@@ -1951,14 +1951,23 @@
       || state.charge.actor._banditPreparedCharge?.target !== target)) state.charge = null;
     return state.charge?.actor || null;
   }
+  function banditPreparedChargeHasPriority(preparer, target) {
+    const charge = preparer?._banditPreparedCharge;
+    if (!charge || charge.target !== target || charge.t < charge.duration) return false;
+    const dx = preparer.x - target.x, dy = preparer.y - target.y;
+    if (dx * dx + dy * dy > deps.TILE * deps.TILE * 16) return false; // A charged fighter far away cannot monopolize everybody else's melee attempts.
+    const slot = _banditAttackSlots.find(s => s.bandit === preparer && s.target === target);
+    if (!slot || slot.sector == null) return !!slot;
+    const angle = Math.atan2(dy, dx);
+    return Math.abs(deps.angleDiff(angle, banditFacingSlotAngle(slot, target))) <= Math.PI / 3; // A charging rear fighter needs to reach their assigned segment before cutting in.
+  }
   function claimBanditAttackTurn(actor, target) {
     if (!banditDirectional(actor)) return true; // Special NPC combat uses the unchanged stage and attack pipeline.
     const state = banditTurnState(target);
     const owner = banditAttackTurnOwner(target);
     if (owner && owner !== actor) return false;
     const preparer = banditChargeOwner(target);
-    if (!owner && preparer && preparer !== actor
-      && preparer._banditPreparedCharge?.t >= preparer._banditPreparedCharge.duration) return false; // A ready held attack takes the next free turn instead of starving.
+    if (!owner && preparer && preparer !== actor && banditPreparedChargeHasPriority(preparer, target)) return false; // A ready, POSITIONED held attack takes the next free turn.
     state.attack = { actor, target }; // Released immediately after the final resolved hit, not after cosmetic weapon recovery.
     return true;
   }
@@ -2488,8 +2497,16 @@
       prep.t = Math.min(prep.duration, prep.t + Math.max(0, dt));
       prep.action.t = prep.t;
       c.facing = towardAngle;
+      prep.readyAgeS = prep.t >= prep.duration ? (prep.readyAgeS || 0) + Math.max(0, dt) : 0; // A blocked or forever-busy opponent cannot make an enemy hold one pose indefinitely.
+      if (prep.readyAgeS > 2.5) {
+        releaseBanditCharge(c, targetPlayer);
+        c._banditChargeDecisionCdS = 1.25;
+        return { aimAngle: towardAngle, moving: false };
+      }
       const reach = banditEngagementReachPx(c, def, loadout, targetPlayer);
-      if (prep.t >= prep.duration && distToPlayer <= reach && claimBanditAttackTurn(c, targetPlayer)) {
+      const heldSlot = claimBanditAttackSlot(c, towardAngle, targetPlayer);
+      if (heldSlot && prep.t >= prep.duration && distToPlayer <= reach
+        && banditPreparedChargeHasPriority(c, targetPlayer) && claimBanditAttackTurn(c, targetPlayer)) {
         releaseBanditCharge(c, targetPlayer, true); // Keep the pose when converting preparation to a real Charged Breaker.
         window.ResourceSystem?.spendStamina(c, def.attackStaminaCost, 'bandit charged release', { actionKind: 'combatNpcMelee', abilityId: 'npcMelee' });
         const fired = fireBanditChargedBreaker(c, def, targetPlayer, prep);
@@ -2503,8 +2520,16 @@
         }
         return { aimAngle: towardAngle, moving: !!fired };
       }
-      const moving = distToPlayer > Math.max(deps.TILE * 1.7, reach * 0.85)
-        ? deps.moveCreatureToward(c, targetPlayer.x, targetPlayer.y, def.chaseSpeed, dt) : false; // A retreating opponent cannot strand a readied attacker out of range.
+      let moving = false;
+      if (heldSlot && heldSlot.sector != null && !banditPreparedChargeHasPriority(c, targetPlayer)) {
+        const direction = banditFacingSlotAngle(heldSlot, targetPlayer);
+        const point = c._banditMovementPoint || (c._banditMovementPoint = { x: 0, y: 0 }); // Reuses the same movement scratch point as normal ring positioning.
+        banditRingPoint(targetPlayer, direction, Math.min(deps.TILE * 2, reach * 0.7), point);
+        banditPersonalSpaceAdjust(c, point, point);
+        moving = deps.moveCreatureToward(c, point.x, point.y, def.chaseSpeed, dt); // Keep circling toward the assigned quadrant even while the weapon is charged.
+      } else if (distToPlayer > Math.max(deps.TILE * 1.7, reach * 0.85)) {
+        moving = deps.moveCreatureToward(c, targetPlayer.x, targetPlayer.y, def.chaseSpeed, dt); // A retreating opponent cannot strand a ready charge out of range.
+      }
       c._banditTactic = prep.t >= prep.duration ? 'charged-ready' : 'charging';
       return { aimAngle: towardAngle, moving };
     }
@@ -2562,8 +2587,7 @@
         return { aimAngle: towardAngle, moving: false };
       }
     }
-    const readyCharge = preparer?._banditPreparedCharge;
-    const priorityBlocked = preparer && preparer !== c && readyCharge?.t >= readyCharge.duration; // The next free attack turn goes to the waiting held release.
+    const priorityBlocked = preparer && preparer !== c && banditPreparedChargeHasPriority(preparer, targetPlayer); // Only a nearby, properly stationed readied charge gets priority.
     const attackPermission = !banditDirectional(c) || ((!committedOwner || committedOwner === c) && !priorityBlocked);
     const sectorAngle = slot && slot.sector != null ? banditFacingSlotAngle(slot, targetPlayer) : null;
     const positionAngle = Math.atan2(c.y - targetPlayer.y, c.x - targetPlayer.x);
