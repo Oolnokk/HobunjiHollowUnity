@@ -880,6 +880,8 @@
       const itemDef = itemKey ? deps.ITEM_DEFS?.[itemKey] : null; // A missing catalog item would otherwise be silently hidden by the Pack inventory filter.
       _nestContentDebug.lastCollectionItemKey = itemKey || null;
       _nestContentDebug.lastCollectionSaveOk = false;
+      _nestContentDebug.lastCollectionBagBefore = null; // Clear a previous attempt's counts before validating this nest's item registration.
+      _nestContentDebug.lastCollectionBagAfter = null;
       if (!itemKey || !itemDef || typeof window.LivestockItemGenotypePersistence?.acquireNestItem !== 'function') {
         const reason = 'Unregistered nest reward: key=' + String(nest.itemKey) + ', species=' + String(nest.speciesKey || 'unknown') + ', registered=' + !!itemDef;
         _nestContentDebug.lastError = reason;
