@@ -97,7 +97,8 @@
     const posedHeight = bounds ? Math.max(height, bounds.max.y - bounds.min.y) : height;
     const headPose = headPoseOf(data);
     Object.assign(group.userData, {
-      familyBabyWidth: posedWidth, familyBabyHeight: posedHeight,
+      familyBabyWidth: width, familyBabyHeight: height, // Hand and mount points use ORIGINAL full portrait coordinates, not head-expanded mesh AABB.
+      familyBabyPosedWidth: posedWidth, familyBabyPosedHeight: posedHeight, // For diagnostics only: head deformation may expand the visible silhouette.
       familyBabyArtMode: baked?.geometry ? 'posed-rig' : 'flat-portrait',
       familyBabyRearArt: data.backTextureUsesSilhouette ? 'colored-front-fallback' : 'authored-back',
     });
@@ -155,7 +156,7 @@
     group.userData.familyBabyRearArt = data.backTextureUsesSilhouette ? 'colored-front-fallback' : 'authored-back';
     const carryable = entry.burden.data?.carryable;
     if (carryable) {
-      const w = group.userData.familyBabyWidth, h = group.userData.familyBabyHeight;
+      const w = width, h = height; // Stay in portrait-plane coordinates even when a newborn's head animation changes the posed bounds.
       if (window.FamilyBabyCarryPose?.applyTo) window.FamilyBabyCarryPose.applyTo(carryable, w, h);
       else { // Missing optional profile script: preserve the original usable hand positions.
         carryable.handTargets.left.x = w * .40; carryable.handTargets.left.y = h * .5;
