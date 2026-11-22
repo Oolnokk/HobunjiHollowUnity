@@ -105,4 +105,40 @@ for(const id of ['paintCanvas','beard','hood','variant','paintMode','eraseMode',
   assert(html.includes('id="'+id+'"'),'the mobile 2D author exposes '+id);
 assert(!html.includes('three.min.js')&&!html.includes('portrait-spline-rig.js'),
   '2D experiment does not load old 3D rig or Three.js');
-console.log('Beard/hood cutout: paint/erase, RLE, alpha-only destination-out, unchanged beard/source hood, variant wiring, main draw order and 2D editor parse pass.');
+assert(html.includes('const [beardArt,hoodArt]=await Promise.all')
+  && html.indexOf("beardArt.getContext('2d').getImageData") < html.indexOf("beardCanvas.getContext('2d').drawImage(beardArt"),
+  'loaders must validate a disposable canvas before committing origin-clean art into the editor');
+assert(html.includes("if(!artReady){status('Brush disabled:")
+  && html.includes('beardCanvas.width=hoodCanvas.width=SIZE'),
+  'failed art cannot create empty brush history and previously tainted canvases are fully reset');
+assert(html.includes('let hoodPixels=new Uint8ClampedArray')
+  && !html.includes("hoodCanvas.getContext('2d').getImageData(0,0,SIZE,SIZE).data"),
+  'error rendering uses stored hood alpha rather than reading potentially tainted canvases');
+
+const inline=html.match(/<script>([\s\S]*?)<\/script>/)[1];
+const loaderSource=inline.match(/  const imageLoadStats=\{fallbacks:0,failures:0\};[\s\S]*?\n  async function loadImage\(url\)\{[\s\S]*?\n  \}/)?.[0];
+assert(loaderSource,'the editor exposes one CORS-safe loader and scoped fallback');
+const loadFunctions=new Function('Image','location','URL',loaderSource+'\nreturn {loadImage,alternateAssetUrl,imageLoadStats};');
+const requests=[];
+class SimulatedCdnImage {
+  set src(value){
+    requests.push({url:value,crossOrigin:this.crossOrigin});
+    Promise.resolve().then(()=>value.includes('raw.githubusercontent.com')?this.onload?.():this.onerror?.());
+  }
+}
+const page={
+  origin:'https://raw.githack.com',protocol:'https:',href:'https://raw.githack.com/Oolnokk/HobunjiHollowUnity/012345/docs/tools/beard-hood-cutout/index.html',
+  pathname:'/Oolnokk/HobunjiHollowUnity/012345/docs/tools/beard-hood-cutout/index.html',
+};
+const urls=loadFunctions(SimulatedCdnImage,page,URL);
+const originalAsset='https://raw.githack.com/Oolnokk/HobunjiHollowUnity/012345/docs/assets/example-beard.png';
+urls.loadImage(originalAsset).then(result=>{
+  assert(result instanceof SimulatedCdnImage,'fallback resolves the image after primary CDN refusal');
+  assert.equal(requests.length,2,'a rejected GitHack image is retried once');
+  assert.equal(requests[0].crossOrigin,'anonymous','the FIRST image request sets CORS before assigning src');
+  assert.equal(requests[1].crossOrigin,'anonymous','the fallback image request also requires origin-clean pixels');
+  assert.equal(requests[1].url,'https://raw.githubusercontent.com/Oolnokk/HobunjiHollowUnity/012345/docs/assets/example-beard.png',
+    'fallback uses the exact same commit and repo instead of unrelated images');
+  assert.equal(urls.imageLoadStats.fallbacks,1,'mobile debug records a successful alternative');
+  console.log('Beard/hood cutout: paint/erase, RLE, alpha-only destination-out, unchanged beard/source hood, main draw order, CORS fallback and clean-canvas recovery pass.');
+}).catch(error=>{console.error(error);process.exitCode=1;});
