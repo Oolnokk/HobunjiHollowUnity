@@ -64,7 +64,7 @@ const context = {
       debugSnapshot: () => ({ babyCount: livestock.filter(entry => entry.lifeStage === 'baby').length }),
     },
     AnimalGrowth: { growthTonicCount: () => 2 },
-    FarmAnimals: { init() {} },
+    FarmAnimals: { init() {}, currentCharacterId: () => 'nursery_tester' },
     FarmPanel: { init() {}, render() {} },
   },
 };
@@ -83,7 +83,7 @@ const animalDeps = {
   saveMemberWorldData() { memberSaveCount++; },
   showToast() {},
 };
-const panelDeps = { ...animalDeps };
+const panelDeps = { ...animalDeps, _tothalWorldId: () => 'nursery_world' };
 context.window.FarmAnimals.init(animalDeps);
 context.window.FarmPanel.init(panelDeps);
 const calendar = { day: 1 }; // Simulates the next-midnight shipping eligibility cutoff.
@@ -94,14 +94,18 @@ context.window.PendingAnimalSales.init({
   _saveWorldLivestock(next) { livestock = next; livestockSaveCount++; },
   getDeliveryLog: () => deliveries,
 });
-context.window.FarmPanel.removeLivestockAndCleanup = id => {
-  const index = livestock.findIndex(entry => String(entry.id) === String(id));
-  if (index < 0) return null;
-  const [removed] = livestock.splice(index, 1);
-  livestockSaveCount++;
-  pairs = pairs.filter(pair => ![pair.parentA, pair.parentB].some(parent => parent.source === 'world' && parent.id === id));
-  return removed;
+context.window.WorldMetaStore = {
+  completeAnimalSales(worldId, characterId, wallet, day, ids) {
+    const sold = livestock.filter(entry => ids.includes(entry.id) && entry.pendingAnimalSale?.eligibleDay <= day); // Isolated Nursery seam; the real atomic metadata implementation is tested separately.
+    const removedIds = new Set(sold.map(entry => entry.id));
+    livestock = livestock.filter(entry => !removedIds.has(entry.id));
+    pairs = pairs.filter(pair => ![pair.parentA, pair.parentB].some(parent => parent.source === 'world' && removedIds.has(parent.id)));
+    if (sold.length) livestockSaveCount++;
+    const earned = sold.reduce((sum, entry) => sum + entry.pendingAnimalSale.price, 0);
+    return { ok: true, sold, earned, currentGold: wallet + earned };
+  },
 };
+context.window.FarmPanel.onAnimalSalesCollected = () => {};
 
 const commonAdult = CreatureGenetics.sellValueFor({ rare: false }, 'grehlr');
 const rareAdult = CreatureGenetics.sellValueFor({ rare: true }, 'grehlr');
