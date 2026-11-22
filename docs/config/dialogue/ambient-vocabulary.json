@@ -2426,6 +2426,90 @@
         "formality": 15,
         "kind": "near-miss"
       }
+    ],
+    "go way": [
+      {
+        "id": "skedaddle",
+        "text": "skedaddle",
+        "verbosity": 45,
+        "color": 80,
+        "formality": 22,
+        "kind": "old-slang",
+        "firstRecorded": 1861,
+        "source": "https://www.etymonline.com/word/skedaddle"
+      },
+      {
+        "id": "go-away",
+        "text": "go away",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "go-aways",
+        "text": "go-aways",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "leave or": [
+      {
+        "id": "skedaddle-or",
+        "text": "skedaddle or",
+        "verbosity": 45,
+        "color": 80,
+        "formality": 22,
+        "kind": "old-slang",
+        "firstRecorded": 1861,
+        "source": "https://www.etymonline.com/word/skedaddle"
+      },
+      {
+        "id": "go-now-or",
+        "text": "go now or",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "go-away-or",
+        "text": "go-away-or",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "leave.": [
+      {
+        "id": "skedaddle",
+        "text": "skedaddle.",
+        "verbosity": 45,
+        "color": 80,
+        "formality": 22,
+        "kind": "old-slang",
+        "firstRecorded": 1861,
+        "source": "https://www.etymonline.com/word/skedaddle"
+      },
+      {
+        "id": "go-away",
+        "text": "go away.",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "be-gone-gone",
+        "text": "be gone-gone.",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
     ]
   },
   "families": {
