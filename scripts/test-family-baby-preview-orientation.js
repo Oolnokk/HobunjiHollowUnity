@@ -165,6 +165,23 @@ closeVec(babyPoseFrame.localToWorld(new Vector3(back.position.x,back.position.y,
 state.selectedId='baby';make.authorBabyRotation(new Quaternion().setFromEuler(new Euler(-.35,.8,.15)));
 assert.equal(JSON.stringify(state.carryable.billboardAnchor.rotation),heldSaved,'back rotation does not change held orientation');
 
+// Mobile degree inputs operate on the BABY visual quaternion, not the inverse gameplay fields.
+const inputs={carryRX:{value:'20'},carryRY:{value:'-34'},carryRZ:{value:'12'}};
+let fieldRefreshes=0;
+const inputBegin=source.indexOf('  function fromInputs() {'),inputEnd=source.indexOf('  function fromGizmo()',inputBegin);
+assert(inputBegin>=0&&inputEnd>inputBegin,'baby degree fields reuse the carry editor input handler');
+const fromInputs=new Function('state','babyRotateProxy','babyEulerScratch','DEG','el',
+  'authorBabyRotation','syncHoldingPreview','renderControls',
+  source.slice(inputBegin,inputEnd)+';return fromInputs;')(
+    state,babyRotateProxy,new Euler(),Math.PI/180,id=>inputs[id],
+    make.authorBabyRotation,make.syncHoldingPreview,()=>fieldRefreshes++);
+fromInputs();
+const numericTarget=new Quaternion().setFromEuler(new Euler(20*Math.PI/180,-34*Math.PI/180,12*Math.PI/180));
+sameRotation(babyPoseFrame.quaternion,numericTarget,'mobile Pitch/Yaw/Roll describe the visual baby');
+assert.equal(fieldRefreshes,1,'mobile numeric edit refreshes the active guide controls');
+assert.equal(JSON.stringify(state.carryable.billboardAnchor.rotation),heldSaved,
+  'mobile back baby orientation does not modify held pose');
+
 // Furniture mode must preserve the legacy preview where the object stays still.
 make.setEdit(false);state.selectedId='anchor';
 const beforePosition=new Vector3(...[held.position.x,held.position.y,held.position.z])
