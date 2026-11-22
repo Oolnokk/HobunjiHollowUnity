@@ -344,6 +344,7 @@ assert.equal(alpha(topBeard,100,80),0,'upper root whisker is erased under droopi
 assert.equal(alpha(topHood,100,80),255,'upper hood is left intact where it overrules whiskers');
 assert.equal(alpha(topHood,100,145),0,'lower whisker still removes normally protected hood');
 const shortBeard=new Canvas(),shortHood=new Canvas();
+shortHood.pixels.set(ringBefore); // Runtime must actually see the hood's opening ring to generate both cone directions.
 for(const y of [50,80]){
   setPixel(shortBeard,100,y,255);setPixel(shortHood,100,y,255);
 }
