@@ -75,11 +75,18 @@ const pile=window.CratePiles.registerPile({mapId:'wild',id:'camp',group:furnitur
  window.CratePiles.tick(.016);assert.equal(loot.length,1);
  assert.equal(window.CratePiles.debugSnapshot().looseJunk,0);
  const collider={origin:{x:3,y:.5,z:5.5},yaw:0,horizontalRangeWorld:2,verticalRiseWorld:0,halfConeRad:.5,halfHeightWorld:.8};
+ window.Combat.meleeColliderVolume=()=>collider;
+ assert.equal(window.CratePiles.hasLungeTarget(window.Combat.deps.player,{rangePx:64,halfConeRad:.5}),true,
+  'a live crate pile is lunge-targetable through the very same melee volume as an ordinary strike');
+ assert.equal(window.CratePiles.hasLungeTarget(window.Combat.deps.player,{rangePx:0}),false,
+  'a zero-reach lunge cannot hit crates');
  assert.equal(window.CratePiles.sweepMelee(collider,{actor:window.Combat.deps.player}),true);
  assert.equal(damage[1][3].excludeActor,window.Combat.deps.player,'melee attacker is immune to its own smashed crate');
  assert.equal(pile.count,1);
  assert.equal(await window.CratePiles.takeCrate(pile),true);
  assert.equal(pile.count,0);
+ assert.equal(window.CratePiles.hasLungeTarget(window.Combat.deps.player,{rangePx:64}),false,
+  'an exhausted crate stack is never a lunge target');
  assert.equal(window.CratePiles.nearestInteractable('wild',3.5,5.5),null);
  assert.deepEqual(counts,[3,2,1,0]);
  const sh=read('docs/js/shattercasks.js'),camp=read('docs/js/bandit-camps.js'),cave=read('docs/js/cave-site-system.js'),editor=read('docs/tools/furniture-avatar-author/index.html');
