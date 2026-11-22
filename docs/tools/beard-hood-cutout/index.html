@@ -135,8 +135,12 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
   const headCache=new Map(); // Avoid repeat network/image decodes when switching hoods of the same wearer.
   const clamp=(x,lo,hi)=>Math.min(hi,Math.max(lo,x));
   function status(message){lastError=message||'';render();}
-  function scopeKey(){return beardDoc?.speciesVariants?.[variant]?.parts?.head||beardDoc?.speciesVariants?.[variant]?.hoodCutoutMask
-    ? variant : 'shared';}
+  function scopeKey(){
+    const entry=beardDoc?.speciesVariants?.[variant]; // A variant can define root points without replacing its artwork.
+    return entry && (entry.parts?.head || Object.hasOwn(entry,'hoodCutoutMask')
+      || Object.hasOwn(entry,'hoodTuftRoots') || Object.hasOwn(entry,'hoodTuftMaxStretch'))
+      ? variant : 'shared';
+  }
   function draftKey(){return (beardEntry?.path||'import')+'|'+scopeKey();}
   function remember(){
     if(!beardEntry||!artReady)return; // Never overwrite saved artwork during a failed CORS load.
@@ -151,7 +155,7 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
   }
   function originalRoots(){
     return Cut.normalizeRoots(scopeKey()==='shared'?beardDoc?.hoodTuftRoots
-      :(beardDoc?.speciesVariants?.[variant]?.hoodTuftRoots||beardDoc?.hoodTuftRoots));
+      :(beardDoc?.speciesVariants?.[variant]?.hoodTuftRoots??beardDoc?.hoodTuftRoots));
   }
   function originalMaxStretch(){
     const local=beardDoc?.speciesVariants?.[variant]?.hoodTuftMaxStretch;
@@ -294,12 +298,13 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
     }
   }
   function ensureStretchedHood(){
-    const key=hoodRevision+'|'+JSON.stringify(Cut.normalizeRoots(roots))+'|'+selectedStretch();
+    const hidesBeard=hoodDoc?.tags?.includes('hides-facial-hair')===true;
+    const key=hoodRevision+'|'+JSON.stringify(Cut.normalizeRoots(roots))+'|'+selectedStretch()+'|'+hidesBeard;
     if(stretchKey===key)return; // Painting pixels does NOT recompute expensive hood stretching.
     const ctx=stretchedHood.getContext('2d',{willReadFrequently:true});
     ctx.clearRect(0,0,SIZE,SIZE);
     ctx.drawImage(hoodCanvas,0,0);
-    stretchSnapshot=artReady
+    stretchSnapshot=artReady&&!hidesBeard
       ? Cut.stretchHoodToRoots(stretchedHood,roots,{maxStretch:selectedStretch()})
       : {requested:roots.length,stretched:0,insideRing:0,tooFar:0,missingRing:0,moves:[],applied:false};
     stretchedHoodPixels=stretchSnapshot.applied
@@ -547,7 +552,10 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
       bd.fillStyle='#f2bd78';bd.fillRect(80,75,30,15);
       hd.fillStyle='#6196bb';hd.fillRect(70,65,55,35);
       const beardBefore=bd.getImageData(0,0,SIZE,SIZE).data;
-      const painted=Cut.paintMask(empty(),beardBefore,90.5,80.5,3);
+      const painted=Cut.paintMask(empty(),beardBefore,90.5,80.5,3,false,null,128);
+      bd.fillStyle='rgba(242,189,120,0.3)';bd.fillRect(70,75,2,2);
+      const threshold=Cut.paintMask(empty(),bd.getImageData(0,0,SIZE,SIZE).data,70.5,75.5,1,false,null,128);
+      if(Cut.countMask(threshold))throw Error('The alpha floor allowed faint beard pixels to be painted');
       if(Cut.decodeMask(painted)[80*SIZE+60])throw Error('Painting escaped the actual beard alpha');
       const beforeAlpha=hd.getImageData(0,0,SIZE,SIZE).data[80*SIZE*4+90*4+3];
       Cut.applyToHood(cloth,painted);
@@ -556,7 +564,17 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
         throw Error('Hood alpha was not selectively removed');
       if(bd.getImageData(0,0,SIZE,SIZE).data[(80*SIZE+90)*4+3]!==255)
         throw Error('Painting modified the beard');
-      status('2D Canvas self-test PASS: selected hood pixels become transparent; beard and surrounding cloth stay intact.');
+      // A U-shaped hood cross section: the opening is empty, with opaque left and right rims.
+      const ring=blank(),rc=ring.getContext('2d');
+      rc.fillStyle='#779cb5';rc.beginPath();rc.arc(100,94,60,0,Math.PI*2);rc.fill();
+      rc.globalCompositeOperation='destination-out';rc.beginPath();rc.arc(100,94,30,0,Math.PI*2);rc.fill();
+      rc.globalCompositeOperation='source-over';
+      const stretched=Cut.stretchHoodToRoots(ring,[{x:140.5,y:94.5}],{maxStretch:36});
+      const ringAlpha=rc.getImageData(0,0,SIZE,SIZE).data;
+      if(stretched.stretched!==1||ringAlpha[(94*SIZE+135)*4+3]>=64
+          ||ringAlpha[(94*SIZE+140)*4+3]<64)
+        throw Error('Tuft root did not pull the inner ring out to its corner');
+      status('2D Canvas self-test PASS: opacity floor, alpha cutout, tuft-root inner-ring stretch, and unchanged beard.');
     } catch(error){status('2D Canvas self-test FAILED: '+error.message);}
   };
   $('copyDebug').onclick=async()=>{
