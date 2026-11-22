@@ -29,6 +29,7 @@ const child = { id: 'test-baby', name: 'Pip', otherParentId: 'spouse-id', carryB
 const babyWalker = { rec: { id: child.id }, area: 'interior', root: babyRoot, avatarGroup: babyAvatar };
 const spouseWalker = { rec: { id: 'spouse-id' }, area: 'interior', root: spouseRoot, avatarGroup: spouseAvatar };
 let held = null, back = null, persistCount = 0, registered = 0, migrationCount = 0;
+let currentArea = 'interior'; // Simulated active player zone changes independently of the baby's zone.
 const areaRecords = new Map(); // Simulate an unloaded/rebuilt farmhouse zone losing only its old in-memory Burden record.
 const api = {
   registerBurden(options) {
@@ -50,7 +51,7 @@ const api = {
 };
 const window = {
   THREE, Shattercasks: api,
-  RomanceSystem: { helpers: { deps: () => ({ getCurrentArea: () => 'interior' }), findWalker: id => id === 'spouse-id' ? spouseWalker : null } },
+  RomanceSystem: { helpers: { deps: () => ({ getCurrentArea: () => currentArea }), findWalker: id => id === 'spouse-id' ? spouseWalker : null } },
 };
 vm.runInNewContext(fs.readFileSync('docs/js/family-baby-burdens.js', 'utf8'), { window, console });
 const carry = window.FamilyBabyBurdens, persist = () => persistCount++;
@@ -95,13 +96,20 @@ assert.equal(babyWalker.area, 'farm', 'an infant landed outdoors changes their a
 assert.equal(babyRoot.position.x, 11.5, 'landed baby NPC sits at the physical burden tile');
 assert.equal(child.carrySpot.area, 'farm', 'saved landing follows the authoritative physical map');
 item.carried = true; child.carryBy = 'spouse';
+currentArea = 'farm'; // Player remains outside as the NPC takes the real baby through the farmhouse door.
 assert.equal(carry.returnToBasket(child, { col: 6, row: 6 }), true);
 assert.equal(babyWalker.area, 'interior', 'real infant returns through the normal NPC area mover');
 assert.deepEqual(areaTransfers.map(x => x.area), ['farm', 'interior'], 'no improvised baby-only zone transfer');
 assert.equal(babyRoot.position.x, 6.5, 'returning the baby really moves their authoritative NPC to the basket');
 assert.equal(babyRoot.position.z, 6.5, 'basket return cannot leave the infant at their previous throw landing');
-assert.equal(babyRoot.visible, true); assert.equal(child.carryBy, null); assert.equal(item.mapId, 'interior',
-  'parent returning indoors re-registers the physical baby in the home area');
+assert.equal(babyRoot.visible, true); assert.equal(child.carryBy, null);
+assert.equal(item.mapId, 'farm', 'physical burden remains indexed in old zone until player enters home');
+assert.equal(item.carried, true, 'invisible old-zone proxy cannot be selected as a duplicate baby');
+assert.equal(carry.takeIntoArms(child, babyWalker, persist), false,
+  'remote infant in the farmhouse cannot be teleported into the player hand from farm');
+currentArea = 'interior'; carry.sync(child, babyWalker, 'basket', persist);
+assert.equal(item.mapId, 'interior', 'physical baby follows authoritative NPC into the active home scene');
+assert.equal(item.carried, false, 'on return home, the physical baby is normally available again');
 assert(migrationCount > 0);
 spouseWalker.area = 'farm';
 assert.equal(carry.spouseCarry(child, babyWalker, spouseWalker, 'back', persist), false,
