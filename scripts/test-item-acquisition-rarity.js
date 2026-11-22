@@ -471,7 +471,7 @@ const alchemySource={REAGENT_DEFS:reagentDefs,reagentsForZone:()=>Object.keys(re
 const reagentHost={window:{AlchemySystem:alchemySource}};
 vm.runInNewContext(fs.readFileSync('docs/js/reagent-plants.js','utf8'),reagentHost);
 const reagents=reagentHost.window.ReagentPlants;
-const currentReagentState={version:2,day:10,placements:[
+const currentReagentState={version:reagents.HABITAT_VERSION,day:10,placements:[ // Fixture must use the actual current herb generator schema.
   {col:1,row:2,key:'frostcapMoss',harvested:false},
   {col:2,row:3,key:'frostcapMoss',harvested:true},
   {col:3,row:3,key:'graniteThistle',harvested:false},

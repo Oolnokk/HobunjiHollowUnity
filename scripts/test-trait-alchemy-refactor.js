@@ -38,7 +38,7 @@ window.AlchemySystem.init({
 const A = window.AlchemySystem;
 const R = window.ResourceSystem;
 const reagentEntries = Object.entries(A.REAGENT_DEFS);
-assert.strictEqual(reagentEntries.length, 20, 'all twenty existing reagents must remain');
+assert.strictEqual(reagentEntries.length, 28, 'the original twenty reagents plus eight new mushrooms must remain');
 for (const [key, definition] of reagentEntries) {
   assert.deepStrictEqual(Object.keys(definition.traits).sort(), ['drive', 'humour', 'magnetism'], `${key} must have exactly three trait categories`);
   assert.ok(A.validateTraits(definition.traits), `${key} must use valid trait values`);

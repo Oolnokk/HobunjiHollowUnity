@@ -184,7 +184,7 @@
   <script src="js/portrait-breathing.js?v=20260831syllable4"></script>
   <script src="js/npc-avatar-preview-utils.js?v=20261122hKasa3"></script>
   <script src="js/character-spine.js?v=20261112longoran1"></script>
-  <script src="js/png-plane-avatar.js?v=20261122neckForwardCard1"></script>
+  <script src="js/png-plane-avatar.js?v=20261122babyPortraitPosed1"></script>
   <script src="js/creature-ground-anchor.js?v=20261023hf1"></script> <!-- Creature sprite ground-anchor scan/offset (extracted from game.js). -->
   <script src="js/species-pose-scaling.js?v=20261115shoulders3"></script>
   <script src="js/character-dimensions.js?v=20261007he86e7d1"></script>
@@ -298,7 +298,7 @@
   <!-- Local database overrides (window.LocalDBOverrides) — lets docs/tools/
        editors save edited repo-tracked JSON into localStorage and have the
        game load that instead of the repo file when Local source is selected. -->
-  <script src="js/local-db-overrides.js?v=20261120grehlrBeardReview1"></script>
+  <script src="js/local-db-overrides.js?v=20261122hsharedDatabaseAudit2"></script>
   <script>
     // species-pose-scaling parser-loads earlier for avatar consumers, then
     // re-resolves its config now that LocalDBOverrides knows the selected
@@ -335,7 +335,7 @@
   <script src="js/combat/burning-entity-hazards.js?v=20261117burnActorsAudit2"></script>
   <!-- Burning Health presentation: reuses the authored campfire emitter on living actors and temporarily burning corpses. -->
   <script src="js/combat/burning-affliction-vfx.js?v=20261117burnActors1"></script>
-  <script src="js/combat/resource-rings.js?v=20261119hb1113d6"></script>
+  <script src="js/combat/resource-rings.js?v=20261122hresarc5"></script>
   <!-- Shared attack-pose math (window.SharedAttackPose): swing interpolation, per-style rest poses, pose / legacy-arc sampling and Light/Heavy stance baking.
        Used by game.js's updateToolMesh AND every BanditCombat humanoid, so it must load before combat-core.js, combat-bandit.js, the lazily loaded
        weapon-tool-stances.js / enemy-weapon-stances.js, and game.js. -->
@@ -418,7 +418,7 @@
        deps injected via init(), so load order relative to the other
        systems above doesn't matter; must load before game.js, which
        calls window.WildBerries.init(...) during its own setup. -->
-  <script src="js/wild-berries.js?v=20261119hc6ab087"></script>
+  <script src="js/wild-berries.js?v=20261122forageGuards1"></script>
   <!-- Buried wilderness treasure (window.WildTreasure) — self-contained
        aside from deps injected via init(), and reads window.AlchemySystem/
        window.DyeSystem at roll time (both already global by then), so
@@ -471,7 +471,7 @@
        relative to the other systems above doesn't matter; must load
        before game.js, which calls window.ReagentPlants.init(...) during
        its own setup. -->
-  <script src="js/reagent-plants.js?v=20261116h75b336d"></script>
+  <script src="js/reagent-plants.js?v=20261122mushroomAudit2"></script>
   <!-- Jubmir the traveling trader: daily egg + combat-manual stock (window.JubmirShop)
        — self-contained aside from deps injected via init(), and reads
        window.CreatureGenetics/window.FarmAnimals/window.ConditionRegistry at
@@ -550,7 +550,7 @@
   <script src="js/perch-support.js?v=20261105perchAudit7"></script>
   <script src="js/attack-readiness.js?v=20261121attackReadiness1"></script> <!-- Shared player-activity attack staging; other predator AIs may opt in without changing minigames. -->
   <script src="js/flying-combat-orbit.js?v=20261118circleFallback1"></script> <!-- Shared foe-centred aerial evasion geometry; flight owners still perform their own collision checks. --> <!-- Point/line perches and shared branch-fall release on prone, death, or knockback. -->
-  <script src="js/cliff-route-network.js?v=20261122intentionalDescent1"></script> <!-- Shared graph for selected exterior handholds, balcony terrain and wildlife routes. -->
+  <script src="js/cliff-route-network.js?v=20261122mushrooms1"></script> <!-- Shared graph for selected exterior handholds, balcony terrain and wildlife routes. -->
   <script src="js/fall-system.js?v=20261107fall1"></script>
   <script src="js/player-air-motion-config.js?v=20261109actualMoveSpeed2"></script>
   <script src="js/player-jump.js?v=20261122hd7a447f"></script> <!-- Free jumping and real cover-elevation traversal, initialized by ClimbSystem. -->
@@ -2207,6 +2207,27 @@
           <div class="settings-section-title" style="margin-top:10px">Performance</div>
           <label class="settings-row">
             <div class="settings-label">
+              <div class="settings-name">Animal X-ray</div>
+              <div class="settings-desc">Let eligible animal parts show through nearby ground and grass. Also applies to shoulder-pet portrait layering.</div>
+            </div>
+            <span class="settings-toggle"><input type="checkbox" id="settingActorXray-animals" checked><span class="toggle-slider"></span></span>
+          </label>
+          <label class="settings-row">
+            <div class="settings-label">
+              <div class="settings-name">Enemy X-ray</div>
+              <div class="settings-desc">Let eligible humanoid enemy parts and equipment show through nearby ground and grass.</div>
+            </div>
+            <span class="settings-toggle"><input type="checkbox" id="settingActorXray-enemies" checked><span class="toggle-slider"></span></span>
+          </label>
+          <label class="settings-row">
+            <div class="settings-label">
+              <div class="settings-name">Player X-ray</div>
+              <div class="settings-desc">Let your hands, feet, pants and held equipment show through nearby ground and grass.</div>
+            </div>
+            <span class="settings-toggle"><input type="checkbox" id="settingActorXray-player" checked><span class="toggle-slider"></span></span>
+          </label>
+          <label class="settings-row">
+            <div class="settings-label">
               <div class="settings-name">FPS Counter</div>
               <div class="settings-desc">Show a live frames-per-second readout</div>
             </div>
@@ -2929,9 +2950,9 @@
        romance-family.js must load before romance-system.js (whose init()
        wires the family module in); game.js calls both init()s. -->
   <script src="config/romance-config.js?v=20261109family1"></script>
-  <script src="js/family-baby-burdens.js?v=20261122familyBaby10"></script>
+  <script src="js/family-baby-burdens.js?v=20261122babyPortraitPosed2"></script>
   <script src="js/family-baby-care.js?v=20261122familyCare2"></script>
-  <script src="js/romance-family.js?v=20261122familyCare2"></script>
+  <script src="js/romance-family.js?v=20261122babyPortraitDiagnostics1"></script>
   <script src="js/romance-wedding.js?v=20261027hbreath8"></script>
   <script src="js/npc-following.js?v=20261122babyFollow1"></script>
   <!-- Shared spouse kiss motion/height solver. Loads before RomanceSystem.init but after the player render/leg APIs. -->

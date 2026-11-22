@@ -1127,7 +1127,7 @@
       lines.push(`Knockback ledge: entity=${knockbackLedgeDebug.entity || '-'} phase=${knockbackLedgeDebug.phase || '-'} originY=${Number(knockbackLedgeDebug.originSurfaceY || 0).toFixed(2)} landingY=${Number(knockbackLedgeDebug.landingSurfaceY || 0).toFixed(2)} drop=${Number(knockbackLedgeDebug.dropTiers || 0).toFixed(2)}tier reason=${knockbackLedgeDebug.reason || '-'}`);
     }
     const resourceRingsDebug = window.ResourceRings?.debugSnapshot?.(); // Shows dashed ring batching during combat on mobile.
-    if (resourceRingsDebug) lines.push(`Resource rings: ${resourceRingsDebug.dashedArcsBuilt} dash batches, ${resourceRingsDebug.dashMeshesAvoided} mesh allocations avoided`);
+    if (resourceRingsDebug) lines.push(`Resource rings: ${resourceRingsDebug.dashedArcsBuilt} dash batches, ${resourceRingsDebug.dashMeshesAvoided} dash meshes avoided; arcs rebuilt=${resourceRingsDebug.resourceArcRebuilds || 0}, reused=${resourceRingsDebug.resourceArcReuses || 0}, target halos=${resourceRingsDebug.targetHaloRebuilds || 0}, cap checks=${resourceRingsDebug.capacityChecks || 0}, cap changes=${resourceRingsDebug.capacityInvalidations || 0}`);
     const burningVfxDebug = window.BurningAfflictionVfx?.debugSnapshot?.(); // Confirms authored furniture fire emitters are attached without requiring a console.
     if (burningVfxDebug) {
       lines.push(`Burning VFX: active=${burningVfxDebug.activeEntities || 0} template=${burningVfxDebug.templateReady ? 'ready' : (burningVfxDebug.loading ? 'loading' : 'missing')} last=${burningVfxDebug.lastEvent?.phase || '-'} entity=${burningVfxDebug.lastEvent?.entity || '-'}`);

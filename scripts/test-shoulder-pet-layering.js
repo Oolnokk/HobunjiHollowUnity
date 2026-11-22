@@ -18,7 +18,7 @@ assert.match(game, /function updatePetLayering\(active, pet\)[\s\S]*?HeldObjectR
   'gameplay delegates player/pet visual decisions to the shared compositor');
 assert.doesNotMatch(game, /function _setLayerDepthWrite\(/, 'gameplay no longer writes shoulder-pet depth independently');
 assert.doesNotMatch(game, /function _setPlayerBodyRenderOrder\(/, 'gameplay no longer reorders shoulder-pet portraits independently');
-assert.match(render, /if \(isBaseWorldPass\(scene, camera\)\) syncShoulderPetLayering\(camera\)/,
+assert.match(render, /if \(baseWorldPass\) \{[^}]*syncShoulderPetLayering\(camera\)/,
   'the compositor restores its shared policy immediately before a real world draw');
 assert.match(render, /const needsOwnerMask = held\.some\(isPortraitMaskedGear\)/,
   'held owners still receive front-art masks in scenes with no nearby ground/water');
@@ -38,6 +38,7 @@ const start = render.indexOf('  const SHOULDER_PET_RENDER_ORDERS');
 const end = render.indexOf('  const maskedHands =', start);
 assert.ok(start > 0 && end > start, 'shoulder presentation and stencil setup reside inside HeldObjectRenderOrder');
 let mode = 'unused';
+const actorXrayEnabled = { animals: true }; // Exercise the same group gate as the Performance switch.
 const masks = new Set();
 let synced = 0;
 const windowStub = { HobunjiShoulderSplitLayerParity: { syncAvatar(avatar) { synced++; for (const split of avatar?.group?.children || []) { if (!split.userData?.hobunjiShoulderSplitOverlay) continue; const source = split.userData.hobunjiPlaneFace === 'front' ? avatar.frontPlane : avatar.backPlane; split.renderOrder = source.renderOrder + 0.01; split.material.depthWrite = source.material.depthWrite; } } } };
@@ -46,7 +47,7 @@ const registry = { has: mesh => masks.has(mesh), add: mesh => masks.add(mesh), d
 const three = { Vector3: class { applyMatrix4() { return this; } }, Matrix4: class { copy() { return this; } invert() { return this; } } };
 const view = frontView => ({ getWorldPosition(point) { point.z = frontView ? 5 : -5; return point; } });
 const api = new Function('window', 'THREE', 'forEachMaterial', 'xrayRule', 'isFrontPortraitMesh',
-  'hasLayer', 'frontPortraitRegistry', 'FRONT_PORTRAIT_MASK_LAYER',
+  'hasLayer', 'frontPortraitRegistry', 'FRONT_PORTRAIT_MASK_LAYER', 'actorXrayEnabled',
   render.slice(start, end) +
   '\nreturn { setShoulderPetLayering, syncShoulderPetLayering, compareShoulderPetDrawFaces, shoulderPetDrawFace, orders: SHOULDER_PET_RENDER_ORDERS, get state() { return lastShoulderPetDecision; } };')(
     windowStub, three,
@@ -54,7 +55,7 @@ const api = new Function('window', 'THREE', 'forEachMaterial', 'xrayRule', 'isFr
     key => key === 'shoulderPet.presentation' ? mode : null,
     mesh => mesh?.name === 'player_avatar_front_plane',
     (mesh, layer) => !!(mesh.layers.mask & (1 << layer)),
-    registry, 24,
+    registry, 24, actorXrayEnabled,
   );
 const makeMesh = name => ({
   name, isMesh: true, renderOrder: 2, material: { depthWrite: true },
@@ -206,12 +207,12 @@ const overrideRank = category => category === 'garment.headwear' ? 8 : 1; // Man
 windowStub.XrayHierarchy = { layerRank: overrideRank };
 let useManual = false;
 const productionSort = new Function('window', 'xrayRule', 'visualLayerFor', 'protectedDrawPhase',
-  'comparePortraitDraws', 'shoulderPetPresentation', 'shoulderPetDrawFace', 'compareShoulderPetDrawFaces', 'SHOULDER_PET_RENDER_ORDERS',
+  'comparePortraitDraws', 'shoulderPetPresentation', 'previouslyPresentedPet', 'shoulderPetDrawFace', 'compareShoulderPetDrawFaces', 'SHOULDER_PET_RENDER_ORDERS',
   render.slice(faceRankStart, faceRankEnd) + render.slice(sorterStart,sorterEnd) + '\nreturn withVisualSort;')(
   windowStub, key => key === 'layers.manualOrder' && useManual ? 'on' : 'off',
   item => item.object === ownerHatFront ? 'garment.headwear' : 'actor.front',
   () => 0,
-  rankedPortraitCompare, stateRef, api.shoulderPetDrawFace, api.compareShoulderPetDrawFaces, api.orders);
+  rankedPortraitCompare, stateRef, pet, api.shoulderPetDrawFace, api.compareShoulderPetDrawFaces, api.orders);
 const sorterRenderer = {
   sort: null, setTransparentSort(value) { this.sort = value; },
   setOpaqueSort() {},
@@ -414,5 +415,16 @@ assert.equal(ownerHatFront.material.depthWrite, true, 'detachment restores origi
 assert.equal(ownerHatBack.material.depthWrite, true, 'detachment restores original back hat depth');
 assert.equal(api.state.active, false);
 assert.ok(synced >= 5, 'split sprites synchronized on swaps and detachment');
+
+use(pet, true);
+actorXrayEnabled.animals = false;
+api.syncShoulderPetLayering(view(true));
+assert.equal(api.state.active, false, 'animal x-ray off restores ordinary shoulder-pet depth');
+assert.equal(api.shoulderPetDrawFace({ object: pet.avatarRef.frontPlane }), null, 'the disabled pet is absent from the special portrait sort');
+assert.equal(pet.avatarRef.frontPlane.material.depthWrite, true);
+assert.equal(front.material.depthWrite, true);
+actorXrayEnabled.animals = true;
+api.syncShoulderPetLayering(view(true));
+assert.equal(api.state.active, true, 're-enabling restores layering without detaching the pet');
 
 console.log('Shoulder pet paired front/back occlusion: ok');

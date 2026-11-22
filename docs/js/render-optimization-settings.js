@@ -169,7 +169,19 @@
       desc: 'Off hides the sky dome\'s cloud layers while drawing.',
       available: () => typeof hooks()?.register === 'function', read: cloudHider.read, write: cloudHider.write },
   ];
-  const byId = new Map(TOGGLES.map(t => [t.id, t]));
+  // These switches share render preferences but appear in the regular Performance section.
+  const actorXrayToggles = ['animals', 'enemies', 'player'].map(group => ({
+    id: 'xray-' + group,
+    group: 'Performance',
+    name: 'X-ray for ' + (group === 'player' ? 'the player' : group),
+    on: true,
+    input: 'settingActorXray-' + group,
+    available: () => typeof held()?.setActorXrayEnabled === 'function',
+    read: () => held().getActorXrayEnabled(group),
+    write: on => held().setActorXrayEnabled(group, on),
+  }));
+  const settingsToggles = [...TOGGLES, ...actorXrayToggles]; // Shared persistence, live updates and defaults.
+  const byId = new Map(settingsToggles.map(t => [t.id, t]));
 
   function loadStored() {
     try { const value = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}'); return value && typeof value === 'object' ? value : {}; }
@@ -219,14 +231,14 @@
   }
 
   function reset() {
-    for (const toggle of TOGGLES) if (toggle.available() && get(toggle.id) !== toggle.on) set(toggle.id, toggle.on);
+    for (const toggle of settingsToggles) if (toggle.available() && get(toggle.id) !== toggle.on) set(toggle.id, toggle.on);
     saveStored({});
     refreshInputs();
   }
 
-  const inputId = id => 'settingRenderOpt_' + id;
+  const inputId = id => byId.get(id)?.input || 'settingRenderOpt_' + id;
   function refreshInputs() {
-    for (const toggle of TOGGLES) {
+    for (const toggle of settingsToggles) {
       const input = document.getElementById(inputId(toggle.id));
       if (input) input.checked = get(toggle.id) === true;
     }
@@ -288,7 +300,18 @@
     return true;
   }
 
+  function installActorXrayInputs() {
+    for (const toggle of actorXrayToggles) {
+      const input = document.getElementById(toggle.input); // Existing Settings checkbox markup supports controller navigation.
+      if (!input || !toggle.available()) continue;
+      input.checked = get(toggle.id) === true;
+      input.addEventListener('change', () => set(toggle.id, input.checked));
+    }
+  }
+
   applyStored();
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', installActorXrayInputs, { once: true });
+  else installActorXrayInputs();
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', installSection, { once: true });
   else installSection();
   window.addEventListener?.('load', applyStored, { once: true }); // Again after game.js and its init() calls.
@@ -305,7 +328,7 @@
 
   window.RenderOptimizationSettings = Object.freeze({
     STORAGE_KEY,
-    list: () => TOGGLES.filter(t => t.available()).map(t => ({ id: t.id, group: t.group, name: t.name, default: t.on, value: get(t.id) })),
+    list: () => settingsToggles.filter(t => t.available()).map(t => ({ id: t.id, group: t.group, name: t.name, default: t.on, value: get(t.id) })),
     get,
     set,
     reset,

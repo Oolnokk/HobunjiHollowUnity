@@ -16,7 +16,7 @@ class Group {
   updateWorldMatrix() {}
   getWorldPosition(out) { return out.copy(this.position); }
 }
-class Mesh extends Group { constructor(geometry, material) { super(); this.geometry = geometry; this.material = material; } }
+class Mesh extends Group { constructor(geometry, material) { super(); this.isMesh = true; this.geometry = geometry; this.material = material; } }
 class PlaneGeometry { constructor(w, h) { this.width = w; this.height = h; } dispose() { this.disposed = true; } }
 class MeshBasicMaterial { constructor(options) { Object.assign(this, options); } dispose() { this.disposed = true; } }
 const THREE = { Group, Mesh, Vector3: Vector, PlaneGeometry, MeshBasicMaterial, FrontSide: 0 }; // Small structural stand-in for actual THREE objects.
@@ -131,6 +131,69 @@ child.carryBy = 'spouse'; // Restore a save made while an NPC was holding the ba
 carry.sync(child, rebuiltWalker, 'basket', persist);
 assert.equal(child.carryBy, null, 'reloading cannot teleport baby into spouse arms without a live attachment');
 assert.equal(carry.snapshot().babies.length, 1);
+// Silhouette-only rear art is for NPC occlusion, never a visible baby burden.
+rebuiltWalker.avatarGroup.userData.backTextureUsesSilhouette = true;
+const beforeBaking = carry.sync(child, rebuiltWalker, 'basket', persist).burden;
+assert.equal(carry.snapshot().babies[0].rearArt, 'colored-front-fallback');
+assert.equal(beforeBaking.group.children[1].material.map, newerFront,
+  'rear-facing carried baby uses the real colored portrait');
+
+// The newborn head bone is enlarged relative to its body. Capture the posed
+// baby one time instead of shrinking the entire image into a flat card.
+const bakedGeometry = new PlaneGeometry(.48, .59);
+bakedGeometry.boundingBox = { min: { x: -.24, y: -.18 }, max: { x: .24, y: .41 } };
+const skinned = { isSkinnedMesh: true, geometry: { id: 'live-head-scaled-geometry' }, position: new Vector(0, 0, .13) };
+rebuiltWalker.avatarGroup.userData.visualCentroidLocalZ = .13; // A live rig's skinnedPlane.position.z already contains the avatar anchor.
+rebuiltWalker.avatarGroup.userData.neckRig = { skinnedPlane: skinned, headScaleJoint: { scale: new Vector(1.8, 1.8, 1) } };
+let bakeCalls = 0;
+window.PNGPlaneAvatar = { meshBudget: { bakeStaticPortraitForCarry(_THREE, input) {
+  assert.equal(input, skinned); bakeCalls++; return { geometry: bakedGeometry, flat: false };
+} } };
+const sameBurden = carry.sync(child, rebuiltWalker, 'basket', persist).burden;
+assert.equal(sameBurden, beforeBaking, 'switching the artwork keeps the one physical baby');
+assert.equal(sameBurden.group.children.length, 1, 'posed portrait replaces the flat proxy faces');
+assert.equal(sameBurden.group.children[0].geometry, bakedGeometry);
+assert.equal(sameBurden.group.children[0].position.z, .13,
+  'baked infant keeps the original portrait depth; the mesh anchor must not be added twice');
+assert.equal(sameBurden.group.children[0].material[1].map, newerFront, 'posed rear face remains colored');
+assert.equal(sameBurden.meshColliders[0], sameBurden.group.children[0], 'colliders use current geometry');
+assert.equal(carry.snapshot().babies[0].artMode, 'posed-rig');
+assert(carry.snapshot().babies[0].dimensions.height > .42, 'the baby retains its enlarged head silhouette');
+carry.sync(child, rebuiltWalker, 'basket', persist);
+assert.equal(bakeCalls, 1, 'family ticks do not trigger per-frame skin baking');
+const newestFront = { source: 'recolored' };
+rebuiltWalker.avatarGroup.userData.frontTexture = newestFront;
+carry.sync(child, rebuiltWalker, 'basket', persist);
+assert.equal(sameBurden.group.children[0].material[0].map, newestFront, 'live front-art updates propagate');
+assert.equal(sameBurden.group.children[0].material[1].map, newestFront, 'rear fallback tracks front art');
+assert.equal(bakeCalls, 1, 'texture refresh does not re-bake');
+// Head compensation can move the head bone without changing its scale.
+// The rigid carry portrait must update for that offset, not for ordinary ticks.
+const oldBakedMesh = sameBurden.group.children[0];
+const shiftedGeometry = new PlaneGeometry(.48, .59);
+shiftedGeometry.boundingBox = bakedGeometry.boundingBox;
+window.PNGPlaneAvatar.meshBudget.bakeStaticPortraitForCarry = () => {
+  bakeCalls++;
+  return { geometry: shiftedGeometry, flat: false };
+};
+rebuiltWalker.avatarGroup.userData.neckRig.headScaleJoint.position = new Vector(0, .06, 0);
+carry.sync(child, rebuiltWalker, 'basket', persist);
+assert.equal(bakeCalls, 2, 'head-offset adjustment triggers exactly one replacement bake');
+assert.equal(sameBurden.group.children[0].geometry, shiftedGeometry);
+assert.equal(sameBurden.meshColliders[0], sameBurden.group.children[0], 'rebuild refreshes collision mesh references');
+assert.equal(bakedGeometry.disposed, true, 'old baked geometry is disposed after the art swap');
+assert.equal(oldBakedMesh.material[0].disposed, true, 'retired front material is disposed');
+assert.equal(oldBakedMesh.material[1].disposed, true, 'retired back material is disposed');
+carry.sync(child, rebuiltWalker, 'basket', persist);
+assert.equal(bakeCalls, 2, 'unchanged head offsets do not rebake on following family ticks');
+// Family restore may replace the JS child record without replacing the live burden.
+// OnPickup must update the current authoritative child, not its original closure value.
+const restoredRecord = { ...child, carryBy: null, carryPose: null };
+carry.sync(restoredRecord, rebuiltWalker, 'basket', persist);
+assert.equal(carry.takeIntoArms(restoredRecord, rebuiltWalker, persist), true);
+assert.equal(restoredRecord.carryBy, 'player', 'pickup writes to the replacement family child record');
+assert.equal(restoredRecord.carryPose, 'arms');
+assert.equal(child.carryBy, null, 'pickup cannot mutate an obsolete family record');
 carry.clear(); assert.equal(carry.snapshot().babies.length, 0);
 assert(persistCount > 0);
 
@@ -155,4 +218,49 @@ assert.equal(physical.rebindRegisteredBurden(realBaby), true, 'repeated scene re
 activeArea = 'farm'; activeScene = new Group(); realBaby.carried = true;
 assert.equal(physical.transferCarriedBurdenToArea('farm', realBaby), true, 'shared Burden migration survives a zone rebuild');
 assert.equal(physical.getBurden(realBaby.id, 'farm'), realBaby, 'destination registry owns the original child');
+// Execute the production PNGPlaneAvatar bake, not only the family mock. A
+// skinned baby's head-scale bone must survive as rigid vertex positions.
+const portraitRuntime = {};
+vm.runInNewContext(fs.readFileSync('docs/js/png-plane-avatar.js', 'utf8'),
+  { window: portraitRuntime, localStorage: { getItem: () => null }, console });
+assert.equal(typeof portraitRuntime.PNGPlaneAvatar.meshBudget.bakeStaticPortraitForCarry, 'function');
+class IdentityMatrix {
+  constructor() { this.elements = [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]; }
+  copy() { return this; } multiply() { return this; }
+}
+function attr(values, step) {
+  return { array: values, count: values.length / step,
+    getX: i => values[i * step], getY: i => values[i * step + 1], getZ: i => values[i * step + 2],
+    setXYZ(i, x, y, z) { values.splice(i * step, 3, x, y, z); } };
+}
+function skinGeometry(attributes) {
+  return { attributes, index: null, boundingBox: null, drawRange: { start: 0, count: 3 },
+    getAttribute(key) { return this.attributes[key]; },
+    deleteAttribute(key) { delete this.attributes[key]; },
+    clone() { return skinGeometry(Object.fromEntries(Object.entries(attributes).map(([key, a]) =>
+      [key, attr([...a.array], key === 'position' ? 3 : 4)]))); },
+    computeBoundingBox() { this.boundingBox = { min: { x: 0, y: 0 }, max: { x: .18, y: .18 } }; },
+    computeBoundingSphere() {},
+  };
+}
+const sourceSkin = skinGeometry({
+  position: attr([0,0,0, 0,.1,0, .1,0,0], 3),
+  skinWeight: attr([1,0,0,0, 1,0,0,0, 1,0,0,0], 4),
+  skinIndex: attr([0,0,0,0, 0,0,0,0, 0,0,0,0], 4),
+});
+const posedMesh = { isSkinnedMesh: true, geometry: sourceSkin,
+  skeleton: { bones: [{ matrixWorld: new IdentityMatrix() }], boneInverses: [new IdentityMatrix()] },
+  bindMatrix: new IdentityMatrix(), bindMatrixInverse: new IdentityMatrix(),
+  updateWorldMatrix() {}, updateMatrixWorld() {},
+  boneTransform(i, point) { const p = sourceSkin.attributes.position;
+    return point.set(p.getX(i) * 1.8, p.getY(i) * 1.8, p.getZ(i)); },
+};
+const pose = portraitRuntime.PNGPlaneAvatar.meshBudget.bakeStaticPortraitForCarry(
+  { Matrix4: IdentityMatrix, Vector3: Vector }, posedMesh);
+assert(pose?.geometry?.boundingBox, 'real bake computes new static bounds');
+assert(Math.abs(pose.geometry.attributes.position.getX(2) - .18) < 1e-9,
+  'head-scale skinning becomes visible static geometry');
+assert(!pose.geometry.attributes.skinIndex, 'carried baby no longer draws a second skinned rig');
+assert.equal(portraitRuntime.PNGPlaneAvatar.meshBudget.bakeStaticPortraitForCarry({}, {}), null);
+
 console.log('Single infant Burden, player/spouse handoff, scene rebuild, zone transfer and cleanup: PASS');

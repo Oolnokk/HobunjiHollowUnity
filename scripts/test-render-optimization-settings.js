@@ -26,6 +26,12 @@ const pane = new El('div'); pane.className = 'settings-pane';
 const performanceSection = new El('div'); performanceSection.id = 'settingsSection8';
 const painterlySection = new El('div'); painterlySection.id = 'settingsSection9';
 pane.append(performanceSection, painterlySection);
+const actorXray = { animals: true, enemies: true, player: true }; // Mock owner state for the regular Performance controls.
+for (const group of Object.keys(actorXray)) {
+  const control = new El('input');
+  control.id = 'settingActorXray-' + group;
+  performanceSection.appendChild(control);
+}
 const connected = node => { for (let n = node; n; n = n.parentElement) if (n === pane) return true; return false; };
 const document = {
   readyState: 'complete',
@@ -40,7 +46,7 @@ const calls = [];
 const log = (name, v) => { calls.push(name + ':' + v); return v; };
 let denMemo = true, wheelCross = true, leanSync = true, propOn = true, gearOnce = true, ownerLink = true, weaponLimit = 0, frameScope = true, treeOn = false, faceted = true;
 const registered = [];
-const storage = new Map([['hobunjiRenderOptimizations', JSON.stringify({ propBatches: false, gearParticlesOnce: false, rainSheets: false, unknownSwitch: false })]]);
+const storage = new Map([['hobunjiRenderOptimizations', JSON.stringify({ propBatches: false, gearParticlesOnce: false, rainSheets: false, 'xray-enemies': false, unknownSwitch: false })]]);
 const rain = { name: 'world_rain_planes', visible: true, parent: null };
 const scene = { isScene: true, getObjectByName: name => (name === 'world_rain_planes' ? rain : null) };
 rain.parent = scene;
@@ -52,6 +58,8 @@ const win = {
     setHeldOwnerLinkEnabled: v => { ownerLink = log('link', v !== false); return ownerLink; },
     setOtherWeaponXrayLimit: n => { weaponLimit = log('limit', n); return weaponLimit; },
     setReplayScissorEnabled: v => log('scissor', v),
+    getActorXrayEnabled: group => actorXray[group],
+    setActorXrayEnabled: (group, on) => { actorXray[group] = on; },
   },
   RenderHooks: {
     register: hook => { registered.push(hook); return () => registered.splice(registered.indexOf(hook), 1); },
@@ -91,6 +99,17 @@ assert.equal(input('propBatches').checked, false, 'reflects the applied stored v
 assert.equal(input('replayScissor').checked, true);
 assert.equal(input('treeInstancing').checked, false, 'tree instancing is off by default');
 assert.equal(input('npcWeaponsBasePass').checked, true, 'NPC weapons in the base pass by default');
+
+// Regular Performance controls apply the stored choice and persist independently.
+const animalXray = document.getElementById('settingActorXray-animals');
+const enemyXray = document.getElementById('settingActorXray-enemies');
+const playerXray = document.getElementById('settingActorXray-player');
+assert.deepEqual([animalXray.checked, enemyXray.checked, playerXray.checked], [true, false, true]);
+assert.ok([animalXray, enemyXray, playerXray].every(control => control.parentElement === performanceSection));
+animalXray.checked = false;
+animalXray.dispatch('change');
+assert.deepEqual(actorXray, { animals: false, enemies: false, player: true });
+assert.equal(JSON.parse(storage.get('hobunjiRenderOptimizations'))['xray-animals'], false);
 
 // Toggling calls the owner and stores only values that differ from the default.
 input('propBatches').checked = true; input('propBatches').dispatch('change');
@@ -137,6 +156,7 @@ assert.equal(input('gearParticlesOnce').checked, true);
 document.getElementById('settingRenderOptResetDefaults').dispatch('click');
 assert.deepEqual([propOn, gearOnce, ownerLink, weaponLimit, frameScope, treeOn, faceted, registered.length, leanSync, wheelCross, denMemo], [true, true, true, 0, true, false, true, 0, true, true, true]);
 assert.equal(storage.has('hobunjiRenderOptimizations'), false);
+assert.ok([animalXray, enemyXray, playerXray].every(control => control.checked));
 assert.ok(S.list().every(t => t.value === t.default), 'list() reports defaults');
 
 // Wiring: last script of the render group (after every owner), before game.js.
