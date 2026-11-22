@@ -363,6 +363,26 @@ assert.equal(split.whiskerWins,1,
 assert.equal(alpha(shortBeard,100,50),0,'upward cover erases whisker beneath upper cloth');
 assert.equal(alpha(shortBeard,100,80),255,'whisker past downward length survives');
 assert.equal(alpha(shortHood,100,80),0,'past the downward length, whisker still opens the hood');
+// Exercise the renderer's uncached path with intact real hood-ring pixels.
+const uncachedBeard=new Canvas(),uncachedHood=new Canvas();
+uncachedHood.pixels.set(ringBefore);
+for(const y of [50,130])setPixel(uncachedBeard,100,y,255);
+const uncachedWhiskers=new Uint8Array(SIZE*SIZE);
+uncachedWhiskers[at(100,50)]=uncachedWhiskers[at(100,130)]=1;
+const directRender=Cut.negotiateBeardHood(uncachedBeard,uncachedHood,null,{size:SIZE,runs:[]},{
+  whiskerMask:Cut.encodeMask(uncachedWhiskers),permissionMode:'painted',
+  topConeSpread:0,topUpConeSpread:.6,topDownConeLength:4
+});
+assert.equal(directRender.topCoverWhiskers,1,
+  'live renderer detects the upper rim and protects whisker above it without a cached mask');
+assert.equal(directRender.whiskerWins,1,
+  'live renderer still permits whisker beneath the lower rim');
+assert.equal(alpha(uncachedBeard,100,50),0,
+  'uncached bidirectional protection erases the upper whisker');
+assert.equal(alpha(uncachedHood,100,50),255,
+  'uncached protected hood remains intact');
+assert.equal(alpha(uncachedHood,100,130),0,
+  'uncached lower whisker still cuts through otherwise protected hood');
 assert.equal(Cut.decodeMask(topFight.refusedMask)[at(100,80)],1,'upper protected whisker is visibly refused');
 assert.equal(Cut.decodeMask(topFight.topCoverMask)[at(100,145)],0,'top cover preview excludes lower beard');
 // Null option is backward compatible: existing hoods still let priority whiskers win.
