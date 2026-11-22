@@ -249,6 +249,7 @@ assert.equal(missingRing.allowedPixels,0,'no detectable hood inner rim does not 
 const autoBeard=new Canvas(),autoHood=new Canvas();
 autoHood.pixels.set(ringBefore);
 setPixel(autoBeard,100,140,255);setPixel(autoBeard,65,140,255);
+setPixel(autoHood,100,140,255);setPixel(autoHood,65,140,255); // Separate opaque cloth patches exercise the actual conflict arbitration.
 const autoRequests=new Uint8Array(SIZE*SIZE);
 autoRequests[at(100,140)]=autoRequests[at(65,140)]=1;
 const automaticCut=Cut.negotiateBeardHood(autoBeard,autoHood,Cut.encodeMask(autoRequests),null,{
