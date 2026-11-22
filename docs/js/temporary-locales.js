@@ -325,6 +325,7 @@
       tileSnapshot,
       createdAt: Date.now(),
     };
+    root.WildernessObjectFootprints?.reserveTemporaryLocale?.(zone,instance); // The common map layout now knows the full reservation even though camps use cloned tile views.
     return instance;
   }
 
