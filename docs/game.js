@@ -1023,7 +1023,11 @@
       function beginProneAirFall(entity, isPlayer) {
         if (isPlayer) {
           if (window.PlayerJump?.knockProne?.()) return true;
-          if (entity.climbing && entity._cliffRouteSession) return window.ClimbSystem?.fallFromClimb?.(entity, 'knocked prone') === true;
+          if (entity.onClimbSurface) {
+            const released = window.ClimbSurfaces?.release?.({ fall: true });
+            if (released) return window.PlayerJump?.knockProne?.() === true; // Wall-grab height transfers into the physical jump owner.
+          }
+          if (entity.climbing) return window.ClimbSystem?.knockProneOffClimb?.(entity) === true;
           const floorY = knockbackSurfaceAtPixel(entity.x, entity.y);
           const currentY = Number(entity.lungeFlightWorldY);
           if (Number.isFinite(floorY) && Number.isFinite(currentY) && currentY > floorY + KNOCKBACK_LEDGE_HEIGHT_EPSILON) {
