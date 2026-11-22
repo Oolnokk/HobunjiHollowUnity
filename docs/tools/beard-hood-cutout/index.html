@@ -198,7 +198,8 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
       || Object.hasOwn(entry,'hoodCutoutMask')
       || Object.hasOwn(entry,'hoodTuftRoots') || Object.hasOwn(entry,'hoodTuftMaxStretch')
       || Object.hasOwn(entry,'hoodTuftSubdivision') || Object.hasOwn(entry,'hoodTuftAboveInfluence')
-      || Object.hasOwn(entry,'hoodTuftBelowInfluence'))
+      || Object.hasOwn(entry,'hoodTuftBelowInfluence')
+      || Object.hasOwn(entry,'hoodPaintAlphaFloor'))
       ? variant : 'shared';
   }
   function draftKey(){return (beardEntry?.path||'import')+'|'+scopeKey();}
@@ -890,10 +891,19 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
       bd.fillStyle='#f2bd78';bd.fillRect(80,75,30,15);
       hd.fillStyle='#6196bb';hd.fillRect(70,65,55,35);
       const beardBefore=bd.getImageData(0,0,SIZE,SIZE).data;
-      const painted=Cut.paintMask(empty(),beardBefore,90.5,80.5,3,false,null,128);
+      const painted=Cut.paintMask(empty(),beardBefore,90.5,80.5,3,false,null,242);
       bd.fillStyle='rgba(242,189,120,0.3)';bd.fillRect(70,75,2,2);
-      const threshold=Cut.paintMask(empty(),bd.getImageData(0,0,SIZE,SIZE).data,70.5,75.5,1,false,null,128);
+      const threshold=Cut.paintMask(empty(),bd.getImageData(0,0,SIZE,SIZE).data,70.5,75.5,1,false,null,242);
       if(Cut.countMask(threshold))throw Error('The alpha floor allowed faint beard pixels to be painted');
+      const hoodThresholdRGBA=new Uint8ClampedArray(SIZE*SIZE*4);
+      hoodThresholdRGBA[(70*SIZE+60)*4+3]=241;
+      hoodThresholdRGBA[(70*SIZE+61)*4+3]=242;
+      const hoodPaintTest=Cut.paintMask(empty(),hoodThresholdRGBA,60.5,70.5,2,false,null,242,true);
+      const hoodProtectTest=Cut.paintMask({size:SIZE,runs:[[0,SIZE*SIZE]]},
+        hoodThresholdRGBA,60.5,70.5,2,true,null,242,true);
+      if(Cut.decodeMask(hoodPaintTest)[70*SIZE+60] || !Cut.decodeMask(hoodPaintTest)[70*SIZE+61]
+          ||!Cut.decodeMask(hoodProtectTest)[70*SIZE+60] || Cut.decodeMask(hoodProtectTest)[70*SIZE+61])
+        throw Error('Hood allow/protect brush ignored the 95% opacity cutoff');
       if(Cut.decodeMask(painted)[80*SIZE+60])throw Error('Painting escaped the actual beard alpha');
       const beforeAlpha=hd.getImageData(0,0,SIZE,SIZE).data[80*SIZE*4+90*4+3];
       Cut.applyToHood(cloth,painted);
@@ -953,6 +963,12 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
           ||thPixels[(119*SIZE+83)*4+3]!==0||thPixels[(119*SIZE+91)*4+3]!==255
           ||tbPixels[(119*SIZE+91)*4+3]!==0||tbPixels[(119*SIZE+95)*4]!==0)
         throw Error('Two-sided hood permission or black beard-edge outline failed');
+      const faintRim=new Uint8ClampedArray(pristineRing);
+      for(let i=3;i<faintRim.length;i+=4)if(faintRim[i])faintRim[i]=235;
+      const rejectedRim=Cut.autoHoodAllowanceMask(faintRim,0,{alphaLimit:242});
+      const acceptedRim=Cut.autoHoodAllowanceMask(faintRim,0,{alphaLimit:230});
+      if(rejectedRim.allowedPixels!==0 || acceptedRim.bottomPoints.length===0)
+        throw Error('Automatic hood ring did not respect the opacity threshold');
       const autoNarrow=Cut.autoHoodAllowanceMask(pristineRing,0);
       const autoWide=Cut.autoHoodAllowanceMask(pristineRing,.5);
       if(autoNarrow.bottomPoints.length<20||autoWide.allowedPixels<=autoNarrow.allowedPixels
@@ -971,7 +987,7 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
         ||wh.getImageData(92,92,1,1).data[3]!==0
         ||wb.getImageData(92,92,1,1).data[3]!==255)
         throw Error('Priority whisker did not defeat protected hood pixels');
-      status('2D Canvas self-test PASS: lower inner rim, expanding cone, winning whiskers, outlines, 0.25px stretch and alpha floor.');
+      status('2D Canvas self-test PASS: hood/bristle 95% opacity cutoffs, adjustable ring threshold, expanding cone, winning whiskers, outlines and 0.25px stretch.');
     } catch(error){status('2D Canvas self-test FAILED: '+error.message);}
   };
   $('copyDebug').onclick=async()=>{
