@@ -844,6 +844,11 @@
             window.ResourceSystem?.spendFooting?.(target, 47.5, 'fell from branch');
             if (target === player) { _nestHoldT = 0; target._nestTakeActive = false; }
             if (target.lunging) {
+          if (target === player && !Number.isFinite(target.lungeFlightWorldY)
+            && Number(target.lungeHopCurrent) > KNOCKBACK_LEDGE_HEIGHT_EPSILON) {
+            const floorY = knockbackSurfaceAtPixel(target.x, target.y);
+            if (Number.isFinite(floorY)) target._proneAirFallStartY = floorY + target.lungeHopCurrent; // Preserve the ordinary hop height before impact cancels the lunge.
+          }
           target.lunging = false;
           target.lungeHopCurrent = 0;
           if (target === player && Number.isFinite(target.lungeFlightWorldY)) {
@@ -1031,6 +1036,8 @@
         if (entity.onBranch || entity.onPerch) window.PerchSupport?.release?.(
           entity, 'knocked prone in air', { deferLegacyKnockback: true }); // No immediate flat injury: gravity and the cliff resolver will charge it once.
         if (isPlayer) {
+          const hopSnapshotY = Number.isFinite(entity._proneAirFallStartY) ? entity._proneAirFallStartY : null;
+          entity._proneAirFallStartY = null; // A prior harmless hit cannot seed a later unrelated fall.
           if (window.PlayerJump?.knockProne?.()) return true;
           if (entity._knockbackLedgeAir && !entity._knockbackLedgeFall) beginKnockbackLedgeFall(entity); // Releasing a horizontal cliff crossing must begin its vertical descent immediately.
           if (entity._knockbackLedgeFall) {
@@ -1051,9 +1058,11 @@
             return falling;
           }
           const floorY = knockbackSurfaceAtPixel(entity.x, entity.y);
-          const currentY = perchedAirY ?? Number(entity.lungeFlightWorldY);
+          const currentY = perchedAirY ?? (Number.isFinite(entity.lungeFlightWorldY)
+            ? entity.lungeFlightWorldY : hopSnapshotY);
           if (Number.isFinite(floorY) && Number.isFinite(currentY) && currentY > floorY + KNOCKBACK_LEDGE_HEIGHT_EPSILON) {
             entity.lunging = false;
+            entity.lungeHopCurrent = 0;
             entity.lungeFlightWorldY = null;
             entity.lungeLandingPending = false; // PlayerJump is the new vertical owner, not the cancelled lunge.
             const flight = window.PlayerJump?.beginFlight?.({
@@ -1153,6 +1162,11 @@
             window.RangedWeapons?.cancelBanditAction?.(entity);
             window.BanditCombat?.cancelLunge?.(entity);
           }
+        }
+        if (isPlayer && entity.lunging && !Number.isFinite(entity.lungeFlightWorldY)
+          && Number(entity.lungeHopCurrent) > KNOCKBACK_LEDGE_HEIGHT_EPSILON) {
+          const floorY = knockbackSurfaceAtPixel(entity.x, entity.y);
+          if (Number.isFinite(floorY)) entity._proneAirFallStartY = floorY + entity.lungeHopCurrent; // Timed knockdown must also retain the hop without normal knockback.
         }
         startProneThrow(entity, isPlayer, facingAngle, direction);
         if (interruptingGetUp) {
@@ -5839,6 +5853,7 @@
           window.Combat?.cancelAllStaged?.();
           if (fromX !== undefined) applyKnockback(player, fromX, fromY, knockbackPxS);
           applyHitStagger(player, true, player.angle, player.x, player.y, fromX, fromY, resourceDamage.footing);
+          if (!player.prone) player._proneAirFallStartY = null; // Normal staggers never retain a stale aerial snapshot.
         }
         if (player.health <= 0) {
           if (!environmentalImpact && window.PlayerDowned?.tryDown?.('damage')) return; // Combat damage puts the player down (Second Wind) instead of killing them outright.
