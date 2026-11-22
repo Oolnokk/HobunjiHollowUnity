@@ -127,7 +127,7 @@ assert.equal(originalInitDeps, deps, 'enemy dodge wrapper preserves BanditCombat
   activeThreat = { id: 100, attacker: player, rangePx: 500, halfConeRad: Math.PI, lungePx: 0, yaw: 0, timeToImpactS: 0.2, source: 'charged-preview-test' };
   windowStub.BanditCombat.updateCombatAI(enemy, 0.016, player, 70);
   assert.equal(enemy.dodging, false, 'a readied heavy attack cannot be interrupted by an unrelated new dodge');
-  assert.equal(enemy._enemyDodgePending, null, 'holding a charge cannot queue a delayed dodge that fires upon release');
+  assert(enemy._enemyDodgePending == null, 'holding a charge cannot queue a delayed dodge that fires upon release'); // Null and undefined both mean no pending dodge.
   assert.equal(dodgeVoices.length, priorDodgeVoices, 'preparation did not trigger another evasion vocal');
   assert.equal(staminaSpent, priorStaminaSpent, 'preparation cannot secretly spend dodge stamina');
   enemy._banditPreparedCharge = null;
