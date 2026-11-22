@@ -56,6 +56,8 @@
   const MIN_DEN_SHARE = 0.65; // Per-zone floor on inhabited ordinary cave anchors; preserves wilderness homes without adding entrances or new AI.
   const SECONDARY_POCKET_CHANCE = 0.8; // Large ordinary caves may reuse spare navigable floor for a few ore rocks or mushrooms, never extra actors.
   const MIN_SECONDARY_POCKET_TILES = 18; // Only meaningful unused cave-floor space is eligible after nests, exits, walls and primary content reserve theirs.
+  const SECONDARY_POCKET_RADIUS_TILES = 5; // A secondary resource activity belongs in one connected room, not four unrelated corners of the cavern.
+  const SECONDARY_POCKET_ANCHOR_ATTEMPTS = 24; // Bounded one-shot local room search, never an extra per-frame job.
 
   const PROFILE_SCHEMA = 4; // Den-balance migration keeps cave IDs and contents while updating legacy inhabitant allocation.
   const MUSHROOM_REAGENT_KEY = 'duskcapMushroom'; // Legacy fallback for isolated previews before AlchemySystem has loaded.
@@ -810,8 +812,32 @@
       && !reserved.has(tileKey(tile.col, tile.row)) && hasFeatureClearance(tile, reserved, 2));
     if (free.length < MIN_SECONDARY_POCKET_TILES) return;
     const count = clamp(Math.floor(free.length / 35), 2, 4); // A small pocket, not a second full-density ore field or mushroom forest.
-    const tiles = pickSpacedTiles(rng, free, count, reserved, 2.2);
-    if (!tiles.length) return;
+    const freeByKey = new Map(free.map(tile => [tileKey(tile.col, tile.row), tile])); // Reachable, unoccupied floor for bounded one-room flood fills.
+    const anchors = [...free]; // One-time deterministic Fisher-Yates trial order, independent from original cave generation.
+    for (let i = anchors.length - 1; i > 0; i--) {
+      const j = Math.floor(rng() * (i + 1));
+      [anchors[i], anchors[j]] = [anchors[j], anchors[i]];
+    }
+    let tiles = []; // Best reachable local cluster, never resources scattered across unrelated cave branches.
+    for (const anchor of anchors.slice(0, SECONDARY_POCKET_ANCHOR_ATTEMPTS)) {
+      const queue = [anchor], visited = new Set([tileKey(anchor.col, anchor.row)]); // Four-neighbor flood fill cannot cross unwalkable gaps or reserved objectives.
+      for (let i = 0; i < queue.length; i++) {
+        const here = queue[i];
+        for (const [dx, dy] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+          const col = here.col + dx, row = here.row + dy, key = tileKey(col,row);
+          if (visited.has(key) || Math.hypot(col - anchor.col, row - anchor.row) > SECONDARY_POCKET_RADIUS_TILES) continue;
+          const tile = freeByKey.get(key);
+          if (!tile) continue;
+          visited.add(key);
+          queue.push(tile);
+        }
+      }
+      if (queue.length < 8) continue; // Narrow leftover slivers should not masquerade as a distinct gathering room.
+      const trial = pickSpacedTiles(rng, queue, count, new Set(reserved), 2.2); // Copies reservations because each trial must be independent.
+      if (trial.length > tiles.length) tiles = trial;
+      if (tiles.length >= count) break;
+    }
+    if (tiles.length < 2) return; // A one-rock outlier is not a second cave activity.
     const kind = [TYPES.ORE_MINE, TYPES.CATACOMB, TYPES.RUIN_ENTRANCE].includes(profile.contents) ? 'mushrooms' : 'ore';
     if (kind === 'mushrooms') {
       const mushroomKeys = caveMushroomKeys(profile.zoneId, profile.signature + ':secondary', tiles.length); // Additional rooms use the same native fungus catalog.
