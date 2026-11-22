@@ -433,18 +433,39 @@
     window.BuildingGrassSuppression?.refreshRebuiltBillboardMesh?.(farmWeedBillMesh);
   }
 
-  // Town's grass billboards — built once when entering town (town tiles
-  // don't get tilled/cleared at runtime, so no per-tile rebuild needed).
+  // Authored town farms are simulated as soil/trench overlays atop an otherwise
+  // grassy base grid. Exclude their footprints from the *source* grass matrices:
+  // building compaction, height followers, and render chunks can then never
+  // resurrect tufts through a worked Ginju bed, even after a scene rebuild.
+  function managedTownPlotKeys() {
+    const keys = new Set(); // Queried by both town grass passes; no per-instance plot scan.
+    const authored = deps.getTownZone()?.farmPlots || [];
+    const registered = window.NpcFarmPlots?.plots?.() || []; // Covers a late map registration or map-data clone.
+    for (const plot of [...authored, ...registered]) {
+      if (plot.mapId && plot.mapId !== 'map_hobunji_town') continue;
+      if (!(plot.managed ?? ['tillers', 'seeders', 'harvesters', 'diggers'].some(role => plot[role]?.length))) continue;
+      for (const tile of plot.tiles || []) {
+        const col = Array.isArray(tile) ? tile[0] : tile.c;
+        const row = Array.isArray(tile) ? tile[1] : tile.r;
+        if (Number.isInteger(col) && Number.isInteger(row)) keys.add(`${col},${row}`);
+      }
+    }
+    return keys;
+  }
+
+  // Town grass is rebuilt on entry; working NPC plots reserve their tile
+  // footprint even when individual cells are briefly bare between crops.
   let townGrassBillMesh = null;
   function _buildTownGrassBillboards(tcols, trows) {
     if (!grassBillboardMat) return;
     const townScene = deps.getTownScene();
     if (townGrassBillMesh) { townScene.remove(townGrassBillMesh); townGrassBillMesh = null; }
     const townGrid = deps.getTownGrid();
+    const farmKeys = managedTownPlotKeys(); // Reserved beds and irrigation trenches, not adjacent lawn.
     let count = 0;
     for (let row = 0; row < trows; row++)
       for (let col = 0; col < tcols; col++)
-        if (townGrid[row]?.[col]?.type === deps.TileType.GRASS) count++;
+        if (townGrid[row]?.[col]?.type === deps.TileType.GRASS && !farmKeys.has(`${col},${row}`)) count++;
     if (count === 0) return;
 
     townGrassBillMesh = new THREE.InstancedMesh(_grassBladeGeo, grassBillboardMat, count * 28);
@@ -457,7 +478,7 @@
     for (let row = 0; row < trows; row++) {
       for (let col = 0; col < tcols; col++) {
         const tile = townGrid[row]?.[col];
-        if (tile?.type !== deps.TileType.GRASS) continue;
+        if (tile?.type !== deps.TileType.GRASS || farmKeys.has(`${col},${row}`)) continue;
         const tierY = (tile.elevTier || 0) * deps.PLATEAU_UNIT;
         idx = _fillBillboardInstances(townGrassBillMesh, dummy, idx, col, row, 1.0, tierY);
       }
