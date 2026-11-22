@@ -37,7 +37,7 @@ const scene=new Group(),furniture=new Group();scene.add(furniture);
 const inventory={},player={x:45.5*64,y:45.5*64,physicalFeetY:12.5};
 const nest={id:'native-exterior-eggs',areaId:'map_southern_cloud_forest',
   x:player.x,y:player.y,col:45,row:45,w:1,h:1,
-  worldY:12.5,remaining:3,itemKey:'fertilePingdortEgg',
+  worldY:12.5,remaining:3,itemKey:'fertilePingdortEgg',exteriorCliffNest:true,
   genotype:{base:{color:'#849877'}},mesh:furniture,eggCollected:0};
 nest.onEggCollected=()=>nest.eggCollected++;
 const classNames=new Set();
@@ -81,6 +81,11 @@ const deps={_denNests:new Map(),getCurrentArea:()=>nest.areaId,
   showToast:(message,ok)=>toasts.push({message,ok}),
 };
 window.DenNestSystem.init(deps);
+const originalNestX=nest.x,originalNestY=nest.y,originalPlayerX=player.x,originalPlayerY=player.y; // Restore precise mock positions after the fractional-range check.
+nest.x=(45+.875)*64;nest.y=(45+.125)*64;player.x=nest.x+1.4*64;player.y=nest.y;
+assert.equal(window.DenNestSystem.isPlayerNearDenNest(nest),true,
+  'player within 1.6 tiles of a shifted egg cup remains eligible even when outside its tile-centre range');
+nest.x=originalNestX;nest.y=originalNestY;player.x=originalPlayerX;player.y=originalPlayerY;
 async function run(){
   // Promises mirror the asynchronous native PNG/emoji egg-plane renderer.
   assert.equal(window.DenNestSystem.currentAimedNest(),null,'eggs are initially queued');
