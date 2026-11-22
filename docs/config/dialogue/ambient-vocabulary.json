@@ -1,6 +1,6 @@
 {
   "schema": "hobunji_ambient_vocabulary.v2",
-  "description": "A single canonical dictionary for NPC floating speech. Alternatives can be standard, historically attested pre-1900 slang, over-simple, or intentionally near-miss wording. Character-specific selections store stable synonym IDs, never duplicate word lists.",
+  "description": "Shared canonical synonym IDs with opt-in regional voice groups; Southern Ginju expressions and Pahu's piratical West Country orthography use authored doorstep evidence without replacing reaction personalities or ordinary Talk.",
   "enabled": true,
   "lexicon": {
     "lovely": [
@@ -448,6 +448,15 @@
         "color": 88,
         "formality": 15,
         "kind": "near-miss"
+      },
+      {
+        "id": "tuckered-out",
+        "text": "tuckered out",
+        "verbosity": 45,
+        "color": 58,
+        "formality": 24,
+        "kind": "regional",
+        "dialect": "southeastern-us"
       }
     ],
     "angry": [
@@ -586,6 +595,15 @@
         "color": 88,
         "formality": 15,
         "kind": "near-miss"
+      },
+      {
+        "id": "treacherous",
+        "text": "treacherous",
+        "verbosity": 45,
+        "color": 58,
+        "formality": 24,
+        "kind": "regional",
+        "dialect": "pirate"
       }
     ],
     "amazing": [
@@ -662,6 +680,15 @@
         "color": 95,
         "formality": 80,
         "id": "what a delight to see you"
+      },
+      {
+        "id": "mighty-glad-to-see-you",
+        "text": "mighty glad to see you",
+        "verbosity": 45,
+        "color": 58,
+        "formality": 24,
+        "kind": "regional",
+        "dialect": "southeastern-us"
       }
     ],
     "gladly": [
@@ -890,6 +917,16 @@
         "color": 88,
         "formality": 15,
         "kind": "near-miss"
+      },
+      {
+        "id": "matey",
+        "text": "matey",
+        "verbosity": 45,
+        "color": 58,
+        "formality": 24,
+        "kind": "regional",
+        "dialect": "pirate",
+        "sourceVisit": "pahu_grapple_flail"
       }
     ],
     "friends": [
@@ -931,6 +968,15 @@
         "color": 88,
         "formality": 15,
         "kind": "near-miss"
+      },
+      {
+        "id": "hearties",
+        "text": "hearties",
+        "verbosity": 45,
+        "color": 58,
+        "formality": 24,
+        "kind": "regional",
+        "dialect": "pirate"
       }
     ],
     "song": [
@@ -1903,6 +1949,15 @@
         "color": 88,
         "formality": 15,
         "kind": "near-miss"
+      },
+      {
+        "id": "bumfuzzled",
+        "text": "bumfuzzled",
+        "verbosity": 45,
+        "color": 58,
+        "formality": 24,
+        "kind": "regional",
+        "dialect": "southeastern-us"
       }
     ],
     "mysterious": [
@@ -2510,6 +2565,548 @@
         "formality": 15,
         "kind": "near-miss"
       }
+    ],
+    "isn't": [
+      {
+        "id": "ain-t",
+        "text": "ain't",
+        "verbosity": 40,
+        "color": 75,
+        "formality": 16,
+        "kind": "old-slang",
+        "dialect": "southeastern-us",
+        "firstRecorded": 1778,
+        "source": "https://www.ahdictionary.com/word/search.html?q=ain%27t"
+      },
+      {
+        "id": "bain-t",
+        "text": "bain't",
+        "verbosity": 45,
+        "color": 58,
+        "formality": 24,
+        "kind": "regional",
+        "dialect": "west-country"
+      }
+    ],
+    "aren't": [
+      {
+        "id": "ain-t",
+        "text": "ain't",
+        "verbosity": 40,
+        "color": 75,
+        "formality": 16,
+        "kind": "old-slang",
+        "dialect": "southeastern-us",
+        "firstRecorded": 1778,
+        "source": "https://www.ahdictionary.com/word/search.html?q=ain%27t"
+      },
+      {
+        "id": "bain-t",
+        "text": "bain't",
+        "verbosity": 45,
+        "color": 58,
+        "formality": 24,
+        "kind": "regional",
+        "dialect": "west-country"
+      }
+    ],
+    "am not": [
+      {
+        "id": "ain-t",
+        "text": "ain't",
+        "verbosity": 40,
+        "color": 75,
+        "formality": 16,
+        "kind": "old-slang",
+        "dialect": "southeastern-us",
+        "firstRecorded": 1778,
+        "source": "https://www.ahdictionary.com/word/search.html?q=ain%27t"
+      }
+    ],
+    "are not": [
+      {
+        "id": "ain-t",
+        "text": "ain't",
+        "verbosity": 40,
+        "color": 75,
+        "formality": 16,
+        "kind": "old-slang",
+        "dialect": "southeastern-us",
+        "firstRecorded": 1778,
+        "source": "https://www.ahdictionary.com/word/search.html?q=ain%27t"
+      }
+    ],
+    "is not": [
+      {
+        "id": "ain-t",
+        "text": "ain't",
+        "verbosity": 40,
+        "color": 75,
+        "formality": 16,
+        "kind": "old-slang",
+        "dialect": "southeastern-us",
+        "firstRecorded": 1778,
+        "source": "https://www.ahdictionary.com/word/search.html?q=ain%27t"
+      }
+    ],
+    "i'm not": [
+      {
+        "id": "i-ain-t",
+        "text": "I ain't",
+        "verbosity": 40,
+        "color": 75,
+        "formality": 16,
+        "kind": "old-slang",
+        "dialect": "southeastern-us",
+        "firstRecorded": 1778,
+        "source": "https://www.ahdictionary.com/word/search.html?q=ain%27t"
+      }
+    ],
+    "i am not": [
+      {
+        "id": "i-ain-t",
+        "text": "I ain't",
+        "verbosity": 40,
+        "color": 75,
+        "formality": 16,
+        "kind": "old-slang",
+        "dialect": "southeastern-us",
+        "firstRecorded": 1778,
+        "source": "https://www.ahdictionary.com/word/search.html?q=ain%27t"
+      }
+    ],
+    "you all": [
+      {
+        "id": "y-all",
+        "text": "y'all",
+        "verbosity": 40,
+        "color": 75,
+        "formality": 16,
+        "kind": "old-slang",
+        "dialect": "southeastern-us",
+        "firstRecorded": 1879,
+        "source": "https://www.etymonline.com/word/y%27all"
+      }
+    ],
+    "all of you": [
+      {
+        "id": "all-y-all",
+        "text": "all y'all",
+        "verbosity": 45,
+        "color": 58,
+        "formality": 24,
+        "kind": "regional",
+        "dialect": "southeastern-us"
+      }
+    ],
+    "hello": [
+      {
+        "id": "howdy",
+        "text": "howdy",
+        "verbosity": 45,
+        "color": 58,
+        "formality": 24,
+        "kind": "regional",
+        "dialect": "southeastern-us"
+      },
+      {
+        "id": "ahoy",
+        "text": "ahoy",
+        "verbosity": 40,
+        "color": 75,
+        "formality": 16,
+        "kind": "old-slang",
+        "dialect": "pirate",
+        "firstRecorded": 1751,
+        "source": "https://www.etymonline.com/word/ahoy",
+        "sourceVisit": "pahu_grapple_flail"
+      }
+    ],
+    "i think": [
+      {
+        "id": "i-reckon",
+        "text": "I reckon",
+        "verbosity": 45,
+        "color": 58,
+        "formality": 24,
+        "kind": "regional",
+        "dialect": "southeastern-us"
+      }
+    ],
+    "i suppose": [
+      {
+        "id": "i-reckon",
+        "text": "I reckon",
+        "verbosity": 45,
+        "color": 58,
+        "formality": 24,
+        "kind": "regional",
+        "dialect": "southeastern-us"
+      }
+    ],
+    "over there": [
+      {
+        "id": "over-yonder",
+        "text": "over yonder",
+        "verbosity": 45,
+        "color": 58,
+        "formality": 24,
+        "kind": "regional",
+        "dialect": "southeastern-us"
+      }
+    ],
+    "far away": [
+      {
+        "id": "way-yonder",
+        "text": "way yonder",
+        "verbosity": 45,
+        "color": 58,
+        "formality": 24,
+        "kind": "regional",
+        "dialect": "southeastern-us"
+      }
+    ],
+    "very": [
+      {
+        "id": "mighty",
+        "text": "mighty",
+        "verbosity": 45,
+        "color": 58,
+        "formality": 24,
+        "kind": "regional",
+        "dialect": "southeastern-us"
+      },
+      {
+        "id": "proper",
+        "text": "proper",
+        "verbosity": 45,
+        "color": 58,
+        "formality": 24,
+        "kind": "regional",
+        "dialect": "west-country"
+      }
+    ],
+    "really": [
+      {
+        "id": "right",
+        "text": "right",
+        "verbosity": 45,
+        "color": 58,
+        "formality": 24,
+        "kind": "regional",
+        "dialect": "southeastern-us"
+      }
+    ],
+    "a little": [
+      {
+        "id": "a-mite",
+        "text": "a mite",
+        "verbosity": 45,
+        "color": 58,
+        "formality": 24,
+        "kind": "regional",
+        "dialect": "southeastern-us"
+      }
+    ],
+    "children": [
+      {
+        "id": "young-uns",
+        "text": "young'uns",
+        "verbosity": 45,
+        "color": 58,
+        "formality": 24,
+        "kind": "regional",
+        "dialect": "southeastern-us"
+      }
+    ],
+    "child": [
+      {
+        "id": "young-un",
+        "text": "young'un",
+        "verbosity": 45,
+        "color": 58,
+        "formality": 24,
+        "kind": "regional",
+        "dialect": "southeastern-us"
+      }
+    ],
+    "carry": [
+      {
+        "id": "tote",
+        "text": "tote",
+        "verbosity": 40,
+        "color": 75,
+        "formality": 16,
+        "kind": "old-slang",
+        "dialect": "southeastern-us",
+        "firstRecorded": 1670,
+        "source": "https://www.etymonline.com/word/tote"
+      }
+    ],
+    "crooked": [
+      {
+        "id": "cattywampus",
+        "text": "cattywampus",
+        "verbosity": 45,
+        "color": 58,
+        "formality": 24,
+        "kind": "regional",
+        "dialect": "southeastern-us"
+      }
+    ],
+    "goodness": [
+      {
+        "id": "tarnation",
+        "text": "tarnation",
+        "verbosity": 40,
+        "color": 75,
+        "formality": 16,
+        "kind": "old-slang",
+        "dialect": "southeastern-us",
+        "firstRecorded": 1784,
+        "source": "https://www.etymonline.com/word/tarnation"
+      }
+    ],
+    "before long": [
+      {
+        "id": "directly",
+        "text": "directly",
+        "verbosity": 45,
+        "color": 58,
+        "formality": 24,
+        "kind": "regional",
+        "dialect": "southeastern-us"
+      }
+    ],
+    "it's not": [
+      {
+        "id": "it-ain-t",
+        "text": "it ain't",
+        "verbosity": 40,
+        "color": 75,
+        "formality": 16,
+        "kind": "old-slang",
+        "dialect": "southeastern-us",
+        "firstRecorded": 1778,
+        "source": "https://www.ahdictionary.com/word/search.html?q=ain%27t"
+      }
+    ],
+    "fellow": [
+      {
+        "id": "matey",
+        "text": "matey",
+        "verbosity": 45,
+        "color": 58,
+        "formality": 24,
+        "kind": "regional",
+        "dialect": "pirate"
+      }
+    ],
+    "yes": [
+      {
+        "id": "aye",
+        "text": "aye",
+        "verbosity": 40,
+        "color": 75,
+        "formality": 16,
+        "kind": "old-slang",
+        "dialect": "pirate",
+        "firstRecorded": 1570,
+        "source": "https://www.etymonline.com/word/aye"
+      }
+    ],
+    "stop!": [
+      {
+        "id": "avast",
+        "text": "avast!",
+        "verbosity": 40,
+        "color": 75,
+        "formality": 16,
+        "kind": "old-slang",
+        "dialect": "pirate",
+        "firstRecorded": 1680,
+        "source": "https://www.etymonline.com/word/avast"
+      }
+    ],
+    "big": [
+      {
+        "id": "gurt",
+        "text": "gurt",
+        "verbosity": 45,
+        "color": 58,
+        "formality": 24,
+        "kind": "regional",
+        "dialect": "west-country"
+      }
+    ],
+    "soon": [
+      {
+        "id": "dreckly",
+        "text": "dreckly",
+        "verbosity": 45,
+        "color": 58,
+        "formality": 24,
+        "kind": "regional",
+        "dialect": "west-country"
+      }
+    ],
+    "listen": [
+      {
+        "id": "hearken",
+        "text": "hearken",
+        "verbosity": 45,
+        "color": 58,
+        "formality": 24,
+        "kind": "regional",
+        "dialect": "west-country"
+      }
+    ],
+    "look at": [
+      {
+        "id": "hark-at",
+        "text": "hark at",
+        "verbosity": 45,
+        "color": 58,
+        "formality": 24,
+        "kind": "regional",
+        "dialect": "west-country"
+      }
+    ],
+    "ship": [
+      {
+        "id": "vessel",
+        "text": "vessel",
+        "verbosity": 45,
+        "color": 58,
+        "formality": 24,
+        "kind": "regional",
+        "dialect": "pirate"
+      }
+    ],
+    "boat": [
+      {
+        "id": "craft",
+        "text": "craft",
+        "verbosity": 45,
+        "color": 58,
+        "formality": 24,
+        "kind": "regional",
+        "dialect": "pirate"
+      }
+    ],
+    "pirate": [
+      {
+        "id": "buccaneer",
+        "text": "buccaneer",
+        "verbosity": 40,
+        "color": 75,
+        "formality": 16,
+        "kind": "old-slang",
+        "dialect": "pirate",
+        "firstRecorded": 1680,
+        "source": "https://www.etymonline.com/word/buccaneer",
+        "sourceVisit": "pahu_grapple_flail"
+      }
+    ],
+    "trustworthy": [
+      {
+        "id": "trusty",
+        "text": "trusty",
+        "verbosity": 45,
+        "color": 58,
+        "formality": 24,
+        "kind": "regional",
+        "dialect": "pirate",
+        "sourceVisit": "pahu_grapple_flail"
+      }
+    ],
+    "people": [
+      {
+        "id": "folk",
+        "text": "folk",
+        "verbosity": 45,
+        "color": 58,
+        "formality": 24,
+        "kind": "standard",
+        "sourceVisit": "kzubug_plainssword"
+      }
+    ],
+    "hit": [
+      {
+        "id": "clobber",
+        "text": "clobber",
+        "verbosity": 45,
+        "color": 58,
+        "formality": 24,
+        "kind": "standard",
+        "sourceVisit": "hreesh_kylie"
+      }
+    ],
+    "beaten": [
+      {
+        "id": "clobbered",
+        "text": "clobbered",
+        "verbosity": 45,
+        "color": 58,
+        "formality": 24,
+        "kind": "standard",
+        "sourceVisit": "hreesh_kylie"
+      }
+    ],
+    "reliable": [
+      {
+        "id": "dependable",
+        "text": "dependable",
+        "verbosity": 45,
+        "color": 58,
+        "formality": 24,
+        "kind": "standard",
+        "sourceVisit": "hreesh_kylie"
+      }
+    ],
+    "unwieldy": [
+      {
+        "id": "awkward-to-wield",
+        "text": "awkward to wield",
+        "verbosity": 45,
+        "color": 58,
+        "formality": 24,
+        "kind": "standard",
+        "sourceVisit": "kzubug_plainssword"
+      }
+    ],
+    "weapon": [
+      {
+        "id": "arm",
+        "text": "arm",
+        "verbosity": 45,
+        "color": 58,
+        "formality": 24,
+        "kind": "standard",
+        "sourceVisit": "pahu_grapple_flail"
+      }
+    ],
+    "ingenious": [
+      {
+        "id": "clever",
+        "text": "clever",
+        "verbosity": 45,
+        "color": 58,
+        "formality": 24,
+        "kind": "standard",
+        "sourceVisit": "jubmir_bshuakauitl"
+      }
+    ],
+    "prosperous": [
+      {
+        "id": "well-off",
+        "text": "well-off",
+        "verbosity": 45,
+        "color": 58,
+        "formality": 24,
+        "kind": "standard",
+        "sourceVisit": "jubmir_bshuakauitl"
+      }
     ]
   },
   "families": {
@@ -2605,5 +3202,253 @@
       }
     }
   },
-  "characters": {}
+  "characters": {},
+  "speakerGroups": {
+    "ginju": {
+      "label": "Ginju · Southeastern US",
+      "idSuffix": "_ginju",
+      "speakerIds": [
+        "gorobi_ginju",
+        "gikali_ginju",
+        "aliri_ginju",
+        "gantami_ginju"
+      ],
+      "dialects": [
+        "southeastern-us"
+      ],
+      "sliders": {
+        "oldSlang": 85,
+        "frequency": 68
+      },
+      "selections": {
+        "isn't": [
+          "ain-t"
+        ],
+        "aren't": [
+          "ain-t"
+        ],
+        "i'm not": [
+          "i-ain-t"
+        ],
+        "am not": [
+          "ain-t"
+        ],
+        "is not": [
+          "ain-t"
+        ],
+        "you all": [
+          "y-all"
+        ]
+      },
+      "doorstepReference": "Weapon-trust doorstep visits currently contain no authored Ginju-specific visit"
+    },
+    "pahu": {
+      "label": "Pahu · West Country pirate",
+      "speakerIds": [
+        "pahu"
+      ],
+      "dialects": [
+        "west-country",
+        "pirate"
+      ],
+      "sliders": {
+        "oldSlang": 90,
+        "color": 85,
+        "frequency": 72
+      },
+      "selections": {
+        "hello": [
+          "ahoy"
+        ],
+        "friend": [
+          "matey"
+        ],
+        "stop!": [
+          "avast"
+        ]
+      },
+      "phoneticPreset": "pahu_grapple_flail",
+      "doorstepReference": "config/weapon-trust-visits.js#pahu_grapple_flail"
+    }
+  },
+  "phoneticPresets": {
+    "pahu_grapple_flail": {
+      "source": "config/weapon-trust-visits.js#pahu_grapple_flail",
+      "description": "Only Pahu's authored grappling-flail doorway accent; deterministic wording rather than an indiscriminate generic pirate filter.",
+      "rules": [
+        {
+          "from": "i am",
+          "to": "oym"
+        },
+        {
+          "from": "i'm",
+          "to": "oym"
+        },
+        {
+          "from": "i’ve",
+          "to": "oy've"
+        },
+        {
+          "from": "i've",
+          "to": "oy've"
+        },
+        {
+          "from": "i'll",
+          "to": "oy'll"
+        },
+        {
+          "from": "i'd",
+          "to": "oy'd"
+        },
+        {
+          "from": "i",
+          "to": "oy"
+        },
+        {
+          "from": "my",
+          "to": "moy"
+        },
+        {
+          "from": "you've",
+          "to": "ye've"
+        },
+        {
+          "from": "you're",
+          "to": "yer"
+        },
+        {
+          "from": "you'll",
+          "to": "ye'll"
+        },
+        {
+          "from": "you",
+          "to": "ye"
+        },
+        {
+          "from": "your",
+          "to": "yerr"
+        },
+        {
+          "from": "like",
+          "to": "loike"
+        },
+        {
+          "from": "life",
+          "to": "loife"
+        },
+        {
+          "from": "time",
+          "to": "toime"
+        },
+        {
+          "from": "times",
+          "to": "toimes"
+        },
+        {
+          "from": "mind",
+          "to": "moind"
+        },
+        {
+          "from": "might",
+          "to": "moight"
+        },
+        {
+          "from": "find",
+          "to": "foind"
+        },
+        {
+          "from": "behind",
+          "to": "behoind"
+        },
+        {
+          "from": "remind",
+          "to": "remoind"
+        },
+        {
+          "from": "reminds",
+          "to": "remoinds"
+        },
+        {
+          "from": "fight",
+          "to": "foight"
+        },
+        {
+          "from": "fighting",
+          "to": "foightin'"
+        },
+        {
+          "from": "right",
+          "to": "royght"
+        },
+        {
+          "from": "high",
+          "to": "hoygh"
+        },
+        {
+          "from": "quite",
+          "to": "quoite"
+        },
+        {
+          "from": "by",
+          "to": "boy"
+        },
+        {
+          "from": "are",
+          "to": "arr"
+        },
+        {
+          "from": "for",
+          "to": "forr"
+        },
+        {
+          "from": "years",
+          "to": "yearrs"
+        },
+        {
+          "from": "year",
+          "to": "yearr"
+        },
+        {
+          "from": "something",
+          "to": "somethin'"
+        },
+        {
+          "from": "getting",
+          "to": "gettin'"
+        },
+        {
+          "from": "doing",
+          "to": "doin'"
+        },
+        {
+          "from": "living",
+          "to": "livin'"
+        },
+        {
+          "from": "giving",
+          "to": "givin'"
+        },
+        {
+          "from": "going",
+          "to": "goin'"
+        },
+        {
+          "from": "keeping",
+          "to": "keepin'"
+        },
+        {
+          "from": "wearing",
+          "to": "wearin'"
+        },
+        {
+          "from": "looking",
+          "to": "lookin'"
+        },
+        {
+          "from": "talking",
+          "to": "talkin'"
+        }
+      ]
+    }
+  }
 }
