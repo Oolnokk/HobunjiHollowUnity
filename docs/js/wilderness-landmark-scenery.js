@@ -115,6 +115,7 @@ function planForLayout(zoneId,layout,identity='world:shift'){
   .filter((entry,index,list)=>list.findIndex(other=>other.col===entry.col&&other.row===entry.row)===index); // Each stamped blossom reserves a short, uniquely patterned opening landmark.
  const occupied=[]; // Preserve entrances, authored locales, totems and the wilderness spawn clearing.
  for(const start of blossomStarts)occupied.push({c:start.col,r:start.row,d:5}); // Ordinary random cairns never overlap the replacement debris.
+ for(const item of layout.localeInstances||[])occupied.push({c:Number(item.x??item.col),r:Number(item.y??item.row),d:6}); // Retain existing anchor spacing while extending protection to the whole painted locale.
  // Keep authored floors free of scenery, even when their actual footprint is far from their entrance anchor.
  // The shared helper also inspects furniture whose footprint extends beyond painted locale tiles.
  for(const item of [...(layout.dens||[]),...(layout.animalDens||[])])occupied.push({c:Number(item.mouthAnchor?.x??item.x),r:Number(item.mouthAnchor?.y??item.y),d:5});
