@@ -37,6 +37,21 @@ for(const name of names){const def=T.DEFINITIONS[name];assert(def,'missing '+nam
   const lootSources=Object.entries(loot.pools).filter(([,pool])=>
     pool.entries?.some(entry=>entry.itemKey==='trinket_'+name)).map(([id])=>id);
   assert.deepEqual(lootSources,['puzzleCave'],name+' is only awarded by Puzzle Cave completion');}
+
+// Drawback gear must undercut a comparable clean option; the penalty cannot be free at the same cost.
+const discountedPairs=[ // Each [risk,clean] pair protects one real catalog comparison against future cost drift.
+  ['unstableBalance','brawlersRing'], // Worse universal Footing damage and +25% Footing received.
+  ['leadKnuckles','brawlersRing'], // Bigger bonus only on heavy hits, with +50% heavy Stamina use.
+  ['hollowLungs','secondBreath'], // Better debt recovery costs a quarter of maximum Stamina.
+  ['glassFang','duelistsSignet'],
+  ['ironAnchor','counterweight'],
+  ['fracturedGuard','evasion'],
+  ['berserkersBargain','duelistsSignet'],
+];
+for(const [risk,clean] of discountedPairs){
+  assert(T.DEFINITIONS[risk].attunementCost<T.DEFINITIONS[clean].attunementCost,
+    risk+' must cost less Attunement than clean '+clean);
+}
 const wear=id=>{const uid=T.grant(id,'dev');assert(T.equip(uid).ok);return uid;};
 const unwear=id=>assert(T.unequip(id));
 const hit=(options={},target={health:100,prone:false},sourceX=0,sourceY=0)=>{
