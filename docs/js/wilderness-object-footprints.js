@@ -106,7 +106,8 @@
     for (const site of sites || []) {
       const col = Number(site?.point?.col), row = Number(site?.point?.row); // Exact planned scene coordinates, not the nearest locale entrance.
       if (!Number.isInteger(col) || !Number.isInteger(row)) continue;
-      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      const radius = site?.kind === 'brokenPillar' ? 2 : 1; // Fallen shafts and scattered authored chips extend beyond the central pillar tile.
+      for (let dy = -radius; dy <= radius; dy++) for (let dx = -radius; dx <= radius; dx++) {
         const c = col + dx, r = row + dy;
         if (c >= 0 && r >= 0 && c < zone.cols && r < zone.rows) cells.add(c + ',' + r);
       }
