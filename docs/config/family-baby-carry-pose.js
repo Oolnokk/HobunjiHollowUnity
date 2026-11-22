@@ -95,9 +95,9 @@
       }])),
     });
   }
-  function applyTo(carryable, width, height) {
+  function applyFrom(carryable, sourceProfile, width, height) {
     if (!carryable) return null;
-    const pose = forSize(width, height);
+    const pose = forSizeFrom(sourceProfile, width, height); // Editor rescales unsaved drafts; gameplay passes the saved profile.
     // Hand attachments can retain references to these socket objects. Update in place.
     for (const key of ['billboardAnchor', 'backCarry']) {
       const target = carryable[key] || (carryable[key] = {}), source = pose[key];
@@ -117,6 +117,7 @@
     carryable.enabled = true;
     return carryable;
   }
+  function applyTo(carryable, width, height) { return applyFrom(carryable, profile, width, height); }
   function save(next) {
     profile = normalize(next);
     try { window.localStorage?.setItem(STORAGE_KEY, JSON.stringify(profile)); }
@@ -130,5 +131,5 @@
   }
   function snapshot() { return JSON.parse(JSON.stringify(profile)); }
   window.FamilyBabyCarryPose = Object.freeze({ version: 1, defaultProfile: normalize(DEFAULT_PROFILE),
-    forSize, forSizeFrom, toProfile, pointToPortrait, pointFromPortrait, applyTo, save, reset, snapshot });
+    forSize, forSizeFrom, toProfile, pointToPortrait, pointFromPortrait, applyTo, applyFrom, save, reset, snapshot });
 })();
