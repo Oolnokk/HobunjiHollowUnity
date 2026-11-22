@@ -212,6 +212,8 @@ async function main() {
     object: target,
     onBurn: () => { burns++; return true; },
   }), 'fire-reactive target registers');
+  assert.equal(api.hasTarget('test-ceiling-target'),true,'cached cave targets can detect live registration');
+  assert.equal(api.hasTarget('nonexistent-target'),false,'missing targets report absent without allocating a new registry');
   api.updateProjectile(thrown.projectile, .016);
   assert.doesNotThrow(() => api.contactProjectile(
     thrown.projectile, thrown.projectile.mesh.position, thrown.projectile.mesh.position, 1, .05
