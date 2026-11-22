@@ -158,5 +158,20 @@
     }).join('');
     return { text, hits, swaps };
   }
-  window.AmbientVocabularyRules = Object.freeze({ DEFAULT_SLIDERS, WORD_KINDS, normalizeSliders, seedSliders, synonymId, generateSelections, mergeSelections, resolveSelections, migrateLegacyTable, generateTable, rewriteLine });
+  const phoneticTableCache = new WeakMap(); // Reuses compiled regex patterns for a named speaker's doorstep-derived orthography.
+  function applyPhoneticPreset(text, config, presetId, speakerId = '') {
+    const preset = config?.phoneticPresets?.[presetId];
+    if (!preset || typeof preset !== 'object' || !Array.isArray(preset.rules)) return { text: String(text ?? ''), hits: 0, swaps: 0 };
+    let table = phoneticTableCache.get(preset);
+    if (!table) {
+      table = Object.create(null); // Immutable one-rule-per-source wording, separate from shared semantic synonym lists.
+      for (const entry of preset.rules) {
+        const source = String(entry?.from || '').trim().toLocaleLowerCase(), target = String(entry?.to || '').trim();
+        if (source && source.length <= 80 && target && !/[{}<>]/.test(source) && !/[{}<>]/.test(target)) table[source] = [target];
+      }
+      phoneticTableCache.set(preset, table);
+    }
+    return rewriteLine(text, table, { frequency: 100, variety: 0 }, () => 0, speakerId); // A single deterministic pass AFTER lexical swaps; never changes authored Talk.
+  }
+  window.AmbientVocabularyRules = Object.freeze({ DEFAULT_SLIDERS, WORD_KINDS, normalizeSliders, seedSliders, speakerTraits, synonymId, applyPhoneticPreset, generateSelections, mergeSelections, resolveSelections, migrateLegacyTable, generateTable, rewriteLine });
 })();
