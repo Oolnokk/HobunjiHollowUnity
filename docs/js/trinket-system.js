@@ -474,14 +474,63 @@
   }
 
   // ── Effect channels ──────────────────────────────────────────────
+  const MIN_STACKED_MULTIPLIER = 0.1; // Prevents additive reductions from removing all incoming damage, recovery or Stamina cost.
+  function additiveMultiplier(values) {
+    let delta = 0; // Each percentage contributes relative to the unmodified baseline, never to another trinket.
+    for (const value of values) if (Number.isFinite(value) && value > 0) delta += value - 1;
+    return Math.max(MIN_STACKED_MULTIPLIER, 1 + delta);
+  }
+
   function statMultiplier(entity, key) {
-    if (!entity || entity !== player()) return 1;
-    let mul = 1;
-    for (const entry of equippedEntries()) {
-      const value = Number(entry.def?.effects?.stats?.[key]);
-      if (Number.isFinite(value) && value > 0) mul *= value;
+    if (!entity) return 1;
+    if (entity !== player()) return entity._enemyTrinketStats?.[key] ?? 1; // Enemies use spawn-cached definitions; unassigned NPCs remain unchanged.
+    return additiveMultiplier(equippedEntries().map(entry => Number(entry.def?.effects?.stats?.[key])));
+  }
+
+  function configureEnemy(entity, ids) {
+    if (!entity || entity === player()) return [];
+    const selected = []; // Exact physical trinket ids on this enemy, available to combat diagnostics.
+    const byStat = Object.create(null); // Spawn-time stat deltas; the per-frame modifier provider only performs a property lookup.
+    let spent = 0; // Enemies use the base 8-point budget, never the player's Lich-heart expansion.
+    for (const id of Array.isArray(ids) ? ids : []) {
+      const def = DEFINITIONS[id], cost = costOf(id);
+      if (!def?.effects?.stats || def.effects.perkRanks || def.effects.companion || !cost || spent + cost > ATTUNEMENT_CAPACITY || selected.includes(id)) continue;
+      spent += cost;
+      selected.push(id);
+      for (const [key, raw] of Object.entries(def.effects.stats)) {
+        const value = Number(raw);
+        if (Number.isFinite(value) && value > 0) byStat[key] = (byStat[key] || 0) + value - 1;
+      }
     }
-    return mul;
+    entity.enemyTrinketIds = selected;
+    entity._enemyTrinketStats = Object.freeze(Object.fromEntries(
+      Object.entries(byStat).map(([key, delta]) => [key, Math.max(MIN_STACKED_MULTIPLIER, 1 + delta)])
+    ));
+    return selected;
+  }
+
+  function rollEnemyLoadout(tuning, rank, tier, random = Math.random) {
+    if (!Array.isArray(tuning?.pool) || typeof random !== 'function') return [];
+    const danger = Math.max(0, Math.min(7, Math.floor(Number(tier) || 0))); // The existing eight-tier enemy progression controls access to trinket combinations.
+    const chance = Math.max(0, Math.min(1, (Number(tuning.chanceByRank?.[rank]) || 0) + danger * (Number(tuning.chancePerTier) || 0))); // Each rank gains trinkets as its danger tier increases.
+    if (random() >= chance) return [];
+    const limit = Math.max(0, Math.min(8, Math.floor(Number(tuning.maxByRank?.[rank]) || 0))); // Rarity/rank caps prevent every enemy from wearing a full 8-point build.
+    const extraChance = Math.max(0, Math.min(1, (Number(tuning.extraChancePerTier) || 0) * danger)); // Additional rolls become more likely later in the wilderness.
+    const pool = [...new Set(tuning.pool)].filter(id => {
+      const def = DEFINITIONS[id];
+      return def?.effects?.stats && !def.effects.perkRanks && !def.effects.companion && costOf(id) > 0 && costOf(id) <= ATTUNEMENT_CAPACITY;
+    }); // Use the shared catalog, never copied enemy-only bonuses.
+    const chosen = []; // Rolled once at spawn; no random work while the enemy fights.
+    let used = 0;
+    while (chosen.length < limit && pool.length && (chosen.length === 0 || random() < extraChance)) {
+      const eligible = pool.filter(id => used + costOf(id) <= ATTUNEMENT_CAPACITY);
+      if (!eligible.length) break;
+      const id = eligible[Math.min(eligible.length - 1, Math.floor(Math.max(0, Math.min(0.999999999, Number(random()) || 0)) * eligible.length))];
+      chosen.push(id);
+      used += costOf(id);
+      pool.splice(pool.indexOf(id), 1);
+    }
+    return chosen;
   }
 
   function perkBonusRanks(skillKey, perkId) {
@@ -498,9 +547,10 @@
       if (!c) continue;
       for (const channel of Object.keys(out)) {
         const value = Number(c[channel]);
-        if (Number.isFinite(value) && value > 0) out[channel] *= value;
+        if (Number.isFinite(value) && value > 0) out[channel] += value - 1;
       }
     }
+    for (const channel of Object.keys(out)) out[channel] = Math.max(MIN_STACKED_MULTIPLIER, out[channel]);
     return out.damage === 1 && out.footing === 1 && out.affliction === 1 ? null : out;
   }
 
@@ -662,6 +712,8 @@
     grant,
     claimLoot,
     statMultiplier,
+    configureEnemy,
+    rollEnemyLoadout,
     combatMultiplier: key => statMultiplier(player(), key), // Shared player-only combat-effect read for collision, flask, and dodge adapters.
     perkBonusRanks,
     companionModifiers,
