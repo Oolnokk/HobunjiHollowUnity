@@ -47,6 +47,7 @@ const reagentPersist = new Map();
 const reagentMeshes = new Map();
 const reagentObjects = new Map();
 const inventory = {};
+let forageXpAwards = 0; // Verifies a stale or over-capacity plant cannot farm XP without consuming the actual placement.
 const debugMessages = [];
 
 function findZoneFlatEmptyTiles(mapId, count, rng, extraOccupied = []) {
@@ -77,7 +78,7 @@ window.ReagentPlants.init({
   inventory,
   random: () => 1,
   bonusYieldChance: () => 0,
-  awardForagingXp: () => {},
+  awardForagingXp: () => { forageXpAwards++; },
   refreshItemScroll: () => {},
   debugLog: message => debugMessages.push(message),
   getCurrentArea: () => ZONES[0],
@@ -114,6 +115,33 @@ const plantObject = window.ReagentPlants.makeReagentPlantObject(sampleZone, samp
 assert.strictEqual(plantObject.onAction('obj_pick_reagent').ok, true, 'harvesting a habitat herb should still use the ordinary reagent pick flow');
 assert.strictEqual(reagentPersist.get(sampleZone).placements.length, 1, 'harvested placement history must be retained for next-day exclusion');
 assert.strictEqual(reagentPersist.get(sampleZone).placements[0].harvested, true, 'harvested placement history must be marked inactive');
+const firstAmount = inventory[sample.key]; // After first real pickup, further UI taps must not duplicate items or XP.
+assert.strictEqual(forageXpAwards, 1, 'successful pick grants Foraging XP exactly once');
+assert.strictEqual(plantObject.onAction('obj_pick_reagent').ok, false, 'stale herb prompts cannot collect the same plant twice');
+assert.strictEqual(inventory[sample.key], firstAmount, 'stale picks never duplicate reagent inventory');
+assert.strictEqual(forageXpAwards, 1, 'stale picks never duplicate Foraging XP');
+
+const cappedMesh = {}; // Fresh physical plant used to verify a full inventory stack leaves the herb untouched.
+reagentPersist.set(sampleZone, { version: window.ReagentPlants.HABITAT_VERSION,
+  day:calendar.day, placements:[{ ...sample, harvested:false }] });
+reagentMeshes.set(sampleZone, [cappedMesh]);
+reagentObjects.set(sampleZone, new Map([[sample.col + ',' + sample.row, {}]]));
+inventory[sample.key] = window.InventoryStacks.MAX_TOTAL;
+const cappedPlant = window.ReagentPlants.makeReagentPlantObject(sampleZone, sample.col, sample.row, sample.key, cappedMesh);
+assert.strictEqual(cappedPlant.onAction('obj_pick_reagent').ok, false, 'full inventory rejects a pick');
+assert.strictEqual(inventory[sample.key], window.InventoryStacks.MAX_TOTAL, 'full stack does not overflow');
+assert.strictEqual(reagentPersist.get(sampleZone).placements[0].harvested, false, 'full stack leaves the herb available');
+assert.strictEqual(forageXpAwards, 1, 'full inventory never awards forage XP');
+
+window.PerkSystem = { rank: () => 1 }; // The real Double Forageables perk produces two units in the partial-stack test.
+inventory[sample.key] = window.InventoryStacks.MAX_TOTAL - 1;
+const partial = cappedPlant.onAction('obj_pick_reagent');
+assert.strictEqual(partial.ok, true, 'a stack with exactly one free slot still permits a harvest');
+assert.strictEqual(partial.message.includes('Picked 1 '), true, 'pickup text reports actual granted units, not rolled double yield');
+assert.strictEqual(inventory[sample.key], window.InventoryStacks.MAX_TOTAL, 'partial stack fills exactly the last slot');
+assert.strictEqual(reagentPersist.get(sampleZone).placements[0].harvested, true, 'successful partial pickup consumes the plant');
+assert.strictEqual(forageXpAwards, 2, 'partially filled stack awards XP once');
+delete window.PerkSystem; // Keep subsequent tests independent of the temporary perk stub.
 
 const saved = window.ReagentPlants.serializeZoneReagentState();
 assert.strictEqual(saved[sampleZone].version, window.ReagentPlants.HABITAT_VERSION, 'habitat save version must persist');
