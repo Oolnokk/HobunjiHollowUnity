@@ -120,9 +120,10 @@ const airWorld = {
   ClimbSystem: { knockProneOffClimb: actor => { actor._climbFall = { dropWorld: 1.5 }; return true; } },
 };
 const beginProneAirFall = new Function('window', 'player', 'knockbackSurfaceAtPixel',
-  'KNOCKBACK_LEDGE_HEIGHT_EPSILON', 'PLATEAU_UNIT', 'TILE',
+  'KNOCKBACK_LEDGE_HEIGHT_EPSILON', 'PLATEAU_UNIT', 'TILE', 'beginKnockbackLedgeFall',
   game.slice(airStart, airEnd) + '\nreturn beginProneAirFall;')(
-  airWorld, player, () => 1, 0.08, 2.5, 64);
+  airWorld, player, () => 1, 0.08, 2.5, 64,
+  actor => { actor._knockbackLedgeFall = { elapsed: 0, dropWorld: 4 }; actor._knockbackLedgeAir = null; return true; });
 const leapingCreature = {
   x: 100, y: 100, prone: true, health: 100, _proneAirFallStartY: 4.5,
   proneThrowT: .34, proneThrowVX: 600, proneThrowVY: 0,
@@ -135,6 +136,15 @@ assert.equal(leapingCreature.proneThrowT, 0, 'a creature falling from its lunge 
 const alreadyFalling = leapingCreature._knockbackLedgeFall;
 assert.equal(beginProneAirFall(leapingCreature, false), true);
 assert.strictEqual(leapingCreature._knockbackLedgeFall, alreadyFalling, 'second knockdown keeps the existing creature fall object');
+
+const launchedOverLedge = {
+  x: 100, y: 100, prone: true, health: 100, _knockbackLedgeAir: { originSurfaceY: 5 },
+  proneThrowT: 0.34,
+};
+assert.equal(beginProneAirFall(launchedOverLedge, false), true);
+assert.equal(launchedOverLedge._knockbackLedgeAir, null, 'the ledge-crossing phase releases into an actual fall');
+assert.equal(launchedOverLedge._knockbackLedgeFall.dropWorld, 4);
+assert.equal(launchedOverLedge.proneThrowT, 0, 'no queued ground launch can cancel the fall');
 
 player._freeJump = null; player.climbing = true; player._cliffRouteSession = {};
 player.proneThrowT = .34;
