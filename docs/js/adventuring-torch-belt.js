@@ -10,6 +10,8 @@
   let art = null; // Own stowed mesh; uses the exact same authored PNG and material recipe as the held torch.
   let rawTexture = null; // Loaded original source PNG; marker masks must never sample the held instance's already-tinted canvas.
   let rawLoading = false; // Only one source request, even if many frames pass before load.
+  let nextTextureRetryAt = 0; // Throttle failed image fetches instead of retrying during every render frame.
+  let nextFireRetryAt = 0; // A renderer error can recover without triggering a shader/texture allocation storm.
   let fireState = null; // The ordinary HobunjiLayeredWeaponEffects state for this one stowed PNG.
   let lastFireAt = null; // Limits particle simulation to the period actually stowed.
   let fireError = null; // Mobile diagnostics for missing renderer/source failures.
@@ -63,6 +65,8 @@
   }
   function prepareFire(THREE) {
     if (fireState || !art || !rawTexture?.image) return;
+    const now = typeof performance !== 'undefined' ? performance.now() : Date.now(); // Only used on setup failures, never on an emitting frame.
+    if (now < nextFireRetryAt) return;
     const effects = global.HobunjiLayeredWeaponEffects; // Reuse the carried torch's recolor, cloth-darkening and particle engine verbatim.
     const base = global.WEAPON_SPRITE_ASSEMBLY_CONFIG?.weapons?.torch?.base; // Authoritative torch material and VFX settings.
     const { width } = sourceImageDimensions(rawTexture.image);
@@ -70,12 +74,14 @@
       || !base || !(width > 0) || !rawTexture.clone) {
       fireError = 'shared weapon fire unavailable'; return;
     }
+    let partiallyBuilt = null; // Retire emitter groups even if activation throws halfway through setup.
     try {
       const copy = rawTexture.clone(); // Private map: recoloring the belt cannot mutate the cached source or an in-hand torch.
       copy.needsUpdate = true;
       art.material.map = copy;
       art.material.needsUpdate = true;
       const state = { THREE, plane:art, itemKey:'torch', masteryLevel:() => 5, dead:false }; // Fields consumed by the same layer-effects calls as a held rigid weapon.
+      partiallyBuilt = state;
       effects.registerLayer(state, art, { id:'base', ...base }, rawTexture.image);
       effects.activateStatic(state, base, [], [], rawTexture.image, (global.HobunjiBeltStowRig?.TORCH_WIDTH || .5) / width);
       const emitter = state.fireEmitters?.find(fx => fx.sources?.length); // Real flame marker pixels, including bottom-tip fallback when a marker is absent.
@@ -92,9 +98,11 @@
       }
       fireState = state;
       lastFireAt = null;
-      fireError = null;
+      fireError = emitter ? null : 'source PNG yielded no fire emitter'; // Fail visibly in Pixel Probe instead of pretending a torch without particles is ready.
     } catch (error) {
       fireError = String(error?.message || error);
+      nextFireRetryAt = now + 2000;
+      try { if (partiallyBuilt) effects?.dispose?.(partiallyBuilt); } catch {} // A failed setup cannot leak a half-built particle group into the scene.
       global.__farmLog?.('[stowed torch] Shared fire init failed: ' + fireError, 'warn');
       art.material.map?.dispose?.();
       art.material.map = null; art.material.needsUpdate = true;
@@ -109,18 +117,27 @@
   }
   function updateTexture(THREE) {
     if (rawTexture) { prepareFire(THREE); return; }
-    if (rawLoading) return;
+    const now = typeof performance !== 'undefined' ? performance.now() : Date.now(); // Asset errors are bounded; successful loads never poll time.
+    if (rawLoading || now < nextTextureRetryAt) return;
     rawLoading = true;
-    new THREE.TextureLoader().load(TORCH_SOURCE, texture => {
-      global.HobunjiSpritePngSurface?.configureTexture?.(THREE, texture, TORCH_SOURCE);
-      rawTexture = texture;
+    try {
+      new THREE.TextureLoader().load(TORCH_SOURCE, texture => {
+        global.HobunjiSpritePngSurface?.configureTexture?.(THREE, texture, TORCH_SOURCE);
+        rawTexture = texture;
+        rawLoading = false;
+        if (root?.visible) prepareFire(THREE); // Late texture load immediately enables both the recolor and the correct fire.
+      }, undefined, error => {
+        rawLoading = false;
+        nextTextureRetryAt = now + 5000;
+        fireError = 'source PNG: ' + String(error?.message || error);
+        global.__farmLog?.('[stowed torch] ' + fireError, 'warn');
+      });
+    } catch (error) {
       rawLoading = false;
-      if (root?.visible) prepareFire(THREE); // Late texture load immediately enables both the recolor and the correct fire.
-    }, undefined, error => {
-      rawLoading = false;
-      fireError = 'source PNG: ' + String(error?.message || error);
+      nextTextureRetryAt = now + 5000;
+      fireError = 'source PNG loader: ' + String(error?.message || error);
       global.__farmLog?.('[stowed torch] ' + fireError, 'warn');
-    });
+    }
   }
   function positionAtPosterior(body, timestamp, target) {
     if (timestamp - lastSampleAt < SAMPLE_INTERVAL_MS && root.parent === target) return;
