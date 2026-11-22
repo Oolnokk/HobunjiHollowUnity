@@ -78,7 +78,7 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
   </section>
   <section>
     <h2>Export</h2>
-    <div class="row"><button id="download" class="primary" type="button">Download cosmetic JSON</button><button id="copy" type="button">Copy mask JSON</button></div>
+    <div class="row"><button id="download" class="primary" type="button">Download cosmetic JSON</button><button id="copy" type="button">Copy authoring JSON</button></div>
     <label for="maskJson">Compact saved 200px cutout mask</label><textarea id="maskJson" readonly></textarea>
     <p>Export preserves original cosmetic fields and adds <code>hoodCutoutMask</code>, <code>hoodTuftRoots</code>, and <code>hoodTuftMaxStretch</code> in the same shared or species-specific scope. The opacity floor is stored as editor authoring metadata.</p>
   </section>
@@ -502,8 +502,13 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
         throw Error('Expected a complete beard cosmetic JSON with parts or speciesVariants');
       remember();beardDoc=imported;drafts.delete(draftKey());
       const importedScope=scopeKey();
-      mask=Cut.normalizeMask(importedScope==='shared'?imported.hoodCutoutMask:imported.speciesVariants?.[variant]?.hoodCutoutMask)||empty();
-      await prepare(false);status('Imported '+file.name+'. Paint and export to save the updated mask.');
+      const source=importedScope==='shared'?imported:imported.speciesVariants?.[variant]||imported;
+      mask=Cut.normalizeMask(source.hoodCutoutMask)||empty();
+      roots=Cut.normalizeRoots(source.hoodTuftRoots);
+      $('maxStretch').value=source.hoodTuftMaxStretch??imported.hoodTuftMaxStretch??36;
+      $('alphaFloor').value=source.hoodPaintAlphaFloor??imported.hoodPaintAlphaFloor??128;
+      updateLabels();
+      await prepare(false);status('Imported '+file.name+'. Paint, mark corners, and export the revised cosmetic.');
     }catch(error){status('Import failed: '+error.message);}
     $('beardJson').value='';
   };
@@ -512,10 +517,12 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
   function exportedJson(){
     if(!beardDoc)throw Error('No beard cosmetic loaded');
     const json=JSON.parse(JSON.stringify(beardDoc)),chosen=Cut.normalizeMask(mask)||empty();
-    if(scopeKey()==='shared')json.hoodCutoutMask=chosen;
+    const metadata={hoodCutoutMask:chosen,hoodTuftRoots:Cut.normalizeRoots(roots),
+      hoodTuftMaxStretch:selectedStretch(),hoodPaintAlphaFloor:selectedAlphaFloor()}; // Exact authoring parameters round-trip in the cosmetic JSON.
+    if(scopeKey()==='shared')Object.assign(json,metadata);
     else {
       json.speciesVariants=json.speciesVariants||{};
-      json.speciesVariants[variant]={...(json.speciesVariants[variant]||{}),hoodCutoutMask:chosen};
+      json.speciesVariants[variant]={...(json.speciesVariants[variant]||{}),...metadata};
     }
     return json;
   }
@@ -526,11 +533,11 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
       const url=URL.createObjectURL(blob),a=document.createElement('a');
       a.href=url;a.download=(beardEntry?.path.split('/').pop()||'beard.json').replace(/^\(HA\)/,'');
       document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1200);
-      status('Exported complete cosmetic JSON with the painted 2D hood mask.');
+      status('Exported complete cosmetic JSON with cutout pixels, tuft corners, and stretch/opacity settings.');
     }catch(error){status(error.message);}
   };
   $('copy').onclick=async()=>{
-    try{await navigator.clipboard.writeText(JSON.stringify(mask,null,2));status('Copied the RLE mask.');}
+    try{await navigator.clipboard.writeText($('maskJson').value);status('Copied RLE mask, tuft roots, and settings.');}
     catch(_){$('maskJson').focus();$('maskJson').select();status('Clipboard unavailable; select and copy the mask text.');}
   };
   $('selfTest').onclick=()=>{
@@ -578,6 +585,12 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
   window.BeardHoodCutoutDebug=()=>({
     beard:beardEntry?.id,hood:hoodEntry?.id,variant,scope:scopeKey(),maskPixels:Cut.countMask(mask),
     history:history.length,beardAlphaPixels:beardPixels.reduce((sum,value,i)=>sum+(i%4===3&&value>=8),0),
+    paintableAlphaFloor:selectedAlphaFloor(),paintablePixels:beardPixels.reduce((sum,value,i)=>sum+(i%4===3&&value>=selectedAlphaFloor()),0),
+    tuftRoots:Cut.normalizeRoots(roots),maxStretch:selectedStretch(),ringStretch:stretchSnapshot&&{
+      stretched:stretchSnapshot.stretched,insideRing:stretchSnapshot.insideRing,tooFar:stretchSnapshot.tooFar,
+      missingRing:stretchSnapshot.missingRing,moves:stretchSnapshot.moves?.map(move=>({from:move.from,to:move.to})),
+      openingCenter:stretchSnapshot.openingCenter,
+    },
     artworkReady:artReady,imageCrossOrigin:'anonymous',imageFallbacks:imageLoadStats.fallbacks,
     imageLoadFailures:imageLoadStats.failures,error:lastError,physicalDepth:false,drawOrder:'main-2d-unchanged',
   }); // Copyable from the status and accessible without devtools on mobile via the mask JSON field.
