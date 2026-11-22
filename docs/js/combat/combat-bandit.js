@@ -2071,9 +2071,10 @@
     const backstabber = c.def?.banditAbilityLoadout?.tap2 === 'backstabFlick';
     if (occupied >= BANDIT_MAX_ATTACK_SLOTS) {
       if (!backstabber || !rearOwner || rearOwner.bandit.def?.banditAbilityLoadout?.tap2 === 'backstabFlick') return null;
-      _banditAttackSlots.splice(_banditAttackSlots.indexOf(rearOwner), 1); // Upgrade an ordinary rear holder when a real Backstab specialist joins.
+      if (rearOwner.bandit._banditAction || rearOwner.bandit._banditPreparedCharge
+        || banditAttackTurnOwner(target) === rearOwner.bandit) return null; // Do not steal a slot during its visible attack or charged preparation; the backstabber can claim it once safe.
+      _banditAttackSlots.splice(_banditAttackSlots.indexOf(rearOwner), 1); // Upgrade an idle rear holder when a real Backstab specialist joins.
       _banditSlotForActor.delete(rearOwner.bandit);
-      if (rearOwner.bandit._banditPreparedCharge) releaseBanditCharge(rearOwner.bandit, target); // A displaced non-specialist cannot keep a stale preparatory reservation.
       used[3] = false;
     }
     let chosen = -1, best = Infinity;
