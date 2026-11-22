@@ -35,6 +35,22 @@
     return cells;
   }
 
+  function localePlacementBoxes(instance) {
+    const boxes = []; // Precomputed once per camp-view build, rather than for each temporary-locale candidate.
+    const floor = instance?.footprint || instance; // New locales export the painted area; older ones may carry width and height directly.
+    if (floor && [floor.x, floor.y, floor.w, floor.h].every(value => Number.isFinite(Number(value)))
+      && Number(floor.w) > 0 && Number(floor.h) > 0) {
+      boxes.push({ x: Number(floor.x), y: Number(floor.y), w: Number(floor.w), h: Number(floor.h) });
+    }
+    for (const object of instance?.objects || []) {
+      if (object && [object.x, object.y, object.w, object.h].every(value => Number.isFinite(Number(value)))
+        && Number(object.w) > 0 && Number(object.h) > 0) {
+        boxes.push({ x: Number(object.x), y: Number(object.y), w: Number(object.w), h: Number(object.h) });
+      }
+    }
+    return boxes;
+  }
+
   function localeBlocksSite(instance, col, row, margin = 1.5) {
     const x = col + 0.5, z = row + 0.5; // Proposed scenery center in final wilderness tile units.
     const pad = Math.max(0, Number(margin) || 0); // Visual overhang margin shared by locale-aware landmark placement.
@@ -124,5 +140,5 @@
     return { objects: ids.size, tiles };
   }
 
-  return { isBoulder, boulderCells, localeBlocksSite, reserveScenery, isSceneryReserved, reserveTemporaryLocale, releaseTemporaryLocale, isTemporaryLocaleReserved, clearExportedObjects };
+  return { isBoulder, boulderCells, localePlacementBoxes, localeBlocksSite, reserveScenery, isSceneryReserved, reserveTemporaryLocale, releaseTemporaryLocale, isTemporaryLocaleReserved, clearExportedObjects };
 });
