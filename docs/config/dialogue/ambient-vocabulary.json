@@ -3195,9 +3195,8 @@
         "certainly": [
           "sure"
         ],
-        "very": [
-          "mighty"
-        ]
+        "very": [],
+        "friend": []
       }
     },
     "aliri_ginju": {
@@ -3223,7 +3222,8 @@
         "good to see you": [
           "nice-to-see-you",
           "mighty-nice-to-see-you"
-        ]
+        ],
+        "very": []
       }
     },
     "gantami_ginju": {
@@ -3252,7 +3252,8 @@
         ],
         "certainly": [
           "sure"
-        ]
+        ],
+        "very": []
       }
     },
     "leaf": {
@@ -3297,7 +3298,8 @@
         "beaten": [
           "clobbered"
         ],
-        "beautiful": []
+        "beautiful": [],
+        "good to see you": []
       }
     },
     "kzubug": {
@@ -3319,10 +3321,8 @@
         "important": [
           "significant"
         ],
-        "good to see you": [
-          "nice-to-see-you",
-          "a pleasure to see you"
-        ]
+        "good to see you": [],
+        "friend": []
       }
     },
     "jubmir": {
@@ -3343,9 +3343,7 @@
           "marvelous",
           "splendid"
         ],
-        "friend": [
-          "companion"
-        ],
+        "friend": [],
         "good to see you": [
           "nice-to-see-you",
           "a pleasure to see you"
