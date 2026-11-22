@@ -4,16 +4,16 @@
   'use strict';
   if (global.AdventuringTorchBelt) return;
 
-  const SAMPLE_INTERVAL_MS = 100; // Sample authored animated waist anchors at 10 Hz, not every frame.
+  const SAMPLE_INTERVAL_MS = 100; // Resample the posterior rig at 10 Hz; avoid repeated profile lookup on each frame.
   const TORCH_SOURCE = 'assets/toolsprites/torch.png'; // Original uncolored mask source, identical to the carried torch's assembly definition.
-  let root = null; // One belt display, reparented when the player's mesh is rebuilt.
-  let art = null; // Reuses the actual held torch's PNG material when it loads.
+  let root = null; // One posterior stow display, reparented when the player's mesh is rebuilt.
+  let art = null; // Own stowed mesh; uses the exact same authored PNG and material recipe as the held torch.
   let rawTexture = null; // Loaded original source PNG; marker masks must never sample the held instance's already-tinted canvas.
   let rawLoading = false; // Only one source request, even if many frames pass before load.
   let fireState = null; // The ordinary HobunjiLayeredWeaponEffects state for this one stowed PNG.
   let lastFireAt = null; // Limits particle simulation to the period actually stowed.
   let fireError = null; // Mobile diagnostics for missing renderer/source failures.
-  let lastSampleAt = -Infinity; // Throttles expensive five-point skinning against the real waist.
+  let lastSampleAt = -Infinity; // Throttles posterior profile lookup while preserving the live character height.
   let placement = 'not ready'; // Mobile Pixel Probe reports actual positioning provenance.
   let display = null; // Shared stow display consumes the same authored idle-scale multiplier used by the held torch.
 
@@ -61,6 +61,18 @@
       const state = { THREE, plane:art, itemKey:'torch', masteryLevel:() => 5, dead:false }; // Fields consumed by the same layer-effects calls as a held rigid weapon.
       effects.registerLayer(state, art, { id:'base', ...base }, rawTexture.image);
       effects.activateStatic(state, base, [], [], rawTexture.image, (global.HobunjiBeltStowRig?.TORCH_WIDTH || .5) / width);
+      const emitter = state.fireEmitters?.find(fx => fx.sources?.length); // Real flame marker pixels, including bottom-tip fallback when a marker is absent.
+      if (emitter) {
+        const sourceWidth = Number(emitter.image?.width) || width; // Same unmodified image dimensions used by the particle emitter.
+        const sourceHeight = Number(emitter.image?.height) || sourceImageDimensions(rawTexture.image).height;
+        let sumX = 0, sumY = 0;
+        for (const pixel of emitter.sources) {
+          sumX += pixel % sourceWidth;
+          sumY += Math.floor(pixel / sourceWidth);
+        }
+        display?.setEmitterSourcePoint?.(sumX / emitter.sources.length, sumY / emitter.sources.length,
+          sourceWidth, sourceHeight); // Rotate about the actual grip/emission midpoint, not the PNG bounds' midpoint.
+      }
       fireState = state;
       lastFireAt = null;
       fireError = null;
@@ -118,6 +130,7 @@
     const body = playerBody();
     if (!torch || !body || !global.THREE) {
       if (root) root.visible = false;
+      retireFire(); // A temporarily missing avatar cannot retain old lit motes in the previous scene.
       return;
     }
     const THREE = global.THREE;
@@ -128,7 +141,7 @@
     root.visible = stowed;
     if (!stowed) { retireFire(); return; } // Drawing, burnout and throws remove the stowed emitters; the one burn clock continues in AdventuringTools.
     updateTexture(THREE);
-    const plane = equippedPlane(); // Use the same actual held-tool PNG plane instead of a miniature belt-only approximation.
+    const plane = equippedPlane(); // Preserve live held-tool dimensions without borrowing its already-colored texture.
     const authoredPlaneSize = plane?.geometry?.parameters; // Real game.js PlaneGeometry dimensions already incorporate PNG aspect.
     const textureImage = materialMap(plane?.material)?.image || art?.material?.map?.image; // Fallback for unloaded/rebuilt held mesh.
     const fallbackWidth = global.HobunjiBeltStowRig?.TORCH_WIDTH || .5; // Canonical game/tool editor base width when the live plane is unavailable.
@@ -139,7 +152,7 @@
         : global.HobunjiBeltStowRig?.TORCH_HEIGHT || .5; // Preserve real PNG proportions through portrait/tool rebuilds.
     display?.setSourceDimensions?.(sourceWidth, sourceHeight); // Cached child transform; no per-frame mesh allocations.
     const idleScale = Number(global.WeaponToolStances?.poses?.torchHold?.scale ?? global.HeldActionAnimations?.torchIdle?.poses?.neutral?.scale) || 1; // Same live Neutral multiplier as the held torch, including editor overrides.
-    display?.setIdleScale?.(idleScale); // Grip stays on the authored belt rig while the PNG extends upward from its handle.
+    display?.setIdleScale?.(idleScale); // Both ends remain equidistant from the actual stowed rotation midpoint.
     const timestamp = Number.isFinite(Number(frame.timestamp)) ? Number(frame.timestamp) : performance.now();
     positionAtPosterior(body, timestamp);
     if (!fireState) return; // Original PNG or shared engine is not ready; never substitute a different flame style.
