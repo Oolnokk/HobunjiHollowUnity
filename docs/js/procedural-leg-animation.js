@@ -1789,6 +1789,7 @@
     function dispose() {
       if (state.disposed) return;
       state.disposed = true;
+      activeLegHandles.delete(handle); // Prevent stale lineup/game actors accumulating in the proportion-sync registry.
       externalFootTargets = null;
       externalFootDeepFold = false;
       portraitGuides?.dispose();
