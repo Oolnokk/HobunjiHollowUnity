@@ -587,7 +587,8 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
     $('undo').disabled=!history.length;
   }
   function pushUndo(){
-    history.push(JSON.stringify({mask,roots:Cut.normalizeRoots(roots),hoodAllowanceMask})); // Unified undo for beard requests, tuft roots and hood permissions.
+    history.push(JSON.stringify({mask,whiskerMask,roots:Cut.normalizeRoots(roots),
+      hoodAllowanceMask,hoodPermissionMode,coneSpread})); // Unified undo for beard requests, tuft roots and hood permissions.
     if(history.length>25)history.shift();
   }
   function point(event){
@@ -607,17 +608,26 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
   }
   function updateStroke(next){
     const hoodMode=mode==='hoodAllow'||mode==='hoodProtect';
-    const current=hoodMode
-      ? (hoodAllowanceMask ?? (mode==='hoodProtect'?{size:SIZE,runs:[[0,SIZE*SIZE]]}:empty()))
-      : mask;
+    const whiskerMode=mode==='whisker'||mode==='whiskerErase';
+    let current=mask;
+    if(whiskerMode)current=whiskerMask;
+    if(hoodMode){
+      current=hoodPermissionMode==='painted'
+        ? hoodAllowanceMask||empty()
+        : hoodPermissionMode==='auto'
+          ? Cut.autoHoodAllowanceMask(hoodPixels,coneSpread).mask // In manual mode permissions are painted on original, unstretched hood art.
+          : {size:SIZE,runs:[[0,SIZE*SIZE]]};
+    }
+    const erase=mode==='erase'||mode==='hoodProtect'||mode==='whiskerErase';
     const changed=Cut.paintMask(current,hoodMode?hoodPixels:beardPixels,
-      next.x,next.y,Number($('brush').value),mode==='erase'||mode==='hoodProtect',
-      drag.last,hoodMode?8:selectedAlphaFloor(),hoodMode);
-    // A transparent click must NOT silently convert a legacy permissive hood
-    // into a protect-all policy. Enter an explicit mask only after a real stroke.
+      next.x,next.y,Number($('brush').value),erase,drag.last,
+      hoodMode?8:selectedAlphaFloor(),hoodMode);
     if(JSON.stringify(current)!==JSON.stringify(changed)){
       if(!drag.changed){pushUndo();drag.changed=true;}
-      if(hoodMode)hoodAllowanceMask=changed;
+      if(hoodMode){
+        hoodPermissionMode='painted';
+        hoodAllowanceMask=changed;
+      }else if(whiskerMode)whiskerMask=changed;
       else mask=changed;
     }
     drag.last=next;
@@ -628,6 +638,7 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
     if(drag||event.button!==0)return;
     event.preventDefault();
     if(!artReady){status('Artwork is unavailable; painting and tuft-root placement are disabled.');return;}
+    if(mode==='hoodAuto')return; // This surface shows an automatically derived permission area, not manual painting.
     const at=point(event);
     if(mode==='root'){
       let existing=roots.findIndex(root=>Math.hypot(root.x-at.x,root.y-at.y)<8);
@@ -668,6 +679,9 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
     $('paintMode').classList.toggle('active',mode==='paint');
     $('eraseMode').classList.toggle('active',mode==='erase');
     $('rootMode').classList.toggle('active',mode==='root');
+    $('whiskerMode').classList.toggle('active',mode==='whisker');
+    $('whiskerEraseMode').classList.toggle('active',mode==='whiskerErase');
+    $('hoodAutoMode').classList.toggle('active',mode==='hoodAuto');
     $('hoodAllowMode').classList.toggle('active',mode==='hoodAllow');
     $('hoodProtectMode').classList.toggle('active',mode==='hoodProtect');
     render(); // Switch the editing surface between original beard and original hood art.
@@ -675,24 +689,53 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
   $('paintMode').onclick=()=>chooseMode('paint');
   $('eraseMode').onclick=()=>chooseMode('erase');
   $('rootMode').onclick=()=>chooseMode('root');
+  $('whiskerMode').onclick=()=>chooseMode('whisker');
+  $('whiskerEraseMode').onclick=()=>chooseMode('whiskerErase');
+  $('hoodAutoMode').onclick=()=>{
+    if(!artReady)return;
+    pushUndo();
+    hoodPermissionMode='auto';hoodAllowanceMask=null;
+    remember();chooseMode('hoodAuto');
+  };
   $('hoodAllowMode').onclick=()=>chooseMode('hoodAllow');
   $('hoodProtectMode').onclick=()=>chooseMode('hoodProtect');
-  $('protectWholeHood').onclick=()=>{if(!artReady)return;pushUndo();hoodAllowanceMask=empty();remember();render();};
-  $('allowWholeHood').onclick=()=>{if(!artReady||hoodAllowanceMask===null)return;pushUndo();hoodAllowanceMask=null;remember();render();};
+  $('protectWholeHood').onclick=()=>{
+    if(!artReady)return;
+    pushUndo();hoodPermissionMode='painted';hoodAllowanceMask=empty();remember();chooseMode('hoodProtect');
+  };
+  $('allowWholeHood').onclick=()=>{
+    if(!artReady)return;
+    pushUndo();hoodPermissionMode='all';hoodAllowanceMask=null;remember();chooseMode('hoodAuto');
+  };
   $('brush').oninput=()=>{$('brushLabel').textContent=$('brush').value+' px';};
   $('alphaFloor').oninput=()=>{updateLabels();remember();render();};
   $('maxStretch').oninput=()=>{updateLabels();remember();render();};
+  $('coneSpread').oninput=()=>{
+    if(!artReady)return;
+    coneSpread=Cut.normalizeConeSpread($('coneSpread').value);
+    automaticKey='';hoodPermissionMode='auto';hoodAllowanceMask=null;
+    updateLabels();remember();chooseMode('hoodAuto');
+  };
   $('subdivision').oninput=()=>{updateLabels();remember();render();};
   $('aboveInfluence').oninput=()=>{updateLabels();remember();render();};
   $('belowInfluence').oninput=()=>{updateLabels();remember();render();};
   $('undo').onclick=()=>{
     if(!history.length)return;
     const previous=JSON.parse(history.pop());
-    mask=Cut.normalizeMask(previous.mask)||empty();roots=Cut.normalizeRoots(previous.roots);
+    mask=Cut.normalizeMask(previous.mask)||empty();
+    whiskerMask=Cut.normalizeMask(previous.whiskerMask)||empty();
+    roots=Cut.normalizeRoots(previous.roots);
     hoodAllowanceMask=previous.hoodAllowanceMask==null?null:Cut.normalizeMask(previous.hoodAllowanceMask);
+    hoodPermissionMode=previous.hoodPermissionMode||'auto';
+    coneSpread=Cut.normalizeConeSpread(previous.coneSpread);
+    $('coneSpread').value=coneSpread;automaticKey='';updateLabels();
     remember();render();
   };
   $('clear').onclick=()=>{if(!Cut.countMask(mask))return;pushUndo();mask=empty();remember();render();};
+  $('clearWhiskers').onclick=()=>{
+    if(!Cut.countMask(whiskerMask))return;
+    pushUndo();whiskerMask=empty();remember();render();
+  };
   $('removeRoot').onclick=()=>{
     if(!roots.length)return;pushUndo();roots.pop();remember();render();
   };
