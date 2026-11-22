@@ -16,7 +16,7 @@ class Group {
   updateWorldMatrix() {}
   getWorldPosition(out) { return out.copy(this.position); }
 }
-class Mesh extends Group { constructor(geometry, material) { super(); this.geometry = geometry; this.material = material; } }
+class Mesh extends Group { constructor(geometry, material) { super(); this.isMesh = true; this.geometry = geometry; this.material = material; } }
 class PlaneGeometry { constructor(w, h) { this.width = w; this.height = h; } dispose() { this.disposed = true; } }
 class MeshBasicMaterial { constructor(options) { Object.assign(this, options); } dispose() { this.disposed = true; } }
 const THREE = { Group, Mesh, Vector3: Vector, PlaneGeometry, MeshBasicMaterial, FrontSide: 0 }; // Small structural stand-in for actual THREE objects.
@@ -131,6 +131,39 @@ child.carryBy = 'spouse'; // Restore a save made while an NPC was holding the ba
 carry.sync(child, rebuiltWalker, 'basket', persist);
 assert.equal(child.carryBy, null, 'reloading cannot teleport baby into spouse arms without a live attachment');
 assert.equal(carry.snapshot().babies.length, 1);
+// Silhouette-only rear art is for NPC occlusion, never a visible baby burden.
+rebuiltWalker.avatarGroup.userData.backTextureUsesSilhouette = true;
+const beforeBaking = carry.sync(child, rebuiltWalker, 'basket', persist).burden;
+assert.equal(carry.snapshot().babies[0].rearArt, 'colored-front-fallback');
+assert.equal(beforeBaking.group.children[1].material.map, newerFront,
+  'rear-facing carried baby uses the real colored portrait');
+
+// The newborn head bone is enlarged relative to its body. Capture the posed
+// baby one time instead of shrinking the entire image into a flat card.
+const bakedGeometry = new PlaneGeometry(.48, .59);
+bakedGeometry.boundingBox = { min: { x: -.24, y: -.18 }, max: { x: .24, y: .41 } };
+const skinned = { isSkinnedMesh: true, geometry: { id: 'live-head-scaled-geometry' }, position: new Vector() };
+rebuiltWalker.avatarGroup.userData.neckRig = { skinnedPlane: skinned, headScaleJoint: { scale: new Vector(1.8, 1.8, 1) } };
+let bakeCalls = 0;
+window.PNGPlaneAvatar = { meshBudget: { bakeStaticPortraitForCarry(_THREE, input) {
+  assert.equal(input, skinned); bakeCalls++; return { geometry: bakedGeometry, flat: false };
+} } };
+const sameBurden = carry.sync(child, rebuiltWalker, 'basket', persist).burden;
+assert.equal(sameBurden, beforeBaking, 'switching the artwork keeps the one physical baby');
+assert.equal(sameBurden.group.children.length, 1, 'posed portrait replaces the flat proxy faces');
+assert.equal(sameBurden.group.children[0].geometry, bakedGeometry);
+assert.equal(sameBurden.group.children[0].material[1].map, newerFront, 'posed rear face remains colored');
+assert.equal(sameBurden.meshColliders[0], sameBurden.group.children[0], 'colliders use current geometry');
+assert.equal(carry.snapshot().babies[0].artMode, 'posed-rig');
+assert(carry.snapshot().babies[0].dimensions.height > .42, 'the baby retains its enlarged head silhouette');
+carry.sync(child, rebuiltWalker, 'basket', persist);
+assert.equal(bakeCalls, 1, 'family ticks do not trigger per-frame skin baking');
+const newestFront = { source: 'recolored' };
+rebuiltWalker.avatarGroup.userData.frontTexture = newestFront;
+carry.sync(child, rebuiltWalker, 'basket', persist);
+assert.equal(sameBurden.group.children[0].material[0].map, newestFront, 'live front-art updates propagate');
+assert.equal(sameBurden.group.children[0].material[1].map, newestFront, 'rear fallback tracks front art');
+assert.equal(bakeCalls, 1, 'texture refresh does not re-bake');
 carry.clear(); assert.equal(carry.snapshot().babies.length, 0);
 assert(persistCount > 0);
 
