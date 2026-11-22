@@ -17,6 +17,7 @@ class Group {
     this.rotation = { x: 0, y: 0, z: 0, set(x, y, z) { this.x = x; this.y = y; this.z = z; } };
   }
   add(node) { node.parent?.remove(node); this.children.push(node); node.parent = this; }
+  attach(node) { this.add(node); return this; } // Fixture parents have identity transforms; real Three.js preserves world pose on attach.
   remove(node) { this.children = this.children.filter(child => child !== node); node.parent = null; }
   worldToLocal(position) { return position; }
   updateWorldMatrix() {}
@@ -153,6 +154,8 @@ heldMode = 'none';
 now = 1000;
 sync({timestamp:now});
 assert.equal(belt.visible, true, 'the stowed torch appears on the actual player');
+assert.equal(belt.parent, avatar, 'rear-stowed torch follows live portrait yaw rather than body yaw');
+assert.equal(torch.debug.belt.attachedToPortrait, true, 'mobile debug reports portrait-follow attachment');
 assert.notEqual(belt.children[0].material.map, handMap, 'belt owns its own separately recolored PNG map');
 assert.equal(belt.children[0].material.map.source, loadedMap, 'belt recolors a clone of the original authored torch PNG');
 assert.equal(belt.children.length, 1, 'no extra decorative flame; real particles are children of the PNG plane');
@@ -183,6 +186,8 @@ assert.equal(belt.position.x, 0, 'anatomical posterior uses the central anchor, 
 assert.equal(belt.position.y, .5, 'posterior tracks the composer');
 assert.equal(belt.position.z, -.04, 'stowed torch sits behind the portrait plane');
 assert(Math.abs(belt.rotation.z + Math.PI / 4) < 1e-8, 'torch is angled 45 degrees about its midpoint');
+assert.equal(torch.debug.belt.stowAngleDeg, -45, 'mobile debug retains body-space authored tilt');
+assert.equal(torch.debug.belt.posteriorPosition.y, .5, 'mobile debug reports the anatomical basis before reparenting');
 const displayCount = player.children.length; // Repeated frames must not allocate or duplicate meshes.
 for (let frame = 1; frame < 150; frame++) sync({timestamp:1000 + frame * 17});
 assert.equal(player.children.length, displayCount, 'the belt artwork is cached, not respawned');
@@ -203,7 +208,7 @@ const formerPlayer = player; // Test reparent rather than leaking to a detached 
 player = new Group(); player.userData = { speciesId:'mao-ao', gender:'male', portraitModelHeight:1.2 };
 avatar = new Group(); player.add(avatar);
 sync({timestamp:now});
-assert.equal(belt.parent, player, 'player rebuild moves the single cached belt root');
+assert.equal(belt.parent, avatar, 'player rebuild attaches the cached torch to the new live portrait');
 assert.equal(formerPlayer.children.includes(belt), false, 'old character scene no longer owns the belt mesh');
 assert.equal(torch.debug.belt.fireVisible, true, 'respawn recreates the shared torch fire without resetting burn expiry');
 assert.equal(torch.debug.belt.attachedToPlayer, true, 'status reports actual new player attachment');
@@ -219,6 +224,14 @@ assert.equal(Number(belt.position.y.toFixed(2)), .44);
 assert.equal(Number(belt.scale.x.toFixed(2)), 1.5, 'authored item scale affects the actual belt mesh');
 assert(Math.abs(belt.rotation.z - (24 * Math.PI / 180)) < 1e-6, 'authored 3D rotation is used in gameplay');
 assert.equal(world.AdventuringTorchBelt.debug.placement, 'authored beltStow override');
+const oldAvatar = avatar; // A portrait can be replaced independently of the body while the torch remains stowed.
+avatar = new Group(); player.add(avatar);
+now = 32050;
+sync({timestamp:now});
+assert.equal(belt.parent, avatar, 'portrait-only rebuild reparents the torch immediately, not after the 100ms poll');
+assert.equal(oldAvatar.children.includes(belt), false, 'the old portrait no longer owns an active torch');
+assert.equal(torch.debug.belt.attachedToPlayer, true, 'attachment debug follows the current portrait beneath the body');
+assert.equal(fireStarts, 3, 'a portrait-only replacement reuses the existing fire state without rebuilding emitters');
 assert(fireTicks > 100, 'real shared fire updates throughout stowed rendering without spawning duplicate sources');
 
 const manifest = fs.readFileSync('docs/js/bootstrap/classic-groups/render.js', 'utf8');
