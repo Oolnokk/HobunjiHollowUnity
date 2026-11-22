@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<script src="../../js/tap-reliability.js?v=20261010a"></script>
+<title>Hobunji Hollow · Vocabulary Workshop</title>
+<style>
+:root{color-scheme:dark;--bg:#07101a;--panel:#111b28;--panel2:#0b1521;--line:rgba(255,255,255,.15);--muted:#a9bfd5;--text:#edf5ff;--accent:#7bb6ff;--good:#34d399;--bad:#fb7185}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font:14px system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+button,input,textarea,select{font:inherit;color:inherit;background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:9px;min-height:40px}
+button{cursor:pointer;font-weight:700}button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+button.good{background:#14532d;border-color:#257447}button.subtle{background:#1d2b3e}
+input[type=range]{width:100%;accent-color:var(--accent);min-height:38px;padding:0;touch-action:pan-y}
+textarea{width:100%;resize:vertical;line-height:1.45;min-height:140px}
+header{display:flex;align-items:center;gap:12px;flex-wrap:wrap;min-height:63px;padding:10px 14px;border-bottom:1px solid var(--line);background:var(--panel)}
+h1{font-size:17px;margin:0}h2{font-size:17px;margin:0 0 10px}h3{font-size:15px;margin:0 0 9px}
+header .grow{flex:1}header .muted{font-size:12px}
+#status{font-size:12px;max-width:50ch;overflow-wrap:anywhere;color:var(--muted)}
+.shell{display:grid;grid-template-columns:minmax(190px,260px) minmax(0,1fr);height:calc(100dvh - 63px);min-height:0}
+aside{background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0;padding:10px;gap:8px}
+aside label{font-weight:700;font-size:12px}
+#search{width:100%;flex:none}
+#list{overflow-y:auto;overscroll-behavior:contain;flex:1;min-height:0;padding:3px}
+.item{padding:10px 11px;border-radius:8px;border:1px solid var(--line);margin-bottom:5px;cursor:pointer;background:rgba(255,255,255,.035)}
+.item:hover,.item.active{border-color:var(--accent);background:rgba(123,182,255,.12)}
+.item .muted{font-size:11px}
+main{overflow:auto;min-width:0;min-height:0;padding:15px;overscroll-behavior:contain}
+.card{max-width:1060px;margin:0 auto 14px;padding:15px;background:var(--panel);border:1px solid var(--line);border-radius:12px}
+.row{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin:8px 0}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:15px}
+.field{display:flex;flex-direction:column;gap:6px;min-width:0;margin:8px 0}
+.field select,.field input{width:100%;min-width:0}
+.field strong{font-variant-numeric:tabular-nums;font-size:14px;color:var(--accent);min-width:2.5ch;text-align:right}
+.muted{color:var(--muted);line-height:1.45;font-size:12px}
+.pill{border:1px solid var(--line);border-radius:999px;padding:5px 9px;font-size:11px;color:var(--muted)}
+.preview{background:rgba(123,182,255,.08);border:1px solid var(--line);border-radius:10px;padding:18px;margin-top:10px;min-height:76px;display:grid;place-items:center;text-align:center;white-space:pre-wrap;overflow-wrap:anywhere;font-size:19px;line-height:1.5}
+#vocabTableWord,#vocabTerm{width:100%;margin:8px 0}
+#vocabNewTerm{flex:1;min-width:170px}
+#vocabWordWarning{color:var(--bad)}
+#diagnostics{font-size:12px;border-top:1px solid var(--line);padding:9px 12px;max-width:100%;overflow-wrap:anywhere}
+#diagnostics>summary{cursor:pointer}
+#diagnostics pre{white-space:pre-wrap;font-size:11px}
+@media(max-width:700px){
+  header{min-height:64px;padding:9px 10px}
+  header h1{font-size:15px}
+  .shell{height:calc(100dvh - 64px);grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(124px,27vh) minmax(0,1fr)}
+  aside{border-right:0;border-bottom:1px solid var(--line);padding:6px 9px;gap:4px}
+  #list{display:flex;gap:6px;overflow-x:auto;overflow-y:auto;align-content:flex-start;flex-wrap:wrap}
+  .item{flex:0 0 auto;margin:0;padding:7px 9px}
+  main{padding:9px}
+  .card{padding:12px}
+  .grid{grid-template-columns:minmax(0,1fr)}
+  .row>button{flex:0 0 auto}
+}
+</style>
+</head>
+<body>
+<header><h1>Vocabulary Workshop</h1><span class="pill">Floating speech only</span><span class="grow"></span><span id="status" role="status" aria-live="polite">Loading…</span></header>
+<div class="shell">
+<aside aria-label="Vocabulary categories and characters">
+  <label for="search">Dictionary · Families · Characters</label>
+  <input id="search" type="search" placeholder="Search words, personality, NPCs…" autocomplete="off">
+  <div id="list"></div>
+  <details id="diagnostics"><summary>Editor diagnostics</summary><pre id="debugText">Loading…</pre><button type="button" id="copyDebug">Copy report</button></details>
+</aside>
+<main id="editor"><div class="card muted">Loading vocabulary and character database…</div></main>
+</div>
+<script src="../../js/ambient-vocabulary-rules.js?v=20261122vocab3"></script>
+<script src="../../js/ambient-vocabulary-editor.js?v=20261122vocabStandalone1"></script>
+<script>
+const diagnostics=document.getElementById('diagnostics');
+diagnostics.addEventListener('toggle',()=>{if(diagnostics.open)document.getElementById('debugText').textContent=JSON.stringify(window.AmbientVocabularyEditor?.getDebug?.()||{status:'unavailable'},null,2)});
+document.getElementById('copyDebug').onclick=()=>{const text=document.getElementById('debugText').textContent;navigator.clipboard?.writeText(text).then(()=>document.getElementById('status').textContent='Copied diagnostics').catch(()=>document.getElementById('status').textContent='Select the diagnostics text to copy')};
+</script>
+</body></html>
