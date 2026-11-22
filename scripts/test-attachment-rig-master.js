@@ -421,9 +421,9 @@ assert.strictEqual(w.HobunjiHandShoulderPoints.keyFor('rakakoan', 'male'), 'kenk
 assert.strictEqual(w.HobunjiAttachmentRigRecovery, undefined, 'hand-shoulder config must not own attachment-rig recovery anymore');
 
 const newRigs = {
-  nelk: { saddle:[0,0.12365496943656872,0.09343178888117182], grip:[0.05838103969211583,-0.06616055534830413,0.05330590874914502], ground:[0.28,0.18,0.065] },
+  nelk: { saddle:[0,0.12365496943656872,0.09343178888117182], grip:[0.05838103969211583,-0.06616055534830413,0.05330590874914502], ground:[0.45,0.25,0.065] },
   nazgraku: { saddle:[0,0.07886458733711826,-0.0022188537422596633], grip:[-0.010120303229480966,-0.112,0.04704726667943677], ground:[0.31,0.2,0.07] },
-}; // Regression fixtures use the user's October 22 calibration exports, not guessed attachment defaults.
+}; // Regression fixtures preserve October 22 sockets while using the November 22 floor calibrations.
 for (const [kind, expected] of Object.entries(newRigs)) {
   const profile = profiles.creatures[kind]; // Runtime rig must contain the authored values without an editor import.
   for (const [anchor, coordinates] of [['saddle',expected.saddle],['shoulderGrip',expected.grip]]) {
@@ -447,7 +447,7 @@ assert.strictEqual(guard.reconcileProfiles({creatures:{nazgraku:{chatheadFrame:{
 const authoredUum = profiles.creatures.uumkaoii; // Compares every newly calibrated Uumkao'ii field with export (23).
 assert.deepStrictEqual(['x','y','z'].map(axis => authoredUum.anchors.shoulderGrip.position[axis]), [0,-0.2057328849409156,-0.004605298975405354]);
 assert.strictEqual(authoredUum.anchors.shoulderGrip.rotationDeg.y, 0, 'new Uumkaoii grip uses neutral yaw');
-assert.deepStrictEqual(['large','medium','small'].map(size => authoredUum.groundOffsets[size]), [0.35,0.25,0.05]);
+assert.deepStrictEqual(['large','medium','small'].map(size => authoredUum.groundOffsets[size]), [0.75,0.25,0.05]);
 assert.deepStrictEqual(['x','y','width','height'].map(key => authoredUum.chatheadFrame[key]), [0.022018283422815435,0.180707251642218,0.4241864686175028,0.6442119462386413]);
 assert.deepStrictEqual(['x','y'].map(axis => authoredUum.sizeScales.large[axis]), [1.5,1.5], 'Large size stays uniform after fixing the source aspect');
 const previousUum = { // Exact former master fingerprints must upgrade on old browser autosaves.
