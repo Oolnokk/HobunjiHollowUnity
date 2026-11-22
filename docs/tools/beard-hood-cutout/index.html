@@ -54,7 +54,7 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
       <button id="rootMode" type="button">Mark tuft corner</button>
     </div>
     <label>Hood permission — automatic from its lower opening ring, or manually painted</label>
-    <div class="row"><button id="hoodAutoMode" class="active" type="button">Automatic lower-ring cone</button></div>
+    <div class="row"><button id="hoodAutoMode" type="button">Automatic lower-ring cone</button></div>
     <label for="coneSpread">Cone outward widening <span id="coneSpreadLabel">0 px per pixel down</span></label>
     <input id="coneSpread" type="range" min="0" max="2" step=".025" value="0">
     <p>At zero, every column directly below the detected bottom hood opening is removable. Increasing this widens the removable area like a cone; everything outside it rejects ordinary beard cutouts.</p>
@@ -929,7 +929,25 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
           ||thPixels[(119*SIZE+83)*4+3]!==0||thPixels[(119*SIZE+91)*4+3]!==255
           ||tbPixels[(119*SIZE+91)*4+3]!==0||tbPixels[(119*SIZE+95)*4]!==0)
         throw Error('Two-sided hood permission or black beard-edge outline failed');
-      status('2D Canvas self-test PASS: hood permissions, refused beard erasure, black edges, 0.25px stretch, opacity floor and upper/lower influence.');
+      const autoNarrow=Cut.autoHoodAllowanceMask(pristineRing,0);
+      const autoWide=Cut.autoHoodAllowanceMask(pristineRing,.5);
+      if(autoNarrow.bottomPoints.length<20||autoWide.allowedPixels<=autoNarrow.allowedPixels
+          ||Cut.decodeMask(autoNarrow.mask)[120*SIZE+100]!==0
+          ||Cut.decodeMask(autoNarrow.mask)[145*SIZE+100]!==1)
+        throw Error('Lower inner-ring auto detection or cone widening failed');
+      const winnerBeard=blank(),winnerHood=blank();
+      const wb=winnerBeard.getContext('2d'),wh=winnerHood.getContext('2d');
+      wb.fillStyle='#b87f5c';wb.fillRect(92,92,1,1);
+      wh.fillStyle='#668aaf';wh.fillRect(92,92,1,1);
+      const priority=new Uint8Array(SIZE*SIZE);priority[92*SIZE+92]=1;
+      const win=Cut.negotiateBeardHood(winnerBeard,winnerHood,null,empty(),{
+        whiskerMask:Cut.encodeMask(priority),permissionMode:'painted'
+      });
+      if(win.whiskerWins!==1||win.approvedPixels!==1
+        ||wh.getImageData(92,92,1,1).data[3]!==0
+        ||wb.getImageData(92,92,1,1).data[3]!==255)
+        throw Error('Priority whisker did not defeat protected hood pixels');
+      status('2D Canvas self-test PASS: lower inner rim, expanding cone, winning whiskers, outlines, 0.25px stretch and alpha floor.');
     } catch(error){status('2D Canvas self-test FAILED: '+error.message);}
   };
   $('copyDebug').onclick=async()=>{
