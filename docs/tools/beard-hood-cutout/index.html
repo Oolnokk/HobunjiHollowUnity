@@ -216,6 +216,7 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
       || Object.hasOwn(entry,'hoodTuftRoots') || Object.hasOwn(entry,'hoodTuftMaxStretch')
       || Object.hasOwn(entry,'hoodTuftSubdivision') || Object.hasOwn(entry,'hoodTuftAboveInfluence')
       || Object.hasOwn(entry,'hoodTuftBelowInfluence')
+      || Object.hasOwn(entry,'beardPaintAlphaFloor')
       || Object.hasOwn(entry,'hoodPaintAlphaFloor'))
       ? variant : 'shared';
   }
@@ -296,8 +297,10 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
     return Cut.normalizeVerticalInfluence(local??beardDoc?.hoodTuftBelowInfluence);
   }
   function originalAlphaFloor(){
-    const local=beardDoc?.speciesVariants?.[variant]?.hoodPaintAlphaFloor;
-    return Cut.alphaFloor(local??beardDoc?.hoodPaintAlphaFloor??DEFAULT_PAINT_ALPHA,DEFAULT_PAINT_ALPHA);
+    const local=beardDoc?.speciesVariants?.[variant]; // Match the exported beard-owned alpha field; support old drafts using the historical name.
+    return Cut.alphaFloor(local?.beardPaintAlphaFloor??local?.hoodPaintAlphaFloor
+      ??beardDoc?.beardPaintAlphaFloor??beardDoc?.hoodPaintAlphaFloor
+      ??DEFAULT_PAINT_ALPHA,DEFAULT_PAINT_ALPHA);
   }
   function formatConeSpread(value, direction) {
     // All three sliders share the same horizontal-line endpoint.
@@ -962,7 +965,7 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
       hoodTuftRoots:Cut.normalizeRoots(roots),
       hoodTuftMaxStretch:selectedStretch(),hoodTuftSubdivision:selectedSubdivision(),
       hoodTuftAboveInfluence:selectedAboveInfluence(),hoodTuftBelowInfluence:selectedBelowInfluence(),
-      hoodPaintAlphaFloor:selectedAlphaFloor()}; // Only user-painted requests are frozen into RLE; generated requests remain derived from the beard art.
+      beardPaintAlphaFloor:selectedAlphaFloor()}; // Authoring-only beard alpha, distinct from hood permission opacity. Painted masks are retained exactly.
     if(beardRequestAutomatic)metadata.hoodCutoutRequestMode='silhouette';
     else {metadata.hoodCutoutMask=chosen;metadata.hoodCutoutRequestMode='painted';}
     const destination=scopeKey()==='shared'?json:
