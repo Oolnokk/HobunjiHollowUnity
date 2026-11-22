@@ -35,8 +35,29 @@
     return cells;
   }
 
+  function localeBlocksSite(instance, col, row, margin = 1.5) {
+    const x = col + 0.5, z = row + 0.5; // Proposed scenery center in final wilderness tile units.
+    const pad = Math.max(0, Number(margin) || 0); // Visual overhang margin shared by locale-aware landmark placement.
+    let hasBox = false; // Legacy locales lacking footprint metadata retain their old anchor-radius safeguard.
+    const matches = box => {
+      if (!box || ![box.x, box.y, box.w, box.h].every(value => Number.isFinite(Number(value)))) return false;
+      const bx = Number(box.x), by = Number(box.y), w = Number(box.w), h = Number(box.h); // Rectangle dimensions are already in final world tile units.
+      if (w <= 0 || h <= 0) return false;
+      hasBox = true;
+      return x >= bx - pad && x <= bx + w + pad && z >= by - pad && z <= by + h + pad;
+    };
+    if (matches(instance?.footprint)) return true; // Authored painted floor, not merely the entrance or locale anchor.
+    if (matches(instance?.footprint ? null : instance)) return true; // Pre-metadata saves have top-left + size.
+    for (const object of instance?.objects || []) {
+      if (matches(object)) return true; // Furniture and auxiliary structures can protrude outside painted floor.
+    }
+    if (hasBox) return false;
+    const anchorX = Number(instance?.x ?? instance?.col), anchorY = Number(instance?.y ?? instance?.row); // Older locale instances may have only an anchor.
+    return Number.isFinite(anchorX) && Number.isFinite(anchorY) && Math.hypot(x - anchorX, z - anchorY) < 6 + pad;
+  }
+
   function clearExportedObjects(workspace, objectIds) {
-    const ids = new Set([...objectIds || []].filter(id => id !== undefined && id !== null && id !== '')); // All selected generated objects are cleared by identity.
+    const ids = new Set([...(objectIds || [])].filter(id => id !== undefined && id !== null && id !== '')); // All selected generated objects are cleared by identity.
     if (!ids.size) return { objects: 0, tiles: 0 };
     let tiles = 0; // Diagnostic count of every root/plateau overlay changed.
     for (const map of workspace?.maps || []) {
@@ -59,5 +80,5 @@
     return { objects: ids.size, tiles };
   }
 
-  return { isBoulder, boulderCells, clearExportedObjects };
+  return { isBoulder, boulderCells, localeBlocksSite, clearExportedObjects };
 });
