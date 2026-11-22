@@ -787,6 +787,10 @@
         if(standing)complete(); // One step permanently solves this cave instead of requiring a held timer or a second interaction.
       }
       if(kind==='fireSconces'&&!rec.solved&&isActive()){
+        if(caveFireTargetIds.length&&typeof fire?.hasTarget==='function'
+          &&caveFireTargetIds.some(targetId=>!fire.hasTarget(targetId))){
+          caveFireTargetIds.length=0;rec.fireLinked=false; // Ruin teardown clears DungeonFire globally; cached caves must re-link on re-entry.
+        }
         if(!caveFireTargetIds.length&&typeof fire?.registerTarget==='function'){
           const registered=[]; // Register in the first active frame, after the real cave scene and DungeonFire runtime exist.
           for(const sconce of rec.sconces){
