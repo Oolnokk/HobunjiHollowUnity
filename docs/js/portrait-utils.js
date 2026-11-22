@@ -2594,8 +2594,9 @@ function portraitOptionFromJson(entry, json) {
       variantBeardCutoutPermissionMode[key]=value.beardCutoutPermissionMode;
     if (value?.beardCutoutConeSpread != null)
       variantBeardCutoutConeSpread[key]=maskApi?.normalizeConeSpread?.(value.beardCutoutConeSpread)??0;
-    if (value?.beardCutoutTopConeSpread != null)
-      variantBeardCutoutTopConeSpread[key]=maskApi?.normalizeConeSpread?.(value.beardCutoutTopConeSpread)??0;
+    if (Object.prototype.hasOwnProperty.call(value||{},'beardCutoutTopConeSpread'))
+      variantBeardCutoutTopConeSpread[key]=value.beardCutoutTopConeSpread==null
+        ? null : (maskApi?.normalizeConeSpread?.(value.beardCutoutTopConeSpread)??0); // null explicitly disables shared upper cover.
     if (value?.beardCutoutPaintAlphaFloor != null)
       variantBeardCutoutPaintAlphaFloor[key]=maskApi?.alphaFloor?.(value.beardCutoutPaintAlphaFloor,242)??242;
     if (Array.isArray(value?.hoodTuftRoots))
