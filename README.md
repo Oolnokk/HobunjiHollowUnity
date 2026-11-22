@@ -196,8 +196,22 @@ materials in place once the config loads.
   Cutter and Mercy Spike only roll when *their own* bonus condition holds,
   scaling from 20% at tier zero to 83% at tier seven; Backstab Flick takes the
   hit when it earns the behind condition. Non-bandit special humanoids and mine
-  encounters retain their existing chase/orbit behaviors. Testing Arena logs
-  `tactic=`, `quickChance=`, `chasePxS=`, and `flankT=` for mobile diagnosis.
+  encounters retain their existing chase/orbit behaviors. Four stable melee
+  approach sectors (front, left, right, rear) follow the opponent's facing,
+  with the rear preferentially claimed by Backstab Flick wielders. Only one
+  fighter per target may run a committed melee windup/strike at a time; its
+  turn frees immediately after the resolved hit, without waiting for the
+  weapon's cosmetic recovery. One other fighter may prepare a visibly held
+  Charged Breaker alongside that attack. Its charge uses the existing shared
+  weapon pose, then converts to the actual staged Charged Breaker when the
+  turn opens, with a timeout so blocked preparers cannot starve the gang.
+  Fey Hyped double-strikes keep the turn through their second physical hit.
+  Counter Shield ripostes obey the same attack serialization. The per-actor
+  slot lookup uses a WeakMap and prunes the debug array once per short
+  simulation window instead of scanning all actors on every combat frame.
+  Non-bandit special humanoids still use the original two-angle slots.
+  Testing Arena logs `tactic=`, `quickChance=`, `chasePxS=`, `flankT=`,
+  `sector=`, `attackOwner=`, `chargeOwner=`, and `chargeT=` for mobile diagnosis.
 - `docs/js/harlyao-relics.js` — boss-vault chests can drop a *bound* Harlyao
   Longsword/Broadsword with random, partial enchantments into the world
   inventory. Garanki Gabu (researcher's tent, "Shop") unbinds it for a fee,
