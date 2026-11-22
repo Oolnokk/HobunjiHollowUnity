@@ -203,9 +203,10 @@ assert.equal(reserved.ok, true, 'unused trough can be reserved ahead of maturati
 assert(B.debugSnapshot().reservedTroughs.includes('barn_test:1'), 'reservation is visible in mobile debug state');
 
 const tonicBefore = inventory.growthTonic;
-reservedBaby.pendingAnimalSale = { price: 55, eligibleDay: 2 };
+const returnedBaby = livestock.find(entry => entry.id === 'baby_1'); // Canceling incubation restores a cloned record, not the old reference.
+returnedBaby.pendingAnimalSale = { price: 55, eligibleDay: 2 };
 assert.equal(B.startMaturation(placed.addition.id, 0, 'baby_1').ok, false, 'direct incubator API cannot consume a queued baby');
-delete reservedBaby.pendingAnimalSale;
+delete returnedBaby.pendingAnimalSale;
 const started = B.startMaturation(placed.addition.id, 0, 'baby_1');
 assert.equal(started.ok, true, 'Nursery baby can enter a configured incubator slot');
 assert(!livestock.some(entry => entry.id === 'baby_1'), 'incubating baby leaves the ordinary Nursery/world roster while physically inside the incubator');
