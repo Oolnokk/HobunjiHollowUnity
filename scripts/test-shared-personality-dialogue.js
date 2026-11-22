@@ -250,7 +250,8 @@ async function verifyDatabaseLoadPaths() {
   assert.ok(loaded.npcs[0].sharedDialogueTrees?.length, 'normal NPC loader attaches shared lines after retry');
   assert.equal(sharedFetches, 2, 'transient shared config failure is retried exactly once');
   const direct = await (await browser.fetch(npcUrl)).json(); // A standalone editor's direct JSON fetch also receives the shared layer.
-  assert.deepEqual(direct.npcs[0].sharedDialogueTrees, loaded.npcs[0].sharedDialogueTrees, 'direct fetch and composed database deliver the same shared speech');
+  assert.deepEqual(JSON.parse(JSON.stringify(direct.npcs[0].sharedDialogueTrees)),
+    JSON.parse(JSON.stringify(loaded.npcs[0].sharedDialogueTrees)), 'direct fetch and composed database deliver the same shared speech'); // Normalize cross-realm VM objects before Node's strict prototype-aware comparison.
 }
 
 verifyDatabaseLoadPaths()
