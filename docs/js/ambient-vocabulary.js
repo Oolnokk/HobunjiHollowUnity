@@ -5,7 +5,7 @@
   const CONFIG_PATH = 'config/dialogue/ambient-vocabulary.json'; // The Vocabulary tab exports this independent authored configuration.
   const PROFILE_PATH = 'config/dialogue/npc-reaction-profiles.json'; // Existing NPC-to-personality assignments supply inherited vocabulary defaults.
   const DEFAULT_SLIDERS = Object.freeze({ verbosity: 50, color: 50, formality: 50, breadth: 70, variety: 55, frequency: 55 }); // Used for an unassigned NPC or incomplete imported settings.
-  const state = { config: null, profiles: null, compiled: null, last: null, error: null, ready: false, changed: 0, skipped: 0, tableCache: new Map() }; // Keeps one configuration, regex, and mobile-readable diagnostic snapshot.
+  const state = { config: null, profiles: null, last: null, error: null, ready: false, changed: 0, skipped: 0, tableCache: new Map() }; // Keeps one configuration, regex, and mobile-readable diagnostic snapshot.
   const hasOwn = (value, key) => Object.prototype.hasOwnProperty.call(value || {}, key);
   const clamp = value => Math.max(0, Math.min(100, Number.isFinite(Number(value)) ? Number(value) : 50));
   const normalizeSliders = value => Object.fromEntries(Object.keys(DEFAULT_SLIDERS).map(key => [key, clamp(hasOwn(value, key) ? value[key] : DEFAULT_SLIDERS[key])])); // Every slider is bounded before selecting vocabulary.
@@ -28,53 +28,20 @@
   function generateTable(lexicon, sliders, speakerId) {
     return window.AmbientVocabularyRules?.generateTable?.(lexicon, sliders, speakerId) || {}; // Editor and runtime use exactly the same table generator.
   }
-  function compile(config) {
-    const terms = Object.keys(config?.lexicon || {}).map(normalizedWord).filter(term => term && !/[{}]/.test(term) && term.length <= 80).sort((a, b) => b.length - a.length); // Longest phrase wins, so 'very nice' is not intercepted by 'nice'.
-    const unique = [...new Set(terms)];
-    if (!unique.length) return null;
-    const escape = text => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    try {
-      return new RegExp('(^|[^\\p{L}\\p{N}_])(' + unique.map(escape).join('|') + ')(?=$|[^\\p{L}\\p{N}_])', 'giu'); // Unicode word boundaries preserve names, punctuation, and complete words.
-    } catch (_) { return null; }
-  }
-  function preserveCase(source, replacement) {
-    if (source === source.toLocaleUpperCase() && source !== source.toLocaleLowerCase()) return replacement.toLocaleUpperCase();
-    if (source.charAt(0) === source.charAt(0).toLocaleUpperCase()) return replacement.charAt(0).toLocaleUpperCase() + replacement.slice(1);
-    return replacement;
-  }
   function rewrite(text, speakerId, random = Math.random, config = state.config, profiles = state.profiles) {
     const source = String(text ?? ''); // Original authoring stays immutable and is returned when any dependency is absent.
     const selected = optionsFor(config, speakerId, profiles);
     if (!selected || !source) return source;
-    const pattern = config === state.config ? state.compiled : compile(config);
-    if (!pattern) return source;
     const table = selected.table || (config === state.config
       ? (state.tableCache.get(selected.characterId) || (() => {
-          const generated = generateTable(config.lexicon, selected.sliders, selected.characterId); // Generated family fallback is cached per speaker rather than rebuilt for every bubble.
+          const generated = generateTable(config.lexicon, selected.sliders, selected.characterId); // Cached per character: no repeated generation on every bubble.
           state.tableCache.set(selected.characterId, generated);
           return generated;
         })())
       : generateTable(config.lexicon, selected.sliders, selected.characterId));
-    const chance = selected.sliders.frequency / 100;
-    let hits = 0; // Included in Dev Companion diagnostics for failed or overly aggressive vocabulary configurations.
-    let swaps = 0; // Counts actual substitutions, not merely words encountered.
-    const output = source.split(/(\{\{[^{}]*\}\}|\{[A-Za-z][A-Za-z0-9_]*\})/g).map(chunk => {
-      if (/^\{/.test(chunk)) return chunk; // Never alter existing template/identity placeholders.
-      pattern.lastIndex = 0;
-      return chunk.replace(pattern, (match, prefix, raw) => {
-        const alternatives = table[normalizedWord(raw)];
-        if (!Array.isArray(alternatives) || !alternatives.length) return match;
-        hits++;
-        if (random() >= chance) return match;
-        const usable = alternatives.filter(candidate => typeof candidate === 'string' && candidate.trim() && normalizedWord(candidate) !== normalizedWord(raw));
-        if (!usable.length) return match;
-        const variant = selected.sliders.variety < 15
-          ? usable[hash(selected.characterId + ':' + normalizedWord(raw)) % usable.length]
-          : usable[Math.min(usable.length - 1, Math.floor(Math.max(0, random()) * usable.length))];
-        swaps++;
-        return prefix + preserveCase(raw, variant);
-      });
-    }).join('');
+    const transformed = window.AmbientVocabularyRules?.rewriteLine?.(source, table, selected.sliders, random, selected.characterId); // Shares token-safe, one-pass rendering with the editor preview.
+    if (!transformed) return source;
+    const { text: output, hits, swaps } = transformed;
     state.last = { speakerId: selected.characterId, familyId: selected.familyId, original: source, displayed: output, hits, swaps }; // Available on mobile through AmbientVocabulary.getDebug().
     state.changed += swaps;
     state.skipped += hits - swaps;
@@ -91,7 +58,6 @@
       if (!config || !config.lexicon || !profiles?.profiles) throw new Error('Invalid vocabulary or personality configuration');
       state.config = config;
       state.profiles = profiles;
-      state.compiled = compile(config);
       state.tableCache.clear();
       state.ready = true;
       state.error = null;
