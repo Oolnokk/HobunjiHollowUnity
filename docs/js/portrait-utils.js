@@ -152,6 +152,13 @@ function _getUrMaskCanvas(w, h) {
   return { canvas: _urMaskOffCanvas, ctx: _urMaskOffCtx };
 }
 
+// Legacy Kenkari-specific kasa IDs remain readable but denote the ordinary Riverland hat item.
+function canonicalRiverlandKasaId(id) {
+  const legacy = /^appearance::Kenkari_[MF]::kenk_riverlandskasa_(low|wide)$/.exec(String(id || ''));
+  return legacy ? `appearance::hat::riverlandskasa_${legacy[1]}` : id;
+}
+window.canonicalRiverlandKasaId = canonicalRiverlandKasaId;
+
 function _normalizeSpeciesKey(speciesId) {
   return String(speciesId || '').trim().toLowerCase().replace(/_/g, '-');
 }

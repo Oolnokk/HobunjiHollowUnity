@@ -636,6 +636,10 @@
     if (document.pointerLockElement) { try { document.exitPointerLock(); } catch (_) {} }
     uiOverlay = document.createElement('div');
     uiOverlay.id = 'romanceFamilyOverlay';
+    uiOverlay.setAttribute('data-ctrl-panel', ''); // Route dream and naming interactions through the existing menu controller.
+    uiOverlay.setAttribute('data-ctrl-modal', ''); // Prevent other visible panels from stealing focus.
+    uiOverlay.setAttribute('role', 'dialog');
+    uiOverlay.setAttribute('aria-modal', 'true');
     uiOverlay.innerHTML = `<div class="rf-card">${html}</div>`;
     uiOverlay.addEventListener('keydown', event => event.stopPropagation()); // Typing a name must not drive the game.
     uiOverlay.addEventListener('keyup', event => event.stopPropagation());
@@ -662,8 +666,8 @@
       <h2>🌙 A child in your dream</h2>
       <p>A child waits for you, familiar and yet unknown. Are you ready to welcome them into your family?</p>
       <div class="rf-actions" style="flex-direction:column">
-        <button class="rf-primary" data-rf-ready>Yes. I want to meet them.</button>
-        <button data-rf-postpone="soon">Soon, but not yet (ask again in 24 hours)</button>
+        <button class="rf-primary" data-rf-ready data-ctrl-default>Yes. I want to meet them.</button>
+        <button data-rf-postpone="soon" data-ctrl-cancel>Soon, but not yet (ask again in 24 hours)</button>
         <button data-rf-postpone="time">I need some time (ask again in 2 weeks)</button>
         <button data-rf-postpone="month">I'm not ready yet (ask again in 1 month)</button>
       </div>`);
@@ -745,7 +749,7 @@
       <h2>👶 Name your ${baby.gender === 'female' ? 'daughter' : 'son'}</h2>
       <p>What will you call them?</p>
       <canvas width="200" height="200" data-rf-preview></canvas>
-      <input type="text" maxlength="32" autocomplete="off" spellcheck="false" data-rf-name value="${randomName(baby.speciesId, baby.gender).replace(/"/g, '')}">
+      <input type="text" maxlength="32" autocomplete="off" spellcheck="false" data-ctrl-default data-rf-name value="${randomName(baby.speciesId, baby.gender).replace(/"/g, '')}">
       <div class="rf-actions"><button data-rf-random>Random</button><button class="rf-primary" data-rf-done>Name them</button></div>`);
     const input = root.querySelector('[data-rf-name]');
     renderPreview(root.querySelector('[data-rf-preview]'), baby);

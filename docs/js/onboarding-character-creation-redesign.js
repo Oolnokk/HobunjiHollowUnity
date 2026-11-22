@@ -122,6 +122,9 @@
 #ob-overlay .ob-3d-shell{position:relative;width:220px;height:300px;border:1px solid rgba(249,226,138,.18);border-radius:13px;overflow:hidden;background:radial-gradient(circle at 50% 28%,rgba(249,226,138,.07),rgba(3,9,7,.86) 70%);touch-action:none}
 #ob-overlay .ob-3d-canvas{display:block;width:100%;height:100%;touch-action:none}
 #ob-overlay .ob-3d-scale-label{position:absolute;left:8px;top:8px;z-index:2;padding:4px 6px;border-radius:6px;background:rgba(0,0,0,.62);border:1px solid rgba(255,255,255,.1);font-size:8px;letter-spacing:.08em;text-transform:uppercase;color:#b7ceb9;pointer-events:none}
+#ob-overlay .ob-3d-zoom-controls{position:absolute;right:8px;top:8px;z-index:4;display:flex;flex-direction:column;gap:5px}
+#ob-overlay .ob-3d-zoom-controls button{width:28px;height:28px;padding:0;cursor:pointer;color:#f9e28a;background:#14201f;border:1px solid #647b65;border-radius:6px;font:20px/1 'DM Mono',monospace}
+#ob-overlay .ob-3d-zoom-controls button:focus-visible{outline:2px solid #f9e28a;outline-offset:2px}
 #ob-overlay .ob-3d-loading{position:absolute;inset:0;z-index:3;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:9px;padding:24px;box-sizing:border-box;background:rgba(3,9,7,.76);color:#d8ead8;text-align:center;font:10px/1.4 'DM Mono',ui-monospace,monospace;pointer-events:none;transition:opacity .16s ease}
 #ob-overlay .ob-3d-loading.ob-ready{opacity:0;visibility:hidden}
 #ob-overlay .ob-3d-loading.ob-error{color:#ffb59e;background:rgba(20,5,3,.82)}
@@ -551,6 +554,28 @@
     }
   }
 
+  // Reframe on avatar builds and viewport resize, never on each animation frame.
+  function updatePreviewCamera(state) {
+    const { THREE, camera, cameraTarget } = state;
+    const distance = Math.max(0.6, state.frameDistance / state.zoom);
+    camera.position.copy(cameraTarget).add(new THREE.Vector3(0.43, 0.20, 0.88).normalize().multiplyScalar(distance));
+    camera.lookAt(cameraTarget);
+  }
+
+  function fitPreviewCamera(state, avatarGroup) {
+    avatarGroup.updateWorldMatrix(true, true);
+    const bounds = new state.THREE.Box3().setFromObject(avatarGroup); // Fit the actual scaled avatar and feet, excluding the scene grid.
+    if (bounds.isEmpty()) return;
+    const size = bounds.getSize(new state.THREE.Vector3());
+    if (![size.x, size.y, size.z].every(Number.isFinite)) return;
+    const aspect = Math.max(0.35, state.canvas.clientWidth / Math.max(1, state.canvas.clientHeight));
+    const halfFovTangent = Math.tan(state.camera.fov * Math.PI / 360);
+    const fitDistance = Math.max(size.y / (2 * halfFovTangent), Math.max(size.x, size.z) / (2 * halfFovTangent * aspect));
+    state.frameDistance = Math.max(0.75, Math.min(5.5, fitDistance * 1.18)); // Breathing room for the silhouette.
+    state.cameraTarget.copy(bounds.getCenter(new state.THREE.Vector3()));
+    updatePreviewCamera(state);
+  }
+
   function makePreviewScene(canvas) {
     const THREE = window.THREE;
     if (!THREE?.WebGLRenderer) throw new Error('Three.js runtime is unavailable.');
@@ -582,6 +607,7 @@
       shellOutlineMaterial: makeRuntimeShellOutlineMaterial(THREE),
       avatarGroup: null, model: null, feet: null,
       running: true, yaw: -0.18, pointer: null,
+      cameraTarget: new THREE.Vector3(0, 0.53, 0), frameDistance: 3.15, zoom: 1, // Used by auto-framing and zoom buttons.
       lastWidth: 0, lastHeight: 0,
     };
 
@@ -615,6 +641,7 @@
         renderer.setSize(width, height, false);
         camera.aspect = width / height;
         camera.updateProjectionMatrix();
+        if (sceneState.avatarGroup) fitPreviewCamera(sceneState, sceneState.avatarGroup); // Refit on orientation changes.
       }
       root.rotation.y = sceneState.yaw;
       renderPreviewFrame(sceneState);
@@ -636,6 +663,7 @@
       shell.innerHTML = `
         <canvas class="ob-3d-canvas" aria-label="To-scale 3D preview of your in-game character"></canvas>
         <div class="ob-3d-scale-label">Runtime scale · drag to rotate</div>
+        <div class="ob-3d-zoom-controls" data-ctrl-transparent><button type="button" data-ob-zoom="in" aria-label="Zoom preview in">+</button><button type="button" data-ob-zoom="out" aria-label="Zoom preview out">−</button></div>
         <div class="ob-3d-loading"><div class="ob-3d-loading-spinner" aria-hidden="true"></div><div class="ob-3d-loading-text">Loading character preview…</div></div>`;
       sourceCanvas.after(shell);
       const oldHint = left.querySelector('.ob-preview-hint');
@@ -647,6 +675,15 @@
     }
 
     const canvas = shell.querySelector('.ob-3d-canvas');
+    if (!shell.dataset.zoomBound) {
+      shell.dataset.zoomBound = 'true'; // One listener per preview shell, shared by pointer and ControllerUI clicks.
+      shell.addEventListener('click', event => {
+        const control = event.target.closest('[data-ob-zoom]');
+        if (!control || previewScene?.canvas !== canvas) return;
+        previewScene.zoom = Math.max(0.75, Math.min(2.5, previewScene.zoom * (control.dataset.obZoom === 'in' ? 1.25 : 0.8)));
+        updatePreviewCamera(previewScene);
+      });
+    }
     if (!shell.querySelector('.ob-facing-debug-button')) {
       const button = document.createElement('button'); // Explicit on-demand diagnostic capture; never adds per-frame serialization.
       button.type = 'button';
@@ -770,6 +807,7 @@
     window.ProceduralHandFrameDriver?.syncNow?.();
 
     sceneState.avatarGroup = group;
+    fitPreviewCamera(sceneState, group); // Fit after child and species scaling.
     sceneState.model = model;
     sceneState.feet = feet;
     installFacingDiagnostics(sceneState, model, profile);
