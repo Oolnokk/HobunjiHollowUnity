@@ -1673,11 +1673,11 @@
     return true;
   }
 
-  function fireBanditChargedBreaker(c, def, targetPlayer) {
+  function fireBanditChargedBreaker(c, def, targetPlayer, prepared = null) {
     const cb = window.Combat?.chargedBreakerData;
     if (!cb) return false;
     const shapeStats = def.weaponShapeStats || window.WeaponShapeStats?.DEFAULT || { power: 1, speed: 1, range: 1, efficiency: 1 }; // NPCs scale charge windup and strike as one animation.
-    const chargeT = 0.5 + deps.rnd() * 0.5; // Bandit charge is expressed in the same Neutral→Windup POSE percentage as the player's.
+    const chargeT = Number.isFinite(Number(prepared?.chargeT)) ? deps.clamp(Number(prepared.chargeT), 0.5, 1) : 0.5 + deps.rnd() * 0.5; // A precharged attack retains the exact strength displayed during preparation.
     const base = banditAttackBaseline(def);
     const damage = Math.max(1, Math.round(base.damage * (cb.DAMAGE_MUL_MIN + (cb.DAMAGE_MUL_MAX - cb.DAMAGE_MUL_MIN) * chargeT)));
     const rangePx = base.rangePx * (cb.RANGE_MUL_MIN + (cb.RANGE_MUL_MAX - cb.RANGE_MUL_MIN) * chargeT);
@@ -1687,7 +1687,8 @@
     const lungeTileMul = cb.LUNGE_TILE_MUL_MIN + (cb.LUNGE_TILE_MUL_MAX - cb.LUNGE_TILE_MUL_MIN) * chargeT;
     const pitchDistanceResistance = cb.LUNGE_GRAVITY_RESIST_MIN
       + (cb.LUNGE_GRAVITY_RESIST_MAX - cb.LUNGE_GRAVITY_RESIST_MIN) * chargeT;
-    const windupS = (cb.holdSecondsForPoseCharge?.(chargeT) ?? (cb.WINDUP_S * chargeT)) / shapeStats.speed;
+    const rawWindupS = (cb.holdSecondsForPoseCharge?.(chargeT) ?? (cb.WINDUP_S * chargeT)) / shapeStats.speed;
+    const windupS = prepared ? Math.min(0.12, rawWindupS) : rawWindupS; // After the separate visible charge, a short committed release allows the original swept lunge to catch up before the hit.
     const aimAngle = Math.atan2(targetPlayer.y - c.y, targetPlayer.x - c.x);
     c.facing = aimAngle;
     c._banditAimPitch = window.Combat?.meleeAimSolution?.(c, targetPlayer, aimAngle, 0)?.pitch || 0;
@@ -1701,7 +1702,7 @@
     // this swing covers the first windupS of that curve, so updateBanditToolMesh replays the same shape over this
     // shorter windup. windupS is already divided by speed, so speed goes back in to find how much of the curve it covers.
     const fullChargeS = Number(cb.MAX_CHARGE_S ?? cb.WINDUP_S) || 0;
-    c._banditSwingWindupCurve = fullChargeS > 0 && cb.WINDUP_SLOWDOWN > 0
+    c._banditSwingWindupCurve = !prepared && fullChargeS > 0 && cb.WINDUP_SLOWDOWN > 0
       ? { slowdown: cb.WINDUP_SLOWDOWN, span: Math.min(1, windupS * shapeStats.speed / fullChargeS) }
       : null;
     c._banditSwingHoldS = (cb.HOLD_S || 0) / shapeStats.speed; c._banditSwingReturnS = 0; // Same post-strike pause the player's Charged Breaker release gets.
@@ -1745,6 +1746,7 @@
       onCancel: () => finishBanditAction(c),
     }, targetPlayer);
     if (c._banditSwingWindupCurve) c._banditSwingWindupCurve.action = c._banditAction; // The curve belongs to this one windup only.
+    c._banditChargeReleaseAction = prepared ? c._banditAction : null; // The charged preparatory pose remains at full windup until the committed strike starts.
     return true;
   }
 
