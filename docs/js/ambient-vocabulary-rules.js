@@ -13,11 +13,24 @@
   function synonymId(entry) {
     return String(entry?.id || entry?.text || '').trim().toLocaleLowerCase(); // Immutable canonical ID; the editor keeps it when synonyms are renamed.
   }
-  const WORD_KINDS = Object.freeze(['standard', 'old-slang', 'simple', 'near-miss']); // Shared editor/runtime classifications: historical slang pre-1900, plain childlike forms, intentional almost-right words.
+  const WORD_KINDS = Object.freeze(['standard', 'old-slang', 'simple', 'near-miss', 'regional']); // Shared editor/runtime classifications: historical slang pre-1900, plain childlike forms, intentional almost-right words.
   const CATEGORY_SLIDER = Object.freeze({ 'old-slang': 'oldSlang', simple: 'simplicity', 'near-miss': 'nearMiss' }); // Every nonstandard kind has its own independent inclusion slider.
-  function isEligibleKind(entry, selected, speakerId, word) {
+  function speakerTraits(config, speakerId) {
+    const id = String(speakerId || ''); // Identifies inherited dialect without replacing the NPC's existing reaction personality.
+    for (const [groupId, group] of Object.entries(config?.speakerGroups || {})) {
+      if (!group || typeof group !== 'object') continue;
+      if (group.speakerIds?.includes(id) || (typeof group.idSuffix === 'string' && group.idSuffix && id.endsWith(group.idSuffix))) {
+        return { groupId, sliders: group.sliders || {}, dialects: Array.isArray(group.dialects) ? group.dialects : [],
+          selections: group.selections || {}, phoneticPreset: group.phoneticPreset || null };
+      }
+    }
+    return { groupId: null, sliders: {}, dialects: [], selections: {}, phoneticPreset: null }; // All other NPCs retain ordinary authored vocabulary.
+  }
+  function isEligibleKind(entry, selected, speakerId, word, dialects) {
+    if (entry?.dialect && !dialects.includes(entry.dialect)) return false; // Regional words cannot bleed into unrelated NPCs.
+
     const kind = String(entry?.kind || 'standard');
-    if (kind === 'standard') return true;
+    if (kind === 'standard' || kind === 'regional') return true;
     const slider = CATEGORY_SLIDER[kind];
     if (!slider || !Number.isFinite(Number(selected[slider]))) return false; // Unknown categories fail closed instead of leaking unusual words into everyone's speech.
     const strength = selected[slider];
@@ -26,7 +39,7 @@
     const roll = (hash(speakerId + ':kind:' + word + ':' + synonymId(entry)) >>> 0) / 4294967296; // Stable per-speaker sample, generated only on first bubble/editor preview.
     return roll < (strength - 10) / 90;
   }
-  function generateSelections(lexicon, sliders, speakerId = '') {
+  function generateSelections(lexicon, sliders, speakerId = '', dialects = []) {
     const selected = normalizeSliders(sliders); // Independent axes determine which globally authored words each character is allowed to say.
     const selections = {}; // Only canonical synonym IDs are stored, not copies of another character's word list.
     for (const [original, entries] of Object.entries(lexicon || {})) {
@@ -34,7 +47,7 @@
       if (!key || key.length > 80 || /[{}]/.test(key) || !Array.isArray(entries)) continue;
       const coverage = 0.12 + (selected.breadth / 100) * 0.88; // Broad characters know more words; low breadth excludes entire entries.
       if ((hash(speakerId + ':known:' + key) >>> 0) / 4294967296 >= coverage) continue;
-      const ranked = entries.filter(item => item && typeof item.text === 'string' && item.text.trim() && isEligibleKind(item, selected, speakerId, key)).map(item => ({
+      const ranked = entries.filter(item => item && typeof item.text === 'string' && item.text.trim() && isEligibleKind(item, selected, speakerId, key, dialects)).map(item => ({
         id: synonymId(item),
         distance: Math.abs(clamp(item.verbosity ?? 50) - selected.verbosity) * 0.9
           + Math.abs(clamp(item.color ?? 50) - selected.color)
@@ -86,8 +99,8 @@
     }
     return selections;
   }
-  function generateTable(lexicon, sliders, speakerId = '') {
-    return resolveSelections(lexicon, generateSelections(lexicon, sliders, speakerId)); // Compatibility helper for older read-only preview/test callers.
+  function generateTable(lexicon, sliders, speakerId = '', dialects = []) {
+    return resolveSelections(lexicon, generateSelections(lexicon, sliders, speakerId, dialects)); // Compatibility helper for older read-only preview/test callers.
   }
   function seedSliders(familySliders, speakerId) {
     const values = normalizeSliders(familySliders); // Existing personality family is the center of each character's vocabulary.
@@ -108,7 +121,7 @@
     return pattern;
   }
   function caseLike(source, replacement) {
-    if (source !== source.toLocaleLowerCase() && source === source.toLocaleUpperCase()) return replacement.toLocaleUpperCase();
+    if (source.length > 1 && source !== source.toLocaleLowerCase() && source === source.toLocaleUpperCase()) return replacement.toLocaleUpperCase();
     if (source[0] && source[0] === source[0].toLocaleUpperCase()) return replacement[0].toLocaleUpperCase() + replacement.slice(1);
     return replacement;
   }
