@@ -156,18 +156,32 @@ assert.equal(tribeView.sourceLayout,campMap,'the tribal view retains the same or
 const sceneryBrowser = {}; // VM browser isolates the renderer's globals from other headless test files.
 const rendererProps = new Map(); // Captures registered stone colliders through the real AreaFootprintBlockers-compatible API.
 class TestGroup {
-  constructor(){this.children=[];this.userData={};this.parent=null;}
+  constructor(){this.children=[];this.userData={};this.parent=null;
+    this.position={set(){}};this.rotation={y:0};this.scale={multiplyScalar(){}};}
   add(child){this.children.push(child);child.parent=this;}
   remove(child){this.children=this.children.filter(entry=>entry!==child);child.parent=null;}
   traverse(fn){fn(this);for(const child of this.children)fn(child);}
 }
 class TestMesh {
   constructor(geometry,material){this.geometry=geometry;this.material=material;this.userData={};
-    this.children=[];this.position={set(){}};this.rotation={y:0};}
+    this.children=[];this.position={set(){}};this.rotation={y:0};this.isMesh=true;
+    this.layers={mask:1,enable(bit){this.mask|=1<<bit;}};}
 }
 sceneryBrowser.WildernessObjectFootprints = policy;
-sceneryBrowser.THREE = { Group:TestGroup, Mesh:TestMesh, InstancedMesh:class {} };
+sceneryBrowser.THREE = {
+  Group:TestGroup, Mesh:TestMesh,
+  Object3D:class {constructor(){this.position={set(){}};this.rotation={};this.scale={set(){}};this.matrix={};}updateMatrix(){}},
+  InstancedMesh:class extends TestGroup {constructor(geometry,material){super();this.geometry=geometry;this.material=material;this.instanceMatrix={};}setMatrixAt(){}}
+}; // Exactly the lightweight Three.js features required by the actual scenery renderers.
 sceneryBrowser.OreRockTextures = {smallStoneArt:()=>({geometry:{},material:{}})};
+let outlinedDeadTrees = 0; // Confirm the existing shell-outline path, not an independent black-edge material.
+sceneryBrowser.HobunjiOutlines = {markShellOutline(root){
+  outlinedDeadTrees++;
+  root.traverse(mesh => {if(mesh.isMesh&&!mesh.userData?.noOutline)mesh.layers.enable(1);});
+}};
+sceneryBrowser.FoliageGenerator = {buildDeadTreeMesh(){
+  const tree=new TestGroup();tree.add(new TestMesh({},{}));return tree;
+}}; // Lightweight native tree builder; every other renderer and collider executes unchanged.
 sceneryBrowser.AreaFootprintBlockers = {register(id,provider){rendererProps.set(id,provider);return()=>rendererProps.delete(id);}};
 const activeScene = new TestGroup(); // Fake scene only needs the real module's add/remove and parent semantics.
 sceneryBrowser.GridTileAccessors = {getActiveScene:()=>activeScene};
@@ -207,5 +221,38 @@ assert.equal(collider.blocksBox(NaN,3.5,.1,null),false,'invalid collision probes
 assert.equal(scenery.debugSnapshot().stoneCollision.siteCount,1,'mobile diagnostics expose the physical stone count');
 scenery.clear();
 assert.equal(rendererProps.size,0,'changing zone or shift unregisters stale physical stones');
+
+// Pick a real seeded wilderness with a naturally generated dead-tree landmark.
+// The test executes the production scene and movement provider instead of
+// checking for a kind name in static source code.
+const woodLayout = {cols:56,rows:56,tiles:Array.from({length:56},()=>Array.from({length:56},()=>({
+  type:'grass',elevTier:0
+}))),localeInstances:[]}; // Large enough for several actual random scenery sites.
+let woodYear=-1,woodSite=null,woodSites=[]; // Seed-search avoids tying the behavior test to incidental PRNG roll order.
+for(let year=0;year<40;year++){
+  const planned=scenery.planForLayout('map_western_slope',woodLayout,'world:'+year);
+  const candidate=planned.find(site=>site.kind==='deadTree');
+  if(candidate){woodYear=year;woodSite=candidate;woodSites=planned;break;}
+}
+assert(woodSite,'ordinary wilderness generation still includes at least one dead-tree landmark');
+scenery.init({_zoneLayouts:new Map([['map_western_slope',woodLayout]]),getCurrentArea:()=> 'map_western_slope',
+  tothalWorldId:()=> 'world',currentTothalYear:()=>woodYear,TILE:64});
+scenery.update();
+const woodCollider=rendererProps.get('wilderness-landmark-stones'); // The same provider now handles dead trunks without adding one per tree.
+assert(woodCollider,'random landmark trees share the permanent stone collision registration');
+const woodX=woodSite.point.col+.5,woodZ=woodSite.point.row+.5;
+assert.equal(woodCollider.blocksBox(woodX,woodZ,0,null),true,'generated dead tree trunks block feet and NPC pathfinding');
+assert.equal(woodCollider.blocksBox(woodX+.6,woodZ,0,null),false,'their collision uses a narrow trunk, not the full canopy');
+assert.equal(woodCollider.blocksBox(woodX,woodZ,0,10),false,'projectiles above a dead-tree crown clear the obstacle');
+assert.equal(scenery.debugSnapshot().stoneCollision.siteCount,woodSites.filter(site =>
+  ['deadTree','markedBoulder','witnessStone','stoneCairn','brokenPillar'].includes(site.kind)).length,
+  'mobile landmark diagnostics count both wood and masonry without a second collision provider');
+const woodDraw=activeScene.children.flatMap(parent=>parent.children).find(node=>node.name==='wilderness-dead-tree-landmark');
+assert(woodDraw,'at least one physically blocking dead tree is rendered using native foliage');
+assert(outlinedDeadTrees>0,'native dead-tree bark is enrolled in the existing shell outline renderer');
+const nativeTrunk=woodDraw.children.find(node=>node.isMesh&&!node.userData.noOutline);
+assert.equal(nativeTrunk.layers.mask&2,2,'the actual dead-tree trunk mesh appears on the shell-outline layer');
+scenery.clear();
+assert.equal(rendererProps.size,0,'dead-tree colliders also unregister on world regeneration');
 
 console.log('wilderness generated-object footprint and collision-preservation tests passed');
