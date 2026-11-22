@@ -106,7 +106,7 @@
   }
 
   function isStageable(c, target) {
-    if (!enabled || !deps || !c || !isActor(target) || isSpecial(c)) return false;
+    if (!enabled || !deps || !c || !isActor(target) || isSpecial(c) || c.tzatzulCapturedBy || target.tzatzulCapturedBy) return false; // An aerial captive is neither a duelist nor a ground duel target.
     if (!(Number(target.health) > 0) || c.prone) return false;
     return !playerInvolved(c, target);
   }
@@ -226,7 +226,7 @@
 
   // 2D reach/cone strike test used instead of the 3D pie-prism hit test.
   function strikeLands(attacker, target, rangePx, halfConeRad) {
-    if (!target || !(Number(target.health) > 0) || target.dodging) { stats.stagedMisses++; return false; }
+    if (!target || !(Number(target.health) > 0) || target.dodging || target.tzatzulCapturedBy) { stats.stagedMisses++; return false; } // A committed swing cannot land on prey already lifted out of the duel.
     if (Number(target.invulnUntil) > performance.now()) { stats.stagedMisses++; return false; }
     const dx = target.x - attacker.x, dy = target.y - attacker.y;
     const bodyPx = (deps?.TILE || 64) * 0.32; // Same body radius creatures use for terrain occupancy.
