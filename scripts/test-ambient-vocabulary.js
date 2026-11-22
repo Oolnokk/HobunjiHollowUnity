@@ -118,6 +118,21 @@ async function testStandaloneEditorInteraction(rules) {
   chooseNpc.onclick(); // The old sidebar node is deliberately re-used to ensure selecting a different pane remains safe.
   assert.ok(panel.innerHTML.includes('canonical replacement for testing'), 'NPC checkboxes must display the updated canonical word');
   assert.equal(sandboxWindow.AmbientVocabularyEditor.getDebug().characterOverrides, 1);
+  const harvestButton = panel.querySelectorAll('[data-harvest-word]')[0];
+  assert.ok(harvestButton?.onclick, 'Doorstep candidate words must be actionable on mobile');
+  const harvestedWord = harvestButton.dataset.harvestWord;
+  harvestButton.onclick();
+  assert.deepEqual(sample.lexicon[harvestedWord], [], 'Harvesting must create only an empty canonical entry, never invent synonyms');
+  assert.ok(panel.innerHTML.includes('Master synonym dictionary'), 'Harvested word should open the real master dictionary');
+  const voiceTab = sidebar.querySelectorAll('[data-entry]').find(node => node.dataset.entry === 'voice:pahu');
+  assert.ok(voiceTab?.onclick, 'Pahu voice group must be independently editable');
+  voiceTab.onclick();
+  assert.ok(panel.innerHTML.includes('phoneticPairs'), 'Pahu voice must show the phonetic rule editor');
+  document.getElementById('phoneticPairs').value = 'I | oy\nmy | moy';
+  document.getElementById('savePhonetics').onclick();
+  assert.equal(sample.phoneticPresets.pahu_grapple_flail.rules.length, 2);
+  assert.equal(rules.applyPhoneticPreset('I have my things.', sample, 'pahu_grapple_flail', 'pahu').text,
+    'Oy have moy things.', 'Edited phonetic rules must take effect without a reload');
 }
 
 async function main() {
@@ -294,6 +309,9 @@ async function main() {
   assert.ok(!rules.generateSelections({ hello: [{ id: 'howdy', text: 'howdy', kind: 'regional', dialect: 'southeastern-us' }] },
     { breadth: 100, variety: 100 }, 'pahu', ['west-country','pirate']).hello,
     'West Country generators must not select Southeastern forms');
+  assert.ok(!rules.generateSelections({ hello: [{ id: 'untagged', text: 'regional word', kind: 'regional' }] },
+    { breadth: 100, variety: 100 }, 'pahu', ['west-country']).hello,
+    'A regional word with no dialect label must never leak into automatic tables');
   const debug = engine.getDebug();
   assert.ok(debug.last && Number.isInteger(debug.last.swaps));
   assert.ok(typeof debug.replacements === 'number');
