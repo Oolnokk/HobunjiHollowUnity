@@ -156,7 +156,11 @@ async function testFamilyBabyAmbient() {
     DialogueContent: { registerTreeProvider() {} },
   }; // Tiny real-module host: only the existing family/ambient interfaces are stubbed.
   vm.runInNewContext(file('docs/config/romance-config.js'), { window: familyWindow });
-  vm.runInNewContext(file('docs/js/romance-family.js'), { window: familyWindow, console });
+  vm.runInNewContext(file('docs/js/romance-family.js'), {
+    window: familyWindow, console,
+    setTimeout: () => 1, clearTimeout: () => {}, // Deterministic browser timers; restore() cancels legacy announcement timeouts.
+    performance: { now: () => 0 }, // Family growth tests inspect saved calendar transitions without depending on wall-clock animation.
+  });
   const family = familyWindow.RomanceFamily;
   const child = { id: 'child_babble_fixture', name: 'Pip', bornRawDay: 10, gender: 'male', speciesId: 'mao-ao' };
   family.init({ helpers: {
