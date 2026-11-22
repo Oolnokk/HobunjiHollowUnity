@@ -936,18 +936,22 @@
       return false;
     }
     const babyLine = newborn ? window.RomanceFamily?.babyAmbientSound?.(speakerId) : null; // Selected on the actual greeting, not on every proximity scan.
-    if (newborn && !babyLine) return false;
-    state.greeted.add(key);
-    saveGreetingLedger(day);
-    state.lastGreetingAt = now;
     if (newborn) {
-      show(babyAnchor?.group || walker.root, babyLine, {
+      if (!babyLine) return false;
+      const renderedBaby = show(babyAnchor?.group || walker.root, babyLine, {
         speakerId, profile: walker.profile, mode: 'chathead', greeting: true,
         directedAtPlayer: targetId === 'player', babyAmbient: true,
         traceSource: 'config/romance-config.js family.babyAmbientNoises',
       }); // No borrowed adult greeting, nickname, or attempted head-turn of the hidden infant rig.
+      if (!renderedBaby) return false; // Missing/disabled scenes cannot consume this baby's only greeting opportunity for the day.
+      state.greeted.add(key);
+      saveGreetingLedger(day);
+      state.lastGreetingAt = now;
       return true;
     }
+    state.greeted.add(key);
+    saveGreetingLedger(day);
+    state.lastGreetingAt = now;
     applyGreetingHeadTurn(walker, target); // Ordinary villagers/toddlers retain their existing heading/neck behavior.
     // A pending-request override (see getPendingRequestGreeting) replaces the
     // ordinary nickname-templated line with the quest-giver's own purple
