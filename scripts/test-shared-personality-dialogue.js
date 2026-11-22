@@ -13,8 +13,10 @@ const personalities = JSON.parse(read('docs/config/dialogue/npc-reaction-profile
 const localSource = read('docs/js/local-db-overrides.js'); // Database composition under test.
 const contentSource = read('docs/js/dialogue-content.js'); // Real conversation picker/render entry under test.
 const conditionsSource = read('docs/js/condition-registry.js'); // Same eligibility rules used by the runtime.
+const festivalSource = read('docs/js/festival-dialogue.js'); // Real Gorkunash context provider, which only replaces original fallback dialogue.
+const spouseSource = read('docs/js/spouse-social-life.js'); // Real spouse/in-law context provider, with the same fallback-only contract.
 
-for (const source of [localSource, contentSource, conditionsSource]) assert.doesNotThrow(() => new vm.Script(source));
+for (const source of [localSource, contentSource, conditionsSource, festivalSource, spouseSource]) assert.doesNotThrow(() => new vm.Script(source));
 assert.equal(config.schema, 'hobunji_shared_dialogue.v1');
 assert.deepEqual(Object.keys(config.personalityFamilies).sort(), Object.keys(personalities.profiles).sort(), 'every existing reaction personality has a shared speech family');
 for (const [family, entries] of Object.entries(config.personalityFamilies)) {
@@ -146,6 +148,33 @@ byId.sloomi.dialogueTrees.push(shop);
 assert.equal(say(byId.sloomi), 'SHOP ACCESS', 'shared chatter cannot displace generated shop access');
 const anotherSloomiLine = say(byId.sloomi);
 assert.ok(anotherSloomiLine === 'SHOP ACCESS' || config.personalityFamilies.reserved.some(entry => entry.text === anotherSloomiLine), 'repeated dialogue cannot leak unrelated personality speech');
+
+// Event-owned dialogue must receive the original authored selection BEFORE
+// any normal personality/character supplementation. Exercise the actual
+// festival and spouse feature modules rather than synthetic context mocks.
+dialogueWindow.FestivalSystem = { festival: () => festivalOn ? { id: 'gorkunash' } : null, festivalHours: () => festivalOn }; // Test-controlled Gorkunash schedule.
+dialogueWindow.RomanceSystem = { getSpouse: () => spouseOn ? { npcId: 'sloomi' } : null, remainingKissHours: () => 5 }; // Sloomi is an existing spouse voice and has a Reserved family.
+dialogueWindow.CalendarSystem = { getHour: () => 10, timeDebugSnapshot: () => ({ rawDay: 4 }), currentWeekdayName: () => 'Hronu' }; // Stable day for choosing spouse advice.
+let festivalOn = false; // Enables/disables Gorkunash for this test only.
+let spouseOn = false; // Enables/disables Sloomi's spouse relationship for this test only.
+vm.runInContext(festivalSource, sandbox, { filename: 'festival-dialogue.js' }); // Registers the production festival provider.
+vm.runInContext(spouseSource, sandbox, { filename: 'spouse-social-life.js' }); // Registers the production spouse provider.
+festivalOn = true;
+const festivalLine = say(byId.dzibim_khibu); // Dzibim has both a fallback and eligible Playful shared dialogue after an earlier Talk.
+assert.match(festivalLine, /This was the day/, 'Gorkunash dialogue overrides shared ordinary chatter');
+assert.ok(dialogueWindow.DialogueContent.getNpcDlgState('dzibim_khibu').heardTrees.some(id => id.startsWith('gorkunash_')), 'Gorkunash conversation routed through its original provider');
+festivalOn = false;
+spouseOn = true;
+const spouseLine = say(byId.sloomi); // Sloomi has a heard fallback and eligible Reserved shared speech.
+assert.ok(spouseLine && !config.personalityFamilies.reserved.some(entry => entry.text === spouseLine), 'married Sloomi speaks her spouse-specific content before Reserved dialogue');
+assert.ok(dialogueWindow.DialogueContent.getNpcDlgState('sloomi').heardTrees.some(id => id.startsWith('spouse_care_')), 'spouse provider routed the dialogue tree');
+spouseOn = false;
+const authoredNormal = { ...byId.pahu, dialogueTrees: [{
+  id: 'independent_story_without_priority', trigger: 'interact', priority: 0, entryNode: 'story',
+  nodes: [{ id: 'story', type: 'text', text: 'AUTHORED NON-FALLBACK TALK' }]
+}] }; // Even a heard priority-0 authored tree must not be masked by personality supplementation.
+assert.equal(say(authoredNormal), 'AUTHORED NON-FALLBACK TALK', 'authored non-fallback line has priority initially');
+assert.equal(say(authoredNormal), 'AUTHORED NON-FALLBACK TALK', 'authored non-fallback line retains its priority after being heard');
 
 dialogueWindow.DialogueContent.loadNpcRelationships({ npcRelationships: {}, npcFavorRescaleApplied: true }); // Fresh world context isolates the complete starter-roster first-meeting audit from the synthetic fixtures above.
 const starter = JSON.parse(read('docs/config/npcs/hobunji-starter-npc-database.json')); // Full shipped character roster verifies existing authored greetings are never silently displaced.
