@@ -27,13 +27,17 @@ const child = { id: 'test-baby', name: 'Pip', otherParentId: 'spouse-id', carryB
 const babyWalker = { rec: { id: child.id }, area: 'interior', root: babyRoot, avatarGroup: babyAvatar };
 const spouseWalker = { rec: { id: 'spouse-id' }, area: 'interior', root: spouseRoot, avatarGroup: spouseAvatar };
 let held = null, back = null, persistCount = 0, registered = 0, migrationCount = 0;
+const areaRecords = new Map(); // Simulate an unloaded/rebuilt farmhouse zone losing only its old in-memory Burden record.
 const api = {
   registerBurden(options) {
     assert.equal(Object.hasOwn(options, 'scene'), false, 'registry resolves the actual world scene, not NPC rig group');
     assert.equal(options.kind, 'familyBaby'); assert.equal(options.invulnerable, true); assert.equal(options.noHang, true);
     registered++;
-    return { ...options, col: 6, row: 6, carried: false, flying: false, exploded: false };
+    const burden = { ...options, col: 6, row: 6, carried: false, flying: false, exploded: false };
+    areaRecords.set(burden.id, burden);
+    return burden;
   },
+  rebindRegisteredBurden(item) { areaRecords.set(item.id, item); return true; },
   pickUp(item) { held = item; item.carried = true; item.onPickup(item); return true; },
   heldBurdenInfo: () => held && { id: held.id },
   backCarriedInfo: () => back && { id: back.id },
@@ -51,6 +55,10 @@ const carry = window.FamilyBabyBurdens, persist = () => persistCount++;
 assert(carry.sync(child, babyWalker, 'basket', persist));
 assert.equal(registered, 1, 'one shared physical baby burden registered');
 assert.equal(carry.isProxyActive(child.id), false, 'the baby NPC is command-targetable in its basket');
+areaRecords.clear(); // Simulate Shattercasks.releaseZone('interior') and a rebuilt home scene.
+assert.equal(carry.sync(child, babyWalker, 'basket', persist).burden, areaRecords.get('family_baby_test-baby'),
+  'the same Burden is re-registered after an interior scene rebuild');
+assert.equal(registered, 1, 'scene recovery must not create a second physical infant');
 assert.equal(babyRoot.visible, true, 'baby NPC is visible in cradle');
 assert.equal(carry.takeIntoArms(child, babyWalker, persist), true);
 assert.equal(babyRoot.visible, false, 'baby NPC hides while player holds its lightweight proxy');
