@@ -245,7 +245,9 @@
   }
 
   function isPlayerNearDenNest(nest) {
-    const cx = (nest.col + nest.w / 2) * deps.TILE, cy = (nest.row + nest.h / 2) * deps.TILE;
+    const exactExterior = nest?.exteriorCliffNest === true && Number.isFinite(nest.x) && Number.isFinite(nest.y); // Only displaced Pingdort cups use fractional pixel-space centres.
+    const cx = exactExterior ? nest.x : (nest.col + nest.w / 2) * deps.TILE;
+    const cy = exactExterior ? nest.y : (nest.row + nest.h / 2) * deps.TILE;
     return Math.hypot(deps.player.x - cx, deps.player.y - cy) <= deps.TILE * 1.6;
   }
 
