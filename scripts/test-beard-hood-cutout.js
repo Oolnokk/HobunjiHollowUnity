@@ -204,6 +204,72 @@ const rootInput=[{x:140,y:94}],rootSnapshot=JSON.stringify(rootInput);
 Cut.stretchHoodToRoots(new Canvas(),rootInput);
 assert.equal(JSON.stringify(rootInput),rootSnapshot,'root normalization never mutates authored JSON');
 
+// Two-sided beard/hood arbitration: painted removal permissions belong to the
+// HOOD; rejected overlaps erase only the beard and require an authored-looking
+// black edge on retained non-black pixels.
+const sampleBeard=new Canvas(),sampleHood=new Canvas();
+for(let x=100;x<=110;x++)setPixel(sampleBeard,x,80,255);
+for(let x=100;x<=105;x++)setPixel(sampleHood,x,80,255);
+sampleBeard.pixels.set([8,8,8,255],at(108,80)*4); // Pre-existing black line art is preserved.
+const requestedBits=new Uint8Array(SIZE*SIZE),allowedBits=new Uint8Array(SIZE*SIZE);
+for(let x=100;x<=110;x++)requestedBits[at(x,80)]=1;
+for(let x=100;x<=102;x++)allowedBits[at(x,80)]=1;
+const requestMask=Cut.encodeMask(requestedBits),permission=Cut.encodeMask(allowedBits);
+const originalBeard=new Uint8ClampedArray(sampleBeard.pixels);
+const originalHood=new Uint8ClampedArray(sampleHood.pixels);
+const approved=Cut.negotiateBeardHood(sampleBeard,sampleHood,requestMask,permission,{includeMasks:true});
+assert.equal(approved.requested,6,'only beard pixels under actual opaque hood need arbitration');
+assert.equal(approved.approvedPixels,3,'hood author allows three removal pixels');
+assert.equal(approved.refusedPixels,3,'hood author protects three conflict pixels');
+assert.equal(approved.erasedPixels,3,'rejected beard pixels become transparent, not black');
+assert(approved.outlinedPixels>=1,'surviving non-black beard pixels acquire black edge where trimmed');
+for(let x=100;x<=102;x++)assert.equal(alpha(sampleHood,x,80),0,'approved hood pixel is removed');
+for(let x=103;x<=105;x++){
+  assert.equal(alpha(sampleHood,x,80),255,'protected hood pixel remains opaque');
+  assert.equal(alpha(sampleBeard,x,80),0,'refused beard pixel really disappears');
+}
+assert.equal(alpha(sampleBeard,106,80),255,'non-conflicting adjacent beard pixel survives');
+assert.deepEqual(Array.from(sampleBeard.pixels.slice(at(106,80)*4,at(106,80)*4+3)),
+  [0,0,0],'first surviving beard pixel gains a true black inset edge');
+assert.deepEqual(Array.from(sampleBeard.pixels.slice(at(109,80)*4,at(109,80)*4+3)),
+  [88,66,44],'beard pigment far from a refusal remains unchanged');
+assert.deepEqual(Array.from(sampleBeard.pixels.slice(at(108,80)*4,at(108,80)*4+4)),
+  [8,8,8,255],'pre-existing black authored beard lines are not repainted');
+assert.equal(Cut.decodeMask(approved.approvedMask)[at(101,80)],1,'approved mask matches real hood holes');
+assert.equal(Cut.decodeMask(approved.refusedMask)[at(104,80)],1,'refused mask matches beard erasures');
+assert.equal(Cut.decodeMask(approved.refusedMask)[at(109,80)],0,
+  'requested beard outside actual hood remains untouched');
+const permissiveBeard=new Canvas(),permissiveHood=new Canvas();
+permissiveBeard.pixels.set(originalBeard);permissiveHood.pixels.set(originalHood);
+const legacy=Cut.negotiateBeardHood(permissiveBeard,permissiveHood,requestMask,null);
+assert.equal(legacy.approvedPixels,6,'hoods without authored permissions retain legacy cutout behavior');
+assert.equal(legacy.refusedPixels,0,'legacy permission does not erase beard pixels');
+assert.deepEqual(Array.from(permissiveBeard.pixels),Array.from(originalBeard),
+  'permissive hoods never clip or re-outline beards');
+const blockedBeard=new Canvas(),blockedHood=new Canvas();
+blockedBeard.pixels.set(originalBeard);blockedHood.pixels.set(originalHood);
+const protectedAll=Cut.negotiateBeardHood(blockedBeard,blockedHood,requestMask,{size:SIZE,runs:[]});
+assert.equal(protectedAll.approvedPixels,0,'explicit EMPTY mask makes all hood pixels non-removable');
+assert.equal(protectedAll.refusedPixels,6,'protect-all trims every competing beard request pixel');
+assert.deepEqual(Array.from(blockedHood.pixels),Array.from(originalHood),
+  'protect-all never damages opaque hood cloth');
+const absentHood=new Canvas(),unopposedBeard=new Canvas();
+unopposedBeard.pixels.set(originalBeard);
+const absence=Cut.negotiateBeardHood(unopposedBeard,absentHood,requestMask,{size:SIZE,runs:[]});
+assert.equal(absence.requested,0,'transparent hood regions cannot refuse beard');
+assert.deepEqual(Array.from(unopposedBeard.pixels),Array.from(originalBeard),
+  'absence of front hood pixels never erases beards');
+// The existing tuft warp must move permission along with hood cloth.
+const pinMask=new Uint8Array(SIZE*SIZE);
+pinMask[at(110,100)]=1;
+const anchorMove={to:{x:112.5,y:100.5},delta:{x:2,y:0},radius:25,
+  aboveInfluence:100,belowInfluence:100};
+const fittedPermission=Cut.deformHoodPermissionMask(Cut.encodeMask(pinMask),[anchorMove]);
+assert.equal(Cut.decodeMask(fittedPermission)[at(112,100)],1,
+  'painted removable zone follows the stretched hood rather than remaining at the old coordinate');
+assert.equal(Cut.deformHoodPermissionMask(null,[anchorMove]),null,
+  'unconfigured hoods remain fully removable after deformation');
+
 const portrait=fs.readFileSync('docs/js/portrait-utils.js','utf8');
 const original=fs.readFileSync('docs/index.html','utf8');
 const studio=fs.readFileSync('docs/tools/character-studio/index.html','utf8');
@@ -212,14 +278,23 @@ const html=fs.readFileSync('docs/tools/beard-hood-cutout/index.html','utf8');
 assert(portrait.includes('const paintedBeardMask = renderOptions?.beardHoodCutoutMaskOverride')
   && portrait.includes('const result = cutoutApi.applyToHood(cloth, paintedBeardMask)'),
   'runtime calls shared compositor only at the separate hood stage');
-const beardDraw=portrait.indexOf('if (!_beardBelowHead) drawEmoteLayers(facialHairLayers);');
-const hoodDraw=portrait.indexOf('const cutoutApi = window.PortraitBeardHoodCutout;',beardDraw);
+const beardDraw=portrait.indexOf('if (!_beardBelowHead) drawNegotiatedBeard();');
+const beardBelow=portrait.indexOf('if (_beardBelowHead) drawNegotiatedBeard();');
+const hoodDraw=portrait.indexOf('if (negotiatedHood) {',beardDraw);
 const faceDraw=portrait.indexOf('drawEmoteLayers(maskLayers); // Face masks sit over the hood opening',hoodDraw);
-assert(beardDraw>=0 && beardDraw<hoodDraw && hoodDraw<faceDraw,
-  'main ordering survives: beard, front hood (with cutout), then face mask');
-assert(portrait.includes('if (cutoutApi && hoodLayers.length && facialHairLayers.length')
-  && portrait.includes('!hiddenCosmeticGroups.has(facialHair)'),
-  'no active beard or a facewrap never carves its hood');
+assert(beardBelow>=0 && beardBelow<beardDraw && beardDraw<hoodDraw && hoodDraw<faceDraw,
+  'main ordering survives: Mashtzarr beard below head, other beards above head, hood, then face mask');
+assert(portrait.includes('!hiddenCosmeticGroups.has(facialHair)')
+  && portrait.includes('facialHairLayers.length && hoodLayers.length'),
+  'no active beard or a facewrap never performs two-way arbitration');
+assert(portrait.includes('drawEmoteLayers(facialHairLayers, beardScratch.getContext')
+  && portrait.includes('const result = cutoutApi.negotiateBeardHood(beardScratch, hoodScratch')
+  && portrait.includes('ctx.drawImage(negotiatedHood'),
+  'beard and hood are negotiated offscreen and composite back only at their original positions');
+assert(portrait.includes('variantBeardCutoutAllowedMasks')&&portrait.includes('resolveHoodBeardAllowanceMask'),
+  'hood cosmetic JSON and species variants supply independent permission masks');
+assert(portrait.includes('hoodMoves:stretch.moves'),
+  'gameplay applies hood stretch to the permission mask as well');
 assert(portrait.includes('variantHoodCutoutMasks')&&portrait.includes('hoodCutoutMask = maskApi?.normalizeMask'),
   'cosmetic JSON and species variants survive the main option parser');
 assert(portrait.includes('cutoutApi.stretchHoodToRoots(cloth, tuftRoots') &&
@@ -241,7 +316,8 @@ for(const text of [original,studio,attack])
 new vm.Script(html.match(/<script>([\s\S]*?)<\/script>/)[1]);
 for(const id of ['paintCanvas','beard','hood','variant','paintMode','eraseMode','rootMode',
   'alphaFloor','maxStretch','subdivision','aboveInfluence','belowInfluence',
-  'removeRoot','clearRoots','download','maskJson'])
+  'removeRoot','clearRoots','hoodAllowMode','hoodProtectMode','protectWholeHood',
+  'allowWholeHood','hoodJson','downloadHood','download','maskJson'])
   assert(html.includes('id="'+id+'"'),'the mobile 2D author exposes '+id);
 assert(html.includes('min="0" max="64" step="0.25"')
   && html.includes("Number($('maxStretch').value)")
@@ -256,6 +332,12 @@ assert(html.includes('subdivision:selectedSubdivision()')
   && html.includes('hoodTuftAboveInfluence:selectedAboveInfluence()')
   && html.includes('hoodTuftBelowInfluence:selectedBelowInfluence()'),
   'editor uses locality and upper/lower values in preview, persistence and exported cosmetic JSON');
+assert(html.includes('Cut.negotiateBeardHood(survivingBeard,maskedHood,mask,hoodAllowanceMask')
+  && html.includes('hoodDraftStorageKey')
+  && html.includes('function exportedHoodJson()')
+  && html.includes('destination.beardCutoutAllowedMask')
+  && html.includes("mode==='hoodProtect'"),
+  'mobile editor previews, persists, imports and exports hood permissions separately');
 assert(!html.includes('three.min.js')&&!html.includes('portrait-spline-rig.js'),
   '2D experiment does not load old 3D rig or Three.js');
 assert(html.includes('const [beardArt,hoodArt]=await Promise.all')
@@ -293,5 +375,5 @@ urls.loadImage(originalAsset).then(result=>{
   assert.equal(requests[1].url,'https://raw.githubusercontent.com/Oolnokk/HobunjiHollowUnity/012345/docs/assets/example-beard.png',
     'fallback uses the exact same commit and repo instead of unrelated images');
   assert.equal(urls.imageLoadStats.fallbacks,1,'mobile debug records a successful alternative');
-  console.log('Beard/hood cutout: quarter-pixel stretch onset, continuous partial cap, no-all-or-nothing threshold, subpixel alpha sampling, asymmetric falloff, draw order and CORS fallback pass.');
+  console.log('Beard/hood: hood permission masks, approved cloth cutouts, refused beard erasure, black cut-edge outlines, deformed permissions, existing layer order, subpixel stretch and CORS fallback pass.');
 }).catch(error=>{console.error(error);process.exitCode=1;});
