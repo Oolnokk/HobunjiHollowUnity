@@ -86,5 +86,55 @@ assert.equal(petals.debugSnapshot().trees,1);
 assert.equal(petals.detach(tree2),true);
 assert.equal(slot.enabled,false,'removing the last emitter disables the frame subscriber');
 assert.equal(petals.debugSnapshot().livePetals,0);
+// The hunt renders these trees outside normal wilderness tile vegetation. Use the
+// production outline registrar and shared collision registry to verify that
+// the real live-scene integration behaves like ordinary unharvestable trunks.
+require('../docs/js/world-render-pipeline.js');
+require('../docs/js/area-footprint-blockers.js');
+require('../docs/js/festival-blossom-hunt.js');
+const hunt=window.FestivalBlossomHunt; // Actual festival renderer and its scene/Shift lifecycle.
+let activeZone='map_southern_cloud_forest'; // Switching areas must unregister the previous provider without touching shared foliage.
+const gameScene=new THREE.Scene(); // Scene for real world bounds, native cullables and renderer layer masks.
+const cullables=[]; // Production zone registry used by the same vegetation culler as ordinary trees.
+const blossomLayout={localeInstances:[
+  {localeId:'locale_five_blossoms_amber',objects:[{x:10,y:10,key:'blossom-tree'}]},
+  {localeId:'locale_five_blossoms_rose',objects:[{x:16,y:10,key:'blossom-tree'}]}
+]}; // Explicit generated locale objects; stable physical positions are also the riddle's targets.
+const layouts=new Map([[activeZone,blossomLayout]]);
+window.GridTileAccessors={getActiveScene:()=>gameScene,getZoneSceneInfo:()=>({scene:gameScene,cullables})};
+window.LocaleRiddleGenerator={positionOf:(instance)=>({col:instance.objects[0].x,row:instance.objects[0].y})};
+window.ClimbSystem={groundYAt:()=>0};
+hunt.init({_zoneLayouts:layouts,getCurrentArea:()=>activeZone,TILE:64});
+hunt.update();
+const trunkProvider='five-blossoms-trunks'; // Real AreaFootprintBlockers ID should exist exactly once regardless of update cadence.
+assert(window.AreaFootprintBlockers.providerIds().includes(trunkProvider),'blossom trees register the shared physical obstacle');
+const firstTree=gameScene.getObjectByName('locale_five_blossoms_amber');
+const nextTree=gameScene.getObjectByName('locale_five_blossoms_rose');
+assert(firstTree&&nextTree,'the actual festival runtime renders both authored wilderness blossoms');
+const visibleStem=firstTree.children.find(child=>child.isMesh&&!child.userData?.noOutline);
+const flowerCards=firstTree.getObjectByName('wilderness-blossom-sprigs');
+assert(visibleStem.layers.isEnabled(1),'the real shell-outlines helper includes volumetric bark');
+assert(!flowerCards.layers.isEnabled(1),'flat alpha-cutout blossom cards are not inked as black rectangles');
+assert.equal(window.AreaFootprintBlockers.blocksBox(activeZone,10.5,10.5,0),true,'the amber blossom trunk blocks movement');
+assert.equal(window.AreaFootprintBlockers.blocksBox(activeZone,16.5,10.5,.1),true,'the rose blossom trunk blocks movement');
+assert.equal(window.AreaFootprintBlockers.blocksBox(activeZone,11.5,10.5,.1),false,'open ground beside blossom branches remains traversable');
+assert.equal(window.AreaFootprintBlockers.blocksBox(activeZone,10.5,10.5,0,1e4),false,'projectiles above the tree remain unobstructed');
+assert.equal(window.AreaFootprintBlockers.blocksBox('map_western_slope',10.5,10.5,0),false,'trunks are scoped to the active zone');
+const firstProviderCount=window.AreaFootprintBlockers.providerIds().length;
+hunt.update();
+assert.equal(window.AreaFootprintBlockers.providerIds().length,firstProviderCount,'steady-state festival ticks do not register duplicate blockers');
+assert.equal(hunt.debugSnapshot().treeTrunkCollision.count,2,'mobile diagnostics report both actual blossom tree obstacles');
+activeZone='map_northern_cliffs';
+layouts.set(activeZone,{localeInstances:[{localeId:'locale_five_blossoms_cyan',objects:[{x:4,y:6,key:'blossom-tree'}]}]});
+hunt.update();
+assert.equal(window.AreaFootprintBlockers.blocksBox(activeZone,4.5,6.5,0),true,'changing zone installs the new tree trunk');
+assert.equal(window.AreaFootprintBlockers.blocksBox(activeZone,10.5,10.5,0),false,'old zone trunks cannot persist at a reused location');
+assert.equal(cullables.length,1,'old zone tree cull entries are discarded when foliage is replaced');
+activeZone='map_farm';
+hunt.update();
+assert.equal(window.AreaFootprintBlockers.providerIds().includes(trunkProvider),false,'leaving wilderness unregisters all blossom colliders');
+assert.equal(hunt.debugSnapshot().treeTrunkCollision.registered,false,'mobile diagnostics reveal a cleaned-up collision provider');
+assert.equal(cullables.length,0,'leaving wilderness clears old zone cull entries');
+
 THREE.TextureLoader.prototype.load=priorLoad;
 console.log('ok - visible native blossoms and capped, cull-aware, scheduled, teardown-safe falling petals');
