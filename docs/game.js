@@ -17817,6 +17817,7 @@
       }
 
       function cycleActiveInventoryItem(delta) {
+        releaseManualClothingForEquipmentSwitch(); // Item wheel selection replaces any held Pack garment.
         window.FestivalSystem?.discardFestivalBowl?.('selected-another-item'); // A bowl is a temporary held item, not part of the ordinary inventory carousel.
         const stacks = getInventoryStackItems();
         if (stacks.length === 0) { activeItemIndex = 0; return null; }
@@ -17838,6 +17839,12 @@
       let manualHeldClothingVisual = null; // Cached presentation for the precise Pack garment in the player's hands; avoids per-frame outfit lookup/composition.
       function getVisibleInventoryItem() {
         return manualHeldClothingVisual || getActiveInventoryItem(); // Both gifting and the held-item renderer use the same visual identity.
+      }
+      function releaseManualClothingForEquipmentSwitch() {
+        if (manualHeldItem?.kind !== 'clothing') return false;
+        manualHeldItem = null;
+        manualHeldClothingVisual = null; // Replacing/stowing the garment releases both selection and visible pose without per-frame scans.
+        return true;
       }
       function setManualHeldItem(item) {
         if (item?.kind === 'clothing' && packClothing.some(c => c.uid === item.uid && c.cursed)) {
@@ -18158,6 +18165,7 @@
             mkBtn('🤲 Hold', 'equip', () => {
               window.CookingSystem?.setHeldQuality?.(key, stack?.stars);
               const index = getInventoryStackItems().findIndex(item => item.key === key);
+              releaseManualClothingForEquipmentSwitch(); // A new Pack item replaces any garment in hand.
               if (index >= 0) activeItemIndex = index;
               window.AdventuringTools?.stow?.();
               heldMode = 'item';
@@ -26990,6 +26998,7 @@
 
       function setActiveTool(tool, opts = {}) {
         if (!toolActions[tool]) return;
+        releaseManualClothingForEquipmentSwitch(); // Tool and weapon selection relinquish an explicit clothing Hold.
         if (activeTool === 'adventuring' && tool !== 'adventuring') {
           if (pendingAction?.tool === 'adventuring') pendingAction = null;
           if (combatSwingAnim && toolSwingT > 0) {
@@ -27052,7 +27061,8 @@
       // gear slots. The remembered activeTool/activeItemIndex are restored by
       // the next tool, item, or weapon selection.
       function putAwayHeldEquipment(opts = {}) {
-        if (heldMode === 'none') return;
+        const clearedClothing = releaseManualClothingForEquipmentSwitch(); // Everything stowed must clear the garment itself, not only its Gift button.
+        if (heldMode === 'none') { if (clearedClothing) refreshActionBar(); return; }
         heldMode = 'none';
         activeAction = 'none';
         actionHeldDown = false;
@@ -31663,7 +31673,7 @@
           disposeHeldItemPlaneMesh(_heldItemPlane,heldItemHolder);
           _heldItemPlane=null;_heldItemKey=null;_heldItemAppearanceSignature=null;heldItemHolder.visible=false;
         },
-        equipFestivalBowl: () => { window.AdventuringTools?.stow?.(); heldMode = 'item'; updateHeldItemHolder(0); refreshActionBar(); }, // Reuses actual held sprite/hand pose with no physical inventory entry.
+        equipFestivalBowl: () => { releaseManualClothingForEquipmentSwitch(); window.AdventuringTools?.stow?.(); heldMode = 'item'; updateHeldItemHolder(0); refreshActionBar(); }, // Reuses actual held sprite/hand pose with no physical inventory entry.
         playFestivalBowlDrink: onBite => {
           if(!sitInteraction || sitInteraction.phase !== 'active' || heldMode !== 'item') return false;
           updateHeldItemHolder(0);
@@ -32044,12 +32054,12 @@
         player,
         getInventoryStackItems,
         getActiveItemIndex: () => activeItemIndex,
-        setActiveItemIndex: (v) => { activeItemIndex = v; },
+        setActiveItemIndex: (v) => { releaseManualClothingForEquipmentSwitch(); activeItemIndex = v; }, // The item arch replaces a Pack garment.
         ITEM_DEFS,
         applyItemSpriteIcon,
         clearItemSpriteIcon,
         getHeldMode: () => heldMode,
-        setHeldMode: (v) => { if(v !== 'tool') window.AdventuringTools?.stow?.(); heldMode = v; },
+        setHeldMode: (v) => { if (v !== 'item') releaseManualClothingForEquipmentSwitch(); if(v !== 'tool') window.AdventuringTools?.stow?.(); heldMode = v; },
         getLastHeldFarmTool: () => lastHeldFarmTool,
         setLastHeldFarmTool: (v) => { lastHeldFarmTool = v; },
         setActiveTool,
