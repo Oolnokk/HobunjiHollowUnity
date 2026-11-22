@@ -45,7 +45,13 @@
     return (normalizeMask(input)?.runs || []).reduce((total, [, length]) => total + length, 0);
   }
 
-  function paintMask(input, beardPixels, x, y, radius, erase = false, previous = null) {
+  function alphaFloor(value, fallback = 8) {
+    const n = Number(value); // Shared configurable paintability threshold; 128 is 50% of 8-bit alpha.
+    return Number.isFinite(n) ? Math.max(1, Math.min(255, Math.round(n))) : fallback;
+  }
+
+  function paintMask(input, beardPixels, x, y, radius, erase = false, previous = null, minimumAlpha = 8) {
+    const minimum = alphaFloor(minimumAlpha); // Applied only to newly painted pixels; erasing always works on saved mask pixels.
     const pixels = decodeMask(input);
     if (!beardPixels || beardPixels.length !== PIXELS * 4) return encodeMask(pixels);
     const toPoint = (px, py) => ({
@@ -66,7 +72,7 @@
       const t = distance2 ? Math.max(0, Math.min(1, (vx * dx + vy * dy) / distance2)) : 0;
       if ((vx - t * dx) ** 2 + (vy - t * dy) ** 2 > brush * brush) continue;
       const i = py * SIZE + px;
-      if (erase || beardPixels[i * 4 + 3] >= 8) pixels[i] = erase ? 0 : 1;
+      if (erase || beardPixels[i * 4 + 3] >= minimum) pixels[i] = erase ? 0 : 1;
     }
     return encodeMask(pixels);
   }
@@ -100,7 +106,116 @@
     return {cutPixels: countMask(mask), applied: true};
   }
 
+  function normalizeRoots(input) {
+    const result = []; // Compact authored tuft-corner pins, in the same portrait pixels as the mask.
+    if (!Array.isArray(input)) return result;
+    for (const raw of input.slice(0, 24)) {
+      if (!raw || !Number.isFinite(Number(raw.x)) || !Number.isFinite(Number(raw.y))) continue;
+      const point = {x: Math.max(0, Math.min(SIZE - .001, Number(raw.x))),
+        y: Math.max(0, Math.min(SIZE - .001, Number(raw.y)))};
+      if (result.some(other => Math.hypot(other.x - point.x, other.y - point.y) < 1)) continue;
+      result.push(point);
+      if (result.length >= 12) break; // Prevent accidental hundreds of deformers from paint-drag gestures.
+    }
+    return result;
+  }
+
+  function openingSeed(alpha, alphaLimit = 64) {
+    // Search a central face region; never select the outer edge of the hood
+    // as the "inner ring". Interior pixels must be transparent in the HOOD art.
+    const cx = SIZE * .5, cy = SIZE * .47;
+    let nearest = null, best = Infinity;
+    for (let y = 42; y <= 132; y++) for (let x = 55; x <= 145; x++) {
+      if (alpha[(y * SIZE + x) * 4 + 3] >= alphaLimit) continue;
+      const dist2 = (x - cx) ** 2 + (y - cy) ** 2;
+      if (dist2 < best) {best = dist2; nearest = {x:x+.5,y:y+.5};}
+    }
+    return nearest;
+  }
+
+  function ringEdgeOnRay(alpha, center, root, alphaLimit = 64) {
+    const dx = root.x - center.x, dy = root.y - center.y;
+    const distance = Math.hypot(dx, dy);
+    if (distance < 2) return null;
+    const stepX = dx / distance, stepY = dy / distance;
+    // The FIRST transition from central transparency to opaque hood is the
+    // inner edge. Searching outside-in would mistakenly stretch the outer rim.
+    for (let d = .5; d < Math.min(SIZE, distance + 1); d += .5) {
+      const x = Math.floor(center.x + stepX * d), y = Math.floor(center.y + stepY * d);
+      if (x < 0 || y < 0 || x >= SIZE || y >= SIZE) break;
+      if (alpha[(y * SIZE + x) * 4 + 3] >= alphaLimit)
+        return {x:x+.5,y:y+.5,ringDistance:d};
+    }
+    return null;
+  }
+
+  function planTuftStretch(hoodPixels, inputRoots, options = {}) {
+    const roots = normalizeRoots(inputRoots);
+    const maxStretch = Math.max(2, Math.min(64, Number(options.maxStretch) || 36));
+    const alphaLimit = alphaFloor(options.hoodAlphaLimit, 64);
+    const center = options.openingCenter && Number.isFinite(options.openingCenter.x)
+      && Number.isFinite(options.openingCenter.y)
+      ? options.openingCenter : openingSeed(hoodPixels, alphaLimit);
+    const moves = [];
+    const diagnostics = {requested:roots.length,stretched:0,insideRing:0,tooFar:0,
+      missingRing:0,openingCenter:center,maxStretch,moves};
+    if (!center) {diagnostics.missingRing=roots.length;return diagnostics;}
+    for (const root of roots) {
+      const edge = ringEdgeOnRay(hoodPixels, center, root, alphaLimit);
+      if (!edge) {diagnostics.missingRing++;continue;}
+      const fromCenter = Math.hypot(root.x-center.x,root.y-center.y);
+      const delta = {x:root.x-edge.x,y:root.y-edge.y};
+      const length = Math.hypot(delta.x,delta.y);
+      if (fromCenter <= edge.ringDistance + .75 || length <= .75) {
+        diagnostics.insideRing++;continue; // The tuft is already in the hood's opening.
+      }
+      if (length > maxStretch) {diagnostics.tooFar++;continue;} // Never create huge, implausible distortions.
+      const radius = Math.min(85, Math.max(20, length * 2.5 + 12));
+      moves.push({from:edge,to:root,delta,radius});
+      diagnostics.stretched++;
+    }
+    return diagnostics;
+  }
+
+  function warpForRoot(image, move) {
+    const {data,width,height} = image;
+    const original = new Uint8ClampedArray(data); // Read-only source for this root; avoid sequential pixel feedback.
+    const {to,delta,radius} = move;
+    const minX=Math.max(0,Math.floor(to.x-radius)),maxX=Math.min(width-1,Math.ceil(to.x+radius));
+    const minY=Math.max(0,Math.floor(to.y-radius)),maxY=Math.min(height-1,Math.ceil(to.y+radius));
+    const r2=radius*radius;
+    for(let y=minY;y<=maxY;y++)for(let x=minX;x<=maxX;x++){
+      const dist2=(x+.5-to.x)**2+(y+.5-to.y)**2;
+      if(dist2>=r2)continue;
+      const t=1-dist2/r2;
+      const weight=t*t; // Smooth, compact falloff: source ring exactly reaches tuft at t=1.
+      const sx=Math.max(0,Math.min(width-1,Math.round(x-delta.x*weight)));
+      const sy=Math.max(0,Math.min(height-1,Math.round(y-delta.y*weight)));
+      const src=(sy*width+sx)*4,dst=(y*width+x)*4;
+      data[dst]=original[src];data[dst+1]=original[src+1];
+      data[dst+2]=original[src+2];data[dst+3]=original[src+3];
+    }
+  }
+
+  function stretchHoodToRoots(hoodCanvas, inputRoots, options = {}) {
+    const roots=normalizeRoots(inputRoots);
+    const empty={requested:roots.length,stretched:0,insideRing:0,tooFar:0,
+      missingRing:0,moves:[],applied:false};
+    if (!hoodCanvas || !roots.length) return empty;
+    try {
+      const ctx=hoodCanvas.getContext('2d',{willReadFrequently:true});
+      if(!ctx)return empty;
+      const image=ctx.getImageData(0,0,SIZE,SIZE);
+      const plan=planTuftStretch(image.data,roots,options);
+      if(!plan.moves.length)return {...plan,applied:false};
+      for(const move of plan.moves)warpForRoot(image,move);
+      ctx.putImageData(image,0,0);
+      return {...plan,applied:true}; // Only front hood is modified; rear cloth and beard stay untouched.
+    }catch(error){return {...empty,error:String(error?.message||error)};}
+  }
+
   window.PortraitBeardHoodCutout = Object.freeze({
-    SIZE, normalizeMask, decodeMask, encodeMask, countMask, paintMask, applyToHood,
+    SIZE, normalizeMask, decodeMask, encodeMask, countMask, alphaFloor, paintMask,
+    normalizeRoots, planTuftStretch, stretchHoodToRoots, applyToHood,
   });
 })();
