@@ -91,6 +91,7 @@
     }
 
     settling = true;
+    let committed = null; // Exposes a successful atomic payment even if a later UI/receipt refresh fails.
     try {
       // Flush other gameplay inventory changes BEFORE the transactional write.
       // Removing animals first, then persisting payment, previously introduced a
@@ -107,6 +108,7 @@
         return { sold: 0, earned: 0 };
       }
       if (!commit.sold.length) return { sold: 0, earned: 0 };
+      committed = { sold: commit.sold.length, earned: commit.earned }; // The world write is already durable; never retry paid sales after UI exceptions.
 
       deps.inventory.gold = commit.currentGold; // Synchronizes only the active member; offline sellers were credited directly in the world save.
       window.FarmPanel?.onAnimalSalesCollected?.(commit.sold.map(animal => animal.id)); // Release the sold world meshes without rewriting the already-committed roster.
@@ -117,6 +119,11 @@
       if (Array.isArray(log)) {
         log.unshift({ type: 'sale', text: 'Day ' + today() + ' animal collection — ' + names.join(', ') + ' = ' + commit.earned + 'g (' + reason + ')' });
         log.length = Math.min(log.length, 60);
+        try {
+          if (deps.saveMemberWorldData() === false) throw new Error('receipt save rejected');
+        } catch (error) {
+          window.__farmLog?.('Animal sale payment committed but receipt save failed: ' + String(error?.message || error), 'livestock'); // The atomic wallet payout is already safe.
+        }
       }
       const amount = deps.spGold?.querySelector?.('#spGoldAmount');
       if (amount) amount.textContent = deps.inventory.gold; // Refresh gold without removing the icon/suffix.
@@ -124,11 +131,11 @@
       window.FarmPanel?.render?.();
       deps.showToast?.('🐾 Animal sale collected: ' + names.length + ' animal(s), ' + commit.earned + 'g credited', true);
       lastAction = 'Collected ' + names.length + ' animals for ' + commit.earned + 'g (' + reason + ').';
-      return { sold: names.length, earned: commit.earned };
+      return committed;
     } catch (error) {
-      lastAction = 'Animal sale committed or deferred with a UI error: ' + String(error?.message || error);
+      lastAction = (committed ? 'Animal sale payment committed; UI refresh failed: ' : 'Animal sale collection deferred: ') + String(error?.message || error);
       window.__farmLog?.(lastAction, 'livestock'); // In-game diagnostics survive absent browser DevTools.
-      return { sold: 0, earned: 0 };
+      return committed || { sold: 0, earned: 0 };
     } finally {
       settling = false;
     }
