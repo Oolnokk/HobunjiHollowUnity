@@ -74,7 +74,7 @@
       profile.anatomy ||= {};
       // Retain donor size controls; fixed per-axis authoring cancels only the
       // extremities' inherited body shrink, without moving their anchors.
-      for (const key of ['rigScale', 'rigScaleX', 'rigScaleY', 'headScale', 'headOffsetY']) delete profile.anatomy[key];
+      for (const key of ['rigScale', 'rigScaleX', 'rigScaleY', 'legLengthScale', 'headScale', 'headOffsetY']) delete profile.anatomy[key]; // legLengthScale too: never inherit the Tletingan's seeded leg length.
       profile.anatomy.handScaleAxes = clone(HAND_SCALE_AXES);
       profile.anatomy.footScaleAxes = clone(PART_SCALE_AXES);
       characters[`${ID}::${gender}`] = profile;

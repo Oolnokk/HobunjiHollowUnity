@@ -73,7 +73,7 @@ const w = { // Minimum donor registries for the same browser inheritance bridge.
     assets: { pngPlaneAvatar: { behindView: { headUrls: { tletingan: { male: 'back' } } }, proceduralFeet: { species: { tletingan: { glb: 'sloth.glb' } }, footScale: { tletingan: { male: 1 } } } } },
     portrait: { armOnlyOpacityMask: { profiles: {} } },
   } },
-  HOBUNJI_ATTACHMENT_RIG_PROFILES: { characters: { 'tletingan::male': { species: 'tletingan', gender: 'male', anatomy: { rigScaleX: 2, handScale: .9, footScale: 1 } } } },
+  HOBUNJI_ATTACHMENT_RIG_PROFILES: { characters: { 'tletingan::male': { species: 'tletingan', gender: 'male', anatomy: { rigScaleX: 2, legLengthScale: 0.5, handScale: .9, footScale: 1 } } } },
   HobunjiHandModelProfiles: { data: { speciesModels: { tletingan: 'sloth' } }, mutate(fn) { fn(this.data); } },
   ConditionRegistry: { PLAYER_SPECIES: ['tletingan'] },
   _getMouthSpriteUrl(_expression, id) { return id; },
@@ -98,6 +98,7 @@ assert.equal(w.SCRATCHBONES_CONFIG.game.appearanceEditor.species.longoran.parent
 assert.equal(w.SCRATCHBONES_CONFIG.game.assets.pngPlaneAvatar.behindView.headUrls.longoran.male, 'back');
 assert.equal(w.SCRATCHBONES_CONFIG.game.assets.pngPlaneAvatar.proceduralFeet.species.longoran.glb, 'sloth.glb');
 assert.equal(w.HOBUNJI_ATTACHMENT_RIG_PROFILES.characters['longoran::male'].anatomy.rigScaleX, undefined);
+assert.equal(w.HOBUNJI_ATTACHMENT_RIG_PROFILES.characters['longoran::male'].anatomy.legLengthScale, undefined, 'a seeded Tletingan leg length must not override the lanky Longoran default');
 assert.deepEqual(JSON.parse(JSON.stringify(w.HOBUNJI_ATTACHMENT_RIG_PROFILES.characters['longoran::male'].anatomy.handScaleAxes)), { x: 0.72, y: 1, z: 0.8 }, 'lanky Longoran hands are thinner but keep their length (y)');
 assert.deepEqual(JSON.parse(JSON.stringify(w.HOBUNJI_ATTACHMENT_RIG_PROFILES.characters['longoran::male'].anatomy.footScaleAxes)), { x: 0.7, y: 0.85, z: 1 }, 'lanky Longoran feet are thinner but keep their length (z)');
 assert(w.ConditionRegistry.PLAYER_SPECIES.includes('longoran'));

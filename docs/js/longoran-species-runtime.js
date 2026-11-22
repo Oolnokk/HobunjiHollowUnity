@@ -192,7 +192,7 @@
       profile.anatomy ||= {};
       // Leave body scale to the canonical Longoran defaults and let hands/feet
       // grow along with the whole body, unlike the deliberately smaller Nuhongan.
-      for (const key of ['rigScale', 'rigScaleX', 'rigScaleY', 'headScale', 'headOffsetY', 'handScaleAxes', 'footScaleAxes']) delete profile.anatomy[key];
+      for (const key of ['rigScale', 'rigScaleX', 'rigScaleY', 'legLengthScale', 'headScale', 'headOffsetY', 'handScaleAxes', 'footScaleAxes']) delete profile.anatomy[key]; // legLengthScale too: a seeded Tletingan leg length must not override the Longoran default.
       const thinHands = window.HobunjiCharacterRigScaleDefaults?.longoranHandScaleAxes; // Lanky: thinner hands/feet at full length.
       const thinFeet = window.HobunjiCharacterRigScaleDefaults?.longoranFootScaleAxes;
       if (thinHands) profile.anatomy.handScaleAxes = clone(thinHands);

@@ -65,7 +65,7 @@ const runtimeWindow = { // Models the real inheritance registries closely enough
   ConditionRegistry: { PLAYER_SPECIES: ['mao-ao', 'tletingan', 'kenkari', 'engh-sho', 'rakakoan'] },
   HOBUNJI_ATTACHMENT_RIG_PROFILES: {
     characters: {
-      'tletingan::male': { species: 'tletingan', gender: 'male', anchors: { hand: 1 }, anatomy: { rigScaleX: 99, rigScaleY: 99, headScale: 99, headOffsetY: 99, handScale: 0.9, footScale: 1 } },
+      'tletingan::male': { species: 'tletingan', gender: 'male', anchors: { hand: 1 }, anatomy: { rigScaleX: 99, rigScaleY: 99, legLengthScale: 99, headScale: 99, headOffsetY: 99, handScale: 0.9, footScale: 1 } },
       'tletingan::female': { species: 'tletingan', gender: 'female', anchors: { hand: 2 }, anatomy: { rigScaleX: 98, rigScaleY: 98, headScale: 98, headOffsetY: 98, handScale: 0.925, footScale: 1.025 } },
     },
   },
@@ -156,6 +156,7 @@ for (const gender of ['male', 'female']) {
   assert.equal(profile.anatomy.rigScaleY, undefined);
   assert.equal(profile.anatomy.headScale, undefined);
   assert.equal(profile.anatomy.headOffsetY, undefined);
+  assert.equal(profile.anatomy.legLengthScale, undefined, 'Nuhongan never inherits the Tletingan leg length');
   assert(Number.isFinite(profile.anatomy.handScale), `${gender} Nuhongan must retain Tletingan handScale`);
   assert(Number.isFinite(profile.anatomy.footScale), `${gender} Nuhongan must retain Tletingan footScale`);
   assert.equal(JSON.stringify(profile.anatomy.footScaleAxes), JSON.stringify({ x: 31 / 24, y: 31 / 24, z: 31 / 24 }));
