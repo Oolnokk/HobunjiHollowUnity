@@ -16,6 +16,10 @@
   let lastSampleAt = -Infinity; // Throttles posterior profile lookup while preserving the live character height.
   let placement = 'not ready'; // Mobile Pixel Probe reports actual positioning provenance.
   let display = null; // Shared stow display consumes the same authored idle-scale multiplier used by the held torch.
+  let ownerBody = null; // Current character owner; portrait children can change without rebuilding this body.
+  let portraitMount = null; // Active portrait parent; stowed gear follows the same independent portrait facing as back Burdens.
+  let lastPoseKey = null; // Skip costly world-space reparenting when the authored/anatomical attachment has not changed.
+  let posteriorPosition = null; // Body-local anatomical coordinate retained for mobile diagnosis after portrait reparenting.
 
   function playerBody() {
     return global.PlayerBodyTransformComposer?.getPlayerMesh?.()
@@ -39,6 +43,21 @@
     root = preview.root;
     art = preview.art;
     return root;
+  }
+  function belongsToBody(node, body) {
+    for (let cursor = node; cursor; cursor = cursor.parent) if (cursor === body) return true;
+    return false; // Never attach a torch to an avatar retained from a previous area/player rebuild.
+  }
+  function currentPortrait(body) {
+    const avatar = global.WorldPortraitLife?.getPlayerAvatar?.()?.group;
+    if (!avatar || !belongsToBody(avatar, body)) return body;
+    const rigged = avatar.userData?.neckRig?.skinnedPlane; // Back-carried Burdens follow this active skinned portrait rather than a stale legacy mesh.
+    if (rigged?.parent && belongsToBody(rigged, avatar)) return rigged;
+    let rigid = null;
+    avatar.traverse?.(mesh => {
+      if (!rigid && (mesh.name === 'player_avatar_front_plane' || mesh.name === 'npc_avatar_front_plane')) rigid = mesh;
+    });
+    return rigid || avatar; // A loading or plain rigid avatar still follows its parent group's facing.
   }
   function sourceImageDimensions(image) {
     return { width:Number(image?.naturalWidth || image?.width) || 0,
@@ -105,24 +124,38 @@
       global.__farmLog?.('[stowed torch] ' + fireError, 'warn');
     });
   }
-  function positionAtPosterior(body, timestamp) {
-    if (timestamp - lastSampleAt < SAMPLE_INTERVAL_MS) return;
+  function positionAtPosterior(body, timestamp, target) {
+    if (timestamp - lastSampleAt < SAMPLE_INTERVAL_MS && root.parent === target) return;
     lastSampleAt = timestamp;
-    const height = Number(body.userData?.portraitModelHeight) || .9; // Scale the small rear clearance with the avatar.
+    const height = Number(body.userData?.portraitModelHeight) || .9; // Small rear clearance scales with the current character.
     const species = String(body.userData?.speciesId || body.userData?.species || 'mao-ao').toLowerCase();
     const gender = String(body.userData?.gender || 'male').toLowerCase();
     const rig = global.HobunjiBeltStowRig;
     const profile = rig?.characterProfile?.(global.HOBUNJI_ATTACHMENT_RIG_PROFILES, species, gender);
-    const origin = profile?.anchors?.posterior?.position || {}; // Reuse the anatomical posterior XYZ used by carried Burdens.
-    const liveY = Number(global.PlayerBodyTransformComposer?.getPosteriorY?.()); // Species/age/leg-scaled live posterior height.
-    root.position.set(Number(origin.x) || 0,
-      Number.isFinite(liveY) && liveY !== 0 ? liveY : Number(origin.y) || .5 * height,
-      (Number(origin.z) || 0) - .04 * height); // Negative Z is behind the front PNG in the avatar's local space.
-    root.rotation.set(0, 0, -Math.PI / 4); // 45-degree shoulder-to-hip diagonal, pivoting around the grip-to-emitter midpoint.
-    root.scale.set(1, 1, 1);
-    placement = 'anatomical posterior, behind portrait';
+    const origin = profile?.anchors?.posterior?.position || {}; // Same anatomical posterior source used by carried Burdens.
+    const liveY = Number(global.PlayerBodyTransformComposer?.getPosteriorY?.());
+    const point = {
+      x: Number(origin.x) || 0,
+      y: Number.isFinite(liveY) && liveY !== 0 ? liveY : Number(origin.y) || .5 * height,
+      z: (Number(origin.z) || 0) - .04 * height,
+    }; // Body-local base coordinate, before portrait yaw and authoring overrides.
     const configured = rig?.configuredSnapshot?.(global.HOBUNJI_ATTACHMENT_RIG_PROFILES, species, gender);
-    if (configured && rig.placeRoot?.(root, configured)) placement = 'authored beltStow override'; // Rig Coordinates remains an explicit per-species override.
+    const pose = configured || {
+      position:point, rotationDeg:{x:0,y:0,z:-45}, scale:{x:1,y:1,z:1},
+    }; // A profile's explicit stow coordinates retain precedence over the natural posterior.
+    const key = ['position','rotationDeg','scale'].flatMap(group =>
+      ['x','y','z'].map(axis => Number(pose[group]?.[axis]) || 0)).join('|');
+    posteriorPosition = point;
+    if (root.parent === target && key === lastPoseKey) return; // No matrix bake or allocation for ordinary animation frames.
+    if (root.parent !== body) body.add(root); // Compute the physical position in the authoritative posterior frame first.
+    rig?.placeRoot?.(root, pose);
+    placement = configured ? 'authored beltStow override' : 'anatomical posterior, behind portrait';
+    portraitMount = null;
+    if (target && target !== body && typeof target.attach === 'function') {
+      target.attach(root); // Preserve body-space world pose once, then inherit the portrait's independent yaw like back Burdens.
+      portraitMount = target;
+    }
+    lastPoseKey = key;
   }
   function sync(frame = {}) {
     const torch = global.AdventuringTools;
@@ -131,11 +164,15 @@
     if (!torch || !body || !global.THREE) {
       if (root) root.visible = false;
       retireFire(); // A temporarily missing avatar cannot retain old lit motes in the previous scene.
+      ownerBody = null; portraitMount = null; lastPoseKey = null; lastSampleAt = -Infinity;
       return;
     }
     const THREE = global.THREE;
     if (!ensureRoot(THREE)) return;
-    if (root.parent !== body) { retireFire(); body.add(root); lastSampleAt = -Infinity; } // Rebuilds immediately resample the posterior; no stale particles are carried across actors.
+    if (ownerBody !== body) {
+      retireFire(); body.add(root); ownerBody = body;
+      portraitMount = null; lastPoseKey = null; lastSampleAt = -Infinity;
+    } // Rebuilds retire the old character's motes and force a new posterior/portrait attachment.
     const burning = torch.isLit(); // Always query the authoritative 30-second flame clock before showing a belt copy.
     const stowed = burning && !torch.isHoldingTorch();
     root.visible = stowed;
@@ -154,7 +191,7 @@
     const idleScale = Number(global.WeaponToolStances?.poses?.torchHold?.scale ?? global.HeldActionAnimations?.torchIdle?.poses?.neutral?.scale) || 1; // Same live Neutral multiplier as the held torch, including editor overrides.
     display?.setIdleScale?.(idleScale); // Both ends remain equidistant from the actual stowed rotation midpoint.
     const timestamp = Number.isFinite(Number(frame.timestamp)) ? Number(frame.timestamp) : performance.now();
-    positionAtPosterior(body, timestamp);
+    positionAtPosterior(body, timestamp, currentPortrait(body));
     if (!fireState) return; // Original PNG or shared engine is not ready; never substitute a different flame style.
     const delta = lastFireAt === null ? 0 : Math.max(0, Math.min(.05, (timestamp - lastFireAt) / 1000)); // Prevent resumed-tab particle bursts.
     lastFireAt = timestamp;
@@ -168,7 +205,8 @@
     get debug() {
       return {
         visible: !!root?.visible && !!root.parent,
-        attachedToPlayer: !!root && root.parent === playerBody(),
+        attachedToPlayer: !!root && ownerBody === playerBody() && belongsToBody(root, ownerBody),
+        attachedToPortrait: !!portraitMount && root?.parent === portraitMount,
         fireVisible: !!root?.visible && !!fireState?.fireEmitters?.length,
         fireEmitters: fireState?.fireEmitters?.length || 0,
         fireParticles: fireState?.fireEmitters?.reduce((count, fx) => count + fx.particles.length, 0) || 0,
@@ -176,8 +214,9 @@
         fireError,
         pivot: 'grip-emitter midpoint',
         emitterSourcePoint: display?.emitterSourcePoint || null, // Original-PNG normalized emission marker, useful for phone-only pivot diagnosis.
-        posteriorPosition: root?.position ? { x:root.position.x, y:root.position.y, z:root.position.z } : null, // Author override and live anatomy are visible on Pixel Probe.
-        stowAngleDeg: root ? Math.round(root.rotation.z * 18000 / Math.PI) / 100 : null,
+        posteriorPosition, // Anatomical body-local anchor before the preserved-world portrait transform.
+        mountedLocalPosition: root?.position ? { x:root.position.x, y:root.position.y, z:root.position.z } : null, // Real after-reparent coordinates for diagnosis.
+        stowAngleDeg: root && !portraitMount ? Math.round(root.rotation.z * 18000 / Math.PI) / 100 : null, // Local Euler is no longer a world angle after portrait reparenting.
         textureReady: !!art?.material?.map?.image,
         placement,
         idleScale: display?.idleScale || 1, // Mobile Pixel Probe compares belt sizing with the authored Neutral stance.
