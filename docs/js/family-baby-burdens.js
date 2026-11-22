@@ -77,12 +77,14 @@
   }
   function moveToWalker(entry) {
     const root = entry.walker?.root, burden = entry.burden;
-    if (!root?.parent || burden.carried || burden.flying) return;
-    if (burden.mapId !== entry.walker.area && entry.walker.area === currentArea()) {
-      burden.carried = true; // The common Burden mover requires a temporary carry claim for cross-map relocation.
-      window.Shattercasks?.transferCarriedBurdenToArea?.(entry.walker.area, burden);
-      burden.carried = false; // Real baby now follows the authoritative NPC/basket again.
-    }
+    if (!root?.parent || burden.flying || (burden.carried && entry.child.carryBy)) return;
+    if (burden.mapId !== entry.walker.area) {
+      // The real NPC can move through a portal before the player's scene switches.
+      // Treat the old area record as unavailable so the player cannot pick up an invisible duplicate.
+      burden.carried = true;
+      if (entry.walker.area === currentArea() && window.Shattercasks?.transferCarriedBurdenToArea?.(entry.walker.area, burden))
+        burden.carried = false; // The live NPC and the real physical burden now occupy the same active area.
+    } else burden.carried = false;
     if (burden.group.parent !== root.parent) root.parent.add(burden.group); // Do not reorder scene nodes every family tick.
     burden.group.position.copy(root.position);
     burden.group.rotation.set(0, 0, 0);
