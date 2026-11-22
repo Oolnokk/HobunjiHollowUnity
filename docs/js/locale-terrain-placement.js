@@ -23,6 +23,9 @@
     { dx: -1, dy: 0, facing: 'west' },
   ]);
 
+  const footprintPolicy = typeof module === 'object' && module.exports
+    ? require('./wilderness-object-footprints.js')
+    : globalThis.WildernessObjectFootprints; // Shared generated-object ownership removes every plateau/root overlay together.
   const WATER_TYPES = new Set(['river', 'stream', 'waterfall']);
   const CLEARABLE_GENERATED_TYPES = new Set([
     'copse', 'tree', 'fallenLog', 'stump', 'bush', 'fruitBush', 'mushroomPatch',
@@ -326,7 +329,7 @@
   function objectBlockingReason(tile) {
     const type = tileGeneratedType(tile); // Generated object type decides whether terrain-aware placement may clear the occupant.
     if (!type) return null;
-    if (CLEARABLE_GENERATED_TYPES.has(type)) return null;
+    if (CLEARABLE_GENERATED_TYPES.has(type)) return tileGeneratedId(tile) ? null : `unidentified generated ${type}`; // Never cover part of an object whose remaining footprint cannot be removed.
     if (HARD_BLOCKING_TYPES.has(type)) return `occupied by ${type}`;
     return `occupied by generated ${type}`;
   }
@@ -616,13 +619,7 @@
 
   function clearGeneratedObject(context, objectId) {
     if (!objectId) return;
-    for (const tile of Object.values(context.root.tiles || {})) {
-      if (tileGeneratedId(tile) !== objectId) continue;
-      delete tile.generatedObjectId;
-      delete tile.generatedObjectType;
-    }
-    if (Array.isArray(context.workspace.objects)) context.workspace.objects = context.workspace.objects.filter(object => object?.id !== objectId);
-    if (Array.isArray(context.workspace.furniture)) context.workspace.furniture = context.workspace.furniture.filter(object => object?.generatedObjectId !== objectId && object?.id !== objectId);
+    footprintPolicy.clearExportedObjects(context.workspace, [objectId]); // One identity clears all root/plateau tiles, visual metadata, and exported object records.
   }
 
   function clearNativeTreeCircle(context, col, row, radius) {
@@ -641,15 +638,7 @@
         cleared++;
       }
     }
-    if (removedIds.size) {
-      for (const tile of Object.values(context.root.tiles || {})) {
-        if (!removedIds.has(tileGeneratedId(tile))) continue;
-        if ((tile.type === 'shrub' && tile.floraKind === 'copse') || ['tree', 'copse'].includes(tileGeneratedType(tile))) tile.type = 'grass';
-        delete tile.floraKind; delete tile.generatedObjectId; delete tile.generatedObjectType;
-      }
-      if (Array.isArray(context.workspace.objects)) context.workspace.objects = context.workspace.objects.filter(entry => !removedIds.has(entry?.id));
-      if (Array.isArray(context.workspace.furniture)) context.workspace.furniture = context.workspace.furniture.filter(entry => !removedIds.has(entry?.generatedObjectId) && !removedIds.has(entry?.id));
-    }
+    if (removedIds.size) footprintPolicy.clearExportedObjects(context.workspace, removedIds); // Restore every tile of each canopy, including plateau copies outside the radius.
     return cleared;
   }
 
@@ -718,7 +707,7 @@
       const type = tileGeneratedType(tile);
       if (type && CLEARABLE_GENERATED_TYPES.has(type) && tileGeneratedId(tile)) ids.add(tileGeneratedId(tile));
     }
-    for (const id of ids) clearGeneratedObject(context, id);
+    if (ids.size) footprintPolicy.clearExportedObjects(context.workspace, ids); // Batch the root and child submap scan once per locale, not once per tree or rock.
     return [...ids];
   }
 
