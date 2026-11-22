@@ -6,14 +6,21 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs'); // Read the exact shipped author and gameplay modules.
 const vm = require('node:vm');
 const html = fs.readFileSync('docs/tools/animation-author/index.html', 'utf8');
+const visual = fs.readFileSync('docs/js/belt-stow-torch-display.js', 'utf8'); // Same art factory as gameplay, independent of rig profile persistence.
 const shared = fs.readFileSync('docs/js/belt-stow-rig.js', 'utf8');
 const ui = fs.readFileSync('docs/js/animation-author-belt-stow.js', 'utf8');
 const runtime = fs.readFileSync('docs/js/adventuring-torch-belt.js', 'utf8');
 const entry = fs.readFileSync('docs/index.html', 'utf8');
 const manifest = fs.readFileSync('docs/js/bootstrap/classic-groups/render.js', 'utf8');
-assert.match(html, /js\/belt-stow-rig\.js\?v=/, 'author loads the exact shared math/art module');
+assert.match(html, /js\/belt-stow-torch-display\.js\?v=/, 'author loads the shared torch art factory');
+assert.match(html, /js\/belt-stow-rig\.js\?v=/, 'author loads the shared rig coordinate and schema module');
+assert(html.indexOf('js/belt-stow-torch-display.js') < html.indexOf('js/belt-stow-rig.js'),
+  'author loads the art factory before the backward-compatible rig API');
 assert.match(html, /js\/animation-author-belt-stow\.js\?v=/, 'editor loads the independent UI module');
-assert.match(entry, /js\/belt-stow-rig\.js\?v=/, 'gameplay loads the shared module ahead of its belt renderer');
+assert.match(entry, /js\/belt-stow-torch-display\.js\?v=/, 'gameplay loads the independent sprite factory');
+assert.match(entry, /js\/belt-stow-rig\.js\?v=/, 'gameplay loads the rig schema and public compatibility API');
+assert(entry.indexOf('js/belt-stow-torch-display.js') < entry.indexOf('js/belt-stow-rig.js'),
+  'gameplay initializes art before the shared rig facade');
 assert.match(manifest, /js\/adventuring-torch-belt\.js\?v=/);
 assert.match(runtime, /configuredSnapshot/, 'the game consumes the authored beltStow profile');
 assert.match(ui, /maaBeltStowSection/, 'separate Rig Coordinates section exists');
@@ -34,10 +41,13 @@ class AxesHelper extends Group { constructor() { super();this.type='AxesHelper';
 const THREE = { Group, AxesHelper };
 const window = { HobunjiBeltStowRig:null };
 const sandbox=vm.createContext({window,performance:{now:()=>0}});
+vm.runInContext(visual,sandbox);
 vm.runInContext(shared,sandbox);
 vm.runInContext(ui,sandbox);
 const belt=window.HobunjiBeltStowRig;
 const editor=window.AnimationAuthorBeltStow;
+assert.equal(belt.TORCH_WIDTH, window.HobunjiBeltStowTorchDisplay.TORCH_WIDTH, 'rig retains stable old torch width API');
+assert.equal(belt.createTorchDisplay, belt.createTorchDisplay, 'rig retains existing display method');
 assert.equal(belt.defaultSnapshot(1.2).position.x,0);
 assert.equal(belt.defaultSnapshot(1.2).position.z,-.048);
 assert.equal(belt.defaultSnapshot(1.2).rotationDeg.z,-45);
