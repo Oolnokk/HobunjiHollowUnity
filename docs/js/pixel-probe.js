@@ -515,13 +515,37 @@
   // The same compositor now owns shoulder-pet pose ordering, temporary portrait
   // depth writes and owner front-art weapon stencil. The probe checks its
   // selected preset and actual material state alongside the physical attachment.
+  // Shared raycast ownership check for both shoulder pets and ground companions.
+  function _pixelProbeIsDescendant(object, ancestor) {
+    if (!ancestor) return false;
+    let node = object; // Walk the selected 3D object toward the creature's avatar group.
+    while (node) { if (node === ancestor) return true; node = node.parent; }
+    return false;
+  }
+
+  // Mobile tap diagnostics for the real ground companion head rig.
+  function _pixelProbeCompanionYawLines(hits) {
+    const objects = hits.map(hit => hit.object); // Use the probe's existing raycast, never a new scene scan.
+    for (const companion of deps.companionObjects || []) {
+      if (companion?.stableRole !== 'companion' || !companion.avatarRef?.group
+        || !objects.some(object => _pixelProbeIsDescendant(object, companion.avatarRef.group))) continue;
+      const avatar = companion.avatarRef; // Runtime rendered Nelk/animal rather than a species preview.
+      const head = avatar.headRig; // Current yaw and pitch state.
+      const geometry = avatar.frontPlane?.geometry?.userData || {}; // Existing neck hinge diagnostic.
+      const material = avatar.headMaterialResponse?.dump?.(); // Existing paint-independent yaw flag.
+      const hinge = geometry.hobunjiAnimalYawFoldPivotX; // Rendered X for baby and adult variants.
+      return [
+        '', '=== Animal companion head yaw ===',
+        `Companion: ${companion.creatureKey || 'unknown'} id=${companion.id || '-'} headRig=${head ? 'active' : 'missing'}`,
+        `Head: pitch=${Number(head?.appliedDeg || 0).toFixed(2)}° yaw=${Number(head?.currentYawDeg || 0).toFixed(2)}° target=${Number(head?.targetYawDeg || 0).toFixed(2)}°`,
+        `Yaw: mode=${head?.yawMode || 'legacy'} mask=${geometry.hobunjiAnimalYawMask || head?.yawMask || 'unknown'} neckX=${Number.isFinite(hinge) ? (hinge*100).toFixed(1)+'%' : '-'} materialYaw=${material?.maps?.yawUsesMaterialMaps === false ? 'off' : 'unknown'}`,
+      ];
+    }
+    return null;
+  }
+
   function _pixelProbeShoulderPetLines(hits) {
-    const isDescendant = (obj, ancestor) => {
-      if (!ancestor) return false;
-      let n = obj;
-      while (n) { if (n === ancestor) return true; n = n.parent; }
-      return false;
-    };
+    const isDescendant = _pixelProbeIsDescendant; // Use the same ancestry check for both creature roles.
     const currentArea = deps.getCurrentArea();
     const player = deps.player;
     let liveActivePet = null;
@@ -1583,6 +1607,8 @@
 
     const shoulderPetLines = _pixelProbeShoulderPetLines(hits);
     if (shoulderPetLines) lines.push(...shoulderPetLines);
+    const companionYawLines = _pixelProbeCompanionYawLines(hits); // Tap a ground Nelk to inspect its actual paper-fold state on mobile.
+    if (companionYawLines) lines.push(...companionYawLines);
 
     const npcSchedulingLines = _pixelProbeNpcSchedulingLines(hits);
     if (npcSchedulingLines) lines.push(...npcSchedulingLines);
