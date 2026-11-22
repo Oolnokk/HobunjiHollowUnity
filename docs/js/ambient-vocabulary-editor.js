@@ -136,6 +136,7 @@
     const query = String($('search').value || '').trim().toLocaleLowerCase();
     const options = [{ id: 'dictionary', name: 'Master dictionary' },
       ...Object.keys(cfg()?.families || {}).map(id => ({ id: 'family:' + id, name: id + ' family' })),
+      ...Object.keys(cfg()?.speakerGroups || {}).map(id => ({ id: 'voice:' + id, name: cfg().speakerGroups[id].label || id + ' regional voice' })), // Regional groups are independent of personality family tabs.
       ...model.npcs.map(npc => ({ id: 'npc:' + npc.id, name: npc.name || npc.id })),
     ].filter(item => (item.name + ' ' + item.id).toLocaleLowerCase().includes(query));
     $('list').innerHTML = options.map(item => '<div class="item' + (item.id === model.selected ? ' active' : '') +
@@ -327,6 +328,67 @@
       notify('Family style updated · regenerate character checkmarks only when desired');
     });
   }
+  function doorstepSpeech(id) {
+    const gifts = window.WEAPON_TRUST_VISIT_CONFIG?.gifts || []; // Live script data only: never duplicate a historical authored speech inside the vocabulary JSON.
+    return gifts.filter(gift => gift.npcId === id).map(gift => ({
+      title: gift.dialogueLabel || gift.id, id: gift.id,
+      lines: (Array.isArray(gift.dialogueLines) ? gift.dialogueLines
+        : (gift.dialogueTree?.nodes || []).filter(node => node.type === 'text').map(node => node.text)).filter(value => typeof value === 'string'),
+    })); // Full original authored lines, including Kzubug's branches and Pahu's phonetic spellings.
+  }
+  function doorstepSamplesHtml(id) {
+    const visits = doorstepSpeech(id);
+    if (!visits.length) return '<section class="card"><details><summary>Doorstep voice references</summary>' +
+      '<div class="muted">No authored weapon-trust doorstep voice is available for this NPC. Other visit providers may be dynamic; this editor does not invent a voice from them.</div></details></section>';
+    return '<section class="card"><details><summary>Authoritative doorstep speech · ' + visits.reduce((n, visit) => n + visit.lines.length, 0) +
+      ' lines</summary><div class="muted">Read-only excerpts loaded from the actual weapon-trust visit configuration. These are voice references, not dialogue to rewrite. Tap any line to preview how this NPC would phrase it in a different floating-speech context.</div>' +
+      '<div class="doorstep-lines">' + visits.flatMap(visit => visit.lines.map((line, index) =>
+        '<div class="doorstep-line"><div class="muted">' + safe(visit.title) + ' · line ' + (index + 1) + '</div>' +
+        safe(line) + '<div><button type="button" data-use-visit="' + safe(visit.id) + ':' + index + '">Use as preview</button></div></div>'
+      )).join('') + '</div></details></section>';
+  }
+  function groupView(id) {
+    const group = cfg()?.speakerGroups?.[id];
+    if (!group) return '<section class="card">Unknown voice group.</section>';
+    const preset = cfg()?.phoneticPresets?.[group.phoneticPreset];
+    return '<section class="card"><h2>' + safe(group.label || id) + '</h2>' +
+      '<div class="muted">Applies to ' + safe((group.speakerIds || []).join(', ') || group.idSuffix || 'unassigned') +
+      '. Separate from personality; only regional vocabulary and phonetic rules are inherited.</div>' +
+      '<label class="field">Enabled dialect tags (comma-separated)<input id="groupDialects" value="' + safe((group.dialects || []).join(', ')) +
+      '"></label>' + sliderHtml(rules().normalizeSliders({ ...rules().DEFAULT_SLIDERS, ...(group.sliders || {}) })) +
+      '<div class="muted">Changing a group default preserves NPC-specific manual synonym checkboxes and individual style overrides.</div></section>' +
+      (preset ? '<section class="card"><h3>Doorstep-derived phonetic rules · ' + safe(group.phoneticPreset) + '</h3>' +
+      '<div class="muted">One exact source word/phrase and target spelling per line, separated by |. Longest matches win. All replacements are limited to this assigned voice group.</div>' +
+      '<textarea id="phoneticPairs" spellcheck="false">' + safe(preset.rules.map(rule => rule.from + ' | ' + rule.to).join('\n')) + '</textarea>' +
+      '<div class="row"><button type="button" id="savePhonetics" class="good">Apply phonetic rules</button></div>' +
+      '<div class="muted">Original authoring: ' + safe(preset.source || 'unavailable') + '</div></section>' : '');
+  }
+  function wireGroup(id) {
+    const group = cfg().speakerGroups[id];
+    wireSliders((key, value) => {
+      group.sliders = { ...(group.sliders || {}), [key]: value }; // Group sliders are only deltas relative to each member's actual personality family.
+      notify('Updated ' + id + ' regional voice: export vocabulary JSON to save');
+    });
+    $('groupDialects').onchange = event => {
+      group.dialects = [...new Set(String(event.target.value).split(',').map(item => item.trim().toLowerCase()).filter(Boolean))]; // New dialect tags are matched against canonical dictionary entries.
+      notify('Changed enabled regional dialects for ' + id);
+    };
+    const preset = cfg()?.phoneticPresets?.[group.phoneticPreset];
+    if (preset && $('savePhonetics')) $('savePhonetics').onclick = () => {
+      const pairs = []; // Only validated bounded phrase pairs reach runtime; the source dialogue file remains read-only.
+      const seen = new Set();
+      for (const line of $('phoneticPairs').value.split(/\r?\n/).filter(line => line.trim())) {
+        const pipe = line.indexOf('|'), from = line.slice(0, pipe).trim(), to = line.slice(pipe + 1).trim();
+        if (pipe < 1 || !from || from.length > 80 || !to || to.length > 120 || /[{}<>|]/.test(from + to) || seen.has(from.toLowerCase())) {
+          notify('Invalid phonetic rule: ' + line.slice(0, 80) + ' · use source | replacement with no duplicates');
+          return;
+        }
+        pairs.push({ from, to }); seen.add(from.toLowerCase());
+      }
+      preset.rules = pairs; // Retains the same preset object, whose cached matcher is reconstructed after config import/game reload.
+      notify('Updated ' + pairs.length + ' phonetic rules for ' + id + ' · export to save');
+    };
+  }
   function characterView(id) {
     const sliders = slidersFor(id);
     const word = activeWord();
@@ -427,11 +489,13 @@
     const selected = model.selected;
     $('editor').innerHTML = toolbar() + (selected === 'dictionary' ? dictionaryView()
       : selected.startsWith('family:') ? familyView(selected.slice(7))
+      : selected.startsWith('voice:') ? groupView(selected.slice(6))
       : selected.startsWith('npc:') ? characterView(selected.slice(4))
       : '<section class="card">Select a word, personality or character.</section>');
     wireToolbar();
     if (selected === 'dictionary') wireDictionary();
     else if (selected.startsWith('family:')) wireFamily(selected.slice(7));
+    else if (selected.startsWith('voice:')) wireGroup(selected.slice(6));
     else if (selected.startsWith('npc:')) wireCharacter(selected.slice(4));
   }
   async function load() {
