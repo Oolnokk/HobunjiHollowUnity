@@ -166,6 +166,14 @@ nestListener({ type: 'nest_stolen', speciesKind: 'moot', itemKey: 'mootBaby',
 assert.equal(nestMoot.def.hostile, true, 'parental defensive profile is active before the predator arrives');
 R.update(nestMoot, 0.3, [nestMoot, wolf], [player], ctx);
 assert.equal(nestMoot.state, 'herd-panic', 'a predator outranks maternal player aggro');
+const panickingWhenStolen = animal('moot', 80, 0); // Another adult is already running away before the theft completes.
+R.update(panickingWhenStolen, 0.3, [panickingWhenStolen, wolf], [player], ctx);
+assert.equal(panickingWhenStolen.state, 'herd-panic');
+adults.add(panickingWhenStolen);
+nestListener({ type: 'nest_stolen', speciesKind: 'moot', itemKey: 'mootBaby',
+  x: 70, y: 0, areaId: ctx.zoneId, liveBirth: true });
+assert.equal(panickingWhenStolen.state, 'herd-panic', 'new theft never interrupts an existing escape');
+assert.equal(panickingWhenStolen.def.hostile, true, 'the adult still remembers to defend its young when the danger ends');
 W.ResourceSystem = { getAffliction: entity => entity === player ? 1 : 0 }; // Simulate an attractive scent-marked player near the nest.
 W.AnimalScentTargeting.prioritizeWild(nestMoot, [player], [], ctx.zoneId, () => true);
 assert.equal(nestMoot.state, 'herd-panic', 'scent cannot hijack predator flight');
