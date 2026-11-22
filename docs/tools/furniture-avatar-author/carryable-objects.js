@@ -62,6 +62,7 @@
     '<div class="section"><h2>Family baby grips</h2>',
     '<p class="muted">Author the actual baby carry profile using these same hand and anchor gizmos. The preview shows a 0.30-unit infant silhouette; all positions scale with the babys actual portrait. Furniture is preserved separately.</p>',
     '<div class="g2"><button type="button" id="carryBabyEdit">Edit baby grips</button><button type="button" id="carryBabyReturn">Return to furniture grips</button></div>',
+    '<button type="button" id="carryBabyRandom">Random Baby</button>',
     '<div class="g2"><button type="button" id="carryBabyApply">Apply baby grips on this device</button><button type="button" id="carryBabyExport">Export baby profile JSON</button></div>',
     '<label>Import baby profile JSON<input type="file" id="carryBabyImport" accept=".json,application/json"></label>',
     '<div class="pill" id="carryBabyStatus" role="status">Furniture carry mode selected.</div></div>',
@@ -118,6 +119,8 @@
   const el=id=>document.getElementById(id);
   const BABY_REFERENCE_WIDTH=.3, BABY_REFERENCE_HEIGHT=.3; // Authoring preview size for dimension-scaled infant grips.
   let editingBaby=false, savedFurnitureCarry=null, babyDraft=null; // Preserve ordinary furniture grips while baby guides are active.
+  let babyRenderTicket=0, babyPreviewRolls=0; // Async randomized child previews are invalidated on exit and rapid rerolls.
+  let babyPreviewStatus=''; // Mobile-visible result/error for the active randomized infant, never serialized into furniture.
   const babyReference=new THREE.Group(); // Non-exported, silhouette-only representation of the infant portrait plane.
   babyReference.name='baby_reference_only';
   const babyReferencePlane=new THREE.Mesh(new THREE.PlaneGeometry(BABY_REFERENCE_WIDTH,BABY_REFERENCE_HEIGHT),
@@ -127,6 +130,7 @@
   babyReference.add(babyReferencePlane);
   babyReference.visible=false;
   helperRoot.add(babyReference);
+  let babyPortraitModel=null; // Only the latest random child portrait lives under the existing infant-reference group.
   const guideRoot=new THREE.Group();
   guideRoot.name='CarryableAuthoringGuides';
   guideRoot.visible=false;
@@ -346,7 +350,8 @@
     el('carryBabyEdit').disabled=editingBaby;
     el('carryBabyReturn').disabled=!editingBaby;
     el('carryBabyApply').disabled=!editingBaby;
-    if(editingBaby)el('carryBabyStatus').textContent='Editing live family baby hand targets and anchors. Apply to this browser or export JSON to ship the profile.';
+    el('carryBabyRandom').disabled=!editingBaby;
+    if(editingBaby)el('carryBabyStatus').textContent=babyPreviewStatus||'Editing family baby hand targets and anchors. Random Baby changes only the reference appearance.';
     el('carrySummary').textContent=c.enabled
       ?'Authoring enabled: held/back anchors and both hand positions will be exported.'
       :'Carrying disabled: configure the anchors here and enable when ready.';
@@ -501,6 +506,96 @@
     el(id).addEventListener('change',fromInputs);
   transform.addEventListener?.('objectChange',fromGizmo);
 
+  function availableBabyIdentities() {
+    // The portrait catalog and species gender support are authoritative; do not request invented NPC identities.
+    const species=window.SCRATCHBONES_CONFIG?.game?.appearanceEditor?.species||{};
+    const fighters=window.getPortraitFighters?.()||[];
+    const seen=new Set(),options=[];
+    for(const fighter of fighters){
+      const speciesId=String(fighter?.speciesId||'').replaceAll('_','-');
+      const gender=String(fighter?.gender||(fighter?.id==='F'?'female':'male')).toLowerCase();
+      if(!speciesId||!['male','female'].includes(gender)||!species[speciesId]?.genders?.includes(gender))continue;
+      const key=speciesId+'::'+gender;
+      if(!seen.has(key)){seen.add(key);options.push({speciesId,gender});}
+    }
+    return options;
+  }
+  async function randomBaby() {
+    if(!editingBaby)return false;
+    const preview=window.NpcAvatarPreview;
+    if(!preview?.randomProfile||!preview?.renderProfileToCanvas){
+      babyPreviewStatus='NPC portrait generator unavailable; the baby silhouette remains visible.';
+      el('carryBabyStatus').textContent=babyPreviewStatus;
+      log(babyPreviewStatus,'warn');
+      return false;
+    }
+    const ticket=++babyRenderTicket; // A later click or exit makes an older async portrait harmless.
+    const roll=++babyPreviewRolls; // Unique seeded appearance each click; grip values and save are never randomized.
+    const button=el('carryBabyRandom');
+    babyPreviewStatus='Generating baby #'+roll+'…';
+    el('carryBabyStatus').textContent=babyPreviewStatus;
+    button.disabled=true; // Avoid starting multiple expensive portrait renders on mobile.
+    try{
+      await preview.ensurePortraitCosmetics?.({assetBase:window.HOBUNJI_ASSET_BASE,configBase:window.HOBUNJI_CONFIG_BASE});
+      if(ticket!==babyRenderTicket||!editingBaby)return false;
+      const candidates=availableBabyIdentities();
+      if(!candidates.length)throw new Error('No family-capable portrait species are loaded.');
+      const identity=candidates[Math.floor(Math.random()*candidates.length)];
+      const seed='furniture-carry-baby-'+roll+'-'+Math.floor(Math.random()*0xffffffff).toString(36);
+      const profile=preview.randomProfile(seed,identity);
+      if(!profile)throw new Error('The NPC portrait generator did not return a baby appearance.');
+      const front=document.createElement('canvas'),back=document.createElement('canvas');
+      front.width=back.width=200;front.height=back.height=200;
+      await preview.renderProfileToCanvas(front,profile,{seatId:seed,breathingComposer:null});
+      if(ticket!==babyRenderTicket||!editingBaby)return false;
+      try{await preview.renderProfileToCanvas(back,profile,{portraitView:'behind',seatId:seed,breathingComposer:null});}
+      catch(error){ // Keep the fully colored front portrait if behind art is unavailable.
+        log('Baby back portrait unavailable: '+(error?.message||error),'warn');
+      }
+      if(ticket!==babyRenderTicket||!editingBaby)return false;
+      const phase=window.HOBUNJI_ROMANCE_CONFIG?.family?.phaseScales?.basket||{body:.32,head:.58};
+      const body=Number(phase.body)>0?Number(phase.body):.32;
+      const head=Number(phase.head)>0?Number(phase.head):.58;
+      const npcRecord={role:'child',tags:['child','family'],isChild:true,
+        childBodyScale:body,childHeadScale:head}; // Same infant proportions as RomanceFamily.childRecord.
+      let model;
+      if(window.PNGPlaneAvatar?.buildSinglePlaneAvatarModel){
+        model=window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(THREE,front,{
+          backCanvas:back,profile,speciesId:identity.speciesId,gender:identity.gender,
+          appearance:{speciesId:identity.speciesId,gender:identity.gender},
+          npcRecord,name:'furniture_random_baby_reference',modelWidth:.9,modelHeight:.9,neckRig:true,
+        });
+        model.userData?.neckRig?.headScaleJoint?.scale?.setScalar?.(head/body);
+      }else{
+        model=new THREE.Mesh(new THREE.PlaneGeometry(BABY_REFERENCE_WIDTH,BABY_REFERENCE_HEIGHT),
+          new THREE.MeshBasicMaterial({map:new THREE.CanvasTexture(front),transparent:true,alphaTest:.35,side:THREE.DoubleSide,depthWrite:false}));
+      }
+      if(ticket!==babyRenderTicket||!editingBaby){disposeObject(model);return false;}
+      const width=Number(model.userData?.portraitModelWidth)||BABY_REFERENCE_WIDTH;
+      const height=Number(model.userData?.portraitModelHeight)||BABY_REFERENCE_HEIGHT;
+      model.scale.setScalar(BABY_REFERENCE_WIDTH/Math.max(.05,width));
+      model.position.y=height/2*model.scale.y; // Match NPC floor-origin positioning and the original infant reference.
+      babyReference.add(model);
+      if(babyPortraitModel){babyReference.remove(babyPortraitModel);disposeObject(babyPortraitModel);}
+      babyPortraitModel=model;
+      babyReferencePlane.visible=false;
+      const label=identity.speciesId.replaceAll('-',' ')+' '+identity.gender;
+      babyPreviewStatus='Baby #'+roll+' · '+label+' · actual generated portrait (baby head/body proportions). Grips unchanged.';
+      el('carryBabyStatus').textContent=babyPreviewStatus;
+      log(babyPreviewStatus);
+      syncHoldingPreview();
+      frameHoldingPreview();
+      return true;
+    }catch(error){
+      if(ticket!==babyRenderTicket||!editingBaby)return false;
+      babyPreviewStatus='Random Baby failed: '+(error?.message||error)+'. Previous preview kept.';
+      el('carryBabyStatus').textContent=babyPreviewStatus;
+      log(babyPreviewStatus,'warn');
+      return false;
+    }finally{
+      if(ticket===babyRenderTicket)button.disabled=!editingBaby;
+    }
+  }
   function editBaby(){
     const pose=window.FamilyBabyCarryPose;
     if(!pose?.forSize){
@@ -513,10 +608,12 @@
     state.carryable=normalized(babyDraft||pose.forSize(BABY_REFERENCE_WIDTH,BABY_REFERENCE_HEIGHT)); // Supply the existing editor's hitbox and guide defaults.
     editingBaby=true;root.visible=false;babyReference.visible=activeEditorMode==='carry';
     createGuides();select('left');setHoldingVisibility();frameHoldingPreview();
+    if(!babyPortraitModel)void randomBaby(); // Show a real randomized child immediately, not an empty blue reference.
     return true;
   }
   function returnToFurniture(){
     if(!editingBaby)return;
+    babyRenderTicket++; // Invalidate a queued NPC render before the visual/controls are restored.
     babyDraft=cloneJson(state.carryable); // Keep incomplete mobile edits if the user revisits the baby tab.
     state.carryable=savedFurnitureCarry;savedFurnitureCarry=null;editingBaby=false;
     root.visible=true;babyReference.visible=false;
@@ -541,6 +638,7 @@
     el('carryBabyStatus').textContent='Exported baby profile JSON. Paste its values into DEFAULT_PROFILE in config/family-baby-carry-pose.js for all players.';
   }
   el('carryBabyEdit').onclick=editBaby;
+  el('carryBabyRandom').onclick=()=>{void randomBaby();};
   el('carryBabyReturn').onclick=returnToFurniture;
   el('carryBabyApply').onclick=applyBaby;
   el('carryBabyExport').onclick=exportBaby;
@@ -615,7 +713,7 @@
   renderControls();
   window.HobunjiCarryableFurnitureAuthor={
     normalize:normalized,
-    snapshot:()=>({carryable:cloneJson(state.carryable),editingBaby,storedFurnitureUnchanged:!!savedFurnitureCarry,babyProfile:window.FamilyBabyCarryPose?.snapshot?.()||null,selected:state.selectedType==='carry'?state.selectedId:null,backPreview:state.selectedId==='back',preview:{visible:heldPreview.visible,ready:!!previewActor,hands:!!previewHands,source:previewSource}})
+    snapshot:()=>({carryable:cloneJson(state.carryable),editingBaby,randomBabyCount:babyPreviewRolls,randomBabyStatus:babyPreviewStatus,storedFurnitureUnchanged:!!savedFurnitureCarry,babyProfile:window.FamilyBabyCarryPose?.snapshot?.()||null,selected:state.selectedType==='carry'?state.selectedId:null,backPreview:state.selectedId==='back',preview:{visible:heldPreview.visible,ready:!!previewActor,hands:!!previewHands,source:previewSource}})
   };
   if(bootStatus)bootStatus.hidden=true; // Hide the pending notice only after the complete Carryable API is ready.
 })();
