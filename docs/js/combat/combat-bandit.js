@@ -2423,9 +2423,18 @@
   }
 
   function updateBanditCombatAI(c, dt, targetPlayer, distToPlayer) {
-    if (c?.tzatzulCapturedBy) return { aimAngle: c.facing || 0, moving: false }; // Talons own this actor until release; no melee lunge, strafe or ranged attack.
+    if (c?.tzatzulCapturedBy) {
+      if (c._banditPreparedCharge) releaseBanditCharge(c, c._banditPreparedCharge.target); // Carried actors cannot hold a reservation while off the battlefield.
+      return { aimAngle: c.facing || 0, moving: false };
+    }
     targetPlayer = resolvedBanditCombatTarget(c, targetPlayer);
-    if (!targetPlayer || Number(targetPlayer.health) <= 0 || targetPlayer.tzatzulCapturedBy) return { aimAngle: c.facing || 0, moving: false }; // The former duel opponent is no longer a ground-combat target.
+    if (!targetPlayer || Number(targetPlayer.health) <= 0 || targetPlayer.tzatzulCapturedBy) {
+      if (c._banditPreparedCharge) releaseBanditCharge(c, c._banditPreparedCharge.target); // The previous target is no longer a valid charge recipient.
+      return { aimAngle: c.facing || 0, moving: false };
+    }
+    if (c._banditPreparedCharge && (c._banditPreparedCharge.target !== targetPlayer || c.prone || c.state !== 'chase')) {
+      releaseBanditCharge(c, c._banditPreparedCharge.target); // Target switches, knockdowns, and leash exits end a visual charge cleanly.
+    }
     distToPlayer = Math.hypot(targetPlayer.x - c.x, targetPlayer.y - c.y);
     const def = c.def, loadout = def.banditAbilityLoadout;
     _updateBanditLookAtTarget(c, dt, targetPlayer);
@@ -2443,11 +2452,12 @@
       const witchResult = window.GhoulWyrmWitches?.update?.(c, dt, targetPlayer, distToPlayer, witchApi); // Dedicated spells run before normal ranged/melee.
       if (witchResult?.handled) return witchResult;
     }
-    const flaskResult = updateBanditFlaskAI(c, dt, targetPlayer, distToPlayer); // Flaskers get first refusal on ranged combat before ordinary crossbow/melee logic.
+    const flaskResult = c._banditPreparedCharge || c._banditAction ? null : updateBanditFlaskAI(c, dt, targetPlayer, distToPlayer); // Do not let a flask throw interrupt a held or committed melee windup.
     if (flaskResult?.handled) return flaskResult;
-    const rangedResult = window.RangedWeapons?.updateBanditAI?.(c, dt, targetPlayer, distToPlayer);
+    const rangedResult = c._banditPreparedCharge || c._banditAction ? null : window.RangedWeapons?.updateBanditAI?.(c, dt, targetPlayer, distToPlayer);
     if (rangedResult?.handled) return rangedResult;
     if (c._banditHold1CdT > 0) c._banditHold1CdT = Math.max(0, c._banditHold1CdT - dt);
+    if (c._banditChargeDecisionCdS > 0) c._banditChargeDecisionCdS = Math.max(0, c._banditChargeDecisionCdS - dt); // One random charge decision per short interval, never every frame.
     if (c._banditFlankRetryS > 0) c._banditFlankRetryS = Math.max(0, c._banditFlankRetryS - dt); // Backstab contenders may reattempt a flank after a short normal-combat fallback.
     if (loadout.hold2 === 'counterShield') updateBanditGuardWindow(c, dt);
     // For player targets, unconditional now (was only called from the engaged
@@ -2470,6 +2480,31 @@
     if (c._banditAction) {
       // The transient lock is already gone: committed windup/strike facing stays fixed.
       return { aimAngle: c.facing, moving: false };
+    }
+    if (c._banditPreparedCharge) {
+      const prep = c._banditPreparedCharge; // The weapon is posed by the existing SharedAttackPose timeline, but no strike has been scheduled yet.
+      prep.t = Math.min(prep.duration, prep.t + Math.max(0, dt));
+      prep.action.t = prep.t;
+      c.facing = towardAngle;
+      const reach = banditEngagementReachPx(c, def, loadout, targetPlayer);
+      if (prep.t >= prep.duration && distToPlayer <= reach && claimBanditAttackTurn(c, targetPlayer)) {
+        releaseBanditCharge(c, targetPlayer, true); // Keep the pose when converting preparation to a real Charged Breaker.
+        window.ResourceSystem?.spendStamina(c, def.attackStaminaCost, 'bandit charged release', { actionKind: 'combatNpcMelee', abilityId: 'npcMelee' });
+        const fired = fireBanditChargedBreaker(c, def, targetPlayer, prep);
+        if (!fired) {
+          releaseBanditAttackTurn(c, targetPlayer);
+          resetBanditSwingToNatural(c);
+          c.telegraphState = null;
+        } else {
+          c._banditTactic = 'charged-release';
+          updateBanditLunge(c, dt, targetPlayer); // A new attack lunge starts in the same frame as its staged windup, matching ordinary combos.
+        }
+        return { aimAngle: towardAngle, moving: !!fired };
+      }
+      const moving = distToPlayer > Math.max(deps.TILE * 1.7, reach * 0.85)
+        ? deps.moveCreatureToward(c, targetPlayer.x, targetPlayer.y, def.chaseSpeed, dt) : false; // A retreating opponent cannot strand a readied attacker out of range.
+      c._banditTactic = prep.t >= prep.duration ? 'charged-ready' : 'charging';
+      return { aimAngle: towardAngle, moving };
     }
     // A fight the player is not part of only has to look like combat:
     // js/combat/npc-duel-staging.js replaces the decision step below with a
@@ -2496,7 +2531,7 @@
     const slot = claimBanditAttackSlot(c, towardAngle, targetPlayer);
     const continuingCombo = c._banditComboIndex > 0; // Continue a successful flurry without letting the flanking behavior interrupt its next strike.
     const seekingBackstab = loadout.tap2 === 'backstabFlick' && !continuingCombo
-      && Number.isFinite(def.banditStandoffMaxTiles); // Only ordinary bandits use active flanking; special encounter AI retains its own choreography.
+      && Number.isFinite(def.banditStandoffMaxTiles) && (!slot || slot.sector == null || slot.sector === 3); // Only a rear-slot specialist actively circles into the backstab position.
     const backstabReady = seekingBackstab && banditBehindTarget(c, targetPlayer); // Reuse the real bonus predicate without redundant resource-affliction scans each frame.
     if (backstabReady) c._banditFlankElapsedS = 0;
     if (slot && seekingBackstab && !backstabReady && distToPlayer < deps.TILE * 6 && !(c._banditFlankRetryS > 0)) {
@@ -2513,6 +2548,24 @@
       c._banditFlankElapsedS = 0;
       c._banditFlankRetryS = def.backstabRetrySeconds || 2.5; // Blocked flank or timeout: fight normally, then look for another opening.
     }
+    const committedOwner = banditDirectional(c) ? banditAttackTurnOwner(targetPlayer) : null; // O(1) per-target permission; unrelated targets have independent melee rhythms.
+    const preparer = banditDirectional(c) ? banditChargeOwner(targetPlayer) : null;
+    if (slot && banditDirectional(c) && !continuingCombo && c._banditChargeDecisionCdS <= 0
+      && loadout.hold1 === 'chargedBreaker' && (c._banditHold1CdT || 0) <= 0
+      && c.attackCooldownT <= 0 && c.stamina >= def.attackStaminaCost && distToPlayer <= engageRangePx
+      && committedOwner && committedOwner !== c && !preparer) {
+      c._banditChargeDecisionCdS = 1.25; // Do not force a charge on every frame of a busy melee queue.
+      if (deps.rnd() < BANDIT_HOLD1_CHANCE && beginBanditPreparedCharge(c, targetPlayer)) {
+        c._banditTactic = 'charging';
+        return { aimAngle: towardAngle, moving: false };
+      }
+    }
+    const readyCharge = preparer?._banditPreparedCharge;
+    const priorityBlocked = preparer && preparer !== c && readyCharge?.t >= readyCharge.duration; // The next free attack turn goes to the waiting held release.
+    const attackPermission = !banditDirectional(c) || ((!committedOwner || committedOwner === c) && !priorityBlocked);
+    const sectorAngle = slot && slot.sector != null ? banditFacingSlotAngle(slot, targetPlayer) : null;
+    const positionAngle = Math.atan2(c.y - targetPlayer.y, c.x - targetPlayer.x);
+    const inSector = sectorAngle == null || Math.abs(deps.angleDiff(positionAngle, sectorAngle)) <= Math.PI / 3; // A bandit must reach roughly its assigned quadrant before committing a strike.
     // attackCooldownS (0.95-1.15s) runs noticeably longer than the
     // post-attack retreat step (deps.JUMP_BACK_DUR_S, 0.4s), and retreating
     // only backs up one tile -- well short of engageRangePx once lunge
@@ -2544,7 +2597,7 @@
     // hard-blocking on it first, matching how the player's own combo
     // (combat-combo.js) spends stamina unconditionally per step rather
     // than pre-checking it.
-    const readyToStrike = distToPlayer <= engageRangePx && !!slot && c.attackCooldownT <= 0
+    const readyToStrike = distToPlayer <= engageRangePx && !!slot && inSector && attackPermission && c.attackCooldownT <= 0
       && (continuingCombo || c.stamina >= def.attackStaminaCost);
     if (!readyToStrike) {
       // One unified ring formula for the whole waiting state (slot-
@@ -2615,6 +2668,7 @@
       return { aimAngle: c.facing, moving: false };
     }
     if (alignment?.aligned) c.facing = alignment.desiredFacing;
+    if (!claimBanditAttackTurn(c, targetPlayer)) return { aimAngle: towardAngle, moving: false }; // Another actor (or ready charge) got the turn after this frame's eligibility check.
     window.ResourceSystem?.spendStamina(c, def.attackStaminaCost, 'bandit attack', { actionKind: 'combatNpcMelee', abilityId: 'npcMelee' }); // Real NPC melee expenditure can fund exactly one two-strike Hyped sequence.
     const openingFresh = c._banditComboIndex === 0;
     let fired = false;
@@ -2633,6 +2687,7 @@
     }
     if (!fired) fired = fireBanditComboStep(c, def, loadout, targetPlayer);
     c._banditTactic = fired ? attackChoice : 'attack-blocked';
+    if (!fired) releaseBanditAttackTurn(c, targetPlayer); // A rejected ability must not monopolize this target's one committed attack.
     if (!fired) window.FeyHypedAttacks?.clearCredit?.(c, 'npcMelee'); // No authored attack started: its enhanced points cannot leak into an unrelated future action.
     // The staged action just created above (inside whichever fire*
     // call ran) gets its own first tick later THIS SAME FRAME --
