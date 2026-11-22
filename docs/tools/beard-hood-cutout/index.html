@@ -49,12 +49,21 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
     <div class="row">
       <button id="paintMode" class="active" type="button">Paint cutout</button>
       <button id="eraseMode" type="button">Erase</button>
+      <button id="rootMode" type="button">Mark tuft corner</button>
     </div>
     <label for="brush">Brush radius <span id="brushLabel">4 px</span></label>
     <input id="brush" type="range" min=".5" max="24" step=".5" value="4">
+    <label for="alphaFloor">Minimum paintable beard opacity <span id="alphaFloorLabel">50% (128/255)</span></label>
+    <input id="alphaFloor" type="range" min="1" max="255" step="1" value="128">
+    <p>Only beard pixels at or above this alpha may be painted or marked as tuft corners. Erasing remains unrestricted.</p>
+    <label for="maxStretch">Maximum hood-ring stretch <span id="stretchLabel">36 px</span></label>
+    <input id="maxStretch" type="range" min="2" max="64" step="1" value="36">
+    <p>In corner mode, tap the beard to place a tuft root, or drag a marker to move it. The nearest inner hood ring stretches to that root if it lies outside. The stretch limit prevents extreme warping.</p>
     <div class="row" style="margin-top:10px">
       <button id="undo" type="button">Undo</button>
       <button id="clear" type="button">Clear mask</button>
+      <button id="removeRoot" type="button">Remove last corner</button>
+      <button id="clearRoots" type="button">Clear corners</button>
     </div>
     <label class="check"><input id="showHood" type="checkbox" checked> Ghost the hood over the painting surface</label>
     <label class="check"><input id="showHead" type="checkbox" checked> Show approximate head reference</label>
@@ -71,14 +80,14 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
     <h2>Export</h2>
     <div class="row"><button id="download" class="primary" type="button">Download cosmetic JSON</button><button id="copy" type="button">Copy mask JSON</button></div>
     <label for="maskJson">Compact saved 200px cutout mask</label><textarea id="maskJson" readonly></textarea>
-    <p>The exported JSON keeps every original field and adds only <code>hoodCutoutMask</code> (or its species variant). To test in-game, replace that beard cosmetic JSON with the exported version.</p>
+    <p>Export preserves original cosmetic fields and adds <code>hoodCutoutMask</code>, <code>hoodTuftRoots</code>, and <code>hoodTuftMaxStretch</code> in the same shared or species-specific scope. The opacity floor is stored as editor authoring metadata.</p>
   </section>
 </div>
 <div>
   <section>
     <h2>Paint directly on the beard</h2>
     <canvas id="paintCanvas" class="paint" width="200" height="200" aria-label="Beard mask paint surface; drag to paint or erase"></canvas>
-    <div class="caption">Teal pixels = hood removed here. Painting cannot mark transparent beard pixels. Touch/drag works on mobile.</div>
+    <div class="caption">Teal = cutout pixels; pink numbered pins = tuft roots; yellow guides show the original inner ring stretched to each root. Paint and drag using touch or mouse.</div>
     <h2>Comparison — unaltered beard layer order</h2>
     <div class="pair">
       <div><canvas id="before" width="200" height="200" aria-label="Original hood preview"></canvas><div class="caption">Original hood</div></div>
@@ -100,18 +109,27 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
   const empty = () => ({size:SIZE,runs:[]});
   const blank = () => {const c=document.createElement('canvas');c.width=c.height=SIZE;return c;};
   const beardCanvas=blank(),hoodCanvas=blank(),headCanvas=blank(),maskedHood=blank(); // Offscreen prepared art, reused between every brush update.
+  const stretchedHood=blank(); // Only recalculate the hood deformation when the roots, hood art, or stretch limit changes.
+  let stretchedHoodPixels=new Uint8ClampedArray(SIZE*SIZE*4),stretchSnapshot=null,stretchKey='',hoodRevision=0;
   const maskOverlay=blank(); // Transparent teal RGBA overlay: only allocated again when the mask actually changes.
-  let mask=empty(),beardPixels=new Uint8ClampedArray(SIZE*SIZE*4);
+  let mask=empty(),roots=[],beardPixels=new Uint8ClampedArray(SIZE*SIZE*4);
+  const selectedAlphaFloor=()=>Cut.alphaFloor($('alphaFloor').value,128); // Editor paint threshold, not a change to the authored beard PNG.
+  const selectedStretch=()=>Math.max(2,Math.min(64,Number($('maxStretch').value)||36)); // The same bound passed to game rendering.
   let hoodPixels=new Uint8ClampedArray(SIZE*SIZE*4); // Read once after verified CORS-safe loading; rendering never reads an untrusted canvas.
   let artReady=false; // The brush cannot record empty strokes while the selected artwork is unavailable.
   let catalog=[],beardDoc=null,hoodDoc=null,beardEntry=null,hoodEntry=null,variant='mao-ao_male';
   let mode='paint',drag=null,history=[],generation=0,lastError='',overrideBeard=null,overrideHood=null;
-  const draftStorageKey='hobunji-beard-hood-cutout-drafts-v1'; // Persist mobile brush sessions without ever overwriting repository files.
-  const drafts=new Map(); // Separate unsaved brush work per selected beard artwork/variant.
+  const draftStorageKey='hobunji-beard-hood-cutout-drafts-v2'; // Persistent phone-friendly masks AND tuft roots; never modifies repo files.
+  const drafts=new Map(); // Separate unsaved authoring per selected beard artwork/variant.
   try {
-    const saved=JSON.parse(localStorage.getItem(draftStorageKey)||'[]');
-    if(Array.isArray(saved))for(const item of saved.slice(0,100))if(Array.isArray(item)&&typeof item[0]==='string')
-      drafts.set(item[0],Cut.normalizeMask(item[1])||empty());
+    const saved=JSON.parse(localStorage.getItem(draftStorageKey)
+      ||localStorage.getItem('hobunji-beard-hood-cutout-drafts-v1')||'[]');
+    if(Array.isArray(saved))for(const entry of saved.slice(0,100))if(Array.isArray(entry)&&typeof entry[0]==='string'){
+      const data=entry[1]||{};
+      drafts.set(entry[0],{mask:Cut.normalizeMask(data.mask||data)||empty(),
+        roots:Cut.normalizeRoots(data.roots),
+        maxStretch:Number.isFinite(Number(data.maxStretch))&&data.maxStretch!=null?Number(data.maxStretch):null});
+    }
   }catch(_){/* Private-browsing storage can be unavailable; normal JSON downloads still work. */}
   const headCache=new Map(); // Avoid repeat network/image decodes when switching hoods of the same wearer.
   const clamp=(x,lo,hi)=>Math.min(hi,Math.max(lo,x));
@@ -120,14 +138,27 @@ textarea{height:110px;font:11px/1.3 monospace;resize:vertical}.note{border-left:
     ? variant : 'shared';}
   function draftKey(){return (beardEntry?.path||'import')+'|'+scopeKey();}
   function remember(){
-    if(!beardEntry)return;
-    drafts.set(draftKey(),JSON.parse(JSON.stringify(mask)));
+    if(!beardEntry||!artReady)return; // Never overwrite saved artwork during a failed CORS load.
+    drafts.set(draftKey(),{mask:JSON.parse(JSON.stringify(mask)),roots:Cut.normalizeRoots(roots),
+      maxStretch:selectedStretch()});
     try{localStorage.setItem(draftStorageKey,JSON.stringify([...drafts].slice(-100)));}
     catch(_){/* Storage quota/private-mode restrictions never block brush input. */}
   }
   function originalMask(){
     const scoped=scopeKey()==='shared'?beardDoc?.hoodCutoutMask:beardDoc?.speciesVariants?.[variant]?.hoodCutoutMask;
     return Cut.normalizeMask(scoped)||empty();
+  }
+  function originalRoots(){
+    return Cut.normalizeRoots(scopeKey()==='shared'?beardDoc?.hoodTuftRoots
+      :(beardDoc?.speciesVariants?.[variant]?.hoodTuftRoots||beardDoc?.hoodTuftRoots));
+  }
+  function originalMaxStretch(){
+    const local=beardDoc?.speciesVariants?.[variant]?.hoodTuftMaxStretch;
+    return Math.max(2,Math.min(64,Number(local??beardDoc?.hoodTuftMaxStretch??36)||36));
+  }
+  function updateLabels(){
+    $('alphaFloorLabel').textContent=Math.round(selectedAlphaFloor()/255*100)+'% ('+selectedAlphaFloor()+'/255)';
+    $('stretchLabel').textContent=selectedStretch()+' px';
   }
   const assetUrl=path=>new URL(base+String(path||'').replace(/^\.\//,''),location.href).href;
   const cosmeticUrl=entry=>new URL(base+'config/cosmetics/'+entry.path.replace(/^\.\//,''),location.href).href;
