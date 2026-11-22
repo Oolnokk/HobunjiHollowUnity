@@ -340,6 +340,39 @@ assert.equal(Cut.countMask(Cut.deformHoodPermissionMask(allAllowed,[anchorMove])
   'explicit full-permission masks remain fully allowed during stretching');
 
 const portrait=fs.readFileSync('docs/js/portrait-utils.js','utf8');
+// Exercise the actual cosmetic policy resolver, not just its string markers.
+const policySource=portrait.slice(portrait.indexOf('function resolveHoodBeardPolicy('),
+  portrait.indexOf('\nfunction portraitOptionFromJson(',portrait.indexOf('function resolveHoodBeardPolicy(')));
+const policyResolver=new Function('window','portraitVariantKeysForFighter',
+  policySource+';return resolveHoodBeardPolicy;')(
+    {PortraitBeardHoodCutout:Cut},()=>['mao-ao_male']);
+assert.equal(policyResolver({},null).mode,'auto','unconfigured hoods automatically derive a lower opening cone');
+assert.equal(policyResolver({beardCutoutAllowedMask:permission},null).mode,'painted',
+  'existing authored hood masks keep their manual policy by default');
+assert.equal(policyResolver({beardCutoutPermissionMode:'all',
+  beardCutoutAllowedMask:permission},null).mode,'all',
+  'explicit allow-all defeats inherited restrictions');
+const overridePolicy=policyResolver({
+  beardCutoutPermissionMode:'painted',beardCutoutAllowedMask:permission,
+  beardCutoutConeSpread:.5,
+  variantBeardCutoutPermissionMode:{'mao-ao_male':'auto'},
+  variantBeardCutoutConeSpread:{'mao-ao_male':1.25},
+}, {speciesId:'mao-ao',gender:'male'});
+assert.equal(overridePolicy.mode,'auto','exact species variant can switch shared painted hood back to automatic');
+assert.equal(overridePolicy.coneSpread,1.25,'variant-specific cone spread wins over shared hood value');
+
+const beardSource=portrait.slice(portrait.indexOf('function resolveBeardHoodAuthoring('),
+  portrait.indexOf('\nfunction resolveHoodBeardPolicy(',portrait.indexOf('function resolveBeardHoodAuthoring(')));
+const beardResolver=new Function('window','portraitVariantKeysForFighter',
+  beardSource+';return resolveBeardHoodAuthoring;')(
+    {PortraitBeardHoodCutout:Cut},()=>['mao-ao_male']);
+const variantWhisker=Cut.encodeMask(whiskerBits);
+const resolvedBeard=beardResolver({layers:[{}],hoodCutoutMask:requestMask,
+  variantHoodWhiskerMasks:{'mao-ao_male':variantWhisker}},
+  {speciesId:'mao-ao',gender:'male'});
+assert.equal(Cut.decodeMask(resolvedBeard.whiskers)[at(104,80)],1,
+  'shared beard art may author a species-only priority whisker layer');
+
 const original=fs.readFileSync('docs/index.html','utf8');
 const studio=fs.readFileSync('docs/tools/character-studio/index.html','utf8');
 const attack=fs.readFileSync('docs/tools/attack-animation-editor/index.html','utf8');
