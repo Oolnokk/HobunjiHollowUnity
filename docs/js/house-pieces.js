@@ -47,7 +47,7 @@
     // Commander-led Harlyao simulation: persistent offscreen positions, regrouping followers, and individual distance-based promotion to native humanoid travel.
     ['HarlyaoNightMarch', 'harlyao-night-march-runtime.js?v=20261114hbeaconfast'],
     // Porakaneki temporary locales can clear ordinary procedural shrub/rock clutter and relax only their own placement margins when dense wilderness would otherwise prevent any camp from existing.
-    ['PorakanekiCampPlacementPolicy', 'porakaneki-camp-placement-policy.js?v=20261105h58f3c87'],
+    ['PorakanekiCampPlacementPolicy', 'porakaneki-camp-placement-policy.js?v=20261122boulderFootprints1'],
     // Porakaneki camp network: distance/hysteresis LOD, shared den-to-den hunting parties, planner-owned destinations, shared hostile-loop locomotion/rendering, and seasonal chief migration.
     ['PorakanekiCamps', 'porakaneki-camps-runtime.js?v=20261121tribalTrophy1'],
     // Keeps neutral Porakaneki off companion target lists, classifies self-defense vs initiated kills, applies Omgurku rivalry favor, and composes the faction rename into NPC database loads.
