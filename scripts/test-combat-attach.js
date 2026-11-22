@@ -283,7 +283,7 @@ const run = (w, c, seconds, dt = 0.05) => { for (let t = 0; t < seconds; t += dt
   assert.equal(w.calls.player.length, 2, 'a second actual rescue applies the second quarter-strength hit');
 }
 
-// ---- rescue priority: available fighters must beat mounts, interrupted or cooling allies ----
+// ---- rescue priority: live companions, including normally cooling fighters, beat mounts and prone animals ----
 {
   const w = world();
   const mount = w.make({ x: 401, y: 400, isCompanion: true, master: w.player, stableRole: 'mount' });
@@ -297,9 +297,9 @@ const run = (w, c, seconds, dt = 0.05) => { for (let t = 0; t < seconds; t += dt
   assert(w.Combat.animalAttacks.start(swarm, 'swarm', { target: w.player }));
   run(w, swarm, 0.15);
   assert(!w.Combat.attach.isAttached(swarm), 'a ready pet rescues despite closer unavailable companions');
-  assert.equal(w.calls.creature[0].opts.attacker, ready, 'the ready fighter, not a mount or cooling pet, lands the rescue');
-  assert(!mount._honeyfuzzleRescueTarget && !prone._honeyfuzzleRescueTarget && !cooling._honeyfuzzleRescueTarget,
-    'ineligible companions never receive a temporary friendly-fire target');
+  assert.equal(w.calls.creature[0].opts.attacker, cooling, 'the closest able pet may override its ordinary cooldown to rescue');
+  assert(!mount._honeyfuzzleRescueTarget && !prone._honeyfuzzleRescueTarget && !ready._honeyfuzzleRescueTarget,
+    'mounts and prone pets cannot rescue, and a nonselected ally keeps no temporary friendly target');
 }
 {
   const w = world();
