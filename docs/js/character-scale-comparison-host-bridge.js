@@ -30,6 +30,7 @@
   let pendingClear = Promise.resolve(); // Used so addNpc waits for the public empty-project import even though the legacy caller does not await clearActors().
   let threePromise = null; // Used to share the already-cached Three.js module load with tap picking.
   const rigScaleOverrides = new Map(); // Survives Rig's fixed-field normalizer and is merged back into both shared profiles and every attachment-rig export.
+  const repositoryPartScales = new Map(); // Original hand/foot sizes are cached once for Reset; the new sliders cannot erase shipped anatomy.
 
   function profileKey(species, gender) {
     const normalizedSpecies = canonicalSpecies(species);
@@ -67,7 +68,14 @@
     const head = normalizedRigScaleNumber(value.head);
     const offsetY = normalizedOffsetYNumber(value.offsetY);
     if (x == null && y == null && head == null && offsetY == null) return null;
-    return { x: x ?? y ?? head ?? 1, y: y ?? x ?? head ?? 1, head: head ?? x ?? y ?? 1, offsetY: offsetY ?? 0 };
+    const resolved = { x: x ?? y ?? head ?? 1, y: y ?? x ?? head ?? 1, head: head ?? x ?? y ?? 1, offsetY: offsetY ?? 0 };
+    const legLength = normalizedRigScaleNumber(value.legLength ?? value.legLengthScale); // Independent reach; omitted by old saves.
+    const handScale = normalizedRigScaleNumber(value.handScale); // Existing species/gender hand size field.
+    const footScale = normalizedRigScaleNumber(value.footScale); // Existing species/gender foot size field.
+    if (legLength != null) resolved.legLength = legLength;
+    if (handScale != null) resolved.handScale = handScale;
+    if (footScale != null) resolved.footScale = footScale;
+    return resolved;
   }
 
   function anatomyRigScale(anatomy) {
@@ -76,7 +84,11 @@
     const y = normalizedRigScaleNumber(anatomy.rigScaleY);
     const head = normalizedRigScaleNumber(anatomy.headScale);
     const offsetY = normalizedOffsetYNumber(anatomy.headOffsetY);
-    if (x != null || y != null || head != null || offsetY != null) return normalizedRigScale({ x, y, head, offsetY });
+    const legLength = normalizedRigScaleNumber(anatomy.legLengthScale); // Old rigScaleY controls legs when this field is absent.
+    const handScale = normalizedRigScaleNumber(anatomy.handScale);
+    const footScale = normalizedRigScaleNumber(anatomy.footScale);
+    if (x != null || y != null || head != null || offsetY != null || legLength != null || handScale != null || footScale != null)
+      return normalizedRigScale({ x, y, head, offsetY, legLength, handScale, footScale });
     return normalizedRigScale(anatomy.rigScale); // Pre-split single-field profiles.
   }
 
@@ -89,6 +101,9 @@
       profile.anatomy.rigScaleY = value.y;
       profile.anatomy.headScale = value.head;
       profile.anatomy.headOffsetY = value.offsetY;
+      if (value.legLength != null) profile.anatomy.legLengthScale = value.legLength; // Keep independently authored leg reach on live shared profile.
+      if (value.handScale != null) profile.anatomy.handScale = value.handScale;
+      if (value.footScale != null) profile.anatomy.footScale = value.footScale;
     }
   }
 
@@ -128,7 +143,8 @@
       const scale = anatomyRigScale(profile?.anatomy);
       if (!key || scale == null) continue;
       const existing = rigScaleOverrides.get(key);
-      if (!existing || existing.x !== scale.x || existing.y !== scale.y || existing.head !== scale.head || existing.offsetY !== scale.offsetY) {
+      if (!existing || existing.x !== scale.x || existing.y !== scale.y || existing.head !== scale.head || existing.offsetY !== scale.offsetY
+          || existing.legLength !== scale.legLength || existing.handScale !== scale.handScale || existing.footScale !== scale.footScale) {
         rigScaleOverrides.set(key, scale);
         changed = true;
       }
@@ -143,14 +159,30 @@
   // (character-rig-scale-defaults.js) — not a frozen snapshot of them, so a later
   // change to that file is picked up without needing another reset. Also clears
   // every per-NPC age override, since "reset everything" should mean everything.
+  function rememberRepositoryPartScales() {
+    const characters = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters || {}; // Canonical source snapshot retained without deep-cloning meshes or textures.
+    for (const [key, profile] of Object.entries(characters)) {
+      if (repositoryPartScales.has(key)) continue;
+      const anatomy = profile?.anatomy || {};
+      repositoryPartScales.set(key, { handScale: anatomy.handScale, footScale: anatomy.footScale });
+    }
+  }
+
   function resetToRepositoryDefaults() {
+    rememberRepositoryPartScales(); // Reset uses the initial canonical species/gender extremity proportions.
     rigScaleOverrides.clear();
     try { localStorage.removeItem(RIG_SCALE_STORAGE_KEY); } catch (_) {}
     try { localStorage.removeItem(LEGACY_SCALE_STORAGE_KEY_V1); } catch (_) {}
     const characters = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters || {};
     let reset = 0;
-    for (const profile of Object.values(characters)) {
+    for (const [rawKey, profile] of Object.entries(characters)) {
       if (!profile?.anatomy) continue;
+      const original = repositoryPartScales.get(rawKey); // Restore exactly the authored hand/foot sizes rather than resetting every species to 100%.
+      if (original) for (const part of ['handScale', 'footScale']) {
+        if (original[part] == null) delete profile.anatomy[part];
+        else profile.anatomy[part] = original[part];
+      }
+      delete profile.anatomy.legLengthScale; // With no independent reach, the original Height default again controls both regions.
       delete profile.anatomy.rigScaleX;
       delete profile.anatomy.rigScaleY;
       delete profile.anatomy.headScale;
@@ -295,6 +327,9 @@
       profile.anatomy.rigScaleY = scale.y;
       profile.anatomy.headScale = scale.head;
       profile.anatomy.headOffsetY = scale.offsetY;
+      if (scale.legLength != null) profile.anatomy.legLengthScale = scale.legLength;
+      if (scale.handScale != null) profile.anatomy.handScale = scale.handScale;
+      if (scale.footScale != null) profile.anatomy.footScale = scale.footScale;
       delete profile.anatomy.rigScale; // Superseded by the x/y/head split; dropped so a re-export never resurrects the ambiguous uniform field.
     }
     return profiles;
@@ -305,7 +340,7 @@
     data.profiles = mergeRigScalesIntoProfiles(data.profiles || data.attachmentRigProfiles || {});
     data.anatomySemantics ||= {};
     data.anatomySemantics.rigScale = 'Whole-character species/gender x/y scale (rigScaleX, rigScaleY) authored in Full Character Scale, applied uniformly to the floor-relative visual root, hands, feet, and attachment coordinates; headScale is a separate, neck-rig-compensated factor that never inherits the body’s aspect ratio; headOffsetY additionally repositions the head (fraction of model height), composed at runtime with a per-NPC age-hunch factor that is instance data and not part of this export.';
-    data.fullCharacterScaleRoundTripVersion = 3;
+    data.fullCharacterScaleRoundTripVersion = 4; // Includes independent leg/portrait height and both existing extremity multipliers.
     return data;
   }
 
@@ -336,11 +371,14 @@
     return true;
   }
 
+  rememberRepositoryPartScales(); // Before recovery/import modifies the live rig's hand/foot scale settings.
+
   function installRigScaleRoundTripHooks() {
     if (document.documentElement.dataset.fullScaleRoundTripHooks === '1') return;
     document.documentElement.dataset.fullScaleRoundTripHooks = '1';
 
-    const FULL_SCALE_RANGE_IDS = new Set(['maaFullScaleRangeX', 'maaFullScaleRangeY', 'maaFullScaleRangeHead']);
+    const FULL_SCALE_RANGE_IDS = new Set(['maaFullScaleRangeX', 'maaFullScaleRangePortraitHeight', 'maaFullScaleRangeLegLength',
+      'maaFullScaleRangeHand', 'maaFullScaleRangeFoot', 'maaFullScaleRangeHead']);
     // The comparison sliders update the shared profile in their own target listener.
     // Capture it afterward at document bubble phase so the value is durable across reloads.
     document.addEventListener('input', event => {
@@ -385,6 +423,9 @@
       profile.anatomy.rigScaleX = scale.x;
       profile.anatomy.rigScaleY = scale.y;
       profile.anatomy.headScale = scale.head;
+      if (scale.legLength != null) profile.anatomy.legLengthScale = scale.legLength;
+      if (scale.handScale != null) profile.anatomy.handScale = scale.handScale;
+      if (scale.footScale != null) profile.anatomy.footScale = scale.footScale;
     }
     return profile;
   }
