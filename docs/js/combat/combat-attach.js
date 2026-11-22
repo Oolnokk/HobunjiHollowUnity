@@ -43,6 +43,7 @@
   const PLAYER_HEIGHT_UNITS = 1.7;
   const RESCUE_SENSE_TILES = 10; // Search radius for pets and friendly NPCs responding to an attached swarm.
   const RESCUE_CONTACT_TILES = 0.95; // Minimum normal-melee reach needed to strike a swarmed ally.
+  const RESCUE_EMERGENCY_COOLDOWN_MS = 450; // Companions may interrupt a normal attack cooldown, but cannot free every rider in one animation frame.
   const RESCUE_KNOCKBACK_PX_S = 260; // Full-strength rescue impulse; the swarmed ally receives one quarter.
 
   const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
@@ -176,7 +177,9 @@
   function tryRescueSwarm(c, host, state, dt) {
     const d = deps();
     const candidates = rescueCandidates(host).filter(ally => !ally._banditAction); // An owner being swarmed outranks a companion's ordinary attack; don't permanently exclude a busy Nelk.
-    const isReady = ally => !(Number(ally.attackCooldownT) > 0); // A ready rescuer must not wait for a closer pet's attack cooldown.
+    const isReady = ally => ally.isCompanion && !ally.banditCompanion
+      ? !(Number(ally._honeyfuzzleRescueCooldownUntilMs) > performance.now()) // Emergency rescue has its own short recovery; an ordinary combat cooldown must not strand a swarmed owner.
+      : !(Number(ally.attackCooldownT) > 0); // NPC rescue parties keep their ordinary attack cadence.
     const inReach = ally => Math.hypot(ally.x - host.x, ally.y - host.y) <=
       Math.max(RESCUE_CONTACT_TILES * d.TILE, Number(ally.def?.attackRangePx) || 0);
     candidates.sort((a, b) => {
@@ -229,6 +232,7 @@
       if (isPlayer(host)) d.damagePlayer(reducedDamage, ally.x, ally.y, fullKnockback * 0.25, reducedOpts);
       else d.damageCreature(host, reducedDamage, ally.x, ally.y, fullKnockback * 0.25, reducedOpts);
       ally.attackCooldownT = Math.max(Number(ally.attackCooldownT) || 0, Number(ally.def?.attackCooldownS) || 1.1);
+      if (ally.isCompanion && !ally.banditCompanion) ally._honeyfuzzleRescueCooldownUntilMs = performance.now() + RESCUE_EMERGENCY_COOLDOWN_MS; // A second swarmer must wait briefly, without making the first rescue wait through normal attack recovery.
       ally.facing = Math.atan2(host.y - ally.y, host.x - ally.x);
       ally._honeyfuzzleRescueTarget = null;
       window.AudioSystem?.playCreatureClawHit?.(ally);
