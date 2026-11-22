@@ -94,6 +94,24 @@ const erasedFringe=Cut.paintMask(lowAlpha,featherArt,95.5,82.5,1,true,null,255);
 assert.equal(Cut.decodeMask(erasedFringe)[at(95,82)],0,'eraser ignores opacity floor');
 assert.equal(Cut.alphaFloor('128'),128,'numeric slider values work');
 assert.equal(Cut.alphaFloor(-4),1,'minimum floor clamps safely');
+// Both artist paint thresholds are near-opaque by default (95% = 242/255).
+// Verify exact equality rather than rounding visible percentages.
+const nearOpaque=new Uint8ClampedArray(SIZE*SIZE*4);
+for(const [x,a] of [[90,240],[91,241],[92,242],[93,243]])nearOpaque[at(x,95)*4+3]=a;
+const beard95=Cut.paintMask(null,nearOpaque,91.5,95.5,4,false,null,242);
+assert.equal(Cut.decodeMask(beard95)[at(90,95)],0,'beard at 240 alpha is below the 95% floor');
+assert.equal(Cut.decodeMask(beard95)[at(91,95)],0,'beard at 241 alpha is below the 95% floor');
+assert.equal(Cut.decodeMask(beard95)[at(92,95)],1,'beard at exactly 242 alpha is paintable');
+assert.equal(Cut.decodeMask(beard95)[at(93,95)],1,'beard above the 95% floor is paintable');
+const hood95=Cut.paintMask(null,nearOpaque,91.5,95.5,4,false,null,242,true);
+assert.equal(Cut.decodeMask(hood95)[at(91,95)],0,'hood permission painting excludes faint cloth');
+assert.equal(Cut.decodeMask(hood95)[at(92,95)],1,'hood painting accepts the exact 95% boundary');
+const fullHood={size:SIZE,runs:[[0,SIZE*SIZE]]};
+const protected95=Cut.paintMask(fullHood,nearOpaque,91.5,95.5,4,true,null,242,true);
+assert.equal(Cut.decodeMask(protected95)[at(91,95)],1,'protect brush preserves permissions on translucent cloth');
+assert.equal(Cut.decodeMask(protected95)[at(92,95)],0,'protect brush revokes permission on qualifying cloth');
+const hood70=Cut.paintMask(null,nearOpaque,90.5,95.5,3,false,null,175,true);
+assert.equal(Cut.decodeMask(hood70)[at(90,95)],1,'lowering the hood opacity slider restores fringe paintability');
 const hoodBrush=new Uint8ClampedArray(SIZE*SIZE*4);
 hoodBrush[at(50,50)*4+3]=255; // Only the actual hood pixel is eligible for protect-mode erasing.
 const allAllowed={size:SIZE,runs:[[0,SIZE*SIZE]]};
@@ -243,6 +261,12 @@ assert.equal(Cut.decodeMask(autoWide.mask)[at(55,170)],1,'positive cone widening
 assert(autoWide.allowedPixels>autoZero.allowedPixels,'expanding the cone increases authorized pixel area');
 assert.equal(Cut.normalizeConeSpread(-1),0,'cone widening never goes negative');
 assert.equal(Cut.normalizeConeSpread(200),2,'cone widening clamps at a reasonable maximum');
+const fadedRing=new Uint8ClampedArray(ringBefore);
+for(let i=3;i<fadedRing.length;i+=4)if(fadedRing[i])fadedRing[i]=235; // Below 95%, above a lowered 90% threshold.
+const ring95=Cut.autoHoodAllowanceMask(fadedRing,0,{alphaLimit:242});
+const ring90=Cut.autoHoodAllowanceMask(fadedRing,0,{alphaLimit:230});
+assert.equal(ring95.allowedPixels,0,'automatic ring rejects hood pixels below its paintability floor');
+assert(ring90.bottomPoints.length>0,'reducing the hood floor restores detectable inner-ring pixels');
 const missingRing=Cut.autoHoodAllowanceMask(new Uint8ClampedArray(SIZE*SIZE*4),.5);
 assert.equal(missingRing.allowedPixels,0,'no detectable hood inner rim does not accidentally allow all');
 
@@ -347,6 +371,9 @@ const policyResolver=new Function('window','portraitVariantKeysForFighter',
   policySource+';return resolveHoodBeardPolicy;')(
     {PortraitBeardHoodCutout:Cut},()=>['mao-ao_male']);
 assert.equal(policyResolver({},null).mode,'auto','unconfigured hoods automatically derive a lower opening cone');
+assert.equal(policyResolver({},null).alphaFloor,242,'unconfigured hoods use the 95% paint/ring threshold');
+assert.equal(policyResolver({beardCutoutPaintAlphaFloor:191},null).alphaFloor,191,
+  'a previously authored hood alpha value is not overwritten by the new default');
 assert.equal(policyResolver({beardCutoutAllowedMask:permission},null).mode,'painted',
   'existing authored hood masks keep their manual policy by default');
 assert.equal(policyResolver({beardCutoutPermissionMode:'all',
@@ -357,9 +384,12 @@ const overridePolicy=policyResolver({
   beardCutoutConeSpread:.5,
   variantBeardCutoutPermissionMode:{'mao-ao_male':'auto'},
   variantBeardCutoutConeSpread:{'mao-ao_male':1.25},
+  beardCutoutPaintAlphaFloor:242,
+  variantBeardCutoutPaintAlphaFloor:{'mao-ao_male':250},
 }, {speciesId:'mao-ao',gender:'male'});
 assert.equal(overridePolicy.mode,'auto','exact species variant can switch shared painted hood back to automatic');
 assert.equal(overridePolicy.coneSpread,1.25,'variant-specific cone spread wins over shared hood value');
+assert.equal(overridePolicy.alphaFloor,250,'species-variant hood alpha overrides the shared opacity floor');
 
 const beardSource=portrait.slice(portrait.indexOf('function resolveBeardHoodAuthoring('),
   portrait.indexOf('\nfunction resolveHoodBeardPolicy(',portrait.indexOf('function resolveBeardHoodAuthoring(')));
@@ -430,7 +460,7 @@ for(const text of [original,studio,attack])
 new vm.Script(html.match(/<script>([\s\S]*?)<\/script>/)[1]);
 for(const id of ['paintCanvas','beard','hood','variant','paintMode','eraseMode','rootMode',
   'hoodAutoMode','coneSpread','coneSpreadLabel','whiskerMode','whiskerEraseMode','clearWhiskers',
-  'alphaFloor','maxStretch','subdivision','aboveInfluence','belowInfluence',
+  'alphaFloor','hoodAlphaFloor','hoodAlphaFloorLabel','maxStretch','subdivision','aboveInfluence','belowInfluence',
   'removeRoot','clearRoots','hoodAllowMode','hoodProtectMode','protectWholeHood',
   'allowWholeHood','hoodJson','downloadHood','download','maskJson'])
   assert(html.includes('id="'+id+'"'),'the mobile 2D author exposes '+id);
@@ -462,10 +492,18 @@ assert(html.includes('destination.beardCutoutPermissionMode=hoodPermissionMode')
 assert(html.includes('hoodWhiskerMask:Cut.normalizeMask(whiskerMask)')
   && html.includes('Cut.autoHoodAllowanceMask(stretchedHoodPixels,coneSpread)'),
   'separate JSON exports retain beard whiskers and auto-cone generation');
-assert(html.includes("Cut.autoHoodAllowanceMask(hoodPixels,coneSpread).mask")
+assert(html.includes('Cut.autoHoodAllowanceMask(hoodPixels,coneSpread,')
+  && html.includes('alphaLimit:selectedHoodAlphaFloor()')
   && html.includes("hoodPermissionMode='painted'")
-  && html.includes('hoodMode?8:selectedAlphaFloor(),hoodMode'),
+  && html.includes('hoodMode?selectedHoodAlphaFloor():selectedAlphaFloor(),hoodMode'),
   'manual hood paint initializes from the auto cone, then switches to an authored permission policy');
+assert(html.includes('beardCutoutPaintAlphaFloor=selectedHoodAlphaFloor()')
+  && html.includes('hoodPaintAlphaFloor:selectedHoodAlphaFloor()')
+  && html.includes('hoodDraftStorageKey='),
+  'hood alpha floor is exported, visible in diagnostics, and persists with independent hood drafts');
+assert(portrait.includes('variantBeardCutoutPaintAlphaFloor')
+  && portrait.includes('hoodAlphaFloor:hoodPolicy.alphaFloor'),
+  'game renderer passes variant-resolved hood alpha floor into automatic ring geometry');
 assert(html.includes('id="hoodJson"')&&html.includes('id="downloadHood"')
   && html.includes('id="showBeardGhost"'),
   'mobile editor supports separate hood import/export and an alignment ghost');
@@ -506,5 +544,5 @@ urls.loadImage(originalAsset).then(result=>{
   assert.equal(requests[1].url,'https://raw.githubusercontent.com/Oolnokk/HobunjiHollowUnity/012345/docs/assets/example-beard.png',
     'fallback uses the exact same commit and repo instead of unrelated images');
   assert.equal(urls.imageLoadStats.fallbacks,1,'mobile debug records a successful alternative');
-  console.log('Beard/hood: lower ring detector, expanding auto cone, priority whiskers, manual mask arbitration, black outlines, original draw order and CORS retry pass.');
+  console.log('Beard/hood: 95% beard and hood paint thresholds, variant hood alpha, adjustable automatic rim detection, whiskers, outlines, draw order and CORS retry pass.');
 }).catch(error=>{console.error(error);process.exitCode=1;});
