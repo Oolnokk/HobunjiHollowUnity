@@ -41,6 +41,14 @@
     return {size: SIZE, runs};
   }
 
+  function autoBeardRequestMask(data, minimumAlpha = 242) {
+    const bits = new Uint8Array(PIXELS); // A preview mask for the selected beard's own pixel silhouette.
+    if (data?.length !== PIXELS * 4) return encodeMask(bits);
+    for (let i = 0; i < PIXELS; i++)
+      if (data[i * 4 + 3] >= alphaFloor(minimumAlpha,242)) bits[i] = 1;
+    return encodeMask(bits);
+  }
+
   function countMask(input) {
     return (normalizeMask(input)?.runs || []).reduce((total, [, length]) => total + length, 0);
   }
@@ -565,7 +573,7 @@
   }
 
   window.PortraitBeardHoodCutout = Object.freeze({
-    SIZE, normalizeMask, decodeMask, encodeMask, countMask, alphaFloor, paintMask,
+    SIZE, normalizeMask, decodeMask, encodeMask, autoBeardRequestMask, countMask, alphaFloor, paintMask,
     normalizeRoots, normalizeSubdivision, normalizeVerticalInfluence, deformationWeight,
     normalizeConeSpread, coneExpansion, normalizeCoverLength, lowerHoodOpeningSegment, autoHoodAllowanceMask,
     upperHoodOpeningSegment, autoHoodTopCoverMask,
