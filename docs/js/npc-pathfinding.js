@@ -815,7 +815,7 @@
       ...debugStats,
       cliffRoutes: { ...cliffDebug },
       collisionRadiusTiles: npcCollisionRadiusTiles(),
-      latestChange: 'NPCs can choose safe direct downhill cliff jumps; existing swept routing handles the approach and lower-shelf continuation.',
+      latestChange: 'NPCs can choose safe direct downhill cliff jumps with swept lower-shelf routing; generated animal-den prewarm stays disabled during NPC route searches.',
     };
   }
 
