@@ -38,10 +38,11 @@ const orphanHand = hand(node('loose_group', scene)); // No resolvable owner: kee
 
 const window = { PlayerBodyTransformComposer: { getPlayerMesh: () => player, getVisualRoots: () => [playerFootRig], getPlayerLegHandle: () => null } };
 const api = new Function('window', 'performance', code + `
+  const syncShoulderPetLayering = () => {}; // This test exercises the replay partition only.
   replayCameraPosition = { x: 0, y: 0, z: 0 };
   const repaired = []; // Nonparticipant weapon-hand invariants are maintained in the same split loop.
   const enforceHeldMesh = mesh => repaired.push(mesh);
-  return { split: (m, s, o, foot, repair = false) => splitReplayParticipants(m, s, o, foot, repair), repaired, setPolicy: v => { replayParticipantPolicy = v; }, skips: () => nonParticipantReplaySkips,
+  return { setActorXrayEnabled, refreshActorXrayRoots, split: (m, s, o, foot, repair = false) => splitReplayParticipants(m, s, o, foot, repair), repaired, setPolicy: v => { replayParticipantPolicy = v; }, skips: () => nonParticipantReplaySkips,
     actorOf: (m, s) => actorRootForXrayMesh(m, s), setOwnerLink: v => { heldOwnerLinkEnabled = v; participantCache = new WeakMap(); }, setLimit: n => { otherWeaponXrayLimit = n; },
     budgetSkips: () => otherWeaponXrayBudgetSkips, ownerLinkDefault: heldOwnerLinkEnabled, limitDefault: otherWeaponXrayLimit };`)(window, { now: () => 0 });
 
@@ -114,6 +115,44 @@ api.setPolicy('all');
 const othersAll = [];
 assert.deepEqual(api.split([tallHand, tallFoot], scene, othersAll, true), [tallHand, tallFoot], "'all' restores the previous participant set");
 assert.equal(othersAll.length, 0);
+
+// The category switches take precedence over the legacy all-participants and
+// weapon-link A/B settings, while the draw lists keep every excluded part in
+// the ordinary pass.
+const animal = node('nelk_group', scene);
+const pet = node('pingdort_group', player);
+const namedAnimal = node('npc_walker_hound', scene, { namedAnimalNpc: true });
+const animalFoot = node('animal_foot', animal), petFoot = node('pet_foot', pet);
+const namedAnimalFoot = node('hound_foot', namedAnimal);
+const enemyFoot = node('enemy_foot', banditA);
+window.GridTileAccessors = { getCurrentArea: () => 'farm' };
+window.CharacterVisuals = {
+  KINDS: { PLAYER: 'player', NPC: 'npc', ENEMY: 'enemy', CORPSE: 'corpse' },
+  forEachCharacter(area, visit) {
+    assert.equal(area, 'farm');
+    visit('player', player);
+    visit('companion', animal);
+    visit('shoulderPet', pet);
+    visit('npc', namedAnimal);
+    visit('npc', tall);
+    visit('enemy', banditA);
+  },
+};
+const replaySet = [animalFoot, petFoot, namedAnimalFoot, enemyFoot, weaponA, playerBlade, playerFootNear, tallFoot, orphanHand];
+for (const [group, expected] of [
+  ['animals', [animalFoot, petFoot, namedAnimalFoot]],
+  ['enemies', [enemyFoot, weaponA]],
+  ['player', [playerBlade, playerFootNear]],
+]) {
+  assert.equal(api.setActorXrayEnabled(group, false), false);
+  api.refreshActorXrayRoots(scene);
+  const ordinary = [];
+  assert.deepEqual(api.split(replaySet, scene, ordinary, false, true), replaySet.filter(mesh => !expected.includes(mesh)));
+  assert.deepEqual(ordinary, expected, group + ' alone uses ordinary depth');
+  assert.equal(api.setActorXrayEnabled(group, true), true);
+}
+assert.equal(api.setActorXrayEnabled('unrecognized', false), null);
+assert.deepEqual(api.split(replaySet, scene, [], false, true), replaySet, 'turning the settings back on restores the existing replay policy');
 
 // The split runs inside collectVisible, so the replay entry points need no new names.
 assert.match(source, /const held = collectVisible\(heldRegistry, scene, replayOthers\);/);
