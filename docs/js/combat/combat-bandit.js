@@ -2254,6 +2254,7 @@
   }
 
   function updateBanditCombatAI(c, dt, targetPlayer, distToPlayer) {
+    if (c?.tzatzulCapturedBy) return { aimAngle: c.facing || 0, moving: false }; // Talons own this actor until release; no melee lunge, strafe or ranged attack.
     targetPlayer = resolvedBanditCombatTarget(c, targetPlayer);
     if (!targetPlayer || Number(targetPlayer.health) <= 0) return { aimAngle: c.facing || 0, moving: false };
     distToPlayer = Math.hypot(targetPlayer.x - c.x, targetPlayer.y - c.y);
