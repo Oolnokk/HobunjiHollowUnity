@@ -229,8 +229,8 @@ const woodLayout = {cols:56,rows:56,tiles:Array.from({length:56},()=>Array.from(
   type:'grass',elevTier:0
 }))),localeInstances:[]}; // Large enough for several actual random scenery sites.
 let woodYear=-1,woodSite=null,woodSites=[]; // Seed-search avoids tying the behavior test to incidental PRNG roll order.
-for(let year=0;year<40;year++){
-  const planned=scenery.planForLayout('map_western_slope',woodLayout,'world:'+year);
+for(let year=1;year<=40;year++){
+  const planned=scenery.planForLayout('map_western_slope',woodLayout,'world:'+year); // The game starts Tothal cycles at 1; zero is intentionally treated as missing by identity().
   const candidate=planned.find(site=>site.kind==='deadTree');
   if(candidate){woodYear=year;woodSite=candidate;woodSites=planned;break;}
 }
@@ -238,6 +238,9 @@ assert(woodSite,'ordinary wilderness generation still includes at least one dead
 scenery.init({_zoneLayouts:new Map([['map_western_slope',woodLayout]]),getCurrentArea:()=> 'map_western_slope',
   tothalWorldId:()=> 'world',currentTothalYear:()=>woodYear,TILE:64});
 scenery.update();
+assert(scenery.landmarksFor('map_western_slope',woodLayout).some(site=>site.kind==='deadTree'
+  &&site.point.col===woodSite.point.col&&site.point.row===woodSite.point.row),
+  'the runtime Tothal identity selects the same generated tree as the deterministic test plan');
 const woodCollider=rendererProps.get('wilderness-landmark-stones'); // The same provider now handles dead trunks without adding one per tree.
 assert(woodCollider,'random landmark trees share the permanent stone collision registration');
 const woodX=woodSite.point.col+.5,woodZ=woodSite.point.row+.5;
