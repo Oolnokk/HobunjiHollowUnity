@@ -232,8 +232,16 @@
       const THREE = window.THREE; // Same Box3→cullSphere registration used for ordinary and Dev Arena vegetation.
       const zoneInfo = window.GridTileAccessors?.getZoneSceneInfo?.(area);
       const box = THREE?.Box3 ? new THREE.Box3().setFromObject(tree) : null; // The original culling bounds also determine the permanent trunk's vertical projectile extent.
-      tree.userData.blossomTrunkCollider = { x: p.col + .5, z: p.row + .5, half: .33,
-        topY: box && !box.isEmpty() ? box.max.y : tree.position.y + 5 }; // Only the narrow trunk blocks movement; canopy leaves stay traversable.
+      const authoredTrunk = instance.objects?.find(object => object.key === 'blossom-tree')?.collision; // Terrain-aware locale export already defines the precise final-grid trunk rectangle.
+      const customTrunk = authoredTrunk?.mode === 'custom' && [authoredTrunk.x, authoredTrunk.y, authoredTrunk.w, authoredTrunk.h].every(Number.isFinite)
+        && authoredTrunk.w > 0 && authoredTrunk.h > 0; // Only valid exported rectangles override the legacy narrow-trunk fallback.
+      tree.userData.blossomTrunkCollider = {
+        x: customTrunk ? authoredTrunk.x + authoredTrunk.w * .5 : p.col + .5,
+        z: customTrunk ? authoredTrunk.y + authoredTrunk.h * .5 : p.row + .5,
+        halfX: customTrunk ? authoredTrunk.w * .5 : .33,
+        halfZ: customTrunk ? authoredTrunk.h * .5 : .33,
+        topY: box && !box.isEmpty() ? box.max.y : tree.position.y + 5
+      }; // Reuse the locale's own trunk footprint, never its far wider leaf canopy.
       if (box && THREE?.Sphere && zoneInfo?.scene === scene) {
         if (!box.isEmpty()) {
           const sphere = box.getBoundingSphere(new THREE.Sphere());
@@ -253,8 +261,8 @@
       if (trunks.length) unregisterTreeCollision = window.AreaFootprintBlockers.register('five-blossoms-trunks', {
         area, blocksBox(x, z, half, worldY) {
           return trunks.some(trunk => (worldY == null || worldY <= trunk.topY)
-            && Math.abs(x - trunk.x) <= half + trunk.half
-            && Math.abs(z - trunk.z) <= half + trunk.half);
+            && Math.abs(x - trunk.x) <= half + trunk.halfX
+            && Math.abs(z - trunk.z) <= half + trunk.halfZ);
         }
       }); // Existing player/NPC/projectile footprint API, not an event-specific collision system.
     }
