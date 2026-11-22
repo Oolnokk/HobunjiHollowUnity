@@ -1197,6 +1197,13 @@
   function damageBanditCombatTarget(c, target, amount, fromX, fromY, knockbackPxS, opts = {}) {
     const echo = window.FeyHypedAttacks?.npcDamagePayload?.(c, target, amount, knockbackPxS, opts); // Real hit owner, including NPC→player and offscreen NPC→NPC, scales one independently tested second contact.
     if (echo) { amount = echo.damage; knockbackPxS = echo.knockback; opts = echo.opts; }
+    const healthMultiplier = window.TrinketSystem?.statMultiplier?.(c, 'outgoingHealthDamage') ?? 1; // Enemy-worn offensive trinkets use the same additive stat authority as the player's gear.
+    const footingMultiplier = window.TrinketSystem?.statMultiplier?.(c, 'outgoingFootingDamage') ?? 1; // Keep Footing distinct from Health even when both are rolled on an enemy.
+    if (healthMultiplier !== 1 || footingMultiplier !== 1) {
+      const existingFooting = Number(opts.footingDamageMultiplier); // Existing attack-specific Footing scaling is preserved.
+      opts = { ...opts, footingDamageMultiplier: (Number.isFinite(existingFooting) ? existingFooting : 1) * footingMultiplier / healthMultiplier };
+      amount *= healthMultiplier;
+    }
     const actorTarget = target && (
       target.isBandit === true
       || target.isPorakanekiHunter === true
@@ -3220,6 +3227,16 @@
       ...opts.extra,
     };
     window.ResourceSystem?.initEntity(c);
+    if (!mineEnemy && cfg?.trinketLoadout) {
+      const rolled = window.TrinketSystem?.rollEnemyLoadout?.(cfg.trinketLoadout, rank, tier, deps.rnd) || []; // Rolled once for rank/tier alongside equipment, not in the hostile update loop.
+      if (rolled.length) {
+        window.TrinketSystem?.configureEnemy?.(c, rolled); // Materializes the same catalog modifiers on this particular enemy rather than editing its shared definition.
+        const resources = window.ResourceSystem; // A fresh combatant starts at its trinket-modified capacity instead of spawning partially wounded.
+        c.health = resources?.getEffectiveMax?.(c, 'health') ?? c.health;
+        c.stamina = resources?.getEffectiveMax?.(c, 'stamina') ?? c.stamina;
+        c.footing = resources?.getEffectiveMax?.(c, 'footing') ?? c.footing;
+      }
+    }
     if (unarmedWitch) window.GhoulSpecialVariants.unarm(c);
     const carriesHronalWitchBomb = c.carriesHronalWitchBomb === true
       || c.carriesBurdenKind === 'hronalWitchBomb'
