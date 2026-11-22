@@ -284,8 +284,8 @@ assert.equal(Cut.decodeMask(autoZero.mask)[at(55,170)],0,'zero cone has no later
 assert.equal(Cut.decodeMask(autoWide.mask)[at(55,170)],1,'positive cone widening permits pixels farther to the side');
 assert(autoWide.allowedPixels>autoZero.allowedPixels,'expanding the cone increases authorized pixel area');
 // Lumpy, concave inner rim with a short UPHILL notch. The old independent
-// 0..180-degree rays never hit x=116; two opposite border walks can continue
-// across the uphill section and recover the missed lower-rim column.
+// 0..180-degree rays never hit x=116; a single COMPLETE clockwise
+// right-to-left contour follows uphill segments before classifying the bottom.
 const lumpyHood=new Uint8ClampedArray(SIZE*SIZE*4);
 for(let y=0;y<SIZE;y++)for(let x=0;x<SIZE;x++){
   const dx=x+.5-100.5,dy=y+.5-94.5,angle=Math.atan2(dy,dx);
@@ -312,14 +312,30 @@ for(let ray=0;ray<256;ray++){
 const trackedLump=Cut.lowerHoodOpeningSegment(lumpyHood);
 const contourX=new Map(trackedLump.points.map(point=>[point.x,point.y]));
 assert.equal(rayOnly[116],-1,'old radial-only scanner misses a column beyond the upward climb');
-assert.equal(contourX.get(116),117,'bidirectional contour tracking recovers the obscured lower edge');
-assert(trackedLump.clockwiseSteps>20,'clockwise 0->180 tracing crosses the lumpy rim');
-assert(trackedLump.counterClockwiseSteps>20,'counterclockwise 360->180 tracing reaches the same lower arc');
-assert(trackedLump.edgeFollowed,'detector reports contour following, not a silent radial fallback');
+assert.equal(contourX.get(116),117,'complete clockwise contour recovers the obscured lower edge');
+assert(trackedLump.clockwiseSteps>60,'clockwise 0->180 trace finishes the full lumpy lower arc');
+assert.equal(trackedLump.clockwiseComplete,true,
+  'detector only classifies the bottom AFTER the entire clockwise right-to-left path is finished');
+assert.equal(trackedLump.edgeFollowed,true,'complete clockwise trace supersedes radial-only pixels');
 for(let x=113;x<=119;x++)
   assert(contourX.has(x),'small climb does not prematurely terminate the bottom boundary at x='+x);
-assert(trackedLump.clockwiseSteps<=4096&&trackedLump.counterClockwiseSteps<=4096,
-  'both contours are bounded to avoid expensive wandering on noisy large hoods');
+assert(trackedLump.clockwiseSteps<=4096,
+  'single complete clockwise trace has a bounded visit budget on noisy hoods');
+// A ragged hood can have jagged upper cloth intruding into the opening.
+// This must NOT be collected as "bottom" merely because a second reverse
+// search discovers a shorter path through those top-side fragments.
+const raggedWithTop=new Uint8ClampedArray(lumpyHood);
+for(let x=85;x<=118;x++)for(let y=69;y<=91;y++){
+  if(y>78 || ((x+3*y)%9===0&&y>=70))raggedWithTop[at(x,y)*4+3]=255;
+}
+const raggedRim=Cut.lowerHoodOpeningSegment(raggedWithTop);
+assert(raggedRim.clockwiseComplete,'top-side ragged cloth must not interrupt the lower clockwise contour');
+assert.equal(raggedRim.clockwiseSteps,trackedLump.clockwiseSteps,
+  'top-side ragged fragments never divert the lower path');
+assert.deepEqual(raggedRim.points,trackedLump.points,
+  'upper hood pieces cannot contribute false bottom opening segments');
+assert(raggedRim.points.every(point=>point.y>=Math.floor(raggedRim.seed.y)),
+  'upper opening pixels are not misclassified as the lower rim');
 const continued=Cut.autoHoodAllowanceMask(lumpyHood,0);
 assert.equal(Cut.decodeMask(continued.mask)[at(116,140)],1,
   'recovered contour column actually contributes to the final removal permission');
