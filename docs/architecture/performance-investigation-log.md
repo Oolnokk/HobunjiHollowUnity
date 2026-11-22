@@ -25,7 +25,9 @@ cross-resource affliction invalidation, target changes and radius changes.
 Visible resource rings also sample equipment/perk-driven effective capacity at a
 bounded 500-ms interval to catch a modifier changing without a Health/Stamina
 event. The scan is skipped for hidden, fully homeostatic fighters and never
-runs every frame. Mobile Pixel Probe now includes `capacityChecks` and
+runs every frame. Newly created fighters are staggered over ten
+capacity-check slots (all checked within 500 ms), preventing large
+simultaneous spawns from aligning their future polls. Mobile Pixel Probe now includes `capacityChecks` and
 `capacityInvalidations` to verify the budget on device. Device FPS and
 actual allocation reductions remain to be measured.
 

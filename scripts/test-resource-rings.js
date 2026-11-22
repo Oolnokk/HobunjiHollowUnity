@@ -238,6 +238,24 @@ assert.equal(oldDashGeometry.disposed, true, 'despawn releases the batched geome
 assert.equal(ringScene.children.length, 0);
 delete context.EnvironmentSurfaceMicroPlateau;
 testNowMs = 0;
+const staggerScene = new Group(); // Groups simultaneous spawns to catch time-synchronized capacity polls.
+const staggerActors = Array.from({ length: 10 }, () => ({
+  ...fullEntity, health: 75,
+  afflictions: { ...fullEntity.afflictions },
+  exhaustion: { active: false, blackStamina: 100 },
+})); // Each unique actor has its own capacity-poll deadline.
+for (const actor of staggerActors) ResourceRings.updateRingHud(actor, staggerScene, 0.6);
+const pollsAfterSpawn = ResourceRings.debugSnapshot().capacityChecks; // Initial readings happen immediately at first render.
+testNowMs += 250;
+for (const actor of staggerActors) ResourceRings.updateRingHud(actor, staggerScene, 0.6);
+const staggeredMidwayPolls = ResourceRings.debugSnapshot().capacityChecks - pollsAfterSpawn; // Checks that work is split across multiple future frames.
+assert.ok(staggeredMidwayPolls > 0 && staggeredMidwayPolls < staggerActors.length, 'simultaneously spawned fighters stagger their periodic provider checks');
+testNowMs += 250;
+for (const actor of staggerActors) ResourceRings.updateRingHud(actor, staggerScene, 0.6);
+assert.ok(ResourceRings.debugSnapshot().capacityChecks >= pollsAfterSpawn + staggerActors.length, 'each staggered fighter is checked within 500 ms');
+for (const actor of staggerActors) ResourceRings.disposeRingHud(actor);
+assert.equal(staggerScene.children.length, 0, 'staggered HUDs still dispose cleanly');
+testNowMs = 0;
 
 const recoveringEntity = { ...fullEntity, stamina: 73, exhaustion: { active: true, blackStamina: 40 }, afflictions: { ...fullEntity.afflictions } }; // Exercises the Exhausted/black-Stamina invariant through both recovery and cap enforcement.
 ResourceSystem.tick(recoveringEntity, 0.25, { staminaRegenPerSec: 999 });

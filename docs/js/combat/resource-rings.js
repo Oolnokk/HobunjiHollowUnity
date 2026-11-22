@@ -409,6 +409,7 @@
   let targetHaloRebuilds = 0; // Read by debugSnapshot to measure target-halo allocations.
   let capacityChecks = 0; // Debug snapshot shows how many low-frequency stat-provider checks ran.
   let capacityInvalidations = 0; // Debug snapshot shows detected live capacity changes without a resource event.
+  let capacityPollSequence = 0; // Spreads new fighters' scheduled follow-up checks over separate frames instead of creating a recurring crowd-wide spike.
 
   function resourceArcSignature(entity, resourceKey, radius) {
     const q = value => Math.round(Number(value) || 0);
@@ -552,8 +553,10 @@
       RS.getEffectiveMax(entity, "stamina"),
       RS.getEffectiveMax(entity, "footing")].join("|"); // Samples the live existing equipment, perks and temporary-stat providers.
     const changed = entity._ringHudCapacityKey !== undefined && entity._ringHudCapacityKey !== capacityKey;
+    const firstCheck = entity._ringHudCapacityKey === undefined; // The first sample establishes the comparison baseline for this fighter.
     entity._ringHudCapacityKey = capacityKey;
-    entity._ringHudNextCapacityCheckAt = nowMs + CAPACITY_CHECK_INTERVAL_MS;
+    const staggerMs = firstCheck ? (capacityPollSequence++ % 10) * (CAPACITY_CHECK_INTERVAL_MS / 10) : 0; // Distributes simultaneous spawns across ten update slots.
+    entity._ringHudNextCapacityCheckAt = nowMs + CAPACITY_CHECK_INTERVAL_MS - staggerMs;
     capacityChecks++;
     if (changed) capacityInvalidations++;
     return changed;
