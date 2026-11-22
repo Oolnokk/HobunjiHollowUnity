@@ -337,4 +337,51 @@ const beforeWrongKind = farm.calls.length;
 api._test.applyJob(legacyDig, { c: 20, r: 20, job: 'dig' });
 assert.equal(farm.calls.length, beforeWrongKind, 'editor ownership denies a misdirected dig even after restoration');
 console.log('ok - legacy overlapping family plots and safe ownership');
+
+// NPC town fields now use the same cached, PNG-based soil materials as the
+// player's farm; no extra texture load or solid-colour field-only pipeline.
+const soilMaterials = []; // Resolved by the actual NPC draw path in this small THREE harness.
+const soilHeights = []; // Reveals the shared furrow/irrigation relief geometry.
+class FakeSoilPlane {
+  constructor() {
+    this.position = { count: 4, getX: i => i % 2 ? 0.48 : -0.48, getZ: i => i > 1 ? 0.48 : -0.48,
+      setY: (_i, y) => soilHeights.push(y) };
+  }
+  rotateX() { return this; }
+  getAttribute() { return this.position; }
+  computeVertexNormals() {}
+}
+class FakeSoilMesh {
+  constructor(geometry, material) {
+    this.geometry = geometry; this.material = material; this.userData = {}; this.rotation = { x: 0 };
+    this.position = { set: (x, y, z) => { this.center = { x, y, z }; } };
+  }
+}
+class FakeSoilGroup {
+  constructor() { this.children = []; this.parent = null; }
+  add(obj) { this.children.push(obj); }
+  remove(obj) { this.children.splice(this.children.indexOf(obj), 1); }
+}
+const soilScene = { children: [], add(group) { group.parent = this; this.children.push(group); } };
+win.THREE = {
+  Group: FakeSoilGroup, Mesh: FakeSoilMesh, PlaneGeometry: FakeSoilPlane,
+  MeshLambertMaterial: class { constructor(opts) { Object.assign(this, opts); } },
+  MeshBasicMaterial: class { constructor(opts) { Object.assign(this, opts); } },
+};
+win.TerrainTileMaterials = { resolveTileMat: (mapId, key) => {
+  soilMaterials.push({ mapId, key });
+  return { mapId, key };
+} };
+api.registerMap('map_hobunji_town', [
+  { id: 'ginju_textured_bed', kind: 'till', tiles: [[4, 4]], tillers: ['gorobi_ginju'] },
+  { id: 'ginju_textured_trench', kind: 'dig', tiles: [[5, 4]], diggers: ['gikali_ginju'] },
+]);
+api.init({ findWalker: () => null, normalizeNpcArea: id => id === 'map_hobunji_town' ? 'town' : id,
+  getCurrentArea: () => 'town', getAreaScene: () => soilScene, surfaceY: () => 0 });
+api.tick();
+assert.deepEqual(soilMaterials.map(m => m.key).sort(), ['tilled', 'trench'], 'town soil and trench use shared authored material keys');
+assert.ok(soilMaterials.every(m => m.mapId === 'map_hobunji_town'), 'soil textures resolve in the map-specific material namespace');
+assert.equal(soilScene.children[0].children.length, 2, 'NPC bed and trench draw once into the current scene');
+assert.ok(soilHeights.some(y => y > 0.05), 'the old flat rectangles now have sculpted surface relief');
+console.log('ok - Ginju soil renders shared terrain textures and shallow furrows/trench lips');
 process.exit(0);
