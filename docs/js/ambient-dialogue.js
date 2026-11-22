@@ -711,8 +711,8 @@
     const speechRoot = carriedBaby?.group || root; // A carried infant's NPC walker is deliberately hidden at the old basket spot.
     let message = isNewborn
       ? (options.babyAmbient === true && originalMessage ? originalMessage
-        : window.RomanceFamily?.babyAmbientSound?.(options.speakerId) || originalMessage)
-      : originalMessage; // Newborn ambient bubbles always use phonetic sounds; normal Talk never calls show().
+        : window.RomanceFamily?.babyAmbientSound?.(options.speakerId) || '')
+      : originalMessage; // Missing infant syllables must silence the bubble, never expose an adult line; ordinary Talk is separate.
     if (!isNewborn && options.vocabulary !== false && options.speakerId) {
       try {
         message = window.AmbientVocabulary?.rewrite?.(originalMessage, options.speakerId) || originalMessage; // One substitution pass BEFORE cadence, textures, timing, tracing and the event payload.
