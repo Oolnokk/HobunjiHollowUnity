@@ -429,9 +429,10 @@ assert(html.includes('destination.beardCutoutPermissionMode=hoodPermissionMode')
 assert(html.includes('hoodWhiskerMask:Cut.normalizeMask(whiskerMask)')
   && html.includes('Cut.autoHoodAllowanceMask(stretchedHoodPixels,coneSpread)'),
   'separate JSON exports retain beard whiskers and auto-cone generation');
-assert(html.includes('drag.last,hoodMode?8:selectedAlphaFloor(),hoodMode')
-  && html.includes("hoodPermissionMode='painted'"),
-  'manual hood paint starts with the auto cone and switches to an authored permission policy');
+assert(html.includes("Cut.autoHoodAllowanceMask(hoodPixels,coneSpread).mask")
+  && html.includes("hoodPermissionMode='painted'")
+  && html.includes('hoodMode?8:selectedAlphaFloor(),hoodMode'),
+  'manual hood paint initializes from the auto cone, then switches to an authored permission policy');
 assert(html.includes('id="hoodJson"')&&html.includes('id="downloadHood"')
   && html.includes('id="showBeardGhost"'),
   'mobile editor supports separate hood import/export and an alignment ghost');
