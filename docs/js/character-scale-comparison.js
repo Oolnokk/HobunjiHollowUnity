@@ -23,6 +23,9 @@
   let building = false;
   let generation = 0;
   let originMode = 'multi';
+  let pendingExitMode = null; // Last requested native mode during an async workspace restoration.
+  let exitingPromise = null; // Serializes scene/project import so rapid mobile taps cannot duplicate the restore.
+  let pendingSetup = Promise.resolve(); // Original project restoration waits until the temporary comparison project is clear.
   let savedMulti = null;
   let entries = [];
   let selected = null;
@@ -248,8 +251,9 @@ body[data-animation-author-mode="${MODE}"] #maaStopBtn,
 body[data-animation-author-mode="${MODE}"] #maaNewBtn,
 body[data-animation-author-mode="${MODE}"] #maaUndoBtn{display:none!important}
 body[data-animation-author-mode="${MODE}"] #maaViewportBadge{left:12px;right:12px;max-width:none;text-align:center}
-#${PANEL_ID}{display:none;position:absolute;z-index:18;left:50%;bottom:max(10px,env(safe-area-inset-bottom));transform:translateX(-50%);width:min(680px,calc(100% - 20px));padding:10px;border:1px solid rgba(255,255,255,.16);border-radius:14px;background:rgba(7,16,26,.94);backdrop-filter:blur(10px);gap:8px}
+#${PANEL_ID}{display:none;position:absolute;z-index:18;left:50%;bottom:max(10px,env(safe-area-inset-bottom));transform:translateX(-50%);width:min(680px,calc(100% - 20px));max-height:min(68dvh,calc(100dvh - 150px));overflow-y:auto;overscroll-behavior:contain;align-content:start;padding:10px;border:1px solid rgba(255,255,255,.16);border-radius:14px;background:rgba(7,16,26,.94);backdrop-filter:blur(10px);gap:8px}
 body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid!important;visibility:visible!important}
+body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain accessible on small touch displays. */
 #${PANEL_ID} .scaleHead{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 #${PANEL_ID} #maaFullScaleChoose{flex:1 1 145px;min-width:0;max-width:100%;padding:6px;border:1px solid rgba(255,255,255,.25);border-radius:6px;background:#17222f;color:inherit}
 #${PANEL_ID} .scaleSelected{font-weight:850;color:var(--accent)}
@@ -418,10 +422,13 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid!important;v
       if (!tab || tab.dataset.fullScaleExit === '1') continue;
       tab.dataset.fullScaleExit = '1';
       tab.addEventListener('click', event => {
-        if (!active && !building) return;
+        if (!active && !building && !exitingPromise) return;
         event.preventDefault();
-        event.stopImmediatePropagation();
-        exit(mode);
+        event.stopImmediatePropagation(); // Complete restoration before handing control to the native mode tab.
+        exit(mode).catch(error => {
+          console.warn('[full-character-scale] native tab restore failed', error);
+          status(`Could not switch to ${mode}: ${error.message}`);
+        });
       }, true);
     }
 
@@ -666,9 +673,7 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid!important;v
     if (!AGE_MODES.includes(nextMode) || (!active && !building)) return;
     stopLongoranWalk();
     if (selectedLayoutFrame && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(selectedLayoutFrame);
-    selectedLayoutFrame = 0;
-    if (selectedLayoutFrame && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(selectedLayoutFrame);
-    selectedLayoutFrame = 0;
+    selectedLayoutFrame = 0; // Cancel stale selected-layout updates on age switch.
     if (ageRenderFrame && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(ageRenderFrame);
     ageRenderFrame = 0;
     ageDirtyBody = false;
@@ -1319,6 +1324,7 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid!important;v
 
   async function buildLineup(buildId) {
     const reps = await representatives();
+    if (buildId !== generation) return; // Abort immediately if a tab switch occurred while fetching the NPC roster.
     const ordered = [
       ...reps.filter(item => item.species === 'longoran'),
       ...reps.filter(item => item.species !== 'longoran'),
@@ -1395,6 +1401,8 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid!important;v
   }
 
   function disposePreview() {
+    if (selectedLayoutFrame && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(selectedLayoutFrame);
+    selectedLayoutFrame = 0; // Avoid a late relayout referencing disposed actors.
     stopLongoranWalk();
     clearTimeout(longoranFeetTimer);
     longoranFeetTimer = 0;
@@ -1432,7 +1440,7 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid!important;v
   }
 
   async function enter() {
-    if (active || building || !ensureUi()) return;
+    if (active || building || exitingPromise || !ensureUi()) return;
     building = true;
     const buildId = ++generation;
     originMode = ['multi','single','rig'].includes(document.body.dataset.animationAuthorMode) ? document.body.dataset.animationAuthorMode : 'multi';
@@ -1441,13 +1449,19 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid!important;v
       if (!scaleHost) throw new Error('Full Character Scale host is unavailable.');
       if (!window.HobunjiFullScaleBodyInputGuard?.applyScaleField)
         throw new Error('Scale controls are unavailable: the shared input guard failed to load.'); // Mobile-visible failure instead of a second, incompatible slider path.
-      if (originMode !== 'multi') await scaleHost.setMode('multi');
+      if (originMode !== 'multi') {
+        pendingSetup = Promise.resolve(scaleHost.setMode('multi')); // The native Multi actor store is our temporary project scratch area.
+        await pendingSetup;
+        if (buildId !== generation) return; // A mode click may cancel the build during a native mode transition.
+      }
       savedMulti = clone(window.MultiAvatarAnimationAuthor?.exportProject?.());
       if (!savedMulti) throw new Error('Could not snapshot the multi-avatar workspace.');
       preserveMultiSave();
-      loadAgeModifiers(); // Honor the gameplay's global age defaults plus this author's most recent valid local adjustments.
+      loadAgeModifiers();
       syncAgeControls();
-      await scaleHost.clearActors();
+      pendingSetup = Promise.resolve(scaleHost.clearActors()); // Wait for the final empty-project import before allowing a restoration import.
+      await pendingSetup;
+      if (buildId !== generation) return; // Never make a cancelled build claim the mode after an exit.
       chrome();
       status('Building preview-only species/gender lineup…');
       await buildLineup(buildId);
@@ -1457,39 +1471,74 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid!important;v
       chrome();
       status('Use the always-open character dropdown for per-species edits; Baby/Toddler/Child modes show and adjust the entire lineup.');
     } catch (error) {
+      if (buildId !== generation) return; // The already-requested exit owns restoration and error reporting.
       console.warn('[full-character-scale]', error);
       building = false;
       active = false;
       status(`Could not build scale comparison: ${error.message}`);
-      disposePreview();
-      await restore(originMode);
+      try { await restoreWorkspace(); }
+      finally {
+        await host()?.setMode?.(originMode); // Even if an actor import failed, leave the broken comparison tab.
+        document.getElementById(TAB_ID)?.setAttribute('aria-selected','false');
+      }
     }
   }
 
-  async function restore(targetMode) {
+  async function restoreWorkspace() {
+    // Cancellation and initialization both use this one path: no duplicate imports or stale comparison meshes.
+    await pendingSetup; // If exit was tapped while the scratch project was being cleared, finish that operation first.
     disposePreview();
     if (savedMulti) {
       try { await window.MultiAvatarAnimationAuthor?.importProject?.(clone(savedMulti)); }
-      catch (error) { console.warn('[full-character-scale] multi restore failed', error); }
+      catch (error) { console.warn('[full-character-scale] multi restore failed', error); throw error; }
       preserveMultiSave();
     }
-    if (targetMode && targetMode !== 'multi') await host()?.setMode?.(targetMode);
     document.getElementById(TAB_ID)?.setAttribute('aria-selected','false');
   }
 
-  async function exit(targetMode = originMode) {
-    if (!active && !building) return;
+  function exit(targetMode = originMode) {
+    const normalized = ['multi','single','rig'].includes(targetMode) ? targetMode : originMode;
+    if (exitingPromise) {
+      pendingExitMode = normalized; // Rapid taps update the destination without starting a second multi-project import.
+      return exitingPromise;
+    }
+    if (!active && !building) return Promise.resolve();
+    pendingExitMode = normalized;
     ++generation;
     active = false;
     building = false;
     if (handScaleTimer && selected?.profile) {
       clearTimeout(handScaleTimer);
       handScaleTimer = 0;
-      applyAnatomyConfig(selected.profile); // Flush the last mobile Hand slider value before leaving; a pending GLB refresh must not be silently abandoned.
+      applyAnatomyConfig(selected.profile); // Flush pending authored hand changes before native workspace restore.
     }
     persistProfiles();
-    await restore(targetMode || originMode || 'multi');
-    savedMulti = null;
+    exitingPromise = (async () => {
+      let restoreFailure = null; // A broken actor import must not trap the user inside the comparison tab.
+      try {
+        try { await restoreWorkspace(); }
+        catch (error) {
+          restoreFailure = error;
+          console.warn('[full-character-scale] could not restore the saved actors before switching tabs', error);
+        }
+        let applied;
+        do {
+          applied = pendingExitMode || originMode; // Last tap wins, even if another tab was requested during a slower native handoff.
+          await host()?.setMode?.(applied); // ALWAYS include Multi: its native mode can already be Multi while CSS still says scale-compare.
+        } while (pendingExitMode !== applied);
+        document.getElementById(TAB_ID)?.setAttribute('aria-selected','false');
+        if (restoreFailure) {
+          const pill = document.getElementById('statusPill'); // Visible in other tabs without mobile devtools.
+          if (pill) pill.textContent = 'Tab switched, but the prior animation project could not be restored. The autosave remains available.';
+        }
+      } finally {
+        savedMulti = null;
+      }
+    })().finally(() => {
+      exitingPromise = null;
+      pendingExitMode = null;
+    });
+    return exitingPromise;
   }
 
   function install() {
@@ -1513,6 +1562,9 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid!important;v
       debugSnapshot: () => ({
         active,
         building,
+        exiting: !!exitingPromise, // Visible mobile diagnostic while an actor import is running.
+        requestedTab: pendingExitMode, // Last native mode requested by the user.
+        currentTabMode: document.body.dataset.animationAuthorMode,
         lineup: entries.map(entry => entry.key),
         selected: selected?.key || null, // Identifies which progressively loaded species is currently editable.
         selection: 'dropdown-only',
