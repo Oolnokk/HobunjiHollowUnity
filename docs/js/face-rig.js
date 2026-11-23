@@ -90,11 +90,6 @@
     return 0.5 * ((2 * b) + (-a + c) * f + (2*a - 5*b + 4*c - d)*f*f
       + (-a + 3*b - 3*c + d)*f*f*f);
   }
-  function lidPositions(eye, x, imageHeight) {
-    const r = eye.circle.r * imageHeight;
-    const relative = (x - eye.circle.x * imageHeight /* corrected below with x coordinate */);
-    return { r, relative };
-  }
   function roundContour(lid, q) {
     const power = 1.35 + lid.curve * 0.95; // Controls how rapidly eyelid influence tapers toward the corners.
     const inward = lid.inset * Math.pow(q, power) + lid.depth * 0.27 * q * (1 - q);
@@ -176,6 +171,7 @@
       }
       const canvas = global.document.createElement('canvas');
       canvas.width = width; canvas.height = height;
+      canvas.naturalWidth = width; canvas.naturalHeight = height; // The portrait layer compositor expects Image-like dimensions even for cached Canvas sources.
       const context = canvas.getContext('2d', { willReadFrequently: true });
       context.drawImage(image, 0, 0);
       for (const eye of rig.eyes) processEye(context, width, height, eye, rig.family);
