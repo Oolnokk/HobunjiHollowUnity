@@ -2477,7 +2477,7 @@ async function loadPortraitCosmetics(configBase) {
       const opt = portraitOptionFromJson(entry, json);
       if (opt.layers.length || Object.keys(opt.variantLayers).length) {
         optionCache.set(entry.id, opt);
-        indexEntries.push(entry);
+        if (!entry.legacyOnly) indexEntries.push(entry); // Old save IDs resolve through optionCache without becoming duplicate selectable hats.
       }
     }
   }));
