@@ -50,6 +50,7 @@ const document={createElement(name){assert.equal(name,'canvas');return {width:0,
 const rosterCalls=[]; // Proves this is the real army wardrobe family, not a custom recolor/costume table.
 const artistCalls=[]; // Captures frozen pose requests and verifies disposal.
 const hostileDressCalls=[]; // Checks the same pants, Temper/armor and dye finishing stages as the live Ghost Army.
+const companionStates=new Map(); // Mobile Dev Companion owns the visible diagnostics provider.
 const disposed=[]; // Asynchronous cancellation cannot resurrect a destroyed burden.
 let textureReady=true; // Switch to missing texture to verify portrait-only failure tolerance.
 let deferredFigure=null; // Simulates a portrait arriving after the statue has been recalled.
@@ -66,6 +67,7 @@ const artist={
 };
 const window={
   THREE,GameRandom:{random:()=>.95},
+  DevCompanion:{registerStateProvider:(key,provider)=>companionStates.set(key,provider)},
   ProceduralMaskPatterns:{ready:Promise.resolve()},
   BanditCombat:{
     ensureEnemyPants(roster){hostileDressCalls.push('pants');roster.equippedCosmetics.push('pants_basic');},
@@ -100,6 +102,7 @@ const diagnostics={warn(){}};
 vm.runInNewContext(source,{window,document,console:diagnostics,Image:class {}});
 (async()=>{
   const api=window.KeyStatueFigures;
+  assert.equal(typeof companionStates.get('keyStatueFigures'),'function','mobile diagnostics receives the sculpture state provider');
   const spec=api.rollSoldier('defense:one');
   assert.equal(rosterCalls.length,1);
   assert.equal(rosterCalls[0][0],'harlyao');
@@ -126,6 +129,7 @@ vm.runInNewContext(source,{window,document,console:diagnostics,Image:class {}});
     'stone soldier plus weapon fits inside the intended original-sized statuette');
   assert.equal(carrier.children[1].children.length,2,'the stone torso and carved physical weapon are both present');
   assert.equal(api.debugSnapshot().active,1);
+  assert.equal(companionStates.get('keyStatueFigures')().soldiers[0].shape,'warhammer','mobile inspector reports the real selected Ghost Army shape');
   api.dispose(carrier);
   assert.equal(primitive.visible,true,'the authored base remains available as emergency fallback');
   assert.equal(api.debugSnapshot().active,0);
