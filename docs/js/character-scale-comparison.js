@@ -571,7 +571,7 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid!important;v
       phaseScales: { basket: clone(values.baby), toddler: clone(values.toddler) },
       pngPlaneAvatar: { childScaleMultiplier: values.child.body, childHeadScaleMultiplier: values.child.head },
       childLimbModifiers: { hand: values.child.hand, foot: values.child.foot },
-      note: 'Baby/toddler values map to HobunjiRomanceConfig.family.phaseScales; child body/head map to SCRATCHBONES_CONFIG.game.assets.pngPlaneAvatar. Hand/foot values beyond the newborn FamilyBabyLimbs visuals require runtime integration before deployment.' };
+      note: 'Baby/toddler values map to HobunjiRomanceConfig.family.phaseScales; child body/head map to SCRATCHBONES_CONFIG.game.assets.pngPlaneAvatar. Family toddler and child hand/foot multipliers are consumed through the shared FamilyBabyLimbs walker visual scale hook.' };
     const blob = new Blob([JSON.stringify(data, null, 2) + '\n'], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
@@ -725,7 +725,7 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid!important;v
   // whatever's currently picked.
   function resetAllToRepoDefaults() {
     if (!active) return;
-    if (window.confirm && !window.confirm('Reset every species/gender scale, Longoran posture/gait, and every per-NPC age back to repository defaults? This discards local overrides.')) return;
+    if (window.confirm && !window.confirm('Reset every species/gender scale, Longoran posture/gait, every per-NPC hunch, and the global baby/toddler/child proportions to repository defaults? This discards local overrides.')) return;
     window.HobunjiLongoranSpecies?.resetAuthorTuning?.(); // Restores the same shipped defaults used by new Longoran spawns.
     ageModifiers = repositoryAgeModifiers(); // Reset global baby/toddler/child modifiers alongside per-species edits.
     try { localStorage.removeItem(AGE_SAVE_KEY); } catch (_) {}
