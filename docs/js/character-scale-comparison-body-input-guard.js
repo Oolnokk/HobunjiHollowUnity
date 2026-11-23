@@ -142,7 +142,8 @@
     }
 
     const group = previewGroupFor(identity);
-    if (group) window.HobunjiCharacterRigScale?.applyToParent?.(group, identity.species, identity.gender, persisted, ageFractionFor(group));
+    if (group && comparisonApi()?.refreshSelectedPreview) comparisonApi().refreshSelectedPreview(); // Recompose the active baby/toddler/child stage after species-only numeric edits.
+    else if (group) window.HobunjiCharacterRigScale?.applyToParent?.(group, identity.species, identity.gender, persisted, ageFractionFor(group));
     persistProfilesSoon();
     return persisted;
   }
