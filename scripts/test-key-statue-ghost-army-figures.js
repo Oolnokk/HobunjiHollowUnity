@@ -27,6 +27,7 @@ class Geometry {
   clone(){return new Geometry();}
   dispose(){Geometry.disposals++;}
 }
+class PlaneGeometry extends Geometry {constructor(w,h){super();this.width=w;this.height=h;}} // Used only if the real held-tool mesh has not finished initializing.
 Geometry.disposals=0;
 class Material {
   constructor(opts){Object.assign(this,opts);}
@@ -41,7 +42,7 @@ class Bounds {
   setFromObject(object){this.root=object;this.min={x:-.5,y:-.2,z:-.1};this.max={x:.5,y:1.8,z:.1};return this;}
   getSize(out){out.x=this.max.x-this.min.x;out.y=this.max.y-this.min.y;out.z=this.max.z-this.min.z;}
 }
-const THREE={Group,Mesh,Box3:Bounds,Vector3:class{},CanvasTexture:class {
+const THREE={Group,Mesh,PlaneGeometry,Box3:Bounds,Vector3:class{},SRGBColorSpace:'sRGB',CanvasTexture:class {
   constructor(canvas){this.image=canvas;}
   dispose(){this.disposed=true;}
 },MeshBasicMaterial:Material,NearestFilter:'nearest',DoubleSide:'both'};
@@ -52,6 +53,7 @@ const artistCalls=[]; // Captures frozen pose requests and verifies disposal.
 const hostileDressCalls=[]; // Checks the same pants, Temper/armor and dye finishing stages as the live Ghost Army.
 const companionStates=new Map(); // Mobile Dev Companion owns the visible diagnostics provider.
 const disposed=[]; // Asynchronous cancellation cannot resurrect a destroyed burden.
+const spriteLoads=[]; // Every fallback must use an existing authored weapon PNG rather than silently omit the soldier's weapon.
 let textureReady=true; // Switch to missing texture to verify portrait-only failure tolerance.
 let deferredFigure=null; // Simulates a portrait arriving after the statue has been recalled.
 const makeFigure=()=>({model:Object.assign(new Group(),{userData:{handAttachX:-.2,handAttachY:.25}}),
@@ -99,7 +101,10 @@ const window={
   FestivalAncestorFigures:artist,
 };
 const diagnostics={warn(){}};
-vm.runInNewContext(source,{window,document,console:diagnostics,Image:class {}});
+vm.runInNewContext(source,{window,document,console:diagnostics,Image:class {
+  constructor(){this.width=60;this.height=120;this.naturalWidth=60;this.naturalHeight=120;this.complete=true;}
+  set src(url){spriteLoads.push(url);this.onload?.();}
+}});
 (async()=>{
   const api=window.KeyStatueFigures;
   assert.equal(typeof companionStates.get('keyStatueFigures'),'function','mobile diagnostics receives the sculpture state provider');
@@ -137,9 +142,16 @@ vm.runInNewContext(source,{window,document,console:diagnostics,Image:class {}});
   assert(Geometry.disposals>0&&Material.disposals>0,'per-figure weapon resources are released');
 
   textureReady=false;const missing=new Group();missing.add(new Group());
-  assert.equal(await api.decorate(missing,spec),true,'no weapon PNG must not block the key-statue puzzle');
-  assert.equal(missing.userData.ghostArmyStatueInfo.weaponVisible,false);
+  assert.equal(await api.decorate(missing,spec),true,'a delayed held-tool mesh can be substituted with the authored source sprite');
+  assert.equal(missing.userData.ghostArmyStatueInfo.weaponVisible,true,'the real Ghost Army weapon stays visible even when its shared tool model has not initialized');
+  assert.equal(spriteLoads.at(-1),'assets/toolsprites/warhammer.png','the fallback uses the official weapon PNG');
   api.dispose(missing);
+  window.Combat.deps.TOOL_ITEM_DEFS.warhammer_nativeCopper.sprite=null;
+  const noArt=new Group();noArt.add(new Group());
+  assert.equal(await api.decorate(noArt,spec),true,'an actually missing weapon asset does not block the Key Statue');
+  assert.equal(noArt.userData.ghostArmyStatueInfo.weaponVisible,false);
+  api.dispose(noArt);
+  window.Combat.deps.TOOL_ITEM_DEFS.warhammer_nativeCopper.sprite='assets/toolsprites/warhammer.png';
 
   textureReady=true;deferredFigure={};const removed=new Group();const old=new Group();removed.add(old);
   const pending=api.decorate(removed,spec);
