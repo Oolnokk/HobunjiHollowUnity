@@ -904,9 +904,9 @@
         log('Baby back portrait unavailable: '+(error?.message||error),'warn');
       }
       if(ticket!==babyRenderTicket||!editingBaby)return false;
-      const phase=window.HobunjiRomanceConfig?.family?.phaseScales?.basket||{body:.32,head:.58}; // Family config owns newborn proportions; fallback covers offline editor previews.
+      const phase=window.HobunjiRomanceConfig?.family?.phaseScales?.basket||{body:.32,head:.50}; // Family config owns newborn proportions; fallback covers offline editor previews.
       const body=Number(phase.body)>0?Number(phase.body):.32;
-      const head=Number(phase.head)>0?Number(phase.head):.58;
+      const head=Number(phase.head)>0?Number(phase.head):.50;
       const npcRecord={role:'child',tags:['child','family'],isChild:true,
         childBodyScale:body,childHeadScale:head}; // Same infant proportions as RomanceFamily.childRecord.
       let model=null;
