@@ -265,6 +265,8 @@ function creature() {
 // A visible new rig can be promoted before normal hostile AI resumes.
 // The draw hook must not keep displaying that replacement upright.
 {
+  const previousClip=clip; // This fixture inspects horizontal orientation from the real authored bank, not the synthetic rig-ownership clip.
+  clip=JSON.parse(fs.readFileSync('docs/config/animations/spinthrow-blend-v1.json','utf8')).clips.left.clip;
   const animal=creature();animal.prone=true;
   assert(impact.updateCreature(animal,.016));
   const original=animal._impactRagdollPlayback;
@@ -280,6 +282,7 @@ function creature() {
   animal.prone=false;rescueFrame();
   assert.equal(impact.getDebug().activeCreatureReactions,0);
   assert.equal(rig.getDebug().activeAbsoluteClaims,0);
+  clip=previousClip;
 }
 
 // A brief ordinary-impact reaction must never substitute for a full prone
