@@ -1598,6 +1598,7 @@
       if (tag === 'wall' || tag === 'entryTunnel') mesh.userData.surfaceFoliageRole = 'walls';
       if (f.doorwayFrame === true) mesh.userData.housePieceDoorwayFrame = true; // Shared-finish identity for mobile mesh inspection.
       mesh.userData.farmMaterialRole = (tag === 'roof' || BOARD_TAGS[tag] || f.doorwayFrame === true) ? 'wood' : (STONE_TAGS[tag] ? 'stone' : null); // Natural farm finish role; canvases keep their authored appearance.
+      mesh.userData.hobunjiStaticBatchable = true; // Static quad: the world render draws it merged per material (js/farm-tile-render-batches.js); this mesh stays the raycast/collision/tint authority.
       group.add(mesh);
     }
 
@@ -1668,6 +1669,7 @@
       }
     }
     global.FoliageGenerator?.applySurfaceGrowth(group, piece.surfaceGrowth);
+    group.userData.hobunjiStaticBatchGroup = true; // Its face quads draw as merged batches when this group sits directly in a non-zone world scene.
     return group;
   }
 

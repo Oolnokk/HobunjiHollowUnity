@@ -113,6 +113,48 @@ Measured and ruled out in the same session (Cloud Forest, same harness):
   per-sheet UV transforms: not mergeable.
 - Remaining wall cost: the fading chunks' 36 draws (per-chunk transparent clones).
 
+## 22 Nov 2026: town houses and NPC farm plots drawn as merged batches
+
+A main-pass draw census in town (headless, fresh world outside the temple) found the largest
+draw source was nameless: `Group > Mesh`, 111–549 draws per main pass depending on the camera
+heading. Those are authored house faces (`HousePieceGen.buildGroupFromPiece`): every wall,
+roof, porch and tunnel quad is its own 6-vertex mesh with its own geometry, ~1,070 across
+town's house groups, sharing only 3–5 materials per house. Looking at the NPC farm plots
+(`npc-farm-plots.js`), their per-tile soil, trench and water meshes were 339 of 517 draws.
+
+`FarmTileRenderBatches` (render scope `farm-tile-batches`) now also merges, outside wilderness
+zones, the children tagged `hobunjiStaticBatchable` of scene-level groups tagged
+`hobunjiStaticBatchGroup`, per 8×8 cell and render state. House faces and plot soil, trench
+and water tiles carry the tags (water is transparent, so it also sets
+`hobunjiStaticBatchFlat`: tiles that never overlap can share one draw). These batches are
+render proxies only, with no terrain tags, so the held/x-ray classifiers see what they saw
+for the sources. Each batch sits at its members' centroid for Three's sort. A group's member
+list is cached while its children, their materials and geometries, and the group's own
+transform are unchanged; a full rescan, including the geometry/matrix signature, runs at
+least every second. Tagged batches set `geometryAutoLODExclude`: opt-in AutoLOD never touched
+the 2-triangle sources (below its 96-triangle floor) and must not decimate their merge. Signatures now include attribute
+identity, so a replaced attribute at version 0 counts as a change.
+
+Measured headless (480×320, same save, batches on vs off in the same session): main-pass
+draws −151 at the spawn view, −56 to −669 across four headings (1,182 → 513 facing the houses),
+−289 facing the plots (531 → 242). 1,331 sources become 41 batches. Raw same-task renders,
+tiles vs batches: 0–1 px differ in house views; 25–32 px of 129,600 (maxd ~30) seam speckles on
+the plots, from vertex rounding where adjacent tiles meet. One view showed ~770 px, all in
+the player's portrait: the first raw render after a game frame differs there from every
+later one (tiles vs tiles too), and with the player hidden tiles vs batches is 0 px.
+Measurement trap for raw-render parity checks: discard the first render after a frame. Whole
+profile at the spawn view (30 s, A/B on the same save): 219 → 186 ms a frame in software GL,
+world render JS 19.4 → 15.3 ms a frame, with the scope's own cost 0.2 → 0.7 ms (the 1 s full
+rescans run every ~5th frame at this frame rate, so the rescan share is smaller on a device). Not yet measured on a device; the
+draw counts are what should carry over to a draw-call-bound GPU like the GTX 1060. A/B:
+Settings → Render optimizations → "Merge farm ground tiles" (also covers these groups),
+`FarmTileRenderBatches.setEnabled(false)`. `snapshot()` reports `groupFullScans` /
+`groupCachedScans`.
+
+Not done: the remaining plot draws are crops (per-crop materials, and crops sway through
+frame hooks, so they stay unbatched). The first house builder (`_buildFaceMeshes`) emits
+faces without UVs and is not tagged.
+
 ## 22 Nov 2026: incremental NPC combat resource rings
 
 When a fighter's rounded Stamina value changes, the previous ring updater

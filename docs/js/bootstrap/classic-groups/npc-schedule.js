@@ -7,7 +7,7 @@
     "js/npc-social-stimuli.js?v=20260902a",
     "js/npc-activity-planner.js?v=20261111communion1",
     "js/npc-scheduling.js?v=20261118fiveBlossomsAudience1",
-    "js/npc-farm-plots.js?v=20261121ginjuSoil1",
+    "js/npc-farm-plots.js?v=20261123hae8717f",
     "config/npcs/social-relations.js?v=20261111communion1",
     "js/npc-social-seating-bridge.js?v=20261111communion1",
     "js/npc-pathfinding.js?v=20261122intentionalDescent1",
