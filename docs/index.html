@@ -238,7 +238,7 @@
   <script src="js/animal-hides.js?v=20261119dairyWild1"></script> <!-- Per-unit genetics, rarity, price, and save data for butchered hides. -->
   <!-- Creature genotype recolor + pattern-overlay compositing. -->
   <script src="js/creature-texture-cache.js?v=20261105h5c6c35c"></script>
-  <script src="js/creature-genetics-render.js?v=20261120grehlrBaseBeard1"></script>
+  <script src="js/creature-genetics-render.js?v=20261123animalAppearancePriority1"></script>
   <script src="js/baby-animal-head-warp.js?v=20261119h47dfbdf"></script> <!-- Idle chathead alpha mask for babies and eligible genetically Small pet variants; final art includes coat patterns and eyes. -->
   <script src="js/honeyfuzzle-swarm.js?v=20261109hfe37cae"></script> <!-- Honeyfuzzle swarm renderer: instanced translucent fly-pose blend plus genotype-tinted tail/spectacles; wild and stable creatures link through shared Combat deps. -->
   <script src="js/honeyfuzzle-colors.js?v=20261114queenPerf1"></script> <!-- Honeyfuzzle color regions and backward-compatible queen genetics FIFO. -->
@@ -438,7 +438,7 @@
   <script src="js/honeyfuzzle-house.js?v=20261114queenPerf1"></script> <!-- Honeyfuzzle House: 1x1 queen/swarm slot on a FarmProduction entry; hooked by farm-production.js, initialized by game.js. -->
   <script src="js/farm-layout-editor.js?v=20261016a"></script>
   <script src="js/world-meta-store.js?v=20261122cancelAnimal2"></script>
-  <script src="js/farm-animals.js?v=20261119hfa2e050"></script>
+  <script src="js/farm-animals.js?v=20261123animalAppearancePriority1"></script>
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="farm-buildings"></script> <!-- Farm construction, barn troughs and modular house. -->
   <!-- Death ragdoll → lootable corpse (window.CreatureDeath) —
        self-contained aside from deps injected via init(), so load order
@@ -597,7 +597,7 @@
   <script src="js/animal-shoulder-spline.js?v=20261119h401d940"></script> <!-- Required by the actual seven-point flying rig perch deformation. -->
   <script src="js/flying-animal-rig.js?v=20261117animalDensity40"></script> <!-- Canonical authored two-bone bird wing/body assembly. -->
   <script src="js/tzatzul-registration.js?v=20261119dairyWild1"></script> <!-- Tzatzul dev species, hatchling peck, stable individual tint and flying-rig JSON. -->
-  <script src="js/skeeri-ruins.js?v=20261122ha120488"></script> <!-- Three authored Skeeri sizes, concealed ruin hatches and shaft witch-bomb runs. -->
+  <script src="js/skeeri-ruins.js?v=20261123skeeriEyePrewarm1"></script> <!-- Three authored Skeeri sizes, concealed ruin hatches and shaft witch-bomb runs. -->
   <script src="js/tzatzul-live-visuals.js?v=20261122birdAnchor3"></script>
   <script src="js/tzatzul-cliff-sites.js?v=20261108tzflightnest2"></script> <!-- Separate rock-textured, non-climbable Tzatzul spires. -->
   <script src="js/tzatzul-flight-runtime.js?v=20261122proneCaptureMerge1"></script> <!-- Shared swept-body dive for exterior and nest mothers. -->
@@ -764,7 +764,7 @@
   <script src="js/tasks-panel.js?v=20261118fiveBlossomsHunt2"></script>
   <script src="js/supply-page.js?v=20261029seedblocks2"></script>
   <script src="js/whistle-equip.js?v=20261016hb4b3fe1"></script>
-  <script src="js/wildlife-debug-panel.js?v=20261122h4f96547"></script>
+  <script src="js/wildlife-debug-panel.js?v=20261123skeeriAppearanceDebug1"></script>
   <script src="js/wildlife-behavior-map.js?v=20261010hb5092df"></script>
   <!-- Shipping tab (player bag <-> shipping-box transfer UI, window.
        ShippingPanel) — pure DOM/state, no other window.* system reads;
@@ -2981,7 +2981,7 @@
   <script src="js/lunge-targeting.js?v=20261121lungeAoeAudit2"></script>
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups2" data-classic-group="render"></script>
   <script src="js/held-gift-policy.js?v=20261122heldGiftPolicy1"></script> <!-- Shared gifting policy and clothing visual preparation; game.js owns equipment state. -->
-  <script src="game.js?v=20261122hedcb3a0"></script>
+  <script src="game.js?v=20261123animalAppearancePriority1"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261115nativeArena1"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->

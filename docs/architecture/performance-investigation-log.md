@@ -1,5 +1,70 @@
 # Performance investigation log
 
+## 23 Nov 2026: prioritized animal colors and patterns for owned pets
+
+**Observed bottleneck in code:** \`CreatureGeneticsRender.composeFrame\` processed every native-resolution
+genotype appearance in strict first-in-first-out order, including wilderness spawns, farm
+livestock, mounts, ordinary companions and shoulder pets. A burst of wild requests could
+delay the player's own animal, making its fully authored base colors, inherited patterns,
+Color Pools surface motifs and eye overlays appear late. The existing wild and farm
+texture caches already deduplicate requests; they were not the cause of the ordering.
+
+The same canonical compositor now schedules by role: **player-owned active pets / mounts /
+shoulder pets**, then **farm livestock**, then **wilderness and regular previews**.
+Only one native-resolution composition runs at once, retaining the existing memory cap;
+all patterns and eyes remain atomic (a missing required layer rejects and retries).
+Priority is FIFO within each class, with one lower-priority frame allowed after four
+consecutive pet frames so wilderness is not starved. The game texture owner can promote
+an existing in-flight wildlife request to pet priority instead of composing twice.
+Small shoulder heads and split shoulder frames explicitly request pet priority.
+For owned pets, the compositor also starts only the *selected* idle/run frame's
+required base/pattern/eye artwork and masks while queued CPU work is still finishing.
+Ordinary global three-frame prewarming remains opt-in for developer tools.
+
+In-game mobile texture diagnostics through \`CreatureGeneticsRender.memorySnapshot()\`
+expose \`queuedPets\`, \`queuedFarm\`, \`composePending\`, \`composeActive\`,
+\`composePetStarts\`, \`composePromotions\` and \`petSpritePrefetches\`.
+\`scripts/test-animal-appearance-priority.js\` executes the production queue to
+assert pet/farm/wild ordering, fairness, promotion, per-pet prefetch and failure recovery.
+
+**Limits:** This removes avoidable *waiting behind other animals* and overlaps pet
+network loads with other composition work; a single expensive recolor/pattern pass
+still costs its original CPU time. Actual mobile seconds saved and FPS impact have
+not yet been benchmarked in an on-device run.
+
+
+## 23 Nov 2026: Skeeri source-art prewarm and appearance review
+
+Entering a generated ruin now starts `SkeeriRuins.prewarm()` on the normal transition
+without awaiting it. The first call downloads the three shared source sprites and rig
+JSON, extracts the base coat, darker mint pattern, off-hue details, and independently
+colored purple eye once. Later birds reuse the preparation while their individual
+body, marking and glowing-eye material colors remain separate. Repeated entry calls
+share the same promise and do not allocate another set of source masks.
+
+The eye selector now matches the **scaled #7F00FF marker family**, not arbitrary
+purple pixels. It preserves the value of shaded purple pixels; mint body pixels and
+dark-green markings remain distinct. The real-art PNG regression checks that every
+original opaque pixel belongs to exactly one source partition (the runtime glow is
+allowed to blur beyond that partition). Large source passes yield through the
+existing `PixelWorkYield` authority between flying/perched/wing masks rather than
+running every pose back-to-back during ruin entry. No new recurring frame work.
+
+Mobile Wildlife diagnostics display prewarm-ready state, request/failure counts,
+marked eye pixels and fur-marking pixels. Reviewed the priority compositor as well:
+optional pet-prefetch errors now fail open to full composition, without permanently
+stranding a pet on plain artwork. Standalone tests verify role ordering, fairness,
+in-flight promotion, failed downloads, failed composite rejection and queue cleanup.
+Legacy cutscene and shoulder animation fixtures were updated to inject the new
+priority bookkeeping and owner dependency; the latter now checks that another
+player's animal is *not* prioritized.
+
+**Measured here:** functional regressions and synthetic scheduler/appearance
+fixtures. **Not measured on device:** wall-clock speedup, GPU material upload
+latency per individual Skeeri, or whether the first entry still causes visible
+hitches on low-end phones. The prewarm caches *source masks*, not GPU textures for
+every possible individual palette. Keep those distinctions when profiling.
+
 ## 23 Nov 2026: fog and sky lighting work
 
 Fog reads the skydome's lunar sampler directly, avoiding a full diagnostic

@@ -45,7 +45,7 @@
   const clamp = (v,a,b) => Math.max(a,Math.min(b,Number(v)||0));
   const hash = str => {let h=2166136261;for(const ch of String(str))h=Math.imul(h^ch.charCodeAt(0),16777619)>>>0;return h;}; // Separate deterministic rolls do not perturb the generator RNG.
   const distance = (a,b) => Math.hypot(a.x-b.x,a.z-b.z); // Flight/trigger distances are measured in world tiles.
-  const snapshot = {mounts:0,hatchesOpened:0,spawned:0,dives:0,hits:0,bombRuns:0,bombsDropped:0,orbits:0,failedSpawns:0,eyeMarkerPixels:0,furPatternPixels:0,lastError:null}; // Readable on mobile without developer console.
+  const snapshot = {mounts:0,hatchesOpened:0,spawned:0,dives:0,hits:0,bombRuns:0,bombsDropped:0,orbits:0,failedSpawns:0,eyeMarkerPixels:0,furPatternPixels:0,prewarmRequests:0,prewarmReady:false,prewarmFailures:0,lastError:null}; // Readable on mobile without developer console.
   let deps = null; // Injected once by WildlifeSpawn.init: authoritative player, factory and hostile collection.
   let owner = null; // Exactly one disposable generated-ruin encounter session.
   let rigPromise = null; // Shared immutable sprite/JSON download across all three Skeeri sizes.
@@ -103,6 +103,14 @@
     return peak||255; // Safe fallback for unexpected/missing green artwork.
   }
   function shade(g,peak) {return Math.min(255,Math.round(255*g/peak));} // White/gray source reproduces the chosen tint without green-channel multiplication.
+  function eyeMarkerShade(r,g,b) {
+    // Same shaded #7F00FF marker-family rule as portrait-utils.js pixelDyeLayerImage:
+    // the original source scaled by brightness, NOT any vaguely purple pixel.
+    // Separates the VFX eye from mint body/markings before either receives tint.
+    const k = Math.max(r,g,b) / 255; // Marker brightness retained in the independently tinted eye, including dark painted pixels.
+    return k >= .28 && k <= 1.04 && Math.abs(r - 127*k) <= 10
+      && Math.abs(g) <= 10 && Math.abs(b - 255*k) <= 10 ? Math.min(1,k) : 0;
+  }
   function separateEyeMarker(image) {
     if(typeof document==='undefined')return {body:image,glow:null,pattern:null,details:null,marked:0,patternPixels:0,detailPixels:0};
     const width=image.naturalWidth||image.width,height=image.naturalHeight||image.height; // Source-space masks share the pose's geometry exactly.
@@ -118,8 +126,9 @@
     for(let i=0;i<pixels.data.length;i+=4) {
       const r=pixels.data[i],g=pixels.data[i+1],b=pixels.data[i+2],a=pixels.data[i+3];
       if(!a)continue;
-      if(b>=50&&r>=b*.28&&r<=b*.75&&g<=b*.24) {
-        eyes.data[i]=eyes.data[i+1]=eyes.data[i+2]=255;
+      const eyeShade = eyeMarkerShade(r,g,b); // The purple source swatch and its darker painted shades belong only to the eye/VFX layer.
+      if(eyeShade) {
+        eyes.data[i]=eyes.data[i+1]=eyes.data[i+2]=Math.round(255*eyeShade); // Preserve authored shaded eye contours rather than flattening every marked pixel to white.
         eyes.data[i+3]=a;
         pixels.data[i+3]=0; // Eyes are extracted before any fur or detail classification.
         marked++;
@@ -212,18 +221,33 @@
     if(!rigPromise)rigPromise=Promise.all([
       fetch(RIG_URL).then(r=>{if(!r.ok)throw new Error('Skeeri rig HTTP '+r.status);return r.json();}),
       ...Object.values(SPRITES).map(loadImage),
-    ]).then(([raw,flying,perched,wings])=>{
-      const flight=separateEyeMarker(flying),rest=separateEyeMarker(perched); // Built once, never inside the render loop.
+    ]).then(async ([raw,flying,perched,wings])=>{
+      const flight=separateEyeMarker(flying); // Expensive native-resolution masks are still built once, never in the render loop.
+      await window.PixelWorkYield?.maybeYield?.(); // Keep ruin entry responsive between individual full-size PNG passes.
+      const rest=separateEyeMarker(perched);
+      await window.PixelWorkYield?.maybeYield?.();
+      const wingsNeutral=neutralizeWings(wings); // Share the neutral wing texture among all individually tinted Skeeri.
+      await window.PixelWorkYield?.maybeYield?.();
       snapshot.eyeMarkerPixels=flight.marked+rest.marked;
       snapshot.furPatternPixels=flight.patternPixels+rest.patternPixels;
       if(!flight.marked||!rest.marked)window.__farmLog?.('[skeeri] planebent eye marker absent from a pose ('+EYE_MARKER+')','warn');
       return {rig:window.FlyingAnimalRig.normalize({...raw,
         flying:'creaturesprites/skeeri_planebent_flying.png',perched:'creaturesprites/skeeri_planebent_perched.png'}),
-        images:{flying:flight.body,perched:rest.body,wings:neutralizeWings(wings),
+        images:{flying:flight.body,perched:rest.body,wings:wingsNeutral,
           detailFlying:flight.details,detailPerched:rest.details,glowFlying:flight.glow,glowPerched:rest.glow,
           patternFlying:flight.pattern,patternPerched:rest.pattern}};
     }).catch(error=>{rigPromise=null;snapshot.lastError=String(error);throw error;});
     return rigPromise;
+  }
+  function prewarm() {
+    snapshot.prewarmRequests++; // Counts ruin entries that requested already-shared rig artwork.
+    const pending = loadRig(); // One shared promise loads all poses, independent colors/marking masks and wings.
+    pending.then(() => { snapshot.prewarmReady = true; }, error => {
+      snapshot.prewarmFailures++;
+      snapshot.prewarmReady = false;
+      snapshot.lastError = String(error?.message || error); // Failed preload can retry on the next entrance or first spawn.
+    });
+    return pending; // Entry calls this without awaiting; spawning continues only when createRig's same promise resolves.
   }
   async function createRig(actor=null) {
     const {rig,images}=await loadRig();
@@ -650,6 +674,6 @@
     actors:[...(owner?.actors||[])].map(s=>({id:s.id,size:s.size,phase:s.phase,
       health:s.actor.health,y:Number(s.actor.branchSurfaceY)||0,palette:s.actor.skeeriPalette}))};
   }
-  window.SkeeriRuins=Object.freeze({SPECIES,SPRITES,BODY_GROUPS,paletteFor,separateEyeMarker,register,init,createRig,mount,update,
+  window.SkeeriRuins=Object.freeze({SPECIES,SPRITES,BODY_GROUPS,paletteFor,separateEyeMarker,register,init,prewarm,createRig,mount,update,
     activateCompartment,signalMechanism,eyeLights,debugSnapshot,get active(){return owner;}});
 })();

@@ -187,6 +187,34 @@
     });
   }
 
+  // While other animals occupy the one-at-a-time pixel compositor, start only
+  // this pet's REQUIRED source PNG downloads (not every frame/pattern of its species).
+  // All loads reuse loadImage's CORS-safe promise cache; any failed asset retries
+  // normally when composeFrameNow actually needs it, never as missing coat art.
+  let petSpritePrefetches = 0; // Diagnostic count of real pet frame prefetch requests.
+  function prefetchPlayerPetFrameAssets(kind, frame, genotype, blinkShut) {
+    const spec = SPECIES[kind]; // Unknown species have no source-art manifest.
+    if (!spec) return;
+    genotype = effectiveGenotype(kind, genotype); // Legacy fur/plates saved genes select the same artwork as composition.
+    const urls = new Set([spec.base[frame] || spec.base.idle]); // One sprite per active frame; no eager run1/run2 downloads.
+    for (const id of spec.underlayPatterns || []) urls.add(patternUrl(kind, id, frame, genotype)); // Permanently visible anatomical tails.
+    for (const entry of visibleDefaultCoatPatterns(spec, genotype)) urls.add(patternUrl(kind, entry.id, frame, genotype)); // Default beards survive beneath genetic patterns.
+    for (const id of spec.patterns || []) {
+      if (spec.underlayPatterns?.includes(id)) continue;
+      const layer = genotype?.[id]; // Unexpressed or disabled inherited overlays have no art to fetch.
+      if (layer?.enabled !== false && layer?.copies > 0 && patternTintColor(kind, id, genotype)) urls.add(patternUrl(kind, id, frame, genotype));
+    }
+    if (spec.eyes) {
+      const eye = spec.eyes.mode === 'cycle'
+        ? spec.eyes.variants[Math.max(0, Math.min(3, 'ABCD'.indexOf(typeof blinkShut === 'string' ? blinkShut : 'A')))]
+        : (blinkShut ? spec.eyes.blink : spec.eyes.open); // Exact selected state; no unnecessary closed-eye upload.
+      urls.add(eye);
+    }
+    for (const url of urls) if (url) loadImage(url).catch(() => null); // Network I/O overlaps older queued pixel work; no unhandled preload failure.
+    if (!spec.fullBaseRecolor && !spec.preferSourceKeyRecolor) loadBaseMasks().catch(() => null); // Mask JSON overlaps source PNG downloads.
+    petSpritePrefetches++;
+  }
+
   function eyeSkinTintColor(kind, genotype, baseColor) {
     const patternId = SPECIES[kind]?.eyes?.skinColorPattern; // Optional pattern whose visible pigmentation covers the skin surrounding an eye.
     const layer = patternId ? genotype?.[patternId] : null; // Reads the same expressed allele used by pattern-layer compositing.
@@ -624,25 +652,90 @@
   // never the other way around. Eyes are normally untinted like NPC
   // untinted_regions; Nelk's eye sprite has mint skin and therefore opts
   // into keyed skin-only recoloring while retaining its painted iris.
-  let composeTail = Promise.resolve(); // One native-resolution compositor at a time bounds overlapping pixel arrays and temporary canvases.
-  let composePending = 0, composeActive = 0; // Mobile checkpoint diagnostics distinguish queued requests from actual allocation work.
-  let composeFailures = 0, lastComposeFailure = null; // Visible in the existing mobile cache snapshot when art fails to compose.
-  async function composeFrame(kind, frame, genotype, blinkShut = false) {
-    const previous = composeTail; // Serial shared farm/wild/companion composition, without changing any frame's pixels.
-    let unlock; // Always releases the queue after errors as well as successful renders.
-    composeTail = new Promise(resolve => { unlock = resolve; });
-    composePending++;
-    try {
-      await previous;
-      if (composePending > 1 && typeof setTimeout === 'function') await new Promise(resolve => setTimeout(resolve, 0)); // Yield between queued native pixel jobs so gameplay can present a frame.
+  function safePrefetchPlayerPetFrameAssets(kind, frame, genotype, blinkShut) {
+    try { prefetchPlayerPetFrameAssets(kind, frame, genotype, blinkShut); }
+    catch (error) {
+      // Optional source downloads must never strand a pet's actual color/pattern composition.
+      window.__farmLog?.('[genotype-render] pet prefetch deferred: ' + String(error?.message || error), 'warn');
+    }
+  }
+
+  // One native-resolution animal composite at a time, prioritizing pets without raising peak canvas memory.
+  const composeQueue = []; // Pending whole-appearance jobs (fur, inherited patterns, Color Pools motifs and eyes).
+  const COMPOSE_PET_BURST = 4; // One lower-priority job after four pet jobs prevents indefinite starvation.
+  let composePending = 0, composeActive = 0; // Existing mobile cache counters include queued and active jobs.
+  let composeFailures = 0, lastComposeFailure = null; // Incomplete frames reject and retry, never become cached plain sprites.
+  let composeDrainScheduled = false, composePetStreak = 0; // At most one active queue drain.
+  let composePetStarts = 0, composePromotions = 0; // Visible performance counters, no per-frame inspection.
+
+  function composePriority(options) {
+    const value = typeof options === 'string' ? options : options?.priority; // Role passed by farm/game/shoulder render callers.
+    return value === 'pet' ? 2 : value === 'farm' ? 1 : 0;
+  }
+  function composeRequestKey(kind, frame, signature, blinkShut) {
+    return kind + '|' + frame + '|' + signature + '|' + eyeStateKey(blinkShut); // Same texture identity across wild and companion consumers.
+  }
+  function promoteFrame(kind, frame, signature, blinkShut = false, options = 'pet') {
+    const key = composeRequestKey(kind, frame, signature, blinkShut); // Existing wild request may become a player-pet request.
+    const priority = composePriority(options);
+    let promoted = false; // Whether queued work was reordered, for the shared texture owner and debug snapshot.
+    for (const job of composeQueue) {
+      if (job.key !== key || job.priority >= priority) continue;
+      job.priority = priority;
+      if (priority === 2) safePrefetchPlayerPetFrameAssets(job.kind, job.frame, job.genotype, job.blinkShut); // A failed optional image prefetch must never cancel promotion.
+      composePromotions++;
+      promoted = true;
+    }
+    return promoted;
+  }
+  function scheduleComposeDrain() {
+    if (composeActive || composeDrainScheduled) return;
+    composeDrainScheduled = true;
+    Promise.resolve().then(drainComposeQueue); // Gather synchronous spawn-wave requests before selecting the first job.
+  }
+  async function drainComposeQueue() {
+    composeDrainScheduled = false;
+    if (composeActive) return;
+    let completed = 0; // Browser may present between completed native-resolution pixel jobs.
+    while (composeQueue.length) {
+      let pick = 0, best = -1; // Highest priority first, FIFO within that priority.
+      for (let i = 0; i < composeQueue.length; i++) {
+        if (composeQueue[i].priority > best) { best = composeQueue[i].priority; pick = i; }
+      }
+      if (best === 2 && composePetStreak >= COMPOSE_PET_BURST) {
+        let lower = -1; // Prefer farm animals to wildlife when giving the other queues a fairness turn.
+        for (let i = 0; i < composeQueue.length; i++) {
+          if (composeQueue[i].priority < 2 && composeQueue[i].priority > lower) { lower = composeQueue[i].priority; pick = i; }
+        }
+        if (lower < 0) pick = 0; // No lower-priority work is waiting.
+      }
+      const job = composeQueue.splice(pick, 1)[0]; // No mutation of an active genotype composition.
       composeActive++;
-      try { return await composeFrameNow(kind, frame, genotype, blinkShut); }
-      catch (error) {
+      if (job.priority === 2) { composePetStreak++; composePetStarts++; }
+      else composePetStreak = 0;
+      try {
+        if (completed && typeof setTimeout === 'function') await new Promise(resolve => setTimeout(resolve, 0)); // Avoid a long unbroken main-thread burst.
+        job.resolve(await composeFrameNow(job.kind, job.frame, job.genotype, job.blinkShut));
+      } catch (error) {
         composeFailures++;
-        lastComposeFailure = { kind, frame, message: String(error?.message || error), at: Date.now() }; // Mobile reports identify incomplete animal art without requiring devtools.
-        throw error; // A failed frame is never a cacheable plain/eyeless/patternless composite.
-      } finally { composeActive--; }
-    } finally { composePending--; unlock(); }
+        lastComposeFailure = { kind: job.kind, frame: job.frame, message: String(error?.message || error), at: Date.now() }; // Mobile report shows real incomplete-art failures.
+        job.reject(error); // Never publish a partially colored/patterned frame.
+      } finally {
+        composeActive--;
+        composePending--;
+        completed++;
+      }
+    }
+  }
+  function composeFrame(kind, frame, genotype, blinkShut = false, options = null) {
+    const priority = composePriority(options); // Default preserves historical FIFO for preview and wildlife callers.
+    const key = composeRequestKey(kind, frame, genotypeSignature(kind, genotype), blinkShut);
+    if (priority === 2) safePrefetchPlayerPetFrameAssets(kind, frame, genotype, blinkShut); // Prefetch failures fall back to composeFrameNow rather than permanently leaving plain sprites.
+    return new Promise((resolve, reject) => {
+      composeQueue.push({ kind, frame, genotype, blinkShut, priority, key, resolve, reject }); // One shared canonical compositor, not a second fast/patternless renderer.
+      composePending++;
+      scheduleComposeDrain();
+    });
   }
 
   async function composeFrameNow(kind, frame, genotype, blinkShut = false) {
@@ -894,7 +987,7 @@
     return parts.join('|');
   }
 
-  window.CreatureGeneticsRender = { composeFrame, genotypeSignature, colorPoolPaintSignature, getLastPatternPaintDebug, prewarm, patternUrl, eyeStateKey, eyeStatesForKind, eyeSkinTintColor, SPECIES, recolorPixels, recolorKeyedPixels, patternTintColor, fitMaskToImage, hexToRgb, memorySnapshot: () => ({ recolorEntries: _recolorCache.size, recolorEstimatedBytes: recolorBytes, recolorBudgetBytes: RECOLOR_CACHE_BYTES, composePending, composeActive, composeFailures, lastComposeFailure }) };
+  window.CreatureGeneticsRender = { composeFrame, genotypeSignature, colorPoolPaintSignature, getLastPatternPaintDebug, prewarm, promoteFrame, patternUrl, eyeStateKey, eyeStatesForKind, eyeSkinTintColor, SPECIES, recolorPixels, recolorKeyedPixels, patternTintColor, fitMaskToImage, hexToRgb, memorySnapshot: () => ({ recolorEntries: _recolorCache.size, recolorEstimatedBytes: recolorBytes, recolorBudgetBytes: RECOLOR_CACHE_BYTES, composePending, composeActive, composeFailures, lastComposeFailure, queuedPets: composeQueue.filter(job => job.priority === 2).length, queuedFarm: composeQueue.filter(job => job.priority === 1).length, composePetStarts, composePromotions, petSpritePrefetches }) };
 
   window.HobunjiCacheAudit?.register('CreatureGeneticsRender.imageCache', () => _imageCache.size);
   window.HobunjiCacheAudit?.register('CreatureGeneticsRender.recolorCache', () => _recolorCache.size);

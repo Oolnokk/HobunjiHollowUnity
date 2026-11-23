@@ -27,6 +27,7 @@ const windowStub = {
 };
 const sandbox = {
   window: windowStub,
+  player, // The real animator closes over the player's identity to prioritize only their own pet's coat and patterns.
   performance: { now: () => 1000 },
   swaps,
   Set,
@@ -34,8 +35,8 @@ const sandbox = {
 vm.createContext(sandbox);
 vm.runInContext(`
   const RUN_FRAME_STRIDE_PX = 30;
-  function setCreatureFrame(_avatarRef, url, kind, frameKey) {
-    swaps.push({ url, kind, frameKey });
+  function setCreatureFrame(_avatarRef, url, kind, frameKey, _genotype, _blink, priority) {
+    swaps.push({ url, kind, frameKey, priority });
     return true;
   }
   ${gameSource.slice(start, end)}
@@ -67,6 +68,7 @@ assert.equal(animal.runFrameDistPx, 0, 'perched pet never advances the ordinary 
 animal.stableRole = 'companion';
 sandbox.animateCreatureForTest(animal, 0.2, false);
 assert.equal(swaps.at(-1).url, 'adult-idle.png', 'ordinary idle frames resume immediately on unperch');
+assert.equal(swaps.at(-1).priority, 'pet', 'player-owned companions get their complete color/pattern frame first');
 animal.x += 40;
 sandbox.animateCreatureForTest(animal, 0.2, true);
 assert.equal(swaps.at(-1).url, 'adult-run2.png', 'ordinary movement/run animation resumes when pet is a companion');
@@ -76,6 +78,7 @@ animal.master = { id: 'different-owner' };
 animal.currentFrameUrl = 'data:image/png;base64,enlarged-head';
 sandbox.animateCreatureForTest(animal, 0.2, false);
 assert.equal(swaps.at(-1).url, 'adult-idle.png', 'another owner cannot suppress this client\'s normal creature rendering');
+assert.equal(swaps.at(-1).priority, 'normal', 'another player\'s pet must not displace the local player\'s pending appearance work');
 // The wilderness sleep presenter also owns an alternative eye-closed texture pass; that must defer to the perch.
 const sleepSource = fs.readFileSync('docs/js/animal-sleep-presentation.js', 'utf8'); // Shipped pre-render sleeper pass.
 const sleepStart = sleepSource.indexOf('  function applyWildernessSleepers() {');

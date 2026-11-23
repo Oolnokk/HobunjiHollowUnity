@@ -78,7 +78,9 @@ class Image {
   }
 }
 let captured = null; // Last renderer call allows checking the source-space masks without WebGL.
+let pixelYieldChecks = 0; // Counts cooperative breaks while creating Skeeri source masks during entry.
 const w = {
+  PixelWorkYield: { async maybeYield() { pixelYieldChecks++; } }, // The production main-thread scheduler may yield between large native-resolution masks.
   FlyingAnimalRig: {
     normalize: x => x,
     create(settings, images) {
@@ -103,6 +105,21 @@ vm.runInNewContext(source, {
 }, { filename: 'skeeri-ruins.js' });
 const api = w.SkeeriRuins;
 assert(api, 'shipped Skeeri runtime exports its API');
+assert.equal(typeof api.prewarm, 'function', 'ruin entry can precompute all Skeeri eye, marking and coat masks');
+const shadedEyes = api.separateEyeMarker({ width:5, height:1, pixels:new Uint8ClampedArray([
+  127,0,255,255, // The exact #7F00FF eye/VFX marker.
+  74,0,148,255, // Dark marker shade uses the same source hue.
+  150,35,180,255, // An unrelated purple accent must remain untinted.
+  159,191,159,255, // Light mint fur remains on the base body.
+  117,140,111,255, // Dark mint fur belongs to the separate pattern.
+])});
+assert.equal(shadedEyes.marked, 2, 'only the painted marker hue family is the eye');
+assert.equal(shadedEyes.body.pixels[3], 0, 'eye core must not be recolored as fur');
+assert.equal(shadedEyes.body.pixels[7], 0, 'dark eye shade must not be recolored as fur');
+assert.equal(shadedEyes.pattern.pixels[3], 0, 'eye core must not be a dark mint marking');
+assert.equal(shadedEyes.pattern.pixels[7], 0, 'dark eye shade must not be a dark mint marking');
+assert.equal(shadedEyes.glow.pixels[4], 148, 'the shaded eye uses its original luminosity');
+assert.equal(shadedEyes.details.pixels[11], 255, 'unrelated purple detail keeps its original color');
 const creatureDb = {'gar-wolf':{lootPool:'creature_gar-wolf'}}; // The predator baseline must not leak its loot into Skeeri.
 const itemDefs = {}, inventoryItems = []; // Real wildlife registration should populate the Pack and tool arch.
 assert(api.register({CREATURE_DB:creatureDb,ITEM_DEFS:itemDefs,inventoryItems}));
@@ -201,10 +218,30 @@ for(const key of ['flying','perched']) {
   assert(extracted.patternPixels>100 && extracted.patternPixels<sprite.width*sprite.height*.50,
     key+' must contain darker fur markings, not the entire sprite or zero pixels');
   assert(extracted.pattern && extracted.glow, key+' includes both separately tintable layers');
+  // Audit every actual artist pixel: mint body, mint markings, neutral details
+  // and the shaded purple eye must form a disjoint, lossless source partition.
+  const layers = [extracted.body.pixels, extracted.pattern.pixels,
+    extracted.details?.pixels, extracted.glow.pixels].filter(Boolean); // Shared source artwork is decoded only once.
+  let covered = 0, overlap = 0, missing = 0; // Renderer regression diagnostics for each real Skeeri pose.
+  for (let i = 3; i < sprite.pixels.length; i += 4) {
+    if (!sprite.pixels[i]) continue;
+    let present = 0; // Small fixed layer count: never allocate a fresh array for millions of real PNG pixels.
+    for (const layer of layers) if (layer[i] > 0) present++;
+    if (!present) missing++;
+    if (present > 1) overlap++;
+    if (present === 1) covered++;
+  }
+  assert.equal(missing, 0, key+' source art has no missing coat/eye/details pixels after recolor partition');
+  assert.equal(overlap, 0, key+' source art is not double-painted by eye, body or pattern');
+  assert(covered > 100, key+' contains genuinely colored/outlined authored pixels');
+
 }
 
 (async () => {
   const palette = api.paletteFor('kanthic', 'specimen-A');
+  const warming = [api.prewarm(), api.prewarm()]; // Repeated entry requests must share one decoded sprite/rig pass.
+  await Promise.all(warming);
+  assert.equal(pixelYieldChecks,3,'the source mask preparation offers a browser turn between flying/perched/wings passes');
   const rig = await api.createRig({ skeeriPalette: palette });
   assert.deepEqual(rig.palette, { body: palette.body, eyes: palette.eyes, pattern: palette.pattern }, 'body, eye and fur pattern use independent colors');
   assert.equal(captured.settings.flying, 'creaturesprites/skeeri_planebent_flying.png');
@@ -241,5 +278,23 @@ for(const key of ['flying','perched']) {
   assert.deepEqual(rig.palette, { body: palette.body, eyes: palette.eyes, pattern: palette.pattern }, 'hit-flash restoration keeps fur and strictly in-family eye colors separate');
   assert.equal(api.debugSnapshot().eyeMarkerPixels, 2);
   assert.equal(api.debugSnapshot().furPatternPixels, 2);
+  assert.equal(api.debugSnapshot().prewarmRequests, 2);
+  assert.equal(api.debugSnapshot().prewarmFailures, 0);
+  assert.equal(api.debugSnapshot().prewarmReady, true);
+  assert.equal(pixelYieldChecks,3,'repeated entry and bird creation do not recolor the shared full-size source art');
+  const ruinEntry = fs.readFileSync(path.join(root, 'docs/js/dev-random-ruin-interior-map.js'),'utf8');
+  assert.match(ruinEntry, /SkeeriRuins\?\.prewarm\?\.\(\)\?\.catch\?\.\(/, 'entry starts Skeeri caching without a new per-frame scan');
+  const wildlifePanel = fs.readFileSync(path.join(root, 'docs/js/wildlife-debug-panel.js'), 'utf8');
+  const censusBegin = wildlifePanel.indexOf('  function renderSkeeriFlightCensus() {');
+  const censusEnd = wildlifePanel.indexOf('  function renderPingdortCensus()', censusBegin);
+  assert(censusBegin > 0 && censusEnd > censusBegin, 'real mobile Skeeri census remains independently testable');
+  const censusContext = { window: { SkeeriRuins: { debugSnapshot: () => ({ ...api.debugSnapshot(), active: true, actors: [] }) } },
+    deps: { esc: value => String(value) } }; // Simulate a present ruin; the source-art counters still come from the real renderer.
+  vm.runInNewContext(wildlifePanel.slice(censusBegin, censusEnd)
+    + '\nthis.census = renderSkeeriFlightCensus;', censusContext);
+  const census = censusContext.census();
+  assert.match(census, /Appearance preload: ready/, 'mobile Wildlife tab shows completed Skeeri source-art preload');
+  assert.match(census, /ruin entries requested: 2/, 'mobile tab makes reuse of source art inspectable');
+  assert.match(census, /Separated original sprite pixels: eyes 2/, 'mobile tab reports eye extraction rather than hiding mask errors');
   console.log('Planebent Skeeri authored art, shared wings, theme palettes, marked eye overlays and tint restore PASS');
 })().catch(error => { console.error(error); process.exitCode = 1; });

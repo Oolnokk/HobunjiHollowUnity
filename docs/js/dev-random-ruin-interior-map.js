@@ -1625,6 +1625,7 @@
       if(!entering||ruin!==entering)return;
       for(const o of playerSceneObjects()) detach(o);
       deps.setCurrentArea(MAP_ID); deps.setCurrentBuildingMapId?.(MAP_ID);
+      window.SkeeriRuins?.prewarm?.()?.catch?.(error => window.__farmLog?.('[skeeri] ruin-entry appearance prewarm failed: '+String(error?.message||error),'warn')); // Start shared pose/eye/fur-pattern artwork immediately; never hold the scene transition on texture I/O.
        window.LocationArrival?.announce?.(arrivalTitle(entering), {area:MAP_ID}); // Every ruin gets the cave/camp arrival banner (a dungeon title card), not only boss tombs.
       deps.player.x=entering.spawn.x*deps.TILE; deps.player.y=entering.spawn.z*deps.TILE; deps.player.vx=0;deps.player.vy=0;
       movePlayerObjectsTo(entering.scene);
