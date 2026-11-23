@@ -76,7 +76,7 @@ ruin keeps `TRAVERSAL_METHODS` (reaching obelisks).
   of 2.6–1.6 that fit; landings are 3 wide (smaller in caves).
 * The rope hangs from a carved stone bracket flush under the balcony above, over the launch pad's forward edge.
   It is the ruin's own rider rope (`DevRandomRuinSimplePuzzles.addFurnitureRope`, hung once the rope runtime is
-  live): jump to catch the visible rope end from its launch pad, pump, and jump off on the forward upswing. The brake slows the swing while preserving the shaft rope’s length and swing plane.
+  live): jump to catch the visible rope end from its launch pad, pump, and jump off on the forward upswing. Holding the brake immediately clears swing momentum and smoothly returns the rope to vertical, while preserving the shaft rope’s fixed length and swing plane.
 * The swing runs along the climb direction, so the backswing passes over the lower steps just climbed; it must
   stay on one straight side of the ring. Every rope's whole arc, up to RopeCore's swing limit, misses every slab.
 * Proof (`compose().checks`, re-checked independently by `scripts/test-ruin-rope-shaft.js`): jump hops against
