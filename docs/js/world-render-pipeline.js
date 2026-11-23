@@ -432,6 +432,11 @@
   // not fading) draw as one InstancedMesh per shared variant part.
   registerRenderScope({ id: 'wilderness-tree-instancing', owner: 'wilderness-tree-instancer.js', order: 250,
     suspend: ctx => window.WildernessTreeInstancer?.suspendForRender?.(ctx.scene, { isZone: ctx.isZone }) });
+  // The Cloud Forest's dense shadewood wall: drawn, non-fading chunk parts
+  // draw as one InstancedMesh per part across chunks (background scenery, so
+  // never inside a held/x-ray replay).
+  registerRenderScope({ id: 'dense-forest-wall-batches', owner: 'dense-forest-wall-batches.js', order: 270,
+    suspend: ctx => window.DenseForestWallBatches?.suspendForRender?.(ctx.scene, { isZone: ctx.isZone, camera: ctx.camera }) });
   // Walkers have a floor-anchored root but skinned/limb children that disable
   // Three's own frustum culling: off-camera NPC visuals are suspended.
   registerRenderScope({ id: 'npc-view-cull', owner: 'npc-view-frustum-cull.js', order: 300,
