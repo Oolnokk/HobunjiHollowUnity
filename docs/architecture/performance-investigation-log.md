@@ -33,6 +33,38 @@ still costs its original CPU time. Actual mobile seconds saved and FPS impact ha
 not yet been benchmarked in an on-device run.
 
 
+## 23 Nov 2026: Skeeri source-art prewarm and appearance review
+
+Entering a generated ruin now starts `SkeeriRuins.prewarm()` on the normal transition
+without awaiting it. The first call downloads the three shared source sprites and rig
+JSON, extracts the base coat, darker mint pattern, off-hue details, and independently
+colored purple eye once. Later birds reuse the preparation while their individual
+body, marking and glowing-eye material colors remain separate. Repeated entry calls
+share the same promise and do not allocate another set of source masks.
+
+The eye selector now matches the **scaled #7F00FF marker family**, not arbitrary
+purple pixels. It preserves the value of shaded purple pixels; mint body pixels and
+dark-green markings remain distinct. The real-art PNG regression checks that every
+original opaque pixel belongs to exactly one source partition (the runtime glow is
+allowed to blur beyond that partition). Large source passes yield through the
+existing `PixelWorkYield` authority between flying/perched/wing masks rather than
+running every pose back-to-back during ruin entry. No new recurring frame work.
+
+Mobile Wildlife diagnostics display prewarm-ready state, request/failure counts,
+marked eye pixels and fur-marking pixels. Reviewed the priority compositor as well:
+optional pet-prefetch errors now fail open to full composition, without permanently
+stranding a pet on plain artwork. Standalone tests verify role ordering, fairness,
+in-flight promotion, failed downloads, failed composite rejection and queue cleanup.
+Legacy cutscene and shoulder animation fixtures were updated to inject the new
+priority bookkeeping and owner dependency; the latter now checks that another
+player's animal is *not* prioritized.
+
+**Measured here:** functional regressions and synthetic scheduler/appearance
+fixtures. **Not measured on device:** wall-clock speedup, GPU material upload
+latency per individual Skeeri, or whether the first entry still causes visible
+hitches on low-end phones. The prewarm caches *source masks*, not GPU textures for
+every possible individual palette. Keep those distinctions when profiling.
+
 ## 23 Nov 2026: Cloud Forest dense wall merged across chunks; wilderness leads measured
 
 A per-render-call draw census of a Southern Cloud Forest frame (headless, fresh world, 480×320,
