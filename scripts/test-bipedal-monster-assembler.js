@@ -29,7 +29,7 @@ assert.equal(nohuknukSpecies.parentSpecies,'engh-sho');
 assert.equal(nohuknukSpecies.npcOnly,true);
 assert.ok(studio.includes('bipedal-monster-assembler.js'));
 assert.ok(author.includes('js/local-db-overrides.js'), 'Animation Author loads the existing NPC sidecar composition rules');
-assert.ok(author.includes('await composeAuthoredNpcSpecies(normalizeDatabase(rawDb), settings)'), 'Repository NPCs use authored species overrides');
+assert.ok(author.includes('await composeAuthoredNpcSpecies(normalizeDatabase(databaseResult.value), settings)'), 'Repository NPCs still compose authored species overrides after the NPC database is downloaded alongside the runtime');
 assert.ok(author.includes('await composeAuthoredNpcSpecies(normalizeDatabase(parsed)'), 'Uploaded NPCs also receive authored species overrides');
 assert.ok(author.includes("if (model.userData?.bipedalMonster) {"), 'Author binds the existing creature rig before humanoid neck creation');
 assert.ok(author.includes("rig.implementation = 'creature-painted-neck'"), 'Author identifies its native painted creature neck');
