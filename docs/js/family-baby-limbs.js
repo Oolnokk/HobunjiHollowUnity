@@ -38,7 +38,8 @@
     walker?.root?.traverse?.(node => {
       if (!node?.isMesh || node.visible === false || !node.geometry?.attributes?.position?.count) return;
       let side = null, kind = null;
-      for (let cursor = node.parent; cursor && cursor !== walker.root && !(side && kind); cursor = cursor.parent) {
+      for (let cursor = node.parent; cursor && cursor !== walker.root; cursor = cursor.parent) {
+        if (cursor.visible === false) return; // Ignore hidden GLB/fallback subtrees, not the intentionally hidden carried baby's walker root.
         const name = String(cursor.name || '');
         if (!kind && /_hand_visual$/.test(name)) { kind = 'hand'; side = name.startsWith('left') ? 'left' : name.startsWith('right') ? 'right' : null; }
         if (!kind && /^(left|right)_foot$/.test(name)) { kind = 'foot'; side = name.slice(0, name.indexOf('_')); }
@@ -216,10 +217,15 @@
     group.updateWorldMatrix(true, false);
     for (const side of SIDES) {
       const dir = side === 'left' ? 1 : -1;
-      cloneLimb(limbs.hand[side], 'hand', side, root, a.shoulder(side),
+      const hand = cloneLimb(limbs.hand[side], 'hand', side, root, a.shoulder(side),
         { x: dir * a.handReach.out, y: a.handReach.up, z: a.handReach.z });
-      cloneLimb(limbs.foot[side], 'foot', side, root, a.hip(side),
+      const foot = cloneLimb(limbs.foot[side], 'foot', side, root, a.hip(side),
         { x: 0, y: -a.footReach.down, z: a.footReach.z });
+      if (!hand || !foot) {
+        debug.lastMissing = side + (!hand ? ' hand' : ' foot');
+        detach(group); // A partial rig cannot be treated as attached: retry with live GLBs next update.
+        return false;
+      }
     }
     groups.add(group);
     sourcesByGroup.set(group, current); // Snapshot includes the resizing revision and live GLB resource identities.
