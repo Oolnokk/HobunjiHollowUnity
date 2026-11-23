@@ -1008,7 +1008,7 @@
       const point=lightingDeps.worldToOverlay(ruinGlowVertex.x,ruinGlowVertex.y,ruinGlowVertex.z);
       screen[i*2]=point.x;screen[i*2+1]=point.y;
     }
-    const element=geometry.index?.array,indices=element||null,uvs=uv.array;
+    const indices=geometry.index?.array||null,uvs=uv.array;
     const total=Math.min(remainingTriangles,Math.floor((indices?.length||count)/3));
     const rect=lightingDeps.getThreeRect?.();
     const width=Number(rect?.width||ctx.canvas?.clientWidth||ctx.canvas?.width)||Infinity;
@@ -1074,7 +1074,8 @@
       ruinGlowSource.x=ruinGlowProjection.x;ruinGlowSource.y=ruinGlowProjection.y;ruinGlowSource.z=ruinGlowProjection.z;
       if(!ruinRoomLightAllowed(ruinGlowSource))continue;
       const scale=mesh.matrixWorld?.getMaxScaleOnAxis?.() || 1;
-      const radiusTiles=Math.min(5,Math.max(.8,(sphere?.radius||1)*scale));
+      const surfaceRadius=Math.max(.8,(sphere?.radius||1)*scale); // Actual geometry extent, used only to cull glyphs that are completely offscreen.
+      const radiusTiles=kanthic?surfaceRadius:Math.min(5,surfaceRadius); // Kanthic must not lose the visible end of a long wall; other themes keep legacy glow radius.
       const center=lightingDeps.worldToOverlay(ruinGlowProjection.x,ruinGlowProjection.y,ruinGlowProjection.z);
       const radius=lightScreenRadius(ruinGlowProjection.x,ruinGlowProjection.z,ruinGlowProjection.y,radiusTiles);
       if (!(radius > 0) || !lightMaskIntersectsViewport(center,radius,ctx,ruinGlowProjection.x,ruinGlowProjection.y,ruinGlowProjection.z,radiusTiles)) continue;
