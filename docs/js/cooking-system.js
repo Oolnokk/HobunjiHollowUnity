@@ -7,13 +7,12 @@
   const CATEGORY_ICONS = {
     mineral: '💎', material: '🔩', wool: '🧶', sweetPaste: '🍯', sweetLiquid: '🫙', liquor: '🍶', grain: '🌾', teaBlend: '🍃', powder: '🥣', curds: '🥛', mayonnaise: '🥚', mustardSeed: '🌱', pungentPaste: '🧄', noodleBase: '🍜', cheese: '🧀', poultry: '🍗', meat: '🥩', whiteMilk: '🥛', seeds: '🌱', spice: '🌶️', fish: '🐟', mollusk: '🐚', starchVegetable: '🥔', butter: '🧈', vegetable: '🥬', brothBase: '🫕', berry: '🫐', fruit: '🍎', flour: '🥣', bread: '🍞', oil: '🫗', nut: '🥜', egg: '🥚', dairy: '🥛', sauce: '🫙', juice: '🧃', wine: '🍷', mead: '🍯', herb: '🌿', crop: '🌾', processedCrop: '🥣', processedProtein: '🍖', uumkaoiiDew: '💧', uumkaoiiMilk: '🥛', uumkaoiiCurds: '🥣', uumkaoiiCheese: '🧀', whiteCurds: '🥣', whiteCheese: '🧀',
   }; // Used to give every prototype ingredient an inventory and picker icon.
-  const EFFECT_ICONS = { strength: '💪', fortitude: '🛡️', vigor: '⚡', speed: '🏃', perception: '👁️', clarity: '🧠', combat: '⚔️', farming: '🌾', fishing: '🎣', foraging: '🌿', cooking: '🍲', mining: '⛏️' }; // Used by food previews and the shared buff bar.
+  const EFFECT_ICONS = { strength: '💪', fortitude: '🛡️', vigor: '⚡', speed: '🏃', perception: '👁️', combat: '⚔️', farming: '🌾', fishing: '🎣', foraging: '🌿', cooking: '🍲', mining: '⛏️' }; // Used by food previews and the shared buff bar.
 
   const FOOD_EFFECT_BENEFITS = Object.freeze({
     strength: 'Increases outgoing damage.', fortitude: 'Reduces incoming Health damage.',
     vigor: 'Improves Stamina recovery.', speed: 'Increases movement speed.',
-    perception: 'Improves Perception checks and rare-fish encounters.',
-    clarity: 'Improves the chance to save ingredients while cooking.',
+    perception: 'Improves Perception checks, rare-fish encounters, and the chance to save cooking ingredients.',
     combat: 'Improves Combat skill bonuses.', farming: 'Improves Farming skill bonuses.',
     fishing: 'Improves Fishing skill bonuses.', foraging: 'Improves Foraging skill bonuses.',
     cooking: 'Improves Cooking skill bonuses.', mining: 'Improves Mining skill bonuses.',
@@ -34,6 +33,21 @@
 
   const data = () => window.HobunjiCookingData || { items: {}, recipes: [] }; // Used to keep this module inert if content fails to load.
   const canonicalKey = key => ITEM_ALIASES[key] || key; // Used whenever prototype ids cross into the game's inventory.
+  const FOOD_EFFECT_ALIASES = Object.freeze({ clarity: 'perception' }); // Legacy food keys migrate into the existing Perception stat, never a separate Clarity buff.
+  function canonicalFoodEffectKey(key) {
+    return FOOD_EFFECT_ALIASES[key] || key; // Shared by ingredient previews, restored meals, timed buffs, and festival rewards.
+  }
+  function normalizeFoodEffects(effects) {
+    const normalized = {}; // Canonical saved/processed food effects, summing any legacy Clarity and existing Perception stacks.
+    if (!effects || typeof effects !== 'object') return normalized;
+    for (const [effect, rawStacks] of Object.entries(effects)) {
+      const stacks = Number(rawStacks); // Keep valid processed fractional values while rejecting malformed old saves.
+      if (!Number.isFinite(stacks) || stacks <= 0) continue;
+      const canonical = canonicalFoodEffectKey(effect); // Legacy Clarity is never exposed as a second buff.
+      normalized[canonical] = (normalized[canonical] || 0) + stacks;
+    }
+    return normalized;
+  }
   const esc = value => String(value ?? '').replace(/[&<>'"]/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[character]); // Used for all generated cooking markup.
 
   function currentGameHour() {
@@ -101,7 +115,7 @@
       if (item.description && (!deps.ITEM_DEFS[key].desc || deps.ITEM_DEFS[key].desc.includes('source will be added'))) deps.ITEM_DEFS[key].desc = item.description;
       Object.assign(deps.ITEM_DEFS[key], {
         cookingCategories: categories,
-        cookingPrimaryEffect: item.primaryEffect,
+        cookingPrimaryEffect: canonicalFoodEffectKey(item.primaryEffect),
         cookingBaseBoost: Number(item.baseBoost) || 1,
         cookingProcessingTier: item.processingTier || 'raw',
         cookingDefaultStars: defaultStarsFor(item),
@@ -132,6 +146,9 @@
     const recipe = data().recipes.find(candidate => candidate.id === recipeId); // Used to restore recipe-owned ingredient categories.
     const normalized = {
       ...definition,
+      ...(definition.foodEffects ? { foodEffects: normalizeFoodEffects(definition.foodEffects) } : {}),
+      ...(Object.prototype.hasOwnProperty.call(definition.foodEffects || {}, 'clarity')
+        ? { desc: String(definition.desc || '').replace(/\bClarity\b/g, 'Perception') } : {}),
       icon: definition.icon || recipe?.icon || '🍲', // Restores useful placeholders for legacy saved foods without an icon.
       ...(recipeId ? { recipeId } : {}),
       cookingCategories: definition.cookingCategories || recipe?.inventoryCategories || [],
@@ -360,7 +377,8 @@
   ]);
 
   function effectLabel(effectKey) {
-    return data().effectLabels?.[effectKey] || String(effectKey || ''); // Used by quests and diagnostics to present canonical cooking-effect names.
+    const canonical = canonicalFoodEffectKey(effectKey); // Legacy callers also see the Perception label.
+    return data().effectLabels?.[canonical] || String(canonical || ''); // Used by quests and diagnostics to present canonical cooking-effect names.
   }
 
   function effectStrengthLabel(stacks) {
@@ -392,14 +410,16 @@
     }
     if (definition.foodEffects && Object.keys(definition.foodEffects).length) {
       Object.entries(definition.foodEffects).forEach(([effect, amount]) => {
-        effects[effect] = roundedProcessedBuff(amount);
+        const canonical = canonicalFoodEffectKey(effect); // Collapses processed legacy Clarity into its Perception contribution.
+        effects[canonical] = (effects[canonical] || 0) + roundedProcessedBuff(amount);
       });
       return effects;
     }
     if (!definition.cookingPrimaryEffect) return effects;
     const safeStars = Math.max(1, Math.min(5, Math.round(Number(stars) || Number(definition.cookingDefaultStars) || 3))); // Keep the original quality curve.
     const prototypeQuality = 1 + (safeStars - 1) / 2;
-    effects[definition.cookingPrimaryEffect] = roundedProcessedBuff((definition.cookingBaseBoost || 1) * prototypeQuality);
+    const canonical = canonicalFoodEffectKey(definition.cookingPrimaryEffect); // Old raw/processed definitions retain their strengths, not their obsolete effect key.
+    effects[canonical] = roundedProcessedBuff((definition.cookingBaseBoost || 1) * prototypeQuality);
     return effects;
   }
 
@@ -594,7 +614,7 @@
     if (!Number.isFinite(now)) return { ok: false, message: 'The game clock is not ready. Try eating again in a moment.' };
     if (!consumeQuality(key, quality, 1)) return { ok: false, message: 'That quality stack is no longer available.' };
     hydratePendingFoodTimers(now);
-    Object.entries(definition.foodEffects || {}).forEach(([effect, stacks]) => {
+    Object.entries(normalizeFoodEffects(definition.foodEffects)).forEach(([effect, stacks]) => {
       const existing = activeFoodEffects.find(entry => entry.key === effect && entry.expiresAtGameHour > now);
       if (existing) { existing.stacks += Math.max(1, Number(stacks) || 1); existing.expiresAtGameHour = now + FOOD_DURATION_HOURS; }
       else activeFoodEffects.push({ key: effect, stacks: Math.max(1, Number(stacks) || 1), durationHours: FOOD_DURATION_HOURS, expiresAtGameHour: now + FOOD_DURATION_HOURS });
@@ -613,23 +633,37 @@
     const now = currentGameHour(); // HUD countdowns use the same in-game clock as effect expiry.
     if (!Number.isFinite(now)) return [];
     hydratePendingFoodTimers(now);
-    return activeFoodEffects.filter(effect => effect.expiresAtGameHour > now).map(effect => ({
-      key: effect.key, label: `${effectStrengthLabel(effect.stacks)} ${effectLabel(effect.key)}`, icon: EFFECT_ICONS[effect.key] || '🍲', kind: 'boon',
-      sourceLabel: 'Food', description: (FOOD_EFFECT_BENEFITS[effect.key] || 'Adds a temporary food skill or stat bonus.') + ` +${effect.stacks} food stacks.`, stacks: effect.stacks, durationS: FOOD_DURATION_HOURS * 3600, remainingS: (effect.expiresAtGameHour - now) * 3600,
+    const displayed = new Map(); // One HUD icon per effect while independently expiring legacy meal stacks retain their original deadlines.
+    for (const effect of activeFoodEffects) {
+      if (effect.expiresAtGameHour <= now) continue;
+      const group = displayed.get(effect.key); // Only the display is combined; the underlying food timers stay separate.
+      if (group) {
+        group.stacks += effect.stacks;
+        group.nextExpiry = Math.min(group.nextExpiry, effect.expiresAtGameHour);
+        group.lastExpiry = Math.max(group.lastExpiry, effect.expiresAtGameHour);
+      } else displayed.set(effect.key, { stacks: effect.stacks, nextExpiry: effect.expiresAtGameHour, lastExpiry: effect.expiresAtGameHour });
+    }
+    return [...displayed].map(([key, effect]) => ({
+      key, label: `${effectStrengthLabel(effect.stacks)} ${effectLabel(key)}`, icon: EFFECT_ICONS[key] || '🍲', kind: 'boon',
+      sourceLabel: 'Food',
+      description: (FOOD_EFFECT_BENEFITS[key] || 'Adds a temporary food skill or stat bonus.') + ` +${effect.stacks} food stacks.`
+        + (effect.nextExpiry < effect.lastExpiry ? ' Some stacks expire earlier than others.' : ''),
+      stacks: effect.stacks, durationS: FOOD_DURATION_HOURS * 3600, remainingS: (effect.nextExpiry - now) * 3600,
     }));
   }
 
   function getFoodEffectStacks(effectKey) {
+    const canonical = canonicalFoodEffectKey(effectKey); // Read legacy requests through the same Perception tally.
     let total = 0; // Food timers are only consulted while ordinary food buffs are actually active.
     if (activeFoodEffects.length) {
       const now = currentGameHour(); // Expiry and stat reads pause whenever the calendar clock pauses.
       if (Number.isFinite(now)) {
         hydratePendingFoodTimers(now);
-        total = activeFoodEffects.filter(effect => effect.key === effectKey && effect.expiresAtGameHour > now).reduce((sum, effect) => sum + effect.stacks, 0);
+        total = activeFoodEffects.filter(effect => effect.key === canonical && effect.expiresAtGameHour > now).reduce((sum, effect) => sum + effect.stacks, 0);
       }
     }
     for (const provider of externalFoodProviders.values()) {
-      try { total += Math.max(0, Number(provider(effectKey)) || 0); }
+      try { total += Math.max(0, Number(provider(canonical)) || 0); }
       catch (error) { window.__farmLog?.('[cooking] external food effect failed: ' + error.message, 'warn'); }
     }
     return total;
@@ -694,13 +728,14 @@
     window.ItemProcessing?.restoreProcessedDefinitions?.(saved.processedDefinitions);
     repairPreservedInventory(); // The world-member inventory was loaded before CookingSystem.restore.
     const now = currentGameHour(); // New saves restore exact game-hours; legacy five-minute timers are upgraded to the new 24-hour rule.
-    activeFoodEffects = (saved.activeFoodEffects || []).filter(effect => Number(effect.remainingHours ?? effect.remainingS) > 0).map(effect => {
+    const restoredFoodEffects = (Array.isArray(saved.activeFoodEffects) ? saved.activeFoodEffects : []).filter(effect => Number(effect.remainingHours ?? effect.remainingS) > 0).map(effect => {
       const remainingHours = Number.isFinite(Number(effect.remainingHours))
         ? Math.min(FOOD_DURATION_HOURS, Number(effect.remainingHours))
         : FOOD_DURATION_HOURS; // Old saves used short real-time seconds; migrate active food buffs to one full in-game duration.
-      return { key: effect.key, stacks: Math.max(1, Number(effect.stacks) || 1), durationHours: FOOD_DURATION_HOURS,
+      return { key: canonicalFoodEffectKey(effect.key), stacks: Math.max(1, Number(effect.stacks) || 1), durationHours: FOOD_DURATION_HOURS,
         ...(Number.isFinite(now) ? { expiresAtGameHour: now + remainingHours } : { remainingHours }) };
     });
+    activeFoodEffects = restoredFoodEffects; // Old Clarity and Perception stacks share one stat, but each keeps its original expiry; foodBuffEntries groups only their icon.
     Object.keys(deps.inventory).forEach(reconcileQuality);
     window.EffectBuffBar?.refresh(true);
     window.SkillSystem?.render?.();
@@ -866,7 +901,7 @@
     init, restore, serialize, repairPreservedInventory, update, openAtHearth, close, isOpen, eat, recordItemQuality, consumeBestQuality,
     registerCookedDefinition, recordItemQuality, getFoodEffectStacks, getSpeedMultiplier, getStaminaRegenMultiplier, registerIngredientItems, availableQualityEntries,
     setHeldQuality, consumeQuality, consumeLowestQuality, consumeQualityByPolicy, peekLowestQuality, valueMultiplierForStars, cookedSellPrice,
-    registerExternalFoodProvider,
+    registerExternalFoodProvider, canonicalFoodEffectKey, normalizeFoodEffects,
     unlockRecipe, isRecipeUnlocked, listIngredientDefinitions, listCookedInventory, consumeCookedInventoryItem, effectLabel,
     FOOD_DURATION_HOURS, FOOD_EFFECT_STRENGTH_TIERS, effectStrengthLabel, formatEffectStrength, ingredientEffectTotals, ingredientBuffText,
     bestAvailableSelection, get favoriteRecipes() { return favoriteRecipes.map(entry => ({ ...entry, ingredients: { ...entry.ingredients } })); }, loadFavorite,

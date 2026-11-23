@@ -186,6 +186,39 @@ assert.equal(Object.keys(flour[0].foodEffects).length, 2);
 game.ItemProcessing.ensureProcessedItemDef(flour[0]);
 assert.equal(Object.keys(itemDefs[flour[0].key].foodEffects).length, 2);
 
+const southernHeftroot = game.CropVarieties.ensure('cv_heftroot_555555'); // Southern Archipelago heirloom supplies the Perception vegetable-to-flour route.
+assert.equal(southernHeftroot.region, 'Southern Archipelago', 'regional seed creates an actual vegetable cultivar');
+assert.equal(southernHeftroot.effects.perception, 2, 'the harvest carries Perception');
+assert.equal(itemDefs[southernHeftroot.seedKey].seedFor, southernHeftroot.id, 'the usual seed action plants this vegetable');
+assert(game.CropVarieties.offers(() => .99).some(offer => offer.key === southernHeftroot.seedKey),
+  'Southern Archipelago Heftroot seed can appear in normal regional trader stock');
+const southernFlour = game.ItemProcessing.getProcessingOutputs('grinding', southernHeftroot.id)?.[0]; // Exercise the shared hand mill instead of inventing an item.
+assert.equal(southernFlour?.key, southernHeftroot.id + 'Flour', 'milling creates cultivar-specific flour');
+assert.equal(southernFlour?.cookingPrimaryEffect, 'perception', 'flour retains the inherited Perception trait');
+assert.equal(southernFlour?.foodEffects?.perception, 2, 'flour preserves the variety effect strength');
+assert(southernFlour?.cookingCategories?.includes('flour'), 'flour is eligible for bread, noodles and pie recipes');
+assert(!southernFlour.cookingCategories.includes('vegetable'), 'ground flour loses the raw vegetable-only category');
+game.ItemProcessing.ensureProcessedItemDef(southernFlour);
+assert(itemDefs[southernFlour.key].cookingCategories.includes('flour'), 'registered flour remains usable at the hearth');
+assert.equal(itemDefs[southernFlour.key].foodEffects.perception, 2, 'processed inventory metadata preserves Perception');
+assert(canonicalGame.CookingSystem.ingredientEffectTotals(itemDefs[southernFlour.key], 3).perception > 0,
+  'the shared cooking resolver grants Perception for meals cooked with this flour');
+assert(game.ItemProcessing.getProcessingOutputs('grinding', 'heftroot')[0].cookingCategories.includes('flour'),
+  'ordinary Heftroot Flour also fits flour recipe slots');
+assert(game.ItemProcessing.getProcessingOutputs('grinding', 'needlegrain')[0].cookingCategories.includes('flour'),
+  'ordinary Needlegrain Flour also fits flour recipe slots');
+
+const orphanFlourKey = 'cv_heftroot_005500Flour'; // Legacy saved flour held without its cultivar, source vegetable or processed metadata.
+assert.equal(itemDefs[orphanFlourKey], undefined, 'test starts with an unregistered source cultivar');
+inventory[orphanFlourKey] = 1; // This lone flour stack is the only surviving reference to the old cultivar.
+assert.equal(game.ItemProcessing.repairPreservedDefs(inventory), 1, 'load repair recognizes missing regional flour definitions');
+assert(itemDefs[orphanFlourKey].cookingCategories.includes('flour'), 'orphan flour becomes usable in recipe slots');
+assert.equal(itemDefs[orphanFlourKey].foodEffects.perception, 2, 'orphan flour restores its Perception from the genotype');
+assert.equal(game.ItemProcessing.serializeProcessedDefinitions().find(entry => entry.key === orphanFlourKey)?.cookingProcessLastMethod,
+  'grinding', 'next save persists recovered flour history without inventing a new item ID');
+assert.equal(inventory[orphanFlourKey], 1, 'recovery never changes the owned flour count');
+delete inventory[orphanFlourKey]; // Keep the unrelated later parent-breeding fixture's original bag contents.
+
 game.FarmWorldSettings = { read: () => ({ meta: {}, world: { farmStarterBuildings: [] } }), current: () => ({}) };
 game.FarmPanel = { cancelBarnPlacement() {}, render() {} };
 game.FarmBuildings = { canPlaceAt: () => true, clearFootprint() {} };

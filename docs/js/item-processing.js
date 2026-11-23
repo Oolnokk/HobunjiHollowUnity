@@ -259,8 +259,8 @@
     if (methodId === 'mashing' && inputKey === 'blackMustardSeed') return { key: 'blackMustardPaste', icon: '🟤', label: 'Black Mushtard Paste', cat: 'processed', sellPrice: 13, tags: ['Processed', 'Pungent Paste', 'Spice'], desc: 'Hot pungent paste made from black mushtard seed.', giftIngredientKeys: [inputKey] };
     if (methodId === 'mashing' && inputKey === 'greenMustardSeed') return { key: 'greenMustardPaste', icon: '🟢', label: 'Green Mushtard Paste', cat: 'processed', sellPrice: 12, tags: ['Processed', 'Pungent Paste', 'Spice'], desc: 'Fresh pungent paste made from green mushtard seed.', giftIngredientKeys: [inputKey] };
     if (methodId === 'mashing' && ['heftroot', 'garlink', 'ongyums', 'blackMustard', 'greenMustard'].includes(inputKey)) return { key: inputKey + 'Mash', icon: '🥣', label: 'Mashed ' + input.label, cat: 'processed', sellPrice: processedValue('mash', input.sellPrice), tags: ['Processed', 'Mash'], desc: 'Mashed crop base for future cooking recipes.', giftIngredientKeys: [inputKey], ...cookingFromSource(input, input.cookingCategories?.length ? input.cookingCategories : ['vegetable'], 'quick', 'cooking') };
-    if (methodId === 'grinding' && inputKey === 'needlegrain') return { key: 'needlegrainFlour', icon: '🌾', label: 'Needlegrain Flour', cat: 'processed', sellPrice: processedValue('flour', input.sellPrice), tags: ['Processed', 'Flour', 'Grain'], desc: 'Ground needlegrain flour for noodles and bread.', giftIngredientKeys: [inputKey] };
-    if (methodId === 'grinding' && inputKey === 'heftroot') return { key: 'heftrootFlour', icon: '🟡', label: 'Heftroot Flour', cat: 'processed', sellPrice: processedValue('flour', input.sellPrice), tags: ['Processed', 'Flour', 'Starch'], desc: 'Ground heftroot flour for yellow noodles and bread.', giftIngredientKeys: [inputKey] };
+    if (methodId === 'grinding' && inputKey === 'needlegrain') return { key: 'needlegrainFlour', icon: '🌾', label: 'Needlegrain Flour', cat: 'processed', sellPrice: processedValue('flour', input.sellPrice), tags: ['Processed', 'Flour', 'Grain'], desc: 'Ground needlegrain flour for noodles and bread.', giftIngredientKeys: [inputKey] , ...cookingFromSource(input, ['flour', 'processedCrop'], 'quick', 'cooking') };
+    if (methodId === 'grinding' && inputKey === 'heftroot') return { key: 'heftrootFlour', icon: '🟡', label: 'Heftroot Flour', cat: 'processed', sellPrice: processedValue('flour', input.sellPrice), tags: ['Processed', 'Flour', 'Starch'], desc: 'Ground heftroot flour for yellow noodles and bread.', giftIngredientKeys: [inputKey] , ...cookingFromSource(input, ['flour', 'processedCrop'], 'quick', 'cooking') };
     if (methodId === 'grinding' && inputKey === 'blackMustardSeed') return { key: 'blackMustardPowder', icon: '⚫', label: 'Black Mushtard Powder', cat: 'processed', sellPrice: 11, tags: ['Processed', 'Powder', 'Spice'], desc: 'Ground black mushtard powder.', giftIngredientKeys: [inputKey], ...cookingFromSource(input, ['spice'], 'quick', 'cooking') };
     if (methodId === 'grinding' && inputKey === 'greenMustardSeed') return { key: 'greenMustardPowder', icon: '🥬', label: 'Green Mushtard Powder', cat: 'processed', sellPrice: 10, tags: ['Processed', 'Powder', 'Spice'], desc: 'Ground green mushtard powder.', giftIngredientKeys: [inputKey], ...cookingFromSource(input, ['spice'], 'quick', 'cooking') };
     // Feed Grinder (barn interior fixture) — harvested crops grind into
@@ -415,15 +415,21 @@
     return null;
   }
 
-  // stock: { itemKey: count }; repairs the definition of every held preserved good.
+  // stock: { itemKey: count }; reconstructs legacy preserved foods and inherited
+  // variety flours whose processedDefinitions snapshot was absent or incomplete.
   function repairPreservedDefs(stock) {
     if (!deps?.ITEM_DEFS) return 0; // Late source registration retries after ItemProcessing.init instead of losing older stacks.
     let repaired = 0;
     for (const key of Object.keys(stock || {})) {
       if (!(Number(stock[key]) > 0)) continue;
-      const match = PRESERVED_SUFFIX.exec(key);
-      if (!match || (deps.ITEM_DEFS[key]?.cookingCategories?.length && processedDefinitions.has(key))) continue; // A previous world may leave its definitions in ITEM_DEFS even after this world's provenance map was cleared.
-      const current = currentPreservedOutput(key, match[1]);
+      const match = PRESERVED_SUFFIX.exec(key); // Existing smoked/dried/jerky recovery retains its original provenance.
+      const flourSource = /^(.+)Flour$/.exec(key)?.[1]; // Matches an actual harvested cultivar, not a seed or a generic flour item.
+      const flourFamily = flourSource?.startsWith('cv_') ? window.CropVarieties?.produceFamily?.(flourSource) : null;
+      const cultivarFlour = flourFamily === 'heftroot' || flourFamily === 'needlegrain'; // Only species with an existing mill recipe can be recovered.
+      if ((!match && !cultivarFlour) || (deps.ITEM_DEFS[key]?.cookingCategories?.length && processedDefinitions.has(key))) continue;
+      if (cultivarFlour) window.CropVarieties?.ensure?.(flourSource); // Flour may be the only remaining evidence of its parent genotype in this saved bag.
+      const current = match ? currentPreservedOutput(key, match[1])
+        : getProcessingOutputs('grinding', flourSource)?.find(output => output?.key === key); // Recreate the real mill output, including the inherited Perception trait.
       if (!current?.cookingCategories?.length) continue;
       ensureProcessedItemDef(current);
       repaired++;
@@ -452,6 +458,10 @@
   }
 
   function ensureProcessedItemDef(output) {
+    const savedFlour = output?.cookingProcessLastMethod === 'grinding' && output?.tags?.includes('Flour'); // Old cultivar mills saved the vegetable category instead of the result's flour category.
+    if (savedFlour && !output.cookingCategories?.includes('flour')) {
+      output = { ...output, cookingCategories: ['flour', 'processedCrop'] }; // Repair already-produced Heftroot/Needlegrain flour without changing its key, quality or inherited buffs.
+    }
     if (!output?.cookingCategories?.length) { // Saved batch snapshots predate cooking metadata.
       const current = currentPreservedOutput(output?.key, output?.giftIngredientKeys?.[0]);
       if (current) output = { ...output, ...current, ingredientKeys: output.ingredientKeys, giftIngredientKeys: output.giftIngredientKeys };
@@ -473,11 +483,11 @@
     }; // Used to replace future-source placeholders once an item gains a real processor recipe.
     const cookingMetadata = {
       ...(output.cookingCategories ? { cookingCategories: [...output.cookingCategories] } : {}),
-      ...(output.cookingPrimaryEffect ? { cookingPrimaryEffect: output.cookingPrimaryEffect } : {}),
+      ...(output.cookingPrimaryEffect ? { cookingPrimaryEffect: window.CookingSystem?.canonicalFoodEffectKey?.(output.cookingPrimaryEffect) || output.cookingPrimaryEffect } : {}),
       ...(output.cookingBaseBoost ? { cookingBaseBoost: output.cookingBaseBoost } : {}),
       ...(output.cookingProcessingTier ? { cookingProcessingTier: output.cookingProcessingTier } : {}),
       ...(output.cookingDefaultStars ? { cookingDefaultStars: output.cookingDefaultStars } : {}),
-      ...(output.foodEffects ? { foodEffects: { ...output.foodEffects } } : {}), // Preserve both inherited buffs in the registered processed item.
+      ...(output.foodEffects ? { foodEffects: window.CookingSystem?.normalizeFoodEffects?.(output.foodEffects) || { ...output.foodEffects } } : {}), // Canonicalize old Clarity while preserving the full food-buff strengths.
       ...(Number.isFinite(Number(output.cookingProcessMultiplier)) ? { cookingProcessMultiplier: Number(output.cookingProcessMultiplier) } : {}),
       ...(Array.isArray(output.cookingProcessSteps) ? { cookingProcessSteps: output.cookingProcessSteps.map(step => ({ ...step })) } : {}),
       ...(typeof output.cookingProcessSourceKey === 'string' ? { cookingProcessSourceKey: output.cookingProcessSourceKey } : {}),

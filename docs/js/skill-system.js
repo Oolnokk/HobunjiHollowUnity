@@ -265,8 +265,8 @@
   }
 
   function craftIngredientSaveChance() {
-    const clarityStacks = Math.max(0, Number(deps?.getFoodEffectStacks?.('clarity')) || 0); // Used to give Clarity food a small cooking benefit.
-    return Math.min(0.25, normalizedPower('cooking') * 0.2 + clarityStacks * 0.003);
+    const perceptionStacks = Math.max(0, Number(deps?.getFoodEffectStacks?.('perception')) || 0); // Perception now inherits the former Clarity cooking benefit alongside sensing and fish checks.
+    return Math.min(0.25, normalizedPower('cooking') * 0.2 + perceptionStacks * 0.003);
   }
 
   function weightedBaseQuality() {

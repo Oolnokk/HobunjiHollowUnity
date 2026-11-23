@@ -36,8 +36,8 @@ const people=[{id:'foroji_funji',name:'Foroji',homeId:'carpenters'},
   {id:'kaboku_kunji',name:'Kaboku',homeId:'potion_shop'},
   {id:'friend',name:'Friend',homeId:'inn',relationship:{canDate:true}}]; // Stage musician and tablemate are real resident roles.
 const walkers=people.map(rec=>({rec,area:'town',root:{position:{x:40,z:44},parent:{}},currentScheduleTarget:null}));
-const defs={heftroot:{cookingPrimaryEffect:'farming',cookingBaseBoost:1},ongyums:{cookingPrimaryEffect:'vigor',cookingBaseBoost:2},
-  garlink:{cookingPrimaryEffect:'clarity',cookingBaseBoost:1},greenMustard:{cookingPrimaryEffect:'speed',cookingBaseBoost:1}}; // Known ingredient effects reach player food stacks.
+const defs={heftroot:{cookingPrimaryEffect:'farming',cookingBaseBoost:1},ongyums:{cookingPrimaryEffect:'perception',cookingBaseBoost:2},
+  garlink:{cookingPrimaryEffect:'combat',cookingBaseBoost:1},greenMustard:{cookingPrimaryEffect:'speed',cookingBaseBoost:1}}; // Known ingredient effects reach player food stacks.
 const services=new Map(),adjusted=[],saved=[]; // Verify actions, earned Favor and persistence.
 const seat=seats[0], tableId=layout.npcStations.find(s=>s.pose==='sit')?.tableId;
 W.FurnitureTableSystem={
