@@ -1279,6 +1279,12 @@
         state.anatomyRevision++;
         placeIdleTarget('left', state.leftContactY);
         placeIdleTarget('right', state.rightContactY);
+        // Optional editor/runtime lifecycle callback; invoked only when the actual GLBs replace fallbacks.
+        // Size/outline consumers can rebind without polling every visible NPC or per-frame geometry traversal.
+        if (typeof options.onFootVisualsReplaced === 'function') {
+          try { options.onFootVisualsReplaced({ left: leftMesh, right: rightMesh, root }); }
+          catch (error) { console.warn('[ProceduralLegAnimation] foot replacement callback failed:', error); }
+        }
         window.HobunjiFeetOutlineParity?.refreshRig?.(root); // Register the final visible meshes for water/outline passes regardless of load duration.
       }).catch(error => {
         console.warn(`[ProceduralLegAnimation] foot GLB load failed for "${speciesId}" (${footConfig.glb}):`, error);
