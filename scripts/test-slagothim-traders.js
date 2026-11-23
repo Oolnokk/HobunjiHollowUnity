@@ -43,6 +43,15 @@ function makeHarness({ townValue = 3, season = 'Stormtide', townBuildings = [], 
     DevCompanion: { panels: new Map(), registerPanel(spec) { this.panels.set(spec.id, spec); return true; } },
     TrinketSystem: { DEFINITIONS: { harlyaoA: { id: 'harlyaoA', source: 'harlyaoRuin', attunementCost: 2, displayName: 'A' } }, grant: () => 'uid' },
   };
+  const packClothing = []; // Tracks physical clothing grants made by the fake equipment owner in trade tests.
+  window.EquipmentPanel = {
+    grantPackClothing(article) {
+      const item = { ...article, uid: `test-caravan-clothing-${packClothing.length}` }; // Distinct Pack instance for each successful purchase.
+      packClothing.push(item);
+      return item;
+    },
+    buildPackClothingSection() {},
+  };
   window.window = window;
   const context = vm.createContext(window);
   vm.runInContext(fs.readFileSync(path.join(ROOT, 'docs/js/building-subtle-elevation.js'), 'utf8'), context);
@@ -81,7 +90,7 @@ function makeHarness({ townValue = 3, season = 'Stormtide', townBuildings = [], 
     while (calendar.time01 >= 1) { calendar.time01 -= 1; calendar.day += 1; }
     T.update(0.016);
   };
-  return { window, T, calendar, toasts, inventory, zone, step, saves: () => saves };
+  return { window, T, calendar, toasts, inventory, packClothing, zone, step, saves: () => saves };
 }
 
 // ── Town Value gates ─────────────────────────────────────────────────
@@ -230,14 +239,29 @@ function makeHarness({ townValue = 3, season = 'Stormtide', townBuildings = [], 
   let mulberry = 7;
   const rng = () => { mulberry = (mulberry * 1103515245 + 12345) % 2147483648; return mulberry / 2147483648; };
   const counts = [0, 0, 0];
+  const kasaVariants = new Set(); // Proves both registered gender variants remain possible from caravan stock rolls.
+  let kasaCount = 0; // Counts seeded caravans offering a physical imported bowl-kasa.
   for (let i = 0; i < 2000; i++) {
     const stock = T.__test.rollStock(rng, 2);
     const ceilingTier = 3; // Town Value 2 => metals up to tier 3.
     const high = stock.filter(e => e.kind === 'item' && /^bar_m(\d)$/.test(e.key) && Number(e.key.slice(5)) > ceilingTier).reduce((s, e) => s + e.qty, 0);
     counts[Math.min(2, high)]++;
-    for (const entry of stock) assert.ok(entry.price > 0 && entry.qty > 0);
+    for (const entry of stock) {
+      assert.ok(entry.price > 0 && entry.qty > 0);
+      if (entry.kind === 'clothing') {
+        kasaCount++;
+        kasaVariants.add(entry.cosmeticId);
+        assert.equal(entry.slot, 'hat');
+        assert.equal(entry.qty, 1);
+        assert.equal(entry.price, 121, 'caravan markup applies to the authored 55g Bowl-Kasa price');
+      }
+    }
   }
   assert.ok(counts[0] > counts[1] && counts[1] > counts[2] && counts[2] > 0, `high-tier bars: usually 0, sometimes 1, rarely 2 (${counts})`);
+  assert.ok(kasaCount > 300 && kasaCount < 700, `bowl-kasas appear sometimes, not on every caravan (${kasaCount}/2000)`);
+  assert.deepEqual([...kasaVariants].sort(), [
+    'appearance::Kenkari_F::kenk_bowlkasa', 'appearance::Kenkari_M::kenk_bowlkasa',
+  ], 'both Kenkari bowl-kasa variants can be stocked');
 }
 
 // ── Buying + save/restore ────────────────────────────────────────────
@@ -265,6 +289,35 @@ function makeHarness({ townValue = 3, season = 'Stormtide', townBuildings = [], 
   assert.equal(migrated.gender, 'male', 'female traders in existing saves migrate to male');
   assert.notEqual(migrated.name, 'Old Female', 'migrated trader name matches male naming');
   assert.equal(migrated.roster, null, 'female cosmetics are re-rolled for male anatomy');
+}
+
+// ── Imported clothing purchases ─────────────────────────────────────
+{
+  const { T, calendar, inventory, packClothing, window } = makeHarness();
+  const caravan = T.spawnCaravan(calendar.day, null); // Purchase against a real saved caravan's stock.
+  const cosmeticId = 'appearance::Kenkari_F::kenk_bowlkasa'; // Female Kenkari variant from the registered cosmetic index.
+  const catalogue = JSON.parse(fs.readFileSync(path.join(ROOT, 'docs/config/cosmetics/index.json'), 'utf8')); // Shipped headwear registration authority.
+  for (const variant of ['appearance::Kenkari_M::kenk_bowlkasa', cosmeticId]) {
+    assert.ok(catalogue.entries.some(article => article.id === variant), `registered bowl-kasa cosmetic: ${variant}`);
+  }
+  const entry = { id: `clothing:${cosmeticId}`, kind: 'clothing', cosmeticId, slot: 'hat', qty: 1,
+    price: 121, sellPrice: 22, label: 'Kenkari Bowl-Kasa', desc: 'Carved wooden headwear' }; // Single caravan garment listing.
+  caravan.stock = [entry];
+  const goldBefore = inventory.gold; // Purchase debit must happen only after the Pack grant succeeds.
+  assert.equal(T.buy(caravan.id, entry.id).ok, true);
+  assert.equal(inventory.gold, goldBefore - 121);
+  assert.equal(entry.qty, 0);
+  assert.equal(packClothing.length, 1);
+  assert.equal(packClothing[0].cosmeticId, cosmeticId);
+  assert.equal(packClothing[0].slot, 'hat');
+  assert.equal(packClothing[0].sellPrice, 22);
+  assert.equal(inventory[`cosmetic:${cosmeticId}`], undefined, 'clothing must never be a numeric bag item');
+  assert.equal(T.buy(caravan.id, entry.id).ok, false, 'sold-out hats cannot be duplicated');
+  entry.qty = 1;
+  window.EquipmentPanel.grantPackClothing = () => null;
+  assert.deepEqual(T.buy(caravan.id, entry.id), { ok: false, reason: 'clothing' }, 'unavailable Pack refuses the purchase');
+  assert.equal(inventory.gold, goldBefore - 121, 'failed clothing grants never charge the player');
+  assert.equal(entry.qty, 1, 'failed clothing grants retain caravan stock');
 }
 
 // ── Dev Companion panel ──────────────────────────────────────────────
