@@ -368,9 +368,11 @@ function registerStoneCollision(zone,sites){
  for(const site of sites.filter(s=>SOLID_LANDMARK_KINDS.has(s.kind))){
   const x=site.point.col+.5,z=site.point.row+.5,y=elevation(site);
   const size=Math.max(.6,Number(site.size)||1),half=(site.kind==='deadTree'?.32:.36)*size;
-  const height=(site.kind==='deadTree'?4.2:1.25)*size;
-  bySite.set(site.id,[{minX:x-half,maxX:x+half,minZ:z-half,maxZ:z+half,minY:y-.05,maxY:y+height}]);
- } // Ordinary cairns/trees/rocks retain their prior cheap collider; only authored debris becomes per-part precise.
+  const height=(site.kind==='deadTree'?4.2:site.kind==='stoneCairn'
+    ?CAIRN_STONES.reduce((sum,stone)=>sum+stone[1]-.055,0)+.055:1.25)*size; // Use the visible cairn's four stone courses, not a taller invisible pillar.
+  bySite.set(site.id,[{minX:x-half,maxX:x+half,minZ:z-half,maxZ:z+half,minY:y-.05,maxY:y+height,
+   siteId:site.id,kind:site.kind}]);
+ } // Ordinary cairns/trees/rocks retain their cheap collider; authored debris becomes per-part precise.
  const BUCKET_TILES=8; // Same spatial index shape used by RuinSites to avoid scanning every piece on each movement probe.
  let columns=new Map(),allBoxes=[]; // Immutable snapshot swapped after one-time or async scene rebuild.
  function rebuild(){
@@ -395,7 +397,7 @@ function registerStoneCollision(zone,sites){
   let changed=false;
   for(const [id,boxes] of resolved||[]){
    if(!bySite.has(id)||!Array.isArray(boxes)||!boxes.length)continue;
-   bySite.set(id,boxes);changed=true;
+   bySite.set(id,boxes.map(box=>({...box,siteId:id,kind:'brokenPillar'})));changed=true;
   }
   if(changed)rebuild(); // Once after the authored fragments finish loading; no geometry traversals during movement.
  };
@@ -403,22 +405,41 @@ function registerStoneCollision(zone,sites){
   return maxX>=box.minX&&minX<=box.maxX&&maxZ>=box.minZ&&minZ<=box.maxZ
    &&(worldY==null||(worldY>=box.minY-.05&&worldY<=box.maxY+.05));
  }
- unregisterStoneCollision=blockers.register('wilderness-landmark-stones',{area:zone,blocksBox(x,z,half,worldY){
-  if(!Number.isFinite(x)||!Number.isFinite(z))return false;
-  const moverHalf=Number.isFinite(half)?Math.max(0,half):0; // Untrusted motion probes cannot trigger an unbounded bucket scan.
-  const minX=x-moverHalf,maxX=x+moverHalf,minZ=z-moverHalf,maxZ=z+moverHalf;
+ function nearby(x,z,half,visit){
+  const minX=x-half,maxX=x+half,minZ=z-half,maxZ=z+half;
   const left=Math.floor(minX/BUCKET_TILES),right=Math.floor(maxX/BUCKET_TILES);
   const top=Math.floor(minZ/BUCKET_TILES),bottom=Math.floor(maxZ/BUCKET_TILES);
   const cellCount=(right-left+1)*(bottom-top+1);
-  if(![left,right,top,bottom,cellCount].every(Number.isSafeInteger)||cellCount<=0||cellCount>64)return allBoxes.some(box=>touches(box,minX,maxX,minZ,maxZ,worldY)); // Pathological positions and large movers scan finite bounds directly.
+  if(![left,right,top,bottom,cellCount].every(Number.isSafeInteger)||cellCount<=0||cellCount>64)
+   return allBoxes.some(box=>visit(box,minX,maxX,minZ,maxZ));
   for(let bx=left;bx<=right;bx++){
    const rows=columns.get(bx);if(!rows)continue;
    for(let bz=top;bz<=bottom;bz++){
-    for(const box of rows.get(bz)||[])if(touches(box,minX,maxX,minZ,maxZ,worldY))return true;
+    for(const box of rows.get(bz)||[])if(visit(box,minX,maxX,minZ,maxZ))return true;
    }
   }
   return false;
- }});
+ }
+ unregisterStoneCollision=blockers.register('wilderness-landmark-stones',{area:zone,
+  blocksBox(x,z,half,worldY){
+   if(!Number.isFinite(x)||!Number.isFinite(z))return false;
+   return nearby(x,z,Number.isFinite(half)?Math.max(0,half):0,
+    (box,minX,maxX,minZ,maxZ)=>touches(box,minX,maxX,minZ,maxZ,worldY));
+  },
+  supportAt(x,z,maxY){
+   if(!Number.isFinite(x)||!Number.isFinite(z))return null;
+   let best=null; // The same static part footprint owns both side contact and landing height.
+   nearby(x,z,0,(box)=>{
+    if(box.kind==='deadTree'||!Number.isFinite(box.maxY)||box.maxY>maxY)return false; // Tall trunks stay trunks, not jump platforms.
+    const inset=.055; // Require the player's centre securely on top, not just grazing a chip or edge.
+    if(box.maxX-box.minX<=inset*2||box.maxZ-box.minZ<=inset*2)return false;
+    if(x<box.minX+inset||x>box.maxX-inset||z<box.minZ+inset||z>box.maxZ-inset)return false;
+    if(!best||box.maxY>best.y)best={y:box.maxY,kind:'landmark',id:box.siteId};
+    return false; // Keep scanning the same small bucket for the highest overlapped piece.
+   });
+   return best;
+  }
+ });
  return bySite.size;
 }
 function clear(){
@@ -484,7 +505,8 @@ function objectAt(zoneId,targetScene,point){
   }
  } // Never touch these part maps during ordinary rendering; mobile debugging should reveal invisible pattern atlases.
  return{activeZone:area,attached:!!group?.parent,drawRoots:group?.children?.length||0,plan:report,lastError:error,
-  stoneCollision:{registered:!!unregisterStoneCollision,siteCount:report?.solidStoneColliders||0}, // Dev Companion can diagnose missing colliders on mobile.
+  stoneCollision:{registered:!!unregisterStoneCollision,siteCount:report?.solidStoneColliders||0,
+   jumpSupport:!!root.AreaFootprintBlockers?.supportAt}, // Mobile confirms raised stone landing is connected. // Dev Companion can diagnose missing colliders on mobile.
   cairnRendering:{chunks:cairnGroup?.children?.length||0,cliffMappedFaces:cliffCairnArt?.patchCount||0,
    frustumTracked:cairnGroup?.children?.filter?.(mesh=>mesh.userData?.hobunjiInstanceBounds===true)?.length||0},
   patternedPillarParts:pillars.reduce((total,node)=>total+(node.userData?.wildernessPatternedParts||0),0),pillarPatterns,
