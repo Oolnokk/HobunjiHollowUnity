@@ -12,7 +12,7 @@
     new URL('../config/character-rig-scale-defaults.js?v=20261113uniformRigStride2', base).href,
     ...(needsAgeAuthoring ? [
       new URL('../config/romance-config.js?v=20261123ageLineup1', base).href, // Editor-only early family defaults.
-      new URL('character-age-rig-config.js?v=20261123ageRuntimeParity1', base).href, // Shares authoring and gameplay scale/GLB math.
+      new URL('character-age-rig-config.js?v=20261123ageParityAudit5', base).href, // Shares authoring and gameplay scale/GLB math.
     ] : []),
     new URL('attachment-rig-latest-authored-snapshot-core.js?v=20261114hrigcore1760', base).href,
     new URL('character-rig-maoao-authored-20260905.js?v=20260905b', base).href,
@@ -30,13 +30,13 @@
     new URL('maskbound-guardian-species-runtime.js?v=20261101maskrear1', base).href,
     new URL('porakaneki-species-runtime.js?v=20260924poracolor2&rearHead=1', base).href,
     new URL('character-rig-scale.js?v=20261113uniformRigStride2', base).href,
-    new URL('character-rig-scale-avatar-runtime.js?v=20261031hbf28f8b', base).href,
+    new URL('character-rig-scale-avatar-runtime.js?v=20261123ageParityAudit5', base).href,
     new URL('maoao-arm-tint-runtime.js?v=20260907a', base).href,
     new URL('shoulder-camera-character-framing.js?v=20261024h224e340', base).href,
     new URL('shoulder-camera-reset-button.js?v=20261007h767d135', base).href,
     new URL('character-rig-pixel-probe-runtime.js?v=20260905a', base).href,
     new URL('character-scale-comparison-host-bridge.js?v=20261113longoranscales5', base).href,
-    new URL('character-scale-comparison.js?v=20261123ageParityAudit4', base).href,
+    new URL('character-scale-comparison.js?v=20261123ageParityAudit5', base).href,
     new URL('character-scale-comparison-body-input-guard.js?v=20261123ageRigInput2', base).href,
     new URL('character-scale-comparison-presentation.js?v=20261123ageRigHead2', base).href,
     new URL('animation-author-rig-gameplay-appearance.js?v=20261017a', base).href,
