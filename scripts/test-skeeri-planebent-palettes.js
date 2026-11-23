@@ -288,7 +288,8 @@ for(const key of ['flying','perched']) {
   const censusBegin = wildlifePanel.indexOf('  function renderSkeeriFlightCensus() {');
   const censusEnd = wildlifePanel.indexOf('  function renderPingdortCensus()', censusBegin);
   assert(censusBegin > 0 && censusEnd > censusBegin, 'real mobile Skeeri census remains independently testable');
-  const censusContext = { window: w, deps: { esc: value => String(value) } }; // Lightweight mobile debug fixture; uses the actual live snapshot.
+  const censusContext = { window: { SkeeriRuins: { debugSnapshot: () => ({ ...api.debugSnapshot(), active: true, actors: [] }) } },
+    deps: { esc: value => String(value) } }; // Simulate a present ruin; the source-art counters still come from the real renderer.
   vm.runInNewContext(wildlifePanel.slice(censusBegin, censusEnd)
     + '\nthis.census = renderSkeeriFlightCensus;', censusContext);
   const census = censusContext.census();
