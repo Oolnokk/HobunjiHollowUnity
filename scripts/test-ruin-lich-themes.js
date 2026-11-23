@@ -19,7 +19,10 @@ assert.match(fogSource, /tradition === 'kanthic' \? 1/, 'Kanthic rooms retain pu
 assert.match(fogSource, /ruinTradition === 'tothal'\) return/, 'Tothal lantern illumination is disabled');
 assert.match(fogSource, /ruinLanternScale = 1/, 'Kanthic lantern shares the normal feathered radius');
 assert.match(fogSource, /getKanthicLanternRadiusTiles:\(\)=>tuning\.lantern\.radiusTiles,/, 'Kanthic uses the ordinary full-radius lantern');
-assert.doesNotMatch(fogSource, /ctx\.clip\(/, 'No hard camera-centered lantern clipping circle may survive');
+const lanternMaskSource = fogSource.slice(fogSource.indexOf('function drawLanternMasksCompat('), fogSource.indexOf('function ruinShadowPolygons(')); // Only the lantern path is forbidden from using a hard camera-centered clipping circle.
+assert(lanternMaskSource.length > 0, 'Shared lantern-mask function is present');
+assert.doesNotMatch(lanternMaskSource, /ctx\.clip\(/, 'No hard camera-centered lantern clipping circle may survive');
+assert.match(fogSource, /function drawRuinGlyphSilhouette\(/, 'Kanthic glyph-shaped cutouts may use triangle clipping without changing lantern behavior');
 assert.match(fogSource, /KANTHIC_STANDARD_DARKNESS_ALPHA = 0\.95/, 'Kanthic darkness uses the shared underground ambient rendering pass');
 assert.match(fogSource, /drawRuinTraditionLightMasks/, 'Ruin sources must be drawn through the central 2D overlay');
 assert.match(bootstrapSource, /dev-random-ruin-lich-themes\.js/, 'Loader must include the theme composer');

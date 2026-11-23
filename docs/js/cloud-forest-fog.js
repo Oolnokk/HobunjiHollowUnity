@@ -978,26 +978,109 @@
   }
 
 
-  const ruinGlowProjection = new window.THREE.Vector3(); // Reused world-space center for engraved glow surfaces, avoiding allocation in the 60 Hz compositor.
-  const ruinGlowSource={x:0,y:0,z:0}; // One scratch light for routing engraving masks through room-local clipping.
-  const ruinGlowStats = { found:0,drawn:0,scans:0 }; // Mobile darkness diagnostics can confirm that glyph masks were discovered and actually painted.
-  let ruinGlowScene = null,ruinGlowNextScan = 0,ruinGlowMeshes = []; // Cache only the active scene's glowing pattern meshes; re-check lazy async atlases periodically.
+
+  const ruinGlowProjection = new window.THREE.Vector3(); // Reused center of each engraved surface for room/floor/viewport culling.
+  const ruinGlowVertex = new window.THREE.Vector3(); // Reused to project each actual glyph triangle without per-frame Vector3 allocation.
+  const ruinGlowCameraPosition = new window.THREE.Vector3(); // Camera near-plane rejection keeps rear-facing mesh vertices from stretching across the mask.
+  const ruinGlowCameraDirection = new window.THREE.Vector3(); // Used with the camera position for the same near-plane test.
+  const ruinGlowSource={x:0,y:0,z:0}; // One scratch source for routing engraving masks through room-local clipping.
+  const ruinGlowStats = { found:0,drawn:0,triangles:0,examined:0,scans:0 }; // Mobile Pixel Probe shows submitted glyph triangles and the total examined work budget.
+  const MAX_RUIN_GLOW_TRIANGLES = 960; // Bounds examined glyph triangles as well as submitted Canvas2D draws per lighting refresh.
+  let ruinGlowScene = null,ruinGlowNextScan = 0,ruinGlowMeshes = []; // Cache the active scene's glow meshes; lazy atlases can complete after initial scan.
+  let ruinGlowVertexScreen = new Float32Array(0); // Shared projected vertex buffer, resized only for the largest encountered engraving mesh.
+  const ruinGlowPatternCache = new WeakMap(); // One repeated-rune CanvasPattern per loaded image, reused across darkness refreshes.
+  const ruinGlowDrawResult={drawn:0,examined:0}; // Shared result avoids allocating a record for every wall on each lighting refresh.
+
+  function drawRuinGlyphSilhouette(ctx,mesh,remainingTriangles,result) {
+    result.drawn=0;result.examined=0; // Invalid textures and unready meshes must not consume a triangle budget.
+    const geometry=mesh.geometry,position=geometry?.getAttribute?.('position'),uv=geometry?.getAttribute?.('uv');
+    const image=mesh.material?.map?.image,iw=image?.naturalWidth||image?.width,ih=image?.naturalHeight||image?.height;
+    if(!position?.array||!uv?.array||!(iw>0&&ih>0)||!remainingTriangles
+      ||!ctx.save||!ctx.restore||!ctx.clip||!ctx.transform||!ctx.drawImage)return;
+    const count=Math.min(position.count||position.array.length/3,uv.count||uv.array.length/2);
+    if(count<3)return;
+    const indices=geometry.index?.array||null,uvs=uv.array;
+    const total=Math.min(remainingTriangles,Math.floor((indices?.length||count)/3));
+    if(!total)return;
+    result.examined=total; // Charge every triangle considered, including triangles culled from the viewport.
+    let projectCount=Math.min(count,total*3);
+    if(indices){projectCount=0;for(let i=0;i<total*3;i++)projectCount=Math.max(projectCount,Math.min(count,indices[i]+1));}
+    if(ruinGlowVertexScreen.length<projectCount*2)ruinGlowVertexScreen=new Float32Array(projectCount*2); // No per-refresh allocations after reaching the largest active wall.
+    const screen=ruinGlowVertexScreen,xyz=position.array;
+    const near=Math.max(0.001,Number(lightingDeps.camera?.near)||0.001);
+    for(let i=0;i<projectCount;i++){
+      ruinGlowVertex.set(xyz[i*3],xyz[i*3+1],xyz[i*3+2]).applyMatrix4(mesh.matrixWorld);
+      const dx=ruinGlowVertex.x-ruinGlowCameraPosition.x,dy=ruinGlowVertex.y-ruinGlowCameraPosition.y,dz=ruinGlowVertex.z-ruinGlowCameraPosition.z;
+      if(dx*ruinGlowCameraDirection.x+dy*ruinGlowCameraDirection.y+dz*ruinGlowCameraDirection.z<=near){
+        screen[i*2]=NaN;screen[i*2+1]=NaN;continue;
+      }
+      const point=lightingDeps.worldToOverlay(ruinGlowVertex.x,ruinGlowVertex.y,ruinGlowVertex.z);
+      screen[i*2]=point.x;screen[i*2+1]=point.y;
+    }
+    const rect=lightingDeps.getThreeRect?.();
+    const width=Number(rect?.width||ctx.canvas?.clientWidth||ctx.canvas?.width)||Infinity;
+    const height=Number(rect?.height||ctx.canvas?.clientHeight||ctx.canvas?.height)||Infinity;
+    const texture=mesh.material.map;
+    const upsideDown=texture.flipY!==false; // CanvasTexture and repeating rune PNGs use GL's bottom-up UV convention.
+    const repeat=texture.wrapS===window.THREE?.RepeatWrapping&&texture.wrapT===window.THREE?.RepeatWrapping;
+    let pattern=null; // A repeat-wrapped climbing rune must keep its full strip, not only its first texture tile.
+    if(repeat){
+      if(!ctx.createPattern)return;
+      pattern=ruinGlowPatternCache.get(image);
+      if(!pattern){pattern=ctx.createPattern(image,'repeat');if(!pattern)return;ruinGlowPatternCache.set(image,pattern);}
+    }
+    let drawn=0;
+    const previousAlpha=ctx.globalAlpha; // Preserve the caller's compositing state across mesh draws.
+    ctx.globalAlpha=previousAlpha*Math.min(1,Math.max(0,Number(mesh.material.opacity)||0)); // The engraving's authored pulse also controls its darkness exemption.
+    for(let t=0;t<total;t++){
+      const i0=indices?indices[t*3]:t*3,i1=indices?indices[t*3+1]:t*3+1,i2=indices?indices[t*3+2]:t*3+2;
+      if(i0>=count||i1>=count||i2>=count)continue;
+      const x0=screen[i0*2],y0=screen[i0*2+1],x1=screen[i1*2],y1=screen[i1*2+1],x2=screen[i2*2],y2=screen[i2*2+1];
+      if(!Number.isFinite(x0)||!Number.isFinite(y0)||!Number.isFinite(x1)||!Number.isFinite(y1)||!Number.isFinite(x2)||!Number.isFinite(y2)
+        ||Math.max(x0,x1,x2)<0||Math.max(y0,y1,y2)<0||Math.min(x0,x1,x2)>width||Math.min(y0,y1,y2)>height)continue;
+      const u0=uvs[i0*2]*iw,v0=(upsideDown?1-uvs[i0*2+1]:uvs[i0*2+1])*ih;
+      const u1=uvs[i1*2]*iw,v1=(upsideDown?1-uvs[i1*2+1]:uvs[i1*2+1])*ih;
+      const u2=uvs[i2*2]*iw,v2=(upsideDown?1-uvs[i2*2+1]:uvs[i2*2+1])*ih;
+      const du1=u1-u0,dv1=v1-v0,du2=u2-u0,dv2=v2-v0,det=du1*dv2-du2*dv1;
+      if(Math.abs(det)<1e-5)continue; // Degenerate UVs do not define a visible carved surface.
+      const dx1=x1-x0,dy1=y1-y0,dx2=x2-x0,dy2=y2-y0;
+      const a=(dx1*dv2-dx2*dv1)/det,b=(dy1*dv2-dy2*dv1)/det;
+      const c=(du1*dx2-du2*dx1)/det,d=(du1*dy2-du2*dy1)/det;
+      ctx.save();
+      try{
+        ctx.beginPath();ctx.moveTo(x0,y0);ctx.lineTo(x1,y1);ctx.lineTo(x2,y2);ctx.closePath();ctx.clip();
+        ctx.transform(a,b,c,d,x0-a*u0-c*v0,y0-b*u0-d*v0);
+        if(pattern){
+          ctx.fillStyle=pattern;
+          ctx.fillRect(Math.min(u0,u1,u2)-1,Math.min(v0,v1,v2)-1,
+            Math.max(u0,u1,u2)-Math.min(u0,u1,u2)+2,Math.max(v0,v1,v2)-Math.min(v0,v1,v2)+2);
+        }else ctx.drawImage(image,0,0,iw,ih); // Only textured alpha clears darkness; adjacent stone remains black.
+      }finally{ctx.restore();}
+      drawn++;
+    }
+    ctx.globalAlpha=previousAlpha;
+    result.drawn=drawn;
+  }
+
   function drawRuinPatternGlowMasks(scene, now) {
     if (!scene?.traverse) return;
     if (ruinGlowScene !== scene || now >= ruinGlowNextScan) {
       ruinGlowScene = scene;ruinGlowNextScan = now + 1600;
-      ruinGlowMeshes = []; // Filter by the real additive pass, not decorative base stone or procedural wall labels.
+      ruinGlowMeshes = []; // Filter by the real additive pass, not decorative stone or generated surface labels.
       scene.traverse(node => {
-        if ((node.name === 'engraving-glyph-glow' || node.userData?.ruinLadderRuneGlow) && node.isMesh) ruinGlowMeshes.push(node); // Rune strips remain legible under Kanthic's near-black darkness.
+        if ((node.name === 'engraving-glyph-glow' || node.userData?.ruinLadderRuneGlow) && node.isMesh) ruinGlowMeshes.push(node);
       });
       ruinGlowStats.scans++;ruinGlowStats.found=ruinGlowMeshes.length;
     }
-    const ctx = lightingDeps.lctx, playerY = Number(lightingDeps.getPlayerWorldY?.()); // Keep vertical shaft floors isolated while exposing glowing carvings.
-    ruinGlowStats.drawn = 0;
+    const ctx = lightingDeps.lctx, playerY = Number(lightingDeps.getPlayerWorldY?.());
+    const kanthic=activeRuinTradition()==='kanthic'; // Other ruin traditions keep their existing atmospheric glow radius.
+    ruinGlowStats.drawn = 0;ruinGlowStats.triangles=0;ruinGlowStats.examined=0;
+    if(kanthic){lightingDeps.camera?.getWorldPosition?.(ruinGlowCameraPosition);lightingDeps.camera?.getWorldDirection?.(ruinGlowCameraDirection);}
     ctx.globalCompositeOperation = 'destination-out';
     for (const mesh of ruinGlowMeshes) {
-      if (ruinGlowStats.drawn >= 80 || !mesh.material?.visible || !(mesh.material.opacity > .001)) continue; // Bound the mobile overlay cost in engraving-dense dungeons.
-      let visible=true; // Hidden overhead wings and removed groups must not punch unexplained holes in darkness.
+      if (ruinGlowStats.drawn >= 80 || kanthic && ruinGlowStats.examined>=MAX_RUIN_GLOW_TRIANGLES
+        || !mesh.material?.visible || !(mesh.material.opacity > .001)) continue;
+      let visible=true; // Hidden upper wings and removed scene groups must not punch unexplained holes in darkness.
       for (let parent=mesh;parent && parent!==scene;parent=parent.parent) {
         if (parent.visible === false) {visible=false;break;}
       }
@@ -1010,20 +1093,31 @@
       if (!Number.isFinite(ruinGlowProjection.x) || !Number.isFinite(ruinGlowProjection.y) || !Number.isFinite(ruinGlowProjection.z)
         || Number.isFinite(playerY) && Math.abs(ruinGlowProjection.y - playerY) > 11) continue;
       ruinGlowSource.x=ruinGlowProjection.x;ruinGlowSource.y=ruinGlowProjection.y;ruinGlowSource.z=ruinGlowProjection.z;
-      if(!ruinRoomLightAllowed(ruinGlowSource))continue; // Closed neighboring rooms cannot brighten their engravings through stone.
-      const scale=mesh.matrixWorld?.getMaxScaleOnAxis?.() || 1; // Sphere bounds are local geometry units, including stretched masonry patches.
-      const radiusTiles=Math.min(5,Math.max(.8,(sphere?.radius||1)*scale)); // Cover the engraving's face, but never illuminate an entire corridor from one glyph.
+      if(!ruinRoomLightAllowed(ruinGlowSource))continue;
+      const scale=mesh.matrixWorld?.getMaxScaleOnAxis?.() || 1;
+      const surfaceRadius=Math.max(.8,(sphere?.radius||1)*scale); // Actual geometry extent, used only to cull glyphs that are completely offscreen.
+      const radiusTiles=kanthic?surfaceRadius:Math.min(5,surfaceRadius); // Kanthic must not lose the visible end of a long wall; other themes keep legacy glow radius.
       const center=lightingDeps.worldToOverlay(ruinGlowProjection.x,ruinGlowProjection.y,ruinGlowProjection.z);
       const radius=lightScreenRadius(ruinGlowProjection.x,ruinGlowProjection.z,ruinGlowProjection.y,radiusTiles);
       if (!(radius > 0) || !lightMaskIntersectsViewport(center,radius,ctx,ruinGlowProjection.x,ruinGlowProjection.y,ruinGlowProjection.z,radiusTiles)) continue;
-      const gradient=ctx.createRadialGradient(center.x,center.y,0,center.x,center.y,radius);
-      gradient.addColorStop(0,'rgba(0,0,0,.98)');
-      gradient.addColorStop(.58,'rgba(0,0,0,.96)');
-      gradient.addColorStop(.83,'rgba(0,0,0,.70)');
-      gradient.addColorStop(1,'rgba(0,0,0,0)'); // Erase only nearby overlay darkness: glyph pixels remain depth-tested by the original Three.js pass.
-      ctx.fillStyle=gradient;
-      withRuinRoomLightClip(ctx,ruinGlowSource,()=>{ctx.beginPath();ctx.arc(center.x,center.y,radius,0,Math.PI*2);ctx.fill();});
-      ruinGlowStats.drawn++;
+      if(kanthic){
+        ruinGlowDrawResult.drawn=0;ruinGlowDrawResult.examined=0; // A sealed-room clip may decline the draw callback entirely.
+        withRuinRoomLightClip(ctx,ruinGlowSource,()=>{
+          drawRuinGlyphSilhouette(ctx,mesh,MAX_RUIN_GLOW_TRIANGLES-ruinGlowStats.examined,ruinGlowDrawResult);
+        }); // Only glyph alpha pierces Kanthic darkness; no radial light masks, gradients, halos or wall wash.
+        ruinGlowStats.examined+=ruinGlowDrawResult.examined;
+        ruinGlowStats.triangles+=ruinGlowDrawResult.drawn;
+        if(ruinGlowDrawResult.drawn)ruinGlowStats.drawn++;
+      } else {
+        const gradient=ctx.createRadialGradient(center.x,center.y,0,center.x,center.y,radius);
+        gradient.addColorStop(0,'rgba(0,0,0,.98)');
+        gradient.addColorStop(.58,'rgba(0,0,0,.96)');
+        gradient.addColorStop(.83,'rgba(0,0,0,.70)');
+        gradient.addColorStop(1,'rgba(0,0,0,0)');
+        ctx.fillStyle=gradient;
+        withRuinRoomLightClip(ctx,ruinGlowSource,()=>{ctx.beginPath();ctx.arc(center.x,center.y,radius,0,Math.PI*2);ctx.fill();});
+        ruinGlowStats.drawn++;
+      }
     }
     ctx.globalCompositeOperation = 'source-over';
   }
