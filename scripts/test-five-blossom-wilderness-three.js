@@ -259,6 +259,24 @@ const cairnGroup=scene.getObjectByName('wilderness-stone-cairns'); // Spatial in
 const plannedCairns=scenery.planForLayout(zoneId,worldLayout,'test-world:'+cycle).filter(site=>site.kind==='stoneCairn');
 const expectedBuckets=new Set(plannedCairns.map(site=>Math.floor(site.point.col/24)+','+Math.floor(site.point.row/24)));
 assert.ok(plannedCairns.length>0,'fixture includes actual normal cairns, not only the marked witness stone');
+for(const chunk of cairnGroup.children){
+  const key=chunk.name.replace('wilderness-cairn-chunk-','');
+  const sitesInChunk=plannedCairns.filter(site=>
+    Math.floor(site.point.col/24)+','+Math.floor(site.point.row/24)===key); // Identical deterministic batch membership/order as the renderer.
+  assert.equal(chunk.count,sitesInChunk.length*4);
+  if(!chunk.geometry.boundingBox)chunk.geometry.computeBoundingBox();
+  const artBox=chunk.geometry.boundingBox; // Actual natural-stone geometry, not the old central .36-tile collision guess.
+  const transform=new THREE.Matrix4();
+  for(let i=0;i<chunk.count;i++){
+    chunk.getMatrixAt(i,transform); // Real instanced course world placement written by cairns(), including its random yaw.
+    const box=artBox.clone().applyMatrix4(transform);
+    const height=(box.min.y+box.max.y)/2;
+    for(const x of [box.min.x,box.max.x])for(const z of [box.min.z,box.max.z]){
+      assert(collisionService.blocksBox(zoneId,x,z,0,height),
+        'every rotated stone course corner must remain physically solid (no visible edge clipping)');
+    }
+  }
+}
 const firstCairn=plannedCairns[0]; // Cached four-course stack and one movement footprint share the same height.
 const cairnTop=collisionService.supportAt(zoneId,firstCairn.point.col+.5,firstCairn.point.row+.5,Infinity);
 assert(cairnTop&&Math.abs(cairnTop.y-(1.25+.70*firstCairn.size))<.02,
