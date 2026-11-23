@@ -19,6 +19,7 @@
     const roster = minions.rollRoster('harlyao', 'Harlyao Ghost Army Soldier', {
       gender: 'male', equipmentSpeciesId: 'harlyao-skeleton',
     });
+    window.BanditCombat?.ensureEnemyPants?.(roster); // The actual Ghost Army's hostile-avatar builder provides matching pants from its ordinary garment pool.
     const shapes = minions.defaultWeaponShapes;
     const shapeKey = shapes[Math.min(shapes.length - 1,Math.floor(Math.max(0,random()) * shapes.length))];
     const metalKey = 'nativeCopper'; // Same metal selection as the marching army's configuration.
@@ -116,9 +117,14 @@
       const artist=window.FestivalAncestorFigures,THREE=window.THREE;
       if(!artist?.createCarvedFigure||!THREE?.Box3)
         throw new Error('Tzizkhanash portrait/stone renderer is unavailable');
-      const figure=await artist.createCarvedFigure(spec.roster,{
+      await window.ProceduralMaskPatterns?.ready; // Match BanditCombat's final portrait dependencies, without a live enemy or update loop.
+      if(entry.disposed)return false;
+      const dressed=window.MetalArmorSystem?.decorateAvatarDataWithMetalArmor?.(
+        spec.roster,spec.roster.metalArmorItems||[]) || spec.roster; // The actual army's metal-and-Temper treatment, not plain sprite cosmetics.
+      const figure=await artist.createCarvedFigure(dressed,{
         id:'key-statue-'+spec.id,
         pose:{x:0,z:0,scale:1,tilt:0,head:0.07,handRise:0.11},
+        prepareProfile:profile=>window.BanditCombat?.applyRosterDyesToProfile?.(profile,spec.roster),
       });
       if(entry.disposed){artist.disposeFigure?.(figure);return false;}
       entry.figure=figure;
