@@ -19,6 +19,7 @@ function flush() {
 }
 let handSyncCalls = 0; // Detects unnecessary all-actor hand driver updates on hand-only and foot-only drags.
 let rigPassCalls = 0; // Only body/head changes may traverse and recompose full rigs.
+let lastAppliedHunch = -1; // Confirms growth stages do not accidentally inherit age hunch from their adult donor.
 let lookups = 0; // Counts GLB discovery; already discovered limbs must not be rescanned.
 const entry = key => {
   const limbs = new Map(); // Distinct visual nodes with trackable baseline scale.
@@ -39,18 +40,18 @@ const window = {
   ProceduralHandFrameDriver: { syncNow() { handSyncCalls++; } },
   HobunjiCharacterRigScale: {
     scaleFor: () => ({ x: 1.2, y: 1.5, head: 1.1, offsetY: 0 }),
-    applyToParent() { rigPassCalls++; },
+    applyToParent(root, species, gender, scale, hunch) { rigPassCalls++; lastAppliedHunch = hunch; },
   },
   SCRATCHBONES_CONFIG: { game: { assets: { pngPlaneAvatar: { childScaleMultiplier: .5, childHeadScaleMultiplier: .72 } } } },
   HobunjiRomanceConfig: { family: { phaseScales: { basket: { body:.32, head:.5, hand:1.2, foot:1.2 },
     toddler: { body:.4, head:.66, hand:1, foot:1 } }, childLimbModifiers: { hand: 1, foot: 1 } } },
-  HobunjiAnimationAuthorScaleHost: { npcAgeFor: () => 0 },
+  HobunjiAnimationAuthorScaleHost: { npcAgeFor: () => .65 }, // Adult donor has old-age hunch, unlike a baby/toddler/child.
 };
 const document = { getElementById: getNode, activeElement: null };
 const injected = source.replace('  install();\n})();', `
   window.agePerfTest = {
     activate() { loadAgeModifiers(); active = true; entries = window.testEntries; },
-    setAgeMode, applyAgeModifiers, syncAgeControls, disposePreview,
+    setAgeMode, applyAgeModifiers, syncAgeControls, scheduleSelectedLayout, disposePreview,
     snapshot() { return { perf: { ...agePerf }, mode: ageMode, runningTimer: !!ageLimbTimer }; },
   };
 })();`);
@@ -69,6 +70,7 @@ const api = window.agePerfTest;
 api.activate();
 api.setAgeMode('baby');
 assert.equal(rigPassCalls, 3, 'stage change applies exactly one composed rig transform per character');
+assert.equal(lastAppliedHunch, 0, 'baby lineup cannot inherit the adult representative NPC’s old-age hunch');
 assert.equal(handSyncCalls, 1, 'stage switch drives the shared hand solver once, not once per character');
 const initialLookups = lookups;
 assert.equal(api.snapshot().runningTimer, false, 'fully loaded limbs must not start a repeated polling loop');
@@ -99,6 +101,12 @@ assert.equal(entries[0].limbs.get('left_hand_visual').scale.x, 2 * 1.65, 'hand u
 assert.equal(entries[0].limbs.get('left_foot').scale.x, 2 * 1.35, 'foot update survives batching with hand change');
 assert.equal(rigPassCalls, 6, 'mixed limb-only changes cannot recompute whole-body transforms');
 
+const layoutBefore = api.snapshot().perf.layoutPasses; // Species-specific width/head edits need just one further lineup placement pass.
+for (let i = 0; i < 30; i++) api.scheduleSelectedLayout();
+assert.equal(scheduled.size, 1, 'thirty selected-species changes must queue only one bounding-box layout');
+flush();
+assert.equal(api.snapshot().perf.layoutPasses, layoutBefore + 1, 'selected species width changes relayout the lineup exactly once');
+
 const number = getNode('maaFullScaleAgeNumHead'); // Mobile keyboard inputs should not be rewritten mid-entry.
 number.value = '1';
 document.activeElement = number;
@@ -106,6 +114,7 @@ api.syncAgeControls();
 assert.equal(number.value, '1', 'a partially typed number stays intact until the user commits');
 document.activeElement = null;
 api.setAgeMode('adult');
+assert.equal(lastAppliedHunch, .65, 'the adult reference retains its authored NPC age hunch');
 assert.equal(entries[2].limbs.get('left_hand_visual').scale.x, 2, 'adult reference restores each imported GLB baseline');
 assert.equal(api.snapshot().runningTimer, false, 'switching to adult mode should not poll already-present limbs');
 

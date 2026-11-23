@@ -99,10 +99,41 @@ async function main() {
       return result;
     });
     assert.equal(browserReport.appliedInGame, .67);
+    const toolbarBounds = await page.locator('#maaTopbar').boundingBox();
+    const panelBounds = await page.locator('#maaFullScalePanel').boundingBox();
+    assert(toolbarBounds && panelBounds && panelBounds.y >= toolbarBounds.y + toolbarBounds.height,
+      'the age controls must never cover mode tabs on mobile; panel should scroll within available viewport space');
+    await page.mouse.click(24, 540); // Real viewport pointer event outside the fixed editor controls.
+    assert.equal(await page.evaluate(() => window.HobunjiFullCharacterScaleComparison?.selectedKey),
+      browserReport.selectedKey, 'clicking the rendered lineup must not change selection');
+
+    // The original regression: the scale tab intercepted Multi's native click and never refreshed its mode chrome.
+    await page.locator('#maaMultiTab').click();
+    await page.waitForFunction(() => document.body.dataset.animationAuthorMode === 'multi'
+      && document.getElementById('maaMultiTab')?.getAttribute('aria-selected') === 'true',
+      null, { timeout: 60000 });
+    assert.equal(await page.locator('#maaFullScalePanel').isVisible(), false, 'the scale controls must close after returning to Multi');
+
     await page.locator('#maaRigTab').click();
-    await page.waitForFunction(() => document.body.dataset.animationAuthorMode !== 'scale-compare', null, { timeout: 30000 });
-    assert.equal(await page.locator('#maaFullScalePanel').isVisible(), false, 'comparison panel must close when another author tab opens');
-    console.log('PASS live age-rig browser parity, dropdown-only selection, mobile slider frame budget, and runtime apply:', JSON.stringify(browserReport).slice(0,6000));
+    await page.waitForFunction(() => document.body.dataset.animationAuthorMode === 'rig'
+      && document.getElementById('maaRigTab')?.getAttribute('aria-selected') === 'true',
+      null, { timeout: 60000 });
+    await page.locator('#maaSingleTab').click();
+    await page.waitForFunction(() => document.body.dataset.animationAuthorMode === 'single'
+      && document.getElementById('maaSingleTab')?.getAttribute('aria-selected') === 'true',
+      null, { timeout: 60000 });
+
+    // Mid-build navigation must invalidate the unfinished lineup instead of cancelling a native tab click.
+    await page.locator('#maaFullScaleTab').click();
+    await page.waitForFunction(() => !!window.HobunjiFullCharacterScaleComparison?.debugSnapshot?.().building,
+      null, { timeout: 30000 });
+    await page.locator('#maaRigTab').click();
+    await page.waitForFunction(() => document.body.dataset.animationAuthorMode === 'rig'
+      && document.getElementById('maaRigTab')?.getAttribute('aria-selected') === 'true',
+      null, { timeout: 90000 });
+    assert.equal(await page.locator('#maaFullScalePanel').isVisible(), false, 'cancelled lineup must not cover the Rig editor');
+    console.log('PASS real mobile age-rig parity and all tab handoffs including Multi, Single, Rig and mid-load cancellation:',
+      JSON.stringify(browserReport).slice(0,6000));
   } catch (error) {
     console.error('FAILED animation author age-rig browser:', error.stack || error);
     console.error('Browser errors:', errors.slice(-12).join('\n\n'));
