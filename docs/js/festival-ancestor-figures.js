@@ -107,8 +107,9 @@
     if(typeof prepareProfile==='function')prepareProfile(profile); // Allows physical carvings to reuse the source actor's final dye pass; shrine ancestors are unchanged.
     const front=document.createElement('canvas');front.width=256;front.height=256;
     const back=document.createElement('canvas');back.width=256;back.height=256;
-    await preview.renderProfileToCanvas(front,profile,{forceEyesOpen:true,seatId:'ancestor-stone:'+index,breathingComposer:null});
-    await preview.renderProfileToCanvas(back,profile,{portraitView:'behind',forceEyesOpen:true,seatId:'ancestor-stone-back:'+index,breathingComposer:null});
+    const frontReady=await preview.renderProfileToCanvas(front,profile,{forceEyesOpen:true,seatId:'ancestor-stone:'+index,breathingComposer:null});
+    const backReady=await preview.renderProfileToCanvas(back,profile,{portraitView:'behind',forceEyesOpen:true,seatId:'ancestor-stone-back:'+index,breathingComposer:null});
+    if(frontReady===false||backReady===false)throw new Error('The carved NPC portrait is not ready'); // Never hide the authored key sculpture in favor of empty transparent planes.
     const carvedFront=carvedCanvas(front,stone), carvedBack=carvedCanvas(back,stone);
     const model=avatar.buildSinglePlaneAvatarModel(THREE,carvedFront,{
       name:'tzizkhanash_ancestor_'+index,backCanvas:carvedBack,profile,npcRecord:record,neckRig:true,meshBudget:'npc'
