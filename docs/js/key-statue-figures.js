@@ -56,11 +56,12 @@
     const tool=tools?.makeToolPlaneMesh?.(spec.weaponKey,{holder:{weaponMasteryLevel:0}});
     const livePlane=tool?.userData?.toolPlane;
     try {
-      if(!livePlane?.geometry)return null;
     const definition=window.Combat?.deps?.TOOL_ITEM_DEFS?.[spec.weaponKey]
       ||window.Combat?.deps?.TOOL_ITEM_DEFS?.[spec.shapeKey];
-    let image=definition?.modular ? null : livePlane.material?.map?.image; // Modular tools start with a blank 450x1204 canvas before composition; never freeze the transparent placeholder into stone.
-    if(!image?.width && definition?.sprite) {
+    const isReady=image=>Number(image?.naturalWidth||image?.width)>0
+      &&Number(image?.naturalHeight||image?.height)>0&&image?.complete!==false; // Reject a still-loading HTMLImageElement even if its width attribute is set.
+    let image=definition?.modular ? null : livePlane?.material?.map?.image; // A modular weapon's blank initial composition canvas is not final authored art.
+    if(!isReady(image)&&definition?.sprite) {
       image=await new Promise(resolve=>{
         const candidate=new Image();
         candidate.onload=()=>resolve(candidate);
@@ -68,19 +69,24 @@
         candidate.src=definition.sprite;
       });
     }
-    if(!image?.width)return null;
+    if(!isReady(image))return null;
     const source=document.createElement('canvas');
     source.width=image.naturalWidth||image.width;source.height=image.naturalHeight||image.height;
     source.getContext('2d').drawImage(image,0,0,source.width,source.height);
     const carved=window.FestivalAncestorFigures.carvedCanvas(source,stone);
     const texture=new THREE.CanvasTexture(carved);
     texture.magFilter=THREE.NearestFilter;texture.minFilter=THREE.NearestFilter;
+    if(THREE.SRGBColorSpace)texture.colorSpace=THREE.SRGBColorSpace; // The carved blade's canvas uses the same PNG color space as the stone portrait.
     const material=new THREE.MeshBasicMaterial({
       map:texture,transparent:true,alphaTest:0.08,side:THREE.DoubleSide,depthWrite:true,
     });
-    const mesh=new THREE.Mesh(livePlane.geometry.clone(),material);
+    const modelWidth=Number(tools?.TOOL_MODEL_WIDTH)||0.5; // Match the existing held-tool PNG plane if its mesh is not available yet.
+    const geometry=livePlane?.geometry?.clone?.() || new THREE.PlaneGeometry(modelWidth,
+      modelWidth*source.height/source.width); // Real authored-sprite fallback, not an invented 3D weapon shape.
+    const mesh=new THREE.Mesh(geometry,material);
     mesh.name='key_statue_carved_army_weapon';
-    mesh.rotation.copy(livePlane.rotation); // Original tool sprite's -90-degree X basis.
+    if(livePlane?.rotation)mesh.rotation.copy(livePlane.rotation);
+    else mesh.rotation.x=-Math.PI/2; // Same original -90-degree sprite basis as CharacterHeldTools.
     mesh.renderOrder=0; // World sculpture, never an actor's held-overlay render pass.
     return mesh;
     } finally {
