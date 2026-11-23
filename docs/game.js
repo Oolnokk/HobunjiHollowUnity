@@ -6279,7 +6279,7 @@
       }
 
       function findAvailableAutoTarget() {
-        if (isDesktop && !desktopLockOnActive) return null;
+        if (!desktopLockOnActive && (isDesktop || window.Combat?.input?.autoTargetAvailable !== true)) return null; // Disabled mobile assist never previews targets; explicit lock-on remains supported.
         if (mobileAutoTargetEnabled()) return findAutoTarget();
         if (availableAutoTargetCacheFrame !== gameFrameSerial) {
           availableAutoTargetCacheValue = computeAutoTarget(true); // Uses ordinary range, visibility, and weapon/cone rules without selecting or turning toward prey.
@@ -19284,8 +19284,10 @@
           updateProneState(dt);
           return;
         }
-        syncMobileAutoTargetCombatState();
-        syncMobileAutoTargetButton(); // Target availability refreshes even when prone, mounted, or another mode skips ordinary movement.
+        if (window.Combat?.input?.autoTargetAvailable === true) {
+          syncMobileAutoTargetCombatState();
+          syncMobileAutoTargetButton(); // Only the available mobile feature needs frame-driven visibility and encounter updates.
+        }
         updateMobileArchCombatAimLifecycle();
         updateMeleeAttackFacingCommitLifecycle();
         const viewModeKeyboard = getKeyboardVector();
@@ -28623,7 +28625,7 @@
       let mobileAutoTargetWasInCombat = false; // Edge tracking allows explicit prey targeting outside an encounter.
       let mobileAutoTargetWeaponWasOut = false;
       function syncMobileAutoTargetCombatState() {
-        if (isDesktop) return;
+        if (isDesktop || window.Combat?.input?.autoTargetAvailable !== true) return;
         const inCombat = isPlayerInCombat();
         const weaponOut = shoulderSurfCombatStanceActive();
         const ended = (mobileAutoTargetWasInCombat && !inCombat) || (mobileAutoTargetWeaponWasOut && !weaponOut);
@@ -28637,8 +28639,9 @@
 
       function syncMobileAutoTargetButton() {
         if (!btnSwapTarget) return;
-        const enabled = mobileAutoTargetEnabled(); // Read once to keep the arch's toggle presentation consistent.
-        const hidden = isDesktop || window.Combat?.input?.autoTargetAvailable === false || !findAvailableAutoTarget(); // Prey can expose the toggle before combat starts, including while autotarget is disabled.
+        const available = !isDesktop && window.Combat?.input?.autoTargetAvailable === true; // The mobile control is unavailable until its owner explicitly enables the feature.
+        const enabled = available && mobileAutoTargetEnabled(); // A desktop/controller lock must not activate the hidden mobile button.
+        const hidden = !available || !findAvailableAutoTarget(); // Never scan for prey when the mobile feature is unavailable.
         if (btnSwapTarget.classList.contains('abt-hidden') !== hidden) btnSwapTarget.classList.toggle('abt-hidden', hidden);
         if (btnSwapTarget.classList.contains('active') !== enabled) btnSwapTarget.classList.toggle('active', enabled);
         const pressed = String(enabled); // Avoids rewriting accessibility state every movement frame.
@@ -28679,7 +28682,7 @@
           if (!cancelled && !press.held && !btnSwapTarget.classList.contains('abt-hidden')) window.Combat?.input?.setAutoTargetEnabled(!mobileAutoTargetEnabled());
         }
         btnSwapTarget.addEventListener('pointerdown', event => {
-          if (window.Combat?.input?.autoTargetAvailable === false || targetStick || btnSwapTarget.classList.contains('abt-hidden')) return;
+          if (window.Combat?.input?.autoTargetAvailable !== true || targetStick || btnSwapTarget.classList.contains('abt-hidden')) return;
           event.preventDefault();
           event.stopPropagation();
           const rect = btnSwapTarget.getBoundingClientRect(); // Fixed gesture center avoids feedback from moving the knob.
@@ -30398,9 +30401,9 @@
         get shoulderSurfOffsets() { return { defaultH: s_shoulderSurfOffsetH_default, defaultV: s_shoulderSurfOffsetV_default, combatH: s_shoulderSurfOffsetH_combat, combatV: s_shoulderSurfOffsetV_combat, currentH: s_shoulderSurfOffsetH_current, currentV: s_shoulderSurfOffsetV_current }; },
         meleeAttackAlignmentSnapshot: () => {
           const target = manualAutoTarget;
-          const availableTarget = findAvailableAutoTarget(); // Reports the prospective prey/enemy even while the mobile toggle is disabled.
+          const availableTarget = findAvailableAutoTarget(); // Reports a candidate only for available mobile assist or deliberate lock-on.
           return {
-            latestChange: 'Combat and potion actions remain available when aiming at cave walls or beyond the map. Canceled holds release ability windups; weapon and mobile pointer release state is cleared even if an action throws.',
+            latestChange: 'Mobile autotarget is unavailable: its Settings row, target button, encounter checks and candidate previews are disabled. Deliberate lock-on remains available.',
             area: currentArea,
             inputSlots: [1, 2].map(slot => window.Combat?.input?.getState?.(slot)),
             swing: { remainingS: toolSwingT, held: combatSwingHeld },
