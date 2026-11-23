@@ -118,6 +118,20 @@
     staticPose(model,pose,parts);
     return {model,parts};
   }
+  // A single reusable Tzizkhanash carving for other physical props (e.g. the Key Statue).
+  // The same profile, stone cells, hand/leg rig and cleanup path as shrine ancestors are used.
+  async function createCarvedFigure(record,{id='carving',pose={x:0,z:0,scale:1,tilt:0,head:0,handRise:0}}={}) {
+    const [stone]=await Promise.all([stoneImage(),window.NpcAvatarPreview?.ensurePortraitCosmetics?.({configBase:'config/'})]);
+    const figure=await buildFigure(window.THREE,record,pose,String(id),stone);
+    return {...figure,stone};
+  }
+  function disposeFigure(figure) {
+    figure?.parts?.hands?.dispose?.();
+    figure?.parts?.legs?.dispose?.();
+    figure?.model?.parent?.remove?.(figure.model);
+    if(figure?.model)window.PNGPlaneAvatar?.disposeAvatarModel?.(figure.model);
+  }
+
   async function decorate(group,record,legacy=null) {
     if(!group || group.userData?.festivalDisposed)return false;
     const entry={group,figures:[],ready:false,failed:false};
@@ -165,6 +179,6 @@
     });
   }
   function diagnostics(){return {activeShrines:active.size,statues:[...active].reduce((n,e)=>n+e.figures.length,0),ready:[...active].filter(e=>e.ready).length,lastError,texture:'carved_smooth.png',cellsPerAxis:CELL_COUNT};}
-  window.FestivalAncestorFigures={decorate,dispose,carvedCanvas,historicalRecords,poseFor,diagnostics};
+  window.FestivalAncestorFigures={decorate,dispose,createCarvedFigure,disposeFigure,carvedCanvas,historicalRecords,poseFor,diagnostics};
   window.__tzizkhanashAncestorFiguresDebug=diagnostics; // Copyable mobile diagnostics; no console required.
 })();
