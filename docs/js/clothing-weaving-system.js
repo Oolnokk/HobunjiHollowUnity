@@ -1895,6 +1895,8 @@
       : typeof window.portraitVariantKeysForFighter === 'function'
         ? window.portraitVariantKeysForFighter({ speciesId, gender }, { slot, fallbackVariantByGender: cfg?.fallbackVariantByGender })
         : speciesVariantKeyCandidates(speciesId, gender); // Partially illustrated prize helmets must not borrow a nearest species' headgear in icons, looms or editor previews. // Matches the portrait's inherited and nearest supported garment variant.
+    const genderFallback = cfg?.fallbackVariantByGender?.[String(gender || '').trim().toLowerCase()]; // Standalone clothing editors may load before portrait-utils; preserve the same Kenkari fallback.
+    if (!cfg?.onlyExactSpeciesVariant && genderFallback && !variantKeys.includes(genderFallback)) variantKeys.push(genderFallback);
     for (const key of variantKeys) {
       const layers = collectLayerImageUrls(cfg?.speciesVariants?.[key]?.parts, paletteLayerMap, []);
       if (layers.length) return layers.map(layer => ({ ...layer, slot }));
