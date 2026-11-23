@@ -63,6 +63,46 @@ for(const [zone,info] of Object.entries(nativeForZone)) {
     assert.equal(leaves.geometry,anotherLeaves.geometry,'native foliage stays instanced by reference');
   }
 }
+// A real r128 Object3D parent rotation/translation must place root collision at the rendered tree, never at its untransformed variant origin.
+{
+  require('../docs/js/nearby-volume-collision.js'); // Real shared cover/root-index owner, exercised with live Three.js matrixWorld.
+  const rootScene=new THREE.Scene(); // Independent scene keeps the existing landmark fixture and its semantic index untouched.
+  const parent=new THREE.Group(); // Nontrivial ancestor transform catches local-vs-world root collision drift.
+  parent.position.set(25,1.25,31);parent.rotation.y=.63;parent.scale.set(1.12,1,1.12);
+  rootScene.add(parent);
+  const pine=generator.buildCrownedPineMesh(14,15); // Its real shared foliage variant includes the native generated root spines.
+  pine.position.set(2,0,1);pine.rotation.y=.87;parent.add(pine);rootScene.updateMatrixWorld(true);
+  let residency=0; // Same monotonic counter used by chunk loading; verify scene reuse without manual cache resets.
+  window.WildernessChunks={residencyVersion:()=>residency};
+  window.NearbyVolumeCollision.init({
+    getActiveScene:()=>rootScene,getCurrentArea:()=> 'map_northern_cliffs',
+    isCombatActive:()=>false,debugLog(){},player:{x:0,y:0},
+    worldSurfaceY:()=>0,options:{enabled:false,projectiles:false}
+  });
+  let standing=null; // Find a real root ridge with enough top surface for the jump solver's centre-foot contact.
+  for(const span of pine.userData.wildernessRootSpansLocal){
+    for(const local of span.points){
+      const point=new THREE.Vector3(...local).applyMatrix4(pine.matrixWorld);
+      const support=window.AreaFootprintBlockers.supportAt('map_northern_cliffs',point.x,point.z,Infinity);
+      if(support?.kind==='tree root'){standing={point,support};break;}
+    }
+    if(standing)break;
+  }
+  assert(standing,'a real generated Crowned Pine has at least one exposed root usable as elevated support');
+  assert(standing.point.x>20&&standing.point.z>25,
+    'root contact inherits the native tree and its ancestor world transforms');
+  assert(window.NearbyVolumeCollision.debugSnapshot().rootRidges>0,
+    'native root centreline collision indexes the real Three.js foliage geometry');
+  rootScene.remove(parent); // The tree remains parented to the detached Group and keeps its original local transform.
+  assert.equal(window.AreaFootprintBlockers.supportAt('map_northern_cliffs',standing.point.x,standing.point.z,Infinity),null,
+    'detaching a whole native-tree group immediately removes support without waiting for rebuild');
+  rootScene.add(parent);residency++;
+  assert(window.AreaFootprintBlockers.supportAt('map_northern_cliffs',standing.point.x,standing.point.z,Infinity),
+    'reusing the same Three.js Scene after a chunk residency change restores native tree roots');
+  window.AreaFootprintBlockers.remove('wilderness-tree-roots');
+  window.NearbyVolumeCollision.invalidate();
+  delete window.WildernessChunks;
+}
 // Exercise the real year-round scenery module against a real Three.js scene, including scene/Shift lifecycle.
 async function verifyScenery(){
 const scenery = require('../docs/js/wilderness-landmark-scenery.js'); // Built witness stones are the exact physical referents named in saved riddles.
