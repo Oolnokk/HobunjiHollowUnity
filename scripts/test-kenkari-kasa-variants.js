@@ -52,6 +52,22 @@ for (const gender of ['male', 'female']) {
     'saved legacy Bowl-Kasas remain loadable but hidden from new authoring choices');
   assert.equal(context.window.canonicalRiverlandKasaId(legacyId), bowlId, 'legacy equipped Bowl-Kasa maps to one item');
 }
+// All authored Kenkari-family hat rules must follow the same short ID used by the newly canonical option.
+for (const speciesId of ['kenkari', 'rakakoan']) {
+  const species = JSON.parse(read('docs/config/species/' + speciesId + '.json')); // Live species portrait weight and occlusion rules.
+  for (const gender of ['male', 'female']) {
+    const set = species[gender].allowedCosmetics; // Real selectable pool must contain only the canonical hat identity.
+    assert(set.includes(bowlId), speciesId + ' ' + gender + ' can generate the Bowl-Kasa');
+    assert(!set.some(id => /^appearance::Kenkari_[MF]::kenk_bowlkasa$/.test(id)), 'no duplicate gendered pool item');
+    assert.equal(species[gender].cosmeticWeights.hat[bowlOption.id], gender === 'male' ? 40 : 7,
+      speciesId + ' ' + gender + ' retains its original Bowl-Kasa frequency');
+    const occlusion = context.hatHideRuleFor(bowlOption.id, species[gender].randomizationRules); // Actual profile hair-occlusion lookup.
+    assert.equal(occlusion?.hideSlots?.join(','), 'hairFront,hairBack,hairSide,hairSideL',
+      speciesId + ' ' + gender + ' hides all hair beneath a Bowl-Kasa');
+    assert.equal(species[gender].randomizationRules.hatHideRules.kenk_bowlkasa, undefined,
+      speciesId + ' ' + gender + ' has no stale hair clipping rule');
+  }
+}
 const future = JSON.parse(JSON.stringify(bowlJson)); // Simulates an artist providing a new species+gender image without adding a new shop item.
 future.speciesVariants['mao-ao_female'] = JSON.parse(JSON.stringify(future.speciesVariants.kenkari_female));
 future.speciesVariants['mao-ao_female'].parts.head.layers.front.image.url = './assets/cosmetics/clothes/hat/future-mao-f-bowl.png';
