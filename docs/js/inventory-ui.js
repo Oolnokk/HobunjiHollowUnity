@@ -213,8 +213,8 @@
     if (!Number.isFinite(delta) || !delta) return;
     const previous = strip.scrollLeft;
     strip.scrollLeft = Math.max(0, Math.min(strip.scrollWidth - strip.clientWidth, previous + delta));
-    if (strip.scrollLeft !== previous) event.preventDefault();
-    event.stopPropagation(); // Even at either end, never send a tab-hover wheel to background inventory/game controls.
+    event.preventDefault(); // The strip owns vertical wheel input even at either end; do not scroll the page behind the menu.
+    event.stopPropagation(); // Never send a tab-hover wheel to background inventory/game controls.
   }
 
   function installObserver() {
