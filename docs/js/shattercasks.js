@@ -723,6 +723,7 @@
     if(!body||!vase?.group?.quaternion||!posteriorLocal)return false;
     const bodyMountedBaby=isBack&&vase.kind==='familyBaby'; // Infant remains on the carrier's posterior, not the separately rotating head/portrait plane.
     const portrait=isBack&&!bodyMountedBaby?backCarryPortrait(body):null; // Ordinary back-stowed furniture keeps its established portrait-facing behavior.
+    if(portrait&&vase.group.parent===portrait)return true; // Preserve the existing fast path: ordinary furniture never runs the baby-specific posture checks.
     const carryable=vase.data?.carryable||{}; // The back pose uses authored transforms, with an inverted held pose as its fallback.
     const livePosterior=window.PlayerBodyTransformComposer?.getPosteriorY?.(); // One cheap height read; dynamically standing/sitting babies remain at the real posterior.
     const liveY=Number.isFinite(livePosterior)?livePosterior:null;
@@ -733,7 +734,6 @@
     if(bodyMountedBaby&&vase.group.parent===body&&mounted?.body===body&&mounted.revision===revision
       &&mounted.liveY===liveY&&mounted.modelHeight===modelHeight&&mounted.handAttachY===handAttachY
       &&mounted.speciesId===speciesId&&mounted.gender===gender)return true;
-    if(portrait&&vase.group.parent===portrait)return true; // Other back Burdens continue to follow their portrait plane.
     if(vase.group.parent!==body)body.add(vase.group);
     // The playerMesh is the actual character/posterior frame. The renderer
     // already applies body yaw and camera deadzone to that whole hierarchy.
