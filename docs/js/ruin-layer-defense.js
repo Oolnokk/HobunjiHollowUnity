@@ -139,7 +139,7 @@
           if(entry.piece==='statueDispenser'){
             if(!node.isObject3D)throw new Error('Key Statue dispenser must be a live Three.js scene object: '+uid);
             if(!statues.registerDispenser(mapId,uid,node,node.userData.furniturePuzzle,{
-              feedPlinthId:plinthId,
+              feedPlinthId:plinthId,statueVisual:'harlyaoGhostArmy', // Only the skeleton-defence Key Statue replaces its abstract carved primitive.
             }))throw new Error('Cannot replenish the Key Statue on retry: '+uid);
           }
           if(['plinth','statueDispenser'].includes(entry.piece))
