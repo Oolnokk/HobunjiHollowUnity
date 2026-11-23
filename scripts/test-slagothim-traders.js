@@ -240,7 +240,7 @@ function makeHarness({ townValue = 3, season = 'Stormtide', townBuildings = [], 
   let mulberry = 7;
   const rng = () => { mulberry = (mulberry * 1103515245 + 12345) % 2147483648; return mulberry / 2147483648; };
   const counts = [0, 0, 0];
-  const kasaVariants = new Set(); // Proves both registered gender variants remain possible from caravan stock rolls.
+  const kasaVariants = new Set(); // All caravans must sell the same Bowl-Kasa identity regardless of wearer's gender.
   let kasaCount = 0; // Counts seeded caravans offering a physical imported bowl-kasa.
   for (let i = 0; i < 2000; i++) {
     const stock = T.__test.rollStock(rng, 2);
@@ -260,9 +260,7 @@ function makeHarness({ townValue = 3, season = 'Stormtide', townBuildings = [], 
   }
   assert.ok(counts[0] > counts[1] && counts[1] > counts[2] && counts[2] > 0, `high-tier bars: usually 0, sometimes 1, rarely 2 (${counts})`);
   assert.ok(kasaCount > 300 && kasaCount < 700, `bowl-kasas appear sometimes, not on every caravan (${kasaCount}/2000)`);
-  assert.deepEqual([...kasaVariants].sort(), [
-    'appearance::Kenkari_F::kenk_bowlkasa', 'appearance::Kenkari_M::kenk_bowlkasa',
-  ], 'both Kenkari bowl-kasa variants can be stocked');
+  assert.deepEqual([...kasaVariants], ['appearance::hat::bowlkasa'], 'there is only one physical Bowl-Kasa item');
 }
 
 // ── Buying + save/restore ────────────────────────────────────────────
@@ -296,13 +294,14 @@ function makeHarness({ townValue = 3, season = 'Stormtide', townBuildings = [], 
 {
   const { T, calendar, inventory, packClothing, window, saves } = makeHarness();
   const caravan = T.spawnCaravan(calendar.day, null); // Purchase against a real saved caravan's stock.
-  const cosmeticId = 'appearance::Kenkari_F::kenk_bowlkasa'; // Female Kenkari variant from the registered cosmetic index.
+  const cosmeticId = 'appearance::hat::bowlkasa'; // Single reusable item; recipient determines the sprite.
   const catalogue = JSON.parse(fs.readFileSync(path.join(ROOT, 'docs/config/cosmetics/index.json'), 'utf8')); // Shipped headwear registration authority.
-  for (const variant of ['appearance::Kenkari_M::kenk_bowlkasa', cosmeticId]) {
-    assert.ok(catalogue.entries.some(article => article.id === variant), `registered bowl-kasa cosmetic: ${variant}`);
+  assert.ok(catalogue.entries.some(article => article.id === cosmeticId), 'canonical Bowl-Kasa is registered');
+  for (const legacyId of ['appearance::Kenkari_M::kenk_bowlkasa', 'appearance::Kenkari_F::kenk_bowlkasa']) {
+    assert.ok(catalogue.entries.some(article => article.id === legacyId), 'older gendered cosmetic IDs remain loadable');
   }
   const entry = { id: `clothing:${cosmeticId}`, kind: 'clothing', cosmeticId, slot: 'hat', qty: 1,
-    price: 121, sellPrice: 22, label: 'Kenkari Bowl-Kasa', desc: 'Carved wooden headwear' }; // Single caravan garment listing.
+    price: 121, sellPrice: 22, label: 'Bowl-Kasa', desc: 'Carved wooden headwear' }; // Single caravan garment listing.
   caravan.stock = [entry];
   const goldBefore = inventory.gold; // Purchase debit must be part of the Pack grant's own save.
   const savesBefore = saves(); // Used to prove the caravan does not write a second expensive full-member save.
