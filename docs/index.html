@@ -53,7 +53,7 @@
   <!-- Small formatting/math helpers (esc/clamp/roundRect/formatClock/etc.)
        extracted out of game.js; must load before game.js and before every
        other module whose init(deps) is handed window.FormatUtils.clamp/esc. -->
-  <script src="js/format-utils.js?v=20261122cancelAnimal2"></script>
+  <script src="js/format-utils.js?v=20261123babyPortraitUtils1"></script>
   <!-- Default building entry tile (buildingSpawnFromExit) extracted out of
        game.js; uses window.FormatUtils.clamp and must load before game.js. -->
   <script src="js/building-entry-spawn.js?v=20261026hfbed948"></script>
@@ -791,7 +791,7 @@
        window.EquipmentPanel directly (including at top-level, in
        window.__climbDebug) and calls window.EquipmentPanel.init(...)
        during its own setup. -->
-  <script src="js/equipment-panel.js?v=20261122hKasa2"></script>
+  <script src="js/equipment-panel.js?v=20261122invCatWheelLoaderEdge2"></script>
   <!-- Per-map terrain tile texture overrides (window.TerrainTileMaterials:
        resolveTileMat/resolveCliffMat/loadTerrainTileTexture) — must load
        before game.js, which calls window.TerrainTileMaterials.init(...) near
@@ -2957,7 +2957,7 @@
   <script src="js/family-baby-burdens.js?v=20261122babyPortraitPosed2"></script>
   <script src="js/family-baby-ambient-voice.js?v=20261122decoupledVoice1"></script> <!-- Voice adapter; physical baby carry code unchanged. -->
   <script src="js/family-baby-care.js?v=20261122familyCare2"></script>
-  <script src="js/romance-family.js?v=20261122decoupledVoice1"></script>
+  <script src="js/romance-family.js?v=20261123newbornPortraitAlpha2"></script>
   <script src="js/romance-wedding.js?v=20261027hbreath8"></script>
   <script src="js/npc-following.js?v=20261122babyFollow1"></script>
   <!-- Shared spouse kiss motion/height solver. Loads before RomanceSystem.init but after the player render/leg APIs. -->

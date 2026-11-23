@@ -24,8 +24,9 @@ assert.equal(0.85 + nativeCopperTier * 0.05, 0.90, 'ungraded saved copper still 
 const baseHealthMatch = banditSource.match(/const BANDIT_BASE_MAX_HEALTH = (\d+(?:\.\d+)?)/); // Extracts the combat runtime's unscaled bandit-health baseline.
 assert(baseHealthMatch, 'bandit base health must remain discoverable in combat-bandit.js');
 const banditBaseHealth = Number(baseHealthMatch[1]); // Used with rank/tier curves to derive actual tier-0 HP.
-const tier0GruntHealth = Math.round(banditBaseHealth * banditConfig.statMultiplierByRankAndTier.grunt[0]); // Requested ordinary tier-0 Bandit target.
-const tier0LieutenantHealth = Math.round(banditBaseHealth * banditConfig.statMultiplierByRankAndTier.lieutenant[0]); // Requested tier-0 Lieutenant target.
+const tier0GruntHealth = Math.round(banditBaseHealth * banditConfig.healthMultiplierByRankAndTier.grunt[0]); // Health-only tier-0 grunt target; attack/stamina still use the original stat curve.
+const tier0LieutenantHealth = Math.round(banditBaseHealth * banditConfig.healthMultiplierByRankAndTier.lieutenant[0]); // Health-only tier-0 Lieutenant target.
+const tier0FlaskerHealth = Math.round(banditBaseHealth * banditConfig.healthMultiplierByRankAndTier.flasker[0]); // Flasker durability is independent of its attack/Stamina curve.
 
 const nativeCopperCutDamage = attackValues.weaponAbilities.cut.damage * nativeCopperMultiplier; // Shared melee base that Charged Breaker and Flurry scale from.
 const breaker = attackValues.chargedBreaker; // Short alias used throughout the Breaker calibration assertions.
@@ -50,18 +51,19 @@ const sharpFootingPerRawDamage = sharpType.footing * footingLossPerDamage * foot
 const bluntFootingPerRawDamage = bluntType.footing * footingLossPerDamage * footingBridgeMultiplier; // Actual Footing removed by one raw Blunt damage before buffs/resistance.
 
 assert.equal(nativeCopperMultiplier, 0.75, 'new Copper-I starting gear uses the wider 0.75x progression');
-assert.equal(tier0GruntHealth, 17, 'tier-0 grunt HP is balanced for the 0.75x one-mark Breaker');
-assert.equal(tier0LieutenantHealth, 29, 'tier-0 lieutenant HP keeps the three-mark Breaker kill threshold');
+assert.equal(tier0GruntHealth, 30, 'tier-0 grunt gets enough Health to survive a basic starting combo');
+assert.equal(tier0LieutenantHealth, 50, 'tier-0 lieutenant is tougher than a grunt without increased offensive stats');
+assert.equal(tier0FlaskerHealth, 43, 'tier-0 flasker survives longer while retaining its ranged support role');
 assert.equal(fullBreakerDamage, 11, 'new grade-I Copper full Charged Breaker has an 11-damage heavy baseline');
 assert.deepEqual(sharpType, { health: 1.1, footing: 0.8, knockback: 1 }, 'Sharp keeps its existing Health, Footing, and knockback strengths');
 assert.deepEqual(bluntType, { health: 0.5, footing: 1.25, knockback: 1.25 }, 'Blunt preserves half Health but increases Footing and knockback to 125%');
 assert(Math.abs(sharpFootingPerRawDamage - 2.56) < 1e-9, 'Sharp should remove 2.56 Footing per raw damage after shared scaling');
 assert(Math.abs(bluntFootingPerRawDamage - 4) < 1e-9, 'Blunt should remove 4 Footing per raw damage after shared scaling');
 assert(Math.abs(bluntFootingPerRawDamage / sharpFootingPerRawDamage - 1.5625) < 1e-9, 'Blunt should apply 56.25% more Footing pressure than Sharp');
-assert(fullBreakerDamage * sharpType.health < tier0GruntHealth, 'Sharp unmarked Charged Breaker must not erase the value of earning the third combo hit');
-assert(fullBreakerDamage * deathMarks[0] * sharpType.health >= tier0GruntHealth, 'Sharp one-mark Charged Breaker must one-shot a tier-0 grunt');
-assert(fullBreakerDamage * deathMarks[1] * sharpType.health < tier0LieutenantHealth, 'Sharp two-mark Charged Breaker must not one-shot a tier-0 lieutenant');
-assert(fullBreakerDamage * deathMarks[2] * sharpType.health >= tier0LieutenantHealth, 'Sharp three-mark Charged Breaker must one-shot a tier-0 lieutenant');
+assert(fullBreakerDamage * sharpType.health < tier0GruntHealth, 'Starter Sharp unmarked Breaker must not one-shot a tier-0 grunt');
+assert(fullBreakerDamage * deathMarks[0] * sharpType.health < tier0GruntHealth, 'Starter Sharp one-mark Breaker should not erase the grunt before follow-up tactics');
+assert(fullBreakerDamage * deathMarks[2] * sharpType.health >= tier0GruntHealth, 'Three earned Death Marks still create a decisive Sharp power hit against a grunt');
+assert(fullBreakerDamage * deathMarks[2] * sharpType.health < tier0LieutenantHealth, 'Lieutenants survive even the strongest starter Sharp mark-consumption hit');
 const maxMarkedBluntHealth = fullBreakerDamage * deathMarks[2] * bluntType.health; // Ensures even a fully marked blunt breaker leaves ordinary foes alive for Footing/terrain tactics.
 assert(maxMarkedBluntHealth < tier0GruntHealth, 'Blunt three-mark Charged Breaker should not erase tier-0 grunts before knockback/Footing can matter');
 assert.equal(bluntType.footing, 1.25, 'Blunt Footing is increased to 125% of the baseline');
