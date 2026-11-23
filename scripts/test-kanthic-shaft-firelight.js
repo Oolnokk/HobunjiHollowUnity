@@ -124,7 +124,8 @@ assert.equal(fakeWindow.CloudForestFog.getDebugState().kanthicFirelight.drawn,2,
   'two independent fixture groups accumulate two darkness-cutout draws');
 const above={...source,floorY:16,y:17.4};
 maskDraws.length=0;
-assert.equal(fakeWindow.__probeRuinMasks([above],drawingDeps).drawn,0,'a lit upper-story goal does not shine through lower floors');
+const beforeUpperStory=visibleResult.drawn+1; // The diagnostics count all masks in this instrumented redraw, even when the next source is culled.
+assert.equal(fakeWindow.__probeRuinMasks([above],drawingDeps).drawn,beforeUpperStory,'a lit upper-story goal does not shine through lower floors');
 
 
 const Plan=require('../docs/js/ruin-layer-plan.js'); // Real seed layouts cover four entrances, varying wing portals, and 3–5 shaft stories.
