@@ -674,6 +674,7 @@
     for (const job of composeQueue) {
       if (job.key !== key || job.priority >= priority) continue;
       job.priority = priority;
+      if (priority === 2) prefetchPlayerPetFrameAssets(job.kind, job.frame, job.genotype, job.blinkShut); // A queued wildlife frame becoming the owner's pet should also begin artwork I/O immediately.
       composePromotions++;
       promoted = true;
     }
