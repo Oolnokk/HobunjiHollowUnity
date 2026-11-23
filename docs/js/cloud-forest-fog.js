@@ -988,6 +988,7 @@
   const MAX_RUIN_GLOW_TRIANGLES = 960; // Hard upper bound on the glyph-only Canvas2D draws per lighting refresh, including mobile.
   let ruinGlowScene = null,ruinGlowNextScan = 0,ruinGlowMeshes = []; // Cache the active scene's glow meshes; lazy atlases can complete after initial scan.
   let ruinGlowVertexScreen = new Float32Array(0); // Shared projected vertex buffer, resized only for the largest encountered engraving mesh.
+  const ruinGlowPatternCache = new WeakMap(); // One repeated-rune CanvasPattern per loaded image, reused across darkness refreshes.
 
   function drawRuinGlyphSilhouette(ctx,mesh,remainingTriangles) {
     const geometry=mesh.geometry,position=geometry?.getAttribute?.('position'),uv=geometry?.getAttribute?.('uv');
@@ -1013,7 +1014,15 @@
     const rect=lightingDeps.getThreeRect?.();
     const width=Number(rect?.width||ctx.canvas?.clientWidth||ctx.canvas?.width)||Infinity;
     const height=Number(rect?.height||ctx.canvas?.clientHeight||ctx.canvas?.height)||Infinity;
-    const upsideDown=mesh.material.map.flipY!==false; // CanvasTexture is sampled with GL's bottom-up UV convention.
+    const texture=mesh.material.map;
+    const upsideDown=texture.flipY!==false; // CanvasTexture and repeating rune PNGs use GL's bottom-up UV convention.
+    const repeat=texture.wrapS===window.THREE?.RepeatWrapping&&texture.wrapT===window.THREE?.RepeatWrapping;
+    let pattern=null; // A repeat-wrapped climbing rune must keep its full strip, not only its first texture tile.
+    if(repeat){
+      if(!ctx.createPattern)return 0;
+      pattern=ruinGlowPatternCache.get(image);
+      if(!pattern){pattern=ctx.createPattern(image,'repeat');if(!pattern)return 0;ruinGlowPatternCache.set(image,pattern);}
+    }
     let drawn=0;
     ctx.globalAlpha=Math.min(1,Math.max(0,Number(mesh.material.opacity)||0)); // The engraving's authored pulse also controls its darkness exemption.
     for(let t=0;t<total;t++){
@@ -1033,7 +1042,11 @@
       ctx.save();
       ctx.beginPath();ctx.moveTo(x0,y0);ctx.lineTo(x1,y1);ctx.lineTo(x2,y2);ctx.closePath();ctx.clip();
       ctx.transform(a,b,c,d,x0-a*u0-c*v0,y0-b*u0-d*v0);
-      ctx.drawImage(image,0,0,iw,ih); // Erase darkness only where atlas pixels have coverage; never expose adjacent stone.
+      if(pattern){
+        ctx.fillStyle=pattern;
+        ctx.fillRect(Math.min(u0,u1,u2)-1,Math.min(v0,v1,v2)-1,
+          Math.max(u0,u1,u2)-Math.min(u0,u1,u2)+2,Math.max(v0,v1,v2)-Math.min(v0,v1,v2)+2);
+      }else ctx.drawImage(image,0,0,iw,ih); // Only textured alpha clears darkness; adjacent stone remains black.
       ctx.restore();
       drawn++;
     }
