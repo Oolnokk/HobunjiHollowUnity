@@ -103,6 +103,21 @@ vm.runInNewContext(source, {
 }, { filename: 'skeeri-ruins.js' });
 const api = w.SkeeriRuins;
 assert(api, 'shipped Skeeri runtime exports its API');
+assert.equal(typeof api.prewarm, 'function', 'ruin entry can precompute all Skeeri eye, marking and coat masks');
+const shadedEyes = api.separateEyeMarker({ width:5, height:1, pixels:new Uint8ClampedArray([
+  127,0,255,255, // The exact #7F00FF eye/VFX marker.
+  74,0,148,255, // Dark marker shade uses the same source hue.
+  150,35,180,255, // An unrelated purple accent must remain untinted.
+  159,191,159,255, // Light mint fur remains on the base body.
+  117,140,111,255, // Dark mint fur belongs to the separate pattern.
+])});
+assert.equal(shadedEyes.marked, 2, 'only the painted marker hue family is the eye');
+assert.equal(shadedEyes.body.pixels[3], 0, 'eye core must not be recolored as fur');
+assert.equal(shadedEyes.body.pixels[7], 0, 'dark eye shade must not be recolored as fur');
+assert.equal(shadedEyes.pattern.pixels[3], 0, 'eye core must not be a dark mint marking');
+assert.equal(shadedEyes.pattern.pixels[7], 0, 'dark eye shade must not be a dark mint marking');
+assert.equal(shadedEyes.glow.pixels[4], 148, 'the shaded eye uses its original luminosity');
+assert.equal(shadedEyes.details.pixels[11], 255, 'unrelated purple detail keeps its original color');
 const creatureDb = {'gar-wolf':{lootPool:'creature_gar-wolf'}}; // The predator baseline must not leak its loot into Skeeri.
 const itemDefs = {}, inventoryItems = []; // Real wildlife registration should populate the Pack and tool arch.
 assert(api.register({CREATURE_DB:creatureDb,ITEM_DEFS:itemDefs,inventoryItems}));
@@ -205,6 +220,8 @@ for(const key of ['flying','perched']) {
 
 (async () => {
   const palette = api.paletteFor('kanthic', 'specimen-A');
+  const warming = [api.prewarm(), api.prewarm()]; // Repeated entry requests must share one decoded sprite/rig pass.
+  await Promise.all(warming);
   const rig = await api.createRig({ skeeriPalette: palette });
   assert.deepEqual(rig.palette, { body: palette.body, eyes: palette.eyes, pattern: palette.pattern }, 'body, eye and fur pattern use independent colors');
   assert.equal(captured.settings.flying, 'creaturesprites/skeeri_planebent_flying.png');
@@ -241,5 +258,10 @@ for(const key of ['flying','perched']) {
   assert.deepEqual(rig.palette, { body: palette.body, eyes: palette.eyes, pattern: palette.pattern }, 'hit-flash restoration keeps fur and strictly in-family eye colors separate');
   assert.equal(api.debugSnapshot().eyeMarkerPixels, 2);
   assert.equal(api.debugSnapshot().furPatternPixels, 2);
+  assert.equal(api.debugSnapshot().prewarmRequests, 2);
+  assert.equal(api.debugSnapshot().prewarmFailures, 0);
+  assert.equal(api.debugSnapshot().prewarmReady, true);
+  const ruinEntry = fs.readFileSync(path.join(root, 'docs/js/dev-random-ruin-interior-map.js'),'utf8');
+  assert.match(ruinEntry, /SkeeriRuins\?\.prewarm\?\.\(\)\?\.catch\?\.\(/, 'entry starts Skeeri caching without a new per-frame scan');
   console.log('Planebent Skeeri authored art, shared wings, theme palettes, marked eye overlays and tint restore PASS');
 })().catch(error => { console.error(error); process.exitCode = 1; });
