@@ -399,17 +399,14 @@
   }
 
   async function setMode(mode) {
-    const normalizedMode = String(mode || 'multi'); // Used to choose the safe public route versus the final in-tool Rig tab handler.
+    const normalizedMode = String(mode || 'multi'); // Multi, Single and Rig all share one native mode switch.
+    if (!MODE_TAB_IDS[normalizedMode]) throw new Error(`Unknown Animation Author mode “${normalizedMode}”.`);
     const api = publicApi();
-    if (normalizedMode === 'multi' || normalizedMode === 'single') {
-      if (typeof api.setMode !== 'function') throw new Error(`Animation Author mode “${normalizedMode}” is unavailable.`);
-      return api.setMode(normalizedMode);
-    }
-    const tab = document.getElementById(MODE_TAB_IDS[normalizedMode]); // Rig was added after the original public setMode reference was captured, so its real tab owns the final switch logic.
-    if (!tab) throw new Error(`Animation Author mode “${normalizedMode}” is unavailable.`);
-    tab.click();
-    await Promise.resolve();
-    return undefined;
+    if (typeof api.setMode !== 'function') throw new Error(`Animation Author mode “${normalizedMode}” is unavailable.`);
+    // Its public method is now a late-bound wrapper, so Rig uses the real final handler without a synthetic tab click.
+    // Also refresh chrome for Multi->Scale->Multi: the underlying mode was already Multi, so setMode itself is a no-op.
+    await api.setMode(normalizedMode);
+    api.refreshModeChrome?.();
   }
 
   async function addNpc(id, options) {
@@ -555,44 +552,8 @@
     };
   }
 
-  function installPicking() {
-    const canvas = document.getElementById('view3d');
-    if (!canvas || canvas.dataset.fullScaleHostPick === '1') return false;
-    canvas.dataset.fullScaleHostPick = '1';
-    let pointerDown = null; // Used to distinguish an intentional tap from camera dragging.
-    canvas.addEventListener('pointerdown', event => {
-      if (document.body.dataset.animationAuthorMode !== 'scale-compare') return;
-      pointerDown = { id: event.pointerId, x: event.clientX, y: event.clientY };
-    });
-    canvas.addEventListener('pointerup', async event => {
-      if (document.body.dataset.animationAuthorMode !== 'scale-compare' || !pointerDown || pointerDown.id !== event.pointerId) {
-        pointerDown = null;
-        return;
-      }
-      const moved = Math.hypot(event.clientX - pointerDown.x, event.clientY - pointerDown.y);
-      pointerDown = null;
-      if (moved > 8) return;
-      const THREE = await loadThree(); // Raycaster is loaded from the same Three.js build already used by the avatar preview.
-      const camera = window.HobunjiGameplayBackdrop?.getCamera?.();
-      const rect = canvas.getBoundingClientRect();
-      if (!THREE?.Raycaster || !camera || !rect.width || !rect.height) return;
-      const pointer = new THREE.Vector2(
-        ((event.clientX - rect.left) / rect.width) * 2 - 1,
-        -(((event.clientY - rect.top) / rect.height) * 2 - 1),
-      );
-      const raycaster = new THREE.Raycaster();
-      raycaster.setFromCamera(pointer, camera);
-      let best = null; // Tracks the nearest intersected comparison actor across every visible mesh child.
-      for (const actor of comparisonActors) {
-        const target = actor?.visualOffset || actor?.model || actor?.root;
-        const hit = target ? raycaster.intersectObject(target, true)[0] : null;
-        if (hit && (!best || hit.distance < best.distance)) best = { actor, distance: hit.distance };
-      }
-      if (best?.actor?.id) selectActor(best.actor.id);
-    });
-    loadThree();
-    return true;
-  }
+  // Viewport click-to-select was retired: Full Character Scale selection is dropdown-only.
+  // Do not install asynchronous pointer raycasts, which also outlive editor mode transitions.
 
   const host = Object.freeze({ // Used exclusively by Full Character Scale and its compatibility shims below.
     setMode,
@@ -652,9 +613,4 @@
     nativeRigExportBlobPatched: !!window.Blob?.__hobunjiRigScaleExportWrapped,
   };
 
-  let attempts = 0; // Used to attach tap picking once the repository-backed viewport exists.
-  const timer = setInterval(() => {
-    if (installPicking() || ++attempts >= 600) clearInterval(timer);
-  }, 50);
-  installPicking();
 })();
