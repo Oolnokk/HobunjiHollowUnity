@@ -147,5 +147,30 @@ vm.runInNewContext(source,{window,document,console:diagnostics,Image:class {}});
   assert.equal(old.visible,true);
   assert.equal(api.debugSnapshot().active,0);
   assert(disposed.length>=3,'even a late portrait is explicitly disposed');
-  console.log('key statue Ghost Army carving: shared pools, scaled frozen portrait + weapon, life cycle, missing weapon, and late cancellation PASS');
+  // The real Tzizkhanash builder must not return an empty portrait when the
+  // renderer declines to produce art; otherwise the old statue vanishes.
+  const stonePreview={THREE,
+    NpcAvatarPreview:{
+      ensurePortraitCosmetics:async()=>{},
+      buildProfileFromNpcExport:()=>({fighter:{speciesId:'harlyao'}}),
+      renderProfileToCanvas:async()=>false,
+    },
+    PNGPlaneAvatar:{buildSinglePlaneAvatarModel(){throw new Error('Empty portrait reached avatar creation');}},
+  };
+  const FreshImage=class {set src(value){this.url=value;this.onload?.();}};
+  vm.runInNewContext(ancestor,{window:stonePreview,document,Image:FreshImage});
+  let emptyPortraitError='';
+  try{await stonePreview.FestivalAncestorFigures.createCarvedFigure({appearance:{speciesId:'harlyao'}},{id:'no-portrait'});}
+  catch(error){emptyPortraitError=String(error.message);}
+  assert.equal(emptyPortraitError,'The carved NPC portrait is not ready',
+    'an unavailable portrait renderer cannot replace the original physical statue with transparent geometry');
+  const visualFailure=new Group(),oldFallback=new Group();visualFailure.add(oldFallback);
+  const originalArtist=artist.createCarvedFigure;
+  artist.createCarvedFigure=async()=>{throw new Error('render unavailable');};
+  deferredFigure=null;
+  assert.equal(await api.decorate(visualFailure,spec),false,'visual failures do not affect the physical Key Statue');
+  assert.equal(oldFallback.visible,true,'the original authored stone remains as an emergency fallback');
+  assert.equal(api.debugSnapshot().active,0,'no failed visual leaves a live figure reference behind');
+  artist.createCarvedFigure=originalArtist;
+  console.log('key statue Ghost Army carving: shared pools, final armor/dyes/pants, dimensions, lifecycle, and portrait fallback PASS');
 })().catch(error=>{console.error(error);process.exitCode=1;});
