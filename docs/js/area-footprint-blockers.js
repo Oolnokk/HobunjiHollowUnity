@@ -53,6 +53,24 @@
     return null;
   }
 
+  // Raised cover uses the same registered geometry as movement, with no per-frame
+  // scene traversal or independent landing approximation. Providers may expose
+  // supportAt(x, z, maxY) -> {y, kind, id}; a footprint too narrow to stand on
+  // should return null. This is intentionally separate from ground surfaceYAt.
+  function supportAt(area, x, z, maxY = Infinity) {
+    if (!Number.isFinite(x) || !Number.isFinite(z) || Number.isNaN(maxY)) return null;
+    let best = null; // Highest actual standable top reached by the descending feet.
+    for (const provider of providers.values()) {
+      if (typeof provider.supportAt !== 'function') continue;
+      if (provider.area != null && provider.area !== area) continue;
+      if (provider.enabled && !provider.enabled()) continue;
+      const support = provider.supportAt(x, z, maxY);
+      if (!support || !Number.isFinite(support.y) || support.y > maxY) continue;
+      if (!best || support.y > best.y) best = support;
+    }
+    return best;
+  }
+
   // Debug: ids of every enabled provider that blocks this box (blocksBox only says yes/no).
   function explain(area, x, z, half = 0, worldY = null) {
     const ids = [];
@@ -70,6 +88,7 @@
     remove,
     registerSurface,
     surfaceYAt,
+    supportAt,
     blocksBox,
     blocksPoint:(area, x, z) => blocksBox(area, x, z, 0),
     providerIds:() => [...providers.keys()],
