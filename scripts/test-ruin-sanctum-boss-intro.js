@@ -136,7 +136,7 @@ async function run(){
   assert.equal(introSounds[0].x,state.boss.x/64);
   assert.equal(introSounds[0].opts.earshotTiles,24,'sanctum shriek carries across the chamber');
   assert.equal(state.boss.groupRot,state.boss.avatarRef.group.rotation.y,'rendered yaw does not drift at the end of the turn');
-  assert.equal(composer.snapshot().introShriekPlayed,true,'mobile debug records the shriek');
+  assert.equal(state.intro.shriekPlayed,true,'mobile debug records the shriek');
   await advance(2650);
   assert.equal(state.intro,null);
   assert.equal(introSounds.length,5,'one original shriek plus four extraordinary echoes, never a second attack shriek');
