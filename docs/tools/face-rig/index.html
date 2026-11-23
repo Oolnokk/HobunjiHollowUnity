@@ -287,15 +287,18 @@ function syncControls(){
  }
  $('eyeSize').value=rig.family==='round'?eye.circle.r:eye.box.w;
  $('sizeValue').textContent=(Number($('eyeSize').value)*100).toFixed(1)+'%';
- for(const input of document.querySelectorAll('[data-lid]')){
-  const [part,key]=input.dataset.lid.split('.');
-  const value=eye[part][key];
-  if(calibration){const extent=Math.max(1,Math.abs(value)*1.25);
-    input.min=-extent;input.max=extent;
-    const numeric=input.parentElement.querySelector('input[type=number]');
-    if(numeric)numeric.value=String(value);
+ // Spline-eye rigs have nodes, not upper/lower eyelids.
+ if(rig.family==='round'){
+  for(const input of document.querySelectorAll('[data-lid]')){
+   const [part,key]=input.dataset.lid.split('.');
+   const value=eye[part][key];
+   if(calibration){const extent=Math.max(1,Math.abs(value)*1.25);
+     input.min=-extent;input.max=extent;
+     const numeric=input.parentElement.querySelector('input[type=number]');
+     if(numeric)numeric.value=String(value);
+   }
+   input.value=String(value);input.nextElementSibling.textContent=Number(value).toFixed(2);
   }
-  input.value=String(value);input.nextElementSibling.textContent=Number(value).toFixed(2);
  }
 }
 function resizeEye(){
@@ -354,7 +357,7 @@ for(const part of ['upper','lower']){
   }
   field.appendChild(label);
   const update=value=>{
-   if(!Number.isFinite(value))return;
+   if(!Number.isFinite(value)||rig.family!=='round')return; // Hidden slider events must not mutate line-eye rigs.
    rig.eyes[selected][part][key]=value;
    if(calibration){
     const extent=Math.max(1,Math.abs(value)*1.25);
