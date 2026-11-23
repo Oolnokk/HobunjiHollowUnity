@@ -1893,7 +1893,7 @@
     const slot = cfg?.slot || null; // Carries garment semantics into flat inventory/loom rendering without hard-coding a specific cosmetic id.
     const variantKeys = cfg?.onlyExactSpeciesVariant ? speciesVariantKeyCandidates(speciesId, gender)
       : typeof window.portraitVariantKeysForFighter === 'function'
-        ? window.portraitVariantKeysForFighter({ speciesId, gender }, { slot })
+        ? window.portraitVariantKeysForFighter({ speciesId, gender }, { slot, fallbackVariantByGender: cfg?.fallbackVariantByGender })
         : speciesVariantKeyCandidates(speciesId, gender); // Partially illustrated prize helmets must not borrow a nearest species' headgear in icons, looms or editor previews. // Matches the portrait's inherited and nearest supported garment variant.
     for (const key of variantKeys) {
       const layers = collectLayerImageUrls(cfg?.speciesVariants?.[key]?.parts, paletteLayerMap, []);
