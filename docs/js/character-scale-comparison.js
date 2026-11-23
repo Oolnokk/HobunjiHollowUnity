@@ -423,7 +423,7 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid!important;v
     const badge = document.getElementById('maaViewportBadge');
     if (badge) badge.textContent = 'Full character scale · choose a character from the open panel; age mode affects the entire lineup.';
     const panel = document.getElementById(PANEL_ID); // Keep the character chooser available whenever this tab is active, including during progressive loading.
-    if (panel) { panel.hidden = false; panel.style.display = 'grid'; }
+    if (panel) panel.hidden = false; // Mode-scoped CSS makes it visible here and hides it again in other tabs.
   }
 
   function setSliderValue(axis, percent) {
