@@ -4,20 +4,20 @@ const fs = require('node:fs'); // Read the shipped compositor, not a duplicate s
 const vm = require('node:vm'); // Execute the production queue in a minimal browser-like context.
 
 const source = fs.readFileSync('docs/js/creature-genetics-render.js', 'utf8'); // Authoritative animal colors/patterns compositor.
-const start = source.indexOf('  const composeQueue = [];'); // Reuses the real scheduler without recreating its implementation.
+const start = source.indexOf('  function safePrefetchPlayerPetFrameAssets('); // Reuses the real scheduler without recreating its implementation.
 const stop = source.indexOf('  async function composeFrameNow(', start); // Substitutes only the heavyweight canvas renderer.
 assert(start >= 0 && stop > start, 'animal renderer must contain the priority queue');
 const scheduler = source.slice(start, stop); // Includes the exact queue priorities, fairness and promotion code.
 
-function harness(failFrame = null) {
+function harness(failFrame = null, failPrefetch = false) {
   const calls = []; // Records the order complete animal frames are actually composed.
   const prefetch = []; // Records which owned pets have their artwork loaded early.
-  const context = { calls, prefetch, failFrame, Date, Promise, console }; // No DOM or real network needed for scheduling.
+  const context = { calls, prefetch, failFrame, failPrefetch, Date, Promise, console, window: {} }; // No DOM or real network needed for scheduling.
   vm.runInNewContext(
     [
       "function genotypeSignature(kind, genes) { return genes?.sig || 'same'; }",
       "function eyeStateKey(state) { return state ? 'b' : 'o'; }",
-      "function prefetchPlayerPetFrameAssets(kind, frame) { prefetch.push(kind + '/' + frame); }",
+      "function prefetchPlayerPetFrameAssets(kind, frame) { prefetch.push(kind + '/' + frame); if (failPrefetch) throw new Error('optional image lookup unavailable'); }",
       "async function composeFrameNow(kind, frame) { calls.push(frame); if (frame === failFrame) throw new Error('incomplete colors or patterns'); return frame; }",
       scheduler,
       "globalThis.api = { composeFrame, promoteFrame, snapshot: () => ({ pending: composePending, active: composeActive, failures: composeFailures, petStarts: composePetStarts, promotions: composePromotions }) };",
@@ -68,9 +68,25 @@ async function checkPromotionAndRetry() {
   assert.equal(h.prefetch.join(','), 'wolf/promoted', 'promoting an in-flight wildlife request begins the required pet pattern downloads');
   assert.equal(h.api.snapshot().pending, 0, 'failed work always releases the queue');
 }
+async function checkOptionalPrefetchFailure() {
+  const h = harness(null, true); // Source-art discovery is advisory; a missing CDN file must not strand a pet's compositor job.
+  const jobs = [
+    h.api.composeFrame('wolf', 'wild', { sig: 'w' }),
+    h.api.composeFrame('wolf', 'promoted', { sig: 'p' }),
+    h.api.composeFrame('wolf', 'owned', { sig: 'pet' }, false, { priority: 'pet' }),
+  ];
+  assert.equal(h.api.promoteFrame('wolf', 'promoted', 'p', false, 'pet'), true,
+    'an optional prefetch failure must not prevent wild-to-pet queue promotion');
+  const frames = await Promise.all(jobs); // Both direct and promoted pet work still reaches the canonical renderer.
+  assert.equal(frames.join(','), 'wild,promoted,owned');
+  assert.equal(h.calls.join(','), 'owned,promoted,wild');
+  assert.equal(h.api.snapshot().pending, 0);
+  assert.equal(h.api.snapshot().failures, 0, 'only actual pixel-compose failures count as failures');
+}
 (async () => {
   await checkPriorities();
   await checkFairness();
   await checkPromotionAndRetry();
+  await checkOptionalPrefetchFailure();
   console.log('Animal colors, patterns, pet-first scheduling, fairness, promotion and retry passed.');
 })().catch(error => { console.error(error); process.exitCode = 1; });
