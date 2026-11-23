@@ -182,9 +182,10 @@
       // Gantami and every other authored child.
       phaseScales: {
         basket: { body: 0.32, head: 0.50, hand: 1.20, foot: 1.20 }, // Smaller newborn head, larger GLB hands/feet; toddler/child phases unchanged.
-        toddler: { body: 0.4, head: 0.66 },
-        child: null,
+        toddler: { body: 0.4, head: 0.66, hand: 1, foot: 1 }, // Family walkers also support globally authored toddler hand/foot proportions.
+        child: null, // Child body/head fall back to the shared pngPlaneAvatar defaults.
       },
+      childLimbModifiers: { hand: 1, foot: 1 }, // Family child GLB proportions; 1 preserves adult-authored species limb visuals.
       vatEfficacyMultiplier: 2, // Output quantity, not output star quality.
       usefulness: {
         maxLevel: 5, xpPerLevelFactor: 40, // Repeated family chores grow one general usefulness rank.
