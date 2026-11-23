@@ -55,7 +55,7 @@
       if(!livePlane?.geometry)return null;
     const definition=window.Combat?.deps?.TOOL_ITEM_DEFS?.[spec.weaponKey]
       ||window.Combat?.deps?.TOOL_ITEM_DEFS?.[spec.shapeKey];
-    let image=livePlane.material?.map?.image;
+    let image=definition?.modular ? null : livePlane.material?.map?.image; // Modular tools start with a blank 450x1204 canvas before composition; never freeze the transparent placeholder into stone.
     if(!image?.width && definition?.sprite) {
       image=await new Promise(resolve=>{
         const candidate=new Image();
