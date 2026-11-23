@@ -313,6 +313,8 @@ function makeHarness({ townValue = 3, season = 'Stormtide', townBuildings = [], 
   assert.equal(packClothing[0].cosmeticId, cosmeticId);
   assert.equal(packClothing[0].slot, 'hat');
   assert.equal(packClothing[0].sellPrice, 22);
+  assert.equal(packClothing[0].sprite, 'assets/cosmetics/clothes/hat/bowlkasa-front.png',
+    'the imported hat uses its real authored front PNG as the Pack icon fallback');
   assert.equal(saves(), savesBefore + 1, 'a clothing purchase performs one world-member save, not two');
   const persisted = JSON.parse(JSON.stringify(T.serialize())); // Simulates the snapshot the Pack grant just saved.
   assert.equal(persisted.caravans.find(c => c.id === caravan.id).stock[0].qty, 0,
