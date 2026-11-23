@@ -65,7 +65,7 @@ assert.match(source, /_activeNestContentHoldId !== contentId[\s\S]*?setNestHoldT
   'moving the reticle to a different egg/baby resets the take hold');
 assert.match(source, /acquireNestItem\(itemKey, nest\.genotype[\s\S]*?_removeContentRecord\(state, content\)[\s\S]*?nest\.remaining = remainingAfterPickup/,
   'taking one focused clutch member saves its exact bloodline before removing that visual and decrementing the clutch once');
-assert.match(source, /window\.LivestockItemGenotypePersistence\.acquireNestItem\(itemKey, nest\.genotype, beforeCount \+ 1/,
+assert.match(source, /window\.LivestockItemGenotypePersistence\.acquireNestItem\(itemKey, nest\.genotype, deps\.inventory/,
   'the collected inventory and inherited genotype are persisted in the same atomic save');
 assert.match(source, /function currentAimedNest\(\) \{\s*return _currentAimedNestContent\(\)\?\.nest \|\| null;/,
   'the public currentAimedNest compatibility API still returns the aggregate nest for existing XP wrappers');

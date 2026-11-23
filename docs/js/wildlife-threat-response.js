@@ -106,7 +106,10 @@
       : pursuing ? PREDATOR_PURSUIT_SPEED_TILES_S : 0; // Ordinary grazing/patrolling and resting remain at authored speeds.
     if (speed > 0 && !c._wildPursuitOriginalDef) {
       c._wildPursuitOriginalDef = c.def; // Nonpersistent actor overlay: restores authored move/chase values after the sprint.
-      c.def = { ...c.def, chaseSpeed: Math.max(Number(c.def?.chaseSpeed) || 0, tile * speed) };
+      // Territorial and foraging overlays inherit the species' label, sprites and combat stats.
+      c.def = Object.assign(Object.create(c.def || null), {
+        chaseSpeed: Math.max(Number(c.def?.chaseSpeed) || 0, tile * speed),
+      });
       if (predator) debug.predatorSprints++;
       else debug.preySprints++;
     } else if (!speed && c._wildPursuitOriginalDef) {
@@ -235,8 +238,8 @@
         target, areaId: area, expiresAt: nowMs() + NEST_DEFENSE_MS,
         releasePx: NEST_DEFENSE_TILES * combat.TILE * 1.5,
       };
-      c.def = {
-        ...c.def, hostile: true,
+      c.def = Object.assign(Object.create(c._nestDefense.originalDef), {
+        hostile: true,
         chaseSpeed: Math.max(Number(c.def?.chaseSpeed) || 0, combat.TILE * 7),
         aggroRangePx: combat.TILE * NEST_DEFENSE_TILES,
         leashRangePx: combat.TILE * NEST_DEFENSE_TILES * 1.5,
@@ -247,7 +250,7 @@
         attackTag: c.def?.attackTag || 'blunt',
         attacks: c.def?.attacks?.length ? c.def.attacks : ['guardCharge'],
         guardChargeDamage: Math.max(Number(c.def?.guardChargeDamage) || 0, 10),
-      };
+      });
       c.homeX = nestX; c.homeY = nestY;
       c._animalSleeping = false; c._denHidden = false; c.scaleY = 1;
       if (c.avatarRef?.group) c.avatarRef.group.visible = true;

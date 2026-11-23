@@ -901,6 +901,7 @@
       _nestContentDebug.lastCollectionSaveOk = false;
       _nestContentDebug.lastCollectionBagBefore = null; // Clear a previous attempt's counts before validating this nest's item registration.
       _nestContentDebug.lastCollectionBagAfter = null;
+      _nestContentDebug.lastError = null;
       if (!itemKey || !itemDef || typeof window.LivestockItemGenotypePersistence?.acquireNestItem !== 'function') {
         const reason = 'Unregistered nest reward: key=' + String(nest.itemKey) + ', species=' + String(nest.speciesKey || 'unknown') + ', registered=' + !!itemDef;
         _nestContentDebug.lastError = reason;
@@ -909,7 +910,7 @@
         deps.showToast('Cannot take this baby or egg: its inventory item is not registered. Nest contents are safe.', false);
         return;
       }
-      const beforeCount = Math.max(0, Math.floor(Number(deps.inventory[itemKey]) || 0)); // Original bag count restored if persistence cannot commit.
+      const beforeCount = deps.inventory[itemKey] ?? 0; // Live Pack count passed to the atomic pickup writer.
       _nestContentDebug.lastCollectionBagBefore = beforeCount;
       if (beforeCount >= window.InventoryStacks.MAX_TOTAL) {
         _nestContentDebug.lastChange = 'Bag full; nest contents and inherited genotype kept in place.';
@@ -920,10 +921,9 @@
       // Only ONE durable metadata write occurs; a rejected write cannot leave a saved phantom or missing baby.
       const areaId = deps.getCurrentArea(); // Used as the stable cave ID in world den-turnover metadata.
       const remainingAfterPickup = Math.max(0, Number(nest.remaining) - 1); // Target clutch count, staged without removing a visible baby.
-      let committed = false; // Failed acquisition restores the live bag and leaves both nest count and visuals untouched.
+      let committed = false; // A failed write leaves the bag, clutch count and visuals untouched.
       try {
-        deps.inventory[itemKey] = beforeCount + 1;
-        committed = window.LivestockItemGenotypePersistence.acquireNestItem(itemKey, nest.genotype, beforeCount + 1, {
+        committed = window.LivestockItemGenotypePersistence.acquireNestItem(itemKey, nest.genotype, deps.inventory, {
           areaId, liveBirth: !!nest.liveBirth, remaining: remainingAfterPickup,
         }) === true;
       } catch (error) {
@@ -931,8 +931,6 @@
         window.__farmLog?.('[nest-content] ' + _nestContentDebug.lastError, 'warn');
       }
       if (!committed) {
-        deps.inventory[itemKey] = beforeCount;
-        deps.clampInventoryStack?.(itemKey);
         _nestContentDebug.lastError ||= 'The inventory/lineage/cave transaction was not committed; check carried animal lineage diagnostics.';
         _nestContentDebug.lastChange = 'Collection aborted; nest contents left intact.';
         _nestContentDebug.lastCollectionBagAfter = beforeCount;
@@ -941,7 +939,7 @@
         return;
       }
       _nestContentDebug.lastCollectionSaveOk = true;
-      _nestContentDebug.lastCollectionBagAfter = beforeCount + 1;
+      _nestContentDebug.lastCollectionBagAfter = deps.inventory[itemKey];
       _nestContentDebug.lastError = null;
       const state = focused.state; // Visuals are destroyed only after the saved transaction succeeds.
       _removeContentRecord(state, content);

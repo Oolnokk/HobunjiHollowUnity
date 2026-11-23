@@ -29,7 +29,7 @@
     "js/combat/combat-blink-dodge.js?v=20261118ghostOptIn1",
     "js/combat/combat-charged-breaker.js?v=20261117hypedCharge4",
     "js/combat/combat-flurry.js?v=20261117hypedFlurry3",
-    "js/combat/combat-loadout-ui.js?v=20261122grehlrCustody1",
+    "js/combat/combat-loadout-ui.js?v=20261123ha2c1378",
     "js/combat/combat-enchantments.js?v=20261118captainWeapon1",
     "js/combat/fey-illusions.js?v=20261117feySensory4",
     "js/combat/fey-hyped-attacks.js?v=20261117hypedCreature6",
