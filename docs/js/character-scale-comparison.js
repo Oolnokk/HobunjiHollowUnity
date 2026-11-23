@@ -12,7 +12,6 @@
   const MODE = 'scale-compare';
   const TAB_ID = 'maaFullScaleTab';
   const PANEL_ID = 'maaFullScalePanel';
-  const MULTI_SAVE_KEY = 'hobunjiMultiAvatarAnimationAuthor.project.v1';
   const RIG_SAVE_KEY = 'hobunjiAttachmentRigProfiles.v2';
   const selfUrl = document.currentScript?.src ? new URL(document.currentScript.src, location.href) : null;
   const docsBase = selfUrl ? new URL('../', selfUrl) : new URL('../../', location.href);
@@ -25,8 +24,8 @@
   let originMode = 'multi';
   let pendingExitMode = null; // Last requested native mode during an async workspace restoration.
   let exitingPromise = null; // Serializes scene/project import so rapid mobile taps cannot duplicate the restore.
-  let pendingSetup = Promise.resolve(); // Original project restoration waits until the temporary comparison project is clear.
-  let savedMulti = null;
+  let nativeWorkspaceVisibility = null; // Native scene root and its prior visibility, restored when the isolated scale preview closes.
+  const isolationDebug = { entries: 0, exits: 0, nativeProjectImports: 0 }; // Mobile diagnostics: project imports must remain zero while comparing scales.
   let entries = [];
   let selected = null;
   let previewRoot = null; // Holds comparison-only avatar groups and is never registered in Animation Author mode state.
@@ -1317,9 +1316,19 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
     camera.updateMatrixWorld?.(true);
   }
 
-  function preserveMultiSave() {
-    if (!savedMulti) return;
-    try { localStorage.setItem(MULTI_SAVE_KEY, JSON.stringify(savedMulti)); } catch (_) {}
+  function isolateNativeWorkspace() {
+    if (nativeWorkspaceVisibility) return;
+    const scene = window.HobunjiGameplayBackdrop?.getScene?.();
+    const root = scene?.getObjectByName?.('AnimationAuthorWorkspace'); // Stable master root shared by Multi, Single and Rig; the comparison preview is a separate scene child.
+    if (!root) return;
+    nativeWorkspaceVisibility = { root, visible: root.visible }; // Preserve the actual starting mode's visibility without importing any project.
+    root.visible = false;
+  }
+
+  function restoreNativeWorkspace() {
+    if (!nativeWorkspaceVisibility) return;
+    nativeWorkspaceVisibility.root.visible = nativeWorkspaceVisibility.visible; // Never alter native actor selection, undo stack, or rig state.
+    nativeWorkspaceVisibility = null;
   }
 
   async function buildLineup(buildId) {
@@ -1397,7 +1406,6 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
     if (!manualViewInteraction) frame(); // Initial auto-fit only after all previews arrive, and never after edits, gestures or explicit focus.
     retryLateAgeLimbs(); // Give async hand/foot GLBs a bounded chance to receive the active stage's shared scale.
     status(`All ${entries.length}/${expected} species/gender previews ready. Use Frame lineup to see everyone.`);
-    setTimeout(preserveMultiSave, 350);
   }
 
   function disposePreview() {
@@ -1442,6 +1450,7 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
   async function enter() {
     if (active || building || exitingPromise || !ensureUi()) return;
     building = true;
+    isolationDebug.entries++;
     const buildId = ++generation;
     originMode = ['multi','single','rig'].includes(document.body.dataset.animationAuthorMode) ? document.body.dataset.animationAuthorMode : 'multi';
     try {
@@ -1449,19 +1458,9 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
       if (!scaleHost) throw new Error('Full Character Scale host is unavailable.');
       if (!window.HobunjiFullScaleBodyInputGuard?.applyScaleField)
         throw new Error('Scale controls are unavailable: the shared input guard failed to load.'); // Mobile-visible failure instead of a second, incompatible slider path.
-      if (originMode !== 'multi') {
-        pendingSetup = Promise.resolve(scaleHost.setMode('multi')); // The native Multi actor store is our temporary project scratch area.
-        await pendingSetup;
-        if (buildId !== generation) return; // A mode click may cancel the build during a native mode transition.
-      }
-      savedMulti = clone(window.MultiAvatarAnimationAuthor?.exportProject?.());
-      if (!savedMulti) throw new Error('Could not snapshot the multi-avatar workspace.');
-      preserveMultiSave();
       loadAgeModifiers();
       syncAgeControls();
-      pendingSetup = Promise.resolve(scaleHost.clearActors()); // Wait for the final empty-project import before allowing a restoration import.
-      await pendingSetup;
-      if (buildId !== generation) return; // Never make a cancelled build claim the mode after an exit.
+      isolateNativeWorkspace(); // These previews are scene-owned, not project actors: do not switch to Multi, clear actors or import empty projects.
       chrome();
       status('Building preview-only species/gender lineup…');
       await buildLineup(buildId);
@@ -1485,14 +1484,9 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
   }
 
   async function restoreWorkspace() {
-    // Cancellation and initialization both use this one path: no duplicate imports or stale comparison meshes.
-    await pendingSetup; // If exit was tapped while the scratch project was being cleared, finish that operation first.
-    disposePreview();
-    if (savedMulti) {
-      try { await window.MultiAvatarAnimationAuthor?.importProject?.(clone(savedMulti)); }
-      catch (error) { console.warn('[full-character-scale] multi restore failed', error); throw error; }
-      preserveMultiSave();
-    }
+    // Only temporary preview meshes are disposed; the native actor project has never been cleared or imported.
+    try { disposePreview(); }
+    finally { restoreNativeWorkspace(); } // Even a failed preview disposal cannot leave Single/Rig content hidden.
     document.getElementById(TAB_ID)?.setAttribute('aria-selected','false');
   }
 
@@ -1504,6 +1498,7 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
     }
     if (!active && !building) return Promise.resolve();
     pendingExitMode = normalized;
+    isolationDebug.exits++;
     ++generation;
     active = false;
     building = false;
@@ -1532,7 +1527,7 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
           if (pill) pill.textContent = 'Tab switched, but the prior animation project could not be restored. The autosave remains available.';
         }
       } finally {
-        savedMulti = null;
+        restoreNativeWorkspace(); // Defensive parity if the preview's own disposal threw.
       }
     })().finally(() => {
       exitingPromise = null;
@@ -1562,6 +1557,7 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
       debugSnapshot: () => ({
         active,
         building,
+        isolation: { ...isolationDebug, nativeWorkspaceHidden: !!nativeWorkspaceVisibility }, // Mobile-visible: zero project imports and balanced scene isolation.
         exiting: !!exitingPromise, // Visible mobile diagnostic while an actor import is running.
         requestedTab: pendingExitMode, // Last native mode requested by the user.
         currentTabMode: document.body.dataset.animationAuthorMode,
