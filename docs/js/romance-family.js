@@ -473,7 +473,10 @@
       return;
     }
     walker._childPhase = phase;
-    if (phase === 'basket') window.FamilyBabyLimbs?.balanceWalker?.(walker, cfg().phaseScales?.basket); // Resize newborn-only visuals before the carried proxy copies their GLBs.
+    const limbScale = phase === 'child' ? cfg().childLimbModifiers : cfg().phaseScales?.[phase]; // Same age-global hand/foot fields exported by Full Character Scale.
+    if (phase === 'basket' || (limbScale && (Number(limbScale.hand) !== 1 || Number(limbScale.foot) !== 1))) {
+      window.FamilyBabyLimbs?.balanceWalker?.(walker, limbScale); // Preserve the baby's carried proxy, and support optional toddler/child limb modifiers without a permanent new frame loop.
+    }
     window.FamilyBabyBurdens?.sync?.(child,walker,phase,()=>H.persist()); // One real infant burden proxies the hidden walker; no alternate movement/throw system.
     if (phase === 'toddler') {
       const footing = toddlingFooting(child) / 99;
