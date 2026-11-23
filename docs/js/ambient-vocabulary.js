@@ -84,7 +84,7 @@
     state.recent.push(result); // The last twelve actual bubbles make intermittent greeting/pet failures inspectable without console access.
     if (state.recent.length > 12) state.recent.shift();
   }
-  function rewrite(text, speakerId, random = Math.random, config = state.config, profiles = state.profiles, protectedNames = []) {
+  function rewrite(text, speakerId, random = Math.random, config = state.config, profiles = state.profiles, protectedNames = [], includeActiveAnimalNames = true) {
     const source = String(text ?? ''); // Original authoring stays immutable and is returned when any dependency is absent.
     const selected = optionsFor(config, speakerId, profiles);
     if (!source) return source;
@@ -96,7 +96,7 @@
     }
     const explicitNames = Array.isArray(protectedNames) ? protectedNames : []; // Greeting addressees are optional for other ambient callers.
     const mayAlter = config !== state.config || !!state.matchPattern?.test(source) || !!selected.phoneticPreset; // Skip stable lookups for unmatched cries.
-    const activeNames = mayAlter ? activeAnimalProperNames(source) : []; // Resolve present pets once per emitted bubble, never in an update loop.
+    const activeNames = mayAlter && includeActiveAnimalNames ? activeAnimalProperNames(source) : []; // Normal NPC greetings exclude unrelated active pet names; direct pet reactions still use the stable API.
     const names = activeNames.length ? explicitNames.concat(activeNames) : explicitNames; // Preserve an explicit player/NPC addressee as well as the active pet names.
     const guarded = names.length ? shieldSpokenNames(source, names, explicitNames) : null; // Avoid protecting unrelated opening salutations even when a pet shares that word.
     const speechInput = guarded?.text || source; // Both rewrite passes and the matcher use the same optionally masked input.
