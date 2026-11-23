@@ -159,6 +159,8 @@
     let linkDisposers=[]; // Disposers are returned by the existing modular target hit registry.
     let timedNoteListener=null; // Every ruin/cave melody consumes only the player's real, plate-gated note events.
     let fireTargetId=null; // Registered only when the correct ruin's projectile runtime is live; removed on teardown.
+    const caveFireTargetIds=[]; // The cave's two DungeonFire contact targets are released alongside its scene.
+    let lightCaveSconce=null; // Shared ignition callback for ground-fire patches, swung torches and thrown torch projectiles.
     let ropeChain=null; // Native V50 rope controller owns all rope physics and checkpoint updates after registration.
     let icePlacement=null; // The existing door-ice generator owns the visible stalagmites over the fire target.
     let flameVisuals=[]; // Authored particle emitters are ticked and disposed with their puzzle, never left running after a reroll.
@@ -216,8 +218,12 @@
     }
     // V50 square pillar (docs/tools/debris-ifier createPillarNicheShortObeliskActivator envelope): 0.78 x 1.75 with base, collar,
     // shaft, collar and capital. With `opening` the shaft is a hollow housing open on that side, so a glyph target sits in a niche.
-    const squarePillar=(name,x,py0,z,opening=null)=>{
-      const part=(w,h,d,ox,oy,oz,label)=>body(name+'-'+label,new THREE.BoxGeometry(w,h,d),stone,x+ox,py0+oy,z+oz);
+    const squarePillar=(name,x,py0,z,opening=null,stoneBoxes=null)=>{
+      const part=(w,h,d,ox,oy,oz,label)=>{
+        const px=x+ox,py=py0+oy,pz=z+oz; // Shared centers for the visible stone and height-aware cover.
+        stoneBoxes?.push({minX:px-w/2,maxX:px+w/2,minY:py-h/2,maxY:py+h/2,minZ:pz-d/2,maxZ:pz+d/2});
+        return body(name+'-'+label,new THREE.BoxGeometry(w,h,d),stone,px,py,pz);
+      };
       const first=part(.78,.11,.78,0,.055,0,'base');
       part(.64,.07,.64,0,.145,0,'collar');
       part(.58,.10,.58,0,1.56,0,'collar-top');
@@ -243,11 +249,12 @@
         parent:group,name,x,y:py+.6,z
       }):null;
       let base,rune,plaque=null,hitMesh,visualRoot=null;
+      const stoneBoxes=[]; // The glyph hall sweeps shots against the solid housing pieces around the opening.
       if(hanging){
         visualRoot=hanging.object;base=visualRoot;rune=hanging.hitMesh;hitMesh=hanging.hitMesh;
         authoredVisuals.push(visualRoot); // Hanging fixture owns multiple meshes and a shared rune texture.
       }else{
-        base=squarePillar(name,x,y,z,SIDE_NAMES[side&3]); // Hollow square pillar, open on one face; the glyph sits inside the niche.
+        base=squarePillar(name,x,y,z,SIDE_NAMES[side&3],stoneBoxes); // Hollow square pillar, open on one face; the glyph sits inside the niche.
         rune=body(name+'-rune-hit',new THREE.BoxGeometry(.34,.4,.12),stone,x-SIDE[0]*.06,py,z-SIDE[1]*.06);
         rune.rotation.y=yaw;
         hitMesh=rune;
@@ -276,7 +283,7 @@
           options.onHit?.(rec,state);
           if(rec.hits===rec.targetCount)complete();
         },
-        base,rune,visualRoot,plaque,baseY:base.position.y,runeY:rune.position.y,origin:{x,z,y:visualRoot?py+.6:py},
+        base,rune,visualRoot,plaque,stoneBoxes,baseY:base.position.y,runeY:rune.position.y,origin:{x,z,y:visualRoot?py+.6:py},
       };
       if(plaque)root.DevRandomRuinFurniturePieces?.track?.(plaque,()=>state.active?1:0);
       targets.push(state);return state;
@@ -328,6 +335,14 @@
         new THREE.PlaneGeometry(pit.maxX-pit.minX,pit.maxZ-pit.minZ),
         basic(0x08090b),centerX,y-.15,centerZ);
       fog.rotation.x=-Math.PI/2;fog.userData.devRuinBottomlessFog=true;
+      // Stone sides from the floor edge down past the hazard sheet: without them the 0.15 drop to the abyss plane
+      // left a slit of black void under every wall and along both banks.
+      const Faces=root.RuinWallFaces;
+      if(Faces?.pitWallQuads&&THREE.BufferGeometry){
+        const sides=body('ruin-abyss-walls-'+id,Faces.toGeometry(THREE,Faces.pitWallQuads({minX:pit.minX,minZ:pit.minZ,
+          sizeX:pit.maxX-pit.minX,sizeZ:pit.maxZ-pit.minZ,bottom:y-2.45,top:y})),stone,0,0,0);
+        sides.layers?.disable?.(1); // Stretched carved-stone patches carry their own ink: no generated outline.
+      }
       // The abyss shows the ruin's own hazard: lava (Hronal), ice (Tothal) or plasm-dark oil (Kanthic) far below the ropes.
       const hazardColor={hronal:0xff4215,tothal:0xb7ecfa,kanthic:0x2a1a4a}[options.theme];
       if(hazardColor){
@@ -422,8 +437,16 @@
         const visual=(options.puzzleFireVisuals||root.PersistentGroundFire)?.attachCampfireFlame?.(flame,{scale:.8,rateScale:.65}); // Shared campfire emitter palette, lifetime and rise speed.
         if(visual)flameVisuals.push(visual); // The cave's existing lifecycle ticks and disposes each torch's authored particles.
         bracket.userData.puzzleCaveSconce=true;
-        rec.sconces.push({x:px,z:pz,flame,lit:false});
+        rec.sconces.push({index,x:px,z:pz,bracket,flame,lit:false}); // The real stone cup is the shared melee/projectile contact surface.
       }
+      lightCaveSconce=sconce=>{
+        if(rec.disposed||rec.solved||!isActive()||sconce.lit)return false;
+        sconce.lit=true;sconce.flame.visible=true; // One persistent solve state no matter which fire source touched the cup.
+        root.RuinInteractionAudio?.igniteTorch?.();
+        options.onSconceLit?.(rec,sconce);
+        if(rec.sconces.every(entry=>entry.lit))complete();
+        return true;
+      };
       rec.animate=dt=>{
         if(!rec.solved||rec.disposed)return;
         rec.doorRise=Math.min(1,rec.doorRise+Math.max(0,Number(dt)||0)/.95);
@@ -536,7 +559,7 @@
       const hidden=Math.min(3,Math.max(1,slots.length-1));
       const footprintBoxes=[]; // Same boxes for ground movement (AreaFootprintBlockers): walking, dodges and lunges query THAT registry, not DynamicSurfaces.
       let blockerSerial=0;
-      const block=(px,pz,height)=>{footprintBoxes.push({minX:px-.4,maxX:px+.4,minZ:pz-.4,maxZ:pz+.4,top:y+height});return DS?.registerBlocker?.({id:scope+'-pillar-'+(blockerSerial++),scope,
+      const block=(px,pz,height,stoneBoxes)=>{footprintBoxes.push({minX:px-.4,maxX:px+.4,minZ:pz-.4,maxZ:pz+.4,top:y+height,stoneBoxes});return DS?.registerBlocker?.({id:scope+'-pillar-'+(blockerSerial++),scope,
         bounds:{minX:px-.4,maxX:px+.4,minZ:px-.4,maxZ:px+.4}, // DynamicSurfaces reads the footprint from `bounds`; bare minX/maxX meant an infinite, map-wide wall.
         enabled:()=>!rec.disposed&&isActive(),
         blocksAt:(_x,_z,_h,_r,_radius,query)=>{ // Solid only from the floor up to the pillar top, and only on this story.
@@ -546,8 +569,8 @@
       slots.forEach((slot,index)=>{
         if(index<hidden){
           const t=target(id+'-glyph'+index,slot.x,y+.95,slot.z,false,Math.floor(rnd()*4));
-          block(slot.x,slot.z,2.4);
-          return t;
+          block(slot.x,slot.z,2.4,t.stoneBoxes);
+          return;
         }
         const height=1.75;
         squarePillar(id+'-pillar'+index,slot.x,y,slot.z);
@@ -562,8 +585,15 @@
           const feet=Number(getPlayerY?.());
           for(const b of footprintBoxes){
             if(bx+half<=b.minX||bx-half>=b.maxX||bz+half<=b.minZ||bz-half>=b.maxZ)continue;
-            if(worldY!=null){if(worldY<y-.4||worldY>b.top+.05)continue;}
-            else if(Number.isFinite(feet)&&Math.abs(feet-y)>2.5)continue; // A walker on another story is not on this floor's pillars.
+            if(worldY!=null){
+              if(b.stoneBoxes){
+                if(b.stoneBoxes.some(stone=>bx+half>stone.minX&&bx-half<stone.maxX
+                  &&bz+half>stone.minZ&&bz-half<stone.maxZ
+                  &&worldY+half>=stone.minY&&worldY-half<=stone.maxY))return true;
+                continue;
+              }
+              if(worldY<y-.4||worldY>b.top+.05)continue;
+            }else if(Number.isFinite(feet)&&Math.abs(feet-y)>2.5)continue; // A walker on another story is not on this floor's pillars.
             return true;
           }
           return false;
@@ -743,6 +773,12 @@
         });
       }
     }
+    const plateSurfaces=options.DynamicSurfaces||root.DynamicSurfaces; // These plates remain physical after their challenge is solved.
+    const plateSupport=plateSurfaces?.pressurePlateSurface?.(rec.plateArtStoneMesh||rec.plate,{
+      id:'layer-pressure-plate-'+group.id,scope:'layer-pressure-plate-'+id,
+      plateArea:options.area||options.mapId,
+    });
+    if(plateSupport)plateSurfaces.registerSurface(plateSupport);
     if(rec.session&&rec.glyphs?.length){
       rec.releaseMelodyCamera=root.MelodyCameraFraming?.register?.({
         area:options.area||options.mapId,
@@ -769,14 +805,34 @@
         if(standing)complete(); // One step permanently solves this cave instead of requiring a held timer or a second interaction.
       }
       if(kind==='fireSconces'&&!rec.solved&&isActive()){
+        if(caveFireTargetIds.length&&typeof fire?.hasTarget==='function'){
+          for(const targetId of caveFireTargetIds){
+            if(fire.hasTarget(targetId))continue;
+            caveFireTargetIds.length=0;rec.fireLinked=false; // Ruin teardown clears DungeonFire globally; cached caves must re-link on re-entry.
+            break; // Avoid allocating a predicate callback in the puzzle's per-frame contact check.
+          }
+        }
+        if(!caveFireTargetIds.length&&typeof fire?.registerTarget==='function'){
+          const registered=[]; // Register in the first active frame, after the real cave scene and DungeonFire runtime exist.
+          for(const sconce of rec.sconces){
+            const targetId=fire.registerTarget({
+              id:'puzzle-cave-fire-'+options.area+'-'+id+'-'+sconce.index,
+              object:sconce.bracket,active:true,contactPadding:.12,
+              isActive:()=>!rec.disposed&&!rec.solved&&!sconce.lit&&isActive(),
+              onBurn:()=>lightCaveSconce(sconce), // DungeonFire already sweeps thrown torch flames and tests swung torch Box3 contacts.
+            });
+            if(!targetId)break;
+            registered.push(targetId);
+          }
+          if(registered.length===rec.sconces.length){
+            caveFireTargetIds.push(...registered);rec.fireLinked=true;
+          }else for(const targetId of registered)fire.unregisterTarget?.(targetId);
+        }
         const fireZones=options.groundFire||root.PersistentGroundFire;
         for(const sconce of rec.sconces){
           if(sconce.lit||!fireZones?.intersects?.(options.area,sconce.x,sconce.z,.16))continue;
-          sconce.lit=true;sconce.flame.visible=true; // Lights persist after the ground patch burns out.
-          root.RuinInteractionAudio?.igniteTorch?.(); // Play the large recorded ignition at the actual flame transition.
-          options.onSconceLit?.(rec,sconce);
+          lightCaveSconce(sconce); // Ground fire retains its existing persistent-patch behavior.
         }
-        if(rec.sconces.every(sconce=>sconce.lit))complete();
       }
       if(kind==='timedMelody'||kind==='melodyEcho'){
         const plate=rec.melodyPlate; // The cave and every former echo use their own existing plate footprint.
@@ -868,6 +924,8 @@
       rec.releaseMelodyCamera?.(); // Dispose the clue-camera source before its meshes and puzzle are removed.
       for(const remove of linkDisposers)remove();
       if(fireTargetId)fire?.unregisterTarget?.(fireTargetId);
+      for(const targetId of caveFireTargetIds)fire?.unregisterTarget?.(targetId); // Cached caves must not leave fire targets in an old map.
+      caveFireTargetIds.length=0;
       rec.removePillarFootprints?.();
       if(rec.pillarScope)(options.DynamicSurfaces||root.DynamicSurfaces)?.clearScope?.(rec.pillarScope); // The pillar hall's solid blockers.
       rec.removeStoneFlanks?.(); // Unregister permanent stone flanks along with their carved scene mesh.
@@ -877,6 +935,7 @@
       if(ropeChain)bus?.removeExternalRopeChain?.(ropeChain);
       rec.inscription?.dispose?.();
       if(timedNoteListener)events?.removeEventListener?.('hobunji-kurraya-puzzle-note',timedNoteListener);
+      if(plateSupport)plateSurfaces.remove(plateSupport.id);
       rec.plateArt?.dispose?.(); // Retire async Tankan lettering without affecting the player's own instrument session.
       if(rec.plateArt)rec.plateArtStoneMesh?.material?.dispose?.(); // Only the decorated visible stone material belongs to this mechanism.
       for(const emitter of flameVisuals)emitter.dispose?.();

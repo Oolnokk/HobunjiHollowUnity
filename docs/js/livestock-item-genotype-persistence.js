@@ -149,16 +149,96 @@
   }
 
   function queuePersistedGenotype(itemKey, genotype) {
-    if (!itemKey || !genotype || !ensureLoaded()) return;
-    const copy = clonePlain(genotype);
-    if (!copy) return;
-    (queues[itemKey] || (queues[itemKey] = [])).push(copy);
+    if (!itemKey || !genotype) return; // A generic item without inherited genes has no lineage record to commit.
+    if (!ensureLoaded()) return false; // A wild offspring must not be removed from its nest without a valid saved character identity.
+    const copy = clonePlain(genotype); // The persisted copy is the only lineage state saved into the member record.
+    if (!copy) return false;
+    const list = queues[itemKey] || (queues[itemKey] = []); // Pending wild offspring remain ordered by acquisition for legacy Farm consumers.
+    list.push(copy);
     groupCache.delete(itemKey);
+    if (!saveQueues()) {
+      list.pop(); // Undo a failed durable write so the next pickup does not acquire a phantom genetic unit.
+      if (!list.length) delete queues[itemKey];
+      groupCache.delete(itemKey);
+      debug.errors.push('queue: failed to persist ' + itemKey + '; nest pickup may retry safely');
+      debug.lastAction = 'queue-failed';
+      return false;
+    }
     debug.queued++;
     debug.lastItemKey = itemKey;
     debug.lastAction = 'queue';
-    saveQueues();
-    window.__farmLog?.(`[genotype] persisted carried lineage for ${itemKey} (${queues[itemKey].length} queued)`, 'wildlife');
+    window.__farmLog?.('[genotype] persisted carried lineage for ' + itemKey + ' (' + list.length + ' queued)', 'wildlife');
+    return true;
+  }
+
+  function acquireNestItem(itemKey, genotype, inventory, { areaId = '', liveBirth = false, remaining = 0 } = {}) {
+    // One saved metadata write owns the new bag unit, its inherited bloodline, and the cave's reduced clutch.
+    // Independent writes can leave a phantom baby, or duplicate an already collected one, after a quota failure.
+    const liveCount = inventory?.[itemKey] ?? 0; // The live bag can change between saves, including when livestock is moved out of the Pack.
+    if (!debug.installed || !ensureLoaded() || !itemKey || !inventory || typeof inventory !== 'object' ||
+        !Number.isSafeInteger(liveCount) || liveCount < 0 ||
+        liveCount >= (window.InventoryStacks?.MAX_TOTAL ?? Number.MAX_SAFE_INTEGER) || !Number.isSafeInteger(remaining) || remaining < 0) {
+      debug.errors.push('nest-acquire: identity, installation, reward, live bag or clutch count invalid');
+      return false;
+    }
+    const ids = currentIds(); // The active world/member identity must match the same character that owns the live bag.
+    const meta = loadMeta(); // Fresh canonical save; never base this transaction on a stale cached copy.
+    const world = (meta?.worlds || []).find(entry => entry.id === ids.worldId);
+    const member = world?.members?.[ids.characterId];
+    if (!world || !member) {
+      debug.errors.push('nest-acquire: active world/member record missing');
+      return false;
+    }
+    const copy = genotype == null ? null : clonePlain(genotype); // The exact den-family genes, if present.
+    if (genotype != null && (!copy || typeof copy !== 'object')) {
+      debug.errors.push('nest-acquire: invalid inherited genotype for ' + itemKey);
+      return false;
+    }
+    const saved = serializedQueues(); // Candidate lineage queue; the live queue remains unchanged until storage succeeds.
+    if (copy) (saved[itemKey] || (saved[itemKey] = [])).push(copy);
+    if (Object.keys(saved).length) member[MEMBER_FIELD] = saved;
+    else delete member[MEMBER_FIELD];
+    member.nonGearInventory = member.nonGearInventory && typeof member.nonGearInventory === 'object'
+      ? member.nonGearInventory : {};
+    const nextCount = liveCount + 1; // The cave clutch comparison below guards against collecting the same baby twice.
+    member.nonGearInventory[itemKey] = nextCount; // Commit the exact live bag count in the SAME metadata write as its genes.
+    const isCavern = typeof areaId === 'string' && areaId.startsWith('map_i_den_'); // Cave clutch records live on the world rather than on the character.
+    if (isCavern) {
+      const record = world.denTurnover?.records?.find(entry => entry?.cavernMapId === areaId); // Existing cave identity is required to prevent a collected baby respawning after reload.
+      if (!record) {
+        debug.errors.push('nest-acquire: saved cave turnover record missing for ' + areaId);
+        return false;
+      }
+      if (record.clutch?.itemKey && record.clutch.itemKey !== itemKey) {
+        debug.errors.push('nest-acquire: saved clutch species/item does not match ' + itemKey + ' in ' + areaId);
+        return false;
+      }
+      if (record.clutch?.remaining != null && Number(record.clutch.remaining) !== remaining + 1) {
+        debug.errors.push('nest-acquire: saved clutch count mismatch in ' + areaId + ': saved=' + record.clutch.remaining + ', expected=' + (remaining + 1));
+        return false;
+      }
+      record.clutch = {
+        remaining,
+        itemKey, liveBirth: !!liveBirth, genotype: copy || genotype || null,
+      }; // The cave can no longer regenerate a baby whose count and lineage were committed.
+    }
+    try {
+      localStorage.setItem(SAVE_META_KEY, JSON.stringify(meta)); // localStorage.setItem replaces the entire record or throws without replacing it.
+    } catch (error) {
+      debug.errors.push('nest-acquire: ' + (error?.message || String(error)));
+      debug.lastAction = 'nest-acquire-failed';
+      return false;
+    }
+    inventory[itemKey] = nextCount;
+    if (copy) (queues[itemKey] || (queues[itemKey] = [])).push(copy); // Only update same-session grouping after the durable write is confirmed.
+    groupCache.delete(itemKey);
+    debug.queued += copy ? 1 : 0;
+    debug.saves++;
+    debug.lastItemKey = itemKey;
+    debug.lastAction = 'nest-acquire';
+    try { window.__farmLog?.('[genotype] committed den pickup for ' + itemKey + ', saved count=' + nextCount + ', cave=' + (isCavern ? areaId : 'other'), 'wildlife'); }
+    catch (_) { /* A diagnostic sink must never turn an already-committed pickup into a retry. */ }
+    return true;
   }
 
   function seedOriginalQueueIfNeeded(itemKey) {
@@ -308,14 +388,24 @@
     install,
     groupsFor,
     consumeVariant,
+    acquireNestItem,
     flush: saveQueues,
     reload() { activeIdentity = null; return ensureLoaded(); },
     getDebug() {
       ensureLoaded();
+      const ids = currentIds(); // Identifies the saved character whose Pack count should back each retained bloodline.
+      const member = (loadMeta()?.worlds || []).find(world => world.id === ids.worldId)?.members?.[ids.characterId];
+      const savedBag = member?.nonGearInventory || {}; // Read-only forensic check: never mint missing babies automatically.
+      const unbackedLineages = Object.fromEntries(Object.entries(queues).flatMap(([itemKey, list]) => {
+        const backed = Math.max(0, Math.floor(Number(savedBag[itemKey]) || 0));
+        const excess = Math.max(0, list.length - backed);
+        return excess ? [[itemKey, { queuedGenes: list.length, savedInventory: backed, missingBagUnits: excess }]] : [];
+      })); // Mobile Pixel Probe can identify old vanished offspring if their genotype FIFO survived.
       return {
         ...debug,
         queuedNow: queuedCount(),
         queues: serializedQueues(),
+        unbackedLineages,
         errors: [...debug.errors],
       };
     },

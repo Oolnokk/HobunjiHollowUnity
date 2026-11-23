@@ -28,7 +28,7 @@
     ['stoneCanopy','Stone projectile canopy','Shoot along a line that crosses the canopy to test its cover.'],
     ['cyclingLift','Cycling stone lift','Board at the bottom of the cycle and ride it up.'],
     ['sarcophagus','Skeleton sarcophagi','Approach the coffins to wake their occupants.'],
-    ['ropeSwing','Single rope swing','Grab the rope from the launch platform and jump toward the far platform.'],
+    ['ropeSwing','Single rope swing','Jump from the launch platform to catch the rope automatically, then swing toward the far platform.'],
     ['ropePump','Pump-to-height rope','Move with the swing on each pass to build height before jumping.'],
     ['ropeTransfer','Rope-to-rope transfer','Jump from the launch rope and catch the hanging rope in midair.'],
     ['ignitionBrazier','Low fire bowl','Swing your adventuring torch through the permanent fire hazard to ignite it.'],

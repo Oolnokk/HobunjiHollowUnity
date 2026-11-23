@@ -15,6 +15,7 @@ THREE.TextureLoader.prototype.load = () => new THREE.Texture();
 global.window = { THREE, __farmLog() {} };
 global.THREE = THREE;
 require('../docs/js/foliage-generator.js'); // Use the real generator and its cached variants, not a handcrafted tree fixture.
+require('../docs/js/area-footprint-blockers.js'); // Actual shared player/NPC/projectile registry handles all authored debris fragments.
 const generator = window.FoliageGenerator;
 require('../docs/js/furniture-pattern-surfaces.js'); // Use the production face projector to verify complete engraving coverage, without needing canvas or WebGL.
 require('../docs/js/procedural-furniture.js'); // Build actual source tapered masonry with real material groups, not approximate BoxGeometry fixtures.
@@ -31,6 +32,12 @@ const nativeForZone = {
 for(const [zone,info] of Object.entries(nativeForZone)) {
   const normal = info.make(),first = generator.buildWildernessBlossomTreeMesh('bloom:'+zone,info.color,zone);
   const second = generator.buildWildernessBlossomTreeMesh('bloom:'+zone,info.color,zone);
+  const treeRoots=normal.userData.wildernessRootSpansLocal; // Source geometry is sampled once per native cached variant.
+  assert(Array.isArray(treeRoots)&&treeRoots.length>0,zone+': generated native tree roots carry actual collision spine samples');
+  assert(treeRoots.every(root=>root.points.length>=3&&root.points.every(p=>p.length===3&&p.every(Number.isFinite))),
+    zone+': root contact follows finite authored centreline points rather than guessing a circular footprint');
+  assert.strictEqual(info.make().userData.wildernessRootSpansLocal,treeRoots,
+    zone+': identical native trees share one root descriptor array instead of deep-cloning it');
   const originalBounds = new THREE.Box3().setFromObject(normal);
   const bloomBounds = new THREE.Box3().setFromObject(first);
   const nativeHeight = originalBounds.getSize(new THREE.Vector3()).y;
@@ -55,6 +62,46 @@ for(const [zone,info] of Object.entries(nativeForZone)) {
     const anotherLeaves=second.children.find(child=>child.isMesh && child.userData.noOutline && child!==second.getObjectByName('wilderness-blossom-sprigs'));
     assert.equal(leaves.geometry,anotherLeaves.geometry,'native foliage stays instanced by reference');
   }
+}
+// A real r128 Object3D parent rotation/translation must place root collision at the rendered tree, never at its untransformed variant origin.
+{
+  require('../docs/js/nearby-volume-collision.js'); // Real shared cover/root-index owner, exercised with live Three.js matrixWorld.
+  const rootScene=new THREE.Scene(); // Independent scene keeps the existing landmark fixture and its semantic index untouched.
+  const parent=new THREE.Group(); // Nontrivial ancestor transform catches local-vs-world root collision drift.
+  parent.position.set(25,1.25,31);parent.rotation.y=.63;parent.scale.set(1.12,1,1.12);
+  rootScene.add(parent);
+  const pine=generator.buildCrownedPineMesh(14,15); // Its real shared foliage variant includes the native generated root spines.
+  pine.position.set(2,0,1);pine.rotation.y=.87;parent.add(pine);rootScene.updateMatrixWorld(true);
+  let residency=0; // Same monotonic counter used by chunk loading; verify scene reuse without manual cache resets.
+  window.WildernessChunks={residencyVersion:()=>residency};
+  window.NearbyVolumeCollision.init({
+    getActiveScene:()=>rootScene,getCurrentArea:()=> 'map_northern_cliffs',
+    isCombatActive:()=>false,debugLog(){},player:{x:0,y:0},
+    worldSurfaceY:()=>0,options:{enabled:false,projectiles:false}
+  });
+  let standing=null; // Find a real root ridge with enough top surface for the jump solver's centre-foot contact.
+  for(const span of pine.userData.wildernessRootSpansLocal){
+    for(const local of span.points){
+      const point=new THREE.Vector3(...local).applyMatrix4(pine.matrixWorld);
+      const support=window.AreaFootprintBlockers.supportAt('map_northern_cliffs',point.x,point.z,Infinity);
+      if(support?.kind==='tree root'){standing={point,support};break;}
+    }
+    if(standing)break;
+  }
+  assert(standing,'a real generated Crowned Pine has at least one exposed root usable as elevated support');
+  assert(standing.point.x>20&&standing.point.z>25,
+    'root contact inherits the native tree and its ancestor world transforms');
+  assert(window.NearbyVolumeCollision.debugSnapshot().rootRidges>0,
+    'native root centreline collision indexes the real Three.js foliage geometry');
+  rootScene.remove(parent); // The tree remains parented to the detached Group and keeps its original local transform.
+  assert.equal(window.AreaFootprintBlockers.supportAt('map_northern_cliffs',standing.point.x,standing.point.z,Infinity),null,
+    'detaching a whole native-tree group immediately removes support without waiting for rebuild');
+  rootScene.add(parent);residency++;
+  assert(window.AreaFootprintBlockers.supportAt('map_northern_cliffs',standing.point.x,standing.point.z,Infinity),
+    'reusing the same Three.js Scene after a chunk residency change restores native tree roots');
+  window.AreaFootprintBlockers.remove('wilderness-tree-roots');
+  window.NearbyVolumeCollision.invalidate();
+  delete window.WildernessChunks;
 }
 // Exercise the real year-round scenery module against a real Three.js scene, including scene/Shift lifecycle.
 async function verifyScenery(){
@@ -166,6 +213,35 @@ scenery.init({
 });
 scenery.update();
 await new Promise(resolve=>setImmediate(resolve)); // Await debrisified pillar model assembly before counting their rendered markings.
+const collisionService=window.AreaFootprintBlockers; // The same registry used by pathfinding and projectiles in production.
+assert(collisionService.providerIds().includes('wilderness-landmark-stones'),'the live scene registers one shared landmark collision provider');
+const pillarRoots=[]; // Existing authored scene roots supply the only authoritative fallen-shaft and rubble transforms.
+scene.traverse(node=>{if(node.name==='wilderness-broken-stone-pillar')pillarRoots.push(node);});
+assert(pillarRoots.length>0,'the fixture includes real Debris-ifier pillar and rubble meshes');
+let offCenterPieces=0,measuredParts=0; // Check every physical part rather than accidentally passing the old center-only box.
+for(const built of pillarRoots){
+ const meshes=[...(built.userData.meshById?.values?.()||[])];
+ assert(meshes.length>0,'an authored pillar contributes actual source meshes to collision');
+ for(const part of meshes){
+  const box=new THREE.Box3().setFromObject(part);
+  if(box.isEmpty())continue;
+  const x=(box.min.x+box.max.x)*.5,z=(box.min.z+box.max.z)*.5,y=(box.min.y+box.max.y)*.5;
+  assert(collisionService.blocksBox(zoneId,x,z,0,y),'every rotated, scaled authored shaft/cap/chip has solid collision at its measured center');
+  if(box.max.x-box.min.x>.12&&box.max.z-box.min.z>.12){
+    const landing=collisionService.supportAt(zoneId,x,z,box.max.y+.015); // Real authored fragment footprint is the jump landing source.
+    assert(landing&&landing.y>=box.max.y-.015,'every wide enough Debris-ifier fragment has a standable top, not only side collision');
+    assert.equal(landing.kind,'landmark','jumping onto a fragment retains raised-landmark footing');
+  }
+  if(Math.abs(x-built.position.x)>.55||Math.abs(z-built.position.z)>.55)offCenterPieces++;
+  measuredParts++;
+ }
+ assert.equal(collisionService.blocksBox(zoneId,built.position.x+3,built.position.z+3,0),false,
+   'wide authored footprints do not turn empty wilderness beside the pillar into an invisible wall');
+}
+assert(offCenterPieces>0,'fallen shafts and scattered rubble actually extend past the old .36-tile center-only collider');
+const debrisDiagnostic=scenery.debugSnapshot().plan;
+assert.equal(debrisDiagnostic.authoredDebrisSites,pillarRoots.length,'all rendered pillar sites have been substituted with exact authored geometry');
+assert.equal(debrisDiagnostic.authoredDebrisParts,measuredParts,'mobile diagnostics count the exact per-part collision shapes');
 const decoratedFor = () => scenery.planForLayout(zoneId,zoneLayouts.get(zoneId),'test-world:'+cycle).filter(x=>x.marked);
 const originalMarked=decoratedFor().length; // The planned dye-bearing objects are exactly those the renderer engraves.
 const witnessFor = () => scene.getObjectByName('wilderness-dye-inscribed-witness-stone');
@@ -183,6 +259,31 @@ const cairnGroup=scene.getObjectByName('wilderness-stone-cairns'); // Spatial in
 const plannedCairns=scenery.planForLayout(zoneId,worldLayout,'test-world:'+cycle).filter(site=>site.kind==='stoneCairn');
 const expectedBuckets=new Set(plannedCairns.map(site=>Math.floor(site.point.col/24)+','+Math.floor(site.point.row/24)));
 assert.ok(plannedCairns.length>0,'fixture includes actual normal cairns, not only the marked witness stone');
+for(const chunk of cairnGroup.children){
+  const key=chunk.name.replace('wilderness-cairn-chunk-','');
+  const sitesInChunk=plannedCairns.filter(site=>
+    Math.floor(site.point.col/24)+','+Math.floor(site.point.row/24)===key); // Identical deterministic batch membership/order as the renderer.
+  assert.equal(chunk.count,sitesInChunk.length*4);
+  if(!chunk.geometry.boundingBox)chunk.geometry.computeBoundingBox();
+  const artBox=chunk.geometry.boundingBox; // Actual natural-stone geometry, not the old central .36-tile collision guess.
+  const transform=new THREE.Matrix4();
+  for(let i=0;i<chunk.count;i++){
+    chunk.getMatrixAt(i,transform); // Real instanced course world placement written by cairns(), including its random yaw.
+    const box=artBox.clone().applyMatrix4(transform);
+    const height=(box.min.y+box.max.y)/2;
+    for(const x of [box.min.x,box.max.x])for(const z of [box.min.z,box.max.z]){
+      assert(collisionService.blocksBox(zoneId,x,z,0,height),
+        'every rotated stone course corner must remain physically solid (no visible edge clipping): '+
+        JSON.stringify({chunk:key,index:i,x,z,y:height,boxMin:[box.min.x,box.min.y,box.min.z],boxMax:[box.max.x,box.max.y,box.max.z]}));
+    }
+  }
+}
+const firstCairn=plannedCairns[0]; // Cached four-course stack and one movement footprint share the same height.
+const cairnTop=collisionService.supportAt(zoneId,firstCairn.point.col+.5,firstCairn.point.row+.5,Infinity);
+assert(cairnTop&&Math.abs(cairnTop.y-(1.25+.70*firstCairn.size))<.02,
+  'a cairn lands on its actual four-course cap, without the old taller invisible collision box');
+assert.equal(collisionService.supportAt('map_western_slope',firstCairn.point.col+.5,firstCairn.point.row+.5,Infinity),null,
+  'wilderness jump support cannot leak into another zone');
 assert.equal(cairnGroup.children.length,expectedBuckets.size,'one independently cullable instance batch per occupied 24-tile cell');
 assert.equal(cairnGroup.children.reduce((n,mesh)=>n+mesh.count,0),plannedCairns.length*4,'four stones survive for each cairn');
 assert.ok(cairnGroup.children.every(mesh=>mesh.material===cliffMaterial&&mesh.geometry!==sharedStoneArt.geometry),
@@ -262,6 +363,10 @@ assert.notEqual(witnessFor(),second,'a forced same-cycle layout replacement also
 assert.equal(decorations,firstCycleDecorations+secondCycleDecorations*2,
   'same-cycle regeneration uses the same surface projection count on every marked part');
 scenery.clear();
+assert.equal(collisionService.providerIds().includes('wilderness-landmark-stones'),false,
+  'Shift and zone cleanup unregister the old authored debris collision provider');
+assert.equal(collisionService.supportAt(zoneId,firstCairn.point.col+.5,firstCairn.point.row+.5,Infinity),null,
+  'cleared landmarks cannot leave invisible elevated landing surfaces');
 assert.equal(witnessFor(),undefined,'leaving a zone removes the marked rock, not a stale hidden decoration');
 assert.equal(sharedStoneDisposed,false,'zone cleanup must not dispose the mainline shared quarry art used by other wilderness rocks');
 THREE.TextureLoader.prototype.load = previousTextureLoad;

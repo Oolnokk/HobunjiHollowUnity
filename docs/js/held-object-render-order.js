@@ -118,7 +118,6 @@
   const heldRegistry = new SceneRegistry();
   const groundRegistry = new SceneRegistry();
   const topFaceGroundRegistry = new SceneRegistry(); // Used for meshes whose upward faces are ground but whose walls/ceiling still occlude (carved cavern shells).
-  const waterRegistry = new SceneRegistry(); // All tagged water surfaces; also exposed in diagnostics.
   const tintCoverRegistry = new SceneRegistry(); // Translucent water/slush to blend over submerged feet, hands and held gear (never opaque snow).
   const protectedCoverRegistry = new SceneRegistry(); // Snow/slush, water and billboard grass must write temporary depth in the held overlay.
   const waterOccludedRegistry = new SceneRegistry(); // Procedural foot meshes, drawn in the selective x-ray overlay with real water/snow/grass depth.
@@ -139,7 +138,8 @@
   let terrainCount = 0;
   let topFaceGroundCount = 0; // Meshes registered via markTopFaceGroundMesh.
   let waterMeshCount = 0; // Exposed in debugState so mobile diagnostics can confirm water surfaces are eligible for translucent replay.
-  let waterOccludedMeshCount = 0; // Used by mobile diagnostics to confirm procedural feet registered for water occlusion.
+  let waterOccludedMeshCount = 0; // Used by mobile diagnostics to confirm feet and pants registered for water occlusion.
+  let pantsXrayRegistrations = 0; // Counts once per pants mesh; surfaced to mobile diagnostics without extra per-frame scanning.
   let waterReplayCount = 0; // Counts depth-correct translucent water/slush tint passes over foot pixels.
   let lastNearbyTintCovers = 0; // Number of water/slush meshes eligible near any visible held/foot owner this frame.
   let lastDistantTintCovers = 0; // Distant water meshes rejected before they can tint character pixels.
@@ -186,8 +186,6 @@
   let lastXrayOrdinaryMeshes = 0; // Parts that can use ordinary depth in the latest pass.
   let lastElevationReplayGroups = 0; // Mobile diagnostics: number of standing-height depth replays in the latest base/shell pass.
   let lastUnknownElevationMeshes = 0; // Mobile diagnostics: unresolved actor meshes intentionally left fully occluded.
-  let lastElevationShaderMaterials = 0; // Materials with the standard elevation-aware shader hook active.
-  let lastElevationShaderFallbacks = 0; // Custom/unsupported ground shaders retained as ordinary depth occluders.
   let internalReplay = false;
   let lastDebugSignature = '';
   // Gameplay keeps this enabled in every camera mode so a low shoulder-surf
@@ -433,12 +431,14 @@
   }
 
   // Central x-ray rules (js/xray-hierarchy.js). Defaults here only apply if that module is absent.
-  const XRAY_RULE_FALLBACK = { 'actors.order': 'all', 'pants.sortWithActor': 'on', 'weapon.frontPlaneMask': 'off', 'hand.frontPlaneMask': 'off', 'portrait.waterTint': 'wet-tile', 'layers.manualOrder': 'off', 'background.gearDepth': 'ignore', 'airborne.rebuildDepth': 'on', 'weapon.followHandLayer': 'on', 'ground.showZone': 'off' };
+  const XRAY_RULE_FALLBACK = { 'actors.order': 'all', 'pants.sortWithActor': 'on', 'weapon.frontPlaneMask': 'off', 'hand.frontPlaneMask': 'off', 'portrait.waterTint': 'wet-tile', 'layers.manualOrder': 'off', 'background.gearDepth': 'ignore', 'airborne.rebuildDepth': 'on', 'weapon.followHandLayer': 'on', 'ground.showZone': 'off', 'baby.carrierForeground': 'on' };
   function xrayRule(key) { return window.XrayHierarchy?.get?.(key) ?? XRAY_RULE_FALLBACK[key]; }
 
   const SHOULDER_PET_RENDER_ORDERS = Object.freeze({
     front: 2, back: 4, // Ordinary owner priorities, also the low and high ends of the attached stack.
     pet: 3, // Both sides of the animal sit between the owner sides. A turn can expose either animal card.
+    stowedDepthPart: 3.25, // Draw depth-writing hands and feet before the baby portrait.
+    stowedBurden: 3.5, // After both pet cards and their split overlays, before the carrier front.
   });
   const shoulderViewLocal = new THREE.Vector3(); // Tests the camera against the owner's front plane for the optional gear mask.
   const shoulderViewInverse = new THREE.Matrix4(); // Converts a world view ray to the owner portrait's local space.
@@ -468,7 +468,7 @@
   // material groups), not from the camera or a second animation-state machine.
   function shoulderPetDrawFace(item) {
     const state = shoulderPetPresentation;
-    const avatar = state?.pet?.avatarRef;
+    const avatar = previouslyPresentedPet?.avatarRef;
     const mesh = item?.object;
     if (!avatar || !mesh?.isMesh) return null;
     const petFace = shoulderPetPortraitFace(mesh, avatar);
@@ -504,7 +504,7 @@
     // Use one consistent order for BOTH portrait faces. Pair-only overrides
     // violated transitivity when a skinned owner, split pet and hat overlays
     // were sorted together, so Array.sort could leave the pet on the old side.
-    const inward = shoulderPetPresentation?.pet?.__hobunjiShoulderFacingInward === true;
+    const inward = previouslyPresentedPet?.__hobunjiShoulderFacingInward === true;
     const first = shoulderPetFaceSortRank(a, inward), second = shoulderPetFaceSortRank(b, inward);
     return first === null || second === null ? 0 : first - second;
   }
@@ -597,7 +597,7 @@
   function syncShoulderPetLayering(camera) {
     const state = shoulderPetPresentation;
     if (!state) return;
-    const pet = state.pet;
+    const pet = actorXrayEnabled.animals ? state.pet : null; // Ordinary portrait depth when animal x-ray is disabled.
     if (previouslyPresentedPet && previouslyPresentedPet !== pet) restoreShoulderPet(previouslyPresentedPet);
     if (!pet) {
       syncShoulderOwnerOverlayDepth(state, false);
@@ -855,21 +855,38 @@
 
   function withVisualSort(renderer, portraitOrder, draw) {
     const manual = xrayRule('layers.manualOrder') === 'on' && !!window.XrayHierarchy?.layerRank;
-    if (!manual && !portraitOrder && !shoulderPetPresentation?.pet?.avatarRef) return draw();
+    const babyForegroundItem = item =>
+      item?.object?.userData?.hobunjiFamilyBabyPhysicalCarry === true
+      && Number(item.renderOrder) >= 30
+      && window.XrayHierarchy?.get?.('baby.carrierForeground') !== 'off'; // Shared with both rank paths; stowed/dropped babies and opt-outs retain normal depth.
+    if (!manual && !portraitOrder && !previouslyPresentedPet?.avatarRef) return draw();
     if (!renderer.setTransparentSort) return draw();
     const rankCache = new Map(); // One classification per render item, not per sort comparison.
     const pairCache = new Map(); // Per-draw pet/owner face identity; no repeated ancestor scans inside sort comparisons.
     const orderCache = new Map(); // Whole-list effective render orders for pet/owner stages AND unrelated items.
-    const inward = shoulderPetPresentation?.pet?.__hobunjiShoulderFacingInward === true; // Snapshot the observation pose for this draw.
-    const activePetPortrait = !!shoulderPetPresentation?.pet?.avatarRef; // Enables the shared owner/pet actor-depth keys only when a pet is attached.
+    const inward = previouslyPresentedPet?.__hobunjiShoulderFacingInward === true; // Snapshot the observation pose for this draw.
+    const activePetPortrait = !!previouslyPresentedPet?.avatarRef; // Enables the shared owner/pet actor-depth keys only when a pet is attached.
+    const stowedCarry = activePetPortrait && window.Shattercasks?.backCarriedInfo?.(); // One lookup for this draw.
     const pairFace = item => {
-      if (!pairCache.has(item)) pairCache.set(item, shoulderPetDrawFace(item));
+      if (!pairCache.has(item)) {
+        let face = shoulderPetDrawFace(item); // Normal owner/pet classification.
+        if (stowedCarry && !face) {
+          if (window.Shattercasks.isStowedSortMesh?.(item.object)) face = 'stowed-burden';
+          else if (item.object?.userData?.shattercaskRearOverlay) face = 'owner-back'; // The carrier's replacement skinned rear card.
+        }
+        pairCache.set(item, face);
+      }
       return pairCache.get(item);
     };
     const drawOrder = item => {
       if (!orderCache.has(item)) {
         const face = pairFace(item);
-        const stage = face ? shoulderPetFaceSortRank(face, inward) : null;
+        // A stowed load uses the carrier's rear/burden/front sandwich even when the pet turns inward.
+        let stage = null; // Local order of the carry, pet, or owner face inside the carrier's actor slot.
+        if (face === 'stowed-burden') {
+          stage = item.object.userData?.shattercaskKeepsOwnDepth
+            ? SHOULDER_PET_RENDER_ORDERS.stowedDepthPart : SHOULDER_PET_RENDER_ORDERS.stowedBurden;
+        } else if (face) stage = shoulderPetFaceSortRank(face, !stowedCarry && inward);
         let value = Number(item.renderOrder) || 0; // All unrelated transparent objects keep their ordinary order.
         if (stage !== null) {
           const mesh = item.object;
@@ -887,8 +904,8 @@
       window.XrayHierarchy.layerRank('actor.front'), window.XrayHierarchy.layerRank('actor.rear')) : 0; // Reserve one manual-rank slot for the owner/pet composite.
     const rank = item => {
       if (!rankCache.has(item)) {
-        const value = pairFace(item)
-          ? petManualRankAnchor + drawOrder(item) * 0.001
+        const value = babyForegroundItem(item) ? 10000
+          : pairFace(item) ? petManualRankAnchor + drawOrder(item) * 0.001
           : window.XrayHierarchy.layerRank(visualLayerFor(item));
         rankCache.set(item, value);
       }
@@ -913,7 +930,7 @@
       if (!actorSortKeyCache.has(item)) {
         const actor = actorRank(item);
         const face = pairFace(item);
-        const category = window.XrayHierarchy.layerRank(visualLayerFor(item));
+        const category = babyForegroundItem(item) ? 10000 : window.XrayHierarchy.layerRank(visualLayerFor(item));
         actorSortKeyCache.set(item, actor && Number.isFinite(actor.depth)
           ? {
               primary: petManualRankAnchor, depth: -actor.depth,
@@ -1016,6 +1033,13 @@
       const rank = actors.get(portraitStencilOwner(mesh, scene));
       if (rank) extras.set(mesh, rank);
     }
+    // A carried Burden (held baby at 30, stowed Burden at 2.15 between the 2.05 rear and 2.25 front
+    // portrait passes) belongs to the player's actor slot. Unranked, it compared its raw renderOrder
+    // against the ranked portrait's PORTRAIT_SORT_ORDER (2) and drew after the carrier's front face,
+    // so a back-stowed baby showed through the parent's chest whenever another actor was nearby.
+    const carrierRank = actors.get(player);
+    for (const mesh of window.Shattercasks?.carrierSortMeshes?.() || [])
+      if (mesh?.parent && mesh.visible !== false && !ranks.has(mesh)) extras.set(mesh, carrierRank);
     return { ranks, extras, nearest, count };
   }
 
@@ -1037,7 +1061,7 @@
   }
 
   function withPortraitDrawOrder(renderer, order, draw, protectNearPortrait = false) {
-    if ((!order && xrayRule('layers.manualOrder') !== 'on' && !shoulderPetPresentation?.pet?.avatarRef) || !renderer.setTransparentSort) return draw();
+    if ((!order && xrayRule('layers.manualOrder') !== 'on' && !previouslyPresentedPet?.avatarRef) || !renderer.setTransparentSort) return draw();
     const changed = new Set(); // Depth-write states of pants-free distant portraits, restored even on an interrupted draw.
     if (protectNearPortrait && order) {
       const pantsRanks = new Set(order.extras?.values() || []); // A wearer needs its real portrait depth to stop the pants drawn immediately afterward.
@@ -1054,12 +1078,34 @@
         });
       }
     }
-    try { return withVisualSort(renderer, order, draw); }
-    finally { for (const material of changed) material.depthWrite = true; }
+    let stowedDepthMaterials; // Restore limb materials before any subsequent depth or shell pass.
+    try {
+      if (protectNearPortrait && previouslyPresentedPet?.avatarRef) {
+        for (const mesh of window.Shattercasks?.stowedDepthParts?.() || []) {
+          forEachMaterial(mesh.material, material => {
+            if (material.transparent) return;
+            (stowedDepthMaterials ||= []).push(material);
+            material.transparent = true; // Use the pet's color sort queue, retaining real depth tests and writes.
+          });
+        }
+      }
+      return withVisualSort(renderer, order, draw);
+    } finally {
+      for (const material of changed) material.depthWrite = true;
+      if (stowedDepthMaterials) for (const material of stowedDepthMaterials) material.transparent = false;
+    }
   }
 
   function rankedHeldOverlayOrder(portraitOrder, meshes, scene) {
-    if (xrayRule('layers.manualOrder') !== 'on' || !portraitOrder?.ranks?.size) return null;
+    if (!portraitOrder?.ranks?.size) return null;
+    // Pant garments moved from the world draw into the foot overlay. Preserve their
+    // owner's cross-actor transparent sort even with the default manual sorter OFF.
+    // Do not apply that sort to unrelated tools or feet outside explicit manual mode.
+    if (xrayRule('layers.manualOrder') !== 'on') {
+      if (xrayRule('pants.sortWithActor') === 'off') return null;
+      return meshes.some(mesh => mesh.userData?.hobunjiPantsGarment === true && portraitOrder.extras?.has(mesh))
+        ? portraitOrder : null;
+    }
     const byOwner = new Map(); // Reuses the base portrait's actor-depth ranks for gear/hand draw entries.
     for (const rank of portraitOrder.ranks.values()) if (rank?.owner) byOwner.set(rank.owner, rank);
     const extras = new Map(portraitOrder.extras || []); // Existing pants continue to share their own actor's priority.
@@ -1101,6 +1147,7 @@
 
   function isLegacyHeldPlane(object) {
     if (!object?.isMesh || object.isInstancedMesh || object.isSkinnedMesh) return false;
+    if (object.userData?.hobunjiFamilyBabyPhysicalCarry && xrayRule('baby.carrierForeground') === 'on') return false; // A held infant is physical PNG art, never a weapon-plane replay.
     if (object.userData?.hobunjiHeldObjectPlane === true) return true;
     return Math.abs(Number(object.renderOrder) - LEGACY_HELD_RENDER_ORDER) < 1e-6;
   }
@@ -1128,7 +1175,9 @@
     // inverted shell and their independent ground/water depth treatment.
     if (mesh?.userData?.hobunjiProceduralHand === true || mesh?.userData?.hobunjiProceduralFoot === true) return false;
     const data = mesh?.userData || {}; // Mesh-authored art classification; never infer from a material shared with 3D props.
-    return data.noOutline === true || data.isPngPlane === true
+    // Pants are a deformable PNG-textured GRID (BufferGeometry), not PlaneGeometry;
+    // their opaque art already includes ink and must never acquire shell outlines.
+    return data.hobunjiPantsGarment === true || data.noOutline === true || data.isPngPlane === true
       || data.hobunjiWeaponAssemblyPart === true || data.isBillboard === true
       || data.isWildernessGrassChunk === true || data.isRichFoliageBillboard === true
       || mesh?.geometry?.type === 'PlaneGeometry';
@@ -1197,13 +1246,16 @@
   function markWaterOccludedMesh(mesh) {
     if (!mesh?.isMesh) return false;
     mesh.userData = mesh.userData || {};
-    const already = waterOccludedMeshes.has(mesh) || mesh.userData.hobunjiWaterOccludedBySurface === true;
+    const already = waterOccludedMeshes.has(mesh); // A preloaded semantic tag is not registration; count it on the first real compositor adoption.
     mesh.userData.hobunjiWaterOccludedBySurface = true;
     waterOccludedMeshes.add(mesh);
     waterOccludedRegistry.add(mesh);
     if (!hasLayer(mesh, FOOT_WATER_MASK_LAYER)) mesh.layers.enable(FOOT_WATER_MASK_LAYER); // Retain compatibility for diagnostic/older foot consumers.
     if (!hasLayer(mesh, HELD_OVERLAY_LAYER)) mesh.layers.enable(HELD_OVERLAY_LAYER); // Feet x-ray through grass/paths, but never through water/snow/props.
-    if (!already) waterOccludedMeshCount++;
+    if (!already) {
+      waterOccludedMeshCount++;
+      if (mesh.userData.hobunjiPantsGarment === true) pantsXrayRegistrations++;
+    }
     return !already;
   }
 
@@ -1267,7 +1319,6 @@
       if (!hasLayer(object, WATER_REPLAY_LAYER)) object.layers.enable(WATER_REPLAY_LAYER);
     }
     if (isWaterSurface(object)) {
-      waterRegistry.add(object);
       if (!waterMeshes.has(object)) {
         waterMeshes.add(object);
         waterMeshCount++;
@@ -2405,6 +2456,8 @@
       scissorBox.copy(localBox).applyMatrix4(matrix);
       const vfxPadding = Number(mesh.userData?.hobunjiHeldOverlayVfxPadding) || 0; // Preserve the original dynamic aura margin.
       if (vfxPadding > 0) scissorBox.expandByScalar(vfxPadding * matrix.getMaxScaleOnAxis());
+      const garmentPadding = Number(mesh.userData?.hobunjiXrayDeformPadding) || 0; // CPU rest bounds miss GPU-skinned leg displacement; a conservative world-space margin prevents scissor clipping.
+      if (garmentPadding > 0) scissorBox.expandByScalar(garmentPadding * matrix.getMaxScaleOnAxis());
       const dungeonRise = Number(mesh.userData?.hobunjiDungeonFireVfxPadding) || 0; // Preserve the fire plume's world-Y reach.
       if (dungeonRise > 0) {
         const lateral = .55;
@@ -2652,8 +2705,9 @@
       // portrait mask already follows this link. Without it a hostile's weapon
       // had no owner, took the fail-safe path and forced an extra "ordinary"
       // held replay group (3 scene renders, ~350 draws in the user's fight).
-      const owner = heldOwnerLinkEnabled ? data.hobunjiHeldPortraitOwner : null;
-      if (owner?.isObject3D && owner !== node && ownerDepth < 2) {
+      const owner = data.hobunjiHeldPortraitOwner; // Player gear always needs its ground scope, even with the NPC weapon budget disabled.
+      if (playerMesh && owner === playerMesh) return { root: playerMesh, isPlayer: true };
+      if (heldOwnerLinkEnabled && owner?.isObject3D && owner !== node && ownerDepth < 2) {
         return actorRootForXrayMesh(owner, scene, ownerDepth + 1) || { root: owner, isPlayer: false };
       }
       if (!namedAnimalRoot && data.namedAnimalNpc === true) namedAnimalRoot = node;
@@ -2676,6 +2730,50 @@
   // HeldObjectRenderOrder.setReplayParticipants('all') restores the old set;
   // setShortXraySpecies([...]) and setFeetXrayDistance(units) tune the rule.
   let replayParticipantPolicy = 'rule';
+  const actorXrayDefaults = Object.freeze({ animals: true, enemies: false, player: true }); // Shared with Performance settings and reset.
+  const actorXrayEnabled = { ...actorXrayDefaults }; // Settings gates shared by the main and shell passes.
+  let hasDisabledActorXray = Object.values(actorXrayEnabled).includes(false); // All-on keeps the existing replay selection fast path.
+  const actorXrayRoots = new Map(); // Current frame's character roots, shared across color and shell selection.
+  let actorXrayScene = null; // Scene whose actor roots the replay selector can reuse.
+
+  function refreshActorXrayRoots(scene) {
+    actorXrayRoots.clear();
+    actorXrayScene = scene;
+    const visuals = window.CharacterVisuals;
+    const area = window.GridTileAccessors?.getCurrentArea?.();
+    if (!visuals || area == null) return;
+    const kinds = visuals.KINDS; // Use the same actor categories as the rest of character rendering.
+    visuals.forEachCharacter(area, (kind, root, entity) => {
+      let group = 'animals'; // Creature, companion, mount, shoulder pet, livestock or creature corpse.
+      if (kind === kinds.PLAYER) group = 'player';
+      else if (kind === kinds.ENEMY || (kind === kinds.CORPSE && entity?.isBandit)
+          || (kind === kinds.NPC && root.userData?.namedAnimalNpc !== true
+          && entity?.avatarGroup?.userData?.namedAnimalNpc !== true)) group = 'enemies';
+      actorXrayRoots.set(root, group);
+    });
+  }
+
+  function actorXrayGroup(mesh, scene, followOwner = true) {
+    for (let node = mesh; node && node !== scene; node = node.parent) {
+      const group = actorXrayRoots.get(node); // The nearest actor wins, including a pet attached to the player.
+      if (group) return group;
+      if (node.userData?.namedAnimalNpc === true) return 'animals';
+      if (node.name === 'bandit_avatar_group' || node.name?.startsWith('npc_walker_')) return 'enemies';
+      const owner = node.userData?.hobunjiHeldPortraitOwner; // Independent of the A/B weapon-budget owner link.
+      if (followOwner && owner?.isObject3D && owner !== node) return actorXrayGroup(owner, scene, false);
+    }
+    return actorRootForXrayMesh(mesh, scene)?.isPlayer ? 'player' : null; // Includes composer-owned external tools and rig roots.
+  }
+
+  function setActorXrayEnabled(group, value) {
+    if (!Object.hasOwn(actorXrayEnabled, group)) return null;
+    actorXrayEnabled[group] = value !== false;
+    hasDisabledActorXray = Object.values(actorXrayEnabled).includes(false);
+    actorXrayRoots.clear();
+    actorXrayScene = null;
+    if (group === 'animals') syncShoulderPetLayering();
+    return actorXrayEnabled[group];
+  }
   // Non-player weapon x-ray budget. An armed character whose gear can reach
   // the floor gets its own x-ray group whenever its screen rectangle overlaps
   // another holder's, and in a fight everyone crowds the player: in the user's
@@ -2745,17 +2843,18 @@
     return isFoot ? withinFeetXrayDistance(mesh) : true;
   }
   function splitReplayParticipants(meshes, scene, others, isFoot = false, repairHeld = false) {
-    if (replayParticipantPolicy === 'all') return meshes;
-    const keep = [];
+    if (replayParticipantPolicy === 'all' && !hasDisabledActorXray) return meshes;
+    const keep = []; // Parts left to the existing replay after applying the Settings gates.
     for (const mesh of meshes) {
-      if (isReplayParticipant(mesh, scene, isFoot)) keep.push(mesh);
+      const group = hasDisabledActorXray ? actorXrayGroup(mesh, scene) : null; // Resolve categories only when needed.
+      if (actorXrayEnabled[group] !== false && isReplayParticipant(mesh, scene, isFoot)) keep.push(mesh);
       else {
         if (repairHeld) enforceHeldMesh(mesh); // Keep the regular-pass held invariant without a second owner lookup.
         others.push(mesh);
         nonParticipantReplaySkips++;
       }
     }
-    return repairHeld && !isFoot ? limitOtherWeaponParticipants(keep, scene, others) : keep;
+    return repairHeld && !isFoot && replayParticipantPolicy !== 'all' ? limitOtherWeaponParticipants(keep, scene, others) : keep;
   }
   // Keeps weapon x-ray for the otherWeaponXrayLimit nearest armed non-player
   // actors (by root distance to the camera); preserves the original order,
@@ -2844,7 +2943,17 @@
     const parity = mesh.__hobunjiXrayBoundParity; // Only trusted rig adapters can bound a per-draw pose change.
     const unknownHook = mesh.onBeforeRender && mesh.onBeforeRender !== objectProto.onBeforeRender
       && parity?.hook !== mesh.onBeforeRender;
-    if (!isReplayCullable(mesh) || unknownHook
+    const garmentPad = Number(mesh.userData?.hobunjiXrayDeformPadding); // Used only for the authored pants mesh's projection, never for generic GPU-deformed props.
+    const boundedPants = mesh.userData?.hobunjiPantsGarment === true
+      && mesh.userData?.hobunjiPantsGpuBoundsSafe === true && Number.isFinite(garmentPad) && garmentPad > 0
+      && mesh.frustumCulled === false && !!mesh.geometry && !mesh.children?.length
+      && !mesh.isSkinnedMesh && !mesh.isInstancedMesh && !mesh.geometry.morphAttributes?.position?.length;
+    // GPU-skinned pants disable Three's ordinary frustum cull, but their rest geometry
+    // plus the explicit deformation padding is usable for the *local x-ray replay* scissor.
+    // CPU fallback meshes are never batched on stale rest bounds: the renderer invalidates
+    // their live bounding box on each changed pose and the scissor recomputes it lazily.
+    // Other uncullable/unknown-shader meshes remain conservative independent groups.
+    if (!(isReplayCullable(mesh) || boundedPants) || unknownHook
         || mesh.userData?.hobunjiReplayNeverCull === true
         || Number(mesh.userData?.hobunjiHeldOverlayVfxPadding) > 0 || Number(mesh.userData?.hobunjiDungeonFireVfxPadding) > 0) return false;
     const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material]; // Custom vertex deformation needs an isolated replay.
@@ -2900,7 +3009,8 @@
       const { elevation, x, z } = region;
       if (region.meshes.every(canBoundXrayMesh)
           && replayScissorRect(renderer, camera, region.meshes, xrayGearRect, null, shellPadding ?? 0)) {
-        if (shellPadding === null && camera.isPerspectiveCamera && cameraY > elevation + band
+        if (shellPadding === null && !region.meshes.some(mesh => mesh.userData?.hobunjiPantsGarment === true)
+            && camera.isPerspectiveCamera && cameraY > elevation + band
             && scissorMinimumWorldY > elevation + band) {
           ordinary.push(...region.meshes);
           continue;
@@ -3183,47 +3293,92 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
     return data.hobunjiXrayRoadSurface;
   }
 
-  function collectGroundElevationMaterials(groundMeshes) {
-    const seen = new Set();
-    const liveNormals = new Map(); // Recomputes normal availability from this scene's drawable ground, not old geometry or another cached zone.
-    let materialCount = 0;
-    let fallbackCount = 0;
-    for (const mesh of groundMeshes) {
-      const position = mesh?.geometry?.attributes?.position;
-      // TerrainRenderChunks leaves each split source mesh in place as an
-      // empty-geometry parent of its chunks. It draws nothing, but it shares
-      // the chunks' material, and treating it as "geometry without normals"
-      // used to switch the x-ray off for the whole path/floor material.
-      if (!position || !position.count) continue;
-      const roadSurface = isRoadXrayMesh(mesh);
-      forEachMaterial(mesh?.material, material => {
-        const state = installGroundElevationShader(material);
-        if (!state) return;
-        const geometryHasNormals = !!mesh.geometry.attributes.normal && !mesh.isBatchedMesh;
-        liveNormals.set(material, (liveNormals.get(material) ?? true) && geometryHasNormals); // Mixed normal/normal-less meshes still fail closed together.
-        if (roadSurface || material.userData?.hobunjiInteriorFloorMaterial === true) state.uniforms.anyFacing.value = 1;
-        if (seen.has(material)) return;
-        seen.add(material);
-        if (state.supported) materialCount++;
-        else if (state.compileAttempted) fallbackCount++;
-      });
+  const groundElevationCache = new WeakMap(); // Each scene retains its latest visible ground material inputs.
+  let groundMaterialCacheHits = 0, groundMaterialCacheBuilds = 0; // Performance Profiler counts across both replay paths.
+  let lastGroundElevationMaterials = null; // Read current compile outcomes when diagnostics are requested.
+
+  function collectGroundElevationMaterials(groundMeshes, scene) {
+    let cached = scene && groundElevationCache.get(scene); // Reuse when both replays see the same ground inputs.
+    if (!groundElevationInputsMatch(cached, groundMeshes)) {
+      // Empty chunk-source parents share the chunks' materials but draw nothing.
+      // An actually drawable mesh without normals still disables the filter for
+      // its whole material, including any otherwise compatible meshes sharing it.
+      const inputs = groundMeshes.map(mesh => ({
+        // Store only the material inputs. Detached chunks can be released
+        // even if this scene has no further x-ray replay to refresh the cache.
+        material: Array.isArray(mesh.material) ? mesh.material.slice() : mesh.material,
+        mode: groundElevationGeometryMode(mesh), road: isRoadXrayMesh(mesh),
+      }));
+      const materialUses = new Map(); // Aggregate normal availability and road rules once per material.
+      for (const { material, mode, road } of inputs) {
+        if (!mode) continue;
+        forEachMaterial(material, entry => {
+          if (!entry) return;
+          const use = materialUses.get(entry);
+          if (use) {
+            use.hasNormals &&= mode === 2;
+            use.road ||= road;
+          } else materialUses.set(entry, { hasNormals: mode === 2, road, state: null });
+        });
+      }
+      cached = { inputs, materialUses, materials: new Set(materialUses.keys()) };
+      if (scene) groundElevationCache.set(scene, cached);
+      groundMaterialCacheBuilds++;
+    } else groundMaterialCacheHits++;
+
+    for (const [material, use] of cached.materialUses) {
+      let state = use.state;
+      // Materials may be shared across scenes or get a new compile callback.
+      // Reconcile the live owner and normal policy before enabling the filter.
+      const compile = material.onBeforeCompile;
+      if (!state || material.userData?.hobunjiXrayElevationShader !== state ||
+          compile?.__hobunjiXrayElevationState !== state || compile.__hobunjiXrayMaterialOwner !== material) {
+        state = use.state = installGroundElevationShader(material);
+      }
+      if (use.road || material.userData?.hobunjiInteriorFloorMaterial === true) state.uniforms.anyFacing.value = 1;
+      if (state.geometryHasNormals !== use.hasNormals) {
+        state.geometryHasNormals = use.hasNormals;
+        material.needsUpdate = true;
+      }
     }
-    for (const [material, hasNormals] of liveNormals) {
-      const state = material.userData.hobunjiXrayElevationShader;
-      if (state.geometryHasNormals === hasNormals) continue;
-      state.geometryHasNormals = hasNormals;
-      material.needsUpdate = true; // Geometry replacement or zone changes can restore normals: recompile the safe shader variant.
+    lastGroundElevationMaterials = cached.materials;
+    return cached.materials;
+  }
+
+  function groundElevationGeometryMode(mesh) {
+    const attributes = mesh.geometry?.attributes; // Track only geometry changes that can affect shader eligibility.
+    if (!attributes?.position?.count) return 0;
+    return attributes.normal && !mesh.isBatchedMesh ? 2 : 1;
+  }
+
+  function groundElevationInputsMatch(cached, groundMeshes) {
+    if (!cached || cached.inputs.length !== groundMeshes.length) return false;
+    for (let i = 0; i < groundMeshes.length; i++) {
+      const mesh = groundMeshes[i], input = cached.inputs[i]; // Compare live material and geometry inputs at this slot.
+      if (input.mode !== groundElevationGeometryMode(mesh) || input.road !== isRoadXrayMesh(mesh)) return false;
+      const current = mesh.material, saved = input.material; // Array snapshots detect in-place material slot edits.
+      if (current === saved) continue;
+      if (!Array.isArray(saved) || !Array.isArray(current) || saved.length !== current.length) return false;
+      for (let slot = 0; slot < saved.length; slot++) if (saved[slot] !== current[slot]) return false;
     }
-    lastElevationShaderMaterials = materialCount;
-    lastElevationShaderFallbacks = fallbackCount;
-    return seen;
+    return true;
+  }
+
+  function groundElevationMaterialStats() {
+    let supported = 0, fallback = 0; // Compiles can complete after the ground material cache was used.
+    for (const material of lastGroundElevationMaterials || []) {
+      const state = material.userData?.hobunjiXrayElevationShader;
+      if (state?.supported) supported++;
+      else if (state?.compileAttempted) fallback++;
+    }
+    return { supported, fallback };
   }
 
   function setGroundElevationFilter(materials, group, mode = 1) {
     for (const material of materials) {
       const { uniforms } = material.userData.hobunjiXrayElevationShader;
       uniforms.enabled.value = group ? mode : 0;
-      if (!group) continue;
+      if (!group || uniforms.centers.value === group.centers) continue;
       uniforms.elevation.value = group.elevation;
       uniforms.centerCount.value = group.regions.length;
       uniforms.centers.value = group.centers;
@@ -3275,19 +3430,29 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
   // Stencil punch + far-depth reset for one group. Returns false (and touches
   // nothing) when it cannot run, so the caller falls back to clear-and-redraw.
   function punchHeldGroupFloor(renderer, scene, camera, group, groundMeshes, groundMaterials, colorBuffer) {
-    if (!floorPunchEnabled || !group?.regions?.length || !groundMaterials?.size) return false;
+    if (!floorPunchEnabled || lastBaseStencilBits < 2 || !group?.regions?.length || !groundMaterials?.size) return false;
     const resources = ensureFloorPunchResources();
     if (!resources || !colorBuffer?.setMask || !colorBuffer?.setLocked) return false;
-    // A ground mesh whose material has no compiled filter would mark ALL of its
-    // frontmost pixels; leave it out of the punch (its floor keeps occluding).
-    // Ground that does not touch the patch cannot contain the nearby floor.
-    const hidden = new Map();
+    // A newly built floor can first compile its filter during the depth replay.
+    // Rebuild the depth if a nearby floor cannot yet stamp the punch bit.
+    const hidden = new Map(); // Ground outside the patch stays out of the stencil draw.
     for (const mesh of groundMeshes) {
       if (!mesh?.visible) continue;
-      let filtered = true;
-      forEachMaterial(mesh.material, material => { if (!material?.userData?.hobunjiXrayElevationShader?.supported) filtered = false; });
-      if (!filtered || touchesFloorPatch(mesh, group, 0.05) === 0) { hidden.set(mesh, true); mesh.visible = false; }
+      if (touchesFloorPatch(mesh, group, 0.05) === 0) {
+        hidden.set(mesh, true);
+        continue;
+      }
+      let filtered = true, pendingFilter = false; // Track whether this floor can stamp the punch bit.
+      forEachMaterial(mesh.material, material => {
+        const state = material.userData?.hobunjiXrayElevationShader;
+        if (state && !state.compileAttempted) pendingFilter = true;
+        if (!state?.supported) filtered = false;
+      });
+      if (pendingFilter) return false;
+      if (!filtered) hidden.set(mesh, true);
     }
+    if (!groundMeshes.some(mesh => mesh?.visible && !hidden.has(mesh))) return false;
+    for (const mesh of hidden.keys()) mesh.visible = false;
     const saved = [];
     for (const material of groundMaterials) {
       if (!material?.userData?.hobunjiXrayElevationShader?.supported) continue;
@@ -3348,18 +3513,16 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
     return 0;
   }
 
-  // The local refill after a punch: only non-ground objects that touch the
-  // patch column and reach below the floor (sunken parts, anything that can
-  // sit between the punched floor and a held part). Ground is left out: what lies behind the holder's
-  // own floor is underground and already farther than its parts. Unbounded
-  // objects stay: drawing a real occluder again only restores depth it had.
+  // Refill with anything that can sit between the punched floor and a held
+  // part. The active shader skips the holder's own floor, while lower slabs
+  // and the solid faces of mixed cave-shell meshes still write real depth.
+  // Unbounded objects stay so uncertain bounds cannot expose hidden gear.
   function hideOutsideFloorPatch(candidates, group) {
     if (!candidates?.length || !group?.regions?.length) return null;
     let hidden = null;
     for (const object of candidates) {
       if (!object.visible) continue;
-      const ground = hasLayer(object, GROUND_REPLAY_LAYER);
-      const touches = ground ? 0 : touchesFloorPatch(object, group, FLOOR_PUNCH_PATCH_MARGIN, true);
+      const touches = touchesFloorPatch(object, group, FLOOR_PUNCH_PATCH_MARGIN, true);
       if (touches !== 0) { floorPunchRefillKept++; continue; }
       if (!hidden) hidden = new Map();
       hidden.set(object, true);
@@ -3573,7 +3736,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
     if (rebuildAirborne) airborneDepthRebuilds++; // Diagnostic counter, includes no-op frames with no ordinary group.
     let { groups, ordinary, scopes, hasUnknownOwner, tintScopeByMesh } = buildXrayGroups(renderer, scene, camera, overlayMeshes);
     lastBaseElevationGroups = groups.length;
-    const groundMaterials = groups.length ? collectGroundElevationMaterials(groundMeshes) : null; // Reuse the same material list for every tile batch.
+    const groundMaterials = groups.length ? collectGroundElevationMaterials(groundMeshes, scene) : null; // Reuse the same material list for every tile batch.
     if (ordinary.length) groups.unshift({ meshes: ordinary, regions: [] }); // Keep existing cutout and water depth rules for regular parts.
     // Screen-space overlap alone is insufficient: a long merged river can
     // project over the player's silhouette even when every wet tile is far away.
@@ -3613,6 +3776,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
     const nearReplay = groups.some(group => group.regions.length) ? nearReplaySupport(canLockColorMask) : null; // Only depth-clearing x-ray groups benefit.
     const allowFarOnly = !!nearReplay; // Far-plane-only objects may leave only when replay depth comes back by copy (ScissorDepthSnapshot).
     const nearCandidates = nearReplay ? [] : null; // Bounded objects still visible after the scissor cull.
+    let groundFilterActive = false; // Cleanup for a replay interrupted before its per-group restore.
     let nearToken = null; // Saved original depth of the replay rectangle, taken before the first clear.
     let nearSnapshotFailed = false;
     let baseDepthTouched = false; // A depth-modifying group already ran since the snapshot.
@@ -3679,7 +3843,10 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
 
       for (const group of groups) {
         const groupScissored = scissored && applyElevationScissor(renderer, camera, group.meshes, glState);
-        if (group.regions.length) setGroundElevationFilter(groundMaterials, group);
+        if (group.regions.length) {
+          groundFilterActive = true;
+          setGroundElevationFilter(groundMaterials, group);
+        }
         const supplementDepth = !group.regions.length && canLockColorMask && !rebuildAirborne; // Airborne gear must not reuse base sky/backdrop depth.
         let punched = false; // Floor punch kept the existing depth (see punchHeldGroupFloor).
         if (supplementDepth) ordinaryDepthClearsAvoided++;
@@ -3744,7 +3911,10 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
             colorBuffer.setMask(true);
           }
           restoreMaterialStates(depthMaterialStates);
-          if (group.regions.length) setGroundElevationFilter(groundMaterials, null);
+          if (groundFilterActive) {
+            setGroundElevationFilter(groundMaterials, null);
+            groundFilterActive = false;
+          }
         }
 
         // This depth must be reintroduced after every clearDepth()/rebuild,
@@ -3896,7 +4066,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
       stencilBuffer?.setMask?.(0xff); // The read-only water tint sets the write mask to zero.
       renderer.clearStencil?.();
     } finally {
-      if (groundMaterials) setGroundElevationFilter(groundMaterials, null);
+      if (groundFilterActive) setGroundElevationFilter(groundMaterials, null);
       if (suppressedOverlay) restoreDraws(suppressedOverlay);
       if (coversHidden) restoreVisibility(coversHidden);
       if (replayCulled) restoreVisibility(replayCulled);
@@ -4005,7 +4175,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
     const shellColorBuffer = glState?.buffers?.color; // Only shell depth renders use its fast colorless GPU mask.
     const canMaskShellColor = !!(shellColorBuffer?.setMask && shellColorBuffer?.setLocked); // Unavailable on fake/legacy renderers; keep material transaction.
     const groundMeshes = [...ground, ...topFaceGround];
-    const groundMaterials = groups.some(group => group.regions.length) ? collectGroundElevationMaterials(groundMeshes) : null; // Scan the ground materials once per replay.
+    const groundMaterials = groups.some(group => group.regions.length) ? collectGroundElevationMaterials(groundMeshes, scene) : null; // Reuse the held pass aggregate when the visible ground matches.
     const groupCullCandidates = groups.length > 1 ? [] : null; // Reused by each shell depth draw.
     let scissorActive = false;
     let depthWasCleared = false;
@@ -4017,6 +4187,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
     const backgroundMeshes = xrayRule('background.gearDepth') === 'ignore'
       ? collectVisible(backgroundDepthRegistry, scene) : []; // Visual backgrounds are never true hand/foot shell occluders.
     const nearCandidates = nearReplay ? [] : null; // Bounded objects still visible after the scissor cull.
+    let groundFilterActive = false; // Cleanup for a shell group interrupted before its usual restore.
     let nearToken = null; // Saved depth of the replay rectangle as the shell pass found it.
     
     internalReplay = true;
@@ -4071,7 +4242,10 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
       // a different floor than its source object.
       for (const group of groups) {
         const groupScissored = scissorActive && applyElevationScissor(renderer, camera, group.meshes, glState, shellPadding);
-        if (group.regions.length) setGroundElevationFilter(groundMaterials, group);
+        if (group.regions.length) {
+          groundFilterActive = true;
+          setGroundElevationFilter(groundMaterials, group);
+        }
         // No floor punch here: by the shell pass the saved depth also holds the
         // PNG-silhouette occluder pass, which the clear-and-redraw below removes
         // around the holder. Keeping it hid hand/foot outlines (seen in testing).
@@ -4097,7 +4271,10 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
           npcReplayRestore?.(); // Restore original actor visibility before drawing the group shell.
           if (farCulled) restoreVisibility(farCulled);
           if (groupCulled) restoreVisibility(groupCulled);
-          if (group.regions.length) setGroundElevationFilter(groundMaterials, null);
+          if (groundFilterActive) {
+            setGroundElevationFilter(groundMaterials, null);
+            groundFilterActive = false;
+          }
         }
 
         const groupSet = new Set(group.meshes);
@@ -4113,7 +4290,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
         }
       }
     } finally {
-      if (groundMaterials) setGroundElevationFilter(groundMaterials, null); // An interrupted replay must never leave the filter active for the next pass.
+      if (groundFilterActive) setGroundElevationFilter(groundMaterials, null); // An interrupted replay must never leave the filter active for the next pass.
       // Rebuild complete, unfiltered scene depth before later outline and
       // material-ID consumers. This is colorless and retains ordinary occlusion.
       try {
@@ -4159,9 +4336,14 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
     }
     replayCameraPosition = camera.matrixWorld?.elements ? { x: camera.matrixWorld.elements[12], y: camera.matrixWorld.elements[13], z: camera.matrixWorld.elements[14] } : null; // Feet x-ray distance rule.
 
-    if (isBaseWorldPass(scene, camera)) syncShoulderPetLayering(camera); // Reassert paired-sprite policy after other actor depth writers and before this renderer's portrait/stencil passes.
+    const baseWorldPass = isBaseWorldPass(scene, camera); // Shared by actor selection and the ordinary world draw.
+    if (baseWorldPass) {
+      if (hasDisabledActorXray) refreshActorXrayRoots(scene);
+      syncShoulderPetLayering(camera); // Reassert paired-sprite policy after other actor depth writers.
+    }
     scanScene(scene);
     if (isShellOutlinePass(scene, camera)) {
+      if (hasDisabledActorXray && actorXrayScene !== scene) refreshActorXrayRoots(scene);
       const shellOthers = []; // Non-participant shells stay in the ordinary shell pass (normal depth).
       const skipsBefore = nonParticipantReplaySkips, budgetSkipsBefore = otherWeaponXrayBudgetSkips;
       const held = collectVisible(heldRegistry, scene, shellOthers);
@@ -4175,10 +4357,13 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
       if (!xrayMeshes.length) {
         lastShellElevationGroups = 0;
         lastShellFullscreenReason = 'no-visible-participants';
+        return originalRender.call(this, scene, camera);
       }
       const ground = collectVisible(groundRegistry, scene);
       const topFaceGround = collectVisible(topFaceGroundRegistry, scene);
-      if (!xrayMeshes.length || (!ground.length && !topFaceGround.length)) {
+      if (!ground.length && !topFaceGround.length) {
+        lastShellElevationGroups = 0;
+        lastShellFullscreenReason = 'no-ground';
         return originalRender.call(this, scene, camera);
       }
       const baseShellPadding = Math.abs(Number(scene.overrideMaterial.uniforms.uThickness.value) || 0); // Source shell thickness before per-limb pose adapters.
@@ -4191,6 +4376,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
       ordinaryShellMeshesDrawnOnce += ordinary.length;
       if (!groups.length) {
         ordinaryShellReplaysAvoided++;
+        lastShellFullscreenReason = 'ordinary-depth';
         return originalRender.call(this, scene, camera);
       }
       const xrayGroupMeshes = groups.flatMap(group => group.meshes); // Only genuine local floor exemptions need a depth reconstruction.
@@ -4215,7 +4401,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
       replayShellOutlineXray(this, scene, camera, xrayGroupMeshes, ground, topFaceGround, scissored, groups, shellPadding);
       return shellResult;
     }
-    if (!enabled || !isBaseWorldPass(scene, camera)) return originalRender.call(this, scene, camera);
+    if (!enabled || !baseWorldPass) return originalRender.call(this, scene, camera);
     // The normal world render pays no position lookup, allocation or preview submission
     // unless its developer-only circle checkbox has been enabled.
     if (xrayRule('ground.showZone') === 'on') {
@@ -4223,7 +4409,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
       if (zonePreview?.updateGroundZone) {
         let playerScope = null; // Only the debug display resolves the player's world-space ground support.
         const player = window.PlayerBodyTransformComposer?.getPlayerMesh?.();
-        if (player && isDescendantOf(player, scene)) {
+        if (actorXrayEnabled.player && player && isDescendantOf(player, scene)) {
           player.updateWorldMatrix?.(true, false);
           playerScope = actorXrayScope(player, scene, new Map());
         }
@@ -4233,6 +4419,20 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
 
     const originalCameraMask = Number(camera.layers.mask) >>> 0;
     lastBaseStencilBits = currentFramebufferStencilBits(this);
+    // A normal-depth frame can return before replay setup. Clear the previous replay's readings here.
+    lastBaseElevationGroups = 0;
+    lastBaseReplayCandidates = 0;
+    lastBaseOffscreenFiltered = 0;
+    lastHeldFullscreenReason = 'no-visible-participants';
+    lastForcedGroundDepthMaterials = 0;
+    lastElevationReplayGroups = 0;
+    lastXrayTileRegions = 0;
+    lastXrayOrdinaryMeshes = 0;
+    lastUnknownElevationMeshes = 0;
+    lastNearbyTintCovers = 0;
+    lastDistantTintCovers = 0;
+    lastWaterClipScopes = 0;
+    lastWaterClipOverflow = 0;
     lastFrontPortraitMaskCount = 0; // Reset per-base-pass diagnostics, including early return paths.
     lastFrontPortraitGearCandidates = 0;
     lastFrontPortraitMaskedGear = 0;
@@ -4241,7 +4441,6 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
     const held = collectVisible(heldRegistry, scene, replayOthers);
     const ground = collectVisible(groundRegistry, scene);
     const topFaceGround = collectVisible(topFaceGroundRegistry, scene);
-    const water = collectVisible(waterRegistry, scene); // Existing water diagnostics and all tagged water surfaces.
     const tintCovers = collectVisible(tintCoverRegistry, scene); // Water/slush foreground alpha applies to gear, hands and feet; not opaque snow.
     const feet = collectVisible(waterOccludedRegistry, scene, replayOthers); // Procedural foot meshes share selective ground x-ray.
     const canTintPortraits = !!(tintCovers.length && lastBaseStencilBits >= 1 && waterPortraitRegistry.all.size);
@@ -4256,11 +4455,14 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
     if (!held.length && !feet.length && !canTintPortraits) return renderBase();
     // Even without nearby grass, floor or water, held gear still needs its owner's front-portrait stencil.
     // The historical early return silently bypassed this on empty/auxiliary maps (especially visible with shoulder pets).
-    const needsOwnerMask = held.some(isPortraitMaskedGear)
-      && collectVisible(frontPortraitRegistry, scene).length > 0; // Do not early-return when the private stencil is absent.
-    if (!ground.length && !topFaceGround.length && !tintCovers.length && !needsOwnerMask) {
-      lastFrontPortraitMaskReason = 'no-ground-or-owner-mask';
-      return renderBase();
+    if (!ground.length && !topFaceGround.length && !tintCovers.length) {
+      const needsOwnerMask = held.some(isPortraitMaskedGear)
+        && collectVisible(frontPortraitRegistry, scene).length > 0; // The mask can use physical depth when the private stencil is absent.
+      if (!needsOwnerMask) {
+        lastFrontPortraitMaskReason = 'no-ground-or-owner-mask';
+        lastHeldFullscreenReason = 'no-cover-or-owner-mask';
+        return renderBase();
+      }
     }
 
     baseWorldRenderCount++;
@@ -4321,9 +4523,11 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
 
   function snapshot() {
     if (classificationScheduled) flushClassification(); // Diagnostics/tests read counts right after add().
+    const elevationMaterials = groundElevationMaterialStats(); // Current shader support, including recent compiles.
     return {
       installed: true,
       enabled,
+      actorXrayEnabled: { ...actorXrayEnabled }, // Included in the existing x-ray diagnostics.
       mode: 'selective-depth-replay',
       legacyHeldRenderOrder: LEGACY_HELD_RENDER_ORDER,
       heldOverlayLayer: HELD_OVERLAY_LAYER,
@@ -4339,6 +4543,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
       waterReplayMeshes: waterMeshCount,
       translucentCoverMeshes: tintCoverRegistry.all.size,
       waterOccludedMeshes: waterOccludedMeshCount,
+      pantsXrayRegistrations,
       waterReplays: waterReplayCount,
       nearbyTintCovers: lastNearbyTintCovers,
       distantTintCoversSkipped: lastDistantTintCovers,
@@ -4385,7 +4590,10 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
       frontPortraitGearCandidates: lastFrontPortraitGearCandidates,
       frontPortraitMaskedGear: lastFrontPortraitMaskedGear,
       frontPortraitMaskReason: lastFrontPortraitMaskReason,
-      shoulderPetCompositor: { ...lastShoulderPetDecision },
+      shoulderPetCompositor: {
+        ...lastShoulderPetDecision,
+        stowedBurdenAbovePet: lastShoulderPetDecision.active && !!window.Shattercasks?.backCarriedInfo?.(),
+      },
       frontPortraitMaskPasses: frontPortraitMaskPassCount,
       frontPortraitDepthFallbackPasses, // Visibility into fallback use without mobile devtools.
       groundDepthRestores: groundDepthRestoreCount,
@@ -4401,8 +4609,9 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
       forcedGroundDepthMaterials: lastForcedGroundDepthMaterials, // Ground depth repaired for gear without changing the world pass.
       xrayOrdinaryMeshes: lastXrayOrdinaryMeshes,
       unknownElevationMeshes: lastUnknownElevationMeshes,
-      elevationShaderMaterials: lastElevationShaderMaterials,
-      elevationShaderFallbacks: lastElevationShaderFallbacks,
+      elevationShaderMaterials: elevationMaterials.supported,
+      elevationShaderFallbacks: elevationMaterials.fallback,
+      groundMaterialCacheHits, groundMaterialCacheBuilds,
       surfaceOcclusionComposer: surfaceComposer?.snapshot?.() || null,
     };
   }
@@ -4412,7 +4621,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
     const signature = JSON.stringify(state);
     if (signature !== lastDebugSignature) {
       lastDebugSignature = signature;
-      const message = `[held-xray] enabled=${state.enabled} held=${state.heldMeshes} ground=${state.groundMeshes} (grass=${state.grassMeshes} road=${state.roadMeshes} terrain=${state.terrainMeshes} interior=${state.interiorFloorMeshes} farmhouse=${state.farmhouseFloorMeshes}) footWater=${state.waterOccludedMeshes}/${state.waterReplayMeshes}/${state.waterReplays} stencil=${state.stencilBits} stencilSkips=${state.missingStencilFootReplaySkips} base=${state.baseWorldRenders} overlay=${state.selectiveOverlays} depth=${state.nonGroundDepthReplays}/${state.groundDepthRestores} portraitMask=${state.frontPortraitMasks}/${state.frontPortraitMaskPasses} shellXray=${state.shellXrayPasses}/${state.shellXrayMeshes} repairs=${state.invariantRepairs} scissor=${state.scissoredReplays}/${state.fullscreenReplays} reasons=${state.lastHeldFullscreenReason}/${state.lastShellFullscreenReason} coverage=${state.lastReplayScissorCoverage} offscreen=${state.baseOffscreenFiltered}/${state.baseReplayCandidates} shellOffscreen=${state.shellOffscreenFiltered}/${state.shellReplayCandidates} groups=${state.baseElevationGroups}/${state.shellElevationGroups} shellWalksAvoided=${state.shellSceneTraversalsAvoided} groupScissors=${state.groupScissors} elevationGroups=${state.elevationReplayGroups} tileRegions=${state.xrayTileRegions} ordinaryDepth=${state.xrayOrdinaryMeshes} unknownElevation=${state.unknownElevationMeshes} elevationShaders=${state.elevationShaderMaterials}/${state.elevationShaderFallbacks}`;
+      const message = `[held-xray] enabled=${state.enabled} animals=${state.actorXrayEnabled.animals} enemies=${state.actorXrayEnabled.enemies} player=${state.actorXrayEnabled.player} held=${state.heldMeshes} ground=${state.groundMeshes} (grass=${state.grassMeshes} road=${state.roadMeshes} terrain=${state.terrainMeshes} interior=${state.interiorFloorMeshes} farmhouse=${state.farmhouseFloorMeshes}) footWater=${state.waterOccludedMeshes}/${state.waterReplayMeshes}/${state.waterReplays} pantsXray=${state.pantsXrayRegistrations} stencil=${state.stencilBits} stencilSkips=${state.missingStencilFootReplaySkips} base=${state.baseWorldRenders} overlay=${state.selectiveOverlays} depth=${state.nonGroundDepthReplays}/${state.groundDepthRestores} portraitMask=${state.frontPortraitMasks}/${state.frontPortraitMaskPasses} shellXray=${state.shellXrayPasses}/${state.shellXrayMeshes} repairs=${state.invariantRepairs} scissor=${state.scissoredReplays}/${state.fullscreenReplays} reasons=${state.lastHeldFullscreenReason}/${state.lastShellFullscreenReason} coverage=${state.lastReplayScissorCoverage} offscreen=${state.baseOffscreenFiltered}/${state.baseReplayCandidates} shellOffscreen=${state.shellOffscreenFiltered}/${state.shellReplayCandidates} groups=${state.baseElevationGroups}/${state.shellElevationGroups} shellWalksAvoided=${state.shellSceneTraversalsAvoided} groupScissors=${state.groupScissors} elevationGroups=${state.elevationReplayGroups} tileRegions=${state.xrayTileRegions} ordinaryDepth=${state.xrayOrdinaryMeshes} unknownElevation=${state.unknownElevationMeshes} elevationShaders=${state.elevationShaderMaterials}/${state.elevationShaderFallbacks}`;
       if (typeof window.__farmLog === 'function') window.__farmLog(message, 'render');
       else console.debug(message);
     }
@@ -4427,7 +4636,11 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
   function forgetScene(scene) {
     if (!scene) return 0;
     retiredScenes.add(scene);
-    const registries = [heldRegistry, groundRegistry, topFaceGroundRegistry, waterRegistry, tintCoverRegistry, protectedCoverRegistry, waterOccludedRegistry, pngDepthRegistry, frontPortraitRegistry, waterPortraitRegistry, backgroundDepthRegistry];
+    if (scene === actorXrayScene) {
+      actorXrayRoots.clear();
+      actorXrayScene = null;
+    }
+    const registries = [heldRegistry, groundRegistry, topFaceGroundRegistry, tintCoverRegistry, protectedCoverRegistry, waterOccludedRegistry, pngDepthRegistry, frontPortraitRegistry, waterPortraitRegistry, backgroundDepthRegistry];
     let removed = 0;
     for (const registry of registries) {
       const bucket = registry.byScene.get(scene);
@@ -4438,6 +4651,8 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
       pendingClassification.delete(object); // A queued add must not restore references after scene disposal.
       for (const registry of registries) if (registry.delete(object)) removed++;
     });
+    if (groundElevationCache.get(scene)?.materials === lastGroundElevationMaterials) lastGroundElevationMaterials = null;
+    groundElevationCache.delete(scene);
     lastSceneScan.delete(scene);
     return removed;
   }
@@ -4464,6 +4679,9 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
     setAutoInertReplayEnabled: value => { autoInertReplayEnabled = value !== false; return autoInertReplayEnabled; },
     setColorOnlyDepthSkipEnabled: value => { colorOnlyDepthSkipEnabled = value !== false; return colorOnlyDepthSkipEnabled; },
     setSkinnedScissorEnabled: value => { skinnedScissorEnabled = value !== false; return skinnedScissorEnabled; },
+    actorXrayDefaults,
+    getActorXrayEnabled: group => Object.hasOwn(actorXrayEnabled, group) ? actorXrayEnabled[group] : null,
+    setActorXrayEnabled,
     setReplayParticipants: value => { replayParticipantPolicy = value === 'all' ? 'all' : 'rule'; return replayParticipantPolicy; },
     setShortXraySpecies: list => { shortXraySpecies.clear(); for (const id of list || []) shortXraySpecies.add(String(id).toLowerCase()); return [...shortXraySpecies]; },
     setFloorPunchEnabled: value => { floorPunchEnabled = value !== false; return floorPunchEnabled; },

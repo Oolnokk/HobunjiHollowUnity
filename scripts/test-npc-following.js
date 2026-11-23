@@ -75,3 +75,17 @@ assert.equal(friend.root.position.x,Math.floor(player.x)+1.5,'cross-area followe
 assert.equal(zoneFollow.area,'wilderness_test');
 W.NpcFollowing.clear();
 console.log('Shared combat cover, stable refuge, recovery and wilderness following passed.');
+
+// Basket-stage newborns cannot be told to leave their basket through the command wheel or direct APIs.
+const newborn={rec:{id:'child_basket_test',isChild:true},area,root:{position:{x:4.5,z:4.5}}}; // Uses the existing family walker shape.
+W.RomanceFamily={isBasketBaby:id=>id===newborn.rec.id}; // Authoritative age state from the real family module.
+assert.equal(W.NpcFollowing.commandOptionsFor(newborn).length,0,'newborn has no follow/wait commands');
+assert.equal(W.NpcFollowing.setMode(newborn,'follow'),false,'direct API cannot move newborn');
+assert.equal(W.NpcFollowing.setMode(newborn,'wait'),false,'direct API cannot park newborn outside the basket');
+assert.equal(override(newborn.rec),null,'newborn schedule retains family control');
+W.RomanceFamily.isBasketBaby=()=>false;
+assert(W.NpcFollowing.commandOptionsFor(newborn).some(option=>option.id==='follow'),'toddlers can follow');
+assert.equal(W.NpcFollowing.setMode(newborn,'follow'),true);
+W.RomanceFamily.isBasketBaby=()=>true;
+assert.equal(override(newborn.rec),null,'stale session is cleared if newborn regains basket stage');
+console.log('Basket-stage following guard passed.');

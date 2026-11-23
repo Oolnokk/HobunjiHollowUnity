@@ -56,6 +56,14 @@
       handAttachY: avatarRoot.userData?.handAttachY,
       avatarRoot,
       name: record.name || avatarRoot.name || 'avatar',
+      onHandVisualReplaced(side, visual) {
+        const factor = Number(avatarRoot.userData?.hobunjiChildLimbVisualModifiers?.hand) || 1;
+        if (factor > 0 && factor !== 1 && visual?.scale?.multiplyScalar) {
+          visual.scale.multiplyScalar(factor); // Independent child NPCs get the same global hand modifier as the age lineup.
+          visual.updateMatrix?.();
+        }
+        record.onHandVisualReplaced?.(side, visual); // Author-only callback rebinds final imported GLBs after their fallback has gone away.
+      },
     });
     if (!rig) return false;
     avatarRoot.userData.proceduralHandRig = rig;
@@ -78,6 +86,7 @@
       gender: identity.gender,
       bodyColors: options.profile?.bodyColors || options.appearance?.bodyColors || options.bodyColors,
       name: options.name,
+      onHandVisualReplaced: options.onHandVisualReplaced, // Avatar construction may provide a low-frequency visual replacement callback.
       rig: null,
       syncSentinel: null,
       lastToolKey: null,
@@ -936,6 +945,9 @@
       // pose with it (visible as a one-frame hand pop).
       const frameId = global.RuntimeFrameScheduler?.frameId?.();
       if (frameId != null) record._lastRenderedFrameId = frameId; // Lets updateManagedRigs skip rigs nobody is drawing.
+      // A draw-only placement moves the already-solved hand with its rig. Sampling
+      // it here would teach the persistent hand solver the talon pose next frame.
+      if (global.ActorRigCompositor?.renderPoseOwner?.(sentinel)) return;
       if (frameId != null && record._lastHandSyncFrameId === frameId) return;
       record._lastHandSyncFrameId = frameId;
       restoreHeldItemReach(record); // A previous carried object's visual lift never leaks into an action or another holder.

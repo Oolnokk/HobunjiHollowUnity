@@ -147,7 +147,7 @@
     return entity?.isPorakanekiHunter ? 'porakaneki' : '';
   }
   function ecologyRole(entity) {
-    if (!entity || entity.health <= 0 || entity.isCompanion) return null;
+    if (!entity || entity.health <= 0 || entity.isCompanion || entity.tzatzulCapturedBy) return null; // Carried actors are no longer available to either side of a faction fight.
     if (tribeOf(entity)) return 'tribe';
     if (entity.isBandit || entity.banditCompanion) return 'bandit';
     if (entity.wildlifeRole === 'predator' || entity.wildlifeRole === 'prey') return entity.wildlifeRole;
@@ -178,6 +178,7 @@
   }
   function validChunkCombatTarget(entity, target) {
     return !!entity && !!target && target.health > 0
+      && !entity.tzatzulCapturedBy && !target.tzatzulCapturedBy // Flight support supersedes both actors' ground-combat goals.
       && entity.areaId === currentArea() && target.areaId === currentArea()
       && entityInPlayerEcologyRange(entity) && entityInPlayerEcologyRange(target);
   }
@@ -236,8 +237,13 @@
   }
   function setHumanoidEcologyTarget(entity, target) {
     if (!entity) return;
+    if (entity.tzatzulCapturedBy) {
+      entity._chunkCombatTarget = null; // Release the old duel without resetting the carrier-owned state to chase/return.
+      return;
+    }
     const prior = entity._chunkCombatTarget;
     entity._chunkCombatTarget = target || null; // Read by BanditCombat.updateCombatAI to replace only the current attack target.
+    if (target) entity.targetPlayer = null; // An ecology fighter owns an NPC opponent; clear a stale player lock before game.js can override the chosen combat target in its chase tick.
     if (!target) {
       // A finished fight must not leave the actor in 'chase' with no target: that
       // reads as the player being in combat (music blip) and, past the leash,
@@ -255,6 +261,10 @@
   }
   function setPredatorEcologyTarget(entity, target) {
     if (!entity) return;
+    if (entity.tzatzulCapturedBy) {
+      entity._chunkFactionEcologyTarget = null; entity.targetCreature = null; // Don't restart prey pathfinding while suspended.
+      return;
+    }
     const prior = entity._chunkFactionEcologyTarget;
     entity._chunkFactionEcologyTarget = target || null; // Tracks ownership so clearing this encounter never erases unrelated wildlife targets.
     if (target) {
@@ -455,13 +465,16 @@
     for (const furniture of (layout.furniture || [])) blockRect(furniture.col, furniture.row);
     for (const transition of (layout.transitions || [])) blockRect(transition.col, transition.row);
     for (const totem of (layout.rootTotems || [])) blockRect(totem.x ?? totem.col, totem.y ?? totem.row, totem.w || 1, totem.h || 1);
-    for (const instance of (layout.localeInstances || [])) for (const object of (instance.objects || [])) blockRect(object.x, object.y, object.w || 1, object.h || 1);
+    for (const instance of (layout.localeInstances || [])) {
+      const boxes = window.WildernessObjectFootprints?.localePlacementBoxes?.(instance) || (instance.objects || []); // Same floor/object footprint authority used by bandit placement and scenery.
+      for (const box of boxes) blockRect(box.x, box.y, box.w || 1, box.h || 1);
+    }
 
     const zoneDef = combatDeps.EXTERIOR_ZONES?.[zoneId];
     const entry = layout.toTownExit
       ? { x: layout.toTownExit.col, y: layout.toTownExit.row }
       : (Number.isFinite(zoneDef?.entryCol) ? { x: zoneDef.entryCol, y: zoneDef.entryRow } : null);
-    return { cols, rows, tiles, objects, entry };
+    return { cols, rows, tiles, objects, entry, sourceLayout: layout }; // Both tribes and generated scenery share one source-layout footprint registry.
   }
 
   const MIN_HUNTER_SEPARATION_TILES = 0.75;
@@ -1025,7 +1038,8 @@
   }
 
   function getNearbyGiftWalker(x, z, radius = GIFT_REACH_TILES) {
-    if (!Number.isFinite(x) || !Number.isFinite(z) || window.NpcRapport?.canGiftToday?.(CHIEF_ID) === false) return null;
+    if (!Number.isFinite(x) || !Number.isFinite(z)
+      || (window.NpcRapport?.canGiftToday?.(CHIEF_ID) === false && window.NpcGifting?.isTribalTrophyHeld?.() !== true)) return null; // Once the daily gift was used, only a held trophy can request another hunter interaction.
     let closest = null; // Reuses cached hunter proxies so the action bar does not refresh every frame.
     let distance = Math.max(0, Math.min(GIFT_REACH_TILES, num(radius, GIFT_REACH_TILES))); // Neither an external caller nor a stale action may reach beyond two tiles.
     for (const camp of activeCamps(currentZoneState())) for (const hunter of camp.hunters) {
@@ -1037,9 +1051,25 @@
       entity._porakanekiGiftWalker ||= { rec: { ...entity.rosterRecord, id: hunter.id, name: `${LABEL} Hunter`, species: SPECIES_ID }, isTribeHunter: true, tribeId: KEY, isPorakanekiHunter: KEY === 'porakaneki' }; // Cached interaction-only proxy shares the actual hunter root.
       entity._porakanekiGiftWalker.root = entity.avatarRef.group;
       entity._porakanekiGiftWalker.area = entity.areaId;
+      entity._porakanekiGiftWalker.tribeCampKind = camp.kind; // Currency trades at the seasonal great camp can use an ordinary resident, not only the chief.
       closest = entity._porakanekiGiftWalker;
     }
     return closest;
+  }
+
+  function isAtChiefCamp(walker) {
+    const camp = state.zones.get(state.chiefZoneId)?.chiefCamp; // Only the currently active seasonal great camp buys enemy trophies.
+    if (!camp || !walker || (walker.area || walker.areaId || currentArea()) !== camp.zoneId) return false;
+    if (walker.isTribeHunter) return walker.tribeId === KEY && walker.tribeCampKind === 'chief'; // Hunter proxy is minted by getNearbyGiftWalker from a verified active camp.
+    if (walker.rec?.id !== (cfg?.reputation?.npcId || CHIEF_ID)) return false;
+    const site = camp.instance?.site; // Stamped tile-space rectangle; the chief may wander a couple of tiles around its edge.
+    const position = walker.root?.position;
+    const tileSize = Number(combatDeps?.TILE) || 1; // NPC root coordinates are world units; camp site bounds are tile indices.
+    const col = Number(position?.x) / tileSize; // Named chief must use the same tile basis as the ordinary hunter gifting proxy.
+    const row = Number(position?.z) / tileSize;
+    return !!site && Number.isFinite(col) && Number.isFinite(row)
+      && col >= site.x - 2 && col <= site.x + site.w + 2
+      && row >= site.y - 2 && row <= site.y + site.h + 2;
   }
 
   function chiefWalker() {
@@ -1950,6 +1980,7 @@
     const entity = hunter.entity;
     if (!entity || entity.health <= 0) return;
     hunter.x = entity.x / combatDeps.TILE; hunter.y = entity.y / combatDeps.TILE;
+    if (entity.tzatzulCapturedBy) return; // Camp agendas must never overwrite the airborne actor's 'tzatzul-carried' state.
     if ((!peacefulRapport() && favor() <= num(cfg?.reputation?.attackOnSightFavor, -5)) || campProvoked(hunter.camp)) {
       entity._chunkCombatTarget = null;
       makeHostile(entity);
@@ -1990,6 +2021,10 @@
   function updateCampHunterTick(hunter, dt, coarseDt, sleeping, generation) {
     if (hunter.slain) return; // Killed off-screen (slayHunter); stays dead for this world generation like an observed death.
     if (hunter.entity?.health <= 0 || hunter.killCounted && hunter.entity?.health <= 0) return;
+    if (hunter.entity?.tzatzulCapturedBy) {
+      hunter.x = hunter.entity.x / combatDeps.TILE; hunter.y = hunter.entity.y / combatDeps.TILE;
+      return; // Moving beyond the player's chunk must not retire, teleport or rematerialize a carried hunter.
+    }
     const observed = sharesPlayerChunk(hunter); // Shared distance/hysteresis gate for daytime and nighttime residents.
     if (!observed) {
       retireDormantEntity(hunter);
@@ -2337,6 +2372,7 @@
     speciesId: SPECIES_ID,
     ensureZoneState,
     getNearbyGiftWalker,
+    isAtChiefCamp, // Cheap, no debugSnapshot/camp rebuild in the frequently rendered NPC action menu.
     update,
     ensureWorldCamps,
     senseTargets, // Perception's 24-tile bronze-verdigris highlight, shared by Porakaneki and Omgurku camps.

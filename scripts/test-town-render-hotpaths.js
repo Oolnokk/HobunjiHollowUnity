@@ -429,7 +429,7 @@ assert.match(pixelProbe, /setTimeout\(\(\) => \{ _pixelProbeArmed = false; \}, 0
   'Pixel Probe keeps the armed input guard alive through the current event dispatch');
 assert.match(heldRender, /const feet = collectVisible\(waterOccludedRegistry, scene(?:, \w+)?\)/,
   'the active world pass collects visible procedural feet into the selective x-ray overlay');
-assert.match(heldRender, /!ground\.length && !topFaceGround\.length && !tintCovers\.length && !needsOwnerMask/,
+assert.match(heldRender, /if \(!ground\.length && !topFaceGround\.length && !tintCovers\.length\) \{[\s\S]{0,300}if \(!needsOwnerMask\)/,
   'held/foot x-ray, water tint and an owner-front portrait mask each trigger the required selective overlay');
 assert.match(heldRender, /const needsOwnerMask = held\.some\(isPortraitMaskedGear\)/,
   'the no-ground case still masks weapons behind their holder front portrait');
@@ -776,10 +776,10 @@ missingLitMaterial.onBeforeCompile(missingLitShader, {});
 assert.equal(missingLitState.supported, false, 'lit ground without a normal attribute also retains full-depth occlusion');
 
 
-const filterStart = heldRender.indexOf('  function collectGroundElevationMaterials(');
+const filterStart = heldRender.indexOf('  const groundElevationCache =');
 const filterEnd = heldRender.indexOf('  function replaySelectiveHeldOverlay(', filterStart);
 const { collect, setFilter } = new Function('forEachMaterial', 'installGroundElevationShader', 'isRoadXrayMesh',
-  'let lastElevationShaderMaterials, lastElevationShaderFallbacks;' + heldRender.slice(filterStart, filterEnd)
+  heldRender.slice(filterStart, filterEnd)
   + elevationNewline + 'return { collect: collectGroundElevationMaterials, setFilter: setGroundElevationFilter };')(
     (material, callback) => { if (Array.isArray(material)) material.forEach(callback); else if (material) callback(material); },
     installElevationShader,
@@ -812,6 +812,29 @@ assert.equal(sharedGroundMaterial.userData.hobunjiXrayElevationShader.geometryHa
   'the live ground with normals regains x-ray after transient/replaced normal-less geometry is removed');
 assert.equal(sharedGroundMaterial.needsUpdate, true,
   'the recovered ground material recompiles its shader, rather than retaining a stale solid-only variant');
+const cachedGroundScene = {}; // Each visible scene gets its own aggregate, even with shared materials.
+const otherGroundScene = {};
+const slots = [sharedGroundMaterial];
+const cachedGround = [{ material: slots, geometry: drawable({ normal: {} }) }];
+const firstMaterials = collect(cachedGround, cachedGroundScene);
+assert.equal(collect([...cachedGround], cachedGroundScene), firstMaterials, 'shell and color replays reuse the same material set');
+const equivalentChunk = { material: [...slots], geometry: drawable({ normal: {} }) };
+assert.equal(collect([equivalentChunk], cachedGroundScene), firstMaterials, 'an equivalent replacement chunk can reuse the cache without retaining the previous mesh');
+collect([{ material: sharedGroundMaterial, geometry: drawable() }], otherGroundScene);
+assert.equal(sharedGroundMaterial.userData.hobunjiXrayElevationShader.geometryHasNormals, false);
+assert.equal(collect(cachedGround, cachedGroundScene), firstMaterials);
+assert.equal(sharedGroundMaterial.userData.hobunjiXrayElevationShader.geometryHasNormals, true, 'cached scene restores the correct shared shader policy');
+const replacementGroundMaterial = { userData: {} };
+slots[0] = replacementGroundMaterial;
+assert.deepEqual([...collect(cachedGround, cachedGroundScene)], [replacementGroundMaterial], 'in-place material slot replacement invalidates the cache');
+cachedGround[0].geometry = drawable();
+collect(cachedGround, cachedGroundScene);
+assert.equal(replacementGroundMaterial.userData.hobunjiXrayElevationShader.geometryHasNormals, false, 'geometry replacement invalidates the normal policy');
+const replacementCompile = () => {};
+replacementGroundMaterial.onBeforeCompile = replacementCompile;
+collect(cachedGround, cachedGroundScene);
+assert.equal(replacementGroundMaterial.onBeforeCompile.__hobunjiXrayBaseCompile, replacementCompile, 'a changed compile callback is rewrapped on a cache hit');
+assert.equal(collect([], cachedGroundScene).size, 0, 'unloaded or hidden ground leaves the cache');
 const chunkedGroundMaterial = { userData: {}, needsUpdate: false };
 collect([
   { material: chunkedGroundMaterial, geometry: { attributes: {} } },
@@ -1023,15 +1046,45 @@ const footRegistrarStart = heldRender.indexOf('  function markWaterOccludedMesh(
 const footRegistrarEnd = heldRender.indexOf('  function enforceGroundMesh(', footRegistrarStart);
 assert.ok(footRegistrarStart >= 0 && footRegistrarEnd > footRegistrarStart);
 const footLayerSet = new Set([0]);
+const garmentLayerSet = new Set([0]); // Tracks the same registration layers for a pants garment.
 const mockFoot = { isMesh: true, userData: {}, layers: { enable(layer) { footLayerSet.add(layer); } } };
-const markFoot = new Function('waterOccludedMeshes', 'waterOccludedRegistry', 'FOOT_WATER_MASK_LAYER', 'HELD_OVERLAY_LAYER', 'hasLayer', 'waterOccludedMeshCount',
+const markFoot = new Function('waterOccludedMeshes', 'waterOccludedRegistry', 'FOOT_WATER_MASK_LAYER', 'HELD_OVERLAY_LAYER', 'hasLayer', 'waterOccludedMeshCount', 'pantsXrayRegistrations',
   heldRender.slice(footRegistrarStart, footRegistrarEnd) + '\nreturn markWaterOccludedMesh;')(
     new WeakSet(), { add() {} }, 26, 29,
-    (mesh, layer) => footLayerSet.has(layer), 0);
+    (mesh, layer) => (mesh === mockFoot ? footLayerSet : garmentLayerSet).has(layer), 0, 0);
 assert.equal(markFoot(mockFoot), true, 'newly registered foot is recognized');
 assert.equal(footLayerSet.has(29), true, 'procedural foot belongs to the selective overlay');
 assert.equal(mockFoot.userData.hobunjiWaterOccludedBySurface, true, 'legacy semantic tagging is retained');
 assert.equal(markFoot(mockFoot), false, 'repeat registration does not duplicate the mesh');
+const mockPants = { isMesh: true, userData: { hobunjiPantsGarment: true },
+  layers: { enable(layer) { garmentLayerSet.add(layer); } } };
+assert.equal(markFoot(mockPants), true, 'production registrar accepts a garment like a procedural foot');
+assert.equal(garmentLayerSet.has(29) && garmentLayerSet.has(26), true,
+  'pants enter the selective color and water-mask layers');
+assert.equal(mockPants.userData.hobunjiWaterOccludedBySurface, true,
+  'semantic tag preserves scene-scan registration of pants');
+assert.equal(markFoot(mockPants), false, 'pants registration is idempotent');
+const oldTaggedPants = { isMesh: true, userData: {
+  hobunjiPantsGarment: true, hobunjiWaterOccludedBySurface: true },
+  layers: { enable(layer) { garmentLayerSet.add(layer); } } }; // Simulates garments attached before the composer exists.
+assert.equal(markFoot(oldTaggedPants), true,
+  'semantic fallback tags still receive their first real registry entry and counted registration');
+assert.equal(markFoot(oldTaggedPants), false, 'late-adopted pants stay idempotent');
+
+
+const participantStart = heldRender.indexOf('  function isReplayParticipant(');
+const participantEnd = heldRender.indexOf('  function splitReplayParticipants(', participantStart);
+assert(participantStart > 0 && participantEnd > participantStart, 'production actor-distance x-ray rule is available');
+const makeParticipantRule = (owner, withinDistance) => new Function('participantOwner', 'withinFeetXrayDistance',
+  "const replayParticipantPolicy = 'rule'; " + heldRender.slice(participantStart, participantEnd)
+    + '\nreturn isReplayParticipant;')(() => owner, () => withinDistance);
+assert.equal(makeParticipantRule('player', true)(mockPants, null, true), true,
+  'player pants use the same ground exemption as player feet');
+assert.equal(makeParticipantRule('other', true)(mockPants, null, true), false,
+  'ordinary NPC pants outside the eligible species retain normal depth');
+assert.equal(makeParticipantRule('player', false)(mockPants, null, true), false,
+  'pants still obey the short-distance rule that limits foot replay cost');
+
 
 
 // Execute production cover-material mutations against mocked materials to

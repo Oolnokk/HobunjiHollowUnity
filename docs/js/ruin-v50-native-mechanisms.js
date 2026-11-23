@@ -168,6 +168,12 @@
     }
     for(const object of inventory.activators){
       const d=object.userData,state=states.get(String(inheritedData(object,'linkedMechanismId',nativeRoot)));
+      if(d.activatorType==='pressurePlate'){
+        for(const part of [d.pressPlate,object.children?.[0]]){
+          const support=DS.pressurePlateSurface?.(part,{id:scope+'-pressure-plate-'+part?.id,scope});
+          if(support){DS.registerSurface(support);surfaceIds.push(support.id);}
+        }
+      }
       if(!state)continue;
       if(d.activatorType==='linkedCubePillars'&&Array.isArray(d.rotatingSegments)){
         for(const entry of d.rotatingSegments){

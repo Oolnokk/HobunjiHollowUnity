@@ -389,6 +389,7 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
   // Run the production temporary-locale finder and tribe placement policy,
   // not only fakeStamp: the actual camps must occupy opposite ends on square,
   // portrait and landscape wilderness maps, including after regeneration.
+  contextWindow.WildernessObjectFootprints = require('../docs/js/wilderness-object-footprints.js'); // The real temporary-camp test uses the same rock footprint helper as browser production.
   const realPlacementContext = vm.createContext({ window: contextWindow, globalThis: contextWindow, console, Math, Set, Map, Object, Date }); // Shared window permits the real placement modules to replace the earlier test-only stamper.
   vm.runInContext(read('docs/js/temporary-locales.js'), realPlacementContext);
   vm.runInContext(read('docs/js/porakaneki-camp-placement-policy.js'), realPlacementContext);

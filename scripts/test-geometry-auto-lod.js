@@ -40,9 +40,11 @@ const nativeRender=function(){
   for(const mesh of scene.children)rendered.push({name:mesh.name,geo:mesh.geometry});
   return 'rendered';
 };
-const renderer={render:nativeRender};
+function FakeRenderer() {} // Exercise the game render-hook path through the same bridge contract as r128.
+const renderer=new FakeRenderer();
+renderer.__hobunjiR128NativeRender=nativeRender;
 const root={
-  THREE:{BufferGeometry:function(){}},
+  THREE:{BufferGeometry:function(){},WebGLRenderer:FakeRenderer},
   MeshoptSimplifier:{supported:true,simplify(){},ready:Promise.resolve()},
   GeometryWorkshopCore:{reduceGeometry(geometry,reduction,error) {
     assert.equal(reduction,60);assert.equal(error,.02);
@@ -57,6 +59,9 @@ const root={
   setTimeout(fn){callbacks.push(fn);},
   __hobunjiGameRenderer:renderer,
 };
+const hooksPath=path.resolve(__dirname,'../docs/js/render-hooks.js');
+new Function('window',fs.readFileSync(hooksPath,'utf8'))(root);
+const originalDispatcher=renderer.render;
 new Function('window',source)(root);
 const lod=root.GeometryAutoLOD;
 assert.ok(lod);
@@ -71,6 +76,7 @@ assert.equal(lod.protectedMesh(authored),true,'GLBs must not be reduced again at
   await new Promise(resolve=>setImmediate(resolve)); // Wait for ready optimizers and renderer attachment.
   assert.equal(lod.snapshot().ready,false,'prebaked mode must not download WASM eagerly');
   assert.equal(mem.get('hobunjiGlobalGeometryOptimize60.v1'),'true');
+  assert.equal(renderer.render,originalDispatcher,'AutoLOD registers without replacing the gameplay renderer');
   assert.equal(renderer.render(scene,{}),'rendered');
   assert.equal(rendered[0].geo,actualOriginal,'no heavy geometry changes synchronously in the render call');
   assert.equal(simplifyCount,0,'the render path cannot invoke meshoptimizer');
@@ -88,7 +94,9 @@ assert.equal(lod.protectedMesh(authored),true,'GLBs must not be reduced again at
   assert.equal(lod.snapshot().sourceTriangles,300);
   assert.equal(lod.snapshot().optimizedTriangles,120);
   rendered=[];
+  const beforeShared=lod.snapshot().renderGeometryChecks; // Two meshes share one source validation in a single draw.
   renderer.render(scene,{});
+  assert.equal(lod.snapshot().renderGeometryChecks-beforeShared,1);
   assert.equal(rendered[0].geo.index.count,360,'opaque mesh one uses reduced triangles in render');
   assert.equal(rendered[1].geo.index.count,360,'opaque mesh two uses the cached simplified geometry');
   assert.equal(rendered[2].geo,actualOriginal,'authored GLB stays intact; precomputed variant is selected while loading');
@@ -141,5 +149,42 @@ assert.equal(lod.protectedMesh(authored),true,'GLBs must not be reduced again at
   renderer.render(scene,{});
   assert.equal(rendered[2].geo,authoredGeometry,'disabling mode immediately restores original authored GLB for drawing too');
   lod.setEnabled(true);
+  const worldCamera={layers:{mask:1}};
+  a.layers={mask:2}; b.layers={mask:2}; authored.layers={mask:2};
+  root.RenderHooks.beginWorldFrame({renderer, scene, camera:worldCamera});
+  try {
+    const beforeMasked=lod.snapshot().renderGeometryChecks; // Excluded layers and auxiliary passes do no source work.
+    renderer.render(scene,worldCamera);
+    renderer.render({isScene:true,children:[]},{layers:{mask:2}});
+    assert.equal(lod.snapshot().renderGeometryChecks,beforeMasked);
+    const matchingCamera={layers:{mask:2}};
+    rendered=[];
+    renderer.render(scene,matchingCamera);
+    assert.equal(rendered[0].geo.index.count,360);
+    const position=actualOriginal.attributes.position;
+    position.version++;
+    rendered=[];
+    renderer.render(scene,matchingCamera);
+    assert.equal(rendered[0].geo,actualOriginal,'versioned edits invalidate LOD before the next draw in the same frame');
+    position.version--;
+    actualOriginal.attributes.position={...position};
+    rendered=[];
+    renderer.render(scene,matchingCamera);
+    assert.equal(rendered[0].geo,actualOriginal,'replacing an attribute with the same version and dimensions invalidates LOD');
+    const replacement={...actualOriginal}; // A different BufferGeometry is never replaced with the old one.
+    a.geometry=replacement;
+    rendered=[];
+    renderer.render(scene,matchingCamera);
+    assert.equal(rendered[0].geo,replacement);
+    renderer.__hobunjiR128NativeRender=()=>{
+      assert.equal(authored.geometry,bakedGeometry);
+      throw new Error('fixture draw failed');
+    };
+    assert.throws(()=>renderer.render(scene,matchingCamera),/fixture draw failed/);
+    assert.equal(authored.geometry,authoredGeometry,'source restored when the native draw throws');
+  } finally {
+    root.RenderHooks.endWorldFrame();
+    renderer.__hobunjiR128NativeRender=nativeRender;
+  }
   console.log('Global pre-baked geometry 60%: lazy optimizer, authored GLB exclusion, preserved physics, idle-only procedural cache and live toggle OK');
 })().catch(error=>{console.error(error);process.exitCode=1;});

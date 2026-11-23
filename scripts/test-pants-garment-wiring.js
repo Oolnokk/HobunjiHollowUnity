@@ -11,6 +11,45 @@ vm.createContext(win);
 for (const file of ['docs/config/pants-rigs.js', 'docs/js/pants-rig-core.js', 'docs/js/pants-garment-renderer.js']) vm.runInContext(fs.readFileSync(file, 'utf8'), win, { filename: file });
 const Renderer = win.PantsGarmentRenderer;
 assert(Renderer, 'renderer did not install');
+
+// Real garment mesh creation: pants join the foot replay without changing global X-ray layer ranks.
+{
+  const garmentSource = fs.readFileSync('docs/js/pants-garment-renderer.js', 'utf8'); // Executes the production mesh creation and registration path.
+  const start = garmentSource.indexOf('      if (!handle.mesh) {', garmentSource.indexOf('    handle.setAppearance = async next => {'));
+  const end = garmentSource.indexOf('      } else {', start);
+  assert(start >= 0 && end > start, 'garment creation block is available for the x-ray integration test');
+  const createMesh = new Function('THREE', 'handle', 'material', 'avatarGroup', 'global', 'MESH_NAME',
+    garmentSource.slice(start, end) + '      }\nreturn handle.mesh;');
+  const attached = []; // Tracks meshes made visible before the compositor receives their registration.
+  const avatarGroup = { add(mesh) { attached.push(mesh); mesh.parent = this; } };
+  const MockMesh = class {
+    constructor(geometry, material) {
+      this.isMesh = true;
+      this.geometry = geometry;
+      this.material = material;
+      this.userData = {};
+      this.layers = { mask: 1 };
+    }
+  };
+  const registered = []; // Production hook must be used instead of faking a color render-order change.
+  const runtime = { HeldObjectRenderOrder: { markWaterOccludedMesh(mesh) {
+    assert(mesh.parent === avatarGroup, 'pants must be attached before compositor registration');
+    registered.push(mesh);
+    mesh.userData.hobunjiWaterOccludedBySurface = true;
+    return true;
+  } } };
+  const live = createMesh({ Mesh: MockMesh }, { mesh: null, geometry: {} }, {}, avatarGroup, runtime, 'PantsGarmentMesh');
+  assert.strictEqual(registered.length, 1, 'pants register for selective foot-style replay exactly once');
+  assert.strictEqual(registered[0], live, 'the real garment is the registered participant');
+  assert.strictEqual(attached[0], live, 'the same mesh is attached to the avatar');
+  assert.strictEqual(live.userData.hobunjiPantsGarment, true);
+  assert.strictEqual(live.userData.hobunjiWaterOccludedBySurface, true);
+  assert(live.userData.hobunjiXrayDeformPadding > 0, 'GPU-skinned pants have conservative replay scissor bounds');
+  const late = createMesh({ Mesh: MockMesh }, { mesh: null, geometry: {} }, {}, avatarGroup, {}, 'PantsGarmentMesh');
+  assert.strictEqual(late.userData.hobunjiWaterOccludedBySurface, true,
+    'pants created before the compositor are tagged for the next scene scan');
+}
+
 const rendererSource = fs.readFileSync('docs/js/pants-garment-renderer.js', 'utf8'); // Production portrait/feet depth contract, not a synthetic replacement.
 assert(rendererSource.includes('const PANTS_REST_PLANE_Z = 0;'),
   'rest garment lies on its owner\'s portrait rather than protruding through it');
@@ -62,6 +101,25 @@ assert(Renderer.resolveCharacter('Mao_Ao', 'MALE'), 'species/gender keys are nor
     'unavailable portrait canvas context also falls back without breaking attachment');
 }
 
+
+// Child waist uses the real front portrait (often nested below a wrapper) and inherits body scale exactly once.
+{
+  const canvas={width:200,height:200,getContext:()=>({getImageData:(_x,y,w)=>{
+    const data=new Uint8Array(w*4); // Torso alpha remains normalized even when the whole baby avatar is only 32% adult size.
+    if(y<=183)for(let x=50;x<150;x++)data[x*4+3]=255;
+    return {data};
+  }})};
+  const plane={material:{map:{image:canvas}}}; // Front material carries the real source when its parent wrapper does not.
+  const baby={userData:{portraitModelWidth:.9*.32},traverse() {}};
+  assert.strictEqual(Renderer.portraitSourceCanvas(baby,plane),canvas,'nested front art is found');
+  assert.strictEqual(Renderer.portraitSourceCanvas(baby,plane,canvas),canvas,'explicit author canvas takes priority');
+  assert.strictEqual(Renderer.portraitSourceCanvas({userData:{sourceCanvas:canvas}},{}),canvas,'existing direct avatar source still works');
+  assert.strictEqual(Renderer.portraitSourceCanvas({traverse(fn){fn({userData:{sourceCanvas:canvas}})}},{}),canvas,'nested avatar metadata works');
+  const fit=Renderer.fitBeltToVisibleTorso(Renderer.resolveCharacter('nuhongan','male'),Renderer.portraitSourceCanvas(baby,plane));
+  assert(fit && fit.source==='connected-torso-alpha');
+  assert(Math.abs(fit.width*baby.userData.portraitModelWidth-.144)<1e-9,'fitted baby waistband scales 32% exactly once');
+  assert.strictEqual(Renderer.portraitSourceCanvas({},{}),null,'missing canvas falls back to authored waist');
+}
 
 // Every humanoid NPC gets the free pants with a deterministic dye; animals and opt-outs do not.
 const npc = { id: 'tester', equippedCosmetics: ['tankan_tunic'] };

@@ -156,6 +156,7 @@ function testRuntime() {
   firstAvatar.userData.neckRig={skinnedPlane:portrait};
   bodyRoot.add(firstAvatar);firstAvatar.add(portrait);
   let activeAvatar=firstAvatar; // Canonical WorldPortraitLife instance used to distinguish current portrait from stale ancestors.
+  let posteriorY=.19; // Mutable live carrier-posterior fixture checks posture transitions without changing the body root.
   let currentBodyRoot=bodyRoot; // Simulates an asynchronously rebuilt avatar root.
   deps.playerMesh=headJoint;
   const targetSources=new Map(); // Holds actual Targetables source functions so stale entries can be tested after state transitions.
@@ -163,7 +164,7 @@ function testRuntime() {
     THREE:{Vector3,Group,Euler,Quaternion,MeshBasicMaterial,SkinnedMesh},Combat:{deps,update(){},init(){}},
     Targetables:{addSource:(key,fn)=>targetSources.set(key,fn),makeActor:entry=>({entry})},
     ProceduralHandAttachments:{gameDeps:deps},
-    PlayerBodyTransformComposer:{getPlayerMesh:()=>currentBodyRoot,getPosteriorY:()=>.19},
+    PlayerBodyTransformComposer:{getPlayerMesh:()=>currentBodyRoot,getPosteriorY:()=>posteriorY},
     WorldPortraitLife:{getPlayerAvatar:()=>({group:activeAvatar})},
     GridTileAccessors:{getActiveScene:()=>activeScene,getCurrentArea:()=>currentArea,getActiveGrid:()=>grid},
     __farmLog(){},WorldEvents:{emit(){}},AudioSystem:{playObjectSfxKey(){}},
@@ -202,6 +203,7 @@ function testRuntime() {
   assert.equal(window.Shattercasks.backCarriedInfo()?.id,charge.id);
   assert.equal(charge.group.parent,portrait,'stowed burden is a DIRECT child of the live skinned portrait plane');
   assert.equal(chargePart.renderOrder,2.15,'the back Burden renders after the rear PNG');
+  assert.equal(window.Shattercasks.isStowedSortMesh(chargePart),true,'the sorter can identify a stowed physical part');
   assert.equal(chargePart.material.transparent,true,'opaque furniture joins the transparent PNG sort queue while stowed');
   assert.equal(chargePart.material.depthTest,true,'world terrain can still occlude the back Burden');
   assert.equal(chargePart.material.depthWrite,false,'back furniture cannot hide the front PNG by writing depth');
@@ -215,12 +217,20 @@ function testRuntime() {
   const lateDetail=new Group();lateDetail.isMesh=true;lateDetail.visible=true;lateDetail.renderOrder=0; // Simulates an asynchronous authored GLB child after pickup.
   lateDetail.material=new MeshBasicMaterial({transparent:false,depthWrite:true,depthTest:true});
   charge.group.add(lateDetail);
+  const modeledPart=new Group(); // Simulates the separately attached hands/feet of a baby.
+  modeledPart.isMesh=true;modeledPart.userData.shattercaskKeepsOwnDepth=true;
+  modeledPart.material=new MeshBasicMaterial({transparent:false,depthWrite:true,depthTest:true});
+  charge.group.add(modeledPart);
   const priorMaterial=chargePart.material;
   chargePart.material=new MeshBasicMaterial({transparent:false,depthWrite:true,depthTest:true}); // Recolored furniture can replace its original material while carried.
   window.Shattercasks.tick(.2); // Force the normal 7 Hz render-state reconciliation.
   assert.equal(lateDetail.renderOrder,2.15,'late-loaded furniture detail enters the correct stowed layer');
   assert.equal(lateDetail.material.transparent,true,'late-loaded opaque detail enters the PNG sorting queue');
   assert.equal(lateDetail.material.depthWrite,false,'late-loaded furniture cannot cover the front PNG');
+  assert.equal(window.Shattercasks.isStowedSortMesh(modeledPart),true,'late modeled parts participate in stowed sort');
+  assert.deepEqual(Array.from(window.Shattercasks.stowedDepthParts()),[modeledPart],'only modeled parts need the temporary color sort');
+  assert.equal(modeledPart.material.transparent,false,'the carrier runtime preserves the original limb material');
+  assert.equal(modeledPart.material.depthWrite,true,'modeled parts retain physical depth');
   assert.equal(chargePart.material.transparent,true,'replacement material inherits the stowed render flags');
   assert.equal(chargePart.material.depthWrite,false,'replacement material cannot mask the front PNG');
   assert.equal(priorMaterial.depthWrite,true,'detached original material is restored on replacement');
@@ -321,6 +331,7 @@ function testRuntime() {
   assert.equal(chargePart.renderOrder,2.15,'picking up a second burden does not remove the back object x-ray');
   assert.equal(chargePart.material.transparent,true,'the back object keeps the transparent PNG queue while hands are occupied');
   assert.equal(secondPart.renderOrder,1.4,'the additional hand burden keeps its ordinary held-order layer');
+  assert.equal(window.Shattercasks.isStowedSortMesh(secondPart),false,'the hand-carried burden is outside the stowed sort stage');
   assert.equal(secondPart.material.transparent,false,'hand burden does not inherit the back object blend mode');
   assert.equal(rigidBack.renderOrder,2.05,'rigid rear plane precedes the stowed burden even with another item held');
   assert.equal(rigidBack.material.depthWrite,false,'rigid rear PNG does not block the stowed burden depth');
@@ -339,6 +350,9 @@ function testRuntime() {
   assert(originalTarget.hitbox(),'retrieval restores the held burden own hitbox, separate from stowed carrier hits');
   assert.equal(charge.group.parent,headJoint,'retrieval restores the ORIGINAL held-object mount');
   assert.equal(chargePart.renderOrder,1.4,'retrieved furniture returns to the existing held-order layer');
+  assert.equal(window.Shattercasks.isStowedSortMesh(chargePart),false,'retrieval immediately clears the stowed sort role');
+  assert.equal(window.Shattercasks.isStowedSortMesh(modeledPart),false,'retrieving also clears the modeled parts from the stow layer');
+  assert.deepEqual(Array.from(window.Shattercasks.stowedDepthParts()),[]);
   assert.equal(chargePart.material.transparent,false,'retrieval restores the authored opaque material');
   assert.equal(chargePart.material.depthWrite,false,'hand-held furniture retains the established rear-PNG behavior');
   assert.equal(decal.renderOrder,0,'the authored decal regains its native drawing order when retrieved into the hands');
@@ -424,6 +438,72 @@ function testRuntime() {
   window.Shattercasks.discardBurden(travel);
   currentArea='map_back_test';
   activeScene=scene;
+
+  // Unlike furniture, an infant must be attached to the carrier's body frame:
+  // back x-ray is a DRAW ORDER, not a reason to inherit the portrait's free yaw.
+  const baby=window.Shattercasks.registerBurden({mapId:currentArea,scene,group:new Group(),
+    id:'test-baby-torso-stow',kind:'familyBaby',hanging:false,invulnerable:true,
+    data:{carryable:{backCarry:{
+      position:{x:-.008,y:.204,z:0},rotation:{x:-174.07,y:-.94,z:171.05},
+      posteriorOffset:{x:.0581,y:.282,z:-.0603},portraitAnchor:{x:0,y:0,z:0},size:1,
+    }}}});
+  const babyArt=new Group(); babyArt.isMesh=true; babyArt.visible=true; // A real infant plane is rendered as the carrier's back Burden.
+  babyArt.material=new MeshBasicMaterial({transparent:true,depthTest:true,depthWrite:false});
+  baby.group.add(babyArt);
+  assert(window.Shattercasks.pickUp(baby),'one physical newborn can be picked up');
+  assert(window.Shattercasks.stowOnBack(),'newborn can be stowed behind player');
+  assert.equal(baby.group.parent,currentBodyRoot,'baby is a CHILD OF THE PLAYER BODY, not its independently rotating portrait');
+  assert.notEqual(baby.group.parent,rigidPortrait,'a back baby is never parented to front PNG artwork');
+  assert.equal(window.Shattercasks.debugSnapshot().backCarryMount.frame,'carrier-posterior','mobile diagnosis exposes the actual baby mounting frame');
+  assert.equal(window.Shattercasks.debugSnapshot().backCarryMount.portraitAttached,false);
+  assert(baby.group.position.z < rigidPortrait.position.z,'baby mount origin stays behind the front portrait in body-local depth');
+  window.Shattercasks.tick(.2); // Existing actor sorter/x-ray policy is unchanged even though the physical parent is the torso.
+  assert.equal(babyArt.renderOrder,2.15,'infant is STILL rendered between carrier rear and front PNG passes');
+  const babyLocal=baby.group.position.clone();
+  const babyWorld=baby.group.getWorldPosition(new Vector3());
+  rigidPortrait.position.x+=.45;
+  rigidPortrait.quaternion.setFromEuler(new Euler(0,Math.PI*.78,0));
+  window.Shattercasks.tick(.02);
+  for(const axis of ['x','y','z']) assert(Math.abs(baby.group.getWorldPosition(new Vector3())[axis]-babyWorld[axis])<1e-8,
+    'independent portrait motion cannot make stowed infant orbit the carrier on '+axis);
+  currentBodyRoot.quaternion.setFromEuler(new Euler(0,Math.PI*.5,0));
+  currentBodyRoot.position.set(.6,.2,.3);
+  window.Shattercasks.tick(.02);
+  const rotatedBaby=baby.group.getWorldPosition(new Vector3());
+  const expectedBaby=currentBodyRoot.localToWorld(babyLocal.clone());
+  for(const axis of ['x','y','z']) {
+    assert(Math.abs(rotatedBaby[axis]-expectedBaby[axis])<1e-8,'baby follows carrier torso turn on '+axis);
+    assert(Math.abs(baby.group.position[axis]-babyLocal[axis])<1e-8,'turns do not rewrite the baby mount on '+axis);
+  }
+  assert(Math.hypot(rotatedBaby.x-babyWorld.x,rotatedBaby.z-babyWorld.z)>.01,'carrier turning moves the baby WITH its rear-facing torso');
+  const previousZ=baby.group.position.z;
+  baby.data.carryable.backCarry.posteriorOffset.z-=.05; // An authored edit from the Carryables panel updates this runtime revision.
+  baby.data.carryable._backCarryRevision=1;
+  window.Shattercasks.tick(.02);
+  assert(Math.abs(baby.group.position.z-previousZ)>.04,
+    'a changed rear pose must invalidate the stable torso mount instead of leaving a floating stale attachment');
+  const adjustedZ=baby.group.position.z;
+  window.Shattercasks.tick(.02);
+  assert(Math.abs(baby.group.position.z-adjustedZ)<1e-8,'unchanged back pose does not accumulate offset across frames');
+  const previousY=baby.group.position.y;
+  posteriorY=.30; // Live player posterior can change on crouch / other rig presentation states.
+  window.Shattercasks.tick(.02);
+  assert(Math.abs(baby.group.position.y-previousY-.11)<1e-8,
+    'live carrier posterior shifts the rear baby by exactly the same height, without following portrait yaw');
+  posteriorY=.19; window.Shattercasks.tick(.02);
+  assert(Math.abs(baby.group.position.y-previousY)<1e-8,'restoring carrier posture restores the authored mount height');
+  assert.equal(window.Shattercasks.debugSnapshot().backCarryMount.bodyAttached,true,
+    'mobile diagnosis confirms the physical baby is on the actual carrier frame');
+  assert(window.Shattercasks.takeFromBack(),'baby can move from rear to normal hand grip');
+  assert.equal(baby.group.parent,headJoint,'retrieval restores existing hand carry rig');
+  assert(window.Shattercasks.stowOnBack(),'retrieved baby can be restowed');
+  assert.equal(baby.group.parent,currentBodyRoot,'restowing solves the body-relative mount again, never preserving the hand pose');
+  assert.equal(window.Shattercasks.debugSnapshot().backCarryMount.frame,'carrier-posterior');
+  assert(window.Shattercasks.discardBurden(baby),'test infant leaves no carried burden after cleanup');
+  rigidPortrait.position.x-=.45;
+  rigidPortrait.quaternion.setFromEuler(new Euler(0,0,0));
+  currentBodyRoot.quaternion.setFromEuler(new Euler(0,0,0));
+  currentBodyRoot.position.set(0,0,0);
 
   const bomb=window.Shattercasks.registerBurden({mapId:'map_back_test',scene,group:new Group(),
     id:'test-back-witch-bomb',kind:'hronalWitchBomb',hanging:false,data:{carryable:{}}});

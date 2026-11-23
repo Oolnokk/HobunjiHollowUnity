@@ -3710,6 +3710,7 @@
         interior: locale.interior ? clonePlain(locale.interior) : null, // Used after Tothal shifting/scaling to export a walkable locale entrance transition without hard-coded world coordinates.
         anchorX, anchorY,
         w: bbox.w, h: bbox.h,
+        footprintMinC: bbox.minC, footprintMinR: bbox.minR, // Retain the real authored floor origin when the locale anchor differs from its painted footprint.
         connectors: (locale.connectors || []).map(c => ({ col: c.col, row: c.row, side: c.side, label: c.label })),
         npcAnchors: (locale.npcAnchors || []).map(n => ({ npcId: n.npcId, name: n.name, col: n.col, row: n.row, facing: n.facing })),
         objects: (locale.objects || []).map(o => ({
@@ -8936,6 +8937,7 @@
           y: Math.round(meta.anchorY * localeScale),
           w: meta.w * localeScale,
           h: meta.h * localeScale,
+          footprint: { x: Math.round((meta.anchorX + (meta.footprintMinC || 0)) * localeScale), y: Math.round((meta.anchorY + (meta.footprintMinR || 0)) * localeScale), w: meta.w * localeScale, h: meta.h * localeScale }, // Legacy locales now expose the exact padded-independent painted rectangle to later scenery.
           connectors: (meta.connectors || []).map(c => ({ ...toWorld(c.col, c.row), side: c.side, label: c.label })),
           npcAnchors: (meta.npcAnchors || []).map(n => ({ npcId: n.npcId, name: n.name, ...toWorld(n.col, n.row), facing: n.facing })),
           objects: (meta.objects || []).map(o => {

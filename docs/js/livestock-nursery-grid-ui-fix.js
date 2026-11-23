@@ -135,11 +135,15 @@
     const adults = Number(window.LivestockNursery?.adultCount?.()) || 0;
     const capacity = Number(window.LivestockNursery?.adultCapacity?.()) || 0;
     const hasOpenBarnStall = adults < capacity;
+    const selectedId = section.shadowRoot?.getElementById('detailBody')?.dataset?.nurseryDetailId; // Uses the visible Nursery selection, not a costly genetics debug snapshot.
+    const selectedBaby = animalDeps?.loadWorldLivestock?.()?.find(entry => String(entry.id) === String(selectedId)); // Only inspected when the Nursery action rail is repaired.
+    const salePending = !!window.PendingAnimalSales?.pendingFor?.(selectedBaby); // A reserved baby must not consume a tonic while awaiting collection.
 
     // Full barns no longer disable maturation: the public growth path now
-    // matures the animal outdoors. Only permission or lacking a tonic blocks it.
-    grow.disabled = !canManage || tonicCount < 1;
+    // matures the animal outdoors. Pending sales still block the action.
+    grow.disabled = !canManage || tonicCount < 1 || salePending;
     grow.title = !canManage ? 'Livestock permission required.'
+      : salePending ? 'Cancel this animal sale before growing it.'
       : tonicCount < 1 ? 'You need a Growth Tonic.'
       : hasOpenBarnStall
         ? `Use 1 Growth Tonic (${tonicCount} owned) and move this baby into an open barn.`

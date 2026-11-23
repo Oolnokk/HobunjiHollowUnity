@@ -209,6 +209,7 @@
 
   function tick(dt = 0) {
     if (!encounters.size) return;
+    if (window.DevInspectTools?.enemiesFrozen?.()) return; // Developer "Enemies off" pauses waves and demolitionists.
     const step = Math.min(0.1, Math.max(0, Number(dt) || 0)), mapId = String(window.GridTileAccessors?.getCurrentArea?.() || '');
     for (const enc of encounters.values()) {
       if(enc.mapId!==mapId)continue;

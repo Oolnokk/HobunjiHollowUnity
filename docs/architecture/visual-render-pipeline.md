@@ -64,11 +64,12 @@ replays (`WorldRenderPipeline.captureFrame()` shows the exact list).
 | Names of every `THREE.Layers` bit | `js/render-layers.js` | `HobunjiRenderLayers` |
 | Outline tuning (thickness, ally/hostile colours, seam thresholds) | `docs/config/outline-rendering.json` | applied by the pipeline |
 | Composite shader | `js/outline-composite-material.js` | `OutlineCompositeMaterial` |
-| Held items / hands / feet over ground, x-ray, water tint | `js/held-object-render-order.js`, rules in `js/xray-hierarchy.js` | `HeldObjectRenderOrder`, `XrayHierarchy` |
+| Held items / hands / feet / pants over ground, x-ray, water tint | `js/held-object-render-order.js`, rules in `js/xray-hierarchy.js` | `HeldObjectRenderOrder`, `XrayHierarchy` |
 | Matrix reuse between passes, world-text overlay | `js/outline-render-performance.js` | `OutlineRenderPerformance` |
 | PNG sprite material/texture path | `js/portrait-utils.js` | `HobunjiSpritePngSurface` (see AGENTS.md) |
 | Which characters exist (player, NPCs, enemies, creatures, companions, mounts, shoulder pets, corpses, farm animals) and which visual systems cover which kind | `js/character-visuals.js` | `CharacterVisuals` |
 | Held tool/weapon planes for any holder (mastery/metal from the holder) | `js/character-held-tools.js` | `CharacterHeldTools` |
+| Frozen Tzizkhanash-style Ghost Army sculpture on skeleton-defense Key Statues (stone portrait/weapon + fitted size; original Burden physics unchanged) | `js/key-statue-figures.js` via `js/festival-ancestor-figures.js`; attached/removed by `js/key-statues.js` | `KeyStatueFigures` |
 | Shoulder-pet perch/grip solver (one instance per owner) | `js/shoulder-pet-attachment-runtime.js` | `ShoulderPetAttachmentRuntime` |
 | Mist depth silhouettes for characters in Cloud Forest mist / blizzard | `js/cloud-forest-avatar-depth-occluder.js` | `CloudForestAvatarDepthOccluder` |
 | Wilderness vegetation corridor cull + tree fade targets | `js/zone-vegetation-cull.js`, `js/zone-tree-fade.js` | `ZoneVegetationCull`, `ZoneTreeFade` |
@@ -134,7 +135,9 @@ Registered hooks, in order (lower runs first, its restore runs last):
 | 700 | `crop-sprite-art` | frame | crop-sprite-art.js | crop billboards face the camera |
 | 800 | `player-body-composer` | frame | player-body-transform-composer.js | composed player body, deadzone, head aim, neck limit, pants re-skin |
 | 900 | `npc-performance-reaction-lock` | frame | npc-performance-reaction-lock-runtime.js | hides social targets of instrument-locked NPCs |
+| 950 | `family-baby-limbs` | frame | family-baby-limbs.js | carried baby's cloned 3D hands/feet wave and kick; rest pose restored |
 | 1000 | `npc-social-inhibition` | frame | npc-social-inhibition-runtime.js | NPC social facing / dance sway |
+| 5000 | `geometry-auto-lod` | render | geometry-auto-lod.js | Opt-in geometry substitutions, restored after every draw |
 
 **`frame` scope** = applied once, on the first render of the world scene in a
 frame, undone once at `endWorldFrame`. Every pass (main, PNG depth, shell,
@@ -156,7 +159,7 @@ Wrappers that still sit **above** the hook base (outer to inner, as measured):
 `natural-surface-stretch-post-jigsaw.js`, `outline-render-performance.js`.
 Also instance-level: `dynamic-surfaces.js` (constructor; its before-render
 clients drive ruin puzzle frames with their own `dt`, so it stays per top-level
-call) and `geometry-auto-lod.js` (opt-in). `zone-grass-billboards.js`' old town
+call). `zone-grass-billboards.js`' old town
 height wrapper never installs (the town bridge marks the renderer first). Note: `held-object-render-order.js`'s "raw"
 replay render (`unwrapRendererRender`) stops at the onboarding wrapper (no
 marker), so replays go through the full lower chain, hooks included. Migrate
@@ -185,6 +188,7 @@ pass and returns a restore function; restores run in reverse order in `finally`.
 | 100 | `farm-tile-batches` | farm-tile-render-batches.js | farm ground tiles → 8×8 merged batches |
 | 200 | `zone-prop-batches` | zone-prop-render-batches.js | still wilderness props (tents, camp furniture, berries, herbs, totems, nests, ore-rock stones) → merged per 8×8 cell + material |
 | 250 | `wilderness-tree-instancing` | wilderness-tree-instancer.js | **off by default** (a net loss on a GTX 1060: corridor-wide batches defeat frustum/replay culling). Opted in: drawn, non-fading procedural trees/bushes → one InstancedMesh per shared variant part |
+| 270 | `dense-forest-wall-batches` | dense-forest-wall-batches.js | Cloud Forest dense wall: opaque, on-camera chunk parts → one InstancedMesh per part across chunks (background scenery, never in a replay) |
 | 300 | `npc-view-cull` | npc-view-frustum-cull.js | off-camera NPC walkers hidden |
 | 400 | `grass-chunks` | grass-billboard-render-chunks.js | farm/town grass → spatial chunks |
 | 500 | `instanced-view-cull` | instanced-mesh-view-cull.js | off-camera instanced walls/grass hidden |
@@ -237,6 +241,7 @@ table (`CAPABILITIES` in `js/character-visuals.js`, keep it accurate):
 | terrain height | every kind (movement-owned for humanoids; render lift for animals) | — |
 | water/slush tint | player, NPC, enemy, pet | — |
 | mist depth silhouettes | every kind | — |
+| carried family baby (`family-baby-burdens.js`, `family-baby-limbs.js`, `Shattercasks.solveCarryMount`) | player, NPC (spouse) carriers — same pose, grips, elbows, back stow | — |
 | shoulder-pet perch | player | runtime is owner-generic; only the player owns a pet in gameplay |
 | weather on bodies (wetness, snow, wind) | none | absent for everyone |
 

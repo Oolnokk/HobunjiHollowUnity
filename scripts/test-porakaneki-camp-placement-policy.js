@@ -89,6 +89,7 @@ const contextWindow = {
     invalidateBoulderIndex(grid) { assert.equal(grid, liveGrid); boulderCacheInvalidations++; },
   },
 };
+contextWindow.WildernessObjectFootprints = require('../docs/js/wilderness-object-footprints.js'); // Use the production whole-boulder footprint policy during VM camp placement.
 contextWindow.window = contextWindow;
 const context = vm.createContext({
   window: contextWindow,

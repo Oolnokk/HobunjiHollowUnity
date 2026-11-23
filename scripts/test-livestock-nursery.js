@@ -191,6 +191,13 @@ assert.equal(grow.ok, false, 'Grow Up is blocked without adult barn capacity');
 
 const barn = { id: 'barn1', kind: 'barn', tier: 'small', stage: 'built', col: 10, row: 10, w: 4, h: 3, _worldObj: {} };
 buildings.push(barn);
+const queuedBaby = livestock.find(entry => entry.id === 'newbaby'); // Ensures the public growth method enforces sale locks independently of UI buttons.
+context.window.PendingAnimalSales = { pendingFor: entry => entry?.pendingAnimalSale || null };
+queuedBaby.pendingAnimalSale = { price: 75, eligibleDay: 5 };
+grow = context.window.LivestockNursery.growBaby('newbaby');
+assert.equal(grow.ok, false, 'a queued baby cannot grow even when the barn has room');
+assert.equal(queuedBaby.lifeStage, 'baby', 'a blocked growth attempt preserves life stage');
+delete queuedBaby.pendingAnimalSale;
 grow = context.window.LivestockNursery.growBaby('newbaby');
 assert.equal(grow.ok, true, 'Grow Up succeeds when total adult barn capacity has space');
 assert.equal(added.entry.lifeStage, 'adult', 'Grow Up is a one-way life-stage transition');

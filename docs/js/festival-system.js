@@ -64,7 +64,7 @@
   const FOOD_PORTION_HOURS = 4; // Each festival bite adds four in-game hours of meal buffs.
   const FULLNESS_DURATION_HOURS = 24; // Fullness remains a separate 24-hour effect, independent of meal-buff portions.
   const MAX_FOOD_PORTIONS = 10; // Bowl capacity, independent meal-duration cap, and fullness stack limit.
-  const FOOD_EFFECT_ICONS = { strength:'💪',fortitude:'🛡️',vigor:'⚡',speed:'🏃',perception:'👁️',clarity:'🧠',combat:'⚔️',farming:'🌾',fishing:'🎣',foraging:'🌿',cooking:'🍲',mining:'⛏️' }; // HUD fallback symbols for the cooking-system meal effects.
+  const FOOD_EFFECT_ICONS = { strength:'💪',fortitude:'🛡️',vigor:'⚡',speed:'🏃',perception:'👁️',combat:'⚔️',farming:'🌾',fishing:'🎣',foraging:'🌿',cooking:'🍲',mining:'⛏️' }; // HUD fallback symbols for the cooking-system meal effects.
   function worldHour() { return day() * 24 + (Number(window.CalendarSystem?.getHour?.()) || 0); } // Used for the calendar-based festival meal and fullness windows.
   function validGatheringHours(start, end) {
     return Number.isFinite(start) && start >= 0 && start < 24
@@ -147,7 +147,7 @@
       contest.entry = { key:donated.key,stars:donated.stars,label:definition.label || donated.key,
         score:window.FestivalPotluckContest.scoreCooked(definition,donated.stars,defs),
         ingredients:snapshot.ingredients,estimatedQuality:snapshot.estimated,
-        estimatedEffects:snapshot.estimatedEffects,foodEffects:{...(definition.foodEffects||{})} };
+        estimatedEffects:snapshot.estimatedEffects,foodEffects:window.CookingSystem?.normalizeFoodEffects?.(definition.foodEffects) || {...(definition.foodEffects||{})} };
       changed = true;
     }
     potluckRecoveryPending = retry;
@@ -191,6 +191,7 @@
       entry.estimatedQuality = entry.estimatedQuality ?? snapshot.estimated;
       entry.estimatedEffects = snapshot.estimatedEffects;
       entry.foodEffects ||= {...(definition.foodEffects || {})}; // An older saved contest entry may not have persisted its exact buff payload.
+      entry.foodEffects = window.CookingSystem?.normalizeFoodEffects?.(entry.foodEffects) || entry.foodEffects; // Retire legacy Clarity before this contest meal is reused.
       deps?.save?.();
     }
     const offset = Math.max(0,Math.min(6,day() - (year()*336 + 4*28 + 8 - 1)));
@@ -200,7 +201,7 @@
     const defs = deps?.getItemDefs?.() || {};
     const dishes = (days[offset] || []).map(dish => ({
       ...dish, ingredients:dish.ingredients || [],
-      foodEffects:window.FestivalPotluckContest?.mealEffects?.(dish.ingredients,defs) || dish.foodEffects || {},
+      foodEffects:window.CookingSystem?.normalizeFoodEffects?.(window.FestivalPotluckContest?.mealEffects?.(dish.ingredients,defs) || dish.foodEffects) || dish.foodEffects || {},
     })); // Recalculate legacy saved NPC buffs with the canonical quality/processing rules, once per day.
     const entry = contest?.entry;
     const definition = entry && deps?.getItemDefs?.()?.[entry.key];
@@ -208,7 +209,7 @@
       icon:definition?.icon || '🍲',score:entry.score,
       ingredients:entry.ingredients || definition?.festivalIngredientQuality || [],
       estimatedQuality:!!entry.estimatedQuality,estimatedEffects:!!entry.estimatedEffects,
-      foodEffects:{...(entry.foodEffects || definition?.foodEffects || {})} }
+      foodEffects:window.CookingSystem?.normalizeFoodEffects?.(entry.foodEffects || definition?.foodEffects) || {...(entry.foodEffects || definition?.foodEffects || {})} }
       : { id:'reserved',label:'Your contest entry (empty)',owner:'You',dish:'Awaiting entry',
         icon:'🍲',score:0,foodEffects:{},ingredients:[] });
     feastCache = { key,contest,menu:dishes };
@@ -245,7 +246,7 @@
       sourceLabel:entry.festivalId === 'five_blossoms' ? 'Five Blossoms meal' : 'Gorkunash meal',kind:'boon',stacks:entry.portions,
       durationS:FOOD_PORTION_HOURS*MAX_FOOD_PORTIONS*3600,remainingS:(entry.expiresHour-now)*3600,
       fractionLabel:`${Math.ceil(entry.expiresHour-now)}h/${FOOD_PORTION_HOURS*MAX_FOOD_PORTIONS}h`,
-       description: Object.entries(entry.foodEffects || {}).map(([key, amount]) => `+${amount} ${window.CookingSystem?.effectLabel?.(key) || key} food stacks`).join(', ') || 'Festival meal food benefits remain active until the timer expires.',
+       description: Object.entries(window.CookingSystem?.normalizeFoodEffects?.(entry.foodEffects) || entry.foodEffects || {}).map(([key, amount]) => `+${amount} ${window.CookingSystem?.effectLabel?.(key) || key} food stacks`).join(', ') || 'Festival meal food benefits remain active until the timer expires.',
     })).concat(currentFullness() ? [{
       key:'festival-fullness',label:'Fullness',icon:'🥣',kind:'bane',sourceLabel:state.fullness?.festivalId === 'five_blossoms' ? 'Five Blossoms' : 'Gorkunash',
       description:'You are too full to eat more festival servings; fullness wears off over a full in-game day.',
@@ -254,7 +255,11 @@
   }
   function festivalFoodStacks(effectKey) {
     const now=worldHour(); // Festival meal bonuses expire only as the in-game calendar advances.
-    return (state.feastBuffs||[]).filter(entry=>entry.expiresHour>now).reduce((total,entry)=>total+(Number(entry.foodEffects?.[effectKey])||0),0);
+    const canonical = window.CookingSystem?.canonicalFoodEffectKey?.(effectKey) || effectKey; // Reuse food-effect migration instead of creating a festival-only Clarity buff.
+    return (state.feastBuffs||[]).filter(entry=>entry.expiresHour>now).reduce((total,entry)=>{
+      const effects = window.CookingSystem?.normalizeFoodEffects?.(entry.foodEffects) || entry.foodEffects || {}; // Saved and current festival meals both use canonical Perception stacks.
+      return total+(Number(effects[canonical])||0);
+    },0);
   }
   function festivalBowl() { return heldBowl ? { ...heldBowl } : null; }
   function festivalCup() { return heldCup ? { ...heldCup } : null; }
@@ -687,7 +692,7 @@
         const remainingHours=Number.isFinite(storedHours)
           ? Math.min(FOOD_PORTION_HOURS*MAX_FOOD_PORTIONS,migrateLegacyPortions ? storedHours*(FOOD_PORTION_HOURS/24) : storedHours)
           : portions*FOOD_PORTION_HOURS; // Legacy real-time saves have no calendar timer; grant four hours per recorded portion.
-        return {...entry,portions:Math.max(1,Math.min(MAX_FOOD_PORTIONS,Math.ceil(remainingHours/FOOD_PORTION_HOURS))),expiresHour:now+remainingHours};
+        return {...entry,foodEffects:window.CookingSystem?.normalizeFoodEffects?.(entry.foodEffects) || entry.foodEffects,portions:Math.max(1,Math.min(MAX_FOOD_PORTIONS,Math.ceil(remainingHours/FOOD_PORTION_HOURS))),expiresHour:now+remainingHours};
       });
     if(restoredBuffs.length) {
       const latestBuff=restoredBuffs[restoredBuffs.length-1]; // Older saves may contain separate meal timers; keep the newest meal's effects.

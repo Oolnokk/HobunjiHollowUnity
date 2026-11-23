@@ -821,7 +821,7 @@
   const AUTO_GRAB_GRACE_S = 0.15, AUTO_GRAB_RADIUS_TILES = 0.75, AUTO_GRAB_REACH_Y = 0.7;
   function tryAutoGrab(player, dt) {
     const fall = player._climbFall;
-    if (!fall || player._cliffRouteSession || player.climbElapsed < AUTO_GRAB_GRACE_S) return false;
+    if (!fall || player.prone || player._cliffRouteSession || player.climbElapsed < AUTO_GRAB_GRACE_S) return false; // Prone characters cannot catch a handhold while tumbling.
     if (fall.noGrab) return false;
     const best = findAirRouteGrab({ x: player.x / deps.TILE, z: player.y / deps.TILE,
       y: player.climbSurfaceY }, null, AUTO_GRAB_RADIUS_TILES, AUTO_GRAB_REACH_Y); // Scripted falls share the free-jump handhold search.
@@ -832,6 +832,35 @@
     player._grip = Math.max(Number.isFinite(grip) ? grip : 1, 0.35); // A catch is a scramble: never a full reset, never an instant re-slip.
     deps.showToast?.('You catch a handhold!', false);
     climbSafetyDebug.lastJumpMode = 'auto-grab';
+    return true;
+  }
+
+  // Called when a real hit knocks a scripted climber prone. Reuse the
+  // existing scripted descent owner; don't strand its world-space height
+  // behind the prone movement gate or add a second, competing fall timer.
+  function knockProneOffClimb(player = deps?.player) {
+    if (!player?.climbing) return false;
+    if (player._climbFall) { player._climbFall.noGrab = true; return true; } // Already falling: do not restart the interpolation.
+    if (player._cliffRouteSession) return fallFromClimb(player, 'knocked prone');
+    const currentY = Number(player.climbSurfaceY);
+    const startY = Number(player.climbSurfaceStartY), endY = Number(player.climbSurfaceEndY);
+    if (![currentY, startY, endY].every(Number.isFinite)) return false;
+    const returnToStart = startY <= endY; // Fall to the lower existing endpoint, never teleport to a higher rim.
+    const landingX = returnToStart ? player.climbStartX : player.climbEndX;
+    const landingY = returnToStart ? player.climbStartY : player.climbEndY;
+    const landingHeight = Math.min(startY, endY);
+    const dropWorld = Math.max(0, currentY - landingHeight);
+    const tiers = window.FallSystem?.dropTiers?.(dropWorld) ?? dropWorld / 2.5;
+    player.climbStartX = player.x; player.climbStartY = player.y;
+    player.climbSurfaceStartY = currentY;
+    player.climbEndX = landingX; player.climbEndY = landingY;
+    player.climbSurfaceEndY = landingHeight;
+    player.climbHopCount = 1;
+    player.climbElapsed = 0;
+    player._climbLastHopIndex = -1;
+    player._climbTargetBranch = null; player._climbJumpDownAxis = null; player._cliffLandingShelf = null;
+    resetClimbTiming(player, { activeS: Math.max(0.2, Math.min(0.55, 0.18 + tiers * 0.07)), pauseS: 0, bounce: 0 });
+    player._climbFall = { dropWorld, deliberate: false, noGrab: true, source: 'knocked prone while climbing' };
     return true;
   }
 
@@ -906,13 +935,20 @@
       player._climbDropped = false;
       const fall = player._climbFall;
       player._climbFall = null;
-      if (fall) window.FallSystem?.land?.(player, fall);
+      if (fall) {
+        const impact = player.prone ? window.HobunjiCliffFallImpact?.resolve?.(player, {
+          dropWorld: fall.dropWorld, dropTiers: window.FallSystem?.dropTiers?.(fall.dropWorld) ?? fall.dropWorld / 2.5,
+          dirX: fall.dirX || 0, dirY: fall.dirY || 0,
+        }) : null; // Knocked-off prone climbers use the same cliff collision profile, not the gentle grip-slip Footing cost.
+        if (!impact) window.FallSystem?.land?.(player, fall);
+      }
       if (player._climbTargetBranch) {
         const branch = player._climbTargetBranch;
         player._climbTargetBranch = null;
         beginOnBranch(player, branch, 0);
       }
-      if (player._climbJumpDownAxis) {
+      if (player.prone) player._climbJumpDownAxis = null; // Landing prone must not queue a free evasive roll after recovery.
+      if (player._climbJumpDownAxis && !player.prone) {
         // Reuses the same tumble/roll movement state an evasive combat
         // dodge uses (see game.js's performDodge), just without its
         // stamina cost, cooldown, or invulnerability window — this is a
@@ -931,6 +967,13 @@
     }
   }
 
+  function balconyTopAt(shelf, x, z) {
+    const stepUp = window.PlayerJump?.config?.maxStepUp ?? .25; // Same reachable height band as ordinary balcony walking.
+    return window.DynamicSurfaces?.samplePressurePlate?.(
+      deps.getCurrentArea(), x, z, shelf.y, shelf.y + stepUp,
+    )?.y ?? shelf.y;
+  }
+
   // Balcony movement keeps the support elevation independent from whichever
   // ground, plateau, or second balcony occupies the exact same X/Z cells.
   function jumpFromBalcony(direction = null) {
@@ -942,6 +985,7 @@
     const dir = length > 0.25 ? { x: raw.x / length, y: raw.y / length } : { x: shelf.normal.x, y: shelf.normal.z };
     const grid = deps.getActiveGrid();
     const takeoffX = player.x / deps.TILE, takeoffZ = player.y / deps.TILE; // Jump starts at the actual feet, not the authored balcony center.
+    const takeoffY = balconyTopAt(shelf, takeoffX, takeoffZ); // A pressure plate can raise the feet above the shelf.
     let destination = null;
     for (const distance of [0.7, 1.2, 1.8, 2.5, 3.2]) {
       const wx = takeoffX + dir.x * distance, wz = takeoffZ + dir.y * distance;
@@ -956,21 +1000,21 @@
       if ((!Number.isFinite(floor) || floor >= shelf.y - 0.1) && !lower) continue;
       if (validGround && floor >= shelf.y - 0.1) continue; // Do not jump through a plateau roof.
       destination = { x: wx * deps.TILE, y: wz * deps.TILE,
-        surfaceY: lower?.y ?? floor, balconyId: lower?.id || null };
+        surfaceY: lower ? balconyTopAt(lower, wx, wz) : floor, balconyId: lower?.id || null };
       break;
     }
     if (!destination) return false; // Never leap into an ungrounded/unreachable void.
     player.onCliffBalcony = null;
     if (!startScriptedWorldClimb({
       endX: destination.x, endY: destination.y,
-      startWorldY: shelf.y, endWorldY: destination.surfaceY,
+      startWorldY: takeoffY, endWorldY: destination.surfaceY,
       hopCount: 2, shortHops: true
     })) { player.onCliffBalcony = shelf.id; return false; }
     player.climbHopCount = 1;
     player._cliffLandingShelf = destination.balconyId;
     player._climbJumpDownAxis = dir;
     resetClimbTiming(player, { activeS: 0.42, pauseS: 0, bounce: 0.32 });
-    player._climbFall = { dropWorld: Math.max(0, shelf.y - destination.surfaceY), deliberate: true, rolled: true, source: 'ledge jump', dirX: dir.x, dirY: dir.y };
+    player._climbFall = { dropWorld: Math.max(0, takeoffY - destination.surfaceY), deliberate: true, rolled: true, source: 'ledge jump', dirX: dir.x, dirY: dir.y };
     return true;
   }
 
@@ -984,18 +1028,19 @@
     const length = Math.hypot(Number(raw?.x) || 0, Number(raw?.y) || 0);
     if (length <= 0.01) return false;
     const nx = raw.x / length, nz = raw.y / length; // Normalized movement aimed across the shelf lip.
+    const takeoffY = balconyTopAt(shelf, player.x / deps.TILE, player.y / deps.TILE); // Sample the final standing point inside the lip.
     let launchX = outside.x, launchZ = outside.z; // Actual physical edge is slightly beyond the walkability inset.
     for (let probe = 0; probe < 8; probe++) {
-      if (window.PlayerJump?.canOccupyAir?.(launchX, launchZ, shelf.y) === false) return false;
+      if (window.PlayerJump?.canOccupyAir?.(launchX, launchZ, takeoffY) === false) return false;
       if (!window.CliffRouteNetwork?.shelfContains?.(shelf, launchX, launchZ, 0.02)) break;
       launchX += nx * 0.04; launchZ += nz * 0.04; // Short collision-checked sweep across the final lip; no teleport to the landing tile.
     }
     if (window.CliffRouteNetwork?.shelfContains?.(shelf, launchX, launchZ, 0.02) ||
-        window.PlayerJump?.canOccupyAir?.(launchX, launchZ, shelf.y) === false) return false;
+        window.PlayerJump?.canOccupyAir?.(launchX, launchZ, takeoffY) === false) return false;
     const balconyId = player.onCliffBalcony; // Used only to restore the original support if flight creation fails.
     player.onCliffBalcony = null;
     const flight = window.PlayerJump.beginFlight({
-      x: launchX, y: shelf.y, z: launchZ,
+      x: launchX, y: takeoffY, z: launchZ,
       vx: nx * 0.6, vy: 0, vz: nz * 0.6,
       safeX: player.x / deps.TILE, safeZ: player.y / deps.TILE,
     }, { source: 'cliff balcony fall', deliberate: true });
@@ -1131,7 +1176,7 @@
   }
 
   window.ClimbSystem = {
-    cliffDodge, jumpAction, tryAirGrab,
+    cliffDodge, jumpAction, tryAirGrab, knockProneOffClimb,
     updateBalcony, jumpFromBalcony, fallFromClimb,
     init,
     getClimbTarget,

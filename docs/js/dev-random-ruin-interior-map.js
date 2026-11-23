@@ -547,6 +547,13 @@
           object.userData.blockerPurpose = 'puzzle_tower_' + d.activatorType; // Makes their authoritative occupancy source visible in Pixel Probe.
         }
       }
+      if (motion === 'pressurePlate') {
+        // The base remains above the fully depressed slab on native weighted plates.
+        for (const part of [d.pressPlate, object.children?.[0]]) {
+          const support = DS.pressurePlateSurface?.(part, { id:'devruin-pressure-plate-'+part?.id, scope:SCOPE });
+          if (support) DS.registerSurface(support);
+        }
+      }
       if (d.pushable && (motion === 'pushPuzzleBlock' || motion === 'elevatorPushBlock')) ruin.pushBlocks.push(object);
       if (d.transitDoor) ruin.transitDoors.push(object);
       if (d.ruinInteriorWall) walls.push(object);
@@ -990,6 +997,7 @@
     roots.localeRoot.name=`dev_v50_ruin_${seed}`; scene.add(roots.localeRoot);
     const ceilingMesh=buildTexturedCeiling(meta); // Gives the rope mounts and support pillars a real visible stone ceiling at the exact wall-top datum they already target.
     if(ceilingMesh)scene.add(ceilingMesh);
+    if(ceilingMesh)roots.localeRoot.userData.ruinCeilingClosure=window.DevRandomRuinWallPlanes?.closeUnderCeiling?.(roots.localeRoot,ceilingMesh.userData.devRandomRuinCeilingY,meta)||null; // Omitted/short "ruined" V50 walls and open arch tops left void under the roof.
     roots.particleRoot.scale.x*=RUIN_TILE_SCALE;roots.particleRoot.scale.z*=RUIN_TILE_SCALE;
     roots.particleRoot.position.set(roots.localeRoot.position.x,0,roots.localeRoot.position.z); // Snapshotted V50 sprites are in the original 2D world coordinate system and need the same horizontal projection as stone meshes.
     scene.add(roots.particleRoot);
@@ -1182,6 +1190,7 @@
         const placement=singleVestibule&&!singleRoomTrial?window.RuinV50Vestibule?.compose?.({
           meta,seed:candidateSeed,LayerPlan:window.RuinLayerPlan,ShaftHub:window.ShaftHub,
           Connector:window.RuinShaftConnector,tileScale:RUIN_TILE_SCALE,plinthTrial:trialRequested,tier:opts.tier||null,theme,
+          shaftTraversal:devModeEnabled()&&!opts.site?(opts.shaftTraversal||null):null, // Developer-only: force a central-shaft puzzle (e.g. 'ropeSwings').
         }):null; // Derived from the V50 entrance face, not a post-hoc exterior corridor.
         if(singleVestibule&&!singleRoomTrial&&!placement)throw new Error('Ruin V50 vestibule placement module missing.');
         entryPadX=placement?.padX??PAD;entryPadZ=placement?.padZ??PAD;
@@ -1885,13 +1894,15 @@
     const currentPillar=[...obelisks.columns.values()].find(p=>
       ruin.supportId==='shaft-obelisks-'+p.id); // Scoped moving-platform ID is stable across support updates.
     if(currentPillar && !ruin.obeliskFall){
-      const prior=Number(ruin.obeliskAttachedY);
+      // Carry only with the SAME column's movement. After a landing, teleport or rope ride the stored height is
+      // null (Number(null) is 0: the column's whole height was added) or another column's (a fake hop up/down).
+      const prior=ruin.obeliskAttachedId===currentPillar.id?ruin.obeliskAttachedY:null;
       if(Number.isFinite(prior)){
         ruin.supportY+=currentPillar.y-prior; // Carry the player exactly with the top's world Y; never apply a fake climb hop.
         syncRuinPresentationHeight(ruin.supportY);
       }
-      ruin.obeliskAttachedY=currentPillar.y;
-    }else ruin.obeliskAttachedY=null;
+      ruin.obeliskAttachedY=currentPillar.y;ruin.obeliskAttachedId=currentPillar.id;
+    }else{ruin.obeliskAttachedY=null;ruin.obeliskAttachedId=null;}
     if(!ruin.obeliskFall){
       const levelY=Number(ruin.supportY)||0;
       // A horizontal approach cannot phase through the solid side of a raised
@@ -1913,7 +1924,7 @@
         return true;
       }
       ruin.obeliskFall={y:levelY,v:0,lastMs:now,startedY:levelY}; // Gravity takes over instead of the instantaneous downward support sampler.
-      ruin.supportId=null;ruin.obeliskAttachedY=null;
+      ruin.supportId=null;ruin.obeliskAttachedY=null;ruin.obeliskAttachedId=null;
     }
     const fall=ruin.obeliskFall;
     const dt=clamp((now-fall.lastMs)/1000,0,.05);
@@ -2058,7 +2069,9 @@
         info={x,z,pit:!support,support:support||null};
       }else{
         const floor=grid.floorLevelAt(col,row,level);
-        info={x,z,pit:false,support:floor<0?null:{id:`shaft:${col},${row},${floor}`,y:grid.levelToY(floor)}};
+        const floorY=floor<0?null:grid.levelToY(floor); // Plate slabs sit on top of the voxel grid's structural floor.
+        const plate=floorY==null?null:DS.samplePressurePlate?.(MAP_ID,x,z,floorY,Math.max(floorY,ruin.supportY)+MAX_STEP_HEIGHT+.02);
+        info={x,z,pit:false,support:plate||(floor<0?null:{id:`shaft:${col},${row},${floor}`,y:floorY})};
       }
     }else info=positionInfo(deps.player.x,deps.player.y,ruin.levelRelativeSupport?ruin.supportY:null);
     if(grid && info.support && ruin.supportY-info.support.y>grid.cellHeight+.02){

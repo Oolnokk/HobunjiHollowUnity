@@ -229,7 +229,15 @@
     // Tothal's *entire* generated floor, including corridor links and room
     // thresholds, is iced. Do not randomly discard 30% of tiles or skip
     // tile skins underneath furniture: visuals and physics share floorSet.
-    for(const key of world.context.floorSet || [])world.iceTiles.add(key);
+    // Exception: the shaft's death pit. Its tiles are in floorSet (the octagon is projected onto the 2D map),
+    // but there is no floor there — the sheet floated over the drop and stuck out from slab edges. Slabs carry
+    // their own ice (RuinJumpShaft), so every tile over a registered pit stays bare for visuals and physics.
+    const pitAt=window.DynamicSurfaces?.pointInPit;
+    for(const key of world.context.floorSet || []){
+      const [x,z]=tileFromKey(key);
+      if(pitAt?.(x+.5,z+.5))continue;
+      world.iceTiles.add(key);
+    }
     if(!world.iceTiles.size)return;
     world.iceMaterial=new THREE.MeshBasicMaterial({color:0x8bcdf5,transparent:true,opacity:.31,depthWrite:false,side:THREE.DoubleSide});
     world.iceMesh=renderCurvedTiles(kit,world.iceTiles,world.iceMaterial,.025,'tothal_ice_sheen');

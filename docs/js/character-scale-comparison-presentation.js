@@ -213,7 +213,9 @@ body[data-animation-author-mode="${MODE}"] #${HEAD_NUMBER_ID}{min-width:0;width:
 
     const scale = runtimeScaleFor(identity); // Uses current authored body X/Y so the head remains aspect-correct under non-uniform body scale.
     const joint = headScaleJointFor(previewGroupFor(identity));
-    if (joint?.scale?.set) {
+    if (comparisonApi()?.refreshSelectedPreview) {
+      comparisonApi().refreshSelectedPreview(); // Preserve the selected baby/toddler/child global proportions when Head (raw PNG) changes.
+    } else if (joint?.scale?.set) {
       joint.scale.set(scale.head / scale.x, scale.head / scale.y, 1);
       joint.updateMatrix?.();
       joint.updateMatrixWorld?.(true);

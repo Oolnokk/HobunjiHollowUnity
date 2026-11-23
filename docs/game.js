@@ -791,6 +791,41 @@
       function applyKnockback(target, fromX, fromY, speedPxS) {
         const reelingMul = window.ResourceSystem?.timedDebuffModifier?.(target, 'knockbackTaken') ?? 1; // Reeling scales the shared impulse before branch/free-plane collision handling diverges.
         speedPxS *= reelingMul;
+        if (!(speedPxS > 0)) return; // Zero-knockback hits still damage/stagger but must not launch a prone target.
+        if (target.tzatzulCapturedBy) return; // Talons own displacement until a genuine prone transition detaches the captive and starts a height-aware fall.
+        if (target._knockbackLedgeFall || target._cliffClimb?.phase === 'fall') {
+          // Already descending: damage still lands, but another hit must not rewind the fall.
+          if (target.prone) window.ImpactRagdollPlayback?.triggerTumble?.(target,
+            hitDirectionRelativeToFacing(target === player ? target.angle : target.facing, target.x, target.y, fromX, fromY), PRONE_THROW_DUR_S);
+          return;
+        }
+        const hitAngle = Math.atan2(target.y - fromY, target.x - fromX);
+        if (target === player && target._freeJump?.phase === 'air') {
+          // A real free fall owns its own gravity. Add horizontal impulse there,
+          // never start the grounded knockback timer that used to reset the jump.
+          window.PlayerJump?.receiveKnockback?.(Math.cos(hitAngle), Math.sin(hitAngle), speedPxS);
+          if (target.prone) {
+            window.PlayerJump?.knockProne?.();
+            window.ImpactRagdollPlayback?.triggerTumble?.(target,
+              hitDirectionRelativeToFacing(target.angle, target.x, target.y, fromX, fromY), PRONE_THROW_DUR_S);
+          }
+          return;
+        }
+        if (target.prone) {
+          if (target === player && player.somersaultRecovering) {
+            player.somersaultRecovering = false; // Replacing a get-up animation cancels its completion callback; never strand the recovery flag.
+          }
+          // Prone is immune to additional Footing loss, not to being physically
+          // thrown. The dedicated prone throw has the existing swept wall/ledge collisions.
+          target.knockbackVX = Math.cos(hitAngle) * speedPxS;
+          target.knockbackVY = Math.sin(hitAngle) * speedPxS;
+          startProneThrow(target, target === player, target === player ? target.angle : target.facing,
+            hitDirectionRelativeToFacing(target === player ? target.angle : target.facing, target.x, target.y, fromX, fromY));
+          target.knockbackT = 0;
+          window.ImpactRagdollPlayback?.triggerTumble?.(target,
+            hitDirectionRelativeToFacing(target === player ? target.angle : target.facing, target.x, target.y, fromX, fromY), PRONE_THROW_DUR_S);
+          return;
+        }
         if (target.onBranch) {
           window.KnockbackCollisionImpact?.cancel?.(target);
           // Knockback while standing on a branch is resolved along the
@@ -809,6 +844,11 @@
             window.ResourceSystem?.spendFooting?.(target, 47.5, 'fell from branch');
             if (target === player) { _nestHoldT = 0; target._nestTakeActive = false; }
             if (target.lunging) {
+          if (target === player && !Number.isFinite(target.lungeFlightWorldY)
+            && Number(target.lungeHopCurrent) > KNOCKBACK_LEDGE_HEIGHT_EPSILON) {
+            const floorY = knockbackSurfaceAtPixel(target.x, target.y);
+            if (Number.isFinite(floorY)) target._proneAirFallStartY = floorY + target.lungeHopCurrent; // Preserve the ordinary hop height before impact cancels the lunge.
+          }
           target.lunging = false;
           target.lungeHopCurrent = 0;
           if (target === player && Number.isFinite(target.lungeFlightWorldY)) {
@@ -898,10 +938,12 @@
         const multipliers = window.SCRATCHBONES_CONFIG?.game?.combat?.stagger?.damageTypeMultipliers?.[dmgOpts?.tag] || {};
         const healthMultiplier = Number(multipliers.healthDamage ?? 1);
         const footingMultiplier = Number(multipliers.footingDamage ?? 1);
+        const knockbackMultiplier = Number(multipliers.knockback ?? 1); // Scales the subsequent hit impulse, independently of Health and Footing.
         const footingOverride = Number(dmgOpts?.footingDamageMultiplier); // Ranged projectiles pass 0 by default; selected ammo can explicitly opt back in.
         return {
           health: amount * healthMultiplier,
           footing: amount * footingMultiplier * (Number.isFinite(footingOverride) ? Math.max(0, footingOverride) : 1),
+          knockbackMultiplier: Number.isFinite(knockbackMultiplier) ? Math.max(0, knockbackMultiplier) : 1,
         };
       }
 
@@ -986,6 +1028,86 @@
         return Number.isFinite(resolved) ? Math.max(0, resolved) : Math.max(0, Number(entity?.maxFooting) || 0); // Legacy/no-ResourceSystem actors still use literal max Footing.
       }
 
+      // A prone actor must keep its existing descent authority. For a
+      // freshly interrupted airborne lunge or cliff climb, transfer the height
+      // to that same cliff-fall resolver instead of snapping the portrait down.
+      function beginProneAirFall(entity, isPlayer) {
+        const perchedAirY = (entity.onBranch || entity.onPerch) && Number.isFinite(entity.branchSurfaceY)
+          ? entity.branchSurfaceY : null; // Snapshot the carrier's talon/branch height before detaching either support.
+        if (entity.tzatzulCapturedBy) window.TzatzulFlightRuntime?.releaseProneCaptive?.(entity);
+        if (entity.onBranch || entity.onPerch) window.PerchSupport?.release?.(
+          entity, 'knocked prone in air', { deferLegacyKnockback: true }); // No immediate flat injury: gravity and the cliff resolver will charge it once.
+        if (isPlayer) {
+          const hopSnapshotY = Number.isFinite(entity._proneAirFallStartY) ? entity._proneAirFallStartY : null;
+          entity._proneAirFallStartY = null; // A prior harmless hit cannot seed a later unrelated fall.
+          if (window.PlayerJump?.knockProne?.()) return true;
+          if (entity._knockbackLedgeAir && !entity._knockbackLedgeFall) beginKnockbackLedgeFall(entity); // Releasing a horizontal cliff crossing must begin its vertical descent immediately.
+          if (entity._knockbackLedgeFall) {
+            entity.proneThrowT = 0; entity.proneThrowVX = 0; entity.proneThrowVY = 0;
+            window.KnockbackCollisionImpact?.cancel?.(entity); // An existing cliff fall must not queue a second throw on landing.
+            return true;
+          }
+          if (entity.onClimbSurface) {
+            const released = window.ClimbSurfaces?.release?.({ fall: true });
+            if (released) return window.PlayerJump?.knockProne?.() === true; // Wall-grab height transfers into the physical jump owner.
+          }
+          if (entity.climbing) {
+            const falling = window.ClimbSystem?.knockProneOffClimb?.(entity) === true;
+            if (falling) {
+              entity.proneThrowT = 0; entity.proneThrowVX = 0; entity.proneThrowVY = 0;
+              window.KnockbackCollisionImpact?.cancel?.(entity); // The climb's own falling interpolation owns the displacement.
+            }
+            return falling;
+          }
+          const floorY = knockbackSurfaceAtPixel(entity.x, entity.y);
+          const currentY = perchedAirY ?? (Number.isFinite(entity.lungeFlightWorldY)
+            ? entity.lungeFlightWorldY : hopSnapshotY);
+          if (Number.isFinite(floorY) && Number.isFinite(currentY) && currentY > floorY + KNOCKBACK_LEDGE_HEIGHT_EPSILON) {
+            entity.lunging = false;
+            entity.lungeHopCurrent = 0;
+            entity.lungeFlightWorldY = null;
+            entity.lungeLandingPending = false; // PlayerJump is the new vertical owner, not the cancelled lunge.
+            const flight = window.PlayerJump?.beginFlight?.({
+              x: entity.x / TILE, z: entity.y / TILE, y: currentY, vy: 0,
+              safeX: entity.x / TILE, safeZ: entity.y / TILE,
+            }, { source: 'prone airborne', deliberate: false });
+            if (flight) return window.PlayerJump?.knockProne?.() === true;
+          }
+          return false;
+        }
+        const snapshotY = Number.isFinite(entity._proneAirFallStartY) ? entity._proneAirFallStartY : null; // Captured before a bandit attack's lunge cancellation.
+        entity._proneAirFallStartY = null;
+        if (entity._knockbackLedgeAir && !entity._knockbackLedgeFall) beginKnockbackLedgeFall(entity); // A prone target released during horizontal cliff transit must not hang in the air.
+        if (entity._knockbackLedgeFall) {
+          entity.proneThrowT = 0; // The existing fall stays in charge; no deferred throw after its landing.
+          return true;
+        }
+        if (entity._cliffClimb) {
+          if (entity._cliffClimb.phase === 'fall') { entity.proneThrowT = 0; return true; }
+          if (window.CreatureCliffClimb?.knockOff?.(entity, 'knocked prone')) {
+            entity.proneThrowT = 0;
+            return true;
+          }
+        }
+        const groundY = knockbackSurfaceAtPixel(entity.x, entity.y);
+        const airborneY = snapshotY ?? perchedAirY ?? (Number.isFinite(entity._climbLeap?.surfaceY) ? entity._climbLeap.surfaceY
+          : Number.isFinite(groundY) ? groundY + Math.max(0, Number(entity._banditLungeHopCurrent) || 0) : null);
+        if (!Number.isFinite(groundY) || !Number.isFinite(airborneY)
+          || airborneY <= groundY + KNOCKBACK_LEDGE_HEIGHT_EPSILON) return false;
+        const dropWorld = airborneY - groundY, dropTiers = dropWorld / Math.max(0.001, PLATEAU_UNIT);
+        entity._knockbackLedgeFall = {
+          startX: entity.x, startY: entity.y, endX: entity.x, endY: entity.y,
+          startSurfaceY: airborneY, endSurfaceY: groundY, visualSurfaceY: airborneY,
+          elapsed: 0, duration: window.FormatUtils.clamp(0.14 + dropTiers * 0.055, 0.16, 0.36),
+          dropWorld, dropTiers, dirX: 0, dirY: 0,
+        }; // Same animation and collision-cost pipeline as a shove off an actual ledge.
+        entity._banditLungeHopCurrent = 0;
+        entity._climbLeap = null;
+        entity.proneThrowT = 0; entity.proneThrowVX = 0; entity.proneThrowVY = 0; // Falling replaces, never queues, the ground throw.
+        window.KnockbackCollisionImpact?.cancel?.(entity);
+        return true;
+      }
+
       // The same full breakThrow knockdown (launch, action interruption and
       // pose hold) is shared by depleted Footing and the short timed Knockdown
       // debuff. Temporary knockdown does not modify the target's Footing.
@@ -993,6 +1115,11 @@
         if (entity.prone) return false;
         entity._temporaryKnockdownProne = temporary === true; // Used by prone recovery and the two distinct prone attack multipliers.
         entity.prone = true;
+        if (beginProneAirFall(entity, isPlayer)) {
+          entity.knockbackT = 0; entity.knockbackVX = 0; entity.knockbackVY = 0;
+          entity.proneThrowT = 0; entity.proneThrowVX = 0; entity.proneThrowVY = 0;
+          window.KnockbackCollisionImpact?.cancel?.(entity); // Airborne gravity owns motion; a stale ground impulse must never resume after landing.
+        }
         if (!isPlayer) {
           window.ImpactRagdollPlayback?.triggerCreature(entity, 'breakThrow', direction, { durationMultiplier: 1 });
           return true;
@@ -1030,6 +1157,10 @@
           window.Combat?.animalAttacks?.cancel?.(entity);
           window.EnemyDodge?.cancel?.(entity);
           if (entity.isBandit) {
+            const groundY = knockbackSurfaceAtPixel(entity.x, entity.y);
+            const hopY = Number(entity._banditLungeHopCurrent) || 0;
+            if (Number.isFinite(groundY) && hopY > KNOCKBACK_LEDGE_HEIGHT_EPSILON)
+              entity._proneAirFallStartY = groundY + hopY; // Timed Knockdown also preserves a bandit's height before cancelLunge erases its hop.
             entity._banditAction?.cancel?.();
             entity._banditAction = null;
             entity.telegraphState = null;
@@ -1037,6 +1168,11 @@
             window.RangedWeapons?.cancelBanditAction?.(entity);
             window.BanditCombat?.cancelLunge?.(entity);
           }
+        }
+        if (isPlayer && entity.lunging && !Number.isFinite(entity.lungeFlightWorldY)
+          && Number(entity.lungeHopCurrent) > KNOCKBACK_LEDGE_HEIGHT_EPSILON) {
+          const floorY = knockbackSurfaceAtPixel(entity.x, entity.y);
+          if (Number.isFinite(floorY)) entity._proneAirFallStartY = floorY + entity.lungeHopCurrent; // Timed knockdown must also retain the hop without normal knockback.
         }
         startProneThrow(entity, isPlayer, facingAngle, direction);
         if (interruptingGetUp) {
@@ -1052,6 +1188,9 @@
       window.HobunjiKnockdown = { enter: enterTimedKnockdown }; // Called only on first timed Knockdown application by ResourceSystem.
 
       function proneRecoveryReady(entity) {
+        if (entity._knockbackLedgeAir || entity._knockbackLedgeFall ||
+            entity._cliffClimb?.phase === 'fall' || entity._climbFall ||
+            entity._freeJump?.phase === 'air') return false; // No human or animal can regain its feet before the fall owner lands.
         if (window.ResourceSystem?.hasTimedDebuff?.(entity, 'knockdown')) return false; // Duration must end before either prone source may recover.
         return entity._temporaryKnockdownProne === true
           ? (Number(entity.footing) > 0) // The timed effect never drains Footing, so no full-refill requirement.
@@ -3601,6 +3740,10 @@
         );
       }
 
+      window.HobunjiCliffFallImpact = Object.freeze({
+        resolve: resolveKnockbackLedgeFallImpact,
+      }); // One landing authority shared by natural prone falls and horizontal cliff knockback.
+
       function advanceKnockbackLedgeFall(entity, dt) {
         const fall = entity?._knockbackLedgeFall;
         if (!fall) return false;
@@ -5146,6 +5289,8 @@
       function makeCreatureEntity(creatureKey, x, y, opts = {}) {
         const def = CREATURE_DB[creatureKey];
         if (!def) return null;
+        const speciesDisplayName = typeof def.label === 'string' && def.label.trim() && def.label.trim().toLowerCase() !== 'undefined'
+          ? def.label.trim() : String(creatureKey); // Canonical fallback for damaged runtime creature definitions and missing Den-Mother labels.
         const { scene: optScene, grid: optGrid, cols: optCols, rows: optRows, ...restOpts } = opts;
         const targetScene = optScene || window.GridTileAccessors.getActiveScene();
         const targetGrid  = optGrid  || window.GridTileAccessors.getActiveGrid();
@@ -5197,13 +5342,17 @@
           // hardcoding `player` so a future NPC-owned companion (or a second
           // remote player's companion) can point at any qualifying entity.
           master: null,
-          name: def.label,
+          name: speciesDisplayName,
           state: 'idle',
           wanderTarget: null, wanderT: 0,
           homeX: x, homeY: y,
           scene: targetScene, areaGrid: targetGrid, areaCols: gridCols, areaRows: gridRows, areaId: currentArea,
           ...restOpts,
         };
+        if (typeof creature.name !== 'string' || !creature.name.trim() || creature.name.trim().toLowerCase() === 'undefined') {
+          window.__farmLog?.('[wildlife] recovered invalid spawned creature name for ' + creatureKey + ' (raw=' + String(creature.name) + ')', 'warn');
+          creature.name = speciesDisplayName; // Caller overrides cannot turn an otherwise valid species into an unnamed actor.
+        }
         creature.genotype = window.VoorgAssRegistration?.displayGenotypeFor?.(creatureKey, creature.genotype) ?? creature.genotype; // Old/wizard-spawned Voorg-Asses without genes still render their coat-colored default beard; no random reroll.
         window.__farmLog?.(`[size-render] ${creatureKey}: ${sizeScale.sizeClass} at ${Math.round(sizeScale.x * 100)}% × ${Math.round(sizeScale.y * 100)}%`, 'wildlife');
         window.ResourceSystem?.initEntity(creature);
@@ -5624,7 +5773,14 @@
         // Getting hit breaks a bandit's in-progress ability the same way it
         // cancels any other mid-attack state above, rather than letting a
         // combo silently resume its step count once it recovers.
-        if (c.isBandit) { c._banditAction?.cancel(); c._banditAction = null; window.RangedWeapons?.cancelBanditAction?.(c); c.telegraphState = null; c._banditComboIndex = 0; window.BanditCombat?.cancelLunge?.(c); } // cancelLunge also lowers a mid-arc hop.
+        if (c.isBandit) {
+          const groundY = knockbackSurfaceAtPixel(c.x, c.y);
+          const hopY = Number(c._banditLungeHopCurrent) || 0; // Snapshot used if this hit also causes knockdown after cancelLunge clears the hop.
+          c._proneAirFallStartY = Number.isFinite(groundY) && hopY > KNOCKBACK_LEDGE_HEIGHT_EPSILON ? groundY + hopY : null;
+          c._banditAction?.cancel(); c._banditAction = null;
+          window.RangedWeapons?.cancelBanditAction?.(c); c.telegraphState = null; c._banditComboIndex = 0;
+          window.BanditCombat?.cancelLunge?.(c);
+        }
         // Referenced by wildlife-territorial.js's own attackedDuringWarning
         // check (an already-attacked creature escalates straight to
         // fighting even from outside its proximity trigger) — that check
@@ -5670,8 +5826,9 @@
             c._voorgRearKickThreat = null;
           }
         }
-        if (fromX !== undefined) applyKnockback(c, fromX, fromY, knockbackPxS * impactMultiplier);
+        if (fromX !== undefined) applyKnockback(c, fromX, fromY, knockbackPxS * impactMultiplier * (resourceDamage.knockbackMultiplier ?? 1));
         applyHitStagger(c, false, c.facing || 0, c.x, c.y, fromX, fromY, resourceDamage.footing);
+        if (!c.prone) c._proneAirFallStartY = null; // A non-knockdown stagger cannot contaminate a later fall.
       }
 
       function damagePlayer(amount, fromX, fromY, knockbackPxS = PLAYER_KNOCKBACK_PX_S, dmgOpts) {
@@ -5709,8 +5866,9 @@
           // rule as damageCreature above, mirrored onto whatever combo/quick-
           // attack/charged-breaker strike the player was mid-windup on.
           window.Combat?.cancelAllStaged?.();
-          if (fromX !== undefined) applyKnockback(player, fromX, fromY, knockbackPxS);
+          if (fromX !== undefined) applyKnockback(player, fromX, fromY, knockbackPxS * (resourceDamage.knockbackMultiplier ?? 1));
           applyHitStagger(player, true, player.angle, player.x, player.y, fromX, fromY, resourceDamage.footing);
+          if (!player.prone) player._proneAirFallStartY = null; // Normal staggers never retain a stale aerial snapshot.
         }
         if (player.health <= 0) {
           if (!environmentalImpact && window.PlayerDowned?.tryDown?.('damage')) return; // Combat damage puts the player down (Second Wind) instead of killing them outright.
@@ -5951,7 +6109,7 @@
         if (desktopLockOnActive && !target) releaseLockOn(); // computeAutoTarget tries hostile succession before disengaging a dead lock.
         const suppressed = !autoTargetPlatformAllowed() || !target || manualCombatReticleAim() || menuOpen || dialogueOpen || sitInteraction
           || farmEditMode || characterViewMode.enabled || window.AuthoredCutsceneRuntime?.isActive?.()
-          || window.__mapEditorOrbitActive; // Scripted/menu/editor camera owners remain authoritative.
+          || window.__mapEditorOrbitActive || window.DevInspectTools?.ownsCamera?.(); // Scripted/menu/editor camera owners remain authoritative.
         mobileAutoCameraActive = false;
         mobileAutoCameraResponseS = 0;
         if (suppressed || !autoTargetVisible(target)) return; // Temporary obstruction pauses camera tracking without selecting another target.
@@ -6415,6 +6573,8 @@
       const CREATURE_STUCK_THRESHOLD_S = 0.6;
       const CREATURE_PATH_REPLAN_DIST_PX = TILE * 3;
       const CREATURE_PATH_SEARCH_PADDING_TILES = 6;
+      const CREATURE_PATH_FAILURE_RETRY_MS = 1200; // Gives a repeatedly blocked ground route time to change before another A* search.
+      const CREATURE_PATH_FAILURE_MAX_RETRY_MS = 4800; // Bounds the wait if a blocker is removed while the actor stands still.
 
       // Wraps moveCreatureToward for "travel to a fixed point" behaviors —
       // returning home, patrol legs, grazing/drinking trips, a companion
@@ -6432,7 +6592,11 @@
       // real target has moved far enough to invalidate it, or it goes stale.
       function travelCreatureToward(c, tx, ty, speed, dt) {
         const dist = Math.hypot(tx - c.x, ty - c.y);
-        if (dist < TILE * 0.5) { c._travelPath = null; c._travelStuckT = 0; return moveCreatureToward(c, tx, ty, speed, dt); }
+        if (dist < TILE * 0.5) {
+          c._travelPath = null; c._travelStuckT = 0;
+          if (c._travelPathFailure) c._travelPathFailure = null;
+          return moveCreatureToward(c, tx, ty, speed, dt);
+        }
 
         if (c._travelPath && c._travelPath.length) {
           if (!c._travelPathTarget || Math.hypot(tx - c._travelPathTarget.x, ty - c._travelPathTarget.y) > CREATURE_PATH_REPLAN_DIST_PX) {
@@ -6447,16 +6611,39 @@
         }
 
         const moving = moveCreatureToward(c, tx, ty, speed, dt);
-        if (moving) { c._travelStuckT = 0; return moving; }
+        if (moving) {
+          c._travelStuckT = 0;
+          if (c._travelPathFailure) c._travelPathFailure = null;
+          return moving;
+        }
         c._travelStuckT = (c._travelStuckT || 0) + dt;
         if (c._travelStuckT < CREATURE_STUCK_THRESHOLD_S) return moving;
-        c._travelStuckT = 0;
         const startCol = Math.floor(c.x / TILE), startRow = Math.floor(c.y / TILE);
         const targetCol = Math.floor(tx / TILE), targetRow = Math.floor(ty / TILE);
-        const path = window.TilePathfinding?.findPath(startCol, startRow, targetCol, targetRow, (col, row) => creatureTileWalkable(col, row, c), {
-          bounds: window.TilePathfinding.boxAround(startCol, startRow, targetCol, targetRow, CREATURE_PATH_SEARCH_PADDING_TILES),
+        const wilderness = _isZoneArea(currentArea); // Only wilderness retries back off. Indoor collision can change at the same tile when the actor changes floors.
+        const failure = c._travelPathFailure; // Reuses a failed wilderness search only for the same start, destination and area.
+        const sameFailure = wilderness && failure?.area === currentArea &&
+          failure.startCol === startCol && failure.startRow === startRow &&
+          failure.targetCol === targetCol && failure.targetRow === targetRow;
+        if (sameFailure && performance.now() < failure.retryAt) return moving; // Uses real elapsed time even when the game limits simulation dt during a slow frame.
+        c._travelStuckT = 0;
+        const pathfinder = window.TilePathfinding; // Uses the same grid solver as the cliff entry planner.
+        if (!pathfinder) return moving;
+        const pathPerf = window.PerfProfiler?.begin('creature ground detour search'); // Visible in the in-game profiler when searches contribute to a slow frame.
+        const path = pathfinder.findPath(startCol, startRow, targetCol, targetRow, (col, row) => creatureTileWalkable(col, row, c), {
+          bounds: pathfinder.boxAround(startCol, startRow, targetCol, targetRow, CREATURE_PATH_SEARCH_PADDING_TILES),
+          cacheWalkability: true,
         });
-        if (path && path.length) { c._travelPath = path; c._travelPathTarget = { x: tx, y: ty }; }
+        window.PerfProfiler?.end(pathPerf);
+        if (path?.length) {
+          c._travelPathFailure = null;
+          c._travelPath = path; c._travelPathTarget = { x: tx, y: ty };
+        } else if (wilderness) {
+          const delay = sameFailure ? Math.min(failure.delay * 2, CREATURE_PATH_FAILURE_MAX_RETRY_MS) : CREATURE_PATH_FAILURE_RETRY_MS; // Extends only repeat failures.
+          c._travelPathFailure = { area: currentArea, startCol, startRow, targetCol, targetRow, delay, retryAt: performance.now() + delay };
+        } else if (failure) {
+          c._travelPathFailure = null;
+        }
         return moving;
       }
 
@@ -7111,8 +7298,9 @@
           patchPrey.push(c);
           grazingPreyByPatchFrame.set(c.grazingPatchId, patchPrey);
         }
+        const devEnemiesFrozen = window.DevInspectTools?.enemiesFrozen?.() === true; // Developer "Enemies off" (js/dev-inspect-tools.js) reuses the stationary-target branch below.
         for (const c of currentHostilesFrame) {
-          if (c.combatTutorialTarget && !c.combatTutorialHostile && !c.combatTutorialPreview) {
+          if (devEnemiesFrozen || (c.combatTutorialTarget && !c.combatTutorialHostile && !c.combatTutorialPreview)) {
             updateCreatureMesh(c, dt, c.facing); // Stationary exercises keep the humanoid renderer and real hitboxes.
             if (c.isBandit) { window.BanditCombat.updateToolMesh(c); window.BanditCombat.updateTrailArc(c, dt); }
             continue;
@@ -7122,7 +7310,6 @@
             updateWildlifeVisualLod(c, 0); // Promote the original carried portrait even when viewed through a distant spyglass.
             updateCreatureMesh(c, dt, c.facing);
             updateCreatureAnimFrame(c, dt, false);
-            window.TzatzulLiveVisuals?.alignCaptive?.(c);
             continue; // The carrier owns position; ground AI and attacks must not overwrite it.
           }
           // Beastmaster pets stay in hostileObjects so player targeting and
@@ -7262,7 +7449,7 @@
           // a small drift near the boundary can't flip both checks back to
           // back.
           const LEASH_REENTER_FRAC = 0.85;
-          if (def.hostile !== false && !chunkCombatTarget && c.state !== 'chase' && c.state !== 'searching' &&
+          if (def.hostile !== false && !chunkCombatTarget && c.state !== 'herd-panic' && c.state !== 'chase' && c.state !== 'searching' &&
               c.state !== 'fleeing-low-health' && !onFleeCooldown &&
               distFromHome <= def.leashRangePx * LEASH_REENTER_FRAC) {
             const acquiredTarget = window.EnemyPetTargeting?.chooseAggroTarget
@@ -7597,7 +7784,7 @@
           } else if (c.state === 'return') {
             moving = travelCreatureToward(c, c.homeX, c.homeY, def.moveSpeed, entityDt);
             if (moving) aimAngle = Math.atan2(c.homeY - c.y, c.homeX - c.x);
-          } else if (c.herdKey && herdNight) {
+          } else if (c.herdKey && herdNight && c.state !== 'herd-panic') { // A spotted predator overrides the open-air herd's nightly settle/sleep schedule.
             // Roaming herds do not use dens. At night every member returns to
             // its own small slot around the herd's shared sleep center, stays
             // visible, and opts into AnimalSleepPresentation via
@@ -7738,6 +7925,7 @@
               && !c.prone
               && !c._animalSleeping
               && c.state !== 'return'
+              && c.state !== 'herd-panic' // Predators take movement/head-look priority; don't keep glancing back at the player during escape.
               && c.state !== 'patrol-chase'
               && !window.Combat?.telegraph?.isBusy(c)
               && !window.Combat?.animalAttacks?.isBusy(c);
@@ -7976,8 +8164,6 @@
       const COMPANION_WATCH_IDLE_RATE_PER_SEC = 0.012; // Samples an infrequent spontaneous dog-stare while the player remains genuinely idle.
       const COMPANION_WATCH_IDLE_MIN_S = 3.2; // Minimum duration of the stationary player-facing idle.
       const COMPANION_WATCH_IDLE_MAX_S = 6.4; // Maximum duration of the stationary player-facing idle.
-      const SHOULDER_PET_CURIOUS_BODY_LEAN_MIN_DEG = 3; // Used by _tickShoulderPetCuriosity for a readable lean that does not foreshorten the flat sprite.
-      const SHOULDER_PET_CURIOUS_BODY_LEAN_MAX_DEG = 7; // Caps the in-plane body lean so the pet stays settled on its authored shoulder grip.
       const SHOULDER_PET_POSE_HOLD_MIN_S = 1.5; // Both local facing poses are sustained, but switch often enough to keep the perched animal lively.
       const SHOULDER_PET_POSE_HOLD_MAX_S = 3.0;
       const SHOULDER_PET_INWARD_CHANCE = 0.5; // No idle/moving bias: each sustained pose selection is an even 50/50 roll.
@@ -8185,15 +8371,12 @@
         state.timer -= dt;
         if (state.timer <= 0) {
           const facingInward = rnd() < SHOULDER_PET_INWARD_CHANCE; // One 50/50 pose roll only when the current multi-second hold expires.
-          const leanSide = rnd() < 0.5 ? -1 : 1; // Body lean can vary independently; head yaw below always turns away from the character.
           state.facingInward = facingInward;
           state.inwardChance = SHOULDER_PET_INWARD_CHANCE;
           state.phase = facingInward ? 'inward' : 'outward';
           state.timer = SHOULDER_PET_POSE_HOLD_MIN_S
             + rnd() * (SHOULDER_PET_POSE_HOLD_MAX_S - SHOULDER_PET_POSE_HOLD_MIN_S);
           c.__hobunjiShoulderFacingInward = facingInward; // The root attachment solve consumes this persistent state as 180° inward vs 0° outward.
-          state.targetLeanDeg = leanSide * (SHOULDER_PET_CURIOUS_BODY_LEAN_MIN_DEG
-            + rnd() * (SHOULDER_PET_CURIOUS_BODY_LEAN_MAX_DEG - SHOULDER_PET_CURIOUS_BODY_LEAN_MIN_DEG));
           state.targetYawDeg = SHOULDER_PET_AWAY_HEAD_YAW_SIGN * (SHOULDER_PET_CURIOUS_HEAD_TURN_MIN_DEG
             + rnd() * (SHOULDER_PET_CURIOUS_HEAD_TURN_MAX_DEG - SHOULDER_PET_CURIOUS_HEAD_TURN_MIN_DEG)); // Same pet-local left/away turn in both body poses.
           state.targetPitchDeg = (rnd() * 2 - 1) * SHOULDER_PET_CURIOUS_PITCH_DEG;
@@ -8206,7 +8389,10 @@
           c.__hobunjiShoulderFacingInward = state.facingInward; // Cheap hot-reload/state repair; no random work or transform traversal.
         }
         const step = SHOULDER_PET_CURIOUS_TURN_SPEED_DEG * Math.max(0, dt);
-        state.currentLeanDeg += window.FormatUtils.clamp(state.targetLeanDeg - state.currentLeanDeg, -step, step);
+        // Old curiosity snapshots may still contain body-lean values. Neutralize them;
+        // the attachment root changes only for the two observation orientations.
+        state.currentLeanDeg = 0;
+        state.targetLeanDeg = 0;
         state.currentPitchDeg += window.FormatUtils.clamp(state.targetPitchDeg - state.currentPitchDeg, -step, step);
         state.currentYawDeg += window.FormatUtils.clamp(state.targetYawDeg - state.currentYawDeg, -step, step);
         return state;
@@ -8214,9 +8400,8 @@
 
       function _applyShoulderPetCuriosity(c, dt) {
         const state = _tickShoulderPetCuriosity(c, dt);
-        // updateShoulderPetMeshPin applies this state to the pet root around the
-        // authored grip. Rotating the two image cards here would pivot each
-        // around its image center and then get cleared by the final pin.
+        // The attachment root applies only the inward/outward observation flip.
+        // Continuous curiosity pitch/yaw belongs exclusively to the head bones.
         _updateCompanionHeadRotation(c, _companionHeadRestDeg(c) + state.currentPitchDeg, dt);
         if (typeof c.avatarRef?.updateHeadYaw === 'function') c.avatarRef.updateHeadYaw(state.currentYawDeg, dt);
       }
@@ -8656,7 +8841,6 @@
           if (c.tzatzulCapturedBy) {
             updateCreatureMesh(c, dt, c.facing);
             updateCreatureAnimFrame(c, dt, false);
-            window.TzatzulLiveVisuals?.alignCaptive?.(c);
             continue; // Captured companions share the carrier's flight path instead of following their master.
           }
           window.AnimalVocalizations?.tickCreature?.(c, dt, {
@@ -8883,7 +9067,11 @@
             if (window.Combat?.animalAttacks?.isBusy(c)) window.Combat.animalAttacks.cancel(c);
             if (window.Combat?.telegraph?.isBusy(c)) window.Combat.telegraph.cancel(c);
           }
-          if (c._knockbackLedgeFall) {
+          if (c._cliffClimb?.phase === 'fall') {
+            _clearCompanionTreasureCue(c, dt, 'falling');
+            _clearCompanionWatchIdle(c, 'falling');
+            window.CreatureCliffClimb?.update?.(c, dt, target); // Companions are outside updateHostiles; they still need their own fall tick.
+          } else if (c._knockbackLedgeFall) {
             _clearCompanionTreasureCue(c, dt, 'falling');
             _clearCompanionWatchIdle(c, 'falling');
             advanceKnockbackLedgeFall(c, dt);
@@ -10106,6 +10294,7 @@
         // (and any ledge fall it can become) prevents the roll from cancelling
         // displacement that still has to resolve.
         if (!(player.proneThrowT > 0) && !player._knockbackLedgeFall
+            && player._freeJump?.phase !== 'air' && !(player.climbing && player._climbFall)
             && proneRecoveryReady(player)) {
           beginSomersaultRecovery();
         }
@@ -10122,7 +10311,8 @@
       // eligible.
       const SOMERSAULT_RECOVERY_DUR_S = 0.5;
       function beginSomersaultRecovery() {
-        if (!player.prone || player.somersaultRecovering) return false;
+        if (!player.prone || player.somersaultRecovering
+            || player._freeJump?.phase === 'air' || player._knockbackLedgeFall || (player.climbing && player._climbFall)) return false;
         if (!proneRecoveryReady(player)) {
           if (!window.ResourceSystem?.hasTimedDebuff?.(player, 'knockdown'))
             showToast("Footing hasn't recovered enough yet.", false);
@@ -11251,7 +11441,7 @@
                 // constantly throughout Northern Cliffs — not what was asked.
                 // Tag the lowest point of the leaf canopy so the camera can be
                 // kept from rising above it while the player is nearby (see
-                // canopyZoomFloor) — mirrors the standalone foliage tool's own
+                // js/camera-canopy-zoom.js) — mirrors the standalone foliage tool's own
                 // camera-vs-canopy obstruction concept. canopyLocal is computed
                 // once per shared tree variant (see foliage-generator.js's
                 // getTreeVariants), not per instance — just scale it by this
@@ -11566,7 +11756,7 @@
         zScene.traverse(o => { if (o.userData?.cameraObstacle) occlusionMeshes.push(o); });
 
         // Canopy zones (tree crowns) whose underside should temporarily hard-limit
-        // manual zoom-out — see canopyZoomFloor. Plain data, not raycast targets.
+        // manual zoom-out — see js/camera-canopy-zoom.js. Plain data, not raycast targets.
         const canopyZones = [];
         zScene.traverse(o => { if (o.userData?.canopyClamp) canopyZones.push(o.userData.canopyClamp); });
 
@@ -17820,6 +18010,7 @@
       }
 
       function cycleActiveInventoryItem(delta) {
+        releaseManualClothingForEquipmentSwitch(); // Item wheel selection replaces any held Pack garment.
         window.FestivalSystem?.discardFestivalBowl?.('selected-another-item'); // A bowl is a temporary held item, not part of the ordinary inventory carousel.
         const stacks = getInventoryStackItems();
         if (stacks.length === 0) { activeItemIndex = 0; return null; }
@@ -17837,7 +18028,17 @@
       // switching the item wheel does not clear it, and it does not clear
       // itself — the player (or a successful gift) clears it back to "let
       // the wheel decide" via clearManualHeldItem.
-      let manualHeldItem = null; // { kind: 'clothing', uid } | null
+      let manualHeldItem = null; // { kind: 'clothing', uid } | { kind: 'bagItem', key } | null
+      let manualHeldClothingVisual = null; // Cached presentation for the precise Pack garment in the player's hands; avoids per-frame outfit lookup/composition.
+      function getVisibleInventoryItem() {
+        return manualHeldClothingVisual || getActiveInventoryItem(); // Both gifting and the held-item renderer use the same visual identity.
+      }
+      function releaseManualClothingForEquipmentSwitch() {
+        if (manualHeldItem?.kind !== 'clothing') return false;
+        manualHeldItem = null;
+        manualHeldClothingVisual = null; // Replacing/stowing the garment releases both selection and visible pose without per-frame scans.
+        return true;
+      }
       function setManualHeldItem(item) {
         if (item?.kind === 'clothing' && packClothing.some(c => c.uid === item.uid && c.cursed)) {
           showToast('A cursed garment cannot be given away until its curse is lifted.', false);
@@ -17848,35 +18049,57 @@
           return;
         }
         manualHeldItem = item || null;
+        manualHeldClothingVisual = null; // Clearing/changing Hold must stop displaying the previous garment immediately.
+        if (item?.kind === 'clothing') {
+          const garment = packClothing.find(article => article.uid === item.uid); // Resolve once on Hold; gift ownership is still rechecked at action time.
+          if (garment) {
+            manualHeldClothingVisual = window.HeldGiftPolicy.createClothingVisual(garment, {
+              getSprite: cosmeticId => window.EquipmentPanel?.clothingSpriteForCosmetic?.(cosmeticId), // Reuse Pack artwork.
+              compose: (article, sprite) => window.ClothingWeavingSystem?.iconSpriteForCosmetic?.(article, sprite), // The existing compositor creates final colors/patterns on Hold.
+              isCurrent: visual => visual === manualHeldClothingVisual, // Discard stale async results after item switches.
+              onError: error => window.__farmLog?.('[held-clothing] sprite failed: ' + String(error?.message || error), 'warn', 'inventory'),
+            });
+            window.AdventuringTools?.stow?.();
+            heldMode = 'item'; // Clicking clothing Hold must actually put an item in the hands, like the Pack item Hold button.
+          }
+        }
         refreshActionBar();
       }
-      function clearManualHeldItem() { if (!manualHeldItem) return; manualHeldItem = null; refreshActionBar(); }
+      function clearManualHeldItem() {
+        if (!manualHeldItem) return;
+        manualHeldItem = null;
+        manualHeldClothingVisual = null;
+        refreshActionBar();
+      }
       function getManualHeldItem() { return manualHeldItem; }
 
-      // The one accessor gifting (and anything else that wants "whatever
-      // the player is currently offering up") should call — resolves the
-      // manual hold first, falling back to the ordinary wheel selection.
+      // Only the actively held item can be offered. The selected wheel item
+      // remains remembered when tools/weapons are drawn or hands are stowed;
+      // both Gift prompts and the transfer itself re-check this accessor.
       function getHeldGiftItem() {
-        if (window.FestivalSystem?.festivalCup?.()) return null; // The keg cup is temporary and can be shared as a swig, never gifted.
-        if (manualHeldItem?.kind === 'clothing') {
-          const item = packClothing.find(c => c.uid === manualHeldItem.uid); // Only uncollected pack clothing may be offered.
-          if (item && window.NpcGifting?.isItemGiftable?.({ kind: 'clothing', instance: item })) return { kind: 'clothing', instance: item };
-          manualHeldItem = null; // Stale reference (sold/gifted away since) — fall through to the wheel.
+        if (heldMode !== 'item') return null; // Remembered wheel items cannot be given while a tool or empty hands are active.
+        const result = window.HeldGiftPolicy.resolve({
+          heldMode,
+          burdenHeld: !!window.Shattercasks?.heldBurdenInfo?.(),
+          festivalHeld: !!(window.FestivalSystem?.festivalCup?.() || window.FestivalSystem?.heldVessel?.()),
+          instrumentHeld: !!window.MusicMinigame?.state?.instrumentItem,
+          manualHeldItem,
+          clothingVisual: manualHeldClothingVisual,
+          visibleItem: getVisibleInventoryItem(),
+          packClothing,
+          inventory,
+          itemDefs: ITEM_DEFS,
+          isClothingGiftable: held => window.NpcGifting?.isItemGiftable?.(held),
+        }); // The extracted policy decides eligibility while this owner retains mutable equipment state.
+        if (result === window.HeldGiftPolicy.STALE_HOLD) {
+          manualHeldItem = null;
+          manualHeldClothingVisual = null; // A stale manual Hold may never fall back to the remembered wheel item.
+          return null;
         }
-        // A wheel-ineligible material/etc explicitly held via the Inventory
-        // panel's "Hold" button (see selectInventoryItem) — the wheel
-        // itself never contains these (see isWheelEligible), so this is
-        // the only way one becomes giftable.
-        if (manualHeldItem?.kind === 'bagItem') {
-          if ((Number(inventory[manualHeldItem.key]) || 0) > 0) return { kind: 'bagItem', key: manualHeldItem.key, def: ITEM_DEFS[manualHeldItem.key] };
-          manualHeldItem = null; // Ran out since it was picked — fall through to the wheel.
-        }
-        const active = getActiveInventoryItem();
-        if (active?.key && (Number(inventory[active.key]) || 0) > 0) return { kind: 'bagItem', key: active.key, def: ITEM_DEFS[active.key] };
-        return null;
+        return result;
       }
 
-      function clampInventoryStack(key) {
+            function clampInventoryStack(key) {
         // Used after transfers/sales so zero-count stacks stop occupying item boxes.
         if (key && key !== 'gold' && inventory[key] !== undefined && inventory[key] <= 0) delete inventory[key];
         if (key) window.AlchemySystem?.syncPotionStack?.(key); // Consuming or transferring a potion can change the stack's most common recipe.
@@ -18124,6 +18347,7 @@
             mkBtn('🤲 Hold', 'equip', () => {
               window.CookingSystem?.setHeldQuality?.(key, stack?.stars);
               const index = getInventoryStackItems().findIndex(item => item.key === key);
+              releaseManualClothingForEquipmentSwitch(); // A new Pack item replaces any garment in hand.
               if (index >= 0) activeItemIndex = index;
               window.AdventuringTools?.stow?.();
               heldMode = 'item';
@@ -19044,6 +19268,14 @@
           player.inputX = 0; player.inputY = 0; player.inputStrength = 0;
           return;
         }
+        if (player.prone && (player._freeJump?.phase === 'air' || (player.climbing && player._climbFall))) {
+          // Gravity outranks dialogue, fishing, music, movement locks and mounted-control gates.
+          // Those modes may have been active when the airborne hit arrived.
+          if (player._freeJump?.phase === 'air') window.PlayerJump?.tick?.(dt);
+          else window.ClimbSystem?.updateClimb?.(dt);
+          updateProneState(dt);
+          return;
+        }
         syncMobileAutoTargetCombatState();
         syncMobileAutoTargetButton(); // Target availability refreshes even when prone, mounted, or another mode skips ordinary movement.
         updateMobileArchCombatAimLifecycle();
@@ -19111,7 +19343,12 @@
         // recovery roll (player.somersaultRecovering) — both keep the player
         // fully out of normal movement/physics until recovery finishes and
         // clears player.prone itself (see beginSomersaultRecovery).
-        if (player.prone) { updateProneState(dt); return; }
+        if (player.prone) {
+          if (player._freeJump?.phase === 'air') window.PlayerJump?.tick?.(dt); // Gravity precedes the settled prone hold.
+          else if (player.climbing && player._climbFall) window.ClimbSystem?.updateClimb?.(dt); // A knocked-off handhold must finish descending.
+          updateProneState(dt);
+          return;
+        }
 
         const _fsPrevX = player.x, _fsPrevY = player.y;
 
@@ -19253,6 +19490,8 @@
           return;
         }
 
+        const ridingRuinRope = window.DevRandomRuinSimplePuzzles?.isRidingRope?.() === true; // Swing input uses the usual camera transform, with only the pendulum writing position.
+        if (ridingRuinRope) playerAutoWalk = null;
         const keyboardVector = getKeyboardVector();
         const usingKeyboard = keyboardVector.active;
         let ix = usingKeyboard ? keyboardVector.x : input.x;
@@ -19292,7 +19531,7 @@
         // out). If so, snap straight to the nearest genuinely clear tile
         // instead, so getting stuck never requires guessing which
         // direction happens to be open.
-        if (inputStrength > 0.001 && !_playerWasMoving && !canOccupyAt(player.x, player.y, PLAYER_RADIUS * 0.72)) {
+        if (!ridingRuinRope && inputStrength > 0.001 && !_playerWasMoving && !canOccupyAt(player.x, player.y, PLAYER_RADIUS * 0.72)) {
           const rescue = findNearestWalkableTileCenter(player.x, player.y);
           if (rescue) { player.x = rescue.x; player.y = rescue.y; player.vx = 0; player.vy = 0; }
         }
@@ -19353,6 +19592,11 @@
         player.inputX = ix;
         player.inputY = iy;
         player.inputStrength = inputStrength;
+        if (ridingRuinRope) {
+          player.vx = 0; player.vy = 0;
+          return;
+        }
+
 
         // ── Tile-speed lookup ─────────────────────────────────
         const rawSpeed = tileSpeedAt(player.x, player.y);
@@ -20701,13 +20945,18 @@
           : getCorpseObjectForAction(action, _r.col, _r.row) || getAimedFarmInteractionObject(_r.col, _r.row);
       }
 
+      function interruptBandagingForAction(action, reason = 'action') {
+        if (!action || action === 'none' || action === 'potion_select' || action === 'ammo_select') return false;
+        return window.BandageSystem?.cancel?.(reason, { action }) === true; // Releases only the bandaging lock before the original action-owner check.
+      }
       function useActiveAction() {
         // A stale bound button/press may arrive after combat began but before the next action-bar refresh.
         if (isPlayerInCombat() && (activeAction === npcDialogueAction() || activeAction === smithyAction() || activeAction === generalStoreAction() || activeAction === carpenterAction()
           || activeAction === 'npc_offer_alcohol_swig' || activeAction === 'npc_offer_gift' || activeAction === 'npc_open_wardrobe' || activeAction === 'npc_slagothim_trade'
           || activeAction === 'festival_npc_gift' || activeAction === 'festival_npc_sweet')) return;
+        const attackAction = (activeTool === 'weapon' && (activeAction === toolActions.weapon[0] || activeAction === toolActions.weapon[1])) || (activeTool === 'ranged' && activeAction === 'shoot'); // Preserves attack-specific cancellation diagnostics.
+        interruptBandagingForAction(activeAction, attackAction ? 'attack' : 'action');
         if (activeAction === 'dance_spin' && !menuOpen && !dialogueOpen && !paused) { window.SocialActionWheel?.spin?.(); return; }
-        if ((activeTool === 'weapon' && (activeAction === toolActions.weapon[0] || activeAction === toolActions.weapon[1])) || (activeTool === 'ranged' && activeAction === 'shoot')) window.BandageSystem?.cancel?.('attack');
         if (window.CharacterActionLocks?.isLocked?.(PLAYER_ACTION_LOCK_ID, 'actions')) return;
         if (window.PlayerDowned?.allowsAction?.(heldMode, activeTool) === false) return; // Only the ranged weapon works while downed (js/player-downed.js).
         if (sitInteraction) {
@@ -21872,6 +22121,7 @@
       // Camera — mode-driven, with the default preserving the original isometric follow.
       const camera = new THREE.PerspectiveCamera(cameraModeConfig('default').fovDeg ?? 42, 1, 0.1, 200);
       window.PngPlaneOutlineOccluder.init({ renderer, camera }); // Registry pruning + depth-only PNG silhouette replay: js/png-plane-outline-occluder.js.
+      window.DevInspectTools?.init?.({ THREE, camera, renderer, showToast, player, TILE, getCurrentArea: () => currentArea }); // Developer fly camera + enemy freeze (dev mode only): js/dev-inspect-tools.js.
       // Outline materials, render targets, composite and the per-frame pass
       // order (js/world-render-pipeline.js). Settings are read live each frame.
       window.WorldRenderPipeline.init({
@@ -22566,33 +22816,12 @@
         return { x: resultX, y: resultY, z: resultZ, lookAtX: adjustedLookAtX, lookAtZ: adjustedLookAtZ }; // Camera and reticle keep the same adjusted look target.
       }
 
-      // How far under a tree canopy's own recorded influence radius the player
-      // has to be before manual zoom-out gets hard-limited to its underside
-      // height — ports the standalone foliage tool's camera-vs-canopy
-      // obstruction concept (see buildZoneScene's canopyZones / the
-      // vegGroup.userData.canopyClamp tagging in _buildZoneFloorMeshes).
-      // Only ever raises the effective zoom used for THIS frame's distance —
-      // never mutates s_zoomScale itself, so the player's own wheel/slider
-      // setting is restored the instant they step out of every canopy's radius.
-      function canopyZoomFloor(tx, tz, lookY) {
-        if (!_isZoneArea(currentArea)) return 0;
-        const zones = _zoneScenes.get(currentArea)?.canopyZones;
-        if (!zones || !zones.length) return 0;
-        const modeCfg = cameraModeConfig(activeCameraMode);
-        const angle = THREE.MathUtils.degToRad((modeCfg.angleFromGroundDeg ?? 32.73) + clampCameraPitchOffsetDeg(cameraAngleOffsetDeg, modeCfg.angleFromGroundDeg ?? 32.73));
-        const distanceTiles = modeCfg.distanceTiles ?? 14;
-        const sinAngle = Math.sin(angle);
-        const CANOPY_CLEARANCE = 0.3;
-        let floor = 0;
-        for (const z of zones) {
-          const dx = tx - z.x, dz = tz - z.z;
-          if (dx * dx + dz * dz > z.radius * z.radius) continue;
-          const headroom = z.undersideY - CANOPY_CLEARANCE - lookY;
-          const required = headroom > 1e-4 ? (sinAngle * distanceTiles) / headroom : Infinity;
-          if (required > floor) floor = required;
-        }
-        return floor;
-      }
+      // How far under a tree canopy the zoom-out is limited (canopyZoomFloor) now lives in js/camera-canopy-zoom.js.
+      window.CameraCanopyZoom.init({
+        isZoneArea: _isZoneArea, getCurrentArea: () => currentArea,
+        getZoneInfo: area => _zoneScenes.get(area), getModeConfig: () => cameraModeConfig(activeCameraMode),
+        getPitchOffsetDeg: baseAngleDeg => clampCameraPitchOffsetDeg(cameraAngleOffsetDeg, baseAngleDeg),
+      });
       window.DialogueCameraFraming?.init({ viewport: threeContainer, panel: _npcDialogueEl }); // Shared live panel geometry drives dialogue-safe head composition.
       // Where the camera was ACTUALLY looking last frame. Cinematic blends
       // start from this rather than camTargetX/Y/Z: camTargetY is ground
@@ -22603,7 +22832,7 @@
       // Authored camera interpolation now lives in the shared camera runtime, also used by the Director.
       const cinematicBlend = window.CinematicCameraRuntime.createBlendController({ camera, lookPoint: _lastCameraLookPoint, safePosition: occlusionSafeCameraPosition, aspect: cameraContainerAspect, framing: (view, shot) => window.DialogueCameraFraming?.apply(view, shot.dialogueFraming !== false && !!(shot.trackSpeaker || shot.targetNpcId || shot.targetProvider || shot.dialogueFraming)) }); // Retains one blend clock across consecutive lines of the same shot.
       function applyAuthoredCinematicCamera() {
-        if (window.__mapEditorOrbitActive) { cinematicBlend.reset(); return false; }
+        if (window.__mapEditorOrbitActive || window.DevInspectTools?.ownsCamera?.()) { cinematicBlend.reset(); return false; }
         return cinematicBlend.apply();
       }
 
@@ -22644,7 +22873,7 @@
         let effectiveZoomScale = ignoreGlobalZoom ? 1 : s_zoomScale;
         if (!ignoreGlobalZoom && !cutscenePreviewActive && !dialogueZoomActive()) {
           const approxLookY = camTargetY + (modeCfg.targetYOffsetTiles ?? 0);
-          const floor = canopyZoomFloor(tx, tz, approxLookY);
+          const floor = window.CameraCanopyZoom.floor(tx, tz, approxLookY);
           if (floor > effectiveZoomScale) {
             const cfg = desktopControlsConfig();
             const max = Number.isFinite(Number(cfg.wheelZoomMax)) ? Number(cfg.wheelZoomMax) : 2.5;
@@ -22680,7 +22909,7 @@
           if (!cutscenePreviewActive && !dialogueZoomActive()) lookY = Math.max(lookY, cameraSurfaceYAtWorld(lookAtX, lookAtZ) + SHOULDER_CAMERA_MIN_TARGET_HEIGHT);
         }
         const surfaceView = window.HobunjiShoulderCameraCharacterFraming?.updateSurfaceView?.(currentArea, player.x / TILE, player.y / TILE,
-          activeCameraMode === SHOULDER_SURF_MODE && !portraitAim && !cutscenePreviewActive && !dialogueZoomActive() && !window.__mapEditorOrbitActive,
+          activeCameraMode === SHOULDER_SURF_MODE && !portraitAim && !cutscenePreviewActive && !dialogueZoomActive() && !window.__mapEditorOrbitActive && !window.DevInspectTools?.ownsCamera?.(),
           performance.now()); // Existing camera update owns the lift; the actual camera ray automatically targets revealed surface items.
         if (surfaceView) { lookY += surfaceView.lift; distance *= surfaceView.distanceScale; }
         const melodyFrame=window.MelodyCameraFraming?.update?.({
@@ -22688,7 +22917,7 @@
           baseTarget:{x:lookAtX,y:lookY,z:lookAtZ},baseDistance:distance,azimuth,angle,
           fovDeg:modeCfg.fovDeg??42,aspect:cameraContainerAspect(),
           enabled:!cutscenePreviewActive&&!dialogueZoomActive()&&!dialogueOpen
-            &&!window.__mapEditorOrbitActive&&!window.CinematicCameraRuntime?.isActive?.()
+            &&!window.__mapEditorOrbitActive&&!window.DevInspectTools?.ownsCamera?.()&&!window.CinematicCameraRuntime?.isActive?.()
             &&activeCameraMode!=='fishing'&&activeCameraMode!=='fishCatch',
           now:performance.now(),
         }); // Shared gameplay camera remains authoritative; the score supplies only a discovery-gated framing correction.
@@ -22705,7 +22934,8 @@
         // runtime.js) owns camera.position/lookAt directly while a placement
         // is selected — skip the normal player-follow pose so this per-frame
         // recompute doesn't fight it, while still keeping fov/aspect current.
-        if (!window.__mapEditorOrbitActive) {
+        // The developer fly camera (js/dev-inspect-tools.js) owns it the same way.
+        if (!window.__mapEditorOrbitActive && !window.DevInspectTools?.ownsCamera?.()) {
           camera.position.set(safe.x, safe.y, safe.z);
           camera.lookAt(safe.lookAtX, lookY, safe.lookAtZ);
           _lastCameraLookPoint.set(safe.lookAtX, lookY, safe.lookAtZ); // Interaction rays track the collision-adjusted camera aim.
@@ -23999,13 +24229,13 @@
         // The full item definition supplies procedural bottle art and tint data.
         const def = ITEM_DEFS[item.key] || item;
         window.ItemProcessing.normalizeAlcoholItemDef(def);
-        window.ObjectSpriteCatalog?.ensure?.(item.key, def); // Held sprite planes use the same newly authored art as Pack and action-arch icons.
+        if (item.kind !== 'packClothingVisual') window.ObjectSpriteCatalog?.ensure?.(item.key, def); // Authored garment silhouettes bypass generic object categorization and accidental palette recoloring.
         // Width starts square and gains the source sprite's aspect ratio after load.
         const w = HELD_ITEM_PLANE_WIDTH * (ITEM_HELD_PLANE_SCALE[item.key] ?? 1) * (isThrowFlaskItem(item) ? HELD_FLASK_SIZE_MULT : 1);
         const geo = new THREE.PlaneGeometry(w, w);
         // Authored items start with their PNG, so a bottle never flashes or
         // remains as an emoji while the ingredient recolor resolves.
-        const spritePath = def.spriteIcon ? 'assets/objectsprites/' + def.spriteIcon : null;
+        const spritePath = item.heldSpritePath || (def.spriteIcon ? 'assets/objectsprites/' + def.spriteIcon : null); // Pack clothing uses its authored/composited garment PNG without pretending to be an ITEM_DEFS object sprite.
         // Plane is assigned below and read only from the texture loader's async callback.
         let plane = null;
         const fallbackTexture = spritePath
@@ -24408,7 +24638,7 @@
         _heldAttachStamp++;
         const vessel = heldMode === 'item' ? window.FestivalSystem?.heldVessel?.() : null; // Display the festival bowl or keg cup as a genuine held sprite while item mode is selected.
         const item = window.MusicMinigame?.state?.instrumentItem
-          || (vessel || getActiveInventoryItem()); // Uses the existing held-item plane, hand sockets, and drink animation instead of a parallel pose system.
+          || (vessel || getVisibleInventoryItem()); // The displayed Pack garment, gift resolver and hand pose now agree on one actual held object.
         if (_heldDrinkPhase && _heldItemPlane) {
           const animation = window.HeldActionAnimations.drink;
           const durationS = Math.max(0.1, Number(animation.durationS) || _heldDrinkAnimDuration || 0.95);
@@ -24461,8 +24691,9 @@
         const isKurraya = item.key === 'kurraya';
         const heldPotion = String(item.key).startsWith('alchemy_') && !!window.AlchemySystem?.parseBrewedItemKey?.(item.key); // Only alchemy stacks have batch-majority pigments.
         if (heldPotion) window.AlchemySystem?.syncPotionStack?.(item.key); // Refresh the dominant liquid before checking the held plane.
-        const appearanceSignature = heldPotion ? String(ITEM_DEFS[item.key]?.spriteColor) + '|' + String(ITEM_DEFS[item.key]?.spriteMode) : null; // Compared only for potion items; ordinary held objects keep their old O(1) key-only path.
-        if (item.key !== _heldItemKey || (heldPotion && appearanceSignature !== _heldItemAppearanceSignature)) {
+        const appearanceSignature = heldPotion ? String(ITEM_DEFS[item.key]?.spriteColor) + '|' + String(ITEM_DEFS[item.key]?.spriteMode)
+          : item.kind === 'packClothingVisual' ? String(item.heldSpriteVersion || 0) : null; // Rebuild an asynchronously composed garment once when its image resolves.
+        if (item.key !== _heldItemKey || appearanceSignature !== _heldItemAppearanceSignature) {
           disposeHeldItemPlaneMesh(_heldItemPlane, heldItemHolder);
           // The Kurraya's real art lives at assets/toolsprites (the same
           // sprite/texture Foroji's NPC station prop uses — see
@@ -25345,7 +25576,7 @@
         // flips (see startClimb/updateClimb).
         const supportedJump = player._freeJump?.phase === 'supported'; // Elevated landings still use PlayerJump's current feet height, with the ruin's visual immersion applied.
         const ruinStandY = window.DevRandomRuin?.getPlayerSupportY?.(supportedJump ? player.physicalFeetY : undefined);
-        const ordinaryStandY = player.onBranch ? player.branchSurfaceY
+        let ordinaryStandY = player.onBranch ? player.branchSurfaceY
           : player.onCliffBalcony ? player._cliffBalconyY
           : player.onClimbSurface ? player.wallClimbY
           : supportedJump && Number.isFinite(ruinStandY) ? ruinStandY
@@ -25353,6 +25584,13 @@
           : player.climbing ? player.climbSurfaceY
           : Number.isFinite(ruinStandY) ? ruinStandY
           : activeSurfaceYAtWorld(wx, wz); // Exact farm/zone/town terrain contour replaces the old flat-tile approximation.
+        if (!player._freeJump && !player.climbing && !player.onBranch && !player.onClimbSurface
+            && !Number.isFinite(ruinStandY) && !sitInteraction && mountRideState === 'none') {
+          const plateSupport = window.DynamicSurfaces?.samplePressurePlate?.(
+            currentArea, wx, wz, ordinaryStandY, ordinaryStandY + (window.PlayerJump?.config?.maxStepUp ?? .25),
+          ); // Ordinary caves and cliff balconies keep their floor, with the plate's slab as a local step up.
+          if (plateSupport) ordinaryStandY = plateSupport.y;
+        }
         const physicalGroundOwnedByWalk = !player._freeJump && !player.climbing && !player.onBranch
           && !player.onCliffBalcony && !player.onClimbSurface && !Number.isFinite(ruinStandY)
           && !sitInteraction && mountRideState === 'none'; // Grounded prone and ordinary melee poses still stand on the same actual porch floor.
@@ -25385,7 +25623,8 @@
           player._walkableStandingX = wx; player._walkableStandingZ = wz;
         }
         const stoodOnRaisedSupport = !!reachableSupport && physicalSurfaceY > ordinaryStandY + 0.01; // Only real deck contact suppresses water wading.
-        if (physicalGroundOwnedByWalk && !Number.isFinite(player.lungeFlightWorldY)) {
+        const onBalconyFloor = player.onCliffBalcony && !player.climbing && !player._freeJump; // Balcony plates add to the existing shelf's standing height.
+        if ((physicalGroundOwnedByWalk || onBalconyFloor) && !Number.isFinite(player.lungeFlightWorldY)) {
           player.physicalFeetY = physicalSurfaceY; // Grounded melee/prone actors and subsequent jumps inherit the real floor.
         }
         const standY = knockbackVisualSurfaceY(player, physicalSurfaceY);
@@ -25613,7 +25852,6 @@
             || (!player.climbing && !player.onBranch && !player.onClimbSurface && playerMesh.position.y > groundedTargetY + 0.12),
           directionX: player.lungeDirX, directionZ: player.lungeDirY,
         });
-        window.TzatzulLiveVisuals?.alignCaptive?.(player, playerMesh); // Apply the authored humanoid talon pose after ordinary player animation.
       }
 
       // ── Update reticle ────────────────────────────────────────────
@@ -26955,6 +27193,7 @@
 
       function setActiveTool(tool, opts = {}) {
         if (!toolActions[tool]) return;
+        releaseManualClothingForEquipmentSwitch(); // Tool and weapon selection relinquish an explicit clothing Hold.
         if (activeTool === 'adventuring' && tool !== 'adventuring') {
           if (pendingAction?.tool === 'adventuring') pendingAction = null;
           if (combatSwingAnim && toolSwingT > 0) {
@@ -27017,7 +27256,8 @@
       // gear slots. The remembered activeTool/activeItemIndex are restored by
       // the next tool, item, or weapon selection.
       function putAwayHeldEquipment(opts = {}) {
-        if (heldMode === 'none') return;
+        const clearedClothing = releaseManualClothingForEquipmentSwitch(); // Everything stowed must clear the garment itself, not only its Gift button.
+        if (heldMode === 'none') { if (clearedClothing) refreshActionBar(); return; }
         heldMode = 'none';
         activeAction = 'none';
         actionHeldDown = false;
@@ -28598,6 +28838,7 @@
       // HobunjiDrunkGameplayBridge (food/drink) and makeProcessingFurniture
       // (processor insertion) respectively.
       function beginHeldItemActionDescriptor(action) {
+        if (action === 'consume_held_item' || action.startsWith('obj_process_')) interruptBandagingForAction(action); // Free both hands before a food/drink/processor hold starts.
         if (action === 'consume_held_item') return !!window.HobunjiDrunkGameplayBridge?.beginHeldItemAction?.();
         if (action.startsWith('obj_process_')) return beginHeldProcessorInsertion(action);
         return false;
@@ -28745,7 +28986,11 @@
           return;
         }
         if (window.FarmworkUI?.isPlanning?.()) {
-          if (['action1', 'action2', 'action3'].includes(actionId)) { dispatchWorldInputClaim(actionId, phase, 'farmwork:' + source); return; }
+          if (['action1', 'action2', 'action3'].includes(actionId)) {
+            if (phase === 'press') interruptBandagingForAction('farmwork-' + actionId, 'world-interaction');
+            dispatchWorldInputClaim(actionId, phase, 'farmwork:' + source);
+            return;
+          }
           if (actionId === 'dodge' || actionId === 'toolSelect') {
             if (phase === 'press') window.FarmworkUI.setPlanning(false);
             return;
@@ -28754,6 +28999,10 @@
         if (actionId === 'dodge' && window.Fishing?.state?.active) {
           if (phase === 'press') performContextAction(); // Fishing cancel outranks placement, selectors and weapon handlers.
           return;
+        }
+        if (phase === 'press' && ['action1', 'action2', 'interact'].includes(actionId)
+          && (window.DevMapFurniture?.isActive?.() || window.WallOrnamentPlacement?.isPlayerReticlePlacementActive?.())) {
+          interruptBandagingForAction('furniture-editor-' + actionId, 'world-interaction'); // Placement claims can execute before the usual action dispatcher.
         }
         if (window.DevMapFurniture?.handleGameplayAction?.(actionId, phase)) {
           if (phase === 'press') refreshActionBar();
@@ -28788,7 +29037,9 @@
           // The controller gameplay loop independently resolves physical buttons:
           // it does NOT consult ControllerInput.frame.pressed deletion. Claim
           // pickup here so the same release cannot recall/re-equip a tool.
-          if (window.Shattercasks?.toolArchAction?.() === 'pickup' && window.Shattercasks?.toolArchTap?.()) {
+          const shattercaskPickup = window.Shattercasks?.toolArchAction?.() === 'pickup'; // This pickup shortcut bypasses the normal action dispatcher.
+          if (shattercaskPickup) interruptBandagingForAction('shattercask_collect', 'world-interaction');
+          if (shattercaskPickup && window.Shattercasks?.toolArchTap?.()) {
             toolSelectPress.down = true;
             toolSelectPress.held = false;
             toolSelectPress.contextPickup = true;
@@ -28864,6 +29115,7 @@
           return;
         }
         if (phase === 'press' && furniturePlacementModeArmed() && (actionId === 'action1' || actionId === 'interact' || actionId === 'action2')) {
+          interruptBandagingForAction('furniture-place-' + actionId, 'world-interaction'); // Placing/canceling held furniture happens on this initial press.
           furniturePlacementActionPresses.add(actionId);
           if (actionId === 'action2') {
             cancelFurniturePlacementMode(true); // Action 2 mirrors the visible mobile Cancel button.
@@ -28903,12 +29155,16 @@
           return;
         }
         if (window.Fishing?.state?.active) {
-          if (actionId === 'interact' || actionId === 'action1') window.Fishing?.primaryAction();
+          if (actionId === 'interact' || actionId === 'action1') {
+            interruptBandagingForAction('fish_primary', 'world-interaction');
+            window.Fishing?.primaryAction();
+          }
           return;
         }
         if (menuOpen || farmEditMode) return;
         if(dispatchWorldInputClaim(actionId,'press',source))return; // Explicit world claims outrank weapon/tool actions, but menus, selectors, fishing, and placement retain their higher-level ownership.
         if (heldMode === 'item' && actionId === 'action1' && window.AlchemyFlasks?.heldActions?.().length) {
+          interruptBandagingForAction('alchemy_flask_primary');
           if (window.AlchemyFlasks.beginAim()) flaskActionPresses.add(actionId);
           return;
         }
@@ -31628,7 +31884,7 @@
           disposeHeldItemPlaneMesh(_heldItemPlane,heldItemHolder);
           _heldItemPlane=null;_heldItemKey=null;_heldItemAppearanceSignature=null;heldItemHolder.visible=false;
         },
-        equipFestivalBowl: () => { window.AdventuringTools?.stow?.(); heldMode = 'item'; updateHeldItemHolder(0); refreshActionBar(); }, // Reuses actual held sprite/hand pose with no physical inventory entry.
+        equipFestivalBowl: () => { releaseManualClothingForEquipmentSwitch(); window.AdventuringTools?.stow?.(); heldMode = 'item'; updateHeldItemHolder(0); refreshActionBar(); }, // Reuses actual held sprite/hand pose with no physical inventory entry.
         playFestivalBowlDrink: onBite => {
           if(!sitInteraction || sitInteraction.phase !== 'active' || heldMode !== 'item') return false;
           updateHeldItemHolder(0);
@@ -32009,12 +32265,12 @@
         player,
         getInventoryStackItems,
         getActiveItemIndex: () => activeItemIndex,
-        setActiveItemIndex: (v) => { activeItemIndex = v; },
+        setActiveItemIndex: (v) => { releaseManualClothingForEquipmentSwitch(); activeItemIndex = v; }, // The item arch replaces a Pack garment.
         ITEM_DEFS,
         applyItemSpriteIcon,
         clearItemSpriteIcon,
         getHeldMode: () => heldMode,
-        setHeldMode: (v) => { if(v !== 'tool') window.AdventuringTools?.stow?.(); heldMode = v; },
+        setHeldMode: (v) => { if (v !== 'item') releaseManualClothingForEquipmentSwitch(); if(v !== 'tool') window.AdventuringTools?.stow?.(); heldMode = v; },
         getLastHeldFarmTool: () => lastHeldFarmTool,
         setLastHeldFarmTool: (v) => { lastHeldFarmTool = v; },
         setActiveTool,

@@ -6,6 +6,7 @@
   'use strict';
 
   const surfaces = new Map();
+  const platesByArea = new Map(); // Small area-local index for plate support on ordinary terrain and voxel floors.
   const blockers = new Map();
   const pits = new Map();
   const beforeRenderClients = new Set();
@@ -38,17 +39,85 @@
     return record;
   }
 
-  const registerSurface = definition => register('surface', surfaces, definition);
+  function unindexPlate(record) {
+    if (!record?.plateArea) return;
+    const plates = platesByArea.get(record.plateArea);
+    plates?.delete(record.id);
+    if (!plates?.size) platesByArea.delete(record.plateArea);
+  }
+
+  function registerSurface(definition) {
+    const previous = surfaces.get(definition?.id);
+    const record = register('surface', surfaces, definition);
+    unindexPlate(previous);
+    if (record.plateArea) {
+      if (!platesByArea.has(record.plateArea)) platesByArea.set(record.plateArea, new Map());
+      platesByArea.get(record.plateArea).set(record.id, record);
+    }
+    return record;
+  }
+
+  // Use only the slab's own geometry. Engravings, glow and payload meshes
+  // attached to it must never raise the standing height.
+  function pressurePlateSurface(mesh, options) {
+    const geometry = mesh?.geometry;
+    if (!geometry) return null;
+    mesh.userData.walkableElevation = true;
+    if (!geometry.boundingBox) geometry.computeBoundingBox?.();
+    const box = geometry.boundingBox;
+    if (!box || box.isEmpty?.() || !mesh.updateWorldMatrix) return null;
+    const bounds = {}; // Reused as the slab moves or depresses.
+    const centerX = (box.min.x + box.max.x) * .5;
+    const centerZ = (box.min.z + box.max.z) * .5;
+    const radius = geometry.parameters?.radiusTop;
+    const halfX = radius ?? (box.max.x - box.min.x) * .5;
+    const halfZ = radius ?? (box.max.z - box.min.z) * .5;
+    let supportedY; // Computed with the footprint test for the same underfoot query.
+    const refresh = () => {
+      mesh.updateWorldMatrix(true, false);
+      const m = mesh.matrixWorld.elements;
+      const x = m[0]*centerX + m[4]*box.max.y + m[8]*centerZ + m[12];
+      const z = m[2]*centerX + m[6]*box.max.y + m[10]*centerZ + m[14];
+      const dx = Math.abs(m[0])*halfX + Math.abs(m[8])*halfZ;
+      const dz = Math.abs(m[2])*halfX + Math.abs(m[10])*halfZ;
+      bounds.minX = x-dx; bounds.maxX = x+dx;
+      bounds.minZ = z-dz; bounds.maxZ = z+dz;
+      return bounds;
+    };
+    return {
+      priority: 15,
+      ...options,
+      walkableElevation: true,
+      bounds: refresh,
+      supports: (x, z) => {
+        const m = mesh.matrixWorld.elements;
+        const dx = x - (bounds.minX + bounds.maxX) * .5;
+        const dz = z - (bounds.minZ + bounds.maxZ) * .5;
+        const det = m[0]*m[10] - m[2]*m[8];
+        if (Math.abs(det) < 1e-8) return false;
+        const localX = (m[10]*dx - m[8]*dz) / det;
+        const localZ = (m[0]*dz - m[2]*dx) / det;
+        supportedY = m[1]*(centerX + localX) + m[5]*box.max.y + m[9]*(centerZ + localZ) + m[13];
+        return radius != null ? localX*localX + localZ*localZ <= radius*radius
+          : Math.abs(localX) <= halfX && Math.abs(localZ) <= halfZ;
+      },
+      topY: () => supportedY,
+    };
+  }
   const registerBlocker = definition => register('blocker', blockers, definition);
   const registerPit = definition => register('pit', pits, definition);
 
   function remove(id) {
+    unindexPlate(surfaces.get(id));
     return surfaces.delete(id) || blockers.delete(id) || pits.delete(id);
   }
 
   function clearScope(scope) {
     for (const store of [surfaces, blockers, pits]) {
-      for (const [id, record] of store) if (record.scope === scope) store.delete(id);
+      for (const [id, record] of store) if (record.scope === scope) {
+        if (store === surfaces) unindexPlate(record);
+        store.delete(id);
+      }
     }
   }
 
@@ -64,25 +133,36 @@
     return number(evalValue(record.topY, x, z, record), 0);
   }
 
-  function sampleSupport(x, z, options = {}) {
+  function sampleFrom(records, x, z, options) {
     const minY = number(options.minY, -Infinity);
     const maxY = number(options.maxY, Infinity);
     const pad = number(options.pad, 0);
     const scope = options.scope == null ? null : String(options.scope); // Optional exact scope filter used by pre-entry generated-map audits.
     let best = null;
-    for (const record of surfaces.values()) {
-      if (!recordEnabled(record)) continue;
+    const area = options.area ?? (scope == null ? window.GridTileAccessors?.getCurrentArea?.() : null);
+    for (const record of records) {
       if (scope != null && String(record.scope ?? '') !== scope) continue;
+      if (record.plateArea && area && record.plateArea !== area) continue;
+      if (!recordEnabled(record)) continue;
       const bounds = recordBounds(record);
       if (!contains(bounds, x, z, pad)) continue;
       if (typeof record.supports === 'function' && !record.supports(x, z, record)) continue;
-      const y = surfaceTopY(record, x, z);
-      if (y < minY || y > maxY) continue;
+      const y = record.sampleTopY ? record.sampleTopY(x, z) : surfaceTopY(record, x, z);
+      if (!Number.isFinite(y) || y < minY || y > maxY) continue;
       if (!best || y > best.y || (y === best.y && number(record.priority) > number(best.record.priority))) {
         best = { id: record.id, y, bounds, record };
       }
     }
     return best;
+  }
+
+  function sampleSupport(x, z, options = {}) {
+    return sampleFrom(surfaces.values(), x, z, options);
+  }
+
+  function samplePressurePlate(area, x, z, minY, maxY) {
+    const records = platesByArea.get(area);
+    return records ? sampleFrom(records.values(), x, z, { area, minY, maxY }) : null;
   }
 
   function pointInPit(x, z, pad = 0) {
@@ -169,7 +249,7 @@
   }
 
   window.DynamicSurfaces = Object.freeze({
-    registerSurface, registerBlocker, registerPit,
+    registerSurface, pressurePlateSurface, samplePressurePlate, registerBlocker, registerPit,
     remove, clearScope, sampleSupport, pointInPit, blockerAt,
     addBlockerFilter, addBeforeRenderClient, debugSnapshot,
   });

@@ -42,6 +42,12 @@
   const BOSS_WAKE_MS = 1400; // Beat between arriving in the arena and the lich rising.
   const INTRO_MS = 3600; // The isolated camera and title hold before the boss enters enemy simulation.
   const INTRO_TITLE_DELAY_MS = 850; // Let the existing camera blend toward the lich before revealing its name.
+  const INTRO_TURN_DELAY_MS = 230, INTRO_TURN_MS = 720; // The lich starts turned away, then acknowledges the player just as the .95s zoom settles.
+  const INTRO_SHRIEK_MS = INTRO_TURN_DELAY_MS + INTRO_TURN_MS; // Shriek begins the instant the portrait finishes turning.
+  const INTRO_ECHO_TAPS = Object.freeze([
+    { afterMs:400, volume:.55, pitch:.96 }, { afterMs:870, volume:.32, pitch:.92 },
+    { afterMs:1450, volume:.18, pitch:.87 }, { afterMs:2070, volume:.09, pitch:.82 },
+  ]); // Deliberately impossible chamber-sized echoes; every repeat uses the existing positional reverb mixer.
   const FADE_MS = 320;
 
   // Sanctum layout in tiles (1 tile = 1 world unit), east of the V50 grid.
@@ -1043,6 +1049,7 @@
     owner.intro = null;
     clearTimeout(intro.titleTimer);
     clearTimeout(intro.endTimer);
+    for (const timer of intro.soundTimers || []) clearTimeout(timer); // Death/exit/reroll must never schedule a late scream or echo.
     intro.title?.remove?.();
     if (owner.introLight) {
       owner.introLight.active = false;
@@ -1053,10 +1060,41 @@
     if (window.CinematicCameraRuntime?.activeRecord?.()?.reason === 'ruin-sanctum-boss-intro') window.CinematicCameraRuntime.deactivate();
     if (intro.lock) window.CharacterActionLocks?.release?.(intro.lock);
     if (beginCombat && s === owner && owner.inSanctum && owner.boss === intro.boss && Number(intro.boss.health) > 0) {
+      window.CombatVocalizations?.suppressSkeletonCoffinSpawnAlert?.(intro.boss); // The skeleton-voiced lich already screamed for the reveal; suppress only its immediate duplicate combat-detection alert.
       deps?.hostileObjects?.add?.(intro.boss); // No enemy AI, projectiles, summons or damage run while the cinematic is active.
       wakeCoffins(); // The lich is alone for its introduction; its skeletons rise only after the title clears.
       owner.lastEncounterEvent = 'combat-started';
     }
+  }
+
+  function setBossIntroFacing(boss, facing) {
+    boss.facing = facing; // Authoritative combat aim stays aligned with the new visual rotation when combat starts.
+    const yaw = Math.PI / 2 - facing - (Number(boss.def?.aimAngleOffset) || 0); // BanditCombat/updateCreatureMesh's existing humanoid rig convention.
+    boss.groupRot = yaw;
+    boss.pngRot = yaw;
+    if (boss.avatarRef?.group?.rotation) boss.avatarRef.group.rotation.y = yaw; // Boss is not in the hostile simulation yet, so updateCreatureMesh is not running.
+    if (boss._banditToolHolder && !boss._banditDisposed) window.BanditCombat?.updateToolMesh?.(boss); // Hostile weapons are scene siblings, not body children; the shared pose owner must turn and re-seat Azgarlu's warhammer too.
+  }
+
+  function updateBossIntro(now) {
+    const intro = s?.intro;
+    if (!intro || !intro.boss) return;
+    const elapsed = Math.max(0, (Number.isFinite(now) ? now : performance.now()) - intro.startedAtMs);
+    const t = Math.max(0, Math.min(1, (elapsed - INTRO_TURN_DELAY_MS) / INTRO_TURN_MS));
+    const eased = t*t*(3-2*t); // Smooth, readable turn rather than an instantaneous AI-facing snap.
+    const facing = intro.turnFrom + (intro.turnTo-intro.turnFrom)*eased; // Reuse the original boss-facing animation without recalculating scene-sibling weapon poses after it settles.
+    if (Math.abs((Number(intro.boss.facing) || 0) - facing) > 1e-5) setBossIntroFacing(intro.boss, facing);
+  }
+
+  function playBossIntroShriek(owner, intro, volume, pitch, echo = false) {
+    if (s !== owner || owner.intro !== intro || !owner.inSanctum || owner.boss !== intro.boss ||
+        !(Number(intro.boss.health) > 0) || deps?.getCurrentArea?.() !== MAP_ID) return;
+    const audio = window.AudioSystem; // Reuse the existing authored skeleton shriek and spatial ruin reverb.
+    if (typeof audio?.playObjectSfxKeyAt === 'function') {
+      audio.playObjectSfxKeyAt('ruinCoffinShriek', intro.soundX, intro.soundZ, MAP_ID, intro.soundY,
+        {earshotTiles:24, volumeScale:volume, pitch});
+    } else audio?.playObjectSfxKey?.('ruinCoffinShriek', volume, pitch);
+    if (echo) intro.echoesPlayed++; else intro.shriekPlayed = true; // Visible in the existing sanctum debug snapshot.
   }
 
   function beginBossIntro(owner, boss, label) {
@@ -1077,8 +1115,24 @@
       return;
     }
     const lock = window.CharacterActionLocks?.acquire?.({owner:'ruin-sanctum-intro',reason:'named lich introduction',participants:['player'],channels:['movement','actions','tools'],timeoutMs:INTRO_MS+1200});
-    const intro = {boss,lock,title:null,titleTimer:null,endTimer:null}; // This owner token also makes all delayed callbacks cancelable on death/exit/reroll.
+    const toPlayerX = Number(deps?.player?.x) - boss.x, toPlayerZ = Number(deps?.player?.y) - boss.y; // Player coordinates are combat pixels; the cinematic camera stands on the same arena side.
+    const playerBearing = Number.isFinite(toPlayerX) && Number.isFinite(toPlayerZ) && Math.hypot(toPlayerX,toPlayerZ) > 1
+      ? Math.atan2(toPlayerZ,toPlayerX) : Math.atan2(shot.position.z-z,shot.position.x-x);
+    const intro = {
+      boss, lock, title:null, titleTimer:null, endTimer:null, soundTimers:[], startedAtMs:performance.now(),
+      turnTo:playerBearing, turnFrom:playerBearing+Math.PI*.84, // Start mostly facing away to guarantee a visible turn for every boss.
+      soundX:x, soundZ:z, soundY:floor+Math.max(1,height*.7), shriekPlayed:false, echoesPlayed:0,
+    }; // All turn and audio state belongs to this one cancellable cinematic, never the combat entity definition.
     owner.intro = intro;
+    setBossIntroFacing(boss,intro.turnFrom);
+    intro.soundTimers.push(setTimeout(() => {
+      if (s !== owner || owner.intro !== intro || !owner.inSanctum) return;
+      setBossIntroFacing(boss,intro.turnTo); // Low-FPS guarantee: the scream never precedes the final visible face-to-face pose.
+      playBossIntroShriek(owner,intro,1,1);
+    },INTRO_SHRIEK_MS));
+    for (const tap of INTRO_ECHO_TAPS) {
+      intro.soundTimers.push(setTimeout(() => playBossIntroShriek(owner,intro,tap.volume,tap.pitch,true),INTRO_SHRIEK_MS+tap.afterMs));
+    }
     const revealLight = {x,y:floor+Math.max(1,height*.75),z,floorY:floor,floorTolerance:3,radius:8.5,strength:1,color:[245,228,207],active:true}; // Center the one-time illumination on the lich's torso so the Kanthic blackness cannot swallow the reveal.
     owner.introLight = revealLight;
     (owner.sanctumLights ||= []).push(revealLight);
@@ -1357,6 +1411,7 @@
       }
       updateDoorVisual(s.door, now, dt, allLit);
       updateDoorVisual(s.returnDoor, now, dt, true);
+      updateBossIntro(now); // Pure pose update for the isolated zoom; the real hostile tick stays disabled until combat.
       updateBoss(now);
       syncLichHeart(); // Also rehydrates unclaimed rewards when returning after a persisted boss victory.
       updateRoomGuards(kit); // Room sentinels spawn once on first entry, keeping large ruins efficient on mobile.
@@ -1385,7 +1440,7 @@
         boss:s.boss ? { id:s.boss.id, health:s.boss.health, maxHealth:s.boss.maxHealth, x:+(s.boss.x / (deps?.TILE || 64)).toFixed(2), z:+(s.boss.y / (deps?.TILE || 64)).toFixed(2) } : null,
         bossDefeated:s.bossDefeated, specialBoss:s.isSpecialBoss, lichHeart:s.heart ? { furnitureKey:s.heart.furnitureKey, position:p(s.heart.group) } : null, lichHeartAcquired:!!window.LichHeartSystem?.has?.(s.bossType), roomGuards:(s.roomCoffins||[]).map(g=>({room:g.index,spawned:g.spawned,pending:g.spawnPending,alive:Number(g.skeleton?.health)>0})), rearDoor:s.rearDoor ? { open:s.rearDoor.open, progress:+s.rearDoor.progress.toFixed(3) } : null,
         vaultChests:(s.vaultChests || []).map(c => ({ id:c.id, tier:c.tier, opened:c.opened })),
-        inSanctum:s.inSanctum, enteringSanctum:!!s.enteringSanctum, leavingSanctum:!!s.leavingSanctum, bossIntro:!!s.intro, introLightActive:!!s.introLight?.active, sanctumLightsLit:(s.sanctumLights||[]).filter(light=>light.active).length, encounterRevision:s.encounterRevision, lastEncounterEvent:s.lastEncounterEvent,
+        inSanctum:s.inSanctum, enteringSanctum:!!s.enteringSanctum, leavingSanctum:!!s.leavingSanctum, bossIntro:!!s.intro, introFacing:s.intro ? +s.intro.boss.facing.toFixed(3) : null, introShriekPlayed:!!s.intro?.shriekPlayed, introEchoesPlayed:s.intro?.echoesPlayed || 0, introLightActive:!!s.introLight?.active, sanctumLightsLit:(s.sanctumLights||[]).filter(light=>light.active).length, encounterRevision:s.encounterRevision, lastEncounterEvent:s.lastEncounterEvent,
         coffins:(s.coffins || []).map(c => ({ index:c.index, open:c.open, raised:c.raised || 0, skeleton:c.skeleton ? { health:c.skeleton.health, state:c.skeleton.state || null, looted:!!c.skeleton.corpseLooted, keep:!!c.skeleton.keepCorpseAfterLoot } : null })),
       };
     },
@@ -1426,6 +1481,7 @@
     resetEncounter:reason => resetSanctumEncounter(reason || 'debug'), // Mobile diagnostics and regression tests can force an encounter reset without desktop DevTools.
     buildLichBrazier,
     lightSources:() => s?.sanctumLights || [], // Zero-allocation read path for both darkness compositors and mobile diagnostics.
+    debugUpdateIntro:now => updateBossIntro(now), // Run one real intro-pose tick without rebuilding the dungeon (mobile diagnostics and isolated regression tests).
     getState:() => s,
   });
 })();

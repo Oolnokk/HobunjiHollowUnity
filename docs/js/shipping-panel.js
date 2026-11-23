@@ -350,6 +350,7 @@
         ? deps?.BASE_PRICES?.[shippingSelected.key] ?? deps?.ITEM_DEFS?.[shippingSelected.key]?.sellPrice ?? null : null, // Authored price before any conditional scarcity premium.
       selectedItemSalePrice: standaloneDebugVisible && shippingSelected.key ? getShipPrice(shippingSelected.key) ?? null : null, // Actual quoted sale price after the premium, before Town Value and quality.
       animalHides: window.AnimalHides?.getDebug?.() || null, // Mobile-copyable hide provenance and transfer counters.
+      pendingAnimalSales: standaloneDebugVisible ? window.PendingAnimalSales?.debugSnapshot?.() || null : null, // Show queued animals and seller attribution in the existing mobile Shipping Debug pane, only when opened.
       boxPosition: box ? { col: box.col, row: box.row, width: box.w, height: box.h } : null,
     };
   }

@@ -69,7 +69,11 @@
     },
     "gorobi_ginju": {
       "player": [
-        "Howdy there, partner!"
+        "Howdy there, partner!",
+        "Howdy, neighbor! How's that patch of yours comin' along?",
+        "Well now, {targetName}! You plannin' to outgrow me this season?",
+        "How's your harvest shaping up? Mine's comin' along just fine.",
+        "Good to see you! Work's better when you've got someone to keep up with."
       ],
       "friends": {
         "gikali_ginju": [],
@@ -79,7 +83,11 @@
     },
     "gikali_ginju": {
       "player": [
-        "Good {dayPart}!"
+        "Good {dayPart}!",
+        "Oh, hello, {targetName}. You look well. That's good.",
+        "Good to see you. Don't go workin' yourself sick, all right?",
+        "Howdy, dear. Everything goin' all right on your farm?",
+        "I reckon we'll manage another day's work. We always do."
       ],
       "friends": {
         "gorobi_ginju": [],
@@ -89,7 +97,12 @@
     },
     "aliri_ginju": {
       "player": [
-        "Howdy-hey, {targetName}!"
+        "Howdy-hey, {targetName}!",
+        "Howdy-hey, {targetName}! Bet I finished my chores before you.",
+        "Hey, rival! How's that harvest comin' along?",
+        "You think you've got a head start? We'll see about that!",
+        "There's my competition! You bring your best, and I'll bring mine.",
+        "Hey, {targetName}! Been practicin' your farmwork?"
       ],
       "friends": {
         "gorobi_ginju": [],
@@ -99,7 +112,12 @@
     },
     "gantami_ginju": {
       "player": [
-        "Hi!"
+        "Hi!",
+        "Psst! Betcha can't catch me!",
+        "Hey, {targetName}! I ain't done nothin'!",
+        "Wanna see a trick? No, wait, Mama said not to.",
+        "Catch me if you can! Hee hee!",
+        "Shhh! Don't tell Papa!"
       ],
       "friends": {
         "gorobi_ginju": [],
@@ -117,7 +135,12 @@
     },
     "pahu": {
       "player": [
-        "Ahoy there, {targetName}!!!"
+        "Ahoy there, {targetName}!!!",
+        "Ahoy, {targetName}! Ye've got a spring in yerr step today!",
+        "There ye arr! Oy was just tryin' to remember how that old sea song goes.",
+        "Ahoy! Another day, another chance to make a little noise!",
+        "Oy say, {targetName}, it's a foine day forr a tune, don't ye think?",
+        "Keep that wind behoind ye, {targetName}!"
       ],
       "friends": {
         "leaf": []

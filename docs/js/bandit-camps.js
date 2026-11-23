@@ -64,12 +64,16 @@
       };
       tiles[t.r][t.c] = view;
       srcByKey.set(`${t.c},${t.r}`, t);
-      if (t.type === deps.TileType.SHRUB || t.type === deps.TileType.ROCK) {
-        const id = `zclutter_${t.c}_${t.r}`;
+      if (t.type === deps.TileType.SHRUB) {
+        const id = `zclutter_${t.c}_${t.r}`; // Only flora is safely removable without rewriting a rock formation's full collider.
         objects.push({
           id, type: 'shrub', x: t.c, y: t.r, w: 1, h: 1,
           srcType: t.type, floraKind: t.floraKind || null,
         });
+        view.occupiedBy = id;
+      } else if (t.type === deps.TileType.ROCK) {
+        const id = `zsolidrock_${t.c}_${t.r}`; // Includes undiggable boulders, ore rocks, and natural cliff faces; no camp may leave an orphaned rock.
+        objects.push({ id, type: 'unique', x: t.c, y: t.r, w: 1, h: 1, localeMeta: true });
         view.occupiedBy = id;
       }
     }
@@ -89,13 +93,14 @@
     for (const tr of (layout.transitions || [])) blockRect(tr.col, tr.row, 1, 1);
     for (const t of (layout.rootTotems || [])) blockRect(t.x ?? t.col, t.y ?? t.row, t.w || 1, t.h || 1);
     for (const inst of (layout.localeInstances || [])) {
-      for (const o of (inst.objects || [])) blockRect(o.x, o.y, o.w || 1, o.h || 1);
+      const boxes = window.WildernessObjectFootprints?.localePlacementBoxes?.(inst) || (inst.objects || []); // Reserve painted locale ground, not merely the furnished interior.
+      for (const box of boxes) blockRect(box.x, box.y, box.w || 1, box.h || 1);
     }
     const zdef = deps.EXTERIOR_ZONES[zoneId];
     const entry = layout.toTownExit
       ? { x: layout.toTownExit.col, y: layout.toTownExit.row }
       : (Number.isFinite(zdef?.entryCol) ? { x: zdef.entryCol, y: zdef.entryRow } : null);
-    const view = { cols, rows, tiles, objects, entry, _srcByKey: srcByKey };
+    const view = { cols, rows, tiles, objects, entry, _srcByKey: srcByKey, sourceLayout: layout }; // Shared scenery/camp reservation ownership uses the original wilderness layout, not this synthetic tile view.
     _banditZoneViews.set(zoneId, view);
     return view;
   }
@@ -1459,7 +1464,10 @@
 
   let lastEnemyLootMs = 0; // Latest corpse-loot input time for mobile diagnostics.
   function makeBanditCorpseWorldObject(c) {
-    const holdSeconds = Number(c.lootHoldSeconds) || 0; // Bodies flagged for a short hold (cave catacomb skeletons) loot through js/corpse-hold-loot.js.
+    const trophyKey = c.isTribeHunter === true
+      ? ({ omgurku: 'omgurkuHorn', porakaneki: 'porakanekiQuill' })[c.tribeId] || null
+      : c.isPorakanekiHunter === true ? 'porakanekiQuill' : null; // Existing tribal humanoid corpses drop their own trophy, never bandit treasure.
+    const holdSeconds = trophyKey ? 0 : (Number(c.lootHoldSeconds) || 0); // Tribal corpses use the ordinary pickup action, not the optional catacomb hold search.
     return {
       id: 'corpse_' + c.id,
       type: 'bandit_corpse',
@@ -1467,26 +1475,37 @@
       holdSeconds,
       holdLabel: 'Searching ' + (c.name || c.def.label) + '...',
       getButtons() {
-        if (c.ruinNoLoot===true)return []; // No corpse loot prompt in the isolated puzzle lab.
+        if (c.ruinNoLoot===true)return []; // Preserve the authored ruin no-loot contract and its existing regression guard.
+        if (trophyKey && c.corpseLooted === true)return []; // A claimed trophy must not leave a Collect prompt on a preserved corpse.
         if (holdSeconds > 0) return [{ icon: c.lootIcon || '🦴', label: 'Hold to Search', action: 'corpse_hold_loot', style: 'primary', allowed: true, worldInteraction: true, promptRoot: c.avatarRef?.group || null }];
-        return [{ icon: '🪙', label: 'Loot ' + (c.name || c.def.label), action: 'obj_loot_corpse', style: 'primary', allowed: true }];
+        return [{ icon: trophyKey === 'omgurkuHorn' ? '📯' : trophyKey === 'porakanekiQuill' ? '🪶' : '🪙',
+          label: trophyKey ? 'Collect ' + (trophyKey === 'omgurkuHorn' ? 'Omgurku Horn' : 'Porakaneki Quill') : 'Loot ' + (c.name || c.def.label),
+          action: 'obj_loot_corpse', style: 'primary', allowed: true }];
       },
       onAction(action) {
         if (action !== 'obj_loot_corpse') return { ok: false, message: 'Unknown action.' };
         if(c.ruinNoLoot===true)return {ok:false,message:'This test-room opponent carries no loot.'}; // Also protects against calling the corpse action directly.
+        if (trophyKey && c.corpseLooted === true) return { ok: false, message: 'This trophy has already been collected.' }; // Repeated mobile presses cannot mint another tribal currency token.
+        if (trophyKey && (Number(deps.inventory[trophyKey]) || 0) >= (Number(window.InventoryStacks?.MAX_TOTAL) || 999)) {
+          return { ok: false, message: 'Make room in your pack to collect this trophy.' }; // Never consume the body when its one guaranteed token cannot fit.
+        }
         const lootStarted=window.performance?.now?.() ?? Date.now(); // Measure only the active loot input.
-        const parts = grantBanditLoot(deps.rollLootPool(c.def.lootPool, { entity: c }));
-        const specialAmmo = window.RangedWeapons?.rollSpecialAmmoLoot?.() || 0;
-        if (specialAmmo) parts.push(`🏹 Special Ammo×${specialAmmo}`);
-        grantFlaskerLoadoutLoot(c, parts); // Flaskers always surrender several of both infinite combat loadout types on death.
-        const relic = window.GhoulSpecialVariants?.lootEnchantedWeapon?.(c); // A Shadowknight's enchanted weapon comes off the body, still bound.
-        if (relic) parts.push('🗡️ Bound ' + relic.label);
-        const captainWeapon = window.BanditCaptainArmaments?.grantCorpseWeapon?.(c); // Transfer the exact worn captain weapon; its donor parts remain undiscovered.
-        if (captainWeapon) parts.push('⚒️ ' + captainWeapon);
-        for (const item of banditWornClothingItems(c.rosterRecord, c)) {
-          deps.getPackClothing().push(item);
-          window.MetalArmorSystem?.learnBlueprints?.([item]); // Unlock at acquisition even if the player sells the loot before visiting the smith.
-          parts.push('👘 ' + item.label);
+        if (trophyKey) window.NpcGifting?.registerTribalTrophyItems?.(deps.ITEM_DEFS, deps.inventoryItems); // Defensive registration when a corpse is opened before NPC gifting initialized.
+        const parts = grantBanditLoot(trophyKey ? { [trophyKey]: 1 } : deps.rollLootPool(c.def.lootPool, { entity: c }));
+        if (trophyKey) c.corpseLooted = true; // Mark the actual source before despawn, not only the temporary interaction object.
+        if (!trophyKey) { // Ordinary bandits, ghouls and liches retain every existing corpse bonus; tribe hunters receive their trophy only.
+          const specialAmmo = window.RangedWeapons?.rollSpecialAmmoLoot?.() || 0;
+          if (specialAmmo) parts.push(`🏹 Special Ammo×${specialAmmo}`);
+          grantFlaskerLoadoutLoot(c, parts); // Flaskers always surrender several of both infinite combat loadout types on death.
+          const relic = window.GhoulSpecialVariants?.lootEnchantedWeapon?.(c); // A Shadowknight's enchanted weapon comes off the body, still bound.
+          if (relic) parts.push('🗡️ Bound ' + relic.label);
+          const captainWeapon = window.BanditCaptainArmaments?.grantCorpseWeapon?.(c); // Transfer the exact worn captain weapon; its donor parts remain undiscovered.
+          if (captainWeapon) parts.push('⚒️ ' + captainWeapon);
+          for (const item of banditWornClothingItems(c.rosterRecord, c)) {
+            deps.getPackClothing().push(item);
+            window.MetalArmorSystem?.learnBlueprints?.([item]); // Unlock at acquisition even if the player sells the loot before visiting the smith.
+            parts.push('👘 ' + item.label);
+          }
         }
         // keepCorpseAfterLoot: the body stays where it fell (e.g. a lich's
         // skeletons it can raise again); it just stops being lootable.

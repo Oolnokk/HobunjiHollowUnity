@@ -28,8 +28,9 @@
   const LOOT_KEY_PREFIX = 'trinket_'; // Loot-pool itemKeys of the form trinket_<id> grant a gear trinket instead of an inventory stack.
 
   // attunementCost reflects broad usefulness: general-purpose power is
-  // expensive, narrow/gimmicky effects are cheap, strong-with-a-drawback sits
-  // in the middle. Three town Icons (9) deliberately exceed the 8 budget.
+  // expensive, narrow/gimmicky effects are cheap. A meaningful drawback
+  // discounts a comparable clean bonus unless the upside is much stronger.
+  // Three town Icons (9) deliberately exceed the 8 budget.
   const DEFINITIONS = Object.freeze({
     // ── Town Icons (Funji & Son's General Store) ──────────────────────
     iconNaoung: {
@@ -187,9 +188,10 @@
       effects: { stats: { flaskPower: 1.25, flaskRadius: 1.15, shatterPower: 1.25, shatterRadius: 1.15 } },
     },
     // ── Double-edged combat trinkets (definitions only; no acquisition source) ──
-    // Trade-offs consume 1-2 Attunement rather than the 2-3 of pure bonuses.
+    // Trade-offs consume 1-2 Attunement. Risky alternatives with comparable
+    // upside to a clean 2-point trinket cost 1, not 2.
     unstableBalance: {
-      id: 'unstableBalance', displayName: 'Unstable Balance', icon: '⚖️', attunementCost: 2,
+      id: 'unstableBalance', displayName: 'Unstable Balance', icon: '⚖️', attunementCost: 1,
       category: 'combat', description: 'Your weapon hits deal 25% more Footing damage, but you receive 25% more Footing damage.',
       effects: { stats: { outgoingFootingDamage: 1.25, incomingFootingDamage: 1.25 } },
     },
@@ -199,7 +201,7 @@
       effects: { stats: { outgoingHealthDamage: 1.40, incomingHealthDamage: 1.30 } },
     },
     leadKnuckles: {
-      id: 'leadKnuckles', displayName: 'Lead Knuckles', icon: '✊', attunementCost: 2,
+      id: 'leadKnuckles', displayName: 'Lead Knuckles', icon: '✊', attunementCost: 1,
       category: 'combat', description: 'Heavy weapon hits deal 60% more Footing damage, but heavy attacks cost 50% more Stamina.',
       effects: { stats: { heavyFootingDamage: 1.60, heavyAttackStaminaCost: 1.50 } },
     },
@@ -214,7 +216,7 @@
       effects: { stats: { knockbackDistance: 0.40, dodgeTravel: 0.60 } },
     },
     hollowLungs: {
-      id: 'hollowLungs', displayName: 'Hollow Lungs', icon: '🫁', attunementCost: 2,
+      id: 'hollowLungs', displayName: 'Hollow Lungs', icon: '🫁', attunementCost: 1,
       category: 'combat', description: 'Black-Stamina Exhaustion debt recovers 75% faster, but maximum Stamina is reduced by 25%.',
       effects: { stats: { exhaustionRecovery: 1.75, maxStamina: 0.75 } },
     },
@@ -472,14 +474,74 @@
   }
 
   // ── Effect channels ──────────────────────────────────────────────
+  const MIN_STACKED_MULTIPLIER = 0.1; // Prevents additive reductions from removing all incoming damage, recovery or Stamina cost.
   function statMultiplier(entity, key) {
-    if (!entity || entity !== player()) return 1;
-    let mul = 1;
+    if (!entity) return 1;
+    if (entity !== player()) return entity._enemyTrinketStats?.[key] ?? 1; // Enemies use spawn-cached definitions; unassigned NPCs remain unchanged.
+    let delta = 0; // Each trinket adds its percentage relative to baseline, not to the result of previous trinkets.
     for (const entry of equippedEntries()) {
       const value = Number(entry.def?.effects?.stats?.[key]);
-      if (Number.isFinite(value) && value > 0) mul *= value;
+      if (Number.isFinite(value) && value > 0) delta += value - 1;
     }
-    return mul;
+    return Math.max(MIN_STACKED_MULTIPLIER, 1 + delta);
+  }
+
+  function scaleEnemyHit(entity, amount, options = {}) {
+    if (!entity?._enemyTrinketStats || entity === player()) return null;
+    const health = statMultiplier(entity, 'outgoingHealthDamage'); // Combat damage uses the identical additive bonus as the player's stat provider.
+    const footing = statMultiplier(entity, 'outgoingFootingDamage'); // Footing must not inherit an unrelated Health-only trinket bonus.
+    if (health === 1 && footing === 1) return null;
+    const priorFooting = Number(options.footingDamageMultiplier); // The attack's pre-existing Footing coefficient remains authoritative.
+    return {
+      amount: amount * health,
+      options: { ...options, footingDamageMultiplier: (Number.isFinite(priorFooting) ? priorFooting : 1) * footing / health },
+    };
+  }
+
+  function configureEnemy(entity, ids) {
+    if (!entity || entity === player()) return [];
+    const selected = []; // Exact physical trinket ids on this enemy, available to combat diagnostics.
+    const byStat = Object.create(null); // Spawn-time stat deltas; the per-frame modifier provider only performs a property lookup.
+    let spent = 0; // Enemies use the base 8-point budget, never the player's Lich-heart expansion.
+    for (const id of Array.isArray(ids) ? ids : []) {
+      const def = DEFINITIONS[id], cost = costOf(id);
+      if (!def?.effects?.stats || def.effects.perkRanks || def.effects.companion || !cost || spent + cost > ATTUNEMENT_CAPACITY || selected.includes(id)) continue;
+      spent += cost;
+      selected.push(id);
+      for (const [key, raw] of Object.entries(def.effects.stats)) {
+        const value = Number(raw);
+        if (Number.isFinite(value) && value > 0) byStat[key] = (byStat[key] || 0) + value - 1;
+      }
+    }
+    entity.enemyTrinketIds = selected;
+    entity._enemyTrinketStats = Object.freeze(Object.fromEntries(
+      Object.entries(byStat).map(([key, delta]) => [key, Math.max(MIN_STACKED_MULTIPLIER, 1 + delta)])
+    ));
+    return selected;
+  }
+
+  function rollEnemyLoadout(tuning, rank, tier, random = Math.random) {
+    if (!Array.isArray(tuning?.pool) || typeof random !== 'function') return [];
+    const danger = Math.max(0, Math.min(7, Math.floor(Number(tier) || 0))); // The existing eight-tier enemy progression controls access to trinket combinations.
+    const chance = Math.max(0, Math.min(1, (Number(tuning.chanceByRank?.[rank]) || 0) + danger * (Number(tuning.chancePerTier) || 0))); // Each rank gains trinkets as its danger tier increases.
+    if (random() >= chance) return [];
+    const limit = Math.max(0, Math.min(8, Math.floor(Number(tuning.maxByRank?.[rank]) || 0))); // Rarity/rank caps prevent every enemy from wearing a full 8-point build.
+    const extraChance = Math.max(0, Math.min(1, (Number(tuning.extraChancePerTier) || 0) * danger)); // Additional rolls become more likely later in the wilderness.
+    const pool = [...new Set(tuning.pool)].filter(id => {
+      const def = DEFINITIONS[id];
+      return def?.effects?.stats && !def.effects.perkRanks && !def.effects.companion && costOf(id) > 0 && costOf(id) <= ATTUNEMENT_CAPACITY;
+    }); // Use the shared catalog, never copied enemy-only bonuses.
+    const chosen = []; // Rolled once at spawn; no random work while the enemy fights.
+    let used = 0;
+    while (chosen.length < limit && pool.length && (chosen.length === 0 || random() < extraChance)) {
+      const eligible = pool.filter(id => used + costOf(id) <= ATTUNEMENT_CAPACITY);
+      if (!eligible.length) break;
+      const id = eligible[Math.min(eligible.length - 1, Math.floor(Math.max(0, Math.min(0.999999999, Number(random()) || 0)) * eligible.length))];
+      chosen.push(id);
+      used += costOf(id);
+      pool.splice(pool.indexOf(id), 1);
+    }
+    return chosen;
   }
 
   function perkBonusRanks(skillKey, perkId) {
@@ -496,9 +558,10 @@
       if (!c) continue;
       for (const channel of Object.keys(out)) {
         const value = Number(c[channel]);
-        if (Number.isFinite(value) && value > 0) out[channel] *= value;
+        if (Number.isFinite(value) && value > 0) out[channel] += value - 1;
       }
     }
+    for (const channel of Object.keys(out)) out[channel] = Math.max(MIN_STACKED_MULTIPLIER, out[channel]);
     return out.damage === 1 && out.footing === 1 && out.affliction === 1 ? null : out;
   }
 
@@ -660,6 +723,9 @@
     grant,
     claimLoot,
     statMultiplier,
+    configureEnemy,
+    rollEnemyLoadout,
+    scaleEnemyHit,
     combatMultiplier: key => statMultiplier(player(), key), // Shared player-only combat-effect read for collision, flask, and dodge adapters.
     perkBonusRanks,
     companionModifiers,

@@ -92,6 +92,7 @@ const routeNodes = [
 const realRoute = { id: 'test-route', nodes: routeNodes, upperNode: 1 }; // Two-node minimal route with a real elevation transition.
 const climbWindow = {
   CliffRouteNetwork: {
+    findIntentionalDrop: require('../docs/js/cliff-route-network.js').findIntentionalDrop, // Production downhill planner replaced the earlier private companion-only ledge scan.
     forGrid: () => routeNetwork,
     componentAt: (net, col, row) => net.component[row * net.cols + col] ?? -1,
     toward: (_net, fromCol, fromRow, toCol, toRow) => fromCol === toCol && fromRow === toRow

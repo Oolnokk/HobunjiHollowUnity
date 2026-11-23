@@ -816,7 +816,25 @@
     return mesh;
   }
 
-  const activeLegHandles = new Set(); // Rare proportion edits update existing hips without per-frame scans or recreating any imported GLBs.
+  const legHandlesByScaleParent = new WeakMap(); // Object3D transform parent -> affected leg handles; used only when proportions change.
+  function registerScaleHandle(handle) {
+    const parents = []; // Cached ancestor membership supports O(depth) teardown on disposal.
+    for (let parent = handle.group?.parent; parent; parent = parent.parent) {
+      let handles = legHandlesByScaleParent.get(parent);
+      if (!handles) { handles = new Set(); legHandlesByScaleParent.set(parent, handles); }
+      handles.add(handle);
+      parents.push(parent);
+    }
+    handle.scaleRegistrationParents = parents;
+  }
+  function unregisterScaleHandle(handle) {
+    for (const parent of handle.scaleRegistrationParents || []) {
+      const handles = legHandlesByScaleParent.get(parent);
+      handles?.delete(handle);
+      if (handles?.size === 0) legHandlesByScaleParent.delete(parent);
+    }
+    handle.scaleRegistrationParents = null;
+  }
   function alignPortraitWithLegs(parent, handle) {
     if (!parent || !handle) return false;
     const desired = Number(handle.standingPosteriorY) - Number(handle.restPosteriorY); // Parent-local additional leg reach, with feet remaining at floor Y=0.
@@ -842,13 +860,11 @@
     return true;
   }
   function syncScaleForParent(parent, legRatio) {
-    for (const handle of activeLegHandles) {
-      for (let current = handle.group?.parent; current; current = current.parent) {
-        if (current !== parent) continue;
-        handle.setLegLengthMultiplier(legRatio); // Keep the actual seven-node portrait and hip-to-foot reach separate.
-        alignPortraitWithLegs(parent, handle); // Upper-body artwork rides the new hip, without scaling head or feet to fake leg length.
-        break;
-      }
+    const handles = legHandlesByScaleParent.get(parent); // O(affected characters); never scan the town's other NPC rigs.
+    if (!handles) return;
+    for (const handle of handles) {
+      handle.setLegLengthMultiplier(legRatio); // Live hip-to-foot adjustment preserves authored leg length.
+      alignPortraitWithLegs(parent, handle); // Portrait tracks the matching hip contact point.
     }
   }
 
@@ -1309,10 +1325,21 @@
       });
     }
 
+    const childLimbMetadata = options.childLimbVisualModifiers
+      || window.HobunjiCharacterAgeRigConfig?.nonFamilyChildLimbsFor?.(options.npcRecord || options.profile?.npcRecord)
+      || parent.userData?.hobunjiChildLimbVisualModifiers
+      || (parent.children || []).find(node => node.userData?.hobunjiChildLimbVisualModifiers)?.userData?.hobunjiChildLimbVisualModifiers
+      || null; // Attach-time child limb lookup only; no recurring scans.
+    const childFootFactor = Number(childLimbMetadata?.foot) > 0 ? Number(childLimbMetadata.foot) : 1;
     function installFootAxes(foot) {
       installFootDepthPush(foot);
       window.HobunjiCharacterRigScale?.installPartScaleAxes?.(THREE, foot, parent, () => window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters?.[partProfileKey]?.anatomy?.footScaleAxes, true); // Shared uniform hand/foot average through moving leg joints.
       if (partAxes?.y > 0) foot.userData.contactRadiusY *= partAxes.y; // Sphere fallback retains ground contact after geometry grows about its center; GLB bottom origin remains zero.
+      if (childFootFactor !== 1 && foot?.scale?.multiplyScalar) {
+        foot.scale.multiplyScalar(childFootFactor); // Scale final GLB visuals and sphere fallbacks equally.
+        if (Number.isFinite(foot.userData?.contactRadiusY)) foot.userData.contactRadiusY *= childFootFactor;
+        foot.updateMatrix?.();
+      }
     }
 
     const leftFallback = alignPreviewFootFacing(THREE,
@@ -1379,6 +1406,10 @@
         state.anatomyRevision++;
         placeIdleTarget('left', state.leftContactY);
         placeIdleTarget('right', state.rightContactY);
+        if (typeof options.onFootVisualsReplaced === 'function') {
+          try { options.onFootVisualsReplaced({ left: leftMesh, right: rightMesh, root }); }
+          catch (error) { console.warn('[ProceduralLegAnimation] foot replacement callback failed:', error); }
+        } // Runs only on real GLB replacement, not every frame.
         window.HobunjiFeetOutlineParity?.refreshRig?.(root); // Register the final visible meshes for water/outline passes regardless of load duration.
       }).catch(error => {
         console.warn(`[ProceduralLegAnimation] foot GLB load failed for "${speciesId}" (${footConfig.glb}):`, error);
@@ -1827,7 +1858,7 @@
     function dispose() {
       if (state.disposed) return;
       state.disposed = true;
-      activeLegHandles.delete(handle); // Prevent stale lineup/game actors accumulating in the proportion-sync registry.
+      unregisterScaleHandle(handle); // Remove all registrations on despawn or editor exit.
       externalFootTargets = null;
       externalFootDeepFold = false;
       portraitGuides?.dispose();
@@ -1982,7 +2013,7 @@
       anatomyRevision: () => state.anatomyRevision,
       getSeatedPoseDebug: () => lastSeatedPoseDebug,
     };
-    activeLegHandles.add(handle); // Lightweight registry for the occasional explicit rig-scale edit; removed during dispose().
+    registerScaleHandle(handle); // Once per new rig, no per-frame/scale global loop.
     alignPortraitWithLegs(parent, handle); // Spawn with an already-authored independent leg length leaves portrait and hips attached immediately.
     return handle;
   }

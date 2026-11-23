@@ -148,10 +148,113 @@ assert.equal(staminaRing.position.x, 0, 'the arc resets its position when the pu
 assert.equal(staminaRing.scale.x, 1, 'the arc resets its scale when the pulse ends');
 assert.equal(ResourceRings.debugSnapshot().dashedArcsBuilt, 2, 'unchanged ring geometry survives pulse updates');
 const oldDashGeometry = staminaRing.children.find(mesh => mesh.material?.opacity === 0.34).geometry;
+const initialHealth = fighterRings.children.find(child => child.userData.resourceKey === 'health'); // Must survive an unrelated Stamina-only rebuild.
+const initialHalo = ringHud.children[1]; // Must survive resource regeneration without a new target overlay.
+ringActor.exhaustion.blackStamina = 61;
+testNowMs = 5100;
+ResourceRings.updateRingHud(ringActor, ringScene, 0.6, { isTarget: true });
+assert.equal(fighterRings.children.find(child => child.userData.resourceKey === 'health'), initialHealth, 'Stamina regeneration reuses Health meshes');
+assert.notEqual(fighterRings.children.find(child => child.userData.resourceKey === 'stamina'), staminaRing, 'Stamina regeneration updates its own arc');
+assert.equal(oldDashGeometry.disposed, true, 'superseded Stamina geometry is disposed without touching Health');
+assert.equal(ringHud.children[1], initialHalo, 'unchanged target halo is reused during regeneration');
+const staminaAfterRegen = fighterRings.children.find(child => child.userData.resourceKey === 'stamina'); // Checks the Stamina group survives later unrelated Health changes.
+ringActor.health = 79;
+ResourceRings.updateRingHud(ringActor, ringScene, 0.6, { isTarget: true });
+assert.notEqual(fighterRings.children.find(child => child.userData.resourceKey === 'health'), initialHealth, 'Health change rebuilds only the Health arc');
+assert.equal(fighterRings.children.find(child => child.userData.resourceKey === 'stamina'), staminaAfterRegen, 'Health change reuses Stamina meshes');
+const healthBeforeRisk = fighterRings.children.find(child => child.userData.resourceKey === 'health'); // Checks cross-resource orange risk dashes stay fresh.
+ringActor.afflictions.woundedStamina = 16;
+ResourceRings.updateRingHud(ringActor, ringScene, 0.6, { isTarget: true });
+assert.notEqual(fighterRings.children.find(child => child.userData.resourceKey === 'health'), healthBeforeRisk, 'Wounded Stamina invalidates Health-risk dashes');
+const healthBeforeTarget = fighterRings.children.find(child => child.userData.resourceKey === 'health'); // Checks target-only updates never rebuild resource arcs.
+const staminaBeforeTarget = fighterRings.children.find(child => child.userData.resourceKey === 'stamina'); // Used for target-only arc identity assertions.
+ResourceRings.updateRingHud(ringActor, ringScene, 0.6, { isTarget: false });
+assert.equal(ringHud.children.length, 1, 'clearing a target removes only its indicator');
+assert.equal(ringHud.children[0], fighterRings, 'resource wrapper remains parented');
+assert.equal(fighterRings.children.find(child => child.userData.resourceKey === 'health'), healthBeforeTarget, 'target removal preserves Health geometry');
+assert.equal(fighterRings.children.find(child => child.userData.resourceKey === 'stamina'), staminaBeforeTarget, 'target removal preserves Stamina geometry');
+ResourceRings.updateRingHud(ringActor, ringScene, 0.6, { isTarget: true });
+assert.equal(ringHud.children.length, 2, 'retargeting restores an independent target halo');
+assert.equal(fighterRings.children.find(child => child.userData.resourceKey === 'health'), healthBeforeTarget, 'retargeting preserves Health geometry');
+assert(ResourceRings.debugSnapshot().resourceArcReuses > 0, 'incremental arc reuse is observable in the existing debug snapshot');
+ResourceRings.updateRingHud(ringActor, ringScene, 0.7, { isTarget: true });
+assert.notEqual(fighterRings.children.find(child => child.userData.resourceKey === 'health'), healthBeforeTarget, 'changing radius correctly invalidates the arc');
+assert.equal(ringHud.children[1].userData.hobunjiTargetRadius, 0.7, 'changing radius rebuilds target indicator to match');
+const staminaAfterRadius = fighterRings.children.find(child => child.userData.resourceKey === 'stamina'); // Check rounded Black-Stamina updates preserve geometry between whole points.
+ringActor.exhaustion.blackStamina = 61.2;
+ResourceRings.updateRingHud(ringActor, ringScene, 0.7, { isTarget: true });
+assert.equal(fighterRings.children.find(child => child.userData.resourceKey === 'stamina'), staminaAfterRadius, 'sub-point Black Stamina recovery reuses its arc');
+ringActor.exhaustion.blackStamina = 62;
+ResourceRings.updateRingHud(ringActor, ringScene, 0.7, { isTarget: true });
+assert.notEqual(fighterRings.children.find(child => child.userData.resourceKey === 'stamina'), staminaAfterRadius, 'whole-point Black Stamina recovery refreshes its arc');
+const healthBeforeEquipment = fighterRings.children.find(child => child.userData.resourceKey === 'health'); // Tracks a resource arc before stat-modifier changes.
+const healthMeshCountBeforeEquipment = healthBeforeEquipment.children.length; // Store before the old arc's children are disposed.
+let externalHealthMultiplier = 1; // Simulates changing the existing equipment/perk stat modifiers mid-combat.
+const unregisterHealthModifier = ResourceSystem.registerStatModifierProvider((actor, key) => actor === ringActor && key === 'maxHealth' ? externalHealthMultiplier : 1);
+externalHealthMultiplier = 0.65;
+ringActor.exhaustion.blackStamina = 63;
+ResourceRings.updateRingHud(ringActor, ringScene, 0.7, { isTarget: true });
+const healthWithEquipment = fighterRings.children.find(child => child.userData.resourceKey === 'health'); // Should gain a capacity cap marker from its reduced effective maximum.
+assert.notEqual(healthWithEquipment, healthBeforeEquipment, 'equipment-derived Health maximum invalidates the cached Health arc when Stamina changes');
+assert.equal(healthWithEquipment.children.length, healthMeshCountBeforeEquipment + 1, 'reduced maximum adds the formerly missing Health cap marker');
+unregisterHealthModifier();
+ringActor.exhaustion.blackStamina = 64;
+ResourceRings.updateRingHud(ringActor, ringScene, 0.7, { isTarget: true });
+assert.notEqual(fighterRings.children.find(child => child.userData.resourceKey === 'health'), healthWithEquipment, 'un-equipping restores the normal capacity display');
+const priorRoot = ringActor._ringHud; // Checks the established scene-transfer behavior remains intact.
+const alternateScene = new Group(); // New scene for a real creature changing zones.
+ResourceRings.updateRingHud(ringActor, alternateScene, 0.7, { isTarget: true });
+assert.equal(ringActor._ringHud, priorRoot, 'scene transfer reuses the existing HUD root');
+assert.equal(ringScene.children.length, 0, 'scene transfer removes the old parent');
+assert.equal(alternateScene.children[0], priorRoot, 'scene transfer attaches to the destination');
+ResourceRings.updateRingHud(ringActor, ringScene, 0.7, { isTarget: true });
+testNowMs += 500;
+ResourceRings.updateRingHud(ringActor, ringScene, 0.7, { isTarget: true }); // Establishes the next capacity poll's baseline after the previous equipment test.
+const healthBeforeStandaloneEquip = fighterRings.children.find(child => child.userData.resourceKey === 'health'); // Reference to the pre-equipment Health mesh.
+const staminaBeforeStandaloneEquip = fighterRings.children.find(child => child.userData.resourceKey === 'stamina'); // Must remain unchanged across Health-only modifier updates.
+let standaloneHealthMultiplier = 1; // Simulates a stat provider whose mutable equipment value changes without a resource event.
+const stopStandaloneHealthModifier = ResourceSystem.registerStatModifierProvider((actor, key) => actor === ringActor && key === 'maxHealth' ? standaloneHealthMultiplier : 1);
+const checksBeforeQuietFrame = ResourceRings.debugSnapshot().capacityChecks; // Used to prove a quiet frame performs no new provider lookups.
+ResourceRings.updateRingHud(ringActor, ringScene, 0.7, { isTarget: true });
+assert.equal(ResourceRings.debugSnapshot().capacityChecks, checksBeforeQuietFrame, 'quiet-frame resource updates do not poll the equipment providers');
+standaloneHealthMultiplier = 0.7;
+testNowMs += 499;
+ResourceRings.updateRingHud(ringActor, ringScene, 0.7, { isTarget: true });
+assert.equal(fighterRings.children.find(child => child.userData.resourceKey === 'health'), healthBeforeStandaloneEquip, 'stand-alone stat changes are throttled for 500 ms');
+testNowMs += 1;
+ResourceRings.updateRingHud(ringActor, ringScene, 0.7, { isTarget: true });
+const healthAfterStandaloneEquip = fighterRings.children.find(child => child.userData.resourceKey === 'health'); // Confirms the reduced capacity redraws when the interval elapses.
+assert.notEqual(healthAfterStandaloneEquip, healthBeforeStandaloneEquip, 'equipment-only capacity change refreshes Health arc with no Stamina/Health update');
+assert.equal(fighterRings.children.find(child => child.userData.resourceKey === 'stamina'), staminaBeforeStandaloneEquip, 'unchanged Stamina geometry is reused across a Health-only equipment change');
+assert.ok(ResourceRings.debugSnapshot().capacityInvalidations > 0, 'equipment changes are observable in the Pixel Probe counters');
+standaloneHealthMultiplier = 1;
+testNowMs += 500;
+ResourceRings.updateRingHud(ringActor, ringScene, 0.7, { isTarget: true });
+assert.notEqual(fighterRings.children.find(child => child.userData.resourceKey === 'health'), healthAfterStandaloneEquip, 'removing a modifier with no resource event restores the uncapped Health arc');
+assert.equal(fighterRings.children.find(child => child.userData.resourceKey === 'stamina'), staminaBeforeStandaloneEquip, 'removing a Health modifier does not invalidate Stamina geometry');
+stopStandaloneHealthModifier();
 ResourceRings.disposeRingHud(ringActor);
 assert.equal(oldDashGeometry.disposed, true, 'despawn releases the batched geometry');
 assert.equal(ringScene.children.length, 0);
 delete context.EnvironmentSurfaceMicroPlateau;
+testNowMs = 0;
+const staggerScene = new Group(); // Groups simultaneous spawns to catch time-synchronized capacity polls.
+const staggerActors = Array.from({ length: 10 }, () => ({
+  ...fullEntity, health: 75,
+  afflictions: { ...fullEntity.afflictions },
+  exhaustion: { active: false, blackStamina: 100 },
+})); // Each unique actor has its own capacity-poll deadline.
+for (const actor of staggerActors) ResourceRings.updateRingHud(actor, staggerScene, 0.6);
+const pollsAfterSpawn = ResourceRings.debugSnapshot().capacityChecks; // Initial readings happen immediately at first render.
+testNowMs += 250;
+for (const actor of staggerActors) ResourceRings.updateRingHud(actor, staggerScene, 0.6);
+const staggeredMidwayPolls = ResourceRings.debugSnapshot().capacityChecks - pollsAfterSpawn; // Checks that work is split across multiple future frames.
+assert.ok(staggeredMidwayPolls > 0 && staggeredMidwayPolls < staggerActors.length, 'simultaneously spawned fighters stagger their periodic provider checks');
+testNowMs += 250;
+for (const actor of staggerActors) ResourceRings.updateRingHud(actor, staggerScene, 0.6);
+assert.ok(ResourceRings.debugSnapshot().capacityChecks >= pollsAfterSpawn + staggerActors.length, 'each staggered fighter is checked within 500 ms');
+for (const actor of staggerActors) ResourceRings.disposeRingHud(actor);
+assert.equal(staggerScene.children.length, 0, 'staggered HUDs still dispose cleanly');
 testNowMs = 0;
 
 const recoveringEntity = { ...fullEntity, stamina: 73, exhaustion: { active: true, blackStamina: 40 }, afflictions: { ...fullEntity.afflictions } }; // Exercises the Exhausted/black-Stamina invariant through both recovery and cap enforcement.

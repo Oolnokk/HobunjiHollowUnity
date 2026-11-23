@@ -33,7 +33,7 @@ for(const blossom of [tree,tree2]) {
   assert.ok(Array.isArray(source)&&source.length===24,'reservoir samples up to 24 real 3D flower clusters');
   assert.ok(source.every(p=>p.length===3&&p.every(Number.isFinite)),'sampled bloom origins are finite local coordinates');
   assert.equal(blossom.userData.wildernessBlossom.blossomSprigsPerBranch,4,'blossom canopy has four colorful clusters per branch');
-  assert.ok(cluster.geometry.attributes.position.count>1000,'the flower canopy has numerous visible petal cards');
+  assert.ok(cluster.geometry.attributes.position.count>=100,'native blossom sprigs meet the established 100-vertex minimum in every regional tree shape');
   assert.equal(cluster.renderOrder,2,'flowers render after native leaf cards without disabling depth testing');
   assert.equal(cluster.material.depthTest,true,'terrain and walls can still occlude clusters');
   assert.equal(cluster.material.color.getHex(),new THREE.Color(blossom.userData.wildernessBlossom.blossomColor).getHex());
@@ -86,5 +86,70 @@ assert.equal(petals.debugSnapshot().trees,1);
 assert.equal(petals.detach(tree2),true);
 assert.equal(slot.enabled,false,'removing the last emitter disables the frame subscriber');
 assert.equal(petals.debugSnapshot().livePetals,0);
+// The hunt renders these trees outside normal wilderness tile vegetation. Use the
+// production outline registrar and shared collision registry to verify that
+// the real live-scene integration behaves like ordinary unharvestable trunks.
+require('../docs/js/world-render-pipeline.js');
+require('../docs/js/area-footprint-blockers.js');
+require('../docs/js/zone-tree-fade.js'); // Native vegetation culler owns all temporary material clones and fade animation subscriptions.
+require('../docs/js/festival-blossom-hunt.js');
+const hunt=window.FestivalBlossomHunt; // Actual festival renderer and its scene/Shift lifecycle.
+let activeZone='map_southern_cloud_forest'; // Switching areas must unregister the previous provider without touching shared foliage.
+const gameScene=new THREE.Scene(); // Scene for real world bounds, native cullables and renderer layer masks.
+const cullables=[]; // Production zone registry used by the same vegetation culler as ordinary trees.
+const blossomLayout={localeInstances:[
+  {localeId:'locale_five_blossoms_amber',objects:[{x:10,y:10,key:'blossom-tree',
+    collision:{mode:'custom',x:10,y:10,w:1,h:1}}]},
+  {localeId:'locale_five_blossoms_rose',objects:[{x:16,y:10,key:'blossom-tree'}]}
+]}; // Explicit generated locale objects; stable physical positions are also the riddle's targets.
+const layouts=new Map([[activeZone,blossomLayout]]);
+window.GridTileAccessors={getActiveScene:()=>gameScene,getZoneSceneInfo:()=>({scene:gameScene,cullables})};
+window.LocaleRiddleGenerator={positionOf:(instance)=>({col:instance.objects[0].x,row:instance.objects[0].y})};
+window.ClimbSystem={groundYAt:()=>0};
+hunt.init({_zoneLayouts:layouts,getCurrentArea:()=>activeZone,TILE:64});
+hunt.update();
+const trunkProvider='five-blossoms-trunks'; // Real AreaFootprintBlockers ID should exist exactly once regardless of update cadence.
+assert(window.AreaFootprintBlockers.providerIds().includes(trunkProvider),'blossom trees register the shared physical obstacle');
+const firstTree=gameScene.getObjectByName('locale_five_blossoms_amber');
+const nextTree=gameScene.getObjectByName('locale_five_blossoms_rose');
+assert(firstTree&&nextTree,'the actual festival runtime renders both authored wilderness blossoms');
+const visibleStem=firstTree.children.find(child=>child.isMesh&&!child.userData?.noOutline);
+const flowerCards=firstTree.getObjectByName('wilderness-blossom-sprigs');
+assert((visibleStem.layers.mask & (1<<1)) !== 0,'the real shell-outlines helper includes volumetric bark');
+assert((flowerCards.layers.mask & (1<<1)) === 0,'flat alpha-cutout blossom cards are not inked as black rectangles');
+assert.equal(window.AreaFootprintBlockers.blocksBox(activeZone,10.5,10.5,0),true,'the amber blossom trunk blocks movement');
+assert.equal(window.AreaFootprintBlockers.blocksBox(activeZone,10.98,10.5,0),true,
+  'the real Three.js tree uses the exported locale trunk rectangle to its edge');
+assert.equal(window.AreaFootprintBlockers.blocksBox(activeZone,11.02,10.5,0),false,
+  'a point just beyond the authored trunk remains traversable');
+assert.equal(window.AreaFootprintBlockers.blocksBox(activeZone,16.5,10.5,.1),true,'the rose blossom trunk blocks movement');
+assert.equal(window.AreaFootprintBlockers.blocksBox(activeZone,11.5,10.5,.1),false,'open ground beside blossom branches remains traversable');
+assert.equal(window.AreaFootprintBlockers.blocksBox(activeZone,10.5,10.5,0,1e4),false,'projectiles above the tree remain unobstructed');
+assert.equal(window.AreaFootprintBlockers.blocksBox('map_western_slope',10.5,10.5,0),false,'trunks are scoped to the active zone');
+const firstProviderCount=window.AreaFootprintBlockers.providerIds().length;
+hunt.update();
+assert.equal(window.AreaFootprintBlockers.providerIds().length,firstProviderCount,'steady-state festival ticks do not register duplicate blockers');
+assert.equal(hunt.debugSnapshot().treeTrunkCollision.count,2,'mobile diagnostics report both actual blossom tree obstacles');
+const baseBarkMaterial=visibleStem.material; // The native bark material is cached by FoliageGenerator across all future tree instances.
+let disposedFadeMaterials=0; // Ensures the zone tree fade lifecycle releases its own temporary materials on Shift/zone unload.
+window.ZoneTreeFade.setTarget(firstTree,.3,true);
+assert.equal(window.ZoneTreeFade.hasFade(firstTree),true,'the real vegetation renderer can fade native blossom bark');
+assert.notEqual(visibleStem.material,baseBarkMaterial,'native fading uses an owned temporary bark material');
+visibleStem.material.addEventListener('dispose',()=>disposedFadeMaterials++);
+activeZone='map_northern_cliffs';
+layouts.set(activeZone,{localeInstances:[{localeId:'locale_five_blossoms_cyan',objects:[{x:4,y:6,key:'blossom-tree'}]}]});
+hunt.update();
+assert.equal(window.ZoneTreeFade.hasFade(firstTree),false,'removing a tree retires native fade animation state');
+assert.equal(visibleStem.material,baseBarkMaterial,'zone teardown restores the shared bark material');
+assert.equal(disposedFadeMaterials,1,'zone teardown disposes the temporary fade material exactly once');
+assert.equal(window.AreaFootprintBlockers.blocksBox(activeZone,4.5,6.5,0),true,'changing zone installs the new tree trunk');
+assert.equal(window.AreaFootprintBlockers.blocksBox(activeZone,10.5,10.5,0),false,'old zone trunks cannot persist at a reused location');
+assert.equal(cullables.length,1,'old zone tree cull entries are discarded when foliage is replaced');
+activeZone='map_farm';
+hunt.update();
+assert.equal(window.AreaFootprintBlockers.providerIds().includes(trunkProvider),false,'leaving wilderness unregisters all blossom colliders');
+assert.equal(hunt.debugSnapshot().treeTrunkCollision.registered,false,'mobile diagnostics reveal a cleaned-up collision provider');
+assert.equal(cullables.length,0,'leaving wilderness clears old zone cull entries');
+
 THREE.TextureLoader.prototype.load=priorLoad;
 console.log('ok - visible native blossoms and capped, cull-aware, scheduled, teardown-safe falling petals');

@@ -151,21 +151,22 @@
     const live = inhabitants.map(bird =>
       '<div>' + fmt(bird.id) + ' · ' + fmt(bird.phase) + ' · ' + fmt(bird.pose)
       + (bird.target ? ' · target ' + fmt(bird.target) : '')
+       + (bird.readyingActivity ? ' · readying ' + fmt(bird.readyingActivity) : '')
+       + (bird.releaseChord ? ' · release warning' : '')
       + (bird.nestMinutesLeft != null ? ' · emerges in ' + fmt(bird.nestMinutesLeft) + ' game min' : '') + '</div>').join('');
     return '<div style="padding:8px 10px;margin-bottom:8px;border:1px solid rgba(145,179,222,.3);border-radius:6px;font-size:12px">'
       + '<div style="font-weight:600">Tzatzul flight / cliff roosts</div>'
       + '<div>Living: <b>' + flight.active + '</b> · launched: ' + flight.flights
       + ' · swoops: ' + flight.swoops + ' · hits/misses: ' + flight.hits + '/' + flight.misses + '</div>'
-      + '<div>Scout legs: ' + (flight.scouts || 0) + ' · no-perch orbits: ' + (flight.orbits || 0)
+      + '<div>Scout legs: ' + (flight.scouts || 0) + ' · all orbits: ' + (flight.orbits || 0)
+       + ' · readying legs: ' + (flight.readiedLegs || 0)
       + ' · nest stays: ' + (flight.nestStays || 0) + ' · flee drops: ' + (flight.fleeDrops || 0) + '</div>'
       + (flight.nestExitProtected ? '<div>Tzatzul nest exit protection active</div>' : '')
       + '<div>Live wing rigs: ' + (wings?.liveRigs ?? 0) + ' · failed loads: ' + (wings?.loadFailures ?? 0) + '</div>'
-      + '<div>Captive pose restores: ' + (wings?.captiveRestores ?? 0)
-      + ' · skipped (rig replaced): ' + (wings?.captiveRestoreMisses ?? 0)
-      + ' · last: ' + fmt(wings?.lastCaptiveRestore) + '</div>'
-      + '<div>Portrait offset repairs: ' + (wings?.captivePositionRestores ?? 0)
-      + ' · newer pose retained: ' + (wings?.captivePositionHandoffs ?? 0)
-      + ' · late replay fixed: ' + (wings?.staleCarryPositionCorrections ?? 0) + '</div>'
+      + '<div>Carry poses drawn: ' + (wings?.captivePoseFrames ?? 0)
+      + ' · waiting for rig: ' + (wings?.captivePoseUnavailable ?? 0)
+      + ' · root conflicts: ' + (wings?.captivePoseConflicts ?? 0)
+      + ' · last: ' + fmt(wings?.lastCaptivePose) + '</div>'
       + '<div>Inaccessible nest spires: ' + (flight.roosts?.find(record => record.area === area)?.count || 0) + '</div>'
       + '<div>Nest arenas: ' + (arena?.arenas?.length || 0) + ' · rock perches: ' + (arena?.rockMeshes || 0)
       + ' · stone spike layers: ' + (arena?.spikeMeshes || 0) + '</div>'

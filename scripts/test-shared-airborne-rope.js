@@ -171,6 +171,114 @@ function world() {
     'a fast ruin rope release catches a grip even when both frame endpoints miss');
   assert(caughtAt>=3.05&&caughtAt<=3.35,'the catch happens on the swept path');
 }
+// Shaft ropes cannot be grabbed by Action 1, including from another floor with
+// the same X/Z. A physical airborne approach catches the visible end instead.
+{
+  const core=require('../docs/js/rope-core.js');
+  assert(!ruinSource.includes('function attachRope('),'direct grab paths must be retired');
+  assert(!ruinSource.includes("label:'Grab Rope'"),'rope proximity must never claim Action 1');
+  assert(ruinSource.includes('HangingRopes?.adoptRope?.(rope'),'ruin ropes support burdens on their own pendulum instance');
+  const rope={...core.create({anchor:{x:0,y:13,z:0},length:4.14}),
+    id:'shaft-test',shaftRopeId:'shaft-test',launchPad:{x:0,z:0,w:2,d:2,y:8}};
+  rope.bob=core.bobAt(rope);
+  assert.equal(core.catchesAirborne(rope,{x:0,y:0,z:0},{endOnly:true}),false,
+    'a lower story cannot catch an upper shaft rope merely by matching X/Z');
+  assert.equal(core.catchesAirborne(rope,{...rope.bob},{endOnly:true}),true,
+    'the visible shaft brush tip remains a legal airborne catch');
+  const state={flight:null,activeRope:null,ropes:[rope],controls:[],context:{singleRoomTrial:true}}; // Exercised by the real held-adjust interaction.
+  const player={x:0,y:0,inputStrength:1,inputX:-1,inputY:0,vx:0,vy:0};
+  let riderPoint=null,holsters=0,resets=0; // The mock records control transfer, never another rope simulator.
+  const window={PlayerJump:{reset:()=>{resets++;}}};
+  const deps={player,TILE:1,showToast:()=>{}};
+  const grabStart=ruinSource.indexOf('  function catchRopeInFlight(rope,f) {');
+  const grabEnd=ruinSource.indexOf('  // Ordinary jumps and unscripted falls',grabStart);
+  assert(grabStart>=0&&grabEnd>grabStart,'the original airborne catch must transfer to pendulum state');
+  const catchRopeInFlight=new Function('state','window','RopeCore','holsterRopeEquipment',
+    'updateRopeVisual','clonePoint','setPlayerWorld','deps',
+    ruinSource.slice(grabStart,grabEnd)+'\nreturn catchRopeInFlight;')(
+      state,window,core,()=>{holsters++;},r=>(r.bob=core.bobAt(r)),p=>({...p}),
+      p=>{riderPoint=p;},deps);
+  const pickStart=ruinSource.indexOf('  function catchAirborneRope(f, from = null) {');
+  const pickEnd=ruinSource.indexOf('\n\n  function createLavaMaterial() {',pickStart);
+  const catchAirborne=new Function('state','inRuin','ropeCatchPoint','catchRopeInFlight',
+    ruinSource.slice(pickStart,pickEnd)+'\nreturn catchAirborneRope;')(
+      state,()=>true,(r,p)=>core.catchesAirborne(r,p,{endOnly:!!r.shaftRopeId}),catchRopeInFlight);
+  assert.equal(catchAirborne({x:0,y:0,z:0,vx:2,vy:0,vz:0}),false,'wrong-floor contact never attaches');
+  assert.equal(catchAirborne({...rope.bob,vx:-2,vy:1,vz:0}),true,'an airborne approach catches the brush tip');
+  assert.equal(state.activeRope,rope);
+  assert.equal(rope.attached,true);
+  assert.equal(holsters,1);
+  assert.equal(resets,1);
+  assert.deepEqual(riderPoint,rope.bob);
+  assert(rope.omega<0,'incoming motion starts the backswing without Action 1 momentum injection');
+
+  const updateStart=ruinSource.indexOf('  function ropeIntent(');
+  const updateEnd=ruinSource.indexOf('  function updateIdleRope(',updateStart);
+  const updateAttachedRope=new Function('RopeCore','deps','updateRopeVisual','clonePoint','setPlayerWorld','sweptRopePoint',
+    ruinSource.slice(updateStart,updateEnd)+'\nreturn updateAttachedRope;')(
+    core,deps,r=>(r.bob=core.bobAt(r)),p=>({...p}),
+    p=>{riderPoint=p;},()=>({blocked:false}));
+  for(let i=0;i<20;i++)updateAttachedRope(rope,.016);
+  assert(rope.angle<-.1,'the normal rope pendulum continues to pump after automatic catch');
+  const swingBeforeBrake=Math.abs(rope.angle); // The authored shaft rider and ordinary ropes use the same held straightener.
+  const controlsStart=ruinSource.indexOf('  function getInteractionControls() {');
+  const controlsEnd=ruinSource.indexOf('\n\n  function snapshot() {',controlsStart);
+  assert(controlsStart>=0&&controlsEnd>controlsStart,'rope adjust uses the native held-interaction callbacks');
+  const getControls=new Function('state','inRuin','window','composers',
+    ruinSource.slice(controlsStart,controlsEnd)+'\nreturn getInteractionControls;')(
+      state,()=>true,window,[]);
+  const holdAdjust=getControls().find(control=>control.kind==='ropeBrake');
+  assert(holdAdjust?.onHoldStart&&holdAdjust?.onHoldEnd,'holding the existing rope-adjust action is wired');
+  holdAdjust.onHoldStart();
+  assert.equal(rope.braking,true,'the real held-action starts straightening');
+  player.inputX=0;player.inputY=1;
+  updateAttachedRope(rope,.05);
+  assert.equal(rope.omega,0,'shaft Adjust immediately cancels its inherited swing momentum');
+  assert(Math.abs(rope.angle)<swingBeforeBrake,'shaft Adjust lerps its rope back toward straight down');
+  assert.equal(rope.yaw,0,'braking keeps the shaft rope on its intended swing plane');
+  player.inputX=1;player.inputY=0;
+  updateAttachedRope(rope,.05);
+  assert.equal(rope.length,4.14,'braking must not shorten the authored shaft rope');
+  for(let i=0;i<40;i++)updateAttachedRope(rope,.05);
+  assert.equal(rope.angle,0,'holding Adjust settles a shaft rope exactly vertical');
+  assert.equal(rope.omega,0,'the shaft finishes with no leftover swing velocity');
+  holdAdjust.onHoldEnd();
+  assert.equal(rope.braking,false,'releasing the adjust hold returns control to ordinary rope pumping');
+  updateAttachedRope(rope,.05);
+  assert.equal(rope.angle,0,'the former momentum must not restart the swing when the hold ends');
+  assert.deepEqual(riderPoint,rope.bob);
+}
+// Every generated ruin rope is also the SAME object consumed by the burden
+// attachment system; registering one does not create a second pendulum.
+{
+  const t=world();
+  const core=t.window.RopeCore;
+  const sourceStart=ruinSource.indexOf('  function registerRuinRope(rope) {');
+  const sourceEnd=ruinSource.indexOf('  function disposeRopeObject(rope) {',sourceStart);
+  assert(sourceStart>=0&&sourceEnd>sourceStart,'the ruin shares one rope registration hook');
+  const sharedScene={add(){}};
+  const state={ropes:[],context:{scene:sharedScene}};
+  const register=new Function('state','window','MAP_ID',
+    ruinSource.slice(sourceStart,sourceEnd)+'\nreturn registerRuinRope;')(
+      state,t.window,'zone-test');
+  const rope={...core.create({anchor:{x:3.1,y:2.1,z:3.5},length:1.7}),
+    id:'ruin-burden-hook'};
+  rope.bob=core.bobAt(rope);
+  assert.strictEqual(register(rope),rope);
+  assert.strictEqual(state.ropes[0],rope,'the traversal runtime retains the exact registered rope');
+  assert.strictEqual(t.window.HangingRopes.ropes[0],rope,'HangingRopes adopts that same rope without cloning its state');
+  assert.equal(rope.external,true,'adopted ropes are stepped only once by the ruin owner');
+  const burden={id:'swing-cask',mapId:'zone-test',carried:false,exploded:false,
+    group:{quaternion:{identity(){}},scale:{setScalar(){}},position:{set(){}}}};
+  assert(t.window.HangingRopes.attach(rope,burden),'the shared rope accepts a carried/placed burden');
+  assert.strictEqual(rope.burden,burden);
+  assert.strictEqual(burden.rope,rope);
+  assert.equal(t.window.HangingRopes.catchAirborneRope({...rope.bob,vx:0,vy:0,vz:0}),false,
+    'a burden-occupied rope is never a competing player grab');
+  assert(t.window.HangingRopes.removeRope(rope));
+  assert.equal(burden.rope,null,'removing a ruin rope releases the burden registry reference');
+  assert.equal(t.window.HangingRopes.ropes.length,0,'a reroll cannot leave a stale burden hook');
+}
 // Ruin ledge falls use the same entry point when directional movement is held.
 {
   const interior=read('docs/js/dev-random-ruin-interior-map.js'); // Native ruin ledge/floor owner.

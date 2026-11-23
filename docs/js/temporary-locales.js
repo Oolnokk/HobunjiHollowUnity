@@ -72,7 +72,14 @@
     if (!t) return true;
     if (t.water || t.path || t.ramp || t.waterfall || t.invisiblePath) return true;
     if (t.borderEscarpment || t.mapBoundary) return true; // Map-boundary escarpment: nothing is ever placed on top of it.
-    if (!t.occupiedBy) return false;
+    if (root.WildernessObjectFootprints?.isSceneryReserved?.(zone, x, y)) return true; // Shared generated-scenery reservation stops a later camp from occupying a permanent stone.
+    if (!t.occupiedBy) {
+      // A generated solid with missing occupancy metadata is not empty space.
+      // Otherwise a temporary locale can stamp on an unregistered boulder/ore
+      // without the removable object snapshot needed to clear its collider.
+      return !!(root.WildernessObjectFootprints?.isBoulder(t)
+        || t.rockKind === 'diggableRockOre' || t.generatedObjectType === 'diggableRockOre');
+    }
     const obj = objectsById ? (objectsById.get(t.occupiedBy) || null) : objectAt(zone, t.occupiedBy);
     // An occupied tile with no resolvable object (e.g. a locale's own
     // reserved-but-not-yet-painted buffer) is treated as blocking -- safest
@@ -318,6 +325,7 @@
       tileSnapshot,
       createdAt: Date.now(),
     };
+    root.WildernessObjectFootprints?.reserveTemporaryLocale?.(zone,instance); // The common map layout now knows the full reservation even though camps use cloned tile views.
     return instance;
   }
 
@@ -327,6 +335,7 @@
   // produced for that footprint, without re-running the whole generator.
   function release(zone, instance) {
     if (!instance) return;
+    root.WildernessObjectFootprints?.releaseTemporaryLocale?.(zone,instance); // Reopening the site also reopens scenery placement for a later shift.
     clearOccupied(zone, instance.site.x, instance.site.y, instance.site.w, instance.site.h);
     zone.objects = (zone.objects || []).filter(o => o.temporaryLocaleInstanceId !== instance.id);
 

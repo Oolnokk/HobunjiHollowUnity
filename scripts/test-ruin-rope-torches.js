@@ -15,7 +15,9 @@ assert(html.includes('js/ruin-rope-torches.js?') && html.indexOf('js/weapon-laye
 assert.match(simple, /RuinRopeTorch\?\.attach\?\.\(marker\)/);
 assert.match(simple, /RuinRopeTorch\?\.tick\?\.\(rope\.torch,dt,ropeCamera\)/);
 assert.match(simple, /RuinRopeTorch\?\.dispose\?\.\(rope\?\.torch\)/);
-assert.match(simple, /for \(const rope of state\.ropes\) window\.RuinRopeTorch\?\.dispose\?\.\(rope\.torch\)/);
+assert.match(simple, /for \(const rope of state\.ropes\) \{/);
+assert.match(simple, /window\.HangingRopes\?\.removeRope\?\.\(rope\)/); // Both burden registration and rope-flame resources must retire on the same reroll.
+assert.match(simple, /window\.RuinRopeTorch\?\.dispose\?\.\(rope\.torch\)/);
 
 class Vector3 {
   constructor(x=0,y=0,z=0){this.set(x,y,z)}
@@ -24,6 +26,8 @@ class Vector3 {
   copy(v){return this.set(v.x,v.y,v.z)}
   sub(v){return this.set(this.x-v.x,this.y-v.y,this.z-v.z)}
   lengthSq(){return this.x*this.x+this.y*this.y+this.z*this.z}
+  length(){return Math.sqrt(this.lengthSq())}
+  multiplyScalar(s){return this.set(this.x*s,this.y*s,this.z*s)}
   normalize(){const n=Math.sqrt(this.lengthSq())||1;return this.set(this.x/n,this.y/n,this.z/n)}
   crossVectors(a,b){return this.set(a.y*b.z-a.z*b.y,a.z*b.x-a.x*b.z,a.x*b.y-a.y*b.x)}
   distanceToSquared(v){return (this.x-v.x)**2+(this.y-v.y)**2+(this.z-v.z)**2}
@@ -103,6 +107,28 @@ const torch=api.attach(marker),second=api.attach(marker);
 assert(torch && second);
 assert.equal(torch.root.visible,false,'glow must not appear before the four brazier textures load');
 assert.equal(torch.root.parent,marker,'head and halo inherit the real swinging rope bob');
+// The shaft swing's own visual update draws the whole span to the grab, then moves the decoration to the end of the brush.
+{
+  const start=simple.indexOf('  function updateRopeVisual('); // Load the production rope visual updater in the fixture.
+  const end=simple.indexOf('  // Rope entry has a single owner:',start);
+  let renderedEnd=null; // Captures the endpoint submitted to the shared rope sprite.
+  const window={DungeonRopeArt:{updateRopePlane(_mesh,_anchor,bob){renderedEnd=bob;}}};
+  const place=new Function('ropeBobAt','ropeDirection','ropeMidpoint','window','deps',
+    simple.slice(start,end)+'return updateRopeVisual;')(
+    rope=>rope.sample,new Vector3(),new Vector3(),window,null);
+  const rope={anchor:new Vector3(0,4,0),sample:new Vector3(0,1,0),marker,torch,
+    mesh:{userData:{dungeonRopeSprite:true}},torchEndOffset:.15};
+  place(rope);
+  assert.equal(renderedEnd,rope.bob,'full rope length reaches the physical grip');
+  assert.deepEqual(torch.root.position,new Vector3(0,-.15,0));
+  assert.deepEqual(marker.position,rope.sample);
+  rope.sample.set(1.8,1.6,0);
+  place(rope);
+  assert.deepEqual(marker.position,rope.sample,'the grab point stays at the live bob when swinging');
+  assert(Math.abs(torch.root.position.x-.09)<1e-9 && Math.abs(torch.root.position.y+.12)<1e-9,
+    'the decorative chain contact follows the tip on a diagonal swing');
+  marker.position.set(0,0,0);
+}
 const camera={getWorldPosition(vector){return vector.set(0,3,5)}};
 api.tick(torch,.02,camera);
 assert.equal(torch.root.visible,false,'a pre-load frame must not show a floating halo');
@@ -116,6 +142,11 @@ assert.equal(fireSteps,0,'unloaded head must not emit particles');
   assert.equal(activations,2,'both ropes emit using the existing Torch-Flail fire effect');
   assert.equal(refreshes,2,'both heads request the shared bronze metal surface treatment');
   assert.equal(torch.headRoot.children.length,5,'four PNG layers plus the shared interleaved fire group');
+  const handle=torch.state.headParts[1]; // The declared handle pixel is the same contact the weapon uses.
+  const {width,height}=handle.material.map.image;
+  const contactX=(head.anchor.x+.5-width/2)*.001*head.scale+torch.headRoot.position.x;
+  const contactY=(height/2-head.anchor.y-.5)*.001*head.scale+torch.headRoot.position.y;
+  assert(Math.abs(contactX)<1e-9&&Math.abs(contactY)<1e-9,'the authored flail-chain contact aligns with the rope attachment');
   assert.equal(torch.aura.material.blending,THREE.AdditiveBlending,'halo is a fake-light sprite, not a point light');
   assert.equal(torch.aura.raycast !== Sprite.prototype.raycast,true,'aura cannot block grabbing');
   assert.equal(api.debugSnapshot().ready,2);

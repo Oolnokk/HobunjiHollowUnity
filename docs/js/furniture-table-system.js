@@ -13,12 +13,16 @@
   function areaId(area) { return area === 'map_hobunji_town' || area === 'hobunji_main_town' ? 'town' : area; }
   function init(value) { deps = value; collisionAreas.clear(); surfaceProbe.valid=false; }
   function clearArea(area) {
+    const scope=areaId(area); // Used by all per-area registries during a complete scene teardown.
+    const placementEntries=areas.get(scope); // Invalidated below so late furniture loads cannot resurrect ropes from the old scene.
     surfaceProbe.valid=false;
-    for(const entry of entries(area).values()) {
-      window.HobunjiWalkableElevation?.unregister?.(`placed-furniture:${areaId(area)}:${entry.id}`);
-      window.FurniturePuzzleRuntime?.unregisterNode?.(areaId(area), entry.id);
+    for(const entry of placementEntries?.values()||[]) {
+      window.HobunjiWalkableElevation?.unregister?.(`placed-furniture:${scope}:${entry.id}`);
+      window.FurniturePuzzleRuntime?.unregisterNode?.(scope, entry.id);
+      window.RopeFurniture?.unregister?.(scope,entry.id); // Unregister burden hooks and rope art when their furniture disappears.
     }
-    areas.delete(areaId(area)); collisionAreas.delete(areaId(area)); focusStamp=null;
+    placementEntries?.clear(); // Reject unresolved AuthoredFurniture.load callbacks that captured this Map.
+    areas.delete(scope); collisionAreas.delete(scope); focusStamp=null;
   }
   function registerPlacement(area, record, root, def = {}) {
     area = areaId(area);

@@ -59,7 +59,6 @@
     "vigor": "Vigor",
     "speed": "Speed",
     "perception": "Perception",
-    "clarity": "Clarity",
     "combat": "Combat",
     "farming": "Farming",
     "fishing": "Fishing",
@@ -97,12 +96,6 @@
       "Watchful",
       "Sharp-Sensed",
       "Alert"
-    ],
-    "clarity": [
-      "Clear",
-      "Focused",
-      "Lucid",
-      "Bright-Minded"
     ],
     "combat": [
       "Fighter's",
@@ -279,7 +272,7 @@
       "quality": 3,
       "baseBoost": 1,
       "processingTier": "raw",
-      "primaryEffect": "clarity",
+      "primaryEffect": "perception",
       "tags": [
         "Mire",
         "Pale Mushrooms",
@@ -517,7 +510,7 @@
       "quality": 3,
       "baseBoost": 1,
       "processingTier": "quick",
-      "primaryEffect": "clarity",
+      "primaryEffect": "perception",
       "tags": [
         "Uumkao’ii",
         "Dew",
@@ -536,7 +529,7 @@
       "quality": 3,
       "baseBoost": 1,
       "processingTier": "quick",
-      "primaryEffect": "clarity",
+      "primaryEffect": "perception",
       "tags": [
         "Uumkao’ii",
         "Dew",
@@ -607,7 +600,7 @@
       "quality": 1,
       "baseBoost": 1,
       "processingTier": "raw",
-      "primaryEffect": "clarity",
+      "primaryEffect": "perception",
       "tags": [
         "Aromatic",
         "Crop"
@@ -675,7 +668,7 @@
       "quality": 2,
       "baseBoost": 1,
       "processingTier": "raw",
-      "primaryEffect": "clarity",
+      "primaryEffect": "perception",
       "tags": [
         "Berry",
         "White"
@@ -823,7 +816,7 @@
       "quality": 1,
       "baseBoost": 1,
       "processingTier": "raw",
-      "primaryEffect": "clarity",
+      "primaryEffect": "perception",
       "tags": [
         "Seed",
         "Berry",
@@ -1050,7 +1043,7 @@
       "quality": 2,
       "baseBoost": 1,
       "processingTier": "medium",
-      "primaryEffect": "clarity",
+      "primaryEffect": "perception",
       "tags": [
         "Fruit",
         "Mild",
@@ -1084,7 +1077,7 @@
       "quality": 3,
       "baseBoost": 1,
       "processingTier": "medium",
-      "primaryEffect": "clarity",
+      "primaryEffect": "perception",
       "tags": [
         "Fruit",
         "Preserve",
@@ -1847,7 +1840,7 @@
       "quality": 3,
       "baseBoost": 1,
       "processingTier": "raw",
-      "primaryEffect": "clarity",
+      "primaryEffect": "perception",
       "tags": [
         "Imported",
         "Rare",

@@ -51,7 +51,10 @@
     renderQueue: Promise.resolve(),
     lastFacingDebug: null, // Used by AmbientDialogue.getDebug and Pixel Probe to report the most recent greeting head-turn decision on mobile.
     lastAddressDebug: null, // Used by mobile debugging to inspect the last spoken nickname without browser devtools.
+    lastBabySpeech: null, // Most recently rendered newborn babble, anchor and carry state, exposed to the existing mobile diagnostics.
   };
+
+  const runtimeGreetings = new Map(); // Runtime child greeting pools survive async authored config loads without mutating canonical JSON.
 
   function structuredCloneSafe(value) {
     return JSON.parse(JSON.stringify(value));
@@ -75,11 +78,12 @@
 
   async function loadSettings() {
     try {
-      const response = await fetch('config/dialogue/ambient-dialogue.json');
+      const response = await fetch('config/dialogue/ambient-dialogue.json', { cache: 'no-store' }); // Fresh authored NPC greetings on next launch; one startup request, never per bubble.
       state.settings = mergeSettings(response.ok ? await response.json() : null);
     } catch (_) {
       state.settings = mergeSettings(null);
     }
+    for (const [id, greetings] of runtimeGreetings) state.settings.npcGreetings[id] = greetings; // Newborn/toddler dynamic pools win even if their registration raced the async settings fetch.
     return structuredCloneSafe(state.settings);
   }
 
@@ -700,13 +704,31 @@
     if (window.NpcInteractionPolicy?.isPassiveGreatFey?.(options.speakerId)) return null; // Last-resort guard for ambient speech from the four Great Fey, including direct/queued pet callers; authored Talk/quest dialogue uses DialogueContent.
     const THREE = state.deps?.THREE;
     const scene = options.scene || state.deps?.getActiveScene?.();
-    const message = String(text || '').trim();
-    if (!THREE || !root || !scene || !message || state.settings.enabled === false) return null;
+    const originalMessage = String(text || '').trim(); // Preserve the authored source; only the ambient bubble is rephrased.
+    const isNewborn = !!options.speakerId && !!window.RomanceFamily?.isBasketBaby?.(options.speakerId); // Authoritative saved age, not an inferred baby-looking sprite.
+    const carriedBaby = isNewborn ? window.FamilyBabyAmbientVoice?.anchorFor?.(options.speakerId) : null; // Reuse the visible baby burden in either parent's arms/back.
+    if (isNewborn && window.FamilyBabyAmbientVoice?.isProxyActive?.(options.speakerId) && !carriedBaby) return null; // A thrown or temporarily hidden infant must never babble from the invisible basket walker.
+    const speechRoot = carriedBaby?.group || root; // A carried infant's NPC walker is deliberately hidden at the old basket spot.
+    let message = isNewborn
+      ? (options.babyAmbient === true && originalMessage ? originalMessage
+        : window.RomanceFamily?.babyAmbientSound?.(options.speakerId) || '')
+      : originalMessage; // Missing infant syllables must silence the bubble, never expose an adult line; ordinary Talk is separate.
+    if (!isNewborn && options.vocabulary !== false && options.speakerId) {
+      try {
+        message = window.AmbientVocabulary?.rewrite?.(originalMessage, options.speakerId, Math.random, undefined, undefined, options.vocabularyProtectedNames, options.greeting !== true) || originalMessage; // One substitution pass BEFORE cadence, textures, timing, tracing and the event payload.
+      } catch (error) {
+        message = originalMessage;
+        state.deps?.debugLog?.('[ambient-vocabulary] Using authored fallback: ' + (error?.message || error), 'warn'); // Mobile diagnostics, never a crashed dialogue bubble.
+      }
+    }
+    if (!THREE || !speechRoot || !scene || !message || state.settings.enabled === false) return null;
     const mode = options.mode === 'overhead' ? 'overhead' : 'chathead';
     if (window.DevCompanion?.isConnected?.()) { // Dev Companion "Now" tab: what was just said ambiently and which config it came from.
       window.DevCompanion.trace('ambient', {
         speakerId: options.speakerId || null,
         text: message,
+        originalText: originalMessage, // Mobile trace can compare displayed and authored variants.
+        vocabularyChanged: message !== originalMessage,
         mode,
         tone: options.tone || null,
         greeting: !!options.greeting,
@@ -737,7 +759,7 @@
     const lastSyllableAtMs = speechSchedule.length ? speechSchedule[speechSchedule.length - 1].revealAtMs : 0; // Do not fade before the last syllable appears.
     const minimumReadableMs = Math.max(message.length * 42 + 1800, lastSyllableAtMs / 0.75 + 1000); // Long sentences get a readable hold after their final speech tick.
     const event = {
-      root, group, textPart, headPart, profile: options.profile || null,
+      root: speechRoot, group, textPart, headPart, profile: options.profile || null,
       chatheadProfile: headPart ? buildChatheadProfile(options.profile) : null,
       faceWalker: options.faceWalker || null,
       faceTarget: options.faceTarget || null,
@@ -761,7 +783,8 @@
       visibleChars: -1,
     };
     state.active.push(event);
-    window.HobunjiEmojiReactions?.reactToDialogue?.(root, { ...options, tone: event.tone }); // NPC greeting, acceptance/refusal and personality reactions reuse the one emoji owner.
+    if (isNewborn) state.lastBabySpeech = { speakerId: options.speakerId, text: message, carried: !!carriedBaby, root: speechRoot?.name || null }; // Updated only for a rendered bubble, never for unsupported render attempts.
+    window.HobunjiEmojiReactions?.reactToDialogue?.(speechRoot, { ...options, tone: event.tone }); // NPC greeting, acceptance/refusal and personality reactions reuse the one emoji owner.
     drawText(event, '');
     if (!event.revealSchedule.length) {
       drawText(event, message);
@@ -877,11 +900,15 @@
     } catch (_) {}
   }
 
+  let babyGreetingWorldPosition = null; // Reused for carried baby world-space distance checks at the normal 5 Hz ambient greeting cadence.
   function tryGreeting(walker, target, now, day, override = null) {
     const speakerId = walker?.rec?.id;
     if (window.NpcInteractionPolicy?.isPassiveGreatFey?.(speakerId)) return false; // Great Fey use scripted conversations, not proximity greetings (player or NPC).
-    if (walker?.rec?.ambientGreetings === false) return false; // Runtime-spawned records (e.g. babies/toddlers from js/romance-family.js) can opt out entirely.
-    if (!speakerId || walker.area !== state.deps.getCurrentArea()) return false;
+    if (walker?.rec?.ambientGreetings === false) return false; // Dynamic family NPCs now use the normal greeting pipeline at each age.
+    const newborn = !!walker?.rec?.isChild && !!window.RomanceFamily?.isBasketBaby?.(speakerId); // Only saved basket-phase babies use this path.
+    const babyAnchor = newborn ? window.FamilyBabyAmbientVoice?.anchorFor?.(speakerId) : null; // When carried, the real walker can remain at the original cradle.
+    if (newborn && window.FamilyBabyAmbientVoice?.isProxyActive?.(speakerId) && !babyAnchor) return false; // The 5 Hz greeting scan must not fire while the newborn proxy is airborne or invisible.
+    if (!speakerId || (babyAnchor?.mapId || walker.area) !== state.deps.getCurrentArea()) return false;
     if (window.HobunjiDrunkGameplayBridge?.isNpcBlackedOut?.(speakerId)) return false;
     // The active event remains in this list through its final opacity fade,
     // so this releases the NPC only after the prior greeting is fully gone.
@@ -890,7 +917,12 @@
     const proximityKey = `${speakerId}>${targetId}`; // Used by the existing dwell timer; relationship policy is intentionally deferred until a greeting is otherwise ready to fire.
     const key = greetPairKey(day, speakerId, targetId);
     if (state.greeted.has(key)) return false;
-    const distance = Math.hypot(walker.root.position.x - target.x, walker.root.position.z - target.z);
+    const three = state.deps?.THREE || window.THREE; // Reuses the active scene's Vector3 for correct world-space positions of parented baby burdens.
+    const location = babyAnchor?.group?.getWorldPosition && three?.Vector3
+      ? babyAnchor.group.getWorldPosition(babyGreetingWorldPosition || (babyGreetingWorldPosition = new three.Vector3()))
+      : walker.root?.position;
+    if (!location) return false;
+    const distance = Math.hypot(location.x - target.x, location.z - target.z);
     if (distance > state.settings.greetingRadiusTiles) {
       state.proximity.delete(proximityKey);
       return false;
@@ -898,15 +930,29 @@
     const enteredAt = state.proximity.get(proximityKey) ?? now;
     state.proximity.set(proximityKey, enteredAt);
     if (now - enteredAt < 300 || now - state.lastGreetingAt < state.settings.greetingCooldownMs) return false;
-    const playerPolicy = targetId === 'player' ? playerGreetingPolicy(walker) : null; // Used only after dwell/cooldown say a greeting is ready, never from updateActive/per-frame work.
+    const playerPolicy = targetId === 'player' && !newborn ? playerGreetingPolicy(walker) : null; // The player's newborn needn't pass adult rapport/name gates.
     if (playerPolicy && !playerPolicy.allowed) {
       state.proximity.set(proximityKey, Number.POSITIVE_INFINITY); // Blocks repeated policy evaluation until the player leaves this NPC's greeting radius and the existing distance path clears the entry.
       return false;
     }
+    const babyLine = newborn ? window.RomanceFamily?.babyAmbientSound?.(speakerId) : null; // Selected on the actual greeting, not on every proximity scan.
+    if (newborn) {
+      if (!babyLine) return false;
+      const renderedBaby = show(babyAnchor?.group || walker.root, babyLine, {
+        speakerId, profile: walker.profile, mode: 'chathead', greeting: true,
+        directedAtPlayer: targetId === 'player', babyAmbient: true,
+        traceSource: 'config/romance-config.js family.babyAmbientNoises',
+      }); // No borrowed adult greeting, nickname, or attempted head-turn of the hidden infant rig.
+      if (!renderedBaby) return false; // Missing/disabled scenes cannot consume this baby's only greeting opportunity for the day.
+      state.greeted.add(key);
+      saveGreetingLedger(day);
+      state.lastGreetingAt = now;
+      return true;
+    }
     state.greeted.add(key);
     saveGreetingLedger(day);
     state.lastGreetingAt = now;
-    applyGreetingHeadTurn(walker, target); // Every ambient greeting preserves locomotion/seat heading and turns only the speaker's head toward the player or NPC friend.
+    applyGreetingHeadTurn(walker, target); // Ordinary villagers/toddlers retain their existing heading/neck behavior.
     // A pending-request override (see getPendingRequestGreeting) replaces the
     // ordinary nickname-templated line with the quest-giver's own purple
     // call-over line, so it can't be mistaken for a random ambient greeting.
@@ -922,6 +968,7 @@
       : templateLine(targetName, speakerId, targetId, day, { omitTargetName, walker });
     show(walker.root, line, {
       speakerId,
+      vocabularyProtectedNames: targetName ? [targetName] : [], // The resolved greeting addressee is a proper name, not a vocabulary source word.
       profile: walker.profile,
       mode: 'chathead',
       greeting: true,
@@ -966,7 +1013,8 @@
     const day = Number(state.deps?.getDay?.()) || 1;
     ensureGreetingLedger(day);
     const area = state.deps.getCurrentArea();
-    const walkers = (state.deps.getNpcWalkers?.() || []).filter(walker => walker.area === area);
+    const walkers = (state.deps.getNpcWalkers?.() || []).filter(walker => walker.area === area
+      || (walker.rec?.isChild && window.FamilyBabyAmbientVoice?.anchorFor?.(walker.rec.id)?.mapId === area)); // Carried infants may be in a new zone while their hidden walker is still by the basket.
     const player = state.deps.getPlayerPosition?.();
     if (player) {
       for (const walker of walkers) {
@@ -978,7 +1026,8 @@
     for (const walker of walkers) {
       const friends = friendSetFor(walker.rec?.id);
       for (const other of walkers) {
-        if (walker === other || !friends.has(other.rec?.id)) continue;
+        if (walker === other || !friends.has(other.rec?.id)
+          || (other.rec?.isChild && window.FamilyBabyAmbientVoice?.anchorFor?.(other.rec.id))) continue; // Do not aim another NPC's conversation at a hidden baby walker.
         if (tryGreeting(walker, { id: other.rec.id, name: other.rec.name, rec: other.rec, x: other.root.position.x, z: other.root.position.z, root: other.root }, now, day)) return;
       }
     }
@@ -1073,6 +1122,7 @@
   function clear() {
     state.active.splice(0).forEach(dispose);
     state.proximity.clear();
+    state.lastBabySpeech = null; // Reset world-scoped baby-babble diagnostics alongside the active bubble list.
   }
 
   function init(deps) {
@@ -1097,8 +1147,8 @@
     setNpcGreetings(npcId, greetings) {
       const id = String(npcId || '');
       if (!id || !state.settings?.npcGreetings) return false;
-      if (greetings) state.settings.npcGreetings[id] = greetings;
-      else delete state.settings.npcGreetings[id];
+      if (greetings) { runtimeGreetings.set(id, greetings); state.settings.npcGreetings[id] = greetings; }
+      else { runtimeGreetings.delete(id); delete state.settings.npcGreetings[id]; } // Restoring a different family cannot leave old child voices registered.
       return true;
     },
     friendIdsFor: npcId => [...friendSetFor(npcId)], // Shared meal/group planning reuses authored friendship circles.
@@ -1112,6 +1162,8 @@
         active: state.active.map(event => ({ speakerId: event.speakerId, greeting: event.greeting, directedAtPlayer: event.directedAtPlayer, faceMode: event.faceMode })),
         lastFacing: state.lastFacingDebug ? { ...state.lastFacingDebug } : null,
         lastAddress: state.lastAddressDebug ? { ...state.lastAddressDebug } : null, // Current address choice exposed through existing mobile diagnostics.
+        lastBabySpeech: state.lastBabySpeech ? { ...state.lastBabySpeech } : null, // Confirms the bubble used baby phonetics and followed the carried mesh.
+        vocabulary: window.AmbientVocabulary?.getDebug?.() || null, // Mobile readout includes loaded status and latest synonym selection.
         spouseId: window.RomanceSystem?.getSpouse?.()?.npcId || null, // Mobile debug shows whether the wedding state was restored.
       };
     },

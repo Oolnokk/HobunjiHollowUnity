@@ -15,8 +15,12 @@ const Challenges = require(path.join(__dirname, '..', 'docs/js/ruin-layer-challe
 const footprints = new Map();
 const Footprint = { register: (id, p) => { footprints.set(id, p); return () => footprints.delete(id); } };
 const bus = { registerExternalProjectileTarget: () => () => {}, hasActiveRuinState: () => true };
-const rec = Challenges.compose({ THREE, parent: new Obj(), room: { x: 10, z: 10, w: 16, d: 16 }, id: 'room-a', kind: 'glyphObelisk', y: 0,
-  isActive: () => true, onSolved: () => {}, getPlayerPosition: () => ({ x: 18, z: 18 }), getPlayerY: () => 0, projectileBus: bus, DynamicSurfaces: DS, AreaFootprintBlockers: Footprint });
+const composeHall = (id, y) => Challenges.compose({
+  THREE, parent: new Obj(), room: { x: 10, z: 10, w: 16, d: 16 }, id, kind: 'glyphObelisk', y,
+  isActive: () => true, onSolved: () => {}, getPlayerPosition: () => ({ x: 18, z: 18 }), getPlayerY: () => y,
+  projectileBus: bus, DynamicSurfaces: DS, AreaFootprintBlockers: Footprint,
+});
+const rec = composeHall('room-a', 0);
 assert.equal(rec.targets.length, 3, 'three hidden glyph targets');
 assert.ok(blockers.size >= 6, 'every pillar is solid: ' + blockers.size);
 for (const b of blockers.values()) {
@@ -37,4 +41,28 @@ assert.equal(fp.blocksBox(cx + 5, cz + 5, .2, null), false, 'open floor stays op
 rec.dispose();
 assert.equal(footprints.size, 0, 'dispose removes the footprint');
 assert.equal(blockers.size, 0, 'dispose clears the pillar blockers');
-console.log('glyph pillar hall: ok');
+// Check the actual collision provider at the visible opening and on all closed faces.
+const sides = [[0, 1], [1, 0], [0, -1], [-1, 0]];
+const openings = new Set();
+const shotRadius = 7 / 55; // Crossbow radius in world units.
+for (const id of ['upper-a', 'upper-b', 'upper-c', 'upper-d']) {
+  const hall = composeHall(id, 8);
+  const cover = [...footprints.values()][0];
+  for (const glyph of hall.targets) {
+    const face = Math.round(glyph.rune.rotation.y / (Math.PI / 2) + 4) % 4;
+    openings.add(face);
+    const { x, y, z } = glyph.origin;
+    for (const [side, [dx, dz]] of sides.entries()) {
+      let blocked = false;
+      for (let distance = .6; distance >= -.001; distance -= .025) {
+        if (cover.blocksBox(x + dx * distance, z + dz * distance, shotRadius, y)) blocked = true;
+      }
+      assert.equal(blocked, side !== face, 'only the visible opening admits a centered shot');
+    }
+    assert.equal(cover.blocksBox(x, z, .2, null), true, 'walking still uses the solid footprint');
+    assert.equal(cover.blocksBox(x, z, shotRadius, y - 8), false, 'the same point on the lower story is clear');
+  }
+  hall.dispose();
+}
+assert.equal(openings.size, 4, 'fixtures exercise all four opening orientations');
+console.log('glyph pillar hall: all four opening faces, solid sides, movement, and floor isolation passed');

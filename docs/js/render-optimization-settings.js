@@ -64,10 +64,20 @@
 
   // group, id, name, desc, default (on = the shipped optimisation), available(), read(), write(on), ownsPersistence.
   const TOGGLES = [
+    { group: 'Character rendering', id: 'frozenPortraits', name: 'Frozen NPC and animal portraits', on: true,
+      desc: 'Use rigid portrait geometry for neutral, hunched and weapon-ready poses. Independent head motion uses the live rig.',
+      available: () => !!window.PNGPlaneAvatar?.meshBudget?.frozenSnapshot,
+      read: () => window.PNGPlaneAvatar.meshBudget.frozenSnapshot().enabled,
+      write: on => window.PNGPlaneAvatar.meshBudget.setFrozenEnabled(on) },
+
     { group: 'Batching (fewer draw calls)', id: 'propBatches', name: 'Merge still wilderness props', on: true,
       desc: 'Tents, camp furniture, berry bushes, herbs, totems, nests and ore-rock stones that stand still are drawn as one merged mesh per 8×8 tiles.',
       available: () => typeof window.ZonePropRenderBatches?.setEnabled === 'function',
       read: () => window.ZonePropRenderBatches.snapshot?.().enabled, write: on => window.ZonePropRenderBatches.setEnabled(on) },
+    { group: 'Batching (fewer draw calls)', id: 'denseWallBatches', name: 'Merge the Cloud Forest dense tree wall', on: true,
+      desc: 'Shadewood wall chunks that are not fading are drawn as one instanced mesh per tree part instead of one per chunk.',
+      available: () => typeof window.DenseForestWallBatches?.setEnabled === 'function',
+      read: () => window.DenseForestWallBatches.snapshot?.().enabled, write: on => window.DenseForestWallBatches.setEnabled(on) },
     { group: 'Batching (fewer draw calls)', id: 'farmTileBatches', name: 'Merge farm ground tiles', on: true,
       desc: 'Farm ground tiles are drawn as merged 8×8 batches.',
       available: () => typeof window.FarmTileRenderBatches?.setEnabled === 'function',
@@ -163,7 +173,19 @@
       desc: 'Off hides the sky dome\'s cloud layers while drawing.',
       available: () => typeof hooks()?.register === 'function', read: cloudHider.read, write: cloudHider.write },
   ];
-  const byId = new Map(TOGGLES.map(t => [t.id, t]));
+  // These switches share render preferences but appear in the regular Performance section.
+  const actorXrayToggles = ['animals', 'enemies', 'player'].map(group => ({
+    id: 'xray-' + group,
+    group: 'Performance',
+    name: 'X-ray for ' + (group === 'player' ? 'the player' : group === 'enemies' ? 'NPCs and enemies' : group),
+    get on() { return held()?.actorXrayDefaults?.[group] ?? (group !== 'enemies'); },
+    input: 'settingActorXray-' + group,
+    available: () => typeof held()?.setActorXrayEnabled === 'function',
+    read: () => held().getActorXrayEnabled(group),
+    write: on => held().setActorXrayEnabled(group, on),
+  }));
+  const settingsToggles = [...TOGGLES, ...actorXrayToggles]; // Shared persistence, live updates and defaults.
+  const byId = new Map(settingsToggles.map(t => [t.id, t]));
 
   function loadStored() {
     try { const value = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}'); return value && typeof value === 'object' ? value : {}; }
@@ -213,14 +235,14 @@
   }
 
   function reset() {
-    for (const toggle of TOGGLES) if (toggle.available() && get(toggle.id) !== toggle.on) set(toggle.id, toggle.on);
+    for (const toggle of settingsToggles) if (toggle.available() && get(toggle.id) !== toggle.on) set(toggle.id, toggle.on);
     saveStored({});
     refreshInputs();
   }
 
-  const inputId = id => 'settingRenderOpt_' + id;
+  const inputId = id => byId.get(id)?.input || 'settingRenderOpt_' + id;
   function refreshInputs() {
-    for (const toggle of TOGGLES) {
+    for (const toggle of settingsToggles) {
       const input = document.getElementById(inputId(toggle.id));
       if (input) input.checked = get(toggle.id) === true;
     }
@@ -282,7 +304,18 @@
     return true;
   }
 
+  function installActorXrayInputs() {
+    for (const toggle of actorXrayToggles) {
+      const input = document.getElementById(toggle.input); // Existing Settings checkbox markup supports controller navigation.
+      if (!input || !toggle.available()) continue;
+      input.checked = get(toggle.id) === true;
+      input.addEventListener('change', () => set(toggle.id, input.checked));
+    }
+  }
+
   applyStored();
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', installActorXrayInputs, { once: true });
+  else installActorXrayInputs();
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', installSection, { once: true });
   else installSection();
   window.addEventListener?.('load', applyStored, { once: true }); // Again after game.js and its init() calls.
@@ -299,7 +332,7 @@
 
   window.RenderOptimizationSettings = Object.freeze({
     STORAGE_KEY,
-    list: () => TOGGLES.filter(t => t.available()).map(t => ({ id: t.id, group: t.group, name: t.name, default: t.on, value: get(t.id) })),
+    list: () => settingsToggles.filter(t => t.available()).map(t => ({ id: t.id, group: t.group, name: t.name, default: t.on, value: get(t.id) })),
     get,
     set,
     reset,

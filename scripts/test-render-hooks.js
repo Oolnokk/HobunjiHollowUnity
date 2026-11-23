@@ -178,6 +178,71 @@ function makeRenderer(window, log) {
   assert.equal(window.NpcSocialInhibition.getDebug().facingApplications, 2, 'the next world frame applies again');
 }
 
+// Exercise two draws in the same frame with the production portrait hooks.
+{
+  const window = loadHooks();
+  const source = read('docs/js/png-plane-avatar.js');
+  const begin = source.indexOf('  const frozenPortraits =');
+  const end = source.indexOf('  function registerSkinnedPortrait(', begin);
+  vm.runInContext(`
+    const NECK_BONE = 7;
+    let portraitWireframeEnabled = false;
+    const portraitMeshRefs = new Set(), portraitMeshBuilds = new WeakMap();
+    ${source.slice(begin, end)}
+    window.portraitFixture = { frozenPortraits, portraitMeshRefs, portraitMeshBuilds, savePortraitPose };
+  `, window);
+  const { frozenPortraits, portraitMeshRefs, portraitMeshBuilds, savePortraitPose } = window.portraitFixture;
+  const world = { name: 'world', isScene: true, visible: true };
+  const renderer = makeRenderer(window, []);
+  const camera = { layers: { mask: 1 } };
+  const skin = { attributes: { position: { version: 0, count: 48 }, uv: { version: 0 } }, drawRange: { start: 0, count: Infinity } };
+  const quad = { attributes: { position: { count: 6 } } };
+  const material = {
+    skinning: true, version: 0,
+    set needsUpdate(value) { if (value) this.version++; },
+  };
+  const bones = Array.from({ length: 9 }, () => ({
+    position: { x: 0, y: 0, z: 0 }, quaternion: { x: 0, y: 0, z: 0, w: 1 },
+    scale: { x: 1, y: 1, z: 1 }, rotation: { x: 0, y: 0, z: 0 },
+  }));
+  const mesh = Object.assign(Object.create({ isSkinnedMesh: true }), {
+    visible: true, parent: world, children: [], userData: {}, layers: { mask: 1 },
+    geometry: skin, material: [material], skeleton: { bones },
+  });
+  const values = new Float64Array(90);
+  savePortraitPose(mesh, values);
+  frozenPortraits.set(mesh, {
+    source: skin, skeleton: mesh.skeleton,
+    attributes: [skin.attributes.position, skin.attributes.uv, undefined, undefined, undefined],
+    versions: [0, 0, undefined, undefined, undefined], start: 0, count: Infinity,
+    poses: [{ geometry: quad, values, flat: true }], current: new Float64Array(90),
+  });
+  portraitMeshRefs.add({ deref: () => mesh });
+  portraitMeshBuilds.set(mesh, { freeze: true });
+  const submitted = [];
+  renderer.__hobunjiR128NativeRender = () => submitted.push([mesh.geometry, mesh.isSkinnedMesh, material.skinning, material.version]);
+  window.RenderHooks.beginWorldFrame({ renderer, scene: world, camera });
+  try {
+    renderer.render(world, camera);
+    assert.deepEqual(submitted.pop(), [quad, false, false, 1], 'first pass submits the frozen geometry');
+    assert.equal(mesh.geometry, skin);
+    bones[7].rotation.y = .2;
+    renderer.render(world, camera);
+    assert.deepEqual(submitted.pop(), [skin, true, true, 2], 'late head turn switches back to the live shader as well as geometry');
+    bones[7].rotation.y = 0;
+    renderer.render(world, camera);
+    assert.deepEqual(submitted.pop(), [quad, false, false, 3], 'return to the frozen pose refreshes the program again');
+    skin.attributes.uv = { version: 0 };
+    renderer.render(world, camera);
+    assert.deepEqual(submitted.pop(), [skin, true, true, 4], 'attribute replacement with the same version invalidates the frozen copy');
+  } finally {
+    window.RenderHooks.endWorldFrame();
+  }
+  assert.equal(mesh.geometry, skin);
+  assert.equal(mesh.isSkinnedMesh, true);
+  assert.equal(material.skinning, true);
+}
+
 // ── Load order: the registry precedes every renderer/bridge on the game page ──
 {
   const html = require('./classic-script-group-index.js').expandClassicScriptGroups();

@@ -515,13 +515,37 @@
   // The same compositor now owns shoulder-pet pose ordering, temporary portrait
   // depth writes and owner front-art weapon stencil. The probe checks its
   // selected preset and actual material state alongside the physical attachment.
+  // Shared raycast ownership check for both shoulder pets and ground companions.
+  function _pixelProbeIsDescendant(object, ancestor) {
+    if (!ancestor) return false;
+    let node = object; // Walk the selected 3D object toward the creature's avatar group.
+    while (node) { if (node === ancestor) return true; node = node.parent; }
+    return false;
+  }
+
+  // Mobile tap diagnostics for the real ground companion head rig.
+  function _pixelProbeCompanionYawLines(hits) {
+    const objects = hits.map(hit => hit.object); // Use the probe's existing raycast, never a new scene scan.
+    for (const companion of deps.companionObjects || []) {
+      if (companion?.stableRole !== 'companion' || !companion.avatarRef?.group
+        || !objects.some(object => _pixelProbeIsDescendant(object, companion.avatarRef.group))) continue;
+      const avatar = companion.avatarRef; // Runtime rendered Nelk/animal rather than a species preview.
+      const head = avatar.headRig; // Current yaw and pitch state.
+      const geometry = avatar.frontPlane?.geometry?.userData || {}; // Existing neck hinge diagnostic.
+      const material = avatar.headMaterialResponse?.dump?.(); // Existing paint-independent yaw flag.
+      const hinge = geometry.hobunjiAnimalYawFoldPivotX; // Rendered X for baby and adult variants.
+      return [
+        '', '=== Animal companion head yaw ===',
+        `Companion: ${companion.creatureKey || 'unknown'} id=${companion.id || '-'} headRig=${head ? 'active' : 'missing'}`,
+        `Head: pitch=${Number(head?.appliedDeg || 0).toFixed(2)}° yaw=${Number(head?.currentYawDeg || 0).toFixed(2)}° target=${Number(head?.targetYawDeg || 0).toFixed(2)}°`,
+        `Yaw: mode=${head?.yawMode || 'legacy'} mask=${geometry.hobunjiAnimalYawMask || head?.yawMask || 'unknown'} neckX=${Number.isFinite(hinge) ? (hinge*100).toFixed(1)+'%' : '-'} materialYaw=${material?.maps?.yawUsesMaterialMaps === false ? 'off' : 'unknown'}`,
+      ];
+    }
+    return null;
+  }
+
   function _pixelProbeShoulderPetLines(hits) {
-    const isDescendant = (obj, ancestor) => {
-      if (!ancestor) return false;
-      let n = obj;
-      while (n) { if (n === ancestor) return true; n = n.parent; }
-      return false;
-    };
+    const isDescendant = _pixelProbeIsDescendant; // Use the same ancestry check for both creature roles.
     const currentArea = deps.getCurrentArea();
     const player = deps.player;
     let liveActivePet = null;
@@ -1011,6 +1035,8 @@
       const scoreActorMask = window.OutlineRenderPerformance?.snapshot?.(); // Mobile-only check that final note rendering reconstructed character silhouettes (not a permanent on-screen diagnostic).
       lines.push(`Puzzle Cave note overlay: portals=${caveOverlayState.portals.length} active=${visibleScores.length} finalPassReady=${readyScores.length}/${visibleScores.length} outlineOverlay=${window.OutlineRenderPerformance?.worldTextAboveShell === true ? 'installed' : 'missing'} characterMask=${scoreActorMask?.scoreActorDepthReady ? 'ready' : 'missing'} actorDepthPasses=${scoreActorMask?.scoreActorDepthPasses ?? 0} lastActorMeshes=${scoreActorMask?.scoreActorDepthMeshes ?? 0} scoreMask=${scoreActorMask?.lastScoreMaskStatus || 'unknown'} maskedScoreFrames=${scoreActorMask?.scoreFramesWithActorMask ?? 0} hiddenNoMask=${scoreActorMask?.scoreFramesWithMissingActorMask ?? 0} auxBasePreserved=${scoreActorMask?.auxiliaryWorldBasePassesPreserved ?? 0} abandonedOverlays=${scoreActorMask?.abandonedWorldTextOverlays ?? 0}; modes=${visibleScores.map(portal => portal.scoreOcclusion || '-').join(',') || '-'}; ${scoreActorMask?.latestScoreChange || ''}`);
     }
+    const skyLightingDebug = window.HobunjiSkyDome?.getDebugState?.(); // On-demand mobile report confirms active rain darkness without sampling or allocating during every frame.
+    if (skyLightingDebug) lines.push(`Weather lighting: rain=${window.WeatherFX?.getPrecipitationStrength?.() ?? 0} overcast=${Number(skyLightingDebug.overcast || 0).toFixed(2)} darkness=${Number(skyLightingDebug.overcastDarkness || 0).toFixed(2)} addedAlpha=${Number(skyLightingDebug.weatherDarknessAddedAlpha || 0).toFixed(2)} overlayAlpha=${Number(skyLightingDebug.ambientOverlayAlpha || 0).toFixed(2)} cloudBucket=${skyLightingDebug.cloudBucket ?? 'none'}`); // Enables phone-only comparisons across rain windows and confirms heavy weather did not rebuild the atlas.
     const interiorLightingDebug = window.CloudForestFog?.getDebugState?.(); // Copies darkness and light-profile changes into the existing mobile report.
     if (interiorLightingDebug) lines.push(`Interior lighting: darkness=${interiorLightingDebug.undergroundDarknessOverlayAlpha} lastMask=${interiorLightingDebug.lastInteriorDarknessDraw?.alpha ?? 'none'} activeFarmhouse=${interiorLightingDebug.lastInteriorDarknessDraw?.farmhouseSceneActive === true} radius=x${interiorLightingDebug.interiorLightRadiusMultiplier} falloff=${interiorLightingDebug.interiorLightFalloff} windows=${interiorLightingDebug.daylightWindowMasks?.sources || 0} daylight=${(interiorLightingDebug.daylightWindowMasks?.daylight ?? 0).toFixed(2)} stained-glass auras=${interiorLightingDebug.daylightWindowMasks?.colorAuras || 0}; outdoor lights=${interiorLightingDebug.outdoorLightVisibility?.drawn ?? 0}/${interiorLightingDebug.outdoorLightVisibility?.considered ?? 0} culled=${interiorLightingDebug.outdoorLightVisibility?.culled ?? 0} fading=${interiorLightingDebug.outdoorLightVisibility?.fading ?? 0}; ${interiorLightingDebug.latestChange}`); // Existing mobile Pixel Probe now reports real outdoor distance culling alongside interior mask diagnostics.
     const portraitSpeciesDebug = window.portraitSpeciesLoadSnapshot?.(); // Identifies incomplete data loads directly in copied mobile reports.
@@ -1030,10 +1056,23 @@
     if (shingleSurfaces) lines.push('Shingle surfaces: ' + JSON.stringify(shingleSurfaces));
     const rigOwners = window.ActorRigCompositor?.getDebug?.(); // Shared pose diagnostics show unknown transform writes and expired layers on mobile.
     if (rigOwners) lines.push('Rig transform ownership: ' + JSON.stringify(rigOwners));
+    const wildlifeThreatDebug = window.WildlifeThreatResponse?.getDebug?.(); // On-demand counters reveal nest alarms, predator sprints and herd reactions in the mobile Pixel Probe.
+    if (wildlifeThreatDebug) lines.push('Wildlife threat reactions: ' + JSON.stringify(wildlifeThreatDebug));
+    const attachRescue = window.Combat?.attach; // Existing attach owner provides rescue evidence without sampling companions on every frame.
+    if (attachRescue) lines.push('Honeyfuzzle ally rescues: ' + attachRescue.rescueCount +
+      '  current player swarmers: ' + (attachRescue.attachersOf?.(window.Combat?.deps?.player)?.length || 0));
     lines.push('Performance cleanup v1: unchanged frame cadence/targeting; reticle writes deduplicated; hand diagnostics on demand.');
     try {
       const nestDebug = window.DenNestSystem?.debugSnapshot?.(); // Makes missing records, empty saved clutches and baby build failures visible in the user's copied report.
       lines.push('Den nests: ' + JSON.stringify(nestDebug || { missingRuntime: true }));
+      const lineage = window.LivestockItemGenotypePersistence?.getDebug?.(); // Read-only saved-offspring audit; never restores animals automatically.
+      if (lineage) lines.push('Carried animal lineage custody: ' + JSON.stringify({
+        installed: lineage.installed, queuedNow: lineage.queuedNow, lastItemKey: lineage.lastItemKey,
+        lastAction: lineage.lastAction, unbackedLineages: lineage.unbackedLineages,
+        queueCounts: Object.fromEntries(Object.entries(lineage.queues || {}).map(([key, genes]) => [key, genes.length])),
+        recentErrors: (lineage.errors || []).slice(-3),
+      })); // Counts and shortfalls are copyable on mobile without dumping every genotype.
+
       lines.push('Den locale: ' + JSON.stringify(window.DenLocaleRuntime?.debugSnapshot?.() || { missingRuntime: true }));
       const denCollision = window.ZoneDenTotemFeatures?.denCollisionDebugSnapshot?.(); // Read cache hits/rebuilds only during a Pixel Probe; no gameplay-frame string work.
       if (denCollision) lines.push(`Den collision cache: hits=${denCollision.hits} builds=${denCollision.builds} invalidations=${denCollision.invalidations}`);
@@ -1096,7 +1135,7 @@
       lines.push(`Knockback ledge: entity=${knockbackLedgeDebug.entity || '-'} phase=${knockbackLedgeDebug.phase || '-'} originY=${Number(knockbackLedgeDebug.originSurfaceY || 0).toFixed(2)} landingY=${Number(knockbackLedgeDebug.landingSurfaceY || 0).toFixed(2)} drop=${Number(knockbackLedgeDebug.dropTiers || 0).toFixed(2)}tier reason=${knockbackLedgeDebug.reason || '-'}`);
     }
     const resourceRingsDebug = window.ResourceRings?.debugSnapshot?.(); // Shows dashed ring batching during combat on mobile.
-    if (resourceRingsDebug) lines.push(`Resource rings: ${resourceRingsDebug.dashedArcsBuilt} dash batches, ${resourceRingsDebug.dashMeshesAvoided} mesh allocations avoided`);
+    if (resourceRingsDebug) lines.push(`Resource rings: ${resourceRingsDebug.dashedArcsBuilt} dash batches, ${resourceRingsDebug.dashMeshesAvoided} dash meshes avoided; arcs rebuilt=${resourceRingsDebug.resourceArcRebuilds || 0}, reused=${resourceRingsDebug.resourceArcReuses || 0}, target halos=${resourceRingsDebug.targetHaloRebuilds || 0}, cap checks=${resourceRingsDebug.capacityChecks || 0}, cap changes=${resourceRingsDebug.capacityInvalidations || 0}`);
     const burningVfxDebug = window.BurningAfflictionVfx?.debugSnapshot?.(); // Confirms authored furniture fire emitters are attached without requiring a console.
     if (burningVfxDebug) {
       lines.push(`Burning VFX: active=${burningVfxDebug.activeEntities || 0} template=${burningVfxDebug.templateReady ? 'ready' : (burningVfxDebug.loading ? 'loading' : 'missing')} last=${burningVfxDebug.lastEvent?.phase || '-'} entity=${burningVfxDebug.lastEvent?.entity || '-'}`);
@@ -1113,6 +1152,15 @@
       if (dungeonFireDebug.armed || dungeonFireDebug.activeVisuals) {
         lines.push(`  Palette: ${(dungeonFireDebug.fireStreams || []).map(stream => stream.color + ':' + stream.rate).join(', ')} | Last: ${dungeonFireDebug.lastEvent || '-'}`);
       }
+    }
+    const shaftRide=window.DevRandomRuinSimplePuzzles?.debugShaftRide?.(); // On-demand stick, pendulum and release diagnostics.
+    if(shaftRide)lines.push('Shaft rope: '+JSON.stringify(shaftRide));
+    for(const hit of hits){
+      let owner=hit.object; // Resolve the clicked brazier, partition, or chest to its optional puzzle.
+      while(owner&&!owner.userData?.ruinSecretSnapshot)owner=owner.parent;
+      if(!owner)continue;
+      lines.push('Hidden ruin alcove: '+JSON.stringify(owner.userData.ruinSecretSnapshot()));
+      break;
     }
     const rubblePickupPerf = window.Shattercasks?.debugSnapshot?.().performance; // Read only on Pixel Probe request, never on a gameplay frame.
     const junkPickupPerf = window.CratePiles?.debugSnapshot?.(); // Mobile-only loot hitch timing and save diagnostics.
@@ -1133,6 +1181,11 @@
       lines.push(`Context: ${gl3 instanceof WebGL2RenderingContext ? 'WebGL2' : 'WebGL1'}  DEPTH_BITS=${gl3.getParameter(gl3.DEPTH_BITS)}  STENCIL_BITS=${gl3.getParameter(gl3.STENCIL_BITS)}  devicePixelRatio=${window.devicePixelRatio}`);
     } catch (e) { lines.push('GPU/context info: (read failed)'); }
     lines.push(`Area: ${currentArea}   CSS(${cssX.toFixed(0)},${cssY.toFixed(0)}) framebuffer(${fbX},${fbY})`);
+    const feetY = window.DevRandomRuin?.getPlayerGroundSupportY?.() ?? deps.player?.physicalFeetY ?? playerMesh.position.y; // Inspect the physical surface during a tap, outside the render loop.
+    const footSupport = window.DynamicSurfaces?.sampleSupport?.(playerMesh.position.x, playerMesh.position.z, {
+      area:currentArea, minY:feetY-.25, maxY:feetY+.25,
+    });
+    if (footSupport?.record.walkableElevation) lines.push(`Pressure plate support: ${footSupport.id} top=${footSupport.y.toFixed(3)} feet=${feetY.toFixed(3)}`);
     const renderRecovery = window.WeatherFX?.getRenderRecoveryState?.(); // Makes WebGL context loss and CSS/backing-buffer desync diagnosable from the in-game report without desktop devtools.
     if (renderRecovery) {
       const lastRepair = renderRecovery.lastRepair;
@@ -1583,6 +1636,8 @@
 
     const shoulderPetLines = _pixelProbeShoulderPetLines(hits);
     if (shoulderPetLines) lines.push(...shoulderPetLines);
+    const companionYawLines = _pixelProbeCompanionYawLines(hits); // Tap a ground Nelk to inspect its actual paper-fold state on mobile.
+    if (companionYawLines) lines.push(...companionYawLines);
 
     const npcSchedulingLines = _pixelProbeNpcSchedulingLines(hits);
     if (npcSchedulingLines) lines.push(...npcSchedulingLines);

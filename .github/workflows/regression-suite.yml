@@ -34,7 +34,7 @@ jobs:
       - name: Syntax check shipped scripts
         run: |
           set -e
-          for f in docs/game.js docs/js/*.js; do node --check "$f"; done
+          for f in docs/game.js docs/js/*.js scripts/test-five-blossom-petals.js scripts/test-wilderness-object-footprints.js; do node --check "$f"; done # Catch syntax errors in the amended blossom/landmark tests before the full suite.
       - name: Validate JSON manifests
         run: |
           node -e "JSON.parse(require('fs').readFileSync('scripts/runtime-frame-ownership-exceptions.json', 'utf8'))"
@@ -67,7 +67,9 @@ jobs:
         run: node scripts/test-berry-bush-three-runtime.js
       - name: Five wilderness blossom trees against real Three.js r128
         if: steps.select.outputs.needs_deps == 'true'
-        run: node scripts/test-five-blossom-wilderness-three.js
+        run: |
+          node scripts/test-five-blossom-wilderness-three.js
+          node scripts/test-five-blossom-petals.js # Exercise the actual hunt's native outlines, trunk blockers, and temporary fade-material cleanup.
       - name: Rounded wilderness stone shell layers against real Three.js r128
         # The fast regression suite runs before optional dependencies install; recheck real mesh behavior now that Three.js is present.
         if: steps.select.outputs.needs_deps == 'true'

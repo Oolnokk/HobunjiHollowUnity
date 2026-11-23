@@ -30,8 +30,8 @@
     }
   }
   if (window.HobunjiAuthoredAnimalHeadRigs?.version !== '2026-11-18-nine-authored-rigs2') {
-    if (!parserLoad('js/animal-head-rig-authored.js?v=20261118NineAuthoredRigs2', 'animal-head-rig-authored')) {
-      lateLoad('js/animal-head-rig-authored.js?v=20261118NineAuthoredRigs2', 'animal-head-rig-authored');
+    if (!parserLoad('js/animal-head-rig-authored.js?v=20261123h77c301d', 'animal-head-rig-authored')) {
+      lateLoad('js/animal-head-rig-authored.js?v=20261123h77c301d', 'animal-head-rig-authored');
     }
   }
   if (!window.HobunjiShoulderSplineProfiles || Number(window.HobunjiShoulderSplineProfiles.version) < 5) {
@@ -82,6 +82,10 @@
     const originalInit = api.init.bind(api);
     api.init = function playerBodyAttachmentAwareInit(injectedDeps) {
       gameDeps = injectedDeps;
+      // The scene-level weapon holder shares the same portrait and standing floor as the player.
+      if (injectedDeps?.toolHolder?.userData && injectedDeps.playerMesh) {
+        injectedDeps.toolHolder.userData.hobunjiHeldPortraitOwner = injectedDeps.playerMesh;
+      }
       window.ProceduralHandAttachments?.installGameRuntime?.(injectedDeps);
       return originalInit(injectedDeps);
     };

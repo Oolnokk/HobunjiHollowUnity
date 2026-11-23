@@ -35,6 +35,7 @@
 
   // ── Claims ────────────────────────────────────────────────────────────
   function optionsFor(walker) {
+    if(window.FamilyBabyBurdens?.isProxyActive?.(walker?.rec?.id))return []; // Hidden infant NPCs are interacted with as physical Burdens, not as ordinary adults.
     try {
       const options=[...(window.NpcFollowing?.commandOptionsFor?.(walker)||[]),...(window.RomanceSystem?.commandOptionsFor?.(walker)||[]),...(window.FestivalSystem?.socialOptionsFor?.(walker)||[]),...(window.NpcSeatRequest?.optionsFor?.(walker)||[])];
       if(!options.length)return [];

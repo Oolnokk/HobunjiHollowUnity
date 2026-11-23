@@ -362,6 +362,12 @@
           width:.48,height:.48,idleColor:'#e2ad62',activeColor:'#65ffaf',
         }); // A seated block lights the inset glyph; neither slab changes texture/color.
         mesh.userData.findBlocksPressurePlate=index;line.userData.devRuinFootprintIgnore=true;
+        for(const part of [mesh,line]){
+          const support=root.DynamicSurfaces?.pressurePlateSurface?.(part,{
+            id:id+'-plate-'+part.id,plateArea:'map_i_dev_random_ruin',enabled:()=>!disposed,
+          }); // Both stone levels are physical, including the raised inset.
+          if(support){kit.registerSurface(support);disposers.push(()=>root.DynamicSurfaces?.remove?.(support.id));}
+        }
         plates.push({mesh,signal,x,z,filled:false,lastVisualFilled:false,block:null});
       });
     }

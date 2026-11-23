@@ -121,6 +121,18 @@ assert.equal(originalInitDeps, deps, 'enemy dodge wrapper preserves BanditCombat
   assert.equal(enemy.def.moveSpeed, 100, 'authored movement speed is restored after the wrapped frame');
   assert.equal(enemy.def.chaseSpeed, 200, 'authored chase speed cannot compound across frames');
 
+  const priorDodgeVoices = dodgeVoices.length; // Held-charge preparation is an active melee pose, not a new opportunity for a dodge roll.
+  const priorStaminaSpent = staminaSpent;
+  enemy._banditPreparedCharge = { target: player, t: 0.25, duration: 0.6, action: { windupS: 0.6 } };
+  activeThreat = { id: 100, attacker: player, rangePx: 500, halfConeRad: Math.PI, lungePx: 0, yaw: 0, timeToImpactS: 0.2, source: 'charged-preview-test' };
+  windowStub.BanditCombat.updateCombatAI(enemy, 0.016, player, 70);
+  assert.equal(enemy.dodging, false, 'a readied heavy attack cannot be interrupted by an unrelated new dodge');
+  assert(enemy._enemyDodgePending == null, 'holding a charge cannot queue a delayed dodge that fires upon release'); // Null and undefined both mean no pending dodge.
+  assert.equal(dodgeVoices.length, priorDodgeVoices, 'preparation did not trigger another evasion vocal');
+  assert.equal(staminaSpent, priorStaminaSpent, 'preparation cannot secretly spend dodge stamina');
+  enemy._banditPreparedCharge = null;
+  activeThreat = null;
+
   const offAxis = windowStub.EnemyDodge.threatStatus(enemy, { id: 2, attacker: player, rangePx: 200, halfConeRad: 0.2, yaw: Math.PI, lungePx: 0 }); // Opposite-facing attack must not trigger psychic evasion.
   assert.equal(offAxis.exposed, false);
   assert.equal(windowStub.EnemyDodge.debugSnapshot().enemies[0].weightUnits, 6, 'mobile diagnostic exposes each enemy outfit and armor result');

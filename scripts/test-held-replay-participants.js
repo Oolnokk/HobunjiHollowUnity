@@ -38,18 +38,28 @@ const orphanHand = hand(node('loose_group', scene)); // No resolvable owner: kee
 
 const window = { PlayerBodyTransformComposer: { getPlayerMesh: () => player, getVisualRoots: () => [playerFootRig], getPlayerLegHandle: () => null } };
 const api = new Function('window', 'performance', code + `
+  const syncShoulderPetLayering = () => {}; // This test exercises the replay partition only.
   replayCameraPosition = { x: 0, y: 0, z: 0 };
   const repaired = []; // Nonparticipant weapon-hand invariants are maintained in the same split loop.
   const enforceHeldMesh = mesh => repaired.push(mesh);
-  return { split: (m, s, o, foot, repair = false) => splitReplayParticipants(m, s, o, foot, repair), repaired, setPolicy: v => { replayParticipantPolicy = v; }, skips: () => nonParticipantReplaySkips,
+  return { actorXrayDefaults, setActorXrayEnabled, refreshActorXrayRoots, split: (m, s, o, foot, repair = false) => splitReplayParticipants(m, s, o, foot, repair), repaired, setPolicy: v => { replayParticipantPolicy = v; }, skips: () => nonParticipantReplaySkips,
     actorOf: (m, s) => actorRootForXrayMesh(m, s), setOwnerLink: v => { heldOwnerLinkEnabled = v; participantCache = new WeakMap(); }, setLimit: n => { otherWeaponXrayLimit = n; },
     budgetSkips: () => otherWeaponXrayBudgetSkips, ownerLinkDefault: heldOwnerLinkEnabled, limitDefault: otherWeaponXrayLimit };`)(window, { now: () => 0 });
 
 // Shipped defaults: owners resolved, other characters' weapons in the base pass (budget 0).
 assert.equal(api.ownerLinkDefault, true, 'owner link on by default');
+assert.deepEqual(api.actorXrayDefaults, { animals: true, enemies: false, player: true });
 assert.equal(api.limitDefault, 0, 'other characters\' weapons draw in the base pass by default');
 api.setOwnerLink(false); api.setLimit(Infinity); // The Settings "off" position: every weapon x-rays (the rules below).
 
+const linkedPlayerHolder = node('scene_level_tool_holder', scene, { hobunjiHeldPortraitOwner: player });
+const linkedPlayerWeapon = node('weapon', linkedPlayerHolder); // Actual gameplay tool holder is a sibling of the avatar.
+const linkedPlayerFlail = node('flail_head', linkedPlayerWeapon); // Nested assembly children need the same standing floor.
+for (const piece of [linkedPlayerWeapon, linkedPlayerFlail]) {
+  assert.equal(api.actorOf(piece, scene)?.root, player);
+  assert.equal(api.actorOf(piece, scene)?.isPlayer, true, 'player gear resolves with the NPC owner-link optimization disabled');
+}
+api.setActorXrayEnabled('enemies', true); // Exercise the standalone replay-participant policy with all actor groups on.
 const heldOthers = [];
 const held = api.split([playerHand, playerBlade, tallHand, tallSpear, shortHand, shortClub, orphanHand], scene, heldOthers, false);
 assert.deepEqual(held, [playerHand, playerBlade, tallSpear, shortHand, shortClub, orphanHand], 'every weapon keeps the x-ray; hands only for the player and short species');
@@ -63,6 +73,22 @@ const feetOthers = [];
 const feet = api.split([playerFootNear, playerFootFar, tallFoot, shortFootNear, shortFootFar], scene, feetOthers, true);
 assert.deepEqual(feet, [playerFootNear, shortFootNear], 'feet x-ray only for the player and short species, and only near the camera');
 assert.deepEqual(feetOthers, [playerFootFar, tallFoot, shortFootFar]);
+// Pants must follow the production FEET policy through real avatar ancestry,
+// not merely pass a mocked standalone owner predicate. This also verifies
+// distant NPC garments never force extra actor-centered depth replays.
+const pantsAt = (actor, x) => at(node('PantsGarmentMesh', node('avatar', actor),
+  { hobunjiPantsGarment: true }), x, 0); // Same nesting as the authored separate pants mesh.
+const playerPantsNear = pantsAt(player, 2), playerPantsFar = pantsAt(player, 10);
+const tallPants = pantsAt(tall, 1);
+const shortPantsNear = pantsAt(shorty, 3), shortPantsFar = pantsAt(shorty, 20);
+const pantsOthers = [];
+const includedPants = api.split([playerPantsNear, playerPantsFar, tallPants, shortPantsNear, shortPantsFar],
+  scene, pantsOthers, true);
+assert.deepEqual(includedPants, [playerPantsNear, shortPantsNear],
+  'actual player/short avatar pants follow exactly the near-camera feet replay policy');
+assert.deepEqual(pantsOthers, [playerPantsFar, tallPants, shortPantsFar],
+  'far pants and taller NPC pants stay in ordinary world depth without a replay');
+
 
 // Scene-sibling hostile weapons (BanditCombat tool holders) name their bearer
 // with userData.hobunjiHeldPortraitOwner. With the link off they are unowned
@@ -98,6 +124,45 @@ api.setPolicy('all');
 const othersAll = [];
 assert.deepEqual(api.split([tallHand, tallFoot], scene, othersAll, true), [tallHand, tallFoot], "'all' restores the previous participant set");
 assert.equal(othersAll.length, 0);
+
+// The category switches take precedence over the legacy all-participants and
+// weapon-link A/B settings, while the draw lists keep every excluded part in
+// the ordinary pass.
+const animal = node('nelk_group', scene);
+const pet = node('pingdort_group', player);
+const namedAnimal = node('npc_walker_hound', scene, { namedAnimalNpc: true });
+const animalFoot = node('animal_foot', animal), petFoot = node('pet_foot', pet);
+const namedAnimalFoot = node('hound_foot', namedAnimal);
+const enemyFoot = node('enemy_foot', banditA);
+window.GridTileAccessors = { getCurrentArea: () => 'farm' };
+window.CharacterVisuals = {
+  KINDS: { PLAYER: 'player', NPC: 'npc', ENEMY: 'enemy', CORPSE: 'corpse' },
+  forEachCharacter(area, visit) {
+    assert.equal(area, 'farm');
+    visit('player', player);
+    visit('companion', animal);
+    visit('shoulderPet', pet);
+    visit('npc', namedAnimal);
+    visit('npc', tall);
+    visit('enemy', banditA);
+  },
+};
+const replaySet = [animalFoot, petFoot, namedAnimalFoot, enemyFoot, weaponA, playerBlade, linkedPlayerWeapon,
+  linkedPlayerFlail, playerFootNear, tallFoot, tallSpear, orphanHand];
+for (const [group, expected] of [
+  ['animals', [animalFoot, petFoot, namedAnimalFoot]],
+  ['enemies', [enemyFoot, weaponA, tallFoot, tallSpear]],
+  ['player', [playerBlade, linkedPlayerWeapon, linkedPlayerFlail, playerFootNear]],
+]) {
+  assert.equal(api.setActorXrayEnabled(group, false), false);
+  api.refreshActorXrayRoots(scene);
+  const ordinary = [];
+  assert.deepEqual(api.split(replaySet, scene, ordinary, false, true), replaySet.filter(mesh => !expected.includes(mesh)));
+  assert.deepEqual(ordinary, expected, group + ' alone uses ordinary depth');
+  assert.equal(api.setActorXrayEnabled(group, true), true);
+}
+assert.equal(api.setActorXrayEnabled('unrecognized', false), null);
+assert.deepEqual(api.split(replaySet, scene, [], false, true), replaySet, 'turning the settings back on restores the existing replay policy');
 
 // The split runs inside collectVisible, so the replay entry points need no new names.
 assert.match(source, /const held = collectVisible\(heldRegistry, scene, replayOthers\);/);

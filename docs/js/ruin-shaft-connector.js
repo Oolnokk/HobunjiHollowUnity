@@ -71,6 +71,7 @@
     return null; // Never silently mount the Great Door back inside the old V50 room.
   }
 
+  const CORRIDOR_HEIGHT=2.4; // Wall and ceiling height of the entrance hall to the shaft.
   function stoneMaterial(THREE){
     return root.ProceduralFurniture?.makePartMaterial?.({materialTexture:'carved_smooth.png',materialLighting:'unlit',materialFillMode:'never',color:'#7a746b'})
       ||new THREE.MeshBasicMaterial({color:0x7a746b}); // Shared V50 ruin stone, not untextured shaft gray.
@@ -91,20 +92,47 @@
       if(!keys.has(key(c,r-1)))wallsX.push([c+.5,r]);
       if(!keys.has(key(c,r+1)))wallsX.push([c+.5,r+1]);
     }
+    // Where the hall meets a wider doorway (the V50 vestibule's 3-cell entrance; the hall narrows to one cell near
+    // it), the doorway's side cells opened onto empty pockets beside the hall: void seen straight through the arch.
+    // Wall off every empty cell beside the hall along its edges with the existing floor. Visual only: those cells
+    // were never walkable.
+    const hall=new Set(tiles.map(([c,r])=>key(c,r))),sealed=new Set();
+    for(const [c,r] of tiles)for(const [dc,dr] of [[1,0],[-1,0],[0,1],[0,-1]]){
+      const nc=c+dc,nr=r+dr;
+      if(keys.has(key(nc,nr)))continue; // Only empty pockets beside the hall.
+      for(const [ec,er] of [[1,0],[-1,0],[0,1],[0,-1]]){
+        const rc=nc+ec,rr=nr+er,edge=nc+','+nr+':'+ec+','+er;
+        if(!keys.has(key(rc,rr))||hall.has(key(rc,rr))||sealed.has(edge))continue;
+        sealed.add(edge);
+        if(er)wallsX.push([nc+.5,er>0?nr+1:nr]);else wallsZ.push([ec>0?nc+1:nc,nr+.5]);
+      }
+    }
     floors.name='ruin-corridor-carved-floor';
     floors.userData.hobunjiGroundTopFacesOnly=true; // Replay the floor's top while keeping its slab edges opaque.
     group.add(floors);
+    const HEIGHT=CORRIDOR_HEIGHT; // Clears the 2.35 V50 arch opening at the ruin end, so no void shows over the hall's ceiling.
     const buildWalls=(positions,geometry,name)=>{
       const mesh=new THREE.InstancedMesh(geometry,wallMat,positions.length);
-      positions.forEach(([x,z],i)=>mesh.setMatrixAt(i,mat.makeTranslation(x,baseY+1.15,z)));
+      positions.forEach(([x,z],i)=>mesh.setMatrixAt(i,mat.makeTranslation(x,baseY+HEIGHT/2,z)));
       mesh.name=name;group.add(mesh);
     };
-    buildWalls(wallsX,new THREE.BoxGeometry(1,2.3,.12),'ruin-corridor-north-south-walls');
-    buildWalls(wallsZ,new THREE.BoxGeometry(.12,2.3,1),'ruin-corridor-east-west-walls');
+    buildWalls(wallsX,new THREE.BoxGeometry(1,HEIGHT,.12),'ruin-corridor-north-south-walls');
+    buildWalls(wallsZ,new THREE.BoxGeometry(.12,HEIGHT,1),'ruin-corridor-east-west-walls');
+    // Ceiling: the hall used to be open to the black void above its walls. One downward-facing stretched
+    // tile per cell (like the V50 room ceiling), so the overhead camera still sees through it from above.
+    const roofMat=THREE.PlaneGeometry?floorMat.clone():null;
+    if(roofMat){ // (Minimal headless THREE fixtures have no PlaneGeometry.)
+      roofMat.side=THREE.FrontSide;
+      const roofGeometry=new THREE.PlaneGeometry(1,1);roofGeometry.rotateX(Math.PI/2); // Normal points down.
+      const roof=new THREE.InstancedMesh(roofGeometry,roofMat,tiles.length);
+      tiles.forEach(([c,r],i)=>roof.setMatrixAt(i,mat.makeTranslation(c+.5,baseY+HEIGHT,r+.5)));
+      roof.name='ruin-corridor-ceiling';roof.layers?.disable?.(1); // Inked stone tile: no generated outline.
+      group.add(roof);
+    }
     parent.add(group);
     return ()=>{group.parent?.remove(group);group.traverse(node=>node.geometry?.dispose?.());
-      const textures=new Set([floorMat.map,wallMat.map].filter(Boolean)); // Shared clones must be released once after their owning corridor materials.
-      floorMat.dispose();wallMat.dispose();textures.forEach(texture=>texture.dispose?.());};
+      const textures=new Set([floorMat.map,wallMat.map,roofMat?.map].filter(Boolean)); // Shared clones must be released once after their owning corridor materials.
+      floorMat.dispose();wallMat.dispose();roofMat?.dispose();textures.forEach(texture=>texture.dispose?.());};
   }
   function connect({rec,ruin,seed,meta,pad=2,tileScale=2,THREE,makeTile,DynamicSurfaces:DS,ShaftHub,ClimbSurfaces,DevRandomRuin,TileOccupancy,RuinLayerPlan,RuinShaftCorridor,RuinLayerPlayable,RuinLayerChallenges,RuinLayerDefense,RuinV50NativeFloors,RuinReachingObelisks=root.RuinReachingObelisks,preplanned=null,nativeFloors=[],prepareMaterials=null,CellGrid3D,getPlayerPosition,getPlayerY,showToast,onStateChange}={}){
     if(!rec||!ruin||!meta||!THREE||!DS||!ShaftHub||!RuinLayerPlan||!RuinShaftCorridor||!RuinLayerPlayable||!RuinLayerChallenges||!RuinLayerDefense||!CellGrid3D||preplanned?.nativeFloorCount&&!RuinV50NativeFloors||!makeTile)
@@ -264,9 +292,9 @@
         tradition:ruin.theme,getPlayerPosition,getPlayerY,projectileBus:root.DevRandomRuinSimplePuzzles,onStateChange:onMechanismStateChange,
       });
     }
-    if(placed.jumpShaft){ // Free-jump platform staircase: same runtime surface as the obelisks, so the ruin's airborne/fall reconciler drives it unchanged.
-      const jump=root.RuinJumpShaft;
-      if(!jump?.mount)throw new Error('Selected jump-platform shaft module is not loaded.');
+    if(placed.jumpShaft){ // Slab shafts (jump staircase or rope swings): same runtime surface as the obelisks, so the ruin's airborne/fall reconciler drives them unchanged.
+      const jump=placed.jumpShaft.method==='ropeSwings'?root.RuinRopeShaft:root.RuinJumpShaft;
+      if(!jump?.mount)throw new Error('Selected '+placed.jumpShaft.method+' shaft module is not loaded.');
       obeliskRuntime=jump.mount(placed.jumpShaft,{scope:'shaft-obelisks',THREE,parent:rec.scene,DynamicSurfaces:DS,tradition:ruin.theme,getPlayerY});
     }
     ruin.shaftObeliskRuntime=obeliskRuntime; // Height-aware fall, switch updates and mobile badge all reuse this one runtime.
@@ -330,5 +358,5 @@
     }
     return {plan,hub:placed,route,registered,layerRuntime,nativeRuntime};
   }
-  return Object.freeze({entranceOutside,sanctumDoorSite,connect});
+  return Object.freeze({entranceOutside,sanctumDoorSite,connect,corridorVisual:visual,CORRIDOR_HEIGHT}); // corridorVisual: exercised by scripts/test-ruin-shaft-visual-holes.js.
 });

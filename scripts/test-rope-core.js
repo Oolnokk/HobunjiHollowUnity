@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 'use strict';
-// Pins RopeCore to the ORIGINAL rope arithmetic from js/dev-random-ruin-simple-puzzles.js (before it was moved
-// into rope-core.js). The reference functions below are that original code, verbatim apart from taking their
-// collision test and constants as parameters. Results must be bit-for-bit identical.
+// Pins RopeCore to the original rope arithmetic from js/dev-random-ruin-simple-puzzles.js,
+// except for the intentional held-adjust change: it now cancels angular velocity and eases to vertical.
+// The reference paths still check the same collision handling and ordinary swing math bit-for-bit.
 const assert = require('assert');
 const RC = require('../docs/js/rope-core.js');
 
@@ -11,7 +11,7 @@ const ROPE_GRAVITY = 8.2, ROPE_PUMP = .45, ROPE_MAX_ANGLE = 1.28, ROPE_MIN_LENGT
 assert.equal(RC.GRAVITY, ROPE_GRAVITY); assert.equal(RC.PUMP, ROPE_PUMP); assert.equal(RC.MAX_ANGLE, ROPE_MAX_ANGLE); assert.equal(RC.MIN_LENGTH, ROPE_MIN_LENGTH);
 assert.equal(RC.GRAB_RADIUS, 0.8); assert.equal(RC.BODY_RADIUS, 0.045); assert.equal(RC.COLLISION_RADIUS, 0.24); assert.equal(RC.AIR_CATCH_RADIUS, 0.45); assert.equal(RC.RELEASE_KICK, 0.55);
 
-// ---- original functions (verbatim)
+// ---- original functions (braking branch updated to the intentional straighten behavior)
 const ref = {
   ropeBobAt(rope, angle = rope.angle) {
     const dirX = Math.cos(rope.yaw), dirZ = Math.sin(rope.yaw), horizontal = Math.sin(angle) * rope.length;
@@ -35,7 +35,9 @@ const ref = {
   updateAttachedRope(rope, intent, dt, blocked) {
     const priorAngle = rope.angle, priorYaw = rope.yaw, priorLength = rope.length;
     if (rope.braking) {
-      rope.omega *= Math.exp(-9 * dt);
+      rope.omega = 0;
+      rope.angle *= Math.exp(-9 * dt);
+      if (Math.abs(rope.angle) < 0.001) rope.angle = 0;
       rope.yaw += intent.side * 1.6 * dt;
       rope.length = Math.max(ROPE_MIN_LENGTH, Math.min(rope.maxLength, rope.length - intent.forward * .9 * dt));
     } else {
@@ -158,7 +160,37 @@ assert(peak > 0.9, 'pumping in time with the swing builds height: peak ' + peak)
 assert(peak <= RC.MAX_ANGLE + 1e-9, 'and never exceeds the max swing angle');
 rope = RC.create({ anchor: { x: 0, y: 4, z: 0 }, length: 3 }); rope.angle = 0.8; rope.omega = 2; rope.braking = true;
 for (let i = 0; i < 90; i++) RC.stepAttached(rope, { forward: 0, side: 0 }, 1 / 60, gentle);
-assert(Math.abs(rope.omega) < 0.01, 'holding the brake stops the swing');
+assert.equal(rope.omega, 0, 'holding Adjust cancels all incoming angular momentum');
+assert.equal(rope.angle, 0, 'holding Adjust finishes with the rope straight down');
+const smooth = RC.create({anchor:{x:0,y:4,z:0},length:3}); // A partially swung rope must ease to center, not snap.
+smooth.angle = 1.12; smooth.omega = -3.2; smooth.braking = true;
+RC.stepAttached(smooth, {forward:0,side:0}, 1/60, gentle);
+assert.equal(smooth.omega, 0, 'momentum resets on the first held frame');
+assert(smooth.angle > 0 && smooth.angle < 1.12, 'the angle moves gradually toward vertical rather than teleporting');
+const firstStraighten = smooth.angle; // Checks monotonic easing across subsequent held frames.
+RC.stepAttached(smooth, {forward:0,side:0}, 1/60, gentle);
+assert(smooth.angle < firstStraighten, 'each held frame continues the smooth straightening');
+for(let i=0;i<60;i++) RC.stepAttached(smooth,{forward:0,side:0},1/60,gentle);
+assert.equal(smooth.angle,0,'a sustained hold finishes exactly straight');
+smooth.braking=false;RC.stepAttached(smooth,{forward:0,side:0},1/60,gentle);
+assert.equal(smooth.angle,0,'releasing after straightening cannot revive the old swing');
+assert.equal(smooth.omega,0,'releasing after straightening has no latent velocity');
+const frameThirty=RC.create({anchor:{x:0,y:4,z:0},length:3});
+const frameOneTwenty=RC.create({anchor:{x:0,y:4,z:0},length:3});
+for(const testRope of [frameThirty,frameOneTwenty]){testRope.angle=-1.1;testRope.omega=4;testRope.braking=true;}
+for(let i=0;i<12;i++)RC.stepAttached(frameThirty,{forward:0,side:0},1/30,gentle);
+for(let i=0;i<48;i++)RC.stepAttached(frameOneTwenty,{forward:0,side:0},1/120,gentle);
+assert(Math.abs(frameThirty.angle-frameOneTwenty.angle)<1e-12,'straightening is independent of frame rate');
+const blockedAdjust=RC.create({anchor:{x:0,y:4,z:0},length:3,maxLength:3.5});
+blockedAdjust.angle=0.6;blockedAdjust.omega=2;blockedAdjust.braking=true;
+const blockedBefore=RC.bobAt(blockedAdjust);
+const obstruction=RC.stepAttached(blockedAdjust,{forward:1,side:1},1/60,()=>true);
+assert.equal(obstruction.blocked,true,'adjustment still obeys rider collision sweeps');
+assert.equal(blockedAdjust.angle,0.6,'blocked adjust restores the safe rope angle');
+assert.equal(blockedAdjust.yaw,0,'blocked adjust restores the safe yaw');
+assert.equal(blockedAdjust.length,3,'blocked adjust restores the safe length');
+assert.equal(blockedAdjust.omega,0,'blocked adjustment never resurrects impact momentum');
+assert.deepEqual(RC.bobAt(blockedAdjust),blockedBefore,'a blocked adjustment cannot penetrate geometry');
 const r2 = RC.create({ anchor: { x: 0, y: 4, z: 0 }, length: 3, maxLength: 3.5 }); r2.braking = true;
 RC.stepAttached(r2, { forward: -1, side: 0 }, 1, gentle); assert.equal(r2.length, 3.5, 'braking and pulling back lengthens up to maxLength');
 RC.stepAttached(r2, { forward: 1, side: 0 }, 10, gentle); assert.equal(r2.length, RC.MIN_LENGTH, 'and shortens down to the minimum');

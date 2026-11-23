@@ -76,10 +76,20 @@ const contextForPower = window.CombatAttackEvents.prepare({
   attacker: player, weaponKey: 'dagger_tinBronze', abilityId: 'pokeCombo',
   damage: 8, knockbackPxS: 200, afflictionBonuses: { cut: 3 },
 });
-for (const field of ['damage', 'knockback', 'footingDamage']) close(contextForPower.modifiers[field], 0.5, `player ${field} multiplier`);
+for (const field of ['damage', 'knockback']) close(contextForPower.modifiers[field], 0.5, `player ${field} multiplier`);
+close(contextForPower.modifiers.footingDamage, 1, 'Dagger Footing must inherit its 0.5x shape Power only from hit damage, not twice');
+close(8 * contextForPower.modifiers.damage * contextForPower.modifiers.footingDamage, 4, 'Dagger raw Footing source scales once from its 8-point hit');
 close(contextForPower.modifiers.affliction, 1, 'shape Health-damage Power cannot modify separate affliction Attack Power');
 close(stats.forShape('bshuakauitl').attackPower, 18, 'Bshuakauitl has high affliction Attack Power despite low Health damage');
 close(stats.forShape('porakanekiGreatclub').attackPower, 16, 'Porakaneki Spiked Club has a distinct heavy attack potency');
+const originalWeaponDefinition = window.Combat.deps.getWeaponDefinition; // Temporarily selects the heavy weapon for a real attack-event Power integration check.
+window.Combat.deps.getWeaponDefinition = () => ({ shapeKey: 'warhammer' });
+const warhammerContext = window.CombatAttackEvents.prepare({ attacker: player, weaponKey: 'warhammer_tinBronze', abilityId: 'swingCombo', damage: 8, knockbackPxS: 200 }); // Exercises the heavy Power path rather than a hand-written multiplier.
+window.Combat.deps.getWeaponDefinition = originalWeaponDefinition; // The existing dagger animation/tempo test below still needs its original fixture.
+close(warhammerContext.modifiers.damage, 1.5, 'Warhammer Health Power applies once');
+close(warhammerContext.modifiers.knockback, 1.5, 'Warhammer knockback Power applies once');
+close(warhammerContext.modifiers.footingDamage, 1, 'Warhammer Footing does not apply its 1.5x shape Power twice');
+close(8 * warhammerContext.modifiers.damage * warhammerContext.modifiers.footingDamage, 12, 'Warhammer raw Footing source scales 1.5x, not 2.25x');
 const npcPower = window.CombatAttackEvents.prepare({ attacker: {}, weaponKey: 'dagger_tinBronze', abilityId: 'pokeCombo' });
 close(npcPower.modifiers.damage, 1, 'NPC shape damage is applied in the bandit executor only');
 

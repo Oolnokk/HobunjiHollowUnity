@@ -19,7 +19,11 @@
   // globally-loaded WildernessMapGenerator script are left as direct
   // references — same treatment as THREE.
   let deps = null;
-  const HABITAT_VERSION = 2; // Used to invalidate pre-habitat saved placements once, then keep same-day positions stable.
+  const HABITAT_VERSION = 3; // One-time rescatters include newly added native mushroom species while preserving daily harvest history.
+  const MUSHROOM_SPRITE_PATH = 'assets/objectsprites/mushroom.png'; // Expected user-authored sprite: mint cap, off-white stalk, painted black outlines.
+  const mushroomMaterials = new Map(); // Cap pigment -> one shared asynchronous artwork/material record across world plants and cave clusters.
+  let mushroomArtUnavailable = false; // Missing future PNG attempts only one load wave per page; grass placeholders remain safe.
+  let mushroomPlaneGeometry = null; // Shared grounded, upright plane geometry used when mushroom.png becomes available.
   const WATER_TYPES = new Set(['water', 'river', 'stream', 'waterfall']); // Used by water-edge habitat checks.
   const TREE_FLORA_TYPES = new Set(['tree', 'copse']); // Used by tree-root habitats without treating every shrub as a tree.
   const SHRUB_FLORA_TYPES = new Set(['bush', 'fruitBush', 'mushroomPatch', 'foragePlant', 'shrub', 'vegetation']); // Used by low-cover habitat checks.
@@ -66,10 +70,52 @@
     return out;
   }
 
-  // A single reagent plant: a small two-blade cross (mirrors the
-  // "cross of quads" billboard-grass look) at 150% of a normal grass
-  // blade's size, standing alone as an individually pickable sprite
-  // instead of being folded into a shared InstancedMesh tuft.
+  // Mushroom world art uses SpriteRecolor's same mint-cap selection as the
+  // inventory: share one CanvasTexture/material per dye, never per instance.
+  // Until the authored PNG arrives, the existing grass-reagent placeholder
+  // still spawns normally; a missing file does not block gameplay.
+  function applyMushroomSprite(meshes, color) {
+    if (mushroomArtUnavailable || typeof window.SpriteRecolor?.getRecoloredCanvas !== 'function') return;
+    let record = mushroomMaterials.get(color); // Shared asynchronous material and pending meshes for one species color.
+    if (!record) {
+      record = { state: 'loading', material: null, meshes: new Set() }; // One load/color, with no permanent references after completion.
+      mushroomMaterials.set(color, record);
+      Promise.resolve().then(() => window.SpriteRecolor.getRecoloredCanvas(MUSHROOM_SPRITE_PATH, color, 'mushroom'))
+        .then(canvas => {
+          if (!canvas?.width || !canvas?.height) throw new Error('Mushroom artwork has no pixels');
+          const texture = new THREE.CanvasTexture(canvas); // Real authored PNG, recolored only once per species.
+          texture.minFilter = texture.magFilter = THREE.NearestFilter;
+          texture.needsUpdate = true;
+          record.material = new THREE.MeshBasicMaterial({ map: texture, transparent: false, alphaTest: 0.5,
+            depthWrite: true, side: THREE.DoubleSide, fog: true });
+          record.material.userData.hobunjiWorldBakeSafe = true; // Static mushroom cards are eligible for the existing world batcher.
+          mushroomPlaneGeometry ||= new THREE.PlaneGeometry(1, 1).translate(0, 0.5, 0); // Ground, not the sprite center, is y=0.
+          record.width = 0.48 * canvas.width / canvas.height; // Preserve the authored cap/stem aspect ratio without stretching the pixels.
+          record.state = 'ready';
+          for (const mesh of record.meshes) {
+            mesh.geometry = mushroomPlaneGeometry;
+            mesh.material = record.material;
+            mesh.scale.set(record.width, 0.48, 1);
+          }
+          record.meshes.clear(); // Do not retain harvested/offscreen groups after the material is ready.
+        }).catch(error => {
+          mushroomArtUnavailable = true;
+          record.state = 'missing';
+          record.meshes.clear();
+          window.__farmLog?.('[reagent-plants] mushroom.png not available; retaining grass silhouettes until sprite is supplied: ' + error.message, 'world');
+        });
+    }
+    if (record.state === 'ready') {
+      for (const mesh of meshes) {
+        mesh.geometry = mushroomPlaneGeometry;
+        mesh.material = record.material;
+        mesh.scale.set(record.width, 0.48, 1);
+      }
+    } else if (record.state === 'loading') for (const mesh of meshes) record.meshes.add(mesh);
+  }
+
+  // A single reagent plant: two crossed cards, still using the legacy grass
+  // material until a mushroom's own authored sprite resolves successfully.
   function buildReagentPlantMesh(reagentKey) {
     const def = window.AlchemySystem.REAGENT_DEFS[reagentKey];
     if (!def) return null;
@@ -79,14 +125,17 @@
     // HOBUNJI_GRASS_DISTANCE_LOD, so its blades can be baked into world space by js/zone-prop-render-batches.js.
     mat.userData.hobunjiWorldBakeSafe = true;
     const group = new THREE.Group();
-    const sizeMul = 1.5; // 150% size, per the placeholder-billboard spec
+    const sizeMul = 1.5; // Established wild herb size; mushroom-specific world sprite uses its own authored aspect.
     const w = 0.22 * sizeMul, h = 0.32 * sizeMul;
+    const cards = []; // Both crossed surfaces share one color material after the PNG loads.
     for (const rot of [0, Math.PI / 2]) {
       const blade = new THREE.Mesh(deps._grassBladeGeo, mat);
       blade.rotation.y = rot;
       blade.scale.set(w, h, 1);
       group.add(blade);
+      cards.push(blade);
     }
+    if (def.form === 'mushroom') applyMushroomSprite(cards, def.color); // Separate bitmap silhouettes, no generated outlines.
     group.userData.isBillboard = true;
     group.userData.reagentKey = reagentKey;
     return group;
@@ -149,26 +198,34 @@
       },
       onAction(action) {
         if (action !== 'obj_pick_reagent') return { ok: false, message: 'Unknown action.' };
-        const bonus = (deps.random || Math.random)() < (deps.bonusYieldChance?.('foraging') || 0) ? 1 : 0; // Used for Foraging's extra-herb chance.
+        const persisted = deps._zoneReagentPersist.get(mapId); // Authoritative same-day harvest state; stale touch prompts cannot claim an old plant.
+        const placement = persisted?.placements?.find(p => p.col === col && p.row === row && p.key === reagentKey); // A new daily plant at the same tile is not the old UI target.
+        const groups = deps._zoneReagentMeshGroups.get(mapId); // The exact visual instance must still belong to today's active scatter.
+        if (deps.getCurrentArea?.() !== mapId || persisted?.day !== deps.calendar.day
+          || !placement || placement.harvested || !groups?.includes(mesh)) {
+          return { ok: false, message: 'This herb is no longer ready to pick.' };
+        }
+        const before = Math.max(0, Number(deps.inventory[reagentKey]) || 0); // Current item stack used to grant only the available remainder.
+        const max = window.InventoryStacks?.MAX_TOTAL ?? 999; // Existing common inventory capacity, never a parallel herb-specific cap.
+        if (before >= max) return { ok: false, message: `Cannot carry more ${def.label}.` };
+        const bonus = (deps.random || Math.random)() < (deps.bonusYieldChance?.('foraging') || 0) ? 1 : 0; // Existing extra-herb chance.
         const doubleRank = window.PerkSystem?.rank('foraging', 'doubleForageables') || 0; // Double Forageables perk.
         const amount = (1 + bonus) * (doubleRank > 0 ? 2 : 1);
-        deps.inventory[reagentKey] = Math.min(window.InventoryStacks.MAX_TOTAL, (deps.inventory[reagentKey] || 0) + amount);
+        const gained = Math.min(amount, max - before); // Full stacks reject a pick; partially full stacks only grant actual capacity.
+        deps.inventory[reagentKey] = before + gained;
+        placement.harvested = true; // Mark first so another cached action cannot duplicate an item or Foraging XP.
         deps.awardForagingXp?.();
-        deps._zoneScenes.get(mapId)?.scene.remove(mesh);
+        deps._zoneScenes.get(mapId)?.scene?.remove(mesh);
         const objs = deps._zoneReagentObjects.get(mapId);
         objs?.delete(col + ',' + row);
-        const groups = deps._zoneReagentMeshGroups.get(mapId);
-        if (groups) { const i = groups.indexOf(mesh); if (i >= 0) groups.splice(i, 1); }
-        // Keep the tile in persisted history, but mark it harvested. This prevents
-        // same-day reload respawns and lets tomorrow's scatter explicitly avoid
-        // yesterday's exact herb positions.
-        const persisted = deps._zoneReagentPersist.get(mapId);
-        const placement = persisted?.placements?.find(p => p.col === col && p.row === row);
-        if (placement) placement.harvested = true;
+        const i = groups.indexOf(mesh);
+        if (i >= 0) groups.splice(i, 1);
+        // Keep the tile in persisted history so reloads and tomorrow's scatter
+        // cannot re-use this picked plant within its current spawn cycle.
         deps.refreshItemScroll();
         window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig().harvest,1,1,null,
           window.AudioSystem?.objectSfxSourceAt?.(col+.5,row+.5,mapId)); // Reagent pickups use the plant's real world position.
-        return { ok: true, message: `Picked ${amount} ${def.icon} ${def.label}${bonus ? ' (Foraging bonus)' : ''}.` };
+        return { ok: true, message: `Picked ${gained} ${def.icon} ${def.label}${bonus ? ' (Foraging bonus)' : ''}.` };
       },
     };
   }
@@ -199,6 +256,12 @@
     let persisted = deps._zoneReagentPersist.get(mapId);
     if (persisted?.day === deps.calendar.day && persisted?.version === HABITAT_VERSION) {
       if (deps._zoneReagentMeshGroups.has(mapId)) return; // already built for today
+    } else if (persisted?.day === deps.calendar.day && persisted.version === HABITAT_VERSION - 1
+      && Array.isArray(persisted.placements)) {
+      // Version 2 already had habitat-correct placements. Keep this in-progress day's
+      // harvests and positions; new fungi join the next normal daily respawn.
+      persisted = { ...persisted, version: HABITAT_VERSION }; // One-time save upgrade without spawning extra same-day plants.
+      deps._zoneReagentPersist.set(mapId, persisted);
     } else {
       const previousPlacements = persisted?.placements || []; // Includes harvested entries so every prior herb tile is excluded from the next respawn.
       persisted = { version: HABITAT_VERSION, day: deps.calendar.day, placements: scatterReagentsForZone(mapId, previousPlacements) };
@@ -275,6 +338,10 @@
     const placements = persisted?.placements || [];
     return {
       mapId, day: persisted?.day ?? null, version: persisted?.version ?? null,
+      mushroomArt: { path: MUSHROOM_SPRITE_PATH, status: mushroomArtUnavailable ? 'awaiting-mushroom-png'
+        : [...mushroomMaterials.values()].some(entry => entry.state === 'ready') ? 'ready'
+          : mushroomMaterials.size ? 'loading' : 'not-requested',
+        cachedColors: [...mushroomMaterials.values()].filter(entry => entry.state === 'ready').length }, // Mobile-readable asset fallback state.
       total: placements.length, active: placements.filter(p => !p.harvested).length, harvested: placements.filter(p => p.harvested).length,
       bySpecies: Object.fromEntries(window.AlchemySystem.reagentsForZone(mapId).map(key => [key, placements.filter(p => p.key === key).length])),
       habitats: Object.fromEntries(window.AlchemySystem.reagentsForZone(mapId).map(key => [key, { habitat: window.AlchemySystem.REAGENT_DEFS[key]?.habitat, label: HABITAT_LABELS[window.AlchemySystem.REAGENT_DEFS[key]?.habitat] || 'unknown' }])),

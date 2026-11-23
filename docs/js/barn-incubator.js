@@ -558,6 +558,7 @@
     const index = list.findIndex(entry => entry.id === babyId && isFarmBaby(entry)); // Exact baby record location.
     if (index < 0) return { ok: false, message: 'That Nursery baby is no longer available.' };
     const baby = list[index]; // Persist the full baby before removing its Nursery copy.
+    if (window.PendingAnimalSales?.pendingFor?.(baby)) return { ok: false, message: 'Cancel the pending sale before incubating this baby.' };
     slot.baby = deepClone(baby);
     slot.daysRemaining = CONFIG.gameplay.maturationDays;
     slot.blockedReason = null;
@@ -1358,7 +1359,9 @@
     if ((panelDeps || animalDeps)?.hasFarmPermission?.('livestock') === false) return { ok: false, message: 'Livestock permission required.' };
     const valid = nurseryIncubationChoices().find(entry => entry.additionId === choice?.additionId && entry.slotIndex === choice?.slotIndex && entry.barnId === choice?.barnId && entry.troughIndex === choice?.troughIndex); // Reject stale selections rather than changing a different reservation.
     if (!valid) return { ok: false, message: 'That incubation space is no longer available.' };
-    if (!nurseryBabies().some(baby => baby.id === babyId)) return { ok: false, message: 'Select an available Nursery baby first.' };
+    const nurseryBaby = nurseryBabies().find(baby => baby.id === babyId); // Inspect the current record before reserving a trough for maturation.
+    if (!nurseryBaby) return { ok: false, message: 'Select an available Nursery baby first.' };
+    if (window.PendingAnimalSales?.pendingFor?.(nurseryBaby)) return { ok: false, message: 'Cancel the pending sale before incubating this baby.' };
     const slot = additionById(valid.additionId)?.slots[valid.slotIndex]; // Preserve an existing reservation if starting fails.
     const previous = { barnId: slot.troughBarnId, troughIndex: slot.troughIndex }; // Rollback target.
     const result = reserveTrough(valid.additionId, valid.slotIndex, valid.barnId, valid.troughIndex);

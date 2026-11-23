@@ -13,6 +13,7 @@ const html = fs.readFileSync(path.join(__dirname, '../docs/index.html'), 'utf8')
 const cliffClimb = fs.readFileSync(path.join(__dirname, '../docs/js/climb-system.js'), 'utf8');
 const wildlife = fs.readFileSync(path.join(__dirname, '../docs/js/creature-cliff-climb.js'), 'utf8');
 const npcPath = fs.readFileSync(path.join(__dirname, '../docs/js/npc-pathfinding.js'), 'utf8');
+const wildlifeThreat = fs.readFileSync(path.join(__dirname, '../docs/js/wildlife-threat-response.js'), 'utf8'); // Panic AI must reach the cliff planner despite its preliminary ground clearance check.
 
 function gridWithCliffs(rows = 28, thirdTier = false) {
   return Array.from({ length: rows }, () => Array.from({ length: thirdTier ? 19 : 14 }, (_, col) => ({
@@ -52,6 +53,25 @@ const at = route.nodes[branch.links[0]];
 const sideways = { x: Math.sign((branch.x - at.x) * route.tangent.x + (branch.z - at.z) * route.tangent.z) * route.tangent.x,
   z: Math.sign((branch.x - at.x) * route.tangent.x + (branch.z - at.z) * route.tangent.z) * route.tangent.z };
 assert.equal(routes.nextHop(route, at.id, sideways)?.id, branch.id, 'sideways input selects branch, not automatic vertical motion');
+
+// Normal routing may take a nearby safe downhill shortcut; climbs and hazard crossings may not.
+const dropOptions = { isSolid: type => type === 'rock', isBoundary: tile => !!tile.mapBoundary };
+const findDrop = (x, z, gx, gz, options = {}) =>
+  routes.findIntentionalDrop(network, baseGrid, x, z, gx, gz, { ...dropOptions, ...options });
+assert.equal(findDrop(7.5, 10.5, 2.5, 10.5)?.landCol, 5, 'a lower connected shelf is a valid intentional landing');
+assert.equal(findDrop(2.5, 10.5, 8.5, 10.5), null, 'drop shortcuts cannot climb uphill');
+assert.equal(findDrop(7.5, 10.5, 9.5, 10.5), null, 'normal same-tier movement does not step off a cliff');
+assert.equal(findDrop(9.5, 10.5, 2.5, 10.5), null, 'a jump cannot launch across several intact upper tiles');
+assert.equal(findDrop(7.5, 10.5, 6.5, 10.5), null, 'ordinary movement toward the cliff face is not enough to jump');
+assert(findDrop(7.5, 10.5, 6.5, 10.5, { escape: true }), 'fleeing may jump in its escape direction without a lower target');
+assert.equal(findDrop(7.5, 10.5, 9.5, 10.5, { escape: true }), null, 'escape cannot jump in the opposite direction');
+assert.equal(findDrop(7.5, 10.5, 2.5, 10.5, { canLand: () => false }), null, 'a blocked actor-sized landing is rejected');
+baseGrid[10][5].type = 'river';
+assert.equal(findDrop(7.5, 10.5, 2.5, 10.5), null, 'a flooded landing is unsafe');
+baseGrid[10][5].type = 'grass';
+baseGrid[10][5].mapBoundary = true;
+assert.equal(findDrop(7.5, 10.5, 2.5, 10.5), null, 'map-boundary escarpments cannot be used as shortcuts');
+delete baseGrid[10][5].mapBoundary;
 
 const balconies = network.balconies;
 assert(balconies.length, 'intermediate miniature cliffs generate on tall walls');
@@ -94,6 +114,92 @@ assert.notEqual(routes.forGrid(baseGrid, { area: 'western-slope', rebuild: true 
 // Run the live mesa builder, including its displaced stone triangles,
 // cave exclusions and actual decal geometry, without a WebGL dependency.
 const vm = require('node:vm');
+
+{
+  const actorWin = { CliffRouteNetwork: routes, MapBoundaryGuard: { isBoundaryTile: tile => !!tile.mapBoundary } };
+  let landings = 0; // The creature descent calls the same fall policy used by player ledge jumps.
+  actorWin.FallSystem = { land(_actor, landing) { landings++; assert(landing.deliberate); assert(landing.dropWorld > 0); } };
+  const fixture = {
+    TILE: 55, getActiveGrid: () => baseGrid, getActiveCols: () => 14, getActiveRows: () => 28,
+    getCurrentArea: () => 'slope', isZoneArea: area => area === 'slope',
+    isSolid: type => type === 'rock', tileSurfaceYInArea: tile => (tile.elevTier || 0) * 9,
+    creatureCanEnterTile: () => true, npcGridForArea: () => baseGrid,
+    isBuildingArea: () => false, isTownBuildingCollisionTile: () => false,
+    TileType: { RIVER: 'river', STREAM: 'stream', TRENCH: 'trench', RAMP: 'ramp' },
+    npcMovementConfig: () => ({}), furnitureOnlyBlocksMovementAt: () => false,
+  }; // Minimal adapters to exercise actual production wrappers without game.js/WebGL.
+  vm.runInNewContext(wildlife, { window: actorWin, performance: { now: () => 1000 } });
+  actorWin.CreatureCliffClimb.init(fixture);
+  const fleeing = { x: 7.5 * 55, y: 10.5 * 55, areaId: 'slope', health: 10,
+    def: { moveSpeed: 110 }, state: 'fleeing-low-health' }; // Reuses the established retreat state.
+  assert(actorWin.CreatureCliffClimb.navigate(fleeing, 2.5 * 55, 10.5 * 55, 110, .03));
+  assert(fleeing._cliffClimb, 'fleeing wildlife begins an airborne descent');
+  assert.equal(fleeing.state, 'fleeing-low-health', 'jumping does not turn a fleeing animal hostile');
+  for (let i = 0; i < 30; i++) if (fleeing._cliffClimb) actorWin.CreatureCliffClimb.update(fleeing, .03, null);
+  assert.equal(fleeing._cliffClimb, null, 'the jump lands without leaving movement ownership behind');
+  assert(Math.abs(fleeing.x / 55 - 5.5) < 0.01, 'the creature lands on the lower real tile');
+  assert.equal(landings, 1, 'the deliberate fall costs Footing exactly once');
+  assert.equal(actorWin.CreatureCliffClimb.debug.intentionalDrops, 1);
+
+  vm.runInNewContext(wildlifeThreat, { window: actorWin, Date, performance: { now: () => 1000 } });
+  const panic = { x: 7.5 * 55, y: 10.5 * 55, areaId: 'slope', health: 10,
+    def: { moveSpeed: 110 }, creatureKey: 'moot', state: 'herd-panic',
+    _herdThreat: { predatorX: 10.5 * 55, predatorY: 10.5 * 55 },
+  }; // Predator east of the upper ledge: flee west over the cliff.
+  let blockedPanicMoves = 0; // A blocked ground probe must not start ordinary walking through the wall.
+  const panicResult = actorWin.WildlifeThreatResponse.tickPanic(panic, .03, {
+    tile: 55, canOccupyAt: () => false,
+    moveCreatureToward: () => { blockedPanicMoves++; return false; },
+  });
+  assert(panicResult.handled && panicResult.moving, 'panic AI deliberately chooses a downhill escape over an impassable cliff face');
+  assert(panic._cliffClimb?.intentionalDrop, 'panic jump uses existing creature animation');
+  assert.equal(blockedPanicMoves, 0, 'blocked ground walking is not attempted through the cliff');
+  assert.equal(actorWin.CreatureCliffClimb.tryIntentionalLedgeDrop(panic, 4.5 * 55, 10.5 * 55), false,
+    'a second panic tick cannot restart the existing airborne jump');
+  for (let i = 0; i < 30; i++) if (panic._cliffClimb) actorWin.CreatureCliffClimb.update(panic, .03, null);
+  assert.equal(panic.state, 'herd-panic', 'landing preserves the herd escape rather than starting an attack');
+  assert.equal(panic._cliffClimb, null, 'panic cliff jump completes on the lower shelf');
+  assert.equal(landings, 2, 'both deliberate creature falls invoke the common landing policy once each');
+
+  let proneImpacts = 0; // Verifies main's newer midair-prone fall owner wins over deliberate-landing Footing.
+  actorWin.HobunjiCliffFallImpact = { resolve(_actor, fall) {
+    proneImpacts++;
+    assert(fall.dropWorld > 0, 'knockdown impact uses the real remaining fall height');
+    return { lethal: false };
+  } };
+  const interrupted = { ...fleeing, x: 7.5 * 55, y: 10.5 * 55, prone: false,
+    _cliffClimb: null, _cliffClimbCooldownT: 0 }; // Second deliberate jumper, knocked prone before reaching the landing.
+  assert(actorWin.CreatureCliffClimb.navigate(interrupted, 2.5 * 55, 10.5 * 55, 110, .03));
+  actorWin.CreatureCliffClimb.update(interrupted, .12, null);
+  interrupted.prone = true;
+  assert(actorWin.CreatureCliffClimb.knockOff(interrupted, 'knocked prone while descending'),
+    'a midair knockdown interrupts the voluntary downhill hop');
+  for (let i = 0; i < 30; i++) if (interrupted._cliffClimb) actorWin.CreatureCliffClimb.update(interrupted, .03, null);
+  assert.equal(interrupted._cliffClimb, null, 'the interrupted descent lands and clears movement ownership');
+  assert.equal(proneImpacts, 1, 'only one height-scaled cliff impact is applied');
+  assert.equal(landings, 2, 'the prone impact does not also charge a deliberate landing');
+
+  vm.runInNewContext(npcPath, { window: actorWin, Date });
+  actorWin.NpcPathfinding.init(fixture);
+  const walker = { area: 'slope', state: 'moving',
+    root: { position: { x: 7.5, z: 10.5, y: 9, set(x,y,z) { this.x=x; this.y=y; this.z=z; } } },
+    moveToward(x,z) { this.root.position.x=x; this.root.position.z=z; return true; },
+    _tryStartGridPath() { return false; }, // Scheduler path requests must not interrupt committed airborne motion.
+  }; // Actual collision decorator keeps a committed jump separate from ordinary path movement.
+  actorWin.NpcPathfinding.decorateWalkerCollision(walker);
+  walker.moveToward(2.5, 10.5, .03);
+  assert(walker._npcCliffClimb?.drop, 'NPC chooses the same safe descent rather than walking into the wall');
+  const inFlight = walker._npcCliffClimb; // Scheduler cannot discard or restart this active jump.
+  assert.equal(walker._tryStartGridPath({ c: 2, r: 10 }), false, 'schedule replans pause until landing');
+  assert.equal(walker._npcCliffClimb, inFlight, 'a replan preserves the current jump ownership');
+  for (let i = 0; i < 30; i++) if (walker._npcCliffClimb) actorWin.NpcPathfinding.updateCliffClimb(walker, .03);
+  assert.equal(walker._npcCliffClimb, null, 'NPC jump has released path ownership on landing');
+  assert(Math.abs(walker.root.position.x - 5.5) < 0.01, 'NPC lands on a real lower-shelf tile');
+  assert.equal(actorWin.NpcPathfinding.debugSnapshot().cliffRoutes.intentionalDrops, 1);
+  assert(actorWin.NpcPathfinding.canNpcReachByDrop('slope', 7.5, 10.5, 4, 10),
+    'retreat selectors can prove a landing and a footpath to lower-shelf cover');
+}
+
 
 // Drive both production movement entry points with a deterministic clock and
 // a goal tile that becomes walkable after the first failed approach.

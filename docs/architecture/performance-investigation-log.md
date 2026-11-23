@@ -1,5 +1,163 @@
 # Performance investigation log
 
+## 23 Nov 2026: fog and sky lighting work
+
+Fog reads the skydome's lunar sampler directly, avoiding a full diagnostic
+snapshot for each lighting sample. The skydome reuses its time-of-day lighting
+table and skips overcast easing once the current value reaches its target.
+Device frame times have yet to be measured.
+
+## 23 Nov 2026: Cloud Forest dense wall merged across chunks; wilderness leads measured
+
+A per-render-call draw census of a Southern Cloud Forest frame (headless, fresh world, 480×320,
+nothing held) found the dense shadewood wall (`border-terrain.js`, `AuthoredCloudForestDenseChunk_*`)
+was 72 of the main pass's 166 draws: ~6 drawn chunks × 12 InstancedMeshes. 36 of those belong to
+chunks fading at the corridor edge (transparent per-chunk material clones); the other 36 share
+their part materials across chunks.
+
+New render scope `dense-forest-wall-batches` (`js/dense-forest-wall-batches.js`, order 270) draws
+those opaque, on-camera chunk parts as one InstancedMesh per (geometry, material, layers, render
+order, shadow flags). It is not the tree-instancing loss: the wall is `backgroundScenery`, so the
+held/x-ray replays ignore it, and batches rebuild only when membership, a member's count or
+matrices change (0 rebuilds over 40 idle frames). A first version merged every drawn chunk and
+drew 8–32% more triangles whenever the wall was partly on screen (the camera cull could no
+longer drop off-camera chunks); the scope now merges only parts that pass the same
+instance-bounds frustum test `instanced-mesh-view-cull.js` applies, and triangles match exactly
+in all nine headings tested. Draws: −24 main-pass draws when the wall faces the camera
+(162 → 138), −5 to −23 in other headings. Raw renders with and without batches are
+pixel-identical (every difference equals the frame-to-frame noise at the player). Not yet
+measured on a device. A/B: Settings → Render optimizations → "Merge the Cloud Forest dense
+tree wall", benchmark variant `denseWallBatchesOff`, `DenseForestWallBatches.setEnabled(false)`.
+
+Measured and ruled out in the same session (Cloud Forest, same harness):
+- **Freezing static matrices.** 5,397 of 5,625 scene nodes recompose their matrix every frame
+  and 3,514 sit under hidden parents; only 22 moved in ~150 frames. But freezing the dense
+  chunks, mesa source meshes and path-brick chunks (1,526 nodes) cut `scene.updateMatrixWorld()`
+  only 1.06 → 1.00 ms: the walk, not the compose, is the cost. The CPU profile's `updateMatrix`
+  share overstated it.
+- **Authored furniture parts** (bonfire ring stones, crates, logs: ~50 draws in a camp view)
+  are all `transparent` because `procedural-furniture.js` applies `part.textureTransparent`
+  (true on these parts) even with opacity 1 and opaque textures, and every part builds its own
+  material. That keeps them out of `zone-prop-render-batches`. Making them opaque alone saves no
+  draws; sharing materials would break the per-part mutations in furniture-puzzle-runtime
+  (emission), the liquid surfaces and the ruin embers. Lead, not done.
+- **Replay cull walks** (`collectReplayCulled`, held + shell): 1.9 ms a frame here, mostly the
+  scene walk itself; the two walks use different scissor frusta, so only the per-object
+  classification (~0.5 ms) could be shared. Lead, not done.
+- **Rain planes** (15–17 draws everywhere it rains) are overlapping transparent sheets with
+  per-sheet UV transforms: not mergeable.
+- Remaining wall cost: the fading chunks' 36 draws (per-chunk transparent clones).
+
+## 22 Nov 2026: incremental NPC combat resource rings
+
+When a fighter's rounded Stamina value changes, the previous ring updater
+disposed and rebuilt **all** active Health/Stamina/Footing arc meshes and
+both target-lock halo meshes, even though only Stamina changed. The existing
+whole-point HUD key still limits update frequency; inside an actual update,
+each resource now has its own status-aware signature and reuses its existing
+mesh tree whenever unchanged. The Health signature additionally includes
+Wounded/Infected Stamina because those create orange Health-risk dashes.
+Target halo meshes survive every resource change, and rebuild only on
+target selection or ring radius changes. A second-pass review added effective
+maximum capacity to each arc's signature: changed trinket/gear stat modifiers
+no longer leave an old cap marker when another resource triggers refresh.
+Active Black Stamina is now rounded to the same whole-point step as other
+HUD resources, avoiding a new arc every fractional-regeneration frame.
+Full homeostasis and despawn still
+dispose the geometry. No new rendering pass or idle per-frame scene walk.
+
+`ResourceRings.debugSnapshot()` exposes `resourceArcRebuilds`,
+`resourceArcReuses` and `targetHaloRebuilds` for profiling; the mobile Pixel Probe also shows these counts. The existing
+source-executed `test-resource-rings.js` now checks reuse, disposal,
+cross-resource affliction invalidation, target changes and radius changes.
+Visible resource rings also sample equipment/perk-driven effective capacity at a
+bounded 500-ms interval to catch a modifier changing without a Health/Stamina
+event. The scan is skipped for hidden, fully homeostatic fighters and never
+runs every frame. Newly created fighters are staggered over ten
+capacity-check slots (all checked within 500 ms), preventing large
+simultaneous spawns from aligning their future polls. Mobile Pixel Probe now includes `capacityChecks` and
+`capacityInvalidations` to verify the budget on device. Device FPS and
+actual allocation reductions remain to be measured.
+
+## 22 Nov 2026: overlapping dens and a barbarian camp at night
+
+Ground detours and cliff-entry searches reuse collision results within one A*
+search. Diagonal probes used to repeat the full terrain, building, locale and
+den checks for the same tile. The blocked 32×32 fixture makes 545 collision calls,
+down from 3,861, and reachable fixtures produce identical waypoints.
+
+In wilderness zones, an unchanged failed ground detour retries after 1.2
+seconds, then 2.4 and 4.8 seconds. A new start tile, goal tile, area, or
+successful direct step bypasses the old failure. A newly available side route
+can wait for the next retry if the direct step stays blocked. A 24-actor blocked
+fixture performs 72 searches over 4.8 seconds, down from 216. Indoor detours
+keep their prior retry cadence because walkability can change at the same map
+tile when an actor changes floors. The in-game Performance Profiler reports ground and
+cliff search counts and peak times. These measurements cover routing work.
+The reported nighttime scene still needs an on-device frame capture to compare
+simulation and rendering costs.
+
+## 21 Nov 2026: battle and sky traces, ground replay and AutoLOD bookkeeping
+
+The same spot measured a 209 ms median frame interval facing the battle and
+65 ms facing the sky in Chrome traces, after removing the profiler startup
+stall. Sampled held-object/x-ray work dropped from roughly 26 to 8 ms per
+game-frame callback. Geometry AutoLOD stayed near 2 ms. The battle capture
+also included substantially more browser style recalculation, so the frame
+intervals cannot isolate the camera change.
+
+The held and shell passes now reuse their per-scene ground material aggregate
+when the visible inputs match. They check material slots and normal
+availability on each use and retain the live compile callback checks.
+AutoLOD uses the shared render hook, validates each eligible shared geometry
+once per draw, and skips excluded layers and auxiliary scenes in the world
+frame. Version changes and attribute replacements still invalidate a variant
+before the next eligible draw. The Performance Profiler shows ground cache
+hits and builds alongside AutoLOD source checks and swaps. These counters
+verify work reuse. Fresh device traces are needed to measure the FPS effect.
+
+## 21 Nov 2026: static portrait poses for NPCs and animals
+
+The game can draw an unskinned quad for a flat neutral portrait or cache the
+existing deformed geometry for a fixed hunch or weapon stance. The bandit's
+live Light, Heavy, and ranged pose data supply the matching face-forward
+counter-turn. Real glances, nods, and active weapon animations use the live skin.
+Native color and PNG depth draws share the same presentation. Stable caches
+are bounded per portrait and first-use bakes are limited per world frame.
+The Performance Profiler reports flat and baked counts and avoided triangles.
+The Render optimizations toggle allows an in-place A/B comparison. A Chromium
+software-WebGL fixture with seven scene draws per frame showed lower median
+render time with frozen portraits in all four warm A/B blocks. This fixture
+does not predict battle-save FPS. A separate WebGL check changed the head,
+spine, UV and material between passes of one world frame and verified that
+the current geometry and program followed those changes.
+
+## 21 Nov 2026: pants added to existing feet x-ray replay (PR #2049)
+
+Pants join the existing selectively ground-exempt feet replay, not a new pass.
+Their GPU-leg animation disables Three.js's ordinary frustum culling, which initially
+also made the actor-tile x-ray grouper treat them as unbounded: separated regions
+could not take the screen-space batching path when pants were present.
+The grouper now recognizes *only* tagged authored pants with finite positive
+deformation padding, unmodified draw hooks, and non-ShaderMaterial geometry,
+using the same padded projected bounds as the existing replay scissor.
+Only its actively GPU-skinned mode may use that shortcut: ghost/lit/CPU
+fallbacks move actual CPU vertices, so their bounding boxes become stale and
+are invalidated on each changed pose for lazy exact scissor recomputation.
+Other deformed/unsafe meshes remain conservative independent groups.
+GPU rest vertices do not prove the live cuff's minimum Y, so pants also do
+not trigger the floor-height-only early skip; the scissor/group checks still run.
+
+This does not add per-frame skinning, new render passes, or road geometry. One
+extra eligible pants mesh still participates in the feet replay and adds some
+marginal draw work. Source-executed bounds tests prove the isolated 24-region
+batching fixture (24 separate regions -> 3 non-overlapping groups), **not**
+on-device frame times. Compare `WorldRenderPipeline.captureFrame()` and
+`HeldObjectRenderOrder.snapshot()` on the same save before/after PR #2049,
+especially `elevationReplayGroups`, `scissoredReplays`, `fullscreenReplays`,
+`lastReplayScissorCoverage`, and `pantsXrayRegistrations`.
+
+
 ## 21 Nov 2026: x-ray depth snapshot kept alive on more GPUs
 
 In the user's town trace, not one sample landed in any function that only runs while the x-ray

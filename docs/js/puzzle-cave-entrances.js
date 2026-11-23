@@ -438,6 +438,12 @@
       plate.name='puzzle-cave-exterior-plate';
       plate.position.set(portal.plate.x,portal.plate.y+.035,portal.plate.z);
       group.add(plate);portal.plateMesh=plate;
+      const surfaces=root.DynamicSurfaces; // The slab adds support above its existing cliff shelf.
+      const support=surfaces?.pressurePlateSurface?.(plate,{
+        id:portalTag+':plate:'+portal.area+':'+portal.denId,
+        scope:portalTag+':'+portal.area,plateArea:portal.area,
+      });
+      if(support){surfaces.registerSurface(support);portal.plateSurfaceId=support.id;}
       portal.plateArt=root.PuzzleCavePlateArt?.decorate?.(THREE,plate,{
         radius:.46,thickness:.09,
         toward:{x:portal.door.x-portal.plate.x,z:portal.door.z-portal.plate.z}
@@ -541,6 +547,7 @@
     if(portal.noteHandler)root.removeEventListener?.('hobunji-kurraya-puzzle-note',portal.noteHandler);
     portal.plateArt?.dispose?.(); // No ownership of the player instrument session; only the cave's own decal is retired.
     if(portal.blockerId)root.DynamicSurfaces?.remove?.(portal.blockerId);
+    if(portal.plateSurfaceId)root.DynamicSurfaces?.remove?.(portal.plateSurfaceId);
     portal.visualRoot?.parent?.remove?.(portal.visualRoot);
     portal.visualRoot?.traverse?.(child=>{
       if(!child.isMesh)return;
@@ -611,6 +618,10 @@
     }
     return portals;
   }
+  function playerOnPlate(portal,player,px,pz){
+    return !!player&&player.onCliffBalcony===portal.shelf.id&&!player.climbing
+      &&Math.hypot(px-portal.plate.x,pz-portal.plate.z)<=.46; // Shared live plate boundary for the rhythm and attacker-readiness signals.
+  }
   function update(dt,activeArea=null){
     const area=safeArea(activeArea||deps?.getCurrentArea?.());
     const state=areas.get(area);
@@ -621,6 +632,7 @@
     if(wasInside&&player&&!player.climbing){
       player.x=(wasInside.entry.c+.5)*tile;player.y=(wasInside.entry.r+.5)*tile;
       player.onCliffBalcony=wasInside.shelf.id;
+      player._cliffBalconyY=wasInside.shelf.y; // Restore the shelf beneath the returned player before sampling its plate.
       player.climbSurfaceY=wasInside.shelf.y; // Same exact elevation owner as the existing cliff climbing movement system.
     }
     const px=Number(player?.x)/tile,pz=Number(player?.y)/tile;
@@ -628,7 +640,7 @@
       if(portal.disposed)continue;
       ensureIndependentTransitions(area,portal); // Late scene copies still get their own player-only portal.
       const onShelf=player?.onCliffBalcony===portal.shelf.id && !player?.climbing;
-      const down=onShelf&&Math.hypot(px-portal.plate.x,pz-portal.plate.z)<=.46; // A separate activation circle leaves room to step up to the gate after the final note.
+      const down=playerOnPlate(portal,player,px,pz); // Live geometry also drives readying attacks, so no one-frame protected-activity lag.
       root.RuinInteractionAudio?.watchPlate?.(portal.plateMesh,down); // Both kinds use the same physical stone plate and entry sound.
       if(portal.session){
         portal.session.step(dt,down); // The active plate alone advances the rhythm; the player decides when to equip and play.
@@ -698,5 +710,14 @@
         activeGlyph:p.progress?.activeIndex??-1,flashRemaining:p.flashRemaining,flashGlyphIndex:p.flashGlyphIndex,scoreBpm:p.song?.bpm||null,
         scorePosition:p.scoreSurface&&{x:p.scoreSurface.x,y:p.scoreSurface.y,z:p.scoreSurface.z}}))}))};
   }
-  return Object.freeze({init,plan,mount,update,clear,forgetCave,hasPortal,senseTargets,activeScoreMeshes,debugSnapshot});
+  function isPlayerSolvingMelody() {
+    const area=safeArea(deps?.getCurrentArea?.()); // Same live area as the player, never a hidden/unloaded challenge.
+    const player=deps?.player,tile=Number(deps?.TILE)||64;
+    if(!player||!Number.isFinite(Number(player.x))||!Number.isFinite(Number(player.y)))return false;
+    const px=Number(player.x)/tile,pz=Number(player.y)/tile; // Shared tile-space coordinates, evaluated when AI needs to know before the puzzle tick.
+    return (areas.get(area)?.portals||[]).some(portal=>portal.requiresSong&&!!portal.session
+      &&!portal.disposed&&!portal.solved&&playerOnPlate(portal,player,px,pz)); // No stale lastDown bit can permit a one-frame surprise grab.
+  }
+  return Object.freeze({init,plan,mount,update,clear,forgetCave,hasPortal,senseTargets,activeScoreMeshes,
+    isPlayerSolvingMelody,debugSnapshot});
 });

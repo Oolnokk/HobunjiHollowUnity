@@ -335,11 +335,13 @@
     vase.emitters=null;
   }
   const backXray=new Map(),heldRenderOrders=new Map();
+  const stowedDepthMeshes=new Set(); // Modeled parts that keep depth even when sorted with the shoulder pet.
   const frontXray=new Map(); // Restores the rigid front PNG draw order when the back slot is emptied.
   const skinnedRearOverlays=new Map(); // One back-only skinned draw per currently held player's neck-rigged portrait.
   const rearHeadwearXray=new Map(); // Separate skinned rear HEAD and its headwear pass were missing from the vessel x-ray.
   const CARRIED_VESSEL_RENDER_ORDER=1.4; // Used by held parts; 1.5 is reserved for weapon/tool PNG overlay classification.
   const CARRIED_REAR_RENDER_ORDER=2.4; // Held-only rear PNG remains above the hand-carried Burden.
+  const HELD_BABY_FOREGROUND_ORDER=30; // Only a held infant: later than the player portrait and 28-ranked pants; never the 1.5 weapon replay.
   const STOWED_REAR_RENDER_ORDER=2.05; // Behind a back-stowed Burden while still above ordinary opaque world meshes.
   const STOWED_REAR_HAT_RENDER_ORDER=2.08; // Headwear belongs to the same back-PNG occlusion side while stowed.
   const STOWED_BURDEN_RENDER_ORDER=2.15; // The actual stowed furniture draws between the two portrait PNG faces.
@@ -504,7 +506,11 @@
     burden?.group?.traverse?.(node=>{
       if(!node?.isMesh||node.visible===false)return;
       const materials=Array.isArray(node.material)?node.material:[node.material];
-      if(materials.some(material=>material&&material.visible!==false))meshes.add(node);
+      if(!materials.some(material=>material&&material.visible!==false))return;
+      if(node.userData?.shattercaskKeepsOwnDepth){
+        stowedDepthMeshes.add(node); // The compositor can order these parts without taking over their materials.
+        meshes.delete(node);
+      }else meshes.add(node);
     });
     return meshes;
   }
@@ -520,6 +526,7 @@
         }]);
   }
   function setHeldRearXray(cask) {
+    stowedDepthMeshes.clear();
     if(!cask) {
       for(const [mesh,v] of backXray) {
         mesh.renderOrder=v.order;
@@ -542,7 +549,8 @@
     // every time, including after transitions, rather than leaving stale x-ray
     // state on whichever object was last selected.
     const activeMeshes=new Map(); // Associates each currently carried geometry with its held/back rendering rule.
-    for(const mesh of held?.meshColliders||[])activeMeshes.set(mesh,'held');
+    const babyForeground=held?.kind==='familyBaby'&&window.XrayHierarchy?.get?.('baby.carrierForeground')!=='off'; // One lookup per carry refresh, never per mesh/frame.
+    for(const mesh of held?.meshColliders||[])activeMeshes.set(mesh,babyForeground?'babyForeground':'held');
     // The render pass applies to every visible part of the back Burden,
     // including non-colliding decals and newly loaded furniture detail.
     for(const mesh of carriedVisualMeshes(backCarried))activeMeshes.set(mesh,'stowed');
@@ -558,16 +566,18 @@
           .map(material=>[material,{depthWrite:material.depthWrite,depthTest:material.depthTest,transparent:material.transparent}])
       });
       const snapshot=heldRenderOrders.get(mesh);
+      snapshot.mode=mode; // The portrait sorter reads the live carry mode independently of raw draw order.
       syncCarriedMaterials(mesh,snapshot);
       // 1.5 is reserved for the weapon replay. A stowed Burden instead enters
       // the PNG transparent draw queue so renderOrder can place it between the
       // owner's rear and front faces, even when the furniture is normally opaque.
-      mesh.renderOrder=mode==='stowed'?STOWED_BURDEN_RENDER_ORDER:CARRIED_VESSEL_RENDER_ORDER;
+      mesh.renderOrder=mode==='stowed'?STOWED_BURDEN_RENDER_ORDER:mode==='babyForeground'?HELD_BABY_FOREGROUND_ORDER:CARRIED_VESSEL_RENDER_ORDER;
       for(const [material,original] of snapshot.materials){
-        const transparent=mode==='stowed'?true:original.transparent;
-        const depthTest=mode==='stowed'?true:original.depthTest;
-        if(material.depthWrite!==false||material.transparent!==transparent||material.depthTest!==depthTest){
-          material.depthWrite=false;
+        const transparent=mode==='stowed'||mode==='babyForeground'?true:original.transparent;
+        const depthTest=mode==='stowed'||mode==='babyForeground'?true:original.depthTest;
+        const depthWrite=mode==='babyForeground'; // Solid infant alpha writes depth: later pants x-ray cannot paint through its silhouette.
+        if(material.depthWrite!==depthWrite||material.transparent!==transparent||material.depthTest!==depthTest){
+          material.depthWrite=depthWrite;
           material.transparent=transparent;
           material.depthTest=depthTest;
           material.needsUpdate=true;
@@ -578,7 +588,8 @@
   }
   function carryDeps() { return window.ProceduralHandAttachments?.gameDeps || deps() || {}; }
   // Held and stowed Burdens share the species/gender-adjusted posterior frame.
-  // Stowed geometry follows the live portrait's facing after its body-frame pose is solved.
+  // Ordinary stowed furniture follows the live portrait; family babies remain on the
+  // carrier's body instead, preventing orbiting when the portrait turns independently.
   function backCarryRoot(){
     const composer=window.PlayerBodyTransformComposer; // Authoritative character root, used to locate the live portrait and resolve authored offsets.
     return typeof composer?.getPlayerMesh==='function'?composer.getPlayerMesh():carryDeps()?.playerMesh;
@@ -624,25 +635,60 @@
     for(const part of chain)quaternion.multiply(part.quaternion);
     return quaternion;
   }
-  function moveBackBurdenToPortrait(vase,body,portrait){
+  // Re-parent ordinary stowed furniture onto the player's portrait so it follows the
+  // portrait's own facing/deadzone yaw. Family babies deliberately skip this attachment.
+  function mountCarryOnPortrait(group,body,portrait){
     body.updateWorldMatrix?.(true,false);
     portrait.updateWorldMatrix?.(true,false);
-    const worldPosition=body.localToWorld(vase.group.position.clone()); // Solve once at mount; repeated solving would cancel the portrait's own deadzone yaw.
-    const worldRotation=worldRigQuaternion(body).multiply(vase.group.quaternion);
+    const worldPosition=body.localToWorld(group.position.clone()); // Solve once at mount; repeated solving would cancel the portrait's own deadzone yaw.
+    const worldRotation=worldRigQuaternion(body).multiply(group.quaternion);
     const bodyScale=body.getWorldScale(new THREE.Vector3());
     const portraitScale=portrait.getWorldScale(new THREE.Vector3());
     const localScale=new THREE.Vector3(
-      vase.group.scale.x*bodyScale.x/(portraitScale.x||1),
-      vase.group.scale.y*bodyScale.y/(portraitScale.y||1),
-      vase.group.scale.z*bodyScale.z/(portraitScale.z||1));
+      group.scale.x*bodyScale.x/(portraitScale.x||1),
+      group.scale.y*bodyScale.y/(portraitScale.y||1),
+      group.scale.z*bodyScale.z/(portraitScale.z||1));
     const inversePortraitRotation=worldRigQuaternion(portrait).invert();
-    portrait.add(vase.group); // Real physical Burden is parented directly to the portrait mesh, not a proxy or the carrier root.
-    vase.group.position.copy(portrait.worldToLocal(worldPosition));
-    vase.group.quaternion.copy(inversePortraitRotation.multiply(worldRotation));
-    vase.group.scale.copy(localScale);
-    // Preserve the posterior-based world pose calculated by alignHeldVase.
+    portrait.add(group); // Real physical Burden is parented directly to the portrait mesh, not a proxy or the carrier root.
+    group.position.copy(portrait.worldToLocal(worldPosition));
+    group.quaternion.copy(inversePortraitRotation.multiply(worldRotation));
+    group.scale.copy(localScale);
+    // Preserve the posterior-based world pose calculated by solveCarryMount.
     // Replacing it with the portrait center floated Nuhongan Burdens at the
     // wrong height. One-time reparenting retains independent portrait yaw.
+  }
+  function moveBackBurdenToPortrait(vase,body,portrait){ mountCarryOnPortrait(vase.group,body,portrait); }
+  // Carrier posterior in its body frame from the species/gender rig profile. A live value
+  // (player composer, NPC leg rig) wins; the profile is the safe fallback while rigs load.
+  function carrierPosteriorLocal(out,{speciesId,gender,modelHeight,handAttachY,liveY}={}){
+    const key=`${String(speciesId||'mao-ao').toLowerCase()}::${String(gender||'male').toLowerCase()}`;
+    const profile=window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters?.[key]
+      ||window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters?.['mao-ao::male'];
+    const height=finite(modelHeight,.9);
+    const computed=window.HOBUNJI_ATTACHMENT_RIG_MATH?.characterPosteriorY?.(
+      profile?.posteriorRule,height,finite(handAttachY,height/2));
+    const y=Number.isFinite(liveY)&&liveY!==0?liveY:Number.isFinite(computed)?computed:defaultPosteriorY;
+    const origin=profile?.anchors?.posterior?.position||{};
+    return out.set(finite(origin.x),y,finite(origin.z));
+  }
+  // THE carry pose: the authored anchor (held billboardAnchor or backCarry) is the point of the
+  // carried object that sits at the carrier's posterior + posteriorOffset; the object turns by the
+  // inverse anchor rotation and scales by 1/size. Player (alignHeldVase) and NPC carriers share it.
+  function solveCarryMount(group,carryable={},isBack=false,posterior){
+    const cfg=(isBack&&carryable.backCarry)||carryable.billboardAnchor||{},a=cfg.position||{},r=cfg.rotation||{},o=cfg.posteriorOffset||{};
+    heldAnchorEuler.set(finite(r.x)*Math.PI/180,(finite(r.y)+(isBack&&!carryable.backCarry?180:0))*Math.PI/180,finite(r.z)*Math.PI/180);
+    authoredAnchorQuat.setFromEuler(heldAnchorEuler).invert();
+    group.quaternion.copy(authoredAnchorQuat);
+    group.scale.setScalar(1/Math.max(.1,finite(cfg.size,1)));
+    // Both poses share the anatomical posterior. Old backCarry.portraitAnchor
+    // values are additive fine offsets in the same frame, never an absolute
+    // portrait-center attachment that ignores species/gender dimensions.
+    const fine=isBack?cfg.portraitAnchor||{}:{}; // Back-only compatibility adjustment for existing authored furniture.
+    posteriorOffset.set(finite(o.x)+finite(fine.x),finite(o.y)+finite(fine.y),finite(o.z)+finite(fine.z));
+    heldAnchorOffset.set(finite(a.x),finite(a.y),finite(a.z))
+      .multiplyScalar(group.scale.x).applyQuaternion(group.quaternion);
+    group.position.copy(posterior).add(posteriorOffset).sub(heldAnchorOffset);
+    return group;
   }
   function heldItemHolder(){
     const d=carryDeps();
@@ -675,43 +721,29 @@
     const isBack=backCarried===vase;
     const body=isBack?backCarryRoot():carryDeps()?.playerMesh;
     if(!body||!vase?.group?.quaternion||!posteriorLocal)return false;
-    const portrait=isBack?backCarryPortrait(body):null; // Stowed-only artwork parent; held retains its original rig parent and pose.
-    if(portrait&&vase.group.parent===portrait)return true; // Preserve independent portrait rotation between animation frames.
-    if(vase.group.parent!==body)body.add(vase.group);
+    const bodyMountedBaby=isBack&&vase.kind==='familyBaby'; // Infant remains on the carrier's posterior, not the separately rotating head/portrait plane.
+    const portrait=isBack&&!bodyMountedBaby?backCarryPortrait(body):null; // Ordinary back-stowed furniture keeps its established portrait-facing behavior.
+    if(portrait&&vase.group.parent===portrait)return true; // Preserve the existing fast path: ordinary furniture never runs the baby-specific posture checks.
     const carryable=vase.data?.carryable||{}; // The back pose uses authored transforms, with an inverted held pose as its fallback.
-    const cfg=(isBack&&carryable.backCarry)||carryable.billboardAnchor||{},a=cfg.position||{},r=cfg.rotation||{},o=cfg.posteriorOffset||{};
-    const playerSpecies=String(body.userData?.speciesId||body.userData?.species||'mao-ao').toLowerCase();
-    const playerGender=String(body.userData?.gender||'male').toLowerCase();
-    const profile=window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters?.[`${playerSpecies}::${playerGender}`]
-      ||window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters?.['mao-ao::male'];
-    const posteriorY=window.PlayerBodyTransformComposer?.getPosteriorY?.();
-    // A live composer value is authoritative; the profile is a safe startup
-    // fallback while player avatar/hand meshes load asynchronously.
-    const modelHeight=finite(body?.userData?.portraitModelHeight,.9);
-    const computed=window.HOBUNJI_ATTACHMENT_RIG_MATH?.characterPosteriorY?.(
-      profile?.posteriorRule,modelHeight,finite(body?.userData?.handAttachY,modelHeight/2));
-    const y=Number.isFinite(posteriorY)&&posteriorY!==0?posteriorY
-      :Number.isFinite(computed)?computed:defaultPosteriorY;
-    const origin=profile?.anchors?.posterior?.position||{};
-    posteriorLocal.set(finite(origin.x),y,finite(origin.z));
+    const livePosterior=window.PlayerBodyTransformComposer?.getPosteriorY?.(); // One cheap height read; dynamically standing/sitting babies remain at the real posterior.
+    const liveY=Number.isFinite(livePosterior)?livePosterior:null;
+    const ud=body.userData||{};
+    const speciesId=ud.speciesId||ud.species,gender=ud.gender,modelHeight=ud.portraitModelHeight,handAttachY=ud.handAttachY;
+    const revision=Number(carryable._backCarryRevision)||0; // FamilyBabyCarryPose only advances this when its authored back transform changes.
+    const mounted=vase._backBodyMount; // Cached posterior mount inputs, avoiding expensive per-frame quaternion and species profile solves.
+    if(bodyMountedBaby&&vase.group.parent===body&&mounted?.body===body&&mounted.revision===revision
+      &&mounted.liveY===liveY&&mounted.modelHeight===modelHeight&&mounted.handAttachY===handAttachY
+      &&mounted.speciesId===speciesId&&mounted.gender===gender)return true;
+    if(vase.group.parent!==body)body.add(vase.group);
     // The playerMesh is the actual character/posterior frame. The renderer
     // already applies body yaw and camera deadzone to that whole hierarchy.
     // Never inherit the *generic held-item holder's* extra bottle/tool rotation
     // or its world position: doing so rotates authored Z clearance into a
     // different axis and makes authoring disagree with gameplay.
-    heldAnchorEuler.set(finite(r.x)*Math.PI/180,(finite(r.y)+(isBack&&!carryable.backCarry?180:0))*Math.PI/180,finite(r.z)*Math.PI/180);
-    authoredAnchorQuat.setFromEuler(heldAnchorEuler).invert();
-    vase.group.quaternion.copy(authoredAnchorQuat);
-    const size=Math.max(.1,finite(cfg.size,1));
-    vase.group.scale.setScalar(1/size);
-    // Both poses share the anatomical posterior. Old backCarry.portraitAnchor
-    // values are additive fine offsets in the same frame, never an absolute
-    // portrait-center attachment that ignores species/gender dimensions.
-    const fine=isBack?cfg.portraitAnchor||{}:{}; // Back-only compatibility adjustment for existing authored furniture.
-    posteriorOffset.set(finite(o.x)+finite(fine.x),finite(o.y)+finite(fine.y),finite(o.z)+finite(fine.z));
-    heldAnchorOffset.set(finite(a.x),finite(a.y),finite(a.z))
-      .multiplyScalar(vase.group.scale.x).applyQuaternion(vase.group.quaternion);
-    vase.group.position.copy(posteriorLocal).add(posteriorOffset).sub(heldAnchorOffset);
+    carrierPosteriorLocal(posteriorLocal,{
+      speciesId,gender,modelHeight,handAttachY,liveY}); // Live composer posterior is authoritative; changing it re-anchors the baby.
+    solveCarryMount(vase.group,carryable,isBack,posteriorLocal);
+    vase._backBodyMount=bodyMountedBaby?{body,revision,liveY,modelHeight,handAttachY,speciesId,gender}:null; // Retrieval and avatar changes invalidate the cached body pose.
     if(isBack&&portrait)moveBackBurdenToPortrait(vase,body,portrait);
     const base=aimingThrow?.socketBase;
     if(aimingThrow?.vase===vase&&base){
@@ -940,6 +972,9 @@
       meshColliders:collectMeshColliders(group),meshBounds:THREE.Box3?new THREE.Box3():null,
       emitters:null,exploded:false,carried:false,hanging:options.hanging!==false,flying:false,
       impactHandler:typeof options.onImpact==='function'?options.onImpact:null,
+      invulnerable:options.invulnerable===true, // Family babies never inherit pottery damage or destruction.
+      noHang:options.noHang===true, // Living carryables cannot be hung from puzzle ropes.
+      onThrow:typeof options.onThrow==='function'?options.onThrow:null,
       onPickup:typeof options.onPickup==='function'?options.onPickup:null,
       onDrop:typeof options.onDrop==='function'?options.onDrop:null,
       onLost:typeof options.onLost==='function'?options.onLost:null,
@@ -1004,6 +1039,9 @@
       displayName:built?.displayName||options.displayName||kind,
       mechanismId:options.mechanismId,
       onImpact:built?.onImpact||options.onImpact,
+      invulnerable:options.invulnerable??built?.invulnerable,
+      noHang:options.noHang??built?.noHang,
+      onThrow:built?.onThrow||options.onThrow,
       onPickup:built?.onPickup||options.onPickup,
       onDrop:built?.onDrop||options.onDrop,
       onLost:built?.onLost||options.onLost,
@@ -1326,8 +1364,8 @@
       impactBackOnCarrierHit('carrier-direct-hit');
     }else if(Number.isFinite(receivedAt))observedAttackAt=receivedAt;
   }
-  function transferBackToArea(mapId){
-    const burden=backCarried,targetScene=scene();
+  function transferBackToArea(mapId,burden=backCarried){
+    const targetScene=scene(); // Both hand-carried and back-stowed babies share the ordinary burden migration.
     if(!burden||burden.mapId===mapId||!mapId||!targetScene)return;
     const oldMapId=burden.mapId,oldId=burden.id; // Used to retire the original static spawn before changing the physical object's identity.
     const oldRecord=records.get(oldMapId);
@@ -1355,7 +1393,28 @@
     burden.mapId=mapId;
     burden.group.userData.shattercaskId=nextId;
     burden.group.userData.shattercaskMap=mapId;
+    try{burden.onTransfer?.(burden,oldMapId,mapId);}catch(error){console.warn('[burden] transfer callback failed',error);}
     lastEvent='carried '+nextId+' into '+mapId;
+  }
+  // Reuse the back-burden map migration for an NPC parent carrying a real infant burden.
+  function transferCarriedBurdenToArea(mapId, burden) {
+    if (!burden?.carried || !mapId || mapId !== area()) return false;
+    transferBackToArea(mapId, burden);
+    return burden.mapId === mapId;
+  }
+  // A zone scene may be rebuilt while a nonpersistent physical Burden lives on a family NPC.
+  // Repair only the registry entry; never create a duplicate Burden, move a held object, or reset its grip.
+  function rebindRegisteredBurden(burden) {
+    const mapId=area(),targetScene=scene();
+    if(!burden||burden.exploded||burden.mapId!==mapId||!targetScene)return false;
+    const existing=records.get(mapId);
+    if(existing?.scene===targetScene&&existing.vases.get(burden.id)===burden)return true;
+    const rec=recordFor(mapId,targetScene); // Shared scene identity already handles old-zone record invalidation.
+    const conflicting=rec.vases.get(burden.id);
+    if(conflicting&&conflicting!==burden&&!conflicting.exploded)return false;
+    rec.vases.set(burden.id,burden);
+    lastEvent='rebound Burden '+burden.id+' after scene rebuild';
+    return true;
   }
   // Takes the carried burden out of the player's hands without placing it anywhere; the caller owns
   // positioning it next (hanging it on a rope). Mirrors the hand-off in placeHeldBurdenOnSurface.
@@ -1638,6 +1697,7 @@
     flight={vase:c,origin,target,distanceTiles,
       duration:window.AlchemyFlasks?.flightDuration?.(distanceTiles)
         ??Math.min(.9,Math.max(.42,.42+distanceTiles*.034)),t:0};
+    try{c.onThrow?.(c,active);}catch(error){console.warn('[burden] throw callback failed',error);}
     lastEvent='launched ' + c.displayName + ' ' + c.id;
     return true;
   }
@@ -1700,13 +1760,18 @@
     Object.freeze({icon:'↗',label:'Throw Soursap Fruit',action:'shattercask_throw',inputAction:'action1',style:'primary',allowed:true}),
     Object.freeze({icon:'⬇',label:'Drop Soursap Fruit',action:'shattercask_drop',inputAction:'action2',style:'secondary',allowed:true}),
   ]); // Shares action IDs; only burden-specific labels and impact payload change.
+  const CARRIED_BABY_ACTION_BUTTONS=Object.freeze([
+    Object.freeze({icon:'↗',label:'Throw Baby',action:'shattercask_throw',inputAction:'action1',style:'primary',allowed:true}),
+    Object.freeze({icon:'⬇',label:'Put Baby Down',action:'shattercask_drop',inputAction:'action2',style:'secondary',allowed:true}),
+  ]); // Baby-specific labels; the same burden input IDs and motions do all the work.
   const HANG_ACTION_BUTTON=Object.freeze({icon:'↟',label:'Hang on Rope',action:'shattercask_drop',inputAction:'action2',style:'secondary',allowed:true});
   const CARRIED_HANG_ACTION_BUTTONS=Object.freeze([CARRIED_ACTION_BUTTONS[0],HANG_ACTION_BUTTON]);
   const CARRIED_FRUIT_HANG_ACTION_BUTTONS=Object.freeze([CARRIED_FRUIT_ACTION_BUTTONS[0],HANG_ACTION_BUTTON]);
   const CARRIED_CRATE_HANG_ACTION_BUTTONS=Object.freeze([CARRIED_CRATE_ACTION_BUTTONS[0],HANG_ACTION_BUTTON]);
   function actionButtons(){
     if(!held)return null;
-    const canHang=window.HangingRopes?.findHook?.(held); // The release action and its label share the same hook search.
+    const canHang=!held.noHang&&window.HangingRopes?.findHook?.(held); // Living burdens never become hanging puzzle payloads.
+    if(held.kind==='familyBaby')return CARRIED_BABY_ACTION_BUTTONS;
     if(held.kind==='soursap')return canHang?CARRIED_FRUIT_HANG_ACTION_BUTTONS:CARRIED_FRUIT_ACTION_BUTTONS;
     if(held.kind==='looseCrate')return canHang?CARRIED_CRATE_HANG_ACTION_BUTTONS:CARRIED_CRATE_ACTION_BUTTONS;
     return canHang?CARRIED_HANG_ACTION_BUTTONS:CARRIED_ACTION_BUTTONS;
@@ -1796,7 +1861,7 @@
     return pile?collectPile(pile):false;
   }
   function interact() {
-    if(held)return window.HangingRopes?.tryHang?.(held)===true||drop(); // Near a rope with a free hook, the carry-release action hangs the burden on it.
+    if(held)return (!held.noHang&&window.HangingRopes?.tryHang?.(held)===true)||drop(); // Near a rope with a free hook, the carry-release action hangs the burden on it.
     const target=nearInteraction();
     if(target?.type==='vase')return pickUp(target.obj);
     if(target?.type==='cratePile')return !!window.CratePiles?.takeCrate?.(target.obj);
@@ -1865,7 +1930,7 @@
     const target=held?null:nearInteraction();
     const vase=target?.type==='vase'?target.obj:null;
     const crate=target?.type==='cratePile'?target.obj:null;
-    const hang=held&&window.HangingRopes?.findHook?.(held); // Refresh the input label when a hook enters or leaves reach.
+    const hang=held&&!held.noHang&&window.HangingRopes?.findHook?.(held); // Do not offer rope hooks for living carryables.
     const claim=held?'carried:'+held.id+(hang?':hang':''):vase?'vase:'+vase.id:crate?'crate:'+crate.id:'';
     if(claim!==promptClaim){
       if(held)window.WorldActionInputClaims?.setClaims?.('shattercask',[
@@ -2317,6 +2382,7 @@
   }
   function detonate(cask,cause='weapon',attacker=null) {
     if(!cask||cask.exploded)return false;
+    if(cask.invulnerable && !String(cause).startsWith('throw-')) return false; // Impacts may land, but attacks and chain blasts never hurt a baby.
     if(cask.kind!=='soursap'&&cask.kind!=='shattercask'&&cask.kind!=='flameShattercask') {
       const handler=cask.impactHandler||BURDEN_IMPACT_HANDLERS.get(cask.kind)||cask.data?.carryable?.impactHandler;
       return typeof handler==='function'?handler(cask,cause,attacker)!==false:false; // Future physical Burdens own their impact; they are never mistaken for explosive pottery.
@@ -2379,31 +2445,44 @@
     const collider=window.Combat?.meleeColliderVolume?.(opts.actor,opts);
     if(!collider)return;
     window.CratePiles?.sweepMelee?.(collider,opts);
+    const stamp=Number(opts.actor?.lungeOriginMs); // Shared attack identity for suppressing a repeated lunge/strike on the same burden.
     for(const vase of allActive().values()) {
       // Hanging Soursap must be plucked from its branch or knocked down by a
       // ranged projectile; a melee swing through the canopy cannot bypass the fall.
-      if(vase.exploded||vase.carried||vase.hanging)continue;
+      if(vase.exploded||vase.carried||vase.invulnerable||(vase.hanging&&vase.kind==='soursap'))continue; // Rope and ceiling burdens are strikeable; hanging Soursap still requires a fall.
+      if(Number.isFinite(stamp) && stamp>0
+        && vase.lastLungeContactStamp===stamp
+        && typeof performance!=='undefined' && performance.now()-stamp<800)continue;
+      const directLungeContact=!!(opts.lungeContact && opts.targetBurden===vase); // Exact Targetables collision takes precedence over the older radius approximation.
       const box=worldHitbox(vase);
       const cx=box?(box.min.x+box.max.x)/2:vase.col+.5;
       const cz=box?(box.min.z+box.max.z)/2:vase.row+.5;
       const centerY=box?(box.min.y+box.max.y)/2:baseHeight(vase.col,vase.row)+.35;
-      const radius=box?Math.hypot(box.max.x-box.min.x,box.max.z-box.min.z)/2:.3;
-      const height=box?(box.max.y-box.min.y)/2:.40;
-      const dx=cx-collider.origin.x,dz=cz-collider.origin.z;
-      const radial=Math.hypot(dx,dz);
-      if(radial>collider.horizontalRangeWorld+radius)continue;
-      const delta=Math.abs(Math.atan2(Math.sin(Math.atan2(dz,dx)-collider.yaw),Math.cos(Math.atan2(dz,dx)-collider.yaw)));
-      if(delta>(collider.halfConeRad||.5)+.10)continue;
-      const expectedY=collider.origin.y+collider.verticalRiseWorld*radial/Math.max(.1,collider.horizontalRangeWorld);
-      if(Math.abs(expectedY-centerY)>collider.halfHeightWorld+height)continue;
+      if(!directLungeContact && opts.lungeContact && typeof window.Combat?.meleeHit==='function'
+        && typeof window.Targetables?.makeActor==='function') {
+        const candidate=targetableFor(vase).toActor(); // Cached actor uses the same Box3 melee test as the lunge-stop probe.
+        if(!window.Combat.meleeHit(opts.actor,candidate,{...opts,debug:false}))continue;
+      } else if(!directLungeContact) {
+        const radius=box?Math.hypot(box.max.x-box.min.x,box.max.z-box.min.z)/2:.3;
+        const height=box?(box.max.y-box.min.y)/2:.40;
+        const dx=cx-collider.origin.x,dz=cz-collider.origin.z;
+        const radial=Math.hypot(dx,dz);
+        if(radial>collider.horizontalRangeWorld+radius)continue;
+        const delta=Math.abs(Math.atan2(Math.sin(Math.atan2(dz,dx)-collider.yaw),Math.cos(Math.atan2(dz,dx)-collider.yaw)));
+        if(delta>(collider.halfConeRad||.5)+.10)continue;
+        const expectedY=collider.origin.y+collider.verticalRiseWorld*radial/Math.max(.1,collider.horizontalRangeWorld);
+        if(Math.abs(expectedY-centerY)>collider.halfHeightWorld+height)continue;
+      }
+      if(opts.lungeContact && Number.isFinite(stamp) && stamp>0)vase.lastLungeContactStamp=stamp;
       window.WorldEvents?.emit('struck',{scope:vase.mapId,targetId:vase.id,targetKind:'burden',burdenKind:vase.kind,source:'melee',attackerId:opts.actor?.id||null,x:cx,y:centerY,z:cz});
       if(typeof vase.strikeHandler==='function') { // A burden that handles its own strikes (hanging on a rope: it swings) is not detonated by them.
         let handled=false;
         try{handled=vase.strikeHandler(vase,{attacker:opts.actor,source:'melee'})===true;}catch(error){console.warn('[burden] strike handler failed',error);}
-        if(handled)break;
+        if(handled){if(!opts.lungeContact)break;continue;} // One lunge AOE can swing more than one rope burden.
       }
       const source=opts.actor===deps()?.player?{power:flaskmasterFactor('shatterPower'),radius:flaskmasterFactor('shatterRadius'),rootId:vase.id,origin:'player-melee'}:opts.actor; // Existing non-player strike ownership is passed through without equipment bonuses.
-      detonate(vase,'melee',source);break;
+      detonate(vase,'melee',source);
+      if(!opts.lungeContact)break; // Ordinary melee still strikes one burden; lunge contact is a multi-target AOE.
     }
   }
   function projectileHit(start,end,radius,limit,mapId) {
@@ -2429,7 +2508,7 @@
     let result=null;
     meshRaycastQueries++;
     for(const vase of rec.vases.values()){
-      if(vase.exploded || vase===backCarried || vase.flying || (vase.hanging&&vase.hangingMechanismId) || !vase.meshColliders?.length)continue; // A back-stowed Burden is hit only when its carrier is hit, not via its own projectile mesh.
+      if(vase.exploded || vase.invulnerable || vase===backCarried || vase.flying || (vase.hanging&&vase.hangingMechanismId) || !vase.meshColliders?.length)continue; // A back-stowed Burden is hit only when its carrier is hit, not via its own projectile mesh.
       if(vase.carried)refreshMeshBounds(vase);
       else vase.group.updateWorldMatrix?.(true,true);
       if(vase.meshBounds && shatterRayBox && shatterRayBoxPoint) {
@@ -2473,7 +2552,7 @@
     return result;
   }
   function hitProjectile(candidate,playerProjectile=false) { // RangedWeapons reports real projectile ownership after its own collision routing.
-    if(!candidate?.vase||candidate.vase===backCarried)return false; // An old raycast result must not independently hit a Burden after it is stowed.
+    if(!candidate?.vase||candidate.vase===backCarried||candidate.vase.invulnerable)return false; // An old raycast result must not independently hit a Burden after it is stowed.
     const burden=candidate.vase;
     if(burden.kind==='soursap'&&burden.hanging)return startFruitFall(burden,'projectile'); // Shot branch fruit falls before exploding at terrain contact.
     const handler=burden.impactHandler||BURDEN_IMPACT_HANDLERS.get(burden.kind)||burden.data?.carryable?.impactHandler;
@@ -2505,7 +2584,18 @@
   }
   function tick(dt=0) {
     const mapId=area();
-    if(held && held.mapId!==mapId)drop();
+    // The family-baby burden is confined to the settlement. Other carried items keep their original zone rules.
+    for(const baby of [held,backCarried]){
+      if(baby?.kind==='familyBaby' && baby.mapId!==mapId
+          && !window.FamilyBabyBurdens?.isAllowedArea?.(mapId)){
+        discardBurden(baby); // onLost returns the real family child safely to their basket.
+        deps()?.showToast?.('The baby must stay near home. You leave them safely in their basket.',false);
+      }
+    }
+    if(held && held.mapId!==mapId){
+      if(held.kind==='familyBaby')transferBackToArea(mapId,held); // Allow farm ↔ town ↔ farmhouse without dropping the child.
+      else drop();
+    }
     if(backCarried&&backCarried.mapId!==mapId)transferBackToArea(mapId);
     if(backCarried)alignHeldVase(backCarried); // Reattach after avatar and area rebuilds.
     if(flight&&flight.vase.mapId!==mapId){flight.vase.flying=false;flight=null;}
@@ -2686,7 +2776,7 @@
   // dispatcher and accidentally recall equipment after pickup.
   // Burdens as Targetables (js/targetables.js). The registry reads our records on demand, so burdens
   // are not tracked twice. Capabilities are derived from live burden state; 'lungeStop' is opt-in
-  // (burden.lungeStop === true), so nothing changes for existing burdens until a system sets it.
+  // (burden.lungeStop === true) or applies to hanging non-fruit burdens, so a ceiling burden cannot be overshot.
   const TARGETABLE_EXPLOSIVE_KINDS=new Set(['shattercask','hronalWitchBomb','tothalWitchBomb','kanthicWitchBomb']);
   const targetableEntries=new WeakMap(),targetableCenter=THREE.Vector3&&new THREE.Vector3();
   function targetableFor(burden) {
@@ -2695,7 +2785,7 @@
     entry={
       id:burden.id,scope:burden.mapId,owner:burden,_actor:null,
       position:()=>({x:burden.col+.5,z:burden.row+.5}),
-      hasCap:cap=>cap==='burden'||(cap==='hangable'&&!!burden.hanging)||(cap==='explosive'&&TARGETABLE_EXPLOSIVE_KINDS.has(burden.kind))||(cap==='lungeStop'&&burden.lungeStop===true),
+      hasCap:cap=>cap==='burden'||(cap==='hangable'&&!!burden.hanging)||(cap==='explosive'&&TARGETABLE_EXPLOSIVE_KINDS.has(burden.kind))||(cap==='lungeStop'&&(burden.lungeStop===true||(burden.hanging&&burden.kind!=='soursap'))),
       hitbox:()=>{
         if(burden===backCarried)return null; // Invalidate even previously cached Targetables wrappers while stowed.
         const box=worldHitbox(burden)||(burden.meshBounds&&!burden.meshBounds.isEmpty()?burden.meshBounds:null);
@@ -2711,7 +2801,7 @@
   window.Targetables?.addSource?.('shattercasks',scope=>{
     const out=[];
     for(const burden of records.get(String(scope))?.vases?.values()||[]){
-      if(!burden||burden.exploded||burden.carried||!burden.group?.parent)continue; // Exploded or held burdens are not targets.
+      if(!burden||burden.exploded||burden.invulnerable||burden.carried||!burden.group?.parent)continue; // Babies are not combat targets.
       out.push(targetableFor(burden));
     }
     return out;
@@ -2719,9 +2809,17 @@
 
   window.Shattercasks=Object.freeze({
     init,releaseZone,RADIUS,FRUIT_RADIUS,Burden,registerFruit,rebindFruitBranch,pickUpFruit,discardFruit,releaseFruitFromTree,
-    backCarriedInfo,backCarrierPosition,stowOnBack,takeFromBack,impactBackOnCarrierHit,
+    backCarriedInfo,backCarrierPosition,stowOnBack,takeFromBack,impactBackOnCarrierHit,transferCarriedBurdenToArea,rebindRegisteredBurden,
     spawn:ensureArea,spawnRandomInDevArena,pickUp,drop,interact,toolArchAction,toolArchTap,actionButtons,
     heldBurdenInfo,placeHeldBurdenOnSurface,retrievePlacedBurden,
+    // The player's held/stowed Burden meshes and the rear-portrait passes that sandwich them.
+    // The actor-depth sorter ranks these WITH the carrier so their renderOrder stays meaningful
+    // (otherwise every portrait sorts at order 2 and a stowed Burden at 2.15 paints over the front face).
+    // Shared carry pose for non-player carriers (FamilyBabyBurdens.spouseCarry): same math as the player.
+    solveCarryMount,carrierPosteriorLocal,mountCarryOnPortrait,
+    isStowedSortMesh:mesh=>stowedDepthMeshes.has(mesh)||heldRenderOrders.get(mesh)?.mode==='stowed',
+    stowedDepthParts:()=>stowedDepthMeshes.values(),
+    carrierSortMeshes:()=>[...heldRenderOrders.keys(),...[...skinnedRearOverlays.values()].map(record=>record.overlay),...rearHeadwearXray.keys()],
     registerHangingBurden,registerBurden:registerHangingBurden,createHangingBurden,createHangingShattercask,releaseBurdenDownward,releaseBurdenWithVelocity,detachHeldBurden,refreshBurdenBounds,discardBurden,registerBurdenFactory,registerBurdenImpactHandler,
     getBurden:(id,mapId=area())=>records.get(String(mapId))?.vases.get(String(id))||null,
     activeBurdenRecords:(mapId=area())=>[...(records.get(String(mapId))?.vases.values()||[])],
@@ -2729,7 +2827,7 @@
     contextButtons,collectAimedPile,promptButtons,RUBBLE_YIELD,
     startShatterAim,releaseShatterAim,cancelShatterAim,detonate,heldHandTarget,
     projectileHit,hitProjectile,senseTargets,sweepMelee,tick,attachRuntime,
-    debugSnapshot:()=>({lastEvent,lastBlastAttribution,latestChange:'Stowed Burdens use the held pose species-adjusted posterior frame before following portrait facing.',backCarryMount:backCarried?{parent:backCarried.group?.parent?.name||backCarried.group?.parent?.type||null,portraitAttached:!!backCarryPortrait(backCarryRoot())&&backCarried.group?.parent===backCarryPortrait(backCarryRoot()),rootFallback:backCarried.group?.parent===backCarryRoot(),collision:'carrier-hitbox'}:null,crates:window.CratePiles?.debugSnapshot?.()||null,backCarried:backCarriedInfo(),fruitCarryProfile:fruitCarryTemplate===FRUIT_CARRY_FALLBACK?'fallback':'authored',area:area(),held:held?.id||null,emittingVases:[...allActive().values()].filter(v=>v.emitters?.length).length,
+    debugSnapshot:()=>({lastEvent,lastBlastAttribution,latestChange:'Back-stowed infants follow the carrier posterior, not independent portrait yaw; ordinary furniture keeps portrait facing.',backCarryMount:backCarried?{parent:backCarried.group?.parent?.name||backCarried.group?.parent?.type||null,portraitAttached:backCarried.kind==='familyBaby'?false:!!backCarryPortrait(backCarryRoot())&&backCarried.group?.parent===backCarryPortrait(backCarryRoot()),rootFallback:backCarried.kind==='familyBaby'?false:backCarried.group?.parent===backCarryRoot(),bodyAttached:backCarried.kind==='familyBaby'&&backCarried.group?.parent===backCarryRoot(),frame:backCarried.kind==='familyBaby'?'carrier-posterior':'portrait-facing',collision:'carrier-hitbox'}:null,crates:window.CratePiles?.debugSnapshot?.()||null,backCarried:backCarriedInfo(),fruitCarryProfile:fruitCarryTemplate===FRUIT_CARRY_FALLBACK?'fallback':'authored',area:area(),held:held?.id||null,babyForeground:{active:held?.kind==='familyBaby',enabled:window.XrayHierarchy?.get?.('baby.carrierForeground')!=='off',renderOrder:held?.kind==='familyBaby'?(window.XrayHierarchy?.get?.('baby.carrierForeground')==='off'?CARRIED_VESSEL_RENDER_ORDER:HELD_BABY_FOREGROUND_ORDER):null},emittingVases:[...allActive().values()].filter(v=>v.emitters?.length).length,
       vases:[...allActive().values()].map(v=>({id:v.id,kind:v.kind,col:v.col,row:v.row,carried:v.carried,hanging:!!v.hanging,flying:!!v.flying,plinthAttached:!!v.plinthAttached,hangingMechanismId:v.hangingMechanismId||null})),
       fruitFalls:[...fallingFruits.values()].map(f=>({id:f.fruit.id,y:f.fruit.group.position.y,cause:f.cause})),
       downwardBurdenFalls:[...downwardFalls.values()].map(f=>({id:f.burden.id,y:f.burden.group.position.y,velocity:+f.velocity.toFixed(2),cause:f.cause})),

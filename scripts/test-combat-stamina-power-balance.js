@@ -24,8 +24,9 @@ assert.equal(0.85 + nativeCopperTier * 0.05, 0.90, 'ungraded saved copper still 
 const baseHealthMatch = banditSource.match(/const BANDIT_BASE_MAX_HEALTH = (\d+(?:\.\d+)?)/); // Extracts the combat runtime's unscaled bandit-health baseline.
 assert(baseHealthMatch, 'bandit base health must remain discoverable in combat-bandit.js');
 const banditBaseHealth = Number(baseHealthMatch[1]); // Used with rank/tier curves to derive actual tier-0 HP.
-const tier0GruntHealth = Math.round(banditBaseHealth * banditConfig.statMultiplierByRankAndTier.grunt[0]); // Requested ordinary tier-0 Bandit target.
-const tier0LieutenantHealth = Math.round(banditBaseHealth * banditConfig.statMultiplierByRankAndTier.lieutenant[0]); // Requested tier-0 Lieutenant target.
+const tier0GruntHealth = Math.round(banditBaseHealth * banditConfig.healthMultiplierByRankAndTier.grunt[0]); // Health-only tier-0 grunt target; attack/stamina still use the original stat curve.
+const tier0LieutenantHealth = Math.round(banditBaseHealth * banditConfig.healthMultiplierByRankAndTier.lieutenant[0]); // Health-only tier-0 Lieutenant target.
+const tier0FlaskerHealth = Math.round(banditBaseHealth * banditConfig.healthMultiplierByRankAndTier.flasker[0]); // Flasker durability is independent of its attack/Stamina curve.
 
 const nativeCopperCutDamage = attackValues.weaponAbilities.cut.damage * nativeCopperMultiplier; // Shared melee base that Charged Breaker and Flurry scale from.
 const breaker = attackValues.chargedBreaker; // Short alias used throughout the Breaker calibration assertions.
@@ -33,10 +34,10 @@ const fullBreakerDamage = Math.round(nativeCopperCutDamage * breaker.DAMAGE_MUL_
 const deathMarks = attackValues.deathMark.multiplierByStacksConsumed; // Heavy-attack multipliers granted by one through three combo finishers.
 
 function damageTypeMultipliers(type) {
-  const pattern = new RegExp(`"${type}"\\s*:\\s*\\{\\s*"healthDamage"\\s*:\\s*([0-9.]+),\\s*"footingDamage"\\s*:\\s*([0-9.]+)\\s*\\}`); // Used to read the live per-type pair without evaluating the browser config file.
+  const pattern = new RegExp(`"${type}"\\s*:\\s*\\{\\s*"healthDamage"\\s*:\\s*([0-9.]+),\\s*"footingDamage"\\s*:\\s*([0-9.]+),\\s*"knockback"\\s*:\\s*([0-9.]+)\\s*\\}`); // Reads all three independently tuned hit channels without executing the browser config.
   const match = scratchConfigSource.match(pattern); // Used below to keep this calibration tied to production Sharp/Blunt tuning.
   assert(match, `${type} damage multipliers must remain discoverable in scratchbones-config.js`);
-  return { health: Number(match[1]), footing: Number(match[2]) };
+  return { health: Number(match[1]), footing: Number(match[2]), knockback: Number(match[3]) };
 }
 
 const sharpType = damageTypeMultipliers('sharp'); // Used to validate Sharp's direct-damage bias and heavy-attack breakpoints.
@@ -50,20 +51,35 @@ const sharpFootingPerRawDamage = sharpType.footing * footingLossPerDamage * foot
 const bluntFootingPerRawDamage = bluntType.footing * footingLossPerDamage * footingBridgeMultiplier; // Actual Footing removed by one raw Blunt damage before buffs/resistance.
 
 assert.equal(nativeCopperMultiplier, 0.75, 'new Copper-I starting gear uses the wider 0.75x progression');
-assert.equal(tier0GruntHealth, 17, 'tier-0 grunt HP is balanced for the 0.75x one-mark Breaker');
-assert.equal(tier0LieutenantHealth, 29, 'tier-0 lieutenant HP keeps the three-mark Breaker kill threshold');
+assert.equal(tier0GruntHealth, 30, 'tier-0 grunt gets enough Health to survive a basic starting combo');
+assert.equal(tier0LieutenantHealth, 50, 'tier-0 lieutenant is tougher than a grunt without increased offensive stats');
+assert.equal(tier0FlaskerHealth, 43, 'tier-0 flasker survives longer while retaining its ranged support role');
 assert.equal(fullBreakerDamage, 11, 'new grade-I Copper full Charged Breaker has an 11-damage heavy baseline');
-assert.deepEqual(sharpType, { health: 1.1, footing: 0.8 }, 'Sharp should keep the intended 10% Health edge and lower Footing pressure');
-assert.deepEqual(bluntType, { health: 1, footing: 1.2 }, 'Blunt should keep baseline Health damage and higher Footing pressure');
+assert.deepEqual(sharpType, { health: 1.1, footing: 0.8, knockback: 1 }, 'Sharp keeps its existing Health, Footing, and knockback strengths');
+assert.deepEqual(bluntType, { health: 0.5, footing: 1.25, knockback: 1.25 }, 'Blunt preserves half Health but increases Footing and knockback to 125%');
 assert(Math.abs(sharpFootingPerRawDamage - 2.56) < 1e-9, 'Sharp should remove 2.56 Footing per raw damage after shared scaling');
-assert(Math.abs(bluntFootingPerRawDamage - 3.84) < 1e-9, 'Blunt should remove 3.84 Footing per raw damage after shared scaling');
-assert(Math.abs(bluntFootingPerRawDamage / sharpFootingPerRawDamage - 1.5) < 1e-9, 'Blunt should apply exactly 50% more Footing pressure than Sharp');
-for (const [label, type] of Object.entries({ Sharp: sharpType, Blunt: bluntType })) {
-  assert(fullBreakerDamage * type.health < tier0GruntHealth, `${label} unmarked Charged Breaker must not erase the value of earning the third combo hit`);
-  assert(fullBreakerDamage * deathMarks[0] * type.health >= tier0GruntHealth, `${label} one Death Mark + full Native Copper Charged Breaker must one-shot a tier-0 grunt`);
-  assert(fullBreakerDamage * deathMarks[1] * type.health < tier0LieutenantHealth, `${label} two Death Marks should not reach the tier-0 lieutenant one-shot reserved for three marks`);
-  assert(fullBreakerDamage * deathMarks[2] * type.health >= tier0LieutenantHealth, `${label} three Death Marks + full Native Copper Charged Breaker must one-shot a tier-0 lieutenant`);
-}
+assert(Math.abs(bluntFootingPerRawDamage - 4) < 1e-9, 'Blunt should remove 4 Footing per raw damage after shared scaling');
+assert(Math.abs(bluntFootingPerRawDamage / sharpFootingPerRawDamage - 1.5625) < 1e-9, 'Blunt should apply 56.25% more Footing pressure than Sharp');
+assert(fullBreakerDamage * sharpType.health < tier0GruntHealth, 'Starter Sharp unmarked Breaker must not one-shot a tier-0 grunt');
+assert(fullBreakerDamage * deathMarks[0] * sharpType.health < tier0GruntHealth, 'Starter Sharp one-mark Breaker should not erase the grunt before follow-up tactics');
+assert(fullBreakerDamage * deathMarks[2] * sharpType.health >= tier0GruntHealth, 'Three earned Death Marks still create a decisive Sharp power hit against a grunt');
+assert(fullBreakerDamage * deathMarks[2] * sharpType.health < tier0LieutenantHealth, 'Lieutenants survive even the strongest starter Sharp mark-consumption hit');
+const maxMarkedBluntHealth = fullBreakerDamage * deathMarks[2] * bluntType.health; // Ensures even a fully marked blunt breaker leaves ordinary foes alive for Footing/terrain tactics.
+assert(maxMarkedBluntHealth < tier0GruntHealth, 'Blunt three-mark Charged Breaker should not erase tier-0 grunts before knockback/Footing can matter');
+assert.equal(bluntType.footing, 1.25, 'Blunt Footing is increased to 125% of the baseline');
+assert.equal(bluntType.knockback, 1.25, 'Blunt knockback is increased to 125% of the baseline');
+assert.match(gameSource, /applyKnockback\(c, fromX, fromY, knockbackPxS \* impactMultiplier \* \(resourceDamage.knockbackMultiplier \?\? 1\)\)/, 'Creatures must receive the new configured impulse multiplier once');
+assert.match(gameSource, /applyKnockback\(player, fromX, fromY, knockbackPxS \* \(resourceDamage.knockbackMultiplier \?\? 1\)\)/, 'The player must receive the same configured impulse multiplier once');
+assert.match(gameSource, /environmentalImpact \? \{ health: amount, footing: 0 \} : hitResourceDamage\(amount, dmgOpts\)/, 'Environmental collisions and falls must bypass the direct-blunt Health reduction');
+
+const hitResourceFunctionSource = gameSource.match(/function hitResourceDamage\(amount, dmgOpts\) \{[\s\S]*?\n      \}/)?.[0]; // Extracts the production hit-channel calculation for direct execution below.
+assert(hitResourceFunctionSource, 'Shared hit resource function must stay discoverable in game.js');
+const runtimeTypeMultipliers = Object.fromEntries(Object.entries({ sharp: sharpType, blunt: bluntType }).map(([type, tuning]) => [type, { healthDamage: tuning.health, footingDamage: tuning.footing, knockback: tuning.knockback }])); // Mirrors the tested config into the production helper's minimal window dependency.
+const productionHitResourceDamage = new Function('window', `${hitResourceFunctionSource}\nreturn hitResourceDamage;`)({ SCRATCHBONES_CONFIG: { game: { combat: { stagger: { damageTypeMultipliers: runtimeTypeMultipliers } } } } }); // Executes the exact production helper for per-channel regression tests.
+assert.deepEqual(productionHitResourceDamage(8, { tag: 'blunt' }), { health: 4, footing: 10, knockbackMultiplier: 1.25 }, 'A blunt hit must halve direct Health without halving Footing or impulse');
+assert.deepEqual(productionHitResourceDamage(8, { tag: 'sharp' }), { health: 8.8, footing: 6.4, knockbackMultiplier: 1 }, 'Sharp stays unchanged in all hit channels');
+assert.deepEqual(productionHitResourceDamage(8, { tag: 'blunt', footingDamageMultiplier: 0 }), { health: 4, footing: 0, knockbackMultiplier: 1.25 }, 'Projectile Footing override must not disable knockback');
+assert.deepEqual(productionHitResourceDamage(8, { tag: 'poison' }), { health: 8, footing: 8, knockbackMultiplier: 1 }, 'Unconfigured damage types retain neutral multipliers');
 
 const swingComboCost = attackValues.combo.swingCombo.reduce((sum, step) => sum + step.staminaCost, 0); // Full three-hit sweep combo cost before perks/buffs.
 const pokeComboCost = attackValues.combo.pokeCombo.reduce((sum, step) => sum + step.staminaCost, 0); // Full thrust combo is the new heavy-charge balance anchor.

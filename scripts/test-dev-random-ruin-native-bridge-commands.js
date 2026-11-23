@@ -60,3 +60,52 @@ assert.equal(frame.activateGlyph(simpleB),true);
 frame.updateSignalState(.5);
 assert.equal(ordinary.target,1,'non-command V50 glyph circuits still open their ordinary mechanism');
 console.log('ok V50 bridge glyphs: separate ON/OFF hit groups, complete native midpoint, reset, repeat, ordinary glyphs unchanged');
+
+// Exercise the shipped native projectile query, with an oversized debug box
+// installed so an accidental fallback would allow a hit from the closed sides.
+const niche = target('niche', null, 1);
+const cover = { segmentHit: () => null };
+const rays = { DynamicSurfaces: {}, NearbyVolumeCollision: cover, RangedWeapons: { update: (...args) => cover.segmentHit(...args) } };
+Object.assign(frame, {
+  window: rays, root: {}, MAP_ID: 'ruin', currentArea: () => 'ruin',
+  GLYPH_HITBOX_PAD: .045, glyphTargets: [niche],
+  finite: (value, fallback) => Number.isFinite(value) ? value : fallback,
+  installedRangedHook: false,
+});
+vm.runInContext([
+  shippedFunction('segmentBoxInterval', 'pillarMouthHit'),
+  shippedFunction('pillarMouthHit', 'glyphProjectileHit'),
+  shippedFunction('glyphProjectileHit', 'activateGlyph'),
+  shippedFunction('installRangedProjectileHook', 'updateSignalState'),
+  'installRangedProjectileHook();'
+].join('\n'), frame);
+niche.hitBox = { clone: () => { throw new Error('Pillar hits must use the opening'); } };
+const ranged = rays.RangedWeapons;
+const radius = 7 / 55; // Standard crossbow projectile in world units.
+for (const outward of [{x:0,z:-1}, {x:1,z:0}, {x:0,z:1}, {x:-1,z:0}]) {
+  const center = {x:10, z:20}; // Rooms can be translated away from the map origin.
+  for (const y of [.45, 1, 1.45, 9.45]) {
+    const point = {x:center.x+outward.x*.22,z:center.z+outward.z*.22};
+    niche.pillarMouth = {point, outward, bounds: {
+      min:{x:center.x-.08,z:center.z-.08,y:y-.15},
+      max:{x:center.x+.08,z:center.z+.08,y:y+.15},
+    }};
+    const at = (distance, side = 0, elevation = y) => ({
+      x:point.x+outward.x*distance+outward.z*side,
+      z:point.z+outward.z*distance-outward.x*side,
+      y:elevation,
+    });
+    niche.active = false;
+    assert.equal(ranged.update(at(1), at(.5), radius), null, 'a short step before the lip has no contact');
+    const hit = ranged.update(at(.5, .04), at(-.2), radius);
+    assert.equal(hit?.key, niche.id, 'an angled shot entering the opening reaches the glyph');
+    assert.equal(niche.active, false, 'query must wait for combat to commit the hit');
+    hit.onImpact();
+    assert.equal(niche.active, true, 'the winning projectile impact activates the glyph');
+    assert.equal(ranged.update(at(-1), at(1), radius), null, 'a rear shot cannot hit the opening');
+    assert.equal(ranged.update(at(-.1, 1), at(-.1), radius), null, 'a side shot cannot hit the opening');
+    assert.equal(ranged.update(at(1, .18), at(-.2, .18), radius), null, 'aiming at the stone edge misses');
+    assert.equal(ranged.update(at(1, 0, y-4), at(-.2, 0, y-4), radius), null, 'a lower-floor shot misses');
+  }
+}
+console.log('ok native pillar mouths: four orientations, three height bands, stacked elevation, and confirmed impact');

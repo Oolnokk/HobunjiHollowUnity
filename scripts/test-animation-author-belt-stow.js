@@ -6,14 +6,21 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs'); // Read the exact shipped author and gameplay modules.
 const vm = require('node:vm');
 const html = fs.readFileSync('docs/tools/animation-author/index.html', 'utf8');
+const visual = fs.readFileSync('docs/js/belt-stow-torch-display.js', 'utf8'); // Same art factory as gameplay, independent of rig profile persistence.
 const shared = fs.readFileSync('docs/js/belt-stow-rig.js', 'utf8');
 const ui = fs.readFileSync('docs/js/animation-author-belt-stow.js', 'utf8');
 const runtime = fs.readFileSync('docs/js/adventuring-torch-belt.js', 'utf8');
 const entry = fs.readFileSync('docs/index.html', 'utf8');
 const manifest = fs.readFileSync('docs/js/bootstrap/classic-groups/render.js', 'utf8');
-assert.match(html, /js\/belt-stow-rig\.js\?v=/, 'author loads the exact shared math/art module');
+assert.match(html, /js\/belt-stow-torch-display\.js\?v=/, 'author loads the shared torch art factory');
+assert.match(html, /js\/belt-stow-rig\.js\?v=/, 'author loads the shared rig coordinate and schema module');
+assert(html.indexOf('js/belt-stow-torch-display.js') < html.indexOf('js/belt-stow-rig.js'),
+  'author loads the art factory before the backward-compatible rig API');
 assert.match(html, /js\/animation-author-belt-stow\.js\?v=/, 'editor loads the independent UI module');
-assert.match(entry, /js\/belt-stow-rig\.js\?v=/, 'gameplay loads the shared module ahead of its belt renderer');
+assert.match(entry, /js\/belt-stow-torch-display\.js\?v=/, 'gameplay loads the independent sprite factory');
+assert.match(entry, /js\/belt-stow-rig\.js\?v=/, 'gameplay loads the rig schema and public compatibility API');
+assert(entry.indexOf('js/belt-stow-torch-display.js') < entry.indexOf('js/belt-stow-rig.js'),
+  'gameplay initializes art before the shared rig facade');
 assert.match(manifest, /js\/adventuring-torch-belt\.js\?v=/);
 assert.match(runtime, /configuredSnapshot/, 'the game consumes the authored beltStow profile');
 assert.match(ui, /maaBeltStowSection/, 'separate Rig Coordinates section exists');
@@ -34,16 +41,26 @@ class AxesHelper extends Group { constructor() { super();this.type='AxesHelper';
 const THREE = { Group, AxesHelper };
 const window = { HobunjiBeltStowRig:null };
 const sandbox=vm.createContext({window,performance:{now:()=>0}});
+vm.runInContext(visual,sandbox);
 vm.runInContext(shared,sandbox);
 vm.runInContext(ui,sandbox);
 const belt=window.HobunjiBeltStowRig;
 const editor=window.AnimationAuthorBeltStow;
-assert.equal(belt.defaultSnapshot(1.2).position.x,.264);
+assert.equal(belt.TORCH_WIDTH, window.HobunjiBeltStowTorchDisplay.TORCH_WIDTH, 'rig retains stable old torch width API');
+assert.equal(typeof belt.createTorchDisplay, 'function', 'rig retains its original display facade');
+assert.match(visual, /function createTorchDisplay/, 'torch rendering lives in its own visual module');
+assert.doesNotMatch(shared, /new THREE\\.Mesh|new THREE\\.Sprite|function createFlameTexture/,
+  'profile normalization must not include GPU artwork or preview flame logic');
+assert.doesNotMatch(visual, /HobunjiLayeredWeaponEffects|AdventuringTools/,
+  'shared artwork must not acquire gameplay clock or particle lifetime ownership');
+assert.equal(belt.defaultSnapshot(1.2).position.x,0);
+assert.equal(belt.defaultSnapshot(1.2).position.z,-.048);
+assert.equal(belt.defaultSnapshot(1.2).rotationDeg.z,-45);
 assert.equal(belt.defaultSnapshot(1.2).position.y,.6);
 assert.equal(belt.normalizedSnapshot({ position:{x:Infinity}, scale:{x:-2} }).scale.x,1,
   'invalid imported scales cannot corrupt rendering');
 assert.equal(belt.configuredSnapshot({characters:{'mao-ao::male':{anchors:{beltStow:{position:{x:.3,y:.5,z:.1}}}}}},'mao-ao','male').position.x,.3);
-assert.equal(belt.configuredSnapshot({},'mao-ao','female'),null,'untuned runtime profiles retain the pants spline fallback');
+assert.equal(belt.configuredSnapshot({},'mao-ao','female'),null,'untuned runtime profiles retain the anatomical posterior fallback');
 assert.equal(editor.anchorNames(['posterior','shoulderPerch'], {source:{type:'creature'}}).includes('beltStow'),false);
 const actor = {
   id:'test-player', source:{type:'npc',species:'mao-ao',gender:'male'},
@@ -63,7 +80,8 @@ const normalized=editor.preserveNormalized({characters:{'mao-ao::male':{anchors:
 assert.equal(normalized.characters['mao-ao::male'].anchors.beltStow.position.x,-.27,
   'importing a rig must preserve the stow position despite old normalizer passes');
 editor.resetProfile(profile,actor);
-assert.equal(profile.anchors.beltStow.position.x,.264,'native reset returns to this species default');
+assert.equal(profile.anchors.beltStow.position.x,0,'native reset returns to the posterior-centered default');
+assert.equal(profile.anchors.beltStow.rotationDeg.z,-45,'native reset restores 45-degree carrying angle');
 
 // Run the exact late bridge that preserves all earlier V15.xx rig hooks and installs
 // one additional authoring anchor, including the existing JSON autosave path.

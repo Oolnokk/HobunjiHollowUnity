@@ -41,7 +41,7 @@ const bobSource = section(
 );
 const gaitSource = section(
   '        if (pairedPoseLocked) { /* Kiss/dance solves its own actual legs at the pre-render checkpoint. */ }',
-  '        window.TzatzulLiveVisuals?.alignCaptive?.'
+  '      }\n\n      // ── Update reticle'
 );
 
 class Vec {

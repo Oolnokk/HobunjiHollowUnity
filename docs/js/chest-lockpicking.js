@@ -44,6 +44,7 @@
   let lastFolderSaveAction = null; // Shows whether the character-only or full-snapshot fallback was used.
   let retrySaveButton = null; // Touch-accessible retry when a primary-folder write was rejected or failed.
   const folderOnlyProgress = new Map(); // Per-character/world lock state staged in CharacterMetaSave when browser storage is full; used on same-session reentry.
+  const pendingFolderSaves = new Map(); // Lock-scoped writes continuing after the player closes the modal; prevents reopening an unacknowledged lock.
 
   const clamp = (value, lo, hi) => Math.max(lo, Math.min(hi, value)); // Constrains tier and frame-delta inputs.
   const wrap = angle => ((angle % 360) + 360) % 360; // Keeps arbitrary ring rotations in degree space.
@@ -182,9 +183,15 @@
     }
     const previousSync = Number(status.lastSyncedAt) || 0; // Detect a folder operation that was skipped instead of committed.
     const saveStartedAt = Date.now(); // Time from lock freeze to canonical acknowledgement, including any queued older save.
+    const scope = profileScope(); // Identifies this lock's pending disk write even after its modal is dismissed.
+    const saveKey = scope ? progressKey(scope, state.id) : null; // Blocks only reentry to the lock currently being saved, not combat or other interactions.
+    if (saveKey) pendingFolderSaves.set(saveKey, state);
+    const finishSave = () => {
+      if (saveKey && pendingFolderSaves.get(saveKey) === state) pendingFolderSaves.delete(saveKey);
+    }; // Both successful and rejected writes must release the reentry guard.
     Promise.resolve().then(() => {
-      const scope = profileScope();
-      if (folder.canSaveLockProgress?.(scope?.characterId) && typeof folder.saveLockProgress === 'function') {
+      if (!scope) throw new Error('Cannot save a lock without its original character scope.');
+      if (folder.canSaveLockProgress?.(scope.characterId) && typeof folder.saveLockProgress === 'function') {
         return folder.saveLockProgress({ characterId:scope.characterId, worldId:scope.worldId, lockId:state.id, record:progressRecord(state) }); // Only the failed lock's canonical character data needs an immediate durable write.
       }
       const captured = window.HobunjiRuntimeSave?.captureSnapshot?.({ reason:'lockpicking-first-failure' }); // Without a verified incremental baseline, retain the full guarded save path.
@@ -202,12 +209,17 @@
         && Number(saved.lastSyncedAt) > previousSync
         && (!saved.lastError || saved.lastAction === 'autosaved-primary-recovery-error');
       state.savePending = false;
-      if (committed) {
+      const currentScope = profileScope(); // Prevent a detached save acknowledgement from changing another active character's metadata.
+      const switchedProfile = !scope || currentScope?.characterId !== scope.characterId || currentScope?.worldId !== scope.worldId;
+      if (committed && !switchedProfile) {
         state.folderUnsynced = false;
         if (!saveProgress(state, 'folder failure-save acknowledged')) state.saveFailed = true;
-      } else state.saveFailed = true;
-      lastSaveStatus = committed ? 'First failure flushed to primary folder' : 'Primary folder failed to save the first failure';
-      if (session !== state) return; // An abandoned lock never reopens itself when a delayed folder write resolves.
+      } else state.saveFailed = true; // Preserve the original lock's unsynced marker for retry after a character/world switch.
+      lastSaveStatus = committed && switchedProfile
+        ? 'Lock saved to folder; return to its character and retry acknowledgement'
+        : committed ? 'Lock progress flushed to primary folder' : 'Primary folder failed to save lock progress';
+      finishSave();
+      if (session !== state) return; // An abandoned lock never reopens itself or awards treasure when a delayed folder write resolves.
       state.phase = committed && !state.saveFailed ? 'playing' : 'save-error';
       lastFrame = 0; // Resume with fresh RAF timing rather than charging the interval spent writing to disk.
       if (state.phase === 'playing' && state.pendingStageFolderSync) {
@@ -224,6 +236,7 @@
       state.savePending = false;
       state.saveFailed = true;
       lastSaveStatus = 'Primary folder save error';
+      finishSave();
       if (session !== state) return;
       state.phase = 'save-error';
       announce('Primary folder save failed. Retry the save before picking further.');
@@ -566,7 +579,7 @@
       bonusDrops:session?bonusDrops(session):0, failedStage:session?.failedStage||false,
       stutters:session?.stutters||0, lastStallMs:session?.lastStallMs||0, lastSaveStatus,
       lastFolderSaveDurationMs, lastFolderSaveAction, // Copyable on-device timing and path diagnostics.
-      savePending:session?.savePending||false, saveFailed:session?.saveFailed||false,
+      savePending:session?.savePending||false, backgroundSaves:pendingFolderSaves.size, saveFailed:session?.saveFailed||false,
       pendingStageSave:session?.pendingStageSave||false,
       pendingStageFolderSync:session?.pendingStageFolderSync||false, folderFallback:session?.folderFallback||false,
       folderUnsynced:session?.folderUnsynced||false,
@@ -580,10 +593,6 @@
   function close(outcome='cancelled') {
     const finished=session;
     if(!finished)return false;
-    if (finished.savePending && outcome === 'cancelled') {
-      announce('Saving your failed set to the primary folder. Cancel after the save finishes.');
-      return false; // Do not let cancelling and instant reentry race an in-flight disk write.
-    }
     if (outcome === 'success' && typeof finished.valid === 'function') {
       try {
         if (finished.valid() === false) outcome = 'invalid'; // The chest must still exist at the reward boundary, not just on the last animation frame.
@@ -591,12 +600,9 @@
     }
     if (outcome === 'cancelled' && finished.phase === 'playing' && finished.rings.some(ring => ring.frozen)) {
       recordFailure(finished, 'Abandoned an in-progress set'); // Cancelling a nearly slipped set cannot preserve a flawless streak.
-      if (finished.savePending) {
-        announce('Saving your abandoned lock set. Cancel after the primary folder confirms the penalty.');
-        return false; // The cancel press must not discard a newly initiated disk write.
-      }
     }
-    if (outcome !== 'invalid' && !saveProgress(finished, outcome)) finished.saveFailed = true;
+    if (outcome !== 'invalid' && !finished.savePending && !saveProgress(finished, outcome)) finished.saveFailed = true;
+    // A pending folder commit already owns the frozen record. Do not issue a second stale save or award cancelled progress.
     if (outcome === 'success' && (finished.saveFailed || finished.savePending || finished.folderUnsynced || finished.pendingStageSave)) {
       outcome = 'save-failed'; // Never grant extra loot if the penalty/progress could not be committed.
       announce('Could not save lock progress. Check Save Diagnostics.');
@@ -635,6 +641,11 @@
     const tier=clamp(Math.round(Number(options.tier)||1),1,4); // Shared tier selection used by ruin, buried, and cave-cache chests.
     const cfg=PRESETS[tier];
     const id = String(options.id || 'chest');
+    const scope = profileScope(); // Reentry is guarded only for this character/world/lock while its folder commit is running.
+    if (scope && pendingFolderSaves.has(progressKey(scope, id))) {
+      lastSaveStatus = 'Previous lock result still saving in the background; try this lock again after it finishes.';
+      return false;
+    }
     const saved = readProgress(id, tier, cfg.stages); // Re-entry uses canonical character/world lock state instead of a fresh run.
     session={id,tier,cfg,valid:options.valid,onSuccess:options.onSuccess,onCancel:options.onCancel,
       phase:'playing',stage:saved?.stage||0,misses:saved?.misses||0,elapsed:0,rings:[],firstCatch:-1,transitionMs:0,lastInput:'',

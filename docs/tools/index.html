@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <script src="../js/tap-reliability.js?v=20261010a"></script>
 <title>Hobunji Hollow — Dev Tools</title>
-<script src="../js/panel-ui.js?v=20261119visualauth12"></script>
+<script src="../js/panel-ui.js?v=20261123hcc4f9a1"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%;overflow:hidden;background:#07101a;color:#edf5ff;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;font-size:13px}
@@ -38,7 +38,7 @@ input{font:inherit;background:rgba(255,255,255,.06);border:1px solid rgba(255,25
 .tab-dot{width:7px;height:7px;border-radius:50%;background:rgba(255,255,255,.18);flex-shrink:0;transition:background .12s}.tab.active .tab-dot{background:var(--ok)}
 #frames{flex:1;position:relative;min-height:0}.frame-wrap{position:absolute;inset:0;display:none}.frame-wrap.active{display:block}
 iframe{width:100%;height:100%;border:none;display:block;background:var(--bg)}
-@media (max-width:680px){#body:has(#fw-flying-animal-author.active)>#npc-sidebar{display:none}}
+@media (max-width:680px){#body:has(#fw-flying-animal-author.active)>#npc-sidebar,#body:has(#fw-vocabulary-editor.active)>#npc-sidebar{display:none}}
 </style>
 </head>
 <body>
@@ -59,6 +59,7 @@ iframe{width:100%;height:100%;border:none;display:block;background:var(--bg)}
         <button class="tab" data-target="color-editor"><span class="tab-dot"></span>🎨 Body &amp; Dye Colors</button>
         <button class="tab" data-target="dialogue-editor"><span class="tab-dot"></span>💬 Dialogue Editor</button>
         <button class="tab" data-target="ambient-dialogue-editor"><span class="tab-dot"></span>🗨 Ambient Dialogue</button>
+        <button class="tab" data-target="vocabulary-editor" title="Generate and edit individual vocabulary, dialects and phrase substitutions"><span class="tab-dot"></span>📚 Vocabulary Workshop</button>
         <button class="tab" data-target="cutscene-director"><span class="tab-dot"></span>🎬 Cutscene Director</button>
         <button class="tab" data-target="animation-author"><span class="tab-dot"></span>🕺 Animation Author</button>
         <button class="tab" data-target="kurraya-music-lab"><span class="tab-dot"></span>🎼 Kurraya Music Lab</button>
@@ -75,6 +76,7 @@ iframe{width:100%;height:100%;border:none;display:block;background:var(--bg)}
         <button class="tab" data-target="furniture-avatar-author"><span class="tab-dot"></span>🪑 Furniture + Avatar Author</button>
         <button class="tab" data-target="statue-pose-bake"><span class="tab-dot"></span>🗿 Statue Pose Bake</button>
         <button class="tab" data-target="clothing-species-fit"><span class="tab-dot"></span>👕 Clothing Species Fit</button>
+        <button class="tab" data-target="beard-hood-cutout" title="Paint which beard pixels cut through the front hood, and which hood pixels a beard may remove"><span class="tab-dot"></span>🧔 Beard + Hood Cutout</button>
         <button class="tab" data-target="foliage-generator"><span class="tab-dot"></span>🌿 Foliage Generator</button>
          <button class="tab" data-target="live-root-growth"><span class="tab-dot"></span>🌳 Live Root Growth</button>
         <button class="tab" data-target="fish-editor"><span class="tab-dot"></span>🐟 Fish Editor</button>
@@ -101,8 +103,9 @@ iframe{width:100%;height:100%;border:none;display:block;background:var(--bg)}
         <div class="frame-wrap" id="fw-color-editor"><iframe src="color-editor/index.html?v=20261106hoodrear4" title="Body &amp; Dye Color Editor" id="if-color-editor" loading="lazy"></iframe></div>
         <div class="frame-wrap" id="fw-dialogue-editor"><iframe src="dialogue-editor/index.html" title="Dialogue Editor" id="if-dialogue-editor" loading="lazy"></iframe></div>
         <div class="frame-wrap" id="fw-ambient-dialogue-editor"><iframe src="ambient-dialogue-editor/index.html" title="Ambient Dialogue Editor" id="if-ambient-dialogue-editor" loading="lazy"></iframe></div>
+        <div class="frame-wrap" id="fw-vocabulary-editor"><iframe src="vocabulary-editor/index.html?v=20261122voiceAudit2" title="Vocabulary Workshop" id="if-vocabulary-editor" loading="lazy"></iframe></div>
         <div class="frame-wrap" id="fw-cutscene-director"><iframe src="cutscene-director/index.html?v=20261106hoodrear4" title="Cutscene Director" id="if-cutscene-director" loading="lazy"></iframe></div>
-        <div class="frame-wrap" id="fw-animation-author"><iframe src="animation-author/index.html?v=20261122scaleAudit1" title="Animation Author" id="if-animation-author" loading="lazy"></iframe></div>
+        <div class="frame-wrap" id="fw-animation-author"><iframe src="animation-author/index.html?v=20261123neckAgeSync2" title="Animation Author" id="if-animation-author" loading="lazy"></iframe></div>
         <div class="frame-wrap" id="fw-kurraya-music-lab"><iframe src="kurraya-music-lab/index.html?v=20261104puzzleHud1" title="Kurraya Music Lab" id="if-kurraya-music-lab" loading="lazy"></iframe></div>
         <div class="frame-wrap" id="fw-procedural-animation-editor"><iframe src="procedural-animation-editor/index.html" title="Procedural Animation" id="if-procedural-animation-editor" loading="lazy"></iframe></div>
         <div class="frame-wrap" id="fw-modular-weapon-editor"><iframe src="modular-weapon-editor/index.html?v=20261109ropebrown3" title="Modular Weapon Attachments" id="if-modular-weapon-editor" loading="lazy"></iframe></div>
@@ -115,6 +118,7 @@ iframe{width:100%;height:100%;border:none;display:block;background:var(--bg)}
         <div class="frame-wrap" id="fw-furniture-avatar-author"><iframe src="furniture-avatar-author/index.html?v=20261110poseBake1" title="Furniture + Avatar Author" id="if-furniture-avatar-author" loading="lazy"></iframe></div>
         <div class="frame-wrap" id="fw-statue-pose-bake"><iframe src="statue-pose-bake/index.html?v=20261110poseBake1" title="Statue Pose Bake" id="if-statue-pose-bake" loading="lazy"></iframe></div>
         <div class="frame-wrap" id="fw-clothing-species-fit"><iframe src="clothing-species-fit/index.html" title="Clothing Species Fit" id="if-clothing-species-fit" loading="lazy"></iframe></div>
+        <div class="frame-wrap" id="fw-beard-hood-cutout"><iframe src="beard-hood-cutout/index.html?v=20261123beardHoodMerge1" title="Beard + Hood Cutout" id="if-beard-hood-cutout" loading="lazy"></iframe></div>
         <div class="frame-wrap" id="fw-foliage-generator"><iframe src="foliage-generator/index.html" title="Foliage Generator" id="if-foliage-generator" loading="lazy"></iframe></div>
          <div class="frame-wrap" id="fw-live-root-growth"><iframe src="live-root-growth/index.html" title="Live Root Growth Author" id="if-live-root-growth" loading="lazy"></iframe></div>
         <div class="frame-wrap" id="fw-fish-editor"><iframe src="../references/(HA)HobunjiFishEditorV1.html" title="Fish Editor" id="if-fish-editor" loading="lazy"></iframe></div>

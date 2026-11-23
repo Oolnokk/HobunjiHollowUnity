@@ -182,6 +182,10 @@
     lastFocusedType: null,
     lastFocusedAlpha: null,
     lastError: null,
+    lastCollectionItemKey: null, // Last targeted inventory item; shown in Pixel Probe even when its catalog mapping is missing.
+    lastCollectionSaveOk: null, // True only after both bag and inherited lineage have been durably committed.
+    lastCollectionBagBefore: null, // Count before the last pickup attempt for mobile loss diagnostics.
+    lastCollectionBagAfter: null, // Count after the last pickup attempt for mobile loss diagnostics.
   }; // Mobile-friendly summary exposed through DenNestSystem.debugSnapshot().
 
   function isLegacyCavernNestMarker(marker, nest) {
@@ -241,7 +245,9 @@
   }
 
   function isPlayerNearDenNest(nest) {
-    const cx = (nest.col + nest.w / 2) * deps.TILE, cy = (nest.row + nest.h / 2) * deps.TILE;
+    const exactExterior = nest?.exteriorCliffNest === true && Number.isFinite(nest.x) && Number.isFinite(nest.y); // Only displaced Pingdort cups use fractional pixel-space centres.
+    const cx = exactExterior ? nest.x : (nest.col + nest.w / 2) * deps.TILE;
+    const cy = exactExterior ? nest.y : (nest.row + nest.h / 2) * deps.TILE;
     return Math.hypot(deps.player.x - cx, deps.player.y - cy) <= deps.TILE * 1.6;
   }
 
@@ -765,6 +771,21 @@
         break;
       }
     }
+    if (!best && state.mode === 'exterior' && raycaster.ray) {
+      // Small Pingdort egg pixels can miss the reticle even while the player aims at the nest cup.
+      // Only extend exterior egg aiming; nearby/same-elevation checks still run before this method.
+      const origin=raycaster.ray.origin,direction=raycaster.ray.direction;
+      for (const record of state.records) {
+        if (record.type !== 'egg' || !record.root || record.disposed || !record.alphaReady) continue;
+        const center=record.root.position;
+        const dx=center.x-origin.x,dy=center.y-origin.y,dz=center.z-origin.z;
+        const distance=dx*direction.x+dy*direction.y+dz*direction.z;
+        if (distance<.5 || distance>NEST_CONTENT_MAX_RAY_DISTANCE) continue;
+        const missSq=dx*dx+dy*dy+dz*dz-distance*distance;
+        if (missSq>.42*.42) continue;
+        if (!best || distance<best.hit.distance) best={record,hit:{distance,point:center},alpha:255,assisted:true};
+      }
+    }
     if (!best) return null;
     const hostile = window.RangedWeapons?.focusedHostile?.(NEST_CONTENT_MAX_RAY_DISTANCE);
     if (hostile && hostile.distanceWorld <= best.hit.distance + 0.05) return null;
@@ -785,6 +806,7 @@
     _nestContentDebug.lastFocusedId = record.id;
     _nestContentDebug.lastFocusedType = record.type;
     _nestContentDebug.lastFocusedAlpha = alpha;
+    _nestContentDebug.lastFocusedAssisted = !!opaque.assisted; // Existing mobile debug snapshot exposes fallback selections.
     return _lastFocusedNestContent;
   }
 
@@ -794,6 +816,7 @@
     _nestContentDebug.lastFocusedId = null;
     _nestContentDebug.lastFocusedType = null;
     _nestContentDebug.lastFocusedAlpha = null;
+    _nestContentDebug.lastFocusedAssisted = false;
 
     const branch = deps.player?.onBranch;
     const branchNest = branch?.nest;
@@ -872,24 +895,73 @@
       deps.player._nestTakeActive = false;
       _activeNestContentHoldId = null;
       _nestTakeHudEl?.classList.remove('visible');
-      if ((deps.inventory[nest.itemKey] || 0) >= window.InventoryStacks.MAX_TOTAL) {
+      const itemKey = typeof nest.itemKey === 'string' ? nest.itemKey.trim() : ''; // The single validated item identity used by bag, save, lineage, and toast.
+      const itemDef = itemKey ? deps.ITEM_DEFS?.[itemKey] : null; // A missing catalog item would otherwise be silently hidden by the Pack inventory filter.
+      _nestContentDebug.lastCollectionItemKey = itemKey || null;
+      _nestContentDebug.lastCollectionSaveOk = false;
+      _nestContentDebug.lastCollectionBagBefore = null; // Clear a previous attempt's counts before validating this nest's item registration.
+      _nestContentDebug.lastCollectionBagAfter = null;
+      _nestContentDebug.lastError = null;
+      if (!itemKey || !itemDef || typeof window.LivestockItemGenotypePersistence?.acquireNestItem !== 'function') {
+        const reason = 'Unregistered nest reward: key=' + String(nest.itemKey) + ', species=' + String(nest.speciesKey || 'unknown') + ', registered=' + !!itemDef;
+        _nestContentDebug.lastError = reason;
+        _nestContentDebug.lastChange = 'Collection blocked; baby/egg remains in nest.';
+        window.__farmLog?.('[nest-content] ' + reason, 'warn');
+        deps.showToast('Cannot take this baby or egg: its inventory item is not registered. Nest contents are safe.', false);
+        return;
+      }
+      const beforeCount = deps.inventory[itemKey] ?? 0; // Live Pack count passed to the atomic pickup writer.
+      _nestContentDebug.lastCollectionBagBefore = beforeCount;
+      if (beforeCount >= window.InventoryStacks.MAX_TOTAL) {
         _nestContentDebug.lastChange = 'Bag full; nest contents and inherited genotype kept in place.';
         deps.showToast('No room in your bag for this baby or egg.', false);
         return;
       }
-      const state = focused.state;
+      // Atomically commit the bag count, exact family genotype, and (for caverns) consumed clutch count.
+      // Only ONE durable metadata write occurs; a rejected write cannot leave a saved phantom or missing baby.
+      const areaId = deps.getCurrentArea(); // Used as the stable cave ID in world den-turnover metadata.
+      const remainingAfterPickup = Math.max(0, Number(nest.remaining) - 1); // Target clutch count, staged without removing a visible baby.
+      let committed = false; // A failed write leaves the bag, clutch count and visuals untouched.
+      try {
+        committed = window.LivestockItemGenotypePersistence.acquireNestItem(itemKey, nest.genotype, deps.inventory, {
+          areaId, liveBirth: !!nest.liveBirth, remaining: remainingAfterPickup,
+        }) === true;
+      } catch (error) {
+        _nestContentDebug.lastError = 'Nest pickup threw: ' + String(error?.message || error);
+        window.__farmLog?.('[nest-content] ' + _nestContentDebug.lastError, 'warn');
+      }
+      if (!committed) {
+        _nestContentDebug.lastError ||= 'The inventory/lineage/cave transaction was not committed; check carried animal lineage diagnostics.';
+        _nestContentDebug.lastChange = 'Collection aborted; nest contents left intact.';
+        _nestContentDebug.lastCollectionBagAfter = beforeCount;
+        window.__farmLog?.('[nest-content] pickup transaction failed key=' + itemKey + ': ' + _nestContentDebug.lastError, 'warn');
+        deps.showToast('Could not save this baby or egg. It remains in the nest; check Pixel Probe.', false);
+        return;
+      }
+      _nestContentDebug.lastCollectionSaveOk = true;
+      _nestContentDebug.lastCollectionBagAfter = deps.inventory[itemKey];
+      _nestContentDebug.lastError = null;
+      const state = focused.state; // Visuals are destroyed only after the saved transaction succeeds.
       _removeContentRecord(state, content);
-      nest.remaining = Math.max(0, Number(nest.remaining) - 1);
-      if (typeof nest.onEggCollected === 'function') nest.onEggCollected(nest);
-      else window.WildlifeSpawn?.updateDenClutchState?.(deps.getCurrentArea(), nest); // Cave clutches keep their original persistence contract.
-      deps.inventory[nest.itemKey] = Math.min(window.InventoryStacks.MAX_TOTAL, (deps.inventory[nest.itemKey] || 0) + 1);
-      window.HobunjiActivityEvents?.emit('nest_stolen', { liveBirth: !!nest.liveBirth, itemKey: nest.itemKey });
-      window.FarmAnimals.queueItemGenotype(nest.itemKey, nest.genotype);
-      deps.clampInventoryStack(nest.itemKey);
+      nest.remaining = remainingAfterPickup;
+      try {
+        if (typeof nest.onEggCollected === 'function') nest.onEggCollected(nest);
+        else window.WildlifeSpawn?.updateDenClutchState?.(areaId, nest, { persist: false }); // Already saved atomically; only refresh the in-memory turnover owner.
+      } catch (error) {
+        _nestContentDebug.lastError = 'Pickup saved, but nest runtime sync failed: ' + String(error?.message || error);
+        window.__farmLog?.('[nest-content] ' + _nestContentDebug.lastError, 'warn');
+      }
+      window.HobunjiActivityEvents?.emit('nest_stolen', {
+        liveBirth: !!nest.liveBirth, itemKey,
+        speciesKind: _babyKindForNest(nest), // Nearby wild adults are alerted only for their own stolen offspring.
+        areaId: deps.getCurrentArea(),
+        x: Number.isFinite(nest.x) ? nest.x : (nest.col + nest.w / 2) * deps.TILE,
+        y: Number.isFinite(nest.y) ? nest.y : (nest.row + nest.h / 2) * deps.TILE,
+      });
+      deps.clampInventoryStack(itemKey);
       deps.buildInventoryGrid(); deps.refreshItemScroll(); deps.refreshActionBar();
-      deps.saveMemberWorldData();
-      _nestContentDebug.lastChange = `Took ${content.type} ${content.id}; ${nest.remaining} clutch members remain.`;
-      deps.showToast(`${deps.itemIconForKey(nest.itemKey)} Took ${deps.ITEM_DEFS[nest.itemKey]?.label || nest.itemKey}${nest.remaining > 0 ? ` (${nest.remaining} left)` : ''}`, true);
+      _nestContentDebug.lastChange = 'Took ' + content.type + ' ' + content.id + '; ' + nest.remaining + ' clutch members remain; bag/save verified.';
+      deps.showToast(deps.itemIconForKey(itemKey) + ' Took ' + (itemDef.label || itemKey) + (nest.remaining > 0 ? ' (' + nest.remaining + ' left)' : ''), true);
     }
   }
 
@@ -918,7 +990,7 @@
       furnitureRevision: 'direct-cavern-nest-v1',
       currentNest: (() => {
         const nest = deps?._denNests?.get?.(deps?.getCurrentArea?.()); // Reports the actual cached record instead of inferring offspring from a visible mesh.
-        return nest ? { itemKey: nest.itemKey || null, remaining: nest.remaining, liveBirth: nest.liveBirth, hasGenotype: !!nest.genotype, mesh: nest.mesh?.name || null, meshAttached: !!nest.mesh?.parent } : null;
+        return nest ? { itemKey: nest.itemKey || null, itemRegistered: !!deps?.ITEM_DEFS?.[nest.itemKey], mappedSpecies: window.SCRATCHBONES_CONFIG?.game?.livestock?.itemKinds?.[nest.itemKey] || null, remaining: nest.remaining, liveBirth: nest.liveBirth, hasGenotype: !!nest.genotype, mesh: nest.mesh?.name || null, meshAttached: !!nest.mesh?.parent } : null;
       })(),
       area: deps?.getCurrentArea?.() || null,
       alphaThreshold: NEST_CONTENT_ALPHA_THRESHOLD,

@@ -1,0 +1,4529 @@
+{
+  "schema": "hobunji_ambient_vocabulary.v2",
+  "description": "Shared canonical synonym IDs with opt-in regional voice groups; Southern Ginju expressions and Pahu's piratical West Country orthography use authored doorstep evidence without replacing reaction personalities or ordinary Talk.",
+  "enabled": true,
+  "lexicon": {
+    "lovely": [
+      {
+        "text": "nice",
+        "verbosity": 20,
+        "color": 35,
+        "formality": 20,
+        "id": "nice"
+      },
+      {
+        "text": "delightful",
+        "verbosity": 65,
+        "color": 75,
+        "formality": 70,
+        "id": "delightful"
+      },
+      {
+        "text": "splendid",
+        "verbosity": 65,
+        "color": 65,
+        "formality": 85,
+        "id": "splendid"
+      },
+      {
+        "text": "enchanting",
+        "verbosity": 85,
+        "color": 100,
+        "formality": 70,
+        "id": "enchanting"
+      }
+    ],
+    "wonderful": [
+      {
+        "text": "great",
+        "verbosity": 20,
+        "color": 45,
+        "formality": 30,
+        "id": "great"
+      },
+      {
+        "text": "marvelous",
+        "verbosity": 70,
+        "color": 80,
+        "formality": 75,
+        "id": "marvelous"
+      },
+      {
+        "text": "splendid",
+        "verbosity": 65,
+        "color": 70,
+        "formality": 85,
+        "id": "splendid"
+      },
+      {
+        "text": "magnificent",
+        "verbosity": 90,
+        "color": 100,
+        "formality": 90,
+        "id": "magnificent"
+      },
+      {
+        "id": "very-very-good",
+        "text": "very very good",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "wonderific",
+        "text": "wonderific",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "beautiful": [
+      {
+        "text": "pretty",
+        "verbosity": 25,
+        "color": 65,
+        "formality": 25,
+        "id": "pretty"
+      },
+      {
+        "text": "lovely",
+        "verbosity": 45,
+        "color": 70,
+        "formality": 55,
+        "id": "lovely"
+      },
+      {
+        "text": "exquisite",
+        "verbosity": 80,
+        "color": 75,
+        "formality": 90,
+        "id": "exquisite"
+      },
+      {
+        "text": "resplendent",
+        "verbosity": 95,
+        "color": 100,
+        "formality": 85,
+        "id": "resplendent"
+      },
+      {
+        "id": "nice-looking",
+        "text": "nice-looking",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "beautifical",
+        "text": "beautifical",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "pleasant": [
+      {
+        "text": "nice",
+        "verbosity": 20,
+        "color": 40,
+        "formality": 20,
+        "id": "nice"
+      },
+      {
+        "text": "agreeable",
+        "verbosity": 60,
+        "color": 25,
+        "formality": 75,
+        "id": "agreeable"
+      },
+      {
+        "text": "delightful",
+        "verbosity": 65,
+        "color": 80,
+        "formality": 65,
+        "id": "delightful"
+      }
+    ],
+    "happy": [
+      {
+        "text": "glad",
+        "verbosity": 20,
+        "color": 30,
+        "formality": 30,
+        "id": "glad"
+      },
+      {
+        "text": "cheerful",
+        "verbosity": 40,
+        "color": 60,
+        "formality": 40,
+        "id": "cheerful"
+      },
+      {
+        "text": "delighted",
+        "verbosity": 65,
+        "color": 75,
+        "formality": 65,
+        "id": "delighted"
+      },
+      {
+        "text": "overjoyed",
+        "verbosity": 80,
+        "color": 95,
+        "formality": 55,
+        "id": "overjoyed"
+      }
+    ],
+    "strange": [
+      {
+        "text": "odd",
+        "verbosity": 15,
+        "color": 45,
+        "formality": 20,
+        "id": "odd"
+      },
+      {
+        "text": "peculiar",
+        "verbosity": 55,
+        "color": 65,
+        "formality": 60,
+        "id": "peculiar"
+      },
+      {
+        "text": "unusual",
+        "verbosity": 55,
+        "color": 15,
+        "formality": 65,
+        "id": "unusual"
+      },
+      {
+        "text": "bizarre",
+        "verbosity": 75,
+        "color": 90,
+        "formality": 55,
+        "id": "bizarre"
+      },
+      {
+        "id": "funny-odd",
+        "text": "funny-odd",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "strangish-odd",
+        "text": "strangish-odd",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "small": [
+      {
+        "text": "little",
+        "verbosity": 20,
+        "color": 45,
+        "formality": 25,
+        "id": "little"
+      },
+      {
+        "text": "tiny",
+        "verbosity": 30,
+        "color": 75,
+        "formality": 30,
+        "id": "tiny"
+      },
+      {
+        "text": "compact",
+        "verbosity": 50,
+        "color": 0,
+        "formality": 70,
+        "id": "compact"
+      },
+      {
+        "text": "diminutive",
+        "verbosity": 90,
+        "color": 60,
+        "formality": 85,
+        "id": "diminutive"
+      },
+      {
+        "id": "little-little",
+        "text": "little-little",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "smallish-tiny",
+        "text": "smallish-tiny",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "large": [
+      {
+        "text": "big",
+        "verbosity": 15,
+        "color": 40,
+        "formality": 20,
+        "id": "big"
+      },
+      {
+        "text": "sizeable",
+        "verbosity": 55,
+        "color": 25,
+        "formality": 55,
+        "id": "sizeable"
+      },
+      {
+        "text": "substantial",
+        "verbosity": 70,
+        "color": 10,
+        "formality": 80,
+        "id": "substantial"
+      },
+      {
+        "text": "enormous",
+        "verbosity": 75,
+        "color": 85,
+        "formality": 55,
+        "id": "enormous"
+      },
+      {
+        "id": "great-big",
+        "text": "great big",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "bignormous",
+        "text": "bignormous",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "quickly": [
+      {
+        "text": "fast",
+        "verbosity": 20,
+        "color": 30,
+        "formality": 15,
+        "id": "fast"
+      },
+      {
+        "text": "swiftly",
+        "verbosity": 55,
+        "color": 65,
+        "formality": 70,
+        "id": "swiftly"
+      },
+      {
+        "text": "rapidly",
+        "verbosity": 70,
+        "color": 5,
+        "formality": 75,
+        "id": "rapidly"
+      },
+      {
+        "text": "with all haste",
+        "verbosity": 95,
+        "color": 85,
+        "formality": 90,
+        "id": "with all haste"
+      },
+      {
+        "id": "in-a-jiffy",
+        "text": "in a jiffy",
+        "verbosity": 45,
+        "color": 75,
+        "formality": 25,
+        "kind": "old-slang",
+        "firstRecorded": 1780,
+        "source": "https://www.etymonline.com/word/jiffy"
+      },
+      {
+        "id": "real-fast",
+        "text": "real fast",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "hurry-fast",
+        "text": "hurry-fast",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "careful": [
+      {
+        "text": "cautious",
+        "verbosity": 50,
+        "color": 15,
+        "formality": 60,
+        "id": "cautious"
+      },
+      {
+        "text": "mindful",
+        "verbosity": 55,
+        "color": 40,
+        "formality": 60,
+        "id": "mindful"
+      },
+      {
+        "text": "vigilant",
+        "verbosity": 75,
+        "color": 30,
+        "formality": 85,
+        "id": "vigilant"
+      },
+      {
+        "id": "extra-watchful",
+        "text": "extra watchful",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "thinky-careful",
+        "text": "thinky-careful",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "tired": [
+      {
+        "text": "worn out",
+        "verbosity": 30,
+        "color": 70,
+        "formality": 20,
+        "id": "worn out"
+      },
+      {
+        "text": "weary",
+        "verbosity": 60,
+        "color": 80,
+        "formality": 75,
+        "id": "weary"
+      },
+      {
+        "text": "fatigued",
+        "verbosity": 75,
+        "color": 0,
+        "formality": 85,
+        "id": "fatigued"
+      },
+      {
+        "id": "sleepy-tired",
+        "text": "sleepy-tired",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "sleep-worn",
+        "text": "sleep-worn",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      },
+      {
+        "id": "tuckered-out",
+        "text": "tuckered out",
+        "verbosity": 45,
+        "color": 58,
+        "formality": 24,
+        "kind": "regional",
+        "dialect": "southeastern-us"
+      }
+    ],
+    "angry": [
+      {
+        "text": "upset",
+        "verbosity": 20,
+        "color": 40,
+        "formality": 25,
+        "id": "upset"
+      },
+      {
+        "text": "cross",
+        "verbosity": 45,
+        "color": 75,
+        "formality": 60,
+        "id": "cross"
+      },
+      {
+        "text": "furious",
+        "verbosity": 65,
+        "color": 80,
+        "formality": 55,
+        "id": "furious"
+      },
+      {
+        "text": "incensed",
+        "verbosity": 85,
+        "color": 40,
+        "formality": 85,
+        "id": "incensed"
+      },
+      {
+        "id": "real-mad",
+        "text": "real mad",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "mad-sore",
+        "text": "mad-sore",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "afraid": [
+      {
+        "text": "scared",
+        "verbosity": 20,
+        "color": 40,
+        "formality": 25,
+        "id": "scared"
+      },
+      {
+        "text": "fearful",
+        "verbosity": 55,
+        "color": 40,
+        "formality": 65,
+        "id": "fearful"
+      },
+      {
+        "text": "frightened",
+        "verbosity": 60,
+        "color": 60,
+        "formality": 60,
+        "id": "frightened"
+      },
+      {
+        "text": "apprehensive",
+        "verbosity": 85,
+        "color": 5,
+        "formality": 85,
+        "id": "apprehensive"
+      },
+      {
+        "id": "all-scared",
+        "text": "all scared",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "fright-full",
+        "text": "fright-full",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "dangerous": [
+      {
+        "text": "risky",
+        "verbosity": 25,
+        "color": 25,
+        "formality": 25,
+        "id": "risky"
+      },
+      {
+        "text": "unsafe",
+        "verbosity": 35,
+        "color": 5,
+        "formality": 55,
+        "id": "unsafe"
+      },
+      {
+        "text": "perilous",
+        "verbosity": 75,
+        "color": 85,
+        "formality": 70,
+        "id": "perilous"
+      },
+      {
+        "text": "hazardous",
+        "verbosity": 80,
+        "color": 0,
+        "formality": 85,
+        "id": "hazardous"
+      },
+      {
+        "id": "danger-full",
+        "text": "danger-full",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      },
+      {
+        "id": "treacherous",
+        "text": "treacherous",
+        "verbosity": 45,
+        "color": 58,
+        "formality": 24,
+        "kind": "regional",
+        "dialect": "pirate"
+      }
+    ],
+    "amazing": [
+      {
+        "text": "great",
+        "verbosity": 15,
+        "color": 45,
+        "formality": 25,
+        "id": "great"
+      },
+      {
+        "text": "remarkable",
+        "verbosity": 70,
+        "color": 30,
+        "formality": 80,
+        "id": "remarkable"
+      },
+      {
+        "text": "astonishing",
+        "verbosity": 75,
+        "color": 75,
+        "formality": 75,
+        "id": "astonishing"
+      },
+      {
+        "text": "extraordinary",
+        "verbosity": 90,
+        "color": 60,
+        "formality": 90,
+        "id": "extraordinary"
+      },
+      {
+        "id": "really-wonderful",
+        "text": "really wonderful",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "amazifying",
+        "text": "amazifying",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "good to see you": [
+      {
+        "text": "a pleasure to see you",
+        "verbosity": 70,
+        "color": 45,
+        "formality": 85,
+        "id": "a pleasure to see you"
+      },
+      {
+        "id": "lovely-to-see-you",
+        "text": "lovely to see you",
+        "verbosity": 42,
+        "color": 44,
+        "formality": 45,
+        "kind": "standard"
+      },
+      {
+        "id": "nice-to-see-you",
+        "text": "nice to see you",
+        "verbosity": 42,
+        "color": 44,
+        "formality": 45,
+        "kind": "standard"
+      },
+      {
+        "id": "mighty-nice-to-see-you",
+        "text": "mighty nice to see you",
+        "verbosity": 42,
+        "color": 44,
+        "formality": 45,
+        "kind": "regional",
+        "dialect": "southeastern-us"
+      }
+    ],
+    "gladly": [
+      {
+        "text": "sure",
+        "verbosity": 10,
+        "color": 30,
+        "formality": 20,
+        "id": "sure"
+      },
+      {
+        "text": "of course",
+        "verbosity": 35,
+        "color": 30,
+        "formality": 55,
+        "id": "of course"
+      },
+      {
+        "text": "with pleasure",
+        "verbosity": 65,
+        "color": 65,
+        "formality": 75,
+        "id": "with pleasure"
+      },
+      {
+        "text": "I'd be delighted",
+        "verbosity": 85,
+        "color": 80,
+        "formality": 80,
+        "id": "i'd be delighted"
+      },
+      {
+        "id": "glad-i-ly",
+        "text": "glad-i-ly",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "perhaps": [
+      {
+        "text": "maybe",
+        "verbosity": 20,
+        "color": 30,
+        "formality": 20,
+        "id": "maybe"
+      },
+      {
+        "text": "possibly",
+        "verbosity": 50,
+        "color": 5,
+        "formality": 65,
+        "id": "possibly"
+      },
+      {
+        "text": "perchance",
+        "verbosity": 80,
+        "color": 95,
+        "formality": 85,
+        "id": "perchance"
+      }
+    ],
+    "maybe": [
+      {
+        "text": "perhaps",
+        "verbosity": 55,
+        "color": 50,
+        "formality": 70,
+        "id": "perhaps"
+      },
+      {
+        "text": "possibly",
+        "verbosity": 55,
+        "color": 10,
+        "formality": 70,
+        "id": "possibly"
+      },
+      {
+        "text": "conceivably",
+        "verbosity": 85,
+        "color": 5,
+        "formality": 90,
+        "id": "conceivably"
+      }
+    ],
+    "certainly": [
+      {
+        "text": "sure",
+        "verbosity": 15,
+        "color": 30,
+        "formality": 20,
+        "id": "sure"
+      },
+      {
+        "text": "absolutely",
+        "verbosity": 50,
+        "color": 60,
+        "formality": 35,
+        "id": "absolutely"
+      }
+    ],
+    "not right now": [
+      {
+        "text": "not at the moment",
+        "verbosity": 40,
+        "color": 15,
+        "formality": 60,
+        "id": "not at the moment"
+      },
+      {
+        "text": "not just now",
+        "verbosity": 35,
+        "color": 35,
+        "formality": 50,
+        "id": "not just now"
+      }
+    ],
+    "not today": [
+      {
+        "text": "not this day",
+        "verbosity": 50,
+        "color": 70,
+        "formality": 70,
+        "id": "not this day"
+      }
+    ],
+    "thank you": [
+      {
+        "text": "thanks",
+        "verbosity": 15,
+        "color": 35,
+        "formality": 20,
+        "id": "thanks"
+      },
+      {
+        "text": "many thanks",
+        "verbosity": 55,
+        "color": 45,
+        "formality": 65,
+        "id": "many thanks"
+      },
+      {
+        "text": "thank you kindly",
+        "verbosity": 65,
+        "color": 70,
+        "formality": 70,
+        "id": "thank you kindly"
+      }
+    ],
+    "friend": [
+      {
+        "text": "pal",
+        "verbosity": 15,
+        "color": 65,
+        "formality": 20,
+        "id": "pal",
+        "kind": "old-slang",
+        "firstRecorded": 1680,
+        "source": "https://www.etymonline.com/word/pal"
+      },
+      {
+        "text": "companion",
+        "verbosity": 65,
+        "color": 25,
+        "formality": 65,
+        "id": "companion"
+      },
+      {
+        "text": "comrade",
+        "verbosity": 65,
+        "color": 45,
+        "formality": 65,
+        "id": "comrade"
+      },
+      {
+        "id": "chum",
+        "text": "chum",
+        "verbosity": 45,
+        "color": 75,
+        "formality": 25,
+        "kind": "old-slang",
+        "firstRecorded": 1680,
+        "source": "https://www.etymonline.com/word/chum"
+      },
+      {
+        "id": "best-buddy",
+        "text": "best buddy",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "pal-friend",
+        "text": "pal-friend",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      },
+      {
+        "id": "matey",
+        "text": "matey",
+        "verbosity": 45,
+        "color": 58,
+        "formality": 24,
+        "kind": "regional",
+        "dialect": "pirate",
+        "sourceVisit": "pahu_grapple_flail"
+      }
+    ],
+    "friends": [
+      {
+        "text": "pals",
+        "verbosity": 15,
+        "color": 65,
+        "formality": 20,
+        "id": "pals"
+      },
+      {
+        "text": "companions",
+        "verbosity": 65,
+        "color": 25,
+        "formality": 65,
+        "id": "companions"
+      },
+      {
+        "text": "comrades",
+        "verbosity": 65,
+        "color": 45,
+        "formality": 65,
+        "id": "comrades"
+      },
+      {
+        "id": "chums",
+        "text": "chums",
+        "verbosity": 45,
+        "color": 75,
+        "formality": 25,
+        "kind": "old-slang",
+        "firstRecorded": 1680,
+        "source": "https://www.etymonline.com/word/chum"
+      },
+      {
+        "id": "pal-friends",
+        "text": "pal-friends",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      },
+      {
+        "id": "hearties",
+        "text": "hearties",
+        "verbosity": 45,
+        "color": 58,
+        "formality": 24,
+        "kind": "regional",
+        "dialect": "pirate"
+      }
+    ],
+    "song": [
+      {
+        "text": "tune",
+        "verbosity": 20,
+        "color": 60,
+        "formality": 20,
+        "id": "tune"
+      },
+      {
+        "text": "melody",
+        "verbosity": 55,
+        "color": 65,
+        "formality": 55,
+        "id": "melody"
+      },
+      {
+        "text": "composition",
+        "verbosity": 80,
+        "color": 0,
+        "formality": 85,
+        "id": "composition"
+      }
+    ],
+    "tune": [
+      {
+        "text": "song",
+        "verbosity": 20,
+        "color": 60,
+        "formality": 20,
+        "id": "song"
+      },
+      {
+        "text": "melody",
+        "verbosity": 55,
+        "color": 65,
+        "formality": 55,
+        "id": "melody"
+      },
+      {
+        "text": "composition",
+        "verbosity": 80,
+        "color": 0,
+        "formality": 85,
+        "id": "composition"
+      }
+    ],
+    "rainfall": [
+      {
+        "text": "rain",
+        "verbosity": 15,
+        "color": 55,
+        "formality": 20,
+        "id": "rain"
+      },
+      {
+        "text": "precipitation",
+        "verbosity": 85,
+        "color": 0,
+        "formality": 90,
+        "id": "precipitation"
+      }
+    ],
+    "interesting": [
+      {
+        "text": "curious",
+        "verbosity": 50,
+        "color": 60,
+        "formality": 55,
+        "id": "curious"
+      },
+      {
+        "text": "intriguing",
+        "verbosity": 75,
+        "color": 50,
+        "formality": 80,
+        "id": "intriguing"
+      },
+      {
+        "text": "fascinating",
+        "verbosity": 80,
+        "color": 80,
+        "formality": 75,
+        "id": "fascinating"
+      },
+      {
+        "id": "really-curious",
+        "text": "really curious",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "interestifying",
+        "text": "interestifying",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "important": [
+      {
+        "text": "significant",
+        "verbosity": 65,
+        "color": 0,
+        "formality": 80,
+        "id": "significant"
+      },
+      {
+        "text": "momentous",
+        "verbosity": 85,
+        "color": 85,
+        "formality": 80,
+        "id": "momentous"
+      },
+      {
+        "id": "big-and-serious",
+        "text": "big and serious",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "importance-full",
+        "text": "importance-full",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "quiet": [
+      {
+        "id": "hush-quiet",
+        "text": "hush-quiet",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "soundless-ish",
+        "text": "soundless-ish",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "loud": [
+      {
+        "text": "noisy",
+        "verbosity": 25,
+        "color": 40,
+        "formality": 20,
+        "id": "noisy"
+      },
+      {
+        "text": "boisterous",
+        "verbosity": 65,
+        "color": 85,
+        "formality": 55,
+        "id": "boisterous"
+      },
+      {
+        "text": "deafening",
+        "verbosity": 80,
+        "color": 85,
+        "formality": 55,
+        "id": "deafening"
+      },
+      {
+        "id": "very-noisy",
+        "text": "very noisy",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "ear-hurting",
+        "text": "ear-hurting",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "terrible": [
+      {
+        "text": "awful",
+        "verbosity": 20,
+        "color": 50,
+        "formality": 25,
+        "id": "awful"
+      },
+      {
+        "text": "dreadful",
+        "verbosity": 60,
+        "color": 75,
+        "formality": 65,
+        "id": "dreadful"
+      },
+      {
+        "text": "horrendous",
+        "verbosity": 85,
+        "color": 65,
+        "formality": 80,
+        "id": "horrendous"
+      },
+      {
+        "id": "very-bad",
+        "text": "very bad",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "terribulous",
+        "text": "terribulous",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "nonsense": [
+      {
+        "id": "bosh",
+        "text": "bosh",
+        "verbosity": 45,
+        "color": 75,
+        "formality": 25,
+        "kind": "old-slang",
+        "firstRecorded": 1839,
+        "source": "https://www.etymonline.com/word/bosh"
+      },
+      {
+        "id": "balderdash",
+        "text": "balderdash",
+        "verbosity": 45,
+        "color": 75,
+        "formality": 25,
+        "kind": "old-slang",
+        "firstRecorded": 1670,
+        "source": "https://www.etymonline.com/word/balderdash"
+      },
+      {
+        "id": "humbug",
+        "text": "humbug",
+        "verbosity": 45,
+        "color": 75,
+        "formality": 25,
+        "kind": "old-slang",
+        "firstRecorded": 1751,
+        "source": "https://www.etymonline.com/word/humbug"
+      },
+      {
+        "id": "twaddle",
+        "text": "twaddle",
+        "verbosity": 45,
+        "color": 75,
+        "formality": 25,
+        "kind": "old-slang",
+        "firstRecorded": 1782,
+        "source": "https://www.etymonline.com/word/twaddle"
+      },
+      {
+        "id": "silly-talk",
+        "text": "silly talk",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "nonsensicals",
+        "text": "nonsensicals",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "food": [
+      {
+        "id": "grub",
+        "text": "grub",
+        "verbosity": 45,
+        "color": 75,
+        "formality": 25,
+        "kind": "old-slang",
+        "firstRecorded": 1650,
+        "source": "https://www.etymonline.com/word/grub"
+      },
+      {
+        "id": "stuff-to-eat",
+        "text": "stuff to eat",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "belly-fuel",
+        "text": "belly-fuel",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "head": [
+      {
+        "id": "noggin",
+        "text": "noggin",
+        "verbosity": 45,
+        "color": 75,
+        "formality": 25,
+        "kind": "old-slang",
+        "firstRecorded": 1866,
+        "source": "https://www.etymonline.com/word/nog"
+      },
+      {
+        "id": "nob",
+        "text": "nob",
+        "verbosity": 45,
+        "color": 75,
+        "formality": 25,
+        "kind": "old-slang",
+        "firstRecorded": 1700,
+        "source": "https://www.etymonline.com/word/nob"
+      },
+      {
+        "id": "top-bit",
+        "text": "top bit",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "thinking-top",
+        "text": "thinking-top",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "mouth": [
+      {
+        "id": "gob",
+        "text": "gob",
+        "verbosity": 45,
+        "color": 75,
+        "formality": 25,
+        "kind": "old-slang",
+        "firstRecorded": 1540,
+        "source": "https://www.etymonline.com/word/gob"
+      },
+      {
+        "id": "talking-hole",
+        "text": "talking hole",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "word-hole",
+        "text": "word-hole",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "run away": [
+      {
+        "id": "skedaddle",
+        "text": "skedaddle",
+        "verbosity": 45,
+        "color": 75,
+        "formality": 25,
+        "kind": "old-slang",
+        "firstRecorded": 1861,
+        "source": "https://www.etymonline.com/word/skedaddle"
+      },
+      {
+        "id": "run-off",
+        "text": "run off",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "leg-it-away",
+        "text": "leg-it-away",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "deceive": [
+      {
+        "id": "bamboozle",
+        "text": "bamboozle",
+        "verbosity": 45,
+        "color": 75,
+        "formality": 25,
+        "kind": "old-slang",
+        "firstRecorded": 1703,
+        "source": "https://www.etymonline.com/word/bamboozle"
+      },
+      {
+        "id": "trick",
+        "text": "trick",
+        "verbosity": 45,
+        "color": 45,
+        "formality": 48,
+        "kind": "standard"
+      },
+      {
+        "id": "trickify",
+        "text": "trickify",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "excellent": [
+      {
+        "id": "capital",
+        "text": "capital",
+        "verbosity": 45,
+        "color": 75,
+        "formality": 25,
+        "kind": "old-slang",
+        "firstRecorded": 1754,
+        "source": "https://www.etymonline.com/word/capital"
+      },
+      {
+        "id": "spiffing",
+        "text": "spiffing",
+        "verbosity": 45,
+        "color": 75,
+        "formality": 25,
+        "kind": "old-slang",
+        "firstRecorded": 1872,
+        "source": "https://www.etymonline.com/word/spiffy"
+      },
+      {
+        "id": "ripping",
+        "text": "ripping",
+        "verbosity": 45,
+        "color": 75,
+        "formality": 25,
+        "kind": "old-slang",
+        "firstRecorded": 1838,
+        "source": "https://www.etymonline.com/word/ripping"
+      },
+      {
+        "id": "first-rate",
+        "text": "first-rate",
+        "verbosity": 45,
+        "color": 75,
+        "formality": 25,
+        "kind": "old-slang",
+        "firstRecorded": 1812,
+        "source": "https://www.etymonline.com/word/first-rate"
+      },
+      {
+        "id": "really-good",
+        "text": "really good",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "excellific",
+        "text": "excellific",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "money": [
+      {
+        "id": "spondulicks",
+        "text": "spondulicks",
+        "verbosity": 45,
+        "color": 75,
+        "formality": 25,
+        "kind": "old-slang",
+        "firstRecorded": 1856,
+        "source": "https://www.etymonline.com/word/spondulicks"
+      },
+      {
+        "id": "pay-money",
+        "text": "pay-money",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "shiny-pay",
+        "text": "shiny-pay",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "trickery": [
+      {
+        "id": "shenanigans",
+        "text": "shenanigans",
+        "verbosity": 45,
+        "color": 75,
+        "formality": 25,
+        "kind": "old-slang",
+        "firstRecorded": 1854,
+        "source": "https://www.etymonline.com/word/shenanigans"
+      },
+      {
+        "id": "humbug",
+        "text": "humbug",
+        "verbosity": 45,
+        "color": 75,
+        "formality": 25,
+        "kind": "old-slang",
+        "firstRecorded": 1751,
+        "source": "https://www.etymonline.com/word/humbug"
+      },
+      {
+        "id": "tricky-stuff",
+        "text": "tricky stuff",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "trickery-doings",
+        "text": "trickery-doings",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "fool": [
+      {
+        "id": "nincompoop",
+        "text": "nincompoop",
+        "verbosity": 45,
+        "color": 45,
+        "formality": 48,
+        "kind": "standard"
+      },
+      {
+        "id": "sillyhead",
+        "text": "sillyhead",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "foolington",
+        "text": "foolington",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "foolish": [
+      {
+        "id": "daft",
+        "text": "daft",
+        "verbosity": 45,
+        "color": 45,
+        "formality": 48,
+        "kind": "standard"
+      },
+      {
+        "id": "brain-sleepy",
+        "text": "brain-sleepy",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      },
+      {
+        "id": "silly",
+        "text": "silly",
+        "verbosity": 18,
+        "color": 70,
+        "formality": 18,
+        "kind": "simple"
+      }
+    ],
+    "hungry": [
+      {
+        "id": "tummy-rumbly",
+        "text": "tummy-rumbly",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "food-thirsty",
+        "text": "food-thirsty",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "thirsty": [
+      {
+        "id": "drink-needy",
+        "text": "drink-needy",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "drink-hungry",
+        "text": "drink-hungry",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "sleepy": [
+      {
+        "id": "drowsy",
+        "text": "drowsy",
+        "verbosity": 45,
+        "color": 45,
+        "formality": 48,
+        "kind": "standard"
+      },
+      {
+        "id": "sleepy-sleepy",
+        "text": "sleepy-sleepy",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "nap-full",
+        "text": "nap-full",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "heavy": [
+      {
+        "id": "weighty",
+        "text": "weighty",
+        "verbosity": 45,
+        "color": 45,
+        "formality": 48,
+        "kind": "standard"
+      },
+      {
+        "id": "really-weighty",
+        "text": "really weighty",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "carry-hard",
+        "text": "carry-hard",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "cold": [
+      {
+        "id": "chilly",
+        "text": "chilly",
+        "verbosity": 45,
+        "color": 45,
+        "formality": 48,
+        "kind": "standard"
+      },
+      {
+        "id": "brr-cold",
+        "text": "brr-cold",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "shiverful",
+        "text": "shiverful",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "warm": [
+      {
+        "id": "cozy",
+        "text": "cozy",
+        "verbosity": 45,
+        "color": 45,
+        "formality": 48,
+        "kind": "standard"
+      },
+      {
+        "id": "nice-and-warm",
+        "text": "nice and warm",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "sun-warmish",
+        "text": "sun-warmish",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "wet": [
+      {
+        "id": "damp",
+        "text": "damp",
+        "verbosity": 45,
+        "color": 45,
+        "formality": 48,
+        "kind": "standard"
+      },
+      {
+        "id": "very-wet",
+        "text": "very wet",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "wetful",
+        "text": "wetful",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "mess": [
+      {
+        "id": "muddle",
+        "text": "muddle",
+        "verbosity": 45,
+        "color": 45,
+        "formality": 48,
+        "kind": "standard"
+      },
+      {
+        "id": "big-mess",
+        "text": "big mess",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "mess-astrophe",
+        "text": "mess-astrophe",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "brave": [
+      {
+        "id": "bold",
+        "text": "bold",
+        "verbosity": 45,
+        "color": 45,
+        "formality": 48,
+        "kind": "standard"
+      },
+      {
+        "id": "courageful",
+        "text": "courageful",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "clever": [
+      {
+        "id": "brainy",
+        "text": "brainy",
+        "verbosity": 45,
+        "color": 45,
+        "formality": 48,
+        "kind": "standard"
+      },
+      {
+        "id": "thinky",
+        "text": "thinky",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "think-smart",
+        "text": "think-smart",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "surprised": [
+      {
+        "id": "startled",
+        "text": "startled",
+        "verbosity": 45,
+        "color": 45,
+        "formality": 48,
+        "kind": "standard"
+      },
+      {
+        "id": "very-surprised",
+        "text": "very surprised",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "surprisified",
+        "text": "surprisified",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "excited": [
+      {
+        "id": "eager",
+        "text": "eager",
+        "verbosity": 45,
+        "color": 45,
+        "formality": 48,
+        "kind": "standard"
+      },
+      {
+        "id": "wiggly-happy",
+        "text": "wiggly-happy",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "excitified",
+        "text": "excitified",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "confused": [
+      {
+        "id": "mixed-up",
+        "text": "mixed up",
+        "verbosity": 45,
+        "color": 45,
+        "formality": 48,
+        "kind": "standard"
+      },
+      {
+        "id": "all-muddled",
+        "text": "all muddled",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "brain-tangled",
+        "text": "brain-tangled",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      },
+      {
+        "id": "bumfuzzled",
+        "text": "bumfuzzled",
+        "verbosity": 45,
+        "color": 58,
+        "formality": 24,
+        "kind": "regional",
+        "dialect": "southeastern-us"
+      }
+    ],
+    "mysterious": [
+      {
+        "id": "puzzling",
+        "text": "puzzling",
+        "verbosity": 45,
+        "color": 45,
+        "formality": 48,
+        "kind": "standard"
+      },
+      {
+        "id": "hard-to-figure",
+        "text": "hard-to-figure",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "mystery-ish",
+        "text": "mystery-ish",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "broken": [
+      {
+        "id": "busted",
+        "text": "busted",
+        "verbosity": 45,
+        "color": 45,
+        "formality": 48,
+        "kind": "standard"
+      },
+      {
+        "id": "all-broken",
+        "text": "all broken",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "breaky",
+        "text": "breaky",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "forest": [
+      {
+        "id": "woods",
+        "text": "woods",
+        "verbosity": 45,
+        "color": 45,
+        "formality": 48,
+        "kind": "standard"
+      },
+      {
+        "id": "tree-place",
+        "text": "tree-place",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "leaf-country",
+        "text": "leaf-country",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "mountain": [
+      {
+        "id": "peak",
+        "text": "peak",
+        "verbosity": 45,
+        "color": 45,
+        "formality": 48,
+        "kind": "standard"
+      },
+      {
+        "id": "big-hill",
+        "text": "big hill",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "sky-hill",
+        "text": "sky-hill",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "river": [
+      {
+        "id": "long-water",
+        "text": "long water",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "wiggle-water",
+        "text": "wiggle-water",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "blizzard": [
+      {
+        "id": "big-snowstorm",
+        "text": "big snowstorm",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "snow-fury",
+        "text": "snow-fury",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "storm": [
+      {
+        "id": "tempest",
+        "text": "tempest",
+        "verbosity": 45,
+        "color": 45,
+        "formality": 48,
+        "kind": "standard"
+      },
+      {
+        "id": "big-bad-weather",
+        "text": "big bad weather",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "sky-tantrum",
+        "text": "sky-tantrum",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "rain": [
+      {
+        "id": "sky-water",
+        "text": "sky-water",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "cloud-crying",
+        "text": "cloud-crying",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "danger": [
+      {
+        "id": "peril",
+        "text": "peril",
+        "verbosity": 45,
+        "color": 45,
+        "formality": 48,
+        "kind": "standard"
+      },
+      {
+        "id": "big-trouble",
+        "text": "big trouble",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "hurt-situation",
+        "text": "hurt-situation",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "trouble": [
+      {
+        "id": "difficulty",
+        "text": "difficulty",
+        "verbosity": 45,
+        "color": 45,
+        "formality": 48,
+        "kind": "standard"
+      },
+      {
+        "id": "big-problem",
+        "text": "big problem",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "worry-muddle",
+        "text": "worry-muddle",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "animal": [
+      {
+        "id": "creature",
+        "text": "creature",
+        "verbosity": 45,
+        "color": 45,
+        "formality": 48,
+        "kind": "standard"
+      },
+      {
+        "id": "furry-thing",
+        "text": "furry thing",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "paw-beast",
+        "text": "paw-beast",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "animals": [
+      {
+        "id": "creatures",
+        "text": "creatures",
+        "verbosity": 45,
+        "color": 45,
+        "formality": 48,
+        "kind": "standard"
+      },
+      {
+        "id": "furry-things",
+        "text": "furry things",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "paw-beasts",
+        "text": "paw-beasts",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "friendship": [
+      {
+        "id": "companionship",
+        "text": "companionship",
+        "verbosity": 45,
+        "color": 45,
+        "formality": 48,
+        "kind": "standard"
+      },
+      {
+        "id": "being-pals",
+        "text": "being pals",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "friendful-ness",
+        "text": "friendful-ness",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "noisy": [
+      {
+        "id": "loud",
+        "text": "loud",
+        "verbosity": 45,
+        "color": 45,
+        "formality": 48,
+        "kind": "standard"
+      },
+      {
+        "id": "big-noisy",
+        "text": "big-noisy",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "ear-bothering",
+        "text": "ear-bothering",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "scary": [
+      {
+        "id": "frightening",
+        "text": "frightening",
+        "verbosity": 45,
+        "color": 45,
+        "formality": 48,
+        "kind": "standard"
+      },
+      {
+        "id": "very-scary",
+        "text": "very scary",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "frightfullish",
+        "text": "frightfullish",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "silly": [
+      {
+        "id": "foolish",
+        "text": "foolish",
+        "verbosity": 45,
+        "color": 45,
+        "formality": 48,
+        "kind": "standard"
+      },
+      {
+        "id": "goofy",
+        "text": "goofy",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "sillified",
+        "text": "sillified",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "delicious": [
+      {
+        "id": "tasty",
+        "text": "tasty",
+        "verbosity": 45,
+        "color": 45,
+        "formality": 48,
+        "kind": "standard"
+      },
+      {
+        "id": "very-tasty",
+        "text": "very tasty",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "yummificent",
+        "text": "yummificent",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "fast": [
+      {
+        "id": "quick",
+        "text": "quick",
+        "verbosity": 45,
+        "color": 45,
+        "formality": 48,
+        "kind": "standard"
+      },
+      {
+        "id": "very-quick",
+        "text": "very quick",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "speedful",
+        "text": "speedful",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "tiny": [
+      {
+        "id": "very-little",
+        "text": "very little",
+        "verbosity": 45,
+        "color": 45,
+        "formality": 48,
+        "kind": "standard"
+      },
+      {
+        "id": "little-little",
+        "text": "little-little",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "miniscule-ish",
+        "text": "miniscule-ish",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "thick fog": [
+      {
+        "id": "dense-fog",
+        "text": "dense fog",
+        "verbosity": 45,
+        "color": 45,
+        "formality": 48,
+        "kind": "standard"
+      },
+      {
+        "id": "big-cloud-mist",
+        "text": "big cloud-mist",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "can-t-see-mist",
+        "text": "can't-see mist",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "nice": [
+      {
+        "id": "pleasant",
+        "text": "pleasant",
+        "verbosity": 45,
+        "color": 45,
+        "formality": 48,
+        "kind": "standard"
+      },
+      {
+        "id": "real-nice",
+        "text": "real nice",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "niceful",
+        "text": "niceful",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "go way": [
+      {
+        "id": "skedaddle",
+        "text": "skedaddle",
+        "verbosity": 45,
+        "color": 80,
+        "formality": 22,
+        "kind": "old-slang",
+        "firstRecorded": 1861,
+        "source": "https://www.etymonline.com/word/skedaddle"
+      },
+      {
+        "id": "go-away",
+        "text": "go away",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "go-aways",
+        "text": "go-aways",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "leave or": [
+      {
+        "id": "skedaddle-or",
+        "text": "skedaddle or",
+        "verbosity": 45,
+        "color": 80,
+        "formality": 22,
+        "kind": "old-slang",
+        "firstRecorded": 1861,
+        "source": "https://www.etymonline.com/word/skedaddle"
+      },
+      {
+        "id": "go-now-or",
+        "text": "go now or",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "go-away-or",
+        "text": "go-away-or",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "leave.": [
+      {
+        "id": "skedaddle",
+        "text": "skedaddle.",
+        "verbosity": 45,
+        "color": 80,
+        "formality": 22,
+        "kind": "old-slang",
+        "firstRecorded": 1861,
+        "source": "https://www.etymonline.com/word/skedaddle"
+      },
+      {
+        "id": "go-away",
+        "text": "go away.",
+        "verbosity": 12,
+        "color": 45,
+        "formality": 12,
+        "kind": "simple"
+      },
+      {
+        "id": "be-gone-gone",
+        "text": "be gone-gone.",
+        "verbosity": 38,
+        "color": 88,
+        "formality": 15,
+        "kind": "near-miss"
+      }
+    ],
+    "isn't": [
+      {
+        "id": "ain-t",
+        "text": "ain't",
+        "verbosity": 40,
+        "color": 75,
+        "formality": 16,
+        "kind": "old-slang",
+        "dialect": "southeastern-us",
+        "firstRecorded": 1778,
+        "source": "https://www.ahdictionary.com/word/search.html?q=ain%27t"
+      },
+      {
+        "id": "bain-t",
+        "text": "bain't",
+        "verbosity": 45,
+        "color": 58,
+        "formality": 24,
+        "kind": "regional",
+        "dialect": "west-country"
+      }
+    ],
+    "aren't": [
+      {
+        "id": "ain-t",
+        "text": "ain't",
+        "verbosity": 40,
+        "color": 75,
+        "formality": 16,
+        "kind": "old-slang",
+        "dialect": "southeastern-us",
+        "firstRecorded": 1778,
+        "source": "https://www.ahdictionary.com/word/search.html?q=ain%27t"
+      },
+      {
+        "id": "bain-t",
+        "text": "bain't",
+        "verbosity": 45,
+        "color": 58,
+        "formality": 24,
+        "kind": "regional",
+        "dialect": "west-country"
+      }
+    ],
+    "am not": [
+      {
+        "id": "ain-t",
+        "text": "ain't",
+        "verbosity": 40,
+        "color": 75,
+        "formality": 16,
+        "kind": "old-slang",
+        "dialect": "southeastern-us",
+        "firstRecorded": 1778,
+        "source": "https://www.ahdictionary.com/word/search.html?q=ain%27t"
+      }
+    ],
+    "are not": [
+      {
+        "id": "ain-t",
+        "text": "ain't",
+        "verbosity": 40,
+        "color": 75,
+        "formality": 16,
+        "kind": "old-slang",
+        "dialect": "southeastern-us",
+        "firstRecorded": 1778,
+        "source": "https://www.ahdictionary.com/word/search.html?q=ain%27t"
+      }
+    ],
+    "is not": [
+      {
+        "id": "ain-t",
+        "text": "ain't",
+        "verbosity": 40,
+        "color": 75,
+        "formality": 16,
+        "kind": "old-slang",
+        "dialect": "southeastern-us",
+        "firstRecorded": 1778,
+        "source": "https://www.ahdictionary.com/word/search.html?q=ain%27t"
+      }
+    ],
+    "i'm not": [
+      {
+        "id": "i-ain-t",
+        "text": "I ain't",
+        "verbosity": 40,
+        "color": 75,
+        "formality": 16,
+        "kind": "old-slang",
+        "dialect": "southeastern-us",
+        "firstRecorded": 1778,
+        "source": "https://www.ahdictionary.com/word/search.html?q=ain%27t"
+      }
+    ],
+    "i am not": [
+      {
+        "id": "i-ain-t",
+        "text": "I ain't",
+        "verbosity": 40,
+        "color": 75,
+        "formality": 16,
+        "kind": "old-slang",
+        "dialect": "southeastern-us",
+        "firstRecorded": 1778,
+        "source": "https://www.ahdictionary.com/word/search.html?q=ain%27t"
+      }
+    ],
+    "you all": [
+      {
+        "id": "y-all",
+        "text": "y'all",
+        "verbosity": 40,
+        "color": 75,
+        "formality": 16,
+        "kind": "old-slang",
+        "dialect": "southeastern-us",
+        "firstRecorded": 1879,
+        "source": "https://www.etymonline.com/word/y%27all"
+      }
+    ],
+    "all of you": [
+      {
+        "id": "all-y-all",
+        "text": "all y'all",
+        "verbosity": 45,
+        "color": 58,
+        "formality": 24,
+        "kind": "regional",
+        "dialect": "southeastern-us"
+      }
+    ],
+    "hello": [
+      {
+        "id": "howdy",
+        "text": "howdy",
+        "verbosity": 45,
+        "color": 58,
+        "formality": 24,
+        "kind": "regional",
+        "dialect": "southeastern-us"
+      },
+      {
+        "id": "ahoy",
+        "text": "ahoy",
+        "verbosity": 40,
+        "color": 75,
+        "formality": 16,
+        "kind": "old-slang",
+        "dialect": "pirate",
+        "firstRecorded": 1751,
+        "source": "https://www.etymonline.com/word/ahoy",
+        "sourceVisit": "pahu_grapple_flail"
+      },
+      {
+        "id": "greetings",
+        "text": "greetings",
+        "verbosity": 60,
+        "color": 45,
+        "formality": 75
+      },
+      {
+        "id": "hullo",
+        "text": "hullo",
+        "verbosity": 30,
+        "color": 48,
+        "formality": 28
+      }
+    ],
+    "i think": [
+      {
+        "id": "i-reckon",
+        "text": "I reckon",
+        "verbosity": 45,
+        "color": 58,
+        "formality": 24,
+        "kind": "regional",
+        "dialect": "southeastern-us"
+      }
+    ],
+    "i suppose": [
+      {
+        "id": "i-reckon",
+        "text": "I reckon",
+        "verbosity": 45,
+        "color": 58,
+        "formality": 24,
+        "kind": "regional",
+        "dialect": "southeastern-us"
+      }
+    ],
+    "over there": [
+      {
+        "id": "over-yonder",
+        "text": "over yonder",
+        "verbosity": 45,
+        "color": 58,
+        "formality": 24,
+        "kind": "regional",
+        "dialect": "southeastern-us"
+      }
+    ],
+    "far away": [
+      {
+        "id": "way-yonder",
+        "text": "way yonder",
+        "verbosity": 45,
+        "color": 58,
+        "formality": 24,
+        "kind": "regional",
+        "dialect": "southeastern-us"
+      }
+    ],
+    "very": [
+      {
+        "id": "mighty",
+        "text": "mighty",
+        "verbosity": 45,
+        "color": 58,
+        "formality": 24,
+        "kind": "regional",
+        "dialect": "southeastern-us"
+      },
+      {
+        "id": "proper",
+        "text": "proper",
+        "verbosity": 45,
+        "color": 58,
+        "formality": 24,
+        "kind": "regional",
+        "dialect": "west-country"
+      }
+    ],
+    "really": [
+      {
+        "id": "right",
+        "text": "right",
+        "verbosity": 45,
+        "color": 58,
+        "formality": 24,
+        "kind": "regional",
+        "dialect": "southeastern-us"
+      }
+    ],
+    "children": [
+      {
+        "id": "young-uns",
+        "text": "young'uns",
+        "verbosity": 45,
+        "color": 58,
+        "formality": 24,
+        "kind": "regional",
+        "dialect": "southeastern-us"
+      }
+    ],
+    "child": [
+      {
+        "id": "young-un",
+        "text": "young'un",
+        "verbosity": 45,
+        "color": 58,
+        "formality": 24,
+        "kind": "regional",
+        "dialect": "southeastern-us"
+      }
+    ],
+    "carry": [
+      {
+        "id": "tote",
+        "text": "tote",
+        "verbosity": 40,
+        "color": 75,
+        "formality": 16,
+        "kind": "old-slang",
+        "dialect": "southeastern-us",
+        "firstRecorded": 1670,
+        "source": "https://www.etymonline.com/word/tote"
+      }
+    ],
+    "crooked": [
+      {
+        "id": "cattywampus",
+        "text": "cattywampus",
+        "verbosity": 45,
+        "color": 58,
+        "formality": 24,
+        "kind": "regional",
+        "dialect": "southeastern-us"
+      }
+    ],
+    "goodness": [
+      {
+        "id": "tarnation",
+        "text": "tarnation",
+        "verbosity": 40,
+        "color": 75,
+        "formality": 16,
+        "kind": "old-slang",
+        "dialect": "southeastern-us",
+        "firstRecorded": 1784,
+        "source": "https://www.etymonline.com/word/tarnation"
+      }
+    ],
+    "before long": [
+      {
+        "id": "directly",
+        "text": "directly",
+        "verbosity": 45,
+        "color": 58,
+        "formality": 24,
+        "kind": "regional",
+        "dialect": "southeastern-us"
+      }
+    ],
+    "it's not": [
+      {
+        "id": "it-ain-t",
+        "text": "it ain't",
+        "verbosity": 40,
+        "color": 75,
+        "formality": 16,
+        "kind": "old-slang",
+        "dialect": "southeastern-us",
+        "firstRecorded": 1778,
+        "source": "https://www.ahdictionary.com/word/search.html?q=ain%27t"
+      }
+    ],
+    "fellow": [
+      {
+        "id": "matey",
+        "text": "matey",
+        "verbosity": 45,
+        "color": 58,
+        "formality": 24,
+        "kind": "regional",
+        "dialect": "pirate"
+      }
+    ],
+    "yes": [
+      {
+        "id": "aye",
+        "text": "aye",
+        "verbosity": 40,
+        "color": 75,
+        "formality": 16,
+        "kind": "old-slang",
+        "dialect": "pirate",
+        "firstRecorded": 1570,
+        "source": "https://www.etymonline.com/word/aye"
+      }
+    ],
+    "stop!": [
+      {
+        "id": "avast",
+        "text": "avast!",
+        "verbosity": 40,
+        "color": 75,
+        "formality": 16,
+        "kind": "old-slang",
+        "dialect": "pirate",
+        "firstRecorded": 1680,
+        "source": "https://www.etymonline.com/word/avast"
+      }
+    ],
+    "big": [
+      {
+        "id": "gurt",
+        "text": "gurt",
+        "verbosity": 45,
+        "color": 58,
+        "formality": 24,
+        "kind": "regional",
+        "dialect": "west-country"
+      }
+    ],
+    "soon": [
+      {
+        "id": "dreckly",
+        "text": "dreckly",
+        "verbosity": 45,
+        "color": 58,
+        "formality": 24,
+        "kind": "regional",
+        "dialect": "west-country"
+      }
+    ],
+    "listen": [
+      {
+        "id": "hearken",
+        "text": "hearken",
+        "verbosity": 45,
+        "color": 58,
+        "formality": 24,
+        "kind": "regional",
+        "dialect": "west-country"
+      }
+    ],
+    "look at": [
+      {
+        "id": "hark-at",
+        "text": "hark at",
+        "verbosity": 45,
+        "color": 58,
+        "formality": 24,
+        "kind": "regional",
+        "dialect": "west-country"
+      }
+    ],
+    "ship": [
+      {
+        "id": "vessel",
+        "text": "vessel",
+        "verbosity": 45,
+        "color": 58,
+        "formality": 24,
+        "kind": "regional",
+        "dialect": "pirate"
+      }
+    ],
+    "boat": [
+      {
+        "id": "craft",
+        "text": "craft",
+        "verbosity": 45,
+        "color": 58,
+        "formality": 24,
+        "kind": "regional",
+        "dialect": "pirate"
+      }
+    ],
+    "pirate": [
+      {
+        "id": "buccaneer",
+        "text": "buccaneer",
+        "verbosity": 40,
+        "color": 75,
+        "formality": 16,
+        "kind": "old-slang",
+        "dialect": "pirate",
+        "firstRecorded": 1680,
+        "source": "https://www.etymonline.com/word/buccaneer",
+        "sourceVisit": "pahu_grapple_flail"
+      }
+    ],
+    "trustworthy": [
+      {
+        "id": "trusty",
+        "text": "trusty",
+        "verbosity": 45,
+        "color": 58,
+        "formality": 24,
+        "kind": "regional",
+        "dialect": "pirate",
+        "sourceVisit": "pahu_grapple_flail"
+      }
+    ],
+    "people": [
+      {
+        "id": "folk",
+        "text": "folk",
+        "verbosity": 45,
+        "color": 58,
+        "formality": 24,
+        "kind": "standard",
+        "sourceVisit": "kzubug_plainssword"
+      }
+    ],
+    "hit": [
+      {
+        "id": "clobber",
+        "text": "clobber",
+        "verbosity": 45,
+        "color": 58,
+        "formality": 24,
+        "kind": "standard",
+        "sourceVisit": "hreesh_kylie"
+      }
+    ],
+    "beaten": [
+      {
+        "id": "clobbered",
+        "text": "clobbered",
+        "verbosity": 45,
+        "color": 58,
+        "formality": 24,
+        "kind": "standard",
+        "sourceVisit": "hreesh_kylie"
+      }
+    ],
+    "reliable": [
+      {
+        "id": "dependable",
+        "text": "dependable",
+        "verbosity": 45,
+        "color": 58,
+        "formality": 24,
+        "kind": "standard",
+        "sourceVisit": "hreesh_kylie"
+      }
+    ],
+    "unwieldy": [
+      {
+        "id": "awkward-to-wield",
+        "text": "awkward to wield",
+        "verbosity": 45,
+        "color": 58,
+        "formality": 24,
+        "kind": "standard",
+        "sourceVisit": "kzubug_plainssword"
+      }
+    ],
+    "ingenious": [
+      {
+        "id": "clever",
+        "text": "clever",
+        "verbosity": 45,
+        "color": 58,
+        "formality": 24,
+        "kind": "standard",
+        "sourceVisit": "jubmir_bshuakauitl"
+      }
+    ],
+    "prosperous": [
+      {
+        "id": "well-off",
+        "text": "well-off",
+        "verbosity": 45,
+        "color": 58,
+        "formality": 24,
+        "kind": "standard",
+        "sourceVisit": "jubmir_bshuakauitl"
+      }
+    ],
+    "a little bit": [
+      {
+        "id": "a-mite",
+        "text": "a mite",
+        "verbosity": 30,
+        "color": 55,
+        "formality": 22,
+        "kind": "regional",
+        "dialect": "southeastern-us"
+      }
+    ],
+    "weapon": [
+      {
+        "id": "arm",
+        "text": "arm",
+        "verbosity": 42,
+        "color": 44,
+        "formality": 45,
+        "kind": "regional",
+        "dialect": "pirate",
+        "sourceVisit": "pahu_grapple_flail"
+      }
+    ],
+    "hey": [
+      {
+        "id": "hiya",
+        "text": "hiya",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      },
+      {
+        "id": "hello",
+        "text": "hello",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "hi": [
+      {
+        "id": "hiya",
+        "text": "hiya",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      },
+      {
+        "id": "hello",
+        "text": "hello",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "there you are": [
+      {
+        "id": "look-who-s-here",
+        "text": "look who's here",
+        "verbosity": 40,
+        "color": 48,
+        "formality": 42
+      },
+      {
+        "id": "ah-there-you-are",
+        "text": "ah, there you are",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "well now": [
+      {
+        "id": "well-well",
+        "text": "well, well",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "your harvest": [
+      {
+        "id": "your-crop",
+        "text": "your crop",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "reckon": [
+      {
+        "id": "figure",
+        "text": "figure",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "betcha": [
+      {
+        "id": "bet-you",
+        "text": "bet you",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "wanna": [
+      {
+        "id": "want-to",
+        "text": "want to",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "shhh": [
+      {
+        "id": "hush",
+        "text": "hush",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "catch me if you can": [
+      {
+        "id": "try-and-catch-me",
+        "text": "try and catch me",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "rival": [
+      {
+        "id": "challenger",
+        "text": "challenger",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "competition": [
+      {
+        "id": "rival",
+        "text": "rival",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "farmwork": [
+      {
+        "id": "farm-chores",
+        "text": "farm chores",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "beast": [
+      {
+        "id": "creature",
+        "text": "creature",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "looking good": [
+      {
+        "id": "looking-sharp",
+        "text": "looking sharp",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      },
+      {
+        "id": "looking-fine",
+        "text": "looking fine",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "well-trained": [
+      {
+        "id": "properly-trained",
+        "text": "properly trained",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "well-mannered": [
+      {
+        "id": "well-behaved",
+        "text": "well-behaved",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "well behaved": [
+      {
+        "id": "well-trained",
+        "text": "well trained",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "settled": [
+      {
+        "id": "content",
+        "text": "content",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      },
+      {
+        "id": "at-home",
+        "text": "at home",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "comfortable": [
+      {
+        "id": "at-ease",
+        "text": "at ease",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "listens well": [
+      {
+        "id": "pays-attention",
+        "text": "pays attention",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "listens to you": [
+      {
+        "id": "heeds-you",
+        "text": "heeds you",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "friendly": [
+      {
+        "id": "sociable",
+        "text": "sociable",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "nearly": [
+      {
+        "id": "almost",
+        "text": "almost",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "a little room": [
+      {
+        "id": "a-bit-of-space",
+        "text": "a bit of space",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "looks happy": [
+      {
+        "id": "seems-happy",
+        "text": "seems happy",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "looks settled": [
+      {
+        "id": "seems-settled",
+        "text": "seems settled",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "getting the hang of this": [
+      {
+        "id": "learning-the-ropes",
+        "text": "learning the ropes",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "best seat": [
+      {
+        "id": "finest-seat",
+        "text": "finest seat",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "passenger": [
+      {
+        "id": "rider",
+        "text": "rider",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "good control": [
+      {
+        "id": "nicely-handled",
+        "text": "nicely handled",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "getting used to": [
+      {
+        "id": "growing-accustomed-to",
+        "text": "growing accustomed to",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "ride along": [
+      {
+        "id": "tag-along",
+        "text": "tag along",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "bigger": [
+      {
+        "id": "larger",
+        "text": "larger",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "calmer": [
+      {
+        "id": "more-relaxed",
+        "text": "more relaxed",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "i didn't notice": [
+      {
+        "id": "i-overlooked",
+        "text": "I overlooked",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "still up there": [
+      {
+        "id": "still-perched-there",
+        "text": "still perched there",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "mind that": [
+      {
+        "id": "watch-that",
+        "text": "watch that",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "does he bite": [
+      {
+        "id": "is-he-a-biter",
+        "text": "is he a biter",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "chubby": [
+      {
+        "id": "plump",
+        "text": "plump",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "follows your lead": [
+      {
+        "id": "takes-its-cue-from-you",
+        "text": "takes its cue from you",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "seems": [
+      {
+        "id": "appears",
+        "text": "appears",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "have a passenger": [
+      {
+        "id": "have-someone-riding-along",
+        "text": "have someone riding along",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "keep it that way": [
+      {
+        "id": "don-t-let-that-change",
+        "text": "don't let that change",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "i reckon": [
+      {
+        "id": "i-figure",
+        "text": "I figure",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "outgrow": [
+      {
+        "id": "outdo",
+        "text": "outdo",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "you look well": [
+      {
+        "id": "you-seem-well",
+        "text": "you seem well",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "a little noise": [
+      {
+        "id": "some-racket",
+        "text": "some racket",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "your farm": [
+      {
+        "id": "your-homestead",
+        "text": "your homestead",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "still riding": [
+      {
+        "id": "still-perched",
+        "text": "still perched",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "close by": [
+      {
+        "id": "nearby",
+        "text": "nearby",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "more at ease": [
+      {
+        "id": "more-comfortable",
+        "text": "more comfortable",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "i nearly missed": [
+      {
+        "id": "i-almost-overlooked",
+        "text": "I almost overlooked",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "what's that": [
+      {
+        "id": "what-is-that",
+        "text": "what is that",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "what a beast": [
+      {
+        "id": "what-a-creature",
+        "text": "what a creature",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "comfortable together": [
+      {
+        "id": "at-ease-together",
+        "text": "at ease together",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "look comfortable": [
+      {
+        "id": "seem-comfortable",
+        "text": "seem comfortable",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "howdy": [
+      {
+        "id": "hey",
+        "text": "hey",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30,
+        "kind": "regional",
+        "dialect": "southeastern-us"
+      },
+      {
+        "id": "hello-there",
+        "text": "hello there",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30,
+        "kind": "regional",
+        "dialect": "southeastern-us"
+      }
+    ],
+    "howdy-hey": [
+      {
+        "id": "hey-howdy",
+        "text": "hey-howdy",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30,
+        "kind": "regional",
+        "dialect": "southeastern-us"
+      },
+      {
+        "id": "hey-there",
+        "text": "hey there",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30,
+        "kind": "regional",
+        "dialect": "southeastern-us"
+      }
+    ],
+    "howdy there": [
+      {
+        "id": "well-howdy",
+        "text": "well, howdy",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30,
+        "kind": "regional",
+        "dialect": "southeastern-us"
+      },
+      {
+        "id": "hey-there",
+        "text": "hey there",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30,
+        "kind": "regional",
+        "dialect": "southeastern-us"
+      }
+    ],
+    "ahoy": [
+      {
+        "id": "hallo",
+        "text": "hallo",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30,
+        "kind": "regional",
+        "dialect": "pirate"
+      }
+    ],
+    "kitty": [
+      {
+        "id": "kit-cat",
+        "text": "kit-cat",
+        "verbosity": 12,
+        "color": 70,
+        "formality": 9,
+        "kind": "simple"
+      }
+    ],
+    "doggy": [
+      {
+        "id": "doggie",
+        "text": "doggie",
+        "verbosity": 12,
+        "color": 70,
+        "formality": 9,
+        "kind": "simple"
+      }
+    ],
+    "baby": [
+      {
+        "id": "little-one",
+        "text": "little one",
+        "verbosity": 12,
+        "color": 70,
+        "formality": 9,
+        "kind": "simple"
+      }
+    ],
+    "psst": [
+      {
+        "id": "pssst",
+        "text": "pssst",
+        "verbosity": 12,
+        "color": 70,
+        "formality": 9,
+        "kind": "simple"
+      }
+    ],
+    "chubby baby": [
+      {
+        "id": "round-little-one",
+        "text": "round little one",
+        "verbosity": 12,
+        "color": 70,
+        "formality": 9,
+        "kind": "simple"
+      }
+    ],
+    "good day": [
+      {
+        "id": "lovely-day",
+        "text": "lovely day",
+        "verbosity": 40,
+        "color": 48,
+        "formality": 42
+      },
+      {
+        "id": "pleasant-day",
+        "text": "pleasant day",
+        "verbosity": 40,
+        "color": 48,
+        "formality": 42
+      }
+    ],
+    "good morning": [
+      {
+        "id": "lovely-morning",
+        "text": "lovely morning",
+        "verbosity": 40,
+        "color": 48,
+        "formality": 42
+      },
+      {
+        "id": "pleasant-morning",
+        "text": "pleasant morning",
+        "verbosity": 40,
+        "color": 48,
+        "formality": 42
+      }
+    ],
+    "good afternoon": [
+      {
+        "id": "lovely-afternoon",
+        "text": "lovely afternoon",
+        "verbosity": 40,
+        "color": 48,
+        "formality": 42
+      },
+      {
+        "id": "pleasant-afternoon",
+        "text": "pleasant afternoon",
+        "verbosity": 40,
+        "color": 48,
+        "formality": 42
+      }
+    ],
+    "good evening": [
+      {
+        "id": "lovely-evening",
+        "text": "lovely evening",
+        "verbosity": 40,
+        "color": 48,
+        "formality": 42
+      },
+      {
+        "id": "pleasant-evening",
+        "text": "pleasant evening",
+        "verbosity": 40,
+        "color": 48,
+        "formality": 42
+      }
+    ],
+    "good night": [
+      {
+        "id": "pleasant-night",
+        "text": "pleasant night",
+        "verbosity": 40,
+        "color": 48,
+        "formality": 42
+      },
+      {
+        "id": "lovely-night",
+        "text": "lovely night",
+        "verbosity": 40,
+        "color": 48,
+        "formality": 42
+      }
+    ],
+    "hello again": [
+      {
+        "id": "hi-again",
+        "text": "hi again",
+        "verbosity": 40,
+        "color": 48,
+        "formality": 42
+      },
+      {
+        "id": "greetings-again",
+        "text": "greetings again",
+        "verbosity": 40,
+        "color": 48,
+        "formality": 42
+      }
+    ],
+    "little baby": [
+      {
+        "id": "tiny-baby",
+        "text": "tiny baby",
+        "verbosity": 40,
+        "color": 48,
+        "formality": 42
+      },
+      {
+        "id": "little-one",
+        "text": "little one",
+        "verbosity": 40,
+        "color": 48,
+        "formality": 42
+      }
+    ],
+    "that harvest": [
+      {
+        "id": "that-crop",
+        "text": "that crop",
+        "verbosity": 40,
+        "color": 48,
+        "formality": 42
+      }
+    ],
+    "good spot": [
+      {
+        "id": "fine-spot",
+        "text": "fine spot",
+        "verbosity": 40,
+        "color": 48,
+        "formality": 42
+      },
+      {
+        "id": "nice-spot",
+        "text": "nice spot",
+        "verbosity": 40,
+        "color": 48,
+        "formality": 42
+      }
+    ],
+    "how long has": [
+      {
+        "id": "how-long-s",
+        "text": "how long's",
+        "verbosity": 34,
+        "color": 55,
+        "formality": 25
+      }
+    ],
+    "hey-hey": [
+      {
+        "id": "hey-there",
+        "text": "hey there",
+        "verbosity": 34,
+        "color": 55,
+        "formality": 25
+      },
+      {
+        "id": "heya",
+        "text": "heya",
+        "verbosity": 34,
+        "color": 55,
+        "formality": 25
+      }
+    ],
+    "that tiny": [
+      {
+        "id": "so-small",
+        "text": "so small",
+        "verbosity": 34,
+        "color": 55,
+        "formality": 25
+      },
+      {
+        "id": "so-tiny",
+        "text": "so tiny",
+        "verbosity": 34,
+        "color": 55,
+        "formality": 25
+      }
+    ],
+    "that big": [
+      {
+        "id": "so-big",
+        "text": "so big",
+        "verbosity": 34,
+        "color": 55,
+        "formality": 25
+      }
+    ],
+    "bigger than most": [
+      {
+        "id": "larger-than-most",
+        "text": "larger than most",
+        "verbosity": 34,
+        "color": 55,
+        "formality": 25
+      }
+    ]
+  },
+  "families": {
+    "neighborly": {
+      "sliders": {
+        "verbosity": 45,
+        "color": 45,
+        "formality": 45,
+        "breadth": 65,
+        "variety": 50,
+        "frequency": 35,
+        "oldSlang": 0,
+        "simplicity": 0,
+        "nearMiss": 0
+      }
+    },
+    "playful": {
+      "sliders": {
+        "verbosity": 65,
+        "color": 90,
+        "formality": 20,
+        "breadth": 80,
+        "variety": 85,
+        "frequency": 65,
+        "oldSlang": 0,
+        "simplicity": 0,
+        "nearMiss": 0
+      }
+    },
+    "reserved": {
+      "sliders": {
+        "verbosity": 15,
+        "color": 25,
+        "formality": 45,
+        "breadth": 30,
+        "variety": 20,
+        "frequency": 30,
+        "oldSlang": 0,
+        "simplicity": 0,
+        "nearMiss": 0
+      }
+    },
+    "proper": {
+      "sliders": {
+        "verbosity": 75,
+        "color": 35,
+        "formality": 92,
+        "breadth": 85,
+        "variety": 45,
+        "frequency": 60,
+        "oldSlang": 0,
+        "simplicity": 0,
+        "nearMiss": 0
+      }
+    },
+    "stern": {
+      "sliders": {
+        "verbosity": 20,
+        "color": 15,
+        "formality": 65,
+        "breadth": 40,
+        "variety": 20,
+        "frequency": 40,
+        "oldSlang": 0,
+        "simplicity": 0,
+        "nearMiss": 0
+      }
+    },
+    "child": {
+      "sliders": {
+        "verbosity": 20,
+        "color": 75,
+        "formality": 15,
+        "breadth": 50,
+        "variety": 85,
+        "frequency": 45,
+        "oldSlang": 8,
+        "simplicity": 94,
+        "nearMiss": 82
+      }
+    },
+    "porakaneki": {
+      "sliders": {
+        "verbosity": 25,
+        "color": 80,
+        "formality": 12,
+        "breadth": 70,
+        "variety": 70,
+        "frequency": 75,
+        "oldSlang": 95,
+        "simplicity": 76,
+        "nearMiss": 65
+      }
+    }
+  },
+  "characters": {
+    "pahu": {
+      "sliders": {
+        "verbosity": 34,
+        "color": 75,
+        "formality": 12,
+        "breadth": 76,
+        "variety": 60,
+        "frequency": 60,
+        "oldSlang": 84,
+        "simplicity": 0,
+        "nearMiss": 0
+      },
+      "selections": {
+        "look at": [],
+        "listen": [],
+        "big": [],
+        "nice": [],
+        "isn't": [],
+        "aren't": [],
+        "friends": [
+          "chums",
+          "hearties"
+        ],
+        "perhaps": [
+          "maybe"
+        ],
+        "certainly": [
+          "sure"
+        ]
+      }
+    },
+    "gorobi_ginju": {
+      "sliders": {
+        "verbosity": 40,
+        "color": 67,
+        "formality": 20,
+        "breadth": 78,
+        "variety": 56,
+        "frequency": 63,
+        "oldSlang": 78,
+        "simplicity": 0,
+        "nearMiss": 0
+      },
+      "selections": {
+        "certainly": [
+          "sure"
+        ],
+        "friend": [
+          "pal",
+          "chum"
+        ],
+        "good to see you": [
+          "mighty-nice-to-see-you",
+          "nice-to-see-you"
+        ],
+        "howdy there": [
+          "well-howdy",
+          "hey-there"
+        ],
+        "how long has": [
+          "how-long-s"
+        ]
+      }
+    },
+    "gikali_ginju": {
+      "sliders": {
+        "verbosity": 30,
+        "color": 22,
+        "formality": 48,
+        "breadth": 50,
+        "variety": 24,
+        "frequency": 33,
+        "oldSlang": 44,
+        "simplicity": 0,
+        "nearMiss": 0
+      },
+      "selections": {
+        "excellent": [],
+        "amazing": [],
+        "good to see you": [
+          "nice-to-see-you"
+        ],
+        "certainly": [
+          "sure"
+        ],
+        "very": [],
+        "friend": [],
+        "your farm": [
+          "your-homestead"
+        ]
+      }
+    },
+    "aliri_ginju": {
+      "sliders": {
+        "verbosity": 45,
+        "color": 62,
+        "formality": 18,
+        "breadth": 78,
+        "variety": 58,
+        "frequency": 56,
+        "oldSlang": 68,
+        "simplicity": 0,
+        "nearMiss": 0
+      },
+      "selections": {
+        "friend": [
+          "pal"
+        ],
+        "certainly": [
+          "sure"
+        ],
+        "nice": [],
+        "good to see you": [
+          "nice-to-see-you",
+          "mighty-nice-to-see-you"
+        ],
+        "very": [],
+        "howdy-hey": [
+          "hey-howdy",
+          "hey-there"
+        ]
+      }
+    },
+    "gantami_ginju": {
+      "sliders": {
+        "verbosity": 14,
+        "color": 82,
+        "formality": 7,
+        "breadth": 68,
+        "variety": 78,
+        "frequency": 63,
+        "oldSlang": 32,
+        "simplicity": 98,
+        "nearMiss": 88
+      },
+      "selections": {
+        "friend": [
+          "pal-friend"
+        ],
+        "friends": [
+          "pal-friends"
+        ],
+        "good to see you": [],
+        "interesting": [
+          "really-curious",
+          "interestifying"
+        ],
+        "certainly": [
+          "sure"
+        ],
+        "very": [],
+        "hi": [
+          "hiya"
+        ],
+        "betcha": [
+          "bet-you"
+        ]
+      }
+    },
+    "leaf": {
+      "sliders": {
+        "verbosity": 15,
+        "color": 8,
+        "formality": 47,
+        "breadth": 27,
+        "variety": 12,
+        "frequency": 15,
+        "oldSlang": 0,
+        "simplicity": 0,
+        "nearMiss": 0
+      },
+      "selections": {
+        "quiet": [],
+        "wonderful": [],
+        "amazing": [],
+        "good to see you": [],
+        "hey": []
+      }
+    },
+    "hreesh": {
+      "sliders": {
+        "verbosity": 22,
+        "color": 20,
+        "formality": 38,
+        "breadth": 47,
+        "variety": 30,
+        "frequency": 34,
+        "oldSlang": 0,
+        "simplicity": 0,
+        "nearMiss": 0
+      },
+      "selections": {
+        "quiet": [],
+        "certainly": [
+          "sure"
+        ],
+        "hit": [
+          "clobber"
+        ],
+        "beaten": [
+          "clobbered"
+        ],
+        "beautiful": [],
+        "good to see you": []
+      }
+    },
+    "kzubug": {
+      "sliders": {
+        "verbosity": 45,
+        "color": 26,
+        "formality": 66,
+        "breadth": 66,
+        "variety": 29,
+        "frequency": 36,
+        "oldSlang": 0,
+        "simplicity": 0,
+        "nearMiss": 0
+      },
+      "selections": {
+        "certainly": [
+          "absolutely"
+        ],
+        "important": [
+          "significant"
+        ],
+        "good to see you": [],
+        "friend": []
+      }
+    },
+    "jubmir": {
+      "sliders": {
+        "verbosity": 49,
+        "color": 46,
+        "formality": 45,
+        "breadth": 62,
+        "variety": 40,
+        "frequency": 44,
+        "oldSlang": 0,
+        "simplicity": 0,
+        "nearMiss": 0
+      },
+      "selections": {
+        "quiet": [],
+        "wonderful": [
+          "marvelous",
+          "splendid"
+        ],
+        "friend": [],
+        "good to see you": [
+          "nice-to-see-you",
+          "a pleasure to see you"
+        ],
+        "good day": [
+          "lovely-day"
+        ],
+        "good morning": [
+          "lovely-morning"
+        ],
+        "good afternoon": [
+          "lovely-afternoon"
+        ],
+        "good evening": [
+          "lovely-evening"
+        ],
+        "good night": [
+          "lovely-night"
+        ]
+      }
+    }
+  },
+  "speakerGroups": {
+    "ginju": {
+      "label": "Ginju · Southeastern US",
+      "idSuffix": "_ginju",
+      "speakerIds": [
+        "gorobi_ginju",
+        "gikali_ginju",
+        "aliri_ginju",
+        "gantami_ginju"
+      ],
+      "dialects": [
+        "southeastern-us"
+      ],
+      "sliders": {
+        "oldSlang": 85,
+        "frequency": 68
+      },
+      "selections": {
+        "isn't": [
+          "ain-t"
+        ],
+        "aren't": [
+          "ain-t"
+        ],
+        "i'm not": [
+          "i-ain-t"
+        ],
+        "am not": [
+          "ain-t"
+        ],
+        "is not": [
+          "ain-t"
+        ],
+        "you all": [
+          "y-all"
+        ]
+      },
+      "doorstepReference": "Weapon-trust doorstep visits currently contain no authored Ginju-specific visit"
+    },
+    "pahu": {
+      "label": "Pahu · West Country pirate",
+      "speakerIds": [
+        "pahu"
+      ],
+      "dialects": [
+        "west-country",
+        "pirate"
+      ],
+      "sliders": {
+        "oldSlang": 90,
+        "color": 85,
+        "frequency": 72
+      },
+      "selections": {
+        "hello": [
+          "ahoy"
+        ],
+        "friend": [
+          "matey"
+        ],
+        "stop!": [
+          "avast"
+        ],
+        "ahoy": [
+          "hallo"
+        ]
+      },
+      "phoneticPreset": "pahu_grapple_flail",
+      "doorstepReference": "config/weapon-trust-visits.js#pahu_grapple_flail"
+    }
+  },
+  "phoneticPresets": {
+    "pahu_grapple_flail": {
+      "source": "config/weapon-trust-visits.js#pahu_grapple_flail",
+      "description": "Only Pahu's authored grappling-flail doorway accent; deterministic wording rather than an indiscriminate generic pirate filter.",
+      "rules": [
+        {
+          "from": "i am",
+          "to": "oym"
+        },
+        {
+          "from": "i'm",
+          "to": "oym"
+        },
+        {
+          "from": "i’ve",
+          "to": "oy've"
+        },
+        {
+          "from": "i've",
+          "to": "oy've"
+        },
+        {
+          "from": "i'll",
+          "to": "oy'll"
+        },
+        {
+          "from": "i'd",
+          "to": "oy'd"
+        },
+        {
+          "from": "i",
+          "to": "oy"
+        },
+        {
+          "from": "my",
+          "to": "moy"
+        },
+        {
+          "from": "you've",
+          "to": "ye've"
+        },
+        {
+          "from": "you're",
+          "to": "yer"
+        },
+        {
+          "from": "you'll",
+          "to": "ye'll"
+        },
+        {
+          "from": "you",
+          "to": "ye"
+        },
+        {
+          "from": "your",
+          "to": "yerr"
+        },
+        {
+          "from": "like",
+          "to": "loike"
+        },
+        {
+          "from": "life",
+          "to": "loife"
+        },
+        {
+          "from": "time",
+          "to": "toime"
+        },
+        {
+          "from": "times",
+          "to": "toimes"
+        },
+        {
+          "from": "mind",
+          "to": "moind"
+        },
+        {
+          "from": "might",
+          "to": "moight"
+        },
+        {
+          "from": "find",
+          "to": "foind"
+        },
+        {
+          "from": "behind",
+          "to": "behoind"
+        },
+        {
+          "from": "remind",
+          "to": "remoind"
+        },
+        {
+          "from": "reminds",
+          "to": "remoinds"
+        },
+        {
+          "from": "fight",
+          "to": "foight"
+        },
+        {
+          "from": "fighting",
+          "to": "foightin'"
+        },
+        {
+          "from": "right",
+          "to": "royght"
+        },
+        {
+          "from": "high",
+          "to": "hoygh"
+        },
+        {
+          "from": "quite",
+          "to": "quoite"
+        },
+        {
+          "from": "by",
+          "to": "boy"
+        },
+        {
+          "from": "are",
+          "to": "arr"
+        },
+        {
+          "from": "for",
+          "to": "forr"
+        },
+        {
+          "from": "years",
+          "to": "yearrs"
+        },
+        {
+          "from": "year",
+          "to": "yearr"
+        },
+        {
+          "from": "something",
+          "to": "somethin'"
+        },
+        {
+          "from": "getting",
+          "to": "gettin'"
+        },
+        {
+          "from": "doing",
+          "to": "doin'"
+        },
+        {
+          "from": "living",
+          "to": "livin'"
+        },
+        {
+          "from": "giving",
+          "to": "givin'"
+        },
+        {
+          "from": "going",
+          "to": "goin'"
+        },
+        {
+          "from": "keeping",
+          "to": "keepin'"
+        },
+        {
+          "from": "wearing",
+          "to": "wearin'"
+        },
+        {
+          "from": "looking",
+          "to": "lookin'"
+        },
+        {
+          "from": "talking",
+          "to": "talkin'"
+        },
+        {
+          "from": "isn't",
+          "to": "ain't"
+        },
+        {
+          "from": "aren't",
+          "to": "ain't"
+        }
+      ]
+    }
+  }
+}

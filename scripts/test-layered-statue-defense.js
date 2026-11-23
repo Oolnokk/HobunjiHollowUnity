@@ -65,7 +65,7 @@ function harness(id,overrides={}){
   };
   const statue={
     registerDispenser(mapId,name,group,puzzleConfig,options){
-      dispensers.push({name,feedPlinthId:options.feedPlinthId});
+      dispensers.push({name,feedPlinthId:options.feedPlinthId,statueVisual:options.statueVisual});
       return true;
     },
   };
@@ -102,6 +102,8 @@ async function flush(){
   assert(one.nodes.has(rec.dispenserId),'physical Key Statue dispenser registered under unique chamber instance ID');
   assert(one.dispensers.some(d=>d.feedPlinthId===rec.plinthId),
     'every dispenser feeds the exact defended plinth so statue loss cannot softlock the dungeon');
+  assert(one.dispensers.every(d=>d.statueVisual==='harlyaoGhostArmy'),
+    'the skeleton fight, not unrelated statue dispensers, opts into the carved Ghost Army soldier');
   assert.equal(one.nodes.get(rec.plinthId).userData.__puzzleOverride.motion.durationSeconds,Defense.PRESS_SECONDS,
     'authored plinth and combat waves use the exact same 30-second objective clock');
   assert.equal(one.encounters.length,1,'one real combat encounter per defence chamber');

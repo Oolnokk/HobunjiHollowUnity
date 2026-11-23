@@ -203,7 +203,7 @@
       return { handled: true, moving: !!entity._enemyDodge, aimAngle: entity.facing || 0 };
     }
 
-    if (entity._enemyDodgeCooldownT > 0 || entity.prone || entity._banditAction || entity._banditLunging || entity._rangedAction || entity.retreatT > 0) return null;
+    if (entity._enemyDodgeCooldownT > 0 || entity.prone || entity._banditAction || entity._banditPreparedCharge || entity._banditLunging || entity._rangedAction || entity.retreatT > 0) return null;
     const threat = window.Combat?.currentPlayerMeleeThreat?.(); // Shared player windup metadata; absent outside a real authored melee attack.
     if (!threat || threat.id === entity._enemyDodgeLastThreatId) return null;
     const status = threatStatus(entity, threat); // Range+cone gate prevents off-axis or distant enemies reacting psychically.
@@ -228,10 +228,10 @@
     return clamp01(tuning.chanceByRank[entity?.banditRank] ?? tuning.chanceByRank.grunt);
   }
   function stageDodge(entity, attacker, timeToImpactS) {
-    if (!entity || !attacker || !deps || entity.health <= 0) return false;
+    if (!entity || !attacker || !deps || entity.health <= 0 || entity.tzatzulCapturedBy) return false; // Staged NPC duels cannot queue a fresh airborne escape roll.
     if (entity.state !== 'chase') return false; // A pending reaction only advances inside the chase AI; outside it, it would fire late.
     if (entity._enemyDodge || entity._enemyDodgePending || (Number(entity._enemyDodgeCooldownT) || 0) > 0) return false;
-    if (entity.prone || entity._banditAction || entity._banditLunging || entity._rangedAction || entity.retreatT > 0) return false;
+    if (entity.prone || entity._banditAction || entity._banditPreparedCharge || entity._banditLunging || entity._rangedAction || entity.retreatT > 0) return false;
     // Negative ids never collide with player threat ids and still vary the dodge side.
     const threat = { id: -(++stagedThreatSerial), attacker, source: 'npc-duel', timeToImpactS: Math.max(0, Number(timeToImpactS) || 0) };
     const delayS = Math.min(tuning.reactionDelayS, threat.timeToImpactS * 0.45);
@@ -251,6 +251,7 @@
   };
 
   window.BanditCombat.updateCombatAI = function enemyDodgeBanditCombatAI(entity, dt, targetPlayer, ...rest) {
+    if (entity?.tzatzulCapturedBy) return { aimAngle: entity.facing || 0, moving: false }; // Skip reaction rolls and active dodge movement while carried.
     if (!entity?.outfitArmorStats) profileOutfit(entity);
     const dodgeResult = maybeReact(entity, dt, targetPlayer);
     if (dodgeResult?.handled) return dodgeResult;

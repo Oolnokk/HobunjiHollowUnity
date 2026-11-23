@@ -77,6 +77,7 @@
     }
     function update(dt){
       if(!session||session!==api||(isActive&&!isActive()))return;
+      if(root.DevInspectTools?.enemiesFrozen?.())return; // Developer "Enemies off": lids stay shut, no skeleton climbs out.
       const p=getPlayerPosition?.(),py=Number(getPlayerY?.());
       const busy=coffins.some(c=>c.releasing||c.skeleton&&live(c.skeleton));
       for(const c of coffins){

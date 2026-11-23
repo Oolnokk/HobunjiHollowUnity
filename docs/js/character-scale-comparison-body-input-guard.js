@@ -161,6 +161,8 @@
     const group = previewGroupFor(identity);
     if (comparisonApi()?.refreshFromScaleChange) {
       comparisonApi().refreshFromScaleChange(persisted, field); // One authoritative preview applies leg IK, reanchors the torso, and resizes hand/foot GLBs.
+    } else if (group && comparisonApi()?.refreshSelectedPreview) {
+      comparisonApi().refreshSelectedPreview(); // Preserve the selected global age stage when direct scale callback is unavailable.
     } else if (group) {
       window.HobunjiCharacterRigScale?.applyToParent?.(group, identity.species, identity.gender, persisted, ageFractionFor(group));
     }

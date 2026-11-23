@@ -96,8 +96,12 @@
     palehartLichen:{label:'Palehart Lichen',icon:'🍂',zone:'map_northern_cliffs',habitat:'rockEdge',color:0xc9c2a0,sellPrice:3,traits:{humour:'blood',drive:'restore',magnetism:'water'}},
     cinderveinBramble:{label:'Cindervein Bramble',icon:'🌿',zone:'map_northern_cliffs',habitat:'cliffBase',color:0xb5493a,sellPrice:3,traits:{humour:'flesh',drive:'greaten',magnetism:'fire'}},
     shalefrondFern:{label:'Shalefrond Fern',icon:'🌾',zone:'map_northern_cliffs',habitat:'rockEdge',color:0x6f8f7a,sellPrice:3,traits:{humour:'bones',drive:'restore',magnetism:'earth'}},
+    frostgillMushroom:{label:'Frostgill Mushroom',icon:'🍄',form:'mushroom',zone:'map_northern_cliffs',habitat:'rockEdge',color:0x8fcbd5,sellPrice:4,traits:{humour:'bones',drive:'restore',magnetism:'water'}},
+    flintcapMushroom:{label:'Flintcap Mushroom',icon:'🍄',form:'mushroom',zone:'map_northern_cliffs',habitat:'cliffBase',color:0xd58d58,sellPrice:4,traits:{humour:'blood',drive:'afflict',magnetism:'fire'}},
     mistpetalBloom:{label:'Mistpetal Bloom',icon:'🌸',zone:'map_southern_cloud_forest',habitat:'waterEdge',color:0xd7b7e8,sellPrice:3,traits:{humour:'senses',drive:'restore',magnetism:'water'}},
-    duskcapMushroom:{label:'Duskcap Mushroom',icon:'🍄',zone:'map_southern_cloud_forest',habitat:'treeRoots',color:0x5a4a78,sellPrice:3,traits:{humour:'flesh',drive:'afflict',magnetism:'wind'}},
+    duskcapMushroom:{label:'Duskcap Mushroom',icon:'🍄',form:'mushroom',zone:'map_southern_cloud_forest',habitat:'treeRoots',color:0x5a4a78,sellPrice:3,traits:{humour:'flesh',drive:'afflict',magnetism:'wind'}},
+    moonveilMushroom:{label:'Moonveil Mushroom',icon:'🍄',form:'mushroom',zone:'map_southern_cloud_forest',habitat:'treeRoots',color:0xc1a8dc,sellPrice:4,traits:{humour:'senses',drive:'restore',magnetism:'water'}},
+    amberbellMushroom:{label:'Amberbell Mushroom',icon:'🍄',form:'mushroom',zone:'map_southern_cloud_forest',habitat:'shrubEdge',color:0xe5b85c,sellPrice:4,traits:{humour:'flesh',drive:'greaten',magnetism:'wind'}},
     silverfernFrond:{label:'Silverfern Frond',icon:'🌿',zone:'map_southern_cloud_forest',habitat:'treeRoots',color:0xc8d8c0,sellPrice:3,traits:{humour:'flesh',drive:'greaten',magnetism:'wind'}},
     cloudberryVine:{label:'Cloudberry Vine',icon:'🫐',zone:'map_southern_cloud_forest',habitat:'treeRoots',color:0x8ec6e0,sellPrice:3,traits:{humour:'bones',drive:'lighten',magnetism:'wind'}},
     hazewortSprig:{label:'Hazewort Sprig',icon:'🌱',zone:'map_southern_cloud_forest',habitat:'shrubEdge',color:0xa0b090,sellPrice:3,traits:{humour:'blood',drive:'greaten',magnetism:'earth'}},
@@ -106,9 +110,13 @@
     larkspurTuft:{label:'Larkspur Tuft',icon:'💐',zone:'map_western_slope',habitat:'cliffBase',color:0x7fb0e0,sellPrice:3,traits:{humour:'senses',drive:'greaten',magnetism:'wind'}},
     sunbarleyHead:{label:'Sunbarley Head',icon:'🌾',zone:'map_western_slope',habitat:'shrubEdge',color:0xe0c95f,sellPrice:3,traits:{humour:'breath',drive:'greaten',magnetism:'fire'}},
     thistledownCap:{label:'Thistledown Cap',icon:'🌼',zone:'map_western_slope',habitat:'waterEdge',color:0xeee4c0,sellPrice:3,traits:{humour:'flesh',drive:'restore',magnetism:'water'}},
+    snowsporeMushroom:{label:'Snowspore Mushroom',icon:'🍄',form:'mushroom',zone:'map_western_slope',habitat:'rockEdge',color:0x94d9c8,sellPrice:4,traits:{humour:'breath',drive:'restore',magnetism:'water'}},
+    pineknobMushroom:{label:'Pineknob Mushroom',icon:'🍄',form:'mushroom',zone:'map_western_slope',habitat:'treeRoots',color:0x97764f,sellPrice:4,traits:{humour:'bones',drive:'greaten',magnetism:'earth'}},
     bogwortLeaf:{label:'Bogwort Leaf',icon:'🍃',zone:'map_eastern_mire',habitat:'shrubEdge',color:0x4a6b3a,sellPrice:3,traits:{humour:'flesh',drive:'afflict',magnetism:'earth'}},
     mireLotusBud:{label:'Mire Lotus Bud',icon:'🪷',zone:'map_eastern_mire',habitat:'waterEdge',color:0xc06090,sellPrice:3,traits:{humour:'bile',drive:'restore',magnetism:'water'}},
-    sporeclusterCap:{label:'Sporecluster Cap',icon:'🍄',zone:'map_eastern_mire',habitat:'shrubEdge',color:0x6a5a3a,sellPrice:3,traits:{humour:'bile',drive:'afflict',magnetism:'water'}},
+    sporeclusterCap:{label:'Sporecluster Cap',icon:'🍄',form:'mushroom',zone:'map_eastern_mire',habitat:'shrubEdge',color:0x6a5a3a,sellPrice:3,traits:{humour:'bile',drive:'afflict',magnetism:'water'}},
+    lanternrotMushroom:{label:'Lanternrot Mushroom',icon:'🍄',form:'mushroom',zone:'map_eastern_mire',habitat:'shrubEdge',color:0xe2cf65,sellPrice:4,traits:{humour:'bile',drive:'afflict',magnetism:'water'}},
+    bloodcupMushroom:{label:'Bloodcup Mushroom',icon:'🍄',form:'mushroom',zone:'map_eastern_mire',habitat:'waterEdge',color:0xb34d69,sellPrice:4,traits:{humour:'blood',drive:'restore',magnetism:'water'}},
     weepingReed:{label:'Weeping Reed',icon:'🌾',zone:'map_eastern_mire',habitat:'waterEdge',color:0x3a5a4a,sellPrice:3,traits:{humour:'breath',drive:'afflict',magnetism:'earth'}},
     muckmelonRind:{label:'Muckmelon Rind',icon:'🍈',zone:'map_eastern_mire',habitat:'shrubEdge',color:0x8a9a3a,sellPrice:3,traits:{humour:'bile',drive:'afflict',magnetism:'fire'}},
   });
@@ -625,8 +633,16 @@
   }
   function registerReagentItemDefs() {
     Object.entries(REAGENT_DEFS).forEach(([key, definition]) => {
-      const item = deps?.ITEM_DEFS?.[key]; // Existing reagent item definition.
-      if (!item) return;
+      if (!deps?.ITEM_DEFS) return;
+      const item = deps.ITEM_DEFS[key] ||= { // New mushroom species use the same inventory definition authority as all existing reagents.
+        icon: definition.icon, label: definition.label, cat: 'material',
+        sellPrice: definition.sellPrice, tags: ['Reagent', 'Consumable'],
+      };
+      if (definition.form === 'mushroom') {
+        item.spriteIcon = 'mushroom.png'; // Shared authored off-white stalk / mint-cap sprite, expected in assets/objectsprites.
+        item.spriteColor = definition.color; // The cap receives the mushroom's standard reagent color in the sprite recolorer.
+        item.spriteMode = 'mushroom'; // Cap-only tint preserves the neutral stalk, shading and transparent outline.
+      }
       item.desc = `${String(item.desc || definition.label).split(' Traits:')[0]} Traits: ${definition.traits.humour}, ${definition.traits.drive}, ${definition.traits.magnetism}. Eat raw for a weak native reaction.`;
       item.tags = [...new Set([...(item.tags || []), 'Reagent', 'Consumable'])];
     });

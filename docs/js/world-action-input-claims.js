@@ -212,6 +212,7 @@
     if(pressed.has(actionId))return true; // Press ownership survives prompt disappearance and keyboard/controller repeat.
     const claim=claimFor(actionId);
     if(!claim)return false;
+    window.BandageSystem?.cancel?.('world-interaction', { action:actionId, owner:claim.ownerId }); // Only actual new presses interrupt; claim queries and releases do not.
     pressed.set(actionId,claim);
     try{claim.onPress?.(detail);}catch(error){console.warn('[WorldActionInputClaims] press failed',claim.ownerId,actionId,error);}
     return true;

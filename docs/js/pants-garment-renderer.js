@@ -47,6 +47,20 @@
     return characters[characterKey(speciesId, gender)] || characters[FALLBACK_CHARACTER_KEY] || null;
   }
 
+  // The pants render parent can be a wrapper: find its child portrait's actual front canvas once at attachment.
+  function portraitSourceCanvas(model, plane, supplied = null) {
+    if (typeof supplied?.getContext === 'function') return supplied;
+    const materials = Array.isArray(plane?.material) ? plane.material : [plane?.material]; // Read the same art for rigid or skinned portraits.
+    const candidates = [model?.userData?.sourceCanvas, plane?.userData?.sourceCanvas,
+      ...materials.map(material => material?.map?.image),
+      plane?.parent?.userData?.sourceCanvas, plane?.parent?.parent?.userData?.sourceCanvas];
+    const direct = candidates.find(canvas => typeof canvas?.getContext === 'function');
+    if (direct) return direct;
+    let nested = null; // One fallback traversal at garment creation, never per rendered frame.
+    model?.traverse?.(node => { if (!nested && typeof node?.userData?.sourceCanvas?.getContext === 'function') nested = node.userData.sourceCanvas; });
+    return nested;
+  }
+
   const BELT_ALPHA_THRESHOLD = 128; // Ignore antialiased background when reading the actual visible torso width.
 
   // The authored five points specify where the waist belongs vertically, but may predate changes to the
@@ -582,7 +596,7 @@
    * @param opts.appearance  {primaryHex, secondaryHex, patternHex, weaving}
    * @returns handle {update, setAppearance, dispose, mesh} or null when pants cannot be drawn for this avatar
    */
-  function attach(THREE, { avatarGroup, legHandle, speciesId, gender, garmentId = DEFAULT_GARMENT_ID, appearance = {}, name = 'pants', overlayMask = null, garmentRecord = null, characterRecord = null, imageUrl = null, footObjects = null, debugSplines = false, spine = null, meshBudget = null, gpuSkin = true } = {}) {
+  function attach(THREE, { avatarGroup, legHandle, speciesId, gender, garmentId = DEFAULT_GARMENT_ID, appearance = {}, name = 'pants', overlayMask = null, garmentRecord = null, characterRecord = null, imageUrl = null, sourceCanvas = null, footObjects = null, debugSplines = false, spine = null, meshBudget = null, gpuSkin = true } = {}) {
     if (!characterRecord && isPantlessSpecies(speciesId)) return null; // The author's live preview (explicit records) can still show them.
     const Core = core();
     const garment = garmentRecord || rigConfig().garments?.[garmentId]; // The editor passes its live, unsaved authoring records here.
@@ -598,7 +612,8 @@
     if (!characterRecord && !hasAuthoredCharacter(speciesId, gender)) { // No authored beltline for this species: default to its posterior height (or the image edge if that is below the image).
       character = { ...character, portraitBeltSpline: Core.defaultBeltAtPosterior(posteriorPortraitY(THREE, avatarGroup, plane, nodes)) };
     }
-    const torsoFit = characterRecord ? null : fitBeltToVisibleTorso(character, avatarGroup.userData?.sourceCanvas); // Never override an explicit in-editor authoring record.
+    const torsoSource = characterRecord ? null : portraitSourceCanvas(avatarGroup, plane, sourceCanvas); // Child and adult waist alpha use the actual portrait source.
+    const torsoFit = characterRecord ? null : fitBeltToVisibleTorso(character, torsoSource); // Normalized waist x is scaled once by the child's model width.
     // Keep the authored character fit as the baseline; apply a separate width field to the torso, not the entire trousers.
     const feet = (footObjects || ['left_foot', 'right_foot'].map(foot => legHandle.group?.getObjectByName?.(foot))).filter(Boolean); // The procedural foot models.
     const footLift = footFrontLift(THREE, avatarGroup, feet);
@@ -675,7 +690,11 @@
         mesh.frustumCulled = false;
         mesh.userData.hobunjiPantsGarment = true;
         mesh.userData.hobunjiPantsPreview = true; // Also keeps the editor's Apply-to-NPC mesh builder from mistaking this for the portrait plane.
+        mesh.userData.hobunjiXrayDeformPadding = 0.8; // Conservative GPU-leg-posed scissor margin consumed by held-object-render-order.js, in local garment units.
         avatarGroup.add(mesh);
+        // One registration per live mesh shares the feet's road/ground exemption, solid-cover depth, and water tint.
+        // If the compositor has not loaded, its scene scan can adopt this mesh from the semantic tag later.
+        if (!global.HeldObjectRenderOrder?.markWaterOccludedMesh?.(mesh)) mesh.userData.hobunjiWaterOccludedBySurface = true;
         handle.mesh = mesh;
       } else {
         handle.material?.dispose?.();
@@ -906,6 +925,9 @@
       const spine = spineProfile();
       if ((spine?.curve || null) !== handle.spineCurve) { rebuildSpineShift(spine); handle.dirty = true; } // A hunch applied (or changed) after attach reshapes the garment too.
       const gpu = gpuSkinUsable(handle);
+      // Only the authored GPU material can use the padded-rest-bounds replay optimization.
+      // Foreign/CPU materials deform the position buffer itself, so they use exact live bounds.
+      if (handle.mesh.userData.hobunjiPantsGpuBoundsSafe !== gpu) handle.mesh.userData.hobunjiPantsGpuBoundsSafe = gpu;
       if (gpu !== handle.gpuSkinActive) { // Switching paths: the position buffer holds rest vertices (GPU) or skinned ones (CPU), so redo this frame.
         handle.gpuSkinActive = gpu;
         handle.maskUniforms.uPantsGpuSkin.value = gpu ? 1 : 0;
@@ -924,7 +946,15 @@
       transforms[4] = boneTransform('right', 'knee', 'ankle', aim);
       const position = handle.geometry.getAttribute('position');
       if (gpu) { // The vertex shader skins: only the bone and ring uniforms change per pose, the vertex buffer holds the rest grid.
-        if (handle.uploadedBaseVersion !== handle.baseVersion) { position.array.set(handle.basePositions); position.needsUpdate = true; handle.uploadedBaseVersion = handle.baseVersion; }
+        if (handle.uploadedBaseVersion !== handle.baseVersion) {
+          position.array.set(handle.basePositions);
+          position.needsUpdate = true;
+          // Returning from CPU mode replaces skinned vertices with rest vertices; neither
+          // the old CPU box nor the previous rest box may be reused by the x-ray scissor.
+          handle.geometry.boundingBox = null;
+          handle.geometry.boundingSphere = null;
+          handle.uploadedBaseVersion = handle.baseVersion;
+        }
         writeGpuSkinUniforms(handle, transforms, aim);
         return;
       }
@@ -953,6 +983,10 @@
       if (handle.spineShift) for (let i = 0; i < out.length; i++) out[i] += handle.spineShift[i]; // Carried by the portrait's spine curve (see rebuildSpineShift).
       if (handle.showSplines) updateDebugSplines();
       position.needsUpdate = true; // frustumCulled is off, so no per-frame bounding-sphere work.
+      // CPU fallback moves vertex positions. Invalidate on a real pose change only;
+      // the x-ray scissor recomputes exact live bounds lazily if this garment is visible.
+      handle.geometry.boundingBox = null;
+      handle.geometry.boundingSphere = null;
       if (handle.mesh.userData?.hobunjiPantsLitNormals) handle.geometry.computeVertexNormals(); // Lit ghoul trousers need current surface normals after each actual pose change, never per idle frame.
     };
 
@@ -1068,6 +1102,10 @@
       const restPosition = handle.geometry.getAttribute('position'); // CPU/debug preview also sees the latest rest hem immediately.
       restPosition.array.set(handle.basePositions);
       restPosition.needsUpdate = true;
+      // The x-ray scissor uses these cached geometric bounds. Refit only on a real rig-rest
+      // realignment, not every animated frame, so replay bounds never use obsolete cuffs.
+      handle.geometry.boundingBox = null;
+      handle.geometry.boundingSphere = null;
       handle.baseVersion = (handle.baseVersion || 0) + 1; // The GPU path re-uploads the rest grid once per realignment, not per frame.
 
     };
@@ -1176,9 +1214,10 @@
     liveHandles: () => [...handles], // Diagnostics: every garment currently attached (headless game checks read alignmentReport() from these).
     resolveCharacter,
     fitBeltToVisibleTorso, // Pure portrait-alpha fitting entry for the in-file mobile diagnostics and regression harness.
+    portraitSourceCanvas, // Mobile and headless diagnostics for nested NPC canvas lookup.
     taperTorsoBeltPoint, // Geometry regression hook to prove the same alpha width adjustment does not change knees/ankles.
     posteriorPortraitYForAvatar: (THREE, avatarGroup, legGroup) => { const plane = findPortraitPlane(avatarGroup), nodes = findLegNodes({ group: legGroup }); return plane && nodes ? posteriorPortraitY(THREE, avatarGroup, plane, nodes) : null; },
     hasRigFor: (speciesId, gender, garmentId = DEFAULT_GARMENT_ID) => !!(rigConfig().garments?.[garmentId] && resolveCharacter(speciesId, gender)),
-    debugSnapshot: () => ({ live: handles.size, garments: Object.keys(rigConfig().garments || {}), characters: Object.keys(rigConfig().characters || {}), footDepthBias: [...handles].filter(h => !h.disposed).slice(0, 12).map(h => ({ name: h.name, ...h.getFootDepthBiasDebug?.() })), lastChange: 'Waist now matches readable torso-alpha silhouette; near-horizontal belts no longer shear the legs; cuff and foot-depth rules remain independent.' }),
+    debugSnapshot: () => ({ live: handles.size, garments: Object.keys(rigConfig().garments || {}), characters: Object.keys(rigConfig().characters || {}), footDepthBias: [...handles].filter(h => !h.disposed).slice(0, 12).map(h => ({ name: h.name, ...h.getFootDepthBiasDebug?.() })), lastChange: 'Pants waist reads the actual nested child/NPC torso canvas; child scale stays single-pass and cuffs retain their independent fit.' }),
   });
 })(window);

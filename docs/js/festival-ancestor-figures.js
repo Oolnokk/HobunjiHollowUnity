@@ -98,16 +98,18 @@
       legs:window.ProceduralLegAnimation?.attach?.(THREE,model,options) || null
     };
   }
-  async function buildFigure(THREE,record,pose,index,stone) {
+  async function buildFigure(THREE,record,pose,index,stone,prepareProfile=null) {
     const preview=window.NpcAvatarPreview,avatar=window.PNGPlaneAvatar;
     if(!preview?.buildProfileFromNpcExport||!preview?.renderProfileToCanvas||!avatar?.buildSinglePlaneAvatarModel)
       throw new Error('NPC portrait/rig assembly has not initialized');
     const profile=preview.buildProfileFromNpcExport(record);
     if(!profile)throw new Error('No rendered portrait profile for '+(record.id || record.name || index));
+    if(typeof prepareProfile==='function')prepareProfile(profile); // Allows physical carvings to reuse the source actor's final dye pass; shrine ancestors are unchanged.
     const front=document.createElement('canvas');front.width=256;front.height=256;
     const back=document.createElement('canvas');back.width=256;back.height=256;
-    await preview.renderProfileToCanvas(front,profile,{forceEyesOpen:true,seatId:'ancestor-stone:'+index,breathingComposer:null});
-    await preview.renderProfileToCanvas(back,profile,{portraitView:'behind',forceEyesOpen:true,seatId:'ancestor-stone-back:'+index,breathingComposer:null});
+    const frontReady=await preview.renderProfileToCanvas(front,profile,{forceEyesOpen:true,seatId:'ancestor-stone:'+index,breathingComposer:null});
+    const backReady=await preview.renderProfileToCanvas(back,profile,{portraitView:'behind',forceEyesOpen:true,seatId:'ancestor-stone-back:'+index,breathingComposer:null});
+    if(frontReady===false||backReady===false)throw new Error('The carved NPC portrait is not ready'); // Never hide the authored key sculpture in favor of empty transparent planes.
     const carvedFront=carvedCanvas(front,stone), carvedBack=carvedCanvas(back,stone);
     const model=avatar.buildSinglePlaneAvatarModel(THREE,carvedFront,{
       name:'tzizkhanash_ancestor_'+index,backCanvas:carvedBack,profile,npcRecord:record,neckRig:true,meshBudget:'npc'
@@ -118,6 +120,20 @@
     staticPose(model,pose,parts);
     return {model,parts};
   }
+  // A single reusable Tzizkhanash carving for other physical props (e.g. the Key Statue).
+  // The same profile, stone cells, hand/leg rig and cleanup path as shrine ancestors are used.
+  async function createCarvedFigure(record,{id='carving',pose={x:0,z:0,scale:1,tilt:0,head:0,handRise:0},prepareProfile=null}={}) {
+    const [stone]=await Promise.all([stoneImage(),window.NpcAvatarPreview?.ensurePortraitCosmetics?.({configBase:'config/'})]);
+    const figure=await buildFigure(window.THREE,record,pose,String(id),stone,prepareProfile);
+    return {...figure,stone};
+  }
+  function disposeFigure(figure) {
+    figure?.parts?.hands?.dispose?.();
+    figure?.parts?.legs?.dispose?.();
+    figure?.model?.parent?.remove?.(figure.model);
+    if(figure?.model)window.PNGPlaneAvatar?.disposeAvatarModel?.(figure.model);
+  }
+
   async function decorate(group,record,legacy=null) {
     if(!group || group.userData?.festivalDisposed)return false;
     const entry={group,figures:[],ready:false,failed:false};
@@ -165,6 +181,6 @@
     });
   }
   function diagnostics(){return {activeShrines:active.size,statues:[...active].reduce((n,e)=>n+e.figures.length,0),ready:[...active].filter(e=>e.ready).length,lastError,texture:'carved_smooth.png',cellsPerAxis:CELL_COUNT};}
-  window.FestivalAncestorFigures={decorate,dispose,carvedCanvas,historicalRecords,poseFor,diagnostics};
+  window.FestivalAncestorFigures={decorate,dispose,createCarvedFigure,disposeFigure,carvedCanvas,historicalRecords,poseFor,diagnostics};
   window.__tzizkhanashAncestorFiguresDebug=diagnostics; // Copyable mobile diagnostics; no console required.
 })();

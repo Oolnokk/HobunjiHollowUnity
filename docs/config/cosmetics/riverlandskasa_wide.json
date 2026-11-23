@@ -79,5 +79,183 @@
         }
       }
     }
+  },
+  "speciesVariants": {
+    "kenkari_male": {
+      "parts": {
+        "head": {
+          "layers": {
+            "back": {
+              "image": {
+                "url": "./assets/cosmetics/clothes/hat/kenk_riverlandskasa_wide-back.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              }
+            },
+            "front": {
+              "image": {
+                "url": "./assets/cosmetics/clothes/hat/kenk_riverlandskasa_wide-front.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "kenkari_female": {
+      "parts": {
+        "head": {
+          "layers": {
+            "back": {
+              "image": {
+                "url": "./assets/cosmetics/clothes/hat/kenk_riverlandskasa_wide-back.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              }
+            },
+            "front": {
+              "image": {
+                "url": "./assets/cosmetics/clothes/hat/kenk_riverlandskasa_wide-front.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "rakakoan_male": {
+      "parts": {
+        "head": {
+          "layers": {
+            "back": {
+              "image": {
+                "url": "./assets/cosmetics/clothes/hat/kenk_riverlandskasa_wide-back.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              }
+            },
+            "front": {
+              "image": {
+                "url": "./assets/cosmetics/clothes/hat/kenk_riverlandskasa_wide-front.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "rakakoan_female": {
+      "parts": {
+        "head": {
+          "layers": {
+            "back": {
+              "image": {
+                "url": "./assets/cosmetics/clothes/hat/kenk_riverlandskasa_wide-back.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              }
+            },
+            "front": {
+              "image": {
+                "url": "./assets/cosmetics/clothes/hat/kenk_riverlandskasa_wide-front.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
   }
 }

@@ -6,17 +6,16 @@
   const SCAN_PERIOD_S = 1.4; // Finds dev-spawned birds without checking every creature on every rendered frame.
   const RETRY_DELAY_MS = 10000; // An absent sprite or GLB cannot initiate a failing fetch every frame.
   const tracked = new Map(); // Live adults only; stale area and removed Set members are disposed on the next reconciliation.
-  const captivePoses = new WeakMap(); // Original rotation and size of the actual aligned actor root, not a potentially different portrait child.
-  const releasedPoseChecks = new Map(); // Short ownership-checked guard against a late talon write; never reassert over a new native pose.
+  const CARRY_POSE_OWNER = 'tzatzul-carry'; // Shared name in render and mobile pose diagnostics.
+  const carryUndo = []; // The wildlife render hook reuses its rollback stack each world frame.
   let deps = null; // WildlifeSpawn's live hostile collection and optional camera dependency.
   let scanT = 0; // Timer for bounded active-area scans rather than per-frame global searches.
   let area = null; // Last map id, used to immediately clear attachments across scene transitions.
   let seconds = 0; // Shared wing flap clock; prevents one Date.now call per bird.
   const debug = { scans: 0, mounts: 0, unmounts: 0, loadFailures: 0, lastError: null,
-    lastBird: null, lastPose: null, captiveRestores: 0, captiveRestoreMisses: 0,
-    lastCaptiveRestore: null, captiveHandoffs: 0, staleCarryCorrections: 0,
-    tintRestores: 0, refreshedPlanes: 0, staleCarryScaleCorrections: 0,
-    captivePositionRestores: 0, captivePositionHandoffs: 0, staleCarryPositionCorrections: 0 }; // Captive root translation is tracked separately from rotation/scale for mobile diagnostics.
+    lastBird: null, lastPose: null, tintRestores: 0, refreshedPlanes: 0,
+    captivePoseFrames: 0, captivePoseUnavailable: 0, captivePoseConflicts: 0,
+    lastCaptivePose: null }; // Available in the mobile Wildlife panel.
   const now = () => typeof performance !== 'undefined' ? performance.now() : Date.now();
   const kind = actor => actor?.creatureKey || actor?.def?.id || actor?.def?.key;
   const isSkeeriActor = actor => actor?.isRuinSkeeri === true || (kind(actor) === 'skeeri' && actor?.isCompanion === true); // Shared native wing rig for authored ruin enemies and trained Skeeri.
@@ -32,120 +31,6 @@
       if (record.node?.parent === state.group) record.node.visible = record.visible;
     } // Never restore visibility on disposed or reparented creature planes.
     state.originals.length = 0;
-  }
-  function playerRoot(prey) {
-    if (!prey || prey !== deps?.player) return null;
-    return window.PlayerBodyTransformComposer?.getPlayerMesh?.()
-      || window.Combat?.deps?.playerMesh
-      || window.ProceduralHandAttachments?.gameDeps?.playerMesh
-      || null; // The player is aligned through game.js's playerMesh, not the optional avatarRef portrait child.
-  }
-  function currentCaptiveGroup(prey) {
-    return playerRoot(prey) || prey?.avatarRef?.group || null; // Both capture and release must use the root that alignCaptive actually changes.
-  }
-  function stillOwnsCaptiveGroup(prey, group) {
-    if (prey === deps?.player) {
-      const liveRoot = playerRoot(prey); // An appearance rebuild may replace the real player rig before a delayed release.
-      return liveRoot ? liveRoot === group : !!group?.parent;
-    }
-    return prey?.avatarRef?.group === group; // NPC and creature visual promotion must not restore detached old portraits.
-  }
-  function sameVector(current, expected) {
-    if (!expected) return true;
-    return !!current && ['x', 'y', 'z'].every(axis => {
-      if (current[axis] == null && expected[axis] == null) return true; // Sparse isolated tool/test vectors still compare their authored axes.
-      return Number.isFinite(current[axis]) && Number.isFinite(expected[axis])
-        && Math.abs(current[axis] - expected[axis]) <= 1e-7;
-    });
-  }
-
-  function sameOrientation(current, expected) {
-    if (!current || !expected) return false;
-    if (typeof current.dot === 'function') {
-      const dot = Math.abs(current.dot(expected)); // Quaternions q and -q represent the same orientation.
-      return Number.isFinite(dot) && dot >= 1 - 1e-12;
-    }
-    return current.equals?.(expected) === true; // Preview/test quaternions may expose equality without a dot product.
-  }
-  function rememberCaptive(prey, group = currentCaptiveGroup(prey)) {
-    if (!prey || !group?.quaternion?.clone) return false;
-    const previous = captivePoses.get(prey); // A rebuilt avatar may change its aligned root while the same bird is still carrying it.
-    if (previous?.group === group) return true;
-    if (previous) {
-      previous.poseSession?.release(); // Clear the outgoing rig's claims before tracking the replacement root.
-      captivePoses.delete(prey);
-    }
-    releasedPoseChecks.delete(prey); // The new capture supersedes any previous drop correction.
-    const poseSession = window.ActorRigCompositor?.createAbsoluteSession?.('tzatzul-captive') || null; // One scoped rotation/size owner, never a world-position owner.
-    if (poseSession) {
-      const fields = group.scale?.clone ? ['quaternion', 'scale'] : ['quaternion']; // Bare preview rigs can still supply only orientation.
-      if (!poseSession.capture(group, fields)) {
-        poseSession.release(); // A locked NPC/dance body must not be stolen by an approaching bird.
-        debug.captiveHandoffs++;
-        debug.lastCaptiveRestore = 'capture rejected: another absolute pose owns the rig';
-        return false;
-      }
-    }
-    captivePoses.set(prey, { group, parent: group.parent, quaternion: group.quaternion.clone(),
-      scale: group.scale?.clone?.() || null, lastAlignedQuaternion: null, poseSession,
-      lastNativePosition: null, lastAlignedPosition: null }); // Translation is a per-frame visual offset, not a claim on the actor's world travel.
-    return true;
-  }
-  function restoreCaptive(prey) {
-    const pose = prey && captivePoses.get(prey);
-    if (!pose) {
-      debug.lastCaptiveRestore = 'no saved pose';
-      return false;
-    }
-    captivePoses.delete(prey); // Never reuse a previous capture's rotation on the next abduction.
-    if (!stillOwnsCaptiveGroup(prey, pose.group) || !pose.group?.quaternion?.copy) {
-      pose.poseSession?.release(); // Even a detached/replaced rig must release its original scoped claims.
-      debug.captiveRestoreMisses++;
-      debug.lastCaptiveRestore = (prey === deps?.player ? 'player' : 'creature') + ': visual root replaced';
-      return false;
-    }
-    // Talon alignment also overwrites the live root's position. Restore only the last
-    // clean simulation position when the root still contains OUR exact talon output.
-    // Do not rewind world travel to the original pickup, or fight a new position owner.
-    const positionOwned = !!pose.lastNativePosition && !!pose.lastAlignedPosition
-      && pose.group.parent === pose.parent
-      && sameVector(pose.group.position, pose.lastAlignedPosition)
-      && !window.ActorRigCompositor?.absoluteOwner?.(pose.group, 'position');
-    if (positionOwned) {
-      pose.group.position.copy(pose.lastNativePosition);
-      debug.captivePositionRestores++;
-    } else if (pose.lastAlignedPosition) debug.captivePositionHandoffs++;
-    const orientationOwned = sameOrientation(pose.group.quaternion, pose.lastAlignedQuaternion); // A fall/impact writer may already have replaced the talon orientation.
-    const scaleOwned = sameVector(pose.group.scale, pose.scale); // A new scale owner must also defeat stale talon reset.
-    const staleTalonScale = !scaleOwned && sameVector(pose.group.scale, pose.lastDecomposedScale); // A precisely recognized late replay of the bird's intermediate matrix scale is not a new native scale owner.
-    if (orientationOwned && staleTalonScale && pose.scale) {
-      pose.group.scale.copy(pose.scale); // Correct ONLY the known talon intermediate scale before shared owner validation.
-      debug.staleCarryScaleCorrections++;
-    }
-    let owned = orientationOwned && (scaleOwned || staleTalonScale);
-    if (pose.poseSession) {
-      pose.poseSession.release(); // Restores only this talon owner's quaternion/scale; an externally displaced rig keeps its newer pose.
-      owned = !!pose.lastAlignedQuaternion && pose.poseSession.wasRestored(pose.group, 'quaternion')
-        && (!pose.scale || pose.poseSession.wasRestored(pose.group, 'scale'));
-    }
-    if (owned) {
-      if (!pose.poseSession) {
-        pose.group.quaternion.copy(pose.quaternion); // Compatibility for isolated tools without the shared compositor.
-        if (pose.scale) pose.group.scale?.copy?.(pose.scale);
-      }
-      releasedPoseChecks.set(prey, { ...pose, poseSession: null, remaining: 2 }); // Guard only a verified late replay, not the new native pose.
-    } else {
-      // A new fall/combat quaternion can take over before the bird drops its
-      // prey. Keep a *position-only* replay guard; never restore that old angle.
-      if (pose.lastNativePosition && pose.lastAlignedPosition && pose.group.parent === pose.parent)
-        releasedPoseChecks.set(prey, { ...pose, poseSession: null, remaining: 2, positionOnly: true });
-      else releasedPoseChecks.delete(prey);
-      debug.captiveHandoffs++;
-    }
-    debug.captiveRestores++;
-    debug.lastCaptiveRestore = (prey === deps?.player ? 'player' : 'creature')
-      + (owned ? ': restored root baseline' : ': newer pose retained');
-    return true;
   }
   function release(actor, reason = 'removed') {
     const state = tracked.get(actor);
@@ -168,6 +53,11 @@
     return [...new Set(candidates)].filter(node => node?.parent === group && node?.isMesh
       && (node.userData?.hobunjiPlaneFace === 'front' || node.userData?.hobunjiPlaneFace === 'back'
         || /_(front|back)_plane$/.test(node.name || '') || node === ref.frontPlane || node === ref.backPlane));
+  }
+  function nativeGroundPlaneY(actor, state) {
+    const authoredPlaneY = actor.avatarRef?.frontPlane?.position?.y
+      ?? state.originals?.[0]?.node?.position?.y; // Reuse the opaque-bottom correction already applied to the native idle/perched sprite.
+    return Number.isFinite(Number(authoredPlaneY)) ? Number(authoredPlaneY) : 0; // An unscanned or absent plane has the original neutral local offset.
   }
   function present(actor, state, camera) {
     if (!state.rig) return;
@@ -206,11 +96,15 @@
           pose, seconds, !!actor.tzatzulCarrying, window.CreatureBlink?.isShut?.(actor) === true);
         if (!(Number(actor.hitFlashT) > 0) && state.rig.restoreTint?.(kind(actor)==='pingdort' ? actor.genotype?.base?.color : undefined)) debug.tintRestores++; // Repair native hit-flash tint and reflect any live Pingdort genotype edits.
         state.rig.root.rotation.z = pose !== 'perched' && !hatchling ? Number(isSkeeriActor(actor) ? actor.skeeriDivePitchRad : kind(actor)==='pingdort' ? actor.pingdortDivePitchRad : actor.tzatzulDivePitchRad) || 0 : 0; // Shared headfirst swoop pitch.
-        if (hatchling && state.rig.root.position) {
-          const moved = state.previousHatchlingPosition && Math.hypot(actor.x - state.previousHatchlingPosition.x, actor.y - state.previousHatchlingPosition.y) > .08;
-          state.hopPhase = moved ? (state.hopPhase || 0) + Math.min(.1, state.renderDt || 0) * 21 : 0; // Native foot pathing moves, while only the visual body hops.
-          state.rig.root.position.y = moved ? Math.max(0, Math.sin(state.hopPhase)) * .13 : 0;
-          state.previousHatchlingPosition = { x: actor.x, y: actor.y };
+        if (state.rig.root.position) {
+          let hopY = 0; // Only mobile hatchlings add hop height above the same native foot anchor used by every perched bird.
+          if (hatchling) {
+            const moved = state.previousHatchlingPosition && Math.hypot(actor.x - state.previousHatchlingPosition.x, actor.y - state.previousHatchlingPosition.y) > .08;
+            state.hopPhase = moved ? (state.hopPhase || 0) + Math.min(.1, state.renderDt || 0) * 21 : 0; // Native foot pathing moves, while only the visual body hops.
+            hopY = moved ? Math.max(0, Math.sin(state.hopPhase)) * .13 : 0;
+            state.previousHatchlingPosition = { x: actor.x, y: actor.y };
+          }
+          state.rig.root.position.y = nativeGroundPlaneY(actor, state) + hopY; // Never let the flying-rig swap discard authored ground-Y/opaque-padding placement.
         }
       } catch (error) { debug.lastError = String(error); }
     }
@@ -254,6 +148,7 @@
         }
       }
       rig.root.rotation.y = Math.PI / 2; // Flying side sprite inherits the same orientation as the native animal front plane.
+      if (rig.root.position) rig.root.position.y = nativeGroundPlaneY(actor, state); // Production Three.Group always has position; tolerate lightweight corpse/rig test stubs.
       group.add(rig.root);
       group.userData ||= {};
       group.userData[isSkeeriActor(actor) ? 'skeeriFlyingRig' : kind(actor)==='pingdort' ? 'pingdortFlyingRig' : 'tzatzulFlyingRig'] = true; // One native avatar owns the corresponding rig.
@@ -271,56 +166,10 @@
     for (const actor of [...tracked.keys()]) release(actor, 'reinitialized');
     area = null;
     scanT = 0;
-    releasedPoseChecks.clear(); // A new scene/roster must never retain pending release writers from the old one.
   }
   function tick(dt, activeArea = deps?.getCurrentArea?.()) {
     if (!deps?.hostileObjects || !activeArea) return 0;
     const step = Math.max(0, Math.min(.25, Number(dt) || 0));
-    for (const [prey, reset] of releasedPoseChecks) {
-      if (prey.tzatzulCapturedBy || !stillOwnsCaptiveGroup(prey, reset.group) || !(prey.health > 0)) {
-        releasedPoseChecks.delete(prey); continue;
-      }
-      // One delayed depth/render pass can replay just the portrait translation, with
-      // no stale quaternion. Correct only an exact talon position on the original rig.
-      if (reset.lastAlignedPosition && reset.lastNativePosition && reset.group.parent === reset.parent
-        && !window.ActorRigCompositor?.absoluteOwner?.(reset.group, 'position')
-        && sameVector(reset.group.position, reset.lastAlignedPosition)) {
-        reset.group.position.copy(reset.lastNativePosition);
-        debug.staleCarryPositionCorrections++;
-      }
-      if (reset.positionOnly) {
-        // The newer impact pose owns orientation. Watch only for a stale talon
-        // translation, and give up immediately when native movement takes over.
-        if (reset.group.parent !== reset.parent
-          || window.ActorRigCompositor?.absoluteOwner?.(reset.group, 'position')
-          || (!sameVector(reset.group.position, reset.lastNativePosition)
-            && !sameVector(reset.group.position, reset.lastAlignedPosition))) {
-          releasedPoseChecks.delete(prey);
-          continue;
-        }
-        if (--reset.remaining <= 0) releasedPoseChecks.delete(prey);
-        continue;
-      }
-      const newOwner = window.ActorRigCompositor?.absoluteOwner?.(reset.group, 'quaternion')
-        || window.ActorRigCompositor?.absoluteOwner?.(reset.group, 'scale'); // A resumed fall/locomotion action takes precedence over stale talon replay.
-      if (newOwner || (!sameVector(reset.group.scale, reset.scale)
-        && !sameVector(reset.group.scale, reset.lastDecomposedScale))) {
-        releasedPoseChecks.delete(prey);
-        debug.captiveHandoffs++;
-        continue;
-      }
-      const current = reset.group.quaternion;
-      if (sameOrientation(current, reset.lastAlignedQuaternion)) {
-        current.copy(reset.quaternion); // An exact late talon pose is stale, not an independent combat/locomotion writer.
-        if (reset.scale) reset.group.scale?.copy?.(reset.scale);
-        debug.staleCarryCorrections++;
-      } else if (!sameOrientation(current, reset.quaternion)) {
-        releasedPoseChecks.delete(prey); // A distinct native pose has taken over: do not override it on this or later ticks.
-        debug.captiveHandoffs++;
-        continue;
-      }
-      if (--reset.remaining <= 0) releasedPoseChecks.delete(prey);
-    } // The guard is bounded and conditional, not a two-frame absolute pose lock.
     seconds += step;
     if (area !== activeArea) {
       for (const actor of [...tracked.keys()]) release(actor, 'area transition');
@@ -371,15 +220,26 @@
     }
     return tracked.size;
   }
-  function alignCaptive(prey, group = prey?.avatarRef?.group) {
-    if (!prey?.tzatzulCapturedBy || !group?.parent || !window.THREE?.Object3D) return false;
-    let state = null; // Only registered bird rigs can own the exact original captive actor.
-    for (const [actor, candidate] of tracked) if (actor._tzFlight?.captive === prey) { state = candidate; break; }
+  function belongsToScene(node, scene) {
+    for (let parent = node; parent; parent = parent.parent) if (parent === scene) return true;
+    return false;
+  }
+
+  function resolveCarryPlacement(prey, bird, group, scene) {
+    if (!prey?.tzatzulCapturedBy || bird?._tzFlight?.captive !== prey || !(prey.health > 0)
+      || !group?.parent || group.visible === false || !belongsToScene(group, scene)) return null;
+    const state = tracked.get(bird); // Flight owns the capture record; this map only supplies the carrier's live art.
     const rig = state?.rig;
-    if (!rig?.talonCarry || !rig.root?.parent) return false;
+    if (!rig?.talonCarry || !rig.root?.parent || rig.root.parent !== bird.avatarRef?.group
+      || rig.root.visible === false || !belongsToScene(rig.root, scene)) {
+      debug.captivePoseUnavailable++;
+      debug.lastCaptivePose = 'waiting for carrier rig';
+      return null;
+    }
     const THREE = window.THREE, animal = prey !== deps.player && !prey.isBandit; // The live actor, including clothing and genotype, is the payload.
     state.payload ||= { frame: new THREE.Object3D(), object: new THREE.Object3D(),
-      worldScale: new THREE.Vector3(), scale: new THREE.Vector3(), inverse: new THREE.Matrix4(), matrix: new THREE.Matrix4() };
+      worldScale: new THREE.Vector3(), position: new THREE.Vector3(), quaternion: new THREE.Quaternion(),
+      decomposedScale: new THREE.Vector3(), inverse: new THREE.Matrix4(), matrix: new THREE.Matrix4() };
     const payload = state.payload; // Scratch transforms are allocated once per bird, rather than per animation frame.
     if (payload.frame.parent !== rig.root) { rig.root.add(payload.frame); payload.frame.add(payload.object); }
     rig.root.getWorldScale(payload.worldScale);
@@ -399,44 +259,67 @@
       animal ? 'animal' : 'humanoid', anchor);
     if (animal) payload.object.rotateY(-Math.PI / 2); // Same X-normal to Z-normal adapter as the authored animal preview.
     payload.frame.updateWorldMatrix(true, true);
-    payload.scale.copy(group.scale); // Keep the prey's actual dimensions; the bird's scale must never resize its captive.
     group.parent.updateWorldMatrix(true, false);
     payload.inverse.copy(group.parent.matrixWorld).invert();
     payload.matrix.multiplyMatrices(payload.inverse, payload.object.matrixWorld);
-    if (!rememberCaptive(prey, group)) return false; // Do not override an action that already owns the captive's rig.
-    const captiveBefore = captivePoses.get(prey); // The same live talon owner is refreshed at each flight-pose update.
-    if (captiveBefore?.poseSession && !captiveBefore.poseSession.owns()) {
-      debug.captiveHandoffs++;
-      return false; // A newer combat/fall animator displaced the talon orientation mid-flight.
-    }
-    if (group.position?.clone && (!captiveBefore.lastAlignedPosition
-      || !sameVector(group.position, captiveBefore.lastAlignedPosition))) {
-      // Cache the *latest* native body root, not the pickup root. If a previous
-      // talon frame is still there, retain the known clean position instead.
-      if (captiveBefore.lastNativePosition) captiveBefore.lastNativePosition.copy(group.position);
-      else captiveBefore.lastNativePosition = group.position.clone();
-    }
-    payload.matrix.decompose(group.position, group.quaternion, group.scale);
-    const captivePose = captivePoses.get(prey); // Used by restoreCaptive to identify the exact orientation this talon pass last wrote.
-    if (captivePose?.group === group) {
-      if (group.position?.clone) {
-        if (captivePose.lastAlignedPosition) captivePose.lastAlignedPosition.copy(group.position);
-        else captivePose.lastAlignedPosition = group.position.clone(); // Exact talon translation used for ownership-aware release.
-      }
-      if (captivePose.lastAlignedQuaternion) captivePose.lastAlignedQuaternion.copy(group.quaternion);
-      else captivePose.lastAlignedQuaternion = group.quaternion.clone(); // Allocate once per capture, not per animated flight frame.
-      if (captivePose.lastDecomposedScale) captivePose.lastDecomposedScale.copy(group.scale);
-      else captivePose.lastDecomposedScale = group.scale.clone(); // Recognize a delayed bird-matrix scale replay without overriding unrelated growth.
-    }
-    group.scale.copy(payload.scale);
-    captivePose?.poseSession?.stamp(); // Stamp the exact flight-frame quaternion and size without claiming the new world position.
-    group.updateWorldMatrix(false, true);
-    return true;
+    // Decompose into scratch, away from the live rig. Its size remains owned by native animation.
+    payload.matrix.decompose(payload.position, payload.quaternion, payload.decomposedScale);
+    payload.quaternion.normalize();
+    return payload;
   }
+
+  function applyCarryPlacement(prey, group, placement, undo) {
+    const applied = window.ActorRigCompositor.applyRenderPose(
+      group, CARRY_POSE_OWNER, placement.position, placement.quaternion, undo);
+    if (applied) debug.captivePoseFrames++;
+    else debug.captivePoseConflicts++;
+    debug.lastCaptivePose = applied ? (prey === deps.player ? 'player placed' : 'creature placed') : 'root already owned';
+    return applied;
+  }
+
+  // The player body composer owns this transaction so its other whole-body
+  // effects and scene-sibling attachments share the same render and rollback.
+  function getPlayerCarryPlacement(group, scene) {
+    const prey = deps?.player; // Use the registered gameplay player and the composer's actual root.
+    if (!prey?.tzatzulCapturedBy) return null;
+    const bird = window.TzatzulFlightRuntime?.carrierOf(prey); // Direct lookup, including consecutive grabs by different birds.
+    return resolveCarryPlacement(prey, bird, group, scene);
+  }
+
+  function restoreWildlifeCarry() {
+    while (carryUndo.length) {
+      try { carryUndo.pop()(); }
+      catch (error) { debug.lastError = String(error); }
+    }
+  }
+
+  window.RenderHooks?.register({
+    id: 'tzatzul-wildlife-carry',
+    owner: 'tzatzul-live-visuals.js',
+    order: window.RenderHooks.ORDER.ACTOR_RENDER_PLACEMENT,
+    scope: 'frame',
+    appliesTo: ctx => ctx.worldScene && !carryUndo.length && !!window.TzatzulFlightRuntime?.hasCaptives(),
+    before(ctx) {
+      try {
+        window.TzatzulFlightRuntime.forEachCaptive((prey, bird) => {
+          if (prey === deps?.player) return;
+          const group = prey.avatarRef?.group; // Resolve the present rig, including a streamed-in replacement.
+          const placement = resolveCarryPlacement(prey, bird, group, ctx.scene); // Reused per-carrier scratch.
+          if (placement) applyCarryPlacement(prey, group, placement, carryUndo);
+        });
+      } catch (error) {
+        restoreWildlifeCarry();
+        throw error;
+      }
+    },
+    after: restoreWildlifeCarry,
+  });
+
   function snapshot() {
     return { ...debug, activeArea: area, tracked: tracked.size,
       liveRigs: [...tracked.values()].filter(state => !!state.rig).length,
       loading: [...tracked.values()].filter(state => state.loading).length };
   }
-  window.TzatzulLiveVisuals = Object.freeze({ init, tick, snapshot, release, alignCaptive, rememberCaptive, restoreCaptive });
+  window.TzatzulLiveVisuals = Object.freeze({ init, tick, snapshot, release, getPlayerCarryPlacement,
+    applyPlayerCarryPlacement: (group, placement, undo) => applyCarryPlacement(deps.player, group, placement, undo) });
 })();

@@ -4,6 +4,19 @@
 >
 > See [AGENTS.md](../../AGENTS.md) and [CLAUDE.md](../../CLAUDE.md). These requirements are project-wide unless the user explicitly changes them.
 
+## 2D beard / front-hood arbitration
+
+Authored with `docs/tools/beard-hood-cutout/` (Tools hub → Assets → Beard + Hood Cutout); runtime owner is `docs/js/beard-hood-cutout.js` (`window.PortraitBeardHoodCutout`), consumed by the shared portrait compositor in `docs/js/portrait-utils.js`. Every page that loads `portrait-utils.js` must load `beard-hood-cutout.js` first so tool previews match gameplay.
+
+The portrait remains authored 2D artwork. Do **not** introduce a 3D beard, head rig, new X-ray layer, or extra portrait silhouette planes for beard/hood interactions.
+
+- Facial-hair cosmetics may author `hoodCutoutMask` (200×200 run-length encoded pixels) requesting removal of front-hood pixels. A hood cosmetic may independently author `beardCutoutAllowedMask` in the same logical portrait coordinates.
+- A **missing** hood permission mask is backward-compatible: beard requests may remove any occupied front-hood pixel. An explicit **empty** mask protects all front-hood pixels. Painted partial masks permit only marked hood pixels to be removed.
+- At each valid overlap, permission granted means erase the **front hood** there. Permission refused means erase the **beard pixel** instead. Transparent hood pixels are never considered conflicts, and hoods tagged `hides-facial-hair` retain complete beard hiding. Rear hood art is unaffected.
+- Black 1-pixel 8-neighbor cut-edge outlines are drawn **inward** onto surviving non-black opaque beard pixels touching fresh rejected pixels; never repaint existing black outlines, uncut beard areas, or refused/transparent pixels. This avoids dark halos and keeps the line visible in front of intact cloth.
+- Work on separately reused beard/front-hood 2D scratch canvases; only composite those results at their original rendering stages. Hood permissions follow the existing tuft-root warp. Never apply an eraser to the entire portrait (eyes, skin, masks, and headwear must remain intact).
+- Per-species variant permission masks are legal, and the 2D editor exports **full, separate beard and hood cosmetic JSONs**. The editor is an approximate static preview of tinted/animated runtime art; inspect the gameplay portrait before merging.
+
 ## 1. The character's four visual components
 
 A humanoid visual is **not one 3D character mesh**. Its basic visible pieces are:

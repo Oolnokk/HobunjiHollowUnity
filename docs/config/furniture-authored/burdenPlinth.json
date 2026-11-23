@@ -20,6 +20,7 @@
   "parts": [
     {
       "id": "burden_plinth_base",
+      "walkableElevation": true,
       "kind": "box",
       "name": "Heavy Footing",
       "transform": {
@@ -65,6 +66,7 @@
     },
     {
       "id": "burden_plinth_lower",
+      "walkableElevation": true,
       "kind": "box",
       "name": "Heavy Lower Block",
       "transform": {

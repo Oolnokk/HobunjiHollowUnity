@@ -42,7 +42,7 @@ Gotchas: (1) `channel` defaults to `A` and is shared by every mechanism in a map
 
 ## Ropes (step 3): one rope behavior, furniture-based
 
-**One behavior.** The original Random Test Ruin rope (a planar pendulum with pumping, a hold-to-brake that turns and lengthens it, a limit angle, collision bounce, and a release flight with a small upward kick) is the rope everywhere. Its arithmetic now lives once in `js/rope-core.js` (`RopeCore`): `bobAt`, `stepIdle`, `stepAttached`, `intent`, `releaseFlight`, `catchFromFlight`, `reachAmplitude`. The ruin runtime (`dev-random-ruin-simple-puzzles.js`) was moved onto it, so generated ropes, furniture ropes and ropes carrying burdens cannot drift apart. `scripts/test-rope-core.js` pins the core to the original code: the original functions are embedded verbatim as a reference and compared bit-for-bit over thousands of randomized states and long step sequences, with and without collisions. Hosts keep what is theirs (the player, input, meshes, collision); the core owns the numbers.
+**One behavior.** The original Random Test Ruin rope (a planar pendulum with pumping, a held adjustment that eases the rope straight down, cancels swing momentum, and still turns/lengthens it, a limit angle, collision bounce, and a release flight with a small upward kick) is the rope everywhere. Its arithmetic now lives once in `js/rope-core.js` (`RopeCore`): `bobAt`, `stepIdle`, `stepAttached`, `intent`, `releaseFlight`, `catchFromFlight`, `reachAmplitude`. The ruin runtime (`dev-random-ruin-simple-puzzles.js`) was moved onto it, so generated ropes, furniture ropes and ropes carrying burdens cannot drift apart. `scripts/test-rope-core.js` pins the core to the original code: the original functions are embedded verbatim as a reference and compared bit-for-bit over thousands of randomized states and long step sequences, with and without collisions. Hosts keep what is theirs (the player, input, meshes, collision); the core owns the numbers.
 
 **Ropes as furniture.** A furniture piece with a `rope` block hangs a rope from itself (`js/rope-furniture.js`; authored in the Furniture Author's **Rope** section):
 
@@ -51,8 +51,8 @@ Gotchas: (1) `channel` defaults to `A` and is shared by every mechanism in a map
 ```
 
 The piece is the ceiling mount; the swinging rope and its behavior are the shared rope. `config/furniture-authored/ruinRopeMount.json` is the first piece (its resting grip is at the generated ropes' reachable height, about 0.86 above the floor). Placement through `FurnitureTableSystem` registers and unregisters the rope automatically; composers call `RopeFurniture.register(area, id, object, data)`.
-- **Inside the ruin** the ruin runtime builds the rope itself (`addFurnitureRope`, using the generator's own `createRopeObject` with the furniture as its mount), so a player rides it exactly like a generated rope: the same *Grab Rope* prompt, pumping, hold to stop/adjust, wall and prop collision, *Jump Off* with Dodge, and release flight.
-- **Elsewhere** it is an owned `HangingRopes` rope (stepped by `RopeCore`, swept against nearby volumes): burdens swing from it with the same behavior; riding outside the ruin is not wired yet.
+- **Inside the ruin** the ruin runtime builds the rope itself (`addFurnitureRope`, using the generator's own `createRopeObject` with the furniture as its mount), so a player rides it exactly like a generated rope: the same automatic airborne grab, pumping, hold to stop/adjust, wall and prop collision, *Jump Off* with Dodge, and release flight.
+- **Elsewhere** it is an owned `HangingRopes` rope (stepped by `RopeCore`, swept against nearby volumes): burdens swing from it with the same behavior; riding outside the ruin also catches automatically during jumps.
 
 **Burdens on any rope.** `js/hanging-ropes.js` hangs a carriable burden on a rope, owned or adopted from the ruin runtime. Carrying a burden near a free hook and pressing the carry-release action (`interact`) hangs it instead of dropping it; picking it up takes it off. A hanging burden is a `lungeStop` target (step 1), so a lunge stops once it is inside the attack cone: a close attack spends little lunge, a distant one all of it. A melee strike (`sweepMelee` calls the burden's `strikeHandler`) sets the rope swinging at `strikeSpeed(lunge distance spent)` away from the attacker (`player.lungeOriginX/Y`, recorded immutably in `beginCombatLunge`; older than 1.5 s is not "this attack"). A rope at rest takes the strike direction as its swing plane; a swinging rope keeps its plane and gains the component along it. The same collision bounce as a rider's rope applies, so a swing into a wall is cut short.
 
@@ -62,7 +62,7 @@ Release rules while swinging after a strike: **drop** at the forward apex (just 
 
 The two example combinations decompose into pieces that exist: *dispenser → bomb → rope furniture → melee → release → blast → pillar input → bridge* is all real code.
 
-Action 2 displays **Hang on Rope** while carrying a burden within reach of a free hook. Keyboard, controller and touch use the same carry-release action. Known limits: riding a furniture rope outside the ruin is not wired; the ruin runtime's ropes do not yet carry `RopeCore`'s rider logic into other hosts; a furniture rope's length is in world units (it does not scale with the piece).
+Action 2 displays **Hang on Rope** while carrying a burden within reach of a free hook. Keyboard, controller and touch use the same carry-release action. Known limits: the same RopeCore rider, automatic airborne catch, and release logic now supports exterior furniture ropes and ruin ropes into other hosts; a furniture rope's length is in world units (it does not scale with the piece).
 
 ## What step 1 changed (behaviour-preserving)
 
@@ -79,7 +79,7 @@ Action 2 displays **Hang on Rope** while carrying a burden within reach of a fre
 
 1. *(this step)* Targetables, WorldEvents, lunge targeting.
 2. *(done)* Mechanism inputs that subscribe to events: `puzzle.inputs`, see below. Still to do: a capabilities block in the Furniture Author (e.g. marking furniture `breakable`/`targetable`) once furniture emits and receives strikes.
-3. *(done)* Ropes: one shared rope behavior (`RopeCore`, the original rope's arithmetic), ropes as authored furniture, burdens hanging from any rope, strike and release into the shared throw arc. See below. Still to do: riding furniture ropes outside the ruin.
+3. *(done)* Ropes: one shared rope behavior (`RopeCore`, the original rope's arithmetic), ropes as authored furniture, burdens hanging from any rope, strike and release into the shared throw arc. See below. Riding authored furniture ropes outside the ruin is supported by the shared airborne catch.
 4. *(done)* Goals, a solver, encounters and a whole-room composer. See "Composing rooms" below.
 
 ## Composing rooms (step 4)

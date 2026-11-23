@@ -219,7 +219,7 @@
     inventoryUiLoadStarted = true;
     // Versioned source is loaded here so Pack presentation can be decoupled without editing game.js or index.html.
     const script = document.createElement('script');
-    script.src = 'js/inventory-ui.js?v=20261118hc6f8e1a';
+    script.src = 'js/inventory-ui.js?v=20261122invCatWheelEdge2';
     script.async = false;
     script.onload = () => window.InventoryUI?.init?.(inventoryUiDeps());
     script.onerror = () => {
@@ -712,7 +712,14 @@
     const equippedCosmetics = new Set(Array.isArray(playerData?.equippedCosmetics) ? playerData.equippedCosmetics : []);
     const bodyColors = { ...(playerData?.appearance?.bodyColors || {}) };
     for (const slot of CLOTHING_SLOTS) {
-      if (slot === 'hat') equippedCosmetics.delete(FIVE_BLOSSOM_CROWN_ID); // Quest-only hats aren't in the shop catalog; remove an old equipped crown on hat swaps.
+      if (slot === 'hat') {
+        equippedCosmetics.delete(FIVE_BLOSSOM_CROWN_ID);
+        if (window.canonicalRiverlandKasaId) {
+          for (const id of [...equippedCosmetics]) {
+            if (window.canonicalRiverlandKasaId(id) !== id) equippedCosmetics.delete(id); // Clear retired hat aliases before the worn item is reapplied.
+          }
+        }
+      } // Quest-only hats aren't in the shop catalog; remove an old equipped crown on hat swaps.
       // Clear out whatever cosmetic previously occupied this category
       // (character-creation's own pick, or a since-unequipped item)
       // before considering the current gearInventory item — this used to
@@ -725,7 +732,8 @@
       }
       const item = gearInventory?.clothing?.[slot];
       if (!item || isClothingArchived(item)) continue;
-      const portraitCosmeticId = item.baseCosmeticId || item.cosmeticId; // Loom/smith instances have unique ids; portrait config is keyed by their authored base id.
+      const originalCosmeticId = item.baseCosmeticId || item.cosmeticId; // Loom/smith instances have unique ids; portrait config is keyed by their authored base id.
+      const portraitCosmeticId = window.canonicalRiverlandKasaId?.(originalCosmeticId) || originalCosmeticId; // Retain old purchases while using the normal Riverland art resolver.
       if (portraitCosmeticId) equippedCosmetics.add(portraitCosmeticId);
       const [primaryTintKey, secondaryTintKey] = clothingTintKeysForSlot(slot);
       if (primaryTintKey && item.colorA) bodyColors[primaryTintKey] = { ...item.colorA };

@@ -465,15 +465,17 @@ window.SCRATCHBONES_CONFIG = {
         "visualMinDurationSeconds": 0.45,
         "footingLossPerDamage": 1.6,
         "damageTypeMultipliers": {
-          // Sharp keeps a modest direct-Health edge; Blunt keeps baseline Health damage
-          // but applies 50% more Footing pressure than Sharp before shared Footing scaling.
+          // Sharp retains its direct-Health edge. Blunt deals half its old Health
+          // damage, with 125% Footing and knockback for tactical displacement.
           "sharp": {
             "healthDamage": 1.10,
-            "footingDamage": 0.80
+            "footingDamage": 0.80,
+            "knockback": 1.00
           },
           "blunt": {
-            "healthDamage": 1.00,
-            "footingDamage": 1.20
+            "healthDamage": 0.50,
+            "footingDamage": 1.25,
+            "knockback": 1.25
           }
         }
       },
@@ -1057,10 +1059,6 @@ window.SCRATCHBONES_CONFIG = {
         { "id": "appearance::hat::riverlandskasa_low",   "label": "Riverland Kasa (Low)",  "price": 45, "category": "hat",      "description": "Traditional riverland hat, worn low.", "material": "rigid_fiber", "dyeGroup": "cloth" },
         { "id": "appearance::hat::riverlandskasa_tight", "label": "Riverland Kasa (Tight)", "price": 45, "category": "hat",      "description": "Traditional riverland hat, tight fit.", "material": "rigid_fiber", "dyeGroup": "cloth" },
         { "id": "appearance::hat::riverlandskasa_wide",  "label": "Riverland Kasa (Wide)", "price": 45, "category": "hat",      "description": "Traditional riverland hat, wide brim.", "material": "rigid_fiber", "dyeGroup": "cloth" },
-        { "id": "appearance::Kenkari_M::kenk_riverlandskasa_low",  "label": "Kenkari Kasa (Low)",  "price": 45, "category": "hat", "species": "kenkari", "gender": "male",   "description": "Kenkari riverland hat, worn low.", "material": "rigid_fiber", "dyeGroup": "cloth" },
-        { "id": "appearance::Kenkari_F::kenk_riverlandskasa_low",  "label": "Kenkari Kasa (Low)",  "price": 45, "category": "hat", "species": "kenkari", "gender": "female", "description": "Kenkari riverland hat, worn low.", "material": "rigid_fiber", "dyeGroup": "cloth" },
-        { "id": "appearance::Kenkari_M::kenk_riverlandskasa_wide", "label": "Kenkari Kasa (Wide)", "price": 45, "category": "hat", "species": "kenkari", "gender": "male",   "description": "Kenkari riverland hat, wide brim.", "material": "rigid_fiber", "dyeGroup": "cloth" },
-        { "id": "appearance::Kenkari_F::kenk_riverlandskasa_wide", "label": "Kenkari Kasa (Wide)", "price": 45, "category": "hat", "species": "kenkari", "gender": "female", "description": "Kenkari riverland hat, wide brim.", "material": "rigid_fiber", "dyeGroup": "cloth" },
         { "id": "appearance::Kenkari_M::kenk_bowlkasa", "label": "Kenkari Bowl-Kasa", "price": 55, "category": "hat", "species": "kenkari", "gender": "male", "description": "A carved wooden bowl-kasa fitted for Kenkari horns.", "material": "wood" },
         { "id": "appearance::Kenkari_F::kenk_bowlkasa", "label": "Kenkari Bowl-Kasa", "price": 55, "category": "hat", "species": "kenkari", "gender": "female", "description": "A carved wooden bowl-kasa fitted for Kenkari horns.", "material": "wood" },
         { "id": "appearance::Kenkari_M::kenk_bowlkasa", "label": "Kenkari Bowl-Kasa", "price": 55, "category": "hat", "species": "rakakoan", "gender": "male", "description": "A carved wooden bowl-kasa fitted for Kenkari horns.", "material": "wood" },
