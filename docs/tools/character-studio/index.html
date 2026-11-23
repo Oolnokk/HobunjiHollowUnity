@@ -220,7 +220,7 @@ label{display:block;color:var(--muted);font-size:12px;margin-bottom:4px}
         <div class="card section" style="--sec:#7dd3fc;--secBg:rgba(125,211,252,.08)">
           <div class="sectionTitle"><b>Experimental eye deformation</b><span class="sectionTag">pixel rig v1</span></div>
           <div class="help" style="margin-bottom:7px">Seven-node spline for Mao'ao, Slagothim and Engh-sho goggles; separate upper/lower circular eyelids (including curve depth) for Kenkari, Oliphanti and Porakaneki.</div>
-          <button id="faceRigOpenBtn" class="secondary">Open Face Rig Author</button>
+          <div class="row"><button id="faceRigOpenBtn" class="secondary">Open Face Rig Author</button><button id="faceRigCalibrateBtn" class="secondary">Unclamped Calibration</button></div>
         </div>
         <div class="card section" style="--sec:#f472b6;--secBg:rgba(244,114,182,.10)">
           <div class="sectionTitle"><b>Body colors</b><span class="sectionTag" id="colorPickerSpeciesLabel">—</span></div>
@@ -2347,6 +2347,7 @@ $('faceRigOpenBtn').onclick = () => {
   else send();
 };
 $('faceRigCloseBtn').onclick = () => { $('faceRigModal').hidden = true; };
+$('faceRigCalibrateBtn').onclick = () => { window.open('../face-rig-calibrator/index.html', '_blank', 'noopener'); }; // Calibration uses its own non-saving author instead of mutating current player/NPC.
 window.addEventListener('message', event => {
   const frame = $('faceRigFrame');
   if (event.origin !== location.origin || event.source !== frame.contentWindow ||
