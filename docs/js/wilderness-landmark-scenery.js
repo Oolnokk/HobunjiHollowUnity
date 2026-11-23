@@ -390,6 +390,9 @@ function cairnPhysicalBoxes(site){
   const midY=bottom+height*size/2;
   result.minY=Math.min(result.minY,midY+bounds.min.y*height*size);
   result.maxY=Math.max(result.maxY,midY+bounds.max.y*height*size);
+  const INSTANCE_EPSILON=.0005; // Three r128 stores instanced transforms as float32; keep their rounded outer corners physically included.
+  result.minX-=INSTANCE_EPSILON;result.maxX+=INSTANCE_EPSILON;
+  result.minZ-=INSTANCE_EPSILON;result.maxZ+=INSTANCE_EPSILON;
   boxes.push(result);
   bottom+=(height-.055)*size;
  }
