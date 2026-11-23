@@ -1101,6 +1101,7 @@
       const radius=lightScreenRadius(ruinGlowProjection.x,ruinGlowProjection.z,ruinGlowProjection.y,radiusTiles);
       if (!(radius > 0) || !lightMaskIntersectsViewport(center,radius,ctx,ruinGlowProjection.x,ruinGlowProjection.y,ruinGlowProjection.z,radiusTiles)) continue;
       if(kanthic){
+        ruinGlowDrawResult.drawn=0;ruinGlowDrawResult.examined=0; // A sealed-room clip may decline the draw callback entirely.
         withRuinRoomLightClip(ctx,ruinGlowSource,()=>{
           drawRuinGlyphSilhouette(ctx,mesh,MAX_RUIN_GLOW_TRIANGLES-ruinGlowStats.examined,ruinGlowDrawResult);
         }); // Only glyph alpha pierces Kanthic darkness; no radial light masks, gradients, halos or wall wash.
