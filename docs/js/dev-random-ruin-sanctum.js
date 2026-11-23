@@ -1060,6 +1060,7 @@
     if (window.CinematicCameraRuntime?.activeRecord?.()?.reason === 'ruin-sanctum-boss-intro') window.CinematicCameraRuntime.deactivate();
     if (intro.lock) window.CharacterActionLocks?.release?.(intro.lock);
     if (beginCombat && s === owner && owner.inSanctum && owner.boss === intro.boss && Number(intro.boss.health) > 0) {
+      window.CombatVocalizations?.suppressSkeletonCoffinSpawnAlert?.(intro.boss); // The skeleton-voiced lich already screamed for the reveal; suppress only its immediate duplicate combat-detection alert.
       deps?.hostileObjects?.add?.(intro.boss); // No enemy AI, projectiles, summons or damage run while the cinematic is active.
       wakeCoffins(); // The lich is alone for its introduction; its skeletons rise only after the title clears.
       owner.lastEncounterEvent = 'combat-started';
