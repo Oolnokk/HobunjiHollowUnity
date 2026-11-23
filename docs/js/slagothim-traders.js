@@ -1199,6 +1199,8 @@
       const article = grant({
         cosmeticId: entry.cosmeticId, slot: entry.slot, label: entry.label, baseLabel: entry.label,
         description: entry.desc, sellPrice: entry.sellPrice,
+        sprite: window.EquipmentPanel?.clothingSpriteForCosmetic?.(entry.cosmeticId)
+          || 'assets/cosmetics/clothes/hat/bowlkasa-front.png', // Authored PNG fallback until the layered Pack icon is composited.
       });
       if (!article) {
         deps.inventory.gold = gold; // A refused grant must not charge for clothing the player never received.
