@@ -186,7 +186,6 @@
         child: null, // Child body/head fall back to the shared pngPlaneAvatar defaults.
       },
       childLimbModifiers: { hand: 1, foot: 1 }, // Family child GLB proportions; 1 preserves adult-authored species limb visuals.
-      ageRigAuthoring: { schema: 'hobunji.character-age-rig-modifiers.v1' }, // Documents the separate editor export schema.
       vatEfficacyMultiplier: 2, // Output quantity, not output star quality.
       usefulness: {
         maxLevel: 5, xpPerLevelFactor: 40, // Repeated family chores grow one general usefulness rank.
