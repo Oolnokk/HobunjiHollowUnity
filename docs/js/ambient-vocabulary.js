@@ -6,7 +6,7 @@
   const PROFILE_PATH = 'config/dialogue/npc-reaction-profiles.json'; // Existing NPC-to-personality assignments supply inherited vocabulary defaults.
   const DEFAULT_SLIDERS = window.AmbientVocabularyRules?.DEFAULT_SLIDERS || Object.freeze({ verbosity: 50, color: 50, formality: 50, breadth: 70, variety: 55, frequency: 55, oldSlang: 0, simplicity: 0, nearMiss: 0 }); // Shared generator is authoritative for all nine axes; fallback only supports missing rule scripts.
   const MAX_CACHED_SPEAKERS = 128; // Bounds memory even when many unique wildlife actor IDs produce ambient text.
-  const state = { config: null, profiles: null, matchPattern: null, last: null, error: null, ready: false, changed: 0, skipped: 0, tableCache: new Map() }; // Keeps one configuration, regex, and mobile-readable diagnostic snapshot.
+  const state = { config: null, profiles: null, matchPattern: null, last: null, error: null, ready: false, changed: 0, skipped: 0, unmatched: 0, recent: [], tableCache: new Map() }; // Keeps one configuration, regex, and mobile-readable diagnostic snapshot.
   const normalizeSliders = value => window.AmbientVocabularyRules?.normalizeSliders?.(value) || { ...DEFAULT_SLIDERS }; // Never maintain a second slider whitelist: historical/childlike axes must survive runtime normalization.
   function optionsFor(config, speakerId, profiles) {
     const id = String(speakerId || ''); // Only real NPC IDs qualify; status and player announcements must not be rewritten.
@@ -42,12 +42,27 @@
     state.tableCache.set(characterId, compiled);
     return compiled;
   }
+  function rememberSpeech(result) {
+    state.last = result; // Most recent attempted vocabulary pass is available in the mobile in-game diagnostics even if no word matched.
+    state.recent.push(result); // The last twelve actual bubbles make intermittent greeting/pet failures inspectable without console access.
+    if (state.recent.length > 12) state.recent.shift();
+  }
   function rewrite(text, speakerId, random = Math.random, config = state.config, profiles = state.profiles) {
     const source = String(text ?? ''); // Original authoring stays immutable and is returned when any dependency is absent.
     const selected = optionsFor(config, speakerId, profiles);
-    if (!selected || !source) return source;
+    if (!source) return source;
+    if (!selected) {
+      if (speakerId && speakerId !== 'player' && !String(speakerId).startsWith('player-')) {
+        rememberSpeech({ speakerId: String(speakerId), original: source, displayed: source, hits: 0, swaps: 0, phoneticSwaps: 0, reason: 'no-voice-profile' });
+      }
+      return source;
+    }
     const hasLexicalMatch = config === state.config ? !!state.matchPattern?.test(source) : true; // Keeps most animal and NPC bubbles allocation-free.
-    if (!hasLexicalMatch && !selected.phoneticPreset) return source; // Only Pahu's assigned orthography can alter otherwise unmatched lines.
+    if (!hasLexicalMatch && !selected.phoneticPreset) {
+      state.unmatched++; // Unmatched text never compiles an NPC table, so animal sounds remain cheap.
+      rememberSpeech({ speakerId: selected.characterId, familyId: selected.familyId, original: source, displayed: source, hits: 0, swaps: 0, phoneticSwaps: 0, reason: 'no-dictionary-phrase' });
+      return source;
+    }
     const rules = window.AmbientVocabularyRules; // Existing pure rules are shared by the game, standalone editor, and tests.
     if (!rules?.generateSelections || !rules?.resolveSelections) return source;
     const compile = () => {
@@ -67,8 +82,9 @@
       ? rules.applyPhoneticPreset(transformed.text, config, selected.phoneticPreset, selected.characterId)
       : { text: transformed.text, hits: 0, swaps: 0 }; // Doorstep-specific phonetics never touch Talk or any unassigned speaker.
     const output = phonetic.text;
-    state.last = { speakerId: selected.characterId, familyId: selected.familyId, dialectGroup: selected.traits.groupId,
-      original: source, displayed: output, hits: transformed.hits, swaps: transformed.swaps, phoneticSwaps: phonetic.swaps };
+    rememberSpeech({ speakerId: selected.characterId, familyId: selected.familyId, dialectGroup: selected.traits.groupId,
+      original: source, displayed: output, hits: transformed.hits, swaps: transformed.swaps, phoneticSwaps: phonetic.swaps,
+      reason: output !== source ? 'reworded' : (transformed.hits ? 'frequency-or-disabled-choice' : 'no-eligible-choice') });
     state.changed += transformed.swaps + phonetic.swaps;
     state.skipped += transformed.hits - transformed.swaps;
     return output;
@@ -100,7 +116,7 @@
     generateTable: (lexicon, sliders, id) => window.AmbientVocabularyRules?.generateTable?.(lexicon, sliders, id) || {}, // Compatibility preview surface.
     normalizeSliders,
     reload: load,
-    getDebug: () => ({ ready: state.ready, error: state.error, last: state.last, replacements: state.changed, untouchedMatches: state.skipped, wordCount: Object.keys(state.config?.lexicon || {}).length, cachedSpeakers: state.tableCache.size }),
+    getDebug: () => ({ ready: state.ready, error: state.error, last: state.last, replacements: state.changed, untouchedMatches: state.skipped, wordCount: Object.keys(state.config?.lexicon || {}).length, cachedSpeakers: state.tableCache.size, unmatched: state.unmatched, recent: state.recent.slice() }),
   }); // Public surface for editor tests and the existing mobile diagnostic console.
   window.AmbientVocabulary = api;
   load();
