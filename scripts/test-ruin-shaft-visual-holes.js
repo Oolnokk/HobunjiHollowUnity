@@ -129,6 +129,10 @@ function assertClosedPit(mesh, { minX, minZ, size, bottom, top }, label) {
     assert.equal(added.length,theme==='kanthic'?plan.platforms.length:0,
       'every Kanthic rope/jump slab gets exactly one top rune; other traditions remain unchanged');
     assert.equal(runtime.getState().engravedPlatformTops,added.length,'mobile shaft diagnostics count active rune surfaces');
+    const visualSlabs=[]; // Exercises the real mount, including Hronal and Tothal parity, before it is disposed.
+    parent.traverse(node=>{if(node.userData?.ruinShaftPlatform===true)visualSlabs.push(node);});
+    assert.equal(visualSlabs.length,plan.platforms.length,
+      'every walkable shaft slab keeps its explicit platform-occlusion marker when geometries are stretched');
     const half = plan.central / 2;
     assertClosedPit(find(parent, 'jump-shaft-death-pit-walls'), { minX:plan.centre.x - half, minZ:plan.centre.z - half, size:plan.central, bottom:plan.pit.bottomY - .42, top:0 }, `${tier}/${theme} jump shaft`);
     runtime.dispose();
