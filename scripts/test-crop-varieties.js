@@ -208,7 +208,7 @@ assert(game.ItemProcessing.getProcessingOutputs('grinding', 'heftroot')[0].cooki
 assert(game.ItemProcessing.getProcessingOutputs('grinding', 'needlegrain')[0].cookingCategories.includes('flour'),
   'ordinary Needlegrain Flour also fits flour recipe slots');
 
-const orphanFlourKey = 'cv_heftroot_555000Flour'; // Legacy saved flour held without its cultivar, source vegetable or processed metadata.
+const orphanFlourKey = 'cv_heftroot_005500Flour'; // Legacy saved flour held without its cultivar, source vegetable or processed metadata.
 assert.equal(itemDefs[orphanFlourKey], undefined, 'test starts with an unregistered source cultivar');
 inventory[orphanFlourKey] = 1; // This lone flour stack is the only surviving reference to the old cultivar.
 assert.equal(game.ItemProcessing.repairPreservedDefs(inventory), 1, 'load repair recognizes missing regional flour definitions');
