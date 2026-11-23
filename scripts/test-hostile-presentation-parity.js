@@ -96,18 +96,19 @@ assert.match(read('docs/tools/enemy-loadout-editor/preview.js'), /js\/procedural
   assert.equal(portrait.indexOf('  drawEmoteLayers(maskLayers);\n  drawBreathingLayers(hoodLayers);'), -1, 'no mask-under-hood order remains');
 }
 
-// 7. A lowered (hunched) head must not fold the skin under the chin: the head-scale fade band below the skull has to be
-// taller than the head's Head Y offset (Mashtzarr -9.5%, Maskbound troops up to -12%).
+// 7. The species' last opaque head row is the upper edge of a very short neck band.
+// Head-scale influence may no longer reach deep into the torso, including for hunched Maskbound troops.
 {
   const src = read('docs/js/png-plane-avatar.js');
   const grab = name => { const i = src.indexOf('function ' + name + '('); let d = 0, j = src.indexOf('{', i); for (let k = j; k < src.length; k++) { if (src[k] === '{') d++; if (src[k] === '}' && --d === 0) return src.slice(i, k + 1); } };
-  const weight = vm.runInNewContext(`${grab('smoothstep01')}\n${grab('headScaleGateAtPixel')}\n${grab('headScaleWeightAt')}\nheadScaleWeightAt`);
+  const weight = vm.runInNewContext(`${grab('smoothstep01')}\n${grab('neckBlendWeight')}\n${grab('headScaleGateAtPixel')}\n${grab('headScaleWeightAt')}\nheadScaleWeightAt`);
   const H = 0.72, neckY = 0.1, bounds = { left: 100, right: 150 };
   const at = below => weight(neckY - below * H, neckY, H, 125, bounds, 1);
   assert.equal(at(0), 1, 'the skull itself is fully head-weighted');
-  assert.ok(at(0.12) > 0, 'the fade band still reaches a 12% hunch (it used to end at 8%, folding the mesh)');
+  assert.ok(at(0.006) > 0 && at(0.006) < 1, 'neck remains smoothly skinned halfway through its 1.2% portrait-height strip');
+  assert.equal(at(0.12), 0, 'a lowered head must not rotate or scale the torso below its actual neck');
   const bandBottom = [...Array(60).keys()].map(i => i / 200).find(b => at(b) === 0);
-  assert.ok(bandBottom >= 0.17, 'fade band is at least 17% of the model height tall, got ' + bandBottom);
+  assert.ok(bandBottom <= 0.02 && bandBottom >= 0.01, 'the neck blend must finish within a few source pixels, got ' + bandBottom);
   let previous = 1;
   for (let b = 0; b <= 0.3; b += 0.01) { const w = at(b); assert.ok(w <= previous + 1e-12, 'weight never increases going down'); previous = w; }
 }

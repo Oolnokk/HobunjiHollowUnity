@@ -14,17 +14,13 @@ assert(index.entries.some(entry => entry.speciesId === 'longoran'));
 const scaleWindow = { SCRATCHBONES_CONFIG: {} }; // Rig-scale defaults only need an optional config host.
 vm.runInNewContext(read('docs/config/character-rig-scale-defaults.js'), { window: scaleWindow });
 const defaults = scaleWindow.HobunjiCharacterRigScaleDefaults; // Uses actual gameplay scales, not duplicated editor-only values.
-const oldMale = { x: 1.0625, y: 1.275, head: 0.8, offsetY: 0 }; // Previously shipped Longoran male proportions, used only to verify the requested relative change.
-const oldFemale = { x: 1.14375, y: 1.335, head: 0.8823529411764706, offsetY: 0 }; // Preserves the established gender ratios rather than copying male dimensions wholesale.
-const exportedMale = { x: 1.05, y: 2, head: 0.9647, offsetY: -0.055 }; // Exact values in the supplied Full Character Scale JSON.
-assert.deepEqual(JSON.parse(JSON.stringify(defaults.scaleFor('longoran', 'male'))), exportedMale);
-const female = defaults.scaleFor('longoran', 'female'); // Female keeps her original relationship to male measurements for each axis.
-for (const field of ['x', 'y', 'head']) {
-  const expected = oldFemale[field] * exportedMale[field] / oldMale[field];
-  assert(near(female[field], expected), `female Longoran ${field} must inherit the male's relative proportional change`);
-}
-assert(near(female.offsetY, oldFemale.offsetY + exportedMale.offsetY - oldMale.offsetY), 'female Longoran head offset uses the same additive change (percentage points), not a zero-denominator ratio');
-assert.equal(defaults.scaleFor('tletingan', 'male').x, 0.85, 'Longoran authoring must not change the parent Tletingan scale');
+const v22Male = { x: 1.05, y: 2, head: 0.9647, offsetY: -0.055 }; // Previously shipped (v22) male default, now eligible for migration.
+const v22Female = { x: 1.130294117647059, y: 2.0941176470588236, head: 1.0640073529411764, offsetY: -0.055 };
+const male = defaults.scaleFor('longoran', 'male'); // Nov 22 lanky/thick-framed pass at the Mammakhbuur's height.
+assert.deepEqual(JSON.parse(JSON.stringify(male)), { x: 1.08, y: 1.4, legLength: 2.3, head: 1.05, offsetY: -0.055 });
+const female = defaults.scaleFor('longoran', 'female');
+assert.deepEqual(JSON.parse(JSON.stringify(female)), { x: 1.04, y: 2.25, legLength: 2.15, head: 1, offsetY: -0.055 });
+assert.equal(defaults.scaleFor('tletingan', 'male').x, 0.6075, 'Tletingan keeps its own short/stocky default, independent of Longoran');
 
 // Execute the actual Full Character Scale save bridge: the old 200% cap used to turn a valid female height of 209.4% back into 200% after reload.
 function restoreScaleBridge(savedScales) {
@@ -55,14 +51,15 @@ function restoreScaleBridge(savedScales) {
 }
 
 const priorSavedScales = { // Rounds previous canonical defaults as the Full Character Scale export does.
-  'longoran::male': exportedMale,
+  'longoran::male': v22Male,
   'longoran::female': { x: 1.1438, y: 1.335, head: 0.8824, offsetY: 0 },
   'tletingan::male': { x: 0.91, y: 0.85, head: 0.8, offsetY: 0 },
 };
 const migratedBridge = restoreScaleBridge(priorSavedScales);
-assert(near(migratedBridge.host.rigScaleFor('longoran', 'female').y, female.y), 'old default female save must migrate to the new height above 200%');
-assert(near(migratedBridge.profiles['longoran::female'].anatomy.rigScaleY, female.y), 'the live female rig must see the height above 200%');
-assert.deepEqual(JSON.parse(JSON.stringify(migratedBridge.host.rigScaleFor('longoran', 'male'))), exportedMale, 'custom male Longoran from the user file must not be overwritten');
+assert(near(migratedBridge.host.rigScaleFor('longoran', 'female').y, female.y), 'old default female save must migrate to the current default');
+assert(near(restoreScaleBridge({ 'longoran::female': v22Female }).host.rigScaleFor('longoran', 'female').y, female.y), 'v22 female default migrates too');
+assert(near(migratedBridge.profiles['longoran::female'].anatomy.rigScaleY, female.y), 'the live female rig must see the migrated height');
+assert(near(migratedBridge.host.rigScaleFor('longoran', 'male').legLength, male.legLength) && near(migratedBridge.host.rigScaleFor('longoran', 'male').y, male.y), 'a stored copy of the old shipped (v22) male default migrates to the new lanky default');
 assert.equal(migratedBridge.host.rigScaleFor('tletingan', 'male').x, 0.91, 'unrelated species saved scales must not be changed');
 assert(near(JSON.parse(migratedBridge.items.get('hobunjiFullCharacterRigScales.v2'))['longoran::female'].y, female.y), 'migration must persist the full female height to storage');
 const customBridge = restoreScaleBridge({ 'longoran::female': { x: 1.2, y: 3.25, head: 0.95, offsetY: 0.1 } });
@@ -76,7 +73,7 @@ const w = { // Minimum donor registries for the same browser inheritance bridge.
     assets: { pngPlaneAvatar: { behindView: { headUrls: { tletingan: { male: 'back' } } }, proceduralFeet: { species: { tletingan: { glb: 'sloth.glb' } }, footScale: { tletingan: { male: 1 } } } } },
     portrait: { armOnlyOpacityMask: { profiles: {} } },
   } },
-  HOBUNJI_ATTACHMENT_RIG_PROFILES: { characters: { 'tletingan::male': { species: 'tletingan', gender: 'male', anatomy: { rigScaleX: 2, handScale: .9, footScale: 1 } } } },
+  HOBUNJI_ATTACHMENT_RIG_PROFILES: { characters: { 'tletingan::male': { species: 'tletingan', gender: 'male', anatomy: { rigScaleX: 2, legLengthScale: 0.5, handScale: .9, footScale: 1 } } } },
   HobunjiHandModelProfiles: { data: { speciesModels: { tletingan: 'sloth' } }, mutate(fn) { fn(this.data); } },
   ConditionRegistry: { PLAYER_SPECIES: ['tletingan'] },
   _getMouthSpriteUrl(_expression, id) { return id; },
@@ -86,11 +83,11 @@ const bridge = w.HobunjiLongoranSpecies;
 assert(bridge, 'Longoran must install its own runtime identity');
 assert.equal(bridge.parentSpecies, 'tletingan');
 assert.equal(bridge.gaitProfile.lurchDegrees, 19);
-assert.equal(bridge.spineProfile.hunch, .07);
+assert.equal(bridge.spineProfile.hunch, .15);
 assert.equal(bridge.spineProfile.kyphosis, 1);
 for (const gender of ['male', 'female']) {
   const exported = JSON.parse(JSON.stringify(bridge.tuningFor(gender))); // Every gender must match the approved per-gender author export.
-  assert.deepEqual(exported.spine, { hunch: 0.07, sway: 0, kyphosis: 1 }, gender + ' uses approved spine tuning');
+  assert.deepEqual(exported.spine, { hunch: 0.15, sway: 0, kyphosis: 1 }, gender + ' uses approved spine tuning');
   assert.deepEqual(exported.gait, {
     style: 'maskbound-lurch', dragSide: 'right', cadence: 0.66,
     stance: 0.74, dragLift: 0.09, lurchDegrees: 19,
@@ -101,7 +98,9 @@ assert.equal(w.SCRATCHBONES_CONFIG.game.appearanceEditor.species.longoran.parent
 assert.equal(w.SCRATCHBONES_CONFIG.game.assets.pngPlaneAvatar.behindView.headUrls.longoran.male, 'back');
 assert.equal(w.SCRATCHBONES_CONFIG.game.assets.pngPlaneAvatar.proceduralFeet.species.longoran.glb, 'sloth.glb');
 assert.equal(w.HOBUNJI_ATTACHMENT_RIG_PROFILES.characters['longoran::male'].anatomy.rigScaleX, undefined);
-assert.equal(w.HOBUNJI_ATTACHMENT_RIG_PROFILES.characters['longoran::male'].anatomy.handScaleAxes, undefined);
+assert.equal(w.HOBUNJI_ATTACHMENT_RIG_PROFILES.characters['longoran::male'].anatomy.legLengthScale, undefined, 'a seeded Tletingan leg length must not override the lanky Longoran default');
+assert.deepEqual(JSON.parse(JSON.stringify(w.HOBUNJI_ATTACHMENT_RIG_PROFILES.characters['longoran::male'].anatomy.handScaleAxes)), { x: 0.72, y: 1, z: 0.8 }, 'lanky Longoran hands are thinner but keep their length (y)');
+assert.deepEqual(JSON.parse(JSON.stringify(w.HOBUNJI_ATTACHMENT_RIG_PROFILES.characters['longoran::male'].anatomy.footScaleAxes)), { x: 0.7, y: 0.85, z: 1 }, 'lanky Longoran feet are thinner but keep their length (z)');
 assert(w.ConditionRegistry.PLAYER_SPECIES.includes('longoran'));
 assert.equal(w._getMouthSpriteUrl('talk', 'longoran'), 'tletingan');
 assert.equal(bridge.rollSubspecies(() => .0499), 'longoran');
@@ -110,7 +109,7 @@ assert.equal(bridge.rollSubspecies(() => .21), 'tletingan');
 
 const spineWindow = { HobunjiLongoranSpecies: bridge }; // Explicit per-character overrides must still be supported.
 vm.runInNewContext(read('docs/js/character-spine.js'), { window: spineWindow });
-assert.equal(spineWindow.HobunjiCharacterSpine.resolve({ speciesId: 'longoran' }).hunch, .07);
+assert.equal(spineWindow.HobunjiCharacterSpine.resolve({ speciesId: 'longoran' }).hunch, .15);
 assert.equal(spineWindow.HobunjiCharacterSpine.resolve({ speciesId: 'tletingan' }).hunch, 0);
 assert.equal(spineWindow.HobunjiCharacterSpine.resolve({ speciesId: 'longoran', spine: { hunch: .2 } }).hunch, .2);
 const maskbound = read('docs/js/combat/combat-maskbound-guardian.js'); // Existing strongest lurch value is authoritative.
@@ -141,7 +140,7 @@ w.localStorage = {
   removeItem: key => { savedTuning.delete(key); },
 };
 const initial = bridge.tuningSnapshot(); // Checks independent species-wide spine and walking-gait defaults.
-assert.equal(initial.spineProfile.hunch, 0.07);
+assert.equal(initial.spineProfile.hunch, 0.15);
 assert.equal(initial.gaitProfile.lurchDegrees, 19);
 assert.equal(bridge.applyTuning({
   spineProfile: { hunch: .6, kyphosis: .92, sway: 'not-a-number' },
