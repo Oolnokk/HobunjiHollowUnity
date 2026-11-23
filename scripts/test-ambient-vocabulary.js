@@ -518,6 +518,8 @@ async function main() {
   window.CREATURE_DB = { nelk: { label: 'Nelk' } }; // Canonical species label must also remain untouched.
   assert.equal(engine.rewrite('Hi, Kitty!', 'gantami_ginju', () => 0), 'Hiya, Kitty!',
     'Direct pet remarks protect an active animal name without changing the animal or reaction modules');
+  assert.equal(engine.rewrite('Hi, Hi!', 'gantami_ginju', () => 0), 'Hiya, Hi!',
+    'Even a pet called Hi must not silence the first greeting word, but its addressed name remains unchanged');
   assert.equal(engine.rewrite('Good morning, Hi!', 'jubmir', () => 0), 'Lovely morning, Hi!',
     'An active animal named Hi keeps its name in floating speech');
   assert.equal(engine.rewrite('Kitty!', 'gantami_ginju', () => 0), 'Kitty!',
