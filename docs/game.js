@@ -5165,6 +5165,7 @@
       const _genotypeTextureResidency = window.CreatureTextureCache.create('wild-and-companion', _genotypeTexCache, undefined, { frameSetOf: window.CreatureTextureCache.genotypeFrameSetKey }); // Owns disposal and bounded idle retention while preserving the existing map/debug API.
       window.HobunjiCacheAudit?.register('game.genotypeTexCache', () => _genotypeTexCache.front.size);
       const _genotypeTexPending = new Map(); // Frame-key promises allow scene preparation to await the existing compositor.
+      const _genotypePendingPriority = new Map(); // Highest class requested for this pending appearance, avoiding repeated queue promotion scans.
       // Every key this function has ever logged a "kicking off compose" line
       // for — so a creature stuck retrying every tick (see
       // updateCreatureAnimFrame's needsRetry loop) logs its request/failure
@@ -5182,7 +5183,7 @@
       // forever, one full composeFrame call at a time, competing with every
       // other creature's real compose work for the same main thread).
       const _genotypeUnsupportedKinds = new Set();
-      function _getGenotypeTextures(kind, frame, genotype, blinkShut = false) {
+      function _getGenotypeTextures(kind, frame, genotype, blinkShut = false, priority = 'normal') {
         const renderer = window.CreatureGeneticsRender;
         if (!renderer) {
           window.__farmLog?.(`[genotype-render] _getGenotypeTextures(${kind},${frame}): window.CreatureGeneticsRender is not loaded — creature-genetics-render.js failed to load or hasn't run yet`, 'warn');
@@ -5214,8 +5215,10 @@
             if (_genotypeTexLogged.size >= 256) _genotypeTexLogged.delete(_genotypeTexLogged.values().next().value);
             window.__farmLog?.(`[genotype-render] _getGenotypeTextures(${kind},${frame}): cache miss, sig="${sig}" blink=${blinkShut} — kicking off composeFrame`, 'wildlife');
           }
-          _genotypeTexPending.set(key, renderer.composeFrame(kind, frame, genotype, blinkShut).then(canvas => {
+          _genotypePendingPriority.set(key, priority); // Track when an existing wild frame is upgraded for the player's pet.
+          _genotypeTexPending.set(key, renderer.composeFrame(kind, frame, genotype, blinkShut, { priority }).then(canvas => {
             _genotypeTexPending.delete(key);
+            _genotypePendingPriority.delete(key);
             if (!canvas) {
               _genotypeTexFailedAt.set(key, performance.now());
               window.__farmLog?.(`[genotype-render] _getGenotypeTextures(${kind},${frame}): composeFrame resolved null for sig="${sig}" — falling back to plain sprite (see composeFrame's own log line just above for why)`, 'warn');
@@ -5232,9 +5235,13 @@
             window.__farmLog?.(`[genotype-render] _getGenotypeTextures(${kind},${frame}): composited texture cached for sig="${sig}" (canvas ${canvas.width}x${canvas.height})`, 'wildlife');
           }).catch(err => {
             _genotypeTexPending.delete(key);
+            _genotypePendingPriority.delete(key);
             _genotypeTexFailedAt.set(key, performance.now());
             window.__farmLog?.(`[genotype-render] _getGenotypeTextures(${kind},${frame}): composeFrame THREW for sig="${sig}" — ${err?.stack || err}`, 'error');
           }));
+        } else if (priority === 'pet' && _genotypePendingPriority.get(key) !== 'pet') {
+          renderer.promoteFrame?.(kind, frame, sig, blinkShut, 'pet'); // Existing wild request is upgraded instead of restarting a second full pattern compose.
+          _genotypePendingPriority.set(key, 'pet');
         }
         return null;
       }
@@ -5255,9 +5262,9 @@
         const sig = window.CreatureGeneticsRender?.genotypeSignature?.(kind, genotype);
         return sig != null && window.CreatureTextureCache.genotypeFrameSetKey(boundKey) === `${kind}|${sig}`;
       }
-      function setCreatureFrame(avatarRef, url, genotypeKind, frameKey, genotype, blinkShut = false) {
+      function setCreatureFrame(avatarRef, url, genotypeKind, frameKey, genotype, blinkShut = false, priority = 'normal') {
         if (window.CreatureTextureCache.isDisposed(avatarRef)) return false; // Prevent a late visual update from reacquiring removed-avatar memory.
-        const genoTex = (genotypeKind && genotype) ? _getGenotypeTextures(genotypeKind, frameKey, genotype, blinkShut) : null;
+        const genoTex = (genotypeKind && genotype) ? _getGenotypeTextures(genotypeKind, frameKey, genotype, blinkShut, priority) : null;
         if (!genoTex && genotypeKind && genotype && _showingSameGenotype(avatarRef, genotypeKind, genotype)) {
           // This pose/blink frame is still composing, but the animal already
           // shows a colored frame of the same genotype: keep it on screen
@@ -6931,6 +6938,7 @@
         // knows, otherwise composeFrame silently no-ops for them (spec not
         // found) and they'd never render a fill/pattern at all.
         const genotypeKind = c.genotype ? (window.CreatureGenetics.SPECIES_ALIAS[c.creatureKey] || c.creatureKey) : null;
+        const appearancePriority = c.health > 0 && (c.master || player) === player && ['companion', 'mount', 'shoulderPet'].includes(c.stableRole) ? 'pet' : 'normal'; // Only the player's own living companion roles outrank wild creatures.
         // Item 3: eyes-open/eyes-shut blinking, layered into the same
         // genotype composite pass above the eyes' own layer (see
         // composeFrame's blinkShut param) — only meaningful for
@@ -6963,7 +6971,7 @@
             window.__farmLog?.(`[genotype-render] ${c.creatureKey} #${c.id}: requesting composited "${blinkFrameKey}" texture (kind=${genotypeKind})`, 'wildlife');
           }
           if (c.currentFrameUrl !== c.def.sprites.idle || c._blinkAppliedShut !== blinkShut || needsRetry) {
-            const applied = setCreatureFrame(c.avatarRef, c.def.sprites.idle, genotypeKind, frameKey, c.genotype, blinkShut);
+            const applied = setCreatureFrame(c.avatarRef, c.def.sprites.idle, genotypeKind, frameKey, c.genotype, blinkShut, appearancePriority);
             c.currentFrameUrl = c.def.sprites.idle;
             c._blinkAppliedShut = blinkShut;
             if (genotypeKind && applied) {
@@ -7001,7 +7009,7 @@
           window.__farmLog?.(`[genotype-render] ${c.creatureKey} #${c.id}: requesting composited "${blinkFrameKey}" texture (kind=${genotypeKind})`, 'wildlife');
         }
         if (c.currentFrameUrl !== url || c._blinkAppliedShut !== blinkShut || needsRetry) {
-          const applied = setCreatureFrame(c.avatarRef, url, genotypeKind, frameKey, c.genotype, blinkShut);
+          const applied = setCreatureFrame(c.avatarRef, url, genotypeKind, frameKey, c.genotype, blinkShut, appearancePriority);
           c.currentFrameUrl = url;
           c._blinkAppliedShut = blinkShut;
           if (genotypeKind && applied) {
