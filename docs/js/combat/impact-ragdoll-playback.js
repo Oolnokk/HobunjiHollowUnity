@@ -228,12 +228,61 @@
     return session;
   }
 
+
+  // Humanoid hostiles render torso, hands and legs under separate pivots. The
+  // recorded knockdown must temporarily move all three under ONE falling
+  // parent; otherwise the sprite falls while the feet keep standing.
+  function attachCreatureLimbs(state) {
+    const avatar = state?.entity?.avatarRef;
+    const pivot = state?.pivot;
+    if (!pivot || !belongsToCreatureAvatar(pivot, avatar?.group)) return;
+    state.limbAttachments = []; // Restored on recovery, cancellation or an aborted death; never owned by ordinary impact flinches.
+    for (const limb of [avatar?.handsPivot, avatar?.legsPivot]) {
+      if (!limb?.isObject3D || !limb.parent || limb.parent === pivot
+          || !belongsToCreatureAvatar(limb, avatar.group)) continue;
+      const parent = limb.parent; // Original center/floor anchoring is reused when the actor stands up.
+      pivot.add(limb); // Both parent frames are neutral outside render-time sway; preserve the authored local limb offsets.
+      state.limbAttachments.push({ limb, parent });
+    }
+  }
+
+  function restoreCreatureLimbs(state) {
+    const root = state?.entity?.avatarRef?.group;
+    for (const entry of state?.limbAttachments || []) {
+      if (entry.limb.parent === state.pivot && entry.parent?.isObject3D
+          && belongsToCreatureAvatar(entry.parent, root)) {
+        entry.parent.add(entry.limb); // Restore the pre-knockdown floor/hand rig, without leaving a nested pivot after recovery.
+      }
+    }
+    if (state) state.limbAttachments = null;
+  }
+
+  function ownsCreatureLegPose(entity) {
+    const state = entity?._impactRagdollPlayback;
+    return !!(entity.prone && state && (state.bank === 'breakThrow' || state.bank === 'tumble')
+      && (!state.poseSession || state.poseSession.owns())
+      && state.limbAttachments?.some(entry => entry.limb === entity.avatarRef?.legsPivot));
+  }
+
+  function applyCreatureLegFrame(state, frameA, frameB, blend) {
+    if (!state?.limbAttachments?.some(entry => entry.limb === state.entity?.avatarRef?.legsPivot)) return;
+    const legs = state.entity?.avatarRef?.legs;
+    if (typeof legs?.applyRecordedLegPose !== 'function') return;
+    for (const side of ['left', 'right']) {
+      if (frameA?.ragdoll?.ik?.[side] && frameB?.ragdoll?.ik?.[side])
+        legs.applyRecordedLegPose(side, sampleLeg(frameA.ragdoll.ik[side], frameB.ragdoll.ik[side], blend));
+    }
+    legs.pants?.update?.(); // Prevent skipped gait updates from leaving pants in their previous standing pose.
+  }
+
   function releaseCreaturePose(state) {
+    const mayRestoreHierarchy = !state?.poseSession || state.poseSession.owns(); // Do not steal limbs from a newer authored owner of this pivot.
     if (state?.poseSession) state.poseSession.release();
     else if (state?.pivot && state.pivot.parent) {
       state.pivot.quaternion?.identity?.();
       if (state.pivot.position) state.pivot.position.y = 0;
     } // Standalone animation tools without the shared compositor keep the old reset.
+    if (mayRestoreHierarchy) restoreCreatureLimbs(state);
   }
 
   function applyCreatureFrame(state, frameA, frameB, t) {
@@ -246,6 +295,7 @@
     state.pivot.quaternion.copy(CREATURE_BASIS_QUATERNION).multiply(body.quaternion).multiply(CREATURE_BASIS_INVERSE);
     state.pivot.position.y = (body.y - state.baseBodyY) * state.heightScale;
     state.poseSession?.stamp(); // Every sample is an absolute authored result; no frame accumulates a prior tilt.
+    applyCreatureLegFrame(state, frameA, frameB, t); // The same recorded knees/feet now follow a living knockdown as well as death.
     return true;
   }
 
@@ -260,17 +310,13 @@
     if (!clip?.frames?.length || !pivot) return 0;
     const poseSession = createCreaturePoseSession(pivot, 'impact-creature-death');
     if (poseSession === false) return 0;
-    // Bandit hands and legs are siblings of the portrait planes; take them
-    // along for a death without changing the normal live knockdown rig.
-    for (const limb of [entity.avatarRef?.handsPivot, entity.avatarRef?.legsPivot]) {
-      if (limb?.isObject3D && limb.parent === pivot.parent) pivot.add(limb);
-    }
     const visibleHeight = Math.max(0.05, Number(entity?.halfHeight) * 2 || CREATURE_REFERENCE_HEIGHT);
     entity._deathRecordedThrow = {
-      pivot, clip, poseSession,
+      entity, pivot, clip, poseSession,
       baseBodyY: Number(clip.frames[0]?.ragdoll?.body?.localPosition?.y) || 0,
       heightScale: visibleHeight / CREATURE_REFERENCE_HEIGHT,
     }; // Sampled by CreatureDeath while dying and retained as the corpse's pose.
+    attachCreatureLimbs(entity._deathRecordedThrow); // Legs and hands may be siblings OUTSIDE the portrait sway pivot.
     sampleCreatureDeath(entity, 0);
     return Math.max(0.05, clip.durationSeconds);
   }
@@ -284,15 +330,7 @@
       stopCreatureDeath(entity); // A newer creature visual owns this pose: do not keep recording legs over it.
       return false;
     }
-    const legs = entity.avatarRef?.legs;
-    if (typeof legs?.applyRecordedLegPose === 'function') {
-      for (const side of ['left', 'right']) {
-        if (frameA?.ragdoll?.ik?.[side] && frameB?.ragdoll?.ik?.[side])
-          legs.applyRecordedLegPose(side, sampleLeg(frameA.ragdoll.ik[side], frameB.ragdoll.ik[side], blend));
-      }
-    }
-    legs?.pants?.update?.(); // Recorded deaths bypass legs.update(); refresh the garment after both authored leg poses are applied.
-    return true;
+    return true; // applyCreatureFrame owns the recorded limb pose for both living and dead humanoids.
   }
 
   function stopCreatureDeath(entity) {
@@ -340,6 +378,7 @@
     }; // Stored on the entity so updateCreatureMesh can advance only the creature it is already rendering.
     entity._impactRagdollPlayback = state;
     creatureStates.add(state);
+    if (bank === 'breakThrow') attachCreatureLimbs(state); // An ordinary impact flinch must not interrupt walking.
     const [frameA, frameB, blend] = findBracket(clip.frames, 0);
     applyCreatureFrame(state, frameA, frameB, blend);
     return clip.durationSeconds * durationMultiplier;
@@ -397,6 +436,7 @@
     }; // New reaction owns this one creature's existing impact pivot; no extra rig, bone or recorded animation.
     entity._impactRagdollPlayback = state;
     creatureStates.add(state);
+    attachCreatureLimbs(state); // Repeat prone hits tumble the entire humanoid, not a detached portrait.
     const tail = clip.frames[clip.frames.length - 1];
     applyCreatureFrame(state, tail, tail, 0);
     return true;
@@ -619,6 +659,7 @@
       recoveryBlend: playback.recoveryBlend ? { ...playback.recoveryBlend } : null,
       recoveryAxis: { x: recoveryAxis.x, y: recoveryAxis.y, z: recoveryAxis.z },
       activeCreatureReactions: creatureStates.size,
+      activeCreatureProneLegRigs: [...creatureStates].filter(state => ownsCreatureLegPose(state.entity)).length, // On-device debug snapshot, not sampled per frame.
     };
   }
 
@@ -636,6 +677,7 @@
     triggerCreature,
     startCreatureDeath, sampleCreatureDeath, stopCreatureDeath,
     updateCreature,
+    ownsCreatureLegPose,
     stopCreature,
     getDebug,
   };
