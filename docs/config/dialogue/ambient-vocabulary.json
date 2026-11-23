@@ -3324,15 +3324,6 @@
         "formality": 30
       }
     ],
-    "how long": [
-      {
-        "id": "how-much-time",
-        "text": "how much time",
-        "verbosity": 35,
-        "color": 52,
-        "formality": 30
-      }
-    ],
     "best seat": [
       {
         "id": "finest-seat",
@@ -3851,6 +3842,65 @@
         "color": 48,
         "formality": 42
       }
+    ],
+    "how long has": [
+      {
+        "id": "how-long-s",
+        "text": "how long's",
+        "verbosity": 34,
+        "color": 55,
+        "formality": 25
+      }
+    ],
+    "hey-hey": [
+      {
+        "id": "hey-there",
+        "text": "hey there",
+        "verbosity": 34,
+        "color": 55,
+        "formality": 25
+      },
+      {
+        "id": "heya",
+        "text": "heya",
+        "verbosity": 34,
+        "color": 55,
+        "formality": 25
+      }
+    ],
+    "that tiny": [
+      {
+        "id": "so-small",
+        "text": "so small",
+        "verbosity": 34,
+        "color": 55,
+        "formality": 25
+      },
+      {
+        "id": "so-tiny",
+        "text": "so tiny",
+        "verbosity": 34,
+        "color": 55,
+        "formality": 25
+      }
+    ],
+    "that big": [
+      {
+        "id": "so-big",
+        "text": "so big",
+        "verbosity": 34,
+        "color": 55,
+        "formality": 25
+      }
+    ],
+    "bigger than most": [
+      {
+        "id": "larger-than-most",
+        "text": "larger than most",
+        "verbosity": 34,
+        "color": 55,
+        "formality": 25
+      }
     ]
   },
   "families": {
@@ -4005,6 +4055,9 @@
         "howdy there": [
           "well-howdy",
           "hey-there"
+        ],
+        "how long has": [
+          "how-long-s"
         ]
       }
     },
