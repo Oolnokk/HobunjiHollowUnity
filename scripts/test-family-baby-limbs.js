@@ -23,6 +23,16 @@ try { THREE = require('three'); } catch (_) {
     traverse(fn) { fn(this); for (const c of this.children) c.traverse(fn); }
     getObjectByName(name) { let found; this.traverse(n => { if (!found && n.name === name) found = n; }); return found; }
     updateWorldMatrix() {}
+    clone(recursive = true) {
+      const copy = this.isMesh ? new Mesh(this.geometry, this.material) : new Obj(); // Mirrors THREE.Object3D.clone's shared geometry/material semantics.
+      copy.name = this.name; copy.visible = this.visible; copy.userData = { ...this.userData };
+      copy.position.set(this.position.x, this.position.y, this.position.z);
+      copy.rotation.set(this.rotation.x, this.rotation.y, this.rotation.z);
+      copy.scale.set(this.scale.x, this.scale.y, this.scale.z);
+      copy.layers.mask = this.layers.mask; copy.det = this.det;
+      if (recursive) for (const child of this.children) copy.add(child.clone(true));
+      return copy;
+    }
     getWorldScale(out) {
       let x = this.worldScale, y = this.worldScale, z = this.worldScale;
       for (let node = this; node; node = node.parent) { // Model parent scaling is what the carried clone inherits.
@@ -56,9 +66,11 @@ for (const side of ['left', 'right']) {
   const hand = new THREE.Mesh(geometry, material(side + '_hand')); hand.name = 'CombinedMesh_MaterialSlots';
   hand.layers.mask = 0x2000000B; // Player/NPC hand passes: must NOT leak onto the baby clones.
   hv.add(hand); sources[side + 'Hand'] = hand;
+  const claw = new THREE.Mesh(geometry, material(side + '_hand_claw')); hv.add(claw); sources[side + 'HandClaw'] = claw; // Multi-primitive models must retain the claws.
   const foot = new THREE.Group(); foot.name = side + '_foot'; feetRoot.add(foot);
   const fallback = new THREE.Mesh(geometry, material('fallback')); fallback.visible = false; foot.add(fallback); // Hidden fallback sphere is skipped.
   const glb = new THREE.Mesh(geometry, material(side + '_foot')); foot.add(glb); sources[side + 'Foot'] = glb;
+  const nail = new THREE.Mesh(geometry, material(side + '_foot_nail')); foot.add(nail); sources[side + 'FootNail'] = nail; // Second independent GLB primitive.
 }
 const walker = { root: walkerRoot };
 const proxy = new THREE.Group();
@@ -84,7 +96,7 @@ assert.equal(api.attach(proxy, walker), true, 'attach is idempotent');
 const limbRoot = proxy.getObjectByName('family_baby_kicking_limbs');
 assert(limbRoot && limbRoot.children.length === 4, 'two hands and two feet pivots');
 const meshes = []; limbRoot.traverse(n => { if (n.isMesh) meshes.push(n); });
-assert.equal(meshes.length, 4, 'four limb meshes');
+assert.equal(meshes.length, 8, 'all eight visible body/claw and foot/nail primitives are present');
 for (const mesh of meshes) {
   assert.equal(mesh.geometry, geometry, 'limb shares the walker GLB geometry');
   assert(!Object.values(sources).some(src => src.material === mesh.material), 'limb owns a cloned material');
@@ -93,6 +105,9 @@ for (const mesh of meshes) {
   assert.notEqual(mesh.userData.noOutline, true, '3D limbs are not suppressed from outlines');
 }
 assert.equal(proxy.children[0], bust, 'bust stays children[0] (refreshProxyArt texture swap relies on it)');
+assert.equal(meshes.filter(m => m.material.name.includes('fallback')).length, 0, 'hidden fallback feet are never copied to a carried child');
+assert(meshes.some(m => m.material.name.includes('hand_claw')), 'independently authored hand claws survive the carry clone');
+assert(meshes.some(m => m.material.name.includes('foot_nail')), 'independently authored foot nails survive the carry clone');
 const carriedScale = () => Math.abs(proxy.getObjectByName('family_baby_left_hand')?.scale?.x || 0); // Proxy uses world-scaled source visuals.
 assert(Math.abs(carriedScale() - 1.2) < 1e-8, 'carried hands initially match corrected world newborn size');
 assert.equal(api.balanceWalker(walker, { hand: 1.25, foot: 1.25 }), 4, 'late proportion change updates the same source visuals');
@@ -125,9 +140,17 @@ const newGeometry = { attributes: { position: { count: 111 } } }; // In-place GL
 newRightFoot.geometry = newGeometry;
 assert.equal(api.attach(proxy, walker), true, 'in-place resource replacement refreshes the clone');
 assert.equal(api.debugSnapshot().refreshed, 3, 'geometry replacement refreshes once');
-assert.equal(proxy.getObjectByName('family_baby_right_foot').geometry, newGeometry);
+const carriedFoot = proxy.getObjectByName('family_baby_right_foot');
+const hasUpdatedGeometry = () => { let found = false; carriedFoot.traverse(node => { if (node.isMesh && node.geometry === newGeometry) found = true; }); return found; };
+assert(hasUpdatedGeometry(), 'recloned right-foot hierarchy contains the updated geometry');
 assert.equal(api.attach(proxy, walker), true, 'the new source geometry stays stable');
 assert.equal(api.debugSnapshot().refreshed, 3, 'same geometry never triggers unnecessary updates');
+const nail = sources.rightFootNail; // An unchanged first mesh must not mask updates to the second GLB primitive.
+nail.geometry = { attributes: { position: { count: 75 } } };
+assert.equal(api.attach(proxy, walker), true, 'secondary foot primitive change refreshes the complete hierarchy');
+assert.equal(api.debugSnapshot().refreshed, 4, 'second primitive refreshes just once');
+assert.equal(api.attach(proxy, walker), true);
+assert.equal(api.debugSnapshot().refreshed, 4, 'unchanged multi-material model is stable');
 
 // Hook: poses visible carried babies, restores rest pose after the frame.
 proxy.parent = new THREE.Group();
@@ -145,7 +168,7 @@ disposed.length = 0;
 api.detach(proxy);
 assert.equal(api.isAttached(proxy), false, 'limbs removed');
 assert(!disposed.includes('geometry'), 'shared walker geometry is never disposed');
-assert.equal(disposed.filter(n => n.endsWith('_clone')).length, 4, 'each cloned limb material disposed');
+assert.equal(disposed.filter(n => n.endsWith('_clone')).length, 8, 'all cloned body and claw/nail materials are disposed');
 assert.equal(api.debugSnapshot().groups, 0, 'hook no longer tracks the detached proxy');
 
 // Wiring: burdens attach after registration and detach before disposal.
@@ -162,4 +185,4 @@ assert(romanceConfig.includes('basket: { body: 0.32, head: 0.50, hand: 1.20, foo
 const html = fs.readFileSync('docs/index.html', 'utf8');
 assert(html.indexOf('js/family-baby-limbs.js?v=') > 0 && html.indexOf('js/family-baby-limbs.js?v=') < html.indexOf('js/family-baby-burdens.js?v='),
   'limbs module loads before family-baby-burdens.js');
-console.log('PASS family baby kicking limbs: cloned walker GLBs, outlines, depth policy, restoring hook, safe disposal');
+console.log('PASS family baby kicking limbs: complete species GLBs, resize invalidation, outlines, depth policy, restoring hook, safe disposal');
