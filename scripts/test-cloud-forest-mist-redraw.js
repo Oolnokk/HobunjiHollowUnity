@@ -126,7 +126,8 @@ slope.add(sky);
 let slopeLightingSamples = 0; // Counts actual sky-light sampling, not the number of rendered snow frames.
 win.HobunjiSkyDome = {
   getLightingState: () => { slopeLightingSamples++; return { r: 230, g: 235, b: 250, a: 0 }; },
-  getDebugState: () => ({ moonIllumination: 1 }),
+  lunarIllumination: () => 1,
+  getDebugState: () => { throw new Error('mist lighting must use the lunar sampler directly'); },
 }; // The Western Slope retains its own daylight sky; only fog-material tint is sampled.
 area = 'map_western_slope';
 activeScene = slope;
