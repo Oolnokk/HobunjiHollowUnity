@@ -388,11 +388,13 @@
     },
     {
       "id": "appearance::Kenkari_M::kenk_bowlkasa",
-      "path": "./kenk_bowlkasa.json"
+      "path": "./kenk_bowlkasa.json",
+      "legacyOnly": true
     },
     {
       "id": "appearance::Kenkari_F::kenk_bowlkasa",
-      "path": "./kenk_bowlkasa.json"
+      "path": "./kenk_bowlkasa.json",
+      "legacyOnly": true
     },
     {
       "id": "fine_hood",
