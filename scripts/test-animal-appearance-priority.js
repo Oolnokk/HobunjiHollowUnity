@@ -65,6 +65,7 @@ async function checkPromotionAndRetry() {
   assert.equal(settled[0].status, 'fulfilled');
   assert.equal(h.api.snapshot().failures, 1);
   assert.equal(h.api.snapshot().promotions, 1);
+  assert.equal(h.prefetch.join(','), 'wolf/promoted', 'promoting an in-flight wildlife request begins the required pet pattern downloads');
   assert.equal(h.api.snapshot().pending, 0, 'failed work always releases the queue');
 }
 (async () => {
