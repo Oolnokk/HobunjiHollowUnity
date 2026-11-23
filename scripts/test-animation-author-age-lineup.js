@@ -24,7 +24,7 @@ assert(bootstrap.indexOf('romance-config.js') < bootstrap.indexOf('character-sca
 const stored = new Map(); // Simulates the browser's authoring autosave without touching real preferences.
 const fields = new Map(); // Provides observable mobile-friendly age UI controls.
 const getField = id => {
-  if (!fields.has(id)) fields.set(id, { value: '', hidden: false, textContent: '', style: {}, offsetParent: {} });
+  if (!fields.has(id)) fields.set(id, { value: '', hidden: false, textContent: '', style: {}, offsetParent: {}, setAttribute() {} });
   return fields.get(id);
 };
 const applied = []; // Captures complete age-and-species transforms passed to the real shared API.
