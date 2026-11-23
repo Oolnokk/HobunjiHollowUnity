@@ -143,7 +143,7 @@
       window.Shattercasks?.refreshBurdenBounds?.(entry.burden);
       window.FamilyBabyLimbs?.attach?.(group, walker); // After colliders: kicking limbs are presentation, never hit targets.
     } else {
-      if (!window.FamilyBabyLimbs?.isAttached?.(group)) window.FamilyBabyLimbs?.attach?.(group, walker); // Retry until the walker's hand/foot GLBs have loaded.
+      window.FamilyBabyLimbs?.attach?.(group, walker); // Shared refresh checks late-loaded GLBs AND newborn size revisions without rebuilding unchanged proxies.
       // WorldPortraitLife may replace canvas textures without rebuilding the avatar.
       const textures = [front, back];
       if (group.userData.familyBabyArtMode === 'posed-rig') {
@@ -293,7 +293,6 @@
     if (phase !== 'basket') { discard(child?.id); return null; } // Toddler transitions clean up the baby-only proxy.
     const entry = ensure(child, walker, persist);
     if (!entry) return null;
-    window.FamilyBabyLimbs?.attach?.(entry.burden.group, walker); // Retry missing GLBs and refresh clones when new models become available.
     const api = window.Shattercasks;
     const held = api?.heldBurdenInfo?.()?.id === entry.burden.id;
     const back = api?.backCarriedInfo?.()?.id === entry.burden.id;
