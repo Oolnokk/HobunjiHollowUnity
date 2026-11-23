@@ -29,7 +29,7 @@ const mesh = {
   computeBoundingSphere() { this.boundsUpdated = (this.boundsUpdated || 0) + 1; },
 }; // Mimics Three.js InstancedMesh's matrix buffer, without needing constructors.
 const road = {
-  isGroup: true, name: 'WallBuilder_Instances', userData: { cullSphere: true },
+  isGroup: true, name: 'WallBuilder_Instances', userData: { cullSphere: true }, children: [], // A real THREE.Group always has children, even when the test traverses manually.
   traverse(callback) { callback(mesh); },
 };
 const scene = { children: [road], userData: {}, add(...objects) { this.children.push(...objects); return this; } };
