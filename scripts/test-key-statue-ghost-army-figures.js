@@ -49,6 +49,7 @@ const document={createElement(name){assert.equal(name,'canvas');return {width:0,
   getContext:()=>({drawImage(){}})};}};
 const rosterCalls=[]; // Proves this is the real army wardrobe family, not a custom recolor/costume table.
 const artistCalls=[]; // Captures frozen pose requests and verifies disposal.
+const hostileDressCalls=[]; // Checks the same pants, Temper/armor and dye finishing stages as the live Ghost Army.
 const disposed=[]; // Asynchronous cancellation cannot resurrect a destroyed burden.
 let textureReady=true; // Switch to missing texture to verify portrait-only failure tolerance.
 let deferredFigure=null; // Simulates a portrait arriving after the statue has been recalled.
@@ -57,6 +58,7 @@ const makeFigure=()=>({model:Object.assign(new Group(),{userData:{handAttachX:-.
 const artist={
   async createCarvedFigure(record,options){
     artistCalls.push({record,options});
+    options.prepareProfile?.({bodyColors:{}}); // The shared Tzizkhanash builder applies the final hostile dye pass before freezing the portrait.
     return deferredFigure ? new Promise(resolve=>{deferredFigure.resolve=resolve;}) : makeFigure();
   },
   disposeFigure(figure){disposed.push(figure);figure?.model?.parent?.remove(figure.model);},
@@ -64,11 +66,22 @@ const artist={
 };
 const window={
   THREE,GameRandom:{random:()=>.95},
+  ProceduralMaskPatterns:{ready:Promise.resolve()},
+  BanditCombat:{
+    ensureEnemyPants(roster){hostileDressCalls.push('pants');roster.equippedCosmetics.push('pants_basic');},
+    applyRosterDyesToProfile(profile,roster){hostileDressCalls.push('dyes');assert(roster.appliedDyes);profile.bodyColors.CLOTH={hex:'#bbaacc'};},
+  },
+  MetalArmorSystem:{
+    decorateAvatarDataWithMetalArmor(roster,items){
+      hostileDressCalls.push('metal');assert.equal(items.length,1);
+      return {...roster,appearance:{...roster.appearance,armorRendered:true}};
+    },
+  },
   MinionCombat:{
     defaultWeaponShapes:['daggerSword','fishingspear','hatchet','harlyaoLongsword','harlyaoBroadsword','warhammer'],
     rollRoster(species,name,opts){rosterCalls.push([species,name,opts]);
       return {appearance:{speciesId:species,gender:opts.gender},
-        equippedCosmetics:['tankan_bodywrap','bandolier1','rounded_pauldron','tangedcirclet'],
+        equippedCosmetics:['tankan_bodywrap','bandolier1','rounded_pauldron','tangedcirclet'],appliedDyes:{CLOTH:'dye:CLOTH:muted_red_orange'},
         metalArmorItems:[{metalKey:'nativeCopper'}]};},
   },
   Combat:{deps:{craftedToolItemKey:(shape,metal)=>shape+'_'+metal,
@@ -94,6 +107,7 @@ vm.runInNewContext(source,{window,document,console:diagnostics,Image:class {}});
   assert.equal(rosterCalls[0][2].equipmentSpeciesId,'harlyao-skeleton',
     'the Harlyao Ghost Army uses skeleton minions for its armor, outfit, and bandolier rolls');
   assert.equal(spec.shapeKey,'warhammer','the sixth canonical marching weapon is reachable');
+  assert.deepEqual(hostileDressCalls,['pants'],'the soldier receives hostile pants from the actual bandit wardrobe helper');
   assert.equal(spec.weaponKey,'warhammer_nativeCopper','real forge key, no invented weapon sprite');
   const carrier=new Group();const primitive=new Group();carrier.add(primitive);
   assert.equal(await api.decorate(carrier,spec),true,'the stone soldier replaces the primitive prop');
@@ -103,6 +117,9 @@ vm.runInNewContext(source,{window,document,console:diagnostics,Image:class {}});
   assert.equal(carrier.userData.ghostArmyStatueInfo.weaponShape,'warhammer');
   assert.equal(carrier.userData.ghostArmyStatueInfo.weaponVisible,true);
   assert.equal(artistCalls.length,1);
+  assert.equal(artistCalls[0].record.appearance.armorRendered,true,'stone portrait received the same Temper/metal armor descriptors as live soldiers');
+  assert.deepEqual(hostileDressCalls,['pants','metal','dyes'],'portrait uses exact hostile pants, armor and final dye finishing order');
+  assert(carrier.userData.ghostArmyStatueInfo.clothing.includes('pants_basic'),'mobile figure metadata exposes the generated soldier pants');
   assert.equal(artistCalls[0].options.pose.scale,1,'render one full frozen NPC before fitting the physical statue');
   const size=carrier.userData.ghostArmyStatueInfo.size;
   assert(Math.abs(size.height-1.12)<.001&&size.width<=.56&&size.depth<=.42,
