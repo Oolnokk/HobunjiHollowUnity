@@ -116,4 +116,86 @@ assert(author.includes('captureObservations()'));
 assert(author.includes('schema:\'hobunji_face_rig_calibration.v1\''));
 assert(read('docs/tools/face-rig-calibrator/index.html').includes('face-rig/index.html?calibration=1'));
 assert(read('docs/tools/index.html').includes('data-target="face-rig-calibrator"'));
-console.log('Face rig: 7-point falloff, bounded/unbounded eyelids, caches, species/genders, art immutability and UI/runtime integration passed.');
+
+// Start the real editor controller under a tiny DOM shim: earlier tests missed a
+// line-eye startup crash because they tested the deformation API but never initialized the UI.
+function verifyEditorBoot(calibration) {
+  const generated = []; // Collects dynamically authored eyelid sliders for input dispatch.
+  const controls = new Map(); // Provides stable stand-ins for the editor's static controls.
+  class EditorElement {
+    constructor(tag = 'div') {
+      this.tag = tag; this.style = {}; this.dataset = {}; this.children = [];
+      this.value = ''; this.textContent = ''; this.hidden = false; this.width = 800; this.height = 500;
+      this.listeners = {}; // Stores callbacks for simulated input and pointer changes.
+    }
+    appendChild(child) {
+      const previous = this.children[this.children.length - 1];
+      if (previous) previous.nextElementSibling = child;
+      child.parentElement = this; this.children.push(child); return child;
+    }
+    addEventListener(type, handler) { (this.listeners[type] ||= []).push(handler); }
+    setAttribute(name, value) { this[name] = String(value); }
+    removeAttribute(name) { delete this[name]; }
+    querySelector(selector) {
+      return selector === 'input[type=number]'
+        ? this.children.find(child => child.tag === 'input' && child.type === 'number') : null;
+    }
+  }
+  const document = {
+    getElementById(id) {
+      if (!controls.has(id)) controls.set(id, new EditorElement());
+      return controls.get(id);
+    },
+    createElement(tag) { const node = new EditorElement(tag); generated.push(node); return node; },
+    querySelectorAll(selector) {
+      return selector === '[data-lid]' ? generated.filter(node => node.dataset.lid) : [];
+    },
+  };
+  const browser = { HobunjiFaceRig: api, addEventListener() {} }; // Uses the actual production eye model.
+  const context = {
+    window: browser, document, parent: {},
+    location: { search: calibration ? '?calibration=1' : '', origin: 'https://example.test' },
+    URLSearchParams, Image: class {}, requestAnimationFrame() {},
+    fetch: async () => ({ ok: false, status: 404 }), // Asset errors are expected without real PNGs in this test.
+    localStorage: { getItem: () => null, setItem() {} },
+    setTimeout: () => 1, clearTimeout() {},
+  };
+  const controller = author.match(/<script>([\s\S]*?)<\/script>/)?.[1];
+  assert(controller, 'the editor has an executable inline controller');
+  vm.runInNewContext(controller, context, { filename: 'face-rig-editor.js' });
+
+  const get = id => document.getElementById(id);
+  assert.equal(get('roundControls').hidden, true, 'Mao’ao must initialize without round-eye eyelids');
+  const sliders = document.querySelectorAll('[data-lid]');
+  assert.equal(sliders.length, 6, 'upper/lower inset, curve and depth sliders exist');
+
+  get('species').value = 'kenkari'; get('species').onchange();
+  assert.equal(get('roundControls').hidden, false);
+  const inset = sliders.find(node => node.dataset.lid === 'upper.inset');
+  assert.equal(inset.value, '0', 'round-eye controls synchronize after changing species');
+  inset.value = '0.35'; inset.listeners.input[0]();
+  assert.equal(inset.nextElementSibling.textContent, '0.35', 'round-eye slider edits still apply');
+
+  if (calibration) {
+    const numeric = inset.parentElement.querySelector('input[type=number]');
+    numeric.value = '-4'; numeric.listeners.change[0]();
+    assert.equal(inset.value, '-4', 'unclamped calibration values remain editable');
+  }
+
+  // Changing back must not attempt eye.upper.inset on a seven-node spline eye.
+  get('species').value = 'mao-ao'; get('species').onchange();
+  assert.equal(get('roundControls').hidden, true);
+  inset.value = '0.6'; inset.listeners.input[0](); // A stale event must be harmless while sliders are hidden.
+  get('right').onclick(); get('left').onclick();
+
+  for (const species of ['tletingan', 'engh-sho', 'mashtzarr', 'mammakhbuur', 'porakaneki']) {
+    get('species').value = species; get('species').onchange();
+    assert.equal(get('roundControls').hidden, api.familyForSpecies(species) !== 'round');
+    get('gender').value = 'female'; get('gender').onchange();
+    get('right').onclick(); get('left').onclick();
+  }
+}
+verifyEditorBoot(false);
+verifyEditorBoot(true);
+
+console.log('Face rig: 7-point falloff, bounded/unbounded eyelids, caches, species/genders, art immutability and UI/runtime integration and editor boot/switch tests passed.');
