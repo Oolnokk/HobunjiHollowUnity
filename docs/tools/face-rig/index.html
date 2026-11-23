@@ -353,13 +353,13 @@ for(const part of ['upper','lower']){
    input.value=String(value);output.textContent=value.toFixed(2);scheduleRender();
   };
   input.addEventListener('input',()=>update(Number(input.value)));
-  numeric?.addEventListener('input',()=>{if(numeric.value.trim())update(Number(numeric.value));});
+  numeric?.addEventListener('change',()=>{if(numeric.value.trim())update(Number(numeric.value));}); // Preserve partly typed signed decimal numbers until commit.
  }
  $('lidSliders').appendChild(field);
 }
 $('nodeIndex').onchange=()=>{chosenNode=Number($('nodeIndex').value)||0;syncControls();};
 for(const [axis,id] of [[0,'nodeX'],[1,'nodeY']]){
- $(id).oninput=()=>{
+ $(id).onchange=()=>{
   if(!calibration||rig.family!=='line')return;
   const value=Number($(id).value);
   if($(id).value.trim()===''||!Number.isFinite(value))return;
