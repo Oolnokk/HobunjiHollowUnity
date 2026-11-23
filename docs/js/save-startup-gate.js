@@ -180,6 +180,8 @@
   async function syncSaveSelectPortraitProfile(canvas, profile) {
     const character = savePortraitCharacter(canvas);
     if (!character || !profile) return profile;
+    profile.faceRig = window.HobunjiFaceRig?.normalize?.(character.appearance?.faceRig,
+      character.appearance?.speciesId, character.appearance?.gender) || null; // Save-slot portraits use the chosen character's eye rig.
 
     const bodyColors = {
       ...(profile.bodyColors || {}),

@@ -1878,6 +1878,14 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
       sy: layer?.sy ?? 1,
     };
 
+  // Experimental face rig acts on the source pixels of head, untinted eye/blink and
+  // eye-accessory layers. Behind views and head-alpha masks must remain anatomically untouched.
+  const faceApi = (!renderBehindView && !onlyHeadSprite) ? window.HobunjiFaceRig : null;
+  const faceSettings = faceApi?.normalize?.(profile.faceRig, speciesId, gender) || null; // Validated once per render; malformed/mismatched records never affect other species.
+  const faceSignature = faceSettings ? '|face-rig:' + JSON.stringify(faceSettings) : ''; // Prevents tint caches from reusing pre-deformation color layers.
+  const warpFaceImage = (image, role) => faceSettings
+    ? faceApi.applyImage(image, faceSettings, role, speciesId, gender) : image; // Uses the shared bounded cache for blink and static portrait bakes.
+
   // Pre-compute emote overlay deformation for this portrait (null when no emote is active).
   const emoteDeformedPts = breathingComposer?.getOverlayOnlyPoints(nowMs, seatId) ?? null;
   const emoteNeutralPts  = emoteDeformedPts ? _buildNeutralGrid(4, 6) : null;
@@ -1927,6 +1935,11 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
     if (!img) return;
     let tint = entry.tint || entry.filter;
     let sourceKey = layer.url;
+    if (faceSettings && (eyesLayers.includes(entry) || elevatedEyeAccessoryLayers.includes(entry))) {
+      const name = String(group?.id || group?.originalId || '').toLowerCase();
+      const warped = warpFaceImage(img, name.includes('snowgoggles') ? 'goggles' : 'eyes');
+      if (warped !== img) { img = warped; sourceKey += faceSignature; }
+    }
     if (layer.pixelDye) {
       const dyeSlot = resolveLayerTintSlot(layer.pixelDye.paletteColorKey || 'C', group?.tintSlot);
       const rgb = _resolveTargetRgbColor(bodyColors[dyeSlot], _dyeReferenceHexForSlot(dyeSlot, speciesId))
@@ -2112,7 +2125,14 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   const _beardBelowHead = _BEARD_BELOW_HEAD_SPECIES.has(String(speciesId || '').toLowerCase().replace(/_/g, '-'));
   drawEmoteLayers(sideLeftLayers);
   if (_beardBelowHead) drawNegotiatedBeard();
-  if (headUrl && !skipHeadSprite) { const img = imgMap.get(headUrl); if (img) drawLayerWithEmote(img, getPortraitXformPreset('B'), tintA, 1, headUrl); }
+  if (headUrl && !skipHeadSprite) {
+    const originalHead = imgMap.get(headUrl);
+    if (originalHead) {
+      const head = warpFaceImage(originalHead, 'head');
+      drawLayerWithEmote(head, getPortraitXformPreset('B'), tintA, 1,
+        headUrl + (head === originalHead ? '' : faceSignature));
+    }
+  }
   const _isMaskSpecies = mouthImg && _isMouthMask(speciesId);
   drawEmoteLayers(rightSideHairLayers);
   if (!_beardBelowHead) drawNegotiatedBeard();
@@ -2131,8 +2151,9 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
     const urXform = getPortraitXformPreset('B');
     for (const mid of normalUrLayers) {
       const activeUrl = isBlinkFrame ? (blinkOverlayUrlsByBase.get(mid.url) || mid.url) : mid.url;
-      const img = imgMap.get(activeUrl) || imgMap.get(mid.url);
-      if (!img) continue;
+      const originalEyeArt = imgMap.get(activeUrl) || imgMap.get(mid.url);
+      if (!originalEyeArt) continue;
+      const img = warpFaceImage(originalEyeArt, 'ur');
       if (emoteDeformedPts) {
         const { ax, ay, sx, sy } = urXform;
         const h = PORTRAIT_L * sy;
@@ -2164,8 +2185,12 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   } else {
     for (const mid of normalUrLayers) {
       const activeUrl = isBlinkFrame ? (blinkOverlayUrlsByBase.get(mid.url) || mid.url) : mid.url;
-      const img = imgMap.get(activeUrl) || imgMap.get(mid.url);
-      if (img) drawLayerWithEmote(img, getPortraitXformPreset('B'), 'none', 1, activeUrl);
+      const originalEyeArt = imgMap.get(activeUrl) || imgMap.get(mid.url);
+      if (originalEyeArt) {
+        const img = warpFaceImage(originalEyeArt, 'ur');
+        drawLayerWithEmote(img, getPortraitXformPreset('B'), 'none', 1,
+          activeUrl + (img === originalEyeArt ? '' : faceSignature));
+      }
     }
   }
   // Non-mask species: mouth sprite overlays ur-head (drawn here so it sits above ur-head).
@@ -2209,8 +2234,12 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   if (!headCosmeticsOnly) drawEmoteLayers(pauldronLayers);
   for (const mid of aboveHoodBelowHatUrLayers) {
     const activeUrl = isBlinkFrame ? (blinkOverlayUrlsByBase.get(mid.url) || mid.url) : mid.url;
-    const img = imgMap.get(activeUrl) || imgMap.get(mid.url);
-    if (img) drawLayerWithEmote(img, getPortraitXformPreset('B'), 'none', 1, activeUrl);
+    const originalEyeArt = imgMap.get(activeUrl) || imgMap.get(mid.url);
+    if (originalEyeArt) {
+      const img = warpFaceImage(originalEyeArt, 'ur');
+      drawLayerWithEmote(img, getPortraitXformPreset('B'), 'none', 1,
+        activeUrl + (img === originalEyeArt ? '' : faceSignature));
+    }
   }
   drawEmoteLayers(hatOverLayers);
   if (_needsScale) ctx.restore();
