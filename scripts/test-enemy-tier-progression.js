@@ -39,12 +39,17 @@ assert.equal(progression.dangerBand(4), 'hard');
 for (const tier of [0,1,2,3,4,5,6,7]) {
   assert.equal(progression.progressionStep(tier), Math.floor(tier / 2), 'gear and mastery improve every second tier');
   for (const rank of ['grunt', 'lieutenant', 'captain', 'flasker']) {
-    const raw = config.statMultiplierByRankAndTier[rank]; // An actual authored rank curve from the game.
-    assert.equal(raw.length, 8, 'all rank curves include the new subtiers');
-    const current = raw[tier] * (1 + tier * config.difficultyTiers.tierStatBonusPerTier);
+    const raw = config.statMultiplierByRankAndTier[rank]; // The original attack and Stamina rank curve, unchanged by the new HP-only policy.
+    const healthRaw = config.healthMultiplierByRankAndTier?.[rank] || raw; // Weak humanoids read the separate health curve; captains retain the old curve.
+    assert.equal(raw.length, 8, 'all offensive rank curves include every danger tier');
+    assert.equal(healthRaw.length, 8, 'all Health rank curves include every danger tier');
+    const current = raw[tier] * (1 + tier * config.difficultyTiers.tierStatBonusPerTier); // Actual offensive rank multiplier for the tier.
+    const currentHealth = healthRaw[tier] * (1 + tier * config.difficultyTiers.tierStatBonusPerTier); // Separate effective Health multiplier for the same tier.
     if (tier > 0) {
       const previous = raw[tier - 1] * (1 + (tier - 1) * config.difficultyTiers.tierStatBonusPerTier);
-      assert(current > previous, `${rank} tier ${tier} health does not fall behind lower tier`);
+      const previousHealth = healthRaw[tier - 1] * (1 + (tier - 1) * config.difficultyTiers.tierStatBonusPerTier); // Protects Health-only progress at each successive tier.
+      assert(current > previous, `${rank} tier ${tier} attack/Stamina curve must progress`);
+      assert(currentHealth > previousHealth, `${rank} tier ${tier} Health curve must progress`);
     }
   }
   const metal = metals[Math.min(5, tier)]; // Gradual equipment power should stay in the player's shared 0.75-1.50 bounds.
@@ -155,6 +160,16 @@ const originalMineStamina = Math.round(context.BANDIT_BASE_MAX_STAMINA * preserv
 const mineBaseline = actualEnemyDef({ ...config, _preserveMineEnemyTiers: true }, 'grunt', 1);
 assert.equal(mineBaseline.maxStamina, originalMineStamina, 'mine stamina stays historically calibrated when sufficient for one attack');
 assert.equal(mineBaseline.maxHealth, Math.round(context.BANDIT_BASE_MAX_HEALTH * preservedMine.grunt[1] * (1 + 0.12)), 'mine Ghouls ignore the new wilderness HP curve');
+const originalMineStats = { ...originalHumanoidStats, _preserveMineEnemyTiers: true }; // Compares the new live factory against exactly the old mine policy, including every rank.
+for (const rank of ['grunt', 'flasker', 'lieutenant', 'captain']) {
+  for (const depth of [1, 3, 7, 10]) {
+    const now = actualEnemyDef({ ...config, _preserveMineEnemyTiers: true }, rank, depth); // Real Ghoul definition with the new Health table present.
+    const before = actualEnemyDef(originalMineStats, rank, depth); // Same Ghoul without the optional Health-only table.
+    assert.equal(now.maxHealth, before.maxHealth, rank + ' mine depth ' + depth + ' Health must remain unchanged');
+    assert.equal(now.attackDamage, before.attackDamage, rank + ' mine depth ' + depth + ' attack must remain unchanged');
+    assert.equal(now.maxStamina, before.maxStamina, rank + ' mine depth ' + depth + ' Stamina must remain unchanged');
+  }
+}
 const mineHeavy = actualEnemyDef({ ...config, _preserveMineEnemyTiers: true }, 'grunt', 1, 0.5);
 assert(mineHeavy.maxStamina >= mineHeavy.attackStaminaCost, 'even a Ghoul with an inefficient weapon cannot be permanently unable to attack');
 
