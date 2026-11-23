@@ -975,6 +975,7 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid!important;v
     const group = new THREE.Group(); // Preview-only parent used by portrait, hands, feet, and whole-character scale together.
     group.name = `FullScalePreview_${rep.key}`;
     group.userData.fullScalePreviewKey = rep.key;
+    let entry = null; // Both async hand and foot GLB callbacks refer to the same preview entry after registration.
 
     const baseWidth = avatarBaseWidth();
     const model = window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(THREE, avatar.front, {
@@ -984,6 +985,12 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid!important;v
       profile: avatar.profile,
       appearance: avatar.exportNpc.appearance,
       npcRecord: previewNpc, // Preview starts from unscaled adult anatomy even if the only available representative was an authored child.
+      onHandVisualReplaced(side, visual) {
+        if (!entry?.group?.parent) return; // Never mutate a preview that was already exited or cancelled.
+        entry.ageVisuals ||= {};
+        entry.ageVisuals[`${side}_hand_visual`] = visual;
+        syncAgeLimbs(entry, 'hand'); // Apply age proportions again when imported GLBs replace their original fallback hands.
+      },
       modelWidth: baseWidth,
       modelHeight: baseWidth,
       name: `${group.name}_portrait`,
@@ -997,7 +1004,6 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid!important;v
     const modelWidth = Number(model.userData.portraitModelWidth) || modelHeight;
     model.position.y = modelHeight / 2;
 
-    let entry = null; // The async final-GLB callback binds after this preview's entry is registered.
     const feet = window.ProceduralLegAnimation?.attach?.(THREE, group, {
       speciesId: rep.species,
       gender: rep.gender,
