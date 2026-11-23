@@ -308,9 +308,25 @@
     return { ...weights, grip: 0 }; // Ranged Windup/Strike disables the grip-axis correction only; palm-normal targeting still follows the authored elbow/shoulder target.
   }
 
+  function currentBabyElbow(side, avatarRoot) {
+    // The Attack Editor shoulder-relative elbow solver is also the authority for a carried baby.
+    const npcCarry = avatarRoot?.userData?.proceduralHeldItemTarget; // NPC carrier (FamilyBabyBurdens.spouseCarry): same authored elbows as the player.
+    if (npcCarry?.familyBabyId) return normalizeElbowPoint(npcCarry.elbows?.[side]);
+    const player=global.Combat?.deps?.playerMesh || global.PlayerBodyTransformComposer?.getPlayerMesh?.();
+    if (!avatarRoot || !player || (avatarRoot !== player && avatarRoot.parent !== player)) return null;
+    const info=global.Shattercasks?.heldBurdenInfo?.(); // Back-stowed infants don't author held-arm bends.
+    if (info?.kind !== 'familyBaby') return null;
+    const burden=global.Shattercasks?.getBurden?.(info.id);
+    return normalizeElbowPoint(burden?.data?.carryable?.elbows?.[side]);
+  }
   function currentElbow(side, avatarRoot = null) {
     const editor = global.HobunjiAttackEditorHandShoulderControls;
     if (editor?.currentElbow) return normalizeElbowPoint(editor.currentElbow(side));
+    // Furniture Author previews use the SAME live hand solver, never just cosmetic bone sticks.
+    const author=global.HobunjiFurnitureBabyElbowFor?.(side,avatarRoot);
+    if (author) return normalizeElbowPoint(author);
+    const baby=currentBabyElbow(side,avatarRoot);
+    if (baby) return baby;
 
     const instrument = playingInstrumentFor(avatarRoot);
     if (instrument) return elbowAt(instrument.progress, instrument.action,

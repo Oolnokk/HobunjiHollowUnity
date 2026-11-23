@@ -101,7 +101,7 @@
     const C=G.RuinComposer, P=G.FurniturePuzzleRuntime, A=G.AuthoredFurniture;
     const mapId=String(options.mapId||'');
     if (!rec?.scene || !ruin || typeof makeTile!=='function' || !THREE?.Mesh || !DS?.registerPit
-      || !A?.load || !A?.buildGroup || !P?.registerNode || !G.HangingRopes?.registerRope || !G.RuinEncounters?.create)
+      || !A?.load || !A?.buildGroup || !P?.registerNode || !G.DevRandomRuinSimplePuzzles?.addFurnitureRope || !G.RuinEncounters?.create)
       throw new Error('Playable ruin wing requires the real scene, authored furniture, puzzle, rope and encounter runtimes.');
     const { room, composition } = plan(options.seed, options.archetype);
     const feedPlinthId=composition.records.find(record=>record.piece==='plinth')?.id||null; // Each authored statue dispenser feeds its own encounter objective, not a global map channel.
@@ -154,14 +154,13 @@
         if(['plinth','statueDispenser','spawnerPillar'].includes(record.piece))setPieceBlocked(record,true); // Fixed fixtures obstruct walking before the encounter begins.
         if (record.piece==='ropeMount') {
           const dir=record.params?.strikeDir || {x:Math.sin(record.rotY),z:Math.cos(record.rotY)};
-          const rope=G.HangingRopes.registerRope({
-            id:'composed_'+record.id,mapId,scene:rec.scene,mount:group,
-            x:origin.x+record.x,y:room.ceilingY-.035,z:origin.z+record.z,
+          const spec = {
+            id:'composed_'+record.id,
+            anchor:{x:origin.x+record.x,y:room.ceilingY-.035,z:origin.z+record.z},
             length:Number(record.params.length)||2.4,maxLength:Number(record.params.maxLength)||2.95,
             yaw:Math.atan2(dir.z,dir.x),
-          });
-          if (!rope) throw new Error('Could not mount a rope on '+record.id);
-          owner.ropes.push(rope.id);
+          }; // The ruin runtime's ordinary airborne rider builds this rope once it is initialized.
+          owner.ropes.push({spec,mount:group,rope:null}); // Kept until the parent V50 runtime is ready; also owns disposal.
         }
         if (record.piece==='bombDispenser') {
           if (!G.HronalWitchBombs?.registerDispenser?.(mapId,record.id,group,group.userData.furniturePuzzle))
@@ -278,6 +277,12 @@
     }
     function update() {
       if(owner.disposed)return false;
+      const riderRuntime=G.DevRandomRuinSimplePuzzles; // One traversal owner for composed, shaft and puzzle-room ropes.
+      if(riderRuntime?.hasActiveRuinState?.()){
+        for(const entry of owner.ropes){
+          if(!entry.rope)entry.rope=riderRuntime.addFurnitureRope(entry.spec,entry.mount); // Deferred until the playable V50 scene exists.
+        }
+      }
       for(const entry of owner.bombTargets){
         if(!entry.unregister)entry.unregister=G.DevRandomRuinSimplePuzzles?.registerExternalProjectileTarget?.(entry.target)||null;
       } // Deferred registration covers wings mounted before the native V50 ranged runtime initializes.
@@ -299,7 +304,9 @@
         if(rec.grid[row]?.[col])rec.grid[row][col]=tile;
       }
       for (const id of owner.placementIds) P.unregisterNode?.(mapId,id); // Releases surface listeners, active statue dispensers and pending motions.
-      for (const id of owner.ropes) G.HangingRopes?.removeRope?.(id);
+      for (const entry of owner.ropes) {
+        if(entry.rope)G.DevRandomRuinSimplePuzzles?.removeFurnitureRope?.(entry.rope); // That single removal also unregisters its burden hook.
+      }
       for (const group of owner.placed) group.parent?.remove(group);
       owner.root?.parent?.remove(owner.root);
       for (const mesh of owner.generated) mesh.geometry?.dispose?.();

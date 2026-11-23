@@ -411,6 +411,35 @@ assert.equal(fam.childTarget(child).area, 'farm', 'vat assignments prevent unsup
 child.vatId = null;
 townRules.visitPercent = 0; // Restore farm behavior for the rest of the test.
 
+// ── Spouses cannot work the vat; toddlers/children still can ──────────
+const vatAssignments = new Map(); // Records real assignment writes for the child's single available vat.
+W.DewVats = {
+  listSqueezingVats: () => [{ id: 'child_vat' }],
+  assignedWorkerForVat: id => vatAssignments.get(id) || null,
+  setExternalWorker(id, worker) {
+    if (worker) vatAssignments.set(id, worker);
+    else vatAssignments.delete(id);
+    return true;
+  },
+};
+const childWalker = makeWalker(fam.childRecord(child), 'farm', 10.5, 10.5); // Grown child's real command path.
+const vatCommand = (walker, id) => W.RomanceSystem.commandOptionsFor(walker).find(option => option.id === id); // Resolve via the production NPC wheel owner.
+assert.equal(vatCommand(tooth, 'vat'), undefined, 'spouse never receives Work the Vat');
+assert.equal(vatCommand(tooth, 'unvat'), undefined, 'spouse never receives Stop Vat Work');
+assert.ok(W.RomanceSystem.commandOptionsFor(tooth).some(option => option.id === 'spouse_kiss'), 'removing vat work preserves spouse commands');
+assert.equal(W.RomanceFamily.isAssignedToVat(tooth.rec.id), false, 'spouse cannot be classified as a vat worker');
+assert.ok(vatCommand(childWalker, 'vat'), 'grown children can still accept vat assignments');
+vatCommand(childWalker, 'vat').run();
+assert.equal(vatAssignments.get('child_vat')?.id, child.id, 'child occupies the available vat');
+assert.equal(W.RomanceFamily.isAssignedToVat(child.id), true, 'child vat work still takes priority over assigned plots');
+assert.equal(socialReplies.at(-1).line, "I'll work at the squeezing vat!", 'child acceptance keeps the normal child speech');
+assert.equal(vatCommand(tooth, 'vat'), undefined, 'spouse remains ineligible while a child vat is occupied');
+vatCommand(childWalker, 'unvat').run();
+assert.equal(socialReplies.at(-1).line, 'Okay! Time to play!', 'child work cancellation retains child speech');
+assert.equal(child.vatId, null, 'stopping child work clears its saved assignment');
+assert.equal(vatAssignments.size, 0, 'child vat becomes available again');
+delete W.DewVats;
+
 const previousPregnancy = fam.getFamily().pregnancy;
 previousPregnancy.born = true;
 previousPregnancy.awaitingChild = true; // Pending naming must block a new plan even after older siblings exist.
@@ -542,24 +571,49 @@ W.RomanceSystem.restore(saved);
 assert.equal(W.RomanceSystem.getSpouse()?.npcId, 'tooth_hatayap');
 assert.equal(W.RomanceFamily.snapshot().children[0]?.name, 'Pip', 'children survive a save/load');
 
-// The vat job belongs to the spouse who accepted it, never whoever is married next.
-const loadedFamily = W.RomanceFamily._test.getFamily(); // Saves from before the owner field must migrate safely.
-const spouseState = W.RomanceSystem._test.getState(); // Change marriage identity only in this isolated regression scenario.
-const originalSpouse = spouseState.spouse; // Restore the wedding state after testing handoff.
-const releasedVats = []; // Captures removal of the former spouse's external worker entry.
+// ── Legacy saves: retire spouse vat shifts without touching children or livestock ──
+const legacyFamily = W.RomanceFamily.serialize(); // Old saves may retain a spouse vat assignment with or without an explicit owner.
+legacyFamily.children[0].vatId = 'child_vat'; // Children's existing work must survive adult vat retirement.
+const externalWorkers = new Map([
+  ['spouse_vat', { id: tooth.rec.id, familyWorker: true }],
+  ['livestock_vat', { id: 'livestock_1', familyWorker: false }],
+]); // Simulate loaded runtime assignments so only family entries are discarded.
+const cleanedVats = []; // Tracks the existing DewVats.clearFamilyWorkers save-bound cleanup path.
+const squeezedVats = []; // Verifies day-rollover processing never processes a retired spouse assignment.
 W.DewVats = {
-  listSqueezingVats: () => [{ id: 'spouse_vat' }],
-  setExternalWorker(vat, worker) { if (!worker) releasedVats.push(vat); return true; },
+  clearFamilyWorkers() {
+    cleanedVats.push(true);
+    for (const [vatId, worker] of externalWorkers) if (worker.familyWorker) externalWorkers.delete(vatId);
+  },
+  listSqueezingVats: () => [{ id: 'spouse_vat' }, { id: 'child_vat' }],
+  assignedWorkerForVat: id => externalWorkers.get(id) || null,
+  setExternalWorker(id, worker) {
+    if (worker) externalWorkers.set(id, worker);
+    else externalWorkers.delete(id);
+    return true;
+  },
+  squeezePileWithExternalWorker(id) { squeezedVats.push(id); return 'started'; },
 };
-loadedFamily.spouseVatId = 'spouse_vat';
-loadedFamily.spouseVatWorkerId = null;
-W.RomanceFamily.tick();
-assert.equal(loadedFamily.spouseVatWorkerId, 'tooth_hatayap', 'legacy spouse vat jobs acquire their saved spouse as owner');
-spouseState.spouse = { npcId: 'different_spouse', marriedRawDay: clock.rawDay };
-W.RomanceFamily.tick();
-assert.equal(loadedFamily.spouseVatId, null, 'remarriage drops a former spouse’s vat job');
-assert.deepEqual(releasedVats, ['spouse_vat'], 'old external vat worker is explicitly released');
-spouseState.spouse = originalSpouse;
+for (const legacyOwner of [null, tooth.rec.id]) {
+  const previousCleanups = cleanedVats.length; // Checks every legacy migration reruns the save-bound family-worker cleanup.
+  W.RomanceFamily.restore({ ...legacyFamily, spouseVatId: 'spouse_vat', spouseVatWorkerId: legacyOwner });
+  assert.equal(cleanedVats.length, previousCleanups + 1, 'legacy family workers are cleared on each restore');
+  assert.equal(Object.hasOwn(W.RomanceFamily.serialize(), 'spouseVatId'), false, 'retired spouse vat is excluded from future saves');
+  assert.equal(Object.hasOwn(W.RomanceFamily.serialize(), 'spouseVatWorkerId'), false, 'retired spouse vat owner is excluded from future saves');
+  assert.equal(W.RomanceFamily.snapshot().children[0].vatId, 'child_vat', 'existing child vat assignments are retained');
+  assert.equal(W.RomanceFamily.isAssignedToVat(tooth.rec.id), false, 'restored spouse is not a vat worker');
+  assert.equal(vatCommand(tooth, 'vat'), undefined, 'legacy saves cannot re-enable spouse vat commands');
+  assert.equal(vatCommand(tooth, 'unvat'), undefined, 'legacy saves cannot re-enable spouse vat cancellation');
+  assert.equal(externalWorkers.has('spouse_vat'), false, 'old spouse worker is released from the physical vat');
+  assert.equal(externalWorkers.get('livestock_vat')?.id, 'livestock_1', 'non-family livestock vat assignments survive loading');
+  W.RomanceFamily.tick(); // Child worker registrations still proceed after the save migration.
+  assert.equal(externalWorkers.get('child_vat')?.id, child.id, 'child vat assignment rehydrates normally');
+  clock.rawDay += 1;
+  W.RomanceFamily.tick();
+  assert.ok(squeezedVats.every(id => id === 'child_vat'), 'day-rollover squeezing never uses a retired spouse job');
+  assert.ok(squeezedVats.includes('child_vat'), 'the child continues to squeeze at day rollover');
+  assert.notEqual(W.RomanceFamily.spouseTargetOverride(tooth.rec)?.activity, 'working the squeezing vat', 'the spouse cannot be sent to a vat by scheduling');
+}
 delete W.DewVats;
 
 console.log('romance dating/marriage/family tests passed');

@@ -94,4 +94,53 @@ claimsWindow.WorldActionInputClaims.clearClaims('dev-random-ruin');
 assert.equal(route('action1', 'press', { source: 'touch-arch:8' }), false,
   'lost claim falls back to generic action handling rather than activating a stale chest');
 
+// Held rope adjustment must use pointerdown/up through the same arch router:
+// calling invokeAction on a hold-only row has no onPress, and would never start the brake.
+let holdStarts=0; // Tracks one straightening request per physical press, not per rendered prompt.
+const holdReleases=[]; // Captures normal and canceled releases so the rope never stays braking.
+const holdRow={kind:'ropebrake',label:'Hold to Stop / Adjust Rope',inputAction:'action1',
+  priority:99,nativeInput:false,touchIcon:'✋',
+  onHoldStart(){holdStarts++;},onHoldEnd(detail){holdReleases.push(detail);} };
+syncClaims([holdRow]);
+const heldClaim=claimsWindow.WorldActionInputClaims.claimFor('action1');
+assert.equal(heldClaim?.showInArch,true,'hold-only adjust occupies a native press/release touch arch slot');
+assert.equal(heldClaim?.hudIcon,'✋','the held action retains its pictured hand icon');
+assert.equal(route('action1','press',{source:'touch-arch:held'}),true);
+assert.equal(holdStarts,1,'a touch pointerdown begins rope straightening immediately');
+assert.equal(route('action1','press',{source:'touch-arch:held'}),true);
+assert.equal(holdStarts,1,'touch repeat does not retrigger the adjustment');
+assert.equal(route('action1','release',{source:'touch-arch:held'}),true);
+assert.equal(holdReleases.length,1,'pointerup ends the straightening hold');
+assert.equal(route('action1','press',{source:'controller:held'}),true);
+assert.equal(holdStarts,2,'controller press uses the same held action');
+assert.equal(route('action1','cancel',{source:'controller:held'}),true);
+assert.equal(holdReleases.length,2,'a canceled hold still clears the brake');
+assert.equal(holdReleases[1].canceled,true,'cancel is identified to the held-control release');
+syncClaims([claimRow]);
+assert.equal(claimsWindow.WorldActionInputClaims.claimFor('action1')?.showInArch,false,
+  'ordinary tap-to-open chest controls are not replaced by a synthetic held arch');
+
+// Test the actual HUD pointer capture, not just the claim callback: the visual
+// action arch must render context_arch_action1 so pointerdown and pointerup pair.
+syncClaims([holdRow]);
+const pointerListeners={}; // Test DOM remembers the capture listeners the production HUD registers.
+const archDocument={hidden:false,getElementById:()=>({}),
+  addEventListener(type,callback){(pointerListeners[type] ||= []).push(callback);} };
+const archSource=fs.readFileSync('docs/js/action-prompt-ui.js','utf8');
+vm.runInNewContext(archSource,{window:claimsWindow,document:archDocument,console});
+claimsWindow.ActionPromptUI.init({});
+const originalButton={action:'dev_ruin_world_0',inputAction:'action1',label:'Hold to Stop / Adjust Rope'}; // The ruin provider advertises this row before the HUD overlays routed claims.
+const archSlots=claimsWindow.ActionPromptUI.createActionArchLayout([originalButton],'tool',false).slots;
+assert.equal(archSlots[0]?.action,'context_arch_action1','the physical touch slot is a hold-aware contextual arch button');
+const gesture={pointerId:17,target:{closest:()=>({dataset:{action:archSlots[0].action}})},
+  preventDefault(){},stopImmediatePropagation(){}}; // The DOM pointer-capture handler consumes the same physical touch gesture as gameplay.
+for(const onDown of pointerListeners.pointerdown||[])onDown(gesture);
+assert.equal(holdStarts,3,'touch pointerdown starts straightening through the rendered arch');
+for(const onUp of pointerListeners.pointerup||[])onUp(gesture);
+assert.equal(holdReleases.length,3,'touch pointerup releases the rendered held action');
+for(const onDown of pointerListeners.pointerdown||[])onDown({...gesture,pointerId:18});
+for(const onCancel of pointerListeners.pointercancel||[])onCancel({...gesture,pointerId:18});
+assert.equal(holdStarts,4,'a second pointerdown starts a fresh hold');
+assert.equal(holdReleases.length,4,'pointercancel releases the held action without sticking');
+
 console.log('hidden ruin chest touch input: primary claims, fallback, door dispatch and stale-action guards PASS');

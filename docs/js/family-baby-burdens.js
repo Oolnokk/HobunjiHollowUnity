@@ -64,6 +64,7 @@
     const group = new THREE.Group();
     group.name = 'family_baby_' + child.id;
     group.userData.familyBabyId = child.id;
+    group.userData.hobunjiFamilyBabyPhysicalCarry = true; // Renderer identifies only this physical infant, not its parent portrait.
     if (baked?.geometry) {
       // Bake the real small-body / enlarged-head skin ONCE; carry uses one rigid mesh,
       // never a second active skeleton or another per-frame animation task.
@@ -76,6 +77,7 @@
         height / 2 + centroidY + (Number(skinned.position?.y) || 0),
         Number(skinned.position?.z ?? centroidZ) || 0);
       mesh.userData.noOutline = true; // Source PNG already contains its own black ink.
+      mesh.userData.hobunjiFamilyBabyPhysicalCarry = true; // Protect the infant from the legacy held-weapon replay.
       group.add(mesh);
     } else {
       const geometry = new THREE.PlaneGeometry(width, height); // Simple fallback for rigid or not-yet-rigged NPCs.
@@ -85,6 +87,7 @@
         plane.position.z = centroidZ + (rear ? -.002 : .002);
         plane.rotation.y = rear ? Math.PI : 0;
         plane.userData.noOutline = true;
+        plane.userData.hobunjiFamilyBabyPhysicalCarry = true; // Fallback faces obey the same physical baby rule.
         group.add(plane);
       }
     }
@@ -94,7 +97,9 @@
     const posedHeight = bounds ? Math.max(height, bounds.max.y - bounds.min.y) : height;
     const headPose = headPoseOf(data);
     Object.assign(group.userData, {
-      familyBabyWidth: posedWidth, familyBabyHeight: posedHeight,
+      familyBabyWidth: width, familyBabyHeight: height, // Full original portrait size; anatomy anchors are resolved separately.
+      familyBabyGripAnchors: window.FamilyBabyCarryPose?.anchorsForAvatar?.(data, width, height) || null, // Baby-local posterior and neck pivot; no head-bounds scaling.
+      familyBabyPosedWidth: posedWidth, familyBabyPosedHeight: posedHeight, // For diagnostics only: head deformation may expand the visible silhouette.
       familyBabyArtMode: baked?.geometry ? 'posed-rig' : 'flat-portrait',
       familyBabyRearArt: data.backTextureUsesSilhouette ? 'colored-front-fallback' : 'authored-back',
     });
@@ -102,6 +107,7 @@
     return group;
   }
   function disposeVisual(group) {
+    window.FamilyBabyLimbs?.detach?.(group); // Cloned limb materials only; the walker owns the shared hand/foot GLB geometry.
     const geometries = new Set(); // One owned geometry may be shared by both fallback portrait faces.
     group?.traverse?.(node => {
       if (node.geometry) geometries.add(node.geometry);
@@ -135,7 +141,9 @@
       proxySources.set(group, proxySources.get(replacement));
       entry.burden.meshColliders = group.children.filter(node => node.isMesh); // Keep shared Shattercasks hits and draw-order tracking on the NEW geometry.
       window.Shattercasks?.refreshBurdenBounds?.(entry.burden);
+      window.FamilyBabyLimbs?.attach?.(group, walker); // After colliders: kicking limbs are presentation, never hit targets.
     } else {
+      if (!window.FamilyBabyLimbs?.isAttached?.(group)) window.FamilyBabyLimbs?.attach?.(group, walker); // Retry until the walker's hand/foot GLBs have loaded.
       // WorldPortraitLife may replace canvas textures without rebuilding the avatar.
       const textures = [front, back];
       if (group.userData.familyBabyArtMode === 'posed-rig') {
@@ -152,11 +160,15 @@
     group.userData.familyBabyRearArt = data.backTextureUsesSilhouette ? 'colored-front-fallback' : 'authored-back';
     const carryable = entry.burden.data?.carryable;
     if (carryable) {
-      const w = group.userData.familyBabyWidth, h = group.userData.familyBabyHeight;
-      carryable.handTargets.left.x = w * .40; carryable.handTargets.left.y = h * .5;
-      carryable.handTargets.right.x = -w * .40; carryable.handTargets.right.y = h * .5;
-      carryable.billboardAnchor.position.y = h * .06; carryable.billboardAnchor.position.z = -h * .48;
-      carryable.backCarry.position.y = h * .16; carryable.backCarry.position.z = -h * .48;
+      const w = width, h = height; // Stay in portrait-plane coordinates even when a newborn's head animation changes the posed bounds.
+      if (window.FamilyBabyCarryPose?.applyTo) window.FamilyBabyCarryPose.applyTo(
+        carryable, w, h, group.userData.familyBabyGripAnchors); // Stable baby-local grip anchors; preserve hand socket object identities.
+      else { // Missing optional profile script: preserve the original usable hand positions.
+        carryable.handTargets.left.x = w * .40; carryable.handTargets.left.y = h * .5;
+        carryable.handTargets.right.x = -w * .40; carryable.handTargets.right.y = h * .5;
+        carryable.billboardAnchor.position.y = h * .06; carryable.billboardAnchor.position.z = -h * .48;
+        carryable.backCarry.position.y = h * .16; carryable.backCarry.position.z = -h * .48;
+      }
     }
   }
   function moveToWalker(entry) {
@@ -181,6 +193,8 @@
     if (entry.disposing) return;
     const child = entry.child;
     child.carryBy = null; child.carryPose = null;
+    clearNpcGrip(entry); entry.npcCarryPose = null; // NPC hands return to their own idle.
+    item.group.userData.familyBabyFlying = false;
     child.carrySpot = basket || !isAllowedArea(item.mapId)
       ? null : { area: item.mapId, c: item.col, r: item.row }; // Dropped baby stays where it landed, across save/reload.
     item.carried = false; item.flying = false;
@@ -223,11 +237,13 @@
     entry = { child, walker, persist, burden: null, hiddenRoot: null, previousVisibility: true, disposing: false };
     const infantWidth = Math.max(.06, Number(walker.avatarGroup?.userData?.portraitModelWidth) || .3); // Reuses the already age-scaled portrait for both hand contacts.
     const infantHeight = Math.max(.06, Number(walker.avatarGroup?.userData?.portraitModelHeight) || infantWidth);
+    const defaultCarry = window.FamilyBabyCarryPose?.forSize?.(
+      infantWidth, infantHeight, group.userData.familyBabyGripAnchors); // Same real newborn posterior/neck pivots used after a proxy rebuild.
     const burden = api.registerBurden({
       id: 'family_baby_' + child.id, mapId: area, // Let Shattercasks pick the canonical active world scene; an NPC sub-group would reset zone burden records.
       group, kind: 'familyBaby', displayName: child.name || 'Baby',
       hanging: false, invulnerable: true, noHang: true,
-      data: { carryable: {
+      data: { carryable: defaultCarry || {
         enabled: true,
         billboardAnchor: { coordinateSpace: 'posterior-relative',
           position: { x: 0, y: infantHeight * .06, z: -infantHeight * .48 },
@@ -241,12 +257,13 @@
           portraitAnchor: { x: 0, y: 0, z: 0 } }, // Same species-adjusted back-stow rig as other carryables.
       } },
       onPickup: () => {
+        clearNpcGrip(entry); entry.npcCarryPose = null; // Spouse hands the baby over: its hand rig lets go.
         entry.child.carryBy = 'player'; entry.child.carryPose = 'arms'; entry.child.carrySpot = null;
         group.visible = true; showWalker(entry, false);
         entry.persist?.();
       },
       onDrop: item => settle(entry, item),
-      onThrow: () => { group.visible = true; showWalker(entry, false); },
+      onThrow: () => { group.visible = true; group.userData.familyBabyFlying = true; showWalker(entry, false); }, // Limbs flail while airborne.
       onImpact: item => {
         item.col = Math.floor(item.group.position.x); item.row = Math.floor(item.group.position.z);
         settle(entry, item);
@@ -261,6 +278,7 @@
     });
     if (!burden) { group.parent?.remove(group); debug.lastError = 'burden registration failed'; return null; }
     entry.burden = burden;
+    window.FamilyBabyLimbs?.attach?.(group, walker); // Attached after registerBurden so limbs are not collected as colliders.
     group.userData.familyBabyModelWidth = infantWidth;
     group.userData.familyBabyModelHeight = infantHeight;
     refreshProxyArt(entry, walker); // Grip bounds include the posed head, not only the unscaled body.
@@ -319,6 +337,41 @@
     if (entry.burden.mapId !== area) return false;
     return api.pickUp(entry.burden) === true; // The normal Tool Select/Action 1/2 carry system takes ownership.
   }
+  // NPC carriers use the PLAYER's carry: the same authored cradle/back-stow pose solved by
+  // Shattercasks.solveCarryMount on the carrier's own posterior, the back stow re-parented onto the
+  // carrier's portrait plane, and the same authored two-hand grip (handTargets + elbows) through
+  // the procedural hand driver's proceduralHeldItemTarget hook.
+  const npcScratch = { posterior: null }; // Reused per tick; no per-call allocation.
+  function clearNpcGrip(entry) {
+    const root = entry?.npcGripRoot;
+    if (root?.userData?.proceduralHeldItemTarget?.familyBabyId === entry.child?.id) root.userData.proceduralHeldItemTarget = null;
+    if (entry) entry.npcGripRoot = null;
+  }
+  function npcCarrierPortrait(spouse) {
+    const plane = spouse.avatarGroup?.userData?.neckRig?.skinnedPlane;
+    if (plane?.parent) return plane;
+    let front = null;
+    spouse.avatarGroup?.traverse?.(node => { if (!front && node.name === 'npc_avatar_front_plane') front = node; });
+    return front;
+  }
+  function solveNpcCarry(entry, spouse, back) {
+    const api = window.Shattercasks, THREE = window.THREE, group = entry.burden.group;
+    const body = spouse._npcCharacterRigRoot || spouse.root; // Facing frame that owns the legs/posterior, like playerMesh for the player.
+    if (!api?.solveCarryMount || !api.carrierPosteriorLocal || !body || !THREE?.Vector3) return false;
+    const portrait = back ? npcCarrierPortrait(spouse) : null;
+    if (back && portrait && group.parent === portrait && entry.npcCarryPose === 'back') return true; // Keep the portrait's own yaw between ticks (player rule).
+    npcScratch.posterior ||= new THREE.Vector3();
+    const ud = spouse.avatarGroup?.userData || {};
+    api.carrierPosteriorLocal(npcScratch.posterior, { speciesId: ud.speciesId, gender: ud.gender,
+      modelHeight: ud.portraitModelHeight, handAttachY: ud.handAttachY, liveY: Number(spouse.legs?.standingPosteriorY) });
+    if (group.parent !== body) body.add(group);
+    // Identical to the player: authored offsets are body-LOCAL units, and the rig root carries the
+    // same species scale playerMesh does (a Mao'ao NPC and Mao'ao player resolve to the same pose).
+    api.solveCarryMount(group, entry.burden.data?.carryable || {}, back, npcScratch.posterior);
+    if (back && portrait) api.mountCarryOnPortrait(group, body, portrait);
+    entry.npcCarryPose = back ? 'back' : 'arms';
+    return true;
+  }
   function spouseCarry(child, walker, spouse, pose, persist) {
     const entry = ensure(child, walker, persist);
     if (!entry || !spouse?.root?.parent || spouse.area !== currentArea()
@@ -326,18 +379,28 @@
     const api = window.Shattercasks;
     if (api?.heldBurdenInfo?.()?.id === entry.burden.id
         || api?.backCarriedInfo?.()?.id === entry.burden.id) return false;
-    const portrait = spouse.avatarGroup || spouse.root; // The NPC's real moving body frame, not a detached sprite clone.
-    const height = Math.max(.3, Number(spouse.avatarGroup?.userData?.portraitModelHeight) || .9);
-    const back = pose === 'back', centered = portrait === spouse.avatarGroup;
+    const back = pose === 'back';
     entry.burden.carried = true;
     if (entry.burden.mapId !== spouse.area && spouse.area === currentArea())
       api?.transferCarriedBurdenToArea?.(spouse.area, entry.burden);
-    if (entry.burden.group.parent !== portrait) portrait.add(entry.burden.group); // Avoid reordering the NPC's visual children every scheduling tick.
-    entry.burden.group.position.set(back ? 0 : height * .13,
-      centered ? height * (back ? .04 : -.10) : height * (back ? .60 : .48),
-      height * (back ? -.22 : .23));
-    entry.burden.group.rotation.set(0, back ? Math.PI : 0, back ? 0 : -.16);
-    entry.burden.group.scale.set(1, 1, 1);
+    if (!solveNpcCarry(entry, spouse, back)) { // Shattercasks without the shared solver: keep the old fixed placement.
+      const portrait = spouse.avatarGroup || spouse.root;
+      const height = Math.max(.3, Number(spouse.avatarGroup?.userData?.portraitModelHeight) || .9);
+      const centered = portrait === spouse.avatarGroup;
+      if (entry.burden.group.parent !== portrait) portrait.add(entry.burden.group);
+      entry.burden.group.position.set(back ? 0 : height * .13,
+        centered ? height * (back ? .04 : -.10) : height * (back ? .60 : .48), height * (back ? -.22 : .23));
+      entry.burden.group.rotation.set(0, back ? Math.PI : 0, back ? 0 : -.16);
+      entry.burden.group.scale.set(1, 1, 1);
+    }
+    const carryable = entry.burden.data?.carryable;
+    const gripRoot = spouse.avatarGroup; // The NPC's procedural hand rig root.
+    if (!back && gripRoot?.userData && carryable) {
+      if (entry.npcGripRoot && entry.npcGripRoot !== gripRoot) clearNpcGrip(entry);
+      gripRoot.userData.proceduralHeldItemTarget = { holder: entry.burden.group, mode: 'authored-world',
+        handTargets: carryable.handTargets || {}, elbows: carryable.elbows || null, familyBabyId: child.id }; // Same grips/elbows as the player.
+      entry.npcGripRoot = gripRoot;
+    } else clearNpcGrip(entry); // Back stow frees the hands, exactly like the player's.
     entry.burden.group.visible = true;
     showWalker(entry, false);
     const next = back ? 'back' : 'arms';
@@ -365,6 +428,7 @@
     const entry = entries.get(id);
     if (!entry) return;
     entry.disposing = true;
+    clearNpcGrip(entry);
     showWalker(entry, true);
     window.Shattercasks?.discardBurden?.(entry.burden); // Shared registry cleans the actor's real physical burden.
     disposeProxy(entry); // Remove one shared mesh and its two materials, leaving the portrait texture alive.
@@ -384,7 +448,11 @@
       area: e.burden.mapId, parent: e.burden.group.parent?.name || null,
       visible: e.burden.group.visible, artMode: e.burden.group.userData.familyBabyArtMode,
       rearArt: e.burden.group.userData.familyBabyRearArt,
-      dimensions: { width: e.burden.group.userData.familyBabyWidth, height: e.burden.group.userData.familyBabyHeight },
+      dimensions: { width: e.burden.group.userData.familyBabyWidth, height: e.burden.group.userData.familyBabyHeight }, // Source-portrait coordinate basis used for hand grips.
+      posedDimensions: { width: e.burden.group.userData.familyBabyPosedWidth, height: e.burden.group.userData.familyBabyPosedHeight }, // Expanded head is visual only.
+      gripAnchors: e.burden.group.userData.familyBabyGripAnchors, // Mobile diagnostic for left/posterior and right/neck grip origins.
+      kickingLimbs: window.FamilyBabyLimbs?.isAttached?.(e.burden.group) ? 'attached'
+        : (window.FamilyBabyLimbs?.debugSnapshot?.().lastMissing ? 'waiting for ' + window.FamilyBabyLimbs.debugSnapshot().lastMissing : 'none'), // Mobile: cloned 3D hands/feet state.
       meshes: e.burden.group.children.length,
     })) }),
   });

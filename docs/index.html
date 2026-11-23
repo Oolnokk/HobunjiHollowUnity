@@ -21,7 +21,7 @@
        prototype render() base every presentation hook runs through.
        See docs/architecture/visual-render-pipeline.md. -->
   <script src="js/render-layers.js?v=20261119visualCore1"></script>
-  <script src="js/render-hooks.js?v=20261122h000df8a"></script>
+  <script src="js/render-hooks.js?v=20261123babyKick1"></script>
   <script src="js/substance-cover-shell.js?v=20261102coverShell4"></script> <!-- Shared static-mesh surface covering; must load after THREE and before gameplay modules. -->
   <script src="js/audio-mix.js?v=20261025qol2"></script> <!-- Master/Music/Effects volume; must load before any audio code creates an AudioContext or <audio>. -->
   <script src="js/sprite-raycast-guard.js?v=20261024a"></script> <!-- Skips Sprite hit tests for camera-less world rays (r128 otherwise logs + throws per ray). -->
@@ -35,7 +35,7 @@
        module so its fetch() wrapper can log each config/JSON access. -->
   <script src="js/dev-companion-bridge.js?v=20261019handoff1"></script>
   <script src="js/dev-companion-appearance.js?v=20261107appearance-audit2"></script>
-  <script src="js/xray-hierarchy.js?v=20261119h7933e82"></script>
+  <script src="js/xray-hierarchy.js?v=20261122babyFront1"></script>
   <script src="https://unpkg.com/three@0.128.0/examples/js/controls/TransformControls.js"></script>
   <script src="js/geometry-quality.js?v=20261110cloneaudit2"></script> <!-- Baked GLB quality profiles; source fallback. -->
   <script src="js/geometry-auto-lod.js?v=20261122hc64fabe"></script> <!-- Opt-in render-only idle-time optimization. -->
@@ -194,7 +194,7 @@
        procedural-hand-outline-parity.js's fix for the same class of bug). -->
   <script src="js/portrait-plane-outline-parity.js?v=20261119he2d7cd6"></script>
   <!-- Shared held-item action poses used by game.js and its animation editor. -->
-  <script src="js/held-action-animations.js?v=20261122hKasa6"></script>
+  <script src="js/held-action-animations.js?v=20261123npcBabyCarry1"></script>
   <!-- Great Fey skip voluntary gifts, proximity chatter, activity reactions, and pet greetings.
        Load once before all NPC interaction modules, including lazy runtimes. -->
   <script src="js/npc-interaction-policy.js?v=20261021fey1"></script>
@@ -268,7 +268,7 @@
   <!-- Loads the richer per-piece data authored by furniture-avatar-author (seat
        anchors, processing VFX/warps, livestock stomp points) on top of it -->
   <script src="js/table-chair-placement.js?v=20261102chairreview3"></script>
-  <script src="js/furniture-table-system.js?v=20261115hf9c1b7a"></script>
+  <script src="js/furniture-table-system.js?v=20261122airrope4"></script>
   <script src="js/furniture-surface-png-runtime.js?v=20261103materialv3"></script> <!-- Opt-in per-face PNG tiling, alpha padding and opacity from Furniture Editor. -->
   <script src="js/furniture-tile-span.js?v=20261114vertical1"></script> <!-- Shared, on-demand rigid ends + surface-rooted elastic middle. -->
   <script src="js/authored-furniture-runtime.js?v=20261119visualauth1"></script>
@@ -575,7 +575,7 @@
   <script src="js/ruin-rope-shaft.js?v=20261122h3c9a090"></script> <!-- Default central-shaft puzzle: spaced-out slabs + swing ropes (window.RuinRopeShaft); after ruin-jump-shaft.js, before shaft-hub.js. -->
   <script src="js/shaft-hub.js?v=20261122h7fb6f80"></script>
   <script src="js/ruin-layer-plan.js?v=20261122hdf993f1"></script>
-  <script src="js/dev-ruin-single-room-trial.js?v=20261117lowBowlFire1"></script> <!-- One-room developer puzzle chooser and normal-plan weighted odds. -->
+  <script src="js/dev-ruin-single-room-trial.js?v=20261122airrope2"></script> <!-- One-room developer puzzle chooser and normal-plan weighted odds. -->
   <script src="js/dev-ruin-find-blocks.js?v=20261122h2c454e1"></script> <!-- Four-block compound lab fixture, using native ruin push, fire, flute and bomb mechanics. -->
   <script src="js/ruin-shaft-corridor.js?v=20261104directVestibule1"></script>
   <script src="js/ruin-layer-defense.js?v=20261122keyghost1"></script>
@@ -872,24 +872,24 @@
        dependencies; must load before shattercasks.js, which feeds them. See docs/architecture/ruin-capabilities.md. -->
   <script src="js/world-events.js?v=1"></script>
   <script src="js/targetables.js?v=1"></script>
-  <script src="js/shattercasks.js?v=20261122familyBaby10"></script>
+  <script src="js/shattercasks.js?v=20261123npcBabyCarry1"></script>
   <script src="js/crate-piles.js?v=20261121lungeAoeAudit3"></script>
   <script src="js/hronal-witch-bombs.js?v=20261115bombImpact3"></script>
   <script src="js/pingdort-flocks.js?v=20261122roostFoot2"></script> <!-- Wild Drenkirra-hunting flocks, fertile nests, and companion rock-bomber attacks. -->
   <!-- Hanging ropes: the shared rope swing arithmetic (pure) and the rope component burdens hang from. Needs Shattercasks at
        call time only. See docs/architecture/ruin-capabilities.md. -->
-  <script src="js/rope-core.js?v=1"></script>
+  <script src="js/rope-core.js?v=20261122ropestraight1"></script>
   <script src="js/ruin-rope-geometry.js?v=20261109actualMoveSpeed1"></script> <!-- Unbuffed new-player flight envelope sizes rope rooms and zigzags. -->
   <script src="js/dungeon-rope-art.js?v=20261116straightNetCage1"></script> <!-- Shared transparent rope sprite for pendulums and net frustums. -->
   <script src="js/ruin-rope-torches.js?v=20261114heca9091"></script> <!-- Torch-Flail head/fire and lightweight fake light on ruin rope ends. -->
-  <script src="js/hanging-ropes.js?v=20261107ropesAir1"></script>
-  <script src="js/rope-furniture.js?v=1"></script> <!-- Ropes as furniture: a piece with a `rope` block hangs a rope; see docs/architecture/ruin-capabilities.md -->
+  <script src="js/hanging-ropes.js?v=20261122airrope1"></script>
+  <script src="js/rope-furniture.js?v=20261122airrope5"></script> <!-- Ropes as furniture: a piece with a `rope` block hangs a rope; see docs/architecture/ruin-capabilities.md -->
   <script src="js/rope-launch.js?v=1"></script>
   <script src="js/ruin-solver.js?v=1"></script> <!-- Goal solver: composes modules into layouts that satisfy goals (defend a statue, blast a pillar...) -->
   <script src="js/room-plan.js?v=1"></script>
   <script src="js/ruin-composer.js?v=20261103h93645be"></script> <!-- Builds whole rooms from goals: archetype -> focal-first solving -> claims ledger -> furniture records + encounter -->
   <script src="js/ruin-encounters.js?v=20261122h464deaf"></script> <!-- Encounter runtime: pillar spawners, demolitionists planting at a statue -->
-  <script src="js/ruin-composer-playable.js?v=20261108witchBombExtern1"></script> <!-- Materializes composed trials in playable V50 ruins (authored fixtures, chasm collision and encounters). -->
+  <script src="js/ruin-composer-playable.js?v=20261122airrope3"></script> <!-- Materializes composed trials in playable V50 ruins (authored fixtures, chasm collision and encounters). -->
   <script src="js/key-statue-figures.js?v=20261122keyghostAudit2"></script> <!-- Tzizkhanash stone Ghost Army soldier render, while KeyStatues owns carrying/press/respawn. -->
   <script src="js/key-statues.js?v=20261122keyghostAudit2"></script>
   <script src="js/dungeon-fire.js?v=20261122hTorchFire1"></script>
@@ -2954,10 +2954,12 @@
        romance-family.js must load before romance-system.js (whose init()
        wires the family module in); game.js calls both init()s. -->
   <script src="config/romance-config.js?v=20261122babyBabble1"></script>
-  <script src="js/family-baby-burdens.js?v=20261122babyPortraitPosed2"></script>
+  <script src="config/family-baby-carry-pose.js?v=20261123poseClear1"></script>
+  <script src="js/family-baby-limbs.js?v=20261123babyKick1"></script> <!-- Kicking hands/feet cloned from the hidden baby walker onto the carried proxy. -->
+  <script src="js/family-baby-burdens.js?v=20261123npcBabyCarry1"></script>
   <script src="js/family-baby-ambient-voice.js?v=20261122decoupledVoice1"></script> <!-- Voice adapter; physical baby carry code unchanged. -->
-  <script src="js/family-baby-care.js?v=20261122familyCare2"></script>
-  <script src="js/romance-family.js?v=20261123newbornPortraitAlpha2"></script>
+  <script src="js/family-baby-care.js?v=20261122noSpouseVat1"></script>
+  <script src="js/romance-family.js?v=20261123childVatNoSpousePortrait3"></script>
   <script src="js/romance-wedding.js?v=20261027hbreath8"></script>
   <script src="js/npc-following.js?v=20261122babyFollow1"></script>
   <!-- Shared spouse kiss motion/height solver. Loads before RomanceSystem.init but after the player render/leg APIs. -->

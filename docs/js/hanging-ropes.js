@@ -194,10 +194,12 @@
     const player = window.Combat?.deps?.player;
     if (!player || !held) return null;
     const t = tile(), px = player.x / t, pz = player.y / t, mapId = area();
+    const feetY = mapId === 'map_i_dev_random_ruin' ? window.DevRandomRuin?.getPlayerGroundSupportY?.() : null; // Layered shaft hooks must belong to the player's story.
     let best = null, bestDist = CONFIG.hangReach;
     for (const rope of ropes.values()) {
       if (rope.mapId !== mapId || !canAttach(rope, held, { fromHand: true })) continue;
       const bob = rope.bob || RC.bobAt(rope), d = Math.hypot(px - bob.x, pz - bob.z); // to the hook
+      if (Number.isFinite(feetY) && Math.abs(bob.y - feetY) > CONFIG.hangReach) continue; // Never hang a burden on an invisible rope on the floor above/below.
       if (d <= bestDist) { best = rope; bestDist = d; }
     }
     return best;
@@ -217,15 +219,7 @@
   // Ruin-owned ropes use their own layered collision and hazard checks. A normal
   // furniture rope outside ruins uses this same RopeCore pendulum and PlayerJump
   // supplies the physical airborne state, rendering and ballistic dismount.
-  function ropeCatches(rope, f) {
-    const bob = rope.bob || RC.bobAt(rope), a = rope.anchor;
-    const dx = bob.x - a.x, dy = bob.y - a.y, dz = bob.z - a.z;
-    const len2 = dx * dx + dy * dy + dz * dz;
-    if (len2 < 1e-6) return false;
-    const t = Math.max(0, Math.min(1, ((f.x - a.x) * dx + (f.y - a.y) * dy + (f.z - a.z) * dz) / len2));
-    if (t * Math.sqrt(len2) < RC.MIN_LENGTH - 0.05) return false;
-    return Math.hypot(f.x - a.x - dx * t, f.y - a.y - dy * t, f.z - a.z - dz * t) <= RC.AIR_CATCH_RADIUS;
-  }
+  const ropeCatches = (rope, point) => RC.catchesAirborne(rope, point); // The ruin uses this exact RopeCore catch geometry too.
   function catchAirborneRope(f) {
     if (!f || playerRope || !window.PlayerJump?.beginRopeRide) return false;
     const player = window.Combat?.deps?.player;

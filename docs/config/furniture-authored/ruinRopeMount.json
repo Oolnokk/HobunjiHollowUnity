@@ -4,7 +4,7 @@
   "id": "ruinRopeMount",
   "name": "Rope Mount",
   "sourceSchema": "hobunji_furniture_surface_author.v58",
-  "notes": "Ceiling mount for a swinging rope. Place it under a ceiling; the rope block hangs a rope from the ring. In the ruin the player rides it like any rope (Grab Rope, pump, hold to brake, Dodge to jump off); a burden can hang from it too.",
+  "notes": "Ceiling mount for a swinging rope. Place it under a ceiling; the rope block hangs a rope from the ring. In the ruin the player rides it like any rope (automatic airborne catch, pump, hold to brake, Dodge to jump off); a burden can hang from it too.",
   "footprint": {
     "w": 1,
     "d": 1

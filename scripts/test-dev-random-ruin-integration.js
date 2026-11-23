@@ -116,7 +116,7 @@ assert(interactions.includes("control.claimAction1===true?'action1'") && interac
 assert(interactions.includes('const reserved=new Set(') && interactions.includes('const availableSlots=slotActions.filter(action=>!reserved.has(action))'), 'explicit rope/door input claims must reserve their arch slot before generic ruin interactions receive remaining slots');
 assert(interactions.includes('entry.nativeInput?null:(fixedIndex>=0?TOUCH_BUTTON_IDS[fixedIndex]:null)'), 'explicit contextual claims must retain the matching physical touch slot');
 assert(interactions.includes('const slotActions=SLOT_ACTIONS'), 'nearby ruin interactions must be allowed to occupy Action 1–3 as well as Item Action 1–2 instead of reserving combat slots');
-assert(simplePuzzles.includes("claimAction1:true") && simplePuzzles.includes("label:'Grab Rope'"), 'rope grab must be able to replace weapon Action 1 while nearby');
+assert(!simplePuzzles.includes("label:'Grab Rope'") && !simplePuzzles.includes('function attachRope(') && !simplePuzzles.includes('function canGrabShaftRope('), 'rope riding is airborne-only and must not claim weapon Action 1');
 assert(interior.includes("kind:'transitDoor'") && interior.includes("claimAction1:true"), 'hallway doors must be able to replace weapon Action 1 while nearby');
 assert(game.includes("window.DevRandomRuinInteractions?.getActionButtons?.()"), 'normal building-interior action resolution must consume ruin context actions before held attacks/items');
 assert(game.includes('const promptInputs = window.ActionPromptUI.resolveWorldPromptInputs(promptButtons, archLayout)')
@@ -172,8 +172,9 @@ assert(interior.includes("DevRandomRuinSimplePuzzles?.ownsPlayerMotion?.()"), 'r
 assert(simplePuzzles.includes("anchorY=ceilingBase+wallHeight-.035"), 'rope anchors must use the authored room ceiling datum instead of floating at a derived mid-room height');
 assert(simplePuzzles.includes("dev_ruin_swing_rope_ceiling_mount_"), 'rope traversal must render an explicit ceiling attachment');
 assert(simplePuzzles.includes("inputAction:'dodge'") && simplePuzzles.includes("nativeInput:true"), 'rope jump-off prompt must advertise the canonical Dodge input without stealing an action slot');
-assert(simplePuzzles.includes("label:'Grab Rope'"), 'idle ropes must remain discoverable through the normal floating interaction list');
-assert(!simplePuzzles.includes('tryAutoGrabRope'), 'ropes are grabbed only through the Grab Rope prompt (which claims Action 1); proximity auto-grab caught players unintentionally');
+assert(simplePuzzles.includes('catchAirborneRope, // Called by PlayerJump') && simplePuzzles.includes('function ropeCatchPoint(rope,point)'), 'every ruin rope must be catchable through the PlayerJump airborne route');
+assert(!simplePuzzles.includes('tryAutoGrabRope') && simplePuzzles.includes('RopeCore.catchesAirborne(rope,point'), 'only the physical PlayerJump airborne catch attaches the player; no grounded auto-snap or Action 1 grab');
+assert(simplePuzzles.includes('ropes.forEach(registerRuinRope)') && simplePuzzles.includes('registerRuinRope(rope)') && simplePuzzles.includes('HangingRopes?.adoptRope?.(rope'), 'all generated and furniture ruin ropes must register the same rope instance for swinging burdens');
 assert(simplePuzzles.includes('ROPE_BODY_RADIUS = RopeCore.BODY_RADIUS') && ropeCore.includes('BODY_RADIUS: 0.045') && simplePuzzles.includes('sharedCylinderGeometry(ROPE_BODY_RADIUS,ROPE_BODY_RADIUS,1,8)'), 'rope must render as a thick world-space cylinder rather than a one-pixel THREE.Line');
 assert(simplePuzzles.includes('sweptRopePoint') && simplePuzzles.includes('ropeBlockedAt') && simplePuzzles.includes('ROPE_ROUTE_SAMPLES'), 'rope generation, swinging, and release flight must use the shared interior occupancy instead of tunnelling through solids');
 assert(simplePuzzles.includes("String(door?.to)===String(hall.id)") && simplePuzzles.includes('approachAtMin'), 'safe-path reveal pedestal must derive the player-approach side from the actual room-to-hall doorway rather than always using the low-coordinate end');

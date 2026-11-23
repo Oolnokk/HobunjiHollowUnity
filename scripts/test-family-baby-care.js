@@ -9,7 +9,7 @@ const baby = { id: 'baby1', name: 'Pip', otherParentId: 'spouse1', carryBy: null
 const infantWalker = { rec: { id: 'baby1', isChild: true }, area: 'interior', root: { position: { x: 6.5, z: 6.5 } } };
 const parent = { rec: { id: 'spouse1' }, area: 'interior', root: { position: { x: 6.7, z: 6.5 } } };
 const ctx = {
-  family: { children: [baby], spouseVatId: null },
+  family: { children: [baby] },
   helpers: {
     clockHour: () => hour, hourStamp: () => hour,
     hashInt: () => 1, findWalker: id => id === 'spouse1' ? parent : null,
@@ -37,6 +37,11 @@ assert.equal(policy.planFor(baby).pose, 'arms', 'free-time newborn is held in ar
 assert.equal(policy.spouseTarget(parent.rec).area, 'interior', 'off-duty spouse stays by crib');
 policy.tick();
 assert.deepEqual(holdingCalls, ['arms'], 'spouse takes baby in arms when they are close to the basket');
+ctx.family.spouseVatId = 'obsolete_spouse_vat'; // Simulates a stale field before legacy family-save migration.
+hour = 12;
+assert.equal(policy.planFor(baby).farmwork, false, 'retired spouse vat fields cannot masquerade as real fieldwork');
+assert.equal(policy.planFor(baby).pose, null, 'stale vat fields never cause an incorrect back-stow pose');
+delete ctx.family.spouseVatId;
 working = true; hour = 12;
 assert.equal(policy.planFor(baby).pose, 'back', 'farmwork selects back-stow instead of skipping work');
 assert.equal(policy.spouseTarget(parent.rec), null, 'working parent retains ordinary farmwork target while carrying baby');

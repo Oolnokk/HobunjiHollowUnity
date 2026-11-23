@@ -431,7 +431,7 @@
   }
 
   // Central x-ray rules (js/xray-hierarchy.js). Defaults here only apply if that module is absent.
-  const XRAY_RULE_FALLBACK = { 'actors.order': 'all', 'pants.sortWithActor': 'on', 'weapon.frontPlaneMask': 'off', 'hand.frontPlaneMask': 'off', 'portrait.waterTint': 'wet-tile', 'layers.manualOrder': 'off', 'background.gearDepth': 'ignore', 'airborne.rebuildDepth': 'on', 'weapon.followHandLayer': 'on', 'ground.showZone': 'off' };
+  const XRAY_RULE_FALLBACK = { 'actors.order': 'all', 'pants.sortWithActor': 'on', 'weapon.frontPlaneMask': 'off', 'hand.frontPlaneMask': 'off', 'portrait.waterTint': 'wet-tile', 'layers.manualOrder': 'off', 'background.gearDepth': 'ignore', 'airborne.rebuildDepth': 'on', 'weapon.followHandLayer': 'on', 'ground.showZone': 'off', 'baby.carrierForeground': 'on' };
   function xrayRule(key) { return window.XrayHierarchy?.get?.(key) ?? XRAY_RULE_FALLBACK[key]; }
 
   const SHOULDER_PET_RENDER_ORDERS = Object.freeze({
@@ -853,6 +853,10 @@
 
   function withVisualSort(renderer, portraitOrder, draw) {
     const manual = xrayRule('layers.manualOrder') === 'on' && !!window.XrayHierarchy?.layerRank;
+    const babyForegroundItem = item =>
+      item?.object?.userData?.hobunjiFamilyBabyPhysicalCarry === true
+      && Number(item.renderOrder) >= 30
+      && window.XrayHierarchy?.get?.('baby.carrierForeground') !== 'off'; // Shared with both rank paths; stowed/dropped babies and opt-outs retain normal depth.
     if (!manual && !portraitOrder && !previouslyPresentedPet?.avatarRef) return draw();
     if (!renderer.setTransparentSort) return draw();
     const rankCache = new Map(); // One classification per render item, not per sort comparison.
@@ -885,8 +889,8 @@
       window.XrayHierarchy.layerRank('actor.front'), window.XrayHierarchy.layerRank('actor.rear')) : 0; // Reserve one manual-rank slot for the owner/pet composite.
     const rank = item => {
       if (!rankCache.has(item)) {
-        const value = pairFace(item)
-          ? petManualRankAnchor + drawOrder(item) * 0.001
+        const value = babyForegroundItem(item) ? 10000
+          : pairFace(item) ? petManualRankAnchor + drawOrder(item) * 0.001
           : window.XrayHierarchy.layerRank(visualLayerFor(item));
         rankCache.set(item, value);
       }
@@ -911,7 +915,7 @@
       if (!actorSortKeyCache.has(item)) {
         const actor = actorRank(item);
         const face = pairFace(item);
-        const category = window.XrayHierarchy.layerRank(visualLayerFor(item));
+        const category = babyForegroundItem(item) ? 10000 : window.XrayHierarchy.layerRank(visualLayerFor(item));
         actorSortKeyCache.set(item, actor && Number.isFinite(actor.depth)
           ? {
               primary: petManualRankAnchor, depth: -actor.depth,
@@ -1014,6 +1018,13 @@
       const rank = actors.get(portraitStencilOwner(mesh, scene));
       if (rank) extras.set(mesh, rank);
     }
+    // A carried Burden (held baby at 30, stowed Burden at 2.15 between the 2.05 rear and 2.25 front
+    // portrait passes) belongs to the player's actor slot. Unranked, it compared its raw renderOrder
+    // against the ranked portrait's PORTRAIT_SORT_ORDER (2) and drew after the carrier's front face,
+    // so a back-stowed baby showed through the parent's chest whenever another actor was nearby.
+    const carrierRank = actors.get(player);
+    for (const mesh of window.Shattercasks?.carrierSortMeshes?.() || [])
+      if (mesh?.parent && mesh.visible !== false && !ranks.has(mesh)) extras.set(mesh, carrierRank);
     return { ranks, extras, nearest, count };
   }
 
@@ -1107,6 +1118,7 @@
 
   function isLegacyHeldPlane(object) {
     if (!object?.isMesh || object.isInstancedMesh || object.isSkinnedMesh) return false;
+    if (object.userData?.hobunjiFamilyBabyPhysicalCarry && xrayRule('baby.carrierForeground') === 'on') return false; // A held infant is physical PNG art, never a weapon-plane replay.
     if (object.userData?.hobunjiHeldObjectPlane === true) return true;
     return Math.abs(Number(object.renderOrder) - LEGACY_HELD_RENDER_ORDER) < 1e-6;
   }

@@ -137,3 +137,30 @@ assert.equal(tables.blocksBox('indexed', 4.5, 4.5), false, 'new frames read curr
 assert.equal(tables.blocksBox('indexed', 8, 4.5), true);
 tables.clearArea('indexed');
 assert.equal(tables.blocksBox('indexed', 8, 4.5), false, 'a same-frame removal invalidates the index');
+
+
+// A scene clear owns rope registration as well as table membership. Late authored
+// asset promises must not recreate an invisible grab hook after its map disappeared.
+{
+  const ropeEvents=[]; // Records registration and removal for two independent lifecycle cases.
+  const deferred=[]; // Queued AuthoredFurniture.load completions stand in for mobile asset latency.
+  window.RopeFurniture={
+    register:(map,id)=>ropeEvents.push(['register',map,id]),
+    unregister:(map,id)=>ropeEvents.push(['unregister',map,id]),
+  };
+  window.AuthoredFurniture={load:()=>({then(callback){deferred.push(callback);}})};
+  window.THREE.Box3=class {setFromObject(){return this;} isEmpty(){return true;}};
+  const piece=root(2,2);piece.parent={};
+  tables.registerPlacement('rope-map',{id:'live',key:'ruinRopeMount',col:2,row:2},piece,{fw:1,fd:1});
+  deferred.shift()({rope:{enabled:true}});
+  assert.deepEqual(ropeEvents,[['register','rope-map','live']],'the authored furniture rope registers only after its asset resolves');
+  tables.clearArea('rope-map');
+  assert.deepEqual(ropeEvents.at(-1),['unregister','rope-map','live'],'a cleared area releases its rope hook');
+  const afterClearCount=ropeEvents.length; // Ensures an in-flight promise cannot revive an absent area.
+  const late=root(4,4);late.parent={};
+  tables.registerPlacement('late-map',{id:'pending',key:'ruinRopeMount',col:4,row:4},late,{fw:1,fd:1});
+  tables.clearArea('late-map');
+  deferred.shift()({rope:{enabled:true}});
+  assert.equal(ropeEvents.length,afterClearCount+1,'a stale authored load cannot register an orphaned rope');
+  assert.deepEqual(ropeEvents.at(-1),['unregister','late-map','pending']);
+}
