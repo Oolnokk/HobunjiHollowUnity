@@ -438,6 +438,54 @@ function testRuntime() {
   currentArea='map_back_test';
   activeScene=scene;
 
+  // Unlike furniture, an infant must be attached to the carrier's body frame:
+  // back x-ray is a DRAW ORDER, not a reason to inherit the portrait's free yaw.
+  const baby=window.Shattercasks.registerBurden({mapId:currentArea,scene,group:new Group(),
+    id:'test-baby-torso-stow',kind:'familyBaby',hanging:false,invulnerable:true,
+    data:{carryable:{backCarry:{
+      position:{x:-.008,y:.204,z:0},rotation:{x:-174.07,y:-.94,z:171.05},
+      posteriorOffset:{x:.0581,y:.282,z:-.0603},portraitAnchor:{x:0,y:0,z:0},size:1,
+    }}}});
+  const babyArt=new Group(); babyArt.isMesh=true; babyArt.visible=true; // A real infant plane is rendered as the carrier's back Burden.
+  babyArt.material=new MeshBasicMaterial({transparent:true,depthTest:true,depthWrite:false});
+  baby.group.add(babyArt);
+  assert(window.Shattercasks.pickUp(baby),'one physical newborn can be picked up');
+  assert(window.Shattercasks.stowOnBack(),'newborn can be stowed behind player');
+  assert.equal(baby.group.parent,currentBodyRoot,'baby is a CHILD OF THE PLAYER BODY, not its independently rotating portrait');
+  assert.notEqual(baby.group.parent,rigidPortrait,'a back baby is never parented to front PNG artwork');
+  assert.equal(window.Shattercasks.debugSnapshot().backCarryMount.frame,'carrier-posterior','mobile diagnosis exposes the actual baby mounting frame');
+  assert.equal(window.Shattercasks.debugSnapshot().backCarryMount.portraitAttached,false);
+  assert(baby.group.position.z < rigidPortrait.position.z,'baby mount origin stays behind the front portrait in body-local depth');
+  window.Shattercasks.tick(.2); // Existing actor sorter/x-ray policy is unchanged even though the physical parent is the torso.
+  assert.equal(babyArt.renderOrder,2.15,'infant is STILL rendered between carrier rear and front PNG passes');
+  const babyLocal=baby.group.position.clone();
+  const babyWorld=baby.group.getWorldPosition(new Vector3());
+  rigidPortrait.position.x+=.45;
+  rigidPortrait.quaternion.setFromEuler(new Euler(0,Math.PI*.78,0));
+  window.Shattercasks.tick(.02);
+  for(const axis of ['x','y','z']) assert(Math.abs(baby.group.getWorldPosition(new Vector3())[axis]-babyWorld[axis])<1e-8,
+    'independent portrait motion cannot make stowed infant orbit the carrier on '+axis);
+  currentBodyRoot.quaternion.setFromEuler(new Euler(0,Math.PI*.5,0));
+  currentBodyRoot.position.set(.6,.2,.3);
+  window.Shattercasks.tick(.02);
+  const rotatedBaby=baby.group.getWorldPosition(new Vector3());
+  const expectedBaby=currentBodyRoot.localToWorld(babyLocal.clone());
+  for(const axis of ['x','y','z']) {
+    assert(Math.abs(rotatedBaby[axis]-expectedBaby[axis])<1e-8,'baby follows carrier torso turn on '+axis);
+    assert(Math.abs(baby.group.position[axis]-babyLocal[axis])<1e-8,'turns do not rewrite the baby mount on '+axis);
+  }
+  assert(Math.hypot(rotatedBaby.x-babyWorld.x,rotatedBaby.z-babyWorld.z)>.01,'carrier turning moves the baby WITH its rear-facing torso');
+  assert(window.Shattercasks.takeFromBack(),'baby can move from rear to normal hand grip');
+  assert.equal(baby.group.parent,headJoint,'retrieval restores existing hand carry rig');
+  assert(window.Shattercasks.stowOnBack(),'retrieved baby can be restowed');
+  assert.equal(baby.group.parent,currentBodyRoot,'restowing solves the body-relative mount again, never preserving the hand pose');
+  assert.equal(window.Shattercasks.debugSnapshot().backCarryMount.frame,'carrier-posterior');
+  assert(window.Shattercasks.discardBurden(baby),'test infant leaves no carried burden after cleanup');
+  rigidPortrait.position.x-=.45;
+  rigidPortrait.quaternion.setFromEuler(new Euler(0,0,0));
+  currentBodyRoot.quaternion.setFromEuler(new Euler(0,0,0));
+  currentBodyRoot.position.set(0,0,0);
+
   const bomb=window.Shattercasks.registerBurden({mapId:'map_back_test',scene,group:new Group(),
     id:'test-back-witch-bomb',kind:'hronalWitchBomb',hanging:false,data:{carryable:{}}});
   bomb.fuseSeconds=2;bomb.spawnedAtMs=clock;
