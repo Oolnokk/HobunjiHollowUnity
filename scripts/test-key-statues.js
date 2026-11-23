@@ -100,9 +100,16 @@ root.userData.meshById=new Map([['key_statue_button',runtimeButton]]);
 let assetLoads=0;
 const registered=[];
 const takenTransitions=[];
+const soldierRolls=[],carved=[],stoneDisposals=[]; // The same soldier persists through every destroyed/recalled Burden, without duplicate carvings.
+
 const runtimeWindow={
  THREE:{Group:MockGroup,Vector3:class{constructor(x=0,y=0,z=0){Object.assign(this,{x,y,z});}}},
  GridTileAccessors:{getCurrentArea:()=> 'map_key_statue_runtime',getActiveScene:()=>scene,getActiveGrid:()=>null},
+ KeyStatueFigures:{
+  rollSoldier(id){soldierRolls.push(id);return {id,roster:{appearance:{speciesId:'harlyao'}},shapeKey:'harlyaoLongsword'};},
+  decorate(group,spec){carved.push({group,spec});group.userData.ghostArmyStatueInfo={species:'harlyao',weaponShape:spec.shapeKey};return Promise.resolve(true);},
+  dispose(group){stoneDisposals.push(group);},
+ },
  AuthoredFurniture:{
   async load(){assetLoads++;return assetLoads===1?null:{key:'keyStatue'};},
   buildGroup(){return new MockGroup();},
@@ -132,12 +139,21 @@ assert.equal(runtimeWindow.KeyStatues.debugSnapshot().dispensers[0].respawning,f
 runtimeWindow.KeyStatues.tick(.1);runtimeWindow.KeyStatues.tick(.1);
 await new Promise(resolve=>setImmediate(resolve));
 assert.equal(registered.length,1,'the dispenser retries and registers the physical Key Statue');
+assert.deepEqual(soldierRolls,['fixture'],'the first Key Statue samples one Ghost Army soldier for its dispenser');
+assert.equal(carved.length,1,'the Key Statue is decorated without changing its Burden registration');
+assert.equal(carved[0].group,registered[0].group);
+assert.equal(runtimeWindow.KeyStatues.debugSnapshot().dispensers[0].soldier?.species,'harlyao',
+  'mobile diagnostics describe the new carving on the same physical payload');
 assert.equal(registered[0].group.parent?.parent,runtimeButton,'the replacement is physically mounted on the moving runtimeButton');
 assert.equal(takenTransitions[0],false,'initially mounted payload leaves the plinth in its OFF/raised state');
 const first=registered[0];
 runtimeWindow.Shattercasks.discardBurden(first);
 await new Promise(resolve=>setImmediate(resolve));
 assert.equal(registered.length,2,'losing the statue spawns exactly one replacement');
+assert.equal(stoneDisposals[0],first.group,'destroyed statue artwork is disposed before the replacement');
+assert.equal(carved.length,2,'each replacement gets a new physical sculpture');
+assert.strictEqual(carved[0].spec,carved[1].spec,'the same randomized soldier identity survives a failed encounter');
+assert.equal(soldierRolls.length,1,'a failed defense does not reroll another ghost');
 assert.notStrictEqual(runtimeWindow.KeyStatues.debugSnapshot().dispensers[0].payload,first.id,
  'the live payload reference changes to the replacement');
 assert.equal(registered[1].group.parent?.parent,runtimeButton,'replacement is attached while the runtimeButton animates back up');
@@ -174,5 +190,10 @@ await new Promise(resolve=>setImmediate(resolve));
 assert.equal(alternateCancels,1,'destroying a swapped statue resets the plinth that actually held it');
 assert.equal(registered.length,5,'a cross-placed destroyed statue still produces only one fresh replacement');
 assert.equal(api.status(area,'fixture'),'ready');
-console.log('Key Statue: authored dispenser + plinth feed, retry after failed loads, loss and drop recovery, protected in-progress or swapped statues, and reset on destruction passed.');
+assert.equal(soldierRolls.length,1,'recalled and swapped statues do not reroll clothing/weapon combinations');
+assert.equal(carved.length,registered.length,'every newly mounted statue receives its own carving');
+assert.equal(stoneDisposals.length,registered.length-1,'every recalled, lost, or destroyed old sculpture gets cleaned up');
+assert(api.unregisterDispenser(area,'fixture'),'teardown removes the room dispenser');
+assert.equal(stoneDisposals.length,registered.length,'teardown disposes the final sculpture even when onLost is suppressed');
+console.log('Key Statue: authored dispenser + plinth feed, Ghost Army figure cleanup/retry identity, and protected in-progress or swapped statues passed.');
 })().catch(error=>{console.error(error);process.exitCode=1;});
