@@ -17,7 +17,7 @@
   let playerLegsRef = null;
   let baseBodyY = 0;
   const creatureStates = new Set(); // Tracks active creature reactions, including a small number of prone actors that need independent presentation updates.
-  const pronePoseDiagnostics = { rescuedStalls: 0, fallbackPoses: 0, lastRescue: null }; // Read by the existing mobile impact debug view; never allocated on a render tick.
+  const pronePoseDiagnostics = { rescuedStalls: 0, fallbackPoses: 0, restoredMissing: 0, reboundVisuals: 0, retiredOrphans: 0, failedRestores: 0, lastRescue: null }; // Read by the existing mobile impact debug view; never allocated on a render tick.
   const PRONE_ANIMATION_STALL_MS = 90; // A skipped hostile simulation update may not strand the portrait part-way through a knockdown.
   const creatureFlatAxis = new THREE.Vector3(0, 0, 1); // Fallback horizontal rotation of the creature's side-facing two-plane portrait.
   const visualNowMs = () => typeof performance !== 'undefined' && typeof performance.now === 'function'
@@ -224,6 +224,16 @@
     return pivot;
   }
 
+  // The same entity can receive a new animal card after wildlife visual LOD,
+  // sprite rig replacement or appearance rebuild. An old session may still
+  // own its EMPTY pivot while the live front/back cards render upright.
+  function isCurrentCreaturePoseRig(entity, state) {
+    const avatar = entity?.avatarRef;
+    return !!(state?.pivot?.parent && avatar?.group && avatar.impactPivot === state.pivot
+      && avatar.frontPlane?.parent === state.pivot && avatar.backPlane?.parent === state.pivot
+      && belongsToCreatureAvatar(state.pivot, avatar.group));
+  }
+
   function createCreaturePoseSession(pivot, owner) {
     const session = window.ActorRigCompositor?.createAbsoluteSession?.(owner) || null;
     if (session && !session.capture(pivot, ['position', 'quaternion'])) {
@@ -316,15 +326,51 @@
     entity._impactRagdollPlayback = null;
   }
 
+  // A knocked-down actor whose portrait was promoted/rebuilt after the original
+  // hit needs the SETTLED recorded pose, not a replayed first-frame throw.
+  // This is called by the existing updateCreatureMesh -> updateCreature path,
+  // which handles both animals and bandits without creating a new game.js tick.
+  function restoreCreaturePronePose(entity) {
+    if (!entity?.prone || !(Number(entity.health) > 0) || entity._deathRecordedThrow
+      || entity._wildlifeVisualsReleased) return false;
+    const direction = entity._pronePortraitDirection || 'front';
+    const mappedDirection = CREATURE_DIRECTION_QUARTER_TURN[direction] || 'front';
+    const clip = window.ImpactBlendLibrary?.getClip('breakThrow', mappedDirection);
+    if (!clip?.frames?.length) return holdUnrecordedCreatureProne(entity);
+    stopCreature(entity);
+    const pivot = ensureCreatureImpactPivot(entity);
+    if (!pivot) { pronePoseDiagnostics.failedRestores++; return false; }
+    const poseSession = createCreaturePoseSession(pivot, 'impact-creature-prone-restored');
+    if (poseSession === false) { pronePoseDiagnostics.failedRestores++; return false; }
+    const visibleHeight = Math.max(0.05, Number(entity.halfHeight) * 2 || CREATURE_REFERENCE_HEIGHT);
+    const state = {
+      entity, pivot, poseSession, bank: 'breakThrow', direction: mappedDirection,
+      clip, elapsedS: clip.durationSeconds, playbackRate: 1, holding: true,
+      lastPresentationMs: visualNowMs(),
+      baseBodyY: Number(clip.frames[0]?.ragdoll?.body?.localPosition?.y) || 0,
+      heightScale: visibleHeight / CREATURE_REFERENCE_HEIGHT,
+    }; // A single held pose owner for the existing current portrait generation.
+    entity._impactRagdollPlayback = state;
+    creatureStates.add(state);
+    const tail = clip.frames[clip.frames.length - 1];
+    if (!applyCreatureFrame(state, tail, tail, 0)) {
+      stopCreature(entity);
+      pronePoseDiagnostics.failedRestores++;
+      return false;
+    }
+    pronePoseDiagnostics.restoredMissing++;
+    return true;
+  }
+
   // The blend bank loads asynchronously. If a creature is knocked down before
   // the recording is available, keep the card flat instead of showing an
   // upright (or low-Footing tilted) portrait for the entire prone duration.
   function holdUnrecordedCreatureProne(entity) {
     stopCreature(entity);
     const pivot = ensureCreatureImpactPivot(entity);
-    if (!pivot) return false;
+    if (!pivot) { pronePoseDiagnostics.failedRestores++; return false; }
     const poseSession = createCreaturePoseSession(pivot, 'impact-creature-prone-fallback');
-    if (poseSession === false) return false;
+    if (poseSession === false) { pronePoseDiagnostics.failedRestores++; return false; }
     const halfHeight = Math.max(0.05, Number(entity.halfHeight) || CREATURE_REFERENCE_HEIGHT / 2);
     const state = {
       entity, pivot, poseSession, bank: 'breakThrow', clip: null,
@@ -340,7 +386,9 @@
   }
 
   function triggerCreature(entity, bank, direction, opts = {}) {
-    if (entity?._deathRecordedThrow) return 0; // Never change corpse geometry just because a live attack tried to start.
+    if (entity?._deathRecordedThrow) return 0;
+    if (bank === 'breakThrow' && entity?.prone)
+      entity._pronePortraitDirection = direction; // Retained on the entity when its visible animal/NPC rig streams out and back in. // Never change corpse geometry just because a live attack tried to start.
     if (entity?.prone && bank !== 'breakThrow') return 0; // Ordinary staggers must never replace the prone body with an upright impact clip.
     const mappedDirection = CREATURE_DIRECTION_QUARTER_TURN[direction] || 'front';
     const clip = window.ImpactBlendLibrary?.getClip(bank, mappedDirection);
@@ -444,8 +492,18 @@
     if (!creatureStates.size) return;
     const now = visualNowMs();
     for (const state of creatureStates) {
+      if (state.entity?._impactRagdollPlayback !== state) {
+        releaseCreaturePose(state); // Visual-streaming can clear the entity's pointer without calling stopCreature.
+        creatureStates.delete(state);
+        pronePoseDiagnostics.retiredOrphans++;
+        continue;
+      }
       if (state.bank !== 'breakThrow' && state.bank !== 'tumble') continue;
-      if (!state.entity?.prone) { stopCreature(state.entity); continue; }
+      if (!state.entity.prone) { stopCreature(state.entity); continue; }
+      if (!isCurrentCreaturePoseRig(state.entity, state)) {
+        updateCreature(state.entity, 0); // A held pose on a discarded sprite is NOT a held pose on the replacement.
+        continue;
+      }
       if (state.holding) continue;
       const elapsedMs = now - (state.lastPresentationMs ?? now);
       if (!(elapsedMs >= PRONE_ANIMATION_STALL_MS)) continue;
@@ -470,13 +528,20 @@
   }); // Presentation only: never advances AI, physics, Footing, or a non-prone hit reaction.
 
   function updateCreature(entity, dt) {
-    const state = entity?._impactRagdollPlayback;
-    if (!state) return false;
-    if (Number.isFinite(dt) && dt > 0) state.lastPresentationMs = visualNowMs(); // Zero-dt presentation probes must not hide a stalled knockdown from the render rescue.
-    if (state.poseSession && !state.poseSession.owns()) {
-      stopCreature(entity); // Another visual actor superseded the live impact.
-      return false;
+    let state = entity?._impactRagdollPlayback;
+    const prone = !!entity?.prone;
+    if (state && state.bank !== 'impact' && !prone && !entity?._deathRecordedThrow) {
+      stopCreature(entity); // Recover as soon as the gameplay state stands, not after an abandoned throw timer.
+      state = null;
     }
+    if (state && (!isCurrentCreaturePoseRig(entity, state)
+        || (state.poseSession && !state.poseSession.owns()))) {
+      stopCreature(entity); // Outdated/overwritten portrait pivot; do not keep a held pose on invisible geometry.
+      state = null;
+      if (prone) pronePoseDiagnostics.reboundVisuals++;
+    }
+    if (!state) return prone ? restoreCreaturePronePose(entity) : false;
+    if (Number.isFinite(dt) && dt > 0) state.lastPresentationMs = visualNowMs(); // Zero-dt presentation probes must not hide a stalled knockdown from the render rescue.
     if (state.holding) {
       if (!entity.prone) { stopCreature(entity); return true; }
       return true;
