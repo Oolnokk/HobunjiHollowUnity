@@ -368,4 +368,37 @@ function creature() {
   clip=originalClip;
 }
 
+
+// Regression for the original shared failure: exported JSON rotations are
+// rounded to six decimals, and the absolute rig owner tests quaternion
+// self-consistency with 1e-7 tolerance. Every intermediate frame must retain
+// its SAME live session rather than quitting at a slightly nonunit sample.
+{
+  const originalClip=clip;
+  const bank=JSON.parse(fs.readFileSync('docs/config/animations/spinthrow-blend-v1.json','utf8'));
+  for(const [direction,pole] of Object.entries({front:'left',back:'right',left:'back',right:'front'})) {
+    clip=bank.clips[pole].clip;
+    const animal=creature(); animal.prone=true;
+    const first=impact.triggerCreature(animal,'breakThrow',direction);
+    assert(first>0);
+    const state=animal._impactRagdollPlayback;
+    let samples=0;
+    for (let elapsed=0;elapsed<clip.durationSeconds+.04;elapsed+=.025) {
+      fakeNowMs+=25;
+      assert(impact.updateCreature(animal,.025),direction+' updates without losing the session');
+      assert.equal(animal._impactRagdollPlayback,state,
+        direction+' frame '+samples+' must retain its original continuously falling portrait, not restart or snap to a replacement');
+      assert.equal(state.poseSession.owns(),true,direction+' authored sample must not invalidate its own absolute quaternion');
+      if(!state.holding) samples++;
+    }
+    assert(state.holding,direction+' completes the recorded throw before settling');
+    assert(samples>=10,direction+' produces many continuous animated frames rather than an immediate flat fallback');
+    const q=state.pivot.quaternion;
+    assert(Math.abs(1-(q.x*q.x+q.y*q.y+q.z*q.z+q.w*q.w))<1e-9,'published portrait rotation is unit-length');
+    animal.prone=false;impact.updateCreature(animal,.025);
+    assert.equal(rig.getDebug().activeAbsoluteClaims,0);
+  }
+  clip=originalClip;
+}
+
 console.log('Ragdoll scoped pivot ownership: prone, replacement, live impacts, corpse, and cleanup PASS');
