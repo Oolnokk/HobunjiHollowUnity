@@ -107,7 +107,7 @@ assert(!draws.some(d=>d.kind==='platform-clip'),'a hidden upper story never gene
 platform.visible=true;
 platform.geometry.boundingBox.min.x=4;platform.geometry.boundingBox.max.x=5;
 const regularProjection=deps.worldToOverlay;
-deps.worldToOverlay=(x,y,z)=>({x:100+z*10,y:100+y*10}); // A camera aligned along X sees the same screen region at different depths.
+deps.worldToOverlay=(x,y,z)=>({x:100+z*10+x*.1,y:100+y*10}); // Preserve a nonzero projected radius while comparing depth-aligned overlapping silhouettes.
 draws.length=0;
 assert.equal(win.__probeGlyphMasks(platformScene,deps,7200).drawn,1,'a slab farther away than the wall leaves the wall glyph visible');
 assert(!draws.some(d=>d.kind==='platform-clip'),'slabs behind the wall must not be treated as foreground cover');
