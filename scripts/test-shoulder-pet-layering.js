@@ -380,6 +380,57 @@ for (const inward of [false, true]) for (const manual of [false, true]) {
     }
   });
 }
+// Exercise both layout shapes with live back-stow classification and an unrelated hand-carried load.
+const stowedLoad = makeMesh('stowed_burden'); // Alternately represents ordinary furniture and a baby PNG.
+const heldLoad = makeMesh('hand_carried_burden'); // Must retain its original layer while the back is occupied.
+const rearReplacement = makeMesh('shattercask_carrier_rear_only_xray'); // Normal skinned owner's visible rear pass while stowed.
+rearReplacement.userData.shattercaskRearOverlay = true;
+stowedLoad.renderOrder = 2.15;
+heldLoad.renderOrder = 1.4;
+rearReplacement.renderOrder = 2.05;
+windowStub.Shattercasks = {
+  backCarriedInfo: () => ({ kind: stowedLoad.userData.hobunjiFamilyBabyPhysicalCarry ? 'familyBaby' : 'witchBomb' }),
+  isStowedSortMesh: mesh => mesh === stowedLoad,
+};
+for (const skinned of [false, true]) for (const inward of [false, true]) {
+  pet.__hobunjiShoulderFacingInward = inward;
+  use(pet, true);
+  if (skinned) {
+    activeOwner.frontMesh = sharedSkinnedOwner;
+    activeOwner.backMesh = sharedSkinnedOwner;
+    api.setShoulderPetLayering(pet, sharedSkinnedOwner, sharedSkinnedOwner, skinnedFrontMaterial, skinnedBackMaterial);
+  }
+  const frontItem = { ...drawItem(activeOwner.frontMesh), material: skinned ? skinnedFrontMaterial : front.material }; // The live carrier front.
+  const rearItem = drawItem(skinned ? rearReplacement : back); // The rear material is replaced only for the skinned carrier.
+  const petItems = pet.avatarRef.group.children.map(drawItem); // Check both faces and both split overlays.
+  const actor = { owner: { id: 1 }, depth: 0.3 }; // A nearby NPC activates the actor-depth comparison path.
+  const ranked = {
+    ranks: new Map([[activeOwner.frontMesh, actor], [rearItem.object, actor],
+      [nearbyNpcPortrait, { owner: { id: 2 }, depth: 0.7 }]]),
+    extras: new Map([[stowedLoad, actor], [heldLoad, actor]]),
+  };
+  for (const baby of [false, true]) for (const order of [null, ranked]) for (const manual of [false, true]) {
+    stowedLoad.userData.hobunjiFamilyBabyPhysicalCarry = baby;
+    useManual = manual;
+    productionSort(sorterRenderer, order, () => {
+      const load = drawItem(stowedLoad); // The same sorter stage applies to ordinary furniture and babies.
+      const items = [frontItem, load, ...petItems, rearItem, drawItem(ownerHatBack), drawItem(ownerHatFront)];
+      if (order) items.push(drawItem(nearbyNpcPortrait));
+      if (!manual) items.push(drawItem(heldLoad));
+      items.reverse().sort(sorterRenderer.sort);
+      for (const petItem of petItems) {
+        assert.ok(items.indexOf(rearItem) < items.indexOf(petItem), 'the rear portrait stays behind the pet');
+        assert.ok(items.indexOf(petItem) < items.indexOf(load), 'the stowed load paints over every pet card');
+      }
+      assert.ok(items.indexOf(load) < items.indexOf(frontItem), 'the carrier front still occludes the stowed load');
+      assert.ok(items.indexOf(load) < items.findIndex(item => item.object === ownerHatFront),
+        'the carrier front hat remains in front of the stowed load');
+      if (!manual) assert.ok(items.findIndex(item => item.object === heldLoad) < items.indexOf(load),
+        'the hand-carried load keeps its ordinary sort stage');
+    });
+  }
+}
+delete windowStub.Shattercasks;
 use(pet, true); // Restore the original rigid owner for detachment assertions.
 testFacing(true);
 use(pet, false);

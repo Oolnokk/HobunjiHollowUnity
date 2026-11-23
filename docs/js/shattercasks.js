@@ -561,6 +561,7 @@
           .map(material=>[material,{depthWrite:material.depthWrite,depthTest:material.depthTest,transparent:material.transparent}])
       });
       const snapshot=heldRenderOrders.get(mesh);
+      snapshot.mode=mode; // The portrait sorter reads the live carry mode independently of raw draw order.
       syncCarriedMaterials(mesh,snapshot);
       // 1.5 is reserved for the weapon replay. A stowed Burden instead enters
       // the PNG transparent draw queue so renderOrder can place it between the
@@ -2801,6 +2802,7 @@
     // (otherwise every portrait sorts at order 2 and a stowed Burden at 2.15 paints over the front face).
     // Shared carry pose for non-player carriers (FamilyBabyBurdens.spouseCarry): same math as the player.
     solveCarryMount,carrierPosteriorLocal,mountCarryOnPortrait,
+    isStowedSortMesh:mesh=>heldRenderOrders.get(mesh)?.mode==='stowed',
     carrierSortMeshes:()=>[...heldRenderOrders.keys(),...[...skinnedRearOverlays.values()].map(record=>record.overlay),...rearHeadwearXray.keys()],
     registerHangingBurden,registerBurden:registerHangingBurden,createHangingBurden,createHangingShattercask,releaseBurdenDownward,releaseBurdenWithVelocity,detachHeldBurden,refreshBurdenBounds,discardBurden,registerBurdenFactory,registerBurdenImpactHandler,
     getBurden:(id,mapId=area())=>records.get(String(mapId))?.vases.get(String(id))||null,

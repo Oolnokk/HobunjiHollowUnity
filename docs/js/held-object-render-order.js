@@ -437,6 +437,7 @@
   const SHOULDER_PET_RENDER_ORDERS = Object.freeze({
     front: 2, back: 4, // Ordinary owner priorities, also the low and high ends of the attached stack.
     pet: 3, // Both sides of the animal sit between the owner sides. A turn can expose either animal card.
+    stowedBurden: 3.5, // After both pet cards and their split overlays, before the carrier front.
   });
   const shoulderViewLocal = new THREE.Vector3(); // Tests the camera against the owner's front plane for the optional gear mask.
   const shoulderViewInverse = new THREE.Matrix4(); // Converts a world view ray to the owner portrait's local space.
@@ -864,14 +865,24 @@
     const orderCache = new Map(); // Whole-list effective render orders for pet/owner stages AND unrelated items.
     const inward = previouslyPresentedPet?.__hobunjiShoulderFacingInward === true; // Snapshot the observation pose for this draw.
     const activePetPortrait = !!previouslyPresentedPet?.avatarRef; // Enables the shared owner/pet actor-depth keys only when a pet is attached.
+    const stowedCarry = activePetPortrait && window.Shattercasks?.backCarriedInfo?.(); // One lookup for this draw.
     const pairFace = item => {
-      if (!pairCache.has(item)) pairCache.set(item, shoulderPetDrawFace(item));
+      if (!pairCache.has(item)) {
+        let face = shoulderPetDrawFace(item); // Normal owner/pet classification.
+        if (stowedCarry && !face) {
+          if (window.Shattercasks.isStowedSortMesh?.(item.object)) face = 'stowed-burden';
+          else if (item.object?.userData?.shattercaskRearOverlay) face = 'owner-back'; // The carrier's replacement skinned rear card.
+        }
+        pairCache.set(item, face);
+      }
       return pairCache.get(item);
     };
     const drawOrder = item => {
       if (!orderCache.has(item)) {
         const face = pairFace(item);
-        const stage = face ? shoulderPetFaceSortRank(face, inward) : null;
+        // A stowed load uses the carrier's rear/burden/front sandwich even when the pet turns inward.
+        const stage = face === 'stowed-burden' ? SHOULDER_PET_RENDER_ORDERS.stowedBurden
+          : face ? shoulderPetFaceSortRank(face, !stowedCarry && inward) : null;
         let value = Number(item.renderOrder) || 0; // All unrelated transparent objects keep their ordinary order.
         if (stage !== null) {
           const mesh = item.object;
@@ -4551,7 +4562,10 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
       frontPortraitGearCandidates: lastFrontPortraitGearCandidates,
       frontPortraitMaskedGear: lastFrontPortraitMaskedGear,
       frontPortraitMaskReason: lastFrontPortraitMaskReason,
-      shoulderPetCompositor: { ...lastShoulderPetDecision },
+      shoulderPetCompositor: {
+        ...lastShoulderPetDecision,
+        stowedBurdenAbovePet: lastShoulderPetDecision.active && !!window.Shattercasks?.backCarriedInfo?.(),
+      },
       frontPortraitMaskPasses: frontPortraitMaskPassCount,
       frontPortraitDepthFallbackPasses, // Visibility into fallback use without mobile devtools.
       groundDepthRestores: groundDepthRestoreCount,
