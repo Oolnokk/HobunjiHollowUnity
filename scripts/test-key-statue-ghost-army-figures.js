@@ -9,7 +9,7 @@ const vm=require('node:vm');
 const source=fs.readFileSync('docs/js/key-statue-figures.js','utf8');
 const ancestor=fs.readFileSync('docs/js/festival-ancestor-figures.js','utf8');
 const march=fs.readFileSync('docs/js/harlyao-night-march-runtime.js','utf8');
-assert(ancestor.includes('createCarvedFigure')&&ancestor.includes('buildFigure(window.THREE,record,pose,String(id),stone)'),
+assert(ancestor.includes('createCarvedFigure')&&ancestor.includes('buildFigure(window.THREE,record,pose,String(id),stone,prepareProfile)'),
   'Key Statue uses the shrine Tzizkhanash portrait and stone-cell renderer, not a second stone material');
 assert(march.includes("window.MinionCombat.rollRoster(SPECIES_ID")&&march.includes('window.MinionCombat.defaultWeaponShapes'),
   'the ghost march supplies the two existing loadout authorities');
