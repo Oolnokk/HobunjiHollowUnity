@@ -211,8 +211,7 @@
     const wheelUnit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? strip.clientWidth : 1; // Wheel deltas may arrive in pixels, lines, or pages.
     const delta = Number(event.deltaY) * wheelUnit; // Only vertical wheel input over category tabs becomes horizontal movement.
     if (!Number.isFinite(delta) || !delta) return;
-    const previous = strip.scrollLeft;
-    strip.scrollLeft = Math.max(0, Math.min(strip.scrollWidth - strip.clientWidth, previous + delta));
+    strip.scrollLeft = Math.max(0, Math.min(strip.scrollWidth - strip.clientWidth, strip.scrollLeft + delta));
     event.preventDefault(); // The strip owns vertical wheel input even at either end; do not scroll the page behind the menu.
     event.stopPropagation(); // Never send a tab-hover wheel to background inventory/game controls.
   }
