@@ -25,8 +25,10 @@ class Geometry {dispose(){}}
 class Material {constructor(opts){Object.assign(this,opts);}dispose(){}}
 class Mesh extends Group {constructor(geometry,material){super();this.geometry=geometry;this.material=material;}}
 class Texture {constructor(canvas){this.image=canvas;}dispose(){}}
+let opaqueHitAvailable=true; // Tests the real alpha-target path and a near-miss on a small egg.
 class Raycaster {
-  intersectObjects(hitPlanes){return hitPlanes.length?[{object:hitPlanes[0],distance:1,
+  constructor(origin,direction){this.ray={origin,direction};}
+  intersectObjects(hitPlanes){return opaqueHitAvailable&&hitPlanes.length?[{object:hitPlanes[0],distance:1,
     uv:{x:.5,y:.5},point:new Vector3(0,0,0)}]:[];}
 }
 const THREE={Group,Mesh,Vector3,Raycaster,PlaneGeometry:Geometry,MeshBasicMaterial:Material,
@@ -35,7 +37,7 @@ const scene=new Group(),furniture=new Group();scene.add(furniture);
 const inventory={},player={x:45.5*64,y:45.5*64,physicalFeetY:12.5};
 const nest={id:'native-exterior-eggs',areaId:'map_southern_cloud_forest',
   x:player.x,y:player.y,col:45,row:45,w:1,h:1,
-  worldY:12.5,remaining:3,itemKey:'fertilePingdortEgg',
+  worldY:12.5,remaining:3,itemKey:'fertilePingdortEgg',exteriorCliffNest:true,
   genotype:{base:{color:'#849877'}},mesh:furniture,eggCollected:0};
 nest.onEggCollected=()=>nest.eggCollected++;
 const classNames=new Set();
@@ -49,7 +51,15 @@ const document={getElementById:id=>widgets[id]||null,
   createElement:kind=>{assert.equal(kind,'canvas');return {width:128,height:128,getContext:()=>({
     clearRect(){},fillText(){},getImageData:()=>({data:canvasData}),
   })};}};
-const window={FarmAnimals:{queueItemGenotype(){window.queued++}},
+const window={LivestockItemGenotypePersistence:{acquireNestItem(itemKey, genotype, newCount, options){
+    assert.equal(itemKey,'fertilePingdortEgg');
+    assert.equal(genotype,nest.genotype);
+    assert.equal(options.areaId,nest.areaId);
+    assert.equal(options.remaining,nest.remaining-1);
+    assert.equal(newCount,window.queued+1);
+    window.queued++;
+    return true;
+  }},
   PingdortFlocks:{nestRecords:()=>[nest]},
   InventoryStacks:{MAX_TOTAL:99},
   __farmLog(){},queued:0};
@@ -58,28 +68,40 @@ const sandbox={window,document,THREE,performance:{now:()=>1000},
 vm.runInNewContext(source,sandbox,{filename:'den-nest-system.js'});
 let holdSeconds=0,action='nest_take',pressed=true;
 const toasts=[];
+let aimDirection=new Vector3(0,-.35,2); // Reticle direction changes independently of the player's ground position.
 const deps={_denNests:new Map(),getCurrentArea:()=>nest.areaId,
   getActiveScene:()=>scene,player,playerMesh:{position:{y:12.5}},TILE:64,
   inventory,ITEM_DEFS:{fertilePingdortEgg:{icon:'🥚',label:'Fertile Pingdort Egg'}},
   itemIconForKey:()=> '🥚',
-  getPlayerAimRay:()=>({origin:new Vector3(45.5,13,45.5),direction:new Vector3(0,-.4,1)}),
+  getPlayerAimRay:()=>({origin:new Vector3(45.5,13.25,43.5),direction:aimDirection}),
   getNestHoldT:()=>holdSeconds,setNestHoldT:value=>{holdSeconds=value;},
   getActiveAction:()=>action,getActionHeldDown:()=>pressed,
   clampInventoryStack(){},buildInventoryGrid(){},refreshItemScroll(){},
-  refreshActionBar(){},saveMemberWorldData(){},
+  refreshActionBar(){},
   showToast:(message,ok)=>toasts.push({message,ok}),
 };
 window.DenNestSystem.init(deps);
+const originalNestX=nest.x,originalNestY=nest.y,originalPlayerX=player.x,originalPlayerY=player.y; // Restore precise mock positions after the fractional-range check.
+nest.x=(45+.875)*64;nest.y=(45+.125)*64;player.x=nest.x+1.4*64;player.y=nest.y;
+assert.equal(window.DenNestSystem.isPlayerNearDenNest(nest),true,
+  'player within 1.6 tiles of a shifted egg cup remains eligible even when outside its tile-centre range');
+nest.x=originalNestX;nest.y=originalNestY;player.x=originalPlayerX;player.y=originalPlayerY;
 async function run(){
   // Promises mirror the asynchronous native PNG/emoji egg-plane renderer.
   assert.equal(window.DenNestSystem.currentAimedNest(),null,'eggs are initially queued');
   await Promise.resolve();await Promise.resolve();
   assert.equal(window.DenNestSystem.currentAimedNest(),nest,'aimed egg claims native interaction');
+  opaqueHitAvailable=false;
+  assert.equal(window.DenNestSystem.currentAimedNest(),nest,'a missed egg pixel still permits a directly aimed nest-cup hold');
+  assert.equal(window.DenNestSystem.debugSnapshot().lastFocusedAssisted,true,'mobile debug identifies the assisted targeting mode');
+  aimDirection=new Vector3(0,0,-1);
+  assert.equal(window.DenNestSystem.currentAimedNest(),null,'looking away returns input to ordinary cliff gameplay');
+  aimDirection=new Vector3(0,-.35,2);opaqueHitAvailable=true;
   for(let i=0;i<51;i++)window.DenNestSystem.updateNestInteraction(.1);
   assert.equal(inventory.fertilePingdortEgg,1,'five-second hold takes one real egg');
   assert.equal(nest.remaining,2,'clutch count updates after one egg');
   assert.equal(nest.eggCollected,1,'existing save callback invoked');
-  assert.equal(window.queued,1,'the inherited genotype joins the livestock item queue');
+  assert.equal(window.queued,1,'the inherited genotype is committed atomically with the inventory unit');
   assert.equal(window.DenNestSystem.debugSnapshot().renderedContents,2);
   player.physicalFeetY=null;deps.playerMesh.position.y=0;
   assert.equal(window.DenNestSystem.currentAimedNest(),null,

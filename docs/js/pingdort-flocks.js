@@ -168,7 +168,7 @@
     const session=sessions.get(activeArea()),nest=session?.nests.find(n=>n.id===id);
     if(!nest||nest.remaining<=0)return {ok:false,message:'This Pingdort nest is empty.'};
     const player=tilePos(deps?.player);
-    if(dist(player,{x:nest.col+.5,z:nest.row+.5})>1.6)return {ok:false,message:'Move closer to the nest.'};
+    if(dist(player,tilePos(nest))>1.6)return {ok:false,message:'Move closer to the nest.'};
     const jumpFeet=deps?.player?.physicalFeetY;
     const feetY=typeof jumpFeet==='number'&&Number.isFinite(jumpFeet)?jumpFeet:Number(deps?.playerMesh?.position?.y);
     if(Number.isFinite(feetY)&&Math.abs(feetY-nest.worldY)>1.25)
@@ -182,15 +182,33 @@
     deps.saveMemberWorldData?.();deps.refreshItemScroll?.();deps.refreshActionBar?.();
     return {ok:true,message:'🥚 Took a fertile Pingdort egg.'};
   }
+  const NEST_CAP_INSET=.2, NEST_ROCK_CLEARANCE=.4; // Keep the actual cup on the cap and away from the parent rock wall.
+  const NEST_SUBTILE_OFFSETS=[.125,.375,.625,.875]; // Sample exposed quarter-tile positions when no safely spaced tile centre exists.
   function clearNestTile(shelf){
-    const spots=(shelf?.footprint||[]).map(cell=>({x:cell.c+.5,z:cell.r+.5}))
-      .filter(p=>window.CliffRouteNetwork?.shelfContains?.(shelf,p.x,p.z)); // Real walkable cap centers; never a ground/rock surface beneath the shelf.
-    if(!spots.length)return null;
+    if(!shelf||!Array.isArray(shelf.footprint)||!shelf.footprint.length)return null; // Defensive entry check for the read-only wildlife diagnostic seam.
+    const solidBase=[...(shelf?.base?.footprint||[]),...(shelf?.base?.boundaryCells||[])]; // Both the parent plateau and painted stone face obstruct the cup.
     const reward=shelf.reward==='herbCluster'&&shelf.herbTile
       ?{x:shelf.herbTile.c+.5,z:shelf.herbTile.r+.5}:shelf;
-    const gap=shelf.reward==='oreRock'?1.05:.88; // Keep the authored central ore/chest/herb pickup clear of the smaller 1×1 nest.
-    const safe=shelf.reward?spots.filter(p=>dist(p,reward)>gap):spots;
-    return safe.sort((a,b)=>dist(a,reward)-dist(b,reward))[0]||null;
+    const gap=shelf.reward==='oreRock'?1.05:.88; // Preserve access to the authored ore/chest/herb reward.
+    const candidateSpots=offsets=>{
+      const spots=[]; // Reused cap candidate buffer for this one-time wilderness nest selection, never per frame.
+      for(const cell of shelf?.footprint||[])for(const dx of offsets)for(const dz of offsets){
+        const p={x:cell.c+dx,z:cell.r+dz}; // Actual sub-tile position shared by the nest, its eggs and guarding flock.
+        if(!window.CliffRouteNetwork?.shelfContains?.(shelf,p.x,p.z,-NEST_CAP_INSET)
+          ||(shelf.reward&&dist(p,reward)<=gap))continue;
+        if(solidBase.some(rock=>{
+          const rx=Math.max(rock.c-p.x,0,p.x-(rock.c+1)),rz=Math.max(rock.r-p.z,0,p.z-(rock.r+1));
+          return Math.hypot(rx,rz)<NEST_ROCK_CLEARANCE;
+        }))continue;
+        spots.push(p);
+      }
+      return spots;
+    };
+    const centers=candidateSpots([.5]); // Keep stable historic tile-centre sites when their cliff clearance is actually valid.
+    const safe=centers.length?centers:candidateSpots(NEST_SUBTILE_OFFSETS); // Recover narrow but reachable ledges before omitting the site.
+    const normal=shelf.normal||{x:0,z:0}; // Rank surviving sites toward the exposed front, away from the embedded cliff.
+    const front=p=>(p.x-shelf.x)*(Number(normal.x)||0)+(p.z-shelf.z)*(Number(normal.z)||0);
+    return safe.sort((a,b)=>front(b)-front(a)||dist(a,reward)-dist(b,reward))[0]||null;
   }
   const nestLineages = new Map(); // World+site -> saved flock genotype; reconnects offspring and parents after streaming or reload.
   function nestFamilyGenotype(session, nestId) {
@@ -234,6 +252,7 @@
       areaId:session.area,remaining:NEST_EGGS,itemKey:FERTILE_EGG,
       genotype:nestFamilyGenotype(session,session.area+':'+shelf.id), // Same stored bloodline as its guarding flock, including after re-entry.
       col:Math.floor(x),row:Math.floor(z),w:1,h:1,
+      exteriorCliffNest:true, // DenNestSystem measures interaction reach from the exact sub-tile cup position.
       mesh:group,group,fallbackArt,flockLoaded:false,deadBirdSlots:new Set()};
     nest.x=x*unit();nest.y=z*unit(); // Native DenNestSystem uses pixel-space nest coordinates like branch nests.
     nest.onEggCollected=()=>eggCollected(session,nest); // Shares the normal hold-to-take and one-item inventory path.
@@ -242,7 +261,11 @@
     return nest;
   }
   function spawnBird(session,nest,index){
-    const pos={x:nest.col+.5+(index-1)*.18,z:nest.row+.5+(index%2)*.12}; // Three roosting birds stay over the same raised 1×1 cap.
+    const at=tilePos(nest); // Actual sub-tile nest coordinates keep the guarding flock out of cliff rock.
+    const shelf=session.network?.balconies?.find(s=>s.id===nest.shelfId); // Only checked when the birds initially spawn, not per frame.
+    const tangent=shelf?.tangent||{x:1,z:0}; // Spread perched birds sideways along the cap instead of outward into its face.
+    const candidate={x:at.x+(index-1)*.16*tangent.x,z:at.z+(index-1)*.16*tangent.z};
+    const pos=shelf&&!window.CliffRouteNetwork?.shelfContains?.(shelf,candidate.x,candidate.z,-.02)?at:candidate; // Never perch past a narrow shelf edge.
     const genotype=nest.genotype ? JSON.parse(JSON.stringify(nest.genotype)) : null; // Identical inherited colors and Size; no independent guardian reroll.
     const actor=deps.makeCreatureEntity?.(KIND,pos.x*unit(),pos.z*unit(),{
       genotype,
@@ -252,7 +275,7 @@
     if(!actor)return null;
     actor.areaId=session.area;actor.isWildPingdort=true;actor.pingdortFlightPose='perched';
     actor.def=Object.assign(Object.create(actor.def||null),{hostile:false,attacks:[]}); // Wild birds never choose the player/large prey in generic AI.
-    const home={x:pos.x,z:pos.z,y:nest.worldY+.75+index*.12}; // Explicit ledge elevation prevents buried birds in Sense Mode.
+    const home={x:pos.x,z:pos.z,y:nest.worldY}; // The shelf is the actual perch surface; native groundLift determines each bird's foot height, not an extra invisible air gap.
     const perch=window.PerchSupport?.point?.(nest.id+':bird:'+index,actor.x,actor.y,home.y);
     if(!perch||!window.PerchSupport.attach(actor,perch)){actor.avatarRef?.dispose?.();return null;}
     deps.hostileObjects.add(actor);
@@ -278,7 +301,7 @@
   function syncNearbyFlocks(session){
     const player=tilePos(deps?.player);
     for(const nest of session.nests){
-      const distance=dist(player,{x:nest.col+.5,z:nest.row+.5});
+      const distance=dist(player,tilePos(nest));
       if(distance<=NEST_NEAR_PLAYER_TILES+9&&!nest.flockLoaded){
         let spawned=0;
         for(let i=0;i<FLOCK_SIZE;i++){
@@ -546,10 +569,10 @@
   const nestRecords=area=>sessions.get(area)?.nests||[]; // DenNestSystem reads this as the authoritative real-egg list.
   const debugSnapshot=()=>({...debug,habitats:[...sessions].map(([area,s])=>({
     area,networkShelves:s.network?.balconies?.length||0,
-    nests:s.nests.map(n=>({id:n.id,x:n.col+.5,z:n.row+.5,y:n.worldY,shelfId:n.shelfId,
+    nests:s.nests.map(n=>({id:n.id,x:n.x/unit(),z:n.y/unit(),y:n.worldY,shelfId:n.shelfId,
       remaining:n.remaining,flockLoaded:n.flockLoaded,deadSlots:[...n.deadBirdSlots].sort()})),
     liveBirds:[...s.birds].filter(v=>v.actor.health>0).length,
   }))});
-  window.PingdortFlocks=Object.freeze({KIND,BOULDER_KIND,init,ensureZone,update,collectNest,nestRecords,lowCeiling,debugSnapshot,
+  window.PingdortFlocks=Object.freeze({KIND,BOULDER_KIND,init,ensureZone,update,collectNest,nestRecords,siteForShelf:clearNestTile,lowCeiling,debugSnapshot,
     getNest: id=>[...sessions.values()].flatMap(s=>s.nests).find(n=>n.id===id)||null});
 })();

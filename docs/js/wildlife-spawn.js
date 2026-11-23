@@ -413,11 +413,11 @@
     return record ? { stage:record.stage, daysRemaining:record.daysRemaining, generation:Number(record.generation)||0, motherDefeated:!!record.motherDefeated, name:record.name || null, clutch:record.clutch ? JSON.parse(JSON.stringify(record.clutch)) : null } : null;
   }
 
-  function updateDenClutchState(cavernMapId, nest) {
+  function updateDenClutchState(cavernMapId, nest, { persist = true } = {}) {
     const record = ensureActiveDenTurnoverRecord(cavernMapId, { persist: false }); // Clutch contents survive revisits/reloads until this cave expires.
     if (!record || !nest) return false;
     record.clutch = { remaining:Math.max(0, Math.floor(Number(nest.remaining) || 0)), itemKey:String(nest.itemKey || ''), liveBirth:!!nest.liveBirth, genotype:nest.genotype || null };
-    persistDenTurnover();
+    if (persist) persistDenTurnover(); // Transactional nest pickups already wrote this clutch together with bag and genes; other callers retain immediate persistence.
     return true;
   }
 

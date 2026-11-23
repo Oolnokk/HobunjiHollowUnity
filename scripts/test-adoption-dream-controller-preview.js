@@ -17,6 +17,11 @@ assert.match(creator, /new state\.THREE\.Box3\(\)\.setFromObject\(avatarGroup\)/
 assert.match(creator, /fitPreviewCamera\(sceneState, group\)/, 'fitting happens after the scaled model is built');
 assert.match(creator, /data-ob-zoom="in"/, 'zoom in has a focusable control');
 assert.match(creator, /data-ob-zoom="out"/, 'zoom out has a focusable control');
+assert.match(dream, /#romanceFamilyOverlay \.rf-name-portrait canvas\{position:static;inset:auto;/, 'baby naming chathead overrides fullscreen canvas positioning');
+assert.match(dream, /#romanceFamilyOverlay \.rf-name-portrait\{[^}]*width:64px;height:64px;overflow:hidden;/, 'newborn chathead is clipped to heading slot');
+assert.match(dream, /class="rf-name-portrait"><canvas[^>]*hidden[^>]*data-rf-preview>[^<]*<\/canvas><span class="rf-name-fallback"/, 'portrait retains baby emoji as fallback');
+assert.match(dream, /window\.AmbientDialogue\?\.renderChatheadImage/, 'baby uses the existing NPC chathead crop');
+assert.match(dream, /!rendered \|\| !canvas\.isConnected \|\| !canvas\.closest/, 'late rendering cannot update a dismissed naming prompt');
 assert.doesNotThrow(() => new Function(dream));
 assert.doesNotThrow(() => new Function(creator));
 console.log('Adoption dream controller and preview checks passed.');

@@ -108,6 +108,9 @@ flush(0);
 const root = document.getElementById('animalBabyArrivalOverlay');
 assert(root && !root.hidden && root.attributes['data-ctrl-modal'] === '', 'naming dialog captures controller/modal focus');
 const form = root.children[0];
+const modalCss = document.head.children.find(child => child.id === 'animalBabyArrivalStyles')?.textContent || ''; // Verifies the injected modal CSS against the game's fullscreen-canvas positioning.
+assert.match(modalCss, /#animalBabyArrivalOverlay \.aba-portrait\{[^}]*width:94px;height:94px;[^}]*overflow:hidden;/, 'portrait slot remains a clipped 94px square');
+assert.match(modalCss, /#animalBabyArrivalOverlay \.aba-chathead\{[^}]*position:static;inset:auto;[^}]*max-width:100%;max-height:100%;/, 'chathead overrides the page-wide absolute canvas positioning without overflowing its slot');
 const input = form.querySelector('input');
 assert.equal(portraitCalls.length, 1, 'naming asks the canonical animal chathead renderer to paint the newborn');
 assert.equal(portraitCalls[0].kind, 'puktuk', 'the portrait uses the newborn species');

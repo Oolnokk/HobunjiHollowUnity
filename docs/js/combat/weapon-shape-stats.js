@@ -63,9 +63,12 @@
   function applyPower(context) {
     if (!context || context.attacker !== global.Combat?.deps?.player) return context; // Hostile attacks are handled by their own combat executor.
     const stats = forKey(context.weaponKey, global.Combat?.deps?.getWeaponDefinition?.(context.weaponKey));
-    for (const field of ['damage', 'knockback', 'footingDamage']) {
+    for (const field of ['damage', 'knockback']) {
       context.modifiers[field] = (Number(context.modifiers[field]) || 1) * stats.power;
     }
+    // Footing is derived from the already Power-scaled hit damage in hitResourceDamage.
+    // Applying Power again to footingDamage would square it (a 1.5× warhammer became 2.25×).
+    // Footing-specific perks still use modifiers.footingDamage independently.
     // ResourceSystem reads Attack Power once; melee damage multipliers must not rescale affliction potency.
     return context;
   }

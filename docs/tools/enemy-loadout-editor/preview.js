@@ -3,7 +3,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 const THREE = { ...ThreeModule };
 window.THREE = THREE;
 const files = [
-  'config/scratchbones-config.js?v=20261122hKasa1',
+  'config/scratchbones-config.js?v=20261122h5cf4b6d',
   'config/attachment-rig-profiles.js?v=20261122hRigAnimal28',
   'config/character-rig-scale-defaults.js?v=20261114uniformRigStrideMerge1',
   'js/character-rig-scale.js?v=20261114uniformRigStrideMerge1',
@@ -56,7 +56,7 @@ const files = [
   'js/combat/melee-pose-spacing.js?v=20261028a',
   'js/combat/resource-system.js?v=20261122familyBaby4',
   'js/trinket-system.js?v=20261122enemyTrinketAdd1', // Enemy Workshop spawns use the same equipment definitions and additive stat provider as gameplay.
-  'js/combat/weapon-shape-stats.js?v=20261109grappledonor1',
+  'js/combat/weapon-shape-stats.js?v=20261122hShapeFootingOnce',
   'js/combat/combat-combo.js?v=20261107combo1501a',
   'js/combat/combat-quickattacks.js?v=20261028a',
   'js/combat/combat-charged-breaker.js?v=20261028a',
@@ -64,7 +64,7 @@ const files = [
   'js/combat/ranged-weapons.js?v=20261122banditPursuit1',
   'js/alchemy-system.js?v=20261122mushrooms1',
   'js/combat/enemy-loadout-rules.js?v=20261101playerhead3',
-  'js/combat/combat-bandit.js?v=20261122tribeDuelRepair1',
+  'js/combat/combat-bandit.js?v=20261122hBanditHealth1',
   'js/weapon-tool-stances.js?v=20261118torchThrowScaled2',
   'js/combat/enemy-weapon-stances.js?v=20261122heldPreviewAudit1',
   'js/combat/combat-minion.js?v=20261103harlyaoDemolitionist1',
@@ -85,7 +85,7 @@ const files = [
   'config/weapon-trust-visits.js?v=20261109hpahugift1',
   'js/weapon-trust-bandit-loadouts.js?v=20261118captainWeapon1',
   'js/combat/ranged-weapon-archetypes.js?v=20261113inputrouter1',
-  'tools/enemy-loadout-editor/source-data.js?v=20261122banditPursuit1',
+  'tools/enemy-loadout-editor/source-data.js?v=20261122hSourceHealth1',
 ];
 const copy = (value) => JSON.parse(JSON.stringify(value));
 export class EnemyPreview {
