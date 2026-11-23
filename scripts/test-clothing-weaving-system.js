@@ -136,6 +136,23 @@ vm.runInContext(fs.readFileSync('docs/js/clothing-weaving-system.js', 'utf8'), c
 
 const api = windowStub.ClothingWeavingSystem;
 assert(api, 'ClothingWeavingSystem exported');
+// Clothing icon compositor must follow the same species+gender fallback as world portraits,
+// including in authoring tools that load the compositor before portrait-utils.
+const bowlCfg = JSON.parse(fs.readFileSync('docs/config/cosmetics/kenk_bowlkasa.json', 'utf8')); // Actual authored Bowl-Kasa variants, not a second stock definition.
+const previewCfg = JSON.parse(JSON.stringify(bowlCfg)); // Independent test fixture for future authored gender-specific art.
+previewCfg.speciesVariants.kenkari_female.parts.head.layers.front.image.url = './assets/cosmetics/clothes/hat/kenkari-fallback-f.png';
+previewCfg.speciesVariants.kenkari_male.parts.head.layers.front.image.url = './assets/cosmetics/clothes/hat/kenkari-fallback-m.png';
+previewCfg.speciesVariants['mao-ao_female'] = JSON.parse(JSON.stringify(previewCfg.speciesVariants.kenkari_female));
+previewCfg.speciesVariants['mao-ao_female'].parts.head.layers.front.image.url = './assets/cosmetics/clothes/hat/mao-ao-f-authored.png';
+for (const [species, gender, image] of [
+  ['mao-ao', 'female', 'mao-ao-f-authored.png'],
+  ['mao-ao', 'male', 'kenkari-fallback-m.png'],
+  ['tletingan', 'female', 'kenkari-fallback-f.png'],
+]) {
+  const layers = api.__test.resolveIconLayerUrls(previewCfg, species, gender); // Production icon-layer resolver, with no portrait-utils globals in this standalone editor fixture.
+  assert(layers.some(layer => layer.url.includes(image)), species + ' ' + gender + ' compositor uses the intended wearer artwork');
+}
+
 assert.equal(api.__test.docsRelativeUrl('config/cosmetics/index.json'), 'https://raw.githack.com/Oolnokk/HobunjiHollowUnity/testsha/docs/config/cosmetics/index.json', 'standalone tools resolve cosmetic config relative to docs/ instead of their own nested page');
 assert.equal(api.__test.standaloneAssetUrl('./assets/cosmetics/clothes/overwear/portrait/poncho1_mao_m.png'), 'https://raw.githack.com/Oolnokk/HobunjiHollowUnity/testsha/docs/assets/cosmetics/clothes/overwear/portrait/poncho1_mao_m.png', 'standalone clothing preview preserves authored ./assets sprite paths under docs/');
 assert.equal(api.__test.standaloneAssetUrl('cosmetics/clothes/overwear/portrait/poncho1_mao_m.png'), 'https://raw.githack.com/Oolnokk/HobunjiHollowUnity/testsha/docs/assets/cosmetics/clothes/overwear/portrait/poncho1_mao_m.png', 'standalone clothing preview reconstructs assets/ after game-path normalization');
