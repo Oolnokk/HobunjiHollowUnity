@@ -28,6 +28,8 @@ const tree = {
 };
 roots = [tree];
 browser.GridTileAccessors={getCurrentArea:()=>area}; // Production cover init may omit the area getter; use the shared runtime accessor instead.
+let residency=0; // Authoritative chunk-stream generation increments when chunks enter or leave the unchanged Three.js scene.
+browser.WildernessChunks={residencyVersion:()=>residency}; // Same lightweight getter exported by the real WildernessChunks owner.
 browser.NearbyVolumeCollision.init({
   getActiveScene:()=>scene,isCombatActive:()=>false,
   worldSurfaceY:()=>0,player:{x:0,y:0},debugLog(){},
@@ -47,9 +49,35 @@ assert.equal(browser.NearbyVolumeCollision.debugSnapshot().rootRidges,2,'mobile 
 
 tree.visible=false;browser.NearbyVolumeCollision.invalidate();
 assert(blockers.supportAt(zone,4,3.5,.5),'render-only vegetation culling cannot remove physical support');
-roots=[];tree.parent=null;browser.NearbyVolumeCollision.invalidate();
-assert.equal(blockers.supportAt(zone,4,3.5,1),null,'removing a tree releases its root collision after rebuilding');
+const detachedChunk={visible:true,children:[tree],parent:scene}; // Real streamed chunk groups contain tree children.
+tree.parent=detachedChunk;
+roots=[detachedChunk];browser.NearbyVolumeCollision.invalidate();
+assert(blockers.supportAt(zone,4,3.5,1),'indexed roots follow the attached chunk subtree');
+detachedChunk.parent=null;roots=[]; // Chunk removed from scene; tree.parent still points to the detached chunk.
+assert.equal(blockers.supportAt(zone,4,3.5,1),null,'detaching a whole chunk must never leave ghost collision, even before a cache rebuild');
+residency++; // A new streamed-chunk residency stamp invalidates the cached root index.
+assert.equal(blockers.supportAt(zone,4,3.5,1),null,'residency invalidation detects the disappeared chunk in the unchanged scene');
 assert.equal(browser.NearbyVolumeCollision.debugSnapshot().rootRidges,0,'stale roots are not retained in the spatial index');
+const replacementTree={...tree,visible:true,name:'new-streamed-tree',parent:null}; // A new tree is placed without replacing the scene object.
+const replacementChunk={visible:true,children:[replacementTree],parent:scene};
+replacementTree.parent=replacementChunk;roots=[replacementChunk];residency++;
+assert(blockers.supportAt(zone,4,3.5,1),'streaming in a new tree registers its roots without manual invalidation');
+assert.equal(browser.NearbyVolumeCollision.debugSnapshot().rootResidencyVersion,residency,
+  'mobile diagnostics report the chunk version used by the current spatial index');
+const cachedVisits=visits; // Movement near a stable resident chunk must never rescan the scene.
+for(let i=0;i<100;i++)blockers.supportAt(zone,4,3.5,1);
+assert.equal(visits,cachedVisits,'steady-state root support queries perform no fresh scene traversal');
+replacementChunk.parent=null;roots=[];residency++;
+assert.equal(blockers.supportAt(zone,4,3.5,1),null,'unloading a resident tree removes its landing support');
+tree.parent=null;
+const regrowthWindow={NearbyVolumeCollision:{invalidations:0,invalidate(){this.invalidations++;}}}; // Isolated actual vegetation-refresh runtime.
+vm.runInNewContext(read('docs/js/zone-regrowth.js'),{window:regrowthWindow,console,Math});
+regrowthWindow.ZoneRegrowth.init({
+  _zoneScenes:new Map([[zone,{}]]),removeZoneVegetationVisual:()=>true,TileType:{WEEDS:'weeds'}
+});
+assert.equal(regrowthWindow.ZoneRegrowth.updateClearedZoneVegetationVisual(zone,3,3,'shrub'),true);
+assert.equal(regrowthWindow.NearbyVolumeCollision.invalidations,1,
+  'felling clears root collision in the same tick instead of leaving a fallen trunk obstacle');
 
 // Native free-jump movement consults the same registered footprint's top as its
 // collision walls. Deliberately release input above the small cap to land there.
