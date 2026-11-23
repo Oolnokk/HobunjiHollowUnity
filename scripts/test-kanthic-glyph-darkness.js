@@ -19,13 +19,15 @@ class Vec {
   dot(v){return this.x*v.x+this.y*v.y+this.z*v.z;}
 }
 let tradition='kanthic'; // Switches between the new precise Kanthic rule and the unchanged Hronal rule.
-const win={THREE:{Vector3:Vec},WeatherFX:{init(){}},DevRandomRuinLichThemes:{activeTheme:()=>tradition}};
+const win={THREE:{Vector3:Vec,RepeatWrapping:1000},WeatherFX:{init(){}},DevRandomRuinLichThemes:{activeTheme:()=>tradition}};
 vm.runInNewContext(fog,{window:win,performance:{now:()=>2000},console});
 const draws=[]; // All light-mask paints are recorded for assertions and mobile-neutral regression coverage.
 const context={
   canvas:{width:500,height:500},globalCompositeOperation:'source-over',globalAlpha:1,
   save(){},restore(){},beginPath(){},moveTo(){},lineTo(){},closePath(){},clip(){},arc(){},fill(){draws.push({kind:'fill',mode:this.globalCompositeOperation});},
   transform(...args){draws.push({kind:'transform',args});},
+  createPattern(img,mode){draws.push({kind:'pattern',mode,img});return {img,mode};},
+  fillRect(...args){draws.push({kind:'tiles',mode:this.globalCompositeOperation,args});},
   drawImage(img){draws.push({kind:'image',mode:this.globalCompositeOperation,alpha:this.globalAlpha,img});},
   createRadialGradient(){draws.push({kind:'gradient'});return {addColorStop(){}};},
 };
@@ -67,8 +69,20 @@ mesh.material.map.image=image;
 positions.array[0]=-30;positions.array[3]=-30;positions.array[6]=-30;
 assert.equal(draw().drawn,0,'engraving behind the camera cannot project a giant mask');
 positions.array[0]=1;positions.array[3]=3;positions.array[6]=1;
+mesh.name='ruin-ladder-rune-glow';mesh.userData.ruinLadderRuneGlow=true;
+mesh.material.map.wrapS=1000;mesh.material.map.wrapT=1000;
+uvs.array[5]=-4; // Long etched ladder strips must repeat the PNG many times, not stop at the first tile.
+const ladder=draw();
+assert.equal(ladder.drawn,1,'repeat-wrapped ladder rune is exposed through Kanthic darkness');
+assert(draws.some(d=>d.kind==='tiles'&&d.mode==='destination-out'),'the rune shape repeats using the image alpha');
+assert(!draws.some(d=>d.kind==='image'||d.kind==='gradient'||d.kind==='fill'),'rune repetition emits no radial halo or separate lighting');
+assert.equal(draws.filter(d=>d.kind==='pattern').length,1,'the PNG is converted into a repeating mask pattern once');
+draw();
+assert.equal(draws.filter(d=>d.kind==='pattern').length,0,'the image pattern stays cached across overlay redraws');
+mesh.name='engraving-glyph-glow';delete mesh.userData.ruinLadderRuneGlow;
+mesh.material.map.wrapS=undefined;mesh.material.map.wrapT=undefined;uvs.array[5]=0;
 tradition='hronal'; // Non-Kanthic traditions preserve their existing soft atmospheric engraving glow.
 assert.equal(draw().drawn,1,'other traditions still display wall patterns');
 assert(draws.some(d=>d.kind==='gradient'),'Hronal retains the prior soft engraved-glow treatment');
 assert(!draws.some(d=>d.kind==='image'),'the Kanthic-only correction does not change Hronal engraving rendering');
-console.log('Kanthic glyph-only darkness, no wall wash, UV projection, hidden surfaces, near plane, and other ruins: PASS');
+console.log('Kanthic glyph-only darkness, repeat-wrapped ladder runes, no wall wash, UV projection, hidden surfaces, near plane, and other ruins: PASS');
