@@ -100,11 +100,17 @@
   }
 
   function settlePendingShippingSale(reason = lifecycleCfg().reasons.default) {
-    if (lifecycleBusy || !shippingBoxInstance) return { sold: 0, earned: 0 };
+    if (lifecycleBusy) return { sold: 0, earned: 0 };
     lifecycleBusy = true;
     try {
       captureMidnightCutoff();
-      if (pendingSaleTotal() < 1) return { sold: 0, earned: 0 };
+      try {
+        window.PendingAnimalSales?.settle?.(reason); // Animal sale collection shares the shipping cutoff and never needs a second timer.
+      } catch (error) {
+        window.__farmLog?.('Animal sale collection failed: ' + String(error?.message || error), 'livestock'); // Mobile-visible diagnostics without interrupting item shipping.
+        console.error('[FarmCrates] animal collection failed', error);
+      }
+      if (!shippingBoxInstance || pendingSaleTotal() < 1) return { sold: 0, earned: 0 };
 
       const bin = shippingBoxInstance.getContents();
       let sold = 0;
@@ -148,8 +154,8 @@
     const crossedMidnight = captureMidnightCutoff();
     const area = currentArea();
 
-    if (life.resolveIfAlreadyAwayAtMidnight && crossedMidnight && area && !isFarmContext(area)) {
-      settlePendingShippingSale(life.reasons.alreadyAway);
+    if (life.resolveIfAlreadyAwayAtMidnight && (crossedMidnight || !lastKnownArea) && area && !isFarmContext(area)) {
+      settlePendingShippingSale(life.reasons.alreadyAway); // A saved sale can be due when loading while already away.
     }
     if (lastKnownArea && isFarmContext(lastKnownArea) && area && !isFarmContext(area)) {
       settlePendingShippingSale(life.reasons.leftFarm);
