@@ -22,7 +22,7 @@
     },
     'voorg-ass-herd-mother': { label: 'Voorg-ass Herd-Mother', mirrorOf: 'voorg-ass', modelWidth: 1.5 },
     moot: {
-      label: 'Moot', modelWidth: 1.7,
+      label: 'Moot', modelWidth: 1.7, spriteAspect: 920 / 1295,
       prefix: 'moot', baseColor: '#9CBD9E', baseShadeReferenceHex: '#9CBD9E',
       baseRecolorKeyHex: '#9CBD9E', baseRecolorHueTolerance: 20,
       baseRecolorMinSaturationRatio: 0.45, fullBaseRecolor: false,

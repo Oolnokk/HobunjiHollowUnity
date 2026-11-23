@@ -8,7 +8,7 @@
   const HERD_MOTHER_KIND = 'moot-herd-mother'; // Uses Moot art and genes but carries recoverable young in open-air herds.
   const ZONE_ID = 'map_northern_cliffs'; // Only the Northern Cliffs get the natural Moot population.
   const BABY_ITEM_KEY = 'mootBaby'; // The Ranch starting baby and future livestock offspring use this existing save key.
-  const SPRITE_ASPECT = 1000 / 1617; // Authored 1617x1000 PNG dimensions, used by the world-space animal card.
+  const SPRITE_ASPECT = 920 / 1295; // Authored 1295x920 PNG dimensions, used by the world-space animal card.
   const COAT_SOURCE_COLOR = '#9CBD9E'; // The existing mint-green coat art is the keyed shade-fill reference; protects teeth, hooves, and heavy black linework.
   const SPRITES = Object.freeze({
     idle: 'assets/creaturesprites/moot_idle.png',
@@ -67,6 +67,7 @@
       label: 'Herd-Mother',
       hostile: false,
       defaultSizeClass: 'large',
+      spriteAspect: baseMoot.spriteAspect,
       lootPool: baseMoot.lootPool,
       sprites: baseMoot.sprites,
     };
