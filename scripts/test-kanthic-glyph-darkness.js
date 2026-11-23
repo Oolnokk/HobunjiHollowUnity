@@ -70,6 +70,13 @@ const hidden=win.__probeGlyphMasks(blockedScene,deps,4000);
 assert.equal(hidden.drawn,0,'physically occluded glyphs cannot punch through the darkness overlay');
 assert.equal(hidden.triangles,0,'a wall-hidden engraving submits no texture triangles');
 assert.equal(draws.length,0,'no 2D light mask is painted for the wall-hidden glyph');
+const projectedOnscreen=deps.worldToOverlay; // Restore the authored camera mapping after testing offscreen occlusion cost.
+deps.worldToOverlay=(x,y,z)=>({x:100000+x*10,y:100000+z*10});
+const offscreen=win.__probeGlyphMasks(blockedScene,deps,6000);
+assert.equal(offscreen.drawn,0,'offscreen runes never clear the darkness');
+assert.equal(win.CloudForestFog.getDebugState().ruinEngravingGlowMasks.occlusionChecks,0,
+  'offscreen runes are culled before any expensive 3D stone occlusion rays');
+deps.worldToOverlay=projectedOnscreen;
 blockedByStone=false;mesh.parent=scene;
 assert.equal(draw().drawn,1,'the real glyph reappears once its physical surface is unobstructed');
 const transform=draws.find(d=>d.kind==='transform').args;
