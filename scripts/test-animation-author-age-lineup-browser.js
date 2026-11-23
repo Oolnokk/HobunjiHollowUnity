@@ -5,7 +5,7 @@ const path = require('node:path'); // Keeps fixtures within the repository's doc
 const { chromium } = require('playwright'); // Uses the existing Animation Author Chromium workflow.
 const ROOT = path.resolve(__dirname, '..');
 const DOCS = path.join(ROOT, 'docs');
-const BASE = 'http://127.0.0.1:8000/tools/animation-author/index.html';
+const BASE = 'http://127.0.0.1:8000/tools/animation-author/index.html?ref=scene-smoke-fixture'; // Tests exactly the checked-out PR assets instead of floating main.
 const RAW = /^https:\/\/raw\.githubusercontent\.com\/Oolnokk\/HobunjiHollowUnity\/[^/]+\/(.+)$/;
 const CDN = /^https:\/\/cdn\.jsdelivr\.net\/gh\/Oolnokk\/HobunjiHollowUnity@[^/]+\/(docs\/.+)$/;
 const safeLocal = (route, raw) => {
@@ -26,6 +26,8 @@ async function main() {
   try {
     await page.route(RAW, route => safeLocal(route, RAW.exec(route.request().url())?.[1]));
     await page.route(CDN, route => safeLocal(route, CDN.exec(route.request().url())?.[1]));
+    await page.route('https://api.github.com/repos/Oolnokk/HobunjiHollowUnity/commits/**', route =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ sha: 'scene-smoke-fixture' }) }));
     await page.goto(BASE, { waitUntil: 'domcontentloaded', timeout: 45000 });
     await page.waitForFunction(() => !!window.HobunjiFullCharacterScaleComparison && !!document.getElementById('maaFullScaleTab'),
       null, { timeout: 90000 });
@@ -43,11 +45,8 @@ async function main() {
       const age = document.getElementById('maaFullScaleAgeMode');
       if (!selectedKey || !chooser?.value || getComputedStyle(panel).display === 'none') throw Error('Dropdown panel is not visible or lacks a selected character');
       if (chooser.value !== selectedKey) throw Error('Dropdown selection and preview state diverged');
-      const canvas = document.getElementById('view3d');
-      const rect = canvas.getBoundingClientRect();
-      canvas.dispatchEvent(new PointerEvent('pointerdown', { pointerId: 1, clientX: rect.left + rect.width / 2, clientY: rect.top + rect.height / 2, bubbles: true }));
-      canvas.dispatchEvent(new PointerEvent('pointerup', { pointerId: 1, clientX: rect.left + rect.width / 2, clientY: rect.top + rect.height / 2, bubbles: true }));
-      if (api.selectedKey !== selectedKey) throw Error('Canvas click changed dropdown-only selection');
+      // Canvas picking is checked with a real pointer event outside the right-hand rail below.
+      if (api.selectedKey !== selectedKey) throw Error('Dropdown selection changed unexpectedly');
       age.value = 'baby';
       age.dispatchEvent(new Event('change', { bubbles: true }));
       if (api.ageMode !== 'baby') throw Error('Baby stage did not activate');
