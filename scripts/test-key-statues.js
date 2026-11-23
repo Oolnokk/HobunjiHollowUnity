@@ -207,5 +207,21 @@ assert.equal(soldierRolls.length,priorRolls,'ordinary dispensers never roll a Gh
 assert.equal(carved.length,priorCarvings,'ordinary Key Statues retain their own authored furniture appearance');
 assert.equal(api.debugSnapshot().dispensers[0].statueVisual,null,'ordinary statue reports no replacement style');
 assert(api.unregisterDispenser(area,'ordinary'));
-console.log('Key Statue: skeleton-defense-only Harlyao art, authored dispenser + plinth feed, retry identity and cleanup passed.');
+// An unavailable/throwing cosmetic loader must not wedge the 30-second defense's
+// actual payload, press reset, or recovery/disposal.
+const failedVisual=new MockGroup(),failureButton=new MockGroup(); // A separate real dispenser keeps the case isolated.
+failedVisual.userData.meshById=new Map([['key_statue_button',failureButton]]);
+scene.add(failedVisual);
+const formerRoll=runtimeWindow.KeyStatueFigures.rollSoldier;
+runtimeWindow.KeyStatueFigures.rollSoldier=()=>{throw new Error('portrait service unavailable');};
+const transitionsBefore=takenTransitions.length;
+assert(api.registerDispenser(area,'broken-portrait',failedVisual,{payloadPartId:'key_statue_button'},
+  {statueVisual:'harlyaoGhostArmy'}));
+await new Promise(resolve=>setImmediate(resolve));
+assert.equal(api.status(area,'broken-portrait'),'ready','visual errors never prevent the physical Key Statue from spawning');
+assert.equal(takenTransitions.length,transitionsBefore+1,'press reset still completes even when art generation throws');
+assert.equal(takenTransitions.at(-1),false,'the physical button returns to its initial raised OFF state');
+assert(api.unregisterDispenser(area,'broken-portrait'));
+runtimeWindow.KeyStatueFigures.rollSoldier=formerRoll;
+console.log('Key Statue: skeleton-defense-only Harlyao art, physical fallback on portrait errors, recall and cleanup passed.');
 })().catch(error=>{console.error(error);process.exitCode=1;});
