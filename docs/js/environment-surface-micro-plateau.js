@@ -31,7 +31,7 @@
   // by this same amount — a real person, and every animal, standing in deep
   // snow, rather than a thin coat of white paint on flat pavement.
   const SURFACE_DEPTH = 0.22;
-  const SNOW_STEPS = 10; // Quantizes storm accumulation into ten mesh rebuilds over an in-game day rather than every frame.
+  const SNOW_STEPS = 10; // Quantizes snow accumulation so height updates happen infrequently.
   const IDLE_POLL_INTERVAL_MS = 250; // Checks dormant surfaces at most four times per second.
   const EDGE_WIDTH = 0.22; // Horizontal run of a micro-plateau side; with 0.22 depth this is a clear ~45° incline.
   const EDGE_HEIGHT_EPS = 0.025; // Shared-edge height tolerance used to decide whether two covered tiles are one walkable surface.
@@ -55,9 +55,9 @@
   let lastInactiveCheckAt = -Infinity; // Last dormant surface poll, allowing cheap in-between frames.
   let skippedInactiveTicks = 0; // Mobile diagnostics count scheduler frames that skip inactive work.
   let skippedDormantProjections = 0; // Counts render hooks avoiding unnecessary season and calendar checks with no surface.
-  let snowUvCache = null; // Scene/grid/triangle keyed CPU-only UV array; reused as the snow depth rises or melts.
   let snowUvMapRuns = 0; // Mobile profiling: costly whole-zone harmonic UV solver executions.
-  let snowUvCacheHits = 0; // Mobile profiling: depth-step rebuilds that reused already-solved snow UVs.
+  let snowDepthUpdates = 0; // Counts depth changes applied to the existing snow buffers.
+  let lastSnowDepthUpdateMs = 0; // Mobile diagnostic for the last depth update.
   let textureState = 'not-requested';
   let snowTexture = null;
   const materials = {}; // mode -> THREE.Material, built lazily and reused.
@@ -325,7 +325,7 @@
     return Math.abs(ours[0] - theirs[0]) <= EDGE_HEIGHT_EPS && Math.abs(ours[1] - theirs[1]) <= EDGE_HEIGHT_EPS;
   }
 
-  function addMicroPlateauTile(pos, idx, col, row, baseCorners, exposed, depthScale) {
+  function addMicroPlateauTile(pos, idx, col, row, baseCorners, exposed, depthScale, lifted, cameraMasks, tileIndex) {
     const inset = Math.min(0.49, Math.max(0.001, EDGE_WIDTH));
     const axis = [0, inset, 1 - inset, 1];
     const baseAt = (u, v) => {
@@ -345,6 +345,10 @@
         col, baseCorners[2] + depth, row + 1,
         col + 1, baseCorners[3] + depth, row + 1);
       idx.push(base, base + 2, base + 3, base, base + 3, base + 1);
+      if (lifted) {
+        lifted.push(1, 1, 1, 1);
+        cameraMasks[tileIndex] = 0xffff;
+      }
       for (let j = 0; j < 4; j++) for (let i = 0; i < 4; i++) {
         heights[j * 4 + i] = baseAt(axis[i], axis[j]) + depth; // Camera collision remains identical across detail levels.
       }
@@ -354,26 +358,24 @@
     }
 
     // Retain the exact rooted 4x4 mesh for cliff edges, holes and non-planar ramps.
-    const smooth = value => {
-      const t = Math.max(0, Math.min(1, value));
-      return t * t * (3 - 2 * t);
-    };
-    const depthFactor = (u, v) => {
-      let factor = 1;
-      if (exposed.N) factor = Math.min(factor, smooth(v / inset));
-      if (exposed.E) factor = Math.min(factor, smooth((1 - u) / inset));
-      if (exposed.S) factor = Math.min(factor, smooth((1 - v) / inset));
-      if (exposed.W) factor = Math.min(factor, smooth(u / inset));
-      return factor;
-    };
+    const depth = SURFACE_DEPTH * depthScale; // Only the outer vertices on exposed edges stay at ground height.
+    let mask = 0; // One bit per raised vertex in the camera's 4×4 tile.
     for (let j = 0; j < axis.length; j++) {
       const v = axis[j];
       for (let i = 0; i < axis.length; i++) {
         const u = axis[i];
-        pos.push(col + u, baseAt(u, v) + SURFACE_DEPTH * depthFactor(u, v) * depthScale, row + v);
-        heights[j * 4 + i] = pos[pos.length - 2]; // Cache the exact drawn vertex elevation.
+        const rooted = (j === 0 && exposed.N) || (i === 3 && exposed.E)
+          || (j === 3 && exposed.S) || (i === 0 && exposed.W);
+        const y = baseAt(u, v) + (rooted ? 0 : depth); // Mesh and camera use the same vertex elevation.
+        pos.push(col + u, y, row + v);
+        heights[j * 4 + i] = y;
+        if (lifted) {
+          lifted.push(rooted ? 0 : 1);
+          if (!rooted) mask |= 1 << (j * 4 + i);
+        }
       }
     }
+    if (cameraMasks) cameraMasks[tileIndex] = mask;
     const width = axis.length;
     for (let j = 0; j < width - 1; j++) for (let i = 0; i < width - 1; i++) {
       const v00 = base + j * width + i;
@@ -433,7 +435,7 @@
   // buffers (not its own geometry) so the stretch mapper below sees every
   // chunk as part of one connected surface — a real, contiguous plateau
   // must get one continuous texture domain, not one per render-chunk.
-  function appendChunkGeometry(state, chunk, pos, idx) {
+  function appendChunkGeometry(state, chunk, pos, idx, lifted) {
     const rowEnd = Math.min(state.rows, chunk.row + CHUNK_TILES);
     const colEnd = Math.min(state.cols, chunk.col + CHUNK_TILES);
     const sides = [['N',0,-1], ['E',1,0], ['S',0,1], ['W',-1,0]];
@@ -448,8 +450,9 @@
           exposed[side] = true;
           exposedEdges++;
         }
-        const heights = addMicroPlateauTile(pos, idx, col, row, baseCorners, exposed, state.depthScale); // Both render paths preserve identical camera samples.
-        state.cameraHeights[row * state.cols + col] = heights;
+        const tileIndex = row * state.cols + col; // Shared by camera heights and their depth mask.
+        state.cameraHeights[tileIndex] = addMicroPlateauTile(pos, idx, col, row, baseCorners, exposed,
+          state.depthScale, lifted, state.cameraMasks, tileIndex);
         builtTiles++;
       }
     }
@@ -461,29 +464,48 @@
   // culling/draw-call partitioning, applied AFTER UV mapping so it never
   // affects texture continuity (the same order real terrain uses: split
   // into GPU-friendly spatial chunks only once the source UVs are final).
-  function makeChunkMeshFromRange(combinedPosition, combinedUv, triStart, triCount, name, order, mode) {
+  function makeChunkMeshFromRange(combinedPosition, combinedUv, chunk, mode, state, indices, lifted) {
     const THREE = window.THREE;
-    const vStart = triStart * 3, vCount = triCount * 3;
+    const vStart = chunk.triStart * 3, vCount = chunk.triCount * 3;
     const positions = new Float32Array(vCount * 3);
     const uvs = new Float32Array(vCount * 2);
+    const raisedPositions = lifted ? [] : null; // Offsets of raised vertices in the chunk's XYZ buffer.
+    const raisedHeights = lifted ? [] : null; // Reference heights avoid rounding drift over repeated steps.
     for (let i = 0; i < vCount; i++) {
       const src = vStart + i;
       positions[i * 3] = combinedPosition.getX(src);
       positions[i * 3 + 1] = combinedPosition.getY(src);
       positions[i * 3 + 2] = combinedPosition.getZ(src);
+      if (lifted?.[indices[src]]) {
+        raisedPositions.push(i * 3 + 1);
+        raisedHeights.push(positions[i * 3 + 1]);
+      }
       uvs[i * 2] = combinedUv.getX(src);
       uvs[i * 2 + 1] = combinedUv.getY(src);
     }
     const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    const position = new THREE.Float32BufferAttribute(positions, 3); // Retained and uploaded again on depth changes.
+    geometry.setAttribute('position', position);
     geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
     geometry.computeBoundingBox();
     geometry.computeBoundingSphere();
+    if (raisedPositions) {
+      position.setUsage?.(THREE.DynamicDrawUsage);
+      const maxDepth = isWesternSlope(activeArea) ? SURFACE_DEPTH * 1.5 : SURFACE_DEPTH; // Conservative culling bounds across all depth steps.
+      geometry.boundingBox.min.y -= state.depth;
+      geometry.boundingBox.max.y += maxDepth - state.depth;
+      if (geometry.boundingSphere) geometry.boundingSphere.radius += Math.max(state.depth, maxDepth - state.depth);
+      state.depthBuffers.push({
+        position,
+        offsets: new Uint16Array(raisedPositions), // A 16×16 chunk has at most 41,472 position components.
+        heights: new Float32Array(raisedHeights),
+      });
+    }
     const mesh = new THREE.Mesh(geometry, material(mode));
-    mesh.name = name;
+    mesh.name = `environment_surface_micro_plateau_${mode}_${chunk.col}_${chunk.row}`;
     mesh.userData.environmentSurfaceRuntime = true;
     mesh.userData.environmentSurfaceMicroPlateau = true;
-    mesh.renderOrder = order;
+    mesh.renderOrder = mode === 'snow' ? 2.2 : 22.1;
     mesh.receiveShadow = false;
     root.add(mesh);
     return mesh;
@@ -500,7 +522,13 @@
   function buildZoneSurface(scene, grid, cols, rows, mode) {
     const started = now();
     const depth = depthForMode(mode); // Shared accumulation-step height for every tile in this zone build.
-    const state = { grid, cols, rows, depth, depthScale: depth / SURFACE_DEPTH, surfaceCache: new Array(cols * rows), cameraHeights: new Array(cols * rows) }; // Precomputed scale retains the rooted shallow-cap geometry.
+    const state = {
+      grid, cols, rows, depth, depthScale: depth / SURFACE_DEPTH,
+      surfaceCache: new Array(cols * rows),
+      cameraHeights: new Array(cols * rows),
+      cameraMasks: mode === 'snow' ? new Uint16Array(cols * rows) : null,
+      depthBuffers: [],
+    }; // Retains the snow buffers and original camera samples across depth changes.
     root = new window.THREE.Group();
     root.name = `hobunji_environment_surface_micro_plateau_${mode}`;
     root.userData.environmentSurfaceRuntime = true;
@@ -516,11 +544,12 @@
     chunkCount = 0;
     const THREE = window.THREE;
     const pos = [], idx = [];
+    const lifted = mode === 'snow' ? [] : null; // Raised vertices in source index order, before UV mapping expands triangles.
     const chunkRanges = [];
     for (let row = 0; row < rows; row += CHUNK_TILES) {
       for (let col = 0; col < cols; col += CHUNK_TILES) {
         const triStart = idx.length / 3;
-        appendChunkGeometry(state, { col, row }, pos, idx);
+        appendChunkGeometry(state, { col, row }, pos, idx, lifted);
         const triCount = idx.length / 3 - triStart;
         if (triCount > 0) chunkRanges.push({ col, row, triStart, triCount });
         chunkCount++;
@@ -531,31 +560,13 @@
       let combined = new THREE.BufferGeometry();
       combined.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
       combined.setIndex(new THREE.BufferAttribute(idx.length > 65535 ? new Uint32Array(idx) : new Uint16Array(idx), 1));
-      const area = currentArea(); // Used to invalidate cached UVs when the wilderness generator changes zones.
-      const cached = mode === 'snow' && snowUvCache
-        && snowUvCache.scene === scene && snowUvCache.grid === grid && snowUvCache.area === area
-        && snowUvCache.cols === cols && snowUvCache.rows === rows
-        && snowUvCache.indices === idx.length && snowUvCache.uv.length === idx.length * 2; // Same logical surface topology, irrespective of the snow's vertical depth.
-      if (cached) {
-        combined = combined.toNonIndexed();
-        combined.setAttribute('uv', new THREE.Float32BufferAttribute(snowUvCache.uv, 2)); // The same PNG coordinates avoid texture drift through the storm.
-        snowUvCacheHits++;
-      } else {
-        combined = mode === 'snow' ? stretchMapSnowUv(combined, 'zone') : planarFallbackUv(combined);
-        if (combined.index) combined = combined.toNonIndexed();
-        if (mode === 'snow') {
-          const mappedUv = combined.getAttribute('uv');
-          snowUvMapRuns++;
-          snowUvCache = mappedUv?.array?.length === idx.length * 2 ? {
-            scene, grid, area, cols, rows, indices: idx.length,
-            uv: new Float32Array(mappedUv.array), // Only CPU texture coordinates survive repeated mesh disposals.
-          } : null;
-        }
-      }
+      if (mode === 'snow') snowUvMapRuns++;
+      combined = mode === 'snow' ? stretchMapSnowUv(combined, 'zone') : planarFallbackUv(combined);
+      if (combined.index) combined = combined.toNonIndexed();
       const combinedPosition = combined.getAttribute('position');
       const combinedUv = combined.getAttribute('uv');
       for (const chunk of chunkRanges) {
-        makeChunkMeshFromRange(combinedPosition, combinedUv, chunk.triStart, chunk.triCount, `environment_surface_micro_plateau_${mode}_${chunk.col}_${chunk.row}`, mode === 'snow' ? 2.2 : 22.1, mode);
+        makeChunkMeshFromRange(combinedPosition, combinedUv, chunk, mode, state, idx, lifted);
       }
     }
 
@@ -570,6 +581,19 @@
     lastReason = `built ${builtTiles} ${mode} tiles (${compactTiles} compact, ${detailedTiles} detailed, ${triangleCount} triangles) in ${chunkCount} chunk meshes; ${exposedEdges} rooted edges (${lastBuildMs.toFixed(1)}ms)`;
   }
 
+  function updateSnowDepth(depth) {
+    const started = now(); // Measures CPU cost for the mobile performance snapshot.
+    const delta = depth - cameraSurfaceState.depth; // Relative to the original build, independent of earlier steps.
+    for (const { position, offsets, heights } of cameraSurfaceState.depthBuffers) {
+      const positions = position.array; // Existing position buffer. UVs stay intact.
+      for (let i = 0; i < offsets.length; i++) positions[offsets[i]] = heights[i] + delta;
+      position.needsUpdate = true;
+    }
+    activeDepth = depth;
+    snowDepthUpdates++;
+    lastSnowDepthUpdateMs = now() - started;
+  }
+
   function resetForScene(scene, area, mode) {
     const sameSurface = scene === activeScene && area === activeArea && mode === activeMode
       && (!root || cameraSurfaceState?.grid === currentGrid()); // A replaced terrain grid may bring new grass groups that need immediate snow hiding.
@@ -577,7 +601,6 @@
       setGrassHidden(grassHiddenScene, false);
       grassHiddenScene = null;
     }
-    if (!sameSurface) snowUvCache = null; // Release cached coordinates immediately when snow is gone or the scene changes.
     disposeRoot();
     activeScene = scene;
     activeArea = area;
@@ -612,9 +635,12 @@
       return;
     }
     const gridChanged = !!root && cameraSurfaceState?.grid !== currentGrid(); // A Tothal terrain regeneration may replace the grid without changing the scene identity.
-    if (scene !== activeScene || area !== activeArea || mode !== activeMode || gridChanged
-        || (root && Math.abs(depthForMode(mode, area) - activeDepth) > 0.00001)) resetForScene(scene, area, mode); // Rebuild only when terrain or quantized snow depth actually changed.
+    if (scene !== activeScene || area !== activeArea || mode !== activeMode || gridChanged) resetForScene(scene, area, mode);
     if (root) {
+      if (mode === 'snow') {
+        const depth = depthForMode(mode, area); // Snow depth changes independently of the terrain and UV topology.
+        if (depth !== activeDepth) updateSnowDepth(depth);
+      }
       // Wilderness grass billboards can stream/build in after the surface's
       // own build already ran (zone decoration finishing later than
       // terrain), so a single hide-on-build call can miss them — cheaply
@@ -632,7 +658,6 @@
   }
 
   function forceRebuild() {
-    snowUvCache = null; // An explicit rebuild may change the authored terrain while retaining the grid object's identity.
     const scene = currentScene();
     const mode = resolveMode();
     if (!scene || mode === 'none') return debugSnapshot();
@@ -673,7 +698,8 @@
     const col = Math.floor(x), row = Math.floor(z); // Finds the built tile under the camera sample.
     const state = cameraSurfaceState; // Latest completed surface build, cleared on scene/season changes.
     if (col < 0 || row < 0 || col >= state.cols || row >= state.rows) return null;
-    const heights = state.cameraHeights[row * state.cols + col]; // Water and uncovered tiles have no camera surface.
+    const tileIndex = row * state.cols + col; // Shared by the tile's height samples and depth mask.
+    const heights = state.cameraHeights[tileIndex]; // Water and uncovered tiles have no camera surface.
     if (!heights) return null;
     const u = x - col, v = z - row; // Local coordinates in the tile's four-by-four vertex grid.
     const inset = Math.min(0.49, Math.max(0.001, EDGE_WIDTH)); // Matches the geometry builder's axis spacing.
@@ -684,9 +710,19 @@
     const a = (u - cellX) / (i === 1 ? 1 - 2 * inset : inset); // Fraction across the rendered quad.
     const b = (v - cellZ) / (j === 1 ? 1 - 2 * inset : inset); // Fraction down the rendered quad.
     const base = j * 4 + i; // Top-left vertex of the quad, split along its top-left/bottom-right diagonal.
-    return b >= a
-      ? heights[base] * (1 - b) + heights[base + 4] * (b - a) + heights[base + 5] * a
-      : heights[base] * (1 - a) + heights[base + 5] * b + heights[base + 1] * (a - b);
+    const lower = b >= a; // Selects the triangle containing the camera sample.
+    const side = base + (lower ? 4 : 1); // Third corner of the selected triangle.
+    const weightBase = 1 - Math.max(a, b);
+    const weightFar = Math.min(a, b);
+    const weightSide = Math.abs(a - b);
+    const height = heights[base] * weightBase + heights[base + 5] * weightFar + heights[side] * weightSide;
+    const delta = activeDepth - state.depth;
+    if (delta === 0) return height;
+    const mask = state.cameraMasks[tileIndex]; // Grounded lip vertices do not rise with the snow cap.
+    if (mask === 0xffff) return height + delta;
+    const extraHeight = delta * (((mask >> base) & 1) * weightBase
+      + ((mask >> (base + 5)) & 1) * weightFar + ((mask >> side) & 1) * weightSide);
+    return height + extraHeight;
   }
 
   function bindGroundProjection(object) {
@@ -741,8 +777,8 @@
       skippedInactiveTicks, // Mobile QA: inactive scheduler frames that skipped the work.
       skippedDormantProjections, // Mobile QA: render hooks that didn't look up snow/season while dormant.
       snowUvMapRuns, // Mobile QA: expensive whole-zone UV relaxations performed.
-      snowUvCacheHits, // Mobile QA: reused UVs across snow-depth changes.
-      snowUvCacheBytes: snowUvCache?.uv.byteLength || 0, // Must be zero when snow is inactive.
+      snowDepthUpdates,
+      lastSnowDepthUpdateMs: Number(lastSnowDepthUpdateMs.toFixed(2)),
       buildCount,
       lastBuildMs: Number(lastBuildMs.toFixed(2)),
       textureState,

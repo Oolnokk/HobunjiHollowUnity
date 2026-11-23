@@ -17,10 +17,12 @@ assert.match(before,/snowMeshes0/,'normal Cloud Forest does not hide a snow draw
 assert.match(before,/triangles0/,'normal Cloud Forest allocates no snow triangles');
 assert.match(before,/idleSkipped1190/,'mobile debug exposes skipped frames');
 snapshot={...snapshot,active:true,mode:'snow',compactTiles:9,detailedTiles:16,
-  triangleCount:306,snowMeshCount:1,builtTiles:25,textureState:'raw-canvas-png'};
+  triangleCount:306,snowMeshCount:1,builtTiles:25,snowDepthUpdates:2,
+  lastSnowDepthUpdateMs:.14,textureState:'raw-canvas-png'};
 const during=win.EnvironmentSurfacePixelProbe.formatLine();
 assert.match(during,/micro=snow/);
 assert.match(during,/compact9\/detailed16\/triangles306\/snowMeshes1/);
+assert.match(during,/depthUpdates2\/lastDepthUpdate0\.14ms/);
 assert.equal(win.EnvironmentSurfacePixelProbe.appendOrReplace('Pixel Probe report'),
   'Pixel Probe report\n'+during,'report remains copyable as ordinary Pixel Probe text');
 console.log('Mobile snow GPU resource, triangle and skipped-frame diagnostics passed.');

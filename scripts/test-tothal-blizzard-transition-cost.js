@@ -106,21 +106,44 @@ assert.equal(afterward.snowMeshCount,0);assert.equal(meshes,1,'no dormant new me
 assert.equal(loads,1,'texture retained for reuse, never re-requested');
 assert.equal(scene.children.length,0);assert.equal(walks,priorWalks);
 assert(afterward.skippedInactiveTicks>900,'over 75% of subsequent frames skip surface mode work');
-assert.equal(afterward.snowUvCacheBytes,0,'melting releases the UV coordinate cache');
 snow=.2;tick({timestamp:24000});
 assert.equal(uvMapRuns,2,'a new storm recomputes its own connected UV islands');
+const surface = win.EnvironmentSurfaceMicroPlateau;
+const geometry = scene.children[0].children[0].geometry; // Same render geometry and UV buffer through rising and melting snow.
+const positions = geometry.getAttribute('position');
+const uv = geometry.getAttribute('uv');
+const originalY = Array.from(positions.array);
+const builds = surface.debugSnapshot().buildCount;
+const meshCount = meshes;
+const disposalCount = disposals;
+const close = (actual, expected) => assert(Math.abs(actual - expected) < 1e-6, `expected ${expected}, got ${actual}`);
 snow=.4;tick({timestamp:24017});
 snow=.7;tick({timestamp:24034});
 assert.equal(uvMapRuns,2,'multiple changing depths reuse the expensive UV solution');
-assert.equal(win.EnvironmentSurfaceMicroPlateau.debugSnapshot().snowUvCacheHits,2);
-assert(win.EnvironmentSurfaceMicroPlateau.debugSnapshot().snowUvCacheBytes>0,'UV cache exists while snow is present');
+assert.equal(surface.debugSnapshot().snowDepthUpdates,2);
+assert.equal(surface.debugSnapshot().buildCount,builds);
+assert.equal(meshes,meshCount,'depth steps do not allocate replacement meshes');
+assert.equal(disposals,disposalCount,'depth steps do not dispose snow geometry');
+assert.equal(scene.children[0].children[0].geometry,geometry);
+assert.equal(geometry.getAttribute('uv'),uv);
+assert.equal(positions.needsUpdate,true,'only the live position attribute needs a GPU upload');
+for (let i=0;i<positions.count;i++) {
+  const original = originalY[i*3+1];
+  close(positions.getY(i),original > 0 ? .154 : 0);
+}
+close(surface.cameraSurfaceYAt(2.5,2.5),.154);
+close(surface.cameraSurfaceYAt(2.5,0),0);
+close(surface.cameraSurfaceYAt(2.5,.11),.077);
+snow=.2;tick({timestamp:24051});
+close(surface.cameraSurfaceYAt(2.5,.11),.022);
+for (let i=0;i<positions.count;i++) close(positions.getY(i),originalY[i*3+1]);
 const newGrass={visible:true,userData:{isWildernessGrassChunkGroup:true},traverse(fn){fn(this);}}; // Simulates wilderness foliage streamed in after a terrain regeneration.
 scene.children.push(newGrass);
 grid=Array.from({length:5},()=>Array.from({length:5},()=>({type:'grass',elevTier:2}))); // New grid identity on the same active scene and snow step.
-tick({timestamp:24051});
+tick({timestamp:24068});
 assert.equal(uvMapRuns,3,'regeneration recomputes the changed terrain topology even without a scene swap');
 assert.equal(newGrass.visible,false,'newly streamed grass is hidden immediately, not one second later');
-snow=0;tick({timestamp:24068});
+snow=0;tick({timestamp:24085});
 assert.equal(newGrass.visible,true,'grass visibility restores after the storm');
-assert.equal(win.EnvironmentSurfaceMicroPlateau.debugSnapshot().snowUvCacheBytes,0,'post-storm snow releases its CPU UV cache');
+assert.equal(scene.children.length,1,'melt removes the snow mesh and its retained depth buffers');
 console.log('Tothal snow clear/storm/clear GPU geometry lifecycle and idle overhead passed.');
