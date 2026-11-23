@@ -171,5 +171,6 @@
   }
   window.KeyStatueFigures=Object.freeze({rollSoldier,decorate,dispose,debugSnapshot,
     targetSize:Object.freeze({height:TARGET_HEIGHT,width:TARGET_WIDTH,depth:TARGET_DEPTH})});
-  window.__keyStatueFiguresDebug=debugSnapshot; // Accessible without DevTools on mobile via Pixel Probe.
+  window.DevCompanion?.registerStateProvider?.('keyStatueFigures',debugSnapshot); // Mobile companion shows actual active carvers, chosen weapons, measured size and asset errors.
+  window.__keyStatueFiguresDebug=debugSnapshot; // Also callable by Pixel Probe and game-side diagnostics.
 })();
