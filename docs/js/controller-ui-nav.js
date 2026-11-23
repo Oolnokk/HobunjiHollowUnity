@@ -192,6 +192,7 @@
   const knownPanels = new Set(); // Reused by visibility reconciliation so gameplay never scans the entire DOM for panel roots.
   let currentTarget = null;
   let lastBlockedActivation = null; // Exposed by debugState() so a controller-only player can see why an off-screen Confirm was ignored.
+  let lastCancelRoute = null; // Mobile diagnostics show whether Back left a nest, clicked a close button or delegated Escape.
   let focusPath = null; // Remembers the active control through in-panel DOM rebuilds.
   let scrolledSelection = null; // Reanchors the next directional input to the right-stick scroll host's visible controls.
   const navigationPerf = { targetCount: 0, rectReads: 0 }; // Used by ControllerUI.debugState() to expose the most recent spatial-navigation scan cost without browser devtools.
@@ -270,7 +271,7 @@
     // player can do anything. Same reasoning as pickDefaultTarget's own
     // cancel-avoidance below, just needed here too since these two
     // fast-paths bypass it.
-    const notCancel = el => el && !el.hasAttribute('data-ctrl-cancel') && el;
+    const notCancel = el => el && !isPanelCloseControl(el) && el;
     const targets = navigationTargets(panel); // Projects remembered controls onto the currently entered nest.
     const remembered = lastFocusedByPanel.get(panel);
     const startFocus =
@@ -494,6 +495,10 @@
     return owner === panel;
   }
 
+  function isPanelCloseControl(el) {
+    return window.ControllerMenuDismissal?.isCloseControl(el) ?? Boolean(el?.hasAttribute?.('data-ctrl-cancel')); // Shared policy owns label inference; minimal fallback supports isolated owners.
+  }
+
   function pickDefaultTarget(panel, availableTargets = null) {
     const explicit = panel.querySelector('[data-ctrl-default]');
     if (explicit && isNavTarget(explicit) && belongsToNavigation(explicit, panel) && (!availableTargets || availableTargets.includes(explicit))) return explicit;
@@ -501,7 +506,7 @@
     // Never default-focus the panel's own close/cancel button — a stray A
     // press on first opening a panel shouldn't be able to instantly back
     // back out of it again.
-    const preferred = targets.filter(el => !el.hasAttribute('data-ctrl-cancel'));
+    const preferred = targets.filter(el => !isPanelCloseControl(el));
     const pool = preferred.length ? preferred : targets;
     if (!pool.length) return null;
     return pool.reduce((best, el) => {
@@ -802,14 +807,21 @@
 
   function cancel() { invalidateVisibility();
     const panel = activePanel();
-    if (!panel || panelOwnsAction(panel, 'cancel')) return;
-    if (leaveGroup(panel)) return;
-    const btn = Array.from(panel.querySelectorAll('[data-ctrl-cancel]')).find(el => isNavTarget(el) && belongsToNavigation(el, panel) && controlOnScreen(el));
-    if (btn && clickOnScreen(btn, 'cancel')) return;
-    // Panels added later occasionally omit data-ctrl-cancel. Give B a safe,
-    // universal fallback through the same Escape path their keyboard close
-    // handlers already support rather than leaving controller users trapped.
-    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }));
+    if (!panel) return;
+    if (panelOwnsAction(panel, 'cancel')) { lastCancelRoute = 'panel-action'; return; }
+    if (leaveGroup(panel)) { lastCancelRoute = 'nest'; return; }
+    const dismissal = window.ControllerMenuDismissal; // Shared policy owns root-level close recognition and Escape routing, not this navigator.
+    if (!dismissal?.dismiss) {
+      lastCancelRoute = 'dismissal-module-missing'; // On-device diagnostics distinguish a missing loader from a menu without a Close action.
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true, cancelable: true }));
+      return;
+    }
+    lastCancelRoute = dismissal.dismiss(panel, {
+      isEligible: el => !isDisabled(el) && isNavTarget(el) && belongsToNavigation(el, panel), // Prevent closing nested dialogs or disabled controls.
+      onScreen: controlOnScreen, // Prioritize visible Close but permit scroll-clipped Close through Back.
+      targetDocument: document,
+      KeyboardEventType: KeyboardEvent,
+    });
   }
 
   function findTabGroup(panel) {
@@ -1364,7 +1376,7 @@
         navigationMode: 'nested-vector-cone',
         groupDepth: panel ? enteredGroups(panel).length : 0,
         groupId: panel ? navigationRoot(panel).id || navigationRoot(panel).getAttribute('data-tree') || null : null,
-        latestChange: 'Controller menu tabs restore the last chosen local section, including after closing or rebuilding a pane.',
+        latestChange: 'Controller Back unwinds nested sections and closes the current floating menu using its own close action or document Escape.',
         rememberedSubtabs: Object.fromEntries(lastSubtabByGroupKey), // Mobile debug can verify each pane independently.
         subtab: panel ? (() => { const state = subtabsByGroup.get(localSubtabs(panel)?.node); return state ? { id: state.selected.id, index: state.sections.indexOf(state.selected), count: state.sections.length } : null; })() : null,
         detailOriginId: panel ? enteredGroups(panel).at(-1)?.returnPath?.steps.at(-1)?.value || null : null,
@@ -1372,6 +1384,8 @@
         pendingScrollReanchor: scrolledSelection?.panel === panel,
         focusedControlOnScreen: currentTarget ? controlOnScreen(currentTarget) : null, // Read only when the in-game debug view is requested.
         lastBlockedActivation,
+        lastCancelRoute,
+        dismissalModuleReady: !!window.ControllerMenuDismissal?.dismiss, // In-game diagnostics expose missing script wiring.
         coneHalfAngleDeg: Math.round(CONE_HALF_ANGLE * 180 / Math.PI),
         navigationTargetCount: navigationPerf.targetCount,
         navigationRectReads: navigationPerf.rectReads,

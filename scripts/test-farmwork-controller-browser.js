@@ -48,6 +48,7 @@ const source = name => fs.readFileSync(path.join(root, 'docs/js', name), 'utf8')
         showToast: () => {},
       }) };
     });
+    await page.addScriptTag({ content: source('controller-menu-dismissal.js') }); // Production Back policy must load before controller navigation.
     await page.addScriptTag({ content: source('controller-ui-nav.js') });
     await page.addScriptTag({ content: source('controller-select-steppers.js') });
     await page.addScriptTag({ content: source('world-action-input-claims.js') });
@@ -155,9 +156,9 @@ const source = name => fs.readFileSync(path.join(root, 'docs/js', name), 'utf8')
     assert.deepEqual(removed, { guarded: true, removed: true }, 'double-confirm removal is fully accessible through controller A');
     const closed = await page.evaluate(() => {
       window.ControllerUI.press('cancel');
-      return document.getElementById('farmworkPanel').style.display === 'none';
+      return { hidden: document.getElementById('farmworkPanel').style.display === 'none', route: window.ControllerUI.debugState().lastCancelRoute, policyReady: window.ControllerUI.debugState().dismissalModuleReady }; // Distinguish a real Close click from an ignored/legacy Escape.
     });
-    assert.equal(closed, true, 'controller B closes the Farmwork panel');
+    assert.deepEqual(closed, { hidden: true, route: 'close-button', policyReady: true }, 'controller B uses the shared dismissal policy to close the Farmwork panel');
     // Real r128 geometry and the production shared glow renderer, including cleanup on mode changes.
     if (process.env.FARMWORK_THREE_PATH) await page.addScriptTag({ content: fs.readFileSync(process.env.FARMWORK_THREE_PATH, 'utf8') });
     else await page.addScriptTag({ url: 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js' });

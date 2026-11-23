@@ -130,6 +130,7 @@ const root = path.resolve(__dirname, '..');
           document.getElementById('invGrid').appendChild(tile);
         }
       }, gameSource.slice(first, last));
+      await page.addScriptTag({ path: path.join(root, 'docs/js/controller-menu-dismissal.js') }); // Match the shipped controller dependency order.
       await page.addScriptTag({ path: path.join(root, 'docs/js/controller-ui-nav.js') });
       await page.addScriptTag({ path: path.join(root, 'docs/js/inventory-ui.js') });
       await page.evaluate(() => window.InventoryUI.init({ isDevMode: () => false }));

@@ -14,6 +14,7 @@ try {
   process.exit(0);
 }
 
+const dismissalSource = fs.readFileSync(path.join(__dirname, '..', 'docs', 'js', 'controller-menu-dismissal.js'), 'utf8'); // Browser fixtures load the real close policy before navigation.
 const navSource = fs.readFileSync(path.join(__dirname, '..', 'docs', 'js', 'controller-ui-nav.js'), 'utf8'); // Shipped navigation module under test.
 const festivalSource = fs.readFileSync(path.join(__dirname, '..', 'docs', 'js', 'festival-ui.js'), 'utf8'); // Uses the real offering menu, not a copied controller mock.
 
@@ -23,6 +24,7 @@ const festivalSource = fs.readFileSync(path.join(__dirname, '..', 'docs', 'js', 
   try {
     const page = await browser.newPage();
     await page.setContent('<body></body>');
+    await page.addScriptTag({ content: dismissalSource });
     await page.addScriptTag({ content: navSource });
     const result = await page.evaluate(async () => {
       const make = (id, modal) => {
@@ -84,6 +86,7 @@ const festivalSource = fs.readFileSync(path.join(__dirname, '..', 'docs', 'js', 
       };
       window.__offeringAnchor={id:'ancestor-shrine',activity:{type:'offering',label:'Ancestor offering'}};
     });
+    await festivalPage.addScriptTag({ content: dismissalSource });
     await festivalPage.addScriptTag({content:navSource});
     await festivalPage.addScriptTag({content:festivalSource});
     const offering = await festivalPage.evaluate(async () => {
