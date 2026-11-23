@@ -827,6 +827,19 @@ assert(portrait.includes('variantHoodTuftSubdivision')
 for(const text of [original,studio,attack])
   assert(text.indexOf('beard-hood-cutout.js')<text.indexOf('portrait-utils.js') && text.includes('beard-hood-cutout.js'),
     'every portrait entrypoint loads the cutout core before portrait-utils');
+{ // Any page or loader that pulls in the shared compositor must load the cutout core first, so tool previews match gameplay.
+  const path=require('node:path');
+  const walk=dir=>fs.readdirSync(dir,{withFileTypes:true}).flatMap(e=>e.isDirectory()
+    ?(['assets','vendor','references'].includes(e.name)?[]:walk(path.join(dir,e.name)))
+    :/\.(html|js)$/.test(e.name)?[path.join(dir,e.name)]:[]);
+  const loaders=walk('docs').filter(file=>/portrait-utils\.js\?v=/.test(fs.readFileSync(file,'utf8')));
+  assert(loaders.length>=10,'found the pages and loaders that include portrait-utils');
+  for(const file of loaders){
+    const text=fs.readFileSync(file,'utf8');
+    const at=text.search(/portrait-utils\.js\?v=/), core=text.search(/beard-hood-cutout\.js\?v=/);
+    assert(core>=0&&core<at,`${file} loads beard-hood-cutout.js before portrait-utils.js`);
+  }
+}
 new vm.Script(html.match(/<script>([\s\S]*?)<\/script>/)[1]);
 for(const id of ['paintCanvas','beard','hood','variant','paintMode','eraseMode','rootMode',
   'hoodAutoMode','coneSpread','coneSpreadLabel','topConeEnabled','topConeSpread','topConeSpreadLabel',

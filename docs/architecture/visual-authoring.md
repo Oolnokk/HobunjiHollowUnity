@@ -4,7 +4,9 @@
 >
 > See [AGENTS.md](../../AGENTS.md) and [CLAUDE.md](../../CLAUDE.md). These requirements are project-wide unless the user explicitly changes them.
 
-## Experimental 2D beard / front-hood arbitration
+## 2D beard / front-hood arbitration
+
+Authored with `docs/tools/beard-hood-cutout/` (Tools hub → Assets → Beard + Hood Cutout); runtime owner is `docs/js/beard-hood-cutout.js` (`window.PortraitBeardHoodCutout`), consumed by the shared portrait compositor in `docs/js/portrait-utils.js`. Every page that loads `portrait-utils.js` must load `beard-hood-cutout.js` first so tool previews match gameplay.
 
 The portrait remains authored 2D artwork. Do **not** introduce a 3D beard, head rig, new X-ray layer, or extra portrait silhouette planes for beard/hood interactions.
 

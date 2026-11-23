@@ -88,8 +88,11 @@ assert.match(read('docs/tools/enemy-loadout-editor/preview.js'), /js\/procedural
 // 6. Mask over hood in the front portrait.
 {
   const portrait = read('docs/js/portrait-utils.js');
-  const front = portrait.indexOf('  drawBreathingLayers(hoodLayers);\n  drawEmoteLayers(maskLayers);');
-  assert.ok(front > 0, 'front portrait draws the hood first and the mask on top');
+  // The hood may be drawn through the beard/hood cutout branches, so check order rather than adjacency.
+  const frontMask = portrait.search(/\n  drawEmoteLayers\(maskLayers\);/);
+  const lastHoodBeforeMask = portrait.lastIndexOf('drawBreathingLayers(hoodLayers', frontMask);
+  assert.ok(frontMask > 0 && lastHoodBeforeMask > 0 && frontMask - lastHoodBeforeMask < 200,
+    'front portrait draws the hood first and the mask on top');
   assert.equal(portrait.indexOf('  drawEmoteLayers(maskLayers);\n  drawBreathingLayers(hoodLayers);'), -1, 'no mask-under-hood order remains');
 }
 
