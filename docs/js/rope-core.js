@@ -1,9 +1,9 @@
 // RopeCore — the single source of truth for how a rope swings and how a rider leaves it.
 //
-// This is the arithmetic of the original Random Test Ruin rope traversal
-// (js/dev-random-ruin-simple-puzzles.js), moved here verbatim so every rope in the game feels the
-// same: the generator's ropes, furniture ropes, and ropes carrying burdens. Hosts keep everything
-// that is theirs (the player, collision, meshes, input); this module owns the numbers.
+// This shares the original Random Test Ruin pendulum arithmetic
+// (js/dev-random-ruin-simple-puzzles.js), with held adjustment now easing toward vertical and
+// clearing swing momentum. Generated, furniture, shaft and burden ropes use the same core.
+// Hosts still own the player, collisions, meshes and input; this module owns the numbers.
 //
 // A rope is a plain object:
 //   { anchor:{x,y,z}, yaw, length, maxLength, angle, omega, braking, bob, lastSafeBob, collisionStops }
