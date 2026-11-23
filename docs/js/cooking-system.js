@@ -633,9 +633,22 @@
     const now = currentGameHour(); // HUD countdowns use the same in-game clock as effect expiry.
     if (!Number.isFinite(now)) return [];
     hydratePendingFoodTimers(now);
-    return activeFoodEffects.filter(effect => effect.expiresAtGameHour > now).map(effect => ({
-      key: effect.key, label: `${effectStrengthLabel(effect.stacks)} ${effectLabel(effect.key)}`, icon: EFFECT_ICONS[effect.key] || '🍲', kind: 'boon',
-      sourceLabel: 'Food', description: (FOOD_EFFECT_BENEFITS[effect.key] || 'Adds a temporary food skill or stat bonus.') + ` +${effect.stacks} food stacks.`, stacks: effect.stacks, durationS: FOOD_DURATION_HOURS * 3600, remainingS: (effect.expiresAtGameHour - now) * 3600,
+    const displayed = new Map(); // One HUD icon per effect while independently expiring legacy meal stacks retain their original deadlines.
+    for (const effect of activeFoodEffects) {
+      if (effect.expiresAtGameHour <= now) continue;
+      const group = displayed.get(effect.key); // Only the display is combined; the underlying food timers stay separate.
+      if (group) {
+        group.stacks += effect.stacks;
+        group.nextExpiry = Math.min(group.nextExpiry, effect.expiresAtGameHour);
+        group.lastExpiry = Math.max(group.lastExpiry, effect.expiresAtGameHour);
+      } else displayed.set(effect.key, { stacks: effect.stacks, nextExpiry: effect.expiresAtGameHour, lastExpiry: effect.expiresAtGameHour });
+    }
+    return [...displayed].map(([key, effect]) => ({
+      key, label: `${effectStrengthLabel(effect.stacks)} ${effectLabel(key)}`, icon: EFFECT_ICONS[key] || '🍲', kind: 'boon',
+      sourceLabel: 'Food',
+      description: (FOOD_EFFECT_BENEFITS[key] || 'Adds a temporary food skill or stat bonus.') + ` +${effect.stacks} food stacks.`
+        + (effect.nextExpiry < effect.lastExpiry ? ' Some stacks expire earlier than others.' : ''),
+      stacks: effect.stacks, durationS: FOOD_DURATION_HOURS * 3600, remainingS: (effect.nextExpiry - now) * 3600,
     }));
   }
 
@@ -722,15 +735,7 @@
       return { key: canonicalFoodEffectKey(effect.key), stacks: Math.max(1, Number(effect.stacks) || 1), durationHours: FOOD_DURATION_HOURS,
         ...(Number.isFinite(now) ? { expiresAtGameHour: now + remainingHours } : { remainingHours }) };
     });
-    const merged = new Map(); // Restored Clarity/Perception timers become one buff, keeping all stacks and the latest expiry.
-    for (const effect of restoredFoodEffects) {
-      const previous = merged.get(effect.key); // Prevent two HUD icons when an old meal had both food effects.
-      if (!previous) { merged.set(effect.key, effect); continue; }
-      previous.stacks += effect.stacks;
-      if (Number.isFinite(now)) previous.expiresAtGameHour = Math.max(previous.expiresAtGameHour, effect.expiresAtGameHour);
-      else previous.remainingHours = Math.max(previous.remainingHours, effect.remainingHours);
-    }
-    activeFoodEffects = [...merged.values()];
+    activeFoodEffects = restoredFoodEffects; // Old Clarity and Perception stacks share one stat, but each keeps its original expiry; foodBuffEntries groups only their icon.
     Object.keys(deps.inventory).forEach(reconcileQuality);
     window.EffectBuffBar?.refresh(true);
     window.SkillSystem?.render?.();
