@@ -32,6 +32,12 @@ const nativeForZone = {
 for(const [zone,info] of Object.entries(nativeForZone)) {
   const normal = info.make(),first = generator.buildWildernessBlossomTreeMesh('bloom:'+zone,info.color,zone);
   const second = generator.buildWildernessBlossomTreeMesh('bloom:'+zone,info.color,zone);
+  const treeRoots=normal.userData.wildernessRootSpansLocal; // Source geometry is sampled once per native cached variant.
+  assert(Array.isArray(treeRoots)&&treeRoots.length>0,zone+': generated native tree roots carry actual collision spine samples');
+  assert(treeRoots.every(root=>root.points.length>=3&&root.points.every(p=>p.length===3&&p.every(Number.isFinite))),
+    zone+': root contact follows finite authored centreline points rather than guessing a circular footprint');
+  assert.strictEqual(info.make().userData.wildernessRootSpansLocal,treeRoots,
+    zone+': identical native trees share one root descriptor array instead of deep-cloning it');
   const originalBounds = new THREE.Box3().setFromObject(normal);
   const bloomBounds = new THREE.Box3().setFromObject(first);
   const nativeHeight = originalBounds.getSize(new THREE.Vector3()).y;
