@@ -335,6 +335,7 @@
       const holder = new THREE.Group(); holder.name = p.id; holder.position.set(p.x, p.y, p.z); group.add(holder);
       const slab = new THREE.Mesh(new THREE.BoxGeometry(p.w, THICKNESS, p.d), stone);
       slab.userData.hobunjiGroundTopFacesOnly = true; // Only the walkable face participates in same-level x-ray.
+      slab.userData.ruinShaftPlatform = true; // Fog uses the physical slab's transformed bounds to clip wall engravings, even after TileSpan replaces its geometry.
       slab.position.y = -THICKNESS / 2; slab.name = p.id + '-stone';
       supportPillars?.stretchStoneFaces?.(slab);
       if(tradition==='kanthic'){
