@@ -318,7 +318,8 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid!important;v
             <input id="maaFullScaleAgeRange${name}" type="range" min="${min}" max="${max}" step="1" value="100" aria-label="Global ${name.toLowerCase()} size for selected age mode">
             <input id="maaFullScaleAgeNum${name}" type="number" min="${min}" max="${max}" step="1" value="100" aria-label="Global ${name.toLowerCase()} percent (exact)">%
           </div>`).join('')}
-          <div class="scaleActions"><button id="maaFullScaleAgeExport" type="button" class="secondary">Export age defaults JSON</button></div>
+          <div class="scaleActions"><button id="maaFullScaleAgeExport" type="button" class="secondary">Export age defaults JSON</button><button id="maaFullScaleAgeApply" type="button" class="good">Apply to game on this device</button><button id="maaFullScaleAgeUnapply" type="button" class="secondary">Restore game's defaults</button></div>
+          <div id="maaFullScaleRuntimeStatus" class="scaleStatus" aria-live="polite">Draft only until applied.</div>
         </section>
         <section id="maaFullScaleLongoranControls" aria-label="Longoran hunch and kyphosis posture" hidden>
           <b>Longoran spine — hunch &amp; kyphosis</b>
@@ -347,10 +348,26 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid!important;v
         const range = panel.querySelector(`#maaFullScaleAgeRange${name}`);
         const number = panel.querySelector(`#maaFullScaleAgeNum${name}`);
         range.addEventListener('input', () => { number.value = range.value; applyAgeModifiers(axis, range.value); });
-        number.addEventListener('input', () => { if (number.value !== '') { range.value = number.value; applyAgeModifiers(axis, number.value); } });
-        number.addEventListener('change', () => { range.value = number.value; applyAgeModifiers(axis, number.value); });
+        number.addEventListener('input', () => {
+          const typed = Number(number.value); // Partial mobile entries below a slider's minimum are not forcibly snapped back.
+          if (number.value !== '' && Number.isFinite(typed) && typed >= Number(number.min) && typed <= Number(number.max)) {
+            range.value = number.value;
+            applyAgeModifiers(axis, number.value);
+          }
+        });
+        number.addEventListener('change', () => {
+          const value = Number(number.value);
+          const percent = Number.isFinite(value) && number.value !== ''
+            ? Math.min(Number(number.max), Math.max(Number(number.min), value))
+            : Math.round(ageValues()[axis] * 100);
+          number.value = String(percent);
+          range.value = String(percent);
+          applyAgeModifiers(axis, percent);
+        });
       }
       panel.querySelector('#maaFullScaleAgeExport').addEventListener('click', exportAgeModifiers);
+      panel.querySelector('#maaFullScaleAgeApply').addEventListener('click', applyAgeToGame);
+      panel.querySelector('#maaFullScaleAgeUnapply').addEventListener('click', restoreGameAges);
       panel.querySelector('#maaFullScaleChoose').addEventListener('change', event => {
         manualViewInteraction = true; // An intentional selection must not be followed by a surprise automatic lineup frame.
         const entry = entries.find(item => item.key === event.target.value);
@@ -571,7 +588,7 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid!important;v
       for (const entry of entries) syncAgeLimbs(entry, 'hand'); // Reassert only hands after pose ownership settles.
       relayoutForAge();
     } else if (ageDirtyLimb) {
-      for (const entry of entries) syncAgeLimbs(entry, ageDirtyLimb); // Hands/feet only: no full rig traversal, leg solver, or layout.
+      for (const entry of entries) syncAgeLimbs(entry, ageDirtyLimb === 'both' ? null : ageDirtyLimb); // Hands/feet only: no full rig traversal, leg solver, or layout.
     }
     ageDirtyBody = false;
     ageDirtyLimb = null;
