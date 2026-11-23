@@ -1,5 +1,38 @@
 # Performance investigation log
 
+## 23 Nov 2026: prioritized animal colors and patterns for owned pets
+
+**Observed bottleneck in code:** \`CreatureGeneticsRender.composeFrame\` processed every native-resolution
+genotype appearance in strict first-in-first-out order, including wilderness spawns, farm
+livestock, mounts, ordinary companions and shoulder pets. A burst of wild requests could
+delay the player's own animal, making its fully authored base colors, inherited patterns,
+Color Pools surface motifs and eye overlays appear late. The existing wild and farm
+texture caches already deduplicate requests; they were not the cause of the ordering.
+
+The same canonical compositor now schedules by role: **player-owned active pets / mounts /
+shoulder pets**, then **farm livestock**, then **wilderness and regular previews**.
+Only one native-resolution composition runs at once, retaining the existing memory cap;
+all patterns and eyes remain atomic (a missing required layer rejects and retries).
+Priority is FIFO within each class, with one lower-priority frame allowed after four
+consecutive pet frames so wilderness is not starved. The game texture owner can promote
+an existing in-flight wildlife request to pet priority instead of composing twice.
+Small shoulder heads and split shoulder frames explicitly request pet priority.
+For owned pets, the compositor also starts only the *selected* idle/run frame's
+required base/pattern/eye artwork and masks while queued CPU work is still finishing.
+Ordinary global three-frame prewarming remains opt-in for developer tools.
+
+In-game mobile texture diagnostics through \`CreatureGeneticsRender.memorySnapshot()\`
+expose \`queuedPets\`, \`queuedFarm\`, \`composePending\`, \`composeActive\`,
+\`composePetStarts\`, \`composePromotions\` and \`petSpritePrefetches\`.
+\`scripts/test-animal-appearance-priority.js\` executes the production queue to
+assert pet/farm/wild ordering, fairness, promotion, per-pet prefetch and failure recovery.
+
+**Limits:** This removes avoidable *waiting behind other animals* and overlaps pet
+network loads with other composition work; a single expensive recolor/pattern pass
+still costs its original CPU time. Actual mobile seconds saved and FPS impact have
+not yet been benchmarked in an on-device run.
+
+
 ## 23 Nov 2026: Cloud Forest dense wall merged across chunks; wilderness leads measured
 
 A per-render-call draw census of a Southern Cloud Forest frame (headless, fresh world, 480×320,
