@@ -144,5 +144,11 @@
         }
       }
     }
-  }
+  },
+  "beardCutoutPermissionMode": "auto",
+  "beardCutoutConeSpread": 2,
+  "beardCutoutTopConeSpread": 3,
+  "beardCutoutTopUpConeSpread": 3,
+  "beardCutoutTopDownConeLength": 0,
+  "beardCutoutPaintAlphaFloor": 128
 }
