@@ -588,7 +588,8 @@
   }
   function carryDeps() { return window.ProceduralHandAttachments?.gameDeps || deps() || {}; }
   // Held and stowed Burdens share the species/gender-adjusted posterior frame.
-  // Stowed geometry follows the live portrait's facing after its body-frame pose is solved.
+  // Ordinary stowed furniture follows the live portrait; family babies remain on the
+  // carrier's body instead, preventing orbiting when the portrait turns independently.
   function backCarryRoot(){
     const composer=window.PlayerBodyTransformComposer; // Authoritative character root, used to locate the live portrait and resolve authored offsets.
     return typeof composer?.getPlayerMesh==='function'?composer.getPlayerMesh():carryDeps()?.playerMesh;
@@ -634,8 +635,8 @@
     for(const part of chain)quaternion.multiply(part.quaternion);
     return quaternion;
   }
-  // Re-parent a solved carry onto the carrier's portrait plane so it follows the portrait's own
-  // facing/deadzone yaw. Shared by the player's back stow and NPC carriers (FamilyBabyBurdens).
+  // Re-parent ordinary stowed furniture onto the player's portrait so it follows the
+  // portrait's own facing/deadzone yaw. Family babies deliberately skip this attachment.
   function mountCarryOnPortrait(group,body,portrait){
     body.updateWorldMatrix?.(true,false);
     portrait.updateWorldMatrix?.(true,false);
@@ -2820,7 +2821,7 @@
     contextButtons,collectAimedPile,promptButtons,RUBBLE_YIELD,
     startShatterAim,releaseShatterAim,cancelShatterAim,detonate,heldHandTarget,
     projectileHit,hitProjectile,senseTargets,sweepMelee,tick,attachRuntime,
-    debugSnapshot:()=>({lastEvent,lastBlastAttribution,latestChange:'Stowed Burdens use the held pose species-adjusted posterior frame before following portrait facing.',backCarryMount:backCarried?{parent:backCarried.group?.parent?.name||backCarried.group?.parent?.type||null,portraitAttached:backCarried.kind==='familyBaby'?false:!!backCarryPortrait(backCarryRoot())&&backCarried.group?.parent===backCarryPortrait(backCarryRoot()),rootFallback:backCarried.group?.parent===backCarryRoot(),frame:backCarried.kind==='familyBaby'?'carrier-posterior':'portrait-facing',collision:'carrier-hitbox'}:null,crates:window.CratePiles?.debugSnapshot?.()||null,backCarried:backCarriedInfo(),fruitCarryProfile:fruitCarryTemplate===FRUIT_CARRY_FALLBACK?'fallback':'authored',area:area(),held:held?.id||null,babyForeground:{active:held?.kind==='familyBaby',enabled:window.XrayHierarchy?.get?.('baby.carrierForeground')!=='off',renderOrder:held?.kind==='familyBaby'?(window.XrayHierarchy?.get?.('baby.carrierForeground')==='off'?CARRIED_VESSEL_RENDER_ORDER:HELD_BABY_FOREGROUND_ORDER):null},emittingVases:[...allActive().values()].filter(v=>v.emitters?.length).length,
+    debugSnapshot:()=>({lastEvent,lastBlastAttribution,latestChange:'Back-stowed infants follow the carrier posterior, not independent portrait yaw; ordinary furniture keeps portrait facing.',backCarryMount:backCarried?{parent:backCarried.group?.parent?.name||backCarried.group?.parent?.type||null,portraitAttached:backCarried.kind==='familyBaby'?false:!!backCarryPortrait(backCarryRoot())&&backCarried.group?.parent===backCarryPortrait(backCarryRoot()),rootFallback:backCarried.kind==='familyBaby'?false:backCarried.group?.parent===backCarryRoot(),bodyAttached:backCarried.kind==='familyBaby'&&backCarried.group?.parent===backCarryRoot(),frame:backCarried.kind==='familyBaby'?'carrier-posterior':'portrait-facing',collision:'carrier-hitbox'}:null,crates:window.CratePiles?.debugSnapshot?.()||null,backCarried:backCarriedInfo(),fruitCarryProfile:fruitCarryTemplate===FRUIT_CARRY_FALLBACK?'fallback':'authored',area:area(),held:held?.id||null,babyForeground:{active:held?.kind==='familyBaby',enabled:window.XrayHierarchy?.get?.('baby.carrierForeground')!=='off',renderOrder:held?.kind==='familyBaby'?(window.XrayHierarchy?.get?.('baby.carrierForeground')==='off'?CARRIED_VESSEL_RENDER_ORDER:HELD_BABY_FOREGROUND_ORDER):null},emittingVases:[...allActive().values()].filter(v=>v.emitters?.length).length,
       vases:[...allActive().values()].map(v=>({id:v.id,kind:v.kind,col:v.col,row:v.row,carried:v.carried,hanging:!!v.hanging,flying:!!v.flying,plinthAttached:!!v.plinthAttached,hangingMechanismId:v.hangingMechanismId||null})),
       fruitFalls:[...fallingFruits.values()].map(f=>({id:f.fruit.id,y:f.fruit.group.position.y,cause:f.cause})),
       downwardBurdenFalls:[...downwardFalls.values()].map(f=>({id:f.burden.id,y:f.burden.group.position.y,velocity:+f.velocity.toFixed(2),cause:f.cause})),
