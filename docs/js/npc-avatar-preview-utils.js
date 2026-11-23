@@ -235,6 +235,7 @@
     }
     if (appearance.bodyColors) profile.bodyColors = { ...(profile.bodyColors || {}), ...appearance.bodyColors };
     if (Array.isArray(appearance.bodyDeform)) profile.bodyDeform = appearance.bodyDeform;
+    profile.faceRig = window.HobunjiFaceRig?.normalize?.(appearance.faceRig, appearance.speciesId, appearance.gender) || null; // The saved NPC's experimental eye rig follows its portrait into world/dialogue rendering.
 
     const catalog = window.ScratchbonesAccount.getShopCatalog();
     const equippedIds = (Array.isArray(npc.equippedCosmetics) ? npc.equippedCosmetics : []).map(id => window.canonicalRiverlandKasaId?.(id) || id); // Old Kenkari kasa items are Riverland kasa.
