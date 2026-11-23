@@ -53,6 +53,16 @@ const detachedChunk={visible:true,children:[tree],parent:scene}; // Real streame
 tree.parent=detachedChunk;
 roots=[detachedChunk];browser.NearbyVolumeCollision.invalidate();
 assert(blockers.supportAt(zone,4,3.5,1),'indexed roots follow the attached chunk subtree');
+const innerTreeGroup={visible:true,children:[tree],parent:detachedChunk}; // Harvested trees can be nested inside a loaded 16-tile chunk.
+tree.parent=innerTreeGroup;detachedChunk.children=[innerTreeGroup];
+browser.NearbyVolumeCollision.invalidate();
+assert(blockers.supportAt(zone,4,3.5,1),'an inner vegetation group remains physically indexed while attached');
+innerTreeGroup.parent=null;detachedChunk.children=[]; // The chunk survives but the harvested subtree is removed.
+assert.equal(blockers.supportAt(zone,4,3.5,1),null,
+  'a removed inner tree group cannot leave roots attached to its still-loaded parent chunk');
+innerTreeGroup.parent=detachedChunk;detachedChunk.children=[innerTreeGroup];
+browser.NearbyVolumeCollision.invalidate();
+assert(blockers.supportAt(zone,4,3.5,1),'reattaching vegetation restores roots on the same active scene');
 detachedChunk.parent=null;roots=[]; // Chunk removed from scene; tree.parent still points to the detached chunk.
 assert.equal(blockers.supportAt(zone,4,3.5,1),null,'detaching a whole chunk must never leave ghost collision, even before a cache rebuild');
 residency++; // A new streamed-chunk residency stamp invalidates the cached root index.
