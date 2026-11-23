@@ -578,6 +578,8 @@
       actionId:row.inputAction,
       label:row.label,
       priority:1000+(Number(row.priority)||0), // World interactions intentionally outrank ordinary gameplay for an explicitly claimed input while remaining below menus/selectors in game.js.
+      showInArch:typeof row.onHoldStart==='function' && typeof row.onPress!=='function', // Hold-only rope adjustment needs the shared pointerdown/up arch, never the tap-only invokeAction fallback.
+      hudIcon:row.touchIcon||'✋', // The routed touch arch retains the same pictogram as the floating world prompt.
       onPress:()=>{
         if(typeof row.onHoldStart==='function')row.onHoldStart();
         else row.onPress?.();
