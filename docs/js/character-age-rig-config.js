@@ -98,6 +98,15 @@
     return clone(defaults);
   }
 
+  function nonFamilyChildLimbsFor(npc) {
+    const record = npc || {}; // Only independent child NPCs need the generic attach-time hook; family stages retain FamilyBabyLimbs ownership.
+    const tags = Array.isArray(record.tags) ? record.tags.map(tag => String(tag).toLowerCase()) : [];
+    const child = record.isChild === true || String(record.role || '').toLowerCase() === 'child' || tags.includes('child');
+    if (!child || tags.includes('family') || record.homeId === 'farmhouse') return null;
+    const current = applied || defaults; // Follows the same active child proportion used by PNGPlaneAvatar and the family config.
+    return { hand: current.child.hand, foot: current.child.foot, phase: 'child', owner: 'generic-child-visuals' };
+  }
+
   window.HobunjiCharacterAgeRigConfig = Object.freeze({
     schema: SCHEMA,
     appliedStorageKey: APPLIED_KEY,
@@ -105,6 +114,7 @@
     effectiveValues: () => clone(applied || defaults),
     sanitize,
     composePreviewScale,
+    nonFamilyChildLimbsFor,
     applyOnThisDevice,
     restoreRepositoryOnThisDevice,
     snapshot: () => ({ applied: !!applied, values: clone(applied || defaults) }),
