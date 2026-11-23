@@ -190,6 +190,8 @@ const southernHeftroot = game.CropVarieties.ensure('cv_heftroot_555555'); // Sou
 assert.equal(southernHeftroot.region, 'Southern Archipelago', 'regional seed creates an actual vegetable cultivar');
 assert.equal(southernHeftroot.effects.perception, 2, 'the harvest carries Perception');
 assert.equal(itemDefs[southernHeftroot.seedKey].seedFor, southernHeftroot.id, 'the usual seed action plants this vegetable');
+assert(game.CropVarieties.offers(() => .99).some(offer => offer.key === southernHeftroot.seedKey),
+  'Southern Archipelago Heftroot seed can appear in normal regional trader stock');
 const southernFlour = game.ItemProcessing.getProcessingOutputs('grinding', southernHeftroot.id)?.[0]; // Exercise the shared hand mill instead of inventing an item.
 assert.equal(southernFlour?.key, southernHeftroot.id + 'Flour', 'milling creates cultivar-specific flour');
 assert.equal(southernFlour?.cookingPrimaryEffect, 'perception', 'flour retains the inherited Perception trait');
