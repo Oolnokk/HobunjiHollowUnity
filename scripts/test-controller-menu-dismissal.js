@@ -81,4 +81,15 @@ const legacyContracts = [
 for (const [path, contract] of legacyContracts) {
   assert.match(fs.readFileSync(path, 'utf8'), contract, path + ' must provide a recognizable existing dismissal action');
 }
+// Keep standalone browser harnesses on the same parser-loading contract as docs/index.html.
+for (const path of [
+  'scripts/test-farmwork-controller-browser.js',
+  'scripts/test-controller-mastery-inventory-browser.js',
+  'scripts/test-controller-ui-modal-pin.js',
+]) {
+  const fixture = fs.readFileSync(path, 'utf8'); // Fixture source is checked for the new dependency's ordering.
+  const policyOffset = fixture.indexOf('controller-menu-dismissal.js'); // Required before navigator in every real browser harness.
+  const navigatorOffset = fixture.indexOf('controller-ui-nav.js'); // Should never be injected before the helper.
+  assert.ok(policyOffset >= 0 && navigatorOffset > policyOffset, path + ' must load dismissal before controller navigation');
+}
 console.log('Shared controller-menu dismissal policy: label safety, clipping, ownership, Escape and action isolation passed');
