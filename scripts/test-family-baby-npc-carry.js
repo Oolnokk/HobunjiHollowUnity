@@ -44,11 +44,15 @@ if (THREE) {
 
 // NPC carry uses that solve on the carrier's own facing frame and live posterior.
 assert.match(burdens, /const body = spouse\._npcCharacterRigRoot \|\| spouse\.root;/, 'NPC body frame = rig root (the playerMesh equivalent)');
-assert.match(burdens, /liveY: Number\(spouse\.legs\?\.standingPosteriorY\)/, 'NPC posterior comes from its live leg rig');
+assert.match(burdens, /const rawY = Number\(spouse\.legs\?\.standingPosteriorY\)/, 'NPC posterior comes from its live leg rig');
 assert.match(burdens, /api\.solveCarryMount\(group, entry\.burden\.data\?\.carryable \|\| \{\}, back, npcScratch\.posterior\);/, 'NPC uses the shared solve with no unit conversion');
 assert.doesNotMatch(burdens, /divideScalar\(s\)/, 'no rig-scale division: authored offsets are body-local like the player');
-assert.match(burdens, /if \(back && group\.parent === body && entry\.npcCarryPose === 'back'\) return true;/,
+assert.match(burdens, /if \(back && group\.parent === body && entry\.npcCarryPose === 'back'/,
   'NPC back-stowed infant stays in the torso frame during repeated family updates');
+assert.match(burdens, /mounted\.revision === revision/,
+  'a changed baby back pose invalidates the cached spouse carry transform');
+assert.match(burdens, /mounted\.liveY === liveY/,
+  'a changed posterior height invalidates the cached spouse carry transform');
 assert.doesNotMatch(burdens, /api\.mountCarryOnPortrait\(group, body, portrait\)/,
   'NPC newborn cannot be reparented into the independently rotating head/portrait');
 assert.match(burdens, /const body = spouse\._npcCharacterRigRoot \|\| spouse\.root; \/\/ Fallback also follows the carrier/,
@@ -81,10 +85,18 @@ assert.match(burdens, /const body = spouse\._npcCharacterRigRoot \|\| spouse\.ro
   assert(group.position.z<0,'spouse newborn starts behind its torso');
   assert.equal(solve(entry,spouse,true),true);
   assert.equal(solves,1,'portrait/head updates do not re-solve or move an already attached baby');
-  assert.equal(solve(entry,spouse,false),true);
-  assert.equal(solves,2,'switching to arms recomputes the existing authored hand pose');
+  entry.burden.data.carryable._backCarryRevision=1; // Profile editor changed the neck anchor while baby remained stowed.
   assert.equal(solve(entry,spouse,true),true);
-  assert.equal(solves,3,'restowing recomputes the authored back pose');
+  assert.equal(solves,2,'edited back-stow pose triggers exactly one new NPC solve');
+  assert.equal(solve(entry,spouse,true),true);
+  assert.equal(solves,2,'unchanged pose revision does not waste a subsequent solve');
+  spouse.legs.standingPosteriorY=.42; // A shift of NPC height/stance must follow the actual posterior.
+  assert.equal(solve(entry,spouse,true),true);
+  assert.equal(solves,3,'NPC standing posterior change recomputes the baby mount');
+  assert.equal(solve(entry,spouse,false),true);
+  assert.equal(solves,4,'switching to arms recomputes the existing authored hand pose');
+  assert.equal(solve(entry,spouse,true),true);
+  assert.equal(solves,5,'restowing recomputes the authored back pose');
 }
 
 // Same grips + elbows through the hand driver hook; back stow frees the hands.
