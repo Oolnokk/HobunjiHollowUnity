@@ -11,7 +11,7 @@
 // The piece is the ceiling mount (a plain box part is enough). The swinging rope, grip and behavior come
 // from the shared rope model (js/rope-core.js):
 //   * inside the Random Test Ruin the rope is built by the ruin runtime itself (addFurnitureRope), so a
-//     player rides it exactly like a generated rope: the same 'Grab Rope' prompt, pumping, brake, collision
+//     player catches it like any generated rope in mid-air: the same pumping, brake, collision
 //     and release flight; HangingRopes adopts it so a burden can hang from it too;
 //   * anywhere else it is an owned HangingRopes rope: burdens swing from it with the same behavior.
 //
@@ -59,7 +59,8 @@
   }
 
   // ------------------------------------------------------------ runtime registry
-  const entries = new Map(); // `${area}|${id}` -> { area, id, object, rope, kind: 'ruin' | 'owned' }
+  const entries = new Map(); // `${area}|${id}` -> { area, id, object, rope, kind: 'ruin' | 'owned' | 'pending' }.
+  const pending = new Map(); // Only not-yet-mounted ruin furniture; scanned during the ruin's existing update tick.
   const keyOf = (area, id) => `${area}|${id}`;
   const sceneOf = object => { for (let n = object; n; n = n.parent) if (n.isScene) return n; return root.GridTileAccessors?.getActiveScene?.() || null; };
 
@@ -70,25 +71,50 @@
     area = String(area); unregister(area, id);
     const HR = root.HangingRopes, ruin = root.DevRandomRuinSimplePuzzles;
     let rope = null, kind = 'owned';
-    if (area === RUIN_MAP && ruin?.addFurnitureRope) {
-      rope = ruin.addFurnitureRope(spec, object); // the ruin runtime owns, steps, draws and lets players ride it
-      if (rope) { kind = 'ruin'; HR?.adoptRope?.(rope, { id: 'furniture_' + id, mapId: area, scene: sceneOf(object) }); }
+    if (area === RUIN_MAP) {
+      rope = ruin?.addFurnitureRope?.(spec, object) || null; // All ruin ropes use the same airborne rider, never the separate outdoor motion owner.
+      kind = rope ? 'ruin' : 'pending'; // Furniture may load before the native ruin runtime becomes ready.
+    } else if (HR) {
+      rope = HR.registerRope({ id: 'furniture_' + id, mapId: area, scene: sceneOf(object), mount: object, x: spec.anchor.x, y: spec.anchor.y, z: spec.anchor.z, yaw: spec.yaw, length: spec.length, maxLength: spec.maxLength, angle: spec.angle });
     }
-    if (!rope && HR) rope = HR.registerRope({ id: 'furniture_' + id, mapId: area, scene: sceneOf(object), mount: object, x: spec.anchor.x, y: spec.anchor.y, z: spec.anchor.z, yaw: spec.yaw, length: spec.length, maxLength: spec.maxLength, angle: spec.angle });
-    if (!rope) return null;
-    entries.set(keyOf(area, id), { area, id: String(id), object, rope, kind });
+    if (!rope && kind !== 'pending') return null;
+    const entry = { area, id: String(id), object, data, rope, kind }; // Retains authoring data so delayed mounting uses the current transformed anchor.
+    entries.set(keyOf(area, id), entry);
+    if (kind === 'pending') pending.set(keyOf(area, id), entry); // No invisible or incompatible fallback rope exists in the interim.
     return rope;
+  }
+  function flushPending() {
+    if (!pending.size || root.DevRandomRuinSimplePuzzles?.hasActiveRuinState?.() !== true) return 0;
+    let mounted = 0; // Count returned to mobile diagnostics/tests; mounting occurs only once per pending record.
+    for (const [key, entry] of pending) {
+      if (entries.get(key) !== entry || !entry.object?.parent) {
+        pending.delete(key); entries.delete(key); // A removed mount cannot create a new rope after its scene disappears.
+        continue;
+      }
+      const spec = specFor(entry.object, entry.data, entry.id); // Resolve the final world transform when the native runtime exists.
+      const rope = spec && root.DevRandomRuinSimplePuzzles.addFurnitureRope(spec, entry.object);
+      if (!rope) continue;
+      entry.rope = rope; entry.kind = 'ruin';
+      pending.delete(key);
+      mounted++;
+    }
+    return mounted;
   }
   function unregister(area, id) {
     const key = keyOf(String(area), id), entry = entries.get(key);
     if (!entry) return false;
-    root.HangingRopes?.removeRope?.(entry.rope); // lets go of any burden first
-    if (entry.kind === 'ruin') root.DevRandomRuinSimplePuzzles?.removeFurnitureRope?.(entry.rope);
+    pending.delete(key);
+    if (entry.rope) {
+      if (entry.kind === 'ruin') {
+        if (!root.DevRandomRuinSimplePuzzles?.removeFurnitureRope?.(entry.rope))
+          root.HangingRopes?.removeRope?.(entry.rope); // A retiring ruin may already have released its traversal state.
+      } else root.HangingRopes?.removeRope?.(entry.rope);
+    }
     entries.delete(key);
     return true;
   }
   const clearArea = area => { let n = 0; for (const entry of [...entries.values()]) if (entry.area === String(area) && unregister(entry.area, entry.id)) n++; return n; };
   const debugSnapshot = () => ({ ropes: [...entries.values()].map(e => ({ area: e.area, id: e.id, kind: e.kind })) });
 
-  return Object.freeze({ VERSION, RUIN_MAP, normalize, specFor, register, unregister, clearArea, debugSnapshot });
+  return Object.freeze({ VERSION, RUIN_MAP, normalize, specFor, register, flushPending, unregister, clearArea, debugSnapshot });
 });

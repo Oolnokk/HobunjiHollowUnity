@@ -15,7 +15,9 @@ assert(html.includes('js/ruin-rope-torches.js?') && html.indexOf('js/weapon-laye
 assert.match(simple, /RuinRopeTorch\?\.attach\?\.\(marker\)/);
 assert.match(simple, /RuinRopeTorch\?\.tick\?\.\(rope\.torch,dt,ropeCamera\)/);
 assert.match(simple, /RuinRopeTorch\?\.dispose\?\.\(rope\?\.torch\)/);
-assert.match(simple, /for \(const rope of state\.ropes\) window\.RuinRopeTorch\?\.dispose\?\.\(rope\.torch\)/);
+assert.match(simple, /for \(const rope of state\.ropes\) \{/);
+assert.match(simple, /window\.HangingRopes\?\.removeRope\?\.\(rope\)/); // Both burden registration and rope-flame resources must retire on the same reroll.
+assert.match(simple, /window\.RuinRopeTorch\?\.dispose\?\.\(rope\.torch\)/);
 
 class Vector3 {
   constructor(x=0,y=0,z=0){this.set(x,y,z)}
@@ -108,7 +110,7 @@ assert.equal(torch.root.parent,marker,'head and halo inherit the real swinging r
 // The shaft swing's own visual update draws the whole span to the grab, then moves the decoration to the end of the brush.
 {
   const start=simple.indexOf('  function updateRopeVisual('); // Load the production rope visual updater in the fixture.
-  const end=simple.indexOf('  function canGrabShaftRope(',start);
+  const end=simple.indexOf('  // Rope entry has a single owner:',start);
   let renderedEnd=null; // Captures the endpoint submitted to the shared rope sprite.
   const window={DungeonRopeArt:{updateRopePlane(_mesh,_anchor,bob){renderedEnd=bob;}}};
   const place=new Function('ropeBobAt','ropeDirection','ropeMidpoint','window','deps',

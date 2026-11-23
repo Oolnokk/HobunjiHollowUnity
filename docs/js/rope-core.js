@@ -1,9 +1,9 @@
 // RopeCore — the single source of truth for how a rope swings and how a rider leaves it.
 //
-// This is the arithmetic of the original Random Test Ruin rope traversal
-// (js/dev-random-ruin-simple-puzzles.js), moved here verbatim so every rope in the game feels the
-// same: the generator's ropes, furniture ropes, and ropes carrying burdens. Hosts keep everything
-// that is theirs (the player, collision, meshes, input); this module owns the numbers.
+// This shares the original Random Test Ruin pendulum arithmetic
+// (js/dev-random-ruin-simple-puzzles.js), with held adjustment now easing toward vertical and
+// clearing swing momentum. Generated, furniture, shaft and burden ropes use the same core.
+// Hosts still own the player, collisions, meshes and input; this module owns the numbers.
 //
 // A rope is a plain object:
 //   { anchor:{x,y,z}, yaw, length, maxLength, angle, omega, braking, bob, lastSafeBob, collisionStops }
@@ -33,7 +33,7 @@
     RELEASE_KICK: 0.55,     // upward kick added when a rider lets go
     IDLE_DAMPING: 0.28,     // unoccupied rope settles
     ATTACHED_DAMPING: 0.16, // occupied rope loses less
-    BRAKE_DAMPING: 9,       // holding the brake bleeds the swing
+    BRAKE_DAMPING: 9,       // exponential straighten-to-vertical rate (per second) while adjusting; momentum is cleared
     BRAKE_YAW_RATE: 1.6,    // side input rotates the swing plane while braking
     BRAKE_LENGTH_RATE: 0.9, // forward/back input shortens/lengthens while braking
     LIMIT_BOUNCE: 0.72,     // omega kept after reaching MAX_ANGLE
@@ -79,7 +79,9 @@
   function stepAttached(rope, move, dt, blocked) {
     const priorAngle = rope.angle, priorYaw = rope.yaw, priorLength = rope.length;
     if (rope.braking) {
-      rope.omega *= Math.exp(-C.BRAKE_DAMPING * dt);
+      rope.omega = 0; // Holding Adjust cancels existing swing momentum instead of merely slowing it.
+      rope.angle *= Math.exp(-C.BRAKE_DAMPING * dt); // Frame-rate-independent lerp back to a vertical rope.
+      if (Math.abs(rope.angle) < 0.001) rope.angle = 0; // Finish precisely straight; no residual gravity when released.
       rope.yaw += move.side * C.BRAKE_YAW_RATE * dt;
       rope.length = Math.max(C.MIN_LENGTH, Math.min(rope.maxLength, rope.length - move.forward * C.BRAKE_LENGTH_RATE * dt));
     } else {
@@ -101,6 +103,20 @@
     const tangentSpeed = Math.cos(rope.angle) * rope.length * rope.omega;
     const verticalSpeed = Math.sin(rope.angle) * rope.length * rope.omega;
     return { x: bob.x, y: bob.y, z: bob.z, vx: dirX * tangentSpeed, vz: dirZ * tangentSpeed, vy: verticalSpeed + kick };
+  }
+
+  // One geometric airborne catch rule shared by ruins and outdoor ropes. Shaft routes
+  // restrict catching to their visible end so their fixed-length launch geometry remains intact.
+  function catchesAirborne(rope, point, { endOnly = false } = {}) {
+    if (!rope?.anchor || !point) return false;
+    const bob = rope.bob || bobAt(rope);
+    if (endOnly) return Math.hypot(point.x - bob.x, point.y - bob.y, point.z - bob.z) <= C.AIR_CATCH_RADIUS;
+    const a = rope.anchor, dx = bob.x - a.x, dy = bob.y - a.y, dz = bob.z - a.z;
+    const len2 = dx * dx + dy * dy + dz * dz;
+    if (len2 < 1e-6) return false;
+    const t = clamp(((point.x - a.x) * dx + (point.y - a.y) * dy + (point.z - a.z) * dz) / len2, 0, 1);
+    if (t * Math.sqrt(len2) < C.MIN_LENGTH - 0.05) return false;
+    return Math.hypot(point.x - a.x - dx * t, point.y - a.y - dy * t, point.z - a.z - dz * t) <= C.AIR_CATCH_RADIUS;
   }
 
   // A flyer at f ({x,y,z,vx,vy,vz}) takes hold of the rope where they are, their velocity turned into swing.
@@ -138,5 +154,5 @@
       angle: Number(angle) || 0, omega: 0, braking: false, bob: null, lastSafeBob: null, collisionStops: 0 };
   }
 
-  return Object.freeze({ C, ...C, bobAt, intent, stepIdle, stepAttached, releaseFlight, catchFromFlight, reachAmplitude, create, clonePoint });
+  return Object.freeze({ C, ...C, bobAt, catchesAirborne, intent, stepIdle, stepAttached, releaseFlight, catchFromFlight, reachAmplitude, create, clonePoint });
 });

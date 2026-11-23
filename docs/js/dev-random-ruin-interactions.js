@@ -365,9 +365,9 @@
     return rows;
   }
 
-  // Rows that are not aim targets: a swinging rope is caught by proximity,
-  // riding controls follow the player, and the exit is a spot, not an object.
-  const AMBIENT_KINDS = new Set(['ropegrab', 'roperelease', 'ropebrake', 'exit','ruinshafttravel','ruincheckpointtravel']); // Waystone actions work by proximity without fighting the combat aim reticle.
+  // Rows that are not aim targets: rope riding controls follow the player after
+  // an airborne catch, and the exit is a spot rather than an object.
+  const AMBIENT_KINDS = new Set(['roperelease', 'ropebrake', 'exit','ruinshafttravel','ruincheckpointtravel']); // Waystone actions work by proximity without fighting the combat aim reticle.
   const PROXIMITY_DOOR_KINDS = new Set(['transitdoor', 'v50nativetransitdoor']); // Both ordinary and upper-story hallway doors must offer an action from either side, even without reticle focus.
   const promptAnchor = new THREE.Object3D(); // One plain anchor (no scale/rotation) so the list sits at camera height beside what is aimed at, never at an object's pivot (door pivots sit at the top of the frame).
   promptAnchor.name = 'dev_ruin_interaction_prompt_anchor';
@@ -543,7 +543,7 @@
     const slotActions=SLOT_ACTIONS; // Nearby world interactions own the ordinary five physical arch slots just like NPC/furniture context actions; attacks/items return as soon as the interaction leaves range.
     const touchButtonIds=TOUCH_BUTTON_IDS;
     const sorted=rows.sort((a, b) => b.priority - a.priority || a.distance - b.distance || b.seenAt - a.seenAt);
-    const reserved=new Set(sorted.filter(row=>!row.nativeInput&&SLOT_ACTIONS.includes(row.inputAction)).map(row=>row.inputAction)); // Explicit controls such as Grab Rope reserve their physical slot before generic nearby rows are assigned.
+    const reserved=new Set(sorted.filter(row=>!row.nativeInput&&SLOT_ACTIONS.includes(row.inputAction)).map(row=>row.inputAction)); // Explicitly assigned world controls reserve their physical slot before generic nearby rows are assigned.
     const availableSlots=slotActions.filter(action=>!reserved.has(action)); // Prevents two rows from both claiming Action 1 and fighting over the same arch button.
     let slotIndex=0;
     const mapped=[];
@@ -578,6 +578,8 @@
       actionId:row.inputAction,
       label:row.label,
       priority:1000+(Number(row.priority)||0), // World interactions intentionally outrank ordinary gameplay for an explicitly claimed input while remaining below menus/selectors in game.js.
+      showInArch:typeof row.onHoldStart==='function' && typeof row.onPress!=='function', // Hold-only rope adjustment needs the shared pointerdown/up arch, never the tap-only invokeAction fallback.
+      hudIcon:row.touchIcon||'✋', // The routed touch arch retains the same pictogram as the floating world prompt.
       onPress:()=>{
         if(typeof row.onHoldStart==='function')row.onHoldStart();
         else row.onPress?.();

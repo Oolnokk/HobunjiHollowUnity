@@ -268,7 +268,7 @@
   <!-- Loads the richer per-piece data authored by furniture-avatar-author (seat
        anchors, processing VFX/warps, livestock stomp points) on top of it -->
   <script src="js/table-chair-placement.js?v=20261102chairreview3"></script>
-  <script src="js/furniture-table-system.js?v=20261115hf9c1b7a"></script>
+  <script src="js/furniture-table-system.js?v=20261122airrope4"></script>
   <script src="js/furniture-surface-png-runtime.js?v=20261103materialv3"></script> <!-- Opt-in per-face PNG tiling, alpha padding and opacity from Furniture Editor. -->
   <script src="js/furniture-tile-span.js?v=20261114vertical1"></script> <!-- Shared, on-demand rigid ends + surface-rooted elastic middle. -->
   <script src="js/authored-furniture-runtime.js?v=20261119visualauth1"></script>
@@ -575,7 +575,7 @@
   <script src="js/ruin-rope-shaft.js?v=20261122h3c9a090"></script> <!-- Default central-shaft puzzle: spaced-out slabs + swing ropes (window.RuinRopeShaft); after ruin-jump-shaft.js, before shaft-hub.js. -->
   <script src="js/shaft-hub.js?v=20261122h7fb6f80"></script>
   <script src="js/ruin-layer-plan.js?v=20261122hdf993f1"></script>
-  <script src="js/dev-ruin-single-room-trial.js?v=20261117lowBowlFire1"></script> <!-- One-room developer puzzle chooser and normal-plan weighted odds. -->
+  <script src="js/dev-ruin-single-room-trial.js?v=20261122airrope2"></script> <!-- One-room developer puzzle chooser and normal-plan weighted odds. -->
   <script src="js/dev-ruin-find-blocks.js?v=20261122h2c454e1"></script> <!-- Four-block compound lab fixture, using native ruin push, fire, flute and bomb mechanics. -->
   <script src="js/ruin-shaft-corridor.js?v=20261104directVestibule1"></script>
   <script src="js/ruin-layer-defense.js?v=20261114roomEnclosure1"></script>
@@ -878,18 +878,18 @@
   <script src="js/pingdort-flocks.js?v=20261122roostFoot2"></script> <!-- Wild Drenkirra-hunting flocks, fertile nests, and companion rock-bomber attacks. -->
   <!-- Hanging ropes: the shared rope swing arithmetic (pure) and the rope component burdens hang from. Needs Shattercasks at
        call time only. See docs/architecture/ruin-capabilities.md. -->
-  <script src="js/rope-core.js?v=1"></script>
+  <script src="js/rope-core.js?v=20261122ropestraight1"></script>
   <script src="js/ruin-rope-geometry.js?v=20261109actualMoveSpeed1"></script> <!-- Unbuffed new-player flight envelope sizes rope rooms and zigzags. -->
   <script src="js/dungeon-rope-art.js?v=20261116straightNetCage1"></script> <!-- Shared transparent rope sprite for pendulums and net frustums. -->
   <script src="js/ruin-rope-torches.js?v=20261114heca9091"></script> <!-- Torch-Flail head/fire and lightweight fake light on ruin rope ends. -->
-  <script src="js/hanging-ropes.js?v=20261107ropesAir1"></script>
-  <script src="js/rope-furniture.js?v=1"></script> <!-- Ropes as furniture: a piece with a `rope` block hangs a rope; see docs/architecture/ruin-capabilities.md -->
+  <script src="js/hanging-ropes.js?v=20261122airrope1"></script>
+  <script src="js/rope-furniture.js?v=20261122airrope5"></script> <!-- Ropes as furniture: a piece with a `rope` block hangs a rope; see docs/architecture/ruin-capabilities.md -->
   <script src="js/rope-launch.js?v=1"></script>
   <script src="js/ruin-solver.js?v=1"></script> <!-- Goal solver: composes modules into layouts that satisfy goals (defend a statue, blast a pillar...) -->
   <script src="js/room-plan.js?v=1"></script>
   <script src="js/ruin-composer.js?v=20261103h93645be"></script> <!-- Builds whole rooms from goals: archetype -> focal-first solving -> claims ledger -> furniture records + encounter -->
   <script src="js/ruin-encounters.js?v=20261122h464deaf"></script> <!-- Encounter runtime: pillar spawners, demolitionists planting at a statue -->
-  <script src="js/ruin-composer-playable.js?v=20261108witchBombExtern1"></script> <!-- Materializes composed trials in playable V50 ruins (authored fixtures, chasm collision and encounters). -->
+  <script src="js/ruin-composer-playable.js?v=20261122airrope3"></script> <!-- Materializes composed trials in playable V50 ruins (authored fixtures, chasm collision and encounters). -->
   <script src="js/key-statues.js?v=20261104statueRecall2"></script>
   <script src="js/dungeon-fire.js?v=20261122hTorchFire1"></script>
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="wilderness-ruin-sites"></script> <!-- Tothal locales, cache and persistent authored Lich entrances in original load order. -->
