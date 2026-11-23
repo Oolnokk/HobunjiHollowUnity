@@ -65,10 +65,29 @@
     return a + (b - a) * t;
   }
 
+  // The recorded JSON rounds quaternion components to six decimals. That
+  // makes 82/98 shipped breakThrow body keys fall outside the absolute-pose
+  // owner's 1e-7 self-consistency tolerance even when no other writer touched
+  // the rig. Normalize copies at the playback boundary (never mutate the
+  // authored clip) so a knockdown can actually reach its horizontal tail.
+  function normalizeRecordedQuaternion(q) {
+    const length = Math.hypot(q.x, q.y, q.z, q.w);
+    if (!(length > 1e-12)) {
+      q.x = q.y = q.z = 0; q.w = 1;
+      return q; // A damaged/all-zero authored rotation is an identity, never NaN.
+    }
+    if (Math.abs(length - 1) > 1e-12) {
+      const inv = 1 / length;
+      q.x *= inv; q.y *= inv; q.z *= inv; q.w *= inv;
+    }
+    return q;
+  }
+
   function slerpQuat(qa, qb, t) {
-    const out = new THREE.Quaternion(qa.x, qa.y, qa.z, qa.w);
+    const out = normalizeRecordedQuaternion(new THREE.Quaternion(qa.x, qa.y, qa.z, qa.w));
     if (t <= 0) return out;
-    return out.slerp(new THREE.Quaternion(qb.x, qb.y, qb.z, qb.w), t);
+    const target = normalizeRecordedQuaternion(new THREE.Quaternion(qb.x, qb.y, qb.z, qb.w));
+    return normalizeRecordedQuaternion(out.slerp(target, t));
   }
 
   function sampleLeg(a, b, t) {
@@ -259,6 +278,7 @@
     // Conjugating by +90° Y rotates the authored pitch/roll axes with the
     // blendspace instead of merely renaming its four directional clips.
     state.pivot.quaternion.copy(CREATURE_BASIS_QUATERNION).multiply(body.quaternion).multiply(CREATURE_BASIS_INVERSE);
+    normalizeRecordedQuaternion(state.pivot.quaternion); // Final basis conversion must also satisfy the shared pose owner's unit-quaternion invariant.
     state.pivot.position.y = (body.y - state.baseBodyY) * state.heightScale;
     state.poseSession?.stamp(); // Every sample is an absolute authored result; no frame accumulates a prior tilt.
     return true;
@@ -561,6 +581,7 @@
       tumbleBaseRotation.set(body.localQuaternion.x, body.localQuaternion.y, body.localQuaternion.z, body.localQuaternion.w);
       tumbleRotation.setFromAxisAngle(state.tumbleAxis, t * Math.PI * 2).multiply(tumbleBaseRotation);
       state.pivot.quaternion.copy(CREATURE_BASIS_QUATERNION).multiply(tumbleRotation).multiply(CREATURE_BASIS_INVERSE);
+      normalizeRecordedQuaternion(state.pivot.quaternion); // A repeated prone tumble uses the unrounded orientation claim too.
       state.pivot.position.y = (body.localPosition.y - state.baseBodyY + Math.sin(t * Math.PI) * 0.3) * state.heightScale;
       state.poseSession?.stamp();
       if (t >= 1) {
@@ -667,7 +688,7 @@
     const body = tail.ragdoll.body;
     tumbleBaseRotation.set(body.localQuaternion.x, body.localQuaternion.y, body.localQuaternion.z, body.localQuaternion.w);
     tumbleRotation.setFromAxisAngle(tumbleAxis, t * Math.PI * 2).multiply(tumbleBaseRotation);
-    publishBodyPose(tumbleRotation, body.localPosition.y - baseBodyY + Math.sin(t * Math.PI) * 0.3);
+    publishBodyPose(normalizeRecordedQuaternion(tumbleRotation), body.localPosition.y - baseBodyY + Math.sin(t * Math.PI) * 0.3);
     if (t >= 1) {
       if (window.Combat?.deps?.player?.prone) {
         playback.bank = 'breakThrow'; playback.holding = true;
