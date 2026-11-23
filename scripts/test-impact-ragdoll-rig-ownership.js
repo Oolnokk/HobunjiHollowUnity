@@ -196,4 +196,83 @@ function creature() {
   assert.equal(earlyCreature._impactRagdollPlayback,null,'fallback releases cleanly on recovery');
   clip=originalClip; // No following test can inherit the synthetic missing-bank state.
 }
+
+// A real prone creature can lose its rendered sprite or its stored animation
+// state independently of its gameplay Footing/prone status.
+{
+  const authored=JSON.parse(fs.readFileSync('docs/config/animations/spinthrow-blend-v1.json','utf8'));
+  const originalClip=clip;
+  clip=authored.clips.left.clip;
+  const animal=creature();animal.prone=true;
+  assert.equal(impact.updateCreature(animal,.016),true,'prone animals reattach when the initial breakThrow did not start');
+  let state=animal._impactRagdollPlayback;
+  assert(state?.holding,'late rig acquisition holds the settled pose instead of replaying a launch');
+  assert.equal(animal.avatarRef.frontPlane.parent,state.pivot);
+  assert.equal(animal.avatarRef.backPlane.parent,state.pivot);
+  assert(Math.abs(1-2*(state.pivot.quaternion.x**2+state.pivot.quaternion.z**2))<.2,'late-attached portrait lies horizontal');
+  assert.equal(rig.getDebug().activeAbsoluteClaims,2);
+
+  // The common species/skin refresh path can swap front/back meshes without
+  // touching the gameplay entity or the old impact pivot/session.
+  const previous=state;
+  const freshFront=new Group(),freshBack=new Group();
+  animal.avatarRef.group.add(freshFront);animal.avatarRef.group.add(freshBack);
+  animal.avatarRef.frontPlane=freshFront;animal.avatarRef.backPlane=freshBack;
+  assert.equal(impact.updateCreature(animal,.016),true,'live animation detects newer portrait planes');
+  state=animal._impactRagdollPlayback;
+  assert.notEqual(state,previous,'fresh plane generation replaces stale impact state');
+  assert.equal(freshFront.parent,state.pivot);
+  assert.equal(freshBack.parent,state.pivot);
+  assert.equal(previous.pivot.parent,null,'stale invisible pivot is retired');
+  assert.equal(rig.getDebug().activeAbsoluteClaims,2,'new rig owns exactly one active transform pair');
+  const q=state.pivot.quaternion;
+  assert(Math.abs(1-2*(q.x*q.x+q.z*q.z))<.2,'recreated portrait remains lying flat');
+
+  // Entire avatar generation replacement on the same entity (wildlife
+  // streaming, shoulder skin or age/species rebuild).
+  const formerAvatar=animal.avatarRef;
+  const replacement=creature().avatarRef;
+  animal.avatarRef=replacement;
+  assert.equal(impact.updateCreature(animal,.016),true,'complete new avatar receives prone pose');
+  state=animal._impactRagdollPlayback;
+  assert.equal(replacement.frontPlane.parent,state.pivot);
+  assert.equal(replacement.backPlane.parent,state.pivot);
+  assert.equal(state.pivot.parent,replacement.group);
+  assert(!formerAvatar.group.children.includes(state.pivot),'replacement never leaves the active pivot on the old avatar');
+  assert.equal(rig.getDebug().activeAbsoluteClaims,2);
+
+  // External rig disposal currently clears the entity pointer directly.
+  // The render rescue must release that orphan's claims and its strong Set
+  // reference before a new visual is promoted.
+  animal._impactRagdollPlayback=null;
+  animal._wildlifeVisualsReleased=true;
+  rescueFrame();
+  assert.equal(rig.getDebug().activeAbsoluteClaims,0,'streamed-out actor does not retain an invisible pose claim');
+  assert.equal(impact.getDebug().activeCreatureReactions,0,'all old active states are retired');
+  animal._wildlifeVisualsReleased=false;
+  animal.avatarRef=creature().avatarRef;
+  assert.equal(impact.updateCreature(animal,.016),true,'streamed-in prone actor recovers its horizontal card');
+  assert.equal(animal._impactRagdollPlayback.holding,true);
+  animal.prone=false;
+  impact.updateCreature(animal,.016);
+  assert.equal(animal._impactRagdollPlayback,null,'prone end restores the newly built sprite to standing');
+  assert.equal(rig.getDebug().activeAbsoluteClaims,0);
+  assert(impact.getDebug().pronePoseRescue.reboundVisuals>=2,'in-game diagnostics report both sprite-generation rebindings');
+  assert(impact.getDebug().pronePoseRescue.retiredOrphans>=1,'in-game diagnostics report external animation disposal');
+  clip=originalClip;
+}
+
+// A brief ordinary-impact reaction must never substitute for a full prone
+// pose if prone gameplay state overtakes it before the next presentation tick.
+{
+  const actor=creature();actor.prone=false;
+  assert(impact.triggerCreature(actor,'impact','right')>0);
+  actor.prone=true;
+  assert.equal(impact.updateCreature(actor,.05),true,'new prone state supersedes older non-prone stagger');
+  const state=actor._impactRagdollPlayback;
+  assert.equal(state.bank,'breakThrow');
+  assert.equal(state.holding,true);
+  actor.prone=false;impact.updateCreature(actor,.016);
+  assert.equal(rig.getDebug().activeAbsoluteClaims,0);
+}
 console.log('Ragdoll scoped pivot ownership: prone, replacement, live impacts, corpse, and cleanup PASS');
