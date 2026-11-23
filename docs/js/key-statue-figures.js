@@ -149,7 +149,7 @@
         blade.rotation.z=-0.30;
         blade.position.set(gripX,gripY+0.15,0.035);
         blade.scale.setScalar(0.62);
-        display.add(blade);
+        figure.model.add(blade); // Hand coordinates are relative to the portrait root (it sits 0.53 above the sculpture group), not to the sculpture group origin.
         entry.weaponParts.push(blade);
       }
       if(!fitSculpture(THREE,display))throw new Error('Could not measure Harlyao soldier portrait bounds');
