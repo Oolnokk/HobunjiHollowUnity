@@ -77,4 +77,58 @@ assert(Array.from(context.resolveOptionLayers(futureOption, { speciesId: 'mao-ao
 assert(Array.from(context.resolveOptionLayers(futureOption, { speciesId: 'mao-ao', gender: 'male' })).some(layer => layer.url.includes('bowlkasa-front.png')),
   'un-authored male species still falls back to Kenkari male');
 
-console.log('Kenkari Riverland kasas and one canonical Bowl-Kasa variant/migration checks passed.');
+// Run the real NPC/player portrait adapter after explicit Gear equip, not just random generation.
+async function checkEquippedBowlKasaOcclusion() {
+  const original = {
+    getPortraitFighters: context.window.getPortraitFighters,
+    randomPortraitProfileSeeded: context.window.randomPortraitProfileSeeded,
+    loadPortraitCosmetics: context.window.loadPortraitCosmetics,
+  }; // Restores shared test VM hooks after the equipped-hat profile integration check.
+  const fighters = [
+    { id: 'kenkari_male', speciesId: 'kenkari', gender: 'male' },
+    { id: 'rakakoan_female', speciesId: 'rakakoan', gender: 'female' },
+  ]; // Covers both possible wearer genders and the inherited Kenkari visual family.
+  const speciesRules = {
+    kenkari_male: JSON.parse(read('docs/config/species/kenkari.json')).male.randomizationRules,
+    rakakoan_female: JSON.parse(read('docs/config/species/rakakoan.json')).female.randomizationRules,
+  }; // Actual species rules govern the final worn-hat hair layers.
+  const authoredHair = () => ({ id: 'chosen_hair', layers: [{ url: 'chosen-hair.png' }] }); // The user's saved hairstyle must stay intact when the rendering profile hides it.
+  context.window.getPortraitFighters = () => fighters;
+  context.window.randomPortraitProfileSeeded = (_rng, selected) => ({
+    fighter: selected[0], hat: { id: 'none', layers: [] }, bodyColors: {},
+    hairFront: authoredHair(), hairBack: authoredHair(), hairSide: authoredHair(), hairSideL: authoredHair(),
+  });
+  context.window.loadPortraitCosmetics = async () => ({
+    optionCache: new Map([[bowlId, bowlOption]]),
+    hatOptions: [{ id: 'none', layers: [] }],
+    hoodOptions: [{ id: 'none', layers: [] }],
+    randomizationRulesByFighter: speciesRules,
+  });
+  vm.runInContext(read('docs/js/npc-avatar-preview-utils.js'), context); // Actual equipped player/NPC profile owner.
+  try {
+    await context.window.NpcAvatarPreview.ensurePortraitCosmetics();
+    for (const fighter of fighters) {
+      const appearance = { speciesId: fighter.speciesId, gender: fighter.gender, cosmetics: {} };
+      const worn = context.window.NpcAvatarPreview.buildProfileFromNpcExport({
+        id: 'player', appearance, equippedCosmetics: [bowlId],
+      });
+      assert.equal(worn.hat?.id, bowlOption.id, 'player wears one canonical Bowl-Kasa');
+      for (const slot of ['hairFront', 'hairBack', 'hairSide', 'hairSideL']) {
+        assert.equal(worn[slot]?.id, 'none', fighter.speciesId + ' ' + fighter.gender + ' hair hides under the equipped hat');
+      }
+      const bare = context.window.NpcAvatarPreview.buildProfileFromNpcExport({
+        id: 'player', appearance, equippedCosmetics: [],
+      });
+      assert.equal(bare.hairFront?.id, 'chosen_hair', 'unequipping the hat restores the original hairstyle');
+    }
+  } finally {
+    for (const [name, value] of Object.entries(original)) context.window[name] = value;
+  }
+}
+
+checkEquippedBowlKasaOcclusion().then(() => {
+  console.log('Kenkari Riverland kasas and one canonical Bowl-Kasa variant/migration/occlusion checks passed.');
+}).catch(error => {
+  console.error(error);
+  process.exitCode = 1;
+});
