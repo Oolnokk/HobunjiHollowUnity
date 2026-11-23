@@ -127,9 +127,11 @@
         burden.keyStatueMounted=true; // Mounted statues are not consumed by floor hazards beneath their support.
         state.payload=burden;
         state.root.userData.keyStatuePayload=burden;
-        const figures=window.KeyStatueFigures; // The authored carryable remains the physics/collision authority; only its visible sculpture is replaced.
-        state.soldierSpec ||= figures?.rollSoldier?.(state.id) || null; // Preserve one random Ghost Army appearance across failed defenses and replacement statues.
-        if(state.soldierSpec)void figures.decorate(group,state.soldierSpec);
+        if(state.statueVisual==='harlyaoGhostArmy'){
+          const figures=window.KeyStatueFigures; // Only the skeleton-fight challenge opts into a carved soldier; other Key Statues retain their own authored art.
+          state.soldierSpec ||= figures?.rollSoldier?.(state.id) || null; // Preserve the selected soldier across failed defenses.
+          if(state.soldierSpec)void figures.decorate(group,state.soldierSpec);
+        }
         window.FurniturePuzzleRuntime?.setKeyStatueTaken?.(state.mapId,state.id,false); // Replacement rises from the sunken button; initial spawns remain at OFF.
       } catch(error) {
         console.warn('[KeyStatues] failed to restore dispenser payload',error);
@@ -155,10 +157,11 @@
     if(existing?.root===root){
       existing.puzzle=puzzle;
       existing.feedPlinthId=String(options.feedPlinthId||existing.feedPlinthId||'');
+      existing.statueVisual=String(options.statueVisual||existing.statueVisual||'');
       getOrCreateAnchor(existing);
       return true;
     }
-    const state={id:key,mapId:String(mapId||currentArea()),root,puzzle,feedPlinthId:String(options.feedPlinthId||''),anchor:null,payload:null,soldierSpec:null,respawning:false,disposed:false}; // Each dispenser owns exactly one physical statue, even after recovery.
+    const state={id:key,mapId:String(mapId||currentArea()),root,puzzle,feedPlinthId:String(options.feedPlinthId||''),statueVisual:String(options.statueVisual||''),anchor:null,payload:null,soldierSpec:null,respawning:false,disposed:false}; // Each dispenser owns exactly one physical statue, even after recovery.
     dispensers.set(key,state);
     root.userData.keyStatueDispenserId=key;
     getOrCreateAnchor(state);
@@ -202,7 +205,7 @@
   function debugSnapshot() {
     return {latestChange:'Key Statue is mounted from spawn; pickup animates the plinth down; loss respawns the statue low and animates the plinth back up.',
       dispensers:[...dispensers.values()].map(state=>({
-        id:state.id,mapId:state.mapId,taken:!!state.root.userData.keyStatueTaken,feedPlinthId:state.feedPlinthId||null,status:status(state.mapId,state.id),
+        id:state.id,mapId:state.mapId,taken:!!state.root.userData.keyStatueTaken,feedPlinthId:state.feedPlinthId||null,statueVisual:state.statueVisual||null,status:status(state.mapId,state.id),
         payload:state.payload?.id||null,payloadParent:state.payload?.group?.parent?.name||null,
         progress:Number(state.root.userData.puzzleProgress)||0,respawning:state.respawning,
         soldier:state.payload?.group?.userData?.ghostArmyStatueInfo||null, // Debug the carved figure without changing the puzzle/burden record.
