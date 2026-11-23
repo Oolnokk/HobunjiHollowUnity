@@ -415,15 +415,21 @@
     return null;
   }
 
-  // stock: { itemKey: count }; repairs the definition of every held preserved good.
+  // stock: { itemKey: count }; reconstructs legacy preserved foods and inherited
+  // variety flours whose processedDefinitions snapshot was absent or incomplete.
   function repairPreservedDefs(stock) {
     if (!deps?.ITEM_DEFS) return 0; // Late source registration retries after ItemProcessing.init instead of losing older stacks.
     let repaired = 0;
     for (const key of Object.keys(stock || {})) {
       if (!(Number(stock[key]) > 0)) continue;
-      const match = PRESERVED_SUFFIX.exec(key);
-      if (!match || (deps.ITEM_DEFS[key]?.cookingCategories?.length && processedDefinitions.has(key))) continue; // A previous world may leave its definitions in ITEM_DEFS even after this world's provenance map was cleared.
-      const current = currentPreservedOutput(key, match[1]);
+      const match = PRESERVED_SUFFIX.exec(key); // Existing smoked/dried/jerky recovery retains its original provenance.
+      const flourSource = /^(.+)Flour$/.exec(key)?.[1]; // Matches an actual harvested cultivar, not a seed or a generic flour item.
+      const flourFamily = flourSource?.startsWith('cv_') ? window.CropVarieties?.produceFamily?.(flourSource) : null;
+      const cultivarFlour = flourFamily === 'heftroot' || flourFamily === 'needlegrain'; // Only species with an existing mill recipe can be recovered.
+      if ((!match && !cultivarFlour) || (deps.ITEM_DEFS[key]?.cookingCategories?.length && processedDefinitions.has(key))) continue;
+      if (cultivarFlour) window.CropVarieties?.ensure?.(flourSource); // Flour may be the only remaining evidence of its parent genotype in this saved bag.
+      const current = match ? currentPreservedOutput(key, match[1])
+        : getProcessingOutputs('grinding', flourSource)?.find(output => output?.key === key); // Recreate the real mill output, including the inherited Perception trait.
       if (!current?.cookingCategories?.length) continue;
       ensureProcessedItemDef(current);
       repaired++;
