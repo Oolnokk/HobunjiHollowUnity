@@ -484,7 +484,7 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid!important;v
     const longoranPanel = document.getElementById('maaFullScaleLongoranControls');
     if (longoranPanel) longoranPanel.hidden = entry.species !== 'longoran';
     const npcAgeRow = document.getElementById('maaFullScaleRangeAge')?.closest('.scaleRow'); // Longoran hunch is species-authored; don't show a second, misleading NPC-age hunch input.
-    if (npcAgeRow) npcAgeRow.hidden = entry.species === 'longoran';
+    if (npcAgeRow) npcAgeRow.hidden = entry.species === 'longoran' || ageMode !== 'adult'; // Old-age hunch does not belong on newborn/toddler/child comparison models.
     if (entry.species === 'longoran') {
       const tune = window.HobunjiLongoranSpecies?.tuningFor?.(entry.gender);
       if (tune) {
@@ -512,6 +512,8 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid!important;v
     if (modeSelect) modeSelect.value = ageMode;
     const stage = document.getElementById('maaFullScaleAgeControls');
     if (stage) stage.hidden = ageMode === 'adult';
+    const npcAgeRow = document.getElementById('maaFullScaleRangeAge')?.closest('.scaleRow'); // Adult donor hunch cannot distort the growth-stage lineup.
+    if (npcAgeRow) npcAgeRow.hidden = ageMode !== 'adult' || selected?.species === 'longoran';
     const runtimeStatus = document.getElementById('maaFullScaleRuntimeStatus'); // Remains visible while a user is tuning a growth stage.
     const applied = window.HobunjiCharacterAgeRigConfig?.snapshot?.()?.applied || false;
     if (runtimeStatus) runtimeStatus.textContent = applied
@@ -565,7 +567,7 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid!important;v
     // Gameplay builds the child body scale into modelWidth/modelHeight and uses childHeadFactor=head/body at the neck.
     // This editor starts with a neutral adult portrait and applies the mathematically equivalent floor-parent transform.
     window.HobunjiCharacterRigScale?.applyToParent?.(entry.group, entry.species, entry.gender, composed,
-      entry.npc?.id ? (host()?.npcAgeFor?.(entry.npc.id) || 0) : 0);
+      ageMode === 'adult' && entry.npc?.id ? (host()?.npcAgeFor?.(entry.npc.id) || 0) : 0); // Child stages never inherit the age-hunch of their adult representative NPC.
     agePerf.rigPasses++;
     syncAgeLimbs(entry);
   }
@@ -821,7 +823,7 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid!important;v
   // persisted separately (see host().setNpcAge), and only ever composes with
   // whatever headOffsetY the selected character's profile already has.
   function applyAgeSlider() {
-    if (!active || !selected?.npc?.id) return;
+    if (!active || ageMode !== 'adult' || !selected?.npc?.id) return;
     const percent = clampAgePercent(document.getElementById('maaFullScaleRangeAge').value);
     setSliderValue('Age', percent);
     host()?.setNpcAge?.(selected.npc.id, percent / 100);
