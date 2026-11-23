@@ -11,8 +11,10 @@ const precision = (a, b) => Math.abs(a - b) < 1e-5; // Float32 matrix translatio
 const world = {
   TerrainPreview: { sampleVisualHeight(_heights, x, z) { return (x + z) * 0.1; } },
   __hobunjiTownElevationMap: { visualHeights: { tile: 1 }, cols: 10, rows: 10 },
+  async fetch() { return { ok: false }; }, // Real browser boot has fetch available before Three.js.
 }; // No window.THREE, self.THREE or injected Three.js module exists during config initialization.
-vm.runInNewContext(config, { self: world, document: {}, console, setTimeout }, { filename: 'docs/config/config.js' });
+vm.runInNewContext(config, { self: world, document: { currentScript: { src: 'https://game.test/docs/config/config.js' } }, URL, console, setTimeout }, { filename: 'docs/config/config.js' });
+assert(world.fetch.hobunjiBuildingElevationDefaults, 'early fetch compatibility also survives startup without Three.js');
 assert(world.HOBUNJI_CONFIG, 'early global configuration still initializes');
 assert(world.HobunjiTownSubtleElevation?.refresh, 'town elevation compatibility must register without Three.js');
 
