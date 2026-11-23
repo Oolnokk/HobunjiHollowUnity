@@ -643,7 +643,11 @@
 #romanceFamilyOverlay button{font:inherit;color:inherit;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.18);border-radius:8px;padding:6px 10px;cursor:pointer}
 #romanceFamilyOverlay button.on{background:rgba(220,160,255,.35);border-color:rgba(240,200,255,.7)}
 #romanceFamilyOverlay .rf-label{font-size:12px;opacity:.75;margin-top:4px}
-#romanceFamilyOverlay canvas{display:block;margin:0 auto 8px;width:160px;height:160px}
+#romanceFamilyOverlay .rf-name-heading{display:flex;align-items:center;gap:12px;margin-bottom:8px}
+#romanceFamilyOverlay .rf-name-portrait{display:grid;place-items:center;flex:0 0 64px;width:64px;height:64px;overflow:hidden;border-radius:12px;background:rgba(255,255,255,.06)}
+#romanceFamilyOverlay .rf-name-portrait canvas{position:static;inset:auto;display:block;margin:0;width:100%;height:100%;max-width:100%;max-height:100%;image-rendering:pixelated}
+#romanceFamilyOverlay .rf-name-portrait canvas[hidden],#romanceFamilyOverlay .rf-name-fallback[hidden]{display:none}
+#romanceFamilyOverlay .rf-name-fallback{font-size:32px;line-height:1}
 #romanceFamilyOverlay input{font:inherit;width:100%;box-sizing:border-box;padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,.25);background:rgba(0,0,0,.35);color:#fff}
 #romanceFamilyOverlay .rf-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:12px}
 #romanceFamilyOverlay .rf-primary{background:rgba(200,130,255,.45)}
@@ -710,8 +714,10 @@
   }
 
   async function renderPreview(canvas, choice) {
-    const preview = window.NpcAvatarPreview;
-    if (!canvas || !preview?.buildProfileFromNpcExport || !preview?.renderProfileToCanvas) return;
+    const preview = window.NpcAvatarPreview; // Builds the baby from its authored appearance, without a second portrait profile builder.
+    const fallback = canvas?.parentElement?.querySelector('.rf-name-fallback'); // The baby emoji remains visible until the chathead successfully paints.
+    const renderChathead = window.AmbientDialogue?.renderChatheadImage; // Uses the same head-only crop as NPC floating dialogue.
+    if (!canvas || !preview?.buildProfileFromNpcExport || typeof renderChathead !== 'function') return;
     try {
       const profile = preview.buildProfileFromNpcExport({
         name: 'dream_child',
@@ -719,8 +725,13 @@
         equippedCosmetics: [...(choice.equippedCosmetics || [])],
         appliedDyes: { ...(choice.appliedDyes || {}) },
       });
-      if (profile) await preview.renderProfileToCanvas(canvas, profile);
-    } catch (error) { console.warn('[RomanceFamily] child preview failed', error); }
+      if (!profile) return;
+      const rendered = await renderChathead(canvas, profile); // The shared renderer crops the finished portrait into the small icon square.
+      if (rendered && canvas.isConnected && canvas.closest('#romanceFamilyOverlay')) {
+        canvas.hidden = false;
+        if (fallback) fallback.hidden = true;
+      }
+    } catch (error) { console.warn('[RomanceFamily] child chathead failed; using emoji fallback', error); }
   }
 
   // The dream is the real character creator (HobunjiOnboarding.openCreator):
@@ -767,9 +778,8 @@
   }
   function openNamingPrompt(baby, onDone) {
     const root = openOverlay(`
-      <h2>👶 Name your ${baby.gender === 'female' ? 'daughter' : 'son'}</h2>
+      <h2 class="rf-name-heading"><span class="rf-name-portrait"><canvas width="200" height="200" hidden role="img" aria-label="Your baby's portrait" data-rf-preview></canvas><span class="rf-name-fallback" aria-hidden="true">👶</span></span><span>Name your ${baby.gender === 'female' ? 'daughter' : 'son'}</span></h2>
       <p>What will you call them?</p>
-      <canvas width="200" height="200" data-rf-preview></canvas>
       <input type="text" maxlength="32" autocomplete="off" spellcheck="false" data-ctrl-default data-rf-name value="${randomName(baby.speciesId, baby.gender).replace(/"/g, '')}">
       <div class="rf-actions"><button data-rf-random>Random</button><button class="rf-primary" data-rf-done>Name them</button></div>`);
     const input = root.querySelector('[data-rf-name]');
