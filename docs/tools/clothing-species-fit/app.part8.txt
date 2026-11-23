@@ -48,9 +48,19 @@ function flipCanvasX(source){
 function canonicalPreviewSlot(slot){
   return({hood:'hood',hat:'hat',torso:'torsoCosmetic',overwear:'armCosmetic',pauldron:'pauldron'})[slot]||null;
 }
+function exposedPortraitUrls(garment,variantKey){
+  // Exposed/exposedSkin layers are the wearer's own anatomy (ears, tusks, trunk)
+  // drawn over the hood. The fit editor never warps them, but the game's parsed
+  // option keeps them in its layer list (as ./assets/-relative URLs).
+  const cfg=garment?.cfg,parts=cfg?.speciesVariants?.[variantKey]?.parts||cfg?.parts;
+  return new Set(Object.values(parts?.head?.layers||{})
+    .filter(layer=>['exposed','exposedSkin'].includes(String(layer?.layerRole||''))&&layer?.image?.url)
+    .map(layer=>String(layer.image.url).replace(/^\.\/assets\//,'')));
+}
 function canonicalPreviewSourceLayers(garment,source,options){
   const variant=`${E.sourceSpecies.value}_${E.sourceGender.value}`;
-  const metadata=options.variantLayers?.[variant]||options.layers||[];
+  const exposed=exposedPortraitUrls(garment,options.variantLayers?.[variant]?variant:null);
+  const metadata=(options.variantLayers?.[variant]||options.layers||[]).filter(layer=>!exposed.has(layer.url)); // Compare wearable materials only.
   const sprites=(source?._layers||[]).filter(layer=>!layer.path?.includes('behindImage'));
   if(metadata.length!==sprites.length)throw new Error(`Game portrait metadata mismatch: ${garment.id} has ${metadata.length} source materials but the fit editor loaded ${sprites.length}. Cannot promise runtime parity.`);
   return sprites.map((sprite,i)=>({sprite,meta:metadata[i]})); // The source catalog and portrait extractor iterate the same authored parts in insertion order.
@@ -58,7 +68,9 @@ function canonicalPreviewSourceLayers(garment,source,options){
 function canonicalPreviewGarmentOption(garment,source,options,overrides,opacity,previewTag){
   const sourceLayers=canonicalPreviewSourceLayers(garment,source,options);
   const variant=`${E.species.value}_${E.gender.value}`;
-  const targetMetadata=options.variantLayers?.[variant]||sourceLayers.map(pair=>pair.meta); // New species variants use donor metadata until their exported config is installed.
+  const targetAll=options.variantLayers?.[variant]||null;
+  const targetExposed=targetAll?exposedPortraitUrls(garment,variant):new Set();
+  const targetMetadata=targetAll?targetAll.filter(layer=>!targetExposed.has(layer.url)):sourceLayers.map(pair=>pair.meta); // New species variants use donor metadata until their exported config is installed.
   if(targetMetadata.length!==sourceLayers.length)throw new Error(`Game portrait has ${targetMetadata.length} target layers but ${sourceLayers.length} donor layers for ${garment.id}.`);
   const layers=sourceLayers.map(({sprite,meta},i)=>{
     const target=targetMetadata[i];
@@ -85,7 +97,9 @@ function canonicalPreviewGarmentOption(garment,source,options,overrides,opacity,
     }
     return result;
   });
-  return layers;
+  if(!targetAll||!targetExposed.size)return layers;
+  let material=0; // Re-insert the target species' own exposed anatomy at its authored position between the fitted materials.
+  return targetAll.map(layer=>targetExposed.has(layer.url)?layer:layers[material++]);
 }
 async function canonicalFittedGarmentPortrait(runtime){
   const garment=garmentRecord(),slot=canonicalPreviewSlot(garment?.slot);

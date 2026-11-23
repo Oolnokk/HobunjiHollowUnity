@@ -364,6 +364,27 @@ async function main() {
   );
   assert.equal(headbandTargetApi(), null, 'No authored target for this species: the curve starts as identity');
 
+  // Hoods with exposed anatomy (ear/tusk/trunk) must still pass the runtime
+  // parity check, and the target's own anatomy stays drawn over the fitted hood.
+  const mashHood = cosmetics[1].cfg.speciesVariants.mashtzarr_male.parts.head.layers;
+  const gameLayers = Object.values(mashHood).map(layer => ({url: layer.image.url.replace(/^\.\/assets\//,''),
+    pos: 'front', paletteColorKey: layer.layerRole === 'trim' ? 'B' : layer.layerRole === 'base' ? 'A' : null}));
+  assert.equal(gameLayers.length, 5, 'Mashtzarr fine hood: base, trim and three exposed anatomy layers');
+  const previewE = {sourceSpecies: {value: 'mashtzarr'}, sourceGender: {value: 'male'}, species: {value: 'mashtzarr'}, gender: {value: 'male'}};
+  const mashSource = await api.buildVariantGarmentCanvas('hood', 'mashtzarr', 'male', 128, 128);
+  assert.equal(mashSource._layers.length, 2, 'The fit editor loads only the two wearable materials');
+  const previewOption = new Function('E','R','document','warpClothing','fittedSourceCanvasForLayer','warpGridForMode','fitRegion','headwearWarpForView',
+    sourceBetween('function exposedPortraitUrls(', 'async function canonicalFittedGarmentPortrait(') +
+    '\nreturn canonicalPreviewGarmentOption;')(
+    previewE, {body: {width: 128, height: 128}, headbandRearCanvas: null}, {createElement: makeCanvas},
+    () => Object.assign(makeCanvas(), {width: 128, height: 128}), layer => layer.canvas, () => [], () => 'headwear', () => null
+  );
+  const previewLayers = previewOption(cosmetics[1], mashSource, {variantLayers: {mashtzarr_male: gameLayers}}, new Map(), 1, 7);
+  assert.equal(previewLayers.length, 5, 'Preview keeps all five game layers');
+  assert.deepEqual(previewLayers.map(layer => /#fit-/.test(layer.url)),
+    gameLayers.map(layer => !/exposed_/.test(layer.url)),
+    'Only base/trim are replaced by fitted rasters; exposed anatomy stays in its authored position');
+
   console.log('PASS clothing-fit source layers, installable ZIP filenames/config, patch composition, fallback rasters, fit keys and script syntax');
 }
 
