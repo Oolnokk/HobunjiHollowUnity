@@ -40,6 +40,30 @@ if (THREE) {
     assert(Math.abs(g.quaternion.angleTo(q)) < 1e-9, (back ? 'back' : 'held') + ': baby turns by the inverse anchor rotation');
     assert(Math.abs(g.scale.x - 1 / cfg.size) < 1e-12, (back ? 'back' : 'held') + ': baby scales by 1/size');
   }
+  // Use real Three.js transformations, including tilt and nonuniform rig scale:
+  // the baby is physically behind its parent's torso and never follows head yaw.
+  const torso=new THREE.Group(),head=new THREE.Group(),rearBaby=new THREE.Group(); // Real actor hierarchy checks the body-vs-portrait parent contract.
+  const front=new THREE.Group(); // The independently turned portrait plane is not the baby's transform parent.
+  torso.scale.set(.78,1.13,.88);torso.add(head);head.add(front);torso.add(rearBaby);
+  head.position.set(.02,.15,.03);front.position.z=.02;
+  solve(rearBaby,carryable,true,posterior);
+  const back=carryable.backCarry;
+  const contactLocal=new THREE.Vector3(back.position.x,back.position.y,back.position.z);
+  const targetLocal=posterior.clone().add(new THREE.Vector3(back.posteriorOffset.x,back.posteriorOffset.y,back.posteriorOffset.z));
+  const expectedWorld=torso.localToWorld(targetLocal.clone());
+  assert(rearBaby.localToWorld(contactLocal.clone()).distanceTo(expectedWorld)<1e-9,
+    'real Three.js: rotated/scaled baby anchor lands on the authored carrier posterior');
+  assert(rearBaby.position.z<front.position.z-.03,
+    'real Three.js: newborn center is physically behind the front portrait, not merely drawn there');
+  assert(new THREE.Vector3(0,0,1).applyQuaternion(rearBaby.quaternion).z<-.95,
+    'real Three.js: default back pose faces rearward, rather than toward the carrier chest');
+  const initial=rearBaby.getWorldPosition(new THREE.Vector3());
+  head.rotation.set(.29,.89,-.15);front.rotation.set(.31,-.64,.08);head.position.x+=.15;
+  assert(rearBaby.getWorldPosition(new THREE.Vector3()).distanceTo(initial)<1e-9,
+    'real Three.js: independent portrait turning cannot orbit the body-mounted infant');
+  torso.position.set(.27,.19,-.13);torso.rotation.set(.11,Math.PI*.72,-.08);
+  assert(rearBaby.localToWorld(contactLocal.clone()).distanceTo(torso.localToWorld(targetLocal.clone()))<1e-9,
+    'real Three.js: full body turning, tilt and nonuniform scale keep the newborn anchor stable');
 }
 
 // NPC carry uses that solve on the carrier's own facing frame and live posterior.
