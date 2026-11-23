@@ -195,5 +195,17 @@ assert.equal(carved.length,registered.length,'every newly mounted statue receive
 assert.equal(stoneDisposals.length,registered.length-1,'every recalled, lost, or destroyed old sculpture gets cleaned up');
 assert(api.unregisterDispenser(area,'fixture'),'teardown removes the room dispenser');
 assert.equal(stoneDisposals.length,registered.length,'teardown disposes the final sculpture even when onLost is suppressed');
-console.log('Key Statue: authored dispenser + plinth feed, Ghost Army figure cleanup/retry identity, and protected in-progress or swapped statues passed.');
+// Ordinary Key Statue dispensers retain their authored art. The Harlyao soldier is specific to the skeleton fight.
+const ordinary=new MockGroup(),ordinaryButton=new MockGroup();
+ordinary.userData.meshById=new Map([['key_statue_button',ordinaryButton]]);
+scene.add(ordinary);
+const priorRolls=soldierRolls.length,priorCarvings=carved.length; // Prevents the new art from leaking into unrelated burden-plate puzzles.
+assert(api.registerDispenser(area,'ordinary',ordinary,{payloadPartId:'key_statue_button'}));
+await new Promise(resolve=>setImmediate(resolve));
+assert.equal(api.status(area,'ordinary'),'ready','unchanged Key Statues still spawn successfully');
+assert.equal(soldierRolls.length,priorRolls,'ordinary dispensers never roll a Ghost Army soldier');
+assert.equal(carved.length,priorCarvings,'ordinary Key Statues retain their own authored furniture appearance');
+assert.equal(api.debugSnapshot().dispensers[0].statueVisual,null,'ordinary statue reports no replacement style');
+assert(api.unregisterDispenser(area,'ordinary'));
+console.log('Key Statue: skeleton-defense-only Harlyao art, authored dispenser + plinth feed, retry identity and cleanup passed.');
 })().catch(error=>{console.error(error);process.exitCode=1;});
