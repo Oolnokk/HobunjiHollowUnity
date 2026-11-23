@@ -1185,6 +1185,7 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
     mesh.userData.festivalBlossomFinish = { part, texture, tint, tintTreatment:'body-sprite-tint' }; // Live inspection describes both surfaces.
   }
 
+  const treeRootSpansByVariant = new WeakMap(); // Shared native spine metadata lives outside Object3D.userData so clone() never deep-copies it for every tree.
   function buildConiferTreeGroup(preset, seedU32) {
     const rand = mulberry32(seedU32);
     const DOWN = new T.Vector3(0, -1, 0);
@@ -1735,7 +1736,7 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
     }
     unitLeaf.dispose();
 
-    if(rootSpansLocal.length) group.userData.wildernessRootSpansLocal = rootSpansLocal; // Tree variants own the immutable root geometry descriptors, not per-frame mesh queries.
+    if(rootSpansLocal.length) treeRootSpansByVariant.set(group,rootSpansLocal); // Immutable variant-local geometry; each placed tree references this one copy.
     if(blossomSources.length) group.userData.wildernessBlossomPetalSources = blossomSources; // The particles use real colored branch sites, not guessed canopy-height boxes.
     group.rotation.y = instYaw;
     group.scale.setScalar(instScale * (preset.scaleMul ?? 1));
@@ -1814,7 +1815,8 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
     inst.rotation.y = instYaw;
     inst.scale.setScalar(instScale * (preset.scaleMul ?? 1));
     if (variant.userData.canopyLocal) inst.userData.canopyLocal = variant.userData.canopyLocal;
-    if (variant.userData.wildernessRootSpansLocal) inst.userData.wildernessRootSpansLocal = variant.userData.wildernessRootSpansLocal; // Share one frozen-in-place variant description instead of JSON-cloning root arrays for every forest tree.
+    const rootSpans = treeRootSpansByVariant.get(variant); // Read after variant clone so the heavy metadata is never JSON-duplicated.
+    if (rootSpans) inst.userData.wildernessRootSpansLocal = rootSpans; // This specific transform is applied only when building the zone's root spatial index.
     // climbBranchChance is rolled HERE, per tile instance, not per shared
     // variant — every variant's geometry always includes a climb-branch
     // mesh (see buildConiferTreeGroup), so this is purely a per-instance
