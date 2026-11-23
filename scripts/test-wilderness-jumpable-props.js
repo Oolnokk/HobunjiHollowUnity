@@ -154,4 +154,13 @@ for(let i=0;i<600;i++){
 assert.equal(visits,1,'cached forest geometry is never traversed again on individual movement/jump probes');
 assert.equal(browser.NearbyVolumeCollision.debugSnapshot().rootRidges,400,
   'the index includes only native root spines rather than doing new mesh raycasts');
+const beforeStream=browser.NearbyVolumeCollision.debugSnapshot(); // Counters after the first forest-wide spatial build.
+residency++; // Native chunk residency changed, but every already-placed tree kept its transform.
+assert(blockers.supportAt(zone,4,3.5,.6),'root support remains valid across a new chunk version');
+const afterStream=browser.NearbyVolumeCollision.debugSnapshot(); // Existing placed root geometry must come from the weak cache.
+assert.equal(afterStream.rootCacheBuilds,beforeStream.rootCacheBuilds,
+  'chunk residency refresh must not regenerate already-built world-space root spines');
+assert(afterStream.rootCacheHits>=beforeStream.rootCacheHits+roots.length,
+  'each unchanged native tree reuses its previous transformed root descriptors');
+assert.equal(visits,2,'a chunk revision rebuilds its spatial buckets once, not once per movement probe');
 console.log('ok - wilderness landmarks and tree roots use shared jumpable physical support');
