@@ -188,6 +188,7 @@ pass and returns a restore function; restores run in reverse order in `finally`.
 | 100 | `farm-tile-batches` | farm-tile-render-batches.js | farm ground tiles → 8×8 merged batches |
 | 200 | `zone-prop-batches` | zone-prop-render-batches.js | still wilderness props (tents, camp furniture, berries, herbs, totems, nests, ore-rock stones) → merged per 8×8 cell + material |
 | 250 | `wilderness-tree-instancing` | wilderness-tree-instancer.js | **off by default** (a net loss on a GTX 1060: corridor-wide batches defeat frustum/replay culling). Opted in: drawn, non-fading procedural trees/bushes → one InstancedMesh per shared variant part |
+| 270 | `dense-forest-wall-batches` | dense-forest-wall-batches.js | Cloud Forest dense wall: opaque, on-camera chunk parts → one InstancedMesh per part across chunks (background scenery, never in a replay) |
 | 300 | `npc-view-cull` | npc-view-frustum-cull.js | off-camera NPC walkers hidden |
 | 400 | `grass-chunks` | grass-billboard-render-chunks.js | farm/town grass → spatial chunks |
 | 500 | `instanced-view-cull` | instanced-mesh-view-cull.js | off-camera instanced walls/grass hidden |
