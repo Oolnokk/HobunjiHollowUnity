@@ -32,6 +32,8 @@ assert.equal(context.window.canonicalRiverlandKasaId('five_blossom_crown'), 'fiv
 const bowlId = 'appearance::hat::bowlkasa'; // One canonical purchasable identity; legacy IDs are compatibility-only.
 const bowlJson = JSON.parse(read('docs/config/cosmetics/kenk_bowlkasa.json')); // Real authored front/back layers and gender fallback metadata.
 const bowlEntry = entries.find(entry => entry.id === bowlId); // Existing cosmetic index is the portrait loader's source of truth.
+assert.match(read('docs/js/portrait-utils.js'), /if \(!entry\.legacyOnly\) indexEntries\.push\(entry\)/,
+  'portrait choice lists exclude legacy duplicates while optionCache still accepts old save IDs');
 assert(bowlEntry?.path === './kenk_bowlkasa.json', 'one canonical Bowl-Kasa uses the existing artwork file');
 assert.equal(catalog.filter(item => item.id === bowlId).length, 1, 'single canonical Bowl-Kasa in the clothing shop catalogue');
 assert(!catalog.some(item => /^appearance::Kenkari_[MF]::kenk_bowlkasa$/.test(item.id)), 'legacy gendered kasas are not separate sale items');
@@ -46,7 +48,8 @@ for (const gender of ['male', 'female']) {
     assert(layers.some(layer => layer.url.includes('bowlkasa-front.png')), speciesId + ' ' + gender + ' can wear an un-authored Bowl-Kasa');
   }
   const legacyId = 'appearance::Kenkari_' + (gender === 'male' ? 'M' : 'F') + '::kenk_bowlkasa';
-  assert(entries.some(entry => entry.id === legacyId), 'saved legacy Bowl-Kasas remain loadable');
+  assert(entries.some(entry => entry.id === legacyId && entry.legacyOnly === true),
+    'saved legacy Bowl-Kasas remain loadable but hidden from new authoring choices');
   assert.equal(context.window.canonicalRiverlandKasaId(legacyId), bowlId, 'legacy equipped Bowl-Kasa maps to one item');
 }
 const future = JSON.parse(JSON.stringify(bowlJson)); // Simulates an artist providing a new species+gender image without adding a new shop item.
