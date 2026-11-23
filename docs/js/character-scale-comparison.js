@@ -740,10 +740,12 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid!important;v
   }
 
   function stopLongoranWalk() {
+    const wasWalking = !!longoranWalkTimer; // Avoid recomputing every species' foot solver when no walk preview was active.
     if (longoranWalkTimer) clearInterval(longoranWalkTimer);
     longoranWalkTimer = 0;
-    for (const entry of entries) {
-      if (entry.model && entry.species === 'longoran') entry.model.rotation.x = 0;
+    if (wasWalking) for (const entry of entries) {
+      if (entry.species !== 'longoran') continue;
+      if (entry.model) entry.model.rotation.x = 0;
       entry.feet?.update?.(0, 0, false, null);
     }
     const button = document.getElementById('maaLongoranWalkPreview');
