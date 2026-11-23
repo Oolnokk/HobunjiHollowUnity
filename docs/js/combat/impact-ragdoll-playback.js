@@ -472,7 +472,7 @@
   function updateCreature(entity, dt) {
     const state = entity?._impactRagdollPlayback;
     if (!state) return false;
-    state.lastPresentationMs = visualNowMs(); // A real creature-animation update takes precedence over the stalled-pose render rescue.
+    if (Number.isFinite(dt) && dt > 0) state.lastPresentationMs = visualNowMs(); // Zero-dt presentation probes must not hide a stalled knockdown from the render rescue.
     if (state.poseSession && !state.poseSession.owns()) {
       stopCreature(entity); // Another visual actor superseded the live impact.
       return false;
