@@ -59,7 +59,7 @@
     }
     return matches;
   }
-  function shieldSpokenNames(source, names) {
+  function shieldSpokenNames(source, names, explicitlyAddressed = []) {
     const literals = [...new Set((Array.isArray(names) ? names : []).filter(value => typeof value === 'string')
       .map(value => value.trim()).filter(value => value.length > 0 && value.length <= 100))]
       .sort((left, right) => right.length - left.length); // Longer names win over shorter aliases in the same sentence.
@@ -67,7 +67,10 @@
     const escape = value => value.replace(/[.*+?^\x24{}()|[\]\\]/g, '\\$&'); // Exact name spelling, never regex syntax.
     const pattern = new RegExp('(^|[^\\p{L}\\p{N}_])(' + literals.map(escape).join('|') + ')(?=$|[^\\p{L}\\p{N}_])', 'giu'); // Whole names only.
     const saved = []; // The exact proper names are restored after both the semantic and phonetic passes.
-    const masked = source.replace(pattern, (whole, prefix, match) => { // Masked line feeds both rewrite stages; original and final lines remain unchanged outside those stages.
+    const masked = source.replace(pattern, (whole, prefix, match, offset) => { // Masked line feeds both rewrite stages; original and final lines remain unchanged outside those stages.
+      const isSalutation = offset === 0 && !prefix && /^(?:hi|hello|hey|hiya|howdy|ahoy)$/i.test(match)
+        && /^,\s*\S/.test(source.slice(whole.length)); // In "Hi, Kitty!", Hi is a greeting, not an address to a pet named Hi.
+      if (isSalutation && !explicitlyAddressed.some(value => String(value).toLocaleLowerCase() === match.toLocaleLowerCase())) return whole; // An explicit addressed character always remains protected.
       let index = saved.length; // Chooses a tag absent from the authored line so user names cannot clash with placeholders.
       while (source.includes('{{AMBIENT_VOCAB_NAME_' + index + '}}') || saved.some(([previous]) => previous === '{{AMBIENT_VOCAB_NAME_' + index + '}}')) index++; // A source token and an earlier masked name both reserve that index.
       const marker = '{{AMBIENT_VOCAB_NAME_' + index + '}}'; // Existing rules already protect double-brace placeholders.
@@ -95,7 +98,7 @@
     const mayAlter = config !== state.config || !!state.matchPattern?.test(source) || !!selected.phoneticPreset; // Skip stable lookups for unmatched cries.
     const activeNames = mayAlter ? activeAnimalProperNames(source) : []; // Resolve present pets once per emitted bubble, never in an update loop.
     const names = activeNames.length ? explicitNames.concat(activeNames) : explicitNames; // Preserve an explicit player/NPC addressee as well as the active pet names.
-    const guarded = names.length ? shieldSpokenNames(source, names) : null; // Unnamed wildlife skips regex masking.
+    const guarded = names.length ? shieldSpokenNames(source, names, explicitNames) : null; // Avoid protecting unrelated opening salutations even when a pet shares that word.
     const speechInput = guarded?.text || source; // Both rewrite passes and the matcher use the same optionally masked input.
     const hasLexicalMatch = config === state.config ? !!state.matchPattern?.test(speechInput) : true; // Keeps most animal and NPC bubbles allocation-free.
     if (!hasLexicalMatch && !selected.phoneticPreset) {
