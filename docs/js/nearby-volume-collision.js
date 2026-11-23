@@ -293,6 +293,7 @@
   function indexTreeRoots(node) {
     const spans = node.userData?.wildernessRootSpansLocal;
     if (!Array.isArray(spans) || !spans.length || node.userData?.pottedBlossom) return;
+    node.updateWorldMatrix?.(true,false); // One scene-build transform update, not a per-frame raycast; freshly placed trees must not index at identity.
     const transform = transformSnapshot(node); // Same authored model/world transform used by tree semantic cover.
     const elements = node.matrixWorld?.elements;
     const yaw = finite(node.rotation?.y);
