@@ -452,6 +452,10 @@
   }
 
   function ensureProcessedItemDef(output) {
+    const savedFlour = output?.cookingProcessLastMethod === 'grinding' && output?.tags?.includes('Flour'); // Old cultivar mills saved the vegetable category instead of the result's flour category.
+    if (savedFlour && !output.cookingCategories?.includes('flour')) {
+      output = { ...output, cookingCategories: ['flour', 'processedCrop'] }; // Repair already-produced Heftroot/Needlegrain flour without changing its key, quality or inherited buffs.
+    }
     if (!output?.cookingCategories?.length) { // Saved batch snapshots predate cooking metadata.
       const current = currentPreservedOutput(output?.key, output?.giftIngredientKeys?.[0]);
       if (current) output = { ...output, ...current, ingredientKeys: output.ingredientKeys, giftIngredientKeys: output.giftIngredientKeys };
