@@ -97,13 +97,25 @@
     return changed;
   }
 
+  function visualRootFor(source, kind, side) {
+    // The full hand GLB may have separate palm/claw primitives; feet likewise
+    // contain independent pad/nail meshes. Copy their shared authored hierarchy.
+    const expected = `${side}_${kind === 'hand' ? 'hand_visual' : 'foot'}`;
+    for (let node = source; node; node = node.parent) if (node.name === expected) return node;
+    return source; // Defensive fallback for older single-mesh rigs.
+  }
+
   function captureSources(walker, limbs) {
-    // Store an immutable snapshot, not live mesh references alone: changing scale or
-    // replacing a GLB's geometry in place must update the carried visual exactly once.
+    // Snapshot every primitive, not just the first Mesh: GLB loading can replace
+    // a claw/pad geometry while the original visible Mesh identity stays stable.
     const state = { revision: walkerRevisions.get(walker.root) || 0, hand: {}, foot: {} };
     for (const kind of ['hand', 'foot']) for (const side of SIDES) {
-      const mesh = limbs[kind][side];
-      state[kind][side] = { mesh, geometry: mesh.geometry, material: mesh.material };
+      const visual = visualRootFor(limbs[kind][side], kind, side);
+      const parts = []; // Frozen source mesh/geometry/material identities used only for refresh decisions.
+      visual.traverse?.(node => {
+        if (node.isMesh) parts.push({ mesh: node, geometry: node.geometry, material: node.material });
+      });
+      state[kind][side] = { visual, parts };
     }
     return state;
   }
@@ -112,35 +124,49 @@
     return !!previous && previous.revision === current.revision && SIDES.every(side =>
       ['hand', 'foot'].every(kind => {
         const before = previous[kind][side], now = current[kind][side];
-        return before.mesh === now.mesh && before.geometry === now.geometry && before.material === now.material;
+        return before.visual === now.visual && before.parts.length === now.parts.length
+          && before.parts.every((part, index) => {
+            const next = now.parts[index];
+            return part.mesh === next.mesh && part.geometry === next.geometry && part.material === next.material;
+          });
       }));
   }
 
   function cloneLimb(source, kind, side, root, pivotAt, offset) {
-    // Keep the walker's species-specific scale/orientation (incl. mirrored side),
-    // but none of its world placement: the walker may be asleep in another scene.
-    source.updateWorldMatrix(true, false);
-    const scale = source.getWorldScale(new THREE.Vector3());
+    // Copy the whole GLB subtree so babies retain EVERY species-specific body,
+    // claw and nail primitive, including their relative transforms and material.
+    const visual = visualRootFor(source, kind, side);
+    visual.updateWorldMatrix(true, false);
+    const scale = visual.getWorldScale(new THREE.Vector3());
     const parentScale = root.getWorldScale(new THREE.Vector3());
-    const sign = Math.sign(source.matrixWorld.determinant()) || 1;
-    const mesh = new THREE.Mesh(source.geometry, (Array.isArray(source.material) ? source.material : [source.material])
-      .map(material => material.clone())); // Own materials: Shattercasks/x-ray may tune them; geometry stays shared.
-    if (mesh.material.length === 1) mesh.material = mesh.material[0];
-    mesh.name = `family_baby_${side}_${kind}`;
-    const s = Math.abs(scale.x) / (parentScale.x || 1);
-    mesh.scale.set(s * (sign < 0 ? -1 : 1), Math.abs(scale.y) / (parentScale.y || 1), Math.abs(scale.z) / (parentScale.z || 1));
-    if (kind === 'foot') mesh.rotation.set(0, -90 * DEG, 0); // Same toe-forward rest yaw the leg rig gives the foot GLB.
-    else mesh.rotation.set(0, 0, side === 'left' ? -20 * DEG : 20 * DEG); // Little fists angled up and outward.
-    mesh.position.set(offset.x, offset.y, offset.z);
-    mesh.layers.mask = 0; mesh.layers.enable(0); mesh.layers.enable(1); // World + generated shell outline only: never the player's hand/foot replay layers.
-    mesh.userData.noOutline = false;
-    mesh.userData.shattercaskKeepsOwnDepth = true;
-    mesh.userData.familyBabyLimb = kind;
+    const sign = Math.sign(visual.matrixWorld.determinant()) || 1;
+    const model = visual.clone(true); // Three.js shares geometries/materials by reference until we clone the materials below.
+    model.name = `family_baby_${side}_${kind}`;
+    model.traverse(node => {
+      if (!node.isMesh) return;
+      node.material = Array.isArray(node.material)
+        ? node.material.map(material => material?.clone?.() || material)
+        : node.material?.clone?.() || node.material; // Own materials: Shattercasks/x-ray may modify these.
+      node.layers.mask = 0;
+      node.layers.enable(0); node.layers.enable(1); // World + generated 3D shell outline; never player hand/foot replay layers.
+      node.userData.noOutline = false;
+      node.userData.shattercaskKeepsOwnDepth = true;
+      node.userData.familyBabyLimb = kind;
+    });
+    const x = Math.abs(scale.x) / (Math.abs(parentScale.x) || 1);
+    model.scale.set(x * (sign < 0 ? -1 : 1),
+      Math.abs(scale.y) / (Math.abs(parentScale.y) || 1),
+      Math.abs(scale.z) / (Math.abs(parentScale.z) || 1));
+    if (kind === 'foot') model.rotation.set(0, -90 * DEG, 0); // Neutral toe-forward yaw rather than the source walker's animated gait.
+    else model.rotation.set(0, 0, side === 'left' ? -20 * DEG : 20 * DEG); // Fists angled up and outward.
+    model.position.set(offset.x, offset.y, offset.z);
+    model.userData.shattercaskKeepsOwnDepth = true;
+    model.userData.familyBabyLimb = kind;
     const pivot = new THREE.Group();
     pivot.name = `family_baby_${side}_${kind}_pivot`;
     pivot.position.set(pivotAt.x, pivotAt.y, pivotAt.z);
     pivot.userData.familyBabyLimb = { kind, side, phase: (kind === 'foot' ? 1.7 : 0) + (side === 'left' ? 0 : Math.PI * .83) };
-    pivot.add(mesh);
+    pivot.add(model);
     root.add(pivot);
     return pivot;
   }
