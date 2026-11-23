@@ -3,6 +3,7 @@
 const assert = require('node:assert/strict'); // Checks startup failures and unchanged road-height transforms.
 const fs = require('node:fs'); // Inspects the actual shipped modules, not an inline copy of their logic.
 const vm = require('node:vm'); // Runs early configuration with THREE intentionally missing.
+const { URL } = require('node:url'); // Supplies a real URL constructor to the isolated browser bootstrap fixture.
 
 const editor = fs.readFileSync('docs/js/character-scale-comparison.js', 'utf8'); // Editor's real stage normalization and controls.
 const config = fs.readFileSync('docs/config/config.js', 'utf8'); // Global configuration executes before Three.js.
