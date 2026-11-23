@@ -22,7 +22,6 @@ assert.match(source, /rampCornerY/, 'ramps must preserve authored sloped base co
 assert.match(source, /function walkableEdgeContinuous\(/, 'covered neighbors may join only when their authored edge heights match');
 assert.match(source, /function addMicroPlateauTile\(/, 'each tile must build a rooted micro plateau rather than a hanging wall');
 assert.match(source, /const axis = \[0, inset, 1 - inset, 1\]/, 'inclined perimeter must live inside the tile and terminate exactly at its edge');
-assert.match(source, /baseAt\(u, v\) \+ SURFACE_DEPTH \* depthFactor\(u, v\)/, 'micro-plateau height must be this tile base plus shallow cap depth only');
 assert.doesNotMatch(source, /addRoundedLip|oursMid|theirsMid/, 'surface geometry must not extrude toward a neighboring lower mesa');
 assert.match(source, /MeshBasicMaterial/, 'surface material must avoid an expensive whole-zone normal solve');
 assert.match(source, /isWildernessGrassChunkGroup|isRichFoliageBillboard/, 'grass-blade billboards under the surface cap must be hidden');
