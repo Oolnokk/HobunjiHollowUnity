@@ -141,7 +141,7 @@
   function updateGarWolfPack(creature, hour) {
     if (!creature.denKey || !GARWOLF_SPECIES.has(creature.creatureKey)) return;
     const state = ensureGarWolfState(creature);
-    const onShift = inShiftWindow(hour);
+    const onShift = inShiftWindow(hour) && !window.TothalBlizzard?.isShelteringFor?.(creature.areaId);
     setOffShiftOverlay(creature, state, !onShift);
     if (!onShift) return; // game.js's own off-shift branch (see isPackOffShift) already walks it home and settles it there
 
@@ -159,8 +159,9 @@
   }
 
   function isPackOffShift(creature) {
-    if (!deps || !creature?.denKey || !GARWOLF_SPECIES.has(creature.creatureKey)) return false;
-    return !inShiftWindow(window.CalendarSystem?.getHour?.() ?? 12);
+    if (!deps || !creature?.denKey) return false;
+    if (window.TothalBlizzard?.isShelteringFor?.(creature.areaId)) return true; // All den residents now use game.js's existing doorway/hidden-den behavior during the shift storm.
+    return GARWOLF_SPECIES.has(creature.creatureKey) && !inShiftWindow(window.CalendarSystem?.getHour?.() ?? 12);
   }
 
   // ── Drenkirra branch anchoring (foraging + sleeping share this) ─────

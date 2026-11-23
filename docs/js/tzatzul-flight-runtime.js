@@ -695,6 +695,7 @@
     if (!deps?.hostileObjects) return;
     const step = Math.max(0, Math.min(.1, n(dt))); // Mobile tab resume cannot skip several seconds of flight.
     const area = deps.getCurrentArea?.();
+    const stormShelter = !!window.TothalBlizzard?.isShelteringFor?.(area); // Exterior cliff birds shelter in their native cave throughout the storm.
     if (area !== lastArea) {
       nestExit = deps.player && ALLOWED_AREAS.has(area) && window.TzatzulNestInterior?.isNestMap?.(lastArea)
         ? { area, x: deps.player.x, y: deps.player.y } : null; // The native exit already restored the player's walkable exterior position.
@@ -715,9 +716,18 @@
       const state = bird._tzFlight;
       if (!state) continue;
       if (state.phase === 'in-nest') {
+        if (stormShelter) continue; // Suspend the normal 30-minute cave-stay deadline until 06:00.
         const now = clockHours(); // Thirty in-game minutes still elapse during a cave visit or clock skip.
         if (state.nestUntil === null ? (state.nestFallbackS -= step) > 0 : now === null || now < state.nestUntil) continue;
         leaveNest(bird);
+      }
+      if (stormShelter) {
+        state.retreating = true; // Existing return-home completion enters the actual Tzatzul nest rather than restarting a hunt.
+        if (state.captive) releaseCaptive(state.captive, 'fled carrying prey'); // No carried player/NPC teleports into a shelter.
+        if (state.phase === 'perched') enterNest(bird);
+        else if (state.phase === 'return') advance(bird, step);
+        else returnHome(bird);
+        continue;
       }
       const wounded = bird.health <= n(bird.maxHealth, 1) * .3;
       if (wounded && !state.retreating) {

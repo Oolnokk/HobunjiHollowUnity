@@ -48,12 +48,15 @@
 
   function strengthForArea(area, calendar = weatherCalendar(), seconds = currentSeconds()) {
     const sample = sampleForArea(area, seconds); // Reuses this frame's gust even across mist, foliage and audio calls.
-    const snowOrRain = precipitationFor(calendar); // Weather changes still take effect immediately within the same frame.
-    if (sample.precipitation !== snowOrRain) {
-      sample.precipitation = snowOrRain;
-      sample.strength = area === 'map_western_slope' && snowOrRain >= 3 ? 1
+    const snowOrRain = precipitationFor(calendar); // Existing rain forecast, unchanged by the Tothal event.
+    const blizzard = window.TothalBlizzard?.stormIntensityFor?.(area) || 0; // Shared monthly peak: stronger than ordinary Slope wind in every wilderness zone.
+    const weatherKey = snowOrRain + blizzard * 10; // Include the event in the cached result without another timer or scanning any actors.
+    if (sample.precipitation !== weatherKey) {
+      sample.precipitation = weatherKey;
+      const ordinary = area === 'map_western_slope' && snowOrRain >= 3 ? 1
         : clamp01(sample.profile.base + sample.profile.gust * (sample.gust - 0.4)
           + Math.min(0.3, snowOrRain * 0.09));
+      sample.strength = blizzard > 0 ? Math.max(ordinary, 0.52 + 1.2 * blizzard + sample.gust * 0.12) : ordinary;
     }
     return sample.strength;
   }
@@ -61,7 +64,8 @@
   function vegetationSwayForArea(area, calendar = weatherCalendar(), seconds = currentSeconds()) {
     // Existing grass/foliage shader uniforms expect roughly 0.03 in normal weather,
     // 0.06 in rain and 0.10 in storms. Keep that scale; don't use raw 0..1 wind.
-    return Math.min(0.14, 0.015 + strengthForArea(area, calendar, seconds) * 0.12);
+    const cap = window.TothalBlizzard?.stormIntensityFor?.(area) > 0 ? 0.24 : 0.14; // Extreme shift wind can visibly bend grass more than any normal blizzard.
+    return Math.min(cap, 0.015 + strengthForArea(area, calendar, seconds) * 0.12);
   }
 
   function getDebugState(area = window.Music?.weatherRegionForArea?.() || weatherCalendar()?.area || '') {
@@ -71,7 +75,9 @@
       precipitation: precipitationFor(calendar),
       profile: { ...profileForArea(area) },
       vegetationSway: vegetationSwayForArea(area, calendar),
-      range: [0, 1], source: 'shared wind for snow fog, vegetation and SFX',
+      range: [0, window.TothalBlizzard?.stormIntensityFor?.(area) > 0 ? 1.85 : 1],
+      tothalStorm: window.TothalBlizzard?.stormIntensityFor?.(area) || 0,
+      source: 'shared wind for snow fog, vegetation and SFX',
     };
   }
 

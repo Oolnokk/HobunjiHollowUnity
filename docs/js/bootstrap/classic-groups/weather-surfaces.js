@@ -17,9 +17,9 @@
   // window.PixelProbe assignment if pixel-probe.js below hasn't loaded
   // yet.
   const scriptUrls = [
-    "js/rain-planes.js?v=20261122stormRainCurve1",
-    "js/environment-surface-micro-plateau.js?v=20261102snowMaterialIsolation1",
-    "js/environment-surface-pixel-probe.js?v=20261106charge879"
+    "js/rain-planes.js?v=20261122tothalSheets1",
+    "js/environment-surface-micro-plateau.js?v=20261122tothalSnow6",
+    "js/environment-surface-pixel-probe.js?v=20261122tothalProbe3"
   ]; // Versioned game modules owned by this group.
   if (document.readyState !== 'loading') throw new Error('Classic script group must run during parsing');
   // A single write guarantees blocking, ordered execution before the next source index.html tag.

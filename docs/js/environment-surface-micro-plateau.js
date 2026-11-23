@@ -31,6 +31,8 @@
   // by this same amount — a real person, and every animal, standing in deep
   // snow, rather than a thin coat of white paint on flat pavement.
   const SURFACE_DEPTH = 0.22;
+  const SNOW_STEPS = 10; // Quantizes storm accumulation into ten mesh rebuilds over an in-game day rather than every frame.
+  const IDLE_POLL_INTERVAL_MS = 250; // Checks dormant surfaces at most four times per second.
   const EDGE_WIDTH = 0.22; // Horizontal run of a micro-plateau side; with 0.22 depth this is a clear ~45° incline.
   const EDGE_HEIGHT_EPS = 0.025; // Shared-edge height tolerance used to decide whether two covered tiles are one walkable surface.
   const CHUNK_TILES = 16; // Output mesh partitioning only (frustum culling), applied after the whole zone is stretch-mapped as one connected surface below — never affects texture continuity.
@@ -46,14 +48,24 @@
   let activeScene = null;
   let activeArea = null;
   let activeMode = 'none';
+  let activeDepth = 0; // Actual snow/slush cap thickness in the latest built mesh; used by projections, camera and rebuild decisions.
   let root = null;
   let cameraSurfaceState = null; // Built tile vertex heights used only by the camera's terrain solver.
   let lastFrameAt = 0;
+  let lastInactiveCheckAt = -Infinity; // Last dormant surface poll, allowing cheap in-between frames.
+  let skippedInactiveTicks = 0; // Mobile diagnostics count scheduler frames that skip inactive work.
+  let skippedDormantProjections = 0; // Counts render hooks avoiding unnecessary season and calendar checks with no surface.
+  let snowUvCache = null; // Scene/grid/triangle keyed CPU-only UV array; reused as the snow depth rises or melts.
+  let snowUvMapRuns = 0; // Mobile profiling: costly whole-zone harmonic UV solver executions.
+  let snowUvCacheHits = 0; // Mobile profiling: depth-step rebuilds that reused already-solved snow UVs.
   let textureState = 'not-requested';
   let snowTexture = null;
   const materials = {}; // mode -> THREE.Material, built lazily and reused.
   const snowMaterialConsumers = new Set(); // Background-only snow material clones waiting for the shared snow texture to finish loading.
   let builtTiles = 0;
+  let compactTiles = 0; // Planar interior tiles using one quad rather than nine.
+  let detailedTiles = 0; // Cliff/complex tiles retaining the rooted 4x4 surface.
+  let triangleCount = 0; // Built GPU triangles reported in the mobile debug snapshot.
   let exposedEdges = 0;
   let chunkCount = 0;
   let buildCount = 0;
@@ -117,7 +129,15 @@
     if (isInteriorArea(area)) return 'none';
     if (isWesternSlope(area)) return 'snow';
     if (!isOutdoorArea(area)) return 'none';
+    if (window.TothalBlizzard?.snowCoverageFor?.(area) > 0) return 'snow'; // The other three wilderness zones gain temporary snow, not Coldmuck slush.
     return currentSeasonName() === 'Coldmuck' ? 'slush' : 'none';
+  }
+
+  function depthForMode(mode, area = currentArea()) {
+    if (mode !== 'snow') return mode === 'slush' ? SURFACE_DEPTH : 0;
+    const snow = window.TothalBlizzard?.snowCoverageFor?.(area) || 0; // Shared clock-driven accumulation and morning melt.
+    const step = Math.round(snow * SNOW_STEPS) / SNOW_STEPS; // Reuse the same low-frequency whole-zone mesh builder.
+    return isWesternSlope(area) ? SURFACE_DEPTH * (1 + 0.5 * step) : SURFACE_DEPTH * Math.max(0.1, step);
   }
 
   function tileCovered(tile) {
@@ -305,18 +325,38 @@
     return Math.abs(ours[0] - theirs[0]) <= EDGE_HEIGHT_EPS && Math.abs(ours[1] - theirs[1]) <= EDGE_HEIGHT_EPS;
   }
 
-  function addMicroPlateauTile(pos, idx, col, row, baseCorners, exposed) {
+  function addMicroPlateauTile(pos, idx, col, row, baseCorners, exposed, depthScale) {
     const inset = Math.min(0.49, Math.max(0.001, EDGE_WIDTH));
     const axis = [0, inset, 1 - inset, 1];
-    const smooth = value => {
-      const t = Math.max(0, Math.min(1, value));
-      return t * t * (3 - 2 * t);
-    };
     const baseAt = (u, v) => {
       const [y00, y10, y01, y11] = baseCorners;
       const north = y00 * (1 - u) + y10 * u;
       const south = y01 * (1 - u) + y11 * u;
       return north * (1 - v) + south * v;
+    };
+    const heights = new Float32Array(16); // Camera samples always retain the original 4x4 resolution.
+    const flatInterior = !exposed.N && !exposed.E && !exposed.S && !exposed.W
+      && Math.abs(baseCorners[0] + baseCorners[3] - baseCorners[1] - baseCorners[2]) < 0.00001; // A planar tile with no exposed incline.
+    const base = pos.length / 3;
+    if (flatInterior) {
+      const depth = SURFACE_DEPTH * depthScale; // Same raised height with no redundant interior triangles.
+      pos.push(col, baseCorners[0] + depth, row,
+        col + 1, baseCorners[1] + depth, row,
+        col, baseCorners[2] + depth, row + 1,
+        col + 1, baseCorners[3] + depth, row + 1);
+      idx.push(base, base + 2, base + 3, base, base + 3, base + 1);
+      for (let j = 0; j < 4; j++) for (let i = 0; i < 4; i++) {
+        heights[j * 4 + i] = baseAt(axis[i], axis[j]) + depth; // Camera collision remains identical across detail levels.
+      }
+      compactTiles++;
+      triangleCount += 2;
+      return heights;
+    }
+
+    // Retain the exact rooted 4x4 mesh for cliff edges, holes and non-planar ramps.
+    const smooth = value => {
+      const t = Math.max(0, Math.min(1, value));
+      return t * t * (3 - 2 * t);
     };
     const depthFactor = (u, v) => {
       let factor = 1;
@@ -326,13 +366,12 @@
       if (exposed.W) factor = Math.min(factor, smooth(u / inset));
       return factor;
     };
-
-    const base = pos.length / 3;
     for (let j = 0; j < axis.length; j++) {
       const v = axis[j];
       for (let i = 0; i < axis.length; i++) {
         const u = axis[i];
-        pos.push(col + u, baseAt(u, v) + SURFACE_DEPTH * depthFactor(u, v), row + v);
+        pos.push(col + u, baseAt(u, v) + SURFACE_DEPTH * depthFactor(u, v) * depthScale, row + v);
+        heights[j * 4 + i] = pos[pos.length - 2]; // Cache the exact drawn vertex elevation.
       }
     }
     const width = axis.length;
@@ -343,6 +382,9 @@
       const v11 = v01 + 1;
       idx.push(v00, v01, v11, v00, v11, v10);
     }
+    detailedTiles++;
+    triangleCount += 18;
+    return heights;
   }
 
   // Naive per-vertex planar UV — the only UV slush needs (its material has
@@ -406,9 +448,7 @@
           exposed[side] = true;
           exposedEdges++;
         }
-        addMicroPlateauTile(pos, idx, col, row, baseCorners, exposed);
-        const heights = new Float32Array(16); // Mirrors the rendered tile vertices without retaining its full geometry buffers.
-        for (let i = 0; i < 16; i++) heights[i] = pos[pos.length - 48 + i * 3 + 1];
+        const heights = addMicroPlateauTile(pos, idx, col, row, baseCorners, exposed, state.depthScale); // Both render paths preserve identical camera samples.
         state.cameraHeights[row * state.cols + col] = heights;
         builtTiles++;
       }
@@ -459,7 +499,8 @@
   // skips straight to the cheap planar UV).
   function buildZoneSurface(scene, grid, cols, rows, mode) {
     const started = now();
-    const state = { grid, cols, rows, surfaceCache: new Array(cols * rows), cameraHeights: new Array(cols * rows) };
+    const depth = depthForMode(mode); // Shared accumulation-step height for every tile in this zone build.
+    const state = { grid, cols, rows, depth, depthScale: depth / SURFACE_DEPTH, surfaceCache: new Array(cols * rows), cameraHeights: new Array(cols * rows) }; // Precomputed scale retains the rooted shallow-cap geometry.
     root = new window.THREE.Group();
     root.name = `hobunji_environment_surface_micro_plateau_${mode}`;
     root.userData.environmentSurfaceRuntime = true;
@@ -468,6 +509,9 @@
     scene.add(root);
 
     builtTiles = 0;
+    compactTiles = 0;
+    detailedTiles = 0;
+    triangleCount = 0;
     exposedEdges = 0;
     chunkCount = 0;
     const THREE = window.THREE;
@@ -487,8 +531,27 @@
       let combined = new THREE.BufferGeometry();
       combined.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
       combined.setIndex(new THREE.BufferAttribute(idx.length > 65535 ? new Uint32Array(idx) : new Uint16Array(idx), 1));
-      combined = mode === 'snow' ? stretchMapSnowUv(combined, 'zone') : planarFallbackUv(combined);
-      if (combined.index) combined = combined.toNonIndexed();
+      const area = currentArea(); // Used to invalidate cached UVs when the wilderness generator changes zones.
+      const cached = mode === 'snow' && snowUvCache
+        && snowUvCache.scene === scene && snowUvCache.grid === grid && snowUvCache.area === area
+        && snowUvCache.cols === cols && snowUvCache.rows === rows
+        && snowUvCache.indices === idx.length && snowUvCache.uv.length === idx.length * 2; // Same logical surface topology, irrespective of the snow's vertical depth.
+      if (cached) {
+        combined = combined.toNonIndexed();
+        combined.setAttribute('uv', new THREE.Float32BufferAttribute(snowUvCache.uv, 2)); // The same PNG coordinates avoid texture drift through the storm.
+        snowUvCacheHits++;
+      } else {
+        combined = mode === 'snow' ? stretchMapSnowUv(combined, 'zone') : planarFallbackUv(combined);
+        if (combined.index) combined = combined.toNonIndexed();
+        if (mode === 'snow') {
+          const mappedUv = combined.getAttribute('uv');
+          snowUvMapRuns++;
+          snowUvCache = mappedUv?.array?.length === idx.length * 2 ? {
+            scene, grid, area, cols, rows, indices: idx.length,
+            uv: new Float32Array(mappedUv.array), // Only CPU texture coordinates survive repeated mesh disposals.
+          } : null;
+        }
+      }
       const combinedPosition = combined.getAttribute('position');
       const combinedUv = combined.getAttribute('uv');
       for (const chunk of chunkRanges) {
@@ -496,24 +559,34 @@
       }
     }
 
+    activeDepth = state.depth;
     cameraSurfaceState = state;
     buildCount++;
     lastBuildMs = now() - started;
-    setGrassHidden(scene, true);
-    grassHiddenScene = scene;
-    lastReason = `built ${builtTiles} ${mode} tile(s) in ${chunkCount} chunk mesh(es); ${exposedEdges} rooted incline edges (${lastBuildMs.toFixed(1)}ms)`;
+    if (grassHiddenScene !== scene) {
+      setGrassHidden(scene, true); // Existing covered tiles stay hidden across depth-only rebuilds.
+      grassHiddenScene = scene;
+    }
+    lastReason = `built ${builtTiles} ${mode} tiles (${compactTiles} compact, ${detailedTiles} detailed, ${triangleCount} triangles) in ${chunkCount} chunk meshes; ${exposedEdges} rooted edges (${lastBuildMs.toFixed(1)}ms)`;
   }
 
   function resetForScene(scene, area, mode) {
-    if (grassHiddenScene) {
+    const sameSurface = scene === activeScene && area === activeArea && mode === activeMode
+      && (!root || cameraSurfaceState?.grid === currentGrid()); // A replaced terrain grid may bring new grass groups that need immediate snow hiding.
+    if (!sameSurface && grassHiddenScene) {
       setGrassHidden(grassHiddenScene, false);
       grassHiddenScene = null;
     }
+    if (!sameSurface) snowUvCache = null; // Release cached coordinates immediately when snow is gone or the scene changes.
     disposeRoot();
     activeScene = scene;
     activeArea = area;
     activeMode = mode;
+    activeDepth = 0;
     builtTiles = 0;
+    compactTiles = 0;
+    detailedTiles = 0;
+    triangleCount = 0;
     exposedEdges = 0;
     chunkCount = 0;
     lastReason = 'waiting for grid data';
@@ -525,13 +598,22 @@
     const scene = currentScene();
     const area = currentArea();
     if (!scene || !window.THREE || !window.GridTileAccessors) return;
+    if (!root && activeScene === scene && activeArea === area && activeMode === 'none'
+        && timestamp - lastInactiveCheckAt < IDLE_POLL_INTERVAL_MS) {
+      skippedInactiveTicks++;
+      return; // Ordinary zones avoid all mesh, tile, season and snow computations between polls.
+    }
     const mode = resolveMode();
     if (mode === 'none') {
       if (root) resetForScene(scene, area, mode);
+      else { activeScene = scene; activeArea = area; activeMode = mode; }
+      lastInactiveCheckAt = timestamp;
       lastReason = 'inactive (indoors, or outdoor but not snow/slush season)';
       return;
     }
-    if (scene !== activeScene || area !== activeArea || mode !== activeMode) resetForScene(scene, area, mode);
+    const gridChanged = !!root && cameraSurfaceState?.grid !== currentGrid(); // A Tothal terrain regeneration may replace the grid without changing the scene identity.
+    if (scene !== activeScene || area !== activeArea || mode !== activeMode || gridChanged
+        || (root && Math.abs(depthForMode(mode, area) - activeDepth) > 0.00001)) resetForScene(scene, area, mode); // Rebuild only when terrain or quantized snow depth actually changed.
     if (root) {
       // Wilderness grass billboards can stream/build in after the surface's
       // own build already ran (zone decoration finishing later than
@@ -550,6 +632,7 @@
   }
 
   function forceRebuild() {
+    snowUvCache = null; // An explicit rebuild may change the authored terrain while retaining the grid object's identity.
     const scene = currentScene();
     const mode = resolveMode();
     if (!scene || mode === 'none') return debugSnapshot();
@@ -561,9 +644,21 @@
   // its full depth even at an exposed lip so a ring's wider footprint cannot
   // cut back through adjacent snow. This is visual only, never collision.
   function projectionLiftAt(x, z, scene = currentScene()) {
-    if (!Number.isFinite(x) || !Number.isFinite(z) || scene !== currentScene() || resolveMode() === 'none') return 0;
+    if (!Number.isFinite(x) || !Number.isFinite(z) || scene !== currentScene()) return 0;
+    // A dormant surface installs no GPU overlay, but world-space shadows and
+    // markers still call this during rendering. Reuse the scheduler's recent
+    // no-snow result rather than looking up the season for every mesh draw.
+    if (!root && activeScene === scene && activeMode === 'none' && activeArea === currentArea()) {
+      const idleAge = now() - lastInactiveCheckAt; // Same monotonic clock as the shared frame scheduler.
+      if (idleAge >= 0 && idleAge < IDLE_POLL_INTERVAL_MS) {
+        skippedDormantProjections++;
+        return 0;
+      }
+    }
+    const mode = resolveMode(); // Still resolve immediately before the first surface tick or after an area change.
+    if (mode === 'none') return 0;
     const tile = currentGrid()?.[Math.floor(z)]?.[Math.floor(x)]; // Coverage under the overlay's world-space anchor.
-    return tile && tileCovered(tile) ? SURFACE_DEPTH : 0;
+    return tile && tileCovered(tile) ? (activeDepth || depthForMode(mode)) : 0; // Correct even before the initial mesh tick.
   }
 
   function hasCameraSurface() {
@@ -629,15 +724,25 @@
       active: Boolean(root),
       area: currentArea() || null,
       mode,
-      thickness: SURFACE_DEPTH,
-      groundProjectionLift: SURFACE_DEPTH,
+      thickness: activeDepth || depthForMode(mode),
+      groundProjectionLift: activeDepth || depthForMode(mode),
+      shiftSnowFraction: window.TothalBlizzard?.snowCoverageFor?.(currentArea()) || 0,
       cameraCollision: hasCameraSurface(),
       latestChange: 'Camera terrain collision includes rendered snow/slush caps and inclined edges; player collision stays at the authored ground.',
       edgeWidth: EDGE_WIDTH,
       opacity: MODE_PRESETS[mode]?.opacity ?? null,
       builtTiles,
+      compactTiles,
+      detailedTiles,
+      triangleCount,
       exposedEdges,
       chunkCount,
+      snowMeshCount: activeMode === 'snow' ? (root?.children?.length || 0) : 0, // Mobile QA: zero outside snowy areas.
+      skippedInactiveTicks, // Mobile QA: inactive scheduler frames that skipped the work.
+      skippedDormantProjections, // Mobile QA: render hooks that didn't look up snow/season while dormant.
+      snowUvMapRuns, // Mobile QA: expensive whole-zone UV relaxations performed.
+      snowUvCacheHits, // Mobile QA: reused UVs across snow-depth changes.
+      snowUvCacheBytes: snowUvCache?.uv.byteLength || 0, // Must be zero when snow is inactive.
       buildCount,
       lastBuildMs: Number(lastBuildMs.toFixed(2)),
       textureState,
@@ -645,8 +750,8 @@
     };
   }
 
-  window.EnvironmentSurfaceMicroPlateau = Object.freeze({ installed: true, debugSnapshot, getSnowMaterial: () => material('snow'), bindSnowTexture(target) { if (!target) return false; target.map = snowTexture; if (snowTexture) target.needsUpdate = true; else if (textureState === 'loading') snowMaterialConsumers.add(target); return true; }, unbindSnowTexture(target) { return snowMaterialConsumers.delete(target); }, forceRebuild, projectionLiftAt, bindGroundProjection, hasCameraSurface, cameraSurfaceYAt }); // Decorative Western Slope snow caps reuse this exact material and its asynchronously loaded canvas texture.
-  ensureTexture();
+  window.EnvironmentSurfaceMicroPlateau = Object.freeze({ installed: true, debugSnapshot, getSnowMaterial: () => material('snow'), bindSnowTexture(target) { if (!target) return false; target.map = snowTexture; if (snowTexture) target.needsUpdate = true; else { snowMaterialConsumers.add(target); ensureTexture(); } return true; }, unbindSnowTexture(target) { return snowMaterialConsumers.delete(target); }, forceRebuild, projectionLiftAt, bindGroundProjection, hasCameraSurface, cameraSurfaceYAt }); // Decorative snow consumers opt into the lazy shared texture.
+  // Zero snow texture requests until a snowy scene or an actual material consumer exists.
 
   // The shipped game always provides RuntimeFrameScheduler; the standalone
   // Wilderness Generation Lab and snow-runtime-test.html tool pages load
