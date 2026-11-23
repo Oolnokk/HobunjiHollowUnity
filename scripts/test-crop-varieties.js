@@ -208,6 +208,17 @@ assert(game.ItemProcessing.getProcessingOutputs('grinding', 'heftroot')[0].cooki
 assert(game.ItemProcessing.getProcessingOutputs('grinding', 'needlegrain')[0].cookingCategories.includes('flour'),
   'ordinary Needlegrain Flour also fits flour recipe slots');
 
+const orphanFlourKey = 'cv_heftroot_555000Flour'; // Legacy saved flour held without its cultivar, source vegetable or processed metadata.
+assert.equal(itemDefs[orphanFlourKey], undefined, 'test starts with an unregistered source cultivar');
+inventory[orphanFlourKey] = 1; // This lone flour stack is the only surviving reference to the old cultivar.
+assert.equal(game.ItemProcessing.repairPreservedDefs(inventory), 1, 'load repair recognizes missing regional flour definitions');
+assert(itemDefs[orphanFlourKey].cookingCategories.includes('flour'), 'orphan flour becomes usable in recipe slots');
+assert.equal(itemDefs[orphanFlourKey].foodEffects.perception, 2, 'orphan flour restores its Perception from the genotype');
+assert.equal(game.ItemProcessing.serializeProcessedDefinitions().find(entry => entry.key === orphanFlourKey)?.cookingProcessLastMethod,
+  'grinding', 'next save persists recovered flour history without inventing a new item ID');
+assert.equal(inventory[orphanFlourKey], 1, 'recovery never changes the owned flour count');
+delete inventory[orphanFlourKey]; // Keep the unrelated later parent-breeding fixture's original bag contents.
+
 game.FarmWorldSettings = { read: () => ({ meta: {}, world: { farmStarterBuildings: [] } }), current: () => ({}) };
 game.FarmPanel = { cancelBarnPlacement() {}, render() {} };
 game.FarmBuildings = { canPlaceAt: () => true, clearFootprint() {} };
