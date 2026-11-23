@@ -23,7 +23,13 @@ try { THREE = require('three'); } catch (_) {
     traverse(fn) { fn(this); for (const c of this.children) c.traverse(fn); }
     getObjectByName(name) { let found; this.traverse(n => { if (!found && n.name === name) found = n; }); return found; }
     updateWorldMatrix() {}
-    getWorldScale(out) { return out.set(this.worldScale, this.worldScale, this.worldScale); } }
+    getWorldScale(out) {
+      let x = this.worldScale, y = this.worldScale, z = this.worldScale;
+      for (let node = this; node; node = node.parent) { // Model parent scaling is what the carried clone inherits.
+        x *= node.scale.x; y *= node.scale.y; z *= node.scale.z;
+      }
+      return out.set(x, y, z);
+    } }
   class Mesh extends Obj { constructor(geometry, material) { super(); this.isMesh = true; this.geometry = geometry; this.material = material; } }
   THREE = { Group: Obj, Mesh, Vector3: Vec };
 }
@@ -87,6 +93,14 @@ for (const mesh of meshes) {
   assert.notEqual(mesh.userData.noOutline, true, '3D limbs are not suppressed from outlines');
 }
 assert.equal(proxy.children[0], bust, 'bust stays children[0] (refreshProxyArt texture swap relies on it)');
+const carriedScale = () => Math.abs(proxy.getObjectByName('family_baby_left_hand')?.scale?.x || 0); // Proxy uses world-scaled source visuals.
+assert(Math.abs(carriedScale() - 1.2) < 1e-8, 'carried hands initially match corrected world newborn size');
+assert.equal(api.balanceWalker(walker, { hand: 1.25, foot: 1.25 }), 4, 'late proportion change updates the same source visuals');
+assert.equal(api.attach(proxy, walker), true, 'same-mesh scale change invalidates its previously cloned proxy');
+assert.equal(api.debugSnapshot().refreshed, 1, 'scale change replaces old clone exactly once');
+assert(Math.abs(carriedScale() - 1.25) < 1e-8, 'carried hands inherit updated scale, not a stale 1.20 clone');
+assert.equal(api.attach(proxy, walker), true, 'same sources and same resize revision are stable');
+assert.equal(api.debugSnapshot().refreshed, 1, 'no per-tick re-cloning when already balanced');
 
 // Anatomy: shoulders sit above the hips, both inside the bust, mirrored about the body.
 const a = api.anatomy(proxy);
@@ -102,11 +116,18 @@ footParent.remove(oldRightFoot);
 const newRightFoot = new THREE.Mesh(geometry, material('right_foot_loaded'));
 footParent.add(newRightFoot);
 assert.equal(api.attach(proxy, walker), true, 'rebind when the source foot changes');
-assert.equal(api.debugSnapshot().refreshed, 1, 'a replaced GLB triggers exactly one refresh');
+assert.equal(api.debugSnapshot().refreshed, 2, 'a replaced GLB triggers one extra refresh');
 assert.equal(api.attach(proxy, walker), true);
-assert.equal(api.debugSnapshot().refreshed, 1, 'no redundant refresh from an unchanged source');
+assert.equal(api.debugSnapshot().refreshed, 2, 'no redundant refresh from an unchanged source');
 assert.equal(proxy.getObjectByName('family_baby_kicking_limbs').children.length, 4, 'replacement still has all limbs');
 assert(!disposed.includes('geometry'), 'refresh never frees walker-owned geometry');
+const newGeometry = { attributes: { position: { count: 111 } } }; // In-place GLB geometry updates keep the Mesh object identity.
+newRightFoot.geometry = newGeometry;
+assert.equal(api.attach(proxy, walker), true, 'in-place resource replacement refreshes the clone');
+assert.equal(api.debugSnapshot().refreshed, 3, 'geometry replacement refreshes once');
+assert.equal(proxy.getObjectByName('family_baby_right_foot').geometry, newGeometry);
+assert.equal(api.attach(proxy, walker), true, 'the new source geometry stays stable');
+assert.equal(api.debugSnapshot().refreshed, 3, 'same geometry never triggers unnecessary updates');
 
 // Hook: poses visible carried babies, restores rest pose after the frame.
 proxy.parent = new THREE.Group();
