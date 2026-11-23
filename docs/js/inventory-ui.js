@@ -11,6 +11,7 @@
   let menuReadabilityFullScan = false; // Opening the menu or an explicit refresh still checks all visible menu content.
   const menuReadabilityStats = { passes: 0, fullPasses: 0, elementsLastPass: 0, lastMs: 0 }; // Exposed by the existing mobile Inventory debug snapshot.
   let lastControllerPackPreview = null; // Exposed by debugSnapshot() to diagnose controller Pack highlighting on mobile.
+  const categoryWheelStrips = new WeakSet(); // Ensures each Pack category scroller gets only one hover-wheel listener, including repeated init calls.
 
   const STYLE_ID = 'inventoryUiPolishStyles'; // Prevents duplicate injected styles across repeated init calls.
   const DEBUG_BUTTON_ID = 'inventoryUiDebugButton'; // Stable id for the in-menu layout-debug control.
@@ -21,6 +22,7 @@
   function init(injectedDeps = {}) {
     deps = injectedDeps;
     installStyles();
+    installCategoryScroll();
     installObserver();
     installMenuReadability();
     decorate();
@@ -66,8 +68,12 @@
       #mpInventory .inv-sub-tab:active { transform:translateY(1px) scale(.975); }
       #mpInventory .inv-sub-tab.active { color:#1a211b; border-color:var(--inv-ui-accent); background:linear-gradient(#ffefa4fa,#e7cb63f0); box-shadow:0 2px 8px #0004,inset 0 1px #fff8; }
 
-      #mpInventory .inv-cats { overflow-x:auto; overflow-y:hidden; scrollbar-width:none; justify-content:flex-start; -webkit-overflow-scrolling:touch; }
-      #mpInventory .inv-cats::-webkit-scrollbar { display:none; }
+      /* Only the category row scrolls horizontally; keep a small, draggable scrollbar below the tabs. */
+      #mpInventory .inv-cats { overflow-x:auto; overflow-y:hidden; scrollbar-width:thin; scrollbar-color:#f9e28a99 #ffffff12; justify-content:flex-start; -webkit-overflow-scrolling:touch; }
+      #mpInventory .inv-cats::-webkit-scrollbar { height:5px; }
+      #mpInventory .inv-cats::-webkit-scrollbar-track { background:#ffffff12; border-radius:999px; }
+      #mpInventory .inv-cats::-webkit-scrollbar-thumb { background:#f9e28a99; border-radius:999px; }
+      #mpInventory .inv-cats::-webkit-scrollbar-thumb:hover { background:#f9e28add; }
       #mpInventory .inv-cat { flex:0 0 auto; border-color:#ffffff24; background:#ffffff09; transition:transform 80ms ease,background 100ms ease,border-color 100ms ease,color 100ms ease; }
       #mpInventory .inv-cat:hover { color:var(--text); background:#ffffff13; }
       #mpInventory .inv-cat:active { transform:translateY(1px) scale(.97); }
@@ -186,6 +192,29 @@
       @media (prefers-reduced-motion:reduce) { #mpInventory .inv-sub-tab,#mpInventory .inv-cat,#mpInventory .inv-item-box,#mpInventory .inv-equip-slot,#mpInventory .ii-btn,#mpInventory .ii-tool-mastery-fill { transition:none!important; } }
     `;
     document.head.appendChild(style);
+  }
+
+  function installCategoryScroll() {
+    const strip = document.querySelector('#mpInventory .inv-cats'); // The existing Pack category row owns mouse-wheel navigation; item lists keep their normal vertical wheel behavior.
+    if (!strip || categoryWheelStrips.has(strip)) return;
+    categoryWheelStrips.add(strip);
+    strip.addEventListener('wheel', onCategoryWheel, { passive:false });
+  }
+
+  function onCategoryWheel(event) {
+    const strip = event.currentTarget;
+    if (!strip || strip.scrollWidth <= strip.clientWidth || event.ctrlKey || event.metaKey || event.altKey) return;
+    if (event.deltaX && Math.abs(event.deltaX) >= Math.abs(event.deltaY)) {
+      event.stopPropagation(); // Preserve native horizontal trackpad scrolling without cycling anything behind the menu.
+      return;
+    }
+    const wheelUnit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? strip.clientWidth : 1; // Wheel deltas may arrive in pixels, lines, or pages.
+    const delta = Number(event.deltaY) * wheelUnit; // Only vertical wheel input over category tabs becomes horizontal movement.
+    if (!Number.isFinite(delta) || !delta) return;
+    const previous = strip.scrollLeft;
+    strip.scrollLeft = Math.max(0, Math.min(strip.scrollWidth - strip.clientWidth, previous + delta));
+    if (strip.scrollLeft !== previous) event.preventDefault();
+    event.stopPropagation(); // Even at either end, never send a tab-hover wheel to background inventory/game controls.
   }
 
   function installObserver() {
@@ -1004,6 +1033,10 @@
       orphanTrinketGroups: document.querySelectorAll('#invEquipSection > .gear-owned-trinkets').length,
       infoHasDescription: !!document.getElementById('iiDesc')?.textContent?.trim(),
       lastControllerPackPreview, // Reports the most recently highlighted Pack stack/clothing for in-game diagnostics.
+      categoryScroll: (() => {
+        const strip = document.querySelector('#mpInventory .inv-cats'); // Used by the existing in-game Inventory debug snapshot to diagnose hidden category tabs.
+        return strip ? { left: Math.round(strip.scrollLeft), max: Math.max(0, strip.scrollWidth - strip.clientWidth) } : null;
+      })(),
       selectedToolMasteryBar: masteryPanel && !masteryPanel.hidden ? masteryPanel.dataset.toolKey || true : false,
       masteryDataAccess: {
         toolDefs: !!combatDeps?.TOOL_ITEM_DEFS,
@@ -1017,7 +1050,7 @@
   }
 
   window.InventoryUI = { init, decorate, debugSnapshot, enforceMenuReadability,
-    __test: { selectedDetailToolKey }, // Exercises the same resolver used by the visible mastery panel without duplicating its rules.
+    __test: { selectedDetailToolKey, installCategoryScroll, onCategoryWheel }, // Exercise the real mastery resolver and Pack wheel listener in isolated tests.
   };
 })();
 
