@@ -66,9 +66,9 @@ const walker={root,avatarGroup:avatar,legs:{group:legs,standingPosteriorY:.4,app
 ragdoll.window.ImpactRagdollPlayback.holdHumanoidProne(walker);
 assert.equal(avatar.parent,legs.parent);
 assert.equal(avatar.position.y,.6-.4);
-assert.equal(walker._cinematicPosePivot.quaternion.x,tail.ragdoll.body.localQuaternion.x);
+assert(Math.abs(walker._cinematicPosePivot.quaternion.x-tail.ragdoll.body.localQuaternion.x)<2e-6, 'held cutscene torso keeps the authored direction after required quaternion normalization');
 assert.equal(poses.left.upperLength,tail.ragdoll.ik.left.upperLength);
-assert.equal(poses.right.calfLocalQuaternion.z,tail.ragdoll.ik.right.calfLocalQuaternion.z);
+assert(Math.abs(poses.right.calfLocalQuaternion.z-tail.ragdoll.ik.right.calfLocalQuaternion.z)<2e-6, 'recorded calf rotation remains visually identical after normalization');
 const pivot=walker._cinematicPosePivot; // Repeated hold ticks must not allocate/reparent another rig.
 ragdoll.window.ImpactRagdollPlayback.holdHumanoidProne(walker);
 assert.equal(walker._cinematicPosePivot,pivot);
