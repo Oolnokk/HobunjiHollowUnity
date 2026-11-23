@@ -114,7 +114,8 @@ async function run(){
   assert.equal(active.shot.blendSeconds,.95);
   const initialFacing=state.boss.facing; // The boss starts mostly turned away before the reveal's face-to-face beat.
   const initialYaw=state.boss.avatarRef.group.rotation.y;
-  assert(Math.abs(initialFacing)>2,'lich should enter the shot turned away from the player');
+  const bearingToPlayer=Math.atan2(deps.player.y-state.boss.y,deps.player.x-state.boss.x); // Facing angles are world-relative; starting angle itself need not be large.
+  assert(Math.abs(initialFacing-bearingToPlayer)>2,'lich should enter the shot turned away from the player');
   await advance(850);
   const title=nodes.find(node=>node.id==='ruin-sanctum-boss-title');
   assert(title,'name banner appears after camera begins zooming');
