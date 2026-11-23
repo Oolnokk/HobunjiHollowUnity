@@ -1082,7 +1082,8 @@
     const elapsed = Math.max(0, (Number.isFinite(now) ? now : performance.now()) - intro.startedAtMs);
     const t = Math.max(0, Math.min(1, (elapsed - INTRO_TURN_DELAY_MS) / INTRO_TURN_MS));
     const eased = t*t*(3-2*t); // Smooth, readable turn rather than an instantaneous AI-facing snap.
-    setBossIntroFacing(intro.boss, intro.turnFrom + (intro.turnTo-intro.turnFrom)*eased);
+    const facing = intro.turnFrom + (intro.turnTo-intro.turnFrom)*eased; // Reuse the original boss-facing animation without recalculating scene-sibling weapon poses after it settles.
+    if (Math.abs((Number(intro.boss.facing) || 0) - facing) > 1e-5) setBossIntroFacing(intro.boss, facing);
   }
 
   function playBossIntroShriek(owner, intro, volume, pitch, echo = false) {
