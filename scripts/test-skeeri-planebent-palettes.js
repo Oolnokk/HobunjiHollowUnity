@@ -216,6 +216,22 @@ for(const key of ['flying','perched']) {
   assert(extracted.patternPixels>100 && extracted.patternPixels<sprite.width*sprite.height*.50,
     key+' must contain darker fur markings, not the entire sprite or zero pixels');
   assert(extracted.pattern && extracted.glow, key+' includes both separately tintable layers');
+  // Audit every actual artist pixel: mint body, mint markings, neutral details
+  // and the shaded purple eye must form a disjoint, lossless source partition.
+  const layers = [extracted.body.pixels, extracted.pattern.pixels,
+    extracted.details?.pixels, extracted.glow.pixels].filter(Boolean); // Shared source artwork is decoded only once.
+  let covered = 0, overlap = 0, missing = 0; // Renderer regression diagnostics for each real Skeeri pose.
+  for (let i = 3; i < sprite.pixels.length; i += 4) {
+    if (!sprite.pixels[i]) continue;
+    const present = layers.filter(layer => layer[i] > 0); // Every nontransparent source pixel must have exactly one owner.
+    if (!present.length) missing++;
+    if (present.length > 1) overlap++;
+    if (present.length === 1) covered++;
+  }
+  assert.equal(missing, 0, key+' source art has no missing coat/eye/details pixels after recolor partition');
+  assert.equal(overlap, 0, key+' source art is not double-painted by eye, body or pattern');
+  assert(covered > 100, key+' contains genuinely colored/outlined authored pixels');
+
 }
 
 (async () => {
