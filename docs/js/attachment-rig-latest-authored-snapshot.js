@@ -33,8 +33,8 @@
     new URL('character-rig-pixel-probe-runtime.js?v=20260905a', base).href,
     new URL('character-scale-comparison-host-bridge.js?v=20261113longoranscales5', base).href,
     new URL('character-scale-comparison.js?v=20261123ageLineup1', base).href,
-    new URL('character-scale-comparison-body-input-guard.js?v=20260905b', base).href,
-    new URL('character-scale-comparison-presentation.js?v=20261113longoranscales5', base).href,
+    new URL('character-scale-comparison-body-input-guard.js?v=20261123ageRigInput2', base).href,
+    new URL('character-scale-comparison-presentation.js?v=20261123ageRigHead2', base).href,
     new URL('animation-author-rig-gameplay-appearance.js?v=20261017a', base).href,
   ];
   const loadSequentially = list => list.reduce((promise, src) => promise.then(() => new Promise((resolve, reject) => {
