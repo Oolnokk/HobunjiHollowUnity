@@ -12,6 +12,7 @@ assert(start >= 0 && end > start, 'random baby renderer is a separable, testable
 assert.match(source, /id="carryBabyRandom">Random Baby<\/button>/, 'touch-accessible Random Baby control exists');
 assert.match(source, /el\('carryBabyRandom'\)\.onclick=\(\)=>\{void randomBaby\(\);\}/, 'button actually runs the preview generator');
 assert.match(html, /romance-config\.js\?v=/, 'editor loads the existing family newborn proportions');
+assert(source.includes('phaseScales?.basket||{body:.32,head:.50}'), 'offline editor uses new 50% head fallback when family config is unavailable');
 assert(html.indexOf('scratchbones-config.js') < html.indexOf('romance-config.js'),
   'family scale configuration is loaded after the base Scratchbones config');
 assert.match(source, /if\(!babyPortraitModel\)void randomBaby\(\)/,
