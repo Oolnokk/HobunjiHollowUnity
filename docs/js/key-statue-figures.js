@@ -51,7 +51,8 @@
     const tools = window.CharacterHeldTools;
     const tool=tools?.makeToolPlaneMesh?.(spec.weaponKey,{holder:{weaponMasteryLevel:0}});
     const livePlane=tool?.userData?.toolPlane;
-    if(!livePlane?.geometry)return null;
+    try {
+      if(!livePlane?.geometry)return null;
     const definition=window.Combat?.deps?.TOOL_ITEM_DEFS?.[spec.weaponKey]
       ||window.Combat?.deps?.TOOL_ITEM_DEFS?.[spec.shapeKey];
     let image=livePlane.material?.map?.image;
@@ -77,13 +78,14 @@
     mesh.name='key_statue_carved_army_weapon';
     mesh.rotation.copy(livePlane.rotation); // Original tool sprite's -90-degree X basis.
     mesh.renderOrder=0; // World sculpture, never an actor's held-overlay render pass.
-    tool.traverse?.(node=>{ // The canonical held-weapon factory's temporary model never enters the scene.
-      if(node.isMesh){
+    return mesh;
+    } finally {
+      tool?.traverse?.(node=>{ // Temporary held-tool meshes are never part of the static world sculpture.
+        if(!node.isMesh)return;
         if(!node.userData?.sharedToolGeometry)node.geometry?.dispose?.();
         for(const mat of Array.isArray(node.material)?node.material:[node.material])mat?.dispose?.();
-      }
-    }); // The cached source textures remain owned by CharacterHeldTools.
-    return mesh;
+      }); // Preserve CharacterHeldTools' shared source textures and modular geometries.
+    }
   }
 
   function fitSculpture(THREE,root) {
