@@ -40,8 +40,13 @@ To add or update a script in an existing group:
    suite. The test discovers groups and allows new members without editing a shared
    test file, while guarding the baseline dependency order.
 
-The manifests are fetched with `?load=<Date.now()>` per navigation so manifest
-edits do not require touching a common index cache token. Child modules retain
+For mutable branch previews and local development, the manifests are fetched with
+`?load=<Date.now()>` per navigation so manifest edits do not require touching
+a common index cache token. For commit-pinned GitHack URLs, the loader instead
+fetches the immutable manifest from `rawcdn.githack.com` at the exact same
+commit. GitHack ignores cache-busting query parameters and recommends its
+production CDN for immutable paths; child scripts continue to resolve against
+the original page and keep their independent cache versions. Child modules retain
 their usual versioned cache URLs; this costs one tiny extra manifest request per
 group. The loader itself remains cache-versioned in `index.html` and should
 rarely need changes.
