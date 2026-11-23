@@ -185,7 +185,7 @@ function world() {
     'a lower story cannot catch an upper shaft rope merely by matching X/Z');
   assert.equal(core.catchesAirborne(rope,{...rope.bob},{endOnly:true}),true,
     'the visible shaft brush tip remains a legal airborne catch');
-  const state={flight:null,activeRope:null,ropes:[rope]};
+  const state={flight:null,activeRope:null,ropes:[rope],controls:[],context:{singleRoomTrial:true}}; // Exercised by the real held-adjust interaction.
   const player={x:0,y:0,inputStrength:1,inputX:-1,inputY:0,vx:0,vy:0};
   let riderPoint=null,holsters=0,resets=0; // The mock records control transfer, never another rope simulator.
   const window={PlayerJump:{reset:()=>{resets++;}}};
@@ -221,7 +221,17 @@ function world() {
   for(let i=0;i<20;i++)updateAttachedRope(rope,.016);
   assert(rope.angle<-.1,'the normal rope pendulum continues to pump after automatic catch');
   const swingBeforeBrake=Math.abs(rope.angle); // The authored shaft rider and ordinary ropes use the same held straightener.
-  rope.braking=true;player.inputX=0;player.inputY=1;
+  const controlsStart=ruinSource.indexOf('  function getInteractionControls() {');
+  const controlsEnd=ruinSource.indexOf('\n\n  function snapshot() {',controlsStart);
+  assert(controlsStart>=0&&controlsEnd>controlsStart,'rope adjust uses the native held-interaction callbacks');
+  const getControls=new Function('state','inRuin','window','composers',
+    ruinSource.slice(controlsStart,controlsEnd)+'\nreturn getInteractionControls;')(
+      state,()=>true,window,[]);
+  const holdAdjust=getControls().find(control=>control.kind==='ropeBrake');
+  assert(holdAdjust?.onHoldStart&&holdAdjust?.onHoldEnd,'holding the existing rope-adjust action is wired');
+  holdAdjust.onHoldStart();
+  assert.equal(rope.braking,true,'the real held-action starts straightening');
+  player.inputX=0;player.inputY=1;
   updateAttachedRope(rope,.05);
   assert.equal(rope.omega,0,'shaft Adjust immediately cancels its inherited swing momentum');
   assert(Math.abs(rope.angle)<swingBeforeBrake,'shaft Adjust lerps its rope back toward straight down');
@@ -232,6 +242,10 @@ function world() {
   for(let i=0;i<40;i++)updateAttachedRope(rope,.05);
   assert.equal(rope.angle,0,'holding Adjust settles a shaft rope exactly vertical');
   assert.equal(rope.omega,0,'the shaft finishes with no leftover swing velocity');
+  holdAdjust.onHoldEnd();
+  assert.equal(rope.braking,false,'releasing the adjust hold returns control to ordinary rope pumping');
+  updateAttachedRope(rope,.05);
+  assert.equal(rope.angle,0,'the former momentum must not restart the swing when the hold ends');
   assert.deepEqual(riderPoint,rope.bob);
 }
 // Every generated ruin rope is also the SAME object consumed by the burden
