@@ -106,6 +106,23 @@ nelk.state = 'idle'; nelk.targetPlayer = null;
 R.update(nelk, 0.3, [nelk], [player], ctx);
 assert.equal(nelk.def, original, 'player-pursuit speed is restored after disengagement');
 
+const grehlrSpecies = { label: 'Grehlr', sprites: { idle: 'grehlr_idle.png' }, hostile: true }; // Species fields inherited by the territorial overlay.
+const grehlrTerritory = Object.assign(Object.create(grehlrSpecies), { hostile: false }); // Match the runtime territorial definition shape.
+const grehlr = animal('grehlr', 78, 0, { def: grehlrTerritory, state: 'fleeing-low-health' }); // An injured territorial Grehlr gets another temporary override.
+R.update(grehlr, 0.3, [grehlr], [player], ctx);
+assert(grehlr.def.chaseSpeed >= 40 * 8.8, 'the Grehlr sprint profile is active');
+assert.equal(grehlr.def.label, 'Grehlr', 'the sprint must preserve the label used by combat and butcher panels');
+assert.equal(grehlr.def.sprites, grehlrSpecies.sprites, 'the sprint must preserve sprite metadata for rendering');
+adults.add(grehlr);
+nestListener({ type: 'nest_stolen', speciesKind: 'grehlr', areaId: ctx.zoneId, x: 70, y: 0 });
+assert.equal(grehlr.def.hostile, true, 'the Grehlr switches from fleeing speed to nest defense');
+assert.equal(grehlr.def.label, 'Grehlr', 'nest defense also preserves the inherited label');
+assert.equal(grehlr.def.sprites, grehlrSpecies.sprites);
+clock += R.tuning.NEST_DEFENSE_MS + 1;
+R.update(grehlr, 0.3, [grehlr], [player], ctx);
+assert.equal(grehlr.def, grehlrTerritory, 'nest defense restores the same territorial definition');
+adults.delete(grehlr);
+
 // Passive species with a nonlethal wildlife wound are fast when they flee, without a permanent stat mutation.
 const injuredPuktuk = animal('puktuk', 230, 0, { state: 'fleeing-low-health', def: { hostile: false, diet: 'herbivore', chaseSpeed: 90 } });
 const preFlightDef = injuredPuktuk.def;

@@ -171,11 +171,14 @@
     return true;
   }
 
-  function acquireNestItem(itemKey, genotype, nextCount, { areaId = '', liveBirth = false, remaining = 0 } = {}) {
+  function acquireNestItem(itemKey, genotype, inventory, { areaId = '', liveBirth = false, remaining = 0 } = {}) {
     // One saved metadata write owns the new bag unit, its inherited bloodline, and the cave's reduced clutch.
     // Independent writes can leave a phantom baby, or duplicate an already collected one, after a quota failure.
-    if (!debug.installed || !ensureLoaded() || !itemKey || !Number.isSafeInteger(nextCount) || nextCount < 1) {
-      debug.errors.push('nest-acquire: identity, installation, item key or inventory count invalid');
+    const liveCount = inventory?.[itemKey] ?? 0; // The live bag can change between saves, including when livestock is moved out of the Pack.
+    if (!debug.installed || !ensureLoaded() || !itemKey || !inventory || typeof inventory !== 'object' ||
+        !Number.isSafeInteger(liveCount) || liveCount < 0 ||
+        liveCount >= (window.InventoryStacks?.MAX_TOTAL ?? Number.MAX_SAFE_INTEGER) || !Number.isSafeInteger(remaining) || remaining < 0) {
+      debug.errors.push('nest-acquire: identity, installation, reward, live bag or clutch count invalid');
       return false;
     }
     const ids = currentIds(); // The active world/member identity must match the same character that owns the live bag.
@@ -197,11 +200,7 @@
     else delete member[MEMBER_FIELD];
     member.nonGearInventory = member.nonGearInventory && typeof member.nonGearInventory === 'object'
       ? member.nonGearInventory : {};
-    const previousSavedCount = Math.max(0, Math.floor(Number(member.nonGearInventory[itemKey]) || 0)); // Reject stale/double pickup attempts instead of silently minting lineage.
-    if (previousSavedCount !== nextCount - 1) {
-      debug.errors.push('nest-acquire: saved bag count mismatch for ' + itemKey + ': saved=' + previousSavedCount + ', expected=' + (nextCount - 1));
-      return false;
-    }
+    const nextCount = liveCount + 1; // The cave clutch comparison below guards against collecting the same baby twice.
     member.nonGearInventory[itemKey] = nextCount; // Commit the exact live bag count in the SAME metadata write as its genes.
     const isCavern = typeof areaId === 'string' && areaId.startsWith('map_i_den_'); // Cave clutch records live on the world rather than on the character.
     if (isCavern) {
@@ -219,7 +218,7 @@
         return false;
       }
       record.clutch = {
-        remaining: Math.max(0, Math.floor(Number(remaining) || 0)),
+        remaining,
         itemKey, liveBirth: !!liveBirth, genotype: copy || genotype || null,
       }; // The cave can no longer regenerate a baby whose count and lineage were committed.
     }
@@ -230,6 +229,7 @@
       debug.lastAction = 'nest-acquire-failed';
       return false;
     }
+    inventory[itemKey] = nextCount;
     if (copy) (queues[itemKey] || (queues[itemKey] = [])).push(copy); // Only update same-session grouping after the durable write is confirmed.
     groupCache.delete(itemKey);
     debug.queued += copy ? 1 : 0;

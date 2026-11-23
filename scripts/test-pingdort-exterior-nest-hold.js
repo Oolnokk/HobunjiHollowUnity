@@ -51,12 +51,13 @@ const document={getElementById:id=>widgets[id]||null,
   createElement:kind=>{assert.equal(kind,'canvas');return {width:128,height:128,getContext:()=>({
     clearRect(){},fillText(){},getImageData:()=>({data:canvasData}),
   })};}};
-const window={LivestockItemGenotypePersistence:{acquireNestItem(itemKey, genotype, newCount, options){
+const window={LivestockItemGenotypePersistence:{acquireNestItem(itemKey, genotype, bag, options){
     assert.equal(itemKey,'fertilePingdortEgg');
     assert.equal(genotype,nest.genotype);
     assert.equal(options.areaId,nest.areaId);
     assert.equal(options.remaining,nest.remaining-1);
-    assert.equal(newCount,window.queued+1);
+    assert.equal(bag,inventory);
+    bag[itemKey]=(bag[itemKey]??0)+1;
     window.queued++;
     return true;
   }},
