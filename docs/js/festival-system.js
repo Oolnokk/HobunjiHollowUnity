@@ -147,7 +147,7 @@
       contest.entry = { key:donated.key,stars:donated.stars,label:definition.label || donated.key,
         score:window.FestivalPotluckContest.scoreCooked(definition,donated.stars,defs),
         ingredients:snapshot.ingredients,estimatedQuality:snapshot.estimated,
-        estimatedEffects:snapshot.estimatedEffects,foodEffects:{...(definition.foodEffects||{})} };
+        estimatedEffects:snapshot.estimatedEffects,foodEffects:window.CookingSystem?.normalizeFoodEffects?.(definition.foodEffects) || {...(definition.foodEffects||{})} };
       changed = true;
     }
     potluckRecoveryPending = retry;
@@ -191,6 +191,7 @@
       entry.estimatedQuality = entry.estimatedQuality ?? snapshot.estimated;
       entry.estimatedEffects = snapshot.estimatedEffects;
       entry.foodEffects ||= {...(definition.foodEffects || {})}; // An older saved contest entry may not have persisted its exact buff payload.
+      entry.foodEffects = window.CookingSystem?.normalizeFoodEffects?.(entry.foodEffects) || entry.foodEffects; // Retire legacy Clarity before this contest meal is reused.
       deps?.save?.();
     }
     const offset = Math.max(0,Math.min(6,day() - (year()*336 + 4*28 + 8 - 1)));
@@ -200,7 +201,7 @@
     const defs = deps?.getItemDefs?.() || {};
     const dishes = (days[offset] || []).map(dish => ({
       ...dish, ingredients:dish.ingredients || [],
-      foodEffects:window.FestivalPotluckContest?.mealEffects?.(dish.ingredients,defs) || dish.foodEffects || {},
+      foodEffects:window.CookingSystem?.normalizeFoodEffects?.(window.FestivalPotluckContest?.mealEffects?.(dish.ingredients,defs) || dish.foodEffects) || dish.foodEffects || {},
     })); // Recalculate legacy saved NPC buffs with the canonical quality/processing rules, once per day.
     const entry = contest?.entry;
     const definition = entry && deps?.getItemDefs?.()?.[entry.key];
@@ -208,7 +209,7 @@
       icon:definition?.icon || '🍲',score:entry.score,
       ingredients:entry.ingredients || definition?.festivalIngredientQuality || [],
       estimatedQuality:!!entry.estimatedQuality,estimatedEffects:!!entry.estimatedEffects,
-      foodEffects:{...(entry.foodEffects || definition?.foodEffects || {})} }
+      foodEffects:window.CookingSystem?.normalizeFoodEffects?.(entry.foodEffects || definition?.foodEffects) || {...(entry.foodEffects || definition?.foodEffects || {})} }
       : { id:'reserved',label:'Your contest entry (empty)',owner:'You',dish:'Awaiting entry',
         icon:'🍲',score:0,foodEffects:{},ingredients:[] });
     feastCache = { key,contest,menu:dishes };
