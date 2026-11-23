@@ -504,15 +504,25 @@ async function main() {
   assert.equal(engine.rewrite('That {species} is bigger than most.', 'furunji_funji', () => 0),
     'That {species} is larger than most.', 'Comparative retains its meaning');
   assert.equal(config.lexicon['how long'], undefined, 'Unsafe general duration replacement must not remain as a fallback');
+  assert.equal(engine.rewrite('Hi, Kitty!', 'gantami_ginju', () => 0, config, profiles, ['Kitty']), 'Hiya, Kitty!');
+  assert.equal(engine.rewrite('Good morning, Hi!', 'jubmir', () => 0, config, profiles, ['Hi']), 'Lovely morning, Hi!');
+  assert.equal(engine.rewrite('Hey, Ki[t]y!', 'gantami_ginju', () => 0, config, profiles, ['Ki[t]y']), 'Hiya, Ki[t]y!');
+  assert.equal(engine.rewrite('Hey, Kitty! {{AMBIENT_VOCAB_NAME_0}}', 'gantami_ginju', () => 0, config, profiles, ['Kitty']),
+    'Hiya, Kitty! {{AMBIENT_VOCAB_NAME_0}}');
+  assert.equal(engine.rewrite('Hey, Kitty!', 'gantami_ginju', () => 0, config, profiles, []), 'Hiya, Kit-cat!');
   const debug = engine.getDebug();
   assert.ok(debug.last && Number.isInteger(debug.last.swaps));
   assert.ok(typeof debug.replacements === 'number');
 
   const floating = file('docs/js/ambient-dialogue.js');
   const regularTalk = file('docs/js/dialogue-content.js');
-  assert.ok(floating.includes('window.AmbientVocabulary?.rewrite?.(originalMessage, options.speakerId)'));
+  assert.ok(floating.includes('window.AmbientVocabulary?.rewrite?.(originalMessage, options.speakerId,'));
   assert.ok(floating.indexOf('window.AmbientVocabulary?.rewrite?.') < floating.indexOf('const textPart = textPlane(message)'));
   assert.ok(floating.includes('showSocialResponse'));
+  assert.ok(floating.includes('vocabularyProtectedNames: targetName ? [targetName] : []'));
+  assert.ok(floating.includes('options.vocabularyProtectedNames'));
+  assert.ok(file('docs/js/stable-animal-progression.js').includes('vocabularyProtectedNames: [animal.entry?.name'));
+  assert.ok(file('docs/js/npc-silliness-reaction-runtime.js').includes('vocabularyProtectedNames: ['));
   assert.ok(!regularTalk.includes('AmbientVocabulary')); // The ordinary Talk renderer never invokes word substitution.
 
   const standalone = file('docs/tools/vocabulary-editor/index.html');
