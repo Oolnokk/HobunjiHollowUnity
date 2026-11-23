@@ -4,9 +4,7 @@
   "parentSpecies": "kenkari",
   "subspeciesDelta": {
     "comment": "Rakako'ans are kenkari with one exclusive difference: the upperFace slot is mandatory and accepts only rakakoan eyepatch cosmetics. All other head/body assets are inherited from kenkari.",
-    "mandatorySlots": [
-      "upperFace"
-    ],
+    "mandatorySlots": ["upperFace"],
     "exclusiveSlotCosmetics": {
       "upperFace": [
         "appearance::Rakakoan_M::rakakoan_woven_eyepatch",
@@ -258,7 +256,7 @@
         "leather_headband": {
           "hideSlots": []
         },
-        "kenk_bowlkasa": {
+        "bowlkasa": {
           "hideSlots": [
             "hairFront",
             "hairBack",
@@ -391,14 +389,14 @@
         "stops": [
           {
             "h": -118,
-            "sMin": -1,
+            "sMin": -1.0,
             "sMax": 0.25,
             "vMin": -0.92,
             "vMax": 0.35
           },
           {
             "h": -70,
-            "sMin": -1,
+            "sMin": -1.0,
             "sMax": 0.55,
             "vMin": -0.88,
             "vMax": 0.42
@@ -418,14 +416,14 @@
         "stops": [
           {
             "h": -118,
-            "sMin": -1,
+            "sMin": -1.0,
             "sMax": 0.2,
             "vMin": -0.96,
             "vMax": 0.08
           },
           {
             "h": -70,
-            "sMin": -1,
+            "sMin": -1.0,
             "sMax": 0.5,
             "vMin": -0.93,
             "vMax": 0.15
@@ -445,14 +443,14 @@
         "stops": [
           {
             "h": -118,
-            "sMin": -1,
+            "sMin": -1.0,
             "sMax": 0.3,
             "vMin": -0.75,
             "vMax": 0.48
           },
           {
             "h": -70,
-            "sMin": -1,
+            "sMin": -1.0,
             "sMax": 0.6,
             "vMin": -0.7,
             "vMax": 0.55
@@ -527,7 +525,7 @@
         "leather_headband": {
           "hideSlots": []
         },
-        "kenk_bowlkasa": {
+        "bowlkasa": {
           "hideSlots": [
             "hairFront",
             "hairBack",
