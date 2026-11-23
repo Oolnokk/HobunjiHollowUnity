@@ -273,7 +273,8 @@ for(const chunk of cairnGroup.children){
     const height=(box.min.y+box.max.y)/2;
     for(const x of [box.min.x,box.max.x])for(const z of [box.min.z,box.max.z]){
       assert(collisionService.blocksBox(zoneId,x,z,0,height),
-        'every rotated stone course corner must remain physically solid (no visible edge clipping)');
+        'every rotated stone course corner must remain physically solid (no visible edge clipping): '+
+        JSON.stringify({chunk:key,index:i,x,z,y:height,boxMin:[box.min.x,box.min.y,box.min.z],boxMax:[box.max.x,box.max.y,box.max.z]}));
     }
   }
 }
