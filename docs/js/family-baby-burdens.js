@@ -293,6 +293,7 @@
     if (phase !== 'basket') { discard(child?.id); return null; } // Toddler transitions clean up the baby-only proxy.
     const entry = ensure(child, walker, persist);
     if (!entry) return null;
+    window.FamilyBabyLimbs?.attach?.(entry.burden.group, walker); // Retry missing GLBs and refresh clones when new models become available.
     const api = window.Shattercasks;
     const held = api?.heldBurdenInfo?.()?.id === entry.burden.id;
     const back = api?.backCarriedInfo?.()?.id === entry.burden.id;
