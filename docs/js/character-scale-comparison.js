@@ -537,12 +537,14 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid!important;v
 
   function setAgeMode(nextMode) {
     if (!AGE_MODES.includes(nextMode) || (!active && !building)) return;
+    stopLongoranWalk(); // Age-stage switches should not inherit the selected adult Longoran's opted-in walk animation.
     ageMode = nextMode;
     manualViewInteraction = true;
     focusedEntryKey = null;
     syncAgeControls();
     for (const entry of entries) applyPreviewProportions(entry);
     window.ProceduralHandFrameDriver?.syncNow?.();
+    for (const entry of entries) syncAgeLimbs(entry); // Reassert modifiers after the hand driver updates its GLB parents.
     retryLateAgeLimbs();
     layout();
     frame(); // Switching mode explicitly asks to see the *whole* age-specific lineup, including the chair reference.
@@ -556,6 +558,7 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid!important;v
     syncAgeControls();
     for (const entry of entries) applyPreviewProportions(entry);
     window.ProceduralHandFrameDriver?.syncNow?.();
+    for (const entry of entries) syncAgeLimbs(entry); // Immediate feedback after any hand-parent recalculation.
     retryLateAgeLimbs();
     layout(); // Keep every scaled preview in its own slot; never reset camera zoom on a slider movement.
     persistAgeModifiers();
@@ -729,7 +732,6 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid!important;v
     syncAgeControls();
     const count = host()?.resetToRepositoryDefaults?.() || 0;
     for (const entry of entries) {
-      const scale = window.HobunjiCharacterRigScale?.scaleFor?.(entry.species, entry.gender, entry.profile) || { x: 1, y: 1, head: 1, offsetY: 0 };
       applyPreviewProportions(entry); // Reapply repository species scales with repository age modifiers across the whole lineup.
       if (entry.species === 'longoran') { refreshLongoranSpine(entry); rebuildLongoranFeet(entry); }
     }
@@ -856,6 +858,9 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid!important;v
     rigProfile.anatomy.headOffsetY ??= initialScale.offsetY;
     applyAnatomyConfig(rigProfile);
 
+    const previewNpc = isChild(rep.npc)
+      ? { ...rep.npc, role: 'adult', tags: (rep.npc.tags || []).filter(tag => String(tag).toLowerCase() !== 'child') }
+      : rep.npc; // Child-only NPC donors must not pre-shrink the rig before the selected global age stage is applied.
     const avatar = await buildPortrait(rep.npc);
     if (buildId !== generation || !previewRoot) return null; // Exiting mid-network-load must never attach a stale mesh to a disposed comparison scene.
     const group = new THREE.Group(); // Preview-only parent used by portrait, hands, feet, and whole-character scale together.
@@ -869,7 +874,7 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid!important;v
       neckRig: true, // Without this, buildSinglePlaneAvatarModel never builds a neck bone, and the Head slider (which only ever drives that bone — see applyHeadCompensation) has nothing to act on.
       profile: avatar.profile,
       appearance: avatar.exportNpc.appearance,
-      npcRecord: rep.npc,
+      npcRecord: previewNpc, // Preview starts from unscaled adult anatomy even if the only available representative was an authored child.
       modelWidth: baseWidth,
       modelHeight: baseWidth,
       name: `${group.name}_portrait`,
@@ -898,7 +903,6 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid!important;v
     feet?.update?.(0, 0, false, null);
 
     previewRoot.add(group);
-    const ageFraction = rep.npc?.id ? (host()?.npcAgeFor?.(rep.npc.id) || 0) : 0;
     const entry = { ...rep, group, model, feet, profile: rigProfile, avatarProfile: avatar.profile };
     applyPreviewProportions(entry); // Every freshly rendered preview inherits the active global age mode before it enters the lineup.
     window.ProceduralHandFrameDriver?.syncNow?.();
