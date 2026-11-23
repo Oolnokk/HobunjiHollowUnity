@@ -66,5 +66,5 @@ assert.equal(roundtrip.cookedDefinitions.food_legacy_clarity.foodEffects.percept
 assert.equal(w.FestivalPotluckContest.mealEffects([{ key: 'garlink', stars: 3 }], defs).perception > 0, true, 'Festival meals use the same Perception ingredient effect');
 cooking.registerExternalFoodProvider('festival-legacy', key => key === 'perception' ? 2 : 0);
 assert.equal(cooking.getFoodEffectStacks('perception'), 10, 'Independent festival Perception stacks are included once');
-assert.match(source('docs/js/alchemy-system.js'), /potionOfClarity: recipe\\('potionOfClarity'.*cleanseFamily/, 'Potion of Clarity remains a defensive-affliction remedy');
+assert.match(source('docs/js/alchemy-system.js'), /potionOfClarity: recipe\('potionOfClarity'.*cleanseFamily/, 'Potion of Clarity remains a defensive-affliction remedy');
 console.log('Clarity -> Perception food migration and buff regression passed');
