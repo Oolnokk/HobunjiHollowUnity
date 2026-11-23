@@ -271,7 +271,7 @@ body[data-animation-author-mode="${MODE}"] #${HEAD_NUMBER_ID}{min-width:0;width:
     // Width/Height/Head-Y use the original handler. That handler also reads Head,
     // so lend it the internal runtime percentage only for the duration of this
     // event, then restore the raw-PNG display in a microtask.
-    if (!['maaFullScaleRangeX','maaFullScaleNumX','maaFullScaleRangeY','maaFullScaleNumY','maaFullScaleRangeOffsetY','maaFullScaleNumOffsetY'].includes(id)) return;
+    if (!['maaFullScaleRangeX','maaFullScaleNumX','maaFullScaleRangePortraitHeight','maaFullScaleNumPortraitHeight','maaFullScaleRangeOffsetY','maaFullScaleNumOffsetY'].includes(id)) return;
     const identity = selectedIdentity();
     if (!identity) return;
     const range = document.getElementById(HEAD_RANGE_ID);

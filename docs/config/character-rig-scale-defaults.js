@@ -14,23 +14,28 @@
 (() => {
   'use strict';
 
-  const VERSION = 22; // Shared hand/foot body-X/Y averaging for all species.
+  const VERSION = 27; // Optional per-species legLength; Longoran/Tletingan/Nuhongan proportion pass. Keep head/x >= ~0.94 (2px neck-band collar step). v24: thin Longoran hands/feet, smaller Nuhongan hands. v25: Longorans a tad less thick (width -6%) with slightly smaller heads. v26: Tletingan eyes just above male Kenkari eyes; Nuhongans below female Kenkari height. v27: Kenkari -10% full body; Slagothim follow to keep those relationships.
   const NUHONGAN_PART_SCALE_AXES = Object.freeze({ x: 31 / 24, y: 31 / 24, z: 31 / 24 }); // Mean of prior inverse 0.8/0.75 adjustments: keep donor-sized extremities without stretching one axis.
+  const NUHONGAN_HAND_SCALE_AXES = Object.freeze({ x: 31 / 24 * 0.88, y: 31 / 24 * 0.88, z: 31 / 24 * 0.88 }); // Nov 22: Nuhongan hands a little smaller (88%) than the shared extremity size; feet keep NUHONGAN_PART_SCALE_AXES.
+  // Longoran extremities are thinner, never shorter (lanky look). Axes are in the
+  // character floor frame: hands hang along y (length), feet point along z (length).
+  const LONGORAN_HAND_SCALE_AXES = Object.freeze({ x: 0.72, y: 1, z: 0.8 });
+  const LONGORAN_FOOT_SCALE_AXES = Object.freeze({ x: 0.7, y: 0.85, z: 1 });
   const VALUES = Object.freeze({
-    'tletingan::male': Object.freeze({ x: 0.85, y: 0.85, head: 0.8, offsetY: 0 }),
-    'tletingan::female': Object.freeze({ x: 0.915, y: 0.89, head: 0.8823529411764706, offsetY: 0 }),
-    'nuhongan::male': Object.freeze({ x: 0.68, y: 0.6375, head: 0.8, offsetY: 0 }),
-    'nuhongan::female': Object.freeze({ x: 0.732, y: 0.6675, head: 0.8823529411764706, offsetY: 0 }),
-    'longoran::male': Object.freeze({ x: 1.05, y: 2, head: 0.9647, offsetY: -0.055 }), // Direct Full Character Scale export: male's approved body/head values.
-    'longoran::female': Object.freeze({ x: 1.130294117647059, y: 2.0941176470588236, head: 1.0640073529411764, offsetY: -0.055 }), // Old female defaults × (new male ÷ old male) per scale axis; head offset gets the same -0.055 additive change.
+    'tletingan::male': Object.freeze({ x: 0.6075, y: 0.81, legLength: 0.675, head: 0.5742, offsetY: 0 }), // Really short, stocky folk; eye line sits just above the male Kenkari's (Nov 22 visual pass, measured in world space).
+    'tletingan::female': Object.freeze({ x: 0.6939, y: 0.8874, legLength: 0.7326, head: 0.6552, offsetY: 0 }),
+    'nuhongan::male': Object.freeze({ x: 0.5886, y: 0.5283, legLength: 0.4149, head: 0.6039, offsetY: 0 }), // Ewok-like: big head, round body, stubby legs; shorter than the female Kenkari.
+    'nuhongan::female': Object.freeze({ x: 0.639, y: 0.5598, legLength: 0.4392, head: 0.6795, offsetY: 0 }),
+    'longoran::male': Object.freeze({ x: 1.08, y: 1.4, legLength: 2.3, head: 1.05, offsetY: -0.055 }), // Tall, lanky but thick-framed (bugbear): Mammakhbuur height with long pants-covered legs.
+    'longoran::female': Object.freeze({ x: 1.04, y: 2.25, legLength: 2.15, head: 1, offsetY: -0.055 }), // Same silhouette as the male at the Mammakhbuur female's height.
     'engh-sho::male': Object.freeze({ x: 0.8, y: 0.845, head: 0.7894736842105263, offsetY: 0 }),
     'engh-sho::female': Object.freeze({ x: 0.795, y: 0.81, head: 0.7894736842105263, offsetY: 0 }),
     'harlyao::male': Object.freeze({ x: 0.96, y: 1.014, head: 0.9473684210526315, offsetY: 0 }),
     'harlyao::female': Object.freeze({ x: 0.954, y: 0.972, head: 0.9473684210526315, offsetY: 0 }),
     'mao-ao::male': Object.freeze({ x: 0.81675, y: 1.089, head: 0.726, offsetY: 0 }),
     'mao-ao::female': Object.freeze({ x: 0.895, y: 0.94, head: 0.7813, offsetY: 0 }),
-    'kenkari::male': Object.freeze({ x: 1.225, y: 1.225, head: 1, offsetY: 0 }),
-    'kenkari::female': Object.freeze({ x: 1.1, y: 1.1, head: 1, offsetY: 0 }),
+    'kenkari::male': Object.freeze({ x: 1.1025, y: 1.1025, head: 0.9, offsetY: 0 }),
+    'kenkari::female': Object.freeze({ x: 0.99, y: 0.99, head: 0.9, offsetY: 0 }),
     'mashtzarr::male': Object.freeze({ x: 0.955, y: 1.255, head: 0.9856, offsetY: -0.095 }),
     'mashtzarr::female': Object.freeze({ x: 1.01, y: 0.99, head: 0.8475, offsetY: -0.02 }),
     'mammakhbuur::male': Object.freeze({ x: 0.96, y: 1.69, head: 0.9771, offsetY: -0.095 }),
@@ -66,6 +71,9 @@
     coordinateSpace: 'character-floor-parent',
     values: VALUES,
     nuhonganPartScaleAxes: NUHONGAN_PART_SCALE_AXES,
+    nuhonganHandScaleAxes: NUHONGAN_HAND_SCALE_AXES,
+    longoranHandScaleAxes: LONGORAN_HAND_SCALE_AXES,
+    longoranFootScaleAxes: LONGORAN_FOOT_SCALE_AXES,
     aliases: ALIASES,
     maoaoFootScale: MAOAO_FOOT_SCALE,
     applyMaoaoFootScaleTuning,

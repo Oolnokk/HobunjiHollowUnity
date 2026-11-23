@@ -86,7 +86,9 @@
     const normalizedGender = normalizeGender(gender);
     const configured = window.HobunjiCharacterRigScaleDefaults?.scaleFor?.(transformed, normalizedGender); // Preferred canonical default source loaded by attachment-rig bootstrap.
     if (configured && Number.isFinite(Number(configured.x)) && Number(configured.x) > 0) {
-      return { x: clampScale(configured.x), y: clampScale(configured.y), head: clampScale(configured.head), offsetY: clampOffset(configured.offsetY) };
+      const legLength = Number(configured.legLength); // Optional: lanky species author hip-to-foot reach separately from portrait height.
+      return { x: clampScale(configured.x), y: clampScale(configured.y), head: clampScale(configured.head), offsetY: clampOffset(configured.offsetY),
+        ...(Number.isFinite(legLength) && legLength > 0 ? { legLength: clampScale(legLength) } : {}) };
     }
     const legacy = Number(window.HOBUNJI_CHARACTER_RIG_SCALE_DEFAULTS?.[`${transformed}::${normalizedGender}`]?.x
       ?? window.HOBUNJI_CHARACTER_RIG_SCALE_DEFAULTS?.[`${transformed}::${normalizedGender}`]);
@@ -118,9 +120,15 @@
     const y = Number(anatomy.rigScaleY);
     const head = Number(anatomy.headScale);
     const offsetY = Number(anatomy.headOffsetY);
+    const legacyHeight = clampScale(Number.isFinite(y) && y > 0 ? y : (hasLegacy ? legacy : defaults.y)); // Old Height saves apply to portrait AND legs until an independent leg length is authored.
+    const leg = Number(anatomy.legLengthScale); // Independent hip-to-foot reach, authored per species/gender in Full Character Scale.
     return {
       x: clampScale(Number.isFinite(x) && x > 0 ? x : (hasLegacy ? legacy : defaults.x)),
-      y: clampScale(Number.isFinite(y) && y > 0 ? y : (hasLegacy ? legacy : defaults.y)),
+      y: legacyHeight, // Compatibility alias: older callers use y for portrait height.
+      portraitHeight: legacyHeight, // Explicit editor label and scale export.
+      legLength: clampScale(Number.isFinite(leg) && leg > 0 ? leg
+        : (Number.isFinite(y) && y > 0) || hasLegacy || !(Number(defaults.legLength) > 0) ? legacyHeight
+          : Number(defaults.legLength)), // Saved Height keeps driving legs; otherwise the species' authored leg default (lanky Longorans) applies.
       head: clampScale(Number.isFinite(head) && head > 0 ? head : (hasLegacy ? legacy : defaults.head)),
       offsetY: clampOffset(Number.isFinite(offsetY) ? offsetY : defaults.offsetY),
     };
@@ -137,6 +145,8 @@
       const resolved = scaleFor(profile.species || keySpecies, profile.gender || keyGender, profile);
       profile.anatomy.rigScaleX ??= resolved.x;
       profile.anatomy.rigScaleY ??= resolved.y;
+      if (Number(defaultScaleFor(profile.species || keySpecies, profile.gender || keyGender).legLength) > 0)
+        profile.anatomy.legLengthScale ??= resolved.legLength; // Seeded with rigScaleY, or the seeded height would read as a legacy save and override the species' leg default.
       profile.anatomy.headScale ??= resolved.head;
       profile.anatomy.headOffsetY ??= resolved.offsetY;
       if (Number.isFinite(Number(profile.anatomy.rigScaleX))) installed += 1;
@@ -160,13 +170,17 @@
     if (explicitScale == null) return fallback;
     if (typeof explicitScale === 'number') {
       const uniform = clampScale(explicitScale);
-      return { x: uniform, y: uniform, head: fallback.head, offsetY: fallback.offsetY };
+      return { x: uniform, y: uniform, portraitHeight: uniform, legLength: uniform, head: fallback.head, offsetY: fallback.offsetY }; // Legacy number remains uniform across portrait and legs.
     }
-    const x = Number(explicitScale.x), y = Number(explicitScale.y), head = Number(explicitScale.head);
+    const x = Number(explicitScale.x), y = Number(explicitScale.portraitHeight ?? explicitScale.y), head = Number(explicitScale.head);
+    const legLength = Number(explicitScale.legLength); // New independent leg factor; an old explicit y continues to scale both regions.
     const offsetY = Number(explicitScale.offsetY);
+    const normalizedY = Number.isFinite(y) && y > 0 ? clampScale(y) : fallback.y;
+    const normalizedLeg = Number.isFinite(legLength) && legLength > 0 ? clampScale(legLength)
+      : Number.isFinite(y) && y > 0 ? normalizedY : (fallback.legLength || normalizedY);
     return {
       x: Number.isFinite(x) && x > 0 ? clampScale(x) : fallback.x,
-      y: Number.isFinite(y) && y > 0 ? clampScale(y) : fallback.y,
+      y: normalizedY, portraitHeight: normalizedY, legLength: normalizedLeg,
       head: Number.isFinite(head) && head > 0 ? clampScale(head) : fallback.head,
       offsetY: Number.isFinite(offsetY) ? clampOffset(offsetY) : fallback.offsetY,
     };
@@ -244,34 +258,71 @@
     return Number.isFinite(stored) && stored > 0 ? stored : 1;
   }
 
+  function scaledNeckAdjustment(rig, relativeHeadScaleY) {
+    const headCenterY = Number(rig?.headCentroidLocal?.y); // Actual alpha-weighted base-head center in the same local plane space as the unscaled neck.
+    const neckY = Number(rig?.neckLocal?.y); // Rest contact point at the last painted head pixel, before head size is authored.
+    if (!rig?.headScaleJoint || !rig?.headOffsetJoint || !rig?.headCentroidLocal || !Number.isFinite(headCenterY) || !Number.isFinite(neckY)) return 0;
+    const scaleY = Number(relativeHeadScaleY); // Scaling the head about its centroid moves the chin and therefore the neck pivot.
+    if (!Number.isFinite(scaleY) || scaleY <= 0) return 0;
+    return (1 - scaleY) * (headCenterY - neckY); // Center-preserving offset of the scaled head's lowest pixel; zero at the default head size.
+  }
+
   function applyHeadCompensation(root, species, gender, overrides = {}, ageFraction = 0) {
     const found = findNeckRig(root);
     if (!found) return false;
     const { rig, modelHeight } = found;
-    const target = rig.headScaleJoint || rig.neckJoint;
+    const target = rig.headScaleJoint || rig.neckJoint; // Scaling remains on the head-only rig bone.
+    const offsetTarget = rig.headOffsetJoint || target; // Separate unrotated offset bone prevents authored head-height shifts folding the short neck bend.
     const resolved = scaleFor(species, gender);
     const bx = clampScale(Number.isFinite(Number(overrides.x)) && Number(overrides.x) > 0 ? overrides.x : resolved.x);
     const by = clampScale(Number.isFinite(Number(overrides.y)) && Number(overrides.y) > 0 ? overrides.y : resolved.y);
     const headNumber = Number(overrides.head);
     const head = clampScale((Number.isFinite(headNumber) && headNumber > 0 ? headNumber : resolved.head) * childHeadFactorFor(overrides, found.node));
-    target.scale.set(bx > 0 ? head / bx : head, by > 0 ? head / by : head, 1);
+    const relativeHeadY = by > 0 ? head / by : head; // Local head-size factor after removing body height scaling.
+    target.scale.set(bx > 0 ? head / bx : head, relativeHeadY, 1);
     target.updateMatrix?.();
-
+    const scaledNeckDeltaY = scaledNeckAdjustment(rig, relativeHeadY); // Recalculate the head-bottom contact after size changes, before the spine/hunch solver runs.
     const offsetNumber = Number(overrides.offsetY);
     const baseOffset = Number.isFinite(offsetNumber) ? offsetNumber : resolved.offsetY;
     // The Longoran's permanent spine drop must survive later hand/rig rescaling even when the caller supplies NPC age 0.
     const boundLongoranHunch = normalizeKey(species) === 'longoran'
       ? Number(found.node?.userData?.hobunjiSpine?.hunch) : NaN; // Explicit character spine overrides still win over the subspecies default.
     const composedHunch = Number.isFinite(boundLongoranHunch) ? boundLongoranHunch : ageFraction;
-    const spineShare = rig.splineNodes ? window.HobunjiCharacterSpine?.profileFor?.(composedHunch)?.shoulderDrop || 0 : 0; // The spline contributes its own shoulder share.
-    applyHeadYOffset(target, clampOffset(baseOffset) + ageHunchFraction(composedHunch) + spineShare, modelHeight);
+    const spineApi = window.HobunjiCharacterSpine; // Shared seven-bone spline owns the upper torso, not a large head-offset weighting zone.
+    const distributeToSpine = !!rig.headOffsetJoint && !!rig.headScaleJoint
+      && Array.isArray(rig.splineNodes) && rig.splineNodes.length === spineApi?.splineNodes
+      && typeof spineApi?.applyNeckReach === 'function'; // Only complete seven-node, separately placed game rigs can spread head offsets through the spine; mock/legacy partial rigs keep their prior behavior.
+    if (distributeToSpine) {
+      // The 10-bone head-scale joint hangs off the neck joint at the chin pivot,
+      // so head size never moves the chin: only the authored head height
+      // stretches/compresses the spine. Adding the centroid-based chin delta
+      // here lifted the whole head (e.g. +8% height on 200% Longorans) and left
+      // a stretched torso with nothing to fill it (verified in Full Character Scale).
+      const reachY = clampOffset(baseOffset) * modelHeight;
+      applyHeadYOffset(offsetTarget, 0, modelHeight); // Restore the short 2.5px head/neck connection; never drag the pseudo-neck through the torso.
+      spineApi.applyNeckReach(rig, reachY, modelHeight, composedHunch); // Rebuild rest→scaled spine→hunch in that order, idempotent on touch-slider edits.
+      if (found.node?.userData && rig.appliedSpineProfile) {
+        if (Math.abs(Number(rig.neckReachAppliedY) || 0) > 1e-9 || composedHunch > 0) found.node.userData.hobunjiSpine = rig.appliedSpineProfile; // Shoulder/weapon orbit reads the actual stretched spine, even without hunch.
+        else delete found.node.userData.hobunjiSpine; // Neutral slider reset also returns held-item shoulder projections to rest.
+      }
+      rig.scaledNeckLocal = { ...(rig.neckLocal || {}), y: (Number(rig.neckLocal?.y) || 0) + (Number(rig.neckReachAppliedY) || 0),
+        deltaY: rig.neckReachAppliedY, relativeHeadScaleY: relativeHeadY }; // Debug reflects the physically achieved position when extreme offsets are clamped.
+    } else {
+      const spineShare = rig.splineNodes ? spineApi?.profileFor?.(composedHunch)?.shoulderDrop || 0 : 0; // Retained for older spline implementations.
+      applyHeadYOffset(offsetTarget, clampOffset(baseOffset) + ageHunchFraction(composedHunch) + spineShare
+        + scaledNeckDeltaY / Math.max(1e-6, modelHeight), modelHeight); // Non-spline three-bone previews still use the original broad offset blend.
+      if (rig.headOffsetJoint && rig.headScaleJoint && rig.headCentroidLocal) {
+        rig.scaledNeckLocal = { ...(rig.neckLocal || {}), y: (Number(rig.neckLocal?.y) || 0) + scaledNeckDeltaY,
+          deltaY: scaledNeckDeltaY, relativeHeadScaleY: relativeHeadY }; // Legacy diagnostics preserve their existing neck position.
+      }
+    }
     return true;
   }
 
   function applyToParent(parent, species, gender, explicitScale = null, ageFraction = 0) {
     if (!parent?.isObject3D || !parent.scale) return false;
     const resolved = normalizeExplicitScale(explicitScale, scaleFor(species, gender));
-    const next = { x: clampScale(resolved.x), y: clampScale(resolved.y) };
+    const next = { x: clampScale(resolved.x), y: clampScale(resolved.y) }; // Y denotes portrait height, with leg length separately tracked.
     parent.userData ||= {};
     const previous = parent.userData.hobunjiCharacterRigScaleState || null;
     const current = { x: Number(parent.scale.x), y: Number(parent.scale.y), z: Number(parent.scale.z) };
@@ -282,9 +333,15 @@
       base = { x: current.x / divisorX, y: current.y / divisorY, z: current.z / divisorX };
     }
     const output = { x: base.x * next.x, y: base.y * next.y, z: base.z * next.x }; // Depth (z) tracks width — these are camera-facing planes with no independently authored depth.
+    const legLength = clampScale(resolved.legLength || next.y); // Independently authored hip-to-foot reach in the same canonical scale units as portrait Y.
+    const previousLegRatio = previous
+      ? (Number(previous.legLength) || clampScale(previous.factor?.y ?? previous.factor)) / clampScale(previous.factor?.y ?? previous.factor)
+      : null; // Used to avoid notifying every NPC's procedural leg handle when only Head, Width or age changed.
+    const nextLegRatio = legLength / next.y; // A 1:1 ratio leaves the old whole-body Y behavior unchanged.
     parent.scale.set(output.x, output.y, output.z);
     parent.userData.hobunjiCharacterRigScaleState = {
       factor: next,
+      legLength, // Procedural legs use this independently authored reach.
       base,
       output,
       species: transformSpecies(species),
@@ -295,6 +352,8 @@
     parent.updateMatrix?.();
     parent.updateMatrixWorld?.(true);
     applyHeadCompensation(parent, species, gender, resolved, ageFraction);
+    if (previousLegRatio == null || Math.abs(previousLegRatio - nextLegRatio) > EPSILON)
+      window.ProceduralLegAnimation?.syncScaleForParent?.(parent, nextLegRatio); // Leg IK changes only when its actual leg/portrait ratio changes, never on unrelated head/age redraws.
     return true;
   }
 
@@ -305,14 +364,23 @@
     delete parent.userData.hobunjiCharacterRigScaleState;
     parent.updateMatrix?.();
     parent.updateMatrixWorld?.(true);
+    window.ProceduralLegAnimation?.syncScaleForParent?.(parent, 1); // Clearing the parent scale also clears its old leg/portrait ratio and restored hip-to-torso offset.
     const found = findNeckRig(parent);
-    const target = found?.rig?.headScaleJoint || found?.rig?.neckJoint;
+    const target = found?.rig?.headScaleJoint || found?.rig?.neckJoint; // Scaling stays on the head-scale bone.
+    const offsetTarget = found?.rig?.headOffsetJoint || target; // Restore the separately offset parent as well when resetting a portrait.
     if (target) {
       target.scale.set(1, 1, 1);
-      if (Number.isFinite(target.userData?.hobunjiHeadOffsetBaseY)) {
-        target.position.y = target.userData.hobunjiHeadOffsetBaseY;
-      }
       target.updateMatrix?.();
+    }
+    if (found?.rig?.scaledNeckLocal) delete found.rig.scaledNeckLocal; // Resetting an authored scale also clears derived scaled-head contact diagnostics.
+    if (found?.rig?.neckReachAppliedY != null && typeof window.HobunjiCharacterSpine?.applyNeckReach === 'function') {
+      window.HobunjiCharacterSpine.applyNeckReach(found.rig, 0, Number(found.modelHeight) || 1, 0); // Clear all scale-induced spine stretch and hunch when resetting a scale preview.
+    }
+    if (offsetTarget) {
+      if (Number.isFinite(offsetTarget.userData?.hobunjiHeadOffsetBaseY)) {
+        offsetTarget.position.y = offsetTarget.userData.hobunjiHeadOffsetBaseY;
+      }
+      offsetTarget.updateMatrix?.();
     }
     return true;
   }
@@ -423,8 +491,10 @@
     defaultScaleFor,
     profileFor,
     scaleFor,
+    legLengthRatioFor: (species, gender, profile = null) => { const resolved = scaleFor(species, gender, profile); return resolved.legLength / resolved.y; }, // Real game and lineup feet read the same post-migration ratio.
     applyToParent,
     applyHeadCompensation,
+    scaledNeckAdjustment, // Shared pure geometric calculation for the author and native regression tests.
     clearFromParent,
     rigScaleRootFor,
     rigScaleInheritedFor,
