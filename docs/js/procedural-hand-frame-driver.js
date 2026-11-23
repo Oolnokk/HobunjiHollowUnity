@@ -79,6 +79,7 @@
       gender: identity.gender,
       bodyColors: options.profile?.bodyColors || options.appearance?.bodyColors || options.bodyColors,
       name: options.name,
+      onHandVisualReplaced: options.onHandVisualReplaced, // Avatar construction may provide a low-frequency visual replacement callback.
       rig: null,
       syncSentinel: null,
       lastToolKey: null,
