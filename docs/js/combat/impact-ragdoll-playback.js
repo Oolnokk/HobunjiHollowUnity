@@ -16,7 +16,12 @@
 
   let playerLegsRef = null;
   let baseBodyY = 0;
-  const creatureStates = new Set(); // Tracks active creature reactions for mobile diagnostics and cleanup when playback ends.
+  const creatureStates = new Set(); // Tracks active creature reactions, including a small number of prone actors that need independent presentation updates.
+  const pronePoseDiagnostics = { rescuedStalls: 0, fallbackPoses: 0, lastRescue: null }; // Read by the existing mobile impact debug view; never allocated on a render tick.
+  const PRONE_ANIMATION_STALL_MS = 90; // A skipped hostile simulation update may not strand the portrait part-way through a knockdown.
+  const creatureFlatAxis = new THREE.Vector3(0, 0, 1); // Fallback horizontal rotation of the creature's side-facing two-plane portrait.
+  const visualNowMs = () => typeof performance !== 'undefined' && typeof performance.now === 'function'
+    ? performance.now() : Date.now(); // Monotonic animation sampling clock, independent of hostile AI cadence.
 
   const recoveryAxis = new THREE.Vector3(1, 0, 0); // Used by recovery rolls; dodge direction blends X/Z while prone recovery keeps +X.
   const tumbleAxis = new THREE.Vector3(1, 0, 0); // Reused by player prone-hit flips without per-frame vector allocation.
@@ -228,61 +233,12 @@
     return session;
   }
 
-
-  // Humanoid hostiles render torso, hands and legs under separate pivots. The
-  // recorded knockdown must temporarily move all three under ONE falling
-  // parent; otherwise the sprite falls while the feet keep standing.
-  function attachCreatureLimbs(state) {
-    const avatar = state?.entity?.avatarRef;
-    const pivot = state?.pivot;
-    if (!pivot || !belongsToCreatureAvatar(pivot, avatar?.group)) return;
-    state.limbAttachments = []; // Restored on recovery, cancellation or an aborted death; never owned by ordinary impact flinches.
-    for (const limb of [avatar?.handsPivot, avatar?.legsPivot]) {
-      if (!limb?.isObject3D || !limb.parent || limb.parent === pivot
-          || !belongsToCreatureAvatar(limb, avatar.group)) continue;
-      const parent = limb.parent; // Original center/floor anchoring is reused when the actor stands up.
-      pivot.add(limb); // Both parent frames are neutral outside render-time sway; preserve the authored local limb offsets.
-      state.limbAttachments.push({ limb, parent });
-    }
-  }
-
-  function restoreCreatureLimbs(state) {
-    const root = state?.entity?.avatarRef?.group;
-    for (const entry of state?.limbAttachments || []) {
-      if (entry.limb.parent === state.pivot && entry.parent?.isObject3D
-          && belongsToCreatureAvatar(entry.parent, root)) {
-        entry.parent.add(entry.limb); // Restore the pre-knockdown floor/hand rig, without leaving a nested pivot after recovery.
-      }
-    }
-    if (state) state.limbAttachments = null;
-  }
-
-  function ownsCreatureLegPose(entity) {
-    const state = entity?._impactRagdollPlayback;
-    return !!(entity.prone && state && (state.bank === 'breakThrow' || state.bank === 'tumble')
-      && (!state.poseSession || state.poseSession.owns())
-      && state.limbAttachments?.some(entry => entry.limb === entity.avatarRef?.legsPivot));
-  }
-
-  function applyCreatureLegFrame(state, frameA, frameB, blend) {
-    if (!state?.limbAttachments?.some(entry => entry.limb === state.entity?.avatarRef?.legsPivot)) return;
-    const legs = state.entity?.avatarRef?.legs;
-    if (typeof legs?.applyRecordedLegPose !== 'function') return;
-    for (const side of ['left', 'right']) {
-      if (frameA?.ragdoll?.ik?.[side] && frameB?.ragdoll?.ik?.[side])
-        legs.applyRecordedLegPose(side, sampleLeg(frameA.ragdoll.ik[side], frameB.ragdoll.ik[side], blend));
-    }
-    legs.pants?.update?.(); // Prevent skipped gait updates from leaving pants in their previous standing pose.
-  }
-
   function releaseCreaturePose(state) {
-    const mayRestoreHierarchy = !state?.poseSession || state.poseSession.owns(); // Do not steal limbs from a newer authored owner of this pivot.
     if (state?.poseSession) state.poseSession.release();
     else if (state?.pivot && state.pivot.parent) {
       state.pivot.quaternion?.identity?.();
       if (state.pivot.position) state.pivot.position.y = 0;
     } // Standalone animation tools without the shared compositor keep the old reset.
-    if (mayRestoreHierarchy) restoreCreatureLimbs(state);
   }
 
   function applyCreatureFrame(state, frameA, frameB, t) {
@@ -295,7 +251,6 @@
     state.pivot.quaternion.copy(CREATURE_BASIS_QUATERNION).multiply(body.quaternion).multiply(CREATURE_BASIS_INVERSE);
     state.pivot.position.y = (body.y - state.baseBodyY) * state.heightScale;
     state.poseSession?.stamp(); // Every sample is an absolute authored result; no frame accumulates a prior tilt.
-    applyCreatureLegFrame(state, frameA, frameB, t); // The same recorded knees/feet now follow a living knockdown as well as death.
     return true;
   }
 
@@ -310,13 +265,17 @@
     if (!clip?.frames?.length || !pivot) return 0;
     const poseSession = createCreaturePoseSession(pivot, 'impact-creature-death');
     if (poseSession === false) return 0;
+    // Bandit hands and legs are siblings of the portrait planes; take them
+    // along for a death without changing the normal live knockdown rig.
+    for (const limb of [entity.avatarRef?.handsPivot, entity.avatarRef?.legsPivot]) {
+      if (limb?.isObject3D && limb.parent === pivot.parent) pivot.add(limb);
+    }
     const visibleHeight = Math.max(0.05, Number(entity?.halfHeight) * 2 || CREATURE_REFERENCE_HEIGHT);
     entity._deathRecordedThrow = {
-      entity, pivot, clip, poseSession,
+      pivot, clip, poseSession,
       baseBodyY: Number(clip.frames[0]?.ragdoll?.body?.localPosition?.y) || 0,
       heightScale: visibleHeight / CREATURE_REFERENCE_HEIGHT,
     }; // Sampled by CreatureDeath while dying and retained as the corpse's pose.
-    attachCreatureLimbs(entity._deathRecordedThrow); // Legs and hands may be siblings OUTSIDE the portrait sway pivot.
     sampleCreatureDeath(entity, 0);
     return Math.max(0.05, clip.durationSeconds);
   }
@@ -330,7 +289,15 @@
       stopCreatureDeath(entity); // A newer creature visual owns this pose: do not keep recording legs over it.
       return false;
     }
-    return true; // applyCreatureFrame owns the recorded limb pose for both living and dead humanoids.
+    const legs = entity.avatarRef?.legs;
+    if (typeof legs?.applyRecordedLegPose === 'function') {
+      for (const side of ['left', 'right']) {
+        if (frameA?.ragdoll?.ik?.[side] && frameB?.ragdoll?.ik?.[side])
+          legs.applyRecordedLegPose(side, sampleLeg(frameA.ragdoll.ik[side], frameB.ragdoll.ik[side], blend));
+      }
+    }
+    legs?.pants?.update?.(); // Recorded deaths bypass legs.update(); refresh the garment after both authored leg poses are applied.
+    return true;
   }
 
   function stopCreatureDeath(entity) {
@@ -349,11 +316,38 @@
     entity._impactRagdollPlayback = null;
   }
 
+  // The blend bank loads asynchronously. If a creature is knocked down before
+  // the recording is available, keep the card flat instead of showing an
+  // upright (or low-Footing tilted) portrait for the entire prone duration.
+  function holdUnrecordedCreatureProne(entity) {
+    stopCreature(entity);
+    const pivot = ensureCreatureImpactPivot(entity);
+    if (!pivot) return false;
+    const poseSession = createCreaturePoseSession(pivot, 'impact-creature-prone-fallback');
+    if (poseSession === false) return false;
+    const halfHeight = Math.max(0.05, Number(entity.halfHeight) || CREATURE_REFERENCE_HEIGHT / 2);
+    const state = {
+      entity, pivot, poseSession, bank: 'breakThrow', clip: null,
+      holding: true, elapsedS: 0, lastPresentationMs: visualNowMs(),
+    }; // Held until Footing recovery (or a real new knockdown) releases this rig.
+    entity._impactRagdollPlayback = state;
+    creatureStates.add(state);
+    pivot.quaternion.setFromAxisAngle(creatureFlatAxis, Math.PI / 2);
+    pivot.position.y = -halfHeight * 0.7; // Match the grounded side-on portrait instead of rotating it around a floating centre.
+    poseSession?.stamp();
+    pronePoseDiagnostics.fallbackPoses++;
+    return true;
+  }
+
   function triggerCreature(entity, bank, direction, opts = {}) {
     if (entity?._deathRecordedThrow) return 0; // Never change corpse geometry just because a live attack tried to start.
+    if (entity?.prone && bank !== 'breakThrow') return 0; // Ordinary staggers must never replace the prone body with an upright impact clip.
     const mappedDirection = CREATURE_DIRECTION_QUARTER_TURN[direction] || 'front';
     const clip = window.ImpactBlendLibrary?.getClip(bank, mappedDirection);
-    if (!clip?.frames?.length) return 0;
+    if (!clip?.frames?.length) {
+      if (bank === 'breakThrow' && entity?.prone) holdUnrecordedCreatureProne(entity);
+      return 0; // A missing async recording still produces an unmistakably horizontal prone portrait.
+    }
     stopCreature(entity); // Release the previous rig claim before deciding whether a replacement pivot is safe.
     const pivot = ensureCreatureImpactPivot(entity);
     if (!pivot) return 0;
@@ -373,12 +367,12 @@
       elapsedS: 0,
       playbackRate: 1 / durationMultiplier,
       holding: false,
+      lastPresentationMs: visualNowMs(), // Used by the render-time rescue when regular hostile animation ticks are skipped.
       baseBodyY: Number(clip.frames[0]?.ragdoll?.body?.localPosition?.y) || 0,
       heightScale: visibleHeight / CREATURE_REFERENCE_HEIGHT,
     }; // Stored on the entity so updateCreatureMesh can advance only the creature it is already rendering.
     entity._impactRagdollPlayback = state;
     creatureStates.add(state);
-    if (bank === 'breakThrow') attachCreatureLimbs(state); // An ordinary impact flinch must not interrupt walking.
     const [frameA, frameB, blend] = findBracket(clip.frames, 0);
     applyCreatureFrame(state, frameA, frameB, blend);
     return clip.durationSeconds * durationMultiplier;
@@ -430,27 +424,61 @@
     const state = {
       entity, pivot, poseSession, bank: 'tumble', direction: mappedDirection,
       clip, elapsedS: 0, tumbleDurationS: duration, holding: false,
+      lastPresentationMs: visualNowMs(), // Repeat prone tumbling must also reach the held prone pose if its AI tick stops.
       baseBodyY: Number(clip.frames[0]?.ragdoll?.body?.localPosition?.y) || 0,
       heightScale: visibleHeight / CREATURE_REFERENCE_HEIGHT,
       tumbleAxis: tumbleDirectionAxis(direction, new THREE.Vector3()),
     }; // New reaction owns this one creature's existing impact pivot; no extra rig, bone or recorded animation.
     entity._impactRagdollPlayback = state;
     creatureStates.add(state);
-    attachCreatureLimbs(state); // Repeat prone hits tumble the entire humanoid, not a detached portrait.
     const tail = clip.frames[clip.frames.length - 1];
     applyCreatureFrame(state, tail, tail, 0);
     return true;
   }
 
+  // Live hostile AI is allowed to skip a creature update when prone/offscreen;
+  // its portrait must NOT be left at the first few degrees of breakThrow. Run
+  // only active prone reactions once at the world-render boundary, and only
+  // when the ordinary creature animation has truly missed an update.
+  function rescueStalledCreaturePronePoses() {
+    if (!creatureStates.size) return;
+    const now = visualNowMs();
+    for (const state of creatureStates) {
+      if (state.bank !== 'breakThrow' && state.bank !== 'tumble') continue;
+      if (!state.entity?.prone) { stopCreature(state.entity); continue; }
+      if (state.holding) continue;
+      const elapsedMs = now - (state.lastPresentationMs ?? now);
+      if (!(elapsedMs >= PRONE_ANIMATION_STALL_MS)) continue;
+      const before = state.elapsedS;
+      updateCreature(state.entity, Math.min(elapsedMs / 1000, 1.25)); // Recover missed animation time, including long throttled frames.
+      if (state.entity._impactRagdollPlayback === state) {
+        pronePoseDiagnostics.rescuedStalls++;
+        pronePoseDiagnostics.lastRescue = {
+          bank: state.bank, missedMs: Math.round(elapsedMs), fromSeconds: before,
+          toSeconds: state.elapsedS,
+        }; // Low-frequency snapshot available without console through ImpactRagdollPlayback.getDebug().
+      }
+    }
+  }
+
+  if (window.RenderHooks?.register) window.RenderHooks.register({
+    id: 'creature-prone-pose-rescue',
+    owner: 'combat/impact-ragdoll-playback.js',
+    order: (window.RenderHooks.ORDER?.ANIMAL_ELEVATION ?? 50) - 1,
+    scope: 'frame',
+    before: rescueStalledCreaturePronePoses,
+  }); // Presentation only: never advances AI, physics, Footing, or a non-prone hit reaction.
+
   function updateCreature(entity, dt) {
     const state = entity?._impactRagdollPlayback;
     if (!state) return false;
+    state.lastPresentationMs = visualNowMs(); // A real creature-animation update takes precedence over the stalled-pose render rescue.
     if (state.poseSession && !state.poseSession.owns()) {
       stopCreature(entity); // Another visual actor superseded the live impact.
       return false;
     }
     if (state.holding) {
-      if (!entity.prone) stopCreature(entity);
+      if (!entity.prone) { stopCreature(entity); return true; }
       return true;
     }
     if (state.bank === 'tumble') {
@@ -659,7 +687,8 @@
       recoveryBlend: playback.recoveryBlend ? { ...playback.recoveryBlend } : null,
       recoveryAxis: { x: recoveryAxis.x, y: recoveryAxis.y, z: recoveryAxis.z },
       activeCreatureReactions: creatureStates.size,
-      activeCreatureProneLegRigs: [...creatureStates].filter(state => ownsCreatureLegPose(state.entity)).length, // On-device debug snapshot, not sampled per frame.
+      activeCreaturePronePoses: [...creatureStates].filter(state => state.entity?.prone).length, // Requested only by the existing on-device debug snapshot.
+      pronePoseRescue: { ...pronePoseDiagnostics },
     };
   }
 
@@ -677,7 +706,6 @@
     triggerCreature,
     startCreatureDeath, sampleCreatureDeath, stopCreatureDeath,
     updateCreature,
-    ownsCreatureLegPose,
     stopCreature,
     getDebug,
   };
