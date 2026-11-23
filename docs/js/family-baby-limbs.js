@@ -29,6 +29,7 @@
   const groups = new Set(); // Proxy groups that currently own limbs; the hook only visits these.
   const sourcesByGroup = new WeakMap(); // Original limb meshes used by each proxy; detect late GLB replacements.
   const balancedParts = new WeakMap(); // Applied newborn visual multipliers; no compounding after reload/update.
+  const walkerRevisions = new WeakMap(); // Newborn visual changes invalidate cached proxy clones even if mesh identity stays the same.
   const debug = { attached: 0, refreshed: 0, balanced: 0, lastMissing: null, frames: 0 };
 
   // Find the walker's visible hand/foot GLB meshes by their rig node names.
@@ -91,13 +92,28 @@
         changed++;
       }
     }
+    if (changed) walkerRevisions.set(root, (walkerRevisions.get(root) || 0) + 1); // The same source mesh now has different world scale.
     debug.balanced += changed;
     return changed;
   }
 
-  function sameSources(oldSources, newSources) {
-    return !!oldSources && SIDES.every(side =>
-      oldSources.hand[side] === newSources.hand[side] && oldSources.foot[side] === newSources.foot[side]);
+  function captureSources(walker, limbs) {
+    // Store an immutable snapshot, not live mesh references alone: changing scale or
+    // replacing a GLB's geometry in place must update the carried visual exactly once.
+    const state = { revision: walkerRevisions.get(walker.root) || 0, hand: {}, foot: {} };
+    for (const kind of ['hand', 'foot']) for (const side of SIDES) {
+      const mesh = limbs[kind][side];
+      state[kind][side] = { mesh, geometry: mesh.geometry, material: mesh.material };
+    }
+    return state;
+  }
+
+  function sameSources(previous, current) {
+    return !!previous && previous.revision === current.revision && SIDES.every(side =>
+      ['hand', 'foot'].every(kind => {
+        const before = previous[kind][side], now = current[kind][side];
+        return before.mesh === now.mesh && before.geometry === now.geometry && before.material === now.material;
+      }));
   }
 
   function cloneLimb(source, kind, side, root, pivotAt, offset) {
@@ -136,7 +152,8 @@
     const limbs = sourceLimbs(walker);
     const missing = SIDES.flatMap(side => ['hand', 'foot'].filter(kind => !limbs[kind][side]).map(kind => side + ' ' + kind));
     if (missing.length) { debug.lastMissing = missing.join(', '); return !!existing; } // Don't drop already-visible limbs during a GLB load.
-    if (existing && sameSources(sourcesByGroup.get(group), limbs)) return true;
+    const current = captureSources(walker, limbs); // The baby may already be held when an async GLB or size change occurs.
+    if (existing && sameSources(sourcesByGroup.get(group), current)) return true;
     if (existing) { detach(group); debug.refreshed++; } // Replace cloned materials, never the source geometry.
     const a = anatomy(group);
     const root = new THREE.Group();
@@ -152,7 +169,7 @@
         { x: 0, y: -a.footReach.down, z: a.footReach.z });
     }
     groups.add(group);
-    sourcesByGroup.set(group, limbs); // Async model changes can refresh the matching carried proxy.
+    sourcesByGroup.set(group, current); // Snapshot includes the resizing revision and live GLB resource identities.
     debug.attached++;
     debug.lastMissing = null;
     return true;
