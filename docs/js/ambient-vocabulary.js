@@ -50,9 +50,9 @@
     const escape = value => value.replace(/[.*+?^\x24{}()|[\]\\]/g, '\\$&'); // Exact name spelling, never regex syntax.
     const pattern = new RegExp('(^|[^\\p{L}\\p{N}_])(' + literals.map(escape).join('|') + ')(?=$|[^\\p{L}\\p{N}_])', 'giu'); // Whole names only.
     const saved = []; // The exact proper names are restored after both the semantic and phonetic passes.
-    const masked = source.replace(pattern, (whole, prefix, match) => {
+    const masked = source.replace(pattern, (whole, prefix, match) => { // Masked line feeds both rewrite stages; original and final lines remain unchanged outside those stages.
       let index = saved.length; // Chooses a tag absent from the authored line so user names cannot clash with placeholders.
-      while (source.includes('{{AMBIENT_VOCAB_NAME_' + index + '}}')) index++;
+      while (source.includes('{{AMBIENT_VOCAB_NAME_' + index + '}}') || saved.some(([previous]) => previous === '{{AMBIENT_VOCAB_NAME_' + index + '}}')) index++; // A source token and an earlier masked name both reserve that index.
       const marker = '{{AMBIENT_VOCAB_NAME_' + index + '}}'; // Existing rules already protect double-brace placeholders.
       saved.push([marker, match]);
       return prefix + marker;
