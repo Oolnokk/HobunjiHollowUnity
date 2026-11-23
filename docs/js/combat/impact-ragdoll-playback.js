@@ -386,9 +386,9 @@
   }
 
   function triggerCreature(entity, bank, direction, opts = {}) {
-    if (entity?._deathRecordedThrow) return 0;
+    if (entity?._deathRecordedThrow) return 0; // A live impact never displaces an already owned corpse pose.
     if (bank === 'breakThrow' && entity?.prone)
-      entity._pronePortraitDirection = direction; // Retained on the entity when its visible animal/NPC rig streams out and back in. // Never change corpse geometry just because a live attack tried to start.
+      entity._pronePortraitDirection = direction; // Retained when its visible animal/NPC rig streams out and back in.
     if (entity?.prone && bank !== 'breakThrow') return 0; // Ordinary staggers must never replace the prone body with an upright impact clip.
     const mappedDirection = CREATURE_DIRECTION_QUARTER_TURN[direction] || 'front';
     const clip = window.ImpactBlendLibrary?.getClip(bank, mappedDirection);
