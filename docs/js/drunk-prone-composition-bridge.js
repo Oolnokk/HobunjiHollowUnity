@@ -205,8 +205,6 @@
           handle.update = function proneExclusiveBanditLegUpdate(dt, speedWorldUnitsPerSecond, suppressed, seatedPose, motion) {
             const prone = !!banditState.entity?.prone;
             if (prone) clearBanditTransientMotion(banditState.entity);
-            if (prone && window.ImpactRagdollPlayback?.ownsCreatureLegPose?.(banditState.entity))
-              return; // Recorded knockdown owns both leg bones and pants until recovery; don't write standing IK over it.
             const effectiveSuppressed = !!suppressed || prone;
             const result = previousBanditUpdate(dt, speedWorldUnitsPerSecond, effectiveSuppressed, seatedPose, motion);
             return result;
