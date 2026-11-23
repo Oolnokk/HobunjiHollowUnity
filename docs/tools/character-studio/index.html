@@ -399,6 +399,10 @@ label{display:block;color:var(--muted);font-size:12px;margin-bottom:4px}
   <div id="logBody"></div>
 </div>
 
+<div id="faceRigModal" hidden role="dialog" aria-modal="true" aria-label="Experimental Face Rig">
+  <div id="faceRigModalHeader"><b>Face Rig Author — edits this character's appearance only</b><button id="faceRigCloseBtn" class="secondary">Close without applying</button></div>
+  <iframe id="faceRigFrame" title="Face Rig Author"></iframe>
+</div>
 <script src="../../js/local-db-overrides.js?v=20261122hsharedDatabaseAudit2"></script>
 <script src="../../config/scratchbones-config.js?v=20261122h5cf4b6d"></script>
 <script src="../../config/colors/config.js?v=20261026h7f369c3"></script>
@@ -2517,9 +2521,5 @@ async function init() {
 init().catch(e => { log('Startup failed: ' + (e.stack || e.message), 'error'); setStatus('Startup failed'); });
 })();
 </script>
-<div id="faceRigModal" hidden role="dialog" aria-modal="true" aria-label="Experimental Face Rig">
-  <div id="faceRigModalHeader"><b>Face Rig Author — edits this character's appearance only</b><button id="faceRigCloseBtn" class="secondary">Close without applying</button></div>
-  <iframe id="faceRigFrame" title="Face Rig Author"></iframe>
-</div>
 </body>
 </html>
