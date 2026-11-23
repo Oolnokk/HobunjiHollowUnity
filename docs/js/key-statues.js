@@ -87,6 +87,7 @@
   }
   function lostStatue(state,burden,reason='lost') {
     if(!state||state.disposed||state.payload!==burden)return false;
+    window.KeyStatueFigures?.dispose?.(burden.group); // A destroyed, recalled or lost sculpture cannot reappear after its asynchronous portrait bake.
     const node=seatedPlinth(state,burden);
     const plinthId=node?.userData?.puzzleInstanceId||(node===linkedPlinth(state)?state.feedPlinthId:''); // Cancel whichever physical plinth held the statue, including a swapped offering statue.
     if(plinthId)window.FurniturePuzzleRuntime?.cancelBurdenPlate?.(state.mapId,plinthId); // A destroyed statue reverses its animation, even after a prior completed press.
@@ -126,6 +127,9 @@
         burden.keyStatueMounted=true; // Mounted statues are not consumed by floor hazards beneath their support.
         state.payload=burden;
         state.root.userData.keyStatuePayload=burden;
+        const figures=window.KeyStatueFigures; // The authored carryable remains the physics/collision authority; only its visible sculpture is replaced.
+        state.soldierSpec ||= figures?.rollSoldier?.(state.id) || null; // Preserve one random Ghost Army appearance across failed defenses and replacement statues.
+        if(state.soldierSpec)void figures.decorate(group,state.soldierSpec);
         window.FurniturePuzzleRuntime?.setKeyStatueTaken?.(state.mapId,state.id,false); // Replacement rises from the sunken button; initial spawns remain at OFF.
       } catch(error) {
         console.warn('[KeyStatues] failed to restore dispenser payload',error);
@@ -154,7 +158,7 @@
       getOrCreateAnchor(existing);
       return true;
     }
-    const state={id:key,mapId:String(mapId||currentArea()),root,puzzle,feedPlinthId:String(options.feedPlinthId||''),anchor:null,payload:null,respawning:false,disposed:false}; // Each dispenser owns exactly one physical statue, even after recovery.
+    const state={id:key,mapId:String(mapId||currentArea()),root,puzzle,feedPlinthId:String(options.feedPlinthId||''),anchor:null,payload:null,soldierSpec:null,respawning:false,disposed:false}; // Each dispenser owns exactly one physical statue, even after recovery.
     dispensers.set(key,state);
     root.userData.keyStatueDispenserId=key;
     getOrCreateAnchor(state);
@@ -165,6 +169,7 @@
     const state=dispensers.get(String(id));
     if(!state||state.mapId!==String(mapId))return false;
     state.disposed=true;
+    if(state.payload)window.KeyStatueFigures?.dispose?.(state.payload.group); // Cleanup also runs if teardown bypasses the lost-statue callback.
     if(state.payload&&!state.payload.exploded)window.Shattercasks?.discardBurden?.(state.payload);
     state.anchor?.parent?.remove(state.anchor);
     dispensers.delete(state.id);
@@ -200,6 +205,7 @@
         id:state.id,mapId:state.mapId,taken:!!state.root.userData.keyStatueTaken,feedPlinthId:state.feedPlinthId||null,status:status(state.mapId,state.id),
         payload:state.payload?.id||null,payloadParent:state.payload?.group?.parent?.name||null,
         progress:Number(state.root.userData.puzzleProgress)||0,respawning:state.respawning,
+        soldier:state.payload?.group?.userData?.ghostArmyStatueInfo||null, // Debug the carved figure without changing the puzzle/burden record.
       }))};
   }
   window.KeyStatues=Object.freeze({installed:true,registerDispenser,unregisterDispenser,take,status,recall,tick,debugSnapshot});
