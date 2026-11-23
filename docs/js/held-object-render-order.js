@@ -2705,8 +2705,9 @@
       // portrait mask already follows this link. Without it a hostile's weapon
       // had no owner, took the fail-safe path and forced an extra "ordinary"
       // held replay group (3 scene renders, ~350 draws in the user's fight).
-      const owner = heldOwnerLinkEnabled ? data.hobunjiHeldPortraitOwner : null;
-      if (owner?.isObject3D && owner !== node && ownerDepth < 2) {
+      const owner = data.hobunjiHeldPortraitOwner; // Player gear always needs its ground scope, even with the NPC weapon budget disabled.
+      if (playerMesh && owner === playerMesh) return { root: playerMesh, isPlayer: true };
+      if (heldOwnerLinkEnabled && owner?.isObject3D && owner !== node && ownerDepth < 2) {
         return actorRootForXrayMesh(owner, scene, ownerDepth + 1) || { root: owner, isPlayer: false };
       }
       if (!namedAnimalRoot && data.namedAnimalNpc === true) namedAnimalRoot = node;
@@ -2729,8 +2730,9 @@
   // HeldObjectRenderOrder.setReplayParticipants('all') restores the old set;
   // setShortXraySpecies([...]) and setFeetXrayDistance(units) tune the rule.
   let replayParticipantPolicy = 'rule';
-  const actorXrayEnabled = { animals: true, enemies: true, player: true }; // Settings gates shared by the main and shell passes.
-  let hasDisabledActorXray = false; // All-on keeps the existing replay selection fast path.
+  const actorXrayDefaults = Object.freeze({ animals: true, enemies: false, player: true }); // Shared with Performance settings and reset.
+  const actorXrayEnabled = { ...actorXrayDefaults }; // Settings gates shared by the main and shell passes.
+  let hasDisabledActorXray = Object.values(actorXrayEnabled).includes(false); // All-on keeps the existing replay selection fast path.
   const actorXrayRoots = new Map(); // Current frame's character roots, shared across color and shell selection.
   let actorXrayScene = null; // Scene whose actor roots the replay selector can reuse.
 
@@ -2744,9 +2746,9 @@
     visuals.forEachCharacter(area, (kind, root, entity) => {
       let group = 'animals'; // Creature, companion, mount, shoulder pet, livestock or creature corpse.
       if (kind === kinds.PLAYER) group = 'player';
-      else if (kind === kinds.ENEMY || (kind === kinds.CORPSE && entity?.isBandit)) group = 'enemies';
-      else if (kind === kinds.NPC && root.userData?.namedAnimalNpc !== true
-          && entity?.avatarGroup?.userData?.namedAnimalNpc !== true) group = 'npc';
+      else if (kind === kinds.ENEMY || (kind === kinds.CORPSE && entity?.isBandit)
+          || (kind === kinds.NPC && root.userData?.namedAnimalNpc !== true
+          && entity?.avatarGroup?.userData?.namedAnimalNpc !== true)) group = 'enemies';
       actorXrayRoots.set(root, group);
     });
   }
@@ -2756,7 +2758,7 @@
       const group = actorXrayRoots.get(node); // The nearest actor wins, including a pet attached to the player.
       if (group) return group;
       if (node.userData?.namedAnimalNpc === true) return 'animals';
-      if (node.name === 'bandit_avatar_group') return 'enemies';
+      if (node.name === 'bandit_avatar_group' || node.name?.startsWith('npc_walker_')) return 'enemies';
       const owner = node.userData?.hobunjiHeldPortraitOwner; // Independent of the A/B weapon-budget owner link.
       if (followOwner && owner?.isObject3D && owner !== node) return actorXrayGroup(owner, scene, false);
     }
@@ -3428,19 +3430,29 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
   // Stencil punch + far-depth reset for one group. Returns false (and touches
   // nothing) when it cannot run, so the caller falls back to clear-and-redraw.
   function punchHeldGroupFloor(renderer, scene, camera, group, groundMeshes, groundMaterials, colorBuffer) {
-    if (!floorPunchEnabled || !group?.regions?.length || !groundMaterials?.size) return false;
+    if (!floorPunchEnabled || lastBaseStencilBits < 2 || !group?.regions?.length || !groundMaterials?.size) return false;
     const resources = ensureFloorPunchResources();
     if (!resources || !colorBuffer?.setMask || !colorBuffer?.setLocked) return false;
-    // A ground mesh whose material has no compiled filter would mark ALL of its
-    // frontmost pixels; leave it out of the punch (its floor keeps occluding).
-    // Ground that does not touch the patch cannot contain the nearby floor.
-    const hidden = new Map();
+    // A newly built floor can first compile its filter during the depth replay.
+    // Rebuild the depth if a nearby floor cannot yet stamp the punch bit.
+    const hidden = new Map(); // Ground outside the patch stays out of the stencil draw.
     for (const mesh of groundMeshes) {
       if (!mesh?.visible) continue;
-      let filtered = true;
-      forEachMaterial(mesh.material, material => { if (!material?.userData?.hobunjiXrayElevationShader?.supported) filtered = false; });
-      if (!filtered || touchesFloorPatch(mesh, group, 0.05) === 0) { hidden.set(mesh, true); mesh.visible = false; }
+      if (touchesFloorPatch(mesh, group, 0.05) === 0) {
+        hidden.set(mesh, true);
+        continue;
+      }
+      let filtered = true, pendingFilter = false; // Track whether this floor can stamp the punch bit.
+      forEachMaterial(mesh.material, material => {
+        const state = material.userData?.hobunjiXrayElevationShader;
+        if (state && !state.compileAttempted) pendingFilter = true;
+        if (!state?.supported) filtered = false;
+      });
+      if (pendingFilter) return false;
+      if (!filtered) hidden.set(mesh, true);
     }
+    if (!groundMeshes.some(mesh => mesh?.visible && !hidden.has(mesh))) return false;
+    for (const mesh of hidden.keys()) mesh.visible = false;
     const saved = [];
     for (const material of groundMaterials) {
       if (!material?.userData?.hobunjiXrayElevationShader?.supported) continue;
@@ -4669,6 +4681,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
     setAutoInertReplayEnabled: value => { autoInertReplayEnabled = value !== false; return autoInertReplayEnabled; },
     setColorOnlyDepthSkipEnabled: value => { colorOnlyDepthSkipEnabled = value !== false; return colorOnlyDepthSkipEnabled; },
     setSkinnedScissorEnabled: value => { skinnedScissorEnabled = value !== false; return skinnedScissorEnabled; },
+    actorXrayDefaults,
     getActorXrayEnabled: group => Object.hasOwn(actorXrayEnabled, group) ? actorXrayEnabled[group] : null,
     setActorXrayEnabled,
     setReplayParticipants: value => { replayParticipantPolicy = value === 'all' ? 'all' : 'rule'; return replayParticipantPolicy; },

@@ -82,6 +82,10 @@
     const originalInit = api.init.bind(api);
     api.init = function playerBodyAttachmentAwareInit(injectedDeps) {
       gameDeps = injectedDeps;
+      // The scene-level weapon holder shares the same portrait and standing floor as the player.
+      if (injectedDeps?.toolHolder?.userData && injectedDeps.playerMesh) {
+        injectedDeps.toolHolder.userData.hobunjiHeldPortraitOwner = injectedDeps.playerMesh;
+      }
       window.ProceduralHandAttachments?.installGameRuntime?.(injectedDeps);
       return originalInit(injectedDeps);
     };

@@ -23,15 +23,15 @@ const rawRender = { call(renderer, scene, camera) {
 const forEachMaterial = (m, fn) => (Array.isArray(m) ? m : [m]).forEach(fn);
 const restoreVisibility = states => { for (const [o, v] of states) o.visible = v; };
 const mat = supported => ({ colorWrite: true, depthWrite: true, depthTest: true, depthFunc: 'LEQUAL_D', stencilWrite: false, stencilFunc: 'ALWAYS_S', stencilRef: 0, stencilFuncMask: 0xff, stencilWriteMask: 0xff, stencilFail: 'KEEP', stencilZFail: 'KEEP', stencilZPass: 'KEEP',
-  userData: { hobunjiXrayElevationShader: { supported, uniforms: { enabled: { value: 0 }, elevation: { value: 0 }, centerCount: { value: 0 }, centers: { value: null } } } } });
+  userData: { hobunjiXrayElevationShader: { supported, compileAttempted: true, uniforms: { enabled: { value: 0 }, elevation: { value: 0 }, centerCount: { value: 0 }, centers: { value: null } } } } });
 const grass = mat(true), dirt = mat(true), custom = mat(false);
 const groundMats = new Set([grass, dirt, custom]);
 const filteredMesh = { visible: true, material: grass }, unsupportedMesh = { visible: true, material: custom };
 const farGround = { visible: true, material: dirt, matrixWorld: {}, geometry: { boundingBox: { min: { x: 40, y: 0, z: 40 }, max: { x: 48, y: 1, z: 48 } } } }; // Cannot contain the holder's floor.
 const hasLayer = (o, l) => (((o.layers?.mask ?? 1) >>> 0) & (1 << l)) !== 0;
-const api = new Function('THREE', 'rawRender', 'forEachMaterial', 'restoreVisibility', 'instancedReplaySphere', 'XRAY_CIRCLE_RADIUS', 'GROUND_REPLAY_MASK', 'GROUND_REPLAY_LAYER', 'hasLayer', 'XRAY_ELEVATION_TOLERANCE', code +
-  '\nreturn { punchHeldGroupFloor, hideOutsideFloorPatch, setGroundElevationFilter, setEnabled: v => { floorPunchEnabled = v; }, stats: () => ({ floorPunches, floorPunchRefillHidden, floorPunchRefillKept }) };')(
-  THREE, rawRender, forEachMaterial, restoreVisibility, () => null, 1.5, 1 << 28, 28, hasLayer, 0.08);
+const api = new Function('THREE', 'rawRender', 'forEachMaterial', 'restoreVisibility', 'instancedReplaySphere', 'XRAY_CIRCLE_RADIUS', 'GROUND_REPLAY_MASK', 'GROUND_REPLAY_LAYER', 'hasLayer', 'XRAY_ELEVATION_TOLERANCE', 'lastBaseStencilBits', code +
+  '\nreturn { punchHeldGroupFloor, hideOutsideFloorPatch, setGroundElevationFilter, setEnabled: v => { floorPunchEnabled = v; }, setStencilBits: v => { lastBaseStencilBits = v; }, stats: () => ({ floorPunches, floorPunchRefillHidden, floorPunchRefillKept }) };')(
+  THREE, rawRender, forEachMaterial, restoreVisibility, () => null, 1.5, 1 << 28, 28, hasLayer, 0.08, 8);
 
 const camera = { layers: { mask: 0xffffffff } };
 const colorLog = [];
@@ -69,6 +69,19 @@ assert.deepEqual([inside.visible, edge.visible, far.visible, unbounded.visible, 
   'the refill keeps non-ground objects in the patch column that reach below the floor; ground, far and wholly-above objects leave');
 restoreVisibility(hidden);
 assert.equal(far.visible, true);
+
+api.setStencilBits(0);
+assert.equal(api.punchHeldGroupFloor({}, {}, camera, group, [filteredMesh], groundMats, colorBuffer), false,
+  'a depth snapshot alone cannot punch a framebuffer without stencil');
+api.setStencilBits(8);
+grass.userData.hobunjiXrayElevationShader.compileAttempted = false;
+grass.userData.hobunjiXrayElevationShader.supported = false;
+assert.equal(api.punchHeldGroupFloor({}, {}, camera, group, [farGround, filteredMesh], groundMats, colorBuffer), false,
+  'a floor whose filter is still compiling needs the full depth rebuild');
+assert.equal(farGround.visible, true, 'falling back does not leave previously visited ground hidden');
+assert.equal(api.punchHeldGroupFloor({}, {}, camera, group, [unsupportedMesh], groundMats, colorBuffer), false,
+  'a patch with no shader-capable floor cannot report a successful punch');
+assert.equal(draws.length, 2, 'fallbacks never mutate the original framebuffer or draw an empty punch');
 
 api.setEnabled(false);
 assert.equal(api.punchHeldGroupFloor({}, {}, camera, group, [], groundMats, colorBuffer), false, 'A/B switch');
