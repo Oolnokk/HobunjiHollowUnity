@@ -158,7 +158,11 @@ vm.runInNewContext(source,{window,document,console:diagnostics,Image:class {
 
   textureReady=true;deferredFigure={};const removed=new Group();const old=new Group();removed.add(old);
   const pending=api.decorate(removed,spec);
-  await Promise.resolve(); // The hostile-avatar profile waits for the shared mask-pattern readiness promise.
+  // Await the actual portrait-bake handshake, not a fixed microtask count.
+  // Awaiting the hostile mask, armor and Tzizkhanash preparation can involve
+  // multiple jobs even when every mock resolves synchronously. The bounded
+  // drain fails meaningfully if the bake never starts rather than hanging CI.
+  for(let attempt=0;attempt<32 && typeof deferredFigure.resolve!=='function';attempt++)await Promise.resolve();
   assert.equal(typeof deferredFigure.resolve,'function','portrait bake has reached the asynchronous Tzizkhanash builder');
   api.dispose(removed);deferredFigure.resolve(makeFigure());
   assert.equal(await pending,false,'a recalled statue may not receive a late portrait');
