@@ -18,16 +18,17 @@
     const vector=(v,fallback)=>Object.fromEntries(['x','y','z']
       .map(key=>[key,Number.isFinite(Number(v?.[key]))?Number(v[key]):fallback[key]]));
     const grip=(v,p)=>({...vector(v,p),rotation:vector(v?.rotation,{x:0,y:0,z:0})});
+    const pivot=a=>['posterior','neck'].includes(a?.pivot)?{pivot:a.pivot}:{}; // Family-baby anatomical mount pivot; absent on furniture.
     return {
       enabled:obj.enabled===true,
       billboardAnchor:{
-        coordinateSpace:'posterior-relative',
+        coordinateSpace:'posterior-relative',...pivot(anchor),
         position:vector(pos,{x:0,y:.53,z:0}),
         rotation:vector(rot,{x:0,y:0,z:0}),
         posteriorOffset:vector(anchor.posteriorOffset,{x:0,y:0,z:0}),
         size:Math.max(.1,Number(anchor.size)||1)
       },
-      backCarry:{
+      backCarry:{...pivot(back),
         position:vector(back.position,vector(pos,{x:0,y:.53,z:0})),
         rotation:vector(back.rotation,{x:Number(rot.x)||0,y:(Number(rot.y)||0)+180,z:Number(rot.z)||0}),
         posteriorOffset:vector(back.posteriorOffset,vector(anchor.posteriorOffset,{x:0,y:0,z:0})),

@@ -76,6 +76,7 @@
     ACTOR_RENDER_PLACEMENT: 790, // Wildlife carry placement comes before actor-specific draw hooks.
     PLAYER_BODY_COMPOSER: 800,
     NPC_PERFORMANCE_LOCK: 900,
+    FAMILY_BABY_LIMBS: 950, // Carried infant's kicking hands/feet (family-baby-limbs.js).
     NPC_SOCIAL_INHIBITION: 1000,
   });
 

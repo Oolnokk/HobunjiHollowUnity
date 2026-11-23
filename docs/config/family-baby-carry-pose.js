@@ -1,5 +1,7 @@
-// Shared baby carry. Mount positions remain portrait-normalized for compatibility;
-// hand offsets are local distances from the baby's POSTERIOR (left) and NECK (right).
+// Shared baby carry. Mount positions are offsets from the baby's actual POSTERIOR pivot
+// (pivot:'posterior'; portrait-normalized offset) or, for profiles saved before that existed,
+// raw portrait-normalized points (pivot:'portrait'). Hand offsets are local distances from
+// the baby's POSTERIOR (left) and NECK (right).
 // The live carrier still consumes world-local handTargets through the existing hand solver.
 (() => {
   'use strict';
@@ -8,23 +10,26 @@
   // Authored defaults (screenshot-verified in game against a newborn Mao'ao bust, Nov 22):
   // HELD = cradle. The infant lies ~65 degrees across the carrier's lower chest, head in the
   // carrier's RIGHT arm, face tipped slightly up; the right hand cups the head/neck from below,
-  // the left hand supports the bottom. Both mounts pivot at the infant's posterior (portrait
-  // y = .486, the bust's lower edge), so posteriorOffset reads as "where the baby's bottom sits".
+  // the left hand supports the bottom. The cradle pivots at the infant's REAL posterior (see
+  // anchorsForAvatar), so its posteriorOffset reads as "where the baby's bottom sits" for every species.
   // BACK = Sacajawea-style stow: upright high between the shoulder blades, offset toward the
   // carrier's left shoulder, facing BEHIND the carrier so the over-the-shoulder gameplay camera
   // sees the face; head leans in against the carrier's neck and peeks over the shoulder line.
   // Euler values are the gameplay ANCHOR (Shattercasks applies their inverse to the infant).
   const DEFAULT_PROFILE = {
-    held: { position: { x: 0, y: .486, z: 0 }, rotation: { x: 4.95, y: -10.92, z: -64.53 }, size: 1,
+    held: { pivot: 'posterior', position: { x: 0, y: 0, z: 0 }, rotation: { x: 4.95, y: -10.92, z: -64.53 }, size: 1,
       posteriorOffset: { x: .11, y: .075, z: .13 } },
-    back: { position: { x: 0, y: .486, z: 0 }, rotation: { x: -174.07, y: -.94, z: 171.05 }, size: 1,
-      posteriorOffset: { x: .065, y: .19, z: -.07 }, portraitAnchor: { x: 0, y: 0, z: 0 } },
+    // Back pivots at the NECK: whatever the newborn's size, its head peeks over the shoulder line
+    // (same pose as a posterior pivot at {.065,.19,-.07} for the verified Mao'ao newborn).
+    back: { pivot: 'neck', position: { x: 0, y: 0, z: 0 }, rotation: { x: -174.07, y: -.94, z: 171.05 }, size: 1,
+      posteriorOffset: { x: .0581, y: .282, z: -.0603 }, portraitAnchor: { x: 0, y: 0, z: 0 } },
     grips: {
       left: { anchor: 'posterior', offset: { x: -.046, y: -.043, z: -.02 }, rotation: { x: 180, y: 0, z: -90 } }, // Under the bottom.
       right: { anchor: 'neck', offset: { x: -.12, y: .044, z: -.02 }, rotation: { x: 0, y: 0, z: 90 } }, // Under the head, toward the crown.
     },
     elbows: { left: null, right: null }, // Attack Animation Editor convention: shoulder-relative XYZ; unset retains legacy arm aiming.
   };
+  const PIVOTS = new Set(['posterior', 'neck']); // Anatomical mount pivots; anything else is legacy portrait space.
   const axes = ['x', 'y', 'z']; // Shared coordinate axes in the authoring schema and live carryable definition.
   const finite = (value, fallback, limit = 10) => {
     const number = Number(value);
@@ -36,6 +41,8 @@
   function normalize(raw) {
     const source = raw && typeof raw === 'object' ? raw : {};
     const pose = (input, defaults, back = false) => ({
+      // A pose saved before pivots existed has a portrait-normalized position: keep that meaning.
+      pivot: input && typeof input === 'object' ? (PIVOTS.has(input.pivot) ? input.pivot : 'portrait') : defaults.pivot,
       position: vector(input?.position, defaults.position),
       rotation: vector(input?.rotation, defaults.rotation, 720),
       size: Math.max(.1, Math.min(10, finite(input?.size, defaults.size))),
@@ -81,9 +88,15 @@
     const spineRoot=rig.splineNodes?.[0]?.position||{}; // Actual pinned spine root (node 0), preferred to a calculated/fallback posterior height.
     const rootY=Number(spineRoot.y);
     const neck = rig.neckLocal || {}; // Raw plane-local neck pivot, BEFORE applying head scale.
+    const spineY = centerY + (Number.isFinite(rootY) ? rootY : Number.isFinite(posteriorY) ? posteriorY : -h * .23);
+    // A carried baby is only its painted bust: no pants. Some species pin the spine root far
+    // below the art (a Mashtzarr newborn's sits 35% of its height under the bust, where a
+    // standing NPC's pants would cover it). Keep the hip within 7% of the bust's lower edge so
+    // grips, mounts and limbs land on visible baby. Mao'ao (6% below) is unaffected.
+    const bustBottom = centerY - h / 2;
     return {
       posterior: { x: centerX + finite(spineRoot.x, 0), // CharacterSpine.layoutFor pins node 0 at x=0. spineBase.x belongs to the NECK.
-        y: centerY + (Number.isFinite(rootY) ? rootY : Number.isFinite(posteriorY) ? posteriorY : -h * .23),
+        y: Math.max(spineY, bustBottom - h * .07),
         z: centerZ + finite(spineRoot.z, 0) },
       neck: { x: centerX + finite(neck.x, 0),
         y: centerY + finite(neck.y, h * .22),
@@ -108,15 +121,22 @@
     const base = gripAnchor(side, anchors, w, h);
     return Object.fromEntries(axes.map(axis => [axis, base[axis] + finite(offset?.[axis], 0)]));
   }
+  function pivotBase(pivot, anchors, w, h) {
+    return PIVOTS.has(pivot) ? resolvedAnchors(anchors, w, h)[pivot] : { x: 0, y: 0, z: 0 };
+  }
+  function mountPosition(pose, anchors, w, h) { // Carryable mount point = baby pivot + portrait-normalized offset.
+    const base = pivotBase(pose.pivot, anchors, w, h), offset = scaled(pose.position, w, h);
+    return Object.fromEntries(axes.map(axis => [axis, base[axis] + offset[axis]]));
+  }
   function forSizeFrom(raw, width, height, anchors = null) {
     const w = Math.max(.05, finite(width, .3)), h = Math.max(.05, finite(height, .3)); // Live baby portrait dimensions.
     const source = normalize(raw); // Allows the editor to resize an UNSAVED draft when Random Baby changes species.
     const held = source.held, back = source.back;
     return {
       enabled: true,
-      billboardAnchor: { coordinateSpace: 'posterior-relative', position: scaled(held.position, w, h),
+      billboardAnchor: { coordinateSpace: 'posterior-relative', pivot: held.pivot, position: mountPosition(held, anchors, w, h),
         rotation: { ...held.rotation }, size: held.size, posteriorOffset: { ...held.posteriorOffset } },
-      backCarry: { position: scaled(back.position, w, h), rotation: { ...back.rotation }, size: back.size,
+      backCarry: { pivot: back.pivot, position: mountPosition(back, anchors, w, h), rotation: { ...back.rotation }, size: back.size,
         posteriorOffset: { ...back.posteriorOffset }, portraitAnchor: { ...back.portraitAnchor } },
       elbows: Object.fromEntries(['left','right'].map(side => [side,source.elbows[side]?{...source.elbows[side]}:null])),
       handTargets: Object.fromEntries(['left', 'right'].map(side => {
@@ -143,13 +163,17 @@
   function toProfile(carryable, width, height, anchors = null) {
     const w = Math.max(.05, finite(width, .3)), h = Math.max(.05, finite(height, .3)); // Editor preview's reference baby size.
     const held = carryable?.billboardAnchor || {}, back = carryable?.backCarry || {};
-    const pose = (source, fallback, isBack) => ({
-      position: unscaled(source.position, w, h),
+    const pose = (source, fallback, isBack) => {
+      const pivot = PIVOTS.has(source.pivot) ? source.pivot : 'portrait', base = pivotBase(pivot, anchors, w, h);
+      return {
+      pivot,
+      position: unscaled(Object.fromEntries(axes.map(axis => [axis, finite(source.position?.[axis], 0) - base[axis]])), w, h),
       rotation: vector(source.rotation, fallback.rotation, 720),
       size: finite(source.size, fallback.size),
       posteriorOffset: vector(source.posteriorOffset, fallback.posteriorOffset),
       ...(isBack ? { portraitAnchor: vector(source.portraitAnchor, DEFAULT_PROFILE.back.portraitAnchor) } : {}),
-    });
+      };
+    };
     return normalize({
       held: pose(held, DEFAULT_PROFILE.held, false),
       back: pose(back, DEFAULT_PROFILE.back, true),
@@ -176,6 +200,7 @@
         Object.assign(target[field] || (target[field] = {}), source[field]);
       }
       target.size = source.size;
+      target.pivot = source.pivot; // Lets toProfile undo the same pivot when the editor saves.
       if (key === 'billboardAnchor') target.coordinateSpace = 'posterior-relative';
     }
     const elbows=carryable.elbows||(carryable.elbows={}); // Same parent-local, shoulder-relative targets used by ProceduralHandShoulderAim.

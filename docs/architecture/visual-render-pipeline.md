@@ -134,6 +134,7 @@ Registered hooks, in order (lower runs first, its restore runs last):
 | 700 | `crop-sprite-art` | frame | crop-sprite-art.js | crop billboards face the camera |
 | 800 | `player-body-composer` | frame | player-body-transform-composer.js | composed player body, deadzone, head aim, neck limit, pants re-skin |
 | 900 | `npc-performance-reaction-lock` | frame | npc-performance-reaction-lock-runtime.js | hides social targets of instrument-locked NPCs |
+| 950 | `family-baby-limbs` | frame | family-baby-limbs.js | carried baby's cloned 3D hands/feet wave and kick; rest pose restored |
 | 1000 | `npc-social-inhibition` | frame | npc-social-inhibition-runtime.js | NPC social facing / dance sway |
 | 5000 | `geometry-auto-lod` | render | geometry-auto-lod.js | Opt-in geometry substitutions, restored after every draw |
 
@@ -238,6 +239,7 @@ table (`CAPABILITIES` in `js/character-visuals.js`, keep it accurate):
 | terrain height | every kind (movement-owned for humanoids; render lift for animals) | — |
 | water/slush tint | player, NPC, enemy, pet | — |
 | mist depth silhouettes | every kind | — |
+| carried family baby (`family-baby-burdens.js`, `family-baby-limbs.js`) | player, NPC (spouse) carriers | spouse carry ignores the authored cradle/back-stow pose and grips |
 | shoulder-pet perch | player | runtime is owner-generic; only the player owns a pet in gameplay |
 | weather on bodies (wetness, snow, wind) | none | absent for everyone |
 

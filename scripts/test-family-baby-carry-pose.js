@@ -48,7 +48,43 @@ close(sized.handTargets.left.y,anchors.posterior.y+GL.y,'left grip Y is unscaled
 close(sized.handTargets.left.z,anchors.posterior.z+GL.z,'left grip depth is unscaled by baby height');
 close(sized.handTargets.right.x,anchors.neck.x+GR.x,'right grip is relative to baby neck');
 close(sized.handTargets.right.y,anchors.neck.y+GR.y,'right grip Y is relative to neck joint');
-close(sized.billboardAnchor.position.y,.4*D.held.position.y,'baby mount pivot still scales with portrait');
+assert.equal(D.held.pivot,'posterior','default cradle mounts at the infant posterior');
+close(sized.billboardAnchor.position.y,anchors.posterior.y+.4*D.held.position.y,'held mount = real posterior + portrait-scaled offset');
+assert.equal(D.back.pivot,'neck','back stow pivots at the neck so the head peeks over the shoulder at any baby size');
+close(sized.backCarry.position.y,anchors.neck.y+.4*D.back.position.y,'back mount = real neck pivot + portrait-scaled offset');
+// Posterior clamp: a spine root far below the painted bust (no pants on a carried baby) is lifted
+// to within 7% of the bust's lower edge; a root already near the edge is untouched.
+const deepRoot=profile.anchorsForAvatar({visualCentroidLocalY:.085,neckRig:{splineNodes:[{position:{x:0,y:-.29,z:0}}],neckLocal:{x:0,y:-.12,z:0}}},.34,.34);
+close(deepRoot.posterior.y,.085-.34*.07,'deep spine root clamps to just under the painted bust');
+const nearRoot=profile.anchorsForAvatar({visualCentroidLocalY:.1267,neckRig:{splineNodes:[{position:{x:0,y:-.1299,z:0}}],neckLocal:{x:0,y:-.0374,z:0}}},.2304,.2304);
+close(nearRoot.posterior.y,.1267+.1152-.1299,'Mao\'ao newborn posterior (6% under the bust) is unchanged');
+// A species whose posterior sits BELOW the portrait origin (Mashtzarr newborn) still mounts at its bottom.
+const lowAnchors={posterior:{x:0,y:-.035,z:0},neck:{x:0,y:.135,z:0}};
+close(profile.forSize(.34,.34,lowAnchors).billboardAnchor.position.y,-.035+.34*D.held.position.y,'mount follows a low posterior, not a fixed portrait fraction');
+// Profiles saved before pivots existed keep their portrait-normalized mount meaning.
+const legacyPose=profile.forSizeFrom({held:{position:{x:0,y:.06,z:-.48}}},.3,.4,anchors);
+assert.equal(legacyPose.billboardAnchor.pivot,'portrait','pivot-less saved pose is treated as legacy portrait space');
+close(legacyPose.billboardAnchor.position.z,.4*-.48,'legacy mount still scales with portrait');
+close(legacyPose.billboardAnchor.position.y,.4*.06,'legacy mount ignores the anatomy pivot');
+// Editor round-trip: applying then saving keeps the pivot and the posterior-relative offset.
+const tripped=profile.toProfile(profile.forSizeFrom({held:{pivot:'posterior',position:{x:.1,y:-.2,z:.05}}},.3,.4,anchors),.3,.4,anchors);
+assert.equal(tripped.held.pivot,'posterior','round-trip keeps the posterior pivot');
+close(tripped.held.position.y,-.2,'round-trip keeps the posterior-relative mount offset');
+close(profile.toProfile(legacyPose,.3,.4,anchors).held.position.z,-.48,'legacy pose round-trips unchanged');
+// The Furniture Author rebuilds every carryable through normalized(); it must keep the baby pivot
+// (else an editor save silently downgrades to legacy portrait space) and add none to furniture.
+{
+  const editor=fs.readFileSync('docs/tools/furniture-avatar-author/carryable-objects.js','utf8');
+  const start=editor.indexOf('  function normalized(value) {'),end=editor.indexOf('  state.carryable=normalized(state.carryable);',start);
+  assert(start>0&&end>start,'extract the editor carryable normalizer');
+  const normalizedFn=new Function(editor.slice(start,end)+'\nreturn normalized;')();
+  const baby=normalizedFn(profile.forSize(.3,.4,anchors));
+  assert.equal(baby.billboardAnchor.pivot,'posterior','editor keeps the cradle pivot');
+  assert.equal(baby.backCarry.pivot,'neck','editor keeps the back-stow pivot');
+  assert.equal(profile.toProfile(baby,.3,.4,anchors).back.pivot,'neck','editor save keeps anatomical pivots');
+  const furniture=normalizedFn({enabled:true,billboardAnchor:{position:{x:0,y:.5,z:0}}});
+  assert.equal('pivot' in furniture.billboardAnchor||'pivot' in furniture.backCarry,false,'furniture exports gain no pivot field');
+}
 close(sized.backCarry.rotation.z,D.back.rotation.z,'back stow pose retains authored orientation');
 assert.equal(sized.elbows.left,null,'legacy shoulder fallback remains when elbow is not explicitly authored');
 

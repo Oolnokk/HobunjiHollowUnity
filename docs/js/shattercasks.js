@@ -504,6 +504,7 @@
     // Points/Sprites/particle effects aren't part of the solid furniture pass.
     burden?.group?.traverse?.(node=>{
       if(!node?.isMesh||node.visible===false)return;
+      if(node.userData?.shattercaskKeepsOwnDepth)return; // Opaque 3D parts (a carried baby's kicking hands/feet) occlude correctly with real depth; no PNG sandwich.
       const materials=Array.isArray(node.material)?node.material:[node.material];
       if(materials.some(material=>material&&material.visible!==false))meshes.add(node);
     });

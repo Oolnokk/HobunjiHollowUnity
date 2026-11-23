@@ -107,6 +107,7 @@
     return group;
   }
   function disposeVisual(group) {
+    window.FamilyBabyLimbs?.detach?.(group); // Cloned limb materials only; the walker owns the shared hand/foot GLB geometry.
     const geometries = new Set(); // One owned geometry may be shared by both fallback portrait faces.
     group?.traverse?.(node => {
       if (node.geometry) geometries.add(node.geometry);
@@ -140,7 +141,9 @@
       proxySources.set(group, proxySources.get(replacement));
       entry.burden.meshColliders = group.children.filter(node => node.isMesh); // Keep shared Shattercasks hits and draw-order tracking on the NEW geometry.
       window.Shattercasks?.refreshBurdenBounds?.(entry.burden);
+      window.FamilyBabyLimbs?.attach?.(group, walker); // After colliders: kicking limbs are presentation, never hit targets.
     } else {
+      if (!window.FamilyBabyLimbs?.isAttached?.(group)) window.FamilyBabyLimbs?.attach?.(group, walker); // Retry until the walker's hand/foot GLBs have loaded.
       // WorldPortraitLife may replace canvas textures without rebuilding the avatar.
       const textures = [front, back];
       if (group.userData.familyBabyArtMode === 'posed-rig') {
@@ -190,6 +193,7 @@
     if (entry.disposing) return;
     const child = entry.child;
     child.carryBy = null; child.carryPose = null;
+    item.group.userData.familyBabyFlying = false;
     child.carrySpot = basket || !isAllowedArea(item.mapId)
       ? null : { area: item.mapId, c: item.col, r: item.row }; // Dropped baby stays where it landed, across save/reload.
     item.carried = false; item.flying = false;
@@ -257,7 +261,7 @@
         entry.persist?.();
       },
       onDrop: item => settle(entry, item),
-      onThrow: () => { group.visible = true; showWalker(entry, false); },
+      onThrow: () => { group.visible = true; group.userData.familyBabyFlying = true; showWalker(entry, false); }, // Limbs flail while airborne.
       onImpact: item => {
         item.col = Math.floor(item.group.position.x); item.row = Math.floor(item.group.position.z);
         settle(entry, item);
@@ -272,6 +276,7 @@
     });
     if (!burden) { group.parent?.remove(group); debug.lastError = 'burden registration failed'; return null; }
     entry.burden = burden;
+    window.FamilyBabyLimbs?.attach?.(group, walker); // Attached after registerBurden so limbs are not collected as colliders.
     group.userData.familyBabyModelWidth = infantWidth;
     group.userData.familyBabyModelHeight = infantHeight;
     refreshProxyArt(entry, walker); // Grip bounds include the posed head, not only the unscaled body.
@@ -398,6 +403,8 @@
       dimensions: { width: e.burden.group.userData.familyBabyWidth, height: e.burden.group.userData.familyBabyHeight }, // Source-portrait coordinate basis used for hand grips.
       posedDimensions: { width: e.burden.group.userData.familyBabyPosedWidth, height: e.burden.group.userData.familyBabyPosedHeight }, // Expanded head is visual only.
       gripAnchors: e.burden.group.userData.familyBabyGripAnchors, // Mobile diagnostic for left/posterior and right/neck grip origins.
+      kickingLimbs: window.FamilyBabyLimbs?.isAttached?.(e.burden.group) ? 'attached'
+        : (window.FamilyBabyLimbs?.debugSnapshot?.().lastMissing ? 'waiting for ' + window.FamilyBabyLimbs.debugSnapshot().lastMissing : 'none'), // Mobile: cloned 3D hands/feet state.
       meshes: e.burden.group.children.length,
     })) }),
   });

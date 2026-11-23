@@ -8,7 +8,7 @@
     "js/scissor-depth-snapshot.js?v=20261121hc90e239",
     "js/actor-render-occlusion.js?v=20261114farCull1",
     "js/outline-composite-material.js?v=20261114composite1",
-    "js/character-visuals.js?v=20261120h3276dba", // Character enumeration + visual capability table; game.js registers the provider.
+    "js/character-visuals.js?v=20261123babyKick1", // Character enumeration + visual capability table; game.js registers the provider.
     "js/character-held-tools.js?v=20261119charVisuals1", // Held tool/weapon planes for any character; game.js calls init() in its tool section.
     "js/world-render-pipeline.js?v=20261120hd03de0a", // Pass order, outline materials/targets and render scopes; game.js calls init() after its camera exists.
     "js/render-ab-benchmark.js?v=20261121h32a718a", // On-device A/B: frame-scoped render hooks on vs off (Settings → Dev Tools).
