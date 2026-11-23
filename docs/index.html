@@ -53,7 +53,7 @@
   <!-- Small formatting/math helpers (esc/clamp/roundRect/formatClock/etc.)
        extracted out of game.js; must load before game.js and before every
        other module whose init(deps) is handed window.FormatUtils.clamp/esc. -->
-  <script src="js/format-utils.js?v=20261122cancelAnimal2"></script>
+  <script src="js/format-utils.js?v=20261122vocabNames2"></script>
   <!-- Default building entry tile (buildingSpawnFromExit) extracted out of
        game.js; uses window.FormatUtils.clamp and must load before game.js. -->
   <script src="js/building-entry-spawn.js?v=20261026hfbed948"></script>
@@ -201,7 +201,7 @@
   <!-- Shared rig ownership must load before the NPC dance/hand scripts injected by action locks. -->
   <script src="js/rig-transform-layers.js?v=20261122hc3370fb"></script>
   <!-- Reusable movement/tool/action suppression and dynamically loaded social presentation. -->
-  <script src="js/character-action-locks.js?v=20261122hAnimalRig28"></script> <!-- Shared quaternion-safe ownership for procedural rig deformations. -->
+  <script src="js/character-action-locks.js?v=20261122vocabNames2"></script> <!-- Shared quaternion-safe ownership for procedural rig deformations. -->
   <script src="js/npc-character-state.js?v=20261117kissPoseLock2"></script>
   <script src="js/npc-movement-head-target.js?v=20261117kissHeadLock3"></script> <!-- Shared invisible movement gaze for allied NPC walkers and humanoid hostiles. -->
   <!-- Accepted alcohol handoff + NPC playback; game.js supplies private-state adapters. -->
@@ -2860,8 +2860,8 @@
        onomatopoeia, and reusable crowd cheer/jeer hooks. -->
   <script src="js/name-nicknames.js?v=20261108relationship2"></script> <!-- Shared first-syllable forms for friendship, dates and marriage. -->
   <script src="js/ambient-vocabulary-rules.js?v=20261122doorstepDialect1"></script> <!-- Shared semantic vocabulary rules. -->
-  <script src="js/ambient-vocabulary.js?v=20261122greetingPets1"></script> <!-- Floating speech only. -->
-  <script src="js/ambient-dialogue.js?v=20261122decoupledVoice1"></script>
+  <script src="js/ambient-vocabulary.js?v=20261122vocabNames2"></script> <!-- Floating speech only. -->
+  <script src="js/ambient-dialogue.js?v=20261122vocabNames2"></script>
   <script src="js/player-social-poses.js?v=20260810a"></script>
   <script src="js/player-chat.js?v=20260810a"></script>
   <!-- Spearfishing minigame + fishing FX particles (window.Fishing) — must
