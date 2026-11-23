@@ -797,6 +797,7 @@
       profile[key] = lookup(saved[slot]);
     }
     if (bodyColors) profile.bodyColors = { ...(profile.bodyColors || {}), ...bodyColors };
+    profile.faceRig = window.HobunjiFaceRig?.normalize?.(ap.faceRig, speciesId, gender) || null; // Reuse the same opt-in face rig when previewing saved/created players.
 
     // Apply equipped clothing (collections tab)
     const catalog    = window.SCRATCHBONES_CONFIG?.game?.account?.shopCatalog || [];
