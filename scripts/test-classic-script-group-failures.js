@@ -57,6 +57,29 @@ vm.runInNewContext(loader, context);
 assert.equal(listeners.length, 1, 'repeated group loads must not register duplicate event listeners');
 assert.equal(insertedScripts.length, 2, 'both groups still write their manifest tags');
 
+// Commit-pinned GitHack previews should use the immutable CDN for every group,
+// avoiding unreliable development-host fetches without affecting branch previews.
+browser.location = {
+  hostname: 'raw.githack.com',
+  pathname: '/Oolnokk/HobunjiHollowUnity/076f4f9a38b7d94daca3da7fe53b12f6819c716f/docs/index.html',
+}; // Browser URL used by the manifest host-selection regression.
+doc.currentScript.getAttribute = () => 'festival';
+vm.runInNewContext(loader, context);
+assert.match(insertedScripts[2], /https:\\/\\/rawcdn\\.githack\\.com\\/Oolnokk\\/HobunjiHollowUnity\\/076f4f9a38b7d94daca3da7fe53b12f6819c716f\\/docs\\/js\\/bootstrap\\/classic-groups\\/festival\\.js/);
+assert.doesNotMatch(insertedScripts[2], /\\?load=/, 'immutable manifests do not need cache-busting query parameters');
+browser.location.pathname = '/Oolnokk/HobunjiHollowUnity/main/docs/index.html';
+vm.runInNewContext(loader, context);
+assert.match(insertedScripts[3], /classic-groups\\/festival\\.js\\?load=4321/, 'mutable GitHack branches retain fresh manifests');
+browser.location.hostname = 'localhost';
+browser.location.pathname = '/Oolnokk/HobunjiHollowUnity/076f4f9a38b7d94daca3da7fe53b12f6819c716f/docs/index.html';
+vm.runInNewContext(loader, context);
+assert.match(insertedScripts[4], /classic-groups\\/festival\\.js\\?load=4321/, 'local hosting never switches to GitHack CDN');
+browser.location.hostname = 'rawcdn.githack.com';
+vm.runInNewContext(loader, context);
+assert.match(insertedScripts[5], /https:\\/\\/rawcdn\\.githack\\.com/, 'pinned CDN pages use the same immutable host');
+listeners[0].callback({ target: { src: 'https://rawcdn.githack.com/o/r/076f4f9a38b7d94daca3da7fe53b12f6819c716f/docs/js/bootstrap/classic-groups/festival.js' } });
+assert(failedGroups.includes('festival'), 'cross-origin CDN manifest errors retain mobile warning coverage');
+
 // A manifest in <head> may fail before the page has created document.body.
 nodes.clear();
 doc.body = null;
