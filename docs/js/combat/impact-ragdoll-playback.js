@@ -496,6 +496,8 @@
         releaseCreaturePose(state); // Visual-streaming can clear the entity's pointer without calling stopCreature.
         creatureStates.delete(state);
         pronePoseDiagnostics.retiredOrphans++;
+        if (state.entity?.prone && !state.entity._impactRagdollPlayback && !state.entity._wildlifeVisualsReleased)
+          restoreCreaturePronePose(state.entity); // A newly promoted sprite may be visible before the next ordinary hostile AI tick.
         continue;
       }
       if (state.bank !== 'breakThrow' && state.bank !== 'tumble') continue;
