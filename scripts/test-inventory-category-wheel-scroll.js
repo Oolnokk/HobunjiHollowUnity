@@ -6,6 +6,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 
 const source = fs.readFileSync(path.join(__dirname, '..', 'docs', 'js', 'inventory-ui.js'), 'utf8');
+assert(source.includes('scrollbar-width:thin') && !source.includes('.inv-cats::-webkit-scrollbar { display:none; }'), 'inventory categories expose a thin scrollbar rather than hiding it');
 const listeners = []; // Records registered wheel listeners so repeated InventoryUI init-style registration can be checked.
 const strip = {
   scrollLeft: 0, clientWidth: 220, scrollWidth: 980, // Simulates a visible category row wider than the Pack filter viewport.
@@ -53,8 +54,9 @@ wheel({ deltaY: 5000 });
 assert.equal(strip.scrollLeft, 760, 'scrolling clamps at the final category');
 event = wheel({ deltaY: 120 });
 assert.equal(strip.scrollLeft, 760);
-assert.equal(event.defaultPrevented, false, 'a wheel at the end is not falsely consumed');
+assert.equal(event.defaultPrevented, true, 'an end-stop wheel cannot scroll a page or menu behind the categories');
 assert.equal(event.propagationStopped, true, 'a wheel at the end does not cycle other game controls');
+assert.equal(strip.scrollLeft, 760, 'end-stop scrolling never overshoots the last tab');
 
 event = wheel({ deltaX: -50, deltaY: -10 });
 assert.equal(strip.scrollLeft, 760, 'horizontal trackpad motion is left to the browser');
@@ -70,6 +72,7 @@ for (const modifier of ['ctrlKey', 'metaKey', 'altKey']) {
 event = wheel({ deltaY: -1e6 });
 assert.equal(strip.scrollLeft, 0, 'scrolling clamps at the first category');
 assert.equal(event.defaultPrevented, true);
+assert.equal(event.propagationStopped, true, 'a wheel at the start stays owned by the category strip');
 
 strip.scrollWidth = strip.clientWidth; // A short row must not steal ordinary wheel input.
 event = wheel({ deltaY: 90 });
