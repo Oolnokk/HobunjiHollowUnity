@@ -31,6 +31,13 @@ const injected = editor.slice(0, editor.lastIndexOf(PROBE)) + [
   '      buildLineup = async () => {};',
   '      return enter();',
   '    },',
+  '    beginWithFailure() {',
+  '      ensureUi = () => true;',
+  '      loadAgeModifiers = () => {};',
+  '      syncAgeControls = () => {};',
+  '      buildLineup = async () => { throw Error("failed preview image"); };',
+  '      return enter();',
+  '    },',
   '    exit,',
   '    get state() { return { active, building, exiting: !!exitingPromise,',
   '      currentTab: document.body.dataset.animationAuthorMode,',
@@ -118,6 +125,17 @@ async function visit(from, to) {
   assert.deepEqual(modes, ['single'], 'rapid taps settle directly on the requested mode');
   assert.equal(nativeRoot.visible, true, 'rapid exit restores the hidden native scene');
   assert.equal(imports, 0, 'no automatic Multi/empty import/Rig loop can originate here');
+  nativeRoot.visible = false; // Preserve a previously hidden editor workspace.
+  document.body.dataset.animationAuthorMode = 'rig';
+  await api.begin();
+  await api.exit('rig');
+  assert.equal(nativeRoot.visible, false, 'an originally hidden workspace stays hidden');
+  nativeRoot.visible = true; // A failed preview load must restore Rig without importing actors.
+  document.body.dataset.animationAuthorMode = 'rig';
+  await api.beginWithFailure();
+  assert.equal(nativeRoot.visible, true, 'preview build failure restores native actor visibility');
+  assert.match(element('maaFullScaleStatus').textContent, /Could not build scale comparison/, 'failure is visible without devtools');
+  assert.equal(imports, 0, 'preview failure never triggers an empty actor import');
   assert.equal(api.state.isolationDebug.nativeProjectImports, 0, 'mobile diagnostic reports zero project imports');
   assert.ok(api.state.isolationDebug.entries >= 7 && api.state.isolationDebug.exits >= 7, 'repeated entry/exit counted');
   console.log('PASS isolated Full Character Scale: no project imports or Multi detours, tab restoration, repeated visits, rapid taps');
