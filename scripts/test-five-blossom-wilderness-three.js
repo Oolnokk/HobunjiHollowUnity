@@ -181,6 +181,11 @@ for(const built of pillarRoots){
   if(box.isEmpty())continue;
   const x=(box.min.x+box.max.x)*.5,z=(box.min.z+box.max.z)*.5,y=(box.min.y+box.max.y)*.5;
   assert(collisionService.blocksBox(zoneId,x,z,0,y),'every rotated, scaled authored shaft/cap/chip has solid collision at its measured center');
+  if(box.max.x-box.min.x>.12&&box.max.z-box.min.z>.12){
+    const landing=collisionService.supportAt(zoneId,x,z,box.max.y+.015); // Real authored fragment footprint is the jump landing source.
+    assert(landing&&landing.y>=box.max.y-.015,'every wide enough Debris-ifier fragment has a standable top, not only side collision');
+    assert.equal(landing.kind,'landmark','jumping onto a fragment retains raised-landmark footing');
+  }
   if(Math.abs(x-built.position.x)>.55||Math.abs(z-built.position.z)>.55)offCenterPieces++;
   measuredParts++;
  }
@@ -208,6 +213,12 @@ const cairnGroup=scene.getObjectByName('wilderness-stone-cairns'); // Spatial in
 const plannedCairns=scenery.planForLayout(zoneId,worldLayout,'test-world:'+cycle).filter(site=>site.kind==='stoneCairn');
 const expectedBuckets=new Set(plannedCairns.map(site=>Math.floor(site.point.col/24)+','+Math.floor(site.point.row/24)));
 assert.ok(plannedCairns.length>0,'fixture includes actual normal cairns, not only the marked witness stone');
+const firstCairn=plannedCairns[0]; // Cached four-course stack and one movement footprint share the same height.
+const cairnTop=collisionService.supportAt(zoneId,firstCairn.point.col+.5,firstCairn.point.row+.5,Infinity);
+assert(cairnTop&&Math.abs(cairnTop.y-(1.25+.70*firstCairn.size))<.02,
+  'a cairn lands on its actual four-course cap, without the old taller invisible collision box');
+assert.equal(collisionService.supportAt('map_western_slope',firstCairn.point.col+.5,firstCairn.point.row+.5,Infinity),null,
+  'wilderness jump support cannot leak into another zone');
 assert.equal(cairnGroup.children.length,expectedBuckets.size,'one independently cullable instance batch per occupied 24-tile cell');
 assert.equal(cairnGroup.children.reduce((n,mesh)=>n+mesh.count,0),plannedCairns.length*4,'four stones survive for each cairn');
 assert.ok(cairnGroup.children.every(mesh=>mesh.material===cliffMaterial&&mesh.geometry!==sharedStoneArt.geometry),
@@ -289,6 +300,8 @@ assert.equal(decorations,firstCycleDecorations+secondCycleDecorations*2,
 scenery.clear();
 assert.equal(collisionService.providerIds().includes('wilderness-landmark-stones'),false,
   'Shift and zone cleanup unregister the old authored debris collision provider');
+assert.equal(collisionService.supportAt(zoneId,firstCairn.point.col+.5,firstCairn.point.row+.5,Infinity),null,
+  'cleared landmarks cannot leave invisible elevated landing surfaces');
 assert.equal(witnessFor(),undefined,'leaving a zone removes the marked rock, not a stale hidden decoration');
 assert.equal(sharedStoneDisposed,false,'zone cleanup must not dispose the mainline shared quarry art used by other wilderness rocks');
 THREE.TextureLoader.prototype.load = previousTextureLoad;
