@@ -12,7 +12,7 @@ const providers = new Map(); // Captures the actual HUD entries registered by Co
 w.EffectBuffBar = { registerProvider: (id, fn) => providers.set(id, fn), refresh() {} };
 const ctx = vm.createContext({
   window: w, console, queueMicrotask() {},
-  document: { getElementById: () => ({}) }, // Existing UI layer avoids unrelated DOM rendering.
+  document: { getElementById: () => ({}), querySelector: () => null }, // Existing UI layer avoids unrelated DOM/Skills rendering.
 });
 for (const p of ['docs/js/cooking-data.js', 'docs/js/cooking-system.js', 'docs/js/skill-system.js', 'docs/js/festival-potluck-contest.js'])
   vm.runInContext(source(p), ctx, { filename: p });
