@@ -21,7 +21,7 @@ assert.match(dream, /#romanceFamilyOverlay \.rf-name-portrait canvas\{position:s
 assert.match(dream, /#romanceFamilyOverlay \.rf-name-portrait\{[^}]*width:64px;height:64px;overflow:hidden;/, 'newborn chathead is clipped to heading slot');
 assert.match(dream, /class="rf-name-portrait"><canvas[^>]*hidden[^>]*data-rf-preview>[^<]*<\/canvas><span class="rf-name-fallback"/, 'portrait retains baby emoji as fallback');
 assert.match(dream, /window\.AmbientDialogue\?\.renderChatheadImage/, 'baby uses the existing NPC chathead crop');
-assert.match(dream, /rendered && canvas\.isConnected && canvas\.closest/, 'late rendering cannot update a dismissed naming prompt');
+assert.match(dream, /!rendered \|\| !canvas\.isConnected \|\| !canvas\.closest/, 'late rendering cannot update a dismissed naming prompt');
 assert.doesNotThrow(() => new Function(dream));
 assert.doesNotThrow(() => new Function(creator));
 console.log('Adoption dream controller and preview checks passed.');
