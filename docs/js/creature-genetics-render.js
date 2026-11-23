@@ -199,7 +199,7 @@
     const urls = new Set([spec.base[frame] || spec.base.idle]); // One sprite per active frame; no eager run1/run2 downloads.
     for (const id of spec.underlayPatterns || []) urls.add(patternUrl(kind, id, frame, genotype)); // Permanently visible anatomical tails.
     for (const entry of visibleDefaultCoatPatterns(spec, genotype)) urls.add(patternUrl(kind, entry.id, frame, genotype)); // Default beards survive beneath genetic patterns.
-    for (const id of spec.patterns) {
+    for (const id of spec.patterns || []) {
       if (spec.underlayPatterns?.includes(id)) continue;
       const layer = genotype?.[id]; // Unexpressed or disabled inherited overlays have no art to fetch.
       if (layer?.enabled !== false && layer?.copies > 0 && patternTintColor(kind, id, genotype)) urls.add(patternUrl(kind, id, frame, genotype));
@@ -652,6 +652,14 @@
   // never the other way around. Eyes are normally untinted like NPC
   // untinted_regions; Nelk's eye sprite has mint skin and therefore opts
   // into keyed skin-only recoloring while retaining its painted iris.
+  function safePrefetchPlayerPetFrameAssets(kind, frame, genotype, blinkShut) {
+    try { prefetchPlayerPetFrameAssets(kind, frame, genotype, blinkShut); }
+    catch (error) {
+      // Optional source downloads must never strand a pet's actual color/pattern composition.
+      window.__farmLog?.('[genotype-render] pet prefetch deferred: ' + String(error?.message || error), 'warn');
+    }
+  }
+
   // One native-resolution animal composite at a time, prioritizing pets without raising peak canvas memory.
   const composeQueue = []; // Pending whole-appearance jobs (fur, inherited patterns, Color Pools motifs and eyes).
   const COMPOSE_PET_BURST = 4; // One lower-priority job after four pet jobs prevents indefinite starvation.
@@ -674,7 +682,7 @@
     for (const job of composeQueue) {
       if (job.key !== key || job.priority >= priority) continue;
       job.priority = priority;
-      if (priority === 2) prefetchPlayerPetFrameAssets(job.kind, job.frame, job.genotype, job.blinkShut); // A queued wildlife frame becoming the owner's pet should also begin artwork I/O immediately.
+      if (priority === 2) safePrefetchPlayerPetFrameAssets(job.kind, job.frame, job.genotype, job.blinkShut); // A failed optional image prefetch must never cancel promotion.
       composePromotions++;
       promoted = true;
     }
@@ -722,7 +730,7 @@
   function composeFrame(kind, frame, genotype, blinkShut = false, options = null) {
     const priority = composePriority(options); // Default preserves historical FIFO for preview and wildlife callers.
     const key = composeRequestKey(kind, frame, genotypeSignature(kind, genotype), blinkShut);
-    if (priority === 2) prefetchPlayerPetFrameAssets(kind, frame, genotype, blinkShut); // Kick off required PNG/mask I/O even if the pet waits for an active wild pixel job.
+    if (priority === 2) safePrefetchPlayerPetFrameAssets(kind, frame, genotype, blinkShut); // Prefetch failures fall back to composeFrameNow rather than permanently leaving plain sprites.
     return new Promise((resolve, reject) => {
       composeQueue.push({ kind, frame, genotype, blinkShut, priority, key, resolve, reject }); // One shared canonical compositor, not a second fast/patternless renderer.
       composePending++;
