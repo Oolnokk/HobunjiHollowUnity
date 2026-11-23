@@ -8,7 +8,8 @@
   const HERD_MOTHER_KIND = 'moot-herd-mother'; // Uses Moot art and genes but carries recoverable young in open-air herds.
   const ZONE_ID = 'map_northern_cliffs'; // Only the Northern Cliffs get the natural Moot population.
   const BABY_ITEM_KEY = 'mootBaby'; // The Ranch starting baby and future livestock offspring use this existing save key.
-  const SPRITE_ASPECT = 1000 / 1617; // Authored 1617x1000 PNG dimensions, used by the world-space animal card.
+  const SPRITE_ASPECT = 920 / 1295; // Authored 1295x920 PNG dimensions, used by the world-space animal card.
+  const SPRITE_MODEL_WIDTH = 1.7 * (1295 / 1617); // World-space width of the cropped plane at the original pixel scale.
   const COAT_SOURCE_COLOR = '#9CBD9E'; // The existing mint-green coat art is the keyed shade-fill reference; protects teeth, hooves, and heavy black linework.
   const SPRITES = Object.freeze({
     idle: 'assets/creaturesprites/moot_idle.png',
@@ -25,7 +26,7 @@
     const itemKinds = livestock.itemKinds || (livestock.itemKinds = {}); // Converts the Ranch's mootBaby inventory item to a living animal.
     itemKinds[BABY_ITEM_KEY] = KIND;
     const widths = livestock.animalWidths || (livestock.animalWidths = {}); // Full-grown plane width for farm and nursery previews.
-    widths[KIND] = Number(widths[KIND]) > 0 ? Number(widths[KIND]) : 1.7;
+    widths[KIND] = Number(widths[KIND]) > 0 ? Number(widths[KIND]) : SPRITE_MODEL_WIDTH;
     const diet = livestock.diet || (livestock.diet = {}); // Reuses the existing plant-fodder barn feeding behavior.
     diet[KIND] = 'prey';
     const resources = livestock.resources || (livestock.resources = {}); // Moot milking uses the existing barn resource cooldown and harvest action.
@@ -54,7 +55,7 @@
       attackStaminaCost: 11, attackCooldownS: 2.0,
       attacks: ['guardCharge'], realAttackEvery: 1, // Reuse the native cone charge; it now deals blunt Health damage for this species.
       defaultSizeClass: existing.defaultSizeClass || 'large',
-      modelWidth: Number(existing.modelWidth) > 0 ? Number(existing.modelWidth) : 1.7,
+      modelWidth: Number(existing.modelWidth) > 0 ? Number(existing.modelWidth) : SPRITE_MODEL_WIDTH,
       spriteAspect: SPRITE_ASPECT,
       lootPool: 'creature_moot',
       sprites: { idle: SPRITES.idle, run: [SPRITES.run1, SPRITES.run2] },
@@ -67,6 +68,7 @@
       label: 'Herd-Mother',
       hostile: false,
       defaultSizeClass: 'large',
+      spriteAspect: baseMoot.spriteAspect,
       lootPool: baseMoot.lootPool,
       sprites: baseMoot.sprites,
     };

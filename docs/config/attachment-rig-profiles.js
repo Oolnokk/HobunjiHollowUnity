@@ -196,7 +196,7 @@
   const skeeriChatheadFrame = Object.freeze({ x: 0.6611149088541667, y: 0.24899449865398673, width: 0.04, height: 0.04, coordinateSpace: 'sprite-normalized-top-left', version: 1 }); // Shared idle-sprite chathead crop for every Skeeri size variant.
   const creatureChatheadFrames = Object.freeze({
     'skeeri-medium': skeeriChatheadFrame,
-    moot: Object.freeze({ x: 0.0843, y: 0.085, width: 0.26, height: 0.37, coordinateSpace: 'sprite-normalized-top-left', version: 1 }),
+    moot: Object.freeze({ x: 0.10526108108108108, y: 0.0923913043478261, width: 0.3246486486486486, height: 0.4021739130434782, coordinateSpace: 'sprite-normalized-top-left', version: 1 }),
     grehlr: Object.freeze({ x: 0.10721275741258315, y: 0.349719408702988, width: 0.2558259151491218, height: 0.35439898228896183, coordinateSpace: 'sprite-normalized-top-left', version: 1 }),
     'gar-wolf': Object.freeze({ x: 0, y: 0.2575, width: 0.25, height: 0.3575, coordinateSpace: 'sprite-normalized-top-left', version: 1 }),
     'dabinggi-hound': Object.freeze({ x: 0.05321196485715341, y: 0.2621006265961596, width: 0.17863723264419087, height: 0.350903183334192, coordinateSpace: 'sprite-normalized-top-left', version: 1 }),
