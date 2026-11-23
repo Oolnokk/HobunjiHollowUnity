@@ -76,6 +76,8 @@
       note: 'Cloud Forest mist / Western Slope blowing snow: any character whose portrait does not write depth gets a depth-only silhouette so mist layers sit behind it consistently.' },
     { id: 'shoulder-pet-perch', owner: 'shoulder-pet-attachment-runtime.js', covers: [KINDS.PLAYER],
       gap: 'The runtime is owner-generic (create({ getOwnerMesh, getOwnerNeckJoint })), but only the player owns a shoulder pet in gameplay today.' },
+    { id: 'carried-infant', owner: 'family-baby-burdens.js + config/family-baby-carry-pose.js + family-baby-limbs.js + shattercasks.js (solveCarryMount)', covers: [KINDS.PLAYER, KINDS.NPC],
+      note: 'A carried family baby looks the same on any carrier: one shared cradle/back-stow pose solve on the carrier\'s own posterior, the same authored two-hand grips and elbows (NPCs through proceduralHeldItemTarget), back stow mounted on the carrier\'s portrait, and cloned kicking 3D hands/feet.' },
     { id: 'render-culling', owner: 'npc-view-frustum-cull.js, actor-render-occlusion.js', covers: [KINDS.NPC, KINDS.ENEMY, KINDS.CREATURE, KINDS.CORPSE],
       note: 'Render-only hiding of off-camera or covered characters; the player is never culled.' },
     { id: 'weather-wetness-snow-wind', owner: '(none)', covers: [],

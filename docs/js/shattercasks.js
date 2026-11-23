@@ -340,6 +340,7 @@
   const rearHeadwearXray=new Map(); // Separate skinned rear HEAD and its headwear pass were missing from the vessel x-ray.
   const CARRIED_VESSEL_RENDER_ORDER=1.4; // Used by held parts; 1.5 is reserved for weapon/tool PNG overlay classification.
   const CARRIED_REAR_RENDER_ORDER=2.4; // Held-only rear PNG remains above the hand-carried Burden.
+  const HELD_BABY_FOREGROUND_ORDER=30; // Only a held infant: later than the player portrait and 28-ranked pants; never the 1.5 weapon replay.
   const STOWED_REAR_RENDER_ORDER=2.05; // Behind a back-stowed Burden while still above ordinary opaque world meshes.
   const STOWED_REAR_HAT_RENDER_ORDER=2.08; // Headwear belongs to the same back-PNG occlusion side while stowed.
   const STOWED_BURDEN_RENDER_ORDER=2.15; // The actual stowed furniture draws between the two portrait PNG faces.
@@ -503,6 +504,7 @@
     // Points/Sprites/particle effects aren't part of the solid furniture pass.
     burden?.group?.traverse?.(node=>{
       if(!node?.isMesh||node.visible===false)return;
+      if(node.userData?.shattercaskKeepsOwnDepth)return; // Opaque 3D parts (a carried baby's kicking hands/feet) occlude correctly with real depth; no PNG sandwich.
       const materials=Array.isArray(node.material)?node.material:[node.material];
       if(materials.some(material=>material&&material.visible!==false))meshes.add(node);
     });
@@ -542,7 +544,8 @@
     // every time, including after transitions, rather than leaving stale x-ray
     // state on whichever object was last selected.
     const activeMeshes=new Map(); // Associates each currently carried geometry with its held/back rendering rule.
-    for(const mesh of held?.meshColliders||[])activeMeshes.set(mesh,'held');
+    const babyForeground=held?.kind==='familyBaby'&&window.XrayHierarchy?.get?.('baby.carrierForeground')!=='off'; // One lookup per carry refresh, never per mesh/frame.
+    for(const mesh of held?.meshColliders||[])activeMeshes.set(mesh,babyForeground?'babyForeground':'held');
     // The render pass applies to every visible part of the back Burden,
     // including non-colliding decals and newly loaded furniture detail.
     for(const mesh of carriedVisualMeshes(backCarried))activeMeshes.set(mesh,'stowed');
@@ -562,12 +565,13 @@
       // 1.5 is reserved for the weapon replay. A stowed Burden instead enters
       // the PNG transparent draw queue so renderOrder can place it between the
       // owner's rear and front faces, even when the furniture is normally opaque.
-      mesh.renderOrder=mode==='stowed'?STOWED_BURDEN_RENDER_ORDER:CARRIED_VESSEL_RENDER_ORDER;
+      mesh.renderOrder=mode==='stowed'?STOWED_BURDEN_RENDER_ORDER:mode==='babyForeground'?HELD_BABY_FOREGROUND_ORDER:CARRIED_VESSEL_RENDER_ORDER;
       for(const [material,original] of snapshot.materials){
-        const transparent=mode==='stowed'?true:original.transparent;
-        const depthTest=mode==='stowed'?true:original.depthTest;
-        if(material.depthWrite!==false||material.transparent!==transparent||material.depthTest!==depthTest){
-          material.depthWrite=false;
+        const transparent=mode==='stowed'||mode==='babyForeground'?true:original.transparent;
+        const depthTest=mode==='stowed'||mode==='babyForeground'?true:original.depthTest;
+        const depthWrite=mode==='babyForeground'; // Solid infant alpha writes depth: later pants x-ray cannot paint through its silhouette.
+        if(material.depthWrite!==depthWrite||material.transparent!==transparent||material.depthTest!==depthTest){
+          material.depthWrite=depthWrite;
           material.transparent=transparent;
           material.depthTest=depthTest;
           material.needsUpdate=true;
@@ -624,25 +628,60 @@
     for(const part of chain)quaternion.multiply(part.quaternion);
     return quaternion;
   }
-  function moveBackBurdenToPortrait(vase,body,portrait){
+  // Re-parent a solved carry onto the carrier's portrait plane so it follows the portrait's own
+  // facing/deadzone yaw. Shared by the player's back stow and NPC carriers (FamilyBabyBurdens).
+  function mountCarryOnPortrait(group,body,portrait){
     body.updateWorldMatrix?.(true,false);
     portrait.updateWorldMatrix?.(true,false);
-    const worldPosition=body.localToWorld(vase.group.position.clone()); // Solve once at mount; repeated solving would cancel the portrait's own deadzone yaw.
-    const worldRotation=worldRigQuaternion(body).multiply(vase.group.quaternion);
+    const worldPosition=body.localToWorld(group.position.clone()); // Solve once at mount; repeated solving would cancel the portrait's own deadzone yaw.
+    const worldRotation=worldRigQuaternion(body).multiply(group.quaternion);
     const bodyScale=body.getWorldScale(new THREE.Vector3());
     const portraitScale=portrait.getWorldScale(new THREE.Vector3());
     const localScale=new THREE.Vector3(
-      vase.group.scale.x*bodyScale.x/(portraitScale.x||1),
-      vase.group.scale.y*bodyScale.y/(portraitScale.y||1),
-      vase.group.scale.z*bodyScale.z/(portraitScale.z||1));
+      group.scale.x*bodyScale.x/(portraitScale.x||1),
+      group.scale.y*bodyScale.y/(portraitScale.y||1),
+      group.scale.z*bodyScale.z/(portraitScale.z||1));
     const inversePortraitRotation=worldRigQuaternion(portrait).invert();
-    portrait.add(vase.group); // Real physical Burden is parented directly to the portrait mesh, not a proxy or the carrier root.
-    vase.group.position.copy(portrait.worldToLocal(worldPosition));
-    vase.group.quaternion.copy(inversePortraitRotation.multiply(worldRotation));
-    vase.group.scale.copy(localScale);
-    // Preserve the posterior-based world pose calculated by alignHeldVase.
+    portrait.add(group); // Real physical Burden is parented directly to the portrait mesh, not a proxy or the carrier root.
+    group.position.copy(portrait.worldToLocal(worldPosition));
+    group.quaternion.copy(inversePortraitRotation.multiply(worldRotation));
+    group.scale.copy(localScale);
+    // Preserve the posterior-based world pose calculated by solveCarryMount.
     // Replacing it with the portrait center floated Nuhongan Burdens at the
     // wrong height. One-time reparenting retains independent portrait yaw.
+  }
+  function moveBackBurdenToPortrait(vase,body,portrait){ mountCarryOnPortrait(vase.group,body,portrait); }
+  // Carrier posterior in its body frame from the species/gender rig profile. A live value
+  // (player composer, NPC leg rig) wins; the profile is the safe fallback while rigs load.
+  function carrierPosteriorLocal(out,{speciesId,gender,modelHeight,handAttachY,liveY}={}){
+    const key=`${String(speciesId||'mao-ao').toLowerCase()}::${String(gender||'male').toLowerCase()}`;
+    const profile=window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters?.[key]
+      ||window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters?.['mao-ao::male'];
+    const height=finite(modelHeight,.9);
+    const computed=window.HOBUNJI_ATTACHMENT_RIG_MATH?.characterPosteriorY?.(
+      profile?.posteriorRule,height,finite(handAttachY,height/2));
+    const y=Number.isFinite(liveY)&&liveY!==0?liveY:Number.isFinite(computed)?computed:defaultPosteriorY;
+    const origin=profile?.anchors?.posterior?.position||{};
+    return out.set(finite(origin.x),y,finite(origin.z));
+  }
+  // THE carry pose: the authored anchor (held billboardAnchor or backCarry) is the point of the
+  // carried object that sits at the carrier's posterior + posteriorOffset; the object turns by the
+  // inverse anchor rotation and scales by 1/size. Player (alignHeldVase) and NPC carriers share it.
+  function solveCarryMount(group,carryable={},isBack=false,posterior){
+    const cfg=(isBack&&carryable.backCarry)||carryable.billboardAnchor||{},a=cfg.position||{},r=cfg.rotation||{},o=cfg.posteriorOffset||{};
+    heldAnchorEuler.set(finite(r.x)*Math.PI/180,(finite(r.y)+(isBack&&!carryable.backCarry?180:0))*Math.PI/180,finite(r.z)*Math.PI/180);
+    authoredAnchorQuat.setFromEuler(heldAnchorEuler).invert();
+    group.quaternion.copy(authoredAnchorQuat);
+    group.scale.setScalar(1/Math.max(.1,finite(cfg.size,1)));
+    // Both poses share the anatomical posterior. Old backCarry.portraitAnchor
+    // values are additive fine offsets in the same frame, never an absolute
+    // portrait-center attachment that ignores species/gender dimensions.
+    const fine=isBack?cfg.portraitAnchor||{}:{}; // Back-only compatibility adjustment for existing authored furniture.
+    posteriorOffset.set(finite(o.x)+finite(fine.x),finite(o.y)+finite(fine.y),finite(o.z)+finite(fine.z));
+    heldAnchorOffset.set(finite(a.x),finite(a.y),finite(a.z))
+      .multiplyScalar(group.scale.x).applyQuaternion(group.quaternion);
+    group.position.copy(posterior).add(posteriorOffset).sub(heldAnchorOffset);
+    return group;
   }
   function heldItemHolder(){
     const d=carryDeps();
@@ -679,39 +718,16 @@
     if(portrait&&vase.group.parent===portrait)return true; // Preserve independent portrait rotation between animation frames.
     if(vase.group.parent!==body)body.add(vase.group);
     const carryable=vase.data?.carryable||{}; // The back pose uses authored transforms, with an inverted held pose as its fallback.
-    const cfg=(isBack&&carryable.backCarry)||carryable.billboardAnchor||{},a=cfg.position||{},r=cfg.rotation||{},o=cfg.posteriorOffset||{};
-    const playerSpecies=String(body.userData?.speciesId||body.userData?.species||'mao-ao').toLowerCase();
-    const playerGender=String(body.userData?.gender||'male').toLowerCase();
-    const profile=window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters?.[`${playerSpecies}::${playerGender}`]
-      ||window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters?.['mao-ao::male'];
-    const posteriorY=window.PlayerBodyTransformComposer?.getPosteriorY?.();
-    // A live composer value is authoritative; the profile is a safe startup
-    // fallback while player avatar/hand meshes load asynchronously.
-    const modelHeight=finite(body?.userData?.portraitModelHeight,.9);
-    const computed=window.HOBUNJI_ATTACHMENT_RIG_MATH?.characterPosteriorY?.(
-      profile?.posteriorRule,modelHeight,finite(body?.userData?.handAttachY,modelHeight/2));
-    const y=Number.isFinite(posteriorY)&&posteriorY!==0?posteriorY
-      :Number.isFinite(computed)?computed:defaultPosteriorY;
-    const origin=profile?.anchors?.posterior?.position||{};
-    posteriorLocal.set(finite(origin.x),y,finite(origin.z));
     // The playerMesh is the actual character/posterior frame. The renderer
     // already applies body yaw and camera deadzone to that whole hierarchy.
     // Never inherit the *generic held-item holder's* extra bottle/tool rotation
     // or its world position: doing so rotates authored Z clearance into a
     // different axis and makes authoring disagree with gameplay.
-    heldAnchorEuler.set(finite(r.x)*Math.PI/180,(finite(r.y)+(isBack&&!carryable.backCarry?180:0))*Math.PI/180,finite(r.z)*Math.PI/180);
-    authoredAnchorQuat.setFromEuler(heldAnchorEuler).invert();
-    vase.group.quaternion.copy(authoredAnchorQuat);
-    const size=Math.max(.1,finite(cfg.size,1));
-    vase.group.scale.setScalar(1/size);
-    // Both poses share the anatomical posterior. Old backCarry.portraitAnchor
-    // values are additive fine offsets in the same frame, never an absolute
-    // portrait-center attachment that ignores species/gender dimensions.
-    const fine=isBack?cfg.portraitAnchor||{}:{}; // Back-only compatibility adjustment for existing authored furniture.
-    posteriorOffset.set(finite(o.x)+finite(fine.x),finite(o.y)+finite(fine.y),finite(o.z)+finite(fine.z));
-    heldAnchorOffset.set(finite(a.x),finite(a.y),finite(a.z))
-      .multiplyScalar(vase.group.scale.x).applyQuaternion(vase.group.quaternion);
-    vase.group.position.copy(posteriorLocal).add(posteriorOffset).sub(heldAnchorOffset);
+    carrierPosteriorLocal(posteriorLocal,{
+      speciesId:body.userData?.speciesId||body.userData?.species,gender:body.userData?.gender,
+      modelHeight:body?.userData?.portraitModelHeight,handAttachY:body?.userData?.handAttachY,
+      liveY:window.PlayerBodyTransformComposer?.getPosteriorY?.()}); // Live composer value is authoritative.
+    solveCarryMount(vase.group,carryable,isBack,posteriorLocal);
     if(isBack&&portrait)moveBackBurdenToPortrait(vase,body,portrait);
     const base=aimingThrow?.socketBase;
     if(aimingThrow?.vase===vase&&base){
@@ -2780,6 +2796,12 @@
     backCarriedInfo,backCarrierPosition,stowOnBack,takeFromBack,impactBackOnCarrierHit,transferCarriedBurdenToArea,rebindRegisteredBurden,
     spawn:ensureArea,spawnRandomInDevArena,pickUp,drop,interact,toolArchAction,toolArchTap,actionButtons,
     heldBurdenInfo,placeHeldBurdenOnSurface,retrievePlacedBurden,
+    // The player's held/stowed Burden meshes and the rear-portrait passes that sandwich them.
+    // The actor-depth sorter ranks these WITH the carrier so their renderOrder stays meaningful
+    // (otherwise every portrait sorts at order 2 and a stowed Burden at 2.15 paints over the front face).
+    // Shared carry pose for non-player carriers (FamilyBabyBurdens.spouseCarry): same math as the player.
+    solveCarryMount,carrierPosteriorLocal,mountCarryOnPortrait,
+    carrierSortMeshes:()=>[...heldRenderOrders.keys(),...[...skinnedRearOverlays.values()].map(record=>record.overlay),...rearHeadwearXray.keys()],
     registerHangingBurden,registerBurden:registerHangingBurden,createHangingBurden,createHangingShattercask,releaseBurdenDownward,releaseBurdenWithVelocity,detachHeldBurden,refreshBurdenBounds,discardBurden,registerBurdenFactory,registerBurdenImpactHandler,
     getBurden:(id,mapId=area())=>records.get(String(mapId))?.vases.get(String(id))||null,
     activeBurdenRecords:(mapId=area())=>[...(records.get(String(mapId))?.vases.values()||[])],
@@ -2787,7 +2809,7 @@
     contextButtons,collectAimedPile,promptButtons,RUBBLE_YIELD,
     startShatterAim,releaseShatterAim,cancelShatterAim,detonate,heldHandTarget,
     projectileHit,hitProjectile,senseTargets,sweepMelee,tick,attachRuntime,
-    debugSnapshot:()=>({lastEvent,lastBlastAttribution,latestChange:'Stowed Burdens use the held pose species-adjusted posterior frame before following portrait facing.',backCarryMount:backCarried?{parent:backCarried.group?.parent?.name||backCarried.group?.parent?.type||null,portraitAttached:!!backCarryPortrait(backCarryRoot())&&backCarried.group?.parent===backCarryPortrait(backCarryRoot()),rootFallback:backCarried.group?.parent===backCarryRoot(),collision:'carrier-hitbox'}:null,crates:window.CratePiles?.debugSnapshot?.()||null,backCarried:backCarriedInfo(),fruitCarryProfile:fruitCarryTemplate===FRUIT_CARRY_FALLBACK?'fallback':'authored',area:area(),held:held?.id||null,emittingVases:[...allActive().values()].filter(v=>v.emitters?.length).length,
+    debugSnapshot:()=>({lastEvent,lastBlastAttribution,latestChange:'Stowed Burdens use the held pose species-adjusted posterior frame before following portrait facing.',backCarryMount:backCarried?{parent:backCarried.group?.parent?.name||backCarried.group?.parent?.type||null,portraitAttached:!!backCarryPortrait(backCarryRoot())&&backCarried.group?.parent===backCarryPortrait(backCarryRoot()),rootFallback:backCarried.group?.parent===backCarryRoot(),collision:'carrier-hitbox'}:null,crates:window.CratePiles?.debugSnapshot?.()||null,backCarried:backCarriedInfo(),fruitCarryProfile:fruitCarryTemplate===FRUIT_CARRY_FALLBACK?'fallback':'authored',area:area(),held:held?.id||null,babyForeground:{active:held?.kind==='familyBaby',enabled:window.XrayHierarchy?.get?.('baby.carrierForeground')!=='off',renderOrder:held?.kind==='familyBaby'?(window.XrayHierarchy?.get?.('baby.carrierForeground')==='off'?CARRIED_VESSEL_RENDER_ORDER:HELD_BABY_FOREGROUND_ORDER):null},emittingVases:[...allActive().values()].filter(v=>v.emitters?.length).length,
       vases:[...allActive().values()].map(v=>({id:v.id,kind:v.kind,col:v.col,row:v.row,carried:v.carried,hanging:!!v.hanging,flying:!!v.flying,plinthAttached:!!v.plinthAttached,hangingMechanismId:v.hangingMechanismId||null})),
       fruitFalls:[...fallingFruits.values()].map(f=>({id:f.fruit.id,y:f.fruit.group.position.y,cause:f.cause})),
       downwardBurdenFalls:[...downwardFalls.values()].map(f=>({id:f.burden.id,y:f.burden.group.position.y,velocity:+f.velocity.toFixed(2),cause:f.cause})),

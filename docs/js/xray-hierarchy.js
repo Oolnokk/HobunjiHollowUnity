@@ -59,7 +59,11 @@
       order: 10, label: 'Show ground X-ray zone', default: 'off', options: ['on', 'off'],
       help: 'Dev-only translucent circle at the player standing elevation; not a rendering behavior override.',
     },
-  });
+
+    'baby.carrierForeground': {
+      order: 11, label: 'Held baby stays in front of carrier portrait/pants', default: 'on', options: ['on', 'off'],
+      help: 'on: held babies draw over their own carrier portrait, write physical depth to protect against the later pants overlay, and keep normal world occlusion. Other carryables and back-stowed babies stay unchanged.',
+    },  });
 
 
   // Manual color-sort priorities shared across all listed categories. Group labels are only descriptive;
@@ -626,6 +630,9 @@
             { id: 'set', args: { key: 'pants.sortWithActor' }, label: RULES['pants.sortWithActor'].label,
               value: state['pants.sortWithActor'], options: RULES['pants.sortWithActor'].options.map(value => ({ value, label: value })),
               group: 'Actor stacking', title: RULES['pants.sortWithActor'].help },
+            { id: 'set', args: { key: 'baby.carrierForeground' }, label: RULES['baby.carrierForeground'].label,
+              value: state['baby.carrierForeground'], options: RULES['baby.carrierForeground'].options.map(value => ({ value, label: value })),
+              group: 'Actor stacking', title: RULES['baby.carrierForeground'].help },
             { id: 'set', args: { key: 'layers.manualOrder' }, label: 'Use custom same-pass color order',
               value: state['layers.manualOrder'], options: RULES['layers.manualOrder'].options.map(value => ({ value, label: value })),
               group: 'Same-pass draw priority', title: RULES['layers.manualOrder'].help },
