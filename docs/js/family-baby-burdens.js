@@ -351,16 +351,25 @@
     const api = window.Shattercasks, THREE = window.THREE, group = entry.burden.group;
     const body = spouse._npcCharacterRigRoot || spouse.root; // Facing frame that owns the legs/posterior, like playerMesh for the player.
     if (!api?.solveCarryMount || !api.carrierPosteriorLocal || !body || !THREE?.Vector3) return false;
-    if (back && group.parent === body && entry.npcCarryPose === 'back') return true; // Retain the anatomical attachment, independent of head and camera facing.
-    npcScratch.posterior ||= new THREE.Vector3();
     const ud = spouse.avatarGroup?.userData || {};
+    const rawY = Number(spouse.legs?.standingPosteriorY), liveY = Number.isFinite(rawY) ? rawY : null;
+    const revision = Number(entry.burden.data?.carryable?._backCarryRevision) || 0; // Shared profile increments only on a changed authored mount.
+    const mounted = entry.npcCarryMount; // Avoid rebuilding an unchanged pose every family/AI tick.
+    if (back && group.parent === body && entry.npcCarryPose === 'back'
+        && mounted?.body === body && mounted.revision === revision
+        && mounted.liveY === liveY && mounted.modelHeight === ud.portraitModelHeight
+        && mounted.handAttachY === ud.handAttachY && mounted.speciesId === ud.speciesId
+        && mounted.gender === ud.gender) return true;
+    npcScratch.posterior ||= new THREE.Vector3();
     api.carrierPosteriorLocal(npcScratch.posterior, { speciesId: ud.speciesId, gender: ud.gender,
-      modelHeight: ud.portraitModelHeight, handAttachY: ud.handAttachY, liveY: Number(spouse.legs?.standingPosteriorY) });
+      modelHeight: ud.portraitModelHeight, handAttachY: ud.handAttachY, liveY });
     if (group.parent !== body) body.add(group);
     // Identical to the player: authored offsets are body-LOCAL units, and the rig root carries the
     // same species scale playerMesh does (a Mao'ao NPC and Mao'ao player resolve to the same pose).
     api.solveCarryMount(group, entry.burden.data?.carryable || {}, back, npcScratch.posterior);
     entry.npcCarryPose = back ? 'back' : 'arms'; // The parent stays the body for back-stowed infants and their 3D limbs.
+    entry.npcCarryMount = back ? { body, revision, liveY, modelHeight: ud.portraitModelHeight,
+      handAttachY: ud.handAttachY, speciesId: ud.speciesId, gender: ud.gender } : null; // Switching to arms forgets the rear mount.
     return true;
   }
   function spouseCarry(child, walker, spouse, pose, persist) {
