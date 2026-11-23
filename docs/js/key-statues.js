@@ -127,12 +127,16 @@
         burden.keyStatueMounted=true; // Mounted statues are not consumed by floor hazards beneath their support.
         state.payload=burden;
         state.root.userData.keyStatuePayload=burden;
+        window.FurniturePuzzleRuntime?.setKeyStatueTaken?.(state.mapId,state.id,false); // A missing portrait must never interrupt the physical dispenser/press reset.
         if(state.statueVisual==='harlyaoGhostArmy'){
-          const figures=window.KeyStatueFigures; // Only the skeleton-fight challenge opts into a carved soldier; other Key Statues retain their own authored art.
-          state.soldierSpec ||= figures?.rollSoldier?.(state.id) || null; // Preserve the selected soldier across failed defenses.
-          if(state.soldierSpec)void figures.decorate(group,state.soldierSpec);
+          try {
+            const figures=window.KeyStatueFigures; // Only the skeleton-fight challenge opts into carved art; all Key Statues retain their native gameplay root.
+            state.soldierSpec ||= figures?.rollSoldier?.(state.id) || null; // Preserve the selected soldier across failed defenses.
+            if(state.soldierSpec)void figures.decorate(group,state.soldierSpec);
+          } catch(artError) {
+            console.warn('[KeyStatues] carved Ghost Army soldier unavailable; physical Key Statue remains usable',artError);
+          }
         }
-        window.FurniturePuzzleRuntime?.setKeyStatueTaken?.(state.mapId,state.id,false); // Replacement rises from the sunken button; initial spawns remain at OFF.
       } catch(error) {
         console.warn('[KeyStatues] failed to restore dispenser payload',error);
       } finally {
