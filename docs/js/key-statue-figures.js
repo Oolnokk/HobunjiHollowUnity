@@ -31,11 +31,12 @@
     if (!entry || entry.disposed) return;
     entry.disposed = true;
     entries.delete(entry);
-    entry.figure && window.FestivalAncestorFigures?.disposeFigure?.(entry.figure);
-    entry.visual?.parent?.remove?.(entry.visual);
     for(const part of entry.weaponParts || []) {
+      part.parent?.remove?.(part); // Exclude the blade from PNGPlaneAvatar.disposeAvatarModel's recursive cleanup; its private geometry/material must be disposed exactly once.
       part.geometry?.dispose?.();part.material?.map?.dispose?.();part.material?.dispose?.();
     }
+    entry.figure && window.FestivalAncestorFigures?.disposeFigure?.(entry.figure);
+    entry.visual?.parent?.remove?.(entry.visual);
     for(const mesh of entry.legacy || []) mesh.visible = true;
     if(entry.group?.userData?.ghostArmyKeyStatue===entry){
       delete entry.group.userData.ghostArmyKeyStatue;
