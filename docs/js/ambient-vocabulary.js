@@ -74,8 +74,9 @@
       }
       return source;
     }
-    const guarded = shieldSpokenNames(source, protectedNames); // Proper nouns are masked before either vocabulary pass.
-    const hasLexicalMatch = config === state.config ? !!state.matchPattern?.test(guarded.text) : true; // Keeps most animal and NPC bubbles allocation-free.
+    const guarded = Array.isArray(protectedNames) && protectedNames.length ? shieldSpokenNames(source, protectedNames) : null; // Unnamed wildlife and ordinary bubbles skip all name-guard allocations.
+    const speechInput = guarded?.text || source; // Both rewrite passes and the matcher use the same optionally masked input.
+    const hasLexicalMatch = config === state.config ? !!state.matchPattern?.test(speechInput) : true; // Keeps most animal and NPC bubbles allocation-free.
     if (!hasLexicalMatch && !selected.phoneticPreset) {
       state.unmatched++; // Unmatched text never compiles an NPC table, so animal sounds remain cheap.
       rememberSpeech({ speakerId: selected.characterId, familyId: selected.familyId, original: source, displayed: source, hits: 0, swaps: 0, phoneticSwaps: 0, reason: 'no-dictionary-phrase' });
@@ -94,12 +95,12 @@
     const table = hasLexicalMatch ? (config === state.config
       ? cachedTable(selected.characterId, compile)
       : compile()) : null; // A purely phonetic Pahu line skips semantic generation and the LRU.
-    const transformed = table ? rules.rewriteLine(guarded.text, table, selected.sliders, random, selected.characterId)
-      : { text: guarded.text, hits: 0, swaps: 0 };
+    const transformed = table ? rules.rewriteLine(speechInput, table, selected.sliders, random, selected.characterId)
+      : { text: speechInput, hits: 0, swaps: 0 };
     const phonetic = selected.phoneticPreset
       ? rules.applyPhoneticPreset(transformed.text, config, selected.phoneticPreset, selected.characterId)
       : { text: transformed.text, hits: 0, swaps: 0 }; // Doorstep-specific phonetics never touch Talk or any unassigned speaker.
-    const output = guarded.restore(phonetic.text); // Recover original names before rendering or debugging.
+    const output = guarded ? guarded.restore(phonetic.text) : phonetic.text; // Restore names only when a protected caller supplied them.
     rememberSpeech({ speakerId: selected.characterId, familyId: selected.familyId, dialectGroup: selected.traits.groupId,
       original: source, displayed: output, hits: transformed.hits, swaps: transformed.swaps, phoneticSwaps: phonetic.swaps,
       reason: output !== source ? 'reworded' : (transformed.hits ? 'frequency-or-disabled-choice' : 'no-eligible-choice') });
