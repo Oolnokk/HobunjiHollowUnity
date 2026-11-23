@@ -131,7 +131,7 @@ const runtimeWindow={
 };
 runtimeWindow.window=runtimeWindow;
 vm.runInNewContext(read('docs/js/key-statues.js'),{window:runtimeWindow,console});
-assert(runtimeWindow.KeyStatues.registerDispenser('map_key_statue_runtime','fixture',root,{payloadPartId:'key_statue_button'},{feedPlinthId:'trial_plinth'}));
+assert(runtimeWindow.KeyStatues.registerDispenser('map_key_statue_runtime','fixture',root,{payloadPartId:'key_statue_button'},{feedPlinthId:'trial_plinth',statueVisual:'harlyaoGhostArmy'}));
 await new Promise(resolve=>setImmediate(resolve));
 assert.equal(assetLoads,1,'initial missing authored data is observed');
 assert.equal(runtimeWindow.KeyStatues.debugSnapshot().dispensers[0].respawning,false,
