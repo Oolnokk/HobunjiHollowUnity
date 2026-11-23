@@ -63,6 +63,8 @@ const feetRoot = new THREE.Group(); feetRoot.name = 'kid_procedural_feet'; walke
 const sources = {};
 for (const side of ['left', 'right']) {
   const hv = new THREE.Group(); hv.name = side + '_hand_visual'; handsRoot.add(hv);
+  const hidden = new THREE.Group(); hidden.name = 'inactive_hand'; hidden.visible = false; hv.add(hidden); // The walker may retain hidden GLB fallback/helper subtrees.
+  hidden.add(new THREE.Mesh(geometry, material('hidden_glb_' + side)));
   const hand = new THREE.Mesh(geometry, material(side + '_hand')); hand.name = 'CombinedMesh_MaterialSlots';
   hand.layers.mask = 0x2000000B; // Player/NPC hand passes: must NOT leak onto the baby clones.
   hv.add(hand); sources[side + 'Hand'] = hand;
@@ -81,6 +83,9 @@ const bust = new THREE.Mesh(geometry, material('bust')); proxy.add(bust);
 const found = api.sourceLimbs(walker);
 assert.equal(found.hand.left, sources.leftHand, 'left hand GLB found under its rig visual');
 assert.equal(found.foot.right, sources.rightFoot, 'visible right foot GLB found, hidden fallback skipped');
+walkerRoot.visible = false; // The live baby NPC hides during carrying, but its 3D source parts still exist.
+assert.equal(api.sourceLimbs(walker).hand.left, sources.leftHand, 'hidden walker parent does not suppress carried limb sources');
+walkerRoot.visible = true;
 
 // Balance the world newborn before the carried proxy takes a copy of its limb sizes.
 const babyScale = { hand: 1.20, foot: 1.20 }; // Exact basket-phase multipliers in romance-config.
@@ -96,7 +101,7 @@ assert.equal(api.attach(proxy, walker), true, 'attach is idempotent');
 const limbRoot = proxy.getObjectByName('family_baby_kicking_limbs');
 assert(limbRoot && limbRoot.children.length === 4, 'two hands and two feet pivots');
 const meshes = []; limbRoot.traverse(n => { if (n.isMesh) meshes.push(n); });
-assert.equal(meshes.length, 8, 'all eight visible body/claw and foot/nail primitives are present');
+assert.equal(meshes.length, 8, 'all eight visible body/claw and foot/nail primitives are present, with hidden groups excluded');
 for (const mesh of meshes) {
   assert.equal(mesh.geometry, geometry, 'limb shares the walker GLB geometry');
   assert(!Object.values(sources).some(src => src.material === mesh.material), 'limb owns a cloned material');
@@ -106,6 +111,7 @@ for (const mesh of meshes) {
 }
 assert.equal(proxy.children[0], bust, 'bust stays children[0] (refreshProxyArt texture swap relies on it)');
 assert.equal(meshes.filter(m => m.material.name.includes('fallback')).length, 0, 'hidden fallback feet are never copied to a carried child');
+assert.equal(meshes.filter(m => m.material.name.includes('hidden_glb')).length, 0, 'invisible GLB subtrees do not pollute the carried model');
 assert(meshes.some(m => m.material.name.includes('hand_claw')), 'independently authored hand claws survive the carry clone');
 assert(meshes.some(m => m.material.name.includes('foot_nail')), 'independently authored foot nails survive the carry clone');
 const carriedScale = () => Math.abs(proxy.getObjectByName('family_baby_left_hand')?.scale?.x || 0); // Proxy uses world-scaled source visuals.
