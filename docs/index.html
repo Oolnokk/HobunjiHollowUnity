@@ -254,7 +254,7 @@
   <script src="js/wildlife-food-web.js?v=20261122wildlifeThreat1"></script>
   <!-- Procedural foliage / crop geometry -->
   <script src="js/ice-stalagmite-coverage.js?v=20261107integratedDungeon1"></script>
-  <script src="js/foliage-generator.js?v=20261119brightBloom3"></script>
+  <script src="js/foliage-generator.js?v=20261123rootRidge1"></script>
   <script src="js/roadside-koma-hedges.js?v=20261105koma1"></script> <!-- Path-adjacent shrub row detection, separate from general foliage. -->
   <script src="js/dungeon-door-ice-coverage.js?v=20261103doorice1"></script>
   <!-- Procedural furniture (replaces GLB-based furniture rendering) -->
@@ -349,12 +349,12 @@
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="combat-main"></script>
   <!-- Dedicated ranged slot, loading/firing poses, and hidden-sphere
        projectiles. Loads before bandits so their dual loadouts can call it. -->
-  <script src="js/nearby-volume-collision.js?v=20261107jump-rebased2"></script>
+  <script src="js/nearby-volume-collision.js?v=20261123rootRidge1"></script>
   <!-- Finite projectile cover heights for rock/tree/cavern tiles (extracted from game.js; init(deps) from game.js). -->
   <script src="js/projectile-tile-cover.js?v=20261015a"></script>
   <!-- Sub-tile prop footprints consulted by game.js canOccupyAt()/furnitureBlocksMovementAt(); must load before game.js. -->
   <script src="js/movement-block-debug.js?v=20261118shaftOwnership1"></script>
-  <script src="js/area-footprint-blockers.js?v=20261108h908e581"></script>
+  <script src="js/area-footprint-blockers.js?v=20261123jumpSurface1"></script>
   <!-- Sub-stepped sliding move extracted out of game.js; must load before game.js. -->
   <script src="js/swept-move.js?v=20260927footprints1"></script>
   <!-- Ranged combat and HUD reticles, bandits, ghouls, minions, maskbound guardians and liches. Edit js/bootstrap/classic-groups/combat-enemies.js instead of this entrypoint. -->
@@ -554,7 +554,7 @@
   <script src="js/cliff-route-network.js?v=20261122mushrooms1"></script> <!-- Shared graph for selected exterior handholds, balcony terrain and wildlife routes. -->
   <script src="js/fall-system.js?v=20261107fall1"></script>
   <script src="js/player-air-motion-config.js?v=20261109actualMoveSpeed2"></script>
-  <script src="js/player-jump.js?v=20261122hd7a447f"></script> <!-- Free jumping and real cover-elevation traversal, initialized by ClimbSystem. -->
+  <script src="js/player-jump.js?v=20261123jumpSurface1"></script> <!-- Free jumping and real cover-elevation traversal, initialized by ClimbSystem. -->
   <script src="js/climb-system.js?v=20261122hb6f619e"></script>
   <script src="js/cliff-crawl-presentation.js?v=20261114footYaw1"></script> <!-- Rock-projected hands, feet and body for handhold routes and attached wall surfaces. -->
   <script src="js/creature-cliff-climb.js?v=20261122h48e636a"></script>
