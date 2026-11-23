@@ -134,4 +134,72 @@ function creature() {
   impact.stopCreature(enemy);
   assert.equal(rig.getDebug().activeAbsoluteClaims,0);
 }
+
+// Live hostile knockdowns must carry the bandit's feet AND hands under the
+// falling portrait. Normal flinches leave the locomotion rig untouched.
+{
+  const enemy=creature();
+  const avatar=enemy.avatarRef, legsPivot=new Group(), handsPivot=new Group();
+  const legs={calls:0,applyRecordedLegPose(){this.calls++;},pants:{updates:0,update(){this.updates++;}}};
+  avatar.group.add(legsPivot); avatar.group.add(handsPivot);
+  avatar.legsPivot=legsPivot; avatar.handsPivot=handsPivot; avatar.legs=legs;
+  enemy.prone=false;
+  assert(impact.triggerCreature(enemy,'impact','front')>0);
+  assert.equal(legsPivot.parent,avatar.group,'ordinary hits do not drag standing feet into an impact');
+  impact.stopCreature(enemy);
+  enemy.prone=true;
+  assert(impact.triggerCreature(enemy,'breakThrow','front')>0);
+  let state=enemy._impactRagdollPlayback;
+  assert.equal(avatar.frontPlane.parent,state.pivot,'torso is in the impact pivot');
+  assert.equal(avatar.backPlane.parent,state.pivot,'back portrait is in the impact pivot');
+  assert.equal(legsPivot.parent,state.pivot,'the entire leg rig falls with the torso');
+  assert.equal(handsPivot.parent,state.pivot,'hands and weapons follow the knockdown');
+  assert.equal(impact.ownsCreatureLegPose(enemy),true,'recorded prone IK suppresses ordinary gait updates');
+  assert.equal(legs.calls,2,'initial frame applies authored knees and feet to both sides');
+  impact.updateCreature(enemy,1);
+  assert.equal(state.holding,true,'enemy settles into the recorded prone tail');
+  assert(legs.calls>=4 && legs.pants.updates>=2,'held prone legs and garment are sampled from the same clip');
+  assert.equal(impact.getDebug().activeCreatureProneLegRigs,1,'mobile diagnostics exposes the live prone limb owner');
+  enemy.prone=false;
+  impact.updateCreature(enemy,.016);
+  assert.equal(avatar.frontPlane.parent,state.pivot,'the portrait pivot stays reusable after recovery');
+  assert.equal(legsPivot.parent,avatar.group,'legs recover their original parent');
+  assert.equal(handsPivot.parent,avatar.group,'hands recover their original parent');
+  assert.equal(impact.ownsCreatureLegPose(enemy),false,'ordinary locomotion resumes on recovery');
+  assert.equal(rig.getDebug().activeAbsoluteClaims,0,'recovery releases all pose claims');
+
+  enemy.prone=true;
+  assert.equal(impact.triggerTumble(enemy,'right',.34),true,'repeat prone knockback animates the full hostile rig');
+  state=enemy._impactRagdollPlayback;
+  assert.equal(legsPivot.parent,state.pivot);
+  assert.equal(handsPivot.parent,state.pivot);
+  assert.equal(impact.ownsCreatureLegPose(enemy),true);
+  impact.updateCreature(enemy,.34);
+  assert.equal(state.holding,true,'tumble ends in the held prone pose');
+  impact.stopCreature(enemy);
+  assert.equal(legsPivot.parent,avatar.group);
+  assert.equal(handsPivot.parent,avatar.group);
+
+  assert(impact.startCreatureDeath(enemy,'front')>0,'death uses the same full-body pivot from any sibling hierarchy');
+  assert.equal(legsPivot.parent,enemy._deathRecordedThrow.pivot);
+  assert.equal(handsPivot.parent,enemy._deathRecordedThrow.pivot);
+  impact.sampleCreatureDeath(enemy,1);
+  assert(legs.calls>=8,'death samples the same authored leg frames');
+  impact.stopCreatureDeath(enemy);
+  assert.equal(legsPivot.parent,avatar.group,'cancelled/retired death restores rig attachment');
+  assert.equal(handsPivot.parent,avatar.group);
+  assert.equal(rig.getDebug().activeAbsoluteClaims,0);
+}
+
+// The committed authored clip must actually settle horizontal; a merely
+// tilted standing pose cannot pass the knockdown regression by hierarchy alone.
+{
+  const bank=JSON.parse(fs.readFileSync('docs/config/animations/spinthrow-blend-v1.json','utf8'));
+  for (const direction of ['front','back','left','right']) {
+    const frames=bank.clips[direction].clip.frames;
+    const q=frames[frames.length-1].ragdoll.body.localQuaternion;
+    const upY=1-2*(q.x*q.x+q.z*q.z); // The final body up vector after the recorded rotation.
+    assert(Math.abs(upY)<.2,direction+' knockdown tail must lie approximately horizontal');
+  }
+}
 console.log('Ragdoll scoped pivot ownership: prone, replacement, live impacts, corpse, and cleanup PASS');
