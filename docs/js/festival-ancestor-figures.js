@@ -98,12 +98,13 @@
       legs:window.ProceduralLegAnimation?.attach?.(THREE,model,options) || null
     };
   }
-  async function buildFigure(THREE,record,pose,index,stone) {
+  async function buildFigure(THREE,record,pose,index,stone,prepareProfile=null) {
     const preview=window.NpcAvatarPreview,avatar=window.PNGPlaneAvatar;
     if(!preview?.buildProfileFromNpcExport||!preview?.renderProfileToCanvas||!avatar?.buildSinglePlaneAvatarModel)
       throw new Error('NPC portrait/rig assembly has not initialized');
     const profile=preview.buildProfileFromNpcExport(record);
     if(!profile)throw new Error('No rendered portrait profile for '+(record.id || record.name || index));
+    if(typeof prepareProfile==='function')prepareProfile(profile); // Allows physical carvings to reuse the source actor's final dye pass; shrine ancestors are unchanged.
     const front=document.createElement('canvas');front.width=256;front.height=256;
     const back=document.createElement('canvas');back.width=256;back.height=256;
     await preview.renderProfileToCanvas(front,profile,{forceEyesOpen:true,seatId:'ancestor-stone:'+index,breathingComposer:null});
@@ -120,9 +121,9 @@
   }
   // A single reusable Tzizkhanash carving for other physical props (e.g. the Key Statue).
   // The same profile, stone cells, hand/leg rig and cleanup path as shrine ancestors are used.
-  async function createCarvedFigure(record,{id='carving',pose={x:0,z:0,scale:1,tilt:0,head:0,handRise:0}}={}) {
+  async function createCarvedFigure(record,{id='carving',pose={x:0,z:0,scale:1,tilt:0,head:0,handRise:0},prepareProfile=null}={}) {
     const [stone]=await Promise.all([stoneImage(),window.NpcAvatarPreview?.ensurePortraitCosmetics?.({configBase:'config/'})]);
-    const figure=await buildFigure(window.THREE,record,pose,String(id),stone);
+    const figure=await buildFigure(window.THREE,record,pose,String(id),stone,prepareProfile);
     return {...figure,stone};
   }
   function disposeFigure(figure) {
