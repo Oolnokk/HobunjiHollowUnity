@@ -218,8 +218,12 @@
     }
     // V50 square pillar (docs/tools/debris-ifier createPillarNicheShortObeliskActivator envelope): 0.78 x 1.75 with base, collar,
     // shaft, collar and capital. With `opening` the shaft is a hollow housing open on that side, so a glyph target sits in a niche.
-    const squarePillar=(name,x,py0,z,opening=null)=>{
-      const part=(w,h,d,ox,oy,oz,label)=>body(name+'-'+label,new THREE.BoxGeometry(w,h,d),stone,x+ox,py0+oy,z+oz);
+    const squarePillar=(name,x,py0,z,opening=null,stoneBoxes=null)=>{
+      const part=(w,h,d,ox,oy,oz,label)=>{
+        const px=x+ox,py=py0+oy,pz=z+oz; // Shared centers for the visible stone and height-aware cover.
+        stoneBoxes?.push({minX:px-w/2,maxX:px+w/2,minY:py-h/2,maxY:py+h/2,minZ:pz-d/2,maxZ:pz+d/2});
+        return body(name+'-'+label,new THREE.BoxGeometry(w,h,d),stone,px,py,pz);
+      };
       const first=part(.78,.11,.78,0,.055,0,'base');
       part(.64,.07,.64,0,.145,0,'collar');
       part(.58,.10,.58,0,1.56,0,'collar-top');
@@ -245,11 +249,12 @@
         parent:group,name,x,y:py+.6,z
       }):null;
       let base,rune,plaque=null,hitMesh,visualRoot=null;
+      const stoneBoxes=[]; // The glyph hall sweeps shots against the solid housing pieces around the opening.
       if(hanging){
         visualRoot=hanging.object;base=visualRoot;rune=hanging.hitMesh;hitMesh=hanging.hitMesh;
         authoredVisuals.push(visualRoot); // Hanging fixture owns multiple meshes and a shared rune texture.
       }else{
-        base=squarePillar(name,x,y,z,SIDE_NAMES[side&3]); // Hollow square pillar, open on one face; the glyph sits inside the niche.
+        base=squarePillar(name,x,y,z,SIDE_NAMES[side&3],stoneBoxes); // Hollow square pillar, open on one face; the glyph sits inside the niche.
         rune=body(name+'-rune-hit',new THREE.BoxGeometry(.34,.4,.12),stone,x-SIDE[0]*.06,py,z-SIDE[1]*.06);
         rune.rotation.y=yaw;
         hitMesh=rune;
@@ -278,7 +283,7 @@
           options.onHit?.(rec,state);
           if(rec.hits===rec.targetCount)complete();
         },
-        base,rune,visualRoot,plaque,baseY:base.position.y,runeY:rune.position.y,origin:{x,z,y:visualRoot?py+.6:py},
+        base,rune,visualRoot,plaque,stoneBoxes,baseY:base.position.y,runeY:rune.position.y,origin:{x,z,y:visualRoot?py+.6:py},
       };
       if(plaque)root.DevRandomRuinFurniturePieces?.track?.(plaque,()=>state.active?1:0);
       targets.push(state);return state;
@@ -554,7 +559,7 @@
       const hidden=Math.min(3,Math.max(1,slots.length-1));
       const footprintBoxes=[]; // Same boxes for ground movement (AreaFootprintBlockers): walking, dodges and lunges query THAT registry, not DynamicSurfaces.
       let blockerSerial=0;
-      const block=(px,pz,height)=>{footprintBoxes.push({minX:px-.4,maxX:px+.4,minZ:pz-.4,maxZ:pz+.4,top:y+height});return DS?.registerBlocker?.({id:scope+'-pillar-'+(blockerSerial++),scope,
+      const block=(px,pz,height,stoneBoxes)=>{footprintBoxes.push({minX:px-.4,maxX:px+.4,minZ:pz-.4,maxZ:pz+.4,top:y+height,stoneBoxes});return DS?.registerBlocker?.({id:scope+'-pillar-'+(blockerSerial++),scope,
         bounds:{minX:px-.4,maxX:px+.4,minZ:px-.4,maxZ:px+.4}, // DynamicSurfaces reads the footprint from `bounds`; bare minX/maxX meant an infinite, map-wide wall.
         enabled:()=>!rec.disposed&&isActive(),
         blocksAt:(_x,_z,_h,_r,_radius,query)=>{ // Solid only from the floor up to the pillar top, and only on this story.
@@ -564,8 +569,8 @@
       slots.forEach((slot,index)=>{
         if(index<hidden){
           const t=target(id+'-glyph'+index,slot.x,y+.95,slot.z,false,Math.floor(rnd()*4));
-          block(slot.x,slot.z,2.4);
-          return t;
+          block(slot.x,slot.z,2.4,t.stoneBoxes);
+          return;
         }
         const height=1.75;
         squarePillar(id+'-pillar'+index,slot.x,y,slot.z);
@@ -580,8 +585,15 @@
           const feet=Number(getPlayerY?.());
           for(const b of footprintBoxes){
             if(bx+half<=b.minX||bx-half>=b.maxX||bz+half<=b.minZ||bz-half>=b.maxZ)continue;
-            if(worldY!=null){if(worldY<y-.4||worldY>b.top+.05)continue;}
-            else if(Number.isFinite(feet)&&Math.abs(feet-y)>2.5)continue; // A walker on another story is not on this floor's pillars.
+            if(worldY!=null){
+              if(b.stoneBoxes){
+                if(b.stoneBoxes.some(stone=>bx+half>stone.minX&&bx-half<stone.maxX
+                  &&bz+half>stone.minZ&&bz-half<stone.maxZ
+                  &&worldY+half>=stone.minY&&worldY-half<=stone.maxY))return true;
+                continue;
+              }
+              if(worldY<y-.4||worldY>b.top+.05)continue;
+            }else if(Number.isFinite(feet)&&Math.abs(feet-y)>2.5)continue; // A walker on another story is not on this floor's pillars.
             return true;
           }
           return false;

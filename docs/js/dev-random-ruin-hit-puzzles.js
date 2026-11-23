@@ -186,6 +186,17 @@
     return candidates;
   }
 
+  function pillarMouthFor(object) {
+    const localZ = object.userData?.pillarNicheMouthZ; // The embedded generator derives this from the tapered shaft face.
+    const housing = object.parent; // The housing's local -Z points through the opening.
+    if (!Number.isFinite(localZ) || !housing) return null;
+    const bounds = boxFor(object); // Core dimensions define the aimable region at the mouth.
+    if (!bounds) return null;
+    const point = housing.localToWorld(new THREE.Vector3(0, 0, localZ));
+    const outward = new THREE.Vector3(0, 0, -1).transformDirection(housing.matrixWorld);
+    return { point, outward, bounds };
+  }
+
   function buildForRoot(nextRoot) {
     clearRuntimeObjects();
     root = nextRoot;
@@ -213,6 +224,7 @@
         id:`glyph-${entry.object.id}`,
         kind:'glyph',
         object:entry.object,
+        pillarMouth:pillarMouthFor(entry.object),
         mechanismId:entry.mechanismId,
         active:false,
         required,
@@ -308,15 +320,31 @@
     return exit >= 0 && enter <= 1 ? { enter:clamp(enter,0,1), exit:clamp(exit,0,1) } : null;
   }
 
+  function pillarMouthHit(start, end, mouth, radius) {
+    const { point, outward, bounds } = mouth;
+    const from = (start.x - point.x) * outward.x + (start.z - point.z) * outward.z - radius;
+    const travel = (end.x - start.x) * outward.x + (end.z - start.z) * outward.z;
+    if (from < 0 || travel >= -1e-9 || from + travel > 0) return null;
+    const t = -from / travel; // First contact with the mouth, only while traveling toward the recess.
+    const y = start.y + (end.y - start.y) * t;
+    const acrossX = Math.abs(outward.z) > Math.abs(outward.x); // Native housings face the four cardinal directions.
+    const across = acrossX ? 'x' : 'z';
+    const side = start[across] + (end[across] - start[across]) * t;
+    const pad = GLYPH_HITBOX_PAD; // Keep the opening fixed even if a projectile has a wide flight collider.
+    if (side < bounds.min[across] - pad || side > bounds.max[across] + pad
+      || y < bounds.min.y - pad || y > bounds.max.y + pad) return null;
+    return t;
+  }
+
   function glyphProjectileHit(start, end, radius) {
     if (!root || currentArea() !== MAP_ID) return null;
     let nearest = null;
     for (const target of glyphTargets) {
-      const box = target.hitBox || boxFor(target.object); // hitBox (js/dev-random-ruin-glyph-circuits.js) reaches the visible rune marker on the room-facing side, so a glyph carved inside a pillar is hit before the pillar's own footprint.
-      if (!box) continue;
-      const interval = segmentBoxInterval(start, end, box, Math.max(GLYPH_HITBOX_PAD, radius));
-      if (!interval || (nearest && interval.enter >= nearest.t)) continue;
-      nearest = { target, t:interval.enter, box };
+      const t = target.pillarMouth
+        ? pillarMouthHit(start, end, target.pillarMouth, radius)
+        : segmentBoxInterval(start, end, target.hitBox || boxFor(target.object), Math.max(GLYPH_HITBOX_PAD, radius))?.enter;
+      if (t == null || (nearest && t >= nearest.t)) continue;
+      nearest = { target, t };
     }
     return nearest;
   }
@@ -371,13 +399,13 @@
       if (projectileUpdateDepth <= 0 || currentArea() !== MAP_ID || !root) return ordinary;
       const glyph = glyphProjectileHit(start, end, radiusWorld);
       if (!glyph || (ordinary && finite(ordinary.t, Infinity) <= glyph.t)) return ordinary;
-      activateGlyph(glyph.target);
       return {
         t:glyph.t,
         distanceWorld:start.distanceTo?.(end) * glyph.t || 0,
         object:glyph.target.object,
         kind:'ruinGlyph',
         key:glyph.target.id,
+        onImpact:() => activateGlyph(glyph.target), // The live projectile sweep resolves any earlier cover or actor first.
         point:start.clone?.().lerp ? start.clone().lerp(end, glyph.t) : null,
       };
     };

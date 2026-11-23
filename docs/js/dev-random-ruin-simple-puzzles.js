@@ -334,14 +334,19 @@
       if(modularProjectileUpdateDepth<=0||!state||!inRuin())return ordinary;
       const modular=modularProjectileHit(start,end,radiusWorld);
       if(!modular||(ordinary&&Number.isFinite(Number(ordinary.t))&&Number(ordinary.t)<=modular.t))return ordinary;
-      if(modular.kind==='glyph')activateCeilingGlyph(modular.record);
-      if(modular.kind==='target'){try{modular.record.onHit?.(modular.record);}catch(error){console.warn('[Random Test Ruin] projectile target hit failed',error);}}
       return {
         t:modular.t,
         distanceWorld:start.distanceTo?.(end)*modular.t||0,
         object:modular.object,
         kind:modular.kind==='glyph'?'ruinModularGlyph':modular.kind==='target'?'ruinProjectileTarget':'ruinStoneCanopy',
         key:modular.record?.id||null,
+        onImpact:modular.record?()=>{
+          if(modular.kind==='glyph')activateCeilingGlyph(modular.record);
+          else{
+            try{modular.record.onHit?.(modular.record);}
+            catch(error){console.warn('[Random Test Ruin] projectile target hit failed',error);}
+          }
+        }:null, // Combat invokes this only if the target wins the sweep against physical cover.
         point:start.clone?.().lerp?start.clone().lerp(end,modular.t):null,
       };
     };

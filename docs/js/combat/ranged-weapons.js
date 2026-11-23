@@ -187,7 +187,7 @@
       });
       return entries;
     });
-    deps.debugLog?.('Ranged update: friendly-fire actor cover, loaded-before-fire LOS repositioning, and same-frame hitbox/perp caches enabled.');
+    deps.debugLog?.('Ranged update: dungeon projectile targets activate when the live shot reaches them.');
   }
 
   function gear() { return window.CombatTutorial?.loanAmmo?.() || deps?.getGearInventory?.() || null; }
@@ -1824,9 +1824,11 @@
       }
       const terrainImpact = hit?.kind === 'cover' ? hit : sweptTerrainImpact;
       if (terrainImpact) {
+        hit?.coverHit?.onImpact?.(); // A cover target reacts only once the live sweep selects it as the impact.
         const fraction = THREE.MathUtils.clamp(Number(terrainImpact.t) || 0, 0, 1); // Collision fraction identifies the last real terrain impact in world coordinates.
         lastTerrainImpact = {
           team: p.team, kind: terrainImpact.kind, weapon: p.itemKey, area: p.areaId,
+          coverKind: terrainImpact.coverHit?.kind ?? null, coverKey: terrainImpact.coverHit?.key ?? null, // Mobile diagnostics identify which cover or dungeon target stopped the shot.
           x: THREE.MathUtils.lerp(p.prevX, p.x, fraction) / deps.TILE,
           y: THREE.MathUtils.lerp(p.prevWorldY, p.worldY, fraction),
           z: THREE.MathUtils.lerp(p.prevY, p.y, fraction) / deps.TILE,
