@@ -1125,13 +1125,13 @@
         || Number.isFinite(playerY) && Math.abs(ruinGlowProjection.y - playerY) > 11) continue;
       ruinGlowSource.x=ruinGlowProjection.x;ruinGlowSource.y=ruinGlowProjection.y;ruinGlowSource.z=ruinGlowProjection.z;
       if(!ruinRoomLightAllowed(ruinGlowSource))continue;
-      if(kanthic&&ruinGlyphOccluded(ruinGlowProjection))continue; // Hidden 3D glyphs must never punch through the 2D darkness overlay.
       const scale=mesh.matrixWorld?.getMaxScaleOnAxis?.() || 1;
       const surfaceRadius=Math.max(.8,(sphere?.radius||1)*scale); // Actual geometry extent, used only to cull glyphs that are completely offscreen.
       const radiusTiles=kanthic?surfaceRadius:Math.min(5,surfaceRadius); // Kanthic must not lose the visible end of a long wall; other themes keep legacy glow radius.
       const center=lightingDeps.worldToOverlay(ruinGlowProjection.x,ruinGlowProjection.y,ruinGlowProjection.z);
       const radius=lightScreenRadius(ruinGlowProjection.x,ruinGlowProjection.z,ruinGlowProjection.y,radiusTiles);
       if (!(radius > 0) || !lightMaskIntersectsViewport(center,radius,ctx,ruinGlowProjection.x,ruinGlowProjection.y,ruinGlowProjection.z,radiusTiles)) continue;
+      if(kanthic&&ruinGlyphOccluded(ruinGlowProjection))continue; // Skip expensive 3D depth rays for offscreen engravings; nearby solid masonry still blocks them.
       if(kanthic){
         ruinGlowDrawResult.drawn=0;ruinGlowDrawResult.examined=0; // A sealed-room clip may decline the draw callback entirely.
         withRuinRoomLightClip(ctx,ruinGlowSource,()=>{
