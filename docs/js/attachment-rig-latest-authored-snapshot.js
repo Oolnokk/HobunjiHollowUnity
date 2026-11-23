@@ -10,6 +10,7 @@
   const urls = [
     new URL('../config/character-rig-scale-defaults.js?v=20261113uniformRigStride2', base).href,
     new URL('../config/romance-config.js?v=20261123ageLineup1', base).href, // Shares baby/toddler defaults with the gameplay family phase configuration.
+    new URL('character-age-rig-config.js?v=20261123ageRuntimeParity1', base).href, // Author and game share sanitized age defaults, authored overrides and preview transform math.
     new URL('attachment-rig-latest-authored-snapshot-core.js?v=20261114hrigcore1760', base).href,
     new URL('character-rig-maoao-authored-20260905.js?v=20260905b', base).href,
     new URL('mammakhbuur-species-runtime.js?v=20261116maoPerch2', base).href,
