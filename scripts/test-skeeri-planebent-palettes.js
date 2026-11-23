@@ -290,7 +290,7 @@ for(const key of ['flying','perched']) {
   assert(censusBegin > 0 && censusEnd > censusBegin, 'real mobile Skeeri census remains independently testable');
   const censusContext = { window: w, deps: { esc: value => String(value) } }; // Lightweight mobile debug fixture; uses the actual live snapshot.
   vm.runInNewContext(wildlifePanel.slice(censusBegin, censusEnd)
-    + '\\nthis.census = renderSkeeriFlightCensus;', censusContext);
+    + '\nthis.census = renderSkeeriFlightCensus;', censusContext);
   const census = censusContext.census();
   assert.match(census, /Appearance preload: ready/, 'mobile Wildlife tab shows completed Skeeri source-art preload');
   assert.match(census, /ruin entries requested: 2/, 'mobile tab makes reuse of source art inspectable');
