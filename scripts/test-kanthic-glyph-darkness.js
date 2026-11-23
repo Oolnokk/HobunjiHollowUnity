@@ -112,6 +112,22 @@ draws.length=0;
 assert.equal(win.__probeGlyphMasks(platformScene,deps,7200).drawn,1,'a slab farther away than the wall leaves the wall glyph visible');
 assert(!draws.some(d=>d.kind==='platform-clip'),'slabs behind the wall must not be treated as foreground cover');
 deps.worldToOverlay=regularProjection;
+// Unlike the edge-on fallback above, a genuine vertical engraved wall must use its physical
+// plane to decide if an overlapping slab is in front, rather than comparing distant bounding centers.
+positions.array.set([1,0,1,1,2,1,1,0,3]);
+const priorSphereCenter=geometry.boundingSphere.center;
+geometry.boundingSphere.center=new Vec(1,1,2);
+deps.worldToOverlay=(x,y,z)=>({x:100+y*10+x*.1,y:100+z*10}); // Screen coordinates of a camera aimed horizontally along X.
+platform.geometry.boundingBox.min.set(-1,.2,1);platform.geometry.boundingBox.max.set(0,1.6,2);
+draws.length=0;
+assert.equal(win.__probeGlyphMasks(platformScene,deps,7400).drawn,1,'visible vertical-wall glyph remains projected behind a foreground slab');
+assert(draws.some(d=>d.kind==='platform-clip'),'a slab on the camera side of the real wall plane clips the overlapping glyph');
+platform.geometry.boundingBox.min.x=4;platform.geometry.boundingBox.max.x=5;
+draws.length=0;
+assert.equal(win.__probeGlyphMasks(platformScene,deps,7500).drawn,1,'vertical wall stays visible when the slab is physically behind it');
+assert(!draws.some(d=>d.kind==='platform-clip'),'a slab on the far side of the wall plane cannot cut out the visible foreground glyph');
+positions.array.set([1,1,1,3,1,1,1,1,3]);geometry.boundingSphere.center=priorSphereCenter;
+deps.worldToOverlay=regularProjection;
 mesh.parent=scene;
 mesh.visible=false;
 assert.equal(draw().drawn,0,'hidden wall sections must not cut through darkness');
