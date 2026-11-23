@@ -37,6 +37,7 @@
     invalidate();
     unregisterRootCollision?.();
     unregisterRootCollision = window.AreaFootprintBlockers?.register?.('wilderness-tree-roots', {
+      get area() { return deps?.getCurrentArea?.() || null; }, // Dynamic area ownership prevents another zone's path probes from seeing the current forest's roots.
       enabled: () => String(deps?.getCurrentArea?.() || '').startsWith('map_'),
       blocksBox: (x, z, half, worldY) => rootBlocksBox(x, z, half, worldY),
       supportAt: (x, z, maxY) => rootSupportAt(x, z, maxY),
