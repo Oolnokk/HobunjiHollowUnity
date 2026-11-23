@@ -65,6 +65,13 @@ latency per individual Skeeri, or whether the first entry still causes visible
 hitches on low-end phones. The prewarm caches *source masks*, not GPU textures for
 every possible individual palette. Keep those distinctions when profiling.
 
+## 23 Nov 2026: fog and sky lighting work
+
+Fog reads the skydome's lunar sampler directly, avoiding a full diagnostic
+snapshot for each lighting sample. The skydome reuses its time-of-day lighting
+table and skips overcast easing once the current value reaches its target.
+Device frame times have yet to be measured.
+
 ## 23 Nov 2026: Cloud Forest dense wall merged across chunks; wilderness leads measured
 
 A per-render-call draw census of a Southern Cloud Forest frame (headless, fresh world, 480×320,
