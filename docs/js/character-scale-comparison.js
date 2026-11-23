@@ -1169,6 +1169,7 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Keep native
 
   async function buildLineup(buildId) {
     const reps = await representatives();
+    if (buildId !== generation) return; // A tab switch while the NPC roster is downloading must not allocate a cancelled lineup.
     const ordered = [
       ...reps.filter(item => item.species === 'longoran'),
       ...reps.filter(item => item.species !== 'longoran'),
