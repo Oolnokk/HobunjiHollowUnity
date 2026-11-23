@@ -156,6 +156,7 @@ function testRuntime() {
   firstAvatar.userData.neckRig={skinnedPlane:portrait};
   bodyRoot.add(firstAvatar);firstAvatar.add(portrait);
   let activeAvatar=firstAvatar; // Canonical WorldPortraitLife instance used to distinguish current portrait from stale ancestors.
+  let posteriorY=.19; // Mutable live carrier-posterior fixture checks posture transitions without changing the body root.
   let currentBodyRoot=bodyRoot; // Simulates an asynchronously rebuilt avatar root.
   deps.playerMesh=headJoint;
   const targetSources=new Map(); // Holds actual Targetables source functions so stale entries can be tested after state transitions.
@@ -163,7 +164,7 @@ function testRuntime() {
     THREE:{Vector3,Group,Euler,Quaternion,MeshBasicMaterial,SkinnedMesh},Combat:{deps,update(){},init(){}},
     Targetables:{addSource:(key,fn)=>targetSources.set(key,fn),makeActor:entry=>({entry})},
     ProceduralHandAttachments:{gameDeps:deps},
-    PlayerBodyTransformComposer:{getPlayerMesh:()=>currentBodyRoot,getPosteriorY:()=>.19},
+    PlayerBodyTransformComposer:{getPlayerMesh:()=>currentBodyRoot,getPosteriorY:()=>posteriorY},
     WorldPortraitLife:{getPlayerAvatar:()=>({group:activeAvatar})},
     GridTileAccessors:{getActiveScene:()=>activeScene,getCurrentArea:()=>currentArea,getActiveGrid:()=>grid},
     __farmLog(){},WorldEvents:{emit(){}},AudioSystem:{playObjectSfxKey(){}},
@@ -475,6 +476,24 @@ function testRuntime() {
     assert(Math.abs(baby.group.position[axis]-babyLocal[axis])<1e-8,'turns do not rewrite the baby mount on '+axis);
   }
   assert(Math.hypot(rotatedBaby.x-babyWorld.x,rotatedBaby.z-babyWorld.z)>.01,'carrier turning moves the baby WITH its rear-facing torso');
+  const previousZ=baby.group.position.z;
+  baby.data.carryable.backCarry.posteriorOffset.z-=.05; // An authored edit from the Carryables panel updates this runtime revision.
+  baby.data.carryable._backCarryRevision=1;
+  window.Shattercasks.tick(.02);
+  assert(Math.abs(baby.group.position.z-previousZ)>.04,
+    'a changed rear pose must invalidate the stable torso mount instead of leaving a floating stale attachment');
+  const adjustedZ=baby.group.position.z;
+  window.Shattercasks.tick(.02);
+  assert(Math.abs(baby.group.position.z-adjustedZ)<1e-8,'unchanged back pose does not accumulate offset across frames');
+  const previousY=baby.group.position.y;
+  posteriorY=.30; // Live player posterior can change on crouch / other rig presentation states.
+  window.Shattercasks.tick(.02);
+  assert(Math.abs(baby.group.position.y-previousY-.11)<1e-8,
+    'live carrier posterior shifts the rear baby by exactly the same height, without following portrait yaw');
+  posteriorY=.19; window.Shattercasks.tick(.02);
+  assert(Math.abs(baby.group.position.y-previousY)<1e-8,'restoring carrier posture restores the authored mount height');
+  assert.equal(window.Shattercasks.debugSnapshot().backCarryMount.bodyAttached,true,
+    'mobile diagnosis confirms the physical baby is on the actual carrier frame');
   assert(window.Shattercasks.takeFromBack(),'baby can move from rear to normal hand grip');
   assert.equal(baby.group.parent,headJoint,'retrieval restores existing hand carry rig');
   assert(window.Shattercasks.stowOnBack(),'retrieved baby can be restowed');
