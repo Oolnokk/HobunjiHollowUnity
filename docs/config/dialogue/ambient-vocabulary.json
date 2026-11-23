@@ -2634,6 +2634,20 @@
         "firstRecorded": 1751,
         "source": "https://www.etymonline.com/word/ahoy",
         "sourceVisit": "pahu_grapple_flail"
+      },
+      {
+        "id": "greetings",
+        "text": "greetings",
+        "verbosity": 60,
+        "color": 45,
+        "formality": 75
+      },
+      {
+        "id": "hullo",
+        "text": "hullo",
+        "verbosity": 30,
+        "color": 48,
+        "formality": 28
       }
     ],
     "i think": [
@@ -3023,22 +3037,6 @@
         "sourceVisit": "pahu_grapple_flail"
       }
     ],
-    "good": [
-      {
-        "id": "fine",
-        "text": "fine",
-        "verbosity": 35,
-        "color": 52,
-        "formality": 30
-      },
-      {
-        "id": "lovely",
-        "text": "lovely",
-        "verbosity": 35,
-        "color": 52,
-        "formality": 30
-      }
-    ],
     "hey": [
       {
         "id": "hiya",
@@ -3073,11 +3071,11 @@
     ],
     "there you are": [
       {
-        "id": "here-you-are",
-        "text": "here you are",
-        "verbosity": 35,
-        "color": 52,
-        "formality": 30
+        "id": "look-who-s-here",
+        "text": "look who's here",
+        "verbosity": 40,
+        "color": 48,
+        "formality": 42
       },
       {
         "id": "ah-there-you-are",
@@ -3299,22 +3297,6 @@
         "formality": 30
       }
     ],
-    "little": [
-      {
-        "id": "small",
-        "text": "small",
-        "verbosity": 35,
-        "color": 52,
-        "formality": 30
-      },
-      {
-        "id": "tiny",
-        "text": "tiny",
-        "verbosity": 35,
-        "color": 52,
-        "formality": 30
-      }
-    ],
     "looks happy": [
       {
         "id": "seems-happy",
@@ -3531,15 +3513,6 @@
         "formality": 30
       }
     ],
-    "how's": [
-      {
-        "id": "how-is",
-        "text": "how is",
-        "verbosity": 35,
-        "color": 52,
-        "formality": 30
-      }
-    ],
     "your farm": [
       {
         "id": "your-homestead",
@@ -3616,15 +3589,6 @@
       {
         "id": "seem-comfortable",
         "text": "seem comfortable",
-        "verbosity": 35,
-        "color": 52,
-        "formality": 30
-      }
-    ],
-    "it that way": [
-      {
-        "id": "things-as-they-are",
-        "text": "things as they are",
         "verbosity": 35,
         "color": 52,
         "formality": 30
@@ -3749,6 +3713,143 @@
         "color": 70,
         "formality": 9,
         "kind": "simple"
+      }
+    ],
+    "good day": [
+      {
+        "id": "lovely-day",
+        "text": "lovely day",
+        "verbosity": 40,
+        "color": 48,
+        "formality": 42
+      },
+      {
+        "id": "pleasant-day",
+        "text": "pleasant day",
+        "verbosity": 40,
+        "color": 48,
+        "formality": 42
+      }
+    ],
+    "good morning": [
+      {
+        "id": "lovely-morning",
+        "text": "lovely morning",
+        "verbosity": 40,
+        "color": 48,
+        "formality": 42
+      },
+      {
+        "id": "pleasant-morning",
+        "text": "pleasant morning",
+        "verbosity": 40,
+        "color": 48,
+        "formality": 42
+      }
+    ],
+    "good afternoon": [
+      {
+        "id": "lovely-afternoon",
+        "text": "lovely afternoon",
+        "verbosity": 40,
+        "color": 48,
+        "formality": 42
+      },
+      {
+        "id": "pleasant-afternoon",
+        "text": "pleasant afternoon",
+        "verbosity": 40,
+        "color": 48,
+        "formality": 42
+      }
+    ],
+    "good evening": [
+      {
+        "id": "lovely-evening",
+        "text": "lovely evening",
+        "verbosity": 40,
+        "color": 48,
+        "formality": 42
+      },
+      {
+        "id": "pleasant-evening",
+        "text": "pleasant evening",
+        "verbosity": 40,
+        "color": 48,
+        "formality": 42
+      }
+    ],
+    "good night": [
+      {
+        "id": "pleasant-night",
+        "text": "pleasant night",
+        "verbosity": 40,
+        "color": 48,
+        "formality": 42
+      },
+      {
+        "id": "lovely-night",
+        "text": "lovely night",
+        "verbosity": 40,
+        "color": 48,
+        "formality": 42
+      }
+    ],
+    "hello again": [
+      {
+        "id": "hi-again",
+        "text": "hi again",
+        "verbosity": 40,
+        "color": 48,
+        "formality": 42
+      },
+      {
+        "id": "greetings-again",
+        "text": "greetings again",
+        "verbosity": 40,
+        "color": 48,
+        "formality": 42
+      }
+    ],
+    "little baby": [
+      {
+        "id": "tiny-baby",
+        "text": "tiny baby",
+        "verbosity": 40,
+        "color": 48,
+        "formality": 42
+      },
+      {
+        "id": "little-one",
+        "text": "little one",
+        "verbosity": 40,
+        "color": 48,
+        "formality": 42
+      }
+    ],
+    "that harvest": [
+      {
+        "id": "that-crop",
+        "text": "that crop",
+        "verbosity": 40,
+        "color": 48,
+        "formality": 42
+      }
+    ],
+    "good spot": [
+      {
+        "id": "fine-spot",
+        "text": "fine spot",
+        "verbosity": 40,
+        "color": 48,
+        "formality": 42
+      },
+      {
+        "id": "nice-spot",
+        "text": "nice spot",
+        "verbosity": 40,
+        "color": 48,
+        "formality": 42
       }
     ]
   },
@@ -4095,8 +4196,20 @@
           "nice-to-see-you",
           "a pleasure to see you"
         ],
-        "good": [
-          "lovely"
+        "good day": [
+          "lovely-day"
+        ],
+        "good morning": [
+          "lovely-morning"
+        ],
+        "good afternoon": [
+          "lovely-afternoon"
+        ],
+        "good evening": [
+          "lovely-evening"
+        ],
+        "good night": [
+          "lovely-night"
         ]
       }
     }
