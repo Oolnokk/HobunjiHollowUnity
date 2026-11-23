@@ -365,7 +365,7 @@
     const westernSlope = currentArea === WESTERN_SLOPE_ID;
     const underground = !cloudForest && !westernSlope && isUndergroundFogArea(currentArea);
     const active = cloudForest || underground || westernSlope;
-    const mistActive = active && currentArea !== 'map_i_dev_random_ruin'; // Kanthic keeps screen-space darkness but no player-following mist tunnels.
+    const mistActive = active; // Kanthic uses the actual Cloud Forest mist cylinders and underground depth fog.
     if (westernSlope) {
       const snowStrength = window.WeatherFX?.getPrecipitationStrength?.();
       slopePrecipitationStrength = Number.isFinite(snowStrength) ? snowStrength
@@ -705,7 +705,7 @@
     const currentArea = lightingDeps.getCurrentArea(); // Use the same carried-lantern gradient in every room; Tothal alone suppresses it.
     const ruinTradition = currentArea === 'map_i_dev_random_ruin' ? (window.DevRandomRuinLichThemes?.activeTheme?.() || window.DevRandomRuin?.getRuntimeContext?.()?.theme) : null;
     if (ruinTradition === 'tothal') return; // Even an equipped lantern cannot lift Tothal's blue overcast.
-    const ruinLanternScale = 1; // Kanthic uses the ordinary full-radius, soft-edged lantern rather than a separate circular vignette.
+    const ruinLanternScale = ruinTradition === 'kanthic' ? 0.32 : 1; // Default 2.4 tiles contracts to 0.768 in Kanthic, with the same smooth falloff.
     const ctx = lightingDeps.lctx;
     const activeScene = lightingDeps.getActiveScene?.() || window.GridTileAccessors?.getActiveScene?.(); // The player farmhouse's special base-light rule uses its active scene identity.
     const farmhouseSceneActive = activeScene?.userData?.hobunjiPlayerFarmhouseInterior === true; // Unlike mines, the farmhouse has no permanently lit player torch.
@@ -760,15 +760,15 @@
           const anchor=rope.anchor,bob=rope.bob||window.RopeCore?.bobAt?.(rope);
           if(!anchor||!bob)continue;
           if(Math.min(Math.hypot(anchor.x-carrier.x,anchor.z-carrier.z),
-             Math.hypot(bob.x-carrier.x,bob.z-carrier.z))>lanternTuning.radiusTiles+localRadius)continue;
+             Math.hypot(bob.x-carrier.x,bob.z-carrier.z))>lanternTuning.radiusTiles*ruinLanternScale+localRadius)continue;
           for(let segment=1;segment<=6;segment++){
             const t=segment/6,x=anchor.x+(bob.x-anchor.x)*t,y=anchor.y+(bob.y-anchor.y)*t,z=anchor.z+(bob.z-anchor.z)*t;
             const distance=Math.hypot(x-carrier.x,y-carrier.y,z-carrier.z);
-            if(distance>=lanternTuning.radiusTiles)continue;
+            if(distance>=lanternTuning.radiusTiles*ruinLanternScale)continue;
             const projected=lightingDeps.worldToOverlay(x,y,z);
             const radius=lightScreenRadius(x,z,y,localRadius);
             if(!(radius>0)&&radius!==0)continue;
-            const alpha=lanternTuning.centerMaskAlpha*effectiveStrength*(1-distance/lanternTuning.radiusTiles);
+            const alpha=lanternTuning.centerMaskAlpha*effectiveStrength*(1-distance/(lanternTuning.radiusTiles*ruinLanternScale));
             const glow=ctx.createRadialGradient(projected.x,projected.y,0,projected.x,projected.y,Math.max(.01,radius));
             glow.addColorStop(0,'rgba(0,0,0,'+alpha+')');
             glow.addColorStop(1,'rgba(0,0,0,0)');
@@ -927,9 +927,8 @@
   }
   const ruinFireMaskStats={sources:0,lit:0,projected:0,drawn:0}; // Mobile Pixel Probe verifies an ignited brazier actually contributes to the visible darkness overlay.
   function drawRuinTraditionLightMasks(lights = window.DevRandomRuinLichThemes?.lightSources?.() || []) { // Existing Hronal/Tothal sources and Kanthic fixture sources share one compositing path.
-    ruinFireMaskStats.sources=lights.length;
-    ruinFireMaskStats.lit=lights.filter(light=>light.active!==false).length;
-    ruinFireMaskStats.projected=0;ruinFireMaskStats.drawn=0;
+    ruinFireMaskStats.sources+=lights.length;
+    ruinFireMaskStats.lit+=lights.filter(light=>light.active!==false).length; // Multiple fixture owners contribute to the same overlay draw.
     if (!lights.length) return;
     const ctx = lightingDeps.lctx;
     const visible = []; // Kept for the second coloured-glow pass, so project each source just once.
@@ -948,7 +947,7 @@
       if (!lightMaskIntersectsViewport(center, radius, ctx, light.x, light.y, light.z, radiusTiles)) continue;
       visible.push({light,center,radius,transmission,shadows:ruinShadowPolygons(light,radiusTiles)});
     }
-    ruinFireMaskStats.projected=visible.length; // Distinguishes source state from sources actually in the camera viewport.
+    ruinFireMaskStats.projected+=visible.length; // Count sources actually in view across all fixture owners.
     ctx.globalCompositeOperation = 'destination-out';
     for (const {light,center,radius,transmission,shadows} of visible) {
       const strength = light.strength * transmission;
@@ -987,6 +986,30 @@
   const ruinGlowStats = { found:0,drawn:0,triangles:0,examined:0,scans:0 }; // Mobile Pixel Probe shows submitted glyph triangles and the total examined work budget.
   const MAX_RUIN_GLOW_TRIANGLES = 960; // Bounds examined glyph triangles as well as submitted Canvas2D draws per lighting refresh.
   let ruinGlowScene = null,ruinGlowNextScan = 0,ruinGlowMeshes = []; // Cache the active scene's glow meshes; lazy atlases can complete after initial scan.
+  let ruinGlowOccluders=[]; // Physical stone/door meshes collected during the existing 1.6s scene scan, never per frame.
+  const ruinGlowRaycaster=window.THREE.Raycaster?new window.THREE.Raycaster():null; // Reused to establish 3D visibility before clearing 2D darkness.
+  const ruinGlowRayDirection=new window.THREE.Vector3(); // Shared camera-to-surface ray scratch vector.
+  const ruinGlowRayHits=[]; // Reused output buffer for all depth checks.
+  let ruinGlowOcclusionChecks=0,ruinGlowOccluded=0; // Exposed through Pixel Probe to diagnose remaining wall-through-glyph cases.
+  function ruinGlyphOccluded(center) {
+    if(!ruinGlowRaycaster||!ruinGlowOccluders.length)return false;
+    ruinGlowRayDirection.copy(center).sub(ruinGlowCameraPosition);
+    const distance=ruinGlowRayDirection.length();
+    if(!(distance>.12))return false;
+    ruinGlowRayDirection.multiplyScalar(1/distance);
+    ruinGlowRaycaster.set(ruinGlowCameraPosition,ruinGlowRayDirection);
+    ruinGlowRaycaster.far=distance-.085; // Coplanar stone and glyph are the same surface; reject only geometry distinctly nearer.
+    ruinGlowRaycaster.near=0;
+    ruinGlowRayHits.length=0;
+    ruinGlowRaycaster.intersectObjects(ruinGlowOccluders,false,ruinGlowRayHits);
+    ruinGlowOcclusionChecks++;
+    for(const hit of ruinGlowRayHits){
+      let visible=true;
+      for(let node=hit.object;node;node=node.parent)if(node.visible===false){visible=false;break;}
+      if(visible) {ruinGlowOccluded++;return true;} // An overhead wing hidden by story-culling is not a physical occluder.
+    }
+    return false;
+  }
   let ruinGlowVertexScreen = new Float32Array(0); // Shared projected vertex buffer, resized only for the largest encountered engraving mesh.
   const ruinGlowPatternCache = new WeakMap(); // One repeated-rune CanvasPattern per loaded image, reused across darkness refreshes.
   const ruinGlowDrawResult={drawn:0,examined:0}; // Shared result avoids allocating a record for every wall on each lighting refresh.
@@ -1066,15 +1089,23 @@
     if (!scene?.traverse) return;
     if (ruinGlowScene !== scene || now >= ruinGlowNextScan) {
       ruinGlowScene = scene;ruinGlowNextScan = now + 1600;
-      ruinGlowMeshes = []; // Filter by the real additive pass, not decorative stone or generated surface labels.
+      ruinGlowMeshes=[];ruinGlowOccluders=[]; // Both lists are collected once; 2D glyph masks otherwise have no depth information.
       scene.traverse(node => {
-        if ((node.name === 'engraving-glyph-glow' || node.userData?.ruinLadderRuneGlow) && node.isMesh) ruinGlowMeshes.push(node);
+        if(!node.isMesh)return;
+        if(node.name === 'engraving-glyph-glow' || node.userData?.ruinLadderRuneGlow){ruinGlowMeshes.push(node);return;}
+        if(ruinGlowOccluders.length>=240||!node.geometry||node.userData?.devRuinFootprintIgnore||node.userData?.furniturePattern)return;
+        const name=String(node.name||'');
+        if(!node.userData?.cameraObstacle&&!node.userData?.ruinInteriorWall&&!node.userData?.transitDoor
+          &&!/wall|pillar|column|slab|stone.door|coffin.lid|stone$/i.test(name))return;
+        const material=Array.isArray(node.material)?node.material[0]:node.material;
+        if(material?.visible===false||(material?.transparent===true&&Number(material.opacity)<.5))return;
+        ruinGlowOccluders.push(node);
       });
       ruinGlowStats.scans++;ruinGlowStats.found=ruinGlowMeshes.length;
     }
     const ctx = lightingDeps.lctx, playerY = Number(lightingDeps.getPlayerWorldY?.());
     const kanthic=activeRuinTradition()==='kanthic'; // Other ruin traditions keep their existing atmospheric glow radius.
-    ruinGlowStats.drawn = 0;ruinGlowStats.triangles=0;ruinGlowStats.examined=0;
+    ruinGlowStats.drawn = 0;ruinGlowStats.triangles=0;ruinGlowStats.examined=0;ruinGlowOcclusionChecks=0;ruinGlowOccluded=0;
     if(kanthic){lightingDeps.camera?.getWorldPosition?.(ruinGlowCameraPosition);lightingDeps.camera?.getWorldDirection?.(ruinGlowCameraDirection);}
     ctx.globalCompositeOperation = 'destination-out';
     for (const mesh of ruinGlowMeshes) {
@@ -1094,6 +1125,7 @@
         || Number.isFinite(playerY) && Math.abs(ruinGlowProjection.y - playerY) > 11) continue;
       ruinGlowSource.x=ruinGlowProjection.x;ruinGlowSource.y=ruinGlowProjection.y;ruinGlowSource.z=ruinGlowProjection.z;
       if(!ruinRoomLightAllowed(ruinGlowSource))continue;
+      if(kanthic&&ruinGlyphOccluded(ruinGlowProjection))continue; // Hidden 3D glyphs must never punch through the 2D darkness overlay.
       const scale=mesh.matrixWorld?.getMaxScaleOnAxis?.() || 1;
       const surfaceRadius=Math.max(.8,(sphere?.radius||1)*scale); // Actual geometry extent, used only to cull glyphs that are completely offscreen.
       const radiusTiles=kanthic?surfaceRadius:Math.min(5,surfaceRadius); // Kanthic must not lose the visible end of a long wall; other themes keep legacy glow radius.
@@ -1308,6 +1340,7 @@
     const rect = surface?.rect || lightingDeps.getThreeRect();
     ctx.clearRect(0, 0, rect.width, rect.height);
     outdoorLightStats.considered = outdoorLightStats.drawn = outdoorLightStats.fading = outdoorLightStats.culled = 0; // Count only lights in the latest frame for mobile debugging.
+    ruinFireMaskStats.sources=ruinFireMaskStats.lit=ruinFireMaskStats.projected=ruinFireMaskStats.drawn=0; // Reset once per frame so mobile diagnostics include every light owner.
     const enclosed = farmhouseSceneActive || currentArea === 'interior'
       || lightingDeps._isBuildingArea(currentArea)
       || (isNoSkyArea(currentArea) && !isCloudForestMap(currentArea));
@@ -1336,6 +1369,7 @@
         if (ruinTradition !== 'kanthic' && ruinTradition !== 'tothal') drawFurnitureLightMasksCompat(); // The pure-black Kanthic room and cold Tothal room have no generic warm furniture pools.
         if (ruinTradition === 'hronal' || ruinTradition === 'tothal') drawRuinTraditionLightMasks();
         if (ruinTradition === 'kanthic') drawRuinTraditionLightMasks(window.RuinMultifloorV50Style?.lightSources?.() || []); // Only dedicated Kanthic fire fixtures lift the blackness.
+        if (ruinTradition === 'kanthic') drawRuinTraditionLightMasks(window.RuinRopeTorch?.lightSources?.() || EMPTY_LIGHT_LIST); // Rope-end flames light less than one tile.
         if (ruinTradition) drawRuinTraditionLightMasks(window.RuinLayerPlayable?.roomLights?.() || []); // A solved puzzle room fills with light.
         if (ruinTradition) drawRuinTraditionLightMasks(window.DevRandomRuinSanctum?.lightSources?.() || []); // Lit arena braziers and the temporary boss reveal brighten their sealed chamber.
         if (ruinTradition) drawRuinTraditionLightMasks(window.RuinCheckpointTravel?.lightSources?.() || []); // White checkpoints brighten all three lich themes.
@@ -1365,8 +1399,10 @@
       drawLanternMasksCompat(undergroundFog ? 1 : currentOutdoorLanternActivation(), !undergroundFog);
       if (!(undergroundFog && activeRuinTradition() === 'kanthic')) drawFurnitureLightMasksCompat(!undergroundFog); // The pure-black Kanthic room has no generic warm furniture pools.
       if (undergroundFog && activeRuinTradition() === 'kanthic') drawRuinTraditionLightMasks(window.RuinMultifloorV50Style?.lightSources?.() || []);
+      if (undergroundFog && activeRuinTradition() === 'kanthic') drawRuinTraditionLightMasks(window.RuinRopeTorch?.lightSources?.() || EMPTY_LIGHT_LIST);
       if (currentArea === 'map_i_dev_random_ruin') drawRuinTraditionLightMasks(window.RuinLayerPlayable?.roomLights?.() || []); // Solved rooms are lit in the fog path too.
-       if (currentArea === 'map_i_dev_random_ruin') drawRuinTraditionLightMasks(window.DevRandomRuinSanctum?.lightSources?.() || []); // Fog-backed Kanthic light masks include the sanctum.
+      if (currentArea === 'map_i_dev_random_ruin') drawRuinTraditionLightMasks(window.DevRandomRuinSanctum?.lightSources?.() || []); // Fog-backed Kanthic light masks include the sanctum.
+      if (currentArea === 'map_i_dev_random_ruin') drawRuinTraditionLightMasks(window.RuinCheckpointTravel?.lightSources?.() || []); // Restored mist must not extinguish activated shaft-travel or checkpoint lights.
       if (currentArea === 'map_i_dev_random_ruin') drawRuinTraditionLightMasks(window.SkeeriRuins?.eyeLights?.() || EMPTY_LIGHT_LIST);
       if (currentArea === 'map_i_dev_random_ruin') drawRuinPatternGlowMasks(activeScene,now); // The fog and enclosed paths must agree about engraved emission.
     });
@@ -1411,7 +1447,7 @@
     renderOutlineMist,
     setLayerRadius,
     setLayerOpacity,
-    getKanthicLanternRadiusTiles:()=>tuning.lantern.radiusTiles, // Compatibility API: Kanthic now uses the normal smooth lantern radius.
+    getKanthicLanternRadiusTiles:()=>tuning.lantern.radiusTiles*0.32, // Reports the same effective tiny radius used by the shared compositor.
     refreshLightingOverlay: () => { lastUnifiedLightingDraw = -Infinity; window.WeatherFX?.drawLightingOverlay?.(); }, // Lets dev-only lighting controls redraw immediately without owning a second lighting path.
     outdoorLightVisibilityAt: (x, y, z, radiusTiles = 0) => {
       const area = lightingDeps?.getCurrentArea?.(); // Reuses the compositor's actual current area instead of asking separate glow owners to guess indoor status.
@@ -1448,9 +1484,9 @@
         skydomeSuppressed: !!isNoSkyArea(debugArea),
         undergroundLanternArea: isUndergroundLanternArea(debugArea),
         latestChange: 'All ruin traditions keep room-local light sources and steady viewport ambience without projected tunnel frames.',
-        kanthicMistMode: debugArea === 'map_i_dev_random_ruin' && activeRuinTradition() === 'kanthic' ? 'screen-overlay-no-mist-geometry' : null, // Mobile Pixel Probe confirms the Kanthic geometry policy.
+        kanthicMistMode: debugArea === 'map_i_dev_random_ruin' && activeRuinTradition() === 'kanthic' ? (group?.visible ? 'cloud-forest-mist-and-underground-depth-fog' : 'mist-disabled-in-settings') : null, // Mobile Pixel Probe identifies the actual fog geometry policy.
         ruinLightOcclusion: window.RuinLightOcclusion?.debugSnapshot?.() || null, // Mobile debug readout counts scanned casters, firelight evaluations and clipped shadow projections.
-        ruinEngravingGlowMasks: { ...ruinGlowStats }, // Mobile-visible proof that glowing wall patterns survive the darkness overlay.
+        ruinEngravingGlowMasks: { ...ruinGlowStats, occlusionCandidates:ruinGlowOccluders.length, occlusionChecks:ruinGlowOcclusionChecks, occluded:ruinGlowOccluded }, // Mobile-visible proof that glowing wall patterns survive the darkness overlay.
         kanthicFirelight: { ...ruinFireMaskStats, ...(window.RuinMultifloorV50Style?.lightDebug?.()||{}) }, // Both emitted/visible mask counts and actual ignited brazier counts are readable without devtools.
         interiorLightRadiusMultiplier: INTERIOR_LIGHT_RADIUS_MULTIPLIER,
         interiorLightFalloff: 'ease-out',
