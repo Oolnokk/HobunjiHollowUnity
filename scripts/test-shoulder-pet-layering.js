@@ -206,13 +206,16 @@ const stateRef = { get pet() { return api.state.active ? pet : null; },
 const overrideRank = category => category === 'garment.headwear' ? 8 : 1; // Manual sorter deliberately prefers owner hat over pet front art.
 windowStub.XrayHierarchy = { layerRank: overrideRank };
 let useManual = false;
-const productionSort = new Function('window', 'xrayRule', 'visualLayerFor', 'protectedDrawPhase',
-  'comparePortraitDraws', 'shoulderPetPresentation', 'previouslyPresentedPet', 'shoulderPetDrawFace', 'compareShoulderPetDrawFaces', 'SHOULDER_PET_RENDER_ORDERS',
-  render.slice(faceRankStart, faceRankEnd) + render.slice(sorterStart,sorterEnd) + '\nreturn withVisualSort;')(
+const drawTransactionEnd = render.indexOf('  function rankedHeldOverlayOrder(', rankedSortEnd); // Includes the main draw's scoped material changes.
+const { withVisualSort: productionSort, withPortraitDrawOrder: productionDraw } = new Function('window', 'xrayRule', 'visualLayerFor', 'protectedDrawPhase',
+  'comparePortraitDraws', 'shoulderPetPresentation', 'previouslyPresentedPet', 'shoulderPetDrawFace', 'compareShoulderPetDrawFaces', 'SHOULDER_PET_RENDER_ORDERS', 'forEachMaterial',
+  render.slice(faceRankStart, faceRankEnd) + render.slice(sorterStart,sorterEnd)
+    + render.slice(rankedSortEnd, drawTransactionEnd) + '\nreturn { withVisualSort, withPortraitDrawOrder };')(
   windowStub, key => key === 'layers.manualOrder' && useManual ? 'on' : 'off',
   item => item.object === ownerHatFront ? 'garment.headwear' : 'actor.front',
   () => 0,
-  rankedPortraitCompare, stateRef, pet, api.shoulderPetDrawFace, api.compareShoulderPetDrawFaces, api.orders);
+  rankedPortraitCompare, stateRef, pet, api.shoulderPetDrawFace, api.compareShoulderPetDrawFaces, api.orders,
+  (material, fn) => fn(material));
 const sorterRenderer = {
   sort: null, setTransparentSort(value) { this.sort = value; },
   setOpaqueSort() {},
@@ -380,6 +383,77 @@ for (const inward of [false, true]) for (const manual of [false, true]) {
     }
   });
 }
+// Exercise both layout shapes with live back-stow classification and an unrelated hand-carried load.
+const stowedLoad = makeMesh('stowed_burden'); // Alternately represents ordinary furniture and a baby PNG.
+const babyHand = makeMesh('family_baby_left_hand'); // Modeled parts keep their real depth.
+babyHand.userData.shattercaskKeepsOwnDepth = true;
+babyHand.material.transparent = false;
+babyHand.material.depthTest = true;
+const heldLoad = makeMesh('hand_carried_burden'); // Must retain its original layer while the back is occupied.
+const rearReplacement = makeMesh('shattercask_carrier_rear_only_xray'); // Normal skinned owner's visible rear pass while stowed.
+rearReplacement.userData.shattercaskRearOverlay = true;
+stowedLoad.renderOrder = 2.15;
+heldLoad.renderOrder = 1.4;
+rearReplacement.renderOrder = 2.05;
+windowStub.Shattercasks = {
+  backCarriedInfo: () => ({ kind: stowedLoad.userData.hobunjiFamilyBabyPhysicalCarry ? 'familyBaby' : 'witchBomb' }),
+  isStowedSortMesh: mesh => mesh === stowedLoad || mesh === babyHand,
+  stowedDepthParts: () => stowedLoad.userData.hobunjiFamilyBabyPhysicalCarry ? [babyHand] : [],
+};
+for (const skinned of [false, true]) for (const inward of [false, true]) {
+  pet.__hobunjiShoulderFacingInward = inward;
+  use(pet, true);
+  if (skinned) {
+    activeOwner.frontMesh = sharedSkinnedOwner;
+    activeOwner.backMesh = sharedSkinnedOwner;
+    api.setShoulderPetLayering(pet, sharedSkinnedOwner, sharedSkinnedOwner, skinnedFrontMaterial, skinnedBackMaterial);
+  }
+  const frontItem = { ...drawItem(activeOwner.frontMesh), material: skinned ? skinnedFrontMaterial : front.material }; // The live carrier front.
+  const rearItem = drawItem(skinned ? rearReplacement : back); // The rear material is replaced only for the skinned carrier.
+  const petItems = pet.avatarRef.group.children.map(drawItem); // Check both faces and both split overlays.
+  const actor = { owner: { id: 1 }, depth: 0.3 }; // A nearby NPC activates the actor-depth comparison path.
+  const ranked = {
+    ranks: new Map([[activeOwner.frontMesh, actor], [rearItem.object, actor],
+      [nearbyNpcPortrait, { owner: { id: 2 }, depth: 0.7 }]]),
+    extras: new Map([[stowedLoad, actor], [heldLoad, actor]]),
+  };
+  for (const baby of [false, true]) for (const order of [null, ranked]) for (const manual of [false, true]) {
+    stowedLoad.userData.hobunjiFamilyBabyPhysicalCarry = baby;
+    useManual = manual;
+    productionDraw(sorterRenderer, order, () => {
+      const hand = drawItem(babyHand); // Checks the opaque-to-transparent handoff in the actual base-draw transaction.
+      const load = drawItem(stowedLoad); // The same sorter stage applies to ordinary furniture and babies.
+      const items = [frontItem, load, ...petItems, rearItem, drawItem(ownerHatBack), drawItem(ownerHatFront)];
+      if (baby) {
+        assert.equal(babyHand.material.transparent, true, 'the modeled limb joins the pet sort queue');
+        assert.equal(babyHand.material.depthWrite, true, 'the modeled limb retains depth writing');
+        assert.equal(babyHand.material.depthTest, true, 'the modeled limb retains its world depth test');
+        items.push(hand);
+      }
+      if (order) items.push(drawItem(nearbyNpcPortrait));
+      if (!manual) items.push(drawItem(heldLoad));
+      items.reverse().sort(sorterRenderer.sort);
+      for (const petItem of petItems) {
+        assert.ok(items.indexOf(rearItem) < items.indexOf(petItem), 'the rear portrait stays behind the pet');
+        assert.ok(items.indexOf(petItem) < items.indexOf(load), 'the stowed load paints over every pet card');
+        if (baby) assert.ok(items.indexOf(petItem) < items.indexOf(hand), 'baby limbs also paint over every pet card');
+      }
+      assert.ok(items.indexOf(load) < items.indexOf(frontItem), 'the carrier front still occludes the stowed load');
+      assert.ok(items.indexOf(load) < items.findIndex(item => item.object === ownerHatFront),
+        'the carrier front hat remains in front of the stowed load');
+      if (!manual) assert.ok(items.findIndex(item => item.object === heldLoad) < items.indexOf(load),
+        'the hand-carried load keeps its ordinary sort stage');
+      if (baby) assert.ok(items.indexOf(hand) < items.indexOf(load), 'the baby PNG can depth-test against the limbs');
+    }, true);
+    assert.equal(babyHand.material.transparent, false, 'the later shell and depth passes see the original material');
+  }
+}
+assert.throws(() => productionDraw(sorterRenderer, null, () => {
+  assert.equal(babyHand.material.transparent, true);
+  throw new Error('interrupted stowed baby draw');
+}, true), /interrupted stowed baby draw/);
+assert.equal(babyHand.material.transparent, false, 'an interrupted world draw restores the limb material');
+delete windowStub.Shattercasks;
 use(pet, true); // Restore the original rigid owner for detachment assertions.
 testFacing(true);
 use(pet, false);

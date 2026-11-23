@@ -106,12 +106,12 @@ assert(!disposed.includes('geometry'), 'shared walker geometry is never disposed
 assert.equal(disposed.filter(n => n.endsWith('_clone')).length, 4, 'each cloned limb material disposed');
 assert.equal(api.debugSnapshot().groups, 0, 'hook no longer tracks the detached proxy');
 
-// Wiring: burdens attach after registration, detach before dispose; Shattercasks honours the flag.
+// Wiring: burdens attach after registration and detach before disposal.
+// test-back-carried-burdens.js checks the live stow runtime preserves limb depth.
 const burdens = fs.readFileSync('docs/js/family-baby-burdens.js', 'utf8');
 assert(burdens.indexOf('entry.burden = burden;\n    window.FamilyBabyLimbs?.attach?.(group, walker);') > 0, 'limbs attach after registerBurden (never colliders)');
 assert.match(burdens, /function disposeVisual\(group\) \{\n    window\.FamilyBabyLimbs\?\.detach\?\.\(group\);/, 'limbs detach before proxy disposal');
 assert.match(burdens, /familyBabyFlying = true/, 'thrown baby flails');
-assert.match(fs.readFileSync('docs/js/shattercasks.js', 'utf8'), /if\(node\.userData\?\.shattercaskKeepsOwnDepth\)return;/, 'stow sandwich skips own-depth limbs');
 const html = fs.readFileSync('docs/index.html', 'utf8');
 assert(html.indexOf('js/family-baby-limbs.js?v=') > 0 && html.indexOf('js/family-baby-limbs.js?v=') < html.indexOf('js/family-baby-burdens.js?v='),
   'limbs module loads before family-baby-burdens.js');

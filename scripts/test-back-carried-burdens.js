@@ -202,6 +202,7 @@ function testRuntime() {
   assert.equal(window.Shattercasks.backCarriedInfo()?.id,charge.id);
   assert.equal(charge.group.parent,portrait,'stowed burden is a DIRECT child of the live skinned portrait plane');
   assert.equal(chargePart.renderOrder,2.15,'the back Burden renders after the rear PNG');
+  assert.equal(window.Shattercasks.isStowedSortMesh(chargePart),true,'the sorter can identify a stowed physical part');
   assert.equal(chargePart.material.transparent,true,'opaque furniture joins the transparent PNG sort queue while stowed');
   assert.equal(chargePart.material.depthTest,true,'world terrain can still occlude the back Burden');
   assert.equal(chargePart.material.depthWrite,false,'back furniture cannot hide the front PNG by writing depth');
@@ -215,12 +216,20 @@ function testRuntime() {
   const lateDetail=new Group();lateDetail.isMesh=true;lateDetail.visible=true;lateDetail.renderOrder=0; // Simulates an asynchronous authored GLB child after pickup.
   lateDetail.material=new MeshBasicMaterial({transparent:false,depthWrite:true,depthTest:true});
   charge.group.add(lateDetail);
+  const modeledPart=new Group(); // Simulates the separately attached hands/feet of a baby.
+  modeledPart.isMesh=true;modeledPart.userData.shattercaskKeepsOwnDepth=true;
+  modeledPart.material=new MeshBasicMaterial({transparent:false,depthWrite:true,depthTest:true});
+  charge.group.add(modeledPart);
   const priorMaterial=chargePart.material;
   chargePart.material=new MeshBasicMaterial({transparent:false,depthWrite:true,depthTest:true}); // Recolored furniture can replace its original material while carried.
   window.Shattercasks.tick(.2); // Force the normal 7 Hz render-state reconciliation.
   assert.equal(lateDetail.renderOrder,2.15,'late-loaded furniture detail enters the correct stowed layer');
   assert.equal(lateDetail.material.transparent,true,'late-loaded opaque detail enters the PNG sorting queue');
   assert.equal(lateDetail.material.depthWrite,false,'late-loaded furniture cannot cover the front PNG');
+  assert.equal(window.Shattercasks.isStowedSortMesh(modeledPart),true,'late modeled parts participate in stowed sort');
+  assert.deepEqual(Array.from(window.Shattercasks.stowedDepthParts()),[modeledPart],'only modeled parts need the temporary color sort');
+  assert.equal(modeledPart.material.transparent,false,'the carrier runtime preserves the original limb material');
+  assert.equal(modeledPart.material.depthWrite,true,'modeled parts retain physical depth');
   assert.equal(chargePart.material.transparent,true,'replacement material inherits the stowed render flags');
   assert.equal(chargePart.material.depthWrite,false,'replacement material cannot mask the front PNG');
   assert.equal(priorMaterial.depthWrite,true,'detached original material is restored on replacement');
@@ -321,6 +330,7 @@ function testRuntime() {
   assert.equal(chargePart.renderOrder,2.15,'picking up a second burden does not remove the back object x-ray');
   assert.equal(chargePart.material.transparent,true,'the back object keeps the transparent PNG queue while hands are occupied');
   assert.equal(secondPart.renderOrder,1.4,'the additional hand burden keeps its ordinary held-order layer');
+  assert.equal(window.Shattercasks.isStowedSortMesh(secondPart),false,'the hand-carried burden is outside the stowed sort stage');
   assert.equal(secondPart.material.transparent,false,'hand burden does not inherit the back object blend mode');
   assert.equal(rigidBack.renderOrder,2.05,'rigid rear plane precedes the stowed burden even with another item held');
   assert.equal(rigidBack.material.depthWrite,false,'rigid rear PNG does not block the stowed burden depth');
@@ -339,6 +349,9 @@ function testRuntime() {
   assert(originalTarget.hitbox(),'retrieval restores the held burden own hitbox, separate from stowed carrier hits');
   assert.equal(charge.group.parent,headJoint,'retrieval restores the ORIGINAL held-object mount');
   assert.equal(chargePart.renderOrder,1.4,'retrieved furniture returns to the existing held-order layer');
+  assert.equal(window.Shattercasks.isStowedSortMesh(chargePart),false,'retrieval immediately clears the stowed sort role');
+  assert.equal(window.Shattercasks.isStowedSortMesh(modeledPart),false,'retrieving also clears the modeled parts from the stow layer');
+  assert.deepEqual(Array.from(window.Shattercasks.stowedDepthParts()),[]);
   assert.equal(chargePart.material.transparent,false,'retrieval restores the authored opaque material');
   assert.equal(chargePart.material.depthWrite,false,'hand-held furniture retains the established rear-PNG behavior');
   assert.equal(decal.renderOrder,0,'the authored decal regains its native drawing order when retrieved into the hands');
