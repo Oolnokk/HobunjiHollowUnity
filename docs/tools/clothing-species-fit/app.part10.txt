@@ -38,7 +38,7 @@ function refreshDebug(){
     `main workflow body tint slot: ${routedPatchIsBody()?routedBodyTintSlot(R.patchWorkflow.descriptor):'(n/a)'}`,
     `main workflow body overlay target: ${routedPatchIsBody()?(targetBodyLayerRecord(R.patchWorkflow.descriptor)?.url||'(unresolved)'):'(n/a)'}`,
     `main workflow patch: ${R.patchWorkflow.active?(R.patchWorkflow.patchName||'(unnamed)'):'(none)'}`,
-    `authored target available: ${!!R.authoredTargetCloth}`,
+    `authored target available: ${!!R.authoredTargetCloth}${R.authoredTargetIsBase?' (base art fallback, not species-specific)':''}`,
     `authored target sources: ${(R.authoredTargetCloth?._paths||[]).join(' | ')}`,
     `extended imports: ${importedExtendedLayers().map(x=>x.name).join(' | ')||'(none)'}`,
     `extended source: ${R.extendedSource?`${R.extendedSource.width}x${R.extendedSource.height}`:'(none)'}`,

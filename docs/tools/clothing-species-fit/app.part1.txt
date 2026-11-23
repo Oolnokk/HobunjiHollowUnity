@@ -20,7 +20,7 @@ const E={
   headbandWholeSection:$('headbandWholeSection'),headbandWholeStatus:$('headbandWholeStatus'),headbandWholeDrag:$('headbandWholeDrag'),headbandWholeReset:$('headbandWholeReset'),headbandWholeBake:$('headbandWholeBake'), // Whole-curve transform UI for whichever plane and source/target mapping is selected.
   headbandWholeX:$('headbandWholeX'),headbandWholeXNumber:$('headbandWholeXNumber'),headbandWholeY:$('headbandWholeY'),headbandWholeYNumber:$('headbandWholeYNumber'),headbandWholeScaleX:$('headbandWholeScaleX'),headbandWholeScaleXNumber:$('headbandWholeScaleXNumber'),headbandWholeScaleY:$('headbandWholeScaleY'),headbandWholeScaleYNumber:$('headbandWholeScaleYNumber'),headbandWholeRotation:$('headbandWholeRotation'),headbandWholeRotationNumber:$('headbandWholeRotationNumber'), // Sliders and exact numeric inputs synchronize with one saved per-curve transform.
   headbandView:$('headbandView'),headbandFlipH:$('headbandFlipH'),headbandFlipV:$('headbandFlipV'),headbandRearSection:$('headbandRearSection'),headbandRearImport:$('headbandRearImport'),headbandRearExport:$('headbandRearExport'),headbandRearEdit:$('headbandRearEdit'),headbandRearFromFront:$('headbandRearFromFront'),headbandRearFromExisting:$('headbandRearFromExisting'),headbandRearBlank:$('headbandRearBlank'),headbandRearRemove:$('headbandRearRemove'),headbandRearDraw:$('headbandRearDraw'),headbandRearErase:$('headbandRearErase'),headbandRearSample:$('headbandRearSample'),headbandRearColor:$('headbandRearColor'),headbandRearBrush:$('headbandRearBrush'),headbandRearFullPlane:$('headbandRearFullPlane'),headbandRearStatus:$('headbandRearStatus'), // Rear-facing sprite authoring and editable spline orientation. // Seven-point source mapping and fitted-target controls.
-  help:$('help'),showBody:$('showBody'),showGarment:$('showGarment'),showMeshes:$('showMeshes'),match3D:$('match3D'),match3DStatus:$('match3DStatus'),opacity:$('opacity'),
+  help:$('help'),showBody:$('showBody'),showGarment:$('showGarment'),showMeshes:$('showMeshes'),match3D:$('match3D'),showHair:$('showHair'),match3DStatus:$('match3DStatus'),opacity:$('opacity'),
   showAuthored:$('showAuthored'),authoredOpacity:$('authoredOpacity'),authoredStatus:$('authoredStatus'),
   extTorsoFile:$('extTorsoFile'),extTorsoClothingFile:$('extTorsoClothingFile'),extOverwearFile:$('extOverwearFile'),
   showExtended3D:$('showExtended3D'),clearExtended:$('clearExtended'),downloadExtended:$('downloadExtended'),extendedStatus:$('extendedStatus'),
@@ -39,7 +39,7 @@ C.imageSmoothingEnabled=false;
 
 const R={
   speciesIndex:[],speciesCfg:new Map(),garments:[],images:new Map(),bodyCanvases:new Map(),garmentCanvases:new Map(),
-  body:null,sourceBody:null,sourceTorso:null,targetTorso:null,headReference:null,cloth:null,authoredTargetCloth:null,warped:null,
+  body:null,sourceBody:null,sourceTorso:null,targetTorso:null,headReference:null,cloth:null,authoredTargetCloth:null,authoredTargetIsBase:false,warped:null,
   contourMask:null,contourMaskKey:null,contourMaskOverlay:null,contourSourceCache:null,contourLastFit:null,
   headbandGridCache:new WeakMap(),headbandWarpStats:null,headbandWholeWarning:'', // Whole-curve edge/fold constraints appear in mobile editor status.
   headbandRearCanvas:null,headbandRearKey:null,headReferenceBack:null,backplaneReference:null, // Native target-space rear pixels, isolated game rear head and full rear body guide. // Caches the unchanged 6x6 raster during curve-only drag edits.

@@ -44,6 +44,10 @@
 function warpGarment(source,targetNorm,outWidth,outHeight){
   const output=document.createElement('canvas');output.width=outWidth;output.height=outHeight;
   const x=output.getContext('2d',{alpha:true});x.imageSmoothingEnabled=false;
+  if(source.width===outWidth&&source.height===outHeight&&
+     targetNorm.every((point,index)=>Math.abs(point.x-SOURCE_GRID[index].x)<1e-9&&Math.abs(point.y-SOURCE_GRID[index].y)<1e-9)){
+    x.drawImage(source,0,0);return output; // An untouched grid is an identity map; copy pixels instead of resampling 800 triangles.
+  }
 
   /*
     Important correction from V4:
@@ -118,7 +122,7 @@ async function refreshAssets(){
   const generation=++R.assetGeneration; // The latest selection alone may install downloaded images.
   const species=E.species.value,gender=E.gender.value,garmentId=E.garment.value,region=fitRegion();
   const sourceSpecies=E.sourceSpecies.value,sourceGender=E.sourceGender.value; // Source dimensions and garment raster are independent of the target avatar.
-  R.body=null;R.sourceBody=null;R.sourceTorso=null;R.targetTorso=null;R.cloth=null;R.headReference=null;R.headReferenceBack=null;R.backplaneReference=null;R.headbandRearCanvas=null;R.headbandRearKey=null;R.authoredTargetCloth=null;
+  R.body=null;R.sourceBody=null;R.sourceTorso=null;R.targetTorso=null;R.cloth=null;R.headReference=null;R.headReferenceBack=null;R.backplaneReference=null;R.headbandRearCanvas=null;R.headbandRearKey=null;R.authoredTargetCloth=null;R.authoredTargetIsBase=false;
   R.contourSourceCache=null;R.contourMask=null;R.contourMaskKey=null;R.contourMaskOverlay=null;
   R.headbandGridCache=new WeakMap();R.headbandWarpStats=null; // Do not reuse a previous garment/source species' spline base raster. // Selection changes invalidate all pixel masks and contour rasters held in memory.
   E.clothPng.disabled=true;E.compositePng.disabled=true; // Never allow exporting a stale garment during a source/target change.
@@ -150,6 +154,7 @@ async function refreshAssets(){
     const torsos=region==='body'?await Promise.all([buildTorsoCanvas(sourceSpecies,sourceGender,sourceBody.width,sourceBody.height),buildTorsoCanvas(species,gender,body.width,body.height)]):[null,null]; // Missing torso layers disable contour fitting without affecting ordinary garment fitting.
     if(generation!==R.assetGeneration)return; // Switching modes/species while images load cannot reinstall stale art.
     R.body=body;R.sourceBody=sourceBody;R.sourceTorso=torsos[0];R.targetTorso=torsos[1];R.headReference=headReference;R.cloth=cloth;R.authoredTargetCloth=authored;
+    R.authoredTargetIsBase=!!authored&&!R.garments?.find(g=>g.id===garmentId)?.cfg?.speciesVariants?.[`${species}_${gender}`]; // Headwear falls back to the cosmetic's base parts; that art was not authored for this species and must not be traced as its fitted target.
     const layerCount=cloth?._layers?.length||0; // Distinct authored source rasters, including explicit alternate behind-view images.
     E.clothPng.disabled=!cloth;E.compositePng.disabled=!cloth;
     E.clothPng.textContent=layerCount>1?`Export ${layerCount} fitted layers ZIP`:(region==='headwear'?'Export fitted headwear PNG':'Export fitted clothing PNG');
@@ -159,7 +164,9 @@ async function refreshAssets(){
     E.exportHeadwearFront.disabled=region!=='headwear'||!cloth?._front;
     E.exportHeadwearBack.disabled=region!=='headwear'||!(cloth?._behindView||cloth?._back);
     E.authoredStatus.textContent=authored
-      ?`Authored ${species}_${gender} variant available.`
+      ?(R.authoredTargetIsBase
+        ?`No ${species}_${gender} variant is authored; the overlay shows this item's base art.`
+        :`Authored ${species}_${gender} variant available.`)
       :'No authored target variant for this garment/species/gender.';
     sizeStage(); // Use the new native dimensions before tracing and loading rear artwork.
     ensureTargetData(species,gender);
@@ -225,6 +232,8 @@ function cachedHeadbandGridWarp(source,grid,width,height){
 }
 function applyHeadbandSplineWarp(garment,state,width,height){
   if(!state?.enabled||!window.ClothingHeadbandSpline.valid(state.source)||!window.ClothingHeadbandSpline.valid(state.target))return garment;
+  if(state.source.every((point,index)=>Math.abs(point.x-state.target[index].x)<1e-6&&Math.abs(point.y-state.target[index].y)<1e-6))
+    return garment; // An unshaped curve is an identity map; skip the resample so the 6×6 fit exports untouched pixels.
   const ctx=garment.getContext('2d',{alpha:true});
   const rgba=ctx.getImageData(0,0,width,height);
   const warped=window.ClothingHeadbandSpline.warp(rgba.data,width,height,state.source,state.target);

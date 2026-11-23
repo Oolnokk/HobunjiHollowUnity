@@ -334,6 +334,36 @@ async function main() {
     'ZIP contains no conflicting entry names');
   assert.equal(testE.clothPng.disabled,false,'Export control is restored after ZIP encoding');
 
+  // Identity fits must be lossless: an untouched 6x6 grid copies pixels and an
+  // unshaped headband spline (target === source nodes) is skipped entirely.
+  const identityApi = new Function('document','SOURCE_GRID','window',
+    sourceBetween('function warpGarment(', 'async function buildSourceReferenceCanvas(') +
+    sourceBetween('function applyHeadbandSplineWarp(', 'function warpClothing(') +
+    '\nreturn {warpGarment, applyHeadbandSplineWarp};')(
+    {createElement: makeCanvas},
+    Array.from({length: 36}, (_, i) => ({x: (i % 6) / 5, y: Math.floor(i / 6) / 5})),
+    {ClothingHeadbandSpline: {valid: nodes => Array.isArray(nodes) && nodes.length === 7,
+      warp: () => {throw new Error('Identity spline must not resample')}}}
+  );
+  const identitySource = makeCanvas();identitySource.width = 234;identitySource.height = 173;
+  const identityOut = identityApi.warpGarment(identitySource,
+    Array.from({length: 36}, (_, i) => ({x: (i % 6) / 5, y: Math.floor(i / 6) / 5})), 234, 173);
+  assert.deepEqual(identityOut.draws, [[identitySource, 0, 0]], 'Untouched grid copies the source pixels 1:1');
+  const nodes = Array.from({length: 7}, (_, i) => ({x: 80 + i * 10, y: 60}));
+  const garmentCanvas = makeCanvas();
+  assert.strictEqual(identityApi.applyHeadbandSplineWarp(garmentCanvas,
+    {enabled: true, source: nodes, target: nodes.map(point => ({...point}))}, 234, 173), garmentCanvas,
+    'An unshaped spline returns the 6x6 result untouched');
+
+  // Base fallback art is never traced as the fitted headband target.
+  const headbandTargetApi = new Function('R','flipCanvasX','traceHeadbandCanvas',
+    sourceBetween('function autoHeadbandTargetNodes(', 'function currentHeadbandRecord(') +
+    '\nreturn autoHeadbandTargetNodes;')(
+    {authoredTargetIsBase: true, authoredTargetCloth: {_front: makeCanvas()}}, value => value,
+    () => {throw new Error('Base fallback art must not be traced')}
+  );
+  assert.equal(headbandTargetApi(), null, 'No authored target for this species: the curve starts as identity');
+
   console.log('PASS clothing-fit source layers, installable ZIP filenames/config, patch composition, fallback rasters, fit keys and script syntax');
 }
 

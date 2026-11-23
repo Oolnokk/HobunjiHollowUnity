@@ -156,6 +156,7 @@ E.sourceSpecies.onchange=changeStartingSprite;E.sourceGender.onchange=changeStar
 E.showBody.onchange=()=>render(false); // Hiding the 2D body is an editing aid, not a change to the game's 3D character.
 E.showGarment.onchange=render;
 E.showMeshes.onchange=()=>render(false); // Grid visibility never needs to rebuild the runtime rig.
+E.showHair.onchange=()=>render(); // Rebuilds the runtime portrait with or without the seeded hair/eyes/beard (separate portrait cache key).
 E.match3D.onchange=()=>render(false); // Toggle between synchronized front portrait pixels and raw PNG inspection.
 E.opacity.oninput=render;
 E.showAuthored.onchange=render;E.authoredOpacity.oninput=render;

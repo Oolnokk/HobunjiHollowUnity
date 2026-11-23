@@ -197,6 +197,7 @@ function autoHeadbandSourceNodes(view='front'){
   return traceHeadbandCanvas(view==='back'?art:cachedHeadbandGridWarp(art,targetGrid(),R.body.width,R.body.height));
 }
 function autoHeadbandTargetNodes(view='front'){
+  if(R.authoredTargetIsBase)return null; // Base fallback art belongs to another head; the target curve starts as an identity copy of the source curve instead.
   if(view==='back'){
     const art=R.authoredTargetCloth?._behindView||R.authoredTargetCloth?._front;
     return art?traceHeadbandCanvas(flipCanvasX(art)):null; // Original PNG orientation differs from visible backplane.
