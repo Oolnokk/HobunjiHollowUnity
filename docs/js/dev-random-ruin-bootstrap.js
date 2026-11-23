@@ -23,7 +23,7 @@
   document.write('<script src="js/dev-random-ruin-config.js?v=20260929config1"></scr' + 'ipt>'); // docs/config/random-ruin/ruin-config.json loader, read by every ruin module below.
   if (!window.FurnitureDecalRuntime) document.write('<script src="js/furniture-decal-runtime.js?v=20261110tankanring1"></scr' + 'ipt>'); // Authored decals + state glow (usually already loaded by zone features).
   document.write('<script src="js/dev-random-ruin-furniture-pieces.js?v=20261114heartRewards1"></scr' + 'ipt>'); // Door seals, glyph plaques, Great Door as authored furniture.
-  document.write('<script src="js/dev-random-ruin-hit-puzzles.js?v=20261115h3e99277"></scr' + 'ipt>'); // Plain source (formerly nine base64 part files reassembled with eval).
+  document.write('<script src="js/dev-random-ruin-hit-puzzles.js?v=20261123h1dc8613"></scr' + 'ipt>'); // Plain source (formerly nine base64 part files reassembled with eval).
   document.write('<script src="js/dev-random-ruin-prototype-hooks.js?v=20261018badge1"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-solid-footprints.js?v=20261117structuralInstance1"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-tile-occupancy.js?v=20261117structuralInstance1"></scr' + 'ipt>');
@@ -59,6 +59,6 @@
   document.write('<script src="js/dev-random-ruin-lich-themes.js?v=20261122h85be70d"></scr' + 'ipt>'); // Lich-specific floor/wall illumination and disposable ruin hazard composer.
   document.write('<script src="js/dev-random-ruin-dungeon-fire.js?v=20261116shortfire1"></scr' + 'ipt>'); // One-shot ranged ignition, ice/plasm mechanisms, and modular ceiling Burdens.
   document.write('<script src="js/dev-random-ruin-interactions.js?v=20261122ropeholdarch1"></scr' + 'ipt>');
-  document.write('<script src="js/dev-random-ruin-glyph-circuits.js?v=20261104glyphSync1"></scr' + 'ipt>');
+  document.write('<script src="js/dev-random-ruin-glyph-circuits.js?v=20261123hdca48af"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-runtime-coverage.js?v=20261114adventRuin2"></scr' + 'ipt>');
 })();

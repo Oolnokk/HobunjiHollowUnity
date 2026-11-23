@@ -9,8 +9,8 @@
 //     is carved into (dim + pulsing until struck, bright once struck),
 //   * a matching rune and a row of progress pips above its door/platform
 //     (one pip per required hit, filled as glyphs are struck).
-// The marker is also folded into the glyph's projectile hit box, so shooting
-// the rune you can see is what registers.
+// Wall markers extend the glyph's hit box. Recessed pillar glyphs use the
+// physical opening for projectile hits.
 (() => {
   'use strict';
 
@@ -194,7 +194,7 @@
         fxGroup.add(burst);
         circuit.markers.push({ target, marker, burst, decals:glyphDecals(target.object), wasActive:!!target.active, hitAt:-Infinity, glyphCenter:box.getCenter(new THREE.Vector3()) });
         target.circuitName = colour.name;
-        target.hitBox = box.clone().union(tmpBox.setFromCenterAndSize(point, new THREE.Vector3(MARKER_HIT_RADIUS * 2, MARKER_HIT_RADIUS * 2, MARKER_HIT_RADIUS * 2)));
+        if (!target.pillarMouth) target.hitBox = box.clone().union(tmpBox.setFromCenterAndSize(point, new THREE.Vector3(MARKER_HIT_RADIUS * 2, MARKER_HIT_RADIUS * 2, MARKER_HIT_RADIUS * 2)));
       }
       const mechBox = entry.mechanismRoot ? worldBox(entry.mechanismRoot) : null;
       if (mechBox) {
