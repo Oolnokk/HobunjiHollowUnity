@@ -148,6 +148,9 @@ async function run(){
   assert.equal(state.boss.groupRot,state.boss.avatarRef.group.rotation.y,'rendered yaw does not drift at the end of the turn');
   assert.equal(state.boss._banditToolHolder.rotation.y,state.boss.groupRot,'low-FPS scream timer poses the weapon and body together');
   assert.equal(state.boss.facing,state.intro.turnTo,'scream cannot begin before a lagging render tick completes the face-to-face turn');
+  const settledPoseCount=weaponPoseUpdates; // The shot holds for seconds after turning; idle frames must not repeatedly rebuild the warhammer stance.
+  for(let i=0;i<60;i++)win.DevRandomRuinSanctum.debugUpdateIntro(clock+16*i);
+  assert.equal(weaponPoseUpdates,settledPoseCount,'settled cinematic consumes no extra weapon-pose work');
   assert.equal(state.intro.shriekPlayed,true,'mobile debug records the shriek');
   await advance(2650);
   assert.equal(state.intro,null);
