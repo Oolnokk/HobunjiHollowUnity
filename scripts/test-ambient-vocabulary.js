@@ -477,6 +477,33 @@ async function main() {
   assert.equal(noiseDebug.last.reason, 'no-dictionary-phrase', 'Diagnostics must describe the newest unmatched bubble');
   assert.equal(noiseDebug.cachedSpeakers, beforePetNoiseCache);
   assert.ok(noiseDebug.recent.length <= 12 && noiseDebug.recent.some(entry => entry.reason === 'reworded'));
+  // Whole-pool language audit: a lexical change is not useful if it produces awkward grammar or corrupts a named token.
+  const allFloatingSource = Object.entries(greetings).flatMap(([npcId, greetingPool]) =>
+    (greetingPool.player || []).map(line => [npcId, line])); // One entry for each actual NPC greeting.
+  for (const [family, npcId] of Object.entries(petSpeakerByFamily)) {
+    allFloatingSource.push(...petPoolLines(profiles.profiles[family]).map(line => [npcId, line]));
+  } // The same source pool also includes every role/tier of the six pet personalities.
+  const testRolls = [0, 0.05, 0.2, 0.49, 0.75, 0.99]; // Covers multiple synonym choices and chance-to-leave-original paths.
+  for (const [npcId, authored] of allFloatingSource) {
+    const tokens = authored.match(/\{[A-Za-z][A-Za-z0-9_]*\}/g) || [];
+    for (const chance of testRolls) {
+      const spoken = engine.rewrite(authored, npcId, () => chance);
+      assert.ok(tokens.every(token => spoken.includes(token)), 'All variants must retain placeholders: ' + npcId + ':' + spoken);
+      assert.ok(!/(?:hello-hello|how much time has|fine to see you)/i.test(spoken),
+        'Vocabulary must avoid known unnatural greeting/pet substitutions: ' + npcId + ':' + spoken);
+    }
+  }
+  assert.equal(engine.rewrite('Hey-hey {targetName}!', 'takua_ao_hakaru', () => 0),
+    'Hey there {targetName}!', 'Whole repeated greeting must take priority over separately rewritten hey words');
+  assert.equal(engine.rewrite('How long has {animalName} been up there?', 'gorobi_ginju', () => 0),
+    "How long's {animalName} been up there?", 'Duration question must keep its interrogative grammar');
+  assert.equal(engine.rewrite('I didn\'t know a {species} could be that tiny.', 'furunji_funji', () => 0),
+    'I didn\'t know a {species} could be so small.', 'Pet surprise remains idiomatic');
+  assert.equal(engine.rewrite('I\'ve never seen a {species} that big.', 'furunji_funji', () => 0),
+    'I\'ve never seen a {species} so big.', 'Big animal comparison remains idiomatic');
+  assert.equal(engine.rewrite('That {species} is bigger than most.', 'furunji_funji', () => 0),
+    'That {species} is larger than most.', 'Comparative retains its meaning');
+  assert.equal(config.lexicon['how long'], undefined, 'Unsafe general duration replacement must not remain as a fallback');
   const debug = engine.getDebug();
   assert.ok(debug.last && Number.isInteger(debug.last.swaps));
   assert.ok(typeof debug.replacements === 'number');
