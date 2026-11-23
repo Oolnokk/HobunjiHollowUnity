@@ -544,8 +544,16 @@ async function main() {
   assert.ok(floating.includes('vocabularyProtectedNames: targetName ? [targetName] : []'));
   assert.ok(floating.includes('options.vocabularyProtectedNames'));
   assert.ok(floating.includes('options.greeting !== true'), 'The renderer must exclude unrelated pet names from normal greetings');
-  assert.ok(file('docs/js/ambient-vocabulary.js').includes('Array.isArray(protectedNames) && protectedNames.length'),
-    'Unprotected animal cries must bypass extra name-masking allocations');
+  // Assert the runtime fast path, not an exact implementation string: other systems can evolve their APIs freely.
+  let activeAnimalLookups = 0; // Counts only stable API queries caused by a floating-vocabulary rewrite.
+  window.StableAnimalProgression = { activeEntryForRole: () => { activeAnimalLookups++; return null; } };
+  const unchangedCry = engine.rewrite('Neeeeeeyyy!!!!', 'gantami_ginju', () => 0);
+  assert.equal(unchangedCry, 'Neeeeeeyyy!!!!', 'Unmatched animal cries retain their authored text');
+  assert.equal(activeAnimalLookups, 0, 'Unmatched animal cries must not query active pet names');
+  assert.equal(engine.rewrite('Hi!', 'gantami_ginju', () => 0, config, profiles, [], false), 'Hiya!',
+    'Ordinary greeting still varies without looking up unrelated active animals');
+  assert.equal(activeAnimalLookups, 0, 'Ordinary NPC greetings must not query active pet names');
+  delete window.StableAnimalProgression;
   assert.ok(file('docs/js/ambient-vocabulary.js').includes('StableAnimalProgression?.activeEntryForRole'),
     'Pet identities must come from the public stable API, not changes to individual reaction callers');
   assert.ok(!file('docs/js/stable-animal-progression.js').includes('vocabularyProtectedNames: [animal.entry?.name'),
