@@ -401,4 +401,24 @@ function creature() {
   clip=originalClip;
 }
 
+// The same rounded tail is used by repeated prone knockback, where the
+// procedural full revolution is multiplied by the authored rotation.
+{
+  const originalClip=clip;
+  clip=JSON.parse(fs.readFileSync('docs/config/animations/spinthrow-blend-v1.json','utf8')).clips.front.clip;
+  const animal=creature();animal.prone=true;
+  assert.equal(impact.triggerTumble(animal,'right',.34),true);
+  const state=animal._impactRagdollPlayback;
+  for(let i=0;i<22;i++) {
+    fakeNowMs+=16;
+    assert.equal(impact.updateCreature(animal,.016),true,'repeated prone tumble continues');
+    assert.equal(animal._impactRagdollPlayback,state,'tumble cannot reset because of rounded recorded quaternion');
+    assert.equal(state.poseSession.owns(),true,'tumble remains the authoritative pose during each procedural roll frame');
+  }
+  assert.equal(state.holding,true,'full roll finishes in the same original prone hold');
+  animal.prone=false;impact.updateCreature(animal,.016);
+  assert.equal(rig.getDebug().activeAbsoluteClaims,0);
+  clip=originalClip;
+}
+
 console.log('Ragdoll scoped pivot ownership: prone, replacement, live impacts, corpse, and cleanup PASS');
