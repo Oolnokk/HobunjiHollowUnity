@@ -69,6 +69,7 @@ replays (`WorldRenderPipeline.captureFrame()` shows the exact list).
 | PNG sprite material/texture path | `js/portrait-utils.js` | `HobunjiSpritePngSurface` (see AGENTS.md) |
 | Which characters exist (player, NPCs, enemies, creatures, companions, mounts, shoulder pets, corpses, farm animals) and which visual systems cover which kind | `js/character-visuals.js` | `CharacterVisuals` |
 | Held tool/weapon planes for any holder (mastery/metal from the holder) | `js/character-held-tools.js` | `CharacterHeldTools` |
+| Frozen Tzizkhanash-style Ghost Army sculpture on skeleton-defense Key Statues (stone portrait/weapon + fitted size; original Burden physics unchanged) | `js/key-statue-figures.js` via `js/festival-ancestor-figures.js`; attached/removed by `js/key-statues.js` | `KeyStatueFigures` |
 | Shoulder-pet perch/grip solver (one instance per owner) | `js/shoulder-pet-attachment-runtime.js` | `ShoulderPetAttachmentRuntime` |
 | Mist depth silhouettes for characters in Cloud Forest mist / blizzard | `js/cloud-forest-avatar-depth-occluder.js` | `CloudForestAvatarDepthOccluder` |
 | Wilderness vegetation corridor cull + tree fade targets | `js/zone-vegetation-cull.js`, `js/zone-tree-fade.js` | `ZoneVegetationCull`, `ZoneTreeFade` |
