@@ -277,7 +277,7 @@
   }
 
   function currentMoonIllumination() {
-    const value = window.HobunjiSkyDome?.getDebugState?.().moonIllumination; // Reuses the skydome's existing 28-day lunar-month phase calculation so lighting and the rendered moon cannot disagree.
+    const value = window.HobunjiSkyDome?.lunarIllumination?.(); // Reuses the skydome's existing 28-day lunar-month phase calculation so lighting and the rendered moon cannot disagree.
     return Number.isFinite(value) ? clamp01(value) : 1;
   }
 
