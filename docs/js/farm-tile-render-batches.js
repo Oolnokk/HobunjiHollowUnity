@@ -49,37 +49,48 @@
   // Tagged groups are static, and a town holds ~1,300 of their members:
   // re-deriving eligibility, keys and signatures for all of them every frame
   // cost ~2 ms of JS headless. A group's member list is reused while its
-  // children are unchanged (same count, every cached member still its child and
-  // visible, same userData.hobunjiStaticBatchRevision if the owner keeps one);
-  // a full rescan, including the geometry/matrix signature check, still runs
-  // at least every TAGGED_RESCAN_MS for changes those checks cannot see (an
-  // in-place material swap or attribute edit shows up within that time).
+  // children are unchanged (same count, every cached member still its child,
+  // visible, with the same material and geometry objects, the group not moved,
+  // same userData.hobunjiStaticBatchRevision if the owner keeps one); a full
+  // rescan, including the geometry/matrix signature check, still runs at least
+  // every TAGGED_RESCAN_MS for changes those checks cannot see (an in-place
+  // attribute edit, a member's own transform or draw hook changing).
   const TAGGED_RESCAN_MS = 1000;
-  const groupScans = new WeakMap(); // group -> { revision, childCount, scannedAt, members, buckets: Map<key, meshes> }
+  const groupScans = new WeakMap(); // group -> { revision, childCount, scannedAt, pose, members, materials, geometries, buckets: Map<key, meshes> }
+  function readPose(group, out) { // Local transform of a scene-level group (= its world transform).
+    const p = group.position, q = group.quaternion, k = group.scale;
+    out[0] = p.x; out[1] = p.y; out[2] = p.z;
+    out[3] = q ? q.x : 0; out[4] = q ? q.y : 0; out[5] = q ? q.z : 0; out[6] = q ? q.w : 1;
+    out[7] = k ? k.x : 1; out[8] = k ? k.y : 1; out[9] = k ? k.z : 1;
+    return out;
+  }
+  const poseScratch = new Float64Array(10);
   function now() { return typeof performance !== 'undefined' ? performance.now() : Date.now(); }
   function scanTaggedGroup(group, time) {
     const revision = group.userData.hobunjiStaticBatchRevision || 0;
     let scan = groupScans.get(group);
     if (scan && scan.revision === revision && scan.childCount === group.children.length && time - scan.scannedAt < TAGGED_RESCAN_MS) {
-      const members = scan.members;
+      const members = scan.members, materials = scan.materials, geometries = scan.geometries;
       let unchanged = true;
-      for (let i = 0; i < members.length; i++) {
+      readPose(group, poseScratch);
+      for (let i = 0; i < 10; i++) if (poseScratch[i] !== scan.pose[i]) { unchanged = false; break; }
+      for (let i = 0; unchanged && i < members.length; i++) {
         const mesh = members[i];
-        if (mesh.parent !== group || mesh.visible === false) { unchanged = false; break; }
+        if (mesh.parent !== group || mesh.visible === false || mesh.material !== materials[i] || mesh.geometry !== geometries[i]) unchanged = false;
       }
       if (unchanged) { scan.cached = true; stats.groupCachedScans++; return scan; }
     }
     group.updateMatrixWorld(); // Group plus its members: one added since the last render has no world matrix yet.
-    const members = [], buckets = new Map();
+    const members = [], materials = [], geometries = [], buckets = new Map();
     for (const mesh of group.children) {
       if (mesh.userData?.hobunjiStaticBatchable !== true) continue;
       if (!eligible(mesh, true)) { stats.skippedIneligible++; continue; }
-      members.push(mesh);
+      members.push(mesh); materials.push(mesh.material); geometries.push(mesh.geometry);
       const key = groupKey(mesh, true);
       const bucket = buckets.get(key);
       if (bucket) bucket.push(mesh); else buckets.set(key, [mesh]);
     }
-    scan = { revision, childCount: group.children.length, scannedAt: time, members, buckets, cached: false };
+    scan = { revision, childCount: group.children.length, scannedAt: time, pose: readPose(group, new Float64Array(10)), members, materials, geometries, buckets, cached: false };
     groupScans.set(group, scan);
     stats.groupFullScans++;
     return scan;
@@ -253,7 +264,9 @@
     mesh.renderOrder = first.renderOrder;
     mesh.onBeforeRender = first.onBeforeRender; // game.js edge-ID hook (same colour for the whole group) or the default no-op.
     const data = tagged
-      ? { hobunjiFarmTileBatch: true, hobunjiRenderProxy: true, terrainJigsawIgnore: true } // Render copy only; no terrain identity the sources lacked.
+      // Render copy only; no terrain identity the sources lacked. Opt-in AutoLOD
+      // never simplified the 2-triangle sources, so it must not decimate their merge.
+      ? { hobunjiFarmTileBatch: true, hobunjiRenderProxy: true, terrainJigsawIgnore: true, geometryAutoLODExclude: true }
       : { hobunjiFarmTileBatch: true, terrainRenderChunk: true, terrainJigsawBaked: true, terrainJigsawIgnore: true };
     for (const tag of GROUND_TAGS) if (first.userData[tag] !== undefined) data[tag] = first.userData[tag];
     if (first.userData.hobunjiTerrainEdgeIdColor) data.hobunjiTerrainEdgeIdColor = first.userData.hobunjiTerrainEdgeIdColor;

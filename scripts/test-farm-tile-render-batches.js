@@ -114,6 +114,7 @@ assert.ok(panes.every(t => t.visible), 'transparent members that are not declare
 const soilBatch = townDrawn.find(m => m.material === soilMat);
 assert.equal(soilBatch.userData.terrainRenderChunk, undefined, 'plot batches never become terrain to the ground x-ray');
 assert.equal(soilBatch.userData.hobunjiRenderProxy, true, 'plot batches are render proxies');
+assert.equal(soilBatch.userData.geometryAutoLODExclude, true, 'opt-in AutoLOD never decimates a merge of tiny sources');
 assert.deepEqual([soilBatch.position.x, soilBatch.position.z], [17, 0], 'a tagged batch sits at its tiles\' centroid (group offset included)');
 const sx = soilBatch.geometry.attributes.position.array.filter((_, i) => i % 3 === 0);
 assert.deepEqual([Math.min(...sx), Math.max(...sx)], [-1, 2], 'vertices are relative to that centroid');
@@ -135,6 +136,18 @@ const r3 = batches.suspendForRender(town);
 assert.ok(soilTiles[2].visible === true && !moved.visible, 'a removed member is no longer hidden; its replacement joins the batch the same frame');
 r3();
 assert.equal(batches.snapshot().rebuilds, rebuildsBefore + 2, 'the changed cell rebuilds immediately');
+let full = batches.snapshot().groupFullScans;
+batches.suspendForRender(town)();
+assert.equal(batches.snapshot().groupFullScans, full, 'unchanged again: cached');
+soilTiles[1].material = { id: 9 }; // e.g. a finish/tint swap
+const r4 = batches.suspendForRender(town);
+assert.equal(batches.snapshot().groupFullScans, full + 1, 'a material swap rescans the same frame');
+assert.equal(soilTiles[1].visible, true, 'the re-materialed tile left the soil batch and draws itself');
+r4();
+full = batches.snapshot().groupFullScans;
+plots.position.x = 20; // A moved building or plot group
+batches.suspendForRender(town)();
+assert.equal(batches.snapshot().groupFullScans, full + 1, 'a moved group rescans the same frame');
 plots.userData.hobunjiStaticBatchRevision = 1; const fullBefore = batches.snapshot().groupFullScans;
 batches.suspendForRender(town)();
 assert.equal(batches.snapshot().groupFullScans, fullBefore + 1, 'an owner revision bump forces a full rescan');
