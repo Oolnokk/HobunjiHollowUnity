@@ -1161,7 +1161,7 @@
         if(node.name === 'engraving-glyph-glow' || node.userData?.ruinLadderRuneGlow){ruinGlowMeshes.push(node);return;}
         if(!node.geometry||node.userData?.devRuinFootprintIgnore||node.userData?.furniturePattern)return;
         const name=String(node.name||'');
-        if(node.userData?.hobunjiGroundTopFacesOnly&&/-stone$/i.test(name)&&node.geometry.type==='BoxGeometry'){
+        if(node.userData?.ruinShaftPlatform===true){ // TileSpan may replace BoxGeometry with BufferGeometry; the authored slab flag survives.
           if(ruinGlowPlatforms.length<MAX_RUIN_GLOW_PLATFORMS){
             node.geometry.computeBoundingBox?.();
             ruinGlowPlatforms.push({node,points:Array.from({length:8},()=>({x:0,y:0})),hull:[],ready:false});
