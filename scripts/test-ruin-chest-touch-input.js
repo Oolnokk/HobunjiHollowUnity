@@ -94,4 +94,30 @@ claimsWindow.WorldActionInputClaims.clearClaims('dev-random-ruin');
 assert.equal(route('action1', 'press', { source: 'touch-arch:8' }), false,
   'lost claim falls back to generic action handling rather than activating a stale chest');
 
+// Held rope adjustment must use pointerdown/up through the same arch router:
+// calling invokeAction on a hold-only row has no onPress, and would never start the brake.
+let holdStarts=0; // Tracks one straightening request per physical press, not per rendered prompt.
+const holdReleases=[]; // Captures normal and canceled releases so the rope never stays braking.
+const holdRow={kind:'ropebrake',label:'Hold to Stop / Adjust Rope',inputAction:'action2',
+  priority:99,nativeInput:false,touchIcon:'✋',
+  onHoldStart(){holdStarts++;},onHoldEnd(detail){holdReleases.push(detail);} };
+syncClaims([holdRow]);
+const heldClaim=claimsWindow.WorldActionInputClaims.claimFor('action2');
+assert.equal(heldClaim?.showInArch,true,'hold-only adjust occupies a native press/release touch arch slot');
+assert.equal(heldClaim?.hudIcon,'✋','the held action retains its pictured hand icon');
+assert.equal(route('action2','press',{source:'touch-arch:held'}),true);
+assert.equal(holdStarts,1,'a touch pointerdown begins rope straightening immediately');
+assert.equal(route('action2','press',{source:'touch-arch:held'}),true);
+assert.equal(holdStarts,1,'touch repeat does not retrigger the adjustment');
+assert.equal(route('action2','release',{source:'touch-arch:held'}),true);
+assert.equal(holdReleases.length,1,'pointerup ends the straightening hold');
+assert.equal(route('action2','press',{source:'controller:held'}),true);
+assert.equal(holdStarts,2,'controller press uses the same held action');
+assert.equal(route('action2','cancel',{source:'controller:held'}),true);
+assert.equal(holdReleases.length,2,'a canceled hold still clears the brake');
+assert.equal(holdReleases[1].canceled,true,'cancel is identified to the held-control release');
+syncClaims([claimRow]);
+assert.equal(claimsWindow.WorldActionInputClaims.claimFor('action1')?.showInArch,false,
+  'ordinary tap-to-open chest controls are not replaced by a synthetic held arch');
+
 console.log('hidden ruin chest touch input: primary claims, fallback, door dispatch and stale-action guards PASS');
