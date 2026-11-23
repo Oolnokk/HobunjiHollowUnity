@@ -389,8 +389,9 @@
     const stack = [...(scene.children || [])];
     while (stack.length) {
       const node = stack.pop();
-      if (!node || node.visible === false) continue;
-      if (node.userData?.wildernessRootSpansLocal) indexTreeRoots(node); // Already passing this tree: no separate traversal to find roots.
+      if (!node) continue;
+      if (node.userData?.wildernessRootSpansLocal) indexTreeRoots(node); // Render-only tree culling must never switch physical roots off.
+      if (node.visible === false) continue;
       const semantic = semanticCoverFor(node);
       if (semantic) {
         const candidate = candidateFrom(node, semantic);
