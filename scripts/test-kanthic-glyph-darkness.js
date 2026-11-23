@@ -16,10 +16,17 @@ class Vec {
   applyMatrix4(){return this;} // The identity world matrix makes texture-to-screen expectations exact.
   setFromMatrixColumn(){return this.set(1,0,0);}
   sub(v){return this.set(this.x-v.x,this.y-v.y,this.z-v.z);}
+  length(){return Math.hypot(this.x,this.y,this.z);}
+  multiplyScalar(scale){return this.set(this.x*scale,this.y*scale,this.z*scale);}
   dot(v){return this.x*v.x+this.y*v.y+this.z*v.z;}
 }
 let tradition='kanthic'; // Switches between the new precise Kanthic rule and the unchanged Hronal rule.
-const win={THREE:{Vector3:Vec,RepeatWrapping:1000},WeatherFX:{init(){}},DevRandomRuinLichThemes:{activeTheme:()=>tradition}};
+let blockedByStone=false; // The fake Three.js raycaster exercises the real glyph-occlusion path without a GPU.
+class Raycaster {
+  set(){}
+  intersectObjects(casters,recursive,hits){if(blockedByStone&&casters.length)hits.push({distance:1,object:casters[0]});return hits;}
+}
+const win={THREE:{Vector3:Vec,Raycaster,RepeatWrapping:1000},WeatherFX:{init(){}},DevRandomRuinLichThemes:{activeTheme:()=>tradition}};
 vm.runInNewContext(fog,{window:win,performance:{now:()=>2000},console});
 const draws=[]; // All light-mask paints are recorded for assertions and mobile-neutral regression coverage.
 const context={
@@ -55,6 +62,16 @@ assert.equal(draws.filter(d=>d.kind==='image').length,1,'texture alpha is the so
 assert.equal(draws.find(d=>d.kind==='image').mode,'destination-out','atlas alpha clears only the engraved pixels');
 assert.equal(draws.find(d=>d.kind==='image').alpha,.8,'authored emissive intensity controls the exemption strength');
 assert(!draws.some(d=>d.kind==='gradient'||d.kind==='fill'),'Kanthic glyphs create no radial reveal or colored light halo');
+const wall={name:'shaft-hub-feature-wall',isMesh:true,geometry:{},visible:true,userData:{cameraObstacle:true},material:{visible:true,opacity:1}};
+const blockedScene={traverse(callback){callback(mesh);callback(wall);}};mesh.parent=blockedScene;wall.parent=blockedScene;
+blockedByStone=true;
+draws.length=0;
+const hidden=win.__probeGlyphMasks(blockedScene,deps,4000);
+assert.equal(hidden.drawn,0,'physically occluded glyphs cannot punch through the darkness overlay');
+assert.equal(hidden.triangles,0,'a wall-hidden engraving submits no texture triangles');
+assert.equal(draws.length,0,'no 2D light mask is painted for the wall-hidden glyph');
+blockedByStone=false;mesh.parent=scene;
+assert.equal(draw().drawn,1,'the real glyph reappears once its physical surface is unobstructed');
 const transform=draws.find(d=>d.kind==='transform').args;
 assert(Math.abs(transform[0]-1.25)<1e-6&&Math.abs(transform[3]-1.25)<1e-6,
   'UV atlas scales to the actual triangle in screen pixels');
@@ -110,4 +127,6 @@ tradition='hronal'; // Non-Kanthic traditions preserve their existing soft atmos
 assert.equal(draw().drawn,1,'other traditions still display wall patterns');
 assert(draws.some(d=>d.kind==='gradient'),'Hronal retains the prior soft engraved-glow treatment');
 assert(!draws.some(d=>d.kind==='image'),'the Kanthic-only correction does not change Hronal engraving rendering');
-console.log('Kanthic glyph-only darkness, repeat-wrapped ladder runes, no wall wash, UV projection, hidden surfaces, near plane, and other ruins: PASS');
+assert(original.includes('const mistActive = active;'),'the Kanthic room must use actual Cloud Forest mist geometry');
+assert(original.includes("ruinTradition === 'kanthic' ? 0.32 : 1"),'the player lantern is less than one tile in Kanthic');
+console.log('Kanthic depth-occluded glyph masks, real fog, tiny player lantern, repeat-wrapped runes and other ruins: PASS');
