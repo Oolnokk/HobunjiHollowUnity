@@ -27,8 +27,9 @@ const tree = {
   visible:true,children:[],parent:scene,
 };
 roots = [tree];
+browser.GridTileAccessors={getCurrentArea:()=>area}; // Production cover init may omit the area getter; use the shared runtime accessor instead.
 browser.NearbyVolumeCollision.init({
-  getActiveScene:()=>scene,getCurrentArea:()=>area,isCombatActive:()=>false,
+  getActiveScene:()=>scene,isCombatActive:()=>false,
   worldSurfaceY:()=>0,player:{x:0,y:0},debugLog(){},
   options:{enabled:false,projectiles:false},
 });
