@@ -275,4 +275,53 @@ function creature() {
   actor.prone=false;impact.updateCreature(actor,.016);
   assert.equal(rig.getDebug().activeAbsoluteClaims,0);
 }
+
+// Bandit portraits have an extra visual sway parent while hands/feet remain
+// siblings. The fix must address the visible paired portrait planes, leaving
+// those unrelated limbs under their original gameplay parent.
+{
+  const fighter=creature();fighter.prone=true;fighter.isBandit=true;
+  const sway=new Group(),legs=new Group(),hands=new Group();
+  fighter.avatarRef.group.add(sway);fighter.avatarRef.group.add(legs);fighter.avatarRef.group.add(hands);
+  sway.add(fighter.avatarRef.frontPlane);sway.add(fighter.avatarRef.backPlane);
+  fighter.avatarRef.legsPivot=legs;fighter.avatarRef.handsPivot=hands;
+  assert.equal(impact.updateCreature(fighter,.016),true,'bandit missing-pose repair uses shared creature presentation');
+  const state=fighter._impactRagdollPlayback;
+  assert.equal(state.pivot.parent,sway,'NPC torso is posed in the actual visual-sway hierarchy');
+  assert.equal(fighter.avatarRef.frontPlane.parent,state.pivot);
+  assert.equal(fighter.avatarRef.backPlane.parent,state.pivot);
+  assert.equal(legs.parent,fighter.avatarRef.group,'leg rig is not mistakenly repurposed as the prone owner');
+  assert.equal(hands.parent,fighter.avatarRef.group,'hand rig is not mistakenly repurposed as the prone owner');
+  const pose=state.pivot.quaternion.clone();
+  for(let t=0;t<20;t++) {
+    assert(impact.updateCreature(fighter,.016));
+    assert.equal(fighter._impactRagdollPlayback,state,'held prone state must not replay or allocate a new pivot each tick');
+  }
+  near(state.pivot.quaternion.x,pose.x);near(state.pivot.quaternion.y,pose.y);
+  near(state.pivot.quaternion.z,pose.z);near(state.pivot.quaternion.w,pose.w);
+  fighter.prone=false;
+  impact.updateCreature(fighter,.016);
+  assert.equal(rig.getDebug().activeAbsoluteClaims,0);
+}
+
+// If knockdown is registered before the victim has a renderable avatar,
+// the late visual load must immediately acquire the correct held pose.
+{
+  const originalClip=clip;
+  clip=null;
+  const later=creature();later.prone=true;
+  later.avatarRef.frontPlane=null;later.avatarRef.backPlane=null;
+  assert.equal(impact.triggerCreature(later,'breakThrow','front'),0);
+  assert.equal(later._impactRagdollPlayback,undefined,'cannot claim missing geometry prematurely');
+  const front=new Group(),back=new Group();
+  later.avatarRef.group.add(front);later.avatarRef.group.add(back);
+  later.avatarRef.frontPlane=front;later.avatarRef.backPlane=back;
+  assert.equal(impact.updateCreature(later,.016),true);
+  assert.equal(later._impactRagdollPlayback.holding,true);
+  assert.equal(front.parent,later._impactRagdollPlayback.pivot);
+  later.prone=false;impact.updateCreature(later,.016);
+  assert.equal(rig.getDebug().activeAbsoluteClaims,0);
+  clip=originalClip;
+}
+
 console.log('Ragdoll scoped pivot ownership: prone, replacement, live impacts, corpse, and cleanup PASS');
