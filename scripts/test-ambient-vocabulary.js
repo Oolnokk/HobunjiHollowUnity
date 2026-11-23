@@ -509,6 +509,8 @@ async function main() {
   assert.equal(engine.rewrite('Hey, Ki[t]y!', 'gantami_ginju', () => 0, config, profiles, ['Ki[t]y']), 'Hiya, Ki[t]y!');
   assert.equal(engine.rewrite('Hey, Kitty! {{AMBIENT_VOCAB_NAME_0}}', 'gantami_ginju', () => 0, config, profiles, ['Kitty']),
     'Hiya, Kitty! {{AMBIENT_VOCAB_NAME_0}}');
+  assert.equal(engine.rewrite('Hey, Kitty and Hi! {{AMBIENT_VOCAB_NAME_0}}', 'gantami_ginju', () => 0, config, profiles, ['Kitty', 'Hi']),
+    'Hiya, Kitty and Hi! {{AMBIENT_VOCAB_NAME_0}}', 'Two protected names cannot reuse the same marker when an authored token occupies marker zero');
   assert.equal(engine.rewrite('Hey, Kitty!', 'gantami_ginju', () => 0, config, profiles, []), 'Hiya, Kit-cat!');
   const debug = engine.getDebug();
   assert.ok(debug.last && Number.isInteger(debug.last.swaps));
