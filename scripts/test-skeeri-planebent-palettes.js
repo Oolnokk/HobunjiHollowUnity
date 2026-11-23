@@ -223,10 +223,11 @@ for(const key of ['flying','perched']) {
   let covered = 0, overlap = 0, missing = 0; // Renderer regression diagnostics for each real Skeeri pose.
   for (let i = 3; i < sprite.pixels.length; i += 4) {
     if (!sprite.pixels[i]) continue;
-    const present = layers.filter(layer => layer[i] > 0); // Every nontransparent source pixel must have exactly one owner.
-    if (!present.length) missing++;
-    if (present.length > 1) overlap++;
-    if (present.length === 1) covered++;
+    let present = 0; // Small fixed layer count: never allocate a fresh array for millions of real PNG pixels.
+    for (const layer of layers) if (layer[i] > 0) present++;
+    if (!present) missing++;
+    if (present > 1) overlap++;
+    if (present === 1) covered++;
   }
   assert.equal(missing, 0, key+' source art has no missing coat/eye/details pixels after recolor partition');
   assert.equal(overlap, 0, key+' source art is not double-painted by eye, body or pattern');
