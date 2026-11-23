@@ -56,6 +56,7 @@
       handAttachY: avatarRoot.userData?.handAttachY,
       avatarRoot,
       name: record.name || avatarRoot.name || 'avatar',
+      onHandVisualReplaced: record.onHandVisualReplaced, // Optional one-shot bridge for GLB replacement parity in the full-rig author.
     });
     if (!rig) return false;
     avatarRoot.userData.proceduralHandRig = rig;
