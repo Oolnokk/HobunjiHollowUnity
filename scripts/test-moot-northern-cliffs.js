@@ -13,15 +13,15 @@ const coatPatterns = ['overcoat', 'mitts']; // Authored overlay draw order; colo
 for (const name of expected) {
   const bytes = fs.readFileSync(path.join(ROOT, basePath, name));
   assert.equal(bytes.subarray(1, 4).toString('ascii'), 'PNG', `${name} must be a PNG`);
-  assert.equal(bytes.readUInt32BE(16), 1617, `${name} must retain the base frame's width`);
-  assert.equal(bytes.readUInt32BE(20), 1000, `${name} must retain the base frame's height`);
+  assert.equal(bytes.readUInt32BE(16), 1295, `${name} must retain the base frame's width`);
+  assert.equal(bytes.readUInt32BE(20), 920, `${name} must retain the base frame's height`);
 }
-for (const pattern of coatPatterns) for (const frame of ['idle', 'run1', 'run2']) {
+for (const pattern of [...coatPatterns, 'coloredneck']) for (const frame of ['idle', 'run1', 'run2']) {
   const name = `moot_${pattern}_${frame}.png`; // Required on all three animation poses so a visible allele never makes the compositor retry a missing frame.
   const bytes = fs.readFileSync(path.join(ROOT, basePath, 'patterns', name));
   assert.equal(bytes.subarray(1, 4).toString('ascii'), 'PNG', `${name} must be a PNG`);
-  assert.equal(bytes.readUInt32BE(16), 1617, `${name} must align with Moot's base width`);
-  assert.equal(bytes.readUInt32BE(20), 1000, `${name} must align with Moot's base height`);
+  assert.equal(bytes.readUInt32BE(16), 1295, `${name} must align with Moot's base width`);
+  assert.equal(bytes.readUInt32BE(20), 920, `${name} must align with Moot's base height`);
   assert.equal(bytes[24], 8, `${name} must have 8-bit sprite channels`);
   assert.equal(bytes[25], 6, `${name} must be RGBA, preserving transparency`);
 }
@@ -122,7 +122,15 @@ assert.deepEqual(creatureDb['moot-herd-mother']?.sprites, creatureDb.moot.sprite
 assert.equal(creatureDb.moot.hostile, false);
 assert.equal(creatureDb.moot.lootPool, 'creature_moot');
 assert.equal(creatureDb.moot.defaultSizeClass, 'large');
-assert.equal(creatureDb.moot.spriteAspect, 1000 / 1617);
+assert.equal(creatureDb.moot.spriteAspect, 920 / 1295);
+const oldWorldUnitsPerPixel = 1.7 / 1617; // Measures visible art scale independently of the old transparent padding.
+const mootBestiary = JSON.parse(read('docs/config/creatures/hobunji-creature-bestiary.json')).creatures.find(entry => entry.id === 'moot'); // Standalone Head Rig view of the same sprite.
+for (const def of [creatureDb.moot, creatureDb['moot-herd-mother'], mootBestiary]) {
+  assert.ok(Math.abs(def.modelWidth / 1295 - oldWorldUnitsPerPixel) < 1e-12);
+  assert.ok(Math.abs(def.modelWidth * def.spriteAspect / 920 - oldWorldUnitsPerPixel) < 1e-12);
+}
+assert.equal(config.game.livestock.animalWidths.moot, creatureDb.moot.modelWidth, 'Default farm and nursery scale matches the original pixel density');
+assert.equal(creatureDb['moot-herd-mother'].spriteAspect, creatureDb.moot.spriteAspect);
 assert.equal(creatureDb.moot.speed, 1.25, 'Moot retains native herbivore wandering behavior');
 assert.deepEqual(JSON.parse(JSON.stringify(creatureDb.moot.sprites)), {
   idle: api.SPRITES.idle, run: [api.SPRITES.run1, api.SPRITES.run2],
