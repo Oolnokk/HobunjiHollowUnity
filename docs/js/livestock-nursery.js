@@ -266,6 +266,7 @@
     const list = currentLivestock();
     const entry = list.find(item => item.id === livestockId);
     if (!entry || !isBaby(entry)) return { ok: false, message: 'That Nursery baby was not found.' };
+    if (window.PendingAnimalSales?.pendingFor?.(entry)) return { ok: false, message: 'Cancel the pending animal sale before growing this baby.' };
     const count = adultCount();
     const capacity = adultCapacity();
     if (count >= capacity) return { ok: false, message: `No adult barn space is available (${count}/${capacity}). Build or upgrade a barn first.` };
@@ -879,6 +880,7 @@
       rename.textContent = 'Rename';
       rename.disabled = animalDeps?.hasFarmPermission?.('livestock') === false;
       rename.addEventListener('click', () => {
+        if (window.PendingAnimalSales?.pendingFor?.(selected)) return; // Queued babies retain their sale identity until cancelled.
         const value = prompt('Rename baby:', selected.name);
         const trimmed = String(value || '').trim().slice(0, 30);
         if (!trimmed) return;
