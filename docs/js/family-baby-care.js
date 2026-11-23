@@ -18,8 +18,8 @@
     if (!walker?.root) return null;
     const hour = H.clockHour(); // 22–07 sleep, 08–18 ordinary job block, other hours at home.
     const sleeping = hour >= 22 || hour < 7;
-    const workHours = hour >= 8 && hour < 18; // Shared spouse town/work and vat shift window, not an independent parenting schedule.
-    const farmwork = workHours && (!!ctx.family.spouseVatId || !!window.NpcFarmPlots?.targetFor?.(walker.rec, { familyOnly: true }));
+    const workHours = hour >= 8 && hour < 18; // Spouse work hours follow the existing plot schedule, not the child's squeezing-vat shifts.
+    const farmwork = workHours && !!window.NpcFarmPlots?.targetFor?.(walker.rec, { familyOnly: true }); // Only assigned crop/plot work stows a spouse-held baby on the back.
     const otherWork = workHours && !farmwork; // After work, hold the baby in arms rather than leaving a work-only back pose active.
     const slot = Math.floor(H.hourStamp() * 2); // Half-hour holds feel natural without any per-frame random rerolls.
     const takingBreak = H.hashInt(child.id + ':' + slot + ':holding-break') % 4 === 0;

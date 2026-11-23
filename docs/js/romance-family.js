@@ -34,7 +34,7 @@
   let registeredChildFriends = ''; // Signature of world-specific NPC friendship links, avoids work each tick.
 
   function defaultFamily() {
-    return { pregnancy: null, children: [], pendingAdoption: null, pendingBaby: null, spouseUsefulness: null, spouseVatId: null, spouseVatWorkerId: null };
+    return { pregnancy: null, children: [], pendingAdoption: null, pendingBaby: null, spouseUsefulness: null };
   }
   const cfg = () => H?.cfg?.()?.family || {};
   const num = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
@@ -97,21 +97,6 @@
   }
 
   // ── Pairing / case resolution ─────────────────────────────────────────
-  function reconcileSpouseVat() {
-    if (!fam.spouseVatId) { fam.spouseVatWorkerId = null; return; }
-    const spouseId = R?.getSpouse?.()?.npcId || null; // Used to prevent a newly married spouse inheriting an old spouse's vat shift.
-    if (!fam.spouseVatWorkerId && spouseId) {
-      fam.spouseVatWorkerId = spouseId; // Older saves predate the owner field; bind their existing job to their restored spouse.
-      H.persist();
-      return;
-    }
-    if (!spouseId || fam.spouseVatWorkerId !== spouseId) {
-      window.DewVats?.setExternalWorker?.(fam.spouseVatId, null);
-      fam.spouseVatId = null;
-      fam.spouseVatWorkerId = null;
-      H.persist();
-    }
-  }
   function isEggLayer(speciesId) { return (cfg().eggLayingSpecies || ['kenkari']).includes(speciesId); }
   function resolveKind(spouseId) {
     const you = H.playerAppearance();
@@ -530,10 +515,7 @@
   }
 
   function onNewDay() {
-    reconcileSpouseVat(); // Day-rollover squeezing must use the actual current spouse, not a former spouse's saved vat.
-    const spouse = R.getSpouse();
-    const workers = fam.children.filter(child => child.vatId && phaseOf(child) !== 'basket').map(child => ({ id: child.id, name: child.name, vatId: child.vatId }));
-    if (spouse?.npcId && fam.spouseVatId && !spouseHoldingEgg()) workers.push({ id: spouse.npcId, name: H.npcName(spouse.npcId), vatId: fam.spouseVatId }); // An egg-tending spouse rests rather than squeezing.
+    const workers = fam.children.filter(child => child.vatId && phaseOf(child) !== 'basket').map(child => ({ id: child.id, name: child.name, vatId: child.vatId })); // Squeezing is a child/toddler chore; spouses retain ordinary plot work.
     for (const worker of workers) {
       const status = window.DewVats?.squeezePileWithExternalWorker?.(worker.vatId);
       if (status === 'started') {
@@ -576,32 +558,27 @@
     syncChildAmbientGreetings(child); // Standalone voice policy, original family Talk trees unchanged.
   }
 
-  // ── Command wheel (family squeezing jobs) ─────────────────────────────
+  // ── Command wheel (child/toddler squeezing jobs) ──────────────────────
   function commandOptionsFor(walker) {
-    const workerId = walker?.rec?.id;
-    const child = fam.children.find(entry => entry.id === workerId);
-    const spouse = R?.getSpouse?.();
-    const isSpouse = spouse?.npcId === workerId;
-    const infantOptions = window.FamilyBabyCare?.commandOptionsFor?.(walker) || []; // The same held-NPC wheel offers Hold Baby / spouse handoffs.
-    if (child && phaseOf(child) === 'basket') return infantOptions;
-    if (!isSpouse && !child) return [];
-    const vatId = isSpouse ? fam.spouseVatId : child.vatId;
-    if (vatId) return [...infantOptions, { id: 'unvat', icon: '🛑', label: 'Stop Vat Work', run: () => {
-      window.DewVats?.setExternalWorker?.(vatId, null);
-      if (isSpouse) { fam.spouseVatId = null; fam.spouseVatWorkerId = null; } else child.vatId = null;
+    const child = fam.children.find(entry => entry.id === walker?.rec?.id);
+    const infantOptions = window.FamilyBabyCare?.commandOptionsFor?.(walker) || []; // Spouses retain baby handoffs, but never receive vat-work commands.
+    if (!child || phaseOf(child) === 'basket') return infantOptions;
+    if (child.vatId) return [...infantOptions, { id: 'unvat', icon: '🛑', label: 'Stop Vat Work', run: () => {
+      window.DewVats?.setExternalWorker?.(child.vatId, null);
+      child.vatId = null;
       H.persist(); H.say(walker, 'Okay! Time to play!');
     } }];
     const vats = (window.DewVats?.listSqueezingVats?.() || []).filter(vat => !window.DewVats.assignedWorkerForVat(vat.id));
     return [...infantOptions, { id: 'vat', icon: '🥛', label: 'Work the Vat', muted: !vats.length, run: () => {
       const available = (window.DewVats?.listSqueezingVats?.() || []).find(vat => !window.DewVats.assignedWorkerForVat(vat.id));
       if (!available) { H.toast('There is no free squeezing vat on the farm.', false); return; }
-      if (isSpouse) { fam.spouseVatId = available.id; fam.spouseVatWorkerId = workerId; } else child.vatId = available.id;
-      window.DewVats.setExternalWorker(available.id, { id: workerId, name: isSpouse ? H.npcName(workerId) : child.name, efficacy: num(cfg().vatEfficacyMultiplier, 2), familyWorker: true });
+      child.vatId = available.id;
+      window.DewVats.setExternalWorker(available.id, { id: child.id, name: child.name, efficacy: num(cfg().vatEfficacyMultiplier, 2), familyWorker: true });
       H.persist(); H.say(walker, "I'll work at the squeezing vat!");
     } }];
   }
 
-  // ── Spouse override hook (egg rest or assigned squeezing work) ──────
+  // ── Spouse override hook (egg rest and baby care) ────────────────────
   function spouseTargetOverride(rec, { bedSpot } = {}) {
     if (spouseHoldingEgg() && fam.pregnancy.spouseId === rec.id) {
       const bed = (bedSpot || H.bedSpot)();
@@ -609,13 +586,6 @@
     }
     const babyCare = window.FamilyBabyCare?.spouseTarget?.(rec, { bedSpot }); // Nursery time precedes idle wandering, not assigned farmwork.
     if (babyCare) return babyCare;
-    if (fam.spouseVatId && R.getSpouse()?.npcId === rec.id && H.clockHour() >= 8 && H.clockHour() < 18) {
-      const vat = (window.DewVats?.listSqueezingVats?.() || []).find(entry => entry.id === fam.spouseVatId);
-      if (vat) {
-        const spot = H.nearestWalkable('farm', vat.col, vat.row + 1, 2);
-        if (spot) return { area: 'farm', c: spot.c, r: spot.r, activity: 'working the squeezing vat' };
-      }
-    }
     return null;
   }
 
@@ -888,18 +858,12 @@
     const day = H.rawDay();
     if (lastRawDay !== null && day !== lastRawDay) onNewDay();
     lastRawDay = day;
-    reconcileSpouseVat();
     ensurePlan();
     maybeAnnounce();
     if (fam.pendingBaby && !pendingBabyPromptScheduled && !uiOverlay && !deps().isDialogueOpen?.()) promptPendingBaby();
     syncChildFriendships();
     for (const child of fam.children) updateChild(child);
     window.FamilyBabyCare?.tick?.(); // One lightweight family update, not a new per-frame character behavior.
-    if (R.getSpouse()?.npcId && fam.spouseVatId) {
-      const available = (window.DewVats?.listSqueezingVats?.() || []).some(vat => vat.id === fam.spouseVatId);
-      if (!available) { fam.spouseVatId = null; fam.spouseVatWorkerId = null; H.persist(); }
-      else window.DewVats?.setExternalWorker?.(fam.spouseVatId, { id: R.getSpouse().npcId, name: H.npcName(R.getSpouse().npcId), efficacy: num(cfg().vatEfficacyMultiplier, 2), familyWorker: true });
-    }
     syncFrameSubscriber();
   }
 
@@ -922,6 +886,8 @@
     fam = saved && typeof saved === 'object'
       ? { ...defaultFamily(), ...saved, children: Array.isArray(saved.children) ? saved.children.map(child => ({ ...child })) : [] }
       : defaultFamily();
+    delete fam.spouseVatId; // Retired adult vat jobs from older saves are discarded; clearFamilyWorkers above releases their runtime shifts.
+    delete fam.spouseVatWorkerId; // No obsolete spouse vat ownership is written back on the next save.
     // Save migration: shorten an existing three-month gestation to one month. A pre-migration
     // save interrupted during newborn naming can retry delivery on the next farmhouse sleep.
     const plan = fam.pregnancy;
@@ -952,7 +918,7 @@
     spouseTargetOverride, commandOptionsFor, spouseHoldingEgg, isBasketBaby, babyAmbientSound,
     careContext: () => ({ family: fam, helpers: H, romance: R, phaseOf, walkerFor, basketObject, persist: () => H.persist() }), // One source of family state for childcare.
     usefulnessInfo, awardWork, rollWorkQuality,
-    isAssignedToVat: id => R?.getSpouse?.()?.npcId === id ? !!fam.spouseVatId : fam.children.some(child => child.id === id && !!child.vatId),
+    isAssignedToVat: id => fam.children.some(child => child.id === id && phaseOf(child) !== 'basket' && !!child.vatId), // Only non-infant children can reserve vats and interrupt family plot claims.
     openDreamPicker, openNamingPrompt, createChild,
     wardrobeRecordFor: id => { const child = fam.children.find(entry => entry.id === id); return child ? childRecord(child) : null; }, // Offscreen children still have identity/clothing for their family chest.
     isWardrobeChild: id => fam.children.some(child => child.id === id), // Fast per-frame physical wardrobe targeting avoids allocating a full family snapshot.
