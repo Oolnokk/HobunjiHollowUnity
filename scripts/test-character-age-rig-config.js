@@ -106,7 +106,7 @@ assert(feetRuntime.includes('options.onFootVisualsReplaced({ left: leftMesh, rig
   'one-shot final foot GLB callback must exist for editor parity');
 assert(html.indexOf('character-age-rig-config.js?v=') > html.indexOf('romance-config.js?v=') &&
   html.indexOf('character-age-rig-config.js?v=') < html.indexOf('romance-family.js?v=') &&
-  html.indexOf('character-age-rig-config.js?v=') < html.indexOf('game.js?v='),
+  html.indexOf('character-age-rig-config.js?v=') < html.indexOf('<script src="game.js?v='),
   'the game must activate the bridge before family gameplay and its initial world actors');
 assert(bootstrap.indexOf('character-age-rig-config.js?v=') < bootstrap.indexOf('character-scale-comparison.js?v='),
   'Animation Author must use the same shared bridge before building its lineup');
