@@ -720,8 +720,10 @@
     const isBack=backCarried===vase;
     const body=isBack?backCarryRoot():carryDeps()?.playerMesh;
     if(!body||!vase?.group?.quaternion||!posteriorLocal)return false;
-    const portrait=isBack?backCarryPortrait(body):null; // Stowed-only artwork parent; held retains its original rig parent and pose.
-    if(portrait&&vase.group.parent===portrait)return true; // Preserve independent portrait rotation between animation frames.
+    const bodyMountedBaby=isBack&&vase.kind==='familyBaby'; // Infant remains on the carrier's posterior, not the separately rotating head/portrait plane.
+    const portrait=isBack&&!bodyMountedBaby?backCarryPortrait(body):null; // Ordinary back-stowed furniture keeps its established portrait-facing behavior.
+    if(bodyMountedBaby&&vase.group.parent===body&&vase._backBodyMount===body)return true; // An already-solved newborn must not be reparented or reoriented on each turn.
+    if(portrait&&vase.group.parent===portrait)return true; // Other back Burdens continue to follow their portrait plane.
     if(vase.group.parent!==body)body.add(vase.group);
     const carryable=vase.data?.carryable||{}; // The back pose uses authored transforms, with an inverted held pose as its fallback.
     // The playerMesh is the actual character/posterior frame. The renderer
@@ -734,6 +736,7 @@
       modelHeight:body?.userData?.portraitModelHeight,handAttachY:body?.userData?.handAttachY,
       liveY:window.PlayerBodyTransformComposer?.getPosteriorY?.()}); // Live composer value is authoritative.
     solveCarryMount(vase.group,carryable,isBack,posteriorLocal);
+    vase._backBodyMount=bodyMountedBaby?body:null; // Clearing on retrieval ensures the next stow reapplies its authored back pose.
     if(isBack&&portrait)moveBackBurdenToPortrait(vase,body,portrait);
     const base=aimingThrow?.socketBase;
     if(aimingThrow?.vase===vase&&base){
@@ -2817,7 +2820,7 @@
     contextButtons,collectAimedPile,promptButtons,RUBBLE_YIELD,
     startShatterAim,releaseShatterAim,cancelShatterAim,detonate,heldHandTarget,
     projectileHit,hitProjectile,senseTargets,sweepMelee,tick,attachRuntime,
-    debugSnapshot:()=>({lastEvent,lastBlastAttribution,latestChange:'Stowed Burdens use the held pose species-adjusted posterior frame before following portrait facing.',backCarryMount:backCarried?{parent:backCarried.group?.parent?.name||backCarried.group?.parent?.type||null,portraitAttached:!!backCarryPortrait(backCarryRoot())&&backCarried.group?.parent===backCarryPortrait(backCarryRoot()),rootFallback:backCarried.group?.parent===backCarryRoot(),collision:'carrier-hitbox'}:null,crates:window.CratePiles?.debugSnapshot?.()||null,backCarried:backCarriedInfo(),fruitCarryProfile:fruitCarryTemplate===FRUIT_CARRY_FALLBACK?'fallback':'authored',area:area(),held:held?.id||null,babyForeground:{active:held?.kind==='familyBaby',enabled:window.XrayHierarchy?.get?.('baby.carrierForeground')!=='off',renderOrder:held?.kind==='familyBaby'?(window.XrayHierarchy?.get?.('baby.carrierForeground')==='off'?CARRIED_VESSEL_RENDER_ORDER:HELD_BABY_FOREGROUND_ORDER):null},emittingVases:[...allActive().values()].filter(v=>v.emitters?.length).length,
+    debugSnapshot:()=>({lastEvent,lastBlastAttribution,latestChange:'Stowed Burdens use the held pose species-adjusted posterior frame before following portrait facing.',backCarryMount:backCarried?{parent:backCarried.group?.parent?.name||backCarried.group?.parent?.type||null,portraitAttached:backCarried.kind==='familyBaby'?false:!!backCarryPortrait(backCarryRoot())&&backCarried.group?.parent===backCarryPortrait(backCarryRoot()),rootFallback:backCarried.group?.parent===backCarryRoot(),frame:backCarried.kind==='familyBaby'?'carrier-posterior':'portrait-facing',collision:'carrier-hitbox'}:null,crates:window.CratePiles?.debugSnapshot?.()||null,backCarried:backCarriedInfo(),fruitCarryProfile:fruitCarryTemplate===FRUIT_CARRY_FALLBACK?'fallback':'authored',area:area(),held:held?.id||null,babyForeground:{active:held?.kind==='familyBaby',enabled:window.XrayHierarchy?.get?.('baby.carrierForeground')!=='off',renderOrder:held?.kind==='familyBaby'?(window.XrayHierarchy?.get?.('baby.carrierForeground')==='off'?CARRIED_VESSEL_RENDER_ORDER:HELD_BABY_FOREGROUND_ORDER):null},emittingVases:[...allActive().values()].filter(v=>v.emitters?.length).length,
       vases:[...allActive().values()].map(v=>({id:v.id,kind:v.kind,col:v.col,row:v.row,carried:v.carried,hanging:!!v.hanging,flying:!!v.flying,plinthAttached:!!v.plinthAttached,hangingMechanismId:v.hangingMechanismId||null})),
       fruitFalls:[...fallingFruits.values()].map(f=>({id:f.fruit.id,y:f.fruit.group.position.y,cause:f.cause})),
       downwardBurdenFalls:[...downwardFalls.values()].map(f=>({id:f.burden.id,y:f.burden.group.position.y,velocity:+f.velocity.toFixed(2),cause:f.cause})),
