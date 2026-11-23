@@ -70,7 +70,27 @@ close(legacyPose.billboardAnchor.position.y,.4*.06,'legacy mount ignores the ana
 const tripped=profile.toProfile(profile.forSizeFrom({held:{pivot:'posterior',position:{x:.1,y:-.2,z:.05}}},.3,.4,anchors),.3,.4,anchors);
 assert.equal(tripped.held.pivot,'posterior','round-trip keeps the posterior pivot');
 close(tripped.held.position.y,-.2,'round-trip keeps the posterior-relative mount offset');
-close(profile.toProfile(legacyPose,.3,.4,anchors).held.position.z,-.48,'legacy pose round-trips unchanged');
+const converted=profile.toProfile(legacyPose,.3,.4,anchors);
+assert.equal(converted.held.pivot,'posterior','saving a legacy pose converts it to the anatomical pivot');
+const reapplied=profile.forSizeFrom(converted,.3,.4,anchors).billboardAnchor.position;
+for(const axis of ['x','y','z'])close(reapplied[axis],legacyPose.billboardAnchor.position[axis],'conversion keeps the exact mount for this baby ('+axis+')');
+// Automatic clean-up: the retired v1 key and any pivot-less stored pose are deleted on load.
+{
+  const store=new Map([['hobunji.familyBabyCarryPose.v1','{"held":{"position":{"y":.06}}}'],
+    ['hobunji.familyBabyCarryPose.v3','{"held":{"position":{"y":0.06}},"back":{"pivot":"neck"}}']]);
+  const w2={localStorage:{getItem:k=>store.has(k)?store.get(k):null,setItem:(k,v)=>store.set(k,v),removeItem:k=>store.delete(k)}};
+  vm.runInNewContext(files.profile,{window:w2,console});
+  assert.equal(store.size,0,'retired and legacy stored poses are removed');
+  assert.deepEqual(JSON.parse(JSON.stringify(w2.FamilyBabyCarryPose.storageStatus())),{key:'hobunji.familyBabyCarryPose.v3',clearedRetired:1,rejectedStored:true},'mobile status reports the clean-up');
+  assert.equal(w2.FamilyBabyCarryPose.snapshot().held.pivot,'posterior','defaults are used after clean-up');
+  const keep=new Map([['hobunji.familyBabyCarryPose.v3',JSON.stringify({...profile.defaultProfile,held:{...profile.defaultProfile.held,posteriorOffset:{x:.2,y:.1,z:.1}}})]]);
+  const w3={localStorage:{getItem:k=>keep.has(k)?keep.get(k):null,setItem:(k,v)=>keep.set(k,v),removeItem:k=>keep.delete(k)}};
+  vm.runInNewContext(files.profile,{window:w3,console});
+  assert.equal(w3.FamilyBabyCarryPose.snapshot().held.posteriorOffset.x,.2,'an anatomical stored pose is kept');
+  const bad=new Map([['hobunji.familyBabyCarryPose.v3','{not json']]);
+  vm.runInNewContext(files.profile,{window:{localStorage:{getItem:k=>bad.has(k)?bad.get(k):null,setItem:()=>{},removeItem:k=>bad.delete(k)}},console});
+  assert.equal(bad.size,0,'corrupt stored pose JSON is removed');
+}
 // The Furniture Author rebuilds every carryable through normalized(); it must keep the baby pivot
 // (else an editor save silently downgrades to legacy portrait space) and add none to furniture.
 {

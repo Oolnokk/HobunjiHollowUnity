@@ -239,7 +239,7 @@ table (`CAPABILITIES` in `js/character-visuals.js`, keep it accurate):
 | terrain height | every kind (movement-owned for humanoids; render lift for animals) | — |
 | water/slush tint | player, NPC, enemy, pet | — |
 | mist depth silhouettes | every kind | — |
-| carried family baby (`family-baby-burdens.js`, `family-baby-limbs.js`) | player, NPC (spouse) carriers | spouse carry ignores the authored cradle/back-stow pose and grips |
+| carried family baby (`family-baby-burdens.js`, `family-baby-limbs.js`, `Shattercasks.solveCarryMount`) | player, NPC (spouse) carriers — same pose, grips, elbows, back stow | — |
 | shoulder-pet perch | player | runtime is owner-generic; only the player owns a pet in gameplay |
 | weather on bodies (wetness, snow, wind) | none | absent for everyone |
 

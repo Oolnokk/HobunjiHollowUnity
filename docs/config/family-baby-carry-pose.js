@@ -6,7 +6,10 @@
 (() => {
   'use strict';
   if (window.FamilyBabyCarryPose) return;
-  const STORAGE_KEY = 'hobunji.familyBabyCarryPose.v1'; // Preserve existing device-local draft storage; legacy V1 positions migrate at resolution.
+  // Device-local "Apply" override. Poses saved before anatomical pivots (key v1: fixed portrait
+  // heights that misplace other species) are cleared automatically on load, never migrated.
+  const STORAGE_KEY = 'hobunji.familyBabyCarryPose.v3';
+  const RETIRED_STORAGE_KEYS = ['hobunji.familyBabyCarryPose.v1'];
   // Authored defaults (screenshot-verified in game against a newborn Mao'ao bust, Nov 22):
   // HELD = cradle. The infant lies ~65 degrees across the carrier's lower chest, head in the
   // carrier's RIGHT arm, face tipped slightly up; the right hand cups the head/neck from below,
@@ -70,10 +73,20 @@
     };
   }
   let profile = normalize(DEFAULT_PROFILE); // Live device override used by new babies and refreshed carry rigs.
+  const storage = { clearedRetired: 0, rejectedStored: false }; // Mobile diagnostics for the automatic clean-up.
+  const anatomical = raw => ['held', 'back'].every(key => PIVOTS.has(raw?.[key]?.pivot)); // Every stored pose must name its pivot.
   try {
+    for (const key of RETIRED_STORAGE_KEYS) {
+      if (window.localStorage?.getItem(key) == null) continue;
+      window.localStorage.removeItem(key);
+      storage.clearedRetired++;
+    }
     const stored = window.localStorage?.getItem(STORAGE_KEY);
-    if (stored) profile = normalize(JSON.parse(stored));
-  } catch (_) { /* Private/file preview: authored defaults remain usable. */ }
+    let parsed = null;
+    try { parsed = stored ? JSON.parse(stored) : null; } catch (_) { parsed = null; } // Corrupt JSON is cleared like a legacy pose.
+    if (parsed && anatomical(parsed)) profile = normalize(parsed);
+    else if (stored) { window.localStorage.removeItem(STORAGE_KEY); storage.rejectedStored = true; }
+  } catch (_) { /* Private/file preview or corrupt JSON: authored defaults remain usable. */ }
   const scaled = (value, width, height) => ({ x: value.x * width, y: value.y * height, z: value.z * height });
   const unscaled = (value, width, height) => ({ x: finite(value?.x, 0) / width,
     y: finite(value?.y, 0) / height, z: finite(value?.z, 0) / height });
@@ -164,7 +177,9 @@
     const w = Math.max(.05, finite(width, .3)), h = Math.max(.05, finite(height, .3)); // Editor preview's reference baby size.
     const held = carryable?.billboardAnchor || {}, back = carryable?.backCarry || {};
     const pose = (source, fallback, isBack) => {
-      const pivot = PIVOTS.has(source.pivot) ? source.pivot : 'portrait', base = pivotBase(pivot, anchors, w, h);
+      // The carryable holds this baby's absolute mount, so a legacy portrait-space pose (e.g. an old
+      // imported JSON) is re-expressed exactly on the default anatomical pivot: saves are never legacy.
+      const pivot = PIVOTS.has(source.pivot) ? source.pivot : fallback.pivot, base = pivotBase(pivot, anchors, w, h);
       return {
       pivot,
       position: unscaled(Object.fromEntries(axes.map(axis => [axis, finite(source.position?.[axis], 0) - base[axis]])), w, h),
@@ -230,7 +245,8 @@
     return snapshot();
   }
   function snapshot() { return JSON.parse(JSON.stringify(profile)); }
-  window.FamilyBabyCarryPose = Object.freeze({ version: 2, defaultProfile: normalize(DEFAULT_PROFILE),
+  window.FamilyBabyCarryPose = Object.freeze({ version: 3, defaultProfile: normalize(DEFAULT_PROFILE),
+    storageStatus: () => ({ key: STORAGE_KEY, ...storage }),
     anchorsForAvatar, gripAnchor, gripOffset, gripPosition,
     forSize, forSizeFrom, toProfile, pointToPortrait, pointFromPortrait, applyTo, applyFrom, save, reset, snapshot });
 })();

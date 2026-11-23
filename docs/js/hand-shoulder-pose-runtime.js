@@ -310,6 +310,8 @@
 
   function currentBabyElbow(side, avatarRoot) {
     // The Attack Editor shoulder-relative elbow solver is also the authority for a carried baby.
+    const npcCarry = avatarRoot?.userData?.proceduralHeldItemTarget; // NPC carrier (FamilyBabyBurdens.spouseCarry): same authored elbows as the player.
+    if (npcCarry?.familyBabyId) return normalizeElbowPoint(npcCarry.elbows?.[side]);
     const player=global.Combat?.deps?.playerMesh || global.PlayerBodyTransformComposer?.getPlayerMesh?.();
     if (!avatarRoot || !player || (avatarRoot !== player && avatarRoot.parent !== player)) return null;
     const info=global.Shattercasks?.heldBurdenInfo?.(); // Back-stowed infants don't author held-arm bends.

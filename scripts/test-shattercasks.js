@@ -191,9 +191,10 @@ assert(['left','right'].every(side=>['x','y','z'].every(axis=>
   Number.isFinite(asset.carryable.handTargets[side].rotation[axis]))),
   'both grip frames export their own authored XYZ Euler rotations');
 assert(code.includes('PlayerBodyTransformComposer?.getPosteriorY?.()') &&
-  code.includes('posteriorLocal.set(') &&
-  code.includes('vase.group.position.copy(posteriorLocal).add(posteriorOffset).sub(heldAnchorOffset)') &&
-  code.includes('multiplyScalar(vase.group.scale.x).applyQuaternion(vase.group.quaternion)') &&
+  code.includes('return out.set(finite(origin.x),y,finite(origin.z))') && // carrierPosteriorLocal (shared with NPC carriers)
+  code.includes('solveCarryMount(vase.group,carryable,isBack,posteriorLocal)') && // The player delegates to THE shared carry pose.
+  code.includes('group.position.copy(posterior).add(posteriorOffset).sub(heldAnchorOffset)') &&
+  code.includes('multiplyScalar(group.scale.x).applyQuaternion(group.quaternion)') &&
   !code.includes('vase.group.position.copy(holder.position)'),
   'runtime mounts relative to actual avatar posterior and applies XYZ plus item scale, never world drop position');
 const composer=fs.readFileSync(path.join(root,'docs/js/player-body-transform-composer.js'),'utf8');

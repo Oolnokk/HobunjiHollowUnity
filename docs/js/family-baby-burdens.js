@@ -193,6 +193,7 @@
     if (entry.disposing) return;
     const child = entry.child;
     child.carryBy = null; child.carryPose = null;
+    clearNpcGrip(entry); entry.npcCarryPose = null; // NPC hands return to their own idle.
     item.group.userData.familyBabyFlying = false;
     child.carrySpot = basket || !isAllowedArea(item.mapId)
       ? null : { area: item.mapId, c: item.col, r: item.row }; // Dropped baby stays where it landed, across save/reload.
@@ -256,6 +257,7 @@
           portraitAnchor: { x: 0, y: 0, z: 0 } }, // Same species-adjusted back-stow rig as other carryables.
       } },
       onPickup: () => {
+        clearNpcGrip(entry); entry.npcCarryPose = null; // Spouse hands the baby over: its hand rig lets go.
         entry.child.carryBy = 'player'; entry.child.carryPose = 'arms'; entry.child.carrySpot = null;
         group.visible = true; showWalker(entry, false);
         entry.persist?.();
@@ -335,6 +337,41 @@
     if (entry.burden.mapId !== area) return false;
     return api.pickUp(entry.burden) === true; // The normal Tool Select/Action 1/2 carry system takes ownership.
   }
+  // NPC carriers use the PLAYER's carry: the same authored cradle/back-stow pose solved by
+  // Shattercasks.solveCarryMount on the carrier's own posterior, the back stow re-parented onto the
+  // carrier's portrait plane, and the same authored two-hand grip (handTargets + elbows) through
+  // the procedural hand driver's proceduralHeldItemTarget hook.
+  const npcScratch = { posterior: null }; // Reused per tick; no per-call allocation.
+  function clearNpcGrip(entry) {
+    const root = entry?.npcGripRoot;
+    if (root?.userData?.proceduralHeldItemTarget?.familyBabyId === entry.child?.id) root.userData.proceduralHeldItemTarget = null;
+    if (entry) entry.npcGripRoot = null;
+  }
+  function npcCarrierPortrait(spouse) {
+    const plane = spouse.avatarGroup?.userData?.neckRig?.skinnedPlane;
+    if (plane?.parent) return plane;
+    let front = null;
+    spouse.avatarGroup?.traverse?.(node => { if (!front && node.name === 'npc_avatar_front_plane') front = node; });
+    return front;
+  }
+  function solveNpcCarry(entry, spouse, back) {
+    const api = window.Shattercasks, THREE = window.THREE, group = entry.burden.group;
+    const body = spouse._npcCharacterRigRoot || spouse.root; // Facing frame that owns the legs/posterior, like playerMesh for the player.
+    if (!api?.solveCarryMount || !api.carrierPosteriorLocal || !body || !THREE?.Vector3) return false;
+    const portrait = back ? npcCarrierPortrait(spouse) : null;
+    if (back && portrait && group.parent === portrait && entry.npcCarryPose === 'back') return true; // Keep the portrait's own yaw between ticks (player rule).
+    npcScratch.posterior ||= new THREE.Vector3();
+    const ud = spouse.avatarGroup?.userData || {};
+    api.carrierPosteriorLocal(npcScratch.posterior, { speciesId: ud.speciesId, gender: ud.gender,
+      modelHeight: ud.portraitModelHeight, handAttachY: ud.handAttachY, liveY: Number(spouse.legs?.standingPosteriorY) });
+    if (group.parent !== body) body.add(group);
+    // Identical to the player: authored offsets are body-LOCAL units, and the rig root carries the
+    // same species scale playerMesh does (a Mao'ao NPC and Mao'ao player resolve to the same pose).
+    api.solveCarryMount(group, entry.burden.data?.carryable || {}, back, npcScratch.posterior);
+    if (back && portrait) api.mountCarryOnPortrait(group, body, portrait);
+    entry.npcCarryPose = back ? 'back' : 'arms';
+    return true;
+  }
   function spouseCarry(child, walker, spouse, pose, persist) {
     const entry = ensure(child, walker, persist);
     if (!entry || !spouse?.root?.parent || spouse.area !== currentArea()
@@ -342,18 +379,28 @@
     const api = window.Shattercasks;
     if (api?.heldBurdenInfo?.()?.id === entry.burden.id
         || api?.backCarriedInfo?.()?.id === entry.burden.id) return false;
-    const portrait = spouse.avatarGroup || spouse.root; // The NPC's real moving body frame, not a detached sprite clone.
-    const height = Math.max(.3, Number(spouse.avatarGroup?.userData?.portraitModelHeight) || .9);
-    const back = pose === 'back', centered = portrait === spouse.avatarGroup;
+    const back = pose === 'back';
     entry.burden.carried = true;
     if (entry.burden.mapId !== spouse.area && spouse.area === currentArea())
       api?.transferCarriedBurdenToArea?.(spouse.area, entry.burden);
-    if (entry.burden.group.parent !== portrait) portrait.add(entry.burden.group); // Avoid reordering the NPC's visual children every scheduling tick.
-    entry.burden.group.position.set(back ? 0 : height * .13,
-      centered ? height * (back ? .04 : -.10) : height * (back ? .60 : .48),
-      height * (back ? -.22 : .23));
-    entry.burden.group.rotation.set(0, back ? Math.PI : 0, back ? 0 : -.16);
-    entry.burden.group.scale.set(1, 1, 1);
+    if (!solveNpcCarry(entry, spouse, back)) { // Shattercasks without the shared solver: keep the old fixed placement.
+      const portrait = spouse.avatarGroup || spouse.root;
+      const height = Math.max(.3, Number(spouse.avatarGroup?.userData?.portraitModelHeight) || .9);
+      const centered = portrait === spouse.avatarGroup;
+      if (entry.burden.group.parent !== portrait) portrait.add(entry.burden.group);
+      entry.burden.group.position.set(back ? 0 : height * .13,
+        centered ? height * (back ? .04 : -.10) : height * (back ? .60 : .48), height * (back ? -.22 : .23));
+      entry.burden.group.rotation.set(0, back ? Math.PI : 0, back ? 0 : -.16);
+      entry.burden.group.scale.set(1, 1, 1);
+    }
+    const carryable = entry.burden.data?.carryable;
+    const gripRoot = spouse.avatarGroup; // The NPC's procedural hand rig root.
+    if (!back && gripRoot?.userData && carryable) {
+      if (entry.npcGripRoot && entry.npcGripRoot !== gripRoot) clearNpcGrip(entry);
+      gripRoot.userData.proceduralHeldItemTarget = { holder: entry.burden.group, mode: 'authored-world',
+        handTargets: carryable.handTargets || {}, elbows: carryable.elbows || null, familyBabyId: child.id }; // Same grips/elbows as the player.
+      entry.npcGripRoot = gripRoot;
+    } else clearNpcGrip(entry); // Back stow frees the hands, exactly like the player's.
     entry.burden.group.visible = true;
     showWalker(entry, false);
     const next = back ? 'back' : 'arms';
@@ -381,6 +428,7 @@
     const entry = entries.get(id);
     if (!entry) return;
     entry.disposing = true;
+    clearNpcGrip(entry);
     showWalker(entry, true);
     window.Shattercasks?.discardBurden?.(entry.burden); // Shared registry cleans the actor's real physical burden.
     disposeProxy(entry); // Remove one shared mesh and its two materials, leaving the portrait texture alive.
