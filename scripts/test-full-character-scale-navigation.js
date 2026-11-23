@@ -20,6 +20,8 @@ assert.match(native, /setMode: mode => setAnimationAuthorMode\(mode\)/,
   'public setMode must resolve the final Rig-aware mode handler, not an earlier captured function');
 assert.match(native, /refreshModeChrome: \(\) => renderAnimationModeChrome\(\)/,
   'the already-selected Multi tab needs an explicit chrome refresh after scale mode');
+assert.match(native, /MultiAvatarAnimationAuthor\.setMode = mode => setAnimationAuthorMode\(mode\)/,
+  'V15.51 public API refresh must also late-bind Rig-aware mode switching');
 assert.match(host, /await api\.setMode\(normalizedMode\);[\s\S]{0,65}api\.refreshModeChrome\?\.\(\);/,
   'the comparison host must restore native chrome even when the target mode was already active');
 assert.doesNotMatch(host, /function installPicking\(/,
