@@ -383,6 +383,10 @@
       "path": "./kenk_riverlandskasa_wide.json"
     },
     {
+      "id": "appearance::hat::bowlkasa",
+      "path": "./kenk_bowlkasa.json"
+    },
+    {
       "id": "appearance::Kenkari_M::kenk_bowlkasa",
       "path": "./kenk_bowlkasa.json"
     },
