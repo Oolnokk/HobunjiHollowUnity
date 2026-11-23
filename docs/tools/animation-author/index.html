@@ -14931,7 +14931,7 @@ if (window.MultiAvatarAnimationAuthor) {
       };
     });
   window.MultiAvatarAnimationAuthor.tick = tickAnimationAuthor; // The public author API was created before the V15.48 preview wrapper.
-  window.MultiAvatarAnimationAuthor.setMode = setAnimationAuthorMode;
+  window.MultiAvatarAnimationAuthor.setMode = mode => setAnimationAuthorMode(mode); // Keep the final Rig-aware handler live after V15.51 reinstalls public API methods.
   window.MultiAvatarAnimationAuthor.parseSceneUrl = parseAnimationUrlSceneV1547;
   window.MultiAvatarAnimationAuthor.getSceneLink = currentAnimationSceneUrlV1547;
   window.MultiAvatarAnimationAuthor.applyKissPreset = applyKissPresetV1546;
