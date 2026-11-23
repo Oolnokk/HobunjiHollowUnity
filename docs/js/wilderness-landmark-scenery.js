@@ -364,7 +364,7 @@ async function debris(host,sites,ticket,zoneId){
 }
 // Mirrors cairns()'s actual seeded stone transforms at zone-build time. The collision
 // footprint includes every rotated stone's visible corners without per-frame mesh raycasts.
-function cairnPhysicalBounds(site){
+function cairnPhysicalBoxes(site){
  const geo=cairnArt(root.THREE)?.geometry; // Same cached cliff-mapped geometry rendered by every instanced cairn course.
  if(!geo?.computeBoundingBox)return null;
  if(!geo.boundingBox)geo.computeBoundingBox();
@@ -373,12 +373,13 @@ function cairnPhysicalBounds(site){
  const rand=rng(hash(site.id)),size=site.size,centerX=site.point.col+.5,centerZ=site.point.row+.5;
  const baseY=elevation(site);
  let bottom=baseY-.055*size;
- const result={minX:Infinity,maxX:-Infinity,minZ:Infinity,maxZ:-Infinity,minY:Infinity,maxY:-Infinity};
+ const boxes=[]; // One rectangle per stacked course allows landing on lower visible stones without floating on the upper cap.
  for(const [width,height,depth] of CAIRN_STONES){
   const offset=(rand()-.5)*.08*size; // Matches the instance offset call order in cairns().
   const yaw=site.yaw+(rand()-.5)*1.5; // Matches the per-course random yaw call order in cairns().
   const x=centerX+Math.cos(site.yaw)*offset,z=centerZ+Math.sin(site.yaw)*offset;
   const cosine=Math.cos(yaw),sine=Math.sin(yaw);
+  const result={minX:Infinity,maxX:-Infinity,minZ:Infinity,maxZ:-Infinity,minY:Infinity,maxY:-Infinity};
   for(const bx of [bounds.min.x*width*size,bounds.max.x*width*size]){
    for(const bz of [bounds.min.z*depth*size,bounds.max.z*depth*size]){
     const wx=x+bx*cosine+bz*sine,wz=z-bx*sine+bz*cosine;
@@ -389,9 +390,10 @@ function cairnPhysicalBounds(site){
   const midY=bottom+height*size/2;
   result.minY=Math.min(result.minY,midY+bounds.min.y*height*size);
   result.maxY=Math.max(result.maxY,midY+bounds.max.y*height*size);
+  boxes.push(result);
   bottom+=(height-.055)*size;
  }
- return result;
+ return boxes;
 }
 function registerStoneCollision(zone,sites){
  unregisterStoneCollision?.();unregisterStoneCollision=null;updateDebrisCollision=null; // Each Shift invalidates the old geometry and asynchronous callback.
@@ -407,9 +409,9 @@ function registerStoneCollision(zone,sites){
    :(site.kind==='deadTree'?.32:site.kind==='stoneCairn'?.46:.36)*size;
   const height=isQuarryStone&&bounds?.max?Math.max(.1,.52+bounds.max.y)
    :(site.kind==='deadTree'?4.2:1.25)*size; // Other scenery stays on the existing cheap finite trunk/rock model.
-  const cairnBox=site.kind==='stoneCairn'?cairnPhysicalBounds(site):null; // One exact rotated stack envelope for landing and side contact.
-  bySite.set(site.id,[{...(cairnBox||{minX:x-half,maxX:x+half,minZ:z-half,maxZ:z+half,minY:y-.05,maxY:y+height}),
-   siteId:site.id,kind:site.kind}]);
+  const cairnBoxes=site.kind==='stoneCairn'?cairnPhysicalBoxes(site):null; // Four measured course footprints preserve real stepped landings.
+  const fallback={minX:x-half,maxX:x+half,minZ:z-half,maxZ:z+half,minY:y-.05,maxY:y+height};
+  bySite.set(site.id,(cairnBoxes?.length?cairnBoxes:[fallback]).map(box=>({...box,siteId:site.id,kind:site.kind})));
  } // Ordinary cairns/trees/rocks retain their cheap collider; authored debris becomes per-part precise.
  const BUCKET_TILES=8; // Same spatial index shape used by RuinSites to avoid scanning every piece on each movement probe.
  let columns=new Map(),allBoxes=[]; // Immutable snapshot swapped after one-time or async scene rebuild.
