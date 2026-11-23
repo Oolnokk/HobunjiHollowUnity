@@ -6,7 +6,7 @@ const vm=require('node:vm');
 // Run: node scripts/test-ruin-sanctum-boss-intro.js
 const source=fs.readFileSync('docs/js/dev-random-ruin-sanctum.js','utf8');
 let composer,clock=0,uid=0,active=null,created=0,disposed=0,locks=0,releases=0,effects=0,hazards=0,slowSpawn=null,discarded=0,skeletons=0,skeletonDisposals=0,warhammers=0,playerTeleports=0,stagedCancelled=0,telegraphsCancelled=0,weaponPoseUpdates=0;
-const timers=new Map(),nodes=[],enemies=new Set(),introSounds=[]; // Audible reveal cues and their cancellation are asserted against the fake clock.
+const timers=new Map(),nodes=[],enemies=new Set(),introSounds=[],suppressedLichAlerts=[]; // Intro cue timing and the one combat-entry suppression are asserted against the fake clock.
 const timeout=(fn,ms=0)=>{const id=++uid;timers.set(id,{at:clock+ms,fn});return id;};
 const clear=id=>timers.delete(id);
 async function settleMicrotasks(){
@@ -36,6 +36,11 @@ function actor(options){
 const win={
   THREE:{},DynamicSurfaces:{},DevRandomRuinSimplePuzzles:{registerComposer:next=>composer=next},
   AudioSystem:{playObjectSfxKeyAt(key,x,z,area,y,opts){introSounds.push({key,x,z,area,y,opts,at:clock});}},
+  CombatVocalizations:{suppressSkeletonCoffinSpawnAlert(entity){
+    assert(!enemies.has(entity),'combat-entry suppression must happen before enrolling the lich in hostile AI');
+    suppressedLichAlerts.push(entity);
+    return true;
+  }},
   DevRandomRuin:{setPlayerWorldPoint:()=>{playerTeleports++;return true;},getSeed:()=>77},
   BanditCombat:{discardEntity(entity){discarded++;entity.avatarRef?.dispose?.();},
     updateToolMesh(entity){weaponPoseUpdates++;entity._banditToolHolder.rotation.y=entity.groupRot;}}, // Verify the existing weapon-pose owner receives the turn as well as the actor group.
@@ -152,6 +157,8 @@ async function run(){
   assert.equal(state.introLight,null,'reveal-only lighting stops with its shot');
   assert.equal(win.DevRandomRuinSanctum.lightSources().length,1,'only permanent arena lighting survives the reveal');
   assert(enemies.has(state.boss),'hostile simulation begins after reveal');
+  assert.equal(suppressedLichAlerts.length,1,'intro shriek suppresses exactly one immediate combat-alert duplicate');
+  assert.equal(suppressedLichAlerts[0],state.boss,'suppression applies to the lich, not its coffin guard');
   assert.equal(state.coffins[0].open,true);
   assert.equal(skeletons,1,'the first coffin guard spawns only when combat starts');
   assert(enemies.has(state.coffins[0].skeleton),'coffin guard participates in real combat');
