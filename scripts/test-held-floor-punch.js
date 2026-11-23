@@ -28,10 +28,9 @@ const grass = mat(true), dirt = mat(true), custom = mat(false);
 const groundMats = new Set([grass, dirt, custom]);
 const filteredMesh = { visible: true, material: grass }, unsupportedMesh = { visible: true, material: custom };
 const farGround = { visible: true, material: dirt, matrixWorld: {}, geometry: { boundingBox: { min: { x: 40, y: 0, z: 40 }, max: { x: 48, y: 1, z: 48 } } } }; // Cannot contain the holder's floor.
-const hasLayer = (o, l) => (((o.layers?.mask ?? 1) >>> 0) & (1 << l)) !== 0;
-const api = new Function('THREE', 'rawRender', 'forEachMaterial', 'restoreVisibility', 'instancedReplaySphere', 'XRAY_CIRCLE_RADIUS', 'GROUND_REPLAY_MASK', 'GROUND_REPLAY_LAYER', 'hasLayer', 'XRAY_ELEVATION_TOLERANCE', 'lastBaseStencilBits', code +
+const api = new Function('THREE', 'rawRender', 'forEachMaterial', 'restoreVisibility', 'instancedReplaySphere', 'XRAY_CIRCLE_RADIUS', 'GROUND_REPLAY_MASK', 'XRAY_ELEVATION_TOLERANCE', 'lastBaseStencilBits', code +
   '\nreturn { punchHeldGroupFloor, hideOutsideFloorPatch, setGroundElevationFilter, setEnabled: v => { floorPunchEnabled = v; }, setStencilBits: v => { lastBaseStencilBits = v; }, stats: () => ({ floorPunches, floorPunchRefillHidden, floorPunchRefillKept }) };')(
-  THREE, rawRender, forEachMaterial, restoreVisibility, () => null, 1.5, 1 << 28, 28, hasLayer, 0.08, 8);
+  THREE, rawRender, forEachMaterial, restoreVisibility, () => null, 1.5, 1 << 28, 0.08, 8);
 
 const camera = { layers: { mask: 0xffffffff } };
 const colorLog = [];
@@ -65,8 +64,8 @@ const inside = boxed(10, 11, 10, 11), edge = boxed(12.9, 14, 10, 11), far = boxe
 const patchGround = { ...boxed(9, 12, 9, 12), layers: { mask: 1 | (1 << 28) } }; // The floor chunk under the holder.
 const aboveFloor = boxed(10, 11, 10, 11); aboveFloor.geometry.boundingBox.min.y = 0.5; // e.g. the holder's torso: wholly above the floor.
 const hidden = api.hideOutsideFloorPatch([inside, edge, far, unbounded, patchGround, aboveFloor], group);
-assert.deepEqual([inside.visible, edge.visible, far.visible, unbounded.visible, patchGround.visible, aboveFloor.visible], [true, true, false, true, false, false],
-  'the refill keeps non-ground objects in the patch column that reach below the floor; ground, far and wholly-above objects leave');
+assert.deepEqual([inside.visible, edge.visible, far.visible, unbounded.visible, patchGround.visible, aboveFloor.visible], [true, true, false, true, true, false],
+  'the refill keeps nearby ground and other occluders that reach below the floor; distant and wholly-above objects leave');
 restoreVisibility(hidden);
 assert.equal(far.visible, true);
 

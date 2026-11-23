@@ -3513,18 +3513,16 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
     return 0;
   }
 
-  // The local refill after a punch: only non-ground objects that touch the
-  // patch column and reach below the floor (sunken parts, anything that can
-  // sit between the punched floor and a held part). Ground is left out: what lies behind the holder's
-  // own floor is underground and already farther than its parts. Unbounded
-  // objects stay: drawing a real occluder again only restores depth it had.
+  // Refill with anything that can sit between the punched floor and a held
+  // part. The active shader skips the holder's own floor, while lower slabs
+  // and the solid faces of mixed cave-shell meshes still write real depth.
+  // Unbounded objects stay so uncertain bounds cannot expose hidden gear.
   function hideOutsideFloorPatch(candidates, group) {
     if (!candidates?.length || !group?.regions?.length) return null;
     let hidden = null;
     for (const object of candidates) {
       if (!object.visible) continue;
-      const ground = hasLayer(object, GROUND_REPLAY_LAYER);
-      const touches = ground ? 0 : touchesFloorPatch(object, group, FLOOR_PUNCH_PATCH_MARGIN, true);
+      const touches = touchesFloorPatch(object, group, FLOOR_PUNCH_PATCH_MARGIN, true);
       if (touches !== 0) { floorPunchRefillKept++; continue; }
       if (!hidden) hidden = new Map();
       hidden.set(object, true);

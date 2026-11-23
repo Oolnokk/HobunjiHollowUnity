@@ -22,8 +22,8 @@ const pageErrors = []; // Captured so CI failures also have mobile-readable diag
     page.on('pageerror', error => pageErrors.push(error.stack || String(error)));
     page.on('console', message => { if (message.type() === 'error') pageErrors.push(message.text()); });
     await page.setContent('<!doctype html><html><body></body></html>');
+    await page.addScriptTag({ path: require.resolve('three/build/three.min.js') });
     for (const script of [
-      'node_modules/three/build/three.min.js',
       'docs/config/pants-rigs.js',
       'docs/js/pants-rig-core.js',
       'docs/js/pants-garment-renderer.js',
@@ -159,7 +159,107 @@ const pageErrors = []; // Captured so CI failures also have mobile-readable diag
     assert(result.material.depthTest && result.material.depthWrite && result.material.offset
       && result.material.factor > 0 && result.material.units > 0,
     'pants use real depth and a rearward camera-independent coplanar offset');
+    for (const script of ['render-layers', 'render-hooks', 'social-action-r128-render-bridge',
+      'surface-occlusion-composer', 'scissor-depth-snapshot', 'held-object-render-order']) {
+      await page.addScriptTag({ path: path.join(root, 'docs/js', script + '.js') });
+    }
+    const heldPixels = await page.evaluate(() => {
+      const T = window.THREE, held = window.HeldObjectRenderOrder; // Shipping replay and unmodified native WebGL renderer.
+      const renderer = new T.WebGLRenderer({ antialias: false, stencil: true });
+      renderer.setSize(128, 128, false);
+      const camera = new T.OrthographicCamera(-3, 3, 3, -3, 0.1, 20); // Sample the same world X on every depth plane.
+      camera.position.y = 6;
+      camera.up.set(0, 0, -1);
+      camera.lookAt(0, 0, 0);
+      camera.updateMatrixWorld(true);
+      const output = {}; // Capture cold and warm RGBA reads from each independent framebuffer and scene.
+      for (const mode of ['cold', 'lower-floor', 'no-stencil', 'water', 'player-off', 'actor-defaults']) {
+        const scene = new T.Scene(), player = new T.Group(), holder = new T.Group();
+        scene.add(player, holder);
+        holder.userData.hobunjiHeldPortraitOwner = player; // The main-hand holder is a scene sibling in gameplay.
+        window.PlayerBodyTransformComposer = { getPlayerMesh: () => player, getVisualRoots: () => [] };
+        window.GridTileAccessors = { getCurrentArea: () => 'pixel-test' };
+        const plane = (color, x, y, size, parent = scene) => {
+          const mesh = new T.Mesh(new T.PlaneGeometry(size, size), new T.MeshBasicMaterial({ color }));
+          mesh.position.set(x, y, 0);
+          mesh.rotation.x = -Math.PI / 2;
+          parent.add(mesh);
+          return mesh;
+        };
+        const base = plane(0x00ff00, 0, 1, 6); // Authored interior floors can reveal only the layer the actor stands on.
+        base.material.userData.hobunjiInteriorFloorMaterial = true;
+        held.markGroundMesh(base, 'interior-floor');
+        window.DevRandomRuin = { getPlayerGroundSupportY: () => 1 };
+        player.position.y = 1;
+        held.markHeldPlane(plane(0xff0000, -0.45, 0.55, 0.3, holder));
+        const flailX = mode === 'no-stencil' ? 2 : 0.45; // Exercise the circle boundary on a saved depth target without stencil.
+        held.markHeldPlane(plane(0x0000ff, flailX, 0.55, 0.3, holder));
+        if (mode === 'lower-floor') held.markGroundMesh(plane(0xffff00, -0.45, 0.76, 0.5), 'interior-floor');
+        const wall = plane(0xffff00, 1.05, 1.25, 0.3); // Unregistered solid scenery must retain ordinary occlusion.
+        held.markHeldPlane(plane(0xff0000, 1.05, 0.55, 0.25, holder));
+        let water = null; // Water tint must remain a distinct draw above only the submerged weapon.
+        if (mode === 'water') {
+          water = plane(0x0000ff, -0.45, 1.1, 0.4);
+          water.userData.waterSurfaceRole = 'test-cover';
+          Object.assign(water.material, { transparent: true, opacity: 0.5, depthWrite: false });
+        }
+        if (mode === 'actor-defaults') {
+          const npc = new T.Group(), animal = new T.Group(); // Stand equidistant from the floor so replay eligibility is the only difference.
+          npc.name = 'npc_walker_pixel_test';
+          animal.userData.hobunjiXrayActorRoot = true;
+          npc.position.set(-1, 1, 0);
+          animal.position.set(1, 1, 0);
+          scene.add(npc, animal);
+          held.markHeldPlane(plane(0xff00ff, 0, -0.45, 0.22, npc));
+          held.markHeldPlane(plane(0x00ffff, 0.35, -0.45, 0.22, animal));
+          window.CharacterVisuals = { KINDS: { NPC: 'npc' }, forEachCharacter(_area, visit) {
+            visit('npc', npc);
+            visit('animal', animal);
+          } };
+          held.setReplayParticipants('all'); // Test the actor settings independently of the NPC equipment budget.
+        }
+        held.setActorXrayEnabled('player', mode !== 'player-off');
+        const target = new T.WebGLRenderTarget(128, 128, { stencilBuffer: mode !== 'no-stencil' });
+        target.depthTexture = new T.DepthTexture(128, 128);
+        if (target.stencilBuffer) {
+          target.depthTexture.format = T.DepthStencilFormat;
+          target.depthTexture.type = T.UnsignedInt248Type;
+        }
+        const pixel = new Uint8Array(4); // Read exact RGB from the main color buffer after the replay.
+        const read = x => {
+          renderer.readRenderTargetPixels(target, Math.floor((x + 3) * 128 / 6), 64, 1, 1, pixel);
+          return [...pixel.slice(0, 3)];
+        };
+        output[mode] = [];
+        for (let frame = 0; frame < 2; frame++) {
+          renderer.setRenderTarget(target);
+          window.RenderHooks.beginWorldFrame({ renderer, scene, camera });
+          try { renderer.render(scene, camera); } finally { window.RenderHooks.endWorldFrame(); }
+          output[mode].push({ weapon: read(-0.45), flail: read(flailX), wall: read(wall.position.x),
+            ...(mode === 'actor-defaults' && { npc: read(-1), animal: read(1.35) }),
+            ...(water && { waterDepthWrite: water.material.depthWrite }),
+            stencil: held.snapshot().stencilBits });
+        }
+        renderer.setRenderTarget(null);
+        target.dispose();
+        held.forgetScene(scene);
+      }
+      renderer.dispose();
+      return output;
+    });
+    for (const mode of ['cold', 'lower-floor', 'no-stencil', 'water', 'player-off', 'actor-defaults']) {
+      const green = [0, 255, 0], yellow = [255, 255, 0]; // Physical floor and scenery colors.
+      const weapon = { 'lower-floor': green, 'player-off': green, water: [128, 0, 128] }[mode] || [255, 0, 0];
+      const flail = ['no-stencil', 'player-off'].includes(mode) ? green : [0, 0, 255];
+      const expected = { weapon, flail, wall: yellow, stencil: mode === 'no-stencil' ? 0 : 8,
+        ...(mode === 'actor-defaults' && { npc: green, animal: [0, 255, 255] }),
+        ...(mode === 'water' && { waterDepthWrite: false }) };
+      for (const [frame, pixels] of heldPixels[mode].entries()) {
+        assert.deepEqual(pixels, expected, mode + ' held x-ray, frame ' + frame);
+      }
+    }
     assert.equal(pageErrors.length, 0, 'browser render/shader errors: ' + pageErrors.join('\n'));
+    console.log('Held x-ray WebGL cold/warm, local/other floor, stencil, water and actor defaults: PASS');
     console.log('Pants portrait depth WebGL front/back/other-actor: PASS ' + JSON.stringify(result));
   } finally {
     if (browser) await browser.close();
