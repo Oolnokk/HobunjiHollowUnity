@@ -53,7 +53,7 @@
     if (!source) return source;
     if (!selected) {
       if (speakerId && speakerId !== 'player' && !String(speakerId).startsWith('player-')) {
-        rememberSpeech({ speakerId: String(speakerId), original: source, displayed: source, hits: 0, swaps: 0, phoneticSwaps: 0, reason: 'no-voice-profile' });
+        rememberSpeech({ speakerId: String(speakerId), original: source, displayed: source, hits: 0, swaps: 0, phoneticSwaps: 0, reason: state.ready ? 'no-voice-profile' : 'engine-not-ready' });
       }
       return source;
     }
