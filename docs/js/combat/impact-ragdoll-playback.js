@@ -502,8 +502,9 @@
       }
       if (state.bank !== 'breakThrow' && state.bank !== 'tumble') continue;
       if (!state.entity.prone) { stopCreature(state.entity); continue; }
-      if (!isCurrentCreaturePoseRig(state.entity, state)) {
-        updateCreature(state.entity, 0); // A held pose on a discarded sprite is NOT a held pose on the replacement.
+      if (!isCurrentCreaturePoseRig(state.entity, state)
+          || (state.poseSession && !state.poseSession.owns())) {
+        updateCreature(state.entity, 0); // A held pose on a discarded or overwritten sprite is NOT a held pose on the current portrait.
         continue;
       }
       if (state.holding) continue;
