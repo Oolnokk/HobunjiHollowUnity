@@ -1004,7 +1004,11 @@
     ruinGlowRayHits.length=0;
     ruinGlowRaycaster.intersectObjects(ruinGlowOccluders,false,ruinGlowRayHits);
     ruinGlowOcclusionChecks++;
-    if(ruinGlowRayHits.length) {ruinGlowOccluded++;return true;}
+    for(const hit of ruinGlowRayHits){
+      let visible=true;
+      for(let node=hit.object;node;node=node.parent)if(node.visible===false){visible=false;break;}
+      if(visible) {ruinGlowOccluded++;return true;} // An overhead wing hidden by story-culling is not a physical occluder.
+    }
     return false;
   }
   let ruinGlowVertexScreen = new Float32Array(0); // Shared projected vertex buffer, resized only for the largest encountered engraving mesh.
