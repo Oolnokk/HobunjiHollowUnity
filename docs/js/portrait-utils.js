@@ -152,10 +152,12 @@ function _getUrMaskCanvas(w, h) {
   return { canvas: _urMaskOffCanvas, ctx: _urMaskOffCtx };
 }
 
-// Legacy Kenkari-specific kasa IDs remain readable but denote the ordinary Riverland hat item.
+// Older Kenkari-specific kasa IDs stay readable, but new purchases use one item per style.
 function canonicalRiverlandKasaId(id) {
   const legacy = /^appearance::Kenkari_[MF]::kenk_riverlandskasa_(low|wide)$/.exec(String(id || ''));
-  return legacy ? `appearance::hat::riverlandskasa_${legacy[1]}` : id;
+  if (legacy) return `appearance::hat::riverlandskasa_${legacy[1]}`;
+  return /^appearance::Kenkari_[MF]::kenk_bowlkasa$/.test(String(id || ''))
+    ? 'appearance::hat::bowlkasa' : id;
 }
 window.canonicalRiverlandKasaId = canonicalRiverlandKasaId;
 
@@ -2337,20 +2339,28 @@ function portraitVariantKeysForFighter(fighter, option) {
   };
 
   pushCandidate(speciesId, gender);
-  if (kind === 'head') pushCandidate(speciesId, otherGender);
-  for (const parentSpeciesId of _speciesParentChain(speciesId)) {
-    pushCandidate(parentSpeciesId, gender);
-    if (kind === 'head') pushCandidate(parentSpeciesId, otherGender);
-  }
-  for (const neighbor of _fallbackNeighborSpecies(speciesId, gender, kind)) {
-    pushCandidate(neighbor.speciesId, neighbor.gender);
-    if (kind === 'head') pushCandidate(neighbor.speciesId, otherGender);
+  if (option?.fallbackVariantByGender) {
+    // Garments explicitly naming a gender fallback choose the wearer's own gender first,
+    // then inherited species of that gender, never an unrelated neighbor's opposite gender.
+    for (const parentSpeciesId of _speciesParentChain(speciesId)) pushCandidate(parentSpeciesId, gender);
+  } else {
+    if (kind === 'head') pushCandidate(speciesId, otherGender);
+    for (const parentSpeciesId of _speciesParentChain(speciesId)) {
+      pushCandidate(parentSpeciesId, gender);
+      if (kind === 'head') pushCandidate(parentSpeciesId, otherGender);
+    }
+    for (const neighbor of _fallbackNeighborSpecies(speciesId, gender, kind)) {
+      pushCandidate(neighbor.speciesId, neighbor.gender);
+      if (kind === 'head') pushCandidate(neighbor.speciesId, otherGender);
+    }
   }
 
   const keys = [];
   for (const candidate of candidates) {
     for (const speciesForm of candidate.speciesForms) keys.push(`${speciesForm}_${candidate.gender}`);
   }
+  const fallbackKey = option?.fallbackVariantByGender?.[gender]; // Used only when no same-gender wearer/parent art was authored.
+  if (typeof fallbackKey === 'string' && fallbackKey) keys.push(fallbackKey);
   return [...new Set(keys)];
 }
 
@@ -2413,12 +2423,13 @@ function portraitOptionFromJson(entry, json) {
                          : tintSlot);
   const hairSlot = json.hairSlot || null; // 'front' | 'back' | 'side' | 'side-L'
   const portraitSlot = json.portraitSlot || null; // 'eyes' | 'upperFace' | 'facialHair' | 'hairFront' | 'hairBack' | 'hairSide' | 'hairSideL'
+  const fallbackVariantByGender = json.fallbackVariantByGender || null; // Shared with the equipped clothing compositor.
   const onlyExactSpeciesVariant = json.onlyExactSpeciesVariant === true; // Used by incomplete-variant equipment such as Bzabag's prize helm.
   const rewardOnly = json.rewardOnly === true; // Authored quest prizes may be equipped explicitly but must not be randomly assigned.
   const hoodLayering = json.hoodLayering || null; // 'under' means hat renders under hood; default is over
   const specialHeadwearRules = json.specialHeadwearRules !== false; // False makes low-profile pieces behave like ordinary baked head cosmetics.
   const originalId = (json.appearance && json.appearance.originalId) || null;
-  return { id: shortId, label, tintSlot: resolvedTintSlot, layers, variantLayers, slot: json.slot || null, portraitSlot, colorRange, hairSlot, tags, materialTag, hoodLayering, specialHeadwearRules, originalId, onlyExactSpeciesVariant, rewardOnly };
+  return { id: shortId, label, tintSlot: resolvedTintSlot, layers, variantLayers, fallbackVariantByGender, slot: json.slot || null, portraitSlot, colorRange, hairSlot, tags, materialTag, hoodLayering, specialHeadwearRules, originalId, onlyExactSpeciesVariant, rewardOnly };
 }
 
 const portraitSpeciesLoadStatus = { phase: 'idle', loaded: 0, retryCount: 0, lastError: null }; // Copied by Pixel Probe; species failures must not be cached as a complete portrait registry.
@@ -2466,7 +2477,7 @@ async function loadPortraitCosmetics(configBase) {
       const opt = portraitOptionFromJson(entry, json);
       if (opt.layers.length || Object.keys(opt.variantLayers).length) {
         optionCache.set(entry.id, opt);
-        indexEntries.push(entry);
+        if (!entry.legacyOnly) indexEntries.push(entry); // Old save IDs resolve through optionCache without becoming duplicate selectable hats.
       }
     }
   }));

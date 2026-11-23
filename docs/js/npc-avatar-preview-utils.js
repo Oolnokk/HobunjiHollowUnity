@@ -191,6 +191,17 @@
     return profile;
   }
 
+  function applyEquippedHatHairOcclusion(profile, cosmetics) {
+    const fighterId = profile?.fighter?.id; // Looks up the wearer's existing species-specific hat/hair rule table.
+    const hatId = profile?.hat?.id; // The final worn hat, after Pack/Gear overrides random profile equipment.
+    const hidden = cosmetics?.randomizationRulesByFighter?.[fighterId]?.hatHideRules?.[hatId]?.hideSlots;
+    if (!Array.isArray(hidden)) return;
+    for (const slot of hidden) {
+      if (!['hairFront', 'hairBack', 'hairSide', 'hairSideL'].includes(slot)) continue;
+      profile[slot] = { id: 'none', label: 'No Hair', layers: [] }; // Render-only occlusion; never discard the saved hairstyle.
+    }
+  }
+
   function buildProfileFromNpcExport(npc) {
     const cosmetics = cosmeticsCache;
     if (!cosmetics || !npc?.appearance) return null;
@@ -265,6 +276,7 @@
       profile[key] = (resolvedId && isAllowedSavedCosmetic(category, resolvedId) && optionCache?.has(resolvedId)) ? optionCache.get(resolvedId) : (noneOpt || { id: 'none', tintSlot: null, layers: [] });
     };
     applyEquip('hat', 'hat', hatOptions?.[0]);
+    applyEquippedHatHairOcclusion(profile, cosmetics); // Explicitly worn Bowl-Kasa still hides hair even when the random placeholder hat did not.
     applyEquip('hood', 'hood', hoodOptions?.[0]);
     applyEquip('mask', 'mask', cosmetics.maskOptions?.[0]);
     stripExorcisedMaskGlow(profile); // The worn item's descriptor (with its exorcised flag) is already in bodyColors at this point.

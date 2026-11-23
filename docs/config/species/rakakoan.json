@@ -42,7 +42,7 @@
       "appearance::Kenkari_M::kenk_braidcluster-R_m",
       "appearance::hat::basic_headband",
       "appearance::hat::leather_headband",
-      "appearance::Kenkari_M::kenk_bowlkasa",
+      "appearance::hat::bowlkasa",
       "fine_hood",
       "tankan_tunic",
       "bandolier1",
@@ -67,7 +67,7 @@
       "hat": {
         "none": 30,
         "basic_headband": 30,
-        "kenk_bowlkasa": 40
+        "bowlkasa": 40
       },
       "hood": {
         "none": 80,
@@ -256,7 +256,7 @@
         "leather_headband": {
           "hideSlots": []
         },
-        "kenk_bowlkasa": {
+        "bowlkasa": {
           "hideSlots": [
             "hairFront",
             "hairBack",
@@ -323,7 +323,7 @@
       "appearance::Kenkari_F::kenk_braidcluster-R_f",
       "appearance::hat::basic_headband",
       "appearance::hat::leather_headband",
-      "appearance::Kenkari_F::kenk_bowlkasa",
+      "appearance::hat::bowlkasa",
       "fine_hood",
       "tankan_tunic",
       "bandolier1",
@@ -348,7 +348,7 @@
       "hat": {
         "none": 65,
         "basic_headband": 28,
-        "kenk_bowlkasa": 7
+        "bowlkasa": 7
       },
       "hood": {
         "none": 80,
@@ -525,7 +525,7 @@
         "leather_headband": {
           "hideSlots": []
         },
-        "kenk_bowlkasa": {
+        "bowlkasa": {
           "hideSlots": [
             "hairFront",
             "hairBack",

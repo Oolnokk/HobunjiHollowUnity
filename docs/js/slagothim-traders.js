@@ -38,6 +38,7 @@
   const PANEL_ID = 'slagothimTradePanel';
   const SAVE_VERSION = 1;
   const IMPORTED_SPICES = Object.freeze(['cloudSaffron','starpepper','nightCardamom']); // Shared with rarity: one or two distinct imported spice keys per caravan.
+  const BOWL_KASA_COSMETIC_ID = 'appearance::hat::bowlkasa'; // One tradable article; the wearer determines its artwork.
 
   const TUNING = Object.freeze({
     MIN_TOWN_VALUE: 1, // Caravans never appear before the town has grown at least once.
@@ -64,6 +65,8 @@
     RELEASE_RADIUS_TILES: 90,
     COMPASS_RADIUS_TILES: 60,
     PRICE_MARKUP: 2.2, // Over an item's ordinary sale value.
+    BOWL_KASA_CHANCE: 0.25, // One imported Kenkari bowl-kasa on roughly a quarter of caravans.
+    BOWL_KASA_BASE_PRICE: 55, // Matches the registered Kenkari Bowl-Kasa shop price.
     HIGH_BAR_COUNT_WEIGHTS: Object.freeze([0.7, 0.25, 0.05]), // 0 / 1 / 2 bars above the Town Value metal ceiling.
     HIGH_BAR_PRICE_PER_TIER: 70,
     HIGH_BAR_PRICE_BASE: 40,
@@ -663,6 +666,15 @@
         desc: `An enchanted blade still bound to its dead Harlyao owner (${count} enchantment${count === 1 ? '' : 's'}). Garanki Gabu can unbind it.`,
         note: 'Enchanted' });
     }
+    // Keep the imported clothing roll last so adding hats cannot alter earlier seeded fish, bar, trinket, or relic rolls.
+    if (rng() < TUNING.BOWL_KASA_CHANCE) {
+      const cosmeticId = BOWL_KASA_COSMETIC_ID; // All species and genders buy the same inventory item.
+      stock.push({ id: `clothing:${cosmeticId}`, kind: 'clothing', cosmeticId, slot: 'hat', qty: 1,
+        price: Math.ceil(Number((TUNING.BOWL_KASA_BASE_PRICE * TUNING.PRICE_MARKUP).toFixed(2))),
+        sellPrice: Math.floor(TUNING.BOWL_KASA_BASE_PRICE * 0.4),
+        icon: '👒', label: 'Bowl-Kasa', desc: 'A carved wooden bowl-kasa with a fitted crown.',
+        note: 'Imported headwear' });
+    }
     return stock;
   }
 
@@ -1167,23 +1179,47 @@
     if (!caravan || !entry || entry.qty < 1 || !deps?.inventory) return { ok: false, reason: 'unavailable' };
     const gold = num(deps.inventory.gold, 0);
     if (gold < entry.price) { deps.showToast?.('Not enough ganang.', false); return { ok: false, reason: 'gold' }; }
+    let savedByClothingGrant = false; // The canonical Pack clothing grant writes the complete trade transaction once.
     if (entry.kind === 'item') {
       const owned = num(deps.inventory[entry.key], 0);
       const maxTotal = num(window.InventoryStacks?.MAX_TOTAL, 9999); // Shared bag cap (js/inventory-stacks.js).
       if (owned >= maxTotal) { deps.showToast?.('You cannot carry any more of that.', false); return { ok: false, reason: 'full' }; }
       deps.inventory[entry.key] = owned + 1;
       if (entry.key.startsWith('cv_')) window.CropVarieties?.refreshBrushes?.(); // Imported seed becomes a farm-editor option immediately after buying.
+    } else if (entry.kind === 'clothing') {
+      // EquipmentPanel.grantPackClothing saves the member immediately, so stage the gold and quantity
+      // first to persist the complete purchase (rather than a free hat) in that single save.
+      const grant = window.EquipmentPanel?.grantPackClothing; // Canonical Pack/Gear owner used by other merchant rewards.
+      if (typeof grant !== 'function') { deps.showToast?.('That clothing is not available.', false); return { ok: false, reason: 'clothing' }; }
+      deps.inventory.gold = gold - entry.price;
+      entry.qty -= 1;
+      const article = grant({
+        cosmeticId: entry.cosmeticId, slot: entry.slot, label: entry.label, baseLabel: entry.label,
+        description: entry.desc, sellPrice: entry.sellPrice,
+        sprite: window.EquipmentPanel?.clothingSpriteForCosmetic?.(entry.cosmeticId)
+          || 'assets/cosmetics/clothes/hat/bowlkasa-front.png', // Authored PNG fallback until the layered Pack icon is composited.
+      });
+      if (!article) {
+        deps.inventory.gold = gold; // A refused grant must not charge for clothing the player never received.
+        entry.qty += 1; // Put the unsold hat back on this caravan.
+        deps.showToast?.('That clothing is not available.', false);
+        return { ok: false, reason: 'clothing' };
+      }
+      savedByClothingGrant = true;
+      window.EquipmentPanel?.buildPackClothingSection?.();
     } else if (entry.kind === 'trinket') {
       if (!window.TrinketSystem?.grant?.(entry.trinketId, 'slagothim')) { deps.showToast?.('That trinket is not available.', false); return { ok: false, reason: 'trinket' }; }
     } else if (entry.kind === 'relic') {
       if (!window.HarlyaoRelics?.grantBoundRelic?.(entry.relic)) { deps.showToast?.('That blade is not available.', false); return { ok: false, reason: 'relic' }; }
     }
-    deps.inventory.gold = gold - entry.price;
-    entry.qty -= 1;
+    if (!savedByClothingGrant) {
+      deps.inventory.gold = gold - entry.price;
+      entry.qty -= 1;
+    }
     deps.showToast?.(`Bought ${entry.label} for ${entry.price}g.`, true);
     deps.buildInventoryGrid?.();
     deps.refreshActionBar?.();
-    deps.save?.();
+    if (!savedByClothingGrant) deps.save?.(); // The clothing grant already serialized stock and deducted money.
     if (openCaravanId === caravanId) renderPanel();
     return { ok: true };
   }
