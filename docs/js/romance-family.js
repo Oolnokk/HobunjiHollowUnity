@@ -719,6 +719,8 @@
     const renderChathead = window.AmbientDialogue?.renderChatheadImage; // Uses the same head-only crop as NPC floating dialogue.
     if (!canvas || !preview?.buildProfileFromNpcExport || typeof renderChathead !== 'function') return;
     try {
+      await preview.ensurePortraitCosmetics?.(); // Lazy portrait assets must be ready before converting a newborn into the shared NPC profile.
+      if (!canvas.isConnected || !canvas.closest('#romanceFamilyOverlay')) return; // Asset loading may outlive this naming dialog.
       const profile = preview.buildProfileFromNpcExport({
         name: 'dream_child',
         appearance: { speciesId: choice.speciesId, gender: choice.gender, bodyColors: choice.bodyColors, cosmetics: { ...(choice.cosmetics || {}) } },
@@ -727,7 +729,13 @@
       });
       if (!profile) return;
       const rendered = await renderChathead(canvas, profile); // The shared renderer crops the finished portrait into the small icon square.
-      if (rendered && canvas.isConnected && canvas.closest('#romanceFamilyOverlay')) {
+      if (!rendered || !canvas.isConnected || !canvas.closest('#romanceFamilyOverlay')) return;
+      const pixels = canvas.getContext('2d', { willReadFrequently: true })?.getImageData(0, 0, canvas.width, canvas.height)?.data; // Visible alpha distinguishes a real chathead from a renderer that returned true with a blank crop.
+      let hasPortrait = false; // Only an actually painted newborn can replace the naming prompt's emoji fallback.
+      for (let i = 3; i < (pixels?.length || 0); i += 4) {
+        if (pixels[i] >= 8) { hasPortrait = true; break; }
+      }
+      if (hasPortrait) {
         canvas.hidden = false;
         if (fallback) fallback.hidden = true;
       }
