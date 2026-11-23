@@ -208,16 +208,22 @@
     if (!carryable) return null;
     const pose = forSizeFrom(sourceProfile, width, height, anchors); // Editor reanchors unsaved drafts; runtime passes actual spine/neck pivots.
     // Hand attachments can retain references to these socket objects. Update in place.
+    let backPoseChanged = false; // Invalidates only the newborn's cached rear body mount, never ordinary furniture.
     for (const key of ['billboardAnchor', 'backCarry']) {
       const target = carryable[key] || (carryable[key] = {}), source = pose[key];
       for (const field of ['position', 'rotation', 'posteriorOffset', 'portraitAnchor']) {
         if (!source[field]) continue;
+        if (key === 'backCarry') for (const axis of axes)
+          if (target[field]?.[axis] !== source[field][axis]) backPoseChanged = true;
         Object.assign(target[field] || (target[field] = {}), source[field]);
       }
+      if (key === 'backCarry' && (target.size !== source.size || target.pivot !== source.pivot))
+        backPoseChanged = true;
       target.size = source.size;
       target.pivot = source.pivot; // Lets toProfile undo the same pivot when the editor saves.
       if (key === 'billboardAnchor') target.coordinateSpace = 'posterior-relative';
     }
+    if (backPoseChanged) carryable._backCarryRevision = (Number(carryable._backCarryRevision) || 0) + 1; // Checked by both parent mounts; identical syncs do not restage the infant.
     const elbows=carryable.elbows||(carryable.elbows={}); // Same parent-local, shoulder-relative targets used by ProceduralHandShoulderAim.
     for(const side of ['left','right']){
       const target=pose.elbows[side];
