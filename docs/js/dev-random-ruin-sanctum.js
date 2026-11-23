@@ -1072,6 +1072,7 @@
     boss.groupRot = yaw;
     boss.pngRot = yaw;
     if (boss.avatarRef?.group?.rotation) boss.avatarRef.group.rotation.y = yaw; // Boss is not in the hostile simulation yet, so updateCreatureMesh is not running.
+    if (boss._banditToolHolder && !boss._banditDisposed) window.BanditCombat?.updateToolMesh?.(boss); // Hostile weapons are scene siblings, not body children; the shared pose owner must turn and re-seat Azgarlu's warhammer too.
   }
 
   function updateBossIntro(now) {
@@ -1122,7 +1123,11 @@
     }; // All turn and audio state belongs to this one cancellable cinematic, never the combat entity definition.
     owner.intro = intro;
     setBossIntroFacing(boss,intro.turnFrom);
-    intro.soundTimers.push(setTimeout(() => playBossIntroShriek(owner,intro,1,1),INTRO_SHRIEK_MS));
+    intro.soundTimers.push(setTimeout(() => {
+      if (s !== owner || owner.intro !== intro || !owner.inSanctum) return;
+      setBossIntroFacing(boss,intro.turnTo); // Low-FPS guarantee: the scream never precedes the final visible face-to-face pose.
+      playBossIntroShriek(owner,intro,1,1);
+    },INTRO_SHRIEK_MS));
     for (const tap of INTRO_ECHO_TAPS) {
       intro.soundTimers.push(setTimeout(() => playBossIntroShriek(owner,intro,tap.volume,tap.pitch,true),INTRO_SHRIEK_MS+tap.afterMs));
     }
