@@ -38,10 +38,7 @@
   const PANEL_ID = 'slagothimTradePanel';
   const SAVE_VERSION = 1;
   const IMPORTED_SPICES = Object.freeze(['cloudSaffron','starpepper','nightCardamom']); // Shared with rarity: one or two distinct imported spice keys per caravan.
-  const KENKARI_BOWL_KASA_VARIANTS = Object.freeze([ // Registered wearable variants selected for imported caravan headwear.
-    'appearance::Kenkari_M::kenk_bowlkasa',
-    'appearance::Kenkari_F::kenk_bowlkasa',
-  ]);
+  const BOWL_KASA_COSMETIC_ID = 'appearance::hat::bowlkasa'; // One tradable article; the wearer determines its artwork.
 
   const TUNING = Object.freeze({
     MIN_TOWN_VALUE: 1, // Caravans never appear before the town has grown at least once.
@@ -671,12 +668,12 @@
     }
     // Keep the imported clothing roll last so adding hats cannot alter earlier seeded fish, bar, trinket, or relic rolls.
     if (rng() < TUNING.BOWL_KASA_CHANCE) {
-      const cosmeticId = pick(rng, KENKARI_BOWL_KASA_VARIANTS); // This caravan's fixed, seeded male/female hat variant.
+      const cosmeticId = BOWL_KASA_COSMETIC_ID; // All species and genders buy the same inventory item.
       stock.push({ id: `clothing:${cosmeticId}`, kind: 'clothing', cosmeticId, slot: 'hat', qty: 1,
         price: Math.ceil(Number((TUNING.BOWL_KASA_BASE_PRICE * TUNING.PRICE_MARKUP).toFixed(2))),
         sellPrice: Math.floor(TUNING.BOWL_KASA_BASE_PRICE * 0.4),
-        icon: '👒', label: 'Kenkari Bowl-Kasa', desc: 'A carved wooden bowl-kasa fitted for Kenkari horns.',
-        note: 'Imported Kenkari headwear' });
+        icon: '👒', label: 'Bowl-Kasa', desc: 'A carved wooden bowl-kasa with a fitted crown.',
+        note: 'Imported headwear' });
     }
     return stock;
   }
