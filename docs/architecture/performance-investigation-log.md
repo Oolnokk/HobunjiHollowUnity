@@ -1,5 +1,46 @@
 # Performance investigation log
 
+## 23 Nov 2026: Cloud Forest dense wall merged across chunks; wilderness leads measured
+
+A per-render-call draw census of a Southern Cloud Forest frame (headless, fresh world, 480×320,
+nothing held) found the dense shadewood wall (`border-terrain.js`, `AuthoredCloudForestDenseChunk_*`)
+was 72 of the main pass's 166 draws: ~6 drawn chunks × 12 InstancedMeshes. 36 of those belong to
+chunks fading at the corridor edge (transparent per-chunk material clones); the other 36 share
+their part materials across chunks.
+
+New render scope `dense-forest-wall-batches` (`js/dense-forest-wall-batches.js`, order 270) draws
+those opaque, on-camera chunk parts as one InstancedMesh per (geometry, material, layers, render
+order, shadow flags). It is not the tree-instancing loss: the wall is `backgroundScenery`, so the
+held/x-ray replays ignore it, and batches rebuild only when membership, a member's count or
+matrices change (0 rebuilds over 40 idle frames). A first version merged every drawn chunk and
+drew 8–32% more triangles whenever the wall was partly on screen (the camera cull could no
+longer drop off-camera chunks); the scope now merges only parts that pass the same
+instance-bounds frustum test `instanced-mesh-view-cull.js` applies, and triangles match exactly
+in all nine headings tested. Draws: −24 main-pass draws when the wall faces the camera
+(162 → 138), −5 to −23 in other headings. Raw renders with and without batches are
+pixel-identical (every difference equals the frame-to-frame noise at the player). Not yet
+measured on a device. A/B: Settings → Render optimizations → "Merge the Cloud Forest dense
+tree wall", benchmark variant `denseWallBatchesOff`, `DenseForestWallBatches.setEnabled(false)`.
+
+Measured and ruled out in the same session (Cloud Forest, same harness):
+- **Freezing static matrices.** 5,397 of 5,625 scene nodes recompose their matrix every frame
+  and 3,514 sit under hidden parents; only 22 moved in ~150 frames. But freezing the dense
+  chunks, mesa source meshes and path-brick chunks (1,526 nodes) cut `scene.updateMatrixWorld()`
+  only 1.06 → 1.00 ms: the walk, not the compose, is the cost. The CPU profile's `updateMatrix`
+  share overstated it.
+- **Authored furniture parts** (bonfire ring stones, crates, logs: ~50 draws in a camp view)
+  are all `transparent` because `procedural-furniture.js` applies `part.textureTransparent`
+  (true on these parts) even with opacity 1 and opaque textures, and every part builds its own
+  material. That keeps them out of `zone-prop-render-batches`. Making them opaque alone saves no
+  draws; sharing materials would break the per-part mutations in furniture-puzzle-runtime
+  (emission), the liquid surfaces and the ruin embers. Lead, not done.
+- **Replay cull walks** (`collectReplayCulled`, held + shell): 1.9 ms a frame here, mostly the
+  scene walk itself; the two walks use different scissor frusta, so only the per-object
+  classification (~0.5 ms) could be shared. Lead, not done.
+- **Rain planes** (15–17 draws everywhere it rains) are overlapping transparent sheets with
+  per-sheet UV transforms: not mergeable.
+- Remaining wall cost: the fading chunks' 36 draws (per-chunk transparent clones).
+
 ## 22 Nov 2026: incremental NPC combat resource rings
 
 When a fighter's rounded Stamina value changes, the previous ring updater
