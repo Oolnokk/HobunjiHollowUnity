@@ -18,6 +18,8 @@
   let rootSpatial = new Map(); // Uses the existing two-tile buckets for real raised tree-root spines, not a second render-frame scan.
   let roots = []; // Only allocated when a scene's cached tree variants are indexed.
   let cachedRootResidencyVersion = null; // Streaming chunk version invalidates root physics without checking every loaded tree during movement.
+  const placedRootCache = new WeakMap(); // Cache world-space spines for static placed trees across streamed-chunk rebuilds; dead trees are weakly held.
+  let rootCacheHits = 0, rootCacheBuilds = 0; // Dev Companion diagnostics distinguish cheap index reuse from expensive geometric transforms.
   let unregisterRootCollision = null; // Replaces the same named footprint provider if this runtime is re-initialized.
   let refreshCount = 0;
   let lastSegmentCandidateCount = 0;
@@ -295,6 +297,18 @@
     }
   }
 
+  function indexRootRecord(root) {
+    roots.push(root);
+    for (let cx = Math.floor(root.minX / SPATIAL_CELL_TILES); cx <= Math.floor(root.maxX / SPATIAL_CELL_TILES); cx++) {
+      for (let cz = Math.floor(root.minZ / SPATIAL_CELL_TILES); cz <= Math.floor(root.maxZ / SPATIAL_CELL_TILES); cz++) {
+        const key = cx + ',' + cz;
+        let bucket = rootSpatial.get(key);
+        if (!bucket) rootSpatial.set(key, bucket = []);
+        bucket.push(root);
+      }
+    }
+  }
+
   function indexTreeRoots(node) {
     const spans = node.userData?.wildernessRootSpansLocal;
     if (!Array.isArray(spans) || !spans.length || node.userData?.pottedBlossom) return;
@@ -305,6 +319,16 @@
     if (sceneOwner.parent !== cachedScene) return; // Detached scenery must not contribute collision at all.
     const elements = node.matrixWorld?.elements;
     const yaw = finite(node.rotation?.y);
+    const signature = elements?.length >= 16 ? Array.from(elements)
+      : [transform.x, transform.y, transform.z, transform.sx, transform.sy, transform.sz, yaw]; // Only transforms (not visibility) invalidate static root geometry.
+    const previous = placedRootCache.get(node);
+    if (previous?.spans === spans && previous.signature.length === signature.length &&
+      signature.every((value, index) => value === previous.signature[index])) {
+      for (const record of previous.roots) { record.sceneOwner = sceneOwner; indexRootRecord(record); }
+      rootCacheHits++;
+      return; // New chunks only require world-point transforms for their own newly created trees.
+    }
+    const built = []; // Persist this tree's immutable world-space spine records for later chunk residency updates.
     const cosine = Math.cos(yaw), sine = Math.sin(yaw);
     const worldPoint = p => elements?.length >= 16
       ? { x: elements[0] * p[0] + elements[4] * p[1] + elements[8] * p[2] + elements[12],
@@ -326,17 +350,13 @@
       const maxX = Math.max(...points.map(p => p.x)) + radius;
       const minZ = Math.min(...points.map(p => p.z)) - radius;
       const maxZ = Math.max(...points.map(p => p.z)) + radius;
-      const root = { node, sceneOwner, id: (node.name || 'tree') + ':root:' + i, baseY: transform.y, points, radius }; // O(1) teardown guard, even when whole chunk parents are detached.
-      roots.push(root);
-      for (let cx = Math.floor(minX / SPATIAL_CELL_TILES); cx <= Math.floor(maxX / SPATIAL_CELL_TILES); cx++) {
-        for (let cz = Math.floor(minZ / SPATIAL_CELL_TILES); cz <= Math.floor(maxZ / SPATIAL_CELL_TILES); cz++) {
-          const key = cx + ',' + cz;
-          let bucket = rootSpatial.get(key);
-          if (!bucket) rootSpatial.set(key, bucket = []);
-          bucket.push(root);
-        }
-      }
+      const root = { node, sceneOwner, id: (node.name || 'tree') + ':root:' + i, baseY: transform.y, points, radius,
+        minX, maxX, minZ, maxZ }; // Indexed bounds are computed once per placed shape, not once per streamed chunk.
+      built.push(root);
+      indexRootRecord(root);
     }
+    placedRootCache.set(node, { spans, signature, roots: built }); // Weak key permits unloaded forest geometry to be reclaimed.
+    rootCacheBuilds++;
   }
 
   function rootContact(root, x, z) {
@@ -616,7 +636,7 @@
       candidates: candidates.length,
       spatialCells: spatial.size,
       rootRidges: roots.length, rootSpatialCells: rootSpatial.size, rootCollisionRegistered: !!unregisterRootCollision,
-      rootResidencyVersion: cachedRootResidencyVersion, // Mobile profiling distinguishes steady-state cache hits from chunk-stream rebuilds.
+      rootResidencyVersion: cachedRootResidencyVersion, rootCacheHits, rootCacheBuilds, // Mobile profiling distinguishes reused shape data from full streamed-chunk rebuilds.
       radiusTiles: null,
       refreshCount,
       testedRayCount: 0,
