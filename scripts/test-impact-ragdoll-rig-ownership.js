@@ -285,6 +285,27 @@ function creature() {
   clip=previousClip;
 }
 
+// A third-party visual writer can invalidate the quaternion of a held pose
+// while creature AI is deferred. Rendering must repair it immediately.
+{
+  const previousClip=clip;
+  clip=JSON.parse(fs.readFileSync('docs/config/animations/spinthrow-blend-v1.json','utf8')).clips.right.clip;
+  const animal=creature();animal.prone=true;
+  assert(impact.updateCreature(animal,.016));
+  const old=animal._impactRagdollPlayback;
+  old.pivot.quaternion.copy(rotate(.2)); // Unexpected/older visual writer restored a standing tilt.
+  rescueFrame();
+  const rebound=animal._impactRagdollPlayback;
+  assert(rebound?.holding,'render rescues invalidated absolute pose even without a creature tick');
+  assert.notEqual(rebound,old,'invalid pose ownership is relinquished before reattaching');
+  assert.equal(animal.avatarRef.frontPlane.parent,rebound.pivot);
+  const q=rebound.pivot.quaternion;
+  assert(Math.abs(1-2*(q.x*q.x+q.z*q.z))<.2,'rendered animal lies flat after external pivot overwrite');
+  animal.prone=false;rescueFrame();
+  assert.equal(rig.getDebug().activeAbsoluteClaims,0);
+  clip=previousClip;
+}
+
 // A brief ordinary-impact reaction must never substitute for a full prone
 // pose if prone gameplay state overtakes it before the next presentation tick.
 {
