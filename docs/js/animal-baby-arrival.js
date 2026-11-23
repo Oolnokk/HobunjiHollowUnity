@@ -52,7 +52,7 @@
       '#'+ROOT_ID+' .aba-heading{display:flex;align-items:center;justify-content:center;gap:14px;margin:10px 0 12px}',
       '#'+ROOT_ID+' .aba-heading h2{margin:0;text-align:left}',
       '#'+ROOT_ID+' .aba-portrait{flex:0 0 94px;width:94px;height:94px;display:grid;place-items:center;overflow:hidden;border-radius:14px;border:1px solid #b7a3c7;background:radial-gradient(circle at 50% 36%,#57456b,#1a1927)}',
-      '#'+ROOT_ID+' .aba-chathead{display:block;width:100%;height:100%;image-rendering:pixelated}',
+      '#'+ROOT_ID+' .aba-chathead{display:block;position:static;inset:auto;width:100%;height:100%;max-width:100%;max-height:100%;image-rendering:pixelated}',
       '#'+ROOT_ID+' .aba-chathead[hidden]{display:none}',
       '#'+ROOT_ID+' .aba-chathead-fallback{font-size:11px;line-height:1.2;padding:8px;color:#f3dfc6}',
       '#'+ROOT_ID+' .aba-chathead-fallback[hidden]{display:none}',
