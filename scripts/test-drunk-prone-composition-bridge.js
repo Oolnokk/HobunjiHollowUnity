@@ -364,6 +364,18 @@ vm.runInContext(source, context, { filename: modulePath });
   assert.strictEqual(pendingBanditEntity._banditComboIndex, 0);
   assert.strictEqual(pendingBanditEntity.telegraphState, null);
 
+  // A recorded full-body prone pose owns the legs; the normal gait solver
+  // must NOT reset them to the standing pose during an enemy render tick.
+  context.window.ImpactRagdollPlayback = {
+    ownsCreatureLegPose: entity => entity === pendingBanditEntity,
+  };
+  lastLegUpdate = null;
+  banditLegs.update(0.016, 0, false, undefined);
+  assert.strictEqual(lastLegUpdate, null, 'recorded prone rig prevents standing gait from overwriting its knees and feet');
+  delete context.window.ImpactRagdollPlayback;
+  banditLegs.update(0.016, 0, false, undefined);
+  assert.strictEqual(lastLegUpdate?.suppressed, true, 'prone without an authored rig retains the ordinary suppressed fallback');
+
   const proneAi = BanditCombat.updateCombatAI(pendingBanditEntity, {}, 0.016);
   assert.strictEqual(proneAi.aimAngle, 0.4);
   assert.strictEqual(proneAi.moving, false);
