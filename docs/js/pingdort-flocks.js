@@ -275,7 +275,7 @@
     if(!actor)return null;
     actor.areaId=session.area;actor.isWildPingdort=true;actor.pingdortFlightPose='perched';
     actor.def=Object.assign(Object.create(actor.def||null),{hostile:false,attacks:[]}); // Wild birds never choose the player/large prey in generic AI.
-    const home={x:pos.x,z:pos.z,y:nest.worldY+.75+index*.12}; // Explicit ledge elevation prevents buried birds in Sense Mode.
+    const home={x:pos.x,z:pos.z,y:nest.worldY}; // The shelf is the actual perch surface; native groundLift determines each bird's foot height, not an extra invisible air gap.
     const perch=window.PerchSupport?.point?.(nest.id+':bird:'+index,actor.x,actor.y,home.y);
     if(!perch||!window.PerchSupport.attach(actor,perch)){actor.avatarRef?.dispose?.();return null;}
     deps.hostileObjects.add(actor);

@@ -54,6 +54,11 @@
       && (node.userData?.hobunjiPlaneFace === 'front' || node.userData?.hobunjiPlaneFace === 'back'
         || /_(front|back)_plane$/.test(node.name || '') || node === ref.frontPlane || node === ref.backPlane));
   }
+  function nativeGroundPlaneY(actor, state) {
+    const authoredPlaneY = actor.avatarRef?.frontPlane?.position?.y
+      ?? state.originals?.[0]?.node?.position?.y; // Reuse the opaque-bottom correction already applied to the native idle/perched sprite.
+    return Number.isFinite(Number(authoredPlaneY)) ? Number(authoredPlaneY) : 0; // An unscanned or absent plane has the original neutral local offset.
+  }
   function present(actor, state, camera) {
     if (!state.rig) return;
     const flightPose = isSkeeriActor(actor) ? actor.skeeriFlightPose : kind(actor)==='pingdort' ? actor.pingdortFlightPose : actor.tzatzulFlightPose; // All three flyers use the shared authored wing assembly.
@@ -91,11 +96,15 @@
           pose, seconds, !!actor.tzatzulCarrying, window.CreatureBlink?.isShut?.(actor) === true);
         if (!(Number(actor.hitFlashT) > 0) && state.rig.restoreTint?.(kind(actor)==='pingdort' ? actor.genotype?.base?.color : undefined)) debug.tintRestores++; // Repair native hit-flash tint and reflect any live Pingdort genotype edits.
         state.rig.root.rotation.z = pose !== 'perched' && !hatchling ? Number(isSkeeriActor(actor) ? actor.skeeriDivePitchRad : kind(actor)==='pingdort' ? actor.pingdortDivePitchRad : actor.tzatzulDivePitchRad) || 0 : 0; // Shared headfirst swoop pitch.
-        if (hatchling && state.rig.root.position) {
-          const moved = state.previousHatchlingPosition && Math.hypot(actor.x - state.previousHatchlingPosition.x, actor.y - state.previousHatchlingPosition.y) > .08;
-          state.hopPhase = moved ? (state.hopPhase || 0) + Math.min(.1, state.renderDt || 0) * 21 : 0; // Native foot pathing moves, while only the visual body hops.
-          state.rig.root.position.y = moved ? Math.max(0, Math.sin(state.hopPhase)) * .13 : 0;
-          state.previousHatchlingPosition = { x: actor.x, y: actor.y };
+        if (state.rig.root.position) {
+          let hopY = 0; // Only mobile hatchlings add hop height above the same native foot anchor used by every perched bird.
+          if (hatchling) {
+            const moved = state.previousHatchlingPosition && Math.hypot(actor.x - state.previousHatchlingPosition.x, actor.y - state.previousHatchlingPosition.y) > .08;
+            state.hopPhase = moved ? (state.hopPhase || 0) + Math.min(.1, state.renderDt || 0) * 21 : 0; // Native foot pathing moves, while only the visual body hops.
+            hopY = moved ? Math.max(0, Math.sin(state.hopPhase)) * .13 : 0;
+            state.previousHatchlingPosition = { x: actor.x, y: actor.y };
+          }
+          state.rig.root.position.y = nativeGroundPlaneY(actor, state) + hopY; // Never let the flying-rig swap discard authored ground-Y/opaque-padding placement.
         }
       } catch (error) { debug.lastError = String(error); }
     }
@@ -139,6 +148,7 @@
         }
       }
       rig.root.rotation.y = Math.PI / 2; // Flying side sprite inherits the same orientation as the native animal front plane.
+      if (rig.root.position) rig.root.position.y = nativeGroundPlaneY(actor, state); // Production Three.Group always has position; tolerate lightweight corpse/rig test stubs.
       group.add(rig.root);
       group.userData ||= {};
       group.userData[isSkeeriActor(actor) ? 'skeeriFlyingRig' : kind(actor)==='pingdort' ? 'pingdortFlyingRig' : 'tzatzulFlyingRig'] = true; // One native avatar owns the corresponding rig.
