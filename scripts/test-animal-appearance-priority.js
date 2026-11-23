@@ -79,7 +79,7 @@ async function checkOptionalPrefetchFailure() {
     'an optional prefetch failure must not prevent wild-to-pet queue promotion');
   const frames = await Promise.all(jobs); // Both direct and promoted pet work still reaches the canonical renderer.
   assert.equal(frames.join(','), 'wild,promoted,owned');
-  assert.equal(h.calls.join(','), 'owned,promoted,wild');
+  assert.equal(h.calls.join(','), 'promoted,owned,wild', 'an earlier promoted pet retains FIFO order ahead of a later pet request');
   assert.equal(h.api.snapshot().pending, 0);
   assert.equal(h.api.snapshot().failures, 0, 'only actual pixel-compose failures count as failures');
 }
