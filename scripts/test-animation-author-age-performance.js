@@ -50,7 +50,7 @@ const document = { getElementById: getNode, activeElement: null };
 const injected = source.replace('  install();\n})();', `
   window.agePerfTest = {
     activate() { loadAgeModifiers(); active = true; entries = window.testEntries; },
-    setAgeMode, applyAgeModifiers, syncAgeControls, disposePreview,
+    setAgeMode, applyAgeModifiers, syncAgeControls, scheduleSelectedLayout, disposePreview,
     snapshot() { return { perf: { ...agePerf }, mode: ageMode, runningTimer: !!ageLimbTimer }; },
   };
 })();`);
@@ -98,6 +98,12 @@ flush();
 assert.equal(entries[0].limbs.get('left_hand_visual').scale.x, 2 * 1.65, 'hand update survives batching with foot change');
 assert.equal(entries[0].limbs.get('left_foot').scale.x, 2 * 1.35, 'foot update survives batching with hand change');
 assert.equal(rigPassCalls, 6, 'mixed limb-only changes cannot recompute whole-body transforms');
+
+const layoutBefore = api.snapshot().perf.layoutPasses; // Species-specific width/head edits need just one further lineup placement pass.
+for (let i = 0; i < 30; i++) api.scheduleSelectedLayout();
+assert.equal(scheduled.size, 1, 'thirty selected-species changes must queue only one bounding-box layout');
+flush();
+assert.equal(api.snapshot().perf.layoutPasses, layoutBefore + 1, 'selected species width changes relayout the lineup exactly once');
 
 const number = getNode('maaFullScaleAgeNumHead'); // Mobile keyboard inputs should not be rewritten mid-entry.
 number.value = '1';
