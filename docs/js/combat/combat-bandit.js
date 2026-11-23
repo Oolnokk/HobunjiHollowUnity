@@ -50,7 +50,7 @@
     if (_banditConfigPromise) return _banditConfigPromise;
     _banditConfigPromise = (async () => {
       try {
-        const r = await fetch('config/bandits/bandit-gang-config.json?v=20261122banditPursuit1');
+        const r = await fetch('config/bandits/bandit-gang-config.json?v=20261122hWeakHP30');
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return await r.json();
       } catch (e) {
