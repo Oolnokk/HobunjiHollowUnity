@@ -48,6 +48,7 @@ function makeHarness({ townValue = 3, season = 'Stormtide', townBuildings = [], 
     grantPackClothing(article) {
       const item = { ...article, uid: `test-caravan-clothing-${packClothing.length}` }; // Distinct Pack instance for each successful purchase.
       packClothing.push(item);
+      saves++; // Mirrors EquipmentPanel.grantPackClothing's immediate world-member save after the Pack insertion.
       return item;
     },
     buildPackClothingSection() {},
@@ -293,7 +294,7 @@ function makeHarness({ townValue = 3, season = 'Stormtide', townBuildings = [], 
 
 // ── Imported clothing purchases ─────────────────────────────────────
 {
-  const { T, calendar, inventory, packClothing, window } = makeHarness();
+  const { T, calendar, inventory, packClothing, window, saves } = makeHarness();
   const caravan = T.spawnCaravan(calendar.day, null); // Purchase against a real saved caravan's stock.
   const cosmeticId = 'appearance::Kenkari_F::kenk_bowlkasa'; // Female Kenkari variant from the registered cosmetic index.
   const catalogue = JSON.parse(fs.readFileSync(path.join(ROOT, 'docs/config/cosmetics/index.json'), 'utf8')); // Shipped headwear registration authority.
@@ -303,7 +304,8 @@ function makeHarness({ townValue = 3, season = 'Stormtide', townBuildings = [], 
   const entry = { id: `clothing:${cosmeticId}`, kind: 'clothing', cosmeticId, slot: 'hat', qty: 1,
     price: 121, sellPrice: 22, label: 'Kenkari Bowl-Kasa', desc: 'Carved wooden headwear' }; // Single caravan garment listing.
   caravan.stock = [entry];
-  const goldBefore = inventory.gold; // Purchase debit must happen only after the Pack grant succeeds.
+  const goldBefore = inventory.gold; // Purchase debit must be part of the Pack grant's own save.
+  const savesBefore = saves(); // Used to prove the caravan does not write a second expensive full-member save.
   assert.equal(T.buy(caravan.id, entry.id).ok, true);
   assert.equal(inventory.gold, goldBefore - 121);
   assert.equal(entry.qty, 0);
@@ -311,6 +313,10 @@ function makeHarness({ townValue = 3, season = 'Stormtide', townBuildings = [], 
   assert.equal(packClothing[0].cosmeticId, cosmeticId);
   assert.equal(packClothing[0].slot, 'hat');
   assert.equal(packClothing[0].sellPrice, 22);
+  assert.equal(saves(), savesBefore + 1, 'a clothing purchase performs one world-member save, not two');
+  const persisted = JSON.parse(JSON.stringify(T.serialize())); // Simulates the snapshot the Pack grant just saved.
+  assert.equal(persisted.caravans.find(c => c.id === caravan.id).stock[0].qty, 0,
+    'the clothing grant saves sold-out stock and money as one transaction');
   assert.equal(inventory[`cosmetic:${cosmeticId}`], undefined, 'clothing must never be a numeric bag item');
   assert.equal(T.buy(caravan.id, entry.id).ok, false, 'sold-out hats cannot be duplicated');
   entry.qty = 1;
@@ -318,6 +324,7 @@ function makeHarness({ townValue = 3, season = 'Stormtide', townBuildings = [], 
   assert.deepEqual(T.buy(caravan.id, entry.id), { ok: false, reason: 'clothing' }, 'unavailable Pack refuses the purchase');
   assert.equal(inventory.gold, goldBefore - 121, 'failed clothing grants never charge the player');
   assert.equal(entry.qty, 1, 'failed clothing grants retain caravan stock');
+  assert.equal(saves(), savesBefore + 1, 'rejected clothing grants never save a false purchase');
 }
 
 // ── Dev Companion panel ──────────────────────────────────────────────
