@@ -195,6 +195,7 @@ const liveMethods = files.burden.slice(start, end);
 const makeHarness = new Function('window', `
   const backXray=new Map(), heldRenderOrders=new Map(), frontXray=new Map(),
     skinnedRearOverlays=new Map(), rearHeadwearXray=new Map();
+  const stowedDepthMeshes=new Set(); // Required by the live stowed-material reconciliation.
   const CARRIED_VESSEL_RENDER_ORDER=1.4, HELD_BABY_FOREGROUND_ORDER=30, STOWED_BURDEN_RENDER_ORDER=2.15;
   let held=null, backCarried=null;
   const carryDeps=()=>({playerMesh:{}}),backCarryRoot=()=>({});
