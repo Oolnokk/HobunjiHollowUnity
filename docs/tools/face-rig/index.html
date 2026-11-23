@@ -27,7 +27,7 @@ canvas{display:block;width:100%;height:auto;image-rendering:pixelated;background
 <script src="../../js/face-rig.js?v=20261123experimental1"></script>
 </head>
 <body>
-<header><h1>Experimental Face Rig</h1><div class="small">Source-pixel controls • two eye systems • no original PNGs are modified</div></header>
+<header><h1 id="pageTitle">Experimental Face Rig</h1><div class="small" id="modeHint">Source-pixel controls • two eye systems • no original PNGs are modified</div></header>
 <main>
 <section class="controls">
 <div class="row"><div><label for="species">Species</label><select id="species">
@@ -50,6 +50,12 @@ canvas{display:block;width:100%;height:auto;image-rendering:pixelated;background
 <div id="lidSliders"></div><button id="resetEyeRound">Reset selected eyelids</button></div>
 <div class="row"><label><input id="blink" type="checkbox"> Preview blink sprite</label></div>
 <div class="row"><button id="apply">Apply to Character Studio</button><button id="download">Download rig JSON</button></div>
+<div id="calibrationControls" hidden>
+ <p class="small">Unclamped calibration: any finite line-node offset, eyelid inset, curve, depth or positive eye-region size. Signed eyelid values intentionally permit outward tests. This mode does not apply unbounded poses to saved characters.</p>
+ <div class="row"><button id="copyRanges">Copy observed ranges</button><button id="resetRanges">Clear this species' ranges</button></div>
+ <div class="small" id="observedRanges">No observations yet</div>
+</div>
+<div id="standardToolLink" class="small"><a style="color:#8ac4ff" href="../face-rig-calibrator/index.html" target="_blank" rel="noopener">Open unclamped calibration tool</a></div>
 <div class="row"><button id="import">Import rig JSON</button><input id="importFile" type="file" accept=".json,application/json" hidden></div>
 <div class="status" id="status">Loading source art…</div>
 <details><summary>Diagnostics</summary><div id="debug"></div></details>
@@ -64,7 +70,12 @@ canvas{display:block;width:100%;height:auto;image-rendering:pixelated;background
 'use strict';
 const $=id=>document.getElementById(id);
 const api=window.HobunjiFaceRig;
+const calibration=new URLSearchParams(location.search).get('calibration')==='1'; // Author-only mode: runtime never receives this flag.
+const calOptions=Object.freeze({calibration}); // Identical deformation implementation, with artist limits switched off in calibrator.
 const clamp=(n,min,max)=>Math.min(max,Math.max(min,Number(n)||0));
+const STORAGE_KEY='hobunji_face_rig_calibration_observations_v1'; // Local range history survives reopening the calibrator.
+let observations={}; // Tracks min/max/last for every selected species, gender, eye and parameter.
+let persistTimer=null; // Delays localStorage writes until rapid dragging pauses.
 let rig=api.make('mao-ao','male'); // Current editable rig, also sent to Character Studio exports.
 let selected=0; // Eye currently edited by the detail pane and sliders.
 let source={}; // Original source PNGs are shared across previews; never altered.
@@ -74,11 +85,46 @@ let placePending=false; // A deliberate next tap on overview chooses the eye cen
 let dragging=-1; // Index of the currently held line control point.
 let crop=null; // Source-to-detail transform for accurate pointer interaction.
 let status=''; // Mobile-readable diagnostics report loading, missing sprites and rendering failures.
+if(calibration){
+ $('pageTitle').textContent='Face Rig • Unclamped Calibration';
+ $('modeHint').textContent='Shared eye deformation • artist clamps off • observed ranges tracked and exportable';
+ $('calibrationControls').hidden=false;$('standardToolLink').hidden=true;$('apply').hidden=true;
+ $('download').textContent='Download calibration report';
+ $('eyeSize').type='number';$('eyeSize').step='any';$('eyeSize').removeAttribute('min');$('eyeSize').removeAttribute('max');
+ try{observations=JSON.parse(localStorage.getItem(STORAGE_KEY)||'{}')||{};}catch(_){observations={};}
+}
+function observationKey(){return rig.speciesId+'::'+rig.gender;}
+function captureObservations(){
+ if(!calibration)return;
+ const key=observationKey(),record=observations[key]||{ranges:{},currentRig:null}; // Keep measurements isolated by source art.
+ const measure=(name,value)=>{
+  if(!Number.isFinite(value))return;
+  const item=record.ranges[name]||(record.ranges[name]={min:value,max:value,last:value});
+  item.min=Math.min(item.min,value);item.max=Math.max(item.max,value);item.last=value;
+ };
+ rig.eyes.forEach((eye,index)=>{
+  const prefix='eye'+index+'.';
+  if(rig.family==='line'){
+   eye.nodes.forEach((node,n)=>{measure(prefix+'node'+n+'.x',node[0]);measure(prefix+'node'+n+'.y',node[1]);});
+   for(const field of ['x','y','w','h'])measure(prefix+'region.'+field,eye.box[field]);
+  }else{
+   for(const field of ['x','y','r'])measure(prefix+'circle.'+field,eye.circle[field]);
+   for(const lid of ['upper','lower'])for(const field of ['inset','curve','depth'])measure(prefix+lid+'.'+field,eye[lid][field]);
+  }
+ });
+ record.currentRig=JSON.parse(JSON.stringify(rig));
+ observations[key]=record;
+ $('observedRanges').textContent=Object.entries(record.ranges)
+  .filter(([name])=>!name.includes('region.')&&!name.includes('circle.'))
+  .map(([name,ext])=>name+': '+ext.min.toFixed(3)+' … '+ext.max.toFixed(3)).join(' | ')||'No observations';
+ clearTimeout(persistTimer);
+ persistTimer=setTimeout(()=>{try{localStorage.setItem(STORAGE_KEY,JSON.stringify(observations));}catch(err){status='Cannot persist locally: '+err.message;updateDiagnostics();}},550);
+}
 function report(message){status=message;$('status').textContent=message;updateDiagnostics();}
 function updateDiagnostics(){
  const info=api.debugSnapshot();
  $('debug').textContent='family='+rig.family+' species='+rig.speciesId+' gender='+rig.gender+
- '\nselected='+selected+' loaded='+Object.keys(source).filter(k=>!!source[k]).join(',')+
+ '\nselected='+selected+' calibration='+calibration+' loaded='+Object.keys(source).filter(k=>!!source[k]).join(',')+
  '\ncacheHits='+info.hits+' builds='+info.builds+' pixels='+info.processedPixels+
  '\nerrors='+info.failures+' lastError='+info.lastError+'\n'+status;
 }
@@ -128,7 +174,7 @@ function compose(){
  const canvas=document.createElement('canvas');
  canvas.width=image.naturalWidth;canvas.height=image.naturalHeight;
  const ctx=canvas.getContext('2d');ctx.imageSmoothingEnabled=false;
- const draw=(img,role)=>{if(img)ctx.drawImage(api.applyImage(img,rig,role,rig.speciesId,rig.gender),0,0);};
+ const draw=(img,role)=>{if(img)ctx.drawImage(api.applyImage(img,rig,role,rig.speciesId,rig.gender,calOptions),0,0);};
  draw(source.head,'head');
  if(rig.speciesId==='engh-sho'){draw(source.goggles,'goggles');draw($('blink').checked?source.blink||source.ur:source.ur,'ur');}
  else {draw($('blink').checked?source.blink||source.ur:source.ur,'ur');}
@@ -142,7 +188,7 @@ function circleGuides(ctx,eye,selectedEye,scaleX=1,scaleY=1){
   ctx.beginPath();
   for(let i=0;i<=40;i++){
    const u=-1+2*i/40,q=Math.sqrt(Math.max(0,1-u*u));
-   const delta=api.roundContour(lid,q)*r;
+   const delta=api.roundContour(lid,q,calOptions)*r;
    const y=cy+(part==='upper'?-q*r+delta:q*r-delta);
    const x=cx+u*r;
    i?ctx.lineTo(x,y):ctx.moveTo(x,y);
@@ -195,7 +241,7 @@ function render(){
   updateDiagnostics();
  }catch(e){report('Preview failure: '+(e.stack||e.message));}
 }
-function scheduleRender(){if(pending)return;pending=true;requestAnimationFrame(render);}
+function scheduleRender(){captureObservations();if(pending)return;pending=true;requestAnimationFrame(render);}
 function selectEye(index){
  selected=index;dragging=-1;$('selectedLabel').textContent=index===0?'screen-left':'screen-right';
  $('left').style.outline=index===0?'2px solid #92c2fa':'';
@@ -210,17 +256,25 @@ function syncControls(){
  $('sizeValue').textContent=(Number($('eyeSize').value)*100).toFixed(1)+'%';
  for(const input of document.querySelectorAll('[data-lid]')){
   const [part,key]=input.dataset.lid.split('.');
-  input.value=eye[part][key];input.nextElementSibling.textContent=Number(input.value).toFixed(2);
+  const value=eye[part][key];
+  if(calibration){const extent=Math.max(1,Math.abs(value)*1.25);
+    input.min=-extent;input.max=extent;
+    const numeric=input.parentElement.querySelector('input[type=number]');
+    if(numeric)numeric.value=String(value);
+  }
+  input.value=String(value);input.nextElementSibling.textContent=Number(value).toFixed(2);
  }
 }
 function resizeEye(){
- const eye=rig.eyes[selected],size=Number($('eyeSize').value);
- if(rig.family==='round')eye.circle.r=clamp(size,0.014,0.20);
+ const eye=rig.eyes[selected],raw=Number($('eyeSize').value);
+ if(!Number.isFinite(raw)||raw<=0){report('Eye region requires a positive, finite size');return;}
+ const size=calibration?raw:clamp(raw,0.014,0.20); // No upper bound in calibration: only positive physical dimensions required.
+ if(rig.family==='round')eye.circle.r=size;
  else{
   const cx=eye.box.x+eye.box.w/2,cy=eye.box.y+eye.box.h/2;
-  eye.box.w=clamp(size,0.014,0.20);eye.box.h=eye.box.w*0.62;
-  eye.box.x=clamp(cx-eye.box.w/2,0,1-eye.box.w);
-  eye.box.y=clamp(cy-eye.box.h/2,0,1-eye.box.h);
+  eye.box.w=size;eye.box.h=size*0.62;
+  eye.box.x=calibration?cx-eye.box.w/2:clamp(cx-eye.box.w/2,0,1-eye.box.w);
+  eye.box.y=calibration?cy-eye.box.h/2:clamp(cy-eye.box.h/2,0,1-eye.box.h);
  }
  $('sizeValue').textContent=(size*100).toFixed(1)+'%';scheduleRender();
 }
@@ -231,16 +285,22 @@ function locatePointer(event,canvas){
 function changeRig(species,gender,newRig=null){
  const canonical=api.make(species,gender);
  if(!canonical){report('This species does not use an experimental eye rig');return;}
- rig=api.normalize(newRig,species,gender)||canonical;
+ const saved=calibration?observations[species+'::'+gender]?.currentRig:null;
+ rig=api.normalize(newRig||saved,species,gender,calOptions)||canonical;
  $('species').value=rig.speciesId;$('gender').value=rig.gender;
  selectEye(0);loadArt();
 }
 function download(){
- const payload={schema:'hobunji_face_rig.v1',speciesId:rig.speciesId,gender:rig.gender,faceRig:rig};
+ captureObservations();
+ const payload=calibration?{schema:'hobunji_face_rig_calibration.v1',
+  speciesId:rig.speciesId,gender:rig.gender,faceRig:rig,
+  observations:JSON.parse(JSON.stringify(observations)),
+  note:'These are observed unclamped extremes, not approved gameplay limits.'}
+  :{schema:'hobunji_face_rig.v1',speciesId:rig.speciesId,gender:rig.gender,faceRig:rig};
  const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});
  const url=URL.createObjectURL(blob),a=document.createElement('a');
- a.href=url;a.download='face-rig_'+rig.speciesId+'_'+rig.gender+'.json';a.click();
- setTimeout(()=>URL.revokeObjectURL(url),1000);report('Exported eye rig settings • original PNGs unchanged');
+ a.href=url;a.download=(calibration?'face-rig-calibration_':'face-rig_')+rig.speciesId+'_'+rig.gender+'.json';a.click();
+ setTimeout(()=>URL.revokeObjectURL(url),1000);report(calibration?'Exported unclamped measurements':'Exported eye rig settings • original PNGs unchanged');
 }
 for(const part of ['upper','lower']){
  const field=document.createElement('fieldset');
@@ -252,8 +312,26 @@ for(const part of ['upper','lower']){
   const input=document.createElement('input');input.type='range';input.min=min;input.max=max;input.step=step;
   input.dataset.lid=part+'.'+key;
   const output=document.createElement('span');output.textContent='0.00';
-  label.appendChild(input);label.appendChild(output);field.appendChild(label);
-  input.addEventListener('input',()=>{rig.eyes[selected][part][key]=Number(input.value);output.textContent=Number(input.value).toFixed(2);scheduleRender();});
+  label.appendChild(input);label.appendChild(output);
+  let numeric=null; // Calibration numeric entry accepts any finite signed value, unlike a fixed-width range.
+  if(calibration){
+   input.min='-1';input.max='1';
+   numeric=document.createElement('input');numeric.type='number';numeric.step='any';
+   numeric.setAttribute('aria-label',part+' '+key+' unclamped value');label.appendChild(numeric);
+  }
+  field.appendChild(label);
+  const update=value=>{
+   if(!Number.isFinite(value))return;
+   rig.eyes[selected][part][key]=value;
+   if(calibration){
+    const extent=Math.max(1,Math.abs(value)*1.25);
+    input.min=-extent;input.max=extent;
+    if(numeric&&numeric.value!==String(value))numeric.value=String(value);
+   }
+   input.value=String(value);output.textContent=value.toFixed(2);scheduleRender();
+  };
+  input.addEventListener('input',()=>update(Number(input.value)));
+  numeric?.addEventListener('input',()=>{if(numeric.value.trim())update(Number(numeric.value));});
  }
  $('lidSliders').appendChild(field);
 }
@@ -267,8 +345,12 @@ $('place').onclick=()=>{placePending=true;report('Tap the desired eye centre on 
 $('overview').addEventListener('pointerdown',event=>{
  const p=locatePointer(event,$('overview')),w=$('overview').width,h=$('overview').height;
  if(placePending){
-  const eye=rig.eyes[selected],x=clamp(p.x/w,0.01,.99),y=clamp(p.y/h,0.01,.99);
-  if(rig.family==='line'){eye.box.x=clamp(x-eye.box.w/2,0,1-eye.box.w);eye.box.y=clamp(y-eye.box.h/2,0,1-eye.box.h);}
+  const eye=rig.eyes[selected],x=calibration?p.x/w:clamp(p.x/w,0.01,.99),
+   y=calibration?p.y/h:clamp(p.y/h,0.01,.99);
+  if(rig.family==='line'){
+   eye.box.x=calibration?x-eye.box.w/2:clamp(x-eye.box.w/2,0,1-eye.box.w);
+   eye.box.y=calibration?y-eye.box.h/2:clamp(y-eye.box.h/2,0,1-eye.box.h);
+  }
   else{eye.circle.x=x;eye.circle.y=y;}
   placePending=false;report('Eye centre placed. Fine-tune its shape in the detail view.');scheduleRender();return;
  }
@@ -304,24 +386,36 @@ $('detail').addEventListener('pointermove',event=>{
  const p=locatePointer(event,$('detail')),previous=window.__lastFacePointer,rect=eyeRect(rig.eyes[selected]);
  if(previous&&rect.w&&rect.h){
   api.moveNode(rig,selected,dragging,(p.x-previous.x)*crop.w/$('detail').width/rect.w,
-   (p.y-previous.y)*crop.h/$('detail').height/rect.h);
+   (p.y-previous.y)*crop.h/$('detail').height/rect.h,calOptions);
   scheduleRender();
  }
  window.__lastFacePointer=p;
 });
 for(const event of ['pointerup','pointercancel','lostpointercapture'])$('detail').addEventListener(event,()=>{dragging=-1;window.__lastFacePointer=null;});
 $('apply').onclick=()=>{
+ if(calibration){report('Unbounded calibration cannot be applied to character saves');return;}
  if(parent===window){report('Open from Character Studio to apply directly, or export JSON for later import');return;}
  parent.postMessage({type:'hobunjiFaceRigApply',faceRig:api.normalize(rig,rig.speciesId,rig.gender)},location.origin);
  report('Sent face rig to Character Studio');
 };
 $('download').onclick=download;
+$('copyRanges').onclick=async()=>{
+ captureObservations();
+ const data=JSON.stringify({schema:'hobunji_face_rig_calibration.v1',observations},null,2);
+ try{await navigator.clipboard.writeText(data);report('Copied observed ranges');}
+ catch(_){report('Clipboard unavailable; use Download calibration report');}
+};
+$('resetRanges').onclick=()=>{
+ if(!calibration)return;
+ delete observations[observationKey()];captureObservations();
+ report('Cleared previous observations for this species/gender');
+};
 $('import').onclick=()=>$('importFile').click();
 $('importFile').onchange=async event=>{
  const file=event.target.files?.[0];if(!file)return;
  try{
   const obj=JSON.parse(await file.text()),incoming=obj.faceRig||obj.appearance?.faceRig||obj;
-  const normalized=api.normalize(incoming,incoming.speciesId,incoming.gender);
+  const normalized=api.normalize(incoming,incoming.speciesId,incoming.gender,calOptions);
   if(!normalized)throw Error('Unsupported or invalid face-rig.v1 data');
   changeRig(normalized.speciesId,normalized.gender,normalized);report('Imported face rig');
  }catch(error){report('Import failed: '+error.message);}
