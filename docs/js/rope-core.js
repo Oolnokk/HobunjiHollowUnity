@@ -33,7 +33,7 @@
     RELEASE_KICK: 0.55,     // upward kick added when a rider lets go
     IDLE_DAMPING: 0.28,     // unoccupied rope settles
     ATTACHED_DAMPING: 0.16, // occupied rope loses less
-    BRAKE_DAMPING: 9,       // holding the brake bleeds the swing
+    BRAKE_DAMPING: 9,       // exponential straighten-to-vertical rate (per second) while adjusting; momentum is cleared
     BRAKE_YAW_RATE: 1.6,    // side input rotates the swing plane while braking
     BRAKE_LENGTH_RATE: 0.9, // forward/back input shortens/lengthens while braking
     LIMIT_BOUNCE: 0.72,     // omega kept after reaching MAX_ANGLE
@@ -79,7 +79,9 @@
   function stepAttached(rope, move, dt, blocked) {
     const priorAngle = rope.angle, priorYaw = rope.yaw, priorLength = rope.length;
     if (rope.braking) {
-      rope.omega *= Math.exp(-C.BRAKE_DAMPING * dt);
+      rope.omega = 0; // Holding Adjust cancels existing swing momentum instead of merely slowing it.
+      rope.angle *= Math.exp(-C.BRAKE_DAMPING * dt); // Frame-rate-independent lerp back to a vertical rope.
+      if (Math.abs(rope.angle) < 0.001) rope.angle = 0; // Finish precisely straight; no residual gravity when released.
       rope.yaw += move.side * C.BRAKE_YAW_RATE * dt;
       rope.length = Math.max(C.MIN_LENGTH, Math.min(rope.maxLength, rope.length - move.forward * C.BRAKE_LENGTH_RATE * dt));
     } else {
