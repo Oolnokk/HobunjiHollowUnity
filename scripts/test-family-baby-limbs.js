@@ -64,6 +64,14 @@ const found = api.sourceLimbs(walker);
 assert.equal(found.hand.left, sources.leftHand, 'left hand GLB found under its rig visual');
 assert.equal(found.foot.right, sources.rightFoot, 'visible right foot GLB found, hidden fallback skipped');
 
+// Balance the world newborn before the carried proxy takes a copy of its limb sizes.
+const babyScale = { hand: 1.20, foot: 1.20 }; // Exact basket-phase multipliers in romance-config.
+assert.equal(api.balanceWalker(walker, babyScale), 4, 'both hands and feet receive newborn-only sizing');
+assert.equal(api.balanceWalker(walker, babyScale), 0, 'family updates never multiply limb sizes repeatedly');
+for (const side of ['left', 'right']) {
+  assert.equal(walkerRoot.getObjectByName(side + '_hand_visual').scale.x, 1.2, 'hand visual scales about its own wrist');
+  assert.equal(walkerRoot.getObjectByName(side + '_foot').scale.y, 1.2, 'foot visual scales without modifying leg anchors');
+}
 assert.equal(api.attach(proxy, { root: new THREE.Group() }), false, 'attach waits while limb GLBs are still loading');
 assert.equal(api.attach(proxy, walker), true, 'attach succeeds once the walker has its limbs');
 assert.equal(api.attach(proxy, walker), true, 'attach is idempotent');
@@ -87,14 +95,27 @@ assert(a.shoulder('left').x > 0 && a.shoulder('right').x < 0, 'left/right should
 const big = new THREE.Group(); big.userData = { familyBabyWidth: .4608, familyBabyHeight: .4608 };
 assert(Math.abs(api.anatomy(big).k - 2) < 1e-9, 'limb reach scales with the baby portrait size');
 
+// A new GLB replacing a fallback updates the proxy without creating a second baby.
+const oldRightFoot = sources.rightFoot; // The loader swaps this visible foot after proxy registration.
+const footParent = oldRightFoot.parent;
+footParent.remove(oldRightFoot);
+const newRightFoot = new THREE.Mesh(geometry, material('right_foot_loaded'));
+footParent.add(newRightFoot);
+assert.equal(api.attach(proxy, walker), true, 'rebind when the source foot changes');
+assert.equal(api.debugSnapshot().refreshed, 1, 'a replaced GLB triggers exactly one refresh');
+assert.equal(api.attach(proxy, walker), true);
+assert.equal(api.debugSnapshot().refreshed, 1, 'no redundant refresh from an unchanged source');
+assert.equal(proxy.getObjectByName('family_baby_kicking_limbs').children.length, 4, 'replacement still has all limbs');
+assert(!disposed.includes('geometry'), 'refresh never frees walker-owned geometry');
+
 // Hook: poses visible carried babies, restores rest pose after the frame.
 proxy.parent = new THREE.Group();
 const posed = hooks[0].before({});
 assert.equal(posed.length, 1, 'visible carried baby is posed');
-const moved = limbRoot.children.some(p => p.rotation.x !== 0 || p.rotation.z !== 0);
+const moved = proxy.getObjectByName('family_baby_kicking_limbs').children.some(p => p.rotation.x !== 0 || p.rotation.z !== 0);
 assert(moved, 'limbs wave/kick during the frame');
 hooks[0].after({}, posed);
-assert(limbRoot.children.every(p => p.rotation.x === 0 && p.rotation.y === 0 && p.rotation.z === 0), 'rest pose restored after the frame');
+assert(proxy.getObjectByName('family_baby_kicking_limbs').children.every(p => p.rotation.x === 0 && p.rotation.y === 0 && p.rotation.z === 0), 'rest pose restored after the frame');
 proxy.visible = false;
 assert.equal(hooks[0].before({}).length, 0, 'a hidden proxy (baby in its basket) is not animated');
 
@@ -112,6 +133,11 @@ const burdens = fs.readFileSync('docs/js/family-baby-burdens.js', 'utf8');
 assert(burdens.indexOf('entry.burden = burden;\n    window.FamilyBabyLimbs?.attach?.(group, walker);') > 0, 'limbs attach after registerBurden (never colliders)');
 assert.match(burdens, /function disposeVisual\(group\) \{\n    window\.FamilyBabyLimbs\?\.detach\?\.\(group\);/, 'limbs detach before proxy disposal');
 assert.match(burdens, /familyBabyFlying = true/, 'thrown baby flails');
+assert(burdens.includes('FamilyBabyLimbs?.attach?.(entry.burden.group, walker)'), 'sync retries late GLB sources');
+const family = fs.readFileSync('docs/js/romance-family.js', 'utf8');
+assert(family.includes("if (phase === 'basket') window.FamilyBabyLimbs?.balanceWalker"), 'only newborns are rebalanced');
+const romanceConfig = fs.readFileSync('docs/config/romance-config.js', 'utf8');
+assert(romanceConfig.includes('basket: { body: 0.32, head: 0.50, hand: 1.20, foot: 1.20 }'), 'head ratio is smaller while both GLB extremities are larger');
 const html = fs.readFileSync('docs/index.html', 'utf8');
 assert(html.indexOf('js/family-baby-limbs.js?v=') > 0 && html.indexOf('js/family-baby-limbs.js?v=') < html.indexOf('js/family-baby-burdens.js?v='),
   'limbs module loads before family-baby-burdens.js');
