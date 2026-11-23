@@ -470,6 +470,7 @@ function clear(){
   // Only scene-local engravings are disposed; the base stone and authored pillar geometry remain shared.
  }
  group?.parent?.remove?.(group);group=null;scene=null;area='';renderedLayout=null;renderedIdentity='';
+ root.NearbyVolumeCollision?.invalidate?.(); // Removed deadwood roots must never retain invisible physics if the active Three.js scene object is reused.
 }
 function update(){
  const zone=deps?.getCurrentArea?.(),layout=deps?._zoneLayouts?.get?.(zone),active=root.GridTileAccessors?.getActiveScene?.();
