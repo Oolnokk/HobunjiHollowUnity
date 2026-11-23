@@ -523,6 +523,8 @@ async function main() {
   assert.ok(floating.includes('showSocialResponse'));
   assert.ok(floating.includes('vocabularyProtectedNames: targetName ? [targetName] : []'));
   assert.ok(floating.includes('options.vocabularyProtectedNames'));
+  assert.ok(file('docs/js/ambient-vocabulary.js').includes('Array.isArray(protectedNames) && protectedNames.length'),
+    'Unprotected animal cries must bypass extra name-masking allocations');
   assert.ok(file('docs/js/stable-animal-progression.js').includes('vocabularyProtectedNames: [animal.entry?.name'));
   assert.ok(file('docs/js/npc-silliness-reaction-runtime.js').includes('vocabularyProtectedNames: ['));
   assert.ok(!regularTalk.includes('AmbientVocabulary')); // The ordinary Talk renderer never invokes word substitution.
