@@ -2634,6 +2634,20 @@
         "firstRecorded": 1751,
         "source": "https://www.etymonline.com/word/ahoy",
         "sourceVisit": "pahu_grapple_flail"
+      },
+      {
+        "id": "greetings",
+        "text": "greetings",
+        "verbosity": 60,
+        "color": 45,
+        "formality": 75
+      },
+      {
+        "id": "hullo",
+        "text": "hullo",
+        "verbosity": 30,
+        "color": 48,
+        "formality": 28
       }
     ],
     "i think": [
@@ -3022,6 +3036,871 @@
         "dialect": "pirate",
         "sourceVisit": "pahu_grapple_flail"
       }
+    ],
+    "hey": [
+      {
+        "id": "hiya",
+        "text": "hiya",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      },
+      {
+        "id": "hello",
+        "text": "hello",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "hi": [
+      {
+        "id": "hiya",
+        "text": "hiya",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      },
+      {
+        "id": "hello",
+        "text": "hello",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "there you are": [
+      {
+        "id": "look-who-s-here",
+        "text": "look who's here",
+        "verbosity": 40,
+        "color": 48,
+        "formality": 42
+      },
+      {
+        "id": "ah-there-you-are",
+        "text": "ah, there you are",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "well now": [
+      {
+        "id": "well-well",
+        "text": "well, well",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "your harvest": [
+      {
+        "id": "your-crop",
+        "text": "your crop",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "reckon": [
+      {
+        "id": "figure",
+        "text": "figure",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "betcha": [
+      {
+        "id": "bet-you",
+        "text": "bet you",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "wanna": [
+      {
+        "id": "want-to",
+        "text": "want to",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "shhh": [
+      {
+        "id": "hush",
+        "text": "hush",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "catch me if you can": [
+      {
+        "id": "try-and-catch-me",
+        "text": "try and catch me",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "rival": [
+      {
+        "id": "challenger",
+        "text": "challenger",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "competition": [
+      {
+        "id": "rival",
+        "text": "rival",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "farmwork": [
+      {
+        "id": "farm-chores",
+        "text": "farm chores",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "beast": [
+      {
+        "id": "creature",
+        "text": "creature",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "looking good": [
+      {
+        "id": "looking-sharp",
+        "text": "looking sharp",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      },
+      {
+        "id": "looking-fine",
+        "text": "looking fine",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "well-trained": [
+      {
+        "id": "properly-trained",
+        "text": "properly trained",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "well-mannered": [
+      {
+        "id": "well-behaved",
+        "text": "well-behaved",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "well behaved": [
+      {
+        "id": "well-trained",
+        "text": "well trained",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "settled": [
+      {
+        "id": "content",
+        "text": "content",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      },
+      {
+        "id": "at-home",
+        "text": "at home",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "comfortable": [
+      {
+        "id": "at-ease",
+        "text": "at ease",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "listens well": [
+      {
+        "id": "pays-attention",
+        "text": "pays attention",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "listens to you": [
+      {
+        "id": "heeds-you",
+        "text": "heeds you",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "friendly": [
+      {
+        "id": "sociable",
+        "text": "sociable",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "nearly": [
+      {
+        "id": "almost",
+        "text": "almost",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "a little room": [
+      {
+        "id": "a-bit-of-space",
+        "text": "a bit of space",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "looks happy": [
+      {
+        "id": "seems-happy",
+        "text": "seems happy",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "looks settled": [
+      {
+        "id": "seems-settled",
+        "text": "seems settled",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "getting the hang of this": [
+      {
+        "id": "learning-the-ropes",
+        "text": "learning the ropes",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "best seat": [
+      {
+        "id": "finest-seat",
+        "text": "finest seat",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "passenger": [
+      {
+        "id": "rider",
+        "text": "rider",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "good control": [
+      {
+        "id": "nicely-handled",
+        "text": "nicely handled",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "getting used to": [
+      {
+        "id": "growing-accustomed-to",
+        "text": "growing accustomed to",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "ride along": [
+      {
+        "id": "tag-along",
+        "text": "tag along",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "bigger": [
+      {
+        "id": "larger",
+        "text": "larger",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "calmer": [
+      {
+        "id": "more-relaxed",
+        "text": "more relaxed",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "i didn't notice": [
+      {
+        "id": "i-overlooked",
+        "text": "I overlooked",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "still up there": [
+      {
+        "id": "still-perched-there",
+        "text": "still perched there",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "mind that": [
+      {
+        "id": "watch-that",
+        "text": "watch that",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "does he bite": [
+      {
+        "id": "is-he-a-biter",
+        "text": "is he a biter",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "chubby": [
+      {
+        "id": "plump",
+        "text": "plump",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "follows your lead": [
+      {
+        "id": "takes-its-cue-from-you",
+        "text": "takes its cue from you",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "seems": [
+      {
+        "id": "appears",
+        "text": "appears",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "have a passenger": [
+      {
+        "id": "have-someone-riding-along",
+        "text": "have someone riding along",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "keep it that way": [
+      {
+        "id": "don-t-let-that-change",
+        "text": "don't let that change",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "i reckon": [
+      {
+        "id": "i-figure",
+        "text": "I figure",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "outgrow": [
+      {
+        "id": "outdo",
+        "text": "outdo",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "you look well": [
+      {
+        "id": "you-seem-well",
+        "text": "you seem well",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "a little noise": [
+      {
+        "id": "some-racket",
+        "text": "some racket",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "your farm": [
+      {
+        "id": "your-homestead",
+        "text": "your homestead",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "still riding": [
+      {
+        "id": "still-perched",
+        "text": "still perched",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "close by": [
+      {
+        "id": "nearby",
+        "text": "nearby",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "more at ease": [
+      {
+        "id": "more-comfortable",
+        "text": "more comfortable",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "i nearly missed": [
+      {
+        "id": "i-almost-overlooked",
+        "text": "I almost overlooked",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "what's that": [
+      {
+        "id": "what-is-that",
+        "text": "what is that",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "what a beast": [
+      {
+        "id": "what-a-creature",
+        "text": "what a creature",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "comfortable together": [
+      {
+        "id": "at-ease-together",
+        "text": "at ease together",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "look comfortable": [
+      {
+        "id": "seem-comfortable",
+        "text": "seem comfortable",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30
+      }
+    ],
+    "howdy": [
+      {
+        "id": "hey",
+        "text": "hey",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30,
+        "kind": "regional",
+        "dialect": "southeastern-us"
+      },
+      {
+        "id": "hello-there",
+        "text": "hello there",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30,
+        "kind": "regional",
+        "dialect": "southeastern-us"
+      }
+    ],
+    "howdy-hey": [
+      {
+        "id": "hey-howdy",
+        "text": "hey-howdy",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30,
+        "kind": "regional",
+        "dialect": "southeastern-us"
+      },
+      {
+        "id": "hey-there",
+        "text": "hey there",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30,
+        "kind": "regional",
+        "dialect": "southeastern-us"
+      }
+    ],
+    "howdy there": [
+      {
+        "id": "well-howdy",
+        "text": "well, howdy",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30,
+        "kind": "regional",
+        "dialect": "southeastern-us"
+      },
+      {
+        "id": "hey-there",
+        "text": "hey there",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30,
+        "kind": "regional",
+        "dialect": "southeastern-us"
+      }
+    ],
+    "ahoy": [
+      {
+        "id": "hallo",
+        "text": "hallo",
+        "verbosity": 35,
+        "color": 52,
+        "formality": 30,
+        "kind": "regional",
+        "dialect": "pirate"
+      }
+    ],
+    "kitty": [
+      {
+        "id": "kit-cat",
+        "text": "kit-cat",
+        "verbosity": 12,
+        "color": 70,
+        "formality": 9,
+        "kind": "simple"
+      }
+    ],
+    "doggy": [
+      {
+        "id": "doggie",
+        "text": "doggie",
+        "verbosity": 12,
+        "color": 70,
+        "formality": 9,
+        "kind": "simple"
+      }
+    ],
+    "baby": [
+      {
+        "id": "little-one",
+        "text": "little one",
+        "verbosity": 12,
+        "color": 70,
+        "formality": 9,
+        "kind": "simple"
+      }
+    ],
+    "psst": [
+      {
+        "id": "pssst",
+        "text": "pssst",
+        "verbosity": 12,
+        "color": 70,
+        "formality": 9,
+        "kind": "simple"
+      }
+    ],
+    "chubby baby": [
+      {
+        "id": "round-little-one",
+        "text": "round little one",
+        "verbosity": 12,
+        "color": 70,
+        "formality": 9,
+        "kind": "simple"
+      }
+    ],
+    "good day": [
+      {
+        "id": "lovely-day",
+        "text": "lovely day",
+        "verbosity": 40,
+        "color": 48,
+        "formality": 42
+      },
+      {
+        "id": "pleasant-day",
+        "text": "pleasant day",
+        "verbosity": 40,
+        "color": 48,
+        "formality": 42
+      }
+    ],
+    "good morning": [
+      {
+        "id": "lovely-morning",
+        "text": "lovely morning",
+        "verbosity": 40,
+        "color": 48,
+        "formality": 42
+      },
+      {
+        "id": "pleasant-morning",
+        "text": "pleasant morning",
+        "verbosity": 40,
+        "color": 48,
+        "formality": 42
+      }
+    ],
+    "good afternoon": [
+      {
+        "id": "lovely-afternoon",
+        "text": "lovely afternoon",
+        "verbosity": 40,
+        "color": 48,
+        "formality": 42
+      },
+      {
+        "id": "pleasant-afternoon",
+        "text": "pleasant afternoon",
+        "verbosity": 40,
+        "color": 48,
+        "formality": 42
+      }
+    ],
+    "good evening": [
+      {
+        "id": "lovely-evening",
+        "text": "lovely evening",
+        "verbosity": 40,
+        "color": 48,
+        "formality": 42
+      },
+      {
+        "id": "pleasant-evening",
+        "text": "pleasant evening",
+        "verbosity": 40,
+        "color": 48,
+        "formality": 42
+      }
+    ],
+    "good night": [
+      {
+        "id": "pleasant-night",
+        "text": "pleasant night",
+        "verbosity": 40,
+        "color": 48,
+        "formality": 42
+      },
+      {
+        "id": "lovely-night",
+        "text": "lovely night",
+        "verbosity": 40,
+        "color": 48,
+        "formality": 42
+      }
+    ],
+    "hello again": [
+      {
+        "id": "hi-again",
+        "text": "hi again",
+        "verbosity": 40,
+        "color": 48,
+        "formality": 42
+      },
+      {
+        "id": "greetings-again",
+        "text": "greetings again",
+        "verbosity": 40,
+        "color": 48,
+        "formality": 42
+      }
+    ],
+    "little baby": [
+      {
+        "id": "tiny-baby",
+        "text": "tiny baby",
+        "verbosity": 40,
+        "color": 48,
+        "formality": 42
+      },
+      {
+        "id": "little-one",
+        "text": "little one",
+        "verbosity": 40,
+        "color": 48,
+        "formality": 42
+      }
+    ],
+    "that harvest": [
+      {
+        "id": "that-crop",
+        "text": "that crop",
+        "verbosity": 40,
+        "color": 48,
+        "formality": 42
+      }
+    ],
+    "good spot": [
+      {
+        "id": "fine-spot",
+        "text": "fine spot",
+        "verbosity": 40,
+        "color": 48,
+        "formality": 42
+      },
+      {
+        "id": "nice-spot",
+        "text": "nice spot",
+        "verbosity": 40,
+        "color": 48,
+        "formality": 42
+      }
+    ],
+    "how long has": [
+      {
+        "id": "how-long-s",
+        "text": "how long's",
+        "verbosity": 34,
+        "color": 55,
+        "formality": 25
+      }
+    ],
+    "hey-hey": [
+      {
+        "id": "hey-there",
+        "text": "hey there",
+        "verbosity": 34,
+        "color": 55,
+        "formality": 25
+      },
+      {
+        "id": "heya",
+        "text": "heya",
+        "verbosity": 34,
+        "color": 55,
+        "formality": 25
+      }
+    ],
+    "that tiny": [
+      {
+        "id": "so-small",
+        "text": "so small",
+        "verbosity": 34,
+        "color": 55,
+        "formality": 25
+      },
+      {
+        "id": "so-tiny",
+        "text": "so tiny",
+        "verbosity": 34,
+        "color": 55,
+        "formality": 25
+      }
+    ],
+    "that big": [
+      {
+        "id": "so-big",
+        "text": "so big",
+        "verbosity": 34,
+        "color": 55,
+        "formality": 25
+      }
+    ],
+    "bigger than most": [
+      {
+        "id": "larger-than-most",
+        "text": "larger than most",
+        "verbosity": 34,
+        "color": 55,
+        "formality": 25
+      }
     ]
   },
   "families": {
@@ -3172,6 +4051,13 @@
         "good to see you": [
           "mighty-nice-to-see-you",
           "nice-to-see-you"
+        ],
+        "howdy there": [
+          "well-howdy",
+          "hey-there"
+        ],
+        "how long has": [
+          "how-long-s"
         ]
       }
     },
@@ -3197,7 +4083,10 @@
           "sure"
         ],
         "very": [],
-        "friend": []
+        "friend": [],
+        "your farm": [
+          "your-homestead"
+        ]
       }
     },
     "aliri_ginju": {
@@ -3224,7 +4113,11 @@
           "nice-to-see-you",
           "mighty-nice-to-see-you"
         ],
-        "very": []
+        "very": [],
+        "howdy-hey": [
+          "hey-howdy",
+          "hey-there"
+        ]
       }
     },
     "gantami_ginju": {
@@ -3254,7 +4147,13 @@
         "certainly": [
           "sure"
         ],
-        "very": []
+        "very": [],
+        "hi": [
+          "hiya"
+        ],
+        "betcha": [
+          "bet-you"
+        ]
       }
     },
     "leaf": {
@@ -3273,7 +4172,8 @@
         "quiet": [],
         "wonderful": [],
         "amazing": [],
-        "good to see you": []
+        "good to see you": [],
+        "hey": []
       }
     },
     "hreesh": {
@@ -3348,6 +4248,21 @@
         "good to see you": [
           "nice-to-see-you",
           "a pleasure to see you"
+        ],
+        "good day": [
+          "lovely-day"
+        ],
+        "good morning": [
+          "lovely-morning"
+        ],
+        "good afternoon": [
+          "lovely-afternoon"
+        ],
+        "good evening": [
+          "lovely-evening"
+        ],
+        "good night": [
+          "lovely-night"
         ]
       }
     }
@@ -3414,6 +4329,9 @@
         ],
         "stop!": [
           "avast"
+        ],
+        "ahoy": [
+          "hallo"
         ]
       },
       "phoneticPreset": "pahu_grapple_flail",

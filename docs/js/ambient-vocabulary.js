@@ -6,7 +6,7 @@
   const PROFILE_PATH = 'config/dialogue/npc-reaction-profiles.json'; // Existing NPC-to-personality assignments supply inherited vocabulary defaults.
   const DEFAULT_SLIDERS = window.AmbientVocabularyRules?.DEFAULT_SLIDERS || Object.freeze({ verbosity: 50, color: 50, formality: 50, breadth: 70, variety: 55, frequency: 55, oldSlang: 0, simplicity: 0, nearMiss: 0 }); // Shared generator is authoritative for all nine axes; fallback only supports missing rule scripts.
   const MAX_CACHED_SPEAKERS = 128; // Bounds memory even when many unique wildlife actor IDs produce ambient text.
-  const state = { config: null, profiles: null, matchPattern: null, last: null, error: null, ready: false, changed: 0, skipped: 0, tableCache: new Map() }; // Keeps one configuration, regex, and mobile-readable diagnostic snapshot.
+  const state = { config: null, profiles: null, matchPattern: null, last: null, error: null, ready: false, changed: 0, skipped: 0, unmatched: 0, recent: [], tableCache: new Map() }; // Keeps one configuration, regex, and mobile-readable diagnostic snapshot.
   const normalizeSliders = value => window.AmbientVocabularyRules?.normalizeSliders?.(value) || { ...DEFAULT_SLIDERS }; // Never maintain a second slider whitelist: historical/childlike axes must survive runtime normalization.
   function optionsFor(config, speakerId, profiles) {
     const id = String(speakerId || ''); // Only real NPC IDs qualify; status and player announcements must not be rewritten.
@@ -42,12 +42,70 @@
     state.tableCache.set(characterId, compiled);
     return compiled;
   }
-  function rewrite(text, speakerId, random = Math.random, config = state.config, profiles = state.profiles) {
+  const ACTIVE_ANIMAL_ROLES = Object.freeze(['companion', 'mount', 'shoulderPet']); // Used by the vocabulary pass to protect names of active stable animals without modifying their callers.
+  function activeAnimalProperNames(source) {
+    const lookup = window.StableAnimalProgression?.activeEntryForRole; // Public stable authority replaces hooks in the pet and NPC reaction modules.
+    if (typeof lookup !== 'function') return []; // The vocabulary engine may load before the stable feature.
+    const speech = source.toLocaleLowerCase(); // Cheap prefilter before regex masking.
+    const matches = []; // Names/species found in this one displayed bubble, never a permanent species-name table.
+    for (const role of ACTIVE_ANIMAL_ROLES) {
+      const entry = lookup(role);
+      if (!entry) continue;
+      const kind = String(entry.kind || ''); // Species ID remains a fallback for unavailable CREATURE_DB labels.
+      for (const candidate of [entry.name, window.CREATURE_DB?.[kind]?.label, kind]) {
+        const name = typeof candidate === 'string' ? candidate.trim() : '';
+        if (name && name.length <= 100 && speech.includes(name.toLocaleLowerCase()) && !matches.includes(name)) matches.push(name);
+      }
+    }
+    return matches;
+  }
+  function shieldSpokenNames(source, names, explicitlyAddressed = []) {
+    const literals = [...new Set((Array.isArray(names) ? names : []).filter(value => typeof value === 'string')
+      .map(value => value.trim()).filter(value => value.length > 0 && value.length <= 100))]
+      .sort((left, right) => right.length - left.length); // Longer names win over shorter aliases in the same sentence.
+    if (!literals.length) return { text: source, restore: value => value };
+    const escape = value => value.replace(/[.*+?^\x24{}()|[\]\\]/g, '\\$&'); // Exact name spelling, never regex syntax.
+    const pattern = new RegExp('(^|[^\\p{L}\\p{N}_])(' + literals.map(escape).join('|') + ')(?=$|[^\\p{L}\\p{N}_])', 'giu'); // Whole names only.
+    const saved = []; // The exact proper names are restored after both the semantic and phonetic passes.
+    const masked = source.replace(pattern, (whole, prefix, match, offset) => { // Masked line feeds both rewrite stages; original and final lines remain unchanged outside those stages.
+      const isSalutation = offset === 0 && !prefix && /^(?:hi|hello|hey|hiya|howdy|ahoy)$/i.test(match)
+        && /^,\s*\S/.test(source.slice(whole.length)); // In "Hi, Kitty!", Hi is a greeting, not an address to a pet named Hi.
+      if (isSalutation && !explicitlyAddressed.some(value => String(value).toLocaleLowerCase() === match.toLocaleLowerCase())) return whole; // An explicit addressed character always remains protected.
+      let index = saved.length; // Chooses a tag absent from the authored line so user names cannot clash with placeholders.
+      while (source.includes('{{AMBIENT_VOCAB_NAME_' + index + '}}') || saved.some(([previous]) => previous === '{{AMBIENT_VOCAB_NAME_' + index + '}}')) index++; // A source token and an earlier masked name both reserve that index.
+      const marker = '{{AMBIENT_VOCAB_NAME_' + index + '}}'; // Existing rules already protect double-brace placeholders.
+      saved.push([marker, match]);
+      return prefix + marker;
+    });
+    return { text: masked, restore: value => saved.reduce((text, [marker, name]) => text.split(marker).join(name), value) };
+  }
+  function rememberSpeech(result) {
+    state.last = result; // Most recent attempted vocabulary pass is available in the mobile in-game diagnostics even if no word matched.
+    state.recent.push(result); // The last twelve actual bubbles make intermittent greeting/pet failures inspectable without console access.
+    if (state.recent.length > 12) state.recent.shift();
+  }
+  function rewrite(text, speakerId, random = Math.random, config = state.config, profiles = state.profiles, protectedNames = [], includeActiveAnimalNames = true) {
     const source = String(text ?? ''); // Original authoring stays immutable and is returned when any dependency is absent.
     const selected = optionsFor(config, speakerId, profiles);
-    if (!selected || !source) return source;
-    const hasLexicalMatch = config === state.config ? !!state.matchPattern?.test(source) : true; // Keeps most animal and NPC bubbles allocation-free.
-    if (!hasLexicalMatch && !selected.phoneticPreset) return source; // Only Pahu's assigned orthography can alter otherwise unmatched lines.
+    if (!source) return source;
+    if (!selected) {
+      if (speakerId && speakerId !== 'player' && !String(speakerId).startsWith('player-')) {
+        rememberSpeech({ speakerId: String(speakerId), original: source, displayed: source, hits: 0, swaps: 0, phoneticSwaps: 0, reason: state.ready ? 'no-voice-profile' : 'engine-not-ready' });
+      }
+      return source;
+    }
+    const explicitNames = Array.isArray(protectedNames) ? protectedNames : []; // Greeting addressees are optional for other ambient callers.
+    const mayAlter = config !== state.config || !!state.matchPattern?.test(source) || !!selected.phoneticPreset; // Skip stable lookups for unmatched cries.
+    const activeNames = mayAlter && includeActiveAnimalNames ? activeAnimalProperNames(source) : []; // Normal NPC greetings exclude unrelated active pet names; direct pet reactions still use the stable API.
+    const names = activeNames.length ? explicitNames.concat(activeNames) : explicitNames; // Preserve an explicit player/NPC addressee as well as the active pet names.
+    const guarded = names.length ? shieldSpokenNames(source, names, explicitNames) : null; // Avoid protecting unrelated opening salutations even when a pet shares that word.
+    const speechInput = guarded?.text || source; // Both rewrite passes and the matcher use the same optionally masked input.
+    const hasLexicalMatch = config === state.config ? !!state.matchPattern?.test(speechInput) : true; // Keeps most animal and NPC bubbles allocation-free.
+    if (!hasLexicalMatch && !selected.phoneticPreset) {
+      state.unmatched++; // Unmatched text never compiles an NPC table, so animal sounds remain cheap.
+      rememberSpeech({ speakerId: selected.characterId, familyId: selected.familyId, original: source, displayed: source, hits: 0, swaps: 0, phoneticSwaps: 0, reason: 'no-dictionary-phrase' });
+      return source;
+    }
     const rules = window.AmbientVocabularyRules; // Existing pure rules are shared by the game, standalone editor, and tests.
     if (!rules?.generateSelections || !rules?.resolveSelections) return source;
     const compile = () => {
@@ -61,14 +119,15 @@
     const table = hasLexicalMatch ? (config === state.config
       ? cachedTable(selected.characterId, compile)
       : compile()) : null; // A purely phonetic Pahu line skips semantic generation and the LRU.
-    const transformed = table ? rules.rewriteLine(source, table, selected.sliders, random, selected.characterId)
-      : { text: source, hits: 0, swaps: 0 };
+    const transformed = table ? rules.rewriteLine(speechInput, table, selected.sliders, random, selected.characterId)
+      : { text: speechInput, hits: 0, swaps: 0 };
     const phonetic = selected.phoneticPreset
       ? rules.applyPhoneticPreset(transformed.text, config, selected.phoneticPreset, selected.characterId)
       : { text: transformed.text, hits: 0, swaps: 0 }; // Doorstep-specific phonetics never touch Talk or any unassigned speaker.
-    const output = phonetic.text;
-    state.last = { speakerId: selected.characterId, familyId: selected.familyId, dialectGroup: selected.traits.groupId,
-      original: source, displayed: output, hits: transformed.hits, swaps: transformed.swaps, phoneticSwaps: phonetic.swaps };
+    const output = guarded ? guarded.restore(phonetic.text) : phonetic.text; // Restore names only when a protected caller supplied them.
+    rememberSpeech({ speakerId: selected.characterId, familyId: selected.familyId, dialectGroup: selected.traits.groupId,
+      original: source, displayed: output, hits: transformed.hits, swaps: transformed.swaps, phoneticSwaps: phonetic.swaps,
+      reason: output !== source ? 'reworded' : (transformed.hits ? 'frequency-or-disabled-choice' : 'no-eligible-choice') });
     state.changed += transformed.swaps + phonetic.swaps;
     state.skipped += transformed.hits - transformed.swaps;
     return output;
@@ -100,7 +159,7 @@
     generateTable: (lexicon, sliders, id) => window.AmbientVocabularyRules?.generateTable?.(lexicon, sliders, id) || {}, // Compatibility preview surface.
     normalizeSliders,
     reload: load,
-    getDebug: () => ({ ready: state.ready, error: state.error, last: state.last, replacements: state.changed, untouchedMatches: state.skipped, wordCount: Object.keys(state.config?.lexicon || {}).length, cachedSpeakers: state.tableCache.size }),
+    getDebug: () => ({ ready: state.ready, error: state.error, last: state.last, replacements: state.changed, untouchedMatches: state.skipped, wordCount: Object.keys(state.config?.lexicon || {}).length, cachedSpeakers: state.tableCache.size, unmatched: state.unmatched, recent: state.recent.slice() }),
   }); // Public surface for editor tests and the existing mobile diagnostic console.
   window.AmbientVocabulary = api;
   load();

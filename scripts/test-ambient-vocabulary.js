@@ -431,15 +431,135 @@ async function main() {
   assert.ok(!Object.hasOwn(config.lexicon, 'weather'), 'Remove synonym roots that cannot keep subject agreement');
   assert.ok(!config.lexicon.quiet.some(entry => entry.text === 'peaceful'),
     'Quiet ambient sound is not automatically the same as peaceful mood');
+  // Source-backed coverage: actual random NPC greetings and every tier of each personality's pet reactions.
+  const greetingChanges = Object.entries(greetings).flatMap(([id, pool]) => (pool.player || []).map(line =>
+    engine.rewrite(line, id, () => 0) !== line)); // One deterministic high-probability roll per real authored greeting.
+  assert.ok(greetingChanges.filter(Boolean).length >= 23, 'Ordinary NPC greetings must offer visible vocabulary choices');
+  const petSpeakerByFamily = { neighborly: 'furunji_funji', playful: 'gorobi_ginju', reserved: 'sloomi',
+    proper: 'kzubug', stern: 'leaf', child: 'gantami_ginju' }; // Each test NPC has an actual matching reaction profile.
+  const petPoolLines = profile => {
+    const lines = []; // Collect actual authored tiers, roles, and recognition responses without rewriting reaction config.
+    const collect = value => {
+      if (Array.isArray(value)) lines.push(...value);
+      else if (value && typeof value === 'object') Object.values(value).forEach(collect);
+    };
+    collect(profile.animal);
+    return lines;
+  };
+  let changedPetLines = 0; // Total pet responses with an available lexical change across all personality owners.
+  for (const [family, npcId] of Object.entries(petSpeakerByFamily)) {
+    assert.equal(profiles.assignments[npcId], family, 'Pet test NPC must keep its real personality: ' + npcId);
+    const sources = petPoolLines(profiles.profiles[family]);
+    const rendered = sources.map(line => engine.rewrite(line, npcId, () => 0));
+    const changed = rendered.filter((text, index) => text !== sources[index]).length;
+    assert.ok(changed >= 2, 'Pet reactions must visibly vary for ' + family);
+    changedPetLines += changed;
+    for (let index = 0; index < sources.length; index++) {
+      for (const placeholder of sources[index].match(/\{[A-Za-z][A-Za-z0-9_]*\}/g) || []) {
+        assert.ok(rendered[index].includes(placeholder), 'Pet name/species token must survive: ' + placeholder);
+      }
+    }
+  }
+  assert.ok(changedPetLines >= 35, 'Pet reactions must visibly vary across the real personality pools');
+  assert.equal(engine.rewrite('Hi!', 'gantami_ginju', () => 0), 'Hiya!');
+  assert.equal(engine.rewrite('Howdy there, partner!', 'gorobi_ginju', () => 0), 'Well, howdy, partner!');
+  assert.equal(engine.rewrite('Howdy-hey, {targetName}!', 'aliri_ginju', () => 0), 'Hey-howdy, {targetName}!');
+  assert.equal(engine.rewrite('Good morning, {targetName}!', 'jubmir', () => 0), 'Lovely morning, {targetName}!');
+  assert.equal(engine.rewrite('Good to see you safe, {targetName}.', 'kzubug', () => 0),
+    'Good to see you safe, {targetName}.', 'A generic word cannot undermine Kzubug');
+  assert.equal(engine.rewrite('Hey...', 'leaf', () => 0), 'Hey...', 'Leaf must remain terse');
+  assert.equal(engine.rewrite('Hey, {animalName}!', 'gorobi_ginju', () => 0), 'Hiya, {animalName}!');
+  assert.equal(engine.rewrite('Kitty!', 'gantami_ginju', () => 0), 'Kit-cat!');
+  assert.equal(engine.rewrite('Hi!', 'gantami_ginju', () => 0.99), 'Hi!', 'Probability retains authored fallback');
+  const beforePetNoiseCache = engine.getDebug().cachedSpeakers; // Unmatched pet sounds should never allocate new tables.
+  engine.rewrite('Neeeeeeyyy!!!!', 'gantami_ginju', () => 0);
+  const noiseDebug = engine.getDebug();
+  assert.equal(noiseDebug.last.reason, 'no-dictionary-phrase', 'Diagnostics must describe the newest unmatched bubble');
+  assert.equal(noiseDebug.cachedSpeakers, beforePetNoiseCache);
+  assert.ok(noiseDebug.recent.length <= 12 && noiseDebug.recent.some(entry => entry.reason === 'reworded'));
+  // Whole-pool language audit: a lexical change is not useful if it produces awkward grammar or corrupts a named token.
+  const allFloatingSource = Object.entries(greetings).flatMap(([npcId, greetingPool]) =>
+    (greetingPool.player || []).map(line => [npcId, line])); // One entry for each actual NPC greeting.
+  for (const [family, npcId] of Object.entries(petSpeakerByFamily)) {
+    allFloatingSource.push(...petPoolLines(profiles.profiles[family]).map(line => [npcId, line]));
+  } // The same source pool also includes every role/tier of the six pet personalities.
+  const testRolls = [0, 0.05, 0.2, 0.49, 0.75, 0.99]; // Covers multiple synonym choices and chance-to-leave-original paths.
+  for (const [npcId, authored] of allFloatingSource) {
+    const tokens = authored.match(/\{[A-Za-z][A-Za-z0-9_]*\}/g) || [];
+    for (const chance of testRolls) {
+      const spoken = engine.rewrite(authored, npcId, () => chance);
+      assert.ok(tokens.every(token => spoken.includes(token)), 'All variants must retain placeholders: ' + npcId + ':' + spoken);
+      assert.ok(!/(?:hello-hello|how much time has|fine to see you)/i.test(spoken),
+        'Vocabulary must avoid known unnatural greeting/pet substitutions: ' + npcId + ':' + spoken);
+    }
+  }
+  assert.equal(engine.rewrite('Hey-hey {targetName}!', 'takua_ao_hakaru', () => 0),
+    'Hey there {targetName}!', 'Whole repeated greeting must take priority over separately rewritten hey words');
+  assert.equal(engine.rewrite('How long has {animalName} been up there?', 'gorobi_ginju', () => 0),
+    "How long's {animalName} been up there?", 'Duration question must keep its interrogative grammar');
+  assert.equal(engine.rewrite('I didn\'t know a {species} could be that tiny.', 'furunji_funji', () => 0),
+    'I didn\'t know a {species} could be so small.', 'Pet surprise remains idiomatic');
+  assert.equal(engine.rewrite('I\'ve never seen a {species} that big.', 'furunji_funji', () => 0),
+    'I\'ve never seen a {species} so big.', 'Big animal comparison remains idiomatic');
+  assert.equal(engine.rewrite('That {species} is bigger than most.', 'furunji_funji', () => 0),
+    'That {species} is larger than most.', 'Comparative retains its meaning');
+  assert.equal(config.lexicon['how long'], undefined, 'Unsafe general duration replacement must not remain as a fallback');
+  assert.equal(engine.rewrite('Hi, Kitty!', 'gantami_ginju', () => 0, config, profiles, ['Kitty']), 'Hiya, Kitty!');
+  assert.equal(engine.rewrite('Good morning, Hi!', 'jubmir', () => 0, config, profiles, ['Hi']), 'Lovely morning, Hi!');
+  assert.equal(engine.rewrite('Hey, Ki[t]y!', 'gantami_ginju', () => 0, config, profiles, ['Ki[t]y']), 'Hiya, Ki[t]y!');
+  assert.equal(engine.rewrite('Hey, Kitty! {{AMBIENT_VOCAB_NAME_0}}', 'gantami_ginju', () => 0, config, profiles, ['Kitty']),
+    'Hiya, Kitty! {{AMBIENT_VOCAB_NAME_0}}');
+  assert.equal(engine.rewrite('Hey, Kitty and Hi! {{AMBIENT_VOCAB_NAME_0}}', 'gantami_ginju', () => 0, config, profiles, ['Kitty', 'Hi']),
+    'Hiya, Kitty and Hi! {{AMBIENT_VOCAB_NAME_0}}', 'Two protected names cannot reuse the same marker when an authored token occupies marker zero');
+  assert.equal(engine.rewrite('Hey, Kitty!', 'gantami_ginju', () => 0, config, profiles, []), 'Hiya, Kit-cat!');
+  // Public stable roles provide protected names automatically, including direct pet reactions without new show options.
+  window.StableAnimalProgression = { activeEntryForRole: role => role === 'shoulderPet' ? { name: 'Kitty', kind: 'nelk' }
+    : role === 'mount' ? { name: 'Hi', kind: 'mount-kind' } : null }; // Fixture mirrors the existing stable API's active-entry shape.
+  window.CREATURE_DB = { nelk: { label: 'Nelk' } }; // Canonical species label must also remain untouched.
+  assert.equal(engine.rewrite('Hi, Kitty!', 'gantami_ginju', () => 0), 'Hiya, Kitty!',
+    'Direct pet remarks protect an active animal name without changing the animal or reaction modules');
+  assert.equal(engine.rewrite('Hi, Hi!', 'gantami_ginju', () => 0), 'Hiya, Hi!',
+    'Even a pet called Hi must not silence the first greeting word, but its addressed name remains unchanged');
+  assert.equal(engine.rewrite('Hi!', 'gantami_ginju', () => 0, config, profiles, [], false), 'Hiya!',
+    'Ordinary NPC greetings must not be suppressed by an unrelated pet named Hi');
+  assert.equal(engine.rewrite('Good morning, Hi!', 'jubmir', () => 0, config, profiles, ['Hi'], false), 'Lovely morning, Hi!',
+    'Explicit player/NPC addressees remain protected when the greeting skips pet lookup');
+  assert.equal(engine.rewrite('Good morning, Hi!', 'jubmir', () => 0), 'Lovely morning, Hi!',
+    'An active animal named Hi keeps its name in floating speech');
+  assert.equal(engine.rewrite('Kitty!', 'gantami_ginju', () => 0), 'Kitty!',
+    'A named active pet must not turn into an animal noun');
+  assert.equal(engine.rewrite('Hey, Nelk!', 'gantami_ginju', () => 0), 'Hiya, Nelk!',
+    'Active pet species labels are protected using CREATURE_DB');
+  delete window.StableAnimalProgression;
+  delete window.CREATURE_DB;
   const debug = engine.getDebug();
   assert.ok(debug.last && Number.isInteger(debug.last.swaps));
   assert.ok(typeof debug.replacements === 'number');
 
   const floating = file('docs/js/ambient-dialogue.js');
   const regularTalk = file('docs/js/dialogue-content.js');
-  assert.ok(floating.includes('window.AmbientVocabulary?.rewrite?.(originalMessage, options.speakerId)'));
+  assert.ok(floating.includes('window.AmbientVocabulary?.rewrite?.(originalMessage, options.speakerId,'));
   assert.ok(floating.indexOf('window.AmbientVocabulary?.rewrite?.') < floating.indexOf('const textPart = textPlane(message)'));
   assert.ok(floating.includes('showSocialResponse'));
+  assert.ok(floating.includes('vocabularyProtectedNames: targetName ? [targetName] : []'));
+  assert.ok(floating.includes('options.vocabularyProtectedNames'));
+  assert.ok(floating.includes('options.greeting !== true'), 'The renderer must exclude unrelated pet names from normal greetings');
+  // Assert the runtime fast path, not an exact implementation string: other systems can evolve their APIs freely.
+  let activeAnimalLookups = 0; // Counts only stable API queries caused by a floating-vocabulary rewrite.
+  window.StableAnimalProgression = { activeEntryForRole: () => { activeAnimalLookups++; return null; } };
+  const unchangedCry = engine.rewrite('Neeeeeeyyy!!!!', 'gantami_ginju', () => 0);
+  assert.equal(unchangedCry, 'Neeeeeeyyy!!!!', 'Unmatched animal cries retain their authored text');
+  assert.equal(activeAnimalLookups, 0, 'Unmatched animal cries must not query active pet names');
+  assert.equal(engine.rewrite('Hi!', 'gantami_ginju', () => 0, config, profiles, [], false), 'Hiya!',
+    'Ordinary greeting still varies without looking up unrelated active animals');
+  assert.equal(activeAnimalLookups, 0, 'Ordinary NPC greetings must not query active pet names');
+  delete window.StableAnimalProgression;
+  assert.ok(file('docs/js/ambient-vocabulary.js').includes('StableAnimalProgression?.activeEntryForRole'),
+    'Pet identities must come from the public stable API, not changes to individual reaction callers');
+  assert.ok(!file('docs/js/stable-animal-progression.js').includes('vocabularyProtectedNames: [animal.entry?.name'),
+    'Stable progression must not depend on vocabulary internals');
+  assert.ok(!file('docs/js/npc-silliness-reaction-runtime.js').includes('vocabularyProtectedNames: ['),
+    'NPC reactions must not depend on vocabulary internals');
   assert.ok(!regularTalk.includes('AmbientVocabulary')); // The ordinary Talk renderer never invokes word substitution.
 
   const standalone = file('docs/tools/vocabulary-editor/index.html');
