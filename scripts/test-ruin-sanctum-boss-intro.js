@@ -5,7 +5,7 @@ const vm=require('node:vm');
 
 // Run: node scripts/test-ruin-sanctum-boss-intro.js
 const source=fs.readFileSync('docs/js/dev-random-ruin-sanctum.js','utf8');
-let composer,clock=0,uid=0,active=null,created=0,disposed=0,locks=0,releases=0,effects=0,hazards=0,slowSpawn=null,discarded=0,skeletons=0,skeletonDisposals=0,warhammers=0,playerTeleports=0,stagedCancelled=0,telegraphsCancelled=0;
+let composer,clock=0,uid=0,active=null,created=0,disposed=0,locks=0,releases=0,effects=0,hazards=0,slowSpawn=null,discarded=0,skeletons=0,skeletonDisposals=0,warhammers=0,playerTeleports=0,stagedCancelled=0,telegraphsCancelled=0,weaponPoseUpdates=0;
 const timers=new Map(),nodes=[],enemies=new Set(),introSounds=[]; // Audible reveal cues and their cancellation are asserted against the fake clock.
 const timeout=(fn,ms=0)=>{const id=++uid;timers.set(id,{at:clock+ms,fn});return id;};
 const clear=id=>timers.delete(id);
@@ -30,13 +30,15 @@ const document={
 function actor(options){
   return {name:'Imlao the Sightless',id:'lich'+(++created),x:options.x,y:options.y,health:100,maxHealth:100,
     facing:0,groupRot:0,pngRot:0,def:{aimAngleOffset:Math.PI/2}, // The production humanoid aims in combat-space, not raw group-yaw space.
+    _banditToolHolder:{rotation:{y:999}}, // Authored warhammer is a world-space sibling; it cannot inherit its owner's yaw by parenting.
     avatarRef:{modelHeight:1.7,group:{rotation:{y:0}},dispose(){disposed++;}}};
 }
 const win={
   THREE:{},DynamicSurfaces:{},DevRandomRuinSimplePuzzles:{registerComposer:next=>composer=next},
   AudioSystem:{playObjectSfxKeyAt(key,x,z,area,y,opts){introSounds.push({key,x,z,area,y,opts,at:clock});}},
   DevRandomRuin:{setPlayerWorldPoint:()=>{playerTeleports++;return true;},getSeed:()=>77},
-  BanditCombat:{discardEntity(entity){discarded++;entity.avatarRef?.dispose?.();}},
+  BanditCombat:{discardEntity(entity){discarded++;entity.avatarRef?.dispose?.();},
+    updateToolMesh(entity){weaponPoseUpdates++;entity._banditToolHolder.rotation.y=entity.groupRot;}}, // Verify the existing weapon-pose owner receives the turn as well as the actor group.
   Combat:{telegraph:{cancel(){telegraphsCancelled++;}},cancelStagedForAttacker(){stagedCancelled++;}}, // Use the canonical teardown path in the real encounter.
   MinionCombat:{makeEntity:async options=>({id:'skeleton'+(++skeletons),x:options.x,y:options.y,health:50,avatarRef:{dispose(){skeletonDisposals++;}}})},
 
@@ -113,6 +115,7 @@ async function run(){
   assert.equal(active.shot.blendSeconds,.95);
   const initialFacing=state.boss.facing; // The boss starts mostly turned away before the reveal's face-to-face beat.
   const initialYaw=state.boss.avatarRef.group.rotation.y;
+  const initialWeaponPoseUpdates=weaponPoseUpdates;
   const bearingToPlayer=Math.atan2(deps.player.y-state.boss.y,deps.player.x-state.boss.x); // Facing angles are world-relative; starting angle itself need not be large.
   assert(Math.abs(initialFacing-bearingToPlayer)>2,'lich should enter the shot turned away from the player');
   await advance(850);
@@ -128,6 +131,8 @@ async function run(){
   assert.notEqual(state.boss.facing,initialFacing,'the boss visibly turns during the camera zoom');
   assert.notEqual(state.boss.avatarRef.group.rotation.y,initialYaw,'the rendered rig turns, not just the combat aim');
   assert.equal(state.boss.pngRot,state.boss.groupRot,'both portrait sides and the underlying rig agree on yaw');
+  assert(weaponPoseUpdates>initialWeaponPoseUpdates,'the shared hostile weapon renderer must update while the boss turns');
+  assert.equal(state.boss._banditToolHolder.rotation.y,state.boss.groupRot,'the independent warhammer follows the boss yaw');
   await advance(100);
   win.DevRandomRuinSanctum.debugUpdateIntro(clock);
   assert.equal(introSounds.length,1,'scream fires once when the turn finishes');
@@ -136,6 +141,8 @@ async function run(){
   assert.equal(introSounds[0].x,state.boss.x/64);
   assert.equal(introSounds[0].opts.earshotTiles,24,'sanctum shriek carries across the chamber');
   assert.equal(state.boss.groupRot,state.boss.avatarRef.group.rotation.y,'rendered yaw does not drift at the end of the turn');
+  assert.equal(state.boss._banditToolHolder.rotation.y,state.boss.groupRot,'low-FPS scream timer poses the weapon and body together');
+  assert.equal(state.boss.facing,state.intro.turnTo,'scream cannot begin before a lagging render tick completes the face-to-face turn');
   assert.equal(state.intro.shriekPlayed,true,'mobile debug records the shriek');
   await advance(2650);
   assert.equal(state.intro,null);
