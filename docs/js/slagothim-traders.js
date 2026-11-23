@@ -633,7 +633,7 @@
     if (rng() < TUNING.BOWL_KASA_CHANCE) {
       const cosmeticId = pick(rng, KENKARI_BOWL_KASA_VARIANTS); // This caravan's fixed, seeded male/female hat variant.
       stock.push({ id: `clothing:${cosmeticId}`, kind: 'clothing', cosmeticId, slot: 'hat', qty: 1,
-        price: Math.ceil(TUNING.BOWL_KASA_BASE_PRICE * TUNING.PRICE_MARKUP),
+        price: Math.ceil(Number((TUNING.BOWL_KASA_BASE_PRICE * TUNING.PRICE_MARKUP).toFixed(2))),
         sellPrice: Math.floor(TUNING.BOWL_KASA_BASE_PRICE * 0.4),
         icon: '👒', label: 'Kenkari Bowl-Kasa', desc: 'A carved wooden bowl-kasa fitted for Kenkari horns.',
         note: 'Imported Kenkari headwear' });
