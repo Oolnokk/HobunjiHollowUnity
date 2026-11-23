@@ -123,6 +123,13 @@ assert.equal(creatureDb.moot.hostile, false);
 assert.equal(creatureDb.moot.lootPool, 'creature_moot');
 assert.equal(creatureDb.moot.defaultSizeClass, 'large');
 assert.equal(creatureDb.moot.spriteAspect, 920 / 1295);
+const oldWorldUnitsPerPixel = 1.7 / 1617; // Measures visible art scale independently of the old transparent padding.
+const mootBestiary = JSON.parse(read('docs/config/creatures/hobunji-creature-bestiary.json')).creatures.find(entry => entry.id === 'moot'); // Standalone Head Rig view of the same sprite.
+for (const def of [creatureDb.moot, creatureDb['moot-herd-mother'], mootBestiary]) {
+  assert.ok(Math.abs(def.modelWidth / 1295 - oldWorldUnitsPerPixel) < 1e-12);
+  assert.ok(Math.abs(def.modelWidth * def.spriteAspect / 920 - oldWorldUnitsPerPixel) < 1e-12);
+}
+assert.equal(config.game.livestock.animalWidths.moot, creatureDb.moot.modelWidth, 'Default farm and nursery scale matches the original pixel density');
 assert.equal(creatureDb['moot-herd-mother'].spriteAspect, creatureDb.moot.spriteAspect);
 assert.equal(creatureDb.moot.speed, 1.25, 'Moot retains native herbivore wandering behavior');
 assert.deepEqual(JSON.parse(JSON.stringify(creatureDb.moot.sprites)), {
