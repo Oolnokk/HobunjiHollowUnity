@@ -23,6 +23,9 @@
   let building = false;
   let generation = 0;
   let originMode = 'multi';
+  let pendingExitMode = null; // Most recent native tab requested while an async workspace restoration is underway.
+  let exitingPromise = null; // Serializes tab exits so rapid mobile taps cannot race concurrent project imports.
+  let pendingSetup = Promise.resolve(); // Tracks the brief native mode/clear operations that must finish before restoring prior actors.
   let savedMulti = null;
   let entries = [];
   let selected = null;
@@ -245,8 +248,9 @@ body[data-animation-author-mode="${MODE}"] #maaStopBtn,
 body[data-animation-author-mode="${MODE}"] #maaNewBtn,
 body[data-animation-author-mode="${MODE}"] #maaUndoBtn{display:none!important}
 body[data-animation-author-mode="${MODE}"] #maaViewportBadge{left:12px;right:12px;max-width:none;text-align:center}
-#${PANEL_ID}{display:none;position:absolute;z-index:18;left:50%;bottom:max(10px,env(safe-area-inset-bottom));transform:translateX(-50%);width:min(680px,calc(100% - 20px));padding:10px;border:1px solid rgba(255,255,255,.16);border-radius:14px;background:rgba(7,16,26,.94);backdrop-filter:blur(10px);gap:8px}
+#${PANEL_ID}{display:none;position:absolute;z-index:18;left:50%;bottom:max(10px,env(safe-area-inset-bottom));transform:translateX(-50%);width:min(680px,calc(100% - 20px));max-height:min(68dvh,calc(100dvh - 150px));overflow-y:auto;overscroll-behavior:contain;align-content:start;padding:10px;border:1px solid rgba(255,255,255,.16);border-radius:14px;background:rgba(7,16,26,.94);backdrop-filter:blur(10px);gap:8px}
 body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid!important;visibility:visible!important}
+body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Keep native mode tabs reachable even on short mobile landscape viewports. */
 #${PANEL_ID} .scaleHead{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 #${PANEL_ID} #maaFullScaleChoose{flex:1 1 145px;min-width:0;max-width:100%;padding:6px;border:1px solid rgba(255,255,255,.25);border-radius:6px;background:#17222f;color:inherit}
 #${PANEL_ID} .scaleSelected{font-weight:850;color:var(--accent)}
@@ -411,10 +415,13 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid!important;v
       if (!tab || tab.dataset.fullScaleExit === '1') continue;
       tab.dataset.fullScaleExit = '1';
       tab.addEventListener('click', event => {
-        if (!active && !building) return;
+        if (!active && !building && !exitingPromise) return;
         event.preventDefault();
-        event.stopImmediatePropagation();
-        exit(mode);
+        event.stopImmediatePropagation(); // Native handler runs exactly once, after the original actors are restored.
+        exit(mode).catch(error => {
+          console.warn('[full-character-scale] native tab restore failed', error);
+          status(`Could not switch to ${mode}: ${error.message}`);
+        });
       }, true);
     }
 
@@ -1274,20 +1281,26 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid!important;v
   }
 
   async function enter() {
-    if (active || building || !ensureUi()) return;
+    if (active || building || exitingPromise || !ensureUi()) return;
     building = true;
     const buildId = ++generation;
     originMode = ['multi','single','rig'].includes(document.body.dataset.animationAuthorMode) ? document.body.dataset.animationAuthorMode : 'multi';
     try {
       const scaleHost = host();
       if (!scaleHost) throw new Error('Full Character Scale host is unavailable.');
-      if (originMode !== 'multi') await scaleHost.setMode('multi');
+      if (originMode !== 'multi') {
+        pendingSetup = Promise.resolve(scaleHost.setMode('multi')); // The native Multi actor store is our temporary project scratch area.
+        await pendingSetup;
+        if (buildId !== generation) return; // A mode click may cancel the build during a native mode transition.
+      }
       savedMulti = clone(window.MultiAvatarAnimationAuthor?.exportProject?.());
       if (!savedMulti) throw new Error('Could not snapshot the multi-avatar workspace.');
       preserveMultiSave();
-      loadAgeModifiers(); // Honor the gameplay's global age defaults plus this author's most recent valid local adjustments.
+      loadAgeModifiers();
       syncAgeControls();
-      await scaleHost.clearActors();
+      pendingSetup = Promise.resolve(scaleHost.clearActors()); // Wait for the final empty-project import before allowing a restoration import.
+      await pendingSetup;
+      if (buildId !== generation) return; // Never make a cancelled build claim the mode after an exit.
       chrome();
       status('Building preview-only species/gender lineup…');
       await buildLineup(buildId);
@@ -1297,34 +1310,55 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid!important;v
       chrome();
       status('Use the always-open character dropdown for per-species edits; Baby/Toddler/Child modes show and adjust the entire lineup.');
     } catch (error) {
+      if (buildId !== generation) return; // The already-requested exit owns restoration and error reporting.
       console.warn('[full-character-scale]', error);
       building = false;
       active = false;
       status(`Could not build scale comparison: ${error.message}`);
-      disposePreview();
-      await restore(originMode);
+      await restoreWorkspace();
+      await host()?.setMode?.(originMode); // Even Multi needs its native chrome refreshed after a failed build.
+      document.getElementById(TAB_ID)?.setAttribute('aria-selected','false');
     }
   }
 
-  async function restore(targetMode) {
+  async function restoreWorkspace() {
+    // Cancellation and initialization both use this one path: no duplicate imports or stale comparison meshes.
+    await pendingSetup; // If exit was tapped while the scratch project was being cleared, finish that operation first.
     disposePreview();
     if (savedMulti) {
       try { await window.MultiAvatarAnimationAuthor?.importProject?.(clone(savedMulti)); }
-      catch (error) { console.warn('[full-character-scale] multi restore failed', error); }
+      catch (error) { console.warn('[full-character-scale] multi restore failed', error); throw error; }
       preserveMultiSave();
     }
-    if (targetMode && targetMode !== 'multi') await host()?.setMode?.(targetMode);
     document.getElementById(TAB_ID)?.setAttribute('aria-selected','false');
   }
 
-  async function exit(targetMode = originMode) {
-    if (!active && !building) return;
+  function exit(targetMode = originMode) {
+    const normalized = ['multi','single','rig'].includes(targetMode) ? targetMode : originMode;
+    if (exitingPromise) {
+      pendingExitMode = normalized; // Rapid taps update the destination without starting a second multi-project import.
+      return exitingPromise;
+    }
+    if (!active && !building) return Promise.resolve();
+    pendingExitMode = normalized;
     ++generation;
     active = false;
     building = false;
     persistProfiles();
-    await restore(targetMode || originMode || 'multi');
-    savedMulti = null;
+    exitingPromise = (async () => {
+      try {
+        await restoreWorkspace();
+        const target = pendingExitMode || originMode;
+        await host()?.setMode?.(target); // ALWAYS include Multi: its native mode is often already Multi while CSS still says scale-compare.
+        document.getElementById(TAB_ID)?.setAttribute('aria-selected','false');
+      } finally {
+        savedMulti = null;
+      }
+    })().finally(() => {
+      exitingPromise = null;
+      pendingExitMode = null;
+    });
+    return exitingPromise;
   }
 
   function install() {
@@ -1347,6 +1381,9 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid!important;v
       debugSnapshot: () => ({
         active,
         building,
+        exiting: !!exitingPromise, // Mobile diagnostics distinguish a slow restore from a disabled tab.
+        requestedTab: pendingExitMode, // Last tap wins while actor and scene restoration are pending.
+        currentTabMode: document.body.dataset.animationAuthorMode,
         lineup: entries.map(entry => entry.key),
         selected: selected?.key || null, // Identifies which progressively loaded species is currently editable.
         selection: 'dropdown-only',
