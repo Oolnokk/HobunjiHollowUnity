@@ -2,7 +2,7 @@
   'use strict';
   // festival: preserved parser-time script order. Maintain member versions here, not in index.html.
   const scriptUrls = [
-    "js/festival-ancestor-figures.js?v=20261122keyghost1",
+    "js/festival-ancestor-figures.js?v=20261122keyghostAudit2",
     "js/festival-props.js?v=20261118blossomPng25v3",
     "js/festival-wheel-dance-runtime.js?v=20261118pairedContinuity2",
     "js/npc-festival-dance.js?v=20261020hd350a73",
