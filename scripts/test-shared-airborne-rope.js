@@ -220,12 +220,18 @@ function world() {
     p=>{riderPoint=p;},()=>({blocked:false}));
   for(let i=0;i<20;i++)updateAttachedRope(rope,.016);
   assert(rope.angle<-.1,'the normal rope pendulum continues to pump after automatic catch');
+  const swingBeforeBrake=Math.abs(rope.angle); // The authored shaft rider and ordinary ropes use the same held straightener.
   rope.braking=true;player.inputX=0;player.inputY=1;
   updateAttachedRope(rope,.05);
+  assert.equal(rope.omega,0,'shaft Adjust immediately cancels its inherited swing momentum');
+  assert(Math.abs(rope.angle)<swingBeforeBrake,'shaft Adjust lerps its rope back toward straight down');
   assert.equal(rope.yaw,0,'braking keeps the shaft rope on its intended swing plane');
   player.inputX=1;player.inputY=0;
   updateAttachedRope(rope,.05);
   assert.equal(rope.length,4.14,'braking must not shorten the authored shaft rope');
+  for(let i=0;i<40;i++)updateAttachedRope(rope,.05);
+  assert.equal(rope.angle,0,'holding Adjust settles a shaft rope exactly vertical');
+  assert.equal(rope.omega,0,'the shaft finishes with no leftover swing velocity');
   assert.deepEqual(riderPoint,rope.bob);
 }
 // Every generated ruin rope is also the SAME object consumed by the burden
