@@ -715,7 +715,7 @@
       : originalMessage; // Missing infant syllables must silence the bubble, never expose an adult line; ordinary Talk is separate.
     if (!isNewborn && options.vocabulary !== false && options.speakerId) {
       try {
-        message = window.AmbientVocabulary?.rewrite?.(originalMessage, options.speakerId) || originalMessage; // One substitution pass BEFORE cadence, textures, timing, tracing and the event payload.
+        message = window.AmbientVocabulary?.rewrite?.(originalMessage, options.speakerId, Math.random, undefined, undefined, options.vocabularyProtectedNames) || originalMessage; // One substitution pass BEFORE cadence, textures, timing, tracing and the event payload.
       } catch (error) {
         message = originalMessage;
         state.deps?.debugLog?.('[ambient-vocabulary] Using authored fallback: ' + (error?.message || error), 'warn'); // Mobile diagnostics, never a crashed dialogue bubble.
@@ -968,6 +968,7 @@
       : templateLine(targetName, speakerId, targetId, day, { omitTargetName, walker });
     show(walker.root, line, {
       speakerId,
+      vocabularyProtectedNames: targetName ? [targetName] : [], // The resolved greeting addressee is a proper name, not a vocabulary source word.
       profile: walker.profile,
       mode: 'chathead',
       greeting: true,
