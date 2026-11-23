@@ -181,7 +181,7 @@
       // (pngPlaneAvatar.childScaleMultiplier / childHeadScaleMultiplier) as
       // Gantami and every other authored child.
       phaseScales: {
-        basket: { body: 0.32, head: 0.58 },
+        basket: { body: 0.32, head: 0.50, hand: 1.20, foot: 1.20 }, // Smaller newborn head, larger GLB hands/feet; toddler/child phases unchanged.
         toddler: { body: 0.4, head: 0.66 },
         child: null,
       },

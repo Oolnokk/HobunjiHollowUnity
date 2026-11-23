@@ -12,6 +12,7 @@ assert(start >= 0 && end > start, 'random baby renderer is a separable, testable
 assert.match(source, /id="carryBabyRandom">Random Baby<\/button>/, 'touch-accessible Random Baby control exists');
 assert.match(source, /el\('carryBabyRandom'\)\.onclick=\(\)=>\{void randomBaby\(\);\}/, 'button actually runs the preview generator');
 assert.match(html, /romance-config\.js\?v=/, 'editor loads the existing family newborn proportions');
+assert(source.includes('phaseScales?.basket||{body:.32,head:.50}'), 'offline editor uses new 50% head fallback when family config is unavailable');
 assert(html.indexOf('scratchbones-config.js') < html.indexOf('romance-config.js'),
   'family scale configuration is loaded after the base Scratchbones config');
 assert.match(source, /if\(!babyPortraitModel\)void randomBaby\(\)/,
@@ -35,7 +36,7 @@ const window = {
     'mao-ao': { genders: ['male', 'female'] },
     'engh-sho': { genders: ['female'] },
   } } } },
-  HobunjiRomanceConfig: { family: { phaseScales: { basket: { body: .32, head: .58 } } } },
+  HobunjiRomanceConfig: { family: { phaseScales: { basket: { body: .32, head: .50 } } } },
   HobunjiCharacterRigScaleDefaults: { scaleFor: () => ({x:.8,y:1.2,head:.7,offsetY:-.03}) }, // Match authored body/head compensation, not just head/body.
   getPortraitFighters() { return [
     {speciesId:'mao-ao',gender:'male'}, {speciesId:'mao-ao',gender:'female'},
@@ -105,8 +106,8 @@ const environment = new Function('window','document','THREE','Math','el','babyRe
   assert.equal(await environment.randomBaby(),true);
   const first = environment.current;
   assert(first && children.length===1,'one real portrait model replaces the reference silhouette');
-  assert(Math.abs(first.headFactors.x-(.7/.8)*(.58/.32))<1e-9,'newborn head X uses rig/head vs body X compensation');
-  assert(Math.abs(first.headFactors.y-(.7/1.2)*(.58/.32))<1e-9,'newborn head Y uses independent body Y compensation');
+  assert(Math.abs(first.headFactors.x-(.7/.8)*(.50/.32))<1e-9,'newborn head X uses rig/head vs body X compensation');
+  assert(Math.abs(first.headFactors.y-(.7/1.2)*(.50/.32))<1e-9,'newborn head Y uses independent body Y compensation');
   assert(Math.abs(first.userData.neckRig.headScaleJoint.position.y+.03*.288)<1e-9,
     'authored head-Y nudge from character rig defaults matches the live newborn');
   assert.equal(first.options.npcRecord.childBodyScale,.32,'newborn body uses shared family phase scale');

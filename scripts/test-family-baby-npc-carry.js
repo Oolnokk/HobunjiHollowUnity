@@ -2,7 +2,7 @@
 'use strict';
 // NPC carriers (a spouse) use the PLAYER's baby carry: one shared Shattercasks mount solve on the
 // carrier's own posterior, the same authored grips/elbows through proceduralHeldItemTarget, the
-// back stow re-parented onto the carrier's portrait, and grips released on every hand-off.
+// back stow kept on the carrier's body instead of the rotating portrait, and grips released on hand-off.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
@@ -40,15 +40,88 @@ if (THREE) {
     assert(Math.abs(g.quaternion.angleTo(q)) < 1e-9, (back ? 'back' : 'held') + ': baby turns by the inverse anchor rotation');
     assert(Math.abs(g.scale.x - 1 / cfg.size) < 1e-12, (back ? 'back' : 'held') + ': baby scales by 1/size');
   }
+  // Use real Three.js transformations, including tilt and nonuniform rig scale:
+  // the baby is physically behind its parent's torso and never follows head yaw.
+  const torso=new THREE.Group(),head=new THREE.Group(),rearBaby=new THREE.Group(); // Real actor hierarchy checks the body-vs-portrait parent contract.
+  const front=new THREE.Group(); // The independently turned portrait plane is not the baby's transform parent.
+  torso.scale.set(.78,1.13,.88);torso.add(head);head.add(front);torso.add(rearBaby);
+  head.position.set(.02,.15,.03);front.position.z=.02;
+  solve(rearBaby,carryable,true,posterior);
+  const back=carryable.backCarry;
+  const contactLocal=new THREE.Vector3(back.position.x,back.position.y,back.position.z);
+  const targetLocal=posterior.clone().add(new THREE.Vector3(back.posteriorOffset.x,back.posteriorOffset.y,back.posteriorOffset.z));
+  const expectedWorld=torso.localToWorld(targetLocal.clone());
+  assert(rearBaby.localToWorld(contactLocal.clone()).distanceTo(expectedWorld)<1e-9,
+    'real Three.js: rotated/scaled baby anchor lands on the authored carrier posterior');
+  assert(rearBaby.position.z<front.position.z-.03,
+    'real Three.js: newborn center is physically behind the front portrait, not merely drawn there');
+  assert(new THREE.Vector3(0,0,1).applyQuaternion(rearBaby.quaternion).z<-.95,
+    'real Three.js: default back pose faces rearward, rather than toward the carrier chest');
+  const initial=rearBaby.getWorldPosition(new THREE.Vector3());
+  head.rotation.set(.29,.89,-.15);front.rotation.set(.31,-.64,.08);head.position.x+=.15;
+  assert(rearBaby.getWorldPosition(new THREE.Vector3()).distanceTo(initial)<1e-9,
+    'real Three.js: independent portrait turning cannot orbit the body-mounted infant');
+  torso.position.set(.27,.19,-.13);torso.rotation.set(.11,Math.PI*.72,-.08);
+  assert(rearBaby.localToWorld(contactLocal.clone()).distanceTo(torso.localToWorld(targetLocal.clone()))<1e-9,
+    'real Three.js: full body turning, tilt and nonuniform scale keep the newborn anchor stable');
 }
 
 // NPC carry uses that solve on the carrier's own facing frame and live posterior.
 assert.match(burdens, /const body = spouse\._npcCharacterRigRoot \|\| spouse\.root;/, 'NPC body frame = rig root (the playerMesh equivalent)');
-assert.match(burdens, /liveY: Number\(spouse\.legs\?\.standingPosteriorY\)/, 'NPC posterior comes from its live leg rig');
+assert.match(burdens, /const rawY = Number\(spouse\.legs\?\.standingPosteriorY\)/, 'NPC posterior comes from its live leg rig');
 assert.match(burdens, /api\.solveCarryMount\(group, entry\.burden\.data\?\.carryable \|\| \{\}, back, npcScratch\.posterior\);/, 'NPC uses the shared solve with no unit conversion');
 assert.doesNotMatch(burdens, /divideScalar\(s\)/, 'no rig-scale division: authored offsets are body-local like the player');
-assert.match(burdens, /if \(back && portrait\) api\.mountCarryOnPortrait\(group, body, portrait\);/, 'NPC back stow mounts on its portrait plane');
-assert.match(burdens, /group\.parent === portrait && entry\.npcCarryPose === 'back'\) return true;/, 'NPC back stow keeps its portrait yaw between ticks (player rule)');
+assert.match(burdens, /if \(back && group\.parent === body && entry\.npcCarryPose === 'back'/,
+  'NPC back-stowed infant stays in the torso frame during repeated family updates');
+assert.match(burdens, /mounted\.revision === revision/,
+  'a changed baby back pose invalidates the cached spouse carry transform');
+assert.match(burdens, /mounted\.liveY === liveY/,
+  'a changed posterior height invalidates the cached spouse carry transform');
+assert.doesNotMatch(burdens, /api\.mountCarryOnPortrait\(group, body, portrait\)/,
+  'NPC newborn cannot be reparented into the independently rotating head/portrait');
+assert.match(burdens, /const body = spouse\._npcCharacterRigRoot \|\| spouse\.root; \/\/ Fallback also follows the carrier/,
+  'legacy fallback is mounted to the same body frame, not the head');
+
+// Execute the actual NPC carry solver, rather than checking only its source text.
+{
+  const begin=burdens.indexOf('  function solveNpcCarry(entry, spouse, back) {');
+  const end=burdens.indexOf('  function spouseCarry(',begin);
+  assert(begin>=0 && end>begin,'NPC carry solver remains a small extractable function');
+  class V { constructor(x=0,y=0,z=0){this.set(x,y,z);}
+    set(x,y,z){this.x=x;this.y=y;this.z=z;return this;} copy(p){return this.set(p.x,p.y,p.z);} }
+  class Body {constructor(){this.parent=null;this.children=[];}
+    add(child){this.children.push(child);child.parent=this;}}
+  let solves=0; // Counts actual newborn pose solves, excluding redundant family updates.
+  const body=new Body(),portrait=new Body(),group={parent:null,position:new V(),quaternion:{},scale:{}};
+  body.add(portrait); // The portrait is a separate rotating child in the real NPC rig.
+  const mock={THREE:{Vector3:V},Shattercasks:{
+    carrierPosteriorLocal(out){return out.set(.08,.33,-.05);},
+    solveCarryMount(child,_pose,back,posterior){
+      solves++; child.position.copy(posterior);child.position.z+=back?-.06:.12;
+    },
+  }};
+  const solve=new Function('window','npcScratch',burdens.slice(begin,end)+'\nreturn solveNpcCarry;')(mock,{posterior:null});
+  const spouse={_npcCharacterRigRoot:body,root:body,avatarGroup:{userData:{neckRig:{skinnedPlane:portrait}}},
+    legs:{standingPosteriorY:.33}};
+  const entry={burden:{group,data:{carryable:{backCarry:{posteriorOffset:{z:-.06}}}}},npcCarryPose:null};
+  assert.equal(solve(entry,spouse,true),true);
+  assert.equal(group.parent,body,'spouse newborn back-stow inherits the torso, not the portrait');
+  assert(group.position.z<0,'spouse newborn starts behind its torso');
+  assert.equal(solve(entry,spouse,true),true);
+  assert.equal(solves,1,'portrait/head updates do not re-solve or move an already attached baby');
+  entry.burden.data.carryable._backCarryRevision=1; // Profile editor changed the neck anchor while baby remained stowed.
+  assert.equal(solve(entry,spouse,true),true);
+  assert.equal(solves,2,'edited back-stow pose triggers exactly one new NPC solve');
+  assert.equal(solve(entry,spouse,true),true);
+  assert.equal(solves,2,'unchanged pose revision does not waste a subsequent solve');
+  spouse.legs.standingPosteriorY=.42; // A shift of NPC height/stance must follow the actual posterior.
+  assert.equal(solve(entry,spouse,true),true);
+  assert.equal(solves,3,'NPC standing posterior change recomputes the baby mount');
+  assert.equal(solve(entry,spouse,false),true);
+  assert.equal(solves,4,'switching to arms recomputes the existing authored hand pose');
+  assert.equal(solve(entry,spouse,true),true);
+  assert.equal(solves,5,'restowing recomputes the authored back pose');
+}
 
 // Same grips + elbows through the hand driver hook; back stow frees the hands.
 assert.match(driver, /record\?\.avatarRoot\?\.userData\?\.proceduralHeldItemTarget/, 'hand driver honours the NPC held-item target');

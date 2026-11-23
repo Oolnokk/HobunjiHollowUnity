@@ -473,6 +473,7 @@
       return;
     }
     walker._childPhase = phase;
+    if (phase === 'basket') window.FamilyBabyLimbs?.balanceWalker?.(walker, cfg().phaseScales?.basket); // Resize newborn-only visuals before the carried proxy copies their GLBs.
     window.FamilyBabyBurdens?.sync?.(child,walker,phase,()=>H.persist()); // One real infant burden proxies the hidden walker; no alternate movement/throw system.
     if (phase === 'toddler') {
       const footing = toddlingFooting(child) / 99;
