@@ -421,9 +421,10 @@
   // Built-in scopes (same order and arguments game.js used to hard-code).
   // The farm's ~1,000 per-tile ground meshes draw as merged 8x8-tile batches
   // (js/farm-tile-render-batches.js); the tiles stay the authority for edits
-  // and raycasts.
+  // and raycasts. Outside zones the same scope merges tagged static groups
+  // (town NPC farm plots, authored house faces).
   registerRenderScope({ id: 'farm-tile-batches', owner: 'farm-tile-render-batches.js', order: 100,
-    suspend: ctx => window.FarmTileRenderBatches?.suspendForRender?.(ctx.scene) });
+    suspend: ctx => window.FarmTileRenderBatches?.suspendForRender?.(ctx.scene, { isZone: ctx.isZone }) });
   // Still wilderness props (tents, totems, herbs, berry bushes, camp
   // furniture, cliff-door caves) draw as merged 8x8-tile batches.
   registerRenderScope({ id: 'zone-prop-batches', owner: 'zone-prop-render-batches.js', order: 200,

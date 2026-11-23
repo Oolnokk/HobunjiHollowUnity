@@ -10,10 +10,10 @@
     "js/outline-composite-material.js?v=20261114composite1",
     "js/character-visuals.js?v=20261123babyKick1", // Character enumeration + visual capability table; game.js registers the provider.
     "js/character-held-tools.js?v=20261119charVisuals1", // Held tool/weapon planes for any character; game.js calls init() in its tool section.
-    "js/world-render-pipeline.js?v=20261123h91dd546", // Pass order, outline materials/targets and render scopes; game.js calls init() after its camera exists.
+    "js/world-render-pipeline.js?v=20261123pr2110rebase1", // Pass order, outline materials/targets and render scopes; game.js calls init() after its camera exists.
     "js/render-ab-benchmark.js?v=20261123h0866071", // On-device A/B: frame-scoped render hooks on vs off (Settings → Dev Tools).
     "js/shadow-map-refresh-throttle.js?v=20261114shadowThrottle1",
-    "js/farm-tile-render-batches.js?v=20261119h71de730",
+    "js/farm-tile-render-batches.js?v=20261123pr2110rebase1",
     "js/zone-prop-render-batches.js?v=20261120ha35bf3b",
     "js/wilderness-distance-cull.js?v=20261119h89ca824", // Loaded before game.js; scope begins after static prop batching.
     "js/zone-tree-fade.js?v=20261120h87c4a16",
@@ -23,7 +23,7 @@
     "js/shoulder-pet-attachment-runtime.js?v=20261122shoulderHeadOnly1", // Shared pin solver, before game.js starts.
     "js/stowed-torch-fire.js?v=20261122stowSplit1", // Shared layer-effects adapter owns stowed PNG, tint, wick and particles.
     "js/adventuring-torch-belt.js?v=20261122stowSplit1", // Stowed belt sprite and 30-second live torch timeout before game.js starts.
-    "js/render-optimization-settings.js?v=20261123h177f73b" // Settings → Render optimizations: a persisted toggle per render switch; last, after every owner.
+    "js/render-optimization-settings.js?v=20261123pr2110rebase1" // Settings → Render optimizations: a persisted toggle per render switch; last, after every owner.
 ]; // Versioned game modules owned by this group.
   if (document.readyState !== 'loading') throw new Error('Classic script group must run during parsing');
   // A single write guarantees blocking, ordered execution before the next source index.html tag.

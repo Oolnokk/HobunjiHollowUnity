@@ -185,7 +185,7 @@ pass and returns a restore function; restores run in reverse order in `finally`.
 
 | Order | id | Owner | Effect |
 |---|---|---|---|
-| 100 | `farm-tile-batches` | farm-tile-render-batches.js | farm ground tiles → 8×8 merged batches |
+| 100 | `farm-tile-batches` | farm-tile-render-batches.js | farm ground tiles → 8×8 merged batches; outside wilderness zones also children tagged `hobunjiStaticBatchable` of scene-level groups tagged `hobunjiStaticBatchGroup` (town NPC farm plots, authored house faces) → merged per 8×8 cell + render state, as render proxies with no terrain tags |
 | 200 | `zone-prop-batches` | zone-prop-render-batches.js | still wilderness props (tents, camp furniture, berries, herbs, totems, nests, ore-rock stones) → merged per 8×8 cell + material |
 | 250 | `wilderness-tree-instancing` | wilderness-tree-instancer.js | **off by default** (a net loss on a GTX 1060: corridor-wide batches defeat frustum/replay culling). Opted in: drawn, non-fading procedural trees/bushes → one InstancedMesh per shared variant part |
 | 270 | `dense-forest-wall-batches` | dense-forest-wall-batches.js | Cloud Forest dense wall: opaque, on-camera chunk parts → one InstancedMesh per part across chunks (background scenery, never in a replay) |

@@ -79,7 +79,7 @@
       available: () => typeof window.DenseForestWallBatches?.setEnabled === 'function',
       read: () => window.DenseForestWallBatches.snapshot?.().enabled, write: on => window.DenseForestWallBatches.setEnabled(on) },
     { group: 'Batching (fewer draw calls)', id: 'farmTileBatches', name: 'Merge farm ground tiles', on: true,
-      desc: 'Farm ground tiles are drawn as merged 8×8 batches.',
+      desc: 'Farm ground tiles, town NPC farm plots and the wall/roof/porch faces of authored houses are drawn as merged 8×8 batches.',
       available: () => typeof window.FarmTileRenderBatches?.setEnabled === 'function',
       read: () => window.FarmTileRenderBatches.snapshot?.().enabled, write: on => window.FarmTileRenderBatches.setEnabled(on) },
     { group: 'Batching (fewer draw calls)', id: 'grassChunks', name: 'Chunk farm and town grass', on: true,
