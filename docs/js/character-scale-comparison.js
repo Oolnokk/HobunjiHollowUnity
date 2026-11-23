@@ -42,6 +42,10 @@
   let ageModifiers = {}; // Editable age-wide values, initialized from gameplay configuration and then local editor overrides.
   let ageLimbTimer = 0; // Bounded retry window for hands/feet whose GLB visuals arrive after the portrait.
   const ageLimbBases = new WeakMap(); // Original per-visual limb scales, so switching modes never compounds multipliers.
+  let ageRenderFrame = 0; // Coalesces rapid touch slider updates into one lineup/layout pass per display frame.
+  let ageDirtyBody = false; // Set when body/head changes require whole-rig transforms and bounding-box layout.
+  let ageDirtyLimb = null; // 'hand' or 'foot' limits visual-only updates to the changed GLB type.
+  const agePerf = { rigPasses: 0, layoutPasses: 0, limbLookups: 0, lateRetries: 0, handSyncs: 0 }; // Mobile-accessible counters for debugging slider performance.
 
   const clone = value => value == null ? value : JSON.parse(JSON.stringify(value));
   const normalizeSpecies = value => String(value || '').trim().toLowerCase().replace(/[’']/g, '').replace(/_/g, '-').replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '');
@@ -64,6 +68,8 @@
   }); // Match Enemy Loadout Editor: only the static spine shape is authored here, in percent. Gait keeps its shared Maskbound defaults.
 
   function repositoryAgeModifiers() {
+    const shared = window.HobunjiCharacterAgeRigConfig?.repositoryDefaults?.(); // Exact checked-in defaults, even if a separate explicit override is active in gameplay.
+    if (shared) return shared;
     const phases = window.HobunjiRomanceConfig?.family?.phaseScales || {}; // Same family phase source as romance-family.js.
     const png = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar || {}; // Shared child defaults also used by non-family children.
     const positive = (value, fallback) => Number.isFinite(Number(value)) && Number(value) > 0 ? Number(value) : fallback;
@@ -80,7 +86,8 @@
       child: mode(phases.child, {
         body: positive(png.childScaleMultiplier, .5),
         head: positive(png.childHeadScaleMultiplier, .72),
-        hand: 1, foot: 1,
+        hand: positive(window.HobunjiRomanceConfig?.family?.childLimbModifiers?.hand, 1),
+        foot: positive(window.HobunjiRomanceConfig?.family?.childLimbModifiers?.foot, 1),
       }),
     };
   }
@@ -487,6 +494,11 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid!important;v
     if (modeSelect) modeSelect.value = ageMode;
     const stage = document.getElementById('maaFullScaleAgeControls');
     if (stage) stage.hidden = ageMode === 'adult';
+    const runtimeStatus = document.getElementById('maaFullScaleRuntimeStatus'); // Remains visible while a user is tuning a growth stage.
+    const applied = window.HobunjiCharacterAgeRigConfig?.snapshot?.()?.applied || false;
+    if (runtimeStatus) runtimeStatus.textContent = applied
+      ? 'This device uses an applied age configuration. Existing game avatars refresh when rebuilt or after reloading the game.'
+      : 'Draft only: game still uses its checked-in age proportions. Apply to this device to test gameplay.';
     const title = document.getElementById('maaFullScaleAgeTitle');
     if (title) title.textContent = ageMode;
     const values = ageValues();
@@ -495,74 +507,146 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid!important;v
       const range = document.getElementById(`maaFullScaleAgeRange${name}`);
       const number = document.getElementById(`maaFullScaleAgeNum${name}`);
       if (range) range.value = percent;
-      if (number) number.value = percent;
+      if (number && document.activeElement !== number) number.value = percent; // Do not overwrite partially entered percentages on mobile keyboards.
     }
   }
 
-  function syncAgeLimbs(entry) {
-    if (!entry?.group?.getObjectByName) return;
+  function syncAgeLimbs(entry, onlyKind = null) {
+    if (!entry?.group?.getObjectByName) return 0;
     const values = ageValues();
-    for (const [kind, factor] of [['hand',values.hand],['foot',values.foot]]) {
-      for (const side of ['left','right']) {
+    const visuals = entry.ageVisuals ||= {}; // Reuse discovered GLB nodes until an actual rig rebuild invalidates them.
+    let missing = 0; // Retry only genuine late GLB arrivals, not every character every frame.
+    for (const kind of (onlyKind ? [onlyKind] : ['hand', 'foot'])) {
+      for (const side of ['left', 'right']) {
         const name = `${side}_${kind === 'hand' ? 'hand_visual' : 'foot'}`;
-        const visual = entry.group.getObjectByName(name); // Shared procedural hand/foot GLB visual roots, not limb pivots or sockets.
-        if (!visual?.scale?.set) continue;
-        const previous = ageLimbBases.get(visual) || { x: visual.scale.x, y: visual.scale.y, z: visual.scale.z };
-        if (!ageLimbBases.has(visual)) ageLimbBases.set(visual, previous);
-        visual.scale.set(previous.x * factor, previous.y * factor, previous.z * factor);
+        let visual = visuals[name];
+        if (!visual?.scale) {
+          agePerf.limbLookups++;
+          visual = entry.group.getObjectByName(name); // One lookup per missing limb; stable loaded limbs use their cached node.
+          if (!visual?.scale) { missing++; continue; }
+          visuals[name] = visual;
+        }
+        const base = ageLimbBases.get(visual) || { x: visual.scale.x, y: visual.scale.y, z: visual.scale.z };
+        if (!ageLimbBases.has(visual)) ageLimbBases.set(visual, base);
+        const factor = values[kind];
+        const x = base.x * factor, y = base.y * factor, z = base.z * factor;
+        if (Math.abs(visual.scale.x - x) < 1e-7 && Math.abs(visual.scale.y - y) < 1e-7 && Math.abs(visual.scale.z - z) < 1e-7) continue;
+        visual.scale.set(x, y, z);
         visual.updateMatrix?.();
       }
     }
+    return missing;
   }
 
   function applyPreviewProportions(entry) {
     if (!entry?.group?.isObject3D) return;
     const authored = window.HobunjiCharacterRigScale?.scaleFor?.(entry.species, entry.gender, entry.profile) || { x: 1, y: 1, head: 1, offsetY: 0 };
     const stage = ageValues();
-    // Combined preview transforms match PNGPlaneAvatar childBodyScale/childHeadScale without mutating the shared species/gender authoring profile.
-    const combined = { x: authored.x * stage.body, y: authored.y * stage.body, head: authored.head * stage.head, offsetY: authored.offsetY };
-    window.HobunjiCharacterRigScale?.applyToParent?.(entry.group, entry.species, entry.gender, combined,
+    const composed = window.HobunjiCharacterAgeRigConfig?.composePreviewScale?.(authored, stage)
+      || { x: authored.x * stage.body, y: authored.y * stage.body, head: authored.head * stage.head, offsetY: authored.offsetY };
+    // Gameplay builds the child body scale into modelWidth/modelHeight and uses childHeadFactor=head/body at the neck.
+    // This editor starts with a neutral adult portrait and applies the mathematically equivalent floor-parent transform.
+    window.HobunjiCharacterRigScale?.applyToParent?.(entry.group, entry.species, entry.gender, composed,
       entry.npc?.id ? (host()?.npcAgeFor?.(entry.npc.id) || 0) : 0);
+    agePerf.rigPasses++;
     syncAgeLimbs(entry);
+  }
+
+  function syncHandsOnce() {
+    window.ProceduralHandFrameDriver?.syncNow?.(); // Only once after a body/head batch, never per-hand slider tick/entry.
+    agePerf.handSyncs++;
+  }
+
+  function relayoutForAge() {
+    layout(); // Box3 traversal is proportional to every rig's mesh count; only call after body/head changes.
+    agePerf.layoutPasses++;
+  }
+
+  function flushAgeRender() {
+    ageRenderFrame = 0;
+    if (!active && !building) { ageDirtyBody = false; ageDirtyLimb = null; return; }
+    if (ageDirtyBody) {
+      for (const entry of entries) applyPreviewProportions(entry);
+      syncHandsOnce();
+      for (const entry of entries) syncAgeLimbs(entry, 'hand'); // Reassert only hands after pose ownership settles.
+      relayoutForAge();
+    } else if (ageDirtyLimb) {
+      for (const entry of entries) syncAgeLimbs(entry, ageDirtyLimb); // Hands/feet only: no full rig traversal, leg solver, or layout.
+    }
+    ageDirtyBody = false;
+    ageDirtyLimb = null;
+  }
+
+  function queueAgeRender(axis) {
+    ageDirtyBody ||= axis === 'body' || axis === 'head';
+    if (!ageDirtyBody && (axis === 'hand' || axis === 'foot')) ageDirtyLimb = ageDirtyLimb && ageDirtyLimb !== axis ? 'both' : axis;
+    if (ageRenderFrame) return;
+    if (typeof requestAnimationFrame !== 'function') { flushAgeRender(); return; } // Node/mobile diagnostics use the same path without a render loop.
+    ageRenderFrame = requestAnimationFrame(flushAgeRender); // Coalesces multiple pointer-input events to one frame.
   }
 
   function retryLateAgeLimbs() {
     if (ageLimbTimer) clearInterval(ageLimbTimer);
-    let passes = 0; // At most three seconds of low-frequency retries; no permanent per-frame GLB traversal.
+    ageLimbTimer = 0;
+    const unresolved = () => entries.reduce((count, entry) => count + syncAgeLimbs(entry), 0); // Discovered visual refs are cached between retries.
+    if (!unresolved()) return; // Loaded GLBs do not need a 3-second timer at all.
+    let passes = 0;
     ageLimbTimer = setInterval(() => {
-      if ((!active && !building) || ++passes >= 12) { clearInterval(ageLimbTimer); ageLimbTimer = 0; return; }
-      for (const entry of entries) syncAgeLimbs(entry);
-    }, 250);
+      agePerf.lateRetries++;
+      if ((!active && !building) || ++passes >= 16 || !unresolved()) {
+        clearInterval(ageLimbTimer);
+        ageLimbTimer = 0;
+      }
+    }, 250); // Bounded four-second fallback for slow mobile GLB/hand arrivals; not a permanent gameplay frame hook.
   }
 
   function setAgeMode(nextMode) {
     if (!AGE_MODES.includes(nextMode) || (!active && !building)) return;
-    stopLongoranWalk(); // Age-stage switches should not inherit the selected adult Longoran's opted-in walk animation.
+    stopLongoranWalk();
+    if (ageRenderFrame && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(ageRenderFrame);
+    ageRenderFrame = 0;
+    ageDirtyBody = false;
+    ageDirtyLimb = null;
     ageMode = nextMode;
     manualViewInteraction = true;
     focusedEntryKey = null;
     syncAgeControls();
     for (const entry of entries) applyPreviewProportions(entry);
-    window.ProceduralHandFrameDriver?.syncNow?.();
-    for (const entry of entries) syncAgeLimbs(entry); // Reassert modifiers after the hand driver updates its GLB parents.
+    syncHandsOnce();
+    for (const entry of entries) syncAgeLimbs(entry, 'hand');
     retryLateAgeLimbs();
-    layout();
-    frame(); // Switching mode explicitly asks to see the *whole* age-specific lineup, including the chair reference.
-    status(`Showing ${ageMode} proportions on all ${entries.length} previews. Select an individual species/gender via the dropdown; age modifiers change every preview together.`);
+    relayoutForAge();
+    frame(); // Explicit stage switch reframes the new whole lineup; slider movements never move the camera.
+    status(`Showing ${ageMode} proportions on ${entries.length} previews. Choose a species/gender from the dropdown; global modifiers update everyone.`);
   }
 
   function applyAgeModifiers(axis, rawPercent) {
     if (!active || ageMode === 'adult' || !AGE_AXES.includes(axis)) return;
     const values = ageValues();
-    values[axis] = clampAgeModifier(Number(rawPercent) / 100, axis, values[axis]);
+    const parsed = Number(rawPercent) / 100; // Incomplete numeric edits must not force the slider to an unrelated valid value.
+    if (!Number.isFinite(parsed) || parsed <= 0) return;
+    values[axis] = clampAgeModifier(parsed, axis, values[axis]);
     syncAgeControls();
-    for (const entry of entries) applyPreviewProportions(entry);
-    window.ProceduralHandFrameDriver?.syncNow?.();
-    for (const entry of entries) syncAgeLimbs(entry); // Immediate feedback after any hand-parent recalculation.
-    retryLateAgeLimbs();
-    layout(); // Keep every scaled preview in its own slot; never reset camera zoom on a slider movement.
+    queueAgeRender(axis);
     persistAgeModifiers();
-    status(`${ageMode} ${axis} ${Math.round(values[axis] * 100)}% applied globally to ${entries.length} species/gender previews. Export age defaults JSON to review permanent game configuration changes.`);
+    status(`${ageMode} ${axis} ${Math.round(values[axis] * 100)}% applies across ${entries.length} previews. Draft is separate from gameplay until explicitly applied.`);
+  }
+
+  function applyAgeToGame() {
+    try {
+      const saved = window.HobunjiCharacterAgeRigConfig?.applyOnThisDevice?.(ageModifiers);
+      if (!saved) throw new Error('Shared game age configuration is unavailable');
+      syncAgeControls();
+      status('Applied all three growth stages to this device’s game configuration. Reload gameplay to rebuild existing NPC portraits; no saved world data was changed.');
+    } catch (error) { status(`Could not apply age configuration: ${error.message}`); }
+  }
+
+  function restoreGameAges() {
+    try {
+      window.HobunjiCharacterAgeRigConfig?.restoreRepositoryOnThisDevice?.();
+      syncAgeControls();
+      status('Restored game age defaults on this device. Your draft remains editable; reload gameplay to rebuild existing NPC portraits.');
+    } catch (error) { status(`Could not restore game defaults: ${error.message}`); }
   }
 
   function exportAgeModifiers() {
@@ -594,6 +678,7 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid!important;v
   function rebuildLongoranFeet(entry) {
     if (entry?.species !== 'longoran' || !THREE || !entry?.group || !entry.model) return;
     entry.feet?.dispose?.();
+    if (entry.ageVisuals) { delete entry.ageVisuals.left_foot; delete entry.ageVisuals.right_foot; } // Rebuilt GLBs invalidate cached limb nodes.
     const modelWidth = Number(entry.model.userData?.portraitModelWidth) || avatarBaseWidth();
     const modelHeight = Number(entry.model.userData?.portraitModelHeight) || modelWidth;
     entry.feet = window.ProceduralLegAnimation?.attach?.(THREE, entry.group, {
@@ -604,6 +689,7 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid!important;v
       name: `${entry.group.name}_feet`, portraitSize: 200,
     }) || null; // Recreates just the comparison feet, never gameplay actors or other species.
     entry.feet?.update?.(0, 0, false, null);
+    syncAgeLimbs(entry, 'foot'); // The replacement GLB inherits the active age-wide size.
   }
 
   function applyLongoranSliders(rebuildNow = false) {
@@ -1102,6 +1188,10 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid!important;v
     longoranFeetTimer = 0;
     if (ageLimbTimer) clearInterval(ageLimbTimer);
     ageLimbTimer = 0;
+    if (ageRenderFrame && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(ageRenderFrame);
+    ageRenderFrame = 0;
+    ageDirtyBody = false;
+    ageDirtyLimb = null;
     focusedEntryKey = null;
     manualViewInteraction = false; // A new editor session starts with a fresh no-interaction initial camera fit.
     selected = null;
@@ -1204,6 +1294,8 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid!important;v
         panelVisible: !!document.getElementById(PANEL_ID)?.offsetParent, // Detects a hidden selector on mobile.
         ageMode,
         globalAgeModifiers: clone(ageValues()), // Confirms the active phase is shared by every lineup avatar.
+        runtimeAgeConfig: window.HobunjiCharacterAgeRigConfig?.snapshot?.() || null, // Distinguishes local drafts from the explicit game override.
+        agePerf: { ...agePerf }, // Counts rig/body recalculations and late GLB probes for phone performance checks.
         view: focusedEntryKey ? 'focused-character' : 'lineup', // Mobile diagnostics report the explicitly chosen camera mode.
         focused: focusedEntryKey, // Identifies the focused portrait even when a different character is selected.
         spinePreviewApplied: selected?.species === 'longoran' ? !!selected.spinePreviewApplied : null, // Detects missing skinned rigs without devtools.
