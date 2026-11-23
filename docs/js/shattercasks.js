@@ -335,6 +335,7 @@
     vase.emitters=null;
   }
   const backXray=new Map(),heldRenderOrders=new Map();
+  const stowedDepthMeshes=new Set(); // Modeled parts that keep depth even when sorted with the shoulder pet.
   const frontXray=new Map(); // Restores the rigid front PNG draw order when the back slot is emptied.
   const skinnedRearOverlays=new Map(); // One back-only skinned draw per currently held player's neck-rigged portrait.
   const rearHeadwearXray=new Map(); // Separate skinned rear HEAD and its headwear pass were missing from the vessel x-ray.
@@ -504,9 +505,12 @@
     // Points/Sprites/particle effects aren't part of the solid furniture pass.
     burden?.group?.traverse?.(node=>{
       if(!node?.isMesh||node.visible===false)return;
-      if(node.userData?.shattercaskKeepsOwnDepth)return; // Opaque 3D parts (a carried baby's kicking hands/feet) occlude correctly with real depth; no PNG sandwich.
       const materials=Array.isArray(node.material)?node.material:[node.material];
-      if(materials.some(material=>material&&material.visible!==false))meshes.add(node);
+      if(!materials.some(material=>material&&material.visible!==false))return;
+      if(node.userData?.shattercaskKeepsOwnDepth){
+        stowedDepthMeshes.add(node); // The compositor can order these parts without taking over their materials.
+        meshes.delete(node);
+      }else meshes.add(node);
     });
     return meshes;
   }
@@ -522,6 +526,7 @@
         }]);
   }
   function setHeldRearXray(cask) {
+    stowedDepthMeshes.clear();
     if(!cask) {
       for(const [mesh,v] of backXray) {
         mesh.renderOrder=v.order;
@@ -2802,7 +2807,8 @@
     // (otherwise every portrait sorts at order 2 and a stowed Burden at 2.15 paints over the front face).
     // Shared carry pose for non-player carriers (FamilyBabyBurdens.spouseCarry): same math as the player.
     solveCarryMount,carrierPosteriorLocal,mountCarryOnPortrait,
-    isStowedSortMesh:mesh=>heldRenderOrders.get(mesh)?.mode==='stowed',
+    isStowedSortMesh:mesh=>stowedDepthMeshes.has(mesh)||heldRenderOrders.get(mesh)?.mode==='stowed',
+    stowedDepthParts:()=>stowedDepthMeshes.values(),
     carrierSortMeshes:()=>[...heldRenderOrders.keys(),...[...skinnedRearOverlays.values()].map(record=>record.overlay),...rearHeadwearXray.keys()],
     registerHangingBurden,registerBurden:registerHangingBurden,createHangingBurden,createHangingShattercask,releaseBurdenDownward,releaseBurdenWithVelocity,detachHeldBurden,refreshBurdenBounds,discardBurden,registerBurdenFactory,registerBurdenImpactHandler,
     getBurden:(id,mapId=area())=>records.get(String(mapId))?.vases.get(String(id))||null,

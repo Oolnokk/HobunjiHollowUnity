@@ -437,6 +437,7 @@
   const SHOULDER_PET_RENDER_ORDERS = Object.freeze({
     front: 2, back: 4, // Ordinary owner priorities, also the low and high ends of the attached stack.
     pet: 3, // Both sides of the animal sit between the owner sides. A turn can expose either animal card.
+    stowedDepthPart: 3.25, // Draw depth-writing hands and feet before the baby portrait.
     stowedBurden: 3.5, // After both pet cards and their split overlays, before the carrier front.
   });
   const shoulderViewLocal = new THREE.Vector3(); // Tests the camera against the owner's front plane for the optional gear mask.
@@ -881,8 +882,11 @@
       if (!orderCache.has(item)) {
         const face = pairFace(item);
         // A stowed load uses the carrier's rear/burden/front sandwich even when the pet turns inward.
-        const stage = face === 'stowed-burden' ? SHOULDER_PET_RENDER_ORDERS.stowedBurden
-          : face ? shoulderPetFaceSortRank(face, !stowedCarry && inward) : null;
+        let stage = null; // Local order of the carry, pet, or owner face inside the carrier's actor slot.
+        if (face === 'stowed-burden') {
+          stage = item.object.userData?.shattercaskKeepsOwnDepth
+            ? SHOULDER_PET_RENDER_ORDERS.stowedDepthPart : SHOULDER_PET_RENDER_ORDERS.stowedBurden;
+        } else if (face) stage = shoulderPetFaceSortRank(face, !stowedCarry && inward);
         let value = Number(item.renderOrder) || 0; // All unrelated transparent objects keep their ordinary order.
         if (stage !== null) {
           const mesh = item.object;
@@ -1074,8 +1078,22 @@
         });
       }
     }
-    try { return withVisualSort(renderer, order, draw); }
-    finally { for (const material of changed) material.depthWrite = true; }
+    let stowedDepthMaterials; // Restore limb materials before any subsequent depth or shell pass.
+    try {
+      if (protectNearPortrait && previouslyPresentedPet?.avatarRef) {
+        for (const mesh of window.Shattercasks?.stowedDepthParts?.() || []) {
+          forEachMaterial(mesh.material, material => {
+            if (material.transparent) return;
+            (stowedDepthMaterials ||= []).push(material);
+            material.transparent = true; // Use the pet's color sort queue, retaining real depth tests and writes.
+          });
+        }
+      }
+      return withVisualSort(renderer, order, draw);
+    } finally {
+      for (const material of changed) material.depthWrite = true;
+      if (stowedDepthMaterials) for (const material of stowedDepthMaterials) material.transparent = false;
+    }
   }
 
   function rankedHeldOverlayOrder(portraitOrder, meshes, scene) {

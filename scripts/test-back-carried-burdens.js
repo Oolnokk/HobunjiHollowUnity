@@ -216,12 +216,20 @@ function testRuntime() {
   const lateDetail=new Group();lateDetail.isMesh=true;lateDetail.visible=true;lateDetail.renderOrder=0; // Simulates an asynchronous authored GLB child after pickup.
   lateDetail.material=new MeshBasicMaterial({transparent:false,depthWrite:true,depthTest:true});
   charge.group.add(lateDetail);
+  const modeledPart=new Group(); // Simulates the separately attached hands/feet of a baby.
+  modeledPart.isMesh=true;modeledPart.userData.shattercaskKeepsOwnDepth=true;
+  modeledPart.material=new MeshBasicMaterial({transparent:false,depthWrite:true,depthTest:true});
+  charge.group.add(modeledPart);
   const priorMaterial=chargePart.material;
   chargePart.material=new MeshBasicMaterial({transparent:false,depthWrite:true,depthTest:true}); // Recolored furniture can replace its original material while carried.
   window.Shattercasks.tick(.2); // Force the normal 7 Hz render-state reconciliation.
   assert.equal(lateDetail.renderOrder,2.15,'late-loaded furniture detail enters the correct stowed layer');
   assert.equal(lateDetail.material.transparent,true,'late-loaded opaque detail enters the PNG sorting queue');
   assert.equal(lateDetail.material.depthWrite,false,'late-loaded furniture cannot cover the front PNG');
+  assert.equal(window.Shattercasks.isStowedSortMesh(modeledPart),true,'late modeled parts participate in stowed sort');
+  assert.deepEqual(Array.from(window.Shattercasks.stowedDepthParts()),[modeledPart],'only modeled parts need the temporary color sort');
+  assert.equal(modeledPart.material.transparent,false,'the carrier runtime preserves the original limb material');
+  assert.equal(modeledPart.material.depthWrite,true,'modeled parts retain physical depth');
   assert.equal(chargePart.material.transparent,true,'replacement material inherits the stowed render flags');
   assert.equal(chargePart.material.depthWrite,false,'replacement material cannot mask the front PNG');
   assert.equal(priorMaterial.depthWrite,true,'detached original material is restored on replacement');
@@ -342,6 +350,8 @@ function testRuntime() {
   assert.equal(charge.group.parent,headJoint,'retrieval restores the ORIGINAL held-object mount');
   assert.equal(chargePart.renderOrder,1.4,'retrieved furniture returns to the existing held-order layer');
   assert.equal(window.Shattercasks.isStowedSortMesh(chargePart),false,'retrieval immediately clears the stowed sort role');
+  assert.equal(window.Shattercasks.isStowedSortMesh(modeledPart),false,'retrieving also clears the modeled parts from the stow layer');
+  assert.deepEqual(Array.from(window.Shattercasks.stowedDepthParts()),[]);
   assert.equal(chargePart.material.transparent,false,'retrieval restores the authored opaque material');
   assert.equal(chargePart.material.depthWrite,false,'hand-held furniture retains the established rear-PNG behavior');
   assert.equal(decal.renderOrder,0,'the authored decal regains its native drawing order when retrieved into the hands');
