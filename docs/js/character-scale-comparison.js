@@ -703,6 +703,13 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid!important;v
       profile: entry.avatarProfile, spine: window.HobunjiLongoranSpecies?.spineFor?.(entry.gender),
       gaitProfile: window.HobunjiLongoranSpecies?.gaitFor?.(entry.gender),
       name: `${entry.group.name}_feet`, portraitSize: 200,
+      onFootVisualsReplaced({ left, right }) {
+        if (!entry.group?.parent) return; // The edited rig may have been disposed while its GLB import was pending.
+        entry.ageVisuals ||= {};
+        entry.ageVisuals.left_foot = left;
+        entry.ageVisuals.right_foot = right;
+        syncAgeLimbs(entry, 'foot');
+      },
     }) || null; // Recreates just the comparison feet, never gameplay actors or other species.
     entry.feet?.update?.(0, 0, false, null);
     syncAgeLimbs(entry, 'foot'); // The replacement GLB inherits the active age-wide size.
@@ -990,6 +997,7 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid!important;v
     const modelWidth = Number(model.userData.portraitModelWidth) || modelHeight;
     model.position.y = modelHeight / 2;
 
+    let entry = null; // The async final-GLB callback binds after this preview's entry is registered.
     const feet = window.ProceduralLegAnimation?.attach?.(THREE, group, {
       speciesId: rep.species,
       gender: rep.gender,
@@ -1001,11 +1009,18 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid!important;v
       profile: avatar.profile,
       ...(rep.species === 'longoran' ? { spine: window.HobunjiLongoranSpecies?.spineFor?.(rep.gender), gaitProfile: window.HobunjiLongoranSpecies?.gaitFor?.(rep.gender) } : {}), // Uses the identical authored gait when building the lineup.
       portraitSize: avatar.front.width || 200,
+      onFootVisualsReplaced({ left, right }) {
+        if (!entry || !entry.group?.parent) return; // A disposed/cancelled comparison must never retain a late-arriving GLB.
+        entry.ageVisuals ||= {};
+        entry.ageVisuals.left_foot = left;
+        entry.ageVisuals.right_foot = right;
+        syncAgeLimbs(entry, 'foot'); // Scale the visible final GLBs, not their discarded placeholder meshes.
+      },
     }) || null;
     feet?.update?.(0, 0, false, null);
 
     previewRoot.add(group);
-    const entry = { ...rep, group, model, feet, profile: rigProfile, avatarProfile: avatar.profile };
+    entry = { ...rep, group, model, feet, profile: rigProfile, avatarProfile: avatar.profile };
     applyPreviewProportions(entry); // Every freshly rendered preview inherits the active global age mode before it enters the lineup.
     window.ProceduralHandFrameDriver?.syncNow?.();
     if (rep.species === 'longoran') refreshLongoranSpine(entry); // Gameplay-static back curvature is visible on the initial lineup, not only after touching a slider.
