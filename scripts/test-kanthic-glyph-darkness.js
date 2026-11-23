@@ -81,6 +81,31 @@ draw();
 assert.equal(draws.filter(d=>d.kind==='pattern').length,0,'the image pattern stays cached across overlay redraws');
 mesh.name='engraving-glyph-glow';delete mesh.userData.ruinLadderRuneGlow;
 mesh.material.map.wrapS=undefined;mesh.material.map.wrapT=undefined;uvs.array[5]=0;
+
+context.globalAlpha=.6; // The darkness compositor may run inside an inherited canvas opacity.
+const pulsed=draw();
+assert.equal(pulsed.examined,1,'one visible triangle costs exactly one unit of the work budget');
+assert(Math.abs(draws.find(d=>d.kind==='image').alpha-.48)<1e-8,'glyph pulse multiplies, rather than replaces, the existing canvas opacity');
+assert.equal(context.globalAlpha,.6,'glyph mask restores the caller\'s alpha');
+context.globalAlpha=1;
+win.RuinRoomSystem={lightAllowed:()=>true,withLightClip(){}}; // A sealed room can skip the draw callback entirely.
+assert.equal(draw().drawn,0,'room clipping must reject the glyph');
+assert.equal(win.__probeGlyphMasks(scene,deps).examined,0,'a rejected callback cannot reuse a previous mesh triangle count');
+delete win.RuinRoomSystem;
+const repeatedTriangles=1002;
+const originalPositions=positions.array,originalUvs=uvs.array,originalPositionCount=positions.count,originalUvCount=uvs.count;
+positions.array=new Float32Array(repeatedTriangles*9);uvs.array=new Float32Array(repeatedTriangles*6);
+for(let n=0;n<repeatedTriangles;n++){
+  positions.array.set([1,1,1,3,1,1,1,1,3],n*9);
+  uvs.array.set([0,1,1,1,0,0],n*6);
+}
+positions.count=repeatedTriangles*3;uvs.count=repeatedTriangles*3;
+const capped=draw();
+assert.equal(capped.examined,960,'Kanthic bounds inspected geometry, not merely triangles actually painted');
+assert.equal(capped.triangles,960,'at most 960 textured triangles are submitted in one darkness refresh');
+assert.equal(draws.filter(d=>d.kind==='image').length,960,'overlapping faces cannot bypass the work budget');
+positions.array=originalPositions;uvs.array=originalUvs;positions.count=originalPositionCount;uvs.count=originalUvCount;
+
 tradition='hronal'; // Non-Kanthic traditions preserve their existing soft atmospheric engraving glow.
 assert.equal(draw().drawn,1,'other traditions still display wall patterns');
 assert(draws.some(d=>d.kind==='gradient'),'Hronal retains the prior soft engraved-glow treatment');
