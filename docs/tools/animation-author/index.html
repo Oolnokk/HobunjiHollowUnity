@@ -4437,7 +4437,8 @@ function prepareMultiAvatarAnimationAuthor() {
     getCreatureTransformProfiles: () => structuredCloneSafe(animationAuthor.creatureTransformProfiles),
     getAttachmentRigProfiles: () => structuredCloneSafe(animationAuthor.attachmentRigProfiles),
     setCreatureSizeClass: (actorId, sizeClass) => applyCreatureSizeClass(actorById(actorId), sizeClass),
-    setMode: setAnimationAuthorMode,
+    setMode: mode => setAnimationAuthorMode(mode), // Resolve the final Rig-aware mode implementation, not the early Multi/Single-only function.
+    refreshModeChrome: () => renderAnimationModeChrome(), // Full Character Scale restores the real tab UI even when the native mode is already Multi.
     getViewportDeadzones: () => structuredCloneSafe(animationAuthor.viewportFacing),
     setViewportDeadzones: values => {
       if (values && Object.hasOwn(values, 'characterDeg')) setViewportDeadzoneOverride('character', values.characterDeg);
