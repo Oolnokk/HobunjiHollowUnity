@@ -337,29 +337,21 @@
     if (entry.burden.mapId !== area) return false;
     return api.pickUp(entry.burden) === true; // The normal Tool Select/Action 1/2 carry system takes ownership.
   }
-  // NPC carriers use the PLAYER's carry: the same authored cradle/back-stow pose solved by
-  // Shattercasks.solveCarryMount on the carrier's own posterior, the back stow re-parented onto the
-  // carrier's portrait plane, and the same authored two-hand grip (handTargets + elbows) through
-  // the procedural hand driver's proceduralHeldItemTarget hook.
+  // NPC carriers use the PLAYER's carry: one authored cradle/back-stow pose solved by
+  // Shattercasks.solveCarryMount on the carrier's own posterior. Stowed babies remain
+  // children of that body frame, rather than the independently rotating portrait.
+  // The existing two-hand grips/elbows still use proceduralHeldItemTarget.
   const npcScratch = { posterior: null }; // Reused per tick; no per-call allocation.
   function clearNpcGrip(entry) {
     const root = entry?.npcGripRoot;
     if (root?.userData?.proceduralHeldItemTarget?.familyBabyId === entry.child?.id) root.userData.proceduralHeldItemTarget = null;
     if (entry) entry.npcGripRoot = null;
   }
-  function npcCarrierPortrait(spouse) {
-    const plane = spouse.avatarGroup?.userData?.neckRig?.skinnedPlane;
-    if (plane?.parent) return plane;
-    let front = null;
-    spouse.avatarGroup?.traverse?.(node => { if (!front && node.name === 'npc_avatar_front_plane') front = node; });
-    return front;
-  }
   function solveNpcCarry(entry, spouse, back) {
     const api = window.Shattercasks, THREE = window.THREE, group = entry.burden.group;
     const body = spouse._npcCharacterRigRoot || spouse.root; // Facing frame that owns the legs/posterior, like playerMesh for the player.
     if (!api?.solveCarryMount || !api.carrierPosteriorLocal || !body || !THREE?.Vector3) return false;
-    const portrait = back ? npcCarrierPortrait(spouse) : null;
-    if (back && portrait && group.parent === portrait && entry.npcCarryPose === 'back') return true; // Keep the portrait's own yaw between ticks (player rule).
+    if (back && group.parent === body && entry.npcCarryPose === 'back') return true; // Retain the anatomical attachment, independent of head and camera facing.
     npcScratch.posterior ||= new THREE.Vector3();
     const ud = spouse.avatarGroup?.userData || {};
     api.carrierPosteriorLocal(npcScratch.posterior, { speciesId: ud.speciesId, gender: ud.gender,
@@ -368,8 +360,7 @@
     // Identical to the player: authored offsets are body-LOCAL units, and the rig root carries the
     // same species scale playerMesh does (a Mao'ao NPC and Mao'ao player resolve to the same pose).
     api.solveCarryMount(group, entry.burden.data?.carryable || {}, back, npcScratch.posterior);
-    if (back && portrait) api.mountCarryOnPortrait(group, body, portrait);
-    entry.npcCarryPose = back ? 'back' : 'arms';
+    entry.npcCarryPose = back ? 'back' : 'arms'; // The parent stays the body for back-stowed infants and their 3D limbs.
     return true;
   }
   function spouseCarry(child, walker, spouse, pose, persist) {
@@ -384,12 +375,11 @@
     if (entry.burden.mapId !== spouse.area && spouse.area === currentArea())
       api?.transferCarriedBurdenToArea?.(spouse.area, entry.burden);
     if (!solveNpcCarry(entry, spouse, back)) { // Shattercasks without the shared solver: keep the old fixed placement.
-      const portrait = spouse.avatarGroup || spouse.root;
+      const body = spouse._npcCharacterRigRoot || spouse.root; // Fallback also follows the carrier rather than neck/portrait yaw.
       const height = Math.max(.3, Number(spouse.avatarGroup?.userData?.portraitModelHeight) || .9);
-      const centered = portrait === spouse.avatarGroup;
-      if (entry.burden.group.parent !== portrait) portrait.add(entry.burden.group);
+      if (entry.burden.group.parent !== body) body.add(entry.burden.group);
       entry.burden.group.position.set(back ? 0 : height * .13,
-        centered ? height * (back ? .04 : -.10) : height * (back ? .60 : .48), height * (back ? -.22 : .23));
+        height * (back ? .60 : .48), height * (back ? -.22 : .23));
       entry.burden.group.rotation.set(0, back ? Math.PI : 0, back ? 0 : -.16);
       entry.burden.group.scale.set(1, 1, 1);
     }
