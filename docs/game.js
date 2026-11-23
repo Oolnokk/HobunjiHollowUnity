@@ -938,10 +938,12 @@
         const multipliers = window.SCRATCHBONES_CONFIG?.game?.combat?.stagger?.damageTypeMultipliers?.[dmgOpts?.tag] || {};
         const healthMultiplier = Number(multipliers.healthDamage ?? 1);
         const footingMultiplier = Number(multipliers.footingDamage ?? 1);
+        const knockbackMultiplier = Number(multipliers.knockback ?? 1); // Scales the subsequent hit impulse, independently of Health and Footing.
         const footingOverride = Number(dmgOpts?.footingDamageMultiplier); // Ranged projectiles pass 0 by default; selected ammo can explicitly opt back in.
         return {
           health: amount * healthMultiplier,
           footing: amount * footingMultiplier * (Number.isFinite(footingOverride) ? Math.max(0, footingOverride) : 1),
+          knockbackMultiplier: Number.isFinite(knockbackMultiplier) ? Math.max(0, knockbackMultiplier) : 1,
         };
       }
 
@@ -5824,7 +5826,7 @@
             c._voorgRearKickThreat = null;
           }
         }
-        if (fromX !== undefined) applyKnockback(c, fromX, fromY, knockbackPxS * impactMultiplier);
+        if (fromX !== undefined) applyKnockback(c, fromX, fromY, knockbackPxS * impactMultiplier * (resourceDamage.knockbackMultiplier ?? 1));
         applyHitStagger(c, false, c.facing || 0, c.x, c.y, fromX, fromY, resourceDamage.footing);
         if (!c.prone) c._proneAirFallStartY = null; // A non-knockdown stagger cannot contaminate a later fall.
       }
@@ -5864,7 +5866,7 @@
           // rule as damageCreature above, mirrored onto whatever combo/quick-
           // attack/charged-breaker strike the player was mid-windup on.
           window.Combat?.cancelAllStaged?.();
-          if (fromX !== undefined) applyKnockback(player, fromX, fromY, knockbackPxS);
+          if (fromX !== undefined) applyKnockback(player, fromX, fromY, knockbackPxS * (resourceDamage.knockbackMultiplier ?? 1));
           applyHitStagger(player, true, player.angle, player.x, player.y, fromX, fromY, resourceDamage.footing);
           if (!player.prone) player._proneAirFallStartY = null; // Normal staggers never retain a stale aerial snapshot.
         }

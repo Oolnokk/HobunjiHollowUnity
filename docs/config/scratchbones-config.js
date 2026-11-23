@@ -465,15 +465,17 @@ window.SCRATCHBONES_CONFIG = {
         "visualMinDurationSeconds": 0.45,
         "footingLossPerDamage": 1.6,
         "damageTypeMultipliers": {
-          // Sharp keeps a modest direct-Health edge; Blunt keeps baseline Health damage
-          // but applies 50% more Footing pressure than Sharp before shared Footing scaling.
+          // Sharp retains its direct-Health edge. Blunt deals half its old Health
+          // damage, with 125% Footing and knockback for tactical displacement.
           "sharp": {
             "healthDamage": 1.10,
-            "footingDamage": 0.80
+            "footingDamage": 0.80,
+            "knockback": 1.00
           },
           "blunt": {
-            "healthDamage": 1.00,
-            "footingDamage": 1.20
+            "healthDamage": 0.50,
+            "footingDamage": 1.25,
+            "knockback": 1.25
           }
         }
       },

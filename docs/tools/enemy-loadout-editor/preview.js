@@ -3,7 +3,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 const THREE = { ...ThreeModule };
 window.THREE = THREE;
 const files = [
-  'config/scratchbones-config.js?v=20261122hKasa1',
+  'config/scratchbones-config.js?v=20261122h5cf4b6d',
   'config/attachment-rig-profiles.js?v=20261122hRigAnimal28',
   'config/character-rig-scale-defaults.js?v=20261114uniformRigStrideMerge1',
   'js/character-rig-scale.js?v=20261114uniformRigStrideMerge1',
@@ -56,7 +56,7 @@ const files = [
   'js/combat/melee-pose-spacing.js?v=20261028a',
   'js/combat/resource-system.js?v=20261122familyBaby4',
   'js/trinket-system.js?v=20261122enemyTrinketAdd1', // Enemy Workshop spawns use the same equipment definitions and additive stat provider as gameplay.
-  'js/combat/weapon-shape-stats.js?v=20261109grappledonor1',
+  'js/combat/weapon-shape-stats.js?v=20261122hShapeFootingOnce',
   'js/combat/combat-combo.js?v=20261107combo1501a',
   'js/combat/combat-quickattacks.js?v=20261028a',
   'js/combat/combat-charged-breaker.js?v=20261028a',
