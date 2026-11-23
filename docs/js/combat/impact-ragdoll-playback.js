@@ -530,6 +530,10 @@
   function updateCreature(entity, dt) {
     let state = entity?._impactRagdollPlayback;
     const prone = !!entity?.prone;
+    if (state && state.bank === 'impact' && prone) {
+      stopCreature(entity); // A late prone transition outranks the ordinary upright stagger.
+      state = null;
+    }
     if (state && state.bank !== 'impact' && !prone && !entity?._deathRecordedThrow) {
       stopCreature(entity); // Recover as soon as the gameplay state stands, not after an abandoned throw timer.
       state = null;
