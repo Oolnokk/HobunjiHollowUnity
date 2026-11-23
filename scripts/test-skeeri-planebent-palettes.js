@@ -284,5 +284,16 @@ for(const key of ['flying','perched']) {
   assert.equal(pixelYieldChecks,3,'repeated entry and bird creation do not recolor the shared full-size source art');
   const ruinEntry = fs.readFileSync(path.join(root, 'docs/js/dev-random-ruin-interior-map.js'),'utf8');
   assert.match(ruinEntry, /SkeeriRuins\?\.prewarm\?\.\(\)\?\.catch\?\.\(/, 'entry starts Skeeri caching without a new per-frame scan');
+  const wildlifePanel = fs.readFileSync(path.join(root, 'docs/js/wildlife-debug-panel.js'), 'utf8');
+  const censusBegin = wildlifePanel.indexOf('  function renderSkeeriFlightCensus() {');
+  const censusEnd = wildlifePanel.indexOf('  function renderPingdortCensus()', censusBegin);
+  assert(censusBegin > 0 && censusEnd > censusBegin, 'real mobile Skeeri census remains independently testable');
+  const censusContext = { window: w, deps: { esc: value => String(value) } }; // Lightweight mobile debug fixture; uses the actual live snapshot.
+  vm.runInNewContext(wildlifePanel.slice(censusBegin, censusEnd)
+    + '\\nthis.census = renderSkeeriFlightCensus;', censusContext);
+  const census = censusContext.census();
+  assert.match(census, /Appearance preload: ready/, 'mobile Wildlife tab shows completed Skeeri source-art preload');
+  assert.match(census, /ruin entries requested: 2/, 'mobile tab makes reuse of source art inspectable');
+  assert.match(census, /Separated original sprite pixels: eyes 2/, 'mobile tab reports eye extraction rather than hiding mask errors');
   console.log('Planebent Skeeri authored art, shared wings, theme palettes, marked eye overlays and tint restore PASS');
 })().catch(error => { console.error(error); process.exitCode = 1; });
