@@ -431,6 +431,52 @@ async function main() {
   assert.ok(!Object.hasOwn(config.lexicon, 'weather'), 'Remove synonym roots that cannot keep subject agreement');
   assert.ok(!config.lexicon.quiet.some(entry => entry.text === 'peaceful'),
     'Quiet ambient sound is not automatically the same as peaceful mood');
+  // Source-backed coverage: actual random NPC greetings and every tier of each personality's pet reactions.
+  const greetingChanges = Object.entries(greetings).flatMap(([id, pool]) => (pool.player || []).map(line =>
+    engine.rewrite(line, id, () => 0) !== line)); // One deterministic high-probability roll per real authored greeting.
+  assert.ok(greetingChanges.filter(Boolean).length >= 23, 'Ordinary NPC greetings must offer visible vocabulary choices');
+  const petSpeakerByFamily = { neighborly: 'furunji_funji', playful: 'gorobi_ginju', reserved: 'sloomi',
+    proper: 'kzubug', stern: 'leaf', child: 'gantami_ginju' }; // Each test NPC has an actual matching reaction profile.
+  const petPoolLines = profile => {
+    const lines = []; // Collect actual authored tiers, roles, and recognition responses without rewriting reaction config.
+    const collect = value => {
+      if (Array.isArray(value)) lines.push(...value);
+      else if (value && typeof value === 'object') Object.values(value).forEach(collect);
+    };
+    collect(profile.animal);
+    return lines;
+  };
+  let changedPetLines = 0; // Total pet responses with an available lexical change across all personality owners.
+  for (const [family, npcId] of Object.entries(petSpeakerByFamily)) {
+    assert.equal(profiles.assignments[npcId], family, 'Pet test NPC must keep its real personality: ' + npcId);
+    const sources = petPoolLines(profiles.profiles[family]);
+    const rendered = sources.map(line => engine.rewrite(line, npcId, () => 0));
+    const changed = rendered.filter((text, index) => text !== sources[index]).length;
+    assert.ok(changed >= 2, 'Pet reactions must visibly vary for ' + family);
+    changedPetLines += changed;
+    for (let index = 0; index < sources.length; index++) {
+      for (const placeholder of sources[index].match(/\{[A-Za-z][A-Za-z0-9_]*\}/g) || []) {
+        assert.ok(rendered[index].includes(placeholder), 'Pet name/species token must survive: ' + placeholder);
+      }
+    }
+  }
+  assert.ok(changedPetLines >= 35, 'Pet reactions must visibly vary across the real personality pools');
+  assert.equal(engine.rewrite('Hi!', 'gantami_ginju', () => 0), 'Hiya!');
+  assert.equal(engine.rewrite('Howdy there, partner!', 'gorobi_ginju', () => 0), 'Well, howdy, partner!');
+  assert.equal(engine.rewrite('Howdy-hey, {targetName}!', 'aliri_ginju', () => 0), 'Hey-howdy, {targetName}!');
+  assert.equal(engine.rewrite('Good morning, {targetName}!', 'jubmir', () => 0), 'Lovely morning, {targetName}!');
+  assert.equal(engine.rewrite('Good to see you safe, {targetName}.', 'kzubug', () => 0),
+    'Good to see you safe, {targetName}.', 'A generic word cannot undermine Kzubug');
+  assert.equal(engine.rewrite('Hey...', 'leaf', () => 0), 'Hey...', 'Leaf must remain terse');
+  assert.equal(engine.rewrite('Hey, {animalName}!', 'gorobi_ginju', () => 0), 'Hiya, {animalName}!');
+  assert.equal(engine.rewrite('Kitty!', 'gantami_ginju', () => 0), 'Kit-cat!');
+  assert.equal(engine.rewrite('Hi!', 'gantami_ginju', () => 0.99), 'Hi!', 'Probability retains authored fallback');
+  const beforePetNoiseCache = engine.getDebug().cachedSpeakers; // Unmatched pet sounds should never allocate new tables.
+  engine.rewrite('Neeeeeeyyy!!!!', 'gantami_ginju', () => 0);
+  const noiseDebug = engine.getDebug();
+  assert.equal(noiseDebug.last.reason, 'no-dictionary-phrase', 'Diagnostics must describe the newest unmatched bubble');
+  assert.equal(noiseDebug.cachedSpeakers, beforePetNoiseCache);
+  assert.ok(noiseDebug.recent.length <= 12 && noiseDebug.recent.some(entry => entry.reason === 'reworded'));
   const debug = engine.getDebug();
   assert.ok(debug.last && Number.isInteger(debug.last.swaps));
   assert.ok(typeof debug.replacements === 'number');
