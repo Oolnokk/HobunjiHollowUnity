@@ -31,7 +31,7 @@ vm.runInNewContext(fog,{window:win,performance:{now:()=>2000},console});
 const draws=[]; // All light-mask paints are recorded for assertions and mobile-neutral regression coverage.
 const context={
   canvas:{width:500,height:500},globalCompositeOperation:'source-over',globalAlpha:1,
-  save(){},restore(){},beginPath(){},moveTo(){},lineTo(){},closePath(){},clip(){},arc(){},fill(){draws.push({kind:'fill',mode:this.globalCompositeOperation});},
+  save(){},restore(){},beginPath(){},rect(){},moveTo(){},lineTo(){},closePath(){},clip(rule){if(rule==='evenodd')draws.push({kind:'platform-clip',mode:this.globalCompositeOperation});},arc(){},fill(){draws.push({kind:'fill',mode:this.globalCompositeOperation});},
   transform(...args){draws.push({kind:'transform',args});},
   createPattern(img,mode){draws.push({kind:'pattern',mode,img});return {img,mode};},
   fillRect(...args){draws.push({kind:'tiles',mode:this.globalCompositeOperation,args});},
@@ -84,6 +84,35 @@ assert(Math.abs(transform[0]-1.25)<1e-6&&Math.abs(transform[3]-1.25)<1e-6,
   'UV atlas scales to the actual triangle in screen pixels');
 assert(Math.abs(transform[4]-110)<1e-6&&Math.abs(transform[5]-110)<1e-6,
   'cutout is positioned on the wall glyph, not around its center');
+// A raised walkable shaft slab hides only the overlapping pixels of a much larger wall rune.
+// Its non-BoxGeometry tests the real TileSpan case, which replaces the source slab geometry.
+const platform={name:'jump-f0-2-stone',visible:true,isMesh:true,userData:{ruinShaftPlatform:true},
+  geometry:{boundingBox:{min:new Vec(.5,.3,1),max:new Vec(1.6,.7,2)}},
+  matrixWorld:{},updateWorldMatrix(){}};
+const platformScene={traverse(callback){callback(mesh);callback(platform);}};
+mesh.parent=platformScene;platform.parent=platformScene;
+draws.length=0;
+const partial=win.__probeGlyphMasks(platformScene,deps,7000);
+assert.equal(partial.drawn,1,'the visible part of an engraved wall survives an overlapping platform');
+assert.equal(partial.triangles,1,'partial platform coverage does not discard the entire wall triangle');
+assert.equal(win.CloudForestFog.getDebugState().ruinEngravingGlowMasks.platformCandidates,1,
+  'the compositor discovers real shaft slabs even after TileSpan replaces their BoxGeometry');
+assert.equal(win.CloudForestFog.getDebugState().ruinEngravingGlowMasks.platformClips,1,
+  'a projected slab silhouette subtracts only the obscured part of a wall glyph');
+assert(draws.some(d=>d.kind==='platform-clip'&&d.mode==='destination-out'),
+  'partial occlusion is applied to the destination-out glyph ink, not the entire scene lighting');
+platform.visible=false;draws.length=0;
+assert.equal(win.__probeGlyphMasks(platformScene,deps,7100).drawn,1,'a hidden platform does not erase the visible wall glyph');
+assert(!draws.some(d=>d.kind==='platform-clip'),'a hidden upper story never generates a platform cutout');
+platform.visible=true;
+platform.geometry.boundingBox.min.x=4;platform.geometry.boundingBox.max.x=5;
+const regularProjection=deps.worldToOverlay;
+deps.worldToOverlay=(x,y,z)=>({x:100+z*10,y:100+y*10}); // A camera aligned along X sees the same screen region at different depths.
+draws.length=0;
+assert.equal(win.__probeGlyphMasks(platformScene,deps,7200).drawn,1,'a slab farther away than the wall leaves the wall glyph visible');
+assert(!draws.some(d=>d.kind==='platform-clip'),'slabs behind the wall must not be treated as foreground cover');
+deps.worldToOverlay=regularProjection;
+mesh.parent=scene;
 mesh.visible=false;
 assert.equal(draw().drawn,0,'hidden wall sections must not cut through darkness');
 mesh.visible=true;
