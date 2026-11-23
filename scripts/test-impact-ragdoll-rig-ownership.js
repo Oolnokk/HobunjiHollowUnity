@@ -158,7 +158,9 @@ function creature() {
   assert(Math.abs(earlyY)>.3,'a partial knockdown leaves the portrait recognizably upright or tilted');
   fakeNowMs+=50;rescueFrame();
   assert.equal(state.holding,false,'healthy 50 ms creature update gaps do not snap a fall forward');
-  fakeNowMs+=1500;rescueFrame();
+  fakeNowMs+=1500;
+  impact.updateCreature(creatureWithoutLimbs,0); // A zero-delta game frame must not reset the watchdog timestamp.
+  rescueFrame();
   const finalY=1-2*(state.pivot.quaternion.x**2+state.pivot.quaternion.z**2);
   assert(Math.abs(finalY)<.2,'SHIPPED clip must orient the creature portrait horizontally even without limbs');
   assert.equal(state.holding,true,'stalled animation must settle in a full held prone pose');
@@ -168,6 +170,20 @@ function creature() {
   assert.equal(creatureWithoutLimbs._impactRagdollPlayback,state);
   creatureWithoutLimbs.prone=false;rescueFrame();
   assert.equal(creatureWithoutLimbs._impactRagdollPlayback,null,'render-boundary recovery releases the prone pivot when Footing recovers');
+
+  // Different incoming attack angles select different authored source clips,
+  // but all four must turn an actual two-sided animal portrait horizontal.
+  for(const [direction,sourcePole] of Object.entries({front:'left',back:'right',left:'back',right:'front'})) {
+    clip=bank.clips[sourcePole].clip;
+    const animal=creature();animal.prone=true;
+    assert(impact.triggerCreature(animal,'breakThrow',direction)>0);
+    impact.updateCreature(animal,clip.durationSeconds+.01);
+    const q=animal._impactRagdollPlayback.pivot.quaternion;
+    const upY=1-2*(q.x*q.x+q.z*q.z);
+    assert(Math.abs(upY)<.2,direction+' live prone card is horizontal with its actual authored directional clip');
+    impact.stopCreature(animal);
+    assert.equal(animal._impactRagdollPlayback,null);
+  }
 
   clip=null; // Simulate the async clip request being unfinished when a creature is knocked down.
   const earlyCreature=creature();earlyCreature.prone=true;
