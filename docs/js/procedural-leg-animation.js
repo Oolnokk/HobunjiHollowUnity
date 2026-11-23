@@ -1215,6 +1215,7 @@
     }
 
     const childLimbMetadata = options.childLimbVisualModifiers
+      || window.HobunjiCharacterAgeRigConfig?.nonFamilyChildLimbsFor?.(options.npcRecord || options.profile?.npcRecord)
       || parent.userData?.hobunjiChildLimbVisualModifiers
       || (parent.children || []).find(node => node.userData?.hobunjiChildLimbVisualModifiers)?.userData?.hobunjiChildLimbVisualModifiers
       || null; // One bounded, attach-time child metadata lookup; no per-frame scene walk.
