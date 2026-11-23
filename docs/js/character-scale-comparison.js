@@ -42,6 +42,7 @@
   let ageModifiers = {}; // Editable age-wide values, initialized from gameplay configuration and then local editor overrides.
   let ageLimbTimer = 0; // Bounded retry window for hands/feet whose GLB visuals arrive after the portrait.
   const ageLimbBases = new WeakMap(); // Original per-visual limb scales, so switching modes never compounds multipliers.
+  let selectedLayoutFrame = 0; // Batches per-species (non-age) width/head edits so neighboring lineup actors never overlap.
   let ageRenderFrame = 0; // Coalesces rapid touch slider updates into one lineup/layout pass per display frame.
   let ageDirtyBody = false; // Set when body/head changes require whole-rig transforms and bounding-box layout.
   let ageDirtyLimb = null; // 'hand' or 'foot' limits visual-only updates to the changed GLB type.
@@ -579,6 +580,15 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid!important;v
     agePerf.layoutPasses++;
   }
 
+  function scheduleSelectedLayout() {
+    if (selectedLayoutFrame || (!active && !building)) return;
+    if (typeof requestAnimationFrame !== 'function') { relayoutForAge(); return; }
+    selectedLayoutFrame = requestAnimationFrame(() => {
+      selectedLayoutFrame = 0;
+      if (active || building) relayoutForAge(); // Other species keep their own physical slots after a selected-width/head edit.
+    });
+  }
+
   function flushAgeRender() {
     ageRenderFrame = 0;
     if (!active && !building) { ageDirtyBody = false; ageDirtyLimb = null; return; }
@@ -620,6 +630,10 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid!important;v
   function setAgeMode(nextMode) {
     if (!AGE_MODES.includes(nextMode) || (!active && !building)) return;
     stopLongoranWalk();
+    if (selectedLayoutFrame && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(selectedLayoutFrame);
+    selectedLayoutFrame = 0;
+    if (selectedLayoutFrame && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(selectedLayoutFrame);
+    selectedLayoutFrame = 0;
     if (ageRenderFrame && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(ageRenderFrame);
     ageRenderFrame = 0;
     ageDirtyBody = false;
@@ -1323,7 +1337,11 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid!important;v
       get previewCount() { return entries.length; },
       get ageMode() { return ageMode; }, // Exposes stage and modifiers to mobile UI diagnostics and the raw-head presentation bridge.
       get ageModifiers() { return clone(ageModifiers); },
-      refreshSelectedPreview: () => { if (selected) applyPreviewProportions(selected); }, // Preserve age scaling during raw-PNG head edits in the presentation adapter.
+      refreshSelectedPreview: () => {
+        if (!selected) return;
+        applyPreviewProportions(selected);
+        scheduleSelectedLayout(); // One layout per display frame even if numeric body/head inputs fire dozens of events.
+      }, // Preserve age scaling during raw-PNG head edits and prevent wider avatars overlapping neighboring lineup slots.
       debugSnapshot: () => ({
         active,
         building,
