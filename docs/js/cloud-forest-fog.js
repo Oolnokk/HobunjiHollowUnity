@@ -1020,7 +1020,7 @@
       const i0=indices?indices[t*3]:t*3,i1=indices?indices[t*3+1]:t*3+1,i2=indices?indices[t*3+2]:t*3+2;
       if(i0>=count||i1>=count||i2>=count)continue;
       const x0=screen[i0*2],y0=screen[i0*2+1],x1=screen[i1*2],y1=screen[i1*2+1],x2=screen[i2*2],y2=screen[i2*2+1];
-      if(![x0,y0,x1,y1,x2,y2].every(Number.isFinite)
+      if(!Number.isFinite(x0)||!Number.isFinite(y0)||!Number.isFinite(x1)||!Number.isFinite(y1)||!Number.isFinite(x2)||!Number.isFinite(y2)
         ||Math.max(x0,x1,x2)<0||Math.max(y0,y1,y2)<0||Math.min(x0,x1,x2)>width||Math.min(y0,y1,y2)>height)continue;
       const u0=uvs[i0*2]*iw,v0=(upsideDown?1-uvs[i0*2+1]:uvs[i0*2+1])*ih;
       const u1=uvs[i1*2]*iw,v1=(upsideDown?1-uvs[i1*2+1]:uvs[i1*2+1])*ih;
