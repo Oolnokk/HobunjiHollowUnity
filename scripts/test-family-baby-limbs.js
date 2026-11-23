@@ -154,7 +154,7 @@ const burdens = fs.readFileSync('docs/js/family-baby-burdens.js', 'utf8');
 assert(burdens.indexOf('entry.burden = burden;\n    window.FamilyBabyLimbs?.attach?.(group, walker);') > 0, 'limbs attach after registerBurden (never colliders)');
 assert.match(burdens, /function disposeVisual\(group\) \{\n    window\.FamilyBabyLimbs\?\.detach\?\.\(group\);/, 'limbs detach before proxy disposal');
 assert.match(burdens, /familyBabyFlying = true/, 'thrown baby flails');
-assert(burdens.includes('FamilyBabyLimbs?.attach?.(entry.burden.group, walker)'), 'sync retries late GLB sources');
+assert(burdens.includes('window.FamilyBabyLimbs?.attach?.(group, walker); // Shared refresh checks late-loaded GLBs'), 'existing proxy refresh checks late GLB and size changes once per family update');
 const family = fs.readFileSync('docs/js/romance-family.js', 'utf8');
 assert(family.includes("if (phase === 'basket') window.FamilyBabyLimbs?.balanceWalker"), 'only newborns are rebalanced');
 const romanceConfig = fs.readFileSync('docs/config/romance-config.js', 'utf8');
