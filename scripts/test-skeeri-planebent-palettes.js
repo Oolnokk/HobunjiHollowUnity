@@ -78,7 +78,9 @@ class Image {
   }
 }
 let captured = null; // Last renderer call allows checking the source-space masks without WebGL.
+let pixelYieldChecks = 0; // Counts cooperative breaks while creating Skeeri source masks during entry.
 const w = {
+  PixelWorkYield: { async maybeYield() { pixelYieldChecks++; } }, // The production main-thread scheduler may yield between large native-resolution masks.
   FlyingAnimalRig: {
     normalize: x => x,
     create(settings, images) {
@@ -239,6 +241,7 @@ for(const key of ['flying','perched']) {
   const palette = api.paletteFor('kanthic', 'specimen-A');
   const warming = [api.prewarm(), api.prewarm()]; // Repeated entry requests must share one decoded sprite/rig pass.
   await Promise.all(warming);
+  assert.equal(pixelYieldChecks,3,'the source mask preparation offers a browser turn between flying/perched/wings passes');
   const rig = await api.createRig({ skeeriPalette: palette });
   assert.deepEqual(rig.palette, { body: palette.body, eyes: palette.eyes, pattern: palette.pattern }, 'body, eye and fur pattern use independent colors');
   assert.equal(captured.settings.flying, 'creaturesprites/skeeri_planebent_flying.png');
@@ -278,6 +281,7 @@ for(const key of ['flying','perched']) {
   assert.equal(api.debugSnapshot().prewarmRequests, 2);
   assert.equal(api.debugSnapshot().prewarmFailures, 0);
   assert.equal(api.debugSnapshot().prewarmReady, true);
+  assert.equal(pixelYieldChecks,3,'repeated entry and bird creation do not recolor the shared full-size source art');
   const ruinEntry = fs.readFileSync(path.join(root, 'docs/js/dev-random-ruin-interior-map.js'),'utf8');
   assert.match(ruinEntry, /SkeeriRuins\?\.prewarm\?\.\(\)\?\.catch\?\.\(/, 'entry starts Skeeri caching without a new per-frame scan');
   console.log('Planebent Skeeri authored art, shared wings, theme palettes, marked eye overlays and tint restore PASS');
