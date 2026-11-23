@@ -187,6 +187,34 @@
     });
   }
 
+  // While other animals occupy the one-at-a-time pixel compositor, start only
+  // this pet's REQUIRED source PNG downloads (not every frame/pattern of its species).
+  // All loads reuse loadImage's CORS-safe promise cache; any failed asset retries
+  // normally when composeFrameNow actually needs it, never as missing coat art.
+  let petSpritePrefetches = 0; // Diagnostic count of real pet frame prefetch requests.
+  function prefetchPlayerPetFrameAssets(kind, frame, genotype, blinkShut) {
+    const spec = SPECIES[kind]; // Unknown species have no source-art manifest.
+    if (!spec) return;
+    genotype = effectiveGenotype(kind, genotype); // Legacy fur/plates saved genes select the same artwork as composition.
+    const urls = new Set([spec.base[frame] || spec.base.idle]); // One sprite per active frame; no eager run1/run2 downloads.
+    for (const id of spec.underlayPatterns || []) urls.add(patternUrl(kind, id, frame, genotype)); // Permanently visible anatomical tails.
+    for (const entry of visibleDefaultCoatPatterns(spec, genotype)) urls.add(patternUrl(kind, entry.id, frame, genotype)); // Default beards survive beneath genetic patterns.
+    for (const id of spec.patterns) {
+      if (spec.underlayPatterns?.includes(id)) continue;
+      const layer = genotype?.[id]; // Unexpressed or disabled inherited overlays have no art to fetch.
+      if (layer?.enabled !== false && layer?.copies > 0 && patternTintColor(kind, id, genotype)) urls.add(patternUrl(kind, id, frame, genotype));
+    }
+    if (spec.eyes) {
+      const eye = spec.eyes.mode === 'cycle'
+        ? spec.eyes.variants[Math.max(0, Math.min(3, 'ABCD'.indexOf(typeof blinkShut === 'string' ? blinkShut : 'A')))]
+        : (blinkShut ? spec.eyes.blink : spec.eyes.open); // Exact selected state; no unnecessary closed-eye upload.
+      urls.add(eye);
+    }
+    for (const url of urls) if (url) loadImage(url).catch(() => null); // Network I/O overlaps older queued pixel work; no unhandled preload failure.
+    if (!spec.fullBaseRecolor && !spec.preferSourceKeyRecolor) loadBaseMasks().catch(() => null); // Mask JSON overlaps source PNG downloads.
+    petSpritePrefetches++;
+  }
+
   function eyeSkinTintColor(kind, genotype, baseColor) {
     const patternId = SPECIES[kind]?.eyes?.skinColorPattern; // Optional pattern whose visible pigmentation covers the skin surrounding an eye.
     const layer = patternId ? genotype?.[patternId] : null; // Reads the same expressed allele used by pattern-layer compositing.
@@ -693,6 +721,7 @@
   function composeFrame(kind, frame, genotype, blinkShut = false, options = null) {
     const priority = composePriority(options); // Default preserves historical FIFO for preview and wildlife callers.
     const key = composeRequestKey(kind, frame, genotypeSignature(kind, genotype), blinkShut);
+    if (priority === 2) prefetchPlayerPetFrameAssets(kind, frame, genotype, blinkShut); // Kick off required PNG/mask I/O even if the pet waits for an active wild pixel job.
     return new Promise((resolve, reject) => {
       composeQueue.push({ kind, frame, genotype, blinkShut, priority, key, resolve, reject }); // One shared canonical compositor, not a second fast/patternless renderer.
       composePending++;
@@ -949,7 +978,7 @@
     return parts.join('|');
   }
 
-  window.CreatureGeneticsRender = { composeFrame, genotypeSignature, colorPoolPaintSignature, getLastPatternPaintDebug, prewarm, promoteFrame, patternUrl, eyeStateKey, eyeStatesForKind, eyeSkinTintColor, SPECIES, recolorPixels, recolorKeyedPixels, patternTintColor, fitMaskToImage, hexToRgb, memorySnapshot: () => ({ recolorEntries: _recolorCache.size, recolorEstimatedBytes: recolorBytes, recolorBudgetBytes: RECOLOR_CACHE_BYTES, composePending, composeActive, composeFailures, lastComposeFailure, queuedPets: composeQueue.filter(job => job.priority === 2).length, queuedFarm: composeQueue.filter(job => job.priority === 1).length, composePetStarts, composePromotions }) };
+  window.CreatureGeneticsRender = { composeFrame, genotypeSignature, colorPoolPaintSignature, getLastPatternPaintDebug, prewarm, promoteFrame, patternUrl, eyeStateKey, eyeStatesForKind, eyeSkinTintColor, SPECIES, recolorPixels, recolorKeyedPixels, patternTintColor, fitMaskToImage, hexToRgb, memorySnapshot: () => ({ recolorEntries: _recolorCache.size, recolorEstimatedBytes: recolorBytes, recolorBudgetBytes: RECOLOR_CACHE_BYTES, composePending, composeActive, composeFailures, lastComposeFailure, queuedPets: composeQueue.filter(job => job.priority === 2).length, queuedFarm: composeQueue.filter(job => job.priority === 1).length, composePetStarts, composePromotions, petSpritePrefetches }) };
 
   window.HobunjiCacheAudit?.register('CreatureGeneticsRender.imageCache', () => _imageCache.size);
   window.HobunjiCacheAudit?.register('CreatureGeneticsRender.recolorCache', () => _recolorCache.size);
