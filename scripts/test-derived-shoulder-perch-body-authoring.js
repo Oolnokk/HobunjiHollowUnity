@@ -16,7 +16,7 @@ const host = { // In-memory profile and appearance registries consumed by every 
   getPortraitFighters() { return []; },
 };
 const donorPerches = { // Donor fixture values plus the Mao-ao reference, all authored independent of pose-orbit scale.
-  'tletingan::male': 0.957612, 'tletingan::female': 1.016661,
+  'tletingan::male': 0.790289, 'tletingan::female': 0.884054,
   'engh-sho::male': 1.035258, 'engh-sho::female': 1.010418,
   'mashtzarr::male': 1.71221, 'mashtzarr::female': 1.56391,
   'mao-ao::male': 1, 'mao-ao::female': 0.972561,
@@ -38,8 +38,8 @@ for (const path of ['docs/js/nuhongan-species-runtime.js', 'docs/js/longoran-spe
   'docs/js/harlyao-species-runtime.js', 'docs/js/mammakhbuur-species-runtime.js',
   'docs/js/skeleton-species-runtime.js', 'docs/js/harlyao-skeleton-species-runtime.js']) run(path);
 const expected = { // Constant values supplied by species installers, not derived by gameplay.
-  'nuhongan': ['tletingan', 0.741763, 0.787502],
-  'longoran': ['tletingan', 1.632601, 1.733272],
+  'nuhongan': ['tletingan', 0.628233, 0.67381],
+  'longoran': ['tletingan', 1.385308, 1.723369],
   'harlyao': ['engh-sho', 1.242309, 1.212502],
   'mammakhbuur': ['mashtzarr', 1.992106, 1.819542],
   'harlyao-skeleton': ['engh-sho', 1.242309, 1.212502],

@@ -18,17 +18,17 @@ function extract(source, name) {
   return source.slice(start, end);
 }
 class Matrix4 {
-  constructor(s = 1, y = 0) { this.s = s; this.y = y; }
-  clone() { return new Matrix4(this.s, this.y); }
-  fromArray(a, offset) { this.s = a[offset]; this.y = a[offset + 13]; return this; }
-  multiplyMatrices(a, b) { this.s = a.s * b.s; this.y = a.s * b.y + a.y; return this; }
+  constructor(s = 1, y = 0, z = 0) { this.s = s; this.y = y; this.z = z; }
+  clone() { return new Matrix4(this.s, this.y, this.z); }
+  fromArray(a, offset) { this.s = a[offset]; this.y = a[offset + 13]; this.z = a[offset + 14]; return this; }
+  multiplyMatrices(a, b) { this.s = a.s * b.s; this.y = a.s * b.y + a.y; this.z = a.s * b.z + a.z; return this; }
 }
 class Vector3 {
   constructor(x = 0, y = 0, z = 0) { Object.assign(this, { x, y, z }); }
   set(x, y, z) { Object.assign(this, { x, y, z }); return this; }
   clone() { return new Vector3(this.x, this.y, this.z); }
   copy(v) { Object.assign(this, v); return this; }
-  applyMatrix4(m) { this.x *= m.s; this.y = this.y * m.s + m.y; this.z *= m.s; return this; }
+  applyMatrix4(m) { this.x *= m.s; this.y = this.y * m.s + m.y; this.z = this.z * m.s + m.z; return this; }
   addScaledVector(v, w) { this.x += v.x * w; this.y += v.y * w; this.z += v.z * w; return this; }
 }
 const context = vm.createContext({ pixelPositionScratch: null, // Extracted production functions share this stand-in for their enclosing reusable scratch.
@@ -36,9 +36,13 @@ const context = vm.createContext({ pixelPositionScratch: null, // Extracted prod
   mirrorShoulderPerchWithPortrait: true, resolveSkinnedPortraitRoot: root => root,
   smoothstep01: t => { t = Math.max(0, Math.min(1, t)); return t * t * (3 - 2 * t); },
 });
+vm.runInContext(extract(avatarSource, 'neckBlendBand'), context);
+vm.runInContext(extract(avatarSource, 'neckBlendWeight'), context);
+vm.runInContext(extract(avatarSource, 'headOffsetWeightAt'), context);
 vm.runInContext(extract(avatarSource, 'headScaleGateAtPixel'), context);
 vm.runInContext(extract(avatarSource, 'headScaleWeightAt'), context);
 context.avatarApi = { resolveSkinnedPortraitRoot: root => root,
+  neckBlendBand: context.neckBlendBand, neckBlendWeight: context.neckBlendWeight, headOffsetWeightAt: context.headOffsetWeightAt, // The outline/parity adapter reads both identical neck and independent head-placement weights.
   headScaleGateAtPixel: context.headScaleGateAtPixel, headScaleWeightAt:context.headScaleWeightAt, getPortraitsFlipped: () => context.portraitsFlipped };
 vm.runInContext(extract(avatarSource, 'resolveSkinnedPixelWorldPosition'), context);
 vm.runInContext(extract(paritySource, 'resolvePosition'), context);
@@ -52,7 +56,7 @@ function fixture(bodyScale, floorY, headScale, cachedMatrices = true, legacy = f
   if (cachedMatrices) skeleton.boneMatrices = matrices.flatMap(m => {
     const a = Array(16).fill(0); a[0] = a[5] = a[10] = m.s; a[13] = m.y; a[15] = 1; return a;
   });
-  const skinnedPlane = { isSkinnedMesh: true, skeleton, geometry: { userData: { blendHeight: .3 } },
+  const skinnedPlane = { isSkinnedMesh: true, skeleton, geometry: { userData: { blendHeight: .012 } },
     bindMatrix: new Matrix4(), bindMatrixInverse: new Matrix4(),
     updateMatrixWorld() { this.bindMatrixInverse = new Matrix4(1 / bodyScale, -floorY / bodyScale); },
     localToWorld(v) { return v.applyMatrix4(world); } };
@@ -90,7 +94,7 @@ function splineFixture(nodeShift) {
   const world = new Matrix4(1, 0);
   const matrices = Array.from({ length: 9 }, (_, k) => (k >= 1 && k <= 6 ? new Matrix4(1, nodeShift[k]) : world)); // Nodes 1-6 displaced, node 0 pinned, neck/head bones at rest.
   const skeleton = { bones: matrices.map(matrixWorld => ({ matrixWorld })), boneInverses: matrices.map(() => new Matrix4()), update() {} };
-  const skinnedPlane = { isSkinnedMesh: true, skeleton, geometry: { userData: { blendHeight: .3 } }, bindMatrix: new Matrix4(), bindMatrixInverse: new Matrix4(),
+  const skinnedPlane = { isSkinnedMesh: true, skeleton, geometry: { userData: { blendHeight: .012 } }, bindMatrix: new Matrix4(), bindMatrixInverse: new Matrix4(),
     updateMatrixWorld() {}, localToWorld(v) { return v; } };
   return { updateMatrixWorld() {}, userData: { sourceCanvas: { width: 100, height: 100 }, portraitModelWidth: 1, portraitModelHeight: 1,
     neckRig: { available: true, skinnedPlane, neckLocal: { y: .2 }, spineBase: { y: .1 }, spinePosteriorY: -.3, headScaleJoint: {}, headBoundsPx: { left: 40, right: 60 } } } };
@@ -104,4 +108,82 @@ for (const resolve of [context.resolveSkinnedPixelWorldPosition, context.resolve
   near(resolve(root, { x: 90, y: 80 }).y, -.3, 'a pixel at the posterior stays on the pinned node 0');
   near(resolve(splineFixture([0, 0, 0, 0, 0, 0, 0]), { x: 90, y: 46.5 }).y, .035, 'an upright skeleton leaves the pixel where it was');
 }
-console.log('head centroid skinning regression passed');
+// The production 10-bone rig carries head-height displacement across all seven
+// real spine bones, reaching the tip before the tiny nonrotating neck contact.
+// Both pixel resolvers must reproduce these weights for shoulder pet attachment.
+function offsetFixture(offset) {
+  const raw = new Matrix4(1, 0);
+  const placed = new Matrix4(1, offset);
+  const matrices = Array.from({ length: 10 }, (_, i) => i >= 7 ? placed : new Matrix4(1, offset * i / 6)); // Lower torso rides the evenly extended spine; the short neck follows its tip.
+  const skeleton = {
+    bones: matrices.map(matrixWorld => ({ matrixWorld })),
+    boneInverses: matrices.map(() => new Matrix4()),
+    boneMatrices: matrices.flatMap(m => { const a = Array(16).fill(0); a[0] = a[5] = a[10] = m.s; a[13] = m.y; a[15] = 1; return a; }),
+    update() {},
+  };
+  const skinnedPlane = { isSkinnedMesh: true, skeleton, geometry: { userData: { blendHeight: .012 } },
+    bindMatrix: new Matrix4(), bindMatrixInverse: new Matrix4(),
+    updateMatrixWorld() {}, localToWorld(v) { return v; } };
+  return { updateMatrixWorld() {}, userData: {
+    sourceCanvas: { width: 100, height: 100 }, portraitModelWidth: 1, portraitModelHeight: 1,
+    neckRig: { available: true, skinnedPlane, headOffsetJoint: {}, headScaleJoint: {}, neckLocal: { y: .2 },
+      spineBase: { y: .175 }, spinePosteriorY: -.3, headBoundsPx: { left: 40, right: 60 } }, // Last spine node is 2.5 original 100px sprite rows below the head.
+  } };
+}
+for (const placement of [-.095, .12]) {
+  const root = offsetFixture(placement);
+  const samples = [{ x: 50, y: 25 }, { x: 50, y: 30.5 }, { x: 50, y: 35 }, { x: 50, y: 50 }, { x: 50, y: 80 }];
+  for (const pixel of samples) {
+    const y = .5 - pixel.y / 100;
+    const spline = context.window.HobunjiCharacterSpine.nodeWeightsAt(y, .175, 1, -.3, {});
+    const translationWeight = y > .2 - .012 ? 1 : (spline.a * (1 - spline.wb) + spline.b * spline.wb) / 6; // Below the neck ALL movement comes from actual spine weights, not placement bone 7.
+    const expected = y + placement * translationWeight;
+    for (const resolve of [context.resolveSkinnedPixelWorldPosition, context.resolvePosition])
+      near(resolve(root, pixel).y, expected, 'runtime and x-ray CPU skinning match real seven-node spine stretch and short-neck placement');
+  }
+}
+// The Animation Author uses a different three-bone layout: body 0, offset 1,
+// rotating neck 2. Spouse Kiss translates the actual neck joint forward in Z,
+// so both skinned-pixel mouth probes must see that bone's motion immediately.
+function authorNeckFixture(headForward, headPlacement) {
+  const body = new Matrix4();
+  const offset = new Matrix4(1, 0, headPlacement);
+  const neck = new Matrix4(1, 0, headPlacement + headForward);
+  const matrices = [body, offset, neck];
+  const skeleton = {
+    bones: matrices.map(matrixWorld => ({ matrixWorld })),
+    boneInverses: matrices.map(() => new Matrix4()),
+    boneMatrices: matrices.flatMap(m => {
+      const a = Array(16).fill(0);
+      a[0] = a[5] = a[10] = m.s;
+      a[13] = m.y; a[14] = m.z; a[15] = 1;
+      return a;
+    }),
+    update() {},
+  };
+  const skinnedPlane = { isSkinnedMesh: true, skeleton, geometry: { userData: { blendHeight: .012 } },
+    bindMatrix: new Matrix4(), bindMatrixInverse: new Matrix4(),
+    updateMatrixWorld() {}, localToWorld(v) { return v; } };
+  return { updateMatrixWorld() {}, userData: {
+    sourceCanvas: { width: 100, height: 100 }, portraitModelWidth: 1, portraitModelHeight: 1,
+    neckRig: { available: true, skinnedPlane, headOffsetJoint: {}, neckJoint: {}, neckLocal: { y: .2 } },
+  } };
+}
+for (const resolve of [context.resolveSkinnedPixelWorldPosition, context.resolvePosition]) {
+  for (const placement of [-.04, .05]) {
+    const root = authorNeckFixture(.10, placement); // Same forward neck move the kiss's contact solver applies in world space.
+    near(resolve(root, { x: 50, y: 10 }).z, .10 + placement,
+      'author head pixels follow bone 2 movement and bone 1 placement');
+    const middleY = .5 - 30.5 / 100;
+    const turn = context.neckBlendWeight(middleY, .2, .012);
+    near(resolve(root, { x: 50, y: 30.5 }).z, placement + .10 * turn,
+      'author short neck strip blends between rotation and nonrotating placement');
+    const lowerY = .5 - 40 / 100;
+    near(resolve(root, { x: 50, y: 40 }).z,
+      placement * context.headOffsetWeightAt(lowerY, .2, 1, .012),
+      'author torso uses only nonrotating offset fade below the short neck');
+    near(resolve(root, { x: 50, y: 90 }).z, 0,
+      'author lower body remains planted during mouth contact');
+  }
+}
+console.log('head centroid skinning regression passed, including ten-bone and three-bone author offset parity');
