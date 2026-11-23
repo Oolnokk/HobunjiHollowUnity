@@ -6,7 +6,7 @@ const vm=require('node:vm');
 // Run: node scripts/test-ruin-sanctum-boss-intro.js
 const source=fs.readFileSync('docs/js/dev-random-ruin-sanctum.js','utf8');
 let composer,clock=0,uid=0,active=null,created=0,disposed=0,locks=0,releases=0,effects=0,hazards=0,slowSpawn=null,discarded=0,skeletons=0,skeletonDisposals=0,warhammers=0,playerTeleports=0,stagedCancelled=0,telegraphsCancelled=0;
-const timers=new Map(),nodes=[],enemies=new Set();
+const timers=new Map(),nodes=[],enemies=new Set(),introSounds=[]; // Audible reveal cues and their cancellation are asserted against the fake clock.
 const timeout=(fn,ms=0)=>{const id=++uid;timers.set(id,{at:clock+ms,fn});return id;};
 const clear=id=>timers.delete(id);
 async function settleMicrotasks(){
@@ -29,10 +29,12 @@ const document={
 };
 function actor(options){
   return {name:'Imlao the Sightless',id:'lich'+(++created),x:options.x,y:options.y,health:100,maxHealth:100,
-    avatarRef:{modelHeight:1.7,dispose(){disposed++;}}};
+    facing:0,groupRot:0,pngRot:0,def:{aimAngleOffset:Math.PI/2}, // The production humanoid aims in combat-space, not raw group-yaw space.
+    avatarRef:{modelHeight:1.7,group:{rotation:{y:0}},dispose(){disposed++;}}};
 }
 const win={
   THREE:{},DynamicSurfaces:{},DevRandomRuinSimplePuzzles:{registerComposer:next=>composer=next},
+  AudioSystem:{playObjectSfxKeyAt(key,x,z,area,y,opts){introSounds.push({key,x,z,area,y,opts,at:clock});}},
   DevRandomRuin:{setPlayerWorldPoint:()=>{playerTeleports++;return true;},getSeed:()=>77},
   BanditCombat:{discardEntity(entity){discarded++;entity.avatarRef?.dispose?.();}},
   Combat:{telegraph:{cancel(){telegraphsCancelled++;}},cancelStagedForAttacker(){stagedCancelled++;}}, // Use the canonical teardown path in the real encounter.
@@ -56,10 +58,11 @@ const context={theme:'kanthic',specialBoss:true,meta:{floorSurfaceY:0},
     vault:{minX:26,maxX:33,minZ:9,maxZ:15},zc:12}};
 composer.buildRooms({deps},context,()=>.5,[],{sanctum:true});
 const state=win.DevRandomRuinSanctum.getState();
+state.built=true; // The fixture supplies the room state directly; composer.update may tick only the real introduction pose.
 Object.assign(state,{entry:{x:12,z:12},door:{front:{x:3,z:12}},bossType:'kanthic',
   coffins:[{index:0,open:false,lidT:0,rise:{x:20,z:10}}],arenaFires:[]});
 const arenaLight={x:12,y:1.4,z:12,active:false}; // Source follows ignition, cancellation and reset.
-state.arenaFires=[{lit:false,anchor:{visible:false},lightSource:arenaLight}];
+state.arenaFires=[{lit:false,anchor:{visible:false,id:1},halo:{material:{opacity:0}},lightSource:arenaLight}];
 state.sanctumLights=[arenaLight];
 function assertProjectedRevealLight(lights, spotlight) {
   // Exercise the production darkness-cutout compositor; an active light record alone does not make the lich visible.
@@ -109,6 +112,9 @@ async function run(){
   assert.equal(skeletons,0,'intro may not summon coffin skeletons');
   assert.equal(active.reason,'ruin-sanctum-boss-intro');
   assert.equal(active.shot.blendSeconds,.95);
+  const initialFacing=state.boss.facing; // The boss starts mostly turned away before the reveal's face-to-face beat.
+  const initialYaw=state.boss.avatarRef.group.rotation.y;
+  assert(Math.abs(initialFacing)>2,'lich should enter the shot turned away from the player');
   await advance(850);
   const title=nodes.find(node=>node.id==='ruin-sanctum-boss-title');
   assert(title,'name banner appears after camera begins zooming');
@@ -117,8 +123,25 @@ async function run(){
   assert.match(title.style.cssText,/KhymeryyanRomanLetters\+Numbers/);
   assert.match(title.style.cssText,/-webkit-text-stroke:\.5px #000/);
   assert.match(title.style.cssText,/font-weight:400/,'authored glyphs must not be synthetically emboldened beneath the outline');
-  await advance(2750);
+  assert.equal(introSounds.length,0,'the title enters just before the face-to-face shriek');
+  composer.update({deps},clock,.016); // Exercise the real composer-owned visual tick, not a duplicate yaw formula.
+  assert.notEqual(state.boss.facing,initialFacing,'the boss visibly turns during the camera zoom');
+  assert.notEqual(state.boss.avatarRef.group.rotation.y,initialYaw,'the rendered rig turns, not just the combat aim');
+  assert.equal(state.boss.pngRot,state.boss.groupRot,'both portrait sides and the underlying rig agree on yaw');
+  await advance(100);
+  composer.update({deps},clock,.016);
+  assert.equal(introSounds.length,1,'scream fires once when the turn finishes');
+  assert.equal(introSounds[0].key,'ruinCoffinShriek','the sound reuses the existing skeleton recording');
+  assert.equal(introSounds[0].area,'map_i_dev_random_ruin','the scream is spatial, not a UI/global audio cue');
+  assert.equal(introSounds[0].x,state.boss.x/64);
+  assert.equal(introSounds[0].opts.earshotTiles,24,'sanctum shriek carries across the chamber');
+  assert.equal(state.boss.groupRot,state.boss.avatarRef.group.rotation.y,'rendered yaw does not drift at the end of the turn');
+  assert.equal(win.DevRandomRuinSanctum.snapshot().introShriekPlayed,true,'mobile debug records the shriek');
+  await advance(2650);
   assert.equal(state.intro,null);
+  assert.equal(introSounds.length,5,'one original shriek plus four extraordinary echoes, never a second attack shriek');
+  assert.deepEqual(Array.from(introSounds,entry=>Math.round(entry.at)),[2700,3100,3570,4150,4770],'echoes keep their distinct long-delay pattern');
+  assert.deepEqual(Array.from(introSounds,entry=>entry.opts.volumeScale),[1,.55,.32,.18,.09],'echo falls away without raising the master SFX volume');
   assert.equal(state.introLight,null,'reveal-only lighting stops with its shot');
   assert.equal(win.DevRandomRuinSanctum.lightSources().length,1,'only permanent arena lighting survives the reveal');
   assert(enemies.has(state.boss),'hostile simulation begins after reveal');
@@ -148,6 +171,9 @@ async function run(){
   assert.equal(state.boss,null);
   assert.equal(active,null);
   assert.equal(locks,releases,'intro locks must be returned after exits');
+  const soundsBeforeExit=introSounds.length;
+  await advance(3500); // Delayed shriek/echo timers belong to the cancelled intro and must stay silent.
+  assert.equal(introSounds.length,soundsBeforeExit,'leaving before the scream cancels every queued echo');
   await advance(350); // Finish the physical return fade before interacting with the Great Door again.
   assert.equal(state.leavingSanctum,false);
   let resolveSpawn;
@@ -175,6 +201,9 @@ async function run(){
   assert.equal(state.introLight,null,'death clears the temporary boss light');
   assert.equal(win.DevRandomRuinSanctum.lightSources().length,1,'death retains no temporary light source');
   assert.equal(state.intro,null,'death during the reveal cancels camera ownership');
+  const soundsBeforeDeath=introSounds.length;
+  await advance(3500);
+  assert.equal(introSounds.length,soundsBeforeDeath,'death during reveal cancels every delayed shriek and echo');
   assert.equal(active,null);
   assert.equal(locks,releases,'death during reveal releases player controls');
   assert.equal(enemies.size,0);
