@@ -1185,6 +1185,7 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
     mesh.userData.festivalBlossomFinish = { part, texture, tint, tintTreatment:'body-sprite-tint' }; // Live inspection describes both surfaces.
   }
 
+  const treeRootSpansByVariant = new WeakMap(); // Shared native spine metadata lives outside Object3D.userData so clone() never deep-copies it for every tree.
   function buildConiferTreeGroup(preset, seedU32) {
     const rand = mulberry32(seedU32);
     const DOWN = new T.Vector3(0, -1, 0);
@@ -1205,6 +1206,7 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
     const instYaw        = rand() * Math.PI * 2;
 
     const woodGeoms = [];
+    const rootSpansLocal = []; // Cached native root centreline samples, consumed by the existing spatial collision index only when this tree is placed.
     const leafGeoms = [];
     const blossomGeoms = []; // Bright flower clusters stay on real native branch tips, without replacing the green canopy.
     const blossomSources = []; // A bounded set of real branch-bloom positions feeds the festival's pooled falling-petal emitter.
@@ -1281,6 +1283,14 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
           }
         });
         woodGeoms.push(root.geom);
+        const points = [0.12, 0.38, 0.66, 0.9].map(t => {
+          const index = Math.min(root.spine.pts.length - 1, Math.round((root.spine.pts.length - 1) * t));
+          const point = root.spine.pts[index]; // Reuse the actual generated tube spine, never guess root directions from the trunk.
+          return [point.x, point.y, point.z];
+        });
+        const middleRing = Math.round(rootRings * 0.5); // Used only once per shared species variant to approximate the real tapered tube radius.
+        const contactRadius = Math.max(0.035, rootBaseRadius * Math.pow(rootTaperPR, Math.max(0, middleRing - rampRings)) * 0.86);
+        rootSpansLocal.push({ points, radius: contactRadius });
       }
     }
 
@@ -1726,6 +1736,7 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
     }
     unitLeaf.dispose();
 
+    if(rootSpansLocal.length) treeRootSpansByVariant.set(group,rootSpansLocal); // Immutable variant-local geometry; each placed tree references this one copy.
     if(blossomSources.length) group.userData.wildernessBlossomPetalSources = blossomSources; // The particles use real colored branch sites, not guessed canopy-height boxes.
     group.rotation.y = instYaw;
     group.scale.setScalar(instScale * (preset.scaleMul ?? 1));
@@ -1804,6 +1815,8 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
     inst.rotation.y = instYaw;
     inst.scale.setScalar(instScale * (preset.scaleMul ?? 1));
     if (variant.userData.canopyLocal) inst.userData.canopyLocal = variant.userData.canopyLocal;
+    const rootSpans = treeRootSpansByVariant.get(variant); // Read after variant clone so the heavy metadata is never JSON-duplicated.
+    if (rootSpans) inst.userData.wildernessRootSpansLocal = rootSpans; // This specific transform is applied only when building the zone's root spatial index.
     // climbBranchChance is rolled HERE, per tile instance, not per shared
     // variant — every variant's geometry always includes a climb-branch
     // mesh (see buildConiferTreeGroup), so this is purely a per-instance
