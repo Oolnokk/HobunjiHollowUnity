@@ -322,7 +322,9 @@ function makeHarness({ townValue = 3, season = 'Stormtide', townBuildings = [], 
   assert.equal(T.buy(caravan.id, entry.id).ok, false, 'sold-out hats cannot be duplicated');
   entry.qty = 1;
   window.EquipmentPanel.grantPackClothing = () => null;
-  assert.deepEqual(T.buy(caravan.id, entry.id), { ok: false, reason: 'clothing' }, 'unavailable Pack refuses the purchase');
+  const refused = T.buy(caravan.id, entry.id); // VM results belong to a different JS realm; compare public fields rather than object prototypes.
+  assert.equal(refused.ok, false, 'unavailable Pack refuses the purchase');
+  assert.equal(refused.reason, 'clothing', 'failed grant returns the expected reason');
   assert.equal(inventory.gold, goldBefore - 121, 'failed clothing grants never charge the player');
   assert.equal(entry.qty, 1, 'failed clothing grants retain caravan stock');
   assert.equal(saves(), savesBefore + 1, 'rejected clothing grants never save a false purchase');
