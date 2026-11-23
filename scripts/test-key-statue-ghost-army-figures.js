@@ -132,7 +132,10 @@ vm.runInNewContext(source,{window,document,console:diagnostics,Image:class {
   const size=carrier.userData.ghostArmyStatueInfo.size;
   assert(Math.abs(size.height-1.12)<.001&&size.width<=.56&&size.depth<=.42,
     'stone soldier plus weapon fits inside the intended original-sized statuette');
-  assert.equal(carrier.children[1].children.length,2,'the stone torso and carved physical weapon are both present');
+  assert.equal(carrier.children[1].children.length,1,'the carved NPC is the single fitted sculpture child');
+  const carvedAvatar=carrier.children[1].children[0]; // The weapon's grip follows the avatar root, not the moving Burden's origin.
+  assert.equal(carvedAvatar.children.length,1,'the weapon is mounted inside the frozen soldier portrait frame');
+  assert.equal(carvedAvatar.children[0].position.y,.4,'the weapon uses the NPC hand height plus its static raised-grip offset');
   assert.equal(api.debugSnapshot().active,1);
   assert.equal(companionStates.get('keyStatueFigures')().soldiers[0].shape,'warhammer','mobile inspector reports the real selected Ghost Army shape');
   api.dispose(carrier);
