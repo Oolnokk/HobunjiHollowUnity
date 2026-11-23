@@ -173,8 +173,8 @@
   const actorXrayToggles = ['animals', 'enemies', 'player'].map(group => ({
     id: 'xray-' + group,
     group: 'Performance',
-    name: 'X-ray for ' + (group === 'player' ? 'the player' : group),
-    on: true,
+    name: 'X-ray for ' + (group === 'player' ? 'the player' : group === 'enemies' ? 'NPCs and enemies' : group),
+    get on() { return held()?.actorXrayDefaults?.[group] ?? (group !== 'enemies'); },
     input: 'settingActorXray-' + group,
     available: () => typeof held()?.setActorXrayEnabled === 'function',
     read: () => held().getActorXrayEnabled(group),

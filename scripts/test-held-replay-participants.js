@@ -42,15 +42,24 @@ const api = new Function('window', 'performance', code + `
   replayCameraPosition = { x: 0, y: 0, z: 0 };
   const repaired = []; // Nonparticipant weapon-hand invariants are maintained in the same split loop.
   const enforceHeldMesh = mesh => repaired.push(mesh);
-  return { setActorXrayEnabled, refreshActorXrayRoots, split: (m, s, o, foot, repair = false) => splitReplayParticipants(m, s, o, foot, repair), repaired, setPolicy: v => { replayParticipantPolicy = v; }, skips: () => nonParticipantReplaySkips,
+  return { actorXrayDefaults, setActorXrayEnabled, refreshActorXrayRoots, split: (m, s, o, foot, repair = false) => splitReplayParticipants(m, s, o, foot, repair), repaired, setPolicy: v => { replayParticipantPolicy = v; }, skips: () => nonParticipantReplaySkips,
     actorOf: (m, s) => actorRootForXrayMesh(m, s), setOwnerLink: v => { heldOwnerLinkEnabled = v; participantCache = new WeakMap(); }, setLimit: n => { otherWeaponXrayLimit = n; },
     budgetSkips: () => otherWeaponXrayBudgetSkips, ownerLinkDefault: heldOwnerLinkEnabled, limitDefault: otherWeaponXrayLimit };`)(window, { now: () => 0 });
 
 // Shipped defaults: owners resolved, other characters' weapons in the base pass (budget 0).
 assert.equal(api.ownerLinkDefault, true, 'owner link on by default');
+assert.deepEqual(api.actorXrayDefaults, { animals: true, enemies: false, player: true });
 assert.equal(api.limitDefault, 0, 'other characters\' weapons draw in the base pass by default');
 api.setOwnerLink(false); api.setLimit(Infinity); // The Settings "off" position: every weapon x-rays (the rules below).
 
+const linkedPlayerHolder = node('scene_level_tool_holder', scene, { hobunjiHeldPortraitOwner: player });
+const linkedPlayerWeapon = node('weapon', linkedPlayerHolder); // Actual gameplay tool holder is a sibling of the avatar.
+const linkedPlayerFlail = node('flail_head', linkedPlayerWeapon); // Nested assembly children need the same standing floor.
+for (const piece of [linkedPlayerWeapon, linkedPlayerFlail]) {
+  assert.equal(api.actorOf(piece, scene)?.root, player);
+  assert.equal(api.actorOf(piece, scene)?.isPlayer, true, 'player gear resolves with the NPC owner-link optimization disabled');
+}
+api.setActorXrayEnabled('enemies', true); // Exercise the standalone replay-participant policy with all actor groups on.
 const heldOthers = [];
 const held = api.split([playerHand, playerBlade, tallHand, tallSpear, shortHand, shortClub, orphanHand], scene, heldOthers, false);
 assert.deepEqual(held, [playerHand, playerBlade, tallSpear, shortHand, shortClub, orphanHand], 'every weapon keeps the x-ray; hands only for the player and short species');
@@ -138,11 +147,12 @@ window.CharacterVisuals = {
     visit('enemy', banditA);
   },
 };
-const replaySet = [animalFoot, petFoot, namedAnimalFoot, enemyFoot, weaponA, playerBlade, playerFootNear, tallFoot, orphanHand];
+const replaySet = [animalFoot, petFoot, namedAnimalFoot, enemyFoot, weaponA, playerBlade, linkedPlayerWeapon,
+  linkedPlayerFlail, playerFootNear, tallFoot, tallSpear, orphanHand];
 for (const [group, expected] of [
   ['animals', [animalFoot, petFoot, namedAnimalFoot]],
-  ['enemies', [enemyFoot, weaponA]],
-  ['player', [playerBlade, playerFootNear]],
+  ['enemies', [enemyFoot, weaponA, tallFoot, tallSpear]],
+  ['player', [playerBlade, linkedPlayerWeapon, linkedPlayerFlail, playerFootNear]],
 ]) {
   assert.equal(api.setActorXrayEnabled(group, false), false);
   api.refreshActorXrayRoots(scene);
