@@ -1315,9 +1315,11 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Keep native
       building = false;
       active = false;
       status(`Could not build scale comparison: ${error.message}`);
-      await restoreWorkspace();
-      await host()?.setMode?.(originMode); // Even Multi needs its native chrome refreshed after a failed build.
-      document.getElementById(TAB_ID)?.setAttribute('aria-selected','false');
+      try { await restoreWorkspace(); }
+      finally {
+        await host()?.setMode?.(originMode); // Even if an actor import failed, leave the broken comparison tab.
+        document.getElementById(TAB_ID)?.setAttribute('aria-selected','false');
+      }
     }
   }
 
@@ -1346,11 +1348,23 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Keep native
     building = false;
     persistProfiles();
     exitingPromise = (async () => {
+      let restoreFailure = null; // A broken actor import must not trap the user inside the comparison tab.
       try {
-        await restoreWorkspace();
-        const target = pendingExitMode || originMode;
-        await host()?.setMode?.(target); // ALWAYS include Multi: its native mode is often already Multi while CSS still says scale-compare.
+        try { await restoreWorkspace(); }
+        catch (error) {
+          restoreFailure = error;
+          console.warn('[full-character-scale] could not restore the saved actors before switching tabs', error);
+        }
+        let applied;
+        do {
+          applied = pendingExitMode || originMode; // Last tap wins, even if another tab was requested during a slower native handoff.
+          await host()?.setMode?.(applied); // ALWAYS include Multi: its native mode can already be Multi while CSS still says scale-compare.
+        } while (pendingExitMode !== applied);
         document.getElementById(TAB_ID)?.setAttribute('aria-selected','false');
+        if (restoreFailure) {
+          const pill = document.getElementById('statusPill'); // Visible in other tabs without mobile devtools.
+          if (pill) pill.textContent = 'Tab switched, but the prior animation project could not be restored. The autosave remains available.';
+        }
       } finally {
         savedMulti = null;
       }
