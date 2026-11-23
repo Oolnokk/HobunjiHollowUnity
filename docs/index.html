@@ -138,7 +138,7 @@
        window.ZoneRegrowth.init(...) alongside the other window.*.init(...)
        calls; js/bandit-camps.js also reads its refreshZoneGroundVisuals
        from its own init() call further down game.js. -->
-  <script src="js/zone-regrowth.js?v=20261116boneyKasaRegrowth1"></script>
+  <script src="js/zone-regrowth.js?v=20261123rootStreamSync1"></script>
   <!-- Player health/stamina/footing regen tick and the vitals-bar HUD
        refresh, extracted out of game.js. Must load before game.js, which
        calls window.PlayerVitals.init(...) alongside the other
@@ -349,7 +349,7 @@
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="combat-main"></script>
   <!-- Dedicated ranged slot, loading/firing poses, and hidden-sphere
        projectiles. Loads before bandits so their dual loadouts can call it. -->
-  <script src="js/nearby-volume-collision.js?v=20261123rootRidge1"></script>
+  <script src="js/nearby-volume-collision.js?v=20261123rootStreamSync1"></script>
   <!-- Finite projectile cover heights for rock/tree/cavern tiles (extracted from game.js; init(deps) from game.js). -->
   <script src="js/projectile-tile-cover.js?v=20261015a"></script>
   <!-- Sub-tile prop footprints consulted by game.js canOccupyAt()/furnitureBlocksMovementAt(); must load before game.js. -->
