@@ -23,7 +23,9 @@ function makeCanvas() {
     getContext() {
       return {
         drawImage: (...args) => this.draws.push(args),
-        set imageSmoothingEnabled(value) { /* draw scale belongs to the sprite */ }
+        save() {}, restore() {},
+        set imageSmoothingEnabled(value) { /* draw scale belongs to the sprite */ },
+        set imageSmoothingQuality(value) {}
       };
     }
   };
@@ -45,20 +47,28 @@ async function main() {
     id, slot, label: id, configPath: file.replace(/^docs\//,''),
     cfg: JSON.parse(fs.readFileSync(path.join(root, file), 'utf8'))
   }));
+  // A plain front/back hat (no behindImage) authored on a non-portrait-sized canvas.
+  cosmetics.push({id: 'bighat', slot: 'hat', label: 'bighat', configPath: 'config/cosmetics/bighat.json', cfg: {
+    slot: 'hat', parts: {head: {layers: {
+      back: {image: {url: './assets/cosmetics/clothes/hat/bighat-back.png'}},
+      front: {image: {url: './assets/cosmetics/clothes/hat/bighat-front.png'}}
+    }}}
+  }});
   const R = {garments: cosmetics, garmentCanvases: new Map()};
   const E = {sourceSpecies: {value: 'mao-ao'}, sourceGender: {value: 'male'}};
   let region = 'headwear'; // The harness tests both normal clothing and layered hats/hoods.
   const harness = [
     sourceBetween('function headwearLayerRecords(', 'async function buildHeadReferenceCanvas'),
     sourceBetween('function sourceHasGarmentArt(', 'function rebuildGarmentSelector'),
-    sourceBetween('async function buildVariantGarmentCanvas(', 'async function buildGarmentCanvas'),
+    sourceBetween('function drawPortraitRaster(', 'async function buildGarmentCanvas'),
     sourceBetween('function collectPatchImageNodes(', 'function behindPatchCatalog'),
     sourceBetween('function targetKey(', 'function ensureTargetData')
   ].join('\n');
   const api = new Function('R', 'E', 'document', 'HEAD_SLOTS', 'assetUrl', 'loadImage', 'fitRegion', 'log',
     harness + '\nreturn {buildVariantGarmentCanvas, sourceHasGarmentArt, targetKey};')(
     R, E, {createElement: makeCanvas}, new Set(['hat', 'hood']), value => value,
-    url => Promise.resolve({url, naturalWidth: 128, naturalHeight: 128}),
+    url => Promise.resolve(url.includes('bighat')
+      ? {url, naturalWidth: 540, naturalHeight: 484} : {url, naturalWidth: 128, naturalHeight: 128}),
     () => region, () => {}
   );
 
@@ -70,6 +80,15 @@ async function main() {
   assert(helm._layers[2].url.endsWith('headband.png'), 'Metal rear image uses the distinct circlet asset');
   assert.deepEqual(Array.from(helm._layers[2].path), ['parts', 'head', 'layers', 'front', 'behindImage']);
   assert(helm._layers.every(layer => layer.canvas.width === 128 && layer.canvas.height === 128));
+
+  // The game sizes portrait layers by height and centers them, so a 540x484 hat
+  // must be scaled into the 234x173 frame, never pasted unscaled at the origin.
+  const bigHat = await api.buildVariantGarmentCanvas('bighat', 'mao-ao', 'male', 234, 173);
+  const bigFront = bigHat._layers.find(layer => layer.name === 'head.layers.front').canvas.draws[0];
+  assert.equal(bigFront.length, 5, 'Oversized headwear is drawn with an explicit destination size');
+  assert(Math.abs(bigFront[4] - 173) < 1e-9, 'Height fills the portrait frame');
+  assert(Math.abs(bigFront[3] - 540 / 484 * 173) < 1e-9, 'Width keeps the authored aspect ratio');
+  assert(Math.abs(bigFront[1] - (234 - 540 / 484 * 173) / 2) < 1e-9, 'Narrower art is centered like portraitLayerRect');
 
   const hood = await api.buildVariantGarmentCanvas('hood', 'kenkari', 'female', 128, 128);
   assert.equal(hood._layers.length, 2, 'Kenkari female fine hood retains separate base and trim');
@@ -249,6 +268,24 @@ async function main() {
     './'+plan.files[0].outputName, 'An equal front/behind cap asset continues pointing to the same new PNG');
   assert.equal(plan.config.speciesVariants.kenkari_female.parts.head.layers.front.behindImage.url,
     './'+plan.files[2].outputName, 'The separate back-view metal PNG gets its own target config URL');
+  const rearNamed=archiveApi.buildFittedLayerArchivePlan([{...helm._layers[2],
+    url:'./assets/cosmetics/clothes/hat/tl_headband_behind.png'}],
+    {sourceSpecies:'mao-ao',sourceGender:'male',targetSpecies:'tletingan',targetGender:'female'});
+  assert(rearNamed.files[0].outputName.endsWith('/tl_headband_tletingan_f_behind.png'),
+    'Fitted rear headwear keeps the *_behind class suffix last: '+rearNamed.files[0].outputName);
+
+  // Exporting a front/back hat to a species with NO existing variant must not
+  // invent (or crash writing) a behindImage that the source never had.
+  archiveGarment = cosmetics[3];
+  plan = archiveApi.buildFittedLayerArchivePlan(bigHat._layers,
+    {sourceSpecies:'mao-ao',sourceGender:'male',targetSpecies:'tletingan',targetGender:'female'});
+  assert.deepEqual(plan.files.map(file => file.outputName), [
+    'assets/cosmetics/clothes/hat/bighat-back_tletingan_f.png',
+    'assets/cosmetics/clothes/hat/bighat-front_tletingan_f.png'
+  ]);
+  const newHatLayers = plan.config.speciesVariants.tletingan_female.parts.head.layers;
+  assert.equal(newHatLayers.front.image.url, './assets/cosmetics/clothes/hat/bighat-front_tletingan_f.png');
+  assert.equal(newHatLayers.front.behindImage, undefined, 'No behindImage is created for a hat that has none');
 
   archiveGarment = cosmetics[2];
   selection = {sourceSpecies:'mao-ao',sourceGender:'male',targetSpecies:'engh-sho',targetGender:'female'};

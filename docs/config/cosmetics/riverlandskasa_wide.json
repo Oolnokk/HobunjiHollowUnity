@@ -256,6 +256,402 @@
           }
         }
       }
+    },
+    "mao-ao_male": {
+      "parts": {
+        "head": {
+          "layers": {
+            "back": {
+              "image": {
+                "url": "./assets/cosmetics/clothes/hat/riverlandskasa_wide-back.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              }
+            },
+            "front": {
+              "image": {
+                "url": "./assets/cosmetics/clothes/hat/riverlandskasa_wide-front.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "mao-ao_female": {
+      "parts": {
+        "head": {
+          "layers": {
+            "back": {
+              "image": {
+                "url": "./assets/cosmetics/clothes/hat/riverlandskasa_wide-back.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              }
+            },
+            "front": {
+              "image": {
+                "url": "./assets/cosmetics/clothes/hat/riverlandskasa_wide-front.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "engh-sho_male": {
+      "parts": {
+        "head": {
+          "layers": {
+            "back": {
+              "image": {
+                "url": "./assets/cosmetics/clothes/hat/riverlandskasa_wide-back.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              }
+            },
+            "front": {
+              "image": {
+                "url": "./assets/cosmetics/clothes/hat/riverlandskasa_wide-front.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "engh-sho_female": {
+      "parts": {
+        "head": {
+          "layers": {
+            "back": {
+              "image": {
+                "url": "./assets/cosmetics/clothes/hat/riverlandskasa_wide-back.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              }
+            },
+            "front": {
+              "image": {
+                "url": "./assets/cosmetics/clothes/hat/riverlandskasa_wide-front.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "tletingan_male": {
+      "parts": {
+        "head": {
+          "layers": {
+            "back": {
+              "image": {
+                "url": "./assets/cosmetics/clothes/hat/riverlandskasa_wide-back_tletingan_m.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              }
+            },
+            "front": {
+              "image": {
+                "url": "./assets/cosmetics/clothes/hat/riverlandskasa_wide-front_tletingan_m.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "tletingan_female": {
+      "parts": {
+        "head": {
+          "layers": {
+            "back": {
+              "image": {
+                "url": "./assets/cosmetics/clothes/hat/riverlandskasa_wide-back_tletingan_f.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              }
+            },
+            "front": {
+              "image": {
+                "url": "./assets/cosmetics/clothes/hat/riverlandskasa_wide-front_tletingan_f.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "mashtzarr_male": {
+      "parts": {
+        "head": {
+          "layers": {
+            "back": {
+              "image": {
+                "url": "./assets/cosmetics/clothes/hat/riverlandskasa_wide-back_mashtzarr_m.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              }
+            },
+            "front": {
+              "image": {
+                "url": "./assets/cosmetics/clothes/hat/riverlandskasa_wide-front_mashtzarr_m.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "mashtzarr_female": {
+      "parts": {
+        "head": {
+          "layers": {
+            "back": {
+              "image": {
+                "url": "./assets/cosmetics/clothes/hat/riverlandskasa_wide-back_mashtzarr_f.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              }
+            },
+            "front": {
+              "image": {
+                "url": "./assets/cosmetics/clothes/hat/riverlandskasa_wide-front_mashtzarr_f.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "porakaneki_male": {
+      "parts": {
+        "head": {
+          "layers": {
+            "back": {
+              "image": {
+                "url": "./assets/cosmetics/clothes/hat/riverlandskasa_wide-back_porakaneki_m.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              }
+            },
+            "front": {
+              "image": {
+                "url": "./assets/cosmetics/clothes/hat/riverlandskasa_wide-front_porakaneki_m.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
     }
   }
 }

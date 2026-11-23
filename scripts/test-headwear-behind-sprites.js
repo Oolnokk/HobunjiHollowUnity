@@ -38,7 +38,7 @@ for(const configPath of configs){
     seen.add(path.basename(behind));
   }
 }
-assert.equal(seen.size,15,'All ten front shape variants and five metal circlet backs are present');
+assert.equal(seen.size,17,'All twelve front shape variants (incl. fitted tletingan-female and porakaneki headbands) and five metal circlet backs are present');
 const source=fs.readFileSync('docs/config/scratchbones-config.js','utf8');
 const circum=source.match(/"layerReplacements"\s*:\s*\[([\s\S]*?)\]\s*,\s*"body/g)?.[0]||source;
 for(const filename of ['tangedcirclet_m.png','tl_tangedcirclet_m.png','kenk_tangedcirclet_m.png',
@@ -46,4 +46,4 @@ for(const filename of ['tangedcirclet_m.png','tl_tangedcirclet_m.png','kenk_tang
   const re=new RegExp('cosmetics/clothes/hat/'+filename.replace(/\./g,'\\.')+'"[\\s\\S]{0,180}?"url"\\s*:\\s*"[^"]+_behind_metal\\.png"');
   assert(re.test(circum),'Circlet rear fallback must use metal behind band for '+filename);
 }
-console.log('Headwear rear asset regression passed: 15 PNGs, all species variants and metallic circlet fallbacks.');
+console.log('Headwear rear asset regression passed: 17 PNGs, all species variants and metallic circlet fallbacks.');

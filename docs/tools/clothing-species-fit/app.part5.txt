@@ -65,9 +65,11 @@ function fittedFallbackAssetPath(layer,selection){
   const source=archiveAssetPath(layer.url);
   const directory=source?.slice(0,source.lastIndexOf('/')+1)||'assets/cosmetics/clothes/';
   const original=(source?.split('/').pop()||safeName(layer.name)+'.png').replace(/\.png$/i,'');
-  const noSourceGender=original.replace(/[_-](male|female|m|f)$/i,'');
+  const rearClass=/(_behind(?:_metal)?)$/i.exec(original)?.[1]||''; // Rear headwear art keeps its *_behind / *_behind_metal class suffix last.
+  const stem=rearClass?original.slice(0,-rearClass.length):original;
+  const noSourceGender=stem.replace(/[_-](male|female|m|f)$/i,'');
   const suffix=selection.targetGender==='female'?'f':'m';
-  return directory+noSourceGender+'_'+safeName(selection.targetSpecies)+'_'+suffix+'.png';
+  return directory+noSourceGender+'_'+safeName(selection.targetSpecies)+'_'+suffix+rearClass+'.png';
 }
 function archiveVariantLeaf(variant,path,originalLeaf){
   let cursor=variant,created=false;
@@ -173,7 +175,7 @@ function buildFittedLayerArchivePlan(layers,selection){
     // If front and rear originally use the same image, updating a front file must
     // update its matching rear alias even when the target layer ALREADY exists.
     // A distinct authored behindImage is handled by its own exported layer instead.
-    if(!behind&&changedUrl&&installed.leaf.behindImage?.url===targetUrl){
+    if(!behind&&changedUrl&&targetUrl&&installed.leaf.behindImage?.url===targetUrl){ // A brand-new target variant has no targetUrl; undefined===undefined must not match a missing behindImage.
       const explicitRear=layers.some(other=>other.path.length===layer.path.length+1&&
         other.path.at(-1)==='behindImage'&&
         JSON.stringify(other.path.slice(0,-1))===JSON.stringify(layer.path));
