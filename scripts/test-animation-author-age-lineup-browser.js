@@ -99,6 +99,9 @@ async function main() {
       return result;
     });
     assert.equal(browserReport.appliedInGame, .67);
+    await page.mouse.click(24, 540); // Real viewport pointer event outside the fixed right-hand panel.
+    assert.equal(await page.evaluate(() => window.HobunjiFullCharacterScaleComparison?.selectedKey),
+      browserReport.selectedKey, 'clicking the rendered lineup must not change selection');
     await page.locator('#maaRigTab').click();
     await page.waitForFunction(() => document.body.dataset.animationAuthorMode !== 'scale-compare', null, { timeout: 30000 });
     assert.equal(await page.locator('#maaFullScalePanel').isVisible(), false, 'comparison panel must close when another author tab opens');
