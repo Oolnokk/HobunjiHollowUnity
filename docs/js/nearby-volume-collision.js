@@ -5,6 +5,7 @@
   const SPATIAL_CELL_TILES = 2; // Buckets static cover so each projectile only checks nearby semantic objects.
   const TREE_HALF_TILE = 0.5; // Native tree trunks already occupy one centered solid tile.
   const HEAD_CACHE_MS = 50; // Reuse the portrait-derived player head clearance across projectiles in the same few frames.
+  const ROOT_STEP_TOLERANCE = 0.23; // Shallow, nearly buried roots remain ordinary walk-over ground clutter, not small invisible walls.
   const HEIGHT_EPSILON = 0.01;
   const EXPLICIT_HEIGHT_FIELDS = ['projectileCoverHeightTiles', 'coverHeightTiles', 'heightTiles'];
   const EXPLICIT_RADIUS_FIELDS = ['projectileCoverRadiusTiles', 'coverRadiusTiles', 'footprintRadiusTiles'];
@@ -14,6 +15,12 @@
   let cachedCombat = false;
   let candidates = [];
   let spatial = new Map();
+  let rootSpatial = new Map(); // Uses the existing two-tile buckets for real raised tree-root spines, not a second render-frame scan.
+  let roots = []; // Only allocated when a scene's cached tree variants are indexed.
+  let cachedRootResidencyVersion = null; // Streaming chunk version invalidates root physics without checking every loaded tree during movement.
+  const placedRootCache = new WeakMap(); // Cache world-space spines for static placed trees across streamed-chunk rebuilds; dead trees are weakly held.
+  let rootCacheHits = 0, rootCacheBuilds = 0; // Dev Companion diagnostics distinguish cheap index reuse from expensive geometric transforms.
+  let unregisterRootCollision = null; // Replaces the same named footprint provider if this runtime is re-initialized.
   let refreshCount = 0;
   let lastSegmentCandidateCount = 0;
   let maxSegmentCandidateCount = 0;
@@ -27,10 +34,21 @@
   const proceduralRecipeBounds = new Map(); // Cached once per furniture key; recipes are expressed in tile-relative authored units.
   const authoredRecipeBounds = new Map(); // Cached once per authored furniture key from its runtime part metadata.
 
+  function activeArea() {
+    return deps?.getCurrentArea?.() ?? window.GridTileAccessors?.getCurrentArea?.() ?? null; // Root collision also works with the older projectile-cover init deps, which did not require an area getter.
+  }
+
   function init(injectedDeps) {
     deps = injectedDeps;
     options = { ...options, ...(injectedDeps.options || {}), textureAlpha: false };
     invalidate();
+    unregisterRootCollision?.();
+    unregisterRootCollision = window.AreaFootprintBlockers?.register?.('wilderness-tree-roots', {
+      get area() { return activeArea(); }, // Dynamic area ownership prevents another zone's path probes from seeing the current forest's roots.
+      enabled: () => String(activeArea() || '').startsWith('map_'),
+      blocksBox: (x, z, half, worldY) => rootBlocksBox(x, z, half, worldY),
+      supportAt: (x, z, maxY) => rootSupportAt(x, z, maxY),
+    }) || null; // One provider for the whole active forest; its cached spine index is never rebuilt per motion query.
     deps.debugLog?.('Nearby cover: height-only semantic projectile cover enabled; mesh, UV, triangle, and raycast collision are disabled.');
   }
 
@@ -44,6 +62,7 @@
     cachedCombat = false;
     candidates = [];
     spatial = new Map();
+    rootSpatial = new Map(); roots = []; cachedRootResidencyVersion = null; // A shifted/regrown forest cannot retain ghost root contact.
     playerHeadCache = { at: -Infinity, value: playerHeadCache.value || 1 };
   }
 
@@ -278,12 +297,134 @@
     }
   }
 
+  function indexRootRecord(root) {
+    roots.push(root);
+    for (let cx = Math.floor(root.minX / SPATIAL_CELL_TILES); cx <= Math.floor(root.maxX / SPATIAL_CELL_TILES); cx++) {
+      for (let cz = Math.floor(root.minZ / SPATIAL_CELL_TILES); cz <= Math.floor(root.maxZ / SPATIAL_CELL_TILES); cz++) {
+        const key = cx + ',' + cz;
+        let bucket = rootSpatial.get(key);
+        if (!bucket) rootSpatial.set(key, bucket = []);
+        bucket.push(root);
+      }
+    }
+  }
+
+  function indexTreeRoots(node) {
+    const spans = node.userData?.wildernessRootSpansLocal;
+    if (!Array.isArray(spans) || !spans.length || node.userData?.pottedBlossom) return;
+    node.updateWorldMatrix?.(true,false); // One scene-build transform update, not a per-frame raycast; freshly placed trees must not index at identity.
+    const transform = transformSnapshot(node); // Same authored model/world transform used by tree semantic cover.
+    let sceneOwner = node; // Cache the scene-attached ancestor: removing a whole chunk leaves child.parent non-null.
+    while (sceneOwner.parent && sceneOwner.parent !== cachedScene) sceneOwner = sceneOwner.parent;
+    if (sceneOwner.parent !== cachedScene) return; // Detached scenery must not contribute collision at all.
+    const elements = node.matrixWorld?.elements;
+    const yaw = finite(node.rotation?.y);
+    const signature = elements?.length >= 16 ? Array.from(elements)
+      : [transform.x, transform.y, transform.z, transform.sx, transform.sy, transform.sz, yaw]; // Only transforms (not visibility) invalidate static root geometry.
+    const previous = placedRootCache.get(node);
+    if (previous?.spans === spans && previous.signature.length === signature.length &&
+      signature.every((value, index) => value === previous.signature[index])) {
+      for (const record of previous.roots) { record.sceneOwner = sceneOwner; indexRootRecord(record); }
+      rootCacheHits++;
+      return; // New chunks only require world-point transforms for their own newly created trees.
+    }
+    const built = []; // Persist this tree's immutable world-space spine records for later chunk residency updates.
+    const cosine = Math.cos(yaw), sine = Math.sin(yaw);
+    const worldPoint = p => elements?.length >= 16
+      ? { x: elements[0] * p[0] + elements[4] * p[1] + elements[8] * p[2] + elements[12],
+          y: elements[1] * p[0] + elements[5] * p[1] + elements[9] * p[2] + elements[13],
+          z: elements[2] * p[0] + elements[6] * p[1] + elements[10] * p[2] + elements[14] }
+      : { x: transform.x + (p[0] * cosine + p[2] * sine) * transform.sx,
+          y: transform.y + p[1] * transform.sy,
+          z: transform.z + (-p[0] * sine + p[2] * cosine) * transform.sz };
+    for (let i = 0; i < spans.length; i++) {
+      const part = spans[i];
+      if (!Array.isArray(part?.points) || part.points.length < 2) continue;
+      const radius = Math.abs(finite(part.radius)) * Math.max(transform.sx, transform.sz);
+      if (radius < 0.055) continue; // Sub-foot-width roots do not become costly, unusable contact strips.
+      const points = part.points.map(worldPoint);
+      if (points.some(p => ![p.x,p.y,p.z].every(Number.isFinite))) continue;
+      const maxTop = Math.max(...points.map(p => p.y)) + radius;
+      if (maxTop < transform.y + 0.085) continue; // Buried roots have no exposed surface and no physical blocker.
+      const minX = Math.min(...points.map(p => p.x)) - radius;
+      const maxX = Math.max(...points.map(p => p.x)) + radius;
+      const minZ = Math.min(...points.map(p => p.z)) - radius;
+      const maxZ = Math.max(...points.map(p => p.z)) + radius;
+      const root = { node, sceneOwner, id: (node.name || 'tree') + ':root:' + i, baseY: transform.y, points, radius,
+        minX, maxX, minZ, maxZ }; // Indexed bounds are computed once per placed shape, not once per streamed chunk.
+      built.push(root);
+      indexRootRecord(root);
+    }
+    placedRootCache.set(node, { spans, signature, roots: built }); // Weak key permits unloaded forest geometry to be reclaimed.
+    rootCacheBuilds++;
+  }
+
+  function rootContact(root, x, z) {
+    let closest = null; // Closest point on the real sampled root centreline, including its local slope.
+    for (let i = 1; i < root.points.length; i++) {
+      const a = root.points[i - 1], b = root.points[i];
+      const dx = b.x - a.x, dz = b.z - a.z;
+      const t = Math.max(0, Math.min(1, ((x-a.x)*dx+(z-a.z)*dz)/Math.max(1e-8,dx*dx+dz*dz)));
+      const px = a.x + dx*t, pz = a.z + dz*t;
+      const distanceSq = (x-px)**2 + (z-pz)**2;
+      if (!closest || distanceSq < closest.distanceSq)
+        closest = { distanceSq, topY: a.y+(b.y-a.y)*t+root.radius, bottomY:a.y+(b.y-a.y)*t-root.radius };
+    }
+    return closest;
+  }
+
+  function rootStillAttached(node) {
+    // Harvesting can detach an inner tree group while its streaming chunk stays
+    // scene-attached; merely checking node.parent or chunk.parent leaves a ghost.
+    for (let ancestor = node, depth = 0; ancestor && depth < 24; ancestor = ancestor.parent, depth++) {
+      if (ancestor === cachedScene) return true;
+    }
+    return false; // Also rejects orphaned/partially disposed subtrees.
+  }
+
+  function eachRootNear(x, z, half, visit) {
+    if (!deps || !Number.isFinite(x) || !Number.isFinite(z)) return false;
+    const version = window.WildernessChunks?.residencyVersion?.(); // Native streamed-zone change counter, checked without scanning any mesh.
+    if (deps.getActiveScene?.() !== cachedScene ||
+      (Number.isFinite(version) && version !== cachedRootResidencyVersion)) rebuild(); // New/unloaded chunks may reuse the exact same Three.js Scene.
+    const h = Number.isFinite(half) ? Math.max(0,half) : 0;
+    for (let cx = Math.floor((x-h)/SPATIAL_CELL_TILES); cx <= Math.floor((x+h)/SPATIAL_CELL_TILES); cx++)
+      for (let cz = Math.floor((z-h)/SPATIAL_CELL_TILES); cz <= Math.floor((z+h)/SPATIAL_CELL_TILES); cz++)
+        for (const root of rootSpatial.get(cx+','+cz) || []) {
+          if (root.node?.parent && root.sceneOwner?.parent === cachedScene && rootStillAttached(root.node) &&
+            visit(root, rootContact(root,x,z),h)) return true; // Both chunk unloads and direct inner-tree removal immediately stop physical contact.
+        }
+    return false;
+  }
+
+  function rootBlocksBox(x, z, half, worldY) {
+    return eachRootNear(x,z,half,(root,contact,h) => {
+      if (!contact || contact.distanceSq > (root.radius+h)**2) return false;
+      if (worldY == null) return contact.topY > root.baseY + ROOT_STEP_TOLERANCE; // Shallow roots can be stepped over normally.
+      return worldY >= contact.bottomY-.035 && worldY < contact.topY-.02;
+    });
+  }
+
+  function rootSupportAt(x, z, maxY) {
+    let best = null; // Only a securely centred foot may stand atop a tube; edge grazes never hold a floating player.
+    eachRootNear(x,z,0,(root,contact) => {
+      if (!contact || root.radius < 0.075 || contact.distanceSq > Math.max(0.02,root.radius-.045)**2) return false;
+      if (contact.topY <= root.baseY + .06 || contact.topY > maxY) return false;
+      if (!best || contact.topY > best.y) best = { y:contact.topY, kind:'tree root', id:root.id };
+      return false;
+    });
+    return best;
+  }
+
   function rebuild() {
     const startedAt = performance.now();
     const scene = deps?.getActiveScene?.();
     candidates = [];
     spatial = new Map();
+    rootSpatial = new Map(); roots = []; // Reuse the scene-wide semantic cover traversal for native tree-root placement.
     cachedScene = scene || null;
+    const version = window.WildernessChunks?.residencyVersion?.();
+    cachedRootResidencyVersion = Number.isFinite(version) ? version : null; // Reuse the chunk owner's existing version instead of adding a per-frame tree scan.
     if (!scene) {
       lastRebuildMs = Number((performance.now() - startedAt).toFixed(2));
       return;
@@ -292,7 +433,9 @@
     const stack = [...(scene.children || [])];
     while (stack.length) {
       const node = stack.pop();
-      if (!node || node.visible === false) continue;
+      if (!node) continue;
+      if (node.userData?.wildernessRootSpansLocal) indexTreeRoots(node); // Render-only tree culling must never switch physical roots off.
+      if (node.visible === false) continue;
       const semantic = semanticCoverFor(node);
       if (semantic) {
         const candidate = candidateFrom(node, semantic);
@@ -502,6 +645,8 @@
       algorithm: 'semantic-height',
       candidates: candidates.length,
       spatialCells: spatial.size,
+      rootRidges: roots.length, rootSpatialCells: rootSpatial.size, rootCollisionRegistered: !!unregisterRootCollision,
+      rootResidencyVersion: cachedRootResidencyVersion, rootCacheHits, rootCacheBuilds, // Mobile profiling distinguishes reused shape data from full streamed-chunk rebuilds.
       radiusTiles: null,
       refreshCount,
       testedRayCount: 0,

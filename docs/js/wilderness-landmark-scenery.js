@@ -362,15 +362,60 @@ async function debris(host,sites,ticket,zoneId){
   }
  }catch(e){error='Could not render debrisified pillars: '+String(e?.message||e);root.__farmLog?.('[wilderness-landmarks] '+error,'warn');}
 }
+// Mirrors cairns()'s actual seeded stone transforms at zone-build time. The collision
+// footprint includes every rotated stone's visible corners without per-frame mesh raycasts.
+function cairnPhysicalBoxes(site){
+ const geo=cairnArt(root.THREE)?.geometry; // Same cached cliff-mapped geometry rendered by every instanced cairn course.
+ if(!geo?.computeBoundingBox)return null;
+ if(!geo.boundingBox)geo.computeBoundingBox();
+ const bounds=geo.boundingBox;
+ if(!bounds||![bounds.min.x,bounds.max.x,bounds.min.y,bounds.max.y,bounds.min.z,bounds.max.z].every(Number.isFinite))return null;
+ const rand=rng(hash(site.id)),size=site.size,centerX=site.point.col+.5,centerZ=site.point.row+.5;
+ const baseY=elevation(site);
+ let bottom=baseY-.055*size;
+ const boxes=[]; // One rectangle per stacked course allows landing on lower visible stones without floating on the upper cap.
+ for(const [width,height,depth] of CAIRN_STONES){
+  const offset=(rand()-.5)*.08*size; // Matches the instance offset call order in cairns().
+  const yaw=site.yaw+(rand()-.5)*1.5; // Matches the per-course random yaw call order in cairns().
+  const x=centerX+Math.cos(site.yaw)*offset,z=centerZ+Math.sin(site.yaw)*offset;
+  const cosine=Math.cos(yaw),sine=Math.sin(yaw);
+  const result={minX:Infinity,maxX:-Infinity,minZ:Infinity,maxZ:-Infinity,minY:Infinity,maxY:-Infinity};
+  for(const bx of [bounds.min.x*width*size,bounds.max.x*width*size]){
+   for(const bz of [bounds.min.z*depth*size,bounds.max.z*depth*size]){
+    const wx=x+bx*cosine+bz*sine,wz=z-bx*sine+bz*cosine;
+    result.minX=Math.min(result.minX,wx);result.maxX=Math.max(result.maxX,wx);
+    result.minZ=Math.min(result.minZ,wz);result.maxZ=Math.max(result.maxZ,wz);
+   }
+  }
+  const midY=bottom+height*size/2;
+  result.minY=Math.min(result.minY,midY+bounds.min.y*height*size);
+  result.maxY=Math.max(result.maxY,midY+bounds.max.y*height*size);
+  const INSTANCE_EPSILON=.0005; // Three r128 stores instanced transforms as float32; keep their rounded outer corners physically included.
+  result.minX-=INSTANCE_EPSILON;result.maxX+=INSTANCE_EPSILON;
+  result.minZ-=INSTANCE_EPSILON;result.maxZ+=INSTANCE_EPSILON;
+  boxes.push(result);
+  bottom+=(height-.055)*size;
+ }
+ return boxes;
+}
 function registerStoneCollision(zone,sites){
  unregisterStoneCollision?.();unregisterStoneCollision=null;updateDebrisCollision=null; // Each Shift invalidates the old geometry and asynchronous callback.
  const bySite=new Map(); // Site id -> world-space stone rectangles; the initial pillar box stays solid while its authored mesh loads.
  for(const site of sites.filter(s=>SOLID_LANDMARK_KINDS.has(s.kind))){
   const x=site.point.col+.5,z=site.point.row+.5,y=elevation(site);
-  const size=Math.max(.6,Number(site.size)||1),half=(site.kind==='deadTree'?.32:.36)*size;
-  const height=(site.kind==='deadTree'?4.2:1.25)*size;
-  bySite.set(site.id,[{minX:x-half,maxX:x+half,minZ:z-half,maxZ:z+half,minY:y-.05,maxY:y+height}]);
- } // Ordinary cairns/trees/rocks retain their prior cheap collider; only authored debris becomes per-part precise.
+  const size=Math.max(.6,Number(site.size)||1);
+  const isQuarryStone=site.kind==='markedBoulder'||site.kind==='witnessStone';
+  const quarry=isQuarryStone?root.OreRockTextures?.smallStoneArt?.(root.THREE)?.geometry:null; // Reuse the already-rendered single stone, not a guessed boulder silhouette.
+  if(quarry&&!quarry.boundingBox)quarry.computeBoundingBox?.(); // One cached source-geometry measurement for all witness sites.
+  const bounds=quarry?.boundingBox;
+  const half=isQuarryStone&&bounds?Math.max(Math.abs(bounds.min.x),Math.abs(bounds.max.x),Math.abs(bounds.min.z),Math.abs(bounds.max.z))
+   :(site.kind==='deadTree'?.32:site.kind==='stoneCairn'?.46:.36)*size;
+  const height=isQuarryStone&&bounds?.max?Math.max(.1,.52+bounds.max.y)
+   :(site.kind==='deadTree'?4.2:1.25)*size; // Other scenery stays on the existing cheap finite trunk/rock model.
+  const cairnBoxes=site.kind==='stoneCairn'?cairnPhysicalBoxes(site):null; // Four measured course footprints preserve real stepped landings.
+  const fallback={minX:x-half,maxX:x+half,minZ:z-half,maxZ:z+half,minY:y-.05,maxY:y+height};
+  bySite.set(site.id,(cairnBoxes?.length?cairnBoxes:[fallback]).map(box=>({...box,siteId:site.id,kind:site.kind})));
+ } // Ordinary cairns/trees/rocks retain their cheap collider; authored debris becomes per-part precise.
  const BUCKET_TILES=8; // Same spatial index shape used by RuinSites to avoid scanning every piece on each movement probe.
  let columns=new Map(),allBoxes=[]; // Immutable snapshot swapped after one-time or async scene rebuild.
  function rebuild(){
@@ -395,7 +440,7 @@ function registerStoneCollision(zone,sites){
   let changed=false;
   for(const [id,boxes] of resolved||[]){
    if(!bySite.has(id)||!Array.isArray(boxes)||!boxes.length)continue;
-   bySite.set(id,boxes);changed=true;
+   bySite.set(id,boxes.map(box=>({...box,siteId:id,kind:'brokenPillar'})));changed=true;
   }
   if(changed)rebuild(); // Once after the authored fragments finish loading; no geometry traversals during movement.
  };
@@ -403,22 +448,41 @@ function registerStoneCollision(zone,sites){
   return maxX>=box.minX&&minX<=box.maxX&&maxZ>=box.minZ&&minZ<=box.maxZ
    &&(worldY==null||(worldY>=box.minY-.05&&worldY<=box.maxY+.05));
  }
- unregisterStoneCollision=blockers.register('wilderness-landmark-stones',{area:zone,blocksBox(x,z,half,worldY){
-  if(!Number.isFinite(x)||!Number.isFinite(z))return false;
-  const moverHalf=Number.isFinite(half)?Math.max(0,half):0; // Untrusted motion probes cannot trigger an unbounded bucket scan.
-  const minX=x-moverHalf,maxX=x+moverHalf,minZ=z-moverHalf,maxZ=z+moverHalf;
+ function nearby(x,z,half,visit){
+  const minX=x-half,maxX=x+half,minZ=z-half,maxZ=z+half;
   const left=Math.floor(minX/BUCKET_TILES),right=Math.floor(maxX/BUCKET_TILES);
   const top=Math.floor(minZ/BUCKET_TILES),bottom=Math.floor(maxZ/BUCKET_TILES);
   const cellCount=(right-left+1)*(bottom-top+1);
-  if(![left,right,top,bottom,cellCount].every(Number.isSafeInteger)||cellCount<=0||cellCount>64)return allBoxes.some(box=>touches(box,minX,maxX,minZ,maxZ,worldY)); // Pathological positions and large movers scan finite bounds directly.
+  if(![left,right,top,bottom,cellCount].every(Number.isSafeInteger)||cellCount<=0||cellCount>64)
+   return allBoxes.some(box=>visit(box,minX,maxX,minZ,maxZ));
   for(let bx=left;bx<=right;bx++){
    const rows=columns.get(bx);if(!rows)continue;
    for(let bz=top;bz<=bottom;bz++){
-    for(const box of rows.get(bz)||[])if(touches(box,minX,maxX,minZ,maxZ,worldY))return true;
+    for(const box of rows.get(bz)||[])if(visit(box,minX,maxX,minZ,maxZ))return true;
    }
   }
   return false;
- }});
+ }
+ unregisterStoneCollision=blockers.register('wilderness-landmark-stones',{area:zone,
+  blocksBox(x,z,half,worldY){
+   if(!Number.isFinite(x)||!Number.isFinite(z))return false;
+   return nearby(x,z,Number.isFinite(half)?Math.max(0,half):0,
+    (box,minX,maxX,minZ,maxZ)=>touches(box,minX,maxX,minZ,maxZ,worldY));
+  },
+  supportAt(x,z,maxY){
+   if(!Number.isFinite(x)||!Number.isFinite(z))return null;
+   let best=null; // The same static part footprint owns both side contact and landing height.
+   nearby(x,z,0,(box)=>{
+    if(box.kind==='deadTree'||!Number.isFinite(box.maxY)||box.maxY>maxY)return false; // Tall trunks stay trunks, not jump platforms.
+    const inset=.055; // Require the player's centre securely on top, not just grazing a chip or edge.
+    if(box.maxX-box.minX<=inset*2||box.maxZ-box.minZ<=inset*2)return false;
+    if(x<box.minX+inset||x>box.maxX-inset||z<box.minZ+inset||z>box.maxZ-inset)return false;
+    if(!best||box.maxY>best.y)best={y:box.maxY,kind:'landmark',id:box.siteId};
+    return false; // Keep scanning the same small bucket for the highest overlapped piece.
+   });
+   return best;
+  }
+ });
  return bySite.size;
 }
 function clear(){
@@ -442,6 +506,7 @@ function clear(){
   // Only scene-local engravings are disposed; the base stone and authored pillar geometry remain shared.
  }
  group?.parent?.remove?.(group);group=null;scene=null;area='';renderedLayout=null;renderedIdentity='';
+ root.NearbyVolumeCollision?.invalidate?.(); // Removed deadwood roots must never retain invisible physics if the active Three.js scene object is reused.
 }
 function update(){
  const zone=deps?.getCurrentArea?.(),layout=deps?._zoneLayouts?.get?.(zone),active=root.GridTileAccessors?.getActiveScene?.();
@@ -457,6 +522,7 @@ function update(){
  report.solidStoneColliders=registerStoneCollision(zone,sites); // Same curated placement list owns both visible rocks and their physical colliders.
  report.authoredDebrisSites=0;report.authoredDebrisParts=0; // Dev Companion shows when async stone fragments replace provisional site footprints.
  cairns(T,host,sites);witnessStone(T,host,sites);deadwood(host,sites);debris(host,sites,serial,zone);
+ root.NearbyVolumeCollision?.invalidate?.(); // The tree-root spatial index must rebuild after new scenery (especially landmark deadwood) joins this zone.
 }
 function objectAt(zoneId,targetScene,point){
   if(area!==zoneId||scene!==targetScene||!group?.parent||!Number.isFinite(point?.col)||!Number.isFinite(point?.row))return null;
@@ -484,7 +550,8 @@ function objectAt(zoneId,targetScene,point){
   }
  } // Never touch these part maps during ordinary rendering; mobile debugging should reveal invisible pattern atlases.
  return{activeZone:area,attached:!!group?.parent,drawRoots:group?.children?.length||0,plan:report,lastError:error,
-  stoneCollision:{registered:!!unregisterStoneCollision,siteCount:report?.solidStoneColliders||0}, // Dev Companion can diagnose missing colliders on mobile.
+  stoneCollision:{registered:!!unregisterStoneCollision,siteCount:report?.solidStoneColliders||0,
+   jumpSupport:!!root.AreaFootprintBlockers?.supportAt}, // Mobile confirms raised stone landing is connected. // Dev Companion can diagnose missing colliders on mobile.
   cairnRendering:{chunks:cairnGroup?.children?.length||0,cliffMappedFaces:cliffCairnArt?.patchCount||0,
    frustumTracked:cairnGroup?.children?.filter?.(mesh=>mesh.userData?.hobunjiInstanceBounds===true)?.length||0},
   patternedPillarParts:pillars.reduce((total,node)=>total+(node.userData?.wildernessPatternedParts||0),0),pillarPatterns,

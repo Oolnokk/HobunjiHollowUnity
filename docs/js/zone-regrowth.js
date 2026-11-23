@@ -17,6 +17,7 @@
     const zi = deps._zoneScenes.get(mapId);
     if (!zi) return false;
     const removedFoliage = deps.removeZoneVegetationVisual(mapId, col, row);
+    if (removedFoliage) window.NearbyVolumeCollision?.invalidate?.(); // A felled tree must stop supporting jumps immediately, without rebuilding its entire forest.
     if (previousType !== deps.TileType.WEEDS) return removedFoliage;
 
     // WEEDS are part of the zone's merged material buckets rather than
@@ -86,6 +87,7 @@
       // owning chunk plus only the neighbors within the conservative seam
       // margin; unloaded chunks read the updated grid when streamed.
       const rebuiltChunks = window.WildernessChunks.rebuildZone(mapId, col, row); // Reported below to diagnose future mobile-only refresh failures.
+      if (rebuiltChunks) window.NearbyVolumeCollision?.invalidate?.(); // A changed chunk can reuse the same Three.js Scene; drop its stale root-spine cache.
       window.WildTreasure.syncZoneInteractivity(mapId);
       deps.debugLog(`[terrain-refresh] ${mapId} c${col},r${row}: routeApron=${routeApronUpdated ? 'updated' : 'outside'} chunks=${rebuiltChunks} cliffRoutes=refreshed`);
       return;
@@ -97,6 +99,7 @@
     if (oldGrass) { zi.scene.remove(oldGrass); oldGrass.geometry?.dispose(); }
     deps._zoneFloorMeshGroups.set(mapId, deps._buildZoneFloorMeshes(zi.scene, zi.grid, zi.cols, zi.rows, mapId));
     deps._zoneGrassMeshes.set(mapId, window.ZoneGrassBillboards.buildZoneGrassBillboards(zi.scene, zi.grid, zi.cols, zi.rows));
+    window.NearbyVolumeCollision?.invalidate?.(); // Regrown and replaced forest meshes need fresh physical roots even when the Scene identity stays fixed.
     // Re-derive canopy clamp zones and cullables (see buildZoneScene) — a
     // felled tree's mesh is gone after this rebuild, and leaving its stale
     // entries around would keep hard-limiting zoom / culling nothing over
