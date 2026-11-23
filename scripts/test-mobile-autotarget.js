@@ -13,6 +13,11 @@ assert.equal(preference(false).isAutoTargetEnabled(), false, 'fresh mobile start
 assert.equal(preference(false, 'false').isAutoTargetEnabled(), false, 'mobile saved off is respected');
 assert.equal(preference(false, null, true).isAutoTargetEnabled(), false, 'blocked storage starts off');
 assert.equal(preference(false, 'true').isAutoTargetEnabled(), false, 'saved on cannot enable targeting automatically');
+const disabledMobile = preference(false, 'true'); // Execute the shipped feature gate, not an enabled fixture.
+assert.equal(disabledMobile.autoTargetAvailable, false);
+assert.equal(disabledMobile.setAutoTargetEnabled(true), false, 'mobile activation cannot bypass the feature gate');
+assert.equal(disabledMobile.autoTargetSettingsSnapshot().preferenceEnabled, false);
+assert.equal(disabledMobile.mountAutoTargetSetting(), false, 'disabled setting never mounts or touches DOM');
 const desktop = preference(true, 'true'); // Desktop fixture must stay manual regardless of preference changes.
 assert.equal(desktop.isAutoTargetEnabled(), false);
 desktop.setAutoTargetEnabled(true);
@@ -252,7 +257,7 @@ console.log('executed runtime target size, label, and social-ring layout regress
 const visibilityClasses = new Set(); // Tracks the production control's active and hidden state without a browser renderer.
 let visibilityWrites = 0, eligibleTarget = false, visibilityEnabled = true; // Verifies combat transitions and deduplicated DOM updates.
 const visibilityAttrs = {}; // Cached accessibility state written by the production sync function.
-const visibilityContext = {btnSwapTarget:{classList:{contains:name=>visibilityClasses.has(name),toggle(name,value){visibilityWrites++;if(value)visibilityClasses.add(name);else visibilityClasses.delete(name);}},getAttribute:name=>visibilityAttrs[name],setAttribute(name,value){visibilityWrites++;visibilityAttrs[name]=value;}},isDesktop:false,mobileAutoTargetEnabled:()=>visibilityEnabled,findAvailableAutoTarget:()=>eligibleTarget?{id:"prey"}:null}; // Isolated live button presentation owner.
+const visibilityContext = {window:{Combat:{input:{autoTargetAvailable:true}}},btnSwapTarget:{classList:{contains:name=>visibilityClasses.has(name),toggle(name,value){visibilityWrites++;if(value)visibilityClasses.add(name);else visibilityClasses.delete(name);}},getAttribute:name=>visibilityAttrs[name],setAttribute(name,value){visibilityWrites++;visibilityAttrs[name]=value;}},isDesktop:false,mobileAutoTargetEnabled:()=>visibilityEnabled,findAvailableAutoTarget:()=>eligibleTarget?{id:"prey"}:null}; // Isolated live button presentation owner.
 const visibilityStart = game.indexOf('      function syncMobileAutoTargetButton()'); // Runs the actual owner rather than mirroring its logic.
 vm.runInNewContext(game.slice(visibilityStart,game.indexOf("      window.addEventListener('hobunji-auto-target-change'",visibilityStart)),visibilityContext);
 visibilityContext.syncMobileAutoTargetButton();
@@ -269,7 +274,11 @@ assert.equal(visibilityWrites,settledWrites,'unchanged visibility does not rewri
 eligibleTarget=false;
 visibilityContext.syncMobileAutoTargetButton();
 assert(visibilityClasses.has('abt-hidden'),'losing every eligible target hides the control');
-eligibleTarget=true;visibilityContext.isDesktop=true;
+eligibleTarget=true;visibilityContext.window.Combat.input.autoTargetAvailable=false;
+visibilityContext.syncMobileAutoTargetButton();
+assert(visibilityClasses.has('abt-hidden'), 'disabled feature stays hidden even with an eligible target');
+visibilityContext.window.Combat.input.autoTargetAvailable=true;
+visibilityContext.isDesktop=true;
 visibilityContext.syncMobileAutoTargetButton();
 assert(visibilityClasses.has('abt-hidden'),'desktop never exposes the mobile button');
 assert.equal(declaration(labelsCss,'#btnSwapTarget .arch-meaning-label','color'),'#b8b8b8','disabled target label is gray');

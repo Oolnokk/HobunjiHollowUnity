@@ -18,6 +18,7 @@
   }
   const STALLED_PRESS_SETTLE_MS = 50; // Lets queued release events catch up before a backdated press triggers a held attack; only affects delayed presses.
   const AUTO_TARGET_STORAGE_KEY = 'hobunjiMobileAutoTargetEnabled'; // Compatibility key; enabled state is never restored automatically.
+  const MOBILE_AUTO_TARGET_AVAILABLE = false; // Temporarily disables player-selectable mobile assist without deleting lock-on infrastructure.
   let autoTargetEnabled = false; // Targeting requires an explicit tap or hold in this session.
   let autoTargetControl = null; // Cached Settings checkbox synchronized with runtime state.
 
@@ -58,11 +59,12 @@
   }
 
   function isAutoTargetEnabled() {
-    return !window.matchMedia?.('(pointer: fine)').matches && autoTargetEnabled;
+    return MOBILE_AUTO_TARGET_AVAILABLE && !window.matchMedia?.('(pointer: fine)').matches && autoTargetEnabled;
   }
 
   function autoTargetSettingsSnapshot() {
     return {
+      available: MOBILE_AUTO_TARGET_AVAILABLE,
       enabled: isAutoTargetEnabled(),
       preferenceEnabled: autoTargetEnabled,
       mobileOnly: true,
@@ -73,7 +75,7 @@
   }
 
   function setAutoTargetEnabled(enabled, options = {}) {
-    const nextEnabled = !!enabled; // Normalized preference used by the attack-alignment gate and Settings checkbox.
+    const nextEnabled = MOBILE_AUTO_TARGET_AVAILABLE && !!enabled; // Normalized preference used by the attack-alignment gate and Settings checkbox.
     const persist = options.persist !== false; // Allows regression/debug callers to change runtime state without writing browser storage.
     const changed = autoTargetEnabled !== nextEnabled; // Emits a targeting transition only when the preference actually changes.
     autoTargetEnabled = nextEnabled;
@@ -87,6 +89,7 @@
   }
 
   function mountAutoTargetSetting() {
+    if (!MOBILE_AUTO_TARGET_AVAILABLE) return false;
     if (window.matchMedia?.('(pointer: fine)').matches) return false;
     const existingControl = document.getElementById('settingMeleeAutoTarget'); // Reuses an already-mounted control if Settings rerenders around this module.
     if (existingControl) {
@@ -468,6 +471,7 @@
     fireTap,
     getState,
     queueSnapshot: () => [...queuedAttacks.keys()],
+    autoTargetAvailable: MOBILE_AUTO_TARGET_AVAILABLE,
     isAutoTargetEnabled,
     setAutoTargetEnabled,
     autoTargetSettingsSnapshot,

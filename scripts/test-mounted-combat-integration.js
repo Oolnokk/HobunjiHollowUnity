@@ -117,7 +117,7 @@ for (const file of [
   'docs/js/combat/combat-mounted.js',
   'docs/js/combat/combat-charged-breaker.js',
   'docs/js/combat/combat-input.js',
-]) vm.runInContext(read(file), context, { filename: file });
+]) vm.runInContext(read(file).replace('const MOBILE_AUTO_TARGET_AVAILABLE = false;', 'const MOBILE_AUTO_TARGET_AVAILABLE = true;'), context, { filename: file }); // Exercise retained opt-in mounted bypass.
 
 assert.equal(Combat.loadout.getSlot('tap1'), 'mountedStrike');
 assert.equal(Combat.loadout.getSlot('hold1'), 'chargedBreaker');

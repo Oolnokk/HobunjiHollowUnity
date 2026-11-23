@@ -28638,7 +28638,7 @@
       function syncMobileAutoTargetButton() {
         if (!btnSwapTarget) return;
         const enabled = mobileAutoTargetEnabled(); // Read once to keep the arch's toggle presentation consistent.
-        const hidden = isDesktop || !findAvailableAutoTarget(); // Prey can expose the toggle before combat starts, including while autotarget is disabled.
+        const hidden = isDesktop || window.Combat?.input?.autoTargetAvailable === false || !findAvailableAutoTarget(); // Prey can expose the toggle before combat starts, including while autotarget is disabled.
         if (btnSwapTarget.classList.contains('abt-hidden') !== hidden) btnSwapTarget.classList.toggle('abt-hidden', hidden);
         if (btnSwapTarget.classList.contains('active') !== enabled) btnSwapTarget.classList.toggle('active', enabled);
         const pressed = String(enabled); // Avoids rewriting accessibility state every movement frame.
@@ -28679,7 +28679,7 @@
           if (!cancelled && !press.held && !btnSwapTarget.classList.contains('abt-hidden')) window.Combat?.input?.setAutoTargetEnabled(!mobileAutoTargetEnabled());
         }
         btnSwapTarget.addEventListener('pointerdown', event => {
-          if (targetStick || btnSwapTarget.classList.contains('abt-hidden')) return;
+          if (window.Combat?.input?.autoTargetAvailable === false || targetStick || btnSwapTarget.classList.contains('abt-hidden')) return;
           event.preventDefault();
           event.stopPropagation();
           const rect = btnSwapTarget.getBoundingClientRect(); // Fixed gesture center avoids feedback from moving the knob.
