@@ -221,14 +221,19 @@
     if(!rigPromise)rigPromise=Promise.all([
       fetch(RIG_URL).then(r=>{if(!r.ok)throw new Error('Skeeri rig HTTP '+r.status);return r.json();}),
       ...Object.values(SPRITES).map(loadImage),
-    ]).then(([raw,flying,perched,wings])=>{
-      const flight=separateEyeMarker(flying),rest=separateEyeMarker(perched); // Built once, never inside the render loop.
+    ]).then(async ([raw,flying,perched,wings])=>{
+      const flight=separateEyeMarker(flying); // Expensive native-resolution masks are still built once, never in the render loop.
+      await window.PixelWorkYield?.maybeYield?.(); // Keep ruin entry responsive between individual full-size PNG passes.
+      const rest=separateEyeMarker(perched);
+      await window.PixelWorkYield?.maybeYield?.();
+      const wingsNeutral=neutralizeWings(wings); // Share the neutral wing texture among all individually tinted Skeeri.
+      await window.PixelWorkYield?.maybeYield?.();
       snapshot.eyeMarkerPixels=flight.marked+rest.marked;
       snapshot.furPatternPixels=flight.patternPixels+rest.patternPixels;
       if(!flight.marked||!rest.marked)window.__farmLog?.('[skeeri] planebent eye marker absent from a pose ('+EYE_MARKER+')','warn');
       return {rig:window.FlyingAnimalRig.normalize({...raw,
         flying:'creaturesprites/skeeri_planebent_flying.png',perched:'creaturesprites/skeeri_planebent_perched.png'}),
-        images:{flying:flight.body,perched:rest.body,wings:neutralizeWings(wings),
+        images:{flying:flight.body,perched:rest.body,wings:wingsNeutral,
           detailFlying:flight.details,detailPerched:rest.details,glowFlying:flight.glow,glowPerched:rest.glow,
           patternFlying:flight.pattern,patternPerched:rest.pattern}};
     }).catch(error=>{rigPromise=null;snapshot.lastError=String(error);throw error;});
