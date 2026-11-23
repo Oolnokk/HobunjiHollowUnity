@@ -4,8 +4,9 @@ const assert = require('node:assert/strict'); // Validate food migration without
 const fs = require('node:fs'); // Load the exact gameplay scripts shipped by the game.
 const vm = require('node:vm'); // Run production modules without leaking globals across tests.
 const source = path => fs.readFileSync(path, 'utf8'); // Shared test loader for real code and authored food data.
+let clockHour = 12; // Mutable in-game hour tests that old food-buff durations are not stretched during consolidation.
 const w = {
-  CalendarSystem: { isInitialized: () => true, timeDebugSnapshot: () => ({ rawDay: 10, time01: .5 }), getHour: () => 12 },
+  CalendarSystem: { isInitialized: () => true, timeDebugSnapshot: () => ({ rawDay: 10, time01: clockHour / 24 }), getHour: () => clockHour },
   InventoryStacks: { MAX_TOTAL: 999 },
 }; // Stubbed browser services used by food persistence and skill stat reads.
 const providers = new Map(); // Captures the actual HUD entries registered by CookingSystem.
@@ -14,7 +15,7 @@ const ctx = vm.createContext({
   window: w, console, queueMicrotask() {},
   document: { getElementById: () => ({}), querySelector: () => null }, // Existing UI layer avoids unrelated DOM/Skills rendering.
 });
-for (const p of ['docs/js/cooking-data.js', 'docs/js/cooking-system.js', 'docs/js/skill-system.js', 'docs/js/festival-potluck-contest.js'])
+for (const p of ['docs/js/cooking-data.js', 'docs/js/cooking-system.js', 'docs/js/item-processing.js', 'docs/js/skill-system.js', 'docs/js/festival-potluck-contest.js'])
   vm.runInContext(source(p), ctx, { filename: p });
 const defs = {}; // Real ingredient registration and legacy cooked-item definitions live here.
 const inventory = { food_legacy_clarity: 1 }; // A pre-consolidation cooked stack must retain its exact key/count.
@@ -24,6 +25,7 @@ const deps = {
 }; // Minimal host bridge for register, restore and eat paths.
 const cooking = w.CookingSystem; // Canonicalization authority under test.
 cooking.init(deps);
+w.ItemProcessing.init({ ITEM_DEFS: defs, cropData: {}, PROCESSING_METHODS: ['grinding'] }); // Real processed-food registry tests old flour saves.
 w.SkillSystem.init({ getFoodEffectStacks: key => cooking.getFoodEffectStacks(key), random: () => .5 });
 assert.equal(w.HobunjiCookingData.effectLabels.clarity, undefined, 'Clarity no longer appears as a food stat');
 assert(Object.values(w.HobunjiCookingData.items).every(item => item.primaryEffect !== 'clarity'), 'Authored ingredients all use Perception');
@@ -47,6 +49,11 @@ assert.equal(cooking.getFoodEffectStacks('clarity'), 5, 'Legacy callers read the
 assert.equal(providers.get('food')().filter(entry => entry.key === 'perception').length, 1, 'Only one Perception HUD entry');
 assert.equal(providers.get('food')().filter(entry => entry.key === 'clarity').length, 0, 'No second Clarity HUD entry');
 assert.equal(providers.get('food')()[0].stacks, 5);
+assert.equal(providers.get('food')()[0].remainingS, 8 * 3600, 'HUD countdown announces the next partial expiry');
+clockHour = 21;
+assert.equal(cooking.getFoodEffectStacks('perception'), 2, 'an eight-hour legacy bonus expires independently of a twelve-hour one');
+assert.equal(providers.get('food')()[0].stacks, 2, 'one icon updates when part of its buff expires');
+clockHour = 12;
 assert.equal(w.SkillSystem.craftIngredientSaveChance(), .015, 'Former Clarity recipe-saving effect now reads Perception');
 assert(w.SkillSystem.rareFishWeightMultiplier('rare') > 1, 'Perception still helps fish encounters');
 assert.equal(defs.food_legacy_clarity.foodEffects.perception, 3, 'Saved food stacks sum without changing the inventory key');
@@ -59,10 +66,28 @@ assert.equal(cooking.getFoodEffectStacks('perception'), 8);
 assert.equal(inventory.food_legacy_clarity, 0);
 assert.equal(providers.get('food')()[0].stacks, 8);
 const roundtrip = cooking.serialize(); // Next save must persist canonical keys with no Clarity revival.
-assert.equal(roundtrip.activeFoodEffects.length, 1);
-assert.equal(roundtrip.activeFoodEffects[0].key, 'perception');
+assert.equal(roundtrip.activeFoodEffects.length, 2, 'migrated stacks retain individual expiry and source contributions');
+assert(roundtrip.activeFoodEffects.every(effect => effect.key === 'perception'), 'neither timer persists a Clarity key');
+assert.deepEqual(roundtrip.activeFoodEffects.map(effect => effect.remainingHours).sort((a,b)=>a-b), [8,24],
+  'old and refreshed food timer deadlines are preserved without inventing extra duration');
 assert.equal(roundtrip.cookedDefinitions.food_legacy_clarity.foodEffects.clarity, undefined);
 assert.equal(roundtrip.cookedDefinitions.food_legacy_clarity.foodEffects.perception, 3);
+const legacyFlourKey = 'cv_heftroot_555555Flour'; // Recovered grain mill output with the obsolete saved vegetable category.
+w.ItemProcessing.ensureProcessedItemDef({
+  key: legacyFlourKey, label: 'Southern Archipelago Heftroot Flour', cat: 'processed', tags: ['Processed', 'Flour', 'Starch'],
+  cookingCategories: ['vegetable', 'crop'], cookingPrimaryEffect: 'clarity', foodEffects: { clarity: 2, perception: 1 },
+  cookingProcessSourceKey: 'cv_heftroot_555555', cookingProcessLastMethod: 'grinding',
+  cookingProcessMultiplier: 1.5, cookingProcessSteps: [{ method: 'grinding', baseHours: 1, multiplier: 1.5 }],
+});
+assert.deepEqual(JSON.parse(JSON.stringify(defs[legacyFlourKey].cookingCategories)), ['flour', 'processedCrop'],
+  'an existing mill product receives the flour recipe category on restore');
+assert.equal(defs[legacyFlourKey].cookingPrimaryEffect, 'perception');
+assert.deepEqual(JSON.parse(JSON.stringify(defs[legacyFlourKey].foodEffects)), { perception: 3 });
+const savedFlour = w.ItemProcessing.serializeProcessedDefinitions().find(entry => entry.key === legacyFlourKey);
+assert.equal(savedFlour.foodEffects.clarity, undefined, 'processed flour serializes no obsolete Clarity buff');
+assert.equal(savedFlour.cookingCategories[0], 'flour');
+assert(cooking.ingredientEffectTotals(defs[legacyFlourKey], 3).perception > 0,
+  'the recovered vegetable flour contributes Perception to cooking');
 assert.equal(w.FestivalPotluckContest.mealEffects([{ key: 'ongyums', stars: 3 }], defs).perception > 0, true, 'Festival meals use the same Perception ingredient effect');
 cooking.registerExternalFoodProvider('festival-legacy', key => key === 'perception' ? 2 : 0);
 assert.equal(cooking.getFoodEffectStacks('perception'), 10, 'Independent festival Perception stacks are included once');
