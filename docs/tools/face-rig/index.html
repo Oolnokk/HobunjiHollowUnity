@@ -158,14 +158,25 @@ async function loadArt(){
   const config=await response.json();
   const entry=config[gender]||config.male||config.female;
   if(!entry)throw Error('No authored gender assets');
-  const headPath=entry.headSprite;
-  const urPath=entry.headUrLayers?.[0]?.url||null;
+  let inherited=null; // Child species, including Mammakhbuur, inherit UR eye overlays from their authoring donor.
+  if(config.parentSpecies&&!entry.headUrLayers?.length){
+   try{
+    const parentResponse=await fetch('../../config/species/'+config.parentSpecies+'.json');
+    if(parentResponse.ok){
+     const parentConfig=await parentResponse.json();
+     inherited=parentConfig[gender]||parentConfig.male||parentConfig.female||null;
+    }
+   }catch(_){/* Keep local head art when parent metadata is unavailable. */}
+  }
+  const headPath=entry.headSprite||inherited?.headSprite;
+  const urPath=entry.headUrLayers?.[0]?.url||inherited?.headUrLayers?.[0]?.url||null;
   const blinkPath=urPath?.replace(/\.png$/i,'_blink.png');
   const gogglePath=species==='engh-sho' ?
    (gender==='female'?'cosmetics/appearance/engh-sho-f/snowgoggles.png':
      'cosmetics/appearance/engh-sho-m/snowgoggles_flat.png') : null;
   const [head,ur,blink,goggles]=await Promise.all([
-   imageAt(headPath),imageAt(urPath),imageAt(blinkPath),imageAt(gogglePath)]);
+   (async()=>await imageAt(headPath)||await imageAt(entry.headFallbackUrls?.[0]))(),
+   imageAt(urPath),imageAt(blinkPath),imageAt(gogglePath)]);
   if(id!==requestId)return;
   source={head,ur,blink,goggles};
   if(!head&&!goggles)throw Error('No valid head/goggle sprite');
