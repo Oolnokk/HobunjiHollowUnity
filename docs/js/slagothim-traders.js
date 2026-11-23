@@ -38,6 +38,10 @@
   const PANEL_ID = 'slagothimTradePanel';
   const SAVE_VERSION = 1;
   const IMPORTED_SPICES = Object.freeze(['cloudSaffron','starpepper','nightCardamom']); // Shared with rarity: one or two distinct imported spice keys per caravan.
+  const KENKARI_BOWL_KASA_VARIANTS = Object.freeze([ // Registered wearable variants selected for imported caravan headwear.
+    'appearance::Kenkari_M::kenk_bowlkasa',
+    'appearance::Kenkari_F::kenk_bowlkasa',
+  ]);
 
   const TUNING = Object.freeze({
     MIN_TOWN_VALUE: 1, // Caravans never appear before the town has grown at least once.
@@ -64,6 +68,8 @@
     RELEASE_RADIUS_TILES: 90,
     COMPASS_RADIUS_TILES: 60,
     PRICE_MARKUP: 2.2, // Over an item's ordinary sale value.
+    BOWL_KASA_CHANCE: 0.25, // One imported Kenkari bowl-kasa on roughly a quarter of caravans.
+    BOWL_KASA_BASE_PRICE: 55, // Matches the registered Kenkari Bowl-Kasa shop price.
     HIGH_BAR_COUNT_WEIGHTS: Object.freeze([0.7, 0.25, 0.05]), // 0 / 1 / 2 bars above the Town Value metal ceiling.
     HIGH_BAR_PRICE_PER_TIER: 70,
     HIGH_BAR_PRICE_BASE: 40,
@@ -624,6 +630,14 @@
     for (const key of shuffled(rng, IMPORTED_SPICES).slice(0,intRoll(rng,1,2))) { // Share the same source authority used by rarity estimates.
       if (deps?.ITEM_DEFS?.[key]) stock.push(itemEntry(key,intRoll(rng,1,3),Math.max(35,itemPrice(key,5)),{note:'Rare imported spice',rare:true}));
     }
+    if (rng() < TUNING.BOWL_KASA_CHANCE) {
+      const cosmeticId = pick(rng, KENKARI_BOWL_KASA_VARIANTS); // This caravan's fixed, seeded male/female hat variant.
+      stock.push({ id: `clothing:${cosmeticId}`, kind: 'clothing', cosmeticId, slot: 'hat', qty: 1,
+        price: Math.ceil(TUNING.BOWL_KASA_BASE_PRICE * TUNING.PRICE_MARKUP),
+        sellPrice: Math.floor(TUNING.BOWL_KASA_BASE_PRICE * 0.4),
+        icon: '👒', label: 'Kenkari Bowl-Kasa', desc: 'A carved wooden bowl-kasa fitted for Kenkari horns.',
+        note: 'Imported Kenkari headwear' });
+    }
     const metals = deps?.VERDIGRIS_METAL_KEYS || [];
     const ceiling = num(window.TownMine?.maximumMetalTierForTownValue?.(value), value + 1);
     if (metals.length && rng() < 0.5) {
@@ -1173,6 +1187,13 @@
       if (owned >= maxTotal) { deps.showToast?.('You cannot carry any more of that.', false); return { ok: false, reason: 'full' }; }
       deps.inventory[entry.key] = owned + 1;
       if (entry.key.startsWith('cv_')) window.CropVarieties?.refreshBrushes?.(); // Imported seed becomes a farm-editor option immediately after buying.
+    } else if (entry.kind === 'clothing') {
+      const article = window.EquipmentPanel?.grantPackClothing?.({ // The Pack article is equippable; cosmetic: inventory counters are not.
+        cosmeticId: entry.cosmeticId, slot: entry.slot, label: entry.label, baseLabel: entry.label,
+        description: entry.desc, sellPrice: entry.sellPrice,
+      });
+      if (!article) { deps.showToast?.('That clothing is not available.', false); return { ok: false, reason: 'clothing' }; }
+      window.EquipmentPanel?.buildPackClothingSection?.();
     } else if (entry.kind === 'trinket') {
       if (!window.TrinketSystem?.grant?.(entry.trinketId, 'slagothim')) { deps.showToast?.('That trinket is not available.', false); return { ok: false, reason: 'trinket' }; }
     } else if (entry.kind === 'relic') {
