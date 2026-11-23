@@ -1,0 +1,340 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Hobunji • Experimental Face Rig</title>
+<style>
+:root{color-scheme:dark;--bg:#0a111d;--panel:#162337;--edge:#334762;--text:#eef3fa;--sub:#b7c7db;--accent:#7bb6ff}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);font:14px/1.45 system-ui,sans-serif;color:var(--text)}
+header{padding:12px 16px;background:#111e31;border-bottom:1px solid var(--edge)}
+h1{font-size:19px;margin:0}h2{font-size:15px;margin:0 0 8px}.small{font-size:12px;color:var(--sub)}
+main{display:grid;grid-template-columns:minmax(260px,340px) minmax(0,1fr);gap:12px;padding:12px}
+section{background:var(--panel);border:1px solid var(--edge);padding:12px;border-radius:12px;min-width:0}
+.controls{display:flex;flex-direction:column;gap:10px;max-height:calc(100dvh - 104px);overflow-y:auto}
+label{display:block;font-size:12px;color:var(--sub);margin:6px 0 2px}
+input:not([type=range]),select,button{border-radius:8px;background:#1f3049;color:var(--text);border:1px solid #47607c;padding:9px;font:inherit}
+input[type=range]{width:100%;accent-color:var(--accent)}
+select{width:100%}button{cursor:pointer;touch-action:manipulation}button:focus-visible{outline:2px solid #fff}
+.row{display:flex;gap:7px;align-items:center;flex-wrap:wrap}.row>*{flex:1}.row button{white-space:nowrap}
+.preview{display:flex;flex-direction:column;gap:12px;min-width:0}
+canvas{display:block;width:100%;height:auto;image-rendering:pixelated;background:#26364a;touch-action:none;border:1px solid #536982;border-radius:8px}
+#detail{aspect-ratio:2/1}#overview{max-height:45vh;object-fit:contain}
+#debug{white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.4 ui-monospace,monospace;color:#c4d6eb}
+.status{color:#a6e0bc;font-size:12px;min-height:18px}
+@media(max-width:790px){main{grid-template-columns:1fr}.controls{max-height:none}.preview{order:-1}#overview{max-height:32vh}#detail{max-height:37vh}}
+</style>
+<script src="../../js/face-rig.js?v=20261123experimental1"></script>
+</head>
+<body>
+<header><h1>Experimental Face Rig</h1><div class="small">Source-pixel controls • two eye systems • no original PNGs are modified</div></header>
+<main>
+<section class="controls">
+<div class="row"><div><label for="species">Species</label><select id="species">
+<option value="mao-ao">Mao'ao — line</option>
+<option value="tletingan">Slagothim — line</option>
+<option value="engh-sho">Engh-sho goggles — line</option>
+<option value="kenkari">Kenkari — round</option>
+<option value="mashtzarr">Oliphanti (Mashtzarr) — round</option>
+<option value="mammakhbuur">Oliphanti (Mammakhbuur) — round</option>
+<option value="porakaneki">Porakaneki — round</option>
+</select></div><div><label for="gender">Gender</label><select id="gender"><option value="male">Male</option><option value="female">Female</option></select></div></div>
+<div><h2>Eye placement</h2><div class="small">The highlighted frames are calibration guides, not guesses about the actual eye positions. Select an eye, choose Place, then tap its centre on the overview.</div>
+<div class="row"><button id="left">Screen-left eye</button><button id="right">Screen-right eye</button></div>
+<div class="row"><button id="place">Place selected eye on overview</button><button id="mirror">Mirror to other eye</button></div>
+<label for="eyeSize">Eye region size <span id="sizeValue"></span></label><input id="eyeSize" type="range" min="0.014" max="0.20" step="0.001">
+</div>
+<div id="lineControls"><h2>Seven-node spline</h2><div class="small">Drag any of the seven points in the magnified view. Neighboring points move progressively less. Horizontal range ±7%; vertical range ±30% of this small eye region.</div>
+<div class="row"><button id="resetEye">Reset selected eye nodes</button></div></div>
+<div id="roundControls" hidden><h2>Separate circular eyelids</h2><div class="small">Neither eyelid has individually draggable nodes. Inset and curve depth are inward-only, and the original circle remains unchanged with both at zero.</div>
+<div id="lidSliders"></div><button id="resetEyeRound">Reset selected eyelids</button></div>
+<div class="row"><label><input id="blink" type="checkbox"> Preview blink sprite</label></div>
+<div class="row"><button id="apply">Apply to Character Studio</button><button id="download">Download rig JSON</button></div>
+<div class="row"><button id="import">Import rig JSON</button><input id="importFile" type="file" accept=".json,application/json" hidden></div>
+<div class="status" id="status">Loading source art…</div>
+<details><summary>Diagnostics</summary><div id="debug"></div></details>
+</section>
+<section class="preview">
+<div><h2>Full-resolution source overview</h2><div class="small">Both eye regions follow their source-pixel locations, before the game's portrait transform.</div><canvas id="overview" width="800" height="500"></canvas></div>
+<div><h2>Eye detail • <span id="selectedLabel">screen-left</span></h2><div class="small" id="detailHint">Choose a point to drag in this enlarged view.</div><canvas id="detail" width="720" height="360"></canvas></div>
+</section>
+</main>
+<script>
+(function(){
+'use strict';
+const $=id=>document.getElementById(id);
+const api=window.HobunjiFaceRig;
+const clamp=(n,min,max)=>Math.min(max,Math.max(min,Number(n)||0));
+let rig=api.make('mao-ao','male'); // Current editable rig, also sent to Character Studio exports.
+let selected=0; // Eye currently edited by the detail pane and sliders.
+let source={}; // Original source PNGs are shared across previews; never altered.
+let requestId=0; // Ignores late asset responses when switching species rapidly.
+let pending=false; // Coalesces mobile pointer and slider changes to one render per animation frame.
+let placePending=false; // A deliberate next tap on overview chooses the eye centre.
+let dragging=-1; // Index of the currently held line control point.
+let crop=null; // Source-to-detail transform for accurate pointer interaction.
+let status=''; // Mobile-readable diagnostics report loading, missing sprites and rendering failures.
+function report(message){status=message;$('status').textContent=message;updateDiagnostics();}
+function updateDiagnostics(){
+ const info=api.debugSnapshot();
+ $('debug').textContent='family='+rig.family+' species='+rig.speciesId+' gender='+rig.gender+
+ '\nselected='+selected+' loaded='+Object.keys(source).filter(k=>!!source[k]).join(',')+
+ '\ncacheHits='+info.hits+' builds='+info.builds+' pixels='+info.processedPixels+
+ '\nerrors='+info.failures+' lastError='+info.lastError+'\n'+status;
+}
+function imageAt(path){
+ if(!path)return Promise.resolve(null);
+ return new Promise(resolve=>{
+  const img=new Image();
+  img.onload=()=>resolve(img);
+  img.onerror=()=>resolve(null);
+  img.src='../../assets/'+String(path).replace(/^(\.\/)?assets\//,'');
+ });
+}
+async function loadArt(){
+ const id=++requestId,species=rig.speciesId,gender=rig.gender;
+ report('Loading '+species+' '+gender+' original portrait layers…');
+ try {
+  const response=await fetch('../../config/species/'+species+'.json');
+  if(!response.ok)throw Error('species config HTTP '+response.status);
+  const config=await response.json();
+  const entry=config[gender]||config.male||config.female;
+  if(!entry)throw Error('No authored gender assets');
+  const headPath=entry.headSprite;
+  const urPath=entry.headUrLayers?.[0]?.url||null;
+  const blinkPath=urPath?.replace(/\.png$/i,'_blink.png');
+  const gogglePath=species==='engh-sho' ?
+   (gender==='female'?'cosmetics/appearance/engh-sho-f/snowgoggles.png':
+     'cosmetics/appearance/engh-sho-m/snowgoggles_flat.png') : null;
+  const [head,ur,blink,goggles]=await Promise.all([
+   imageAt(headPath),imageAt(urPath),imageAt(blinkPath),imageAt(gogglePath)]);
+  if(id!==requestId)return;
+  source={head,ur,blink,goggles};
+  if(!head&&!goggles)throw Error('No valid head/goggle sprite');
+  report('Art ready'+(blink?' • blink available':' • blink art unavailable')+
+   (species==='engh-sho'?' • warping goggles only':' • warping head and untinted-eye layers'));
+  scheduleRender();
+ }catch(error){if(id!==requestId)return;source={};report('Asset error: '+error.message);}
+}
+function eyeRect(eye){
+ const img=source.head||source.goggles;const w=img?.naturalWidth||1617,h=img?.naturalHeight||1000;
+ if(rig.family==='line')return {x:eye.box.x*w,y:eye.box.y*h,w:eye.box.w*w,h:eye.box.h*h};
+ const r=eye.circle.r*h;
+ return {x:eye.circle.x*w-r,y:eye.circle.y*h-r,w:2*r,h:2*r};
+}
+function compose(){
+ const image=source.head||source.goggles;
+ if(!image)return null;
+ const canvas=document.createElement('canvas');
+ canvas.width=image.naturalWidth;canvas.height=image.naturalHeight;
+ const ctx=canvas.getContext('2d');ctx.imageSmoothingEnabled=false;
+ const draw=(img,role)=>{if(img)ctx.drawImage(api.applyImage(img,rig,role,rig.speciesId,rig.gender),0,0);};
+ draw(source.head,'head');
+ if(rig.speciesId==='engh-sho'){draw(source.goggles,'goggles');draw($('blink').checked?source.blink||source.ur:source.ur,'ur');}
+ else {draw($('blink').checked?source.blink||source.ur:source.ur,'ur');}
+ return canvas;
+}
+function circleGuides(ctx,eye,selectedEye,scaleX=1,scaleY=1){
+ const rect=eyeRect(eye),cx=rect.x+rect.w/2,cy=rect.y+rect.h/2,r=rect.w/2;
+ const top=eye.upper,bottom=eye.lower;
+ for(const part of ['upper','lower']){
+  const lid=part==='upper'?top:bottom;
+  ctx.beginPath();
+  for(let i=0;i<=40;i++){
+   const u=-1+2*i/40,q=Math.sqrt(Math.max(0,1-u*u));
+   const delta=api.roundContour(lid,q)*r;
+   const y=cy+(part==='upper'?-q*r+delta:q*r-delta);
+   const x=cx+u*r;
+   i?ctx.lineTo(x,y):ctx.moveTo(x,y);
+  }
+  ctx.strokeStyle=part==='upper'?'#facc67':'#75d5ff';
+  ctx.lineWidth=2/Math.max(scaleX,0.1);ctx.stroke();
+ }
+ ctx.strokeStyle=selectedEye?'#ffffff':'#819cbd';
+ ctx.setLineDash([5,5]);ctx.strokeRect(rect.x,rect.y,rect.w,rect.h);ctx.setLineDash([]);
+}
+function drawGuides(ctx,eye,index,selectedEye){
+ const rect=eyeRect(eye);
+ if(rig.family==='round'){circleGuides(ctx,eye,selectedEye);return;}
+ ctx.strokeStyle=selectedEye?'#ffd77b':'#7da7cc';
+ ctx.lineWidth=2;ctx.setLineDash([6,4]);
+ ctx.strokeRect(rect.x,rect.y,rect.w,rect.h);ctx.setLineDash([]);
+ ctx.beginPath();
+ for(let n=0;n<7;n++){
+  const px=rect.x+rect.w*(0.1+0.8*n/6+eye.nodes[n][0]);
+  const py=rect.y+rect.h*(0.5+eye.nodes[n][1]);
+  n?ctx.lineTo(px,py):ctx.moveTo(px,py);
+ }
+ ctx.stroke();
+ for(let n=0;n<7;n++){
+  const px=rect.x+rect.w*(0.1+0.8*n/6+eye.nodes[n][0]);
+  const py=rect.y+rect.h*(0.5+eye.nodes[n][1]);
+  ctx.beginPath();ctx.arc(px,py,Math.max(3,rect.h*0.045),0,Math.PI*2);
+  ctx.fillStyle=selectedEye?'#fff4bf':'#b0c9e8';ctx.fill();ctx.strokeStyle='#1a263b';ctx.stroke();
+ }
+}
+function render(){
+ pending=false;
+ try{
+  const picture=compose();if(!picture)return;
+  const overview=$('overview');overview.width=picture.width;overview.height=picture.height;
+  const o=overview.getContext('2d');o.imageSmoothingEnabled=false;o.drawImage(picture,0,0);
+  rig.eyes.forEach((eye,i)=>drawGuides(o,eye,i,i===selected));
+  const detail=$('detail'),d=detail.getContext('2d');
+  d.clearRect(0,0,detail.width,detail.height);d.imageSmoothingEnabled=false;
+  const rect=eyeRect(rig.eyes[selected]);
+  let cropW=Math.max(picture.width*0.17,rect.w*3.4);
+  let cropH=cropW*detail.height/detail.width;
+  if(cropH<rect.h*3){cropH=rect.h*3;cropW=cropH*detail.width/detail.height;}
+  crop={x:rect.x+rect.w/2-cropW/2,y:rect.y+rect.h/2-cropH/2,w:cropW,h:cropH};
+  d.drawImage(picture,crop.x,crop.y,crop.w,crop.h,0,0,detail.width,detail.height);
+  d.save();d.translate(-crop.x*detail.width/crop.w,-crop.y*detail.height/crop.h);
+  d.scale(detail.width/crop.w,detail.height/crop.h);
+  drawGuides(d,rig.eyes[selected],selected,true);
+  d.restore();
+  updateDiagnostics();
+ }catch(e){report('Preview failure: '+(e.stack||e.message));}
+}
+function scheduleRender(){if(pending)return;pending=true;requestAnimationFrame(render);}
+function selectEye(index){
+ selected=index;dragging=-1;$('selectedLabel').textContent=index===0?'screen-left':'screen-right';
+ $('left').style.outline=index===0?'2px solid #92c2fa':'';
+ $('right').style.outline=index===1?'2px solid #92c2fa':'';
+ $('detailHint').textContent=rig.family==='line'?'Drag any one of seven control points.':'Inward eyelids are controlled by the sliders, not dragged nodes.';
+ syncControls();scheduleRender();
+}
+function syncControls(){
+ $('lineControls').hidden=rig.family!=='line';$('roundControls').hidden=rig.family!=='round';
+ const eye=rig.eyes[selected];
+ $('eyeSize').value=rig.family==='round'?eye.circle.r:eye.box.w;
+ $('sizeValue').textContent=(Number($('eyeSize').value)*100).toFixed(1)+'%';
+ for(const input of document.querySelectorAll('[data-lid]')){
+  const [part,key]=input.dataset.lid.split('.');
+  input.value=eye[part][key];input.nextElementSibling.textContent=Number(input.value).toFixed(2);
+ }
+}
+function resizeEye(){
+ const eye=rig.eyes[selected],size=Number($('eyeSize').value);
+ if(rig.family==='round')eye.circle.r=clamp(size,0.014,0.20);
+ else{
+  const cx=eye.box.x+eye.box.w/2,cy=eye.box.y+eye.box.h/2;
+  eye.box.w=clamp(size,0.014,0.20);eye.box.h=eye.box.w*0.62;
+  eye.box.x=clamp(cx-eye.box.w/2,0,1-eye.box.w);
+  eye.box.y=clamp(cy-eye.box.h/2,0,1-eye.box.h);
+ }
+ $('sizeValue').textContent=(size*100).toFixed(1)+'%';scheduleRender();
+}
+function locatePointer(event,canvas){
+ const rect=canvas.getBoundingClientRect();
+ return {x:(event.clientX-rect.left)/rect.width*canvas.width,y:(event.clientY-rect.top)/rect.height*canvas.height};
+}
+function changeRig(species,gender,newRig=null){
+ const canonical=api.make(species,gender);
+ if(!canonical){report('This species does not use an experimental eye rig');return;}
+ rig=api.normalize(newRig,species,gender)||canonical;
+ $('species').value=rig.speciesId;$('gender').value=rig.gender;
+ selectEye(0);loadArt();
+}
+function download(){
+ const payload={schema:'hobunji_face_rig.v1',speciesId:rig.speciesId,gender:rig.gender,faceRig:rig};
+ const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});
+ const url=URL.createObjectURL(blob),a=document.createElement('a');
+ a.href=url;a.download='face-rig_'+rig.speciesId+'_'+rig.gender+'.json';a.click();
+ setTimeout(()=>URL.revokeObjectURL(url),1000);report('Exported eye rig settings • original PNGs unchanged');
+}
+for(const part of ['upper','lower']){
+ const field=document.createElement('fieldset');
+ field.style.cssText='border:1px solid #486482;border-radius:8px;margin:8px 0;padding:8px';
+ const legend=document.createElement('legend');legend.textContent=part==='upper'?'Upper eyelid':'Lower eyelid';field.appendChild(legend);
+ for(const [key,min,max,step] of [['inset',0,1,.01],['curve',-1,1,.01],['depth',0,1,.01]]){
+  const label=document.createElement('label');
+  label.textContent=key==='inset'?'Inward movement':key==='curve'?'Curve shape':'Curve depth';
+  const input=document.createElement('input');input.type='range';input.min=min;input.max=max;input.step=step;
+  input.dataset.lid=part+'.'+key;
+  const output=document.createElement('span');output.textContent='0.00';
+  label.appendChild(input);label.appendChild(output);field.appendChild(label);
+  input.addEventListener('input',()=>{rig.eyes[selected][part][key]=Number(input.value);output.textContent=Number(input.value).toFixed(2);scheduleRender();});
+ }
+ $('lidSliders').appendChild(field);
+}
+$('left').onclick=()=>selectEye(0);
+$('right').onclick=()=>selectEye(1);
+$('species').onchange=()=>changeRig($('species').value,$('gender').value);
+$('gender').onchange=()=>changeRig($('species').value,$('gender').value);
+$('eyeSize').oninput=resizeEye;
+$('blink').onchange=scheduleRender;
+$('place').onclick=()=>{placePending=true;report('Tap the desired eye centre on the large overview image');};
+$('overview').addEventListener('pointerdown',event=>{
+ const p=locatePointer(event,$('overview')),w=$('overview').width,h=$('overview').height;
+ if(placePending){
+  const eye=rig.eyes[selected],x=clamp(p.x/w,0.01,.99),y=clamp(p.y/h,0.01,.99);
+  if(rig.family==='line'){eye.box.x=clamp(x-eye.box.w/2,0,1-eye.box.w);eye.box.y=clamp(y-eye.box.h/2,0,1-eye.box.h);}
+  else{eye.circle.x=x;eye.circle.y=y;}
+  placePending=false;report('Eye centre placed. Fine-tune its shape in the detail view.');scheduleRender();return;
+ }
+ let best=0,distance=Infinity;
+ rig.eyes.forEach((eye,index)=>{const rect=eyeRect(eye),dx=p.x-rect.x-rect.w/2,dy=p.y-rect.y-rect.h/2;const d=dx*dx+dy*dy;if(d<distance){distance=d;best=index;}});
+ selectEye(best);
+});
+$('mirror').onclick=()=>{
+ const other=1-selected;
+ if(rig.family==='line')rig.eyes[other].nodes=rig.eyes[selected].nodes.slice().reverse().map(p=>[-p[0],p[1]]);
+ else{rig.eyes[other].upper={...rig.eyes[selected].upper};rig.eyes[other].lower={...rig.eyes[selected].lower};}
+ scheduleRender();report('Mirrored shape to the other eye without moving its placement');
+};
+function resetSelected(){
+ if(rig.family==='line')rig.eyes[selected].nodes=Array.from({length:7},()=>[0,0]);
+ else for(const part of ['upper','lower'])rig.eyes[selected][part]={inset:0,curve:0,depth:0};
+ syncControls();scheduleRender();
+}
+$('resetEye').onclick=resetSelected;$('resetEyeRound').onclick=resetSelected;
+$('detail').addEventListener('pointerdown',event=>{
+ if(rig.family!=='line'||!crop)return;
+ const p=locatePointer(event,$('detail')),eye=rig.eyes[selected],rect=eyeRect(eye);
+ let best=-1,distance=24*24;
+ for(let n=0;n<7;n++){
+  const px=(rect.x+rect.w*(0.1+.8*n/6+eye.nodes[n][0])-crop.x)*$('detail').width/crop.w;
+  const py=(rect.y+rect.h*(.5+eye.nodes[n][1])-crop.y)*$('detail').height/crop.h;
+  const d=(px-p.x)**2+(py-p.y)**2;if(d<distance){distance=d;best=n;}
+ }
+ if(best>=0){dragging=best;$('detail').setPointerCapture(event.pointerId);window.__lastFacePointer=p;}
+});
+$('detail').addEventListener('pointermove',event=>{
+ if(dragging<0||!crop)return;
+ const p=locatePointer(event,$('detail')),previous=window.__lastFacePointer,rect=eyeRect(rig.eyes[selected]);
+ if(previous&&rect.w&&rect.h){
+  api.moveNode(rig,selected,dragging,(p.x-previous.x)*crop.w/$('detail').width/rect.w,
+   (p.y-previous.y)*crop.h/$('detail').height/rect.h);
+  scheduleRender();
+ }
+ window.__lastFacePointer=p;
+});
+for(const event of ['pointerup','pointercancel','lostpointercapture'])$('detail').addEventListener(event,()=>{dragging=-1;window.__lastFacePointer=null;});
+$('apply').onclick=()=>{
+ if(parent===window){report('Open from Character Studio to apply directly, or export JSON for later import');return;}
+ parent.postMessage({type:'hobunjiFaceRigApply',faceRig:api.normalize(rig,rig.speciesId,rig.gender)},location.origin);
+ report('Sent face rig to Character Studio');
+};
+$('download').onclick=download;
+$('import').onclick=()=>$('importFile').click();
+$('importFile').onchange=async event=>{
+ const file=event.target.files?.[0];if(!file)return;
+ try{
+  const obj=JSON.parse(await file.text()),incoming=obj.faceRig||obj.appearance?.faceRig||obj;
+  const normalized=api.normalize(incoming,incoming.speciesId,incoming.gender);
+  if(!normalized)throw Error('Unsupported or invalid face-rig.v1 data');
+  changeRig(normalized.speciesId,normalized.gender,normalized);report('Imported face rig');
+ }catch(error){report('Import failed: '+error.message);}
+ event.target.value='';
+};
+window.addEventListener('message',event=>{
+ if(event.origin!==location.origin||event.source!==parent||event.data?.type!=='hobunjiFaceRigLoad')return;
+ const appearance=event.data.appearance||{},family=api.familyForSpecies(appearance.speciesId);
+ if(!family){report('Selected character species has no experimental eye model');return;}
+ changeRig(appearance.speciesId,appearance.gender,appearance.faceRig);
+});
+window.addEventListener('error',event=>report('Error: '+event.message));
+changeRig('mao-ao','male');
+})();
+</script>
+</body></html>
