@@ -135,38 +135,56 @@
       }));
   }
 
+  function cloneRenderableLimb(node, isRoot = false) {
+    // A lean copy of the GLB hierarchy: Object3D.clone(true) also serializes
+    // arbitrary userData (some parrot hands store large outline index buffers).
+    // The baby needs only the visible 3D transforms, geometry and render materials.
+    if (!node || (node.visible === false && !isRoot)) return null;
+    let copy;
+    if (node.isMesh) {
+      if (!node.geometry?.attributes?.position?.count) return null;
+      const materials = Array.isArray(node.material)
+        ? node.material.map(material => material?.clone?.() || material)
+        : node.material?.clone?.() || node.material; // Independent from the live walker's x-ray/material state.
+      copy = new THREE.Mesh(node.geometry, materials); // Shared GLB geometry: never dispose it when removing baby limbs.
+      copy.layers.mask = 0;
+      copy.layers.enable(0); copy.layers.enable(1); // Only world and generated-shell passes.
+      copy.userData.noOutline = false;
+      copy.userData.shattercaskKeepsOwnDepth = true;
+      copy.userData.familyBabyLimbPart = true; // Allows mobile rig probes to distinguish cloned GLB surfaces.
+    } else {
+      copy = new THREE.Group(); // Preserve glTF primitive-local rotations and offsets through lightweight parents.
+    }
+    copy.name = node.name;
+    copy.position.set(node.position?.x || 0, node.position?.y || 0, node.position?.z || 0);
+    if (copy.quaternion?.copy && node.quaternion) copy.quaternion.copy(node.quaternion);
+    else copy.rotation.set(node.rotation?.x || 0, node.rotation?.y || 0, node.rotation?.z || 0);
+    copy.scale.set(node.scale?.x ?? 1, node.scale?.y ?? 1, node.scale?.z ?? 1);
+    for (const child of node.children || []) {
+      const childCopy = cloneRenderableLimb(child);
+      if (childCopy) copy.add(childCopy);
+    }
+    if (!node.isMesh && !copy.children.length) return null; // Omit GLB helpers and non-rendering subgroups.
+    return copy;
+  }
+
   function cloneLimb(source, kind, side, root, pivotAt, offset) {
-    // Copy the whole GLB subtree so babies retain EVERY species-specific body,
-    // claw and nail primitive, including their relative transforms and material.
+    // Reconstruct every visible body/claw/nail primitive, keeping the exact
+    // imported local hierarchy but no walker placement, collider or animation.
     const visual = visualRootFor(source, kind, side);
     visual.updateWorldMatrix(true, false);
     const scale = visual.getWorldScale(new THREE.Vector3());
     const parentScale = root.getWorldScale(new THREE.Vector3());
     const sign = Math.sign(visual.matrixWorld.determinant()) || 1;
-    const model = visual.clone(true); // Three.js shares geometries/materials by reference until we clone the materials below.
+    const model = cloneRenderableLimb(visual, true);
+    if (!model) return null; // Missing 3D assets are retried by the existing family sync.
     model.name = `family_baby_${side}_${kind}`;
-    model.visible = true; // The NPC walker's culling/hidden state must not blank the carried infant's limbs.
-    const hidden = []; // Inactive fallback meshes are dropped, never copied into the active carried GLB.
-    model.traverse(node => {
-      if (node !== model && node.visible === false) { hidden.push(node); return; }
-      for (let ancestor = node.parent; ancestor && ancestor !== model; ancestor = ancestor.parent)
-        if (ancestor.visible === false) return; // Descendants of hidden subgroups have no drawable material to clone.
-      if (!node.isMesh) return;
-      node.material = Array.isArray(node.material)
-        ? node.material.map(material => material?.clone?.() || material)
-        : node.material?.clone?.() || node.material; // Own materials: Shattercasks/x-ray may modify these.
-      node.layers.mask = 0;
-      node.layers.enable(0); node.layers.enable(1); // World + generated 3D shell outline; never player hand/foot replay layers.
-      node.userData.noOutline = false;
-      node.userData.shattercaskKeepsOwnDepth = true;
-      node.userData.familyBabyLimb = kind;
-    });
-    for (const node of hidden) node.parent?.remove(node); // Remove only owned clones, never live walker meshes.
+    model.visible = true; // NPC culling and hidden walker state never hide the separate physical infant.
     const x = Math.abs(scale.x) / (Math.abs(parentScale.x) || 1);
     model.scale.set(x * (sign < 0 ? -1 : 1),
       Math.abs(scale.y) / (Math.abs(parentScale.y) || 1),
       Math.abs(scale.z) / (Math.abs(parentScale.z) || 1));
-    if (kind === 'foot') model.rotation.set(0, -90 * DEG, 0); // Neutral toe-forward yaw rather than the source walker's animated gait.
+    if (kind === 'foot') model.rotation.set(0, -90 * DEG, 0); // Neutral toe-forward yaw rather than the walker's animated gait.
     else model.rotation.set(0, 0, side === 'left' ? -20 * DEG : 20 * DEG); // Fists angled up and outward.
     model.position.set(offset.x, offset.y, offset.z);
     model.userData.shattercaskKeepsOwnDepth = true;
