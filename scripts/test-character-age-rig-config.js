@@ -5,7 +5,10 @@ const vm = require('node:vm'); // Executes the browser-only bridge in isolated, 
 const source = fs.readFileSync('docs/js/character-age-rig-config.js', 'utf8'); // The production shared config module under test.
 const authorSource = fs.readFileSync('docs/js/character-scale-comparison.js', 'utf8'); // The real Animation Author stage and RAF paths.
 const familySource = fs.readFileSync('docs/js/romance-family.js', 'utf8'); // Checks the runtime's consumers of configured body/head and limb sizes.
-const pngSource = fs.readFileSync('docs/js/png-plane-avatar.js', 'utf8'); // Checks the runtime head/body factor and geometry-sizing contract.
+const pngSource = fs.readFileSync('docs/js/png-plane-avatar.js', 'utf8');
+const headRuntime = fs.readFileSync('docs/js/character-rig-scale-avatar-runtime.js', 'utf8'); // Non-family children expose stage data at avatar build time.
+const handDriver = fs.readFileSync('docs/js/procedural-hand-frame-driver.js', 'utf8'); // One-time hand GLB swaps use generic child sizing.
+const feetRuntime = fs.readFileSync('docs/js/procedural-leg-animation.js', 'utf8'); // Final imported foot GLBs honor the same factor and ground contact. // Checks the runtime head/body factor and geometry-sizing contract.
 const html = fs.readFileSync('docs/index.html', 'utf8'); // Ensures configuration is activated before family walkers/game initialization.
 const bootstrap = fs.readFileSync('docs/js/attachment-rig-latest-authored-snapshot.js', 'utf8'); // Ensures the editor loads the SAME bridge.
 const storage = new Map(); // Local storage models the same-origin persistence boundary.
@@ -49,6 +52,13 @@ assert.equal(initial.family.phaseScales.basket.body, .36, 'baby body is consumed
 assert.equal(initial.family.phaseScales.toddler.head, .68, 'toddler head is consumed by the same family record fields');
 assert.equal(initial.family.phaseScales.toddler.hand, 1.1, 'toddler hand sizes reach the live family limb controller');
 assert.equal(initial.family.childLimbModifiers.foot, 1.13, 'child foot sizes reach the live family limb controller');
+assert.deepEqual(plain(initial.api.nonFamilyChildLimbsFor({ role: 'child', tags: ['child'] })),
+  { hand: 1.15, foot: 1.13, phase: 'child', owner: 'generic-child-visuals' },
+  'ordinary authored child NPCs must use the same global extremity modifiers');
+assert.equal(initial.api.nonFamilyChildLimbsFor({ role: 'child', tags: ['child', 'family'] }), null,
+  'family child GLBs must not receive both generic and FamilyBabyLimbs multipliers');
+assert.equal(initial.api.nonFamilyChildLimbsFor({ role: 'villager', tags: [] }), null,
+  'adult NPCs must never inherit child limb scaling');
 assert.equal(initial.png.childScaleMultiplier, .57, 'child body size reaches PNGPlaneAvatar childScaleFor');
 assert.equal(initial.png.childHeadScaleMultiplier, .76, 'child final head size reaches PNGPlaneAvatar childScaleFor');
 assert.equal(storage.get(draftKey), 'untouched draft', 'applying a runtime override must preserve editor drafts and game saves');
@@ -88,6 +98,12 @@ assert.match(pngSource, /headFactor: head \/ body/, 'the runtime head bone must 
 assert.match(familySource, /function phaseScaleFields\(phase\) \{[\s\S]{0,160}childBodyScale: scales\.body, childHeadScale: scales\.head/,
   'live family records must consume the exact phase body/head configuration');
 assert.match(familySource, /FamilyBabyLimbs\?\.balanceWalker\?\./, 'the family runtime must consume phase GLB size settings');
+assert(headRuntime.includes('hobunjiChildLimbVisualModifiers'), 'world child avatars must publish independent child sizes');
+assert(handDriver.includes('avatarRoot.userData?.hobunjiChildLimbVisualModifiers?.hand'), 'hand driver must scale both fallback and async GLB replacements');
+assert(feetRuntime.includes('childFootFactor'), 'foot runtime must scale fallback and replacement GLBs');
+assert(feetRuntime.includes('foot.userData.contactRadiusY *= childFootFactor'), 'foot contact must adjust with child foot sizes');
+assert(feetRuntime.includes('options.onFootVisualsReplaced({ left: leftMesh, right: rightMesh, root })'),
+  'one-shot final foot GLB callback must exist for editor parity');
 assert(html.indexOf('character-age-rig-config.js?v=') > html.indexOf('romance-config.js?v=') &&
   html.indexOf('character-age-rig-config.js?v=') < html.indexOf('romance-family.js?v=') &&
   html.indexOf('character-age-rig-config.js?v=') < html.indexOf('game.js?v='),
