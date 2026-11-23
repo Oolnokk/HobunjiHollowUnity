@@ -56,7 +56,14 @@
       handAttachY: avatarRoot.userData?.handAttachY,
       avatarRoot,
       name: record.name || avatarRoot.name || 'avatar',
-      onHandVisualReplaced: record.onHandVisualReplaced, // Optional one-shot bridge for GLB replacement parity in the full-rig author.
+      onHandVisualReplaced(side, visual) {
+        const factor = Number(avatarRoot.userData?.hobunjiChildLimbVisualModifiers?.hand) || 1;
+        if (factor > 0 && factor !== 1 && visual?.scale?.multiplyScalar) {
+          visual.scale.multiplyScalar(factor); // Independent child NPCs get the same global hand modifier as the age lineup.
+          visual.updateMatrix?.();
+        }
+        record.onHandVisualReplaced?.(side, visual); // Author-only callback rebinds final imported GLBs after their fallback has gone away.
+      },
     });
     if (!rig) return false;
     avatarRoot.userData.proceduralHandRig = rig;
