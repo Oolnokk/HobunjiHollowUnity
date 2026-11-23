@@ -2,7 +2,7 @@
 'use strict';
 // NPC carriers (a spouse) use the PLAYER's baby carry: one shared Shattercasks mount solve on the
 // carrier's own posterior, the same authored grips/elbows through proceduralHeldItemTarget, the
-// back stow re-parented onto the carrier's portrait, and grips released on every hand-off.
+// back stow kept on the carrier's body instead of the rotating portrait, and grips released on hand-off.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
@@ -47,8 +47,45 @@ assert.match(burdens, /const body = spouse\._npcCharacterRigRoot \|\| spouse\.ro
 assert.match(burdens, /liveY: Number\(spouse\.legs\?\.standingPosteriorY\)/, 'NPC posterior comes from its live leg rig');
 assert.match(burdens, /api\.solveCarryMount\(group, entry\.burden\.data\?\.carryable \|\| \{\}, back, npcScratch\.posterior\);/, 'NPC uses the shared solve with no unit conversion');
 assert.doesNotMatch(burdens, /divideScalar\(s\)/, 'no rig-scale division: authored offsets are body-local like the player');
-assert.match(burdens, /if \(back && portrait\) api\.mountCarryOnPortrait\(group, body, portrait\);/, 'NPC back stow mounts on its portrait plane');
-assert.match(burdens, /group\.parent === portrait && entry\.npcCarryPose === 'back'\) return true;/, 'NPC back stow keeps its portrait yaw between ticks (player rule)');
+assert.match(burdens, /if \(back && group\.parent === body && entry\.npcCarryPose === 'back'\) return true;/,
+  'NPC back-stowed infant stays in the torso frame during repeated family updates');
+assert.doesNotMatch(burdens, /api\.mountCarryOnPortrait\(group, body, portrait\)/,
+  'NPC newborn cannot be reparented into the independently rotating head/portrait');
+assert.match(burdens, /const body = spouse\._npcCharacterRigRoot \|\| spouse\.root; \/\/ Fallback also follows the carrier/,
+  'legacy fallback is mounted to the same body frame, not the head');
+
+// Execute the actual NPC carry solver, rather than checking only its source text.
+{
+  const begin=burdens.indexOf('  function solveNpcCarry(entry, spouse, back) {');
+  const end=burdens.indexOf('  function spouseCarry(',begin);
+  assert(begin>=0 && end>begin,'NPC carry solver remains a small extractable function');
+  class V { constructor(x=0,y=0,z=0){this.set(x,y,z);}
+    set(x,y,z){this.x=x;this.y=y;this.z=z;return this;} copy(p){return this.set(p.x,p.y,p.z);} }
+  class Body {constructor(){this.parent=null;this.children=[];}
+    add(child){this.children.push(child);child.parent=this;}}
+  let solves=0; // Counts actual newborn pose solves, excluding redundant family updates.
+  const body=new Body(),portrait=new Body(),group={parent:null,position:new V(),quaternion:{},scale:{}};
+  body.add(portrait); // The portrait is a separate rotating child in the real NPC rig.
+  const mock={THREE:{Vector3:V},Shattercasks:{
+    carrierPosteriorLocal(out){return out.set(.08,.33,-.05);},
+    solveCarryMount(child,_pose,back,posterior){
+      solves++; child.position.copy(posterior);child.position.z+=back?-.06:.12;
+    },
+  }};
+  const solve=new Function('window','npcScratch',burdens.slice(begin,end)+'\nreturn solveNpcCarry;')(mock,{posterior:null});
+  const spouse={_npcCharacterRigRoot:body,root:body,avatarGroup:{userData:{neckRig:{skinnedPlane:portrait}}},
+    legs:{standingPosteriorY:.33}};
+  const entry={burden:{group,data:{carryable:{backCarry:{posteriorOffset:{z:-.06}}}}},npcCarryPose:null};
+  assert.equal(solve(entry,spouse,true),true);
+  assert.equal(group.parent,body,'spouse newborn back-stow inherits the torso, not the portrait');
+  assert(group.position.z<0,'spouse newborn starts behind its torso');
+  assert.equal(solve(entry,spouse,true),true);
+  assert.equal(solves,1,'portrait/head updates do not re-solve or move an already attached baby');
+  assert.equal(solve(entry,spouse,false),true);
+  assert.equal(solves,2,'switching to arms recomputes the existing authored hand pose');
+  assert.equal(solve(entry,spouse,true),true);
+  assert.equal(solves,3,'restowing recomputes the authored back pose');
+}
 
 // Same grips + elbows through the hand driver hook; back stow frees the hands.
 assert.match(driver, /record\?\.avatarRoot\?\.userData\?\.proceduralHeldItemTarget/, 'hand driver honours the NPC held-item target');
