@@ -88,6 +88,8 @@
       if (!touchesCover(obstacle, x, z, -CONFIG.radius * 0.45)) continue;
       if (!best || obstacle.topY > best.y) best = { y: obstacle.topY, kind: obstacle.kind || 'furniture', id: obstacle.key };
     }
+    const landmark = window.AreaFootprintBlockers?.supportAt?.(deps.getCurrentArea(), x, z, maxY); // Same indexed physical footprint used by normal wilderness collision.
+    if (landmark && (!best || landmark.y > best.y)) best = landmark;
     return best;
   }
 
