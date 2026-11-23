@@ -133,7 +133,7 @@
     ['js/combat/ranged-camera-focus.js?v=20261101spyglassLookCloser2', () => Number(window.HobunjiRangedCameraFocus?.version) >= 14],
     ['js/combat/combat-camera-alignment-bridge.js?v=20261105globalAerial2', () => Number(window.HobunjiCombatCameraAlignment?.version) >= 6],
     ['js/combat/ranged-dual-role-anim-style.js?v=20260918throwables1', () => Number(window.HobunjiDualRoleRangedAnimStyle?.version) >= 2],
-    ['js/drunk-prone-composition-bridge.js?v=20261119h8e395a6', () => !!window.HobunjiDrunkProneCompositionBridge],
+    ['js/drunk-prone-composition-bridge.js?v=20261122proneFullBody2', () => !!window.HobunjiDrunkProneCompositionBridge],
     ['js/prone-motion-exclusivity.js?v=20261105perchAudit3', () => !!window.HobunjiProneMotionExclusivity],
     ['js/footing-damage-recovery-bridge.js?v=20261106trinkets1', () => !!window.HobunjiFootingDamageRecovery],
     ['js/combat/combat-grehlr-burrow.js?v=20261117hypedCreature6', () => !!window.HobunjiGrehlrBurrow],
