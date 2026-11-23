@@ -8,7 +8,7 @@
     "js/combat/combat-core.js?v=20261121lungeProbeScratch1",
     "js/combat/enemy-search-ai.js?v=20261110h608e181",
     "js/combat/impact-blend-library.js?v=20260828b",
-    "js/combat/impact-ragdoll-playback.js?v=20261122pronePortraitStall1",
+    "js/combat/impact-ragdoll-playback.js?v=20261123pronePortraitRecovery2",
     "js/combat/combat-enemy-telegraph.js?v=20261009he463e76",
     "js/combat/combat-animal-attacks.js?v=20261122mootCharge1",
     "js/combat/combat-voorg-ass-rear-kick.js?v=20261117hypedCreature6",
