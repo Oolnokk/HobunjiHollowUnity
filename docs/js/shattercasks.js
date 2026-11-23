@@ -723,21 +723,27 @@
     if(!body||!vase?.group?.quaternion||!posteriorLocal)return false;
     const bodyMountedBaby=isBack&&vase.kind==='familyBaby'; // Infant remains on the carrier's posterior, not the separately rotating head/portrait plane.
     const portrait=isBack&&!bodyMountedBaby?backCarryPortrait(body):null; // Ordinary back-stowed furniture keeps its established portrait-facing behavior.
-    if(bodyMountedBaby&&vase.group.parent===body&&vase._backBodyMount===body)return true; // An already-solved newborn must not be reparented or reoriented on each turn.
+    const carryable=vase.data?.carryable||{}; // The back pose uses authored transforms, with an inverted held pose as its fallback.
+    const livePosterior=window.PlayerBodyTransformComposer?.getPosteriorY?.(); // One cheap height read; dynamically standing/sitting babies remain at the real posterior.
+    const liveY=Number.isFinite(livePosterior)?livePosterior:null;
+    const ud=body.userData||{};
+    const speciesId=ud.speciesId||ud.species,gender=ud.gender,modelHeight=ud.portraitModelHeight,handAttachY=ud.handAttachY;
+    const revision=Number(carryable._backCarryRevision)||0; // FamilyBabyCarryPose only advances this when its authored back transform changes.
+    const mounted=vase._backBodyMount; // Cached posterior mount inputs, avoiding expensive per-frame quaternion and species profile solves.
+    if(bodyMountedBaby&&vase.group.parent===body&&mounted?.body===body&&mounted.revision===revision
+      &&mounted.liveY===liveY&&mounted.modelHeight===modelHeight&&mounted.handAttachY===handAttachY
+      &&mounted.speciesId===speciesId&&mounted.gender===gender)return true;
     if(portrait&&vase.group.parent===portrait)return true; // Other back Burdens continue to follow their portrait plane.
     if(vase.group.parent!==body)body.add(vase.group);
-    const carryable=vase.data?.carryable||{}; // The back pose uses authored transforms, with an inverted held pose as its fallback.
     // The playerMesh is the actual character/posterior frame. The renderer
     // already applies body yaw and camera deadzone to that whole hierarchy.
     // Never inherit the *generic held-item holder's* extra bottle/tool rotation
     // or its world position: doing so rotates authored Z clearance into a
     // different axis and makes authoring disagree with gameplay.
     carrierPosteriorLocal(posteriorLocal,{
-      speciesId:body.userData?.speciesId||body.userData?.species,gender:body.userData?.gender,
-      modelHeight:body?.userData?.portraitModelHeight,handAttachY:body?.userData?.handAttachY,
-      liveY:window.PlayerBodyTransformComposer?.getPosteriorY?.()}); // Live composer value is authoritative.
+      speciesId,gender,modelHeight,handAttachY,liveY}); // Live composer posterior is authoritative; changing it re-anchors the baby.
     solveCarryMount(vase.group,carryable,isBack,posteriorLocal);
-    vase._backBodyMount=bodyMountedBaby?body:null; // Clearing on retrieval ensures the next stow reapplies its authored back pose.
+    vase._backBodyMount=bodyMountedBaby?{body,revision,liveY,modelHeight,handAttachY,speciesId,gender}:null; // Retrieval and avatar changes invalidate the cached body pose.
     if(isBack&&portrait)moveBackBurdenToPortrait(vase,body,portrait);
     const base=aimingThrow?.socketBase;
     if(aimingThrow?.vase===vase&&base){
