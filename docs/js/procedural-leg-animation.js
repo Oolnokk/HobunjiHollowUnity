@@ -1214,10 +1214,21 @@
       });
     }
 
+    const childLimbMetadata = options.childLimbVisualModifiers
+      || window.HobunjiCharacterAgeRigConfig?.nonFamilyChildLimbsFor?.(options.npcRecord || options.profile?.npcRecord)
+      || parent.userData?.hobunjiChildLimbVisualModifiers
+      || (parent.children || []).find(node => node.userData?.hobunjiChildLimbVisualModifiers)?.userData?.hobunjiChildLimbVisualModifiers
+      || null; // One bounded, attach-time child metadata lookup; no per-frame scene walk.
+    const childFootFactor = Number(childLimbMetadata?.foot) > 0 ? Number(childLimbMetadata.foot) : 1;
     function installFootAxes(foot) {
       installFootDepthPush(foot);
       window.HobunjiCharacterRigScale?.installPartScaleAxes?.(THREE, foot, parent, () => window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters?.[partProfileKey]?.anatomy?.footScaleAxes, true); // Shared uniform hand/foot average through moving leg joints.
       if (partAxes?.y > 0) foot.userData.contactRadiusY *= partAxes.y; // Sphere fallback retains ground contact after geometry grows about its center; GLB bottom origin remains zero.
+      if (childFootFactor !== 1 && foot?.scale?.multiplyScalar) {
+        foot.scale.multiplyScalar(childFootFactor); // Independent children inherit global authored foot size, including asynchronously imported GLBs.
+        if (Number.isFinite(foot.userData?.contactRadiusY)) foot.userData.contactRadiusY *= childFootFactor;
+        foot.updateMatrix?.();
+      }
     }
 
     const leftFallback = buildFallbackFoot(THREE, { speciesId, radius, sphereScaleXZ, sphereScaleY, initialColorHex });
@@ -1279,6 +1290,12 @@
         state.anatomyRevision++;
         placeIdleTarget('left', state.leftContactY);
         placeIdleTarget('right', state.rightContactY);
+        // Optional editor/runtime lifecycle callback; invoked only when the actual GLBs replace fallbacks.
+        // Size/outline consumers can rebind without polling every visible NPC or per-frame geometry traversal.
+        if (typeof options.onFootVisualsReplaced === 'function') {
+          try { options.onFootVisualsReplaced({ left: leftMesh, right: rightMesh, root }); }
+          catch (error) { console.warn('[ProceduralLegAnimation] foot replacement callback failed:', error); }
+        }
         window.HobunjiFeetOutlineParity?.refreshRig?.(root); // Register the final visible meshes for water/outline passes regardless of load duration.
       }).catch(error => {
         console.warn(`[ProceduralLegAnimation] foot GLB load failed for "${speciesId}" (${footConfig.glb}):`, error);

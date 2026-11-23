@@ -323,10 +323,10 @@ assert.match(scaleComparisonSource, /model\.userData\.proceduralHandParent = gro
   'comparison avatars must use the normal free-hand parent contract');
 assert.match(scaleComparisonSource, /ProceduralLegAnimation\?\.attach\?/,
   'comparison avatars must attach the gameplay procedural feet runtime');
-assert.match(scaleComparisonSource, /raycaster\.intersectObject\(entry\.group, true\)/,
-  'selection must raycast each preview group directly');
-assert.match(scaleComparisonSource, /select\(best\.entry\)/,
-  'a tapped preview must directly update the comparison selection');
+assert.doesNotMatch(scaleComparisonSource, /raycaster\.intersectObject\(entry\.group, true\)|pickAt\(event\.clientX/,
+  'the Full Character Scale lineup must not select through 3D raycasts');
+assert.match(scaleComparisonSource, /querySelector\('#maaFullScaleChoose'\)\.addEventListener\('change'/,
+  'the always-open character dropdown must remain wired to selection');
 assert.doesNotMatch(scaleComparisonSource, /addNpcAnimationActor/,
   'comparison lineup must not create Animation Author actors');
 assert.doesNotMatch(scaleComparisonSource, /selectedAnimationActor/,

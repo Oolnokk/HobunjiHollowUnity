@@ -689,6 +689,10 @@
         visual.name = `${side}_hand_visual`; // Fallback and GLB visuals share the same stable name for outline rescans.
         rec.calibration.add(visual); // The visual is downstream of model calibration; socket orientation remains owned by grip/shoulder systems.
         markOutline(visual); // Reassert layer 1 after every visual replacement, including the left hand.
+        if (typeof options.onHandVisualReplaced === 'function') {
+          try { options.onHandVisualReplaced(side, visual); } // Handles async fallback-to-GLB swaps without a permanent preview polling loop.
+          catch (error) { console.warn('[ProceduralHandAttachments] visual replacement callback failed:', error); }
+        }
       }
       rec.guide.visible = showGripGuides;
     }
