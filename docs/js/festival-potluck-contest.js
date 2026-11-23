@@ -59,12 +59,13 @@
     const def = ingredientDefinition(key, defs); // Exactly the definition the cooking UI uses for its ingredient contribution.
     const canonical = window.CookingSystem?.ingredientEffectTotals?.(def, stars);
     if (canonical) return canonical; // No separate balancing math when cooking is initialized.
-    if (def.foodEffects && Object.keys(def.foodEffects).length) return { ...def.foodEffects };
+    if (def.foodEffects && Object.keys(def.foodEffects).length) return window.CookingSystem?.normalizeFoodEffects?.(def.foodEffects) || { ...def.foodEffects };
     if (!def.cookingPrimaryEffect) return {};
     const data = window.HobunjiCookingData;
     const tier = data?.processingTiers?.[def.cookingProcessingTier] || data?.processingTiers?.raw || { multiplier:1 };
     const quality = Math.max(1,Math.min(5,Math.round(Number(stars) || Number(def.cookingDefaultStars) || 3)));
-    return { [def.cookingPrimaryEffect]:Math.max(1,Math.ceil(def.cookingBaseBoost * (1+(quality-1)/2) * (tier.multiplier || 1))) };
+    const effect = window.CookingSystem?.canonicalFoodEffectKey?.(def.cookingPrimaryEffect) || def.cookingPrimaryEffect; // Fallback uses the same effect identity as Cooking when it is available.
+    return { [effect]:Math.max(1,Math.ceil(def.cookingBaseBoost * (1+(quality-1)/2) * (tier.multiplier || 1))) };
   }
   function mealEffects(ingredients, defs) {
     const effects = {}; // Used both by meal previews and actual festival buffs after the first bite.
