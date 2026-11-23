@@ -75,7 +75,7 @@
 
   function repositoryAgeModifiers() {
     const shared = window.HobunjiCharacterAgeRigConfig?.repositoryDefaults?.(); // Exact checked-in defaults, even if a separate explicit override is active in gameplay.
-    if (shared) return shared;
+    if (shared) return { adult: { body: 1, head: 1, hand: 1, foot: 1 }, ...shared }; // The shared game bridge intentionally exports only growth stages; Adult is this editor's unmodified reference.
     const phases = window.HobunjiRomanceConfig?.family?.phaseScales || {}; // Same family phase source as romance-family.js.
     const png = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar || {}; // Shared child defaults also used by non-family children.
     const positive = (value, fallback) => Number.isFinite(Number(value)) && Number(value) > 0 ? Number(value) : fallback;
@@ -121,7 +121,7 @@
   }
 
   function ageValues() {
-    return ageModifiers[ageMode] || repositoryAgeModifiers().adult; // Age-specific proportions apply across the whole lineup, not to its per-character profiles.
+    return ageModifiers[ageMode] || ageModifiers.adult || { body: 1, head: 1, hand: 1, foot: 1 }; // Safe even when the shared bridge provides only baby/toddler/child or an old draft is malformed.
   }
 
   function host() {
@@ -451,6 +451,25 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
   function status(text) {
     const node = document.getElementById('maaFullScaleStatus');
     if (node) node.textContent = text;
+  }
+
+  function showStartupError(error) {
+    const detail = `Full Character Scale: ${error?.message || String(error)}. Check the scale editor diagnostic banner.`; // Mobile-readable failure remains visible after exiting the hidden comparison panel.
+    const pill = document.getElementById('statusPill');
+    if (pill) pill.textContent = detail;
+    let banner = document.getElementById('maaFullScaleErrorBanner'); // Independent of panel/tab visibility, so failed initialization cannot erase it.
+    if (!banner) {
+      banner = document.createElement('div');
+      banner.id = 'maaFullScaleErrorBanner';
+      banner.setAttribute('role', 'alert');
+      banner.style.cssText = 'position:fixed;top:64px;left:8px;right:8px;max-height:25vh;overflow:auto;z-index:100000;background:#411e26;color:#fff;border:1px solid #e58a9a;border-radius:7px;padding:10px;font:13px/1.4 sans-serif;white-space:pre-wrap;overflow-wrap:anywhere;';
+      document.body.appendChild(banner);
+    }
+    banner.textContent = `${detail}\n${error?.stack || ''}`; // Message and stack are copyable on touch devices without a console.
+  }
+
+  function clearStartupError() {
+    document.getElementById('maaFullScaleErrorBanner')?.remove?.(); // A successful retry clears the last startup error.
   }
 
   function chrome() {
@@ -1460,6 +1479,7 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
         throw new Error('Scale controls are unavailable: the shared input guard failed to load.'); // Mobile-visible failure instead of a second, incompatible slider path.
       loadAgeModifiers();
       syncAgeControls();
+      clearStartupError();
       isolateNativeWorkspace(); // These previews are scene-owned, not project actors: do not switch to Multi, clear actors or import empty projects.
       chrome();
       status('Building preview-only species/gender lineup…');
@@ -1475,6 +1495,7 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
       building = false;
       active = false;
       status(`Could not build scale comparison: ${error.message}`);
+      showStartupError(error); // Do not hide all diagnostics by returning to Rig after a failed preview build.
       try { await restoreWorkspace(); }
       finally {
         await host()?.setMode?.(originMode); // Even if an actor import failed, leave the broken comparison tab.
