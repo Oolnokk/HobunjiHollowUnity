@@ -30,10 +30,13 @@
   let chair = null;
   let THREE = null;
   let persistTimer = 0;
+  let handScaleTimer = 0; // Debounces hand-GLB rebuilds during touch drags; numeric profile changes still save immediately.
+  const originalPartRuntime = new Map(); // Captures each species' runtime hand/foot defaults before Full Character Scale mutates their shared lookup tables.
   let longoranFeetTimer = 0; // Rebuilds the author-only leg preview after a posture/gait slider settles.
   let longoranWalkTimer = 0; // Runs an isolated, user-requested walk preview; never a gameplay frame loop.
   let focusedEntryKey = null; // Only the explicit Focus selected action changes camera focus; selection and slider edits never reframe it.
   let manualViewInteraction = false; // During progressive loading, prevents a final automatic lineup frame after any actual user input or camera gesture.
+  let showSpineGuides = true; // Full Character Scale displays the real seven-node spline and cyan head attachment until the user hides it.
   let portraitRenderChain = Promise.resolve(); // Serializes portrait rendering because NpcAvatarPreview temporarily installs the active NPC account shim.
 
   const clone = value => value == null ? value : JSON.parse(JSON.stringify(value));
@@ -248,7 +251,7 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
           <b>Longoran spine — hunch &amp; kyphosis</b>
           <span class="longoranIntro">Hunch lowers the shoulders; kyphosis curls the neck forward. Both are independently authored for males and females.</span>
           <div class="longoranRows">
-            ${longoranRow('Hunch', 'Spine hunch (%)', 0, 100, 1, 7)}
+            ${longoranRow('Hunch', 'Spine hunch (%)', 0, 100, 1, 15)}
             ${longoranRow('Kyphosis', 'Kyphosis (%)', 0, 100, 1, 100)}
           </div>
           <div class="longoranTuningActions">
@@ -258,14 +261,23 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
           <p class="armLengthHint">Arm length offset (%) is in Rig Coordinates → Species proportions. It adjusts the free-hanging hands, not the whole-body scale.</p>
         </section>
         ${scaleRow('X', 'Width', 10, 400, 0.5, 100, 'Body width scale')}
-        ${scaleRow('Y', 'Height', 10, 400, 0.5, 100, 'Body height scale')}
+        ${scaleRow('PortraitHeight', 'Portrait height', 10, 400, 0.5, 100, 'Portrait artwork height, independent of the procedural legs')}
+        ${scaleRow('LegLength', 'Leg length', 10, 400, 0.5, 100, 'Hip-to-foot reach without stretching the foot meshes')}
+        ${scaleRow('Hand', 'Hand scale', 10, 400, 0.5, 100, 'Independent size of both procedural hands')}
+        ${scaleRow('Foot', 'Foot scale', 10, 400, 0.5, 100, 'Independent size of both procedural feet')}
         ${scaleRow('Head', 'Head', 10, 400, 0.5, 100, 'Head scale')}
         ${scaleRow('OffsetY', 'Head Y offset', -50, 50, 0.5, 0, 'Head Y offset, percent of model height')}
         ${scaleRow('Age', 'Age (hunch)', 0, 100, 1, 0, 'Per-NPC age hunch, lowers the head further')}
+        <label class="maaToggleLine" style="margin:8px 0"><input id="maaFullScaleShowSpine" type="checkbox" checked> Show live spine and neck attachment</label>
+        <div class="maaSmall maaMuted" style="margin-bottom:8px">Spine: green pelvis → orange vertebrae → violet shoulder/neck base; cyan marks the scaled head attachment. The selected avatar is highlighted, and hunch edits update the bones without changing the portrait art.</div>
         <div class="scaleActions"><button id="maaFullScaleExport" type="button" class="good">Export scale JSON</button><button id="maaFullScaleFrame" type="button" class="secondary">Frame lineup</button><button id="maaFullScaleFocus" type="button" class="secondary" disabled>Focus selected</button><button id="maaFullScaleReset" type="button" class="secondary">Reset all to repo defaults</button></div>
-        <div id="maaFullScaleStatus" class="scaleStatus">Preview-only lineup: hands and feet use the Rig Coordinates runtime; no lineup actor is saved into Rig or Multi mode. Head scale/offset are compensated at the neck rig, so stretching width/height never distorts head proportions. Age is per-NPC and composes with Head Y offset for a hunched-over look.</div>`;
+        <div id="maaFullScaleStatus" class="scaleStatus">Portrait height scales the painted upper body; Leg length adjusts the real hip-to-foot IK chain while keeping feet on the floor. Hand and Foot scale change their own GLBs independently. Existing Height saves initialize both height sliders, and all settings export per species/gender.</div>`;
       workspace.appendChild(panel);
       panel.querySelector('#maaFullScaleReset').addEventListener('click', resetAllToRepoDefaults);
+      panel.querySelector('#maaFullScaleShowSpine').addEventListener('change', event => {
+        showSpineGuides = event.target.checked; // Preview-only setting; not exported with species scales or Rig Coordinates data.
+        syncSpineGuides(); // Immediately hide/show the existing meshes; never rebuild the portrait to toggle debug bones.
+      });
       panel.querySelector('#maaFullScaleChoose').addEventListener('change', event => {
         manualViewInteraction = true; // An intentional selection must not be followed by a surprise automatic lineup frame.
         const entry = entries.find(item => item.key === event.target.value);
@@ -274,14 +286,9 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
       panel.addEventListener('input', () => { if (active) manualViewInteraction = true; }, true); // Includes head, body and Longoran adjustments, even when another capture listener consumes the event.
       panel.addEventListener('pointerdown', () => { if (active) manualViewInteraction = true; }, true); // Covers Reset all, buttons and mobile taps during background preview loading.
       panel.addEventListener('keydown', () => { if (active) manualViewInteraction = true; }, true); // Covers keyboard-only editing and focus requests without pointer events.
-      for (const axis of ['X', 'Y', 'Head', 'OffsetY']) {
-        const range = panel.querySelector(`#maaFullScaleRange${axis}`);
-        const number = panel.querySelector(`#maaFullScaleNum${axis}`);
-        range.addEventListener('input', () => { number.value = range.value; applyBodyHeadSliders(); });
-        range.addEventListener('change', persistProfiles);
-        number.addEventListener('input', () => { range.value = number.value; applyBodyHeadSliders(); });
-        number.addEventListener('change', persistProfiles);
-      }
+      // The capture-phase BodyInputGuard owns these seven paired sliders.
+      // Do not add a second input listener: it would rewrite Head's raw-PNG scale
+      // or reset independently authored dimensions when another slider moves.
       const ageRange = panel.querySelector('#maaFullScaleRangeAge');
       const ageNumber = panel.querySelector('#maaFullScaleNumAge');
       ageRange.addEventListener('input', () => { ageNumber.value = ageRange.value; applyAgeSlider(); });
@@ -372,6 +379,27 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
     document.getElementById(`maaFullScaleNum${axis}`).value = String(Math.round(percent * 10) / 10);
   }
 
+  function spineGapSourcePixels(entry) {
+    const model = entry?.model?.userData; // Only the selected model's real portrait rig supplies geometry and source image dimensions.
+    const rig = model?.neckRig; // The seven-bone gameplay skeleton is authoritative, not a drawn debug approximation.
+    const sourcePixelHeight = Number(String(model?.sourceImagePixels || '').split('x')[1]); // Source sprite pixel height used when calculating the short head connection.
+    const height = Number(model?.portraitModelHeight); // World/model units used by the spine layout solver.
+    const gap = Number(rig?.neckLocal?.y) - Number(rig?.spineBase?.y); // Rest gap from spine tip to the last painted head pixel.
+    return sourcePixelHeight > 0 && height > 0 && Number.isFinite(gap) ? Math.round(gap * sourcePixelHeight / height * 1000) / 1000 : null;
+  }
+
+  function syncSpineGuides() {
+    for (const entry of entries) {
+      if (entry === selected || !entry.spineGuide) continue;
+      entry.spineGuide.dispose(); // Only one selected live guide consumes debug geometry on mobile.
+      entry.spineGuide = null;
+    }
+    if (showSpineGuides && selected && !selected.spineGuide && THREE) {
+      selected.spineGuide = window.HobunjiCharacterSpine?.makeBoneGuides?.(THREE, selected.model.userData.neckRig) || null; // Lazily bind the real seven-node gameplay spline to the selected skinned avatar.
+    }
+    selected?.spineGuide?.sync(showSpineGuides); // Head-scale and hunch sliders update the existing selected guide without building new textures.
+  }
+
   function syncLongoranKyphosisAvailability() {
     const hunch = Number(document.getElementById('maaLongoranRangeHunch')?.value) || 0; // The same dependency used in Enemy Loadout Editor: no hunch means there can be no forward hook.
     for (const id of ['maaLongoranRangeKyphosis', 'maaLongoranNumKyphosis']) {
@@ -391,9 +419,11 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
     const scale = window.HobunjiCharacterRigScale?.scaleFor?.(entry.species, entry.gender, entry.profile) || { x: 1, y: 1, head: 1, offsetY: 0 };
     document.getElementById('maaFullScaleSelected').textContent = `${prettySpecies(entry.species)} · ${entry.gender}`;
     document.getElementById('maaFullScaleNpc').textContent = entry.npc?.name || entry.npc?.id || 'Repository NPC';
-    for (const [axis, field] of [['X', 'x'], ['Y', 'y'], ['Head', 'head']]) {
-      setSliderValue(axis, clampPercent(scale[field] * 100));
+    for (const [axis, field] of [['X', 'x'], ['PortraitHeight', 'y'], ['LegLength', 'legLength'], ['Head', 'head']]) {
+      setSliderValue(axis, clampPercent((scale[field] || 1) * 100));
     }
+    setSliderValue('Hand', clampPercent(partScaleFor(entry, 'hand') * 100));
+    setSliderValue('Foot', clampPercent(partScaleFor(entry, 'foot') * 100));
     setSliderValue('OffsetY', clampOffsetPercent(scale.offsetY * 100));
     const age = entry.npc?.id ? (host()?.npcAgeFor?.(entry.npc.id) || 0) : 0;
     setSliderValue('Age', clampAgePercent(age * 100));
@@ -413,6 +443,7 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
         syncLongoranKyphosisAvailability(); // Kyphosis is unavailable until some hunch exists, as in the enemy editor.
       }
     }
+    syncSpineGuides(); // Selected species' actual spine becomes visible without moving the camera or modifying its rig.
     status(`Selected ${prettySpecies(entry.species)} ${entry.gender} · ${entry.npc?.name || entry.npc?.id || 'repository NPC'}. Use Focus selected to center this character without altering the lineup until requested.`);
     // Selection changes the edited character, never camera position, angle, projection, or zoom.
   }
@@ -427,9 +458,48 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
     const api = window.HobunjiLongoranSpecies;
     const spineValues = api?.spineFor?.(entry.gender); // Single authored posture source shared with the game's portrait rig.
     const spine = window.HobunjiCharacterSpine?.bind?.(entry.model, { speciesId: 'longoran', gender: entry.gender, spine: spineValues });
-    entry.spinePreviewApplied = !!(spine && window.HobunjiCharacterSpine?.applyToRig?.(entry.model.userData.neckRig, spine, Number(entry.model.userData.portraitModelHeight))); // Exposed in mobile diagnostics if a portrait could not build its skinned spline.
     const scale = window.HobunjiCharacterRigScale?.scaleFor?.('longoran', entry.gender, entry.profile);
-    if (scale) window.HobunjiCharacterRigScale?.applyToParent?.(entry.group, 'longoran', entry.gender, scale, spine?.hunch || 0);
+    if (scale) window.HobunjiCharacterRigScale?.applyToParent?.(entry.group, 'longoran', entry.gender, scale, spine?.hunch || 0); // Head scale and alpha-centroid neck contact resolve before generating the hunch.
+    entry.spinePreviewApplied = !!(spine && window.HobunjiCharacterSpine?.applyToRig?.(entry.model.userData.neckRig, spine, Number(entry.model.userData.portraitModelHeight))); // The spline is bent only after the skull-to-neck connection has been updated.
+    entry.spineGuide?.sync(showSpineGuides && entry === selected); // The seven bones and cyan neck endpoint follow the actual scale/hunch result immediately.
+  }
+
+  // Same garment rule as gameplay NPCs (game.js): the NPC's authored leg
+  // garment, else basic pants for humanoids with a pants rig. Without this the
+  // lineup showed an empty hip-to-foot gap that gameplay always covers, which
+  // made Leg length and lanky species proportions impossible to judge.
+  function pantsAssetUrl(path) {
+    const value = String(path || '').trim();
+    if (!value || /^(?:https?:|data:|blob:|\/)/i.test(value)) return value;
+    return new URL(`../../${value.replace(/^\.\//, '')}`, location.href).href; // Tool pages live two folders below docs/.
+  }
+
+  function attachPreviewPants(entry, frontCanvas) {
+    const Renderer = window.PantsGarmentRenderer;
+    if (!THREE || !entry?.feet || !entry.model || !Renderer?.attachToLegs) return null;
+    const exportNpc = portraitExportFor(entry.npc);
+    const equipped = Renderer.garmentForCosmetics?.(exportNpc.equippedCosmetics) || null;
+    const garmentId = equipped || (entry.npc?.noPants !== true && Renderer.hasRigFor?.(entry.species, entry.gender, 'pants_basic') ? 'pants_basic' : null);
+    const source = garmentId ? window.HOBUNJI_PANTS_RIGS?.garments?.[garmentId] : null;
+    if (!source) return null; // Pantless/unsupported species stay uncovered, exactly as in gameplay.
+    const garmentRecord = clone(source);
+    if (garmentRecord.image) garmentRecord.image = pantsAssetUrl(garmentRecord.image);
+    if (Array.isArray(garmentRecord.imageLayers)) garmentRecord.imageLayers = garmentRecord.imageLayers.map(layer => ({ ...layer, url: pantsAssetUrl(layer?.url) }));
+    const bodyColors = entry.avatarProfile?.bodyColors || exportNpc.appearance?.bodyColors || {};
+    const pants = Renderer.attachToLegs(THREE, entry.feet, {
+      avatarGroup: entry.model, speciesId: entry.species, gender: entry.gender, garmentId, garmentRecord, meshBudget: 'npc',
+      appearance: Renderer.appearanceFromBodyColors?.(bodyColors) || {}, name: `${entry.group?.name || entry.key}_pants`,
+    }) || null;
+    const front = frontCanvas || entry.frontCanvas;
+    if (pants && front && entry.avatarProfile && Renderer.buildOverlayMask) {
+      Renderer.buildOverlayMask(front, entry.avatarProfile, { forceEyesOpen: true }).then(mask => {
+        if (pants.disposed || entry.feet?.pants !== pants) return;
+        pants.setOverlayMask?.(mask); // Arm clothing, overwear and hoods stay in front of the pants like gameplay.
+        pants.update?.();
+      }).catch(() => {});
+    }
+    pants?.update?.();
+    return pants;
   }
 
   function rebuildLongoranFeet(entry) {
@@ -444,7 +514,9 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
       gaitProfile: window.HobunjiLongoranSpecies?.gaitFor?.(entry.gender),
       name: `${entry.group.name}_feet`, portraitSize: 200,
     }) || null; // Recreates just the comparison feet, never gameplay actors or other species.
+    attachPreviewPants(entry); // Disposing the old leg handle disposed its pants too.
     entry.feet?.update?.(0, 0, false, null);
+    syncLegPortraitAlignment(entry); // A rebuilt species foot rig retains its independent hip height and torso connection.
   }
 
   function applyLongoranSliders(rebuildNow = false) {
@@ -509,28 +581,44 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
     status('Exported Longoran male/female spine and gait settings; this editor does not alter the repository until reviewed and committed.');
   }
 
-  // Width/height/head/head-Y-offset are authored per species+gender, on the shared
-  // profile — moving any one of these four sliders reapplies all four together
-  // (each read fresh from its own range input) plus whatever age is already set.
-  function applyBodyHeadSliders() {
-    if (!active || !selected) return;
-    const scale = { x: 1, y: 1, head: 1, offsetY: 0 };
-    for (const [axis, field] of [['X', 'x'], ['Y', 'y'], ['Head', 'head']]) {
-      const percent = clampPercent(document.getElementById(`maaFullScaleRange${axis}`).value);
-      scale[field] = percent / 100;
-      setSliderValue(axis, percent);
+  function partScaleFor(entry, part) {
+    const saved = Number(entry?.profile?.anatomy?.[part === 'hand' ? 'handScale' : 'footScale']); // Existing attachment-rig profile is authoritative when an explicit part size was authored.
+    if (Number.isFinite(saved) && saved > 0) return Math.max(.1, Math.min(4, saved));
+    const api = window.HobunjiHandModelProfiles; // Existing shared character hand/foot sizing inherits the appropriate species/gender defaults.
+    return Math.max(.1, Math.min(4, Number(part === 'hand'
+      ? api?.speciesScaleFor?.(entry?.species, entry?.gender)
+      : api?.footScaleFor?.(entry?.species, entry?.gender)) || 1));
+  }
+
+  function syncLegPortraitAlignment(entry) {
+    if (entry?.group && entry.feet) window.ProceduralLegAnimation?.alignPortraitWithLegs?.(entry.group, entry.feet); // One shared game/editor hip anchor, with no duplicate fallback geometry.
+  }
+
+  function scheduleHandResize(entry) {
+    clearTimeout(handScaleTimer);
+    handScaleTimer = setTimeout(() => {
+      if (!active || !entry || !entries.includes(entry)) return; // Deferred GLB replacement must not mutate a disposed lineup.
+      applyAnatomyConfig(entry.profile); // The existing hand-profile subscription rebuilds the two selected-size hands from cached source GLBs.
+      window.ProceduralHandFrameDriver?.syncNow?.();
+    }, 140);
+  }
+
+  function refreshFromScaleChange(scale, changedField = '') {
+    if (!active || !selected) return false;
+    const hand = Number(scale?.handScale) > 0 ? Number(scale.handScale) : partScaleFor(selected, 'hand'); // Guard copies part sizes verbatim on unrelated edits.
+    const foot = Number(scale?.footScale) > 0 ? Number(scale.footScale) : partScaleFor(selected, 'foot');
+    if (changedField === 'footScale') {
+      applyAnatomyConfig(selected.profile); // Materialize the current Hand scale once before Foot scale changes its inherited fallback, keeping the two dimensions genuinely independent.
+      selected.feet?.setFootScaleMultiplier?.(foot); // Resize real feet now, not just after leaving this workspace.
     }
-    const offsetPercent = clampOffsetPercent(document.getElementById('maaFullScaleRangeOffsetY').value);
-    scale.offsetY = offsetPercent / 100;
-    setSliderValue('OffsetY', offsetPercent);
-    selected.profile.anatomy ||= {};
-    selected.profile.anatomy.rigScaleX = scale.x;
-    selected.profile.anatomy.rigScaleY = scale.y;
-    selected.profile.anatomy.headScale = scale.head;
-    selected.profile.anatomy.headOffsetY = scale.offsetY;
     window.HobunjiCharacterRigScale?.applyToParent?.(selected.group, selected.species, selected.gender, scale, currentAgeFraction());
-    clearTimeout(persistTimer);
-    persistTimer = setTimeout(persistProfiles, 180);
+    if (['x', 'y', 'legLength', 'footScale'].includes(changedField))
+      selected.feet?.update?.(0, 0, false, null); // Recheck planted soles only when geometry changes; Head and Hand edits need no gait work.
+    syncLegPortraitAlignment(selected); // Hip and painted torso stay attached under separate Leg length and Portrait height edits.
+    if (changedField === 'handScale') scheduleHandResize(selected); // Debounced cached GLB replacement keeps mobile slider movement responsive.
+    syncSpineGuides(); // The guide follows the true resized body, not the former combined Height factor.
+    window.ProceduralHandFrameDriver?.syncNow?.();
+    return true;
   }
 
   // Age is per-NPC instance data, not species+gender-authored — it's stored and
@@ -543,6 +631,7 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
     host()?.setNpcAge?.(selected.npc.id, percent / 100);
     const scale = window.HobunjiCharacterRigScale?.scaleFor?.(selected.species, selected.gender, selected.profile) || { x: 1, y: 1, head: 1, offsetY: 0 };
     window.HobunjiCharacterRigScale?.applyToParent?.(selected.group, selected.species, selected.gender, scale, percent / 100);
+    syncSpineGuides(); // Age only shifts head/spine; do not re-solve or relocate unchanged procedural legs. // Aged stoop may move the head independently of permanent species posture.
   }
 
   function persistProfiles() {
@@ -568,12 +657,20 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
     if (!active) return;
     if (window.confirm && !window.confirm('Reset every species/gender scale, Longoran posture/gait, and every per-NPC age back to repository defaults? This discards local overrides.')) return;
     window.HobunjiLongoranSpecies?.resetAuthorTuning?.(); // Restores the same shipped defaults used by new Longoran spawns.
+    clearTimeout(handScaleTimer); // A queued pre-reset hand rebuild must not restore an abandoned scale.
+    handScaleTimer = 0;
     const count = host()?.resetToRepositoryDefaults?.() || 0;
     for (const entry of entries) {
-      const scale = window.HobunjiCharacterRigScale?.scaleFor?.(entry.species, entry.gender, entry.profile) || { x: 1, y: 1, head: 1, offsetY: 0 };
+      const scale = window.HobunjiCharacterRigScale?.scaleFor?.(entry.species, entry.gender, entry.profile) || { x: 1, y: 1, legLength: 1, head: 1, offsetY: 0 };
+      applyAnatomyConfig(entry.profile);
+      entry.feet?.setFootScaleMultiplier?.(partScaleFor(entry, 'foot'));
       window.HobunjiCharacterRigScale?.applyToParent?.(entry.group, entry.species, entry.gender, scale, 0);
+      syncLegPortraitAlignment(entry);
       if (entry.species === 'longoran') { refreshLongoranSpine(entry); rebuildLongoranFeet(entry); }
     }
+    restorePartRuntimeDefaults(); // Reset the *actual* source tables as well: a missing hand/foot author override must not leave last-edited geometry on future characters.
+    for (const entry of entries) entry.feet?.setFootScaleMultiplier?.(partScaleFor(entry, 'foot')); // Newly restored fallback values also affect current lineup feet.
+    syncSpineGuides(); // Reset visibly restores all selected vertebra positions and the real head pivot.
     window.ProceduralHandFrameDriver?.syncNow?.();
     if (selected) select(selected);
     persistProfiles();
@@ -588,7 +685,11 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
       data[descriptor.species] ||= {};
       data[descriptor.species][descriptor.gender] = {
         x: Math.round(scale.x * 10000) / 10000,
-        y: Math.round(scale.y * 10000) / 10000,
+        y: Math.round(scale.y * 10000) / 10000, // Legacy field: same value as portraitHeight, for older consumers.
+        portraitHeight: Math.round(scale.y * 10000) / 10000,
+        legLength: Math.round((scale.legLength || scale.y) * 10000) / 10000,
+        handScale: Math.round(partScaleFor({ species: descriptor.species, gender: descriptor.gender, profile }, 'hand') * 10000) / 10000,
+        footScale: Math.round(partScaleFor({ species: descriptor.species, gender: descriptor.gender, profile }, 'foot') * 10000) / 10000,
         head: Math.round(scale.head * 10000) / 10000,
         offsetY: Math.round(scale.offsetY * 10000) / 10000,
       };
@@ -602,7 +703,54 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
     a.click();
     a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 0);
-    status('Exported species + gender full-character scales only.');
+    status('Exported width, portrait height, independent leg length, hand/foot size, head size and offset per species/gender.');
+  }
+
+  function rememberPartRuntimeDefaults(species, gender) {
+    const key = `${species}::${gender}`; // Stable species+gender snapshot for Reset all, independent of user-authored slider values.
+    if (originalPartRuntime.has(key)) return;
+    const hand = window.HobunjiHandModelProfiles?.data?.speciesScaleOverrides?.[species]; // Original hand-model scale table before slider edits.
+    const feet = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.proceduralFeet?.footScale?.[species]; // Original procedural foot scale table.
+    originalPartRuntime.set(key, {
+      hand: hand != null && Object.prototype.hasOwnProperty.call(hand, gender) ? hand[gender] : null,
+      foot: feet != null && Object.prototype.hasOwnProperty.call(feet, gender) ? feet[gender] : null,
+    });
+  }
+
+  function restorePartRuntimeDefaults() {
+    const png = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar; // Existing game-wide source for procedural feet; restore before spawning new previews.
+    const handApi = window.HobunjiHandModelProfiles; // One batched notification rebuilds hands instead of one rebuild per lineup member.
+    const handRestores = [];
+    for (const [key, original] of originalPartRuntime) {
+      const [species, gender] = key.split('::');
+      const feet = png?.proceduralFeet?.footScale;
+      if (feet) {
+        if (original.foot == null) {
+          if (feet[species]) {
+            delete feet[species][gender];
+            if (!Object.keys(feet[species]).length) delete feet[species];
+          }
+        } else {
+          feet[species] ||= {};
+          feet[species][gender] = original.foot;
+        }
+      }
+      const currentHand = handApi?.data?.speciesScaleOverrides?.[species]?.[gender];
+      if ((currentHand ?? null) !== original.hand) handRestores.push({ species, gender, value: original.hand });
+    }
+    if (handRestores.length && handApi?.mutate) handApi.mutate(data => {
+      data.speciesScaleOverrides ||= {};
+      for (const { species, gender, value } of handRestores) {
+        if (value == null) {
+          if (!data.speciesScaleOverrides[species]) continue;
+          delete data.speciesScaleOverrides[species][gender];
+          if (!Object.keys(data.speciesScaleOverrides[species]).length) delete data.speciesScaleOverrides[species];
+        } else {
+          data.speciesScaleOverrides[species] ||= {};
+          data.speciesScaleOverrides[species][gender] = value;
+        }
+      }
+    }, { kind: 'data' }); // Revert precisely the touched entries; do not erase unrelated Hand Model Author changes.
   }
 
   function applyAnatomyConfig(profile) {
@@ -611,6 +759,7 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
     const gender = normalizeGender(profile?.gender);
     const pngConfig = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar;
     if (!species || !gender || !pngConfig) return;
+    rememberPartRuntimeDefaults(species, gender); // Save unedited hand/foot fallback tables once before a slider changes them.
 
     const placement = Number(anatomy.portraitVerticalPlacementRatio);
     if (Number.isFinite(placement)) {
@@ -639,12 +788,14 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
     }
 
     const handScale = Number(anatomy.handScale);
-    if (Number.isFinite(handScale) && handScale > 0 && window.HobunjiHandModelProfiles?.mutate) {
-      window.HobunjiHandModelProfiles.mutate(data => {
+    const profiles = window.HobunjiHandModelProfiles; // Existing hand-model profiles rebuild active GLBs when the species-scale value actually changes.
+    const currentHand = Number(profiles?.data?.speciesScaleOverrides?.[species]?.[gender]);
+    if (Number.isFinite(handScale) && handScale > 0 && currentHand !== handScale && profiles?.mutate) {
+      profiles.mutate(data => {
         data.speciesScaleOverrides ||= {};
         data.speciesScaleOverrides[species] ||= {};
         data.speciesScaleOverrides[species][gender] = handScale;
-      });
+      }, { kind: 'species-scale', speciesId: species, gender }); // Do not refresh every actor's hands on unrelated width/head sliders.
     }
   }
 
@@ -693,6 +844,7 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
     rigProfile.anatomy.rigScaleY ??= initialScale.y;
     rigProfile.anatomy.headScale ??= initialScale.head;
     rigProfile.anatomy.headOffsetY ??= initialScale.offsetY;
+    rigProfile.anatomy.legLengthScale ??= initialScale.legLength; // Seed alongside rigScaleY so the species' authored leg default survives later scaleFor reads.
     applyAnatomyConfig(rigProfile);
 
     const avatar = await buildPortrait(rep.npc);
@@ -733,16 +885,21 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
       profile: avatar.profile,
       ...(rep.species === 'longoran' ? { spine: window.HobunjiLongoranSpecies?.spineFor?.(rep.gender), gaitProfile: window.HobunjiLongoranSpecies?.gaitFor?.(rep.gender) } : {}), // Uses the identical authored gait when building the lineup.
       portraitSize: avatar.front.width || 200,
-    }) || null;
-    feet?.update?.(0, 0, false, null);
+    }) || null; // Same orientation as gameplay: the portrait front, toes and spine hunch all face +Z (toward the lineup camera).
 
     previewRoot.add(group);
     const ageFraction = rep.npc?.id ? (host()?.npcAgeFor?.(rep.npc.id) || 0) : 0;
     window.HobunjiCharacterRigScale?.applyToParent?.(group, rep.species, rep.gender, {
-      x: rigProfile.anatomy.rigScaleX, y: rigProfile.anatomy.rigScaleY, head: rigProfile.anatomy.headScale, offsetY: rigProfile.anatomy.headOffsetY,
+      x: rigProfile.anatomy.rigScaleX, y: rigProfile.anatomy.rigScaleY,
+      legLength: rigProfile.anatomy.legLengthScale ?? initialScale.legLength, // Old Height saves initialize both new heights identically.
+      head: rigProfile.anatomy.headScale, offsetY: rigProfile.anatomy.headOffsetY,
     }, ageFraction);
     window.ProceduralHandFrameDriver?.syncNow?.();
-    const entry = { ...rep, group, model, feet, profile: rigProfile, avatarProfile: avatar.profile };
+    const entry = { ...rep, group, model, feet, spineGuide: null, profile: rigProfile, avatarProfile: avatar.profile, frontCanvas: avatar.front,
+      basePortraitY: model.position.y }; // Original floor-relative portrait center; leg-length edits move only its hip anchor, not its height scale.
+    attachPreviewPants(entry, avatar.front); // Gameplay covers the hip-to-foot span with the NPC's leg garment.
+    feet?.update?.(0, 0, false, null);
+    syncLegPortraitAlignment(entry); // The lineup starts with any previously authored independent leg length without separating hips from the torso.
     if (rep.species === 'longoran') refreshLongoranSpine(entry); // Gameplay-static back curvature is visible on the initial lineup, not only after touching a slider.
     return entry;
   }
@@ -962,6 +1119,7 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
     const focusButton = document.getElementById('maaFullScaleFocus');
     if (focusButton) focusButton.disabled = true;
     for (const entry of entries) {
+      try { entry.spineGuide?.dispose?.(); } catch (_) {} // Remove line/joint meshes and release their shared geometry before disposing the skinned model.
       try { entry.feet?.dispose?.(); } catch (_) {}
       try { window.PNGPlaneAvatar?.disposeAvatarModel?.(entry.model); } catch (_) {}
       try { entry.group?.parent?.remove?.(entry.group); } catch (_) {}
@@ -990,6 +1148,8 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
     try {
       const scaleHost = host();
       if (!scaleHost) throw new Error('Full Character Scale host is unavailable.');
+      if (!window.HobunjiFullScaleBodyInputGuard?.applyScaleField)
+        throw new Error('Scale controls are unavailable: the shared input guard failed to load.'); // Mobile-visible failure instead of a second, incompatible slider path.
       if (originMode !== 'multi') await scaleHost.setMode('multi');
       savedMulti = clone(window.MultiAvatarAnimationAuthor?.exportProject?.());
       if (!savedMulti) throw new Error('Could not snapshot the multi-avatar workspace.');
@@ -1029,6 +1189,11 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
     ++generation;
     active = false;
     building = false;
+    if (handScaleTimer && selected?.profile) {
+      clearTimeout(handScaleTimer);
+      handScaleTimer = 0;
+      applyAnatomyConfig(selected.profile); // Flush the last mobile Hand slider value before leaving; a pending GLB refresh must not be silently abandoned.
+    }
     persistProfiles();
     await restore(targetMode || originMode || 'multi');
     savedMulti = null;
@@ -1044,6 +1209,7 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
       get selectedKey() { return selected?.key || null; },
       get focusKey() { return focusedEntryKey; }, // Independent of selectedKey: choosing a different editor target must never move the camera.
       get previewCount() { return entries.length; },
+      refreshFromScaleChange, // Input guard uses one field at a time, preserving raw-PNG head size and all four new dimensions.
       debugSnapshot: () => ({
         active,
         building,
@@ -1051,11 +1217,21 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
         selected: selected?.key || null, // Identifies which progressively loaded species is currently editable.
         view: focusedEntryKey ? 'focused-character' : 'lineup', // Mobile diagnostics report the explicitly chosen camera mode.
         focused: focusedEntryKey, // Identifies the focused portrait even when a different character is selected.
-        spinePreviewApplied: selected?.species === 'longoran' ? !!selected.spinePreviewApplied : null, // Detects missing skinned rigs without devtools.
+        spinePreviewApplied: selected?.species === 'longoran' ? !!selected.spinePreviewApplied : null,
+        facing: { portraitFrontZ: 1, spineForwardSign: 1, reverseFootVisualDepth: false, pants: selected?.feet?.pants?.garmentId || null }, // Lineup matches gameplay orientation: face, toes and hunch all point +Z.
+        spineGuide: { enabled: showSpineGuides, available: !!selected?.spineGuide, visible: !!selected?.spineGuide?.group?.visible,
+          nodeCount: selected?.model?.userData?.neckRig?.splineNodes?.length || 0,
+          restGapSourcePixels: spineGapSourcePixels(selected), // Verify the real sprite-height conversion yields the intended 2.5px connection.
+          requestedSpineReach: selected?.model?.userData?.neckRig?.neckReachY ?? null,
+          appliedSpineReach: selected?.model?.userData?.neckRig?.neckReachAppliedY ?? null }, // Mobile-readable actual skinning layout without browser DevTools.
+        anatomyScales: selected ? { ...window.HobunjiCharacterRigScale?.scaleFor?.(selected.species, selected.gender, selected.profile),
+          hand: partScaleFor(selected, 'hand'), foot: partScaleFor(selected, 'foot'),
+          restHipY: selected.feet?.restPosteriorY ?? null, liveHipY: selected.feet?.standingPosteriorY ?? null,
+          portraitOffsetY: Number(selected.model?.position?.y) - Number(selected.basePortraitY) } : null, // Mobile diagnostics distinguish the four independently authored dimensions without DevTools.
         gait: selected?.species === 'longoran' ? selected.feet?.getStandingPoseDebug?.()?.gait || null : null, // Exposes actual Maskbound gait state in the preview.
         portraitLoading: window.__portraitPixelCacheDebug?.()?.imageLoads || null, // Displays slowest sprite and real request counts without devtools.
         portraitImageCache: window.__portraitPixelCacheDebug?.()?.images || null, // Cache size and evictions distinguish reload churn from network slowness.
-        latestChange: 'Longoran spine hunch/kyphosis is visible above body scales without nested clipping; arm length offset remains in Rig Coordinates.',
+        latestChange: 'Height is split into independent portrait height and procedural leg length, with live hand and foot scale and saved per-species anatomy.',
       }),
     });
     return true;
