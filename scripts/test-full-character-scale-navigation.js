@@ -59,7 +59,19 @@ function element(id) {
   });
   return elements.get(id);
 }
-const document = { currentScript: null, body: { dataset: { animationAuthorMode: 'rig' } }, getElementById: element };
+const body = {
+  dataset: { animationAuthorMode: 'rig' },
+  appendChild(node) { elements.set(node.id, node); return node; }, // Startup errors must remain visible even when the scale editor panel hides.
+};
+const document = {
+  currentScript: null, body,
+  getElementById: id => id === 'maaFullScaleErrorBanner' && !elements.has(id) ? null : element(id),
+  createElement: tag => ({
+    tagName: tag, style: {}, textContent: '',
+    setAttribute(name, value) { this[name] = value; },
+    remove() { elements.delete(this.id); },
+  }), // Realistic diagnostic-banner creation rather than returning a fictitious existing element.
+};
 let imports = 0; // Any project import demonstrates a regression to the old automatic loop.
 const modes = []; // Native setMode calls should happen only on explicit exit.
 const window = {
@@ -135,6 +147,7 @@ async function visit(from, to) {
   await api.beginWithFailure();
   assert.equal(nativeRoot.visible, true, 'preview build failure restores native actor visibility');
   assert.match(element('maaFullScaleStatus').textContent, /Could not build scale comparison/, 'failure is visible without devtools');
+  assert.match(document.getElementById('maaFullScaleErrorBanner')?.textContent || '', /failed preview image/, 'persistent error banner survives returning to Rig');
   assert.equal(imports, 0, 'preview failure never triggers an empty actor import');
   assert.equal(api.state.isolationDebug.nativeProjectImports, 0, 'mobile diagnostic reports zero project imports');
   assert.ok(api.state.isolationDebug.entries >= 7 && api.state.isolationDebug.exits >= 7, 'repeated entry/exit counted');
