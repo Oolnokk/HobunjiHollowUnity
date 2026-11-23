@@ -113,7 +113,10 @@
       const visual = visualRootFor(limbs[kind][side], kind, side);
       const parts = []; // Frozen source mesh/geometry/material identities used only for refresh decisions.
       visual.traverse?.(node => {
-        if (node.isMesh) parts.push({ mesh: node, geometry: node.geometry, material: node.material });
+        if (!node.isMesh || node.visible === false) return; // Hidden foot fallback is not part of the rendered clone.
+        for (let ancestor = node.parent; ancestor && ancestor !== visual; ancestor = ancestor.parent)
+          if (ancestor.visible === false) return; // A hidden GLB group is not a visible limb part.
+        parts.push({ mesh: node, geometry: node.geometry, material: node.material });
       });
       state[kind][side] = { visual, parts };
     }
@@ -142,7 +145,12 @@
     const sign = Math.sign(visual.matrixWorld.determinant()) || 1;
     const model = visual.clone(true); // Three.js shares geometries/materials by reference until we clone the materials below.
     model.name = `family_baby_${side}_${kind}`;
+    model.visible = true; // The NPC walker's culling/hidden state must not blank the carried infant's limbs.
+    const hidden = []; // Inactive fallback meshes are dropped, never copied into the active carried GLB.
     model.traverse(node => {
+      if (node !== model && node.visible === false) { hidden.push(node); return; }
+      for (let ancestor = node.parent; ancestor && ancestor !== model; ancestor = ancestor.parent)
+        if (ancestor.visible === false) return; // Descendants of hidden subgroups have no drawable material to clone.
       if (!node.isMesh) return;
       node.material = Array.isArray(node.material)
         ? node.material.map(material => material?.clone?.() || material)
@@ -153,6 +161,7 @@
       node.userData.shattercaskKeepsOwnDepth = true;
       node.userData.familyBabyLimb = kind;
     });
+    for (const node of hidden) node.parent?.remove(node); // Remove only owned clones, never live walker meshes.
     const x = Math.abs(scale.x) / (Math.abs(parentScale.x) || 1);
     model.scale.set(x * (sign < 0 ? -1 : 1),
       Math.abs(scale.y) / (Math.abs(parentScale.y) || 1),
