@@ -36,7 +36,10 @@
       part.geometry?.dispose?.();part.material?.map?.dispose?.();part.material?.dispose?.();
     }
     for(const mesh of entry.legacy || []) mesh.visible = true;
-    if(entry.group?.userData?.ghostArmyKeyStatue===entry)delete entry.group.userData.ghostArmyKeyStatue;
+    if(entry.group?.userData?.ghostArmyKeyStatue===entry){
+      delete entry.group.userData.ghostArmyKeyStatue;
+      delete entry.group.userData.ghostArmyStatueInfo; // An abandoned Burden must not report the old soldier as visually present.
+    }
     entry.figure=null;entry.visual=null;
   }
   function dispose(group) {
