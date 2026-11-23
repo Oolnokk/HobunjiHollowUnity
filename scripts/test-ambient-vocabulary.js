@@ -512,6 +512,20 @@ async function main() {
   assert.equal(engine.rewrite('Hey, Kitty and Hi! {{AMBIENT_VOCAB_NAME_0}}', 'gantami_ginju', () => 0, config, profiles, ['Kitty', 'Hi']),
     'Hiya, Kitty and Hi! {{AMBIENT_VOCAB_NAME_0}}', 'Two protected names cannot reuse the same marker when an authored token occupies marker zero');
   assert.equal(engine.rewrite('Hey, Kitty!', 'gantami_ginju', () => 0, config, profiles, []), 'Hiya, Kit-cat!');
+  // Public stable roles provide protected names automatically, including direct pet reactions without new show options.
+  window.StableAnimalProgression = { activeEntryForRole: role => role === 'shoulderPet' ? { name: 'Kitty', kind: 'nelk' }
+    : role === 'mount' ? { name: 'Hi', kind: 'mount-kind' } : null }; // Fixture mirrors the existing stable API's active-entry shape.
+  window.CREATURE_DB = { nelk: { label: 'Nelk' } }; // Canonical species label must also remain untouched.
+  assert.equal(engine.rewrite('Hi, Kitty!', 'gantami_ginju', () => 0), 'Hiya, Kitty!',
+    'Direct pet remarks protect an active animal name without changing the animal or reaction modules');
+  assert.equal(engine.rewrite('Good morning, Hi!', 'jubmir', () => 0), 'Lovely morning, Hi!',
+    'An active animal named Hi keeps its name in floating speech');
+  assert.equal(engine.rewrite('Kitty!', 'gantami_ginju', () => 0), 'Kitty!',
+    'A named active pet must not turn into an animal noun');
+  assert.equal(engine.rewrite('Hey, Nelk!', 'gantami_ginju', () => 0), 'Hiya, Nelk!',
+    'Active pet species labels are protected using CREATURE_DB');
+  delete window.StableAnimalProgression;
+  delete window.CREATURE_DB;
   const debug = engine.getDebug();
   assert.ok(debug.last && Number.isInteger(debug.last.swaps));
   assert.ok(typeof debug.replacements === 'number');
@@ -525,8 +539,12 @@ async function main() {
   assert.ok(floating.includes('options.vocabularyProtectedNames'));
   assert.ok(file('docs/js/ambient-vocabulary.js').includes('Array.isArray(protectedNames) && protectedNames.length'),
     'Unprotected animal cries must bypass extra name-masking allocations');
-  assert.ok(file('docs/js/stable-animal-progression.js').includes('vocabularyProtectedNames: [animal.entry?.name'));
-  assert.ok(file('docs/js/npc-silliness-reaction-runtime.js').includes('vocabularyProtectedNames: ['));
+  assert.ok(file('docs/js/ambient-vocabulary.js').includes('StableAnimalProgression?.activeEntryForRole'),
+    'Pet identities must come from the public stable API, not changes to individual reaction callers');
+  assert.ok(!file('docs/js/stable-animal-progression.js').includes('vocabularyProtectedNames: [animal.entry?.name'),
+    'Stable progression must not depend on vocabulary internals');
+  assert.ok(!file('docs/js/npc-silliness-reaction-runtime.js').includes('vocabularyProtectedNames: ['),
+    'NPC reactions must not depend on vocabulary internals');
   assert.ok(!regularTalk.includes('AmbientVocabulary')); // The ordinary Talk renderer never invokes word substitution.
 
   const standalone = file('docs/tools/vocabulary-editor/index.html');

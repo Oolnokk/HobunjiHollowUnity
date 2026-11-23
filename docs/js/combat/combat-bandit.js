@@ -50,7 +50,7 @@
     if (_banditConfigPromise) return _banditConfigPromise;
     _banditConfigPromise = (async () => {
       try {
-        const r = await fetch('config/bandits/bandit-gang-config.json?v=20261122banditPursuit1');
+        const r = await fetch('config/bandits/bandit-gang-config.json?v=20261122hWeakHP30');
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return await r.json();
       } catch (e) {
@@ -811,13 +811,10 @@
 
   // ── Combatant ─────────────────────────────────────────────────────
 
-  // Tier-0 CAPTAIN baseline; every other rank/tier is this scaled by
-  // statWeakenMultiplierByRank * (1 + tier * tierStatBonusPerTier). Sized
-  // against CREATURE_DB's own hostiles: a gar-wolf is 38 HP / 12 damage
-  // and an alpha 78 / 18, so a tier-0 captain (70 / 17) reads a shade
-  // under an alpha, and a tier-0 grunt (x0.55 -> ~39 HP / ~9 damage) is a
-  // gar-wolf's worth of health that hits noticeably softer -- a lightly
-  // armed thug, not a predator.
+  // Tier-0 CAPTAIN baseline. Ordinary bandit attacks and Stamina use the
+  // existing rank/tier stat curve, while the optional Health-only curve gives
+  // weak ranks more time to be staggered, flanked, and knocked into hazards.
+  // Captain (90 HP at tier 0), mine Ghouls, and authored overrides are unchanged.
   const BANDIT_BASE_MAX_HEALTH = 70;
   // These 5 (plus CREATURE_DB's own per-species attack* fields) are
   // overridden from docs/config/combat/attack-values.json's `bandit`
@@ -1041,6 +1038,10 @@
     );
     const tierMul = 1 + tier * (cfg?._preserveMineEnemyTiers ? 0.12 : Number(cfg?.difficultyTiers?.tierStatBonusPerTier ?? 0)); // Mine Ghouls retain their authored ten-floor curve.
     const statMul = weaken * tierMul;
+    const healthTierMultipliers = cfg?._preserveMineEnemyTiers ? null : cfg?.healthMultiplierByRankAndTier?.[rank]; // Separate wilderness humanoid HP from the attack/Stamina curve; Ghouls keep their historic mine curve.
+    const healthRankMultiplier = Array.isArray(healthTierMultipliers) && healthTierMultipliers.length
+      ? Number(healthTierMultipliers[Math.min(Math.max(0, tier), healthTierMultipliers.length - 1)]) : weaken; // Rank/tier HP only; missing or malformed curves preserve the original scaling.
+    const healthStatMul = (Number.isFinite(healthRankMultiplier) && healthRankMultiplier > 0 ? healthRankMultiplier : weaken) * tierMul; // Used only for maxHealth so extra survivability never increases outgoing damage or Stamina.
     const weapon = banditWeaponFor(cfg, rank, tier);
     const isFlasker = rank === 'flasker'; // Used to reserve this rank's ranged role for its infinite two-flask loadout.
     const rangedWeaponKey = isFlasker ? null : banditRangedWeaponFor(cfg, rank);
@@ -1064,7 +1065,7 @@
     return {
       label: BANDIT_RANK_LABEL[rank] || 'Bandit',
       hostile: true, liveBirth: true,
-      maxHealth: Math.max(1, Math.round(BANDIT_BASE_MAX_HEALTH * statMul)),
+      maxHealth: Math.max(1, Math.round(BANDIT_BASE_MAX_HEALTH * healthStatMul)),
       maxStamina,
       moveSpeed: 118 + tier * (cfg?._preserveMineEnemyTiers ? 4 : 2), // Existing ten-floor ghoul movement stays as before.
       chaseSpeed: (cfg?._preserveMineEnemyTiers ? 165 + tier * 5 : chaseBase + tier * chaseTierStep) + (rank === 'captain' ? 20 : rank === 'lieutenant' ? 10 : 0), // Fast direct pursuit; Ghoul mine keeps its prior chase curve.

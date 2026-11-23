@@ -257,10 +257,6 @@
         const replacement = animalLine(npcId, animal); // Personality line replaces only the old hardcoded stable-animal copy.
         if (!replacement) return null; // Never show the legacy hardcoded pet line for an intentionally empty pool.
         text = replacement;
-        options = { ...options, vocabularyProtectedNames: [
-          ...(Array.isArray(options.vocabularyProtectedNames) ? options.vocabularyProtectedNames : []),
-          animal.entry?.name || speciesLabel(animal.entry), speciesLabel(animal.entry),
-        ].filter(Boolean) }; // Preserve the actual pet's name and species even for direct calls outside StableAnimalProgression.
         state.animalLineReplacements++;
       }
       return originalShow(target, text, options);

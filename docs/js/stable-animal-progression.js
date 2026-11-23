@@ -520,7 +520,6 @@
       if (!line) continue;
       const shown = window.AmbientDialogue?.show?.(walker.root, line, {
         speakerId: npcId,
-        vocabularyProtectedNames: [animal.entry?.name, speciesLabel(animal.entry)].filter(Boolean), // Keep player-given pet names and species labels unchanged while varying the surrounding remark.
         profile: walker.profile,
         mode: 'chathead',
         durationMs: 4300,

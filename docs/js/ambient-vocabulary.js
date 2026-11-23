@@ -42,6 +42,23 @@
     state.tableCache.set(characterId, compiled);
     return compiled;
   }
+  const ACTIVE_ANIMAL_ROLES = Object.freeze(['companion', 'mount', 'shoulderPet']); // Used by the vocabulary pass to protect names of active stable animals without modifying their callers.
+  function activeAnimalProperNames(source) {
+    const lookup = window.StableAnimalProgression?.activeEntryForRole; // Public stable authority replaces hooks in the pet and NPC reaction modules.
+    if (typeof lookup !== 'function') return []; // The vocabulary engine may load before the stable feature.
+    const speech = source.toLocaleLowerCase(); // Cheap prefilter before regex masking.
+    const matches = []; // Names/species found in this one displayed bubble, never a permanent species-name table.
+    for (const role of ACTIVE_ANIMAL_ROLES) {
+      const entry = lookup(role);
+      if (!entry) continue;
+      const kind = String(entry.kind || ''); // Species ID remains a fallback for unavailable CREATURE_DB labels.
+      for (const candidate of [entry.name, window.CREATURE_DB?.[kind]?.label, kind]) {
+        const name = typeof candidate === 'string' ? candidate.trim() : '';
+        if (name && name.length <= 100 && speech.includes(name.toLocaleLowerCase()) && !matches.includes(name)) matches.push(name);
+      }
+    }
+    return matches;
+  }
   function shieldSpokenNames(source, names) {
     const literals = [...new Set((Array.isArray(names) ? names : []).filter(value => typeof value === 'string')
       .map(value => value.trim()).filter(value => value.length > 0 && value.length <= 100))]
@@ -74,7 +91,11 @@
       }
       return source;
     }
-    const guarded = Array.isArray(protectedNames) && protectedNames.length ? shieldSpokenNames(source, protectedNames) : null; // Unnamed wildlife and ordinary bubbles skip all name-guard allocations.
+    const explicitNames = Array.isArray(protectedNames) ? protectedNames : []; // Greeting addressees are optional for other ambient callers.
+    const mayAlter = config !== state.config || !!state.matchPattern?.test(source) || !!selected.phoneticPreset; // Skip stable lookups for unmatched cries.
+    const activeNames = mayAlter ? activeAnimalProperNames(source) : []; // Resolve present pets once per emitted bubble, never in an update loop.
+    const names = activeNames.length ? explicitNames.concat(activeNames) : explicitNames; // Preserve an explicit player/NPC addressee as well as the active pet names.
+    const guarded = names.length ? shieldSpokenNames(source, names) : null; // Unnamed wildlife skips regex masking.
     const speechInput = guarded?.text || source; // Both rewrite passes and the matcher use the same optionally masked input.
     const hasLexicalMatch = config === state.config ? !!state.matchPattern?.test(speechInput) : true; // Keeps most animal and NPC bubbles allocation-free.
     if (!hasLexicalMatch && !selected.phoneticPreset) {
