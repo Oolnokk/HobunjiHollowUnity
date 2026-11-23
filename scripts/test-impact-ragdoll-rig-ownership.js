@@ -262,6 +262,26 @@ function creature() {
   clip=originalClip;
 }
 
+// A visible new rig can be promoted before normal hostile AI resumes.
+// The draw hook must not keep displaying that replacement upright.
+{
+  const animal=creature();animal.prone=true;
+  assert(impact.updateCreature(animal,.016));
+  const original=animal._impactRagdollPlayback;
+  animal.avatarRef=creature().avatarRef; // Newly promoted rig is now current.
+  animal._impactRagdollPlayback=null; // Existing visual teardown can clear this directly.
+  rescueFrame();
+  const rebound=animal._impactRagdollPlayback;
+  assert(rebound?.holding,'render rescue reattaches a visible newly promoted prone animal without waiting for AI');
+  assert.notEqual(rebound,original);
+  assert.equal(animal.avatarRef.frontPlane.parent,rebound.pivot);
+  const q=rebound.pivot.quaternion;
+  assert(Math.abs(1-2*(q.x*q.x+q.z*q.z))<.2);
+  animal.prone=false;rescueFrame();
+  assert.equal(impact.getDebug().activeCreatureReactions,0);
+  assert.equal(rig.getDebug().activeAbsoluteClaims,0);
+}
+
 // A brief ordinary-impact reaction must never substitute for a full prone
 // pose if prone gameplay state overtakes it before the next presentation tick.
 {
