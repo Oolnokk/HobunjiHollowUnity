@@ -4,6 +4,7 @@ const fs = require('node:fs'); // Reads the shipped owners rather than duplicate
 const vm = require('node:vm'); // Executes owner functions with lightweight dependencies.
 const game = fs.readFileSync('docs/game.js', 'utf8'); // Contains the common mobile/keyboard/controller dispatcher.
 const fishing = fs.readFileSync('docs/js/fishing-minigame.js', 'utf8'); // Contains camera cleanup and catch reward presentation.
+const dismissalSource = fs.readFileSync('docs/js/controller-menu-dismissal.js', 'utf8'); // Reuse the real extracted close policy in the focus-handoff harness.
 const nav = fs.readFileSync('docs/js/controller-ui-nav.js', 'utf8'); // Contains focus ownership across menu transitions.
 const NAV_VISIBILITY_SHIM = 'function invalidateVisibility() {}\nfunction navClassAdd(node, name) { node.classList.add(name); }\nfunction navClassRemove(node, name) { node.classList.remove(name); }\n'; // Helpers the production nav functions call (visibility memo invalidation).
 function ownerFunction(source, name, indent = '  ') {
@@ -72,19 +73,21 @@ assert.equal(directions.length, 2, 'both digital and analog input continue navig
 for (const panel of [main, child]) panel.querySelector = () => null;
 for (const button of [mainButton, childButton]) {
   button.hasAttribute = () => false;
+  button.matches = () => false; // Isolated plain focus targets are not buttons; the real close-control classifier owns its own DOM selector logic.
   button.getBoundingClientRect = () => ({ top: 0, left: 0 });
 }
 panels.stack = [main];
 panels.currentTarget = mainButton;
 panels.lastFocusedByPanel = new WeakMap();
 panels.document = { activeElement: mainButton };
-panels.window = {};
+panels.window = {}; // Native close policy in the isolated focus-handoff VM, matching the browser load order.
+vm.runInNewContext(dismissalSource, panels);
 panels.isNavTarget = panels.isVisible = () => true;
 panels.isDisabled = () => false;
 panels.updateHintBar = () => {};
 panels.setFocus = target => { panels.currentTarget = target; };
 panels.visiblePanels = () => [main, child];
-vm.runInNewContext(['activePanel', 'reconcileStack', 'activatePanel', 'pickDefaultTarget'].map(name => ownerFunction(nav, name)).join('\n') + NAV_VISIBILITY_SHIM, panels);
+vm.runInNewContext(['activePanel', 'reconcileStack', 'activatePanel', 'isPanelCloseControl', 'pickDefaultTarget'].map(name => ownerFunction(nav, name)).join('\n') + NAV_VISIBILITY_SHIM, panels);
 panels.reconcileStack();
 assert.equal(panels.currentTarget, childButton, 'opening a submenu immediately transfers focus');
 panels.visiblePanels = () => [main];

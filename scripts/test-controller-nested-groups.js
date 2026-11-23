@@ -63,15 +63,20 @@ const tabs = new Element('div', { 'data-ctrl-tabs': '' }, [tabA, tabB], 250, 100
 const close = button('close', 400, 0, { 'data-ctrl-cancel': '' }); // Only root-level Back should activate the panel close action.
 const panel = new Element('div', { id: 'panel', 'data-ctrl-panel': '' }, [group, outside, tabs, close]);
 const body = new Element('body', {}, [panel]); // Sole connected document root.
-document = { body, activeElement: body, createElement: tag => new Element(tag, {}, [new Element('span', { class: 'ctrl-nav-hint ctrl-nav-hint-tabs' }), new Element('span', { class: 'ctrl-nav-hint' })]), addEventListener(type, callback) { listeners.set(type, [...(listeners.get(type) || []), callback]); } };
+document = { body, activeElement: body, createElement: tag => new Element(tag, {}, [new Element('span', { class: 'ctrl-nav-hint ctrl-nav-hint-tabs' }), new Element('span', { class: 'ctrl-nav-hint' })]), addEventListener(type, callback) { listeners.set(type, [...(listeners.get(type) || []), callback]); },
+  dispatchEvent(event) { for (const listener of listeners.get(event.type) || []) listener(event); return true; } }; // Synthetic Escape now travels through document-level handlers just as a real keyboard event does.
 const context = {
   document, console, getComputedStyle: el => ({ display: el.hidden ? 'none' : el.style.display || 'block', visibility: 'visible', opacity: '1', overflowY: el.style.overflowY || 'visible' }),
   window: { innerWidth: 600, innerHeight: 400, addEventListener(type, callback) { listeners.set(type, [...(listeners.get(type) || []), callback]); }, dispatchEvent() {},
     ControllerInput: { PRIORITY: { menuNav: 10 }, subscribe(_id, callback) { this.poll = callback; }, normalizeStick: (x, y) => ({ x, y }) } },
   MutationObserver: class { constructor(callback) { observers.push(callback); } observe() {} },
-  queueMicrotask, setTimeout: () => 1, clearTimeout() {}, KeyboardEvent: class {},
+  queueMicrotask, setTimeout: () => 1, clearTimeout() {}, KeyboardEvent: class {
+    constructor(type, options = {}) { this.type = type; Object.assign(this, options); }
+    preventDefault() {} stopPropagation() {}
+  },
   CustomEvent: class { constructor(type, options) { this.type = type; this.detail = options.detail; } },
 }; // No custom navigation helpers: boot, press, focus recovery and cancel execute the entire shipped module.
+vm.runInNewContext(fs.readFileSync('docs/js/controller-menu-dismissal.js', 'utf8'), context); // Real menu policy is registered before the navigator, as in the shipped game.
 vm.runInNewContext(fs.readFileSync('docs/js/controller-ui-nav.js', 'utf8'), context);
 const ui = context.window.ControllerUI; // Same public diagnostic/press API used in-game.
 const press = action => ui.press(action); // Reconciles real panel ownership on every input.
@@ -149,6 +154,67 @@ const rebuild = async target => { for (const observer of observers) observer([{ 
   press('cancel');
   press('cancel'); assert.equal(close.clicks, 1, 'root Back uses the existing close action');
   assert.equal(panel.querySelectorAll('.ctrl-nav-focus').length, 1, 'exactly one control glows after all handoffs');
+
+  const legacyNest = new Element('div', { id: 'legacy-nest', 'data-ctrl-group': '' }, [button('stock-a', 10, 45), button('stock-b', 110, 45)], 10, 35); // Legacy floating shop content stays in its own controller nest.
+  const legacyClose = button('legacy-close', 400, 0, { 'data-close': '' }); // Existing shop and mine-upgrade markup use data-close without needing custom controller code.
+  const legacyPanel = new Element('div', { id: 'legacy-shop', 'data-ctrl-panel': '' }, [legacyNest, legacyClose]);
+  legacyClose.onclick = () => { legacyPanel.hidden = true; };
+  body.append(legacyPanel);
+  for (const observer of observers) observer([{ target: body, addedNodes: [legacyPanel], removedNodes: [] }]);
+  await Promise.resolve();
+  assert.equal(ui.activePanel(), legacyPanel, 'newly opened legacy shop owns controller focus');
+  assert.equal(ui.focusedElement(), legacyNest, 'inferred Close button never receives the initial Confirm focus');
+  press('confirm'); assert.equal(ui.debugState().groupDepth, 1, 'Confirm enters the shop stock nest');
+  press('cancel'); assert.equal(legacyClose.clicks, 0, 'first Back only unwinds the nest');
+  assert.equal(ui.debugState().lastCancelRoute, 'nest');
+  press('cancel'); assert.equal(legacyClose.clicks, 1, 'second Back invokes the existing shop close handler');
+  assert.equal(ui.debugState().lastCancelRoute, 'close-button');
+  await rebuild(legacyPanel);
+  assert.equal(ui.activePanel(), panel, 'closing the shop restores the underlying menu owner');
+
+  const labelledClose = button('labelled-close', 400, 0, { 'aria-label': 'Close' }); // Other floating windows can use an unambiguous accessible label.
+  const labelledPanel = new Element('div', { id: 'labelled-panel', 'data-ctrl-panel': '' }, [button('another-action', 10, 40), labelledClose]);
+  labelledClose.onclick = () => { labelledPanel.hidden = true; };
+  body.append(labelledPanel);
+  for (const observer of observers) observer([{ target: body, addedNodes: [labelledPanel], removedNodes: [] }]);
+  await Promise.resolve();
+  assert.equal(ui.focusedElement().id, 'another-action', 'an aria-labelled close button is not automatically selected');
+  press('cancel');
+  assert.equal(labelledClose.clicks, 1, 'B recognizes an accessible Close label without one-off menu logic');
+  await rebuild(labelledPanel);
+
+  const clippedClose = button('clipped-close', 750, 0, { 'data-ctrl-cancel': '' }); // A scrolled-off footer remains a safe Back destination, but not a Confirm destination.
+  const clippedPanel = new Element('div', { id: 'clipped-panel', 'data-ctrl-panel': '' }, [button('clipped-action', 10, 40), clippedClose]);
+  clippedClose.onclick = () => { clippedPanel.hidden = true; };
+  body.append(clippedPanel);
+  for (const observer of observers) observer([{ target: body, addedNodes: [clippedPanel], removedNodes: [] }]);
+  await Promise.resolve();
+  clippedClose.focus();
+  press('confirm');
+  assert.equal(clippedClose.clicks, 0, 'Confirm never clicks an off-screen close button');
+  press('cancel');
+  assert.equal(clippedClose.clicks, 1, 'Back invokes the correct close handler even when the footer is clipped');
+  assert.equal(ui.debugState().lastCancelRoute, 'close-button');
+  await rebuild(clippedPanel);
+  assert.equal(ui.activePanel(), panel, 'closing a scroll-clipped panel restores the underlying menu');
+
+  const hiddenClose = button('hidden-close', 400, 0, { 'data-ctrl-cancel': '' }); // A genuinely hidden action must never be clicked.
+  hiddenClose.hidden = true;
+  const fallbackPanel = new Element('div', { id: 'escape-panel', 'data-ctrl-panel': '' }, [button('fallback-action', 10, 40), hiddenClose]);
+  let escapeDispatches = 0; // Count document Escape delivery to verify the old window-only bug is fixed.
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && ui.activePanel() === fallbackPanel) { escapeDispatches++; fallbackPanel.hidden = true; }
+  });
+  body.append(fallbackPanel);
+  for (const observer of observers) observer([{ target: body, addedNodes: [fallbackPanel], removedNodes: [] }]);
+  await Promise.resolve();
+  press('cancel');
+  assert.equal(hiddenClose.clicks, 0, 'hidden Cancel is never activated');
+  assert.equal(escapeDispatches, 1, 'fallback Escape reaches document keydown listeners exactly once');
+  assert.equal(ui.debugState().lastCancelRoute, 'escape-fallback');
+  await rebuild(fallbackPanel);
+  assert.equal(ui.activePanel(), panel, 'Escape-closing a modal returns controller ownership to the previous menu');
+
   const perk = (tree, x) => new Element('div', { class: 'perk-tree', 'data-tree': tree }, [new Element('div', { 'data-perk': 'health' }, [
     button('', x, 200, { 'data-perk-action': 'dec' }), button('', x + 100, 200, { 'data-perk-action': 'inc' }),
   ])], x, 180); // Mirrors id-less perk markup whose siblings gain enabled minus buttons after spending a point.
@@ -220,7 +286,7 @@ const rebuild = async target => { for (const observer of observers) observer([{ 
   assert.equal(offscreenSlider.value, '20', 'controller range adjustments ignore a selected off-screen slider');
 
   close.x = 700; press('cancel');
-  assert.equal(close.clicks, 1, 'off-screen close button cannot be clicked by controller Back');
+  assert.equal(close.clicks, 2, 'Back invokes the semantic panel Close even when its position is outside the viewport');
   close.x = 400;
 
   const scrollTopButton = button('scroll-top', 10, 10); // Offscreen old focus after scrolling must not drag the viewport back.
