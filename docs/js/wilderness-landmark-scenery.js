@@ -367,9 +367,16 @@ function registerStoneCollision(zone,sites){
  const bySite=new Map(); // Site id -> world-space stone rectangles; the initial pillar box stays solid while its authored mesh loads.
  for(const site of sites.filter(s=>SOLID_LANDMARK_KINDS.has(s.kind))){
   const x=site.point.col+.5,z=site.point.row+.5,y=elevation(site);
-  const size=Math.max(.6,Number(site.size)||1),half=(site.kind==='deadTree'?.32:.36)*size;
-  const height=(site.kind==='deadTree'?4.2:site.kind==='stoneCairn'
-    ?CAIRN_STONES.reduce((sum,stone)=>sum+stone[1]-.055,0)+.055:1.25)*size; // Use the visible cairn's four stone courses, not a taller invisible pillar.
+  const size=Math.max(.6,Number(site.size)||1);
+  const isQuarryStone=site.kind==='markedBoulder'||site.kind==='witnessStone';
+  const quarry=isQuarryStone?root.OreRockTextures?.smallStoneArt?.(root.THREE)?.geometry:null; // Reuse the already-rendered single stone, not a guessed boulder silhouette.
+  if(quarry&&!quarry.boundingBox)quarry.computeBoundingBox?.(); // One cached source-geometry measurement for all witness sites.
+  const bounds=quarry?.boundingBox;
+  const half=isQuarryStone&&bounds?Math.max(Math.abs(bounds.min.x),Math.abs(bounds.max.x),Math.abs(bounds.min.z),Math.abs(bounds.max.z))
+   :(site.kind==='deadTree'?.32:site.kind==='stoneCairn'?.46:.36)*size;
+  const height=isQuarryStone&&bounds?.max?Math.max(.1,.52+bounds.max.y)
+   :(site.kind==='deadTree'?4.2:site.kind==='stoneCairn'
+    ?CAIRN_STONES.reduce((sum,stone)=>sum+stone[1]-.055,0):1.25)*size; // Stacked stones start buried .055; no hidden top .055 above their visible cap.
   bySite.set(site.id,[{minX:x-half,maxX:x+half,minZ:z-half,maxZ:z+half,minY:y-.05,maxY:y+height,
    siteId:site.id,kind:site.kind}]);
  } // Ordinary cairns/trees/rocks retain their cheap collider; authored debris becomes per-part precise.
@@ -478,6 +485,7 @@ function update(){
  report.solidStoneColliders=registerStoneCollision(zone,sites); // Same curated placement list owns both visible rocks and their physical colliders.
  report.authoredDebrisSites=0;report.authoredDebrisParts=0; // Dev Companion shows when async stone fragments replace provisional site footprints.
  cairns(T,host,sites);witnessStone(T,host,sites);deadwood(host,sites);debris(host,sites,serial,zone);
+ root.NearbyVolumeCollision?.invalidate?.(); // The tree-root spatial index must rebuild after new scenery (especially landmark deadwood) joins this zone.
 }
 function objectAt(zoneId,targetScene,point){
   if(area!==zoneId||scene!==targetScene||!group?.parent||!Number.isFinite(point?.col)||!Number.isFinite(point?.row))return null;
