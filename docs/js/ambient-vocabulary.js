@@ -42,12 +42,29 @@
     state.tableCache.set(characterId, compiled);
     return compiled;
   }
+  function shieldSpokenNames(source, names) {
+    const literals = [...new Set((Array.isArray(names) ? names : []).filter(value => typeof value === 'string')
+      .map(value => value.trim()).filter(value => value.length > 0 && value.length <= 100))]
+      .sort((left, right) => right.length - left.length); // Longer names win over shorter aliases in the same sentence.
+    if (!literals.length) return { text: source, restore: value => value };
+    const escape = value => value.replace(/[.*+?^\x24{}()|[\]\\]/g, '\\$&'); // Exact name spelling, never regex syntax.
+    const pattern = new RegExp('(^|[^\\p{L}\\p{N}_])(' + literals.map(escape).join('|') + ')(?=$|[^\\p{L}\\p{N}_])', 'giu'); // Whole names only.
+    const saved = []; // The exact proper names are restored after both the semantic and phonetic passes.
+    const masked = source.replace(pattern, (whole, prefix, match) => {
+      let index = saved.length; // Chooses a tag absent from the authored line so user names cannot clash with placeholders.
+      while (source.includes('{{AMBIENT_VOCAB_NAME_' + index + '}}')) index++;
+      const marker = '{{AMBIENT_VOCAB_NAME_' + index + '}}'; // Existing rules already protect double-brace placeholders.
+      saved.push([marker, match]);
+      return prefix + marker;
+    });
+    return { text: masked, restore: value => saved.reduce((text, [marker, name]) => text.split(marker).join(name), value) };
+  }
   function rememberSpeech(result) {
     state.last = result; // Most recent attempted vocabulary pass is available in the mobile in-game diagnostics even if no word matched.
     state.recent.push(result); // The last twelve actual bubbles make intermittent greeting/pet failures inspectable without console access.
     if (state.recent.length > 12) state.recent.shift();
   }
-  function rewrite(text, speakerId, random = Math.random, config = state.config, profiles = state.profiles) {
+  function rewrite(text, speakerId, random = Math.random, config = state.config, profiles = state.profiles, protectedNames = []) {
     const source = String(text ?? ''); // Original authoring stays immutable and is returned when any dependency is absent.
     const selected = optionsFor(config, speakerId, profiles);
     if (!source) return source;
@@ -57,7 +74,8 @@
       }
       return source;
     }
-    const hasLexicalMatch = config === state.config ? !!state.matchPattern?.test(source) : true; // Keeps most animal and NPC bubbles allocation-free.
+    const guarded = shieldSpokenNames(source, protectedNames); // Proper nouns are masked before either vocabulary pass.
+    const hasLexicalMatch = config === state.config ? !!state.matchPattern?.test(guarded.text) : true; // Keeps most animal and NPC bubbles allocation-free.
     if (!hasLexicalMatch && !selected.phoneticPreset) {
       state.unmatched++; // Unmatched text never compiles an NPC table, so animal sounds remain cheap.
       rememberSpeech({ speakerId: selected.characterId, familyId: selected.familyId, original: source, displayed: source, hits: 0, swaps: 0, phoneticSwaps: 0, reason: 'no-dictionary-phrase' });
@@ -76,12 +94,12 @@
     const table = hasLexicalMatch ? (config === state.config
       ? cachedTable(selected.characterId, compile)
       : compile()) : null; // A purely phonetic Pahu line skips semantic generation and the LRU.
-    const transformed = table ? rules.rewriteLine(source, table, selected.sliders, random, selected.characterId)
-      : { text: source, hits: 0, swaps: 0 };
+    const transformed = table ? rules.rewriteLine(guarded.text, table, selected.sliders, random, selected.characterId)
+      : { text: guarded.text, hits: 0, swaps: 0 };
     const phonetic = selected.phoneticPreset
       ? rules.applyPhoneticPreset(transformed.text, config, selected.phoneticPreset, selected.characterId)
       : { text: transformed.text, hits: 0, swaps: 0 }; // Doorstep-specific phonetics never touch Talk or any unassigned speaker.
-    const output = phonetic.text;
+    const output = guarded.restore(phonetic.text); // Recover original names before rendering or debugging.
     rememberSpeech({ speakerId: selected.characterId, familyId: selected.familyId, dialectGroup: selected.traits.groupId,
       original: source, displayed: output, hits: transformed.hits, swaps: transformed.swaps, phoneticSwaps: phonetic.swaps,
       reason: output !== source ? 'reworded' : (transformed.hits ? 'frequency-or-disabled-choice' : 'no-eligible-choice') });
