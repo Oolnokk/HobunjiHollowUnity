@@ -78,6 +78,26 @@ regrowthWindow.ZoneRegrowth.init({
 assert.equal(regrowthWindow.ZoneRegrowth.updateClearedZoneVegetationVisual(zone,3,3,'shrub'),true);
 assert.equal(regrowthWindow.NearbyVolumeCollision.invalidations,1,
   'felling clears root collision in the same tick instead of leaving a fallen trunk obstacle');
+// Exercise both production vegetation-rebuild modes: chunked streaming and older full-floor replacement.
+const regrowthScene={remove(){},traverse(){}}; // Reused Three.js scene identity must not preserve a stale root index.
+const regrowthZone={scene:regrowthScene,grid:[],cols:8,rows:8,chunkController:{}};
+const regrowthDeps={
+  _zoneScenes:new Map([[zone,regrowthZone]]),_zoneFloorMeshGroups:new Map(),_zoneGrassMeshes:new Map(),
+  removeZoneVegetationVisual:()=>true,TileType:{WEEDS:'weeds'},resolveTileMat:()=>null,
+  _buildZoneFloorMeshes:()=>[],debugLog(){},
+};
+regrowthWindow.ZonePlateauMesa={rebuildZoneMesaMeshes(){}};
+regrowthWindow.WildernessChunks={rebuildZone:()=>1};
+regrowthWindow.WildTreasure={syncZoneInteractivity(){}};
+regrowthWindow.ZoneGrassBillboards={buildZoneGrassBillboards:()=>({})};
+regrowthWindow.ZoneRegrowth.init(regrowthDeps);
+regrowthWindow.ZoneRegrowth.refreshZoneGroundVisuals(zone,3,3);
+assert.equal(regrowthWindow.NearbyVolumeCollision.invalidations,2,
+  'a chunk-edited tree root invalidates the same-scene collision cache');
+regrowthZone.chunkController=null;
+regrowthWindow.ZoneRegrowth.refreshZoneGroundVisuals(zone,3,3);
+assert.equal(regrowthWindow.NearbyVolumeCollision.invalidations,3,
+  'a replaced native forest rebuild invalidates the same-scene collision cache');
 
 // Native free-jump movement consults the same registered footprint's top as its
 // collision walls. Deliberately release input above the small cap to land there.
