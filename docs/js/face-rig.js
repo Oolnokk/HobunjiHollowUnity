@@ -9,7 +9,10 @@
   const stats = { builds: 0, hits: 0, processedPixels: 0, failures: 0, lastError: '' }; // Mobile diagnostics and performance audit.
   let nextImageId = 1; // Provides cache IDs without retaining discarded image objects.
 
-  const clamp = (n, min, max) => Math.min(max, Math.max(min, Number.isFinite(Number(n)) ? Number(n) : min));
+  const finite = (n, fallback = 0) => Number.isFinite(Number(n)) ? Number(n) : fallback; // Sanitizes NaN/Infinity without imposing an artistic calibration limit.
+  const clamp = (n, min, max) => Math.min(max, Math.max(min, finite(n, min)));
+  const asValue = (n, min, max, fallback, calibration) =>
+    calibration ? finite(n, fallback) : clamp(n == null ? fallback : n, min, max); // Calibration disables artistic min/max only.
   const speciesKey = value => String(value || '').trim().toLowerCase().replace(/_/g, '-');
   function familyForSpecies(species) {
     const key = speciesKey(species);
@@ -36,7 +39,8 @@
       gender: String(gender || 'male').toLowerCase(), family,
       eyes: [eyeTemplate(family, 0), eyeTemplate(family, 1)] };
   }
-  function normalize(value, speciesId = value?.speciesId, gender = value?.gender) {
+  function normalize(value, speciesId = value?.speciesId, gender = value?.gender, options = {}) {
+    const calibration = options?.calibration === true; // Only a specifically requested calibration render may read out-of-range controls.
     const family = familyForSpecies(speciesId);
     if (!family || !value || value.enabled === false || value.version !== 1
       || speciesKey(value.speciesId) !== speciesKey(speciesId)
@@ -48,36 +52,46 @@
       if (family === 'line') {
         const b = original.box || {};
         return {
-          box: { x: clamp(b.x, 0, 0.99), y: clamp(b.y, 0, 0.99),
-            w: clamp(b.w, 0.01, 0.5), h: clamp(b.h, 0.01, 0.5) },
+          box: { x: asValue(b.x, 0, 0.99, fallback.box.x, calibration),
+            y: asValue(b.y, 0, 0.99, fallback.box.y, calibration),
+            w: Math.max(0.00001, asValue(b.w, 0.01, 0.5, fallback.box.w, calibration)),
+            h: Math.max(0.00001, asValue(b.h, 0.01, 0.5, fallback.box.h, calibration)) },
           nodes: Array.from({ length: 7 }, (_, n) => [
-            clamp(original.nodes?.[n]?.[0], -0.07, 0.07),
-            clamp(original.nodes?.[n]?.[1], -0.3, 0.3),
+            asValue(original.nodes?.[n]?.[0], -0.07, 0.07, 0, calibration),
+            asValue(original.nodes?.[n]?.[1], -0.3, 0.3, 0, calibration),
           ]),
         };
       }
       const c = original.circle || {};
-      const eyelid = data => ({ inset: clamp(data?.inset, 0, 1), curve: clamp(data?.curve, -1, 1),
-        depth: clamp(data?.depth, 0, 1) });
-      return { circle: { x: clamp(c.x, 0, 1), y: clamp(c.y, 0, 1), r: clamp(c.r, 0.005, 0.2) },
-        upper: eyelid(original.upper), lower: eyelid(original.lower) };
+      const eyelid = data => ({
+        inset: asValue(data?.inset, 0, 1, 0, calibration),
+        curve: asValue(data?.curve, -1, 1, 0, calibration),
+        depth: asValue(data?.depth, 0, 1, 0, calibration),
+      });
+      return { circle: {
+        x: asValue(c.x, 0, 1, fallback.circle.x, calibration),
+        y: asValue(c.y, 0, 1, fallback.circle.y, calibration),
+        r: Math.max(0.00001, asValue(c.r, 0.005, 0.2, fallback.circle.r, calibration)),
+      }, upper: eyelid(original.upper), lower: eyelid(original.lower) };
     });
     return next;
   }
-  function moveNode(rig, side, node, dx, dy) {
+  function moveNode(rig, side, node, dx, dy, options = {}) {
+    const calibration = options?.calibration === true; // Unclamped calibration drags use identical neighboring-node weights.
     const eye = rig?.family === 'line' ? rig.eyes?.[side] : null;
     if (!eye || !Number.isInteger(node) || node < 0 || node > 6) return false;
     for (let i = 0; i < 7; i++) {
       const weight = NODE_INFLUENCE[Math.abs(i - node)] || 0;
-      eye.nodes[i][0] = clamp(eye.nodes[i][0] + clamp(dx, -1, 1) * weight, -0.07, 0.07);
-      eye.nodes[i][1] = clamp(eye.nodes[i][1] + clamp(dy, -1, 1) * weight, -0.3, 0.3);
+      eye.nodes[i][0] = asValue(eye.nodes[i][0] + finite(dx) * weight, -0.07, 0.07, 0, calibration);
+      eye.nodes[i][1] = asValue(eye.nodes[i][1] + finite(dy) * weight, -0.3, 0.3, 0, calibration);
     }
     return true;
   }
   function active(rig) {
     return rig.eyes.some(eye => rig.family === 'line'
       ? eye.nodes.some(node => Math.abs(node[0]) + Math.abs(node[1]) > 0.00001)
-      : ['upper', 'lower'].some(part => eye[part].inset > 0.00001 || eye[part].depth > 0.00001));
+      : ['upper', 'lower'].some(part => Math.abs(eye[part].inset) > 0.00001
+        || Math.abs(eye[part].depth) > 0.00001));
   }
   function allowedLayer(rig, role) {
     if (speciesKey(rig.speciesId) === 'engh-sho') return role === 'goggles';
@@ -90,18 +104,25 @@
     return 0.5 * ((2 * b) + (-a + c) * f + (2*a - 5*b + 4*c - d)*f*f
       + (-a + 3*b - 3*c + d)*f*f*f);
   }
-  function roundContour(lid, q) {
-    const power = 1.35 + lid.curve * 0.95; // Controls how rapidly eyelid influence tapers toward the corners.
-    const inward = lid.inset * Math.pow(q, power) + lid.depth * 0.27 * q * (1 - q);
-    return Math.min(q, Math.max(0, inward)); // Never cross the original circular edge or the eye center.
+  function roundContour(lid, q, options = {}) {
+    const calibration = options?.calibration === true;
+    // Slope remains numerically defined for any artist-entered curve value.
+    const power = 1.35 + finite(lid.curve) * 0.95;
+    const inward = finite(lid.inset) * Math.pow(Math.max(q, 0.000001), power)
+      + finite(lid.depth) * 0.27 * q * (1 - q);
+    if (!calibration) return Math.min(q, Math.max(0, inward)); // Live character eyes stay inward-only.
+    return Number.isFinite(inward) ? inward : 0; // Expose out-of-range geometry rather than silently clipping it.
   }
   function sampleNearest(data, width, height, x, y, target, outputIndex) {
-    const sx = Math.min(width - 1, Math.max(0, Math.round(x)));
-    const sy = Math.min(height - 1, Math.max(0, Math.round(y)));
+    const sx = Math.round(x), sy = Math.round(y);
+    if (!Number.isFinite(x) || !Number.isFinite(y) || sx < 0 || sx >= width || sy < 0 || sy >= height) {
+      target.fill(0, outputIndex, outputIndex + 4); // Do not smear cropped border pixels across an over-extended calibration pose.
+      return;
+    }
     const sourceIndex = (sy * width + sx) * 4;
     for (let channel = 0; channel < 4; channel++) target[outputIndex + channel] = data[sourceIndex + channel];
   }
-  function processEye(context, sourceWidth, sourceHeight, eye, family) {
+  function processEye(context, sourceWidth, sourceHeight, eye, family, options = {}) {
     const rect = family === 'line'
       ? { x: eye.box.x * sourceWidth, y: eye.box.y * sourceHeight,
           w: eye.box.w * sourceWidth, h: eye.box.h * sourceHeight }
@@ -141,8 +162,13 @@
           const q = Math.sqrt(1-u*u);
           const oldTop = centerY - radius*q, oldBottom = centerY + radius*q;
           if (Y < oldTop || Y > oldBottom) continue;
-          const newTop = oldTop + roundContour(eye.upper, q)*radius;
-          const newBottom = oldBottom - roundContour(eye.lower, q)*radius;
+          let upper = roundContour(eye.upper, q, options);
+          let lower = roundContour(eye.lower, q, options);
+          if (options?.calibration !== true && upper + lower > 2*q) {
+            const scale = (2*q)/Math.max(0.000001, upper+lower); // Prevents two approved inward eyelids from swapping order.
+            upper *= scale; lower *= scale;
+          }
+          const newTop = oldTop + upper*radius, newBottom = oldBottom - lower*radius;
           if (Y < newTop) fromY = oldTop - (newTop-Y);
           else if (Y > newBottom) fromY = oldBottom + (Y-newBottom);
           else fromY = oldTop + (Y-newTop) / Math.max(0.0001, newBottom-newTop) * (oldBottom-oldTop);
@@ -155,15 +181,15 @@
     if (updated) context.putImageData(result, left, top);
     stats.processedPixels += width * height;
   }
-  function applyImage(image, rawRig, role, speciesId, gender) {
+  function applyImage(image, rawRig, role, speciesId, gender, options = {}) {
     if (!image || !rawRig) return image;
-    const rig = normalize(rawRig, speciesId, gender);
+    const rig = normalize(rawRig, speciesId, gender, options);
     if (!rig || !allowedLayer(rig, role) || !active(rig)) return image;
     const width = image.naturalWidth || image.width, height = image.naturalHeight || image.height;
     if (!(width > 0 && height > 0) || width > 4096 || height > 4096) return image;
     try {
       if (!ids.has(image)) ids.set(image, nextImageId++);
-      const signature = JSON.stringify([ids.get(image), role, rig]);
+      const signature = JSON.stringify([ids.get(image), role, options?.calibration === true, rig]); // Runtime and calibration results can never collide.
       if (cache.has(signature)) {
         const hit = cache.get(signature); cache.delete(signature); cache.set(signature, hit);
         stats.hits++;
@@ -174,7 +200,7 @@
       canvas.naturalWidth = width; canvas.naturalHeight = height; // The portrait layer compositor expects Image-like dimensions even for cached Canvas sources.
       const context = canvas.getContext('2d', { willReadFrequently: true });
       context.drawImage(image, 0, 0);
-      for (const eye of rig.eyes) processEye(context, width, height, eye, rig.family);
+      for (const eye of rig.eyes) processEye(context, width, height, eye, rig.family, options);
       cache.set(signature, canvas);
       while (cache.size > MAX_CANVASES) cache.delete(cache.keys().next().value);
       stats.builds++;
