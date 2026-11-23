@@ -45,9 +45,14 @@ const recorded=()=>{
   }});
   return {frames:[make(0,0),make(1,.16)],durationSeconds:1};
 }; // Deterministic two-frame clip covers prone, live hit and creature death.
-const clip=recorded();
-const window={THREE,ImpactBlendLibrary:{getClip(_bank,_direction){return clip;}}};
-const context={window,THREE,console,performance:{now:()=>1000}};
+let clip=recorded(); // Swapped to the shipped prone bank in the all-creature portrait regression.
+let rescueFrame = null; // Registered render-time fallback; invoked below to simulate throttled hostile update frames.
+const window={THREE,ImpactBlendLibrary:{getClip(_bank,_direction){return clip;}},RenderHooks:{
+  ORDER:{ANIMAL_ELEVATION:50},
+  register(spec){if(spec.id==='creature-prone-pose-rescue')rescueFrame=spec.before;},
+}};
+let fakeNowMs=1000; // Advances an actual render clock while the creature update intentionally stalls.
+const context={window,THREE,console,performance:{now:()=>fakeNowMs}};
 vm.runInNewContext(fs.readFileSync('docs/js/rig-transform-layers.js','utf8'),context);
 vm.runInNewContext(fs.readFileSync('docs/js/combat/impact-ragdoll-playback.js','utf8'),context);
 const rig=window.ActorRigCompositor,impact=window.ImpactRagdollPlayback;
@@ -135,71 +140,44 @@ function creature() {
   assert.equal(rig.getDebug().activeAbsoluteClaims,0);
 }
 
-// Live hostile knockdowns must carry the bandit's feet AND hands under the
-// falling portrait. Normal flinches leave the locomotion rig untouched.
+// A wildlife creature has only its two portrait planes. Simulate the real
+// breakThrow recording stalling partway through: the next world draw must
+// finish it without any leg or hand rig, and keep the pose while prone.
 {
-  const enemy=creature();
-  const avatar=enemy.avatarRef, legsPivot=new Group(), handsPivot=new Group();
-  const legs={calls:0,applyRecordedLegPose(){this.calls++;},pants:{updates:0,update(){this.updates++;}}};
-  avatar.group.add(legsPivot); avatar.group.add(handsPivot);
-  avatar.legsPivot=legsPivot; avatar.handsPivot=handsPivot; avatar.legs=legs;
-  enemy.prone=false;
-  assert(impact.triggerCreature(enemy,'impact','front')>0);
-  assert.equal(legsPivot.parent,avatar.group,'ordinary hits do not drag standing feet into an impact');
-  impact.stopCreature(enemy);
-  enemy.prone=true;
-  assert(impact.triggerCreature(enemy,'breakThrow','front')>0);
-  let state=enemy._impactRagdollPlayback;
-  assert.equal(avatar.frontPlane.parent,state.pivot,'torso is in the impact pivot');
-  assert.equal(avatar.backPlane.parent,state.pivot,'back portrait is in the impact pivot');
-  assert.equal(legsPivot.parent,state.pivot,'the entire leg rig falls with the torso');
-  assert.equal(handsPivot.parent,state.pivot,'hands and weapons follow the knockdown');
-  assert.equal(impact.ownsCreatureLegPose(enemy),true,'recorded prone IK suppresses ordinary gait updates');
-  assert.equal(legs.calls,2,'initial frame applies authored knees and feet to both sides');
-  impact.updateCreature(enemy,1);
-  assert.equal(state.holding,true,'enemy settles into the recorded prone tail');
-  assert(legs.calls>=4 && legs.pants.updates>=2,'held prone legs and garment are sampled from the same clip');
-  assert.equal(impact.getDebug().activeCreatureProneLegRigs,1,'mobile diagnostics exposes the live prone limb owner');
-  enemy.prone=false;
-  impact.updateCreature(enemy,.016);
-  assert.equal(avatar.frontPlane.parent,state.pivot,'the portrait pivot stays reusable after recovery');
-  assert.equal(legsPivot.parent,avatar.group,'legs recover their original parent');
-  assert.equal(handsPivot.parent,avatar.group,'hands recover their original parent');
-  assert.equal(impact.ownsCreatureLegPose(enemy),false,'ordinary locomotion resumes on recovery');
-  assert.equal(rig.getDebug().activeAbsoluteClaims,0,'recovery releases all pose claims');
-
-  enemy.prone=true;
-  assert.equal(impact.triggerTumble(enemy,'right',.34),true,'repeat prone knockback animates the full hostile rig');
-  state=enemy._impactRagdollPlayback;
-  assert.equal(legsPivot.parent,state.pivot);
-  assert.equal(handsPivot.parent,state.pivot);
-  assert.equal(impact.ownsCreatureLegPose(enemy),true);
-  impact.updateCreature(enemy,.34);
-  assert.equal(state.holding,true,'tumble ends in the held prone pose');
-  impact.stopCreature(enemy);
-  assert.equal(legsPivot.parent,avatar.group);
-  assert.equal(handsPivot.parent,avatar.group);
-
-  assert(impact.startCreatureDeath(enemy,'front')>0,'death uses the same full-body pivot from any sibling hierarchy');
-  assert.equal(legsPivot.parent,enemy._deathRecordedThrow.pivot);
-  assert.equal(handsPivot.parent,enemy._deathRecordedThrow.pivot);
-  impact.sampleCreatureDeath(enemy,1);
-  assert(legs.calls>=8,'death samples the same authored leg frames');
-  impact.stopCreatureDeath(enemy);
-  assert.equal(legsPivot.parent,avatar.group,'cancelled/retired death restores rig attachment');
-  assert.equal(handsPivot.parent,avatar.group);
-  assert.equal(rig.getDebug().activeAbsoluteClaims,0);
-}
-
-// The committed authored clip must actually settle horizontal; a merely
-// tilted standing pose cannot pass the knockdown regression by hierarchy alone.
-{
+  const originalClip=clip;
   const bank=JSON.parse(fs.readFileSync('docs/config/animations/spinthrow-blend-v1.json','utf8'));
-  for (const direction of ['front','back','left','right']) {
-    const frames=bank.clips[direction].clip.frames;
-    const q=frames[frames.length-1].ragdoll.body.localQuaternion;
-    const upY=1-2*(q.x*q.x+q.z*q.z); // The final body up vector after the recorded rotation.
-    assert(Math.abs(upY)<.2,direction+' knockdown tail must lie approximately horizontal');
-  }
+  clip=bank.clips.front.clip;
+  assert.equal(typeof rescueFrame,'function','prone portrait is independently advanced by the normal render pipeline');
+  const creatureWithoutLimbs=creature();
+  creatureWithoutLimbs.prone=true;
+  const started=impact.triggerCreature(creatureWithoutLimbs,'breakThrow','front');
+  assert(started>0,'real recorded knockdown starts for an animal without hands or legs');
+  const state=creatureWithoutLimbs._impactRagdollPlayback;
+  impact.updateCreature(creatureWithoutLimbs,.16);
+  const earlyY=1-2*(state.pivot.quaternion.x**2+state.pivot.quaternion.z**2);
+  assert(Math.abs(earlyY)>.3,'a partial knockdown leaves the portrait recognizably upright or tilted');
+  fakeNowMs+=50;rescueFrame();
+  assert.equal(state.holding,false,'healthy 50 ms creature update gaps do not snap a fall forward');
+  fakeNowMs+=1500;rescueFrame();
+  const finalY=1-2*(state.pivot.quaternion.x**2+state.pivot.quaternion.z**2);
+  assert(Math.abs(finalY)<.2,'SHIPPED clip must orient the creature portrait horizontally even without limbs');
+  assert.equal(state.holding,true,'stalled animation must settle in a full held prone pose');
+  assert(impact.getDebug().pronePoseRescue.rescuedStalls>=1,'mobile diagnostics records the rescued stalled creature');
+  assert.equal(impact.triggerCreature(creatureWithoutLimbs,'impact','front'),0,
+    'a second normal impact cannot replace the held prone pose with a partial upright stagger');
+  assert.equal(creatureWithoutLimbs._impactRagdollPlayback,state);
+  creatureWithoutLimbs.prone=false;rescueFrame();
+  assert.equal(creatureWithoutLimbs._impactRagdollPlayback,null,'render-boundary recovery releases the prone pivot when Footing recovers');
+
+  clip=null; // Simulate the async clip request being unfinished when a creature is knocked down.
+  const earlyCreature=creature();earlyCreature.prone=true;
+  assert.equal(impact.triggerCreature(earlyCreature,'breakThrow','front'),0,'no recording reports zero clip duration');
+  const fallback=earlyCreature._impactRagdollPlayback;
+  assert(fallback?.holding,'missing recording still gets a temporary held prone pose');
+  const fallbackY=1-2*(fallback.pivot.quaternion.x**2+fallback.pivot.quaternion.z**2);
+  assert(Math.abs(fallbackY)<.05,'animal with no recording is visibly horizontal instead of standing at a tilt');
+  earlyCreature.prone=false;rescueFrame();
+  assert.equal(earlyCreature._impactRagdollPlayback,null,'fallback releases cleanly on recovery');
+  clip=originalClip; // No following test can inherit the synthetic missing-bank state.
 }
 console.log('Ragdoll scoped pivot ownership: prone, replacement, live impacts, corpse, and cleanup PASS');
