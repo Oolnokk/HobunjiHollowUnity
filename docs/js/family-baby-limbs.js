@@ -27,7 +27,9 @@
   const SIDES = ['left', 'right'];
   const DEG = Math.PI / 180;
   const groups = new Set(); // Proxy groups that currently own limbs; the hook only visits these.
-  const debug = { attached: 0, lastMissing: null, frames: 0 };
+  const sourcesByGroup = new WeakMap(); // Original limb meshes used by each proxy; detect late GLB replacements.
+  const balancedParts = new WeakMap(); // Applied newborn visual multipliers; no compounding after reload/update.
+  const debug = { attached: 0, refreshed: 0, balanced: 0, lastMissing: null, frames: 0 };
 
   // Find the walker's visible hand/foot GLB meshes by their rig node names.
   function sourceLimbs(walker) {
@@ -66,6 +68,38 @@
     };
   }
 
+  // Resizes the newborn NPC's own extremities at the visual only, not the
+  // shoulders, hips, leg lengths, authored species profiles or carried grips.
+  // Proxy limbs clone these same visuals, so in-world and carried sizes agree.
+  function balanceWalker(walker, proportions = {}) {
+    const root = walker?.root;
+    if (!root?.getObjectByName) return 0;
+    let changed = 0; // Counts resized limbs for mobile debugging.
+    for (const kind of ['hand', 'foot']) {
+      const configured = Number(proportions[kind]);
+      const factor = Number.isFinite(configured) && configured > 0
+        ? Math.min(2, Math.max(.5, configured)) : 1; // Invalid configuration cannot cause extreme limb scaling.
+      for (const side of SIDES) {
+        const visual = root.getObjectByName(`${side}_${kind === 'hand' ? 'hand_visual' : 'foot'}`);
+        if (!visual?.scale?.set) continue; // A GLB may still be loading.
+        const previous = balancedParts.get(visual) || 1;
+        if (Math.abs(previous - factor) < 1e-6) continue;
+        const ratio = factor / previous; // Preserve any authored/species-specific original scale.
+        visual.scale.set(visual.scale.x * ratio, visual.scale.y * ratio, visual.scale.z * ratio);
+        visual.updateMatrix?.();
+        balancedParts.set(visual, factor);
+        changed++;
+      }
+    }
+    debug.balanced += changed;
+    return changed;
+  }
+
+  function sameSources(oldSources, newSources) {
+    return !!oldSources && SIDES.every(side =>
+      oldSources.hand[side] === newSources.hand[side] && oldSources.foot[side] === newSources.foot[side]);
+  }
+
   function cloneLimb(source, kind, side, root, pivotAt, offset) {
     // Keep the walker's species-specific scale/orientation (incl. mirrored side),
     // but none of its world placement: the walker may be asleep in another scene.
@@ -97,10 +131,13 @@
 
   function attach(group, walker) {
     if (!group || !window.THREE?.Group) return false;
-    if (group.getObjectByName?.(LIMB_ROOT)) return true;
+    const existing = group.getObjectByName?.(LIMB_ROOT); // Keep a healthy carried proxy when the source is unchanged.
+    if (existing && !walker?.root) return true;
     const limbs = sourceLimbs(walker);
     const missing = SIDES.flatMap(side => ['hand', 'foot'].filter(kind => !limbs[kind][side]).map(kind => side + ' ' + kind));
-    if (missing.length) { debug.lastMissing = missing.join(', '); return false; } // GLBs load asynchronously; family sync retries.
+    if (missing.length) { debug.lastMissing = missing.join(', '); return !!existing; } // Don't drop already-visible limbs during a GLB load.
+    if (existing && sameSources(sourcesByGroup.get(group), limbs)) return true;
+    if (existing) { detach(group); debug.refreshed++; } // Replace cloned materials, never the source geometry.
     const a = anatomy(group);
     const root = new THREE.Group();
     root.name = LIMB_ROOT;
@@ -115,6 +152,7 @@
         { x: 0, y: -a.footReach.down, z: a.footReach.z });
     }
     groups.add(group);
+    sourcesByGroup.set(group, limbs); // Async model changes can refresh the matching carried proxy.
     debug.attached++;
     debug.lastMissing = null;
     return true;
@@ -123,6 +161,7 @@
   function detach(group) {
     const root = group?.getObjectByName?.(LIMB_ROOT);
     groups.delete(group);
+    sourcesByGroup.delete(group); // Do not retain the disposed proxy's source meshes.
     if (!root) return;
     root.traverse(node => { // Dispose only the cloned materials; the walker still owns the GLB geometry.
       if (node.isMesh) for (const material of Array.isArray(node.material) ? node.material : [node.material]) material?.dispose?.();
@@ -185,7 +224,7 @@
   });
 
   window.FamilyBabyLimbs = Object.freeze({
-    attach, detach, sourceLimbs, anatomy,
+    attach, detach, sourceLimbs, anatomy, balanceWalker,
     isAttached: group => !!group?.getObjectByName?.(LIMB_ROOT),
     debugSnapshot: () => ({ ...debug, groups: groups.size }),
     _poseForTest: poseLimbs, _restForTest: restLimbs,
