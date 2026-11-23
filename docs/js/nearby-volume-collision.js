@@ -373,6 +373,15 @@
     return closest;
   }
 
+  function rootStillAttached(node) {
+    // Harvesting can detach an inner tree group while its streaming chunk stays
+    // scene-attached; merely checking node.parent or chunk.parent leaves a ghost.
+    for (let ancestor = node, depth = 0; ancestor && depth < 24; ancestor = ancestor.parent, depth++) {
+      if (ancestor === cachedScene) return true;
+    }
+    return false; // Also rejects orphaned/partially disposed subtrees.
+  }
+
   function eachRootNear(x, z, half, visit) {
     if (!deps || !Number.isFinite(x) || !Number.isFinite(z)) return false;
     const version = window.WildernessChunks?.residencyVersion?.(); // Native streamed-zone change counter, checked without scanning any mesh.
@@ -382,7 +391,8 @@
     for (let cx = Math.floor((x-h)/SPATIAL_CELL_TILES); cx <= Math.floor((x+h)/SPATIAL_CELL_TILES); cx++)
       for (let cz = Math.floor((z-h)/SPATIAL_CELL_TILES); cz <= Math.floor((z+h)/SPATIAL_CELL_TILES); cz++)
         for (const root of rootSpatial.get(cx+','+cz) || []) {
-          if (root.node?.parent && root.sceneOwner?.parent === cachedScene && visit(root, rootContact(root,x,z),h)) return true; // Removed chunk subtrees cannot leave ghost roots.
+          if (root.node?.parent && root.sceneOwner?.parent === cachedScene && rootStillAttached(root.node) &&
+            visit(root, rootContact(root,x,z),h)) return true; // Both chunk unloads and direct inner-tree removal immediately stop physical contact.
         }
     return false;
   }
