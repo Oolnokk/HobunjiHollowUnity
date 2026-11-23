@@ -58,11 +58,10 @@ const context={theme:'kanthic',specialBoss:true,meta:{floorSurfaceY:0},
     vault:{minX:26,maxX:33,minZ:9,maxZ:15},zc:12}};
 composer.buildRooms({deps},context,()=>.5,[],{sanctum:true});
 const state=win.DevRandomRuinSanctum.getState();
-state.built=true; // The fixture supplies the room state directly; composer.update may tick only the real introduction pose.
-Object.assign(state,{entry:{x:12,z:12},door:{front:{x:3,z:12},decals:[]},bossType:'kanthic',
+Object.assign(state,{entry:{x:12,z:12},door:{front:{x:3,z:12}},bossType:'kanthic',
   coffins:[{index:0,open:false,lidT:0,rise:{x:20,z:10}}],arenaFires:[]});
 const arenaLight={x:12,y:1.4,z:12,active:false}; // Source follows ignition, cancellation and reset.
-state.arenaFires=[{lit:false,anchor:{visible:false,id:1},halo:{material:{opacity:0}},lightSource:arenaLight}];
+state.arenaFires=[{lit:false,anchor:{visible:false},lightSource:arenaLight}];
 state.sanctumLights=[arenaLight];
 function assertProjectedRevealLight(lights, spotlight) {
   // Exercise the production darkness-cutout compositor; an active light record alone does not make the lich visible.
@@ -125,12 +124,12 @@ async function run(){
   assert.match(title.style.cssText,/-webkit-text-stroke:\.5px #000/);
   assert.match(title.style.cssText,/font-weight:400/,'authored glyphs must not be synthetically emboldened beneath the outline');
   assert.equal(introSounds.length,0,'the title enters just before the face-to-face shriek');
-  composer.update({deps},clock,.016); // Exercise the real composer-owned visual tick, not a duplicate yaw formula.
+  win.DevRandomRuinSanctum.debugUpdateIntro(clock); // Exercise the production pose tick directly without rebuilding the minimal fake arena.
   assert.notEqual(state.boss.facing,initialFacing,'the boss visibly turns during the camera zoom');
   assert.notEqual(state.boss.avatarRef.group.rotation.y,initialYaw,'the rendered rig turns, not just the combat aim');
   assert.equal(state.boss.pngRot,state.boss.groupRot,'both portrait sides and the underlying rig agree on yaw');
   await advance(100);
-  composer.update({deps},clock,.016);
+  win.DevRandomRuinSanctum.debugUpdateIntro(clock);
   assert.equal(introSounds.length,1,'scream fires once when the turn finishes');
   assert.equal(introSounds[0].key,'ruinCoffinShriek','the sound reuses the existing skeleton recording');
   assert.equal(introSounds[0].area,'map_i_dev_random_ruin','the scream is spatial, not a UI/global audio cue');
