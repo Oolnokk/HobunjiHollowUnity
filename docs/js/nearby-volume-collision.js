@@ -31,14 +31,18 @@
   const proceduralRecipeBounds = new Map(); // Cached once per furniture key; recipes are expressed in tile-relative authored units.
   const authoredRecipeBounds = new Map(); // Cached once per authored furniture key from its runtime part metadata.
 
+  function activeArea() {
+    return deps?.getCurrentArea?.() ?? window.GridTileAccessors?.getCurrentArea?.() ?? null; // Root collision also works with the older projectile-cover init deps, which did not require an area getter.
+  }
+
   function init(injectedDeps) {
     deps = injectedDeps;
     options = { ...options, ...(injectedDeps.options || {}), textureAlpha: false };
     invalidate();
     unregisterRootCollision?.();
     unregisterRootCollision = window.AreaFootprintBlockers?.register?.('wilderness-tree-roots', {
-      get area() { return deps?.getCurrentArea?.() || null; }, // Dynamic area ownership prevents another zone's path probes from seeing the current forest's roots.
-      enabled: () => String(deps?.getCurrentArea?.() || '').startsWith('map_'),
+      get area() { return activeArea(); }, // Dynamic area ownership prevents another zone's path probes from seeing the current forest's roots.
+      enabled: () => String(activeArea() || '').startsWith('map_'),
       blocksBox: (x, z, half, worldY) => rootBlocksBox(x, z, half, worldY),
       supportAt: (x, z, maxY) => rootSupportAt(x, z, maxY),
     }) || null; // One provider for the whole active forest; its cached spine index is never rebuilt per motion query.
