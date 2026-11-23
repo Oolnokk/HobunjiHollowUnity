@@ -543,7 +543,7 @@
     const slotActions=SLOT_ACTIONS; // Nearby world interactions own the ordinary five physical arch slots just like NPC/furniture context actions; attacks/items return as soon as the interaction leaves range.
     const touchButtonIds=TOUCH_BUTTON_IDS;
     const sorted=rows.sort((a, b) => b.priority - a.priority || a.distance - b.distance || b.seenAt - a.seenAt);
-    const reserved=new Set(sorted.filter(row=>!row.nativeInput&&SLOT_ACTIONS.includes(row.inputAction)).map(row=>row.inputAction)); // Explicit controls such as Grab Rope reserve their physical slot before generic nearby rows are assigned.
+    const reserved=new Set(sorted.filter(row=>!row.nativeInput&&SLOT_ACTIONS.includes(row.inputAction)).map(row=>row.inputAction)); // Explicitly assigned world controls reserve their physical slot before generic nearby rows are assigned.
     const availableSlots=slotActions.filter(action=>!reserved.has(action)); // Prevents two rows from both claiming Action 1 and fighting over the same arch button.
     let slotIndex=0;
     const mapped=[];
