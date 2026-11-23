@@ -990,6 +990,7 @@
   let ruinGlowPlatforms=[]; // Cached box slabs, gathered in the normal scene scan; only their eight corners are projected per lighting frame.
   const MAX_RUIN_GLOW_PLATFORMS=96; // Upper bound on moving-platform stencil preparation in a large multi-story ruin.
   const ruinGlowPlatformVertex=new window.THREE.Vector3(); // Reused local-to-world corner and camera-depth scratch for slab silhouettes.
+  const ruinGlowWallPlaneA=new window.THREE.Vector3(),ruinGlowWallPlaneB=new window.THREE.Vector3(),ruinGlowWallPlaneC=new window.THREE.Vector3(); // Three reused transformed glyph vertices define the wall plane for front/behind slab classification.
   let ruinGlowPlatformClipCount=0; // Pixel Probe reports how often a platform actually subtracts from a projected rune panel.
   function updateRuinPlatformMasks() {
     const near=Math.max(.001,Number(lightingDeps.camera?.near)||.001);
@@ -1004,9 +1005,11 @@
       const bounds=node.geometry?.boundingBox;
       if(!bounds)continue;
       let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity,minDepth=Infinity,maxDepth=-Infinity;
+      let worldX=0,worldY=0,worldZ=0; // Mean of the eight world corners is the real slab center, even during a shaft platform move.
       const points=mask.points; // Eight reusable projected corners, including the sides and underside of each solid slab.
       for(let i=0;i<8;i++){
         ruinGlowPlatformVertex.set(i&1?bounds.max.x:bounds.min.x,i&2?bounds.max.y:bounds.min.y,i&4?bounds.max.z:bounds.min.z).applyMatrix4(node.matrixWorld);
+        worldX+=ruinGlowPlatformVertex.x;worldY+=ruinGlowPlatformVertex.y;worldZ+=ruinGlowPlatformVertex.z;
         const dx=ruinGlowPlatformVertex.x-ruinGlowCameraPosition.x,dy=ruinGlowPlatformVertex.y-ruinGlowCameraPosition.y,dz=ruinGlowPlatformVertex.z-ruinGlowCameraPosition.z;
         const depth=dx*ruinGlowCameraDirection.x+dy*ruinGlowCameraDirection.y+dz*ruinGlowCameraDirection.z;
         if(depth<=near){visible=false;break;} // Never project a polygon crossing behind the camera's near plane.
@@ -1027,22 +1030,44 @@
       hull.pop(); // Monotone chain produces the convex *silhouette* of a box, including visible sides.
       mask.ready=hull.length>=3;mask.minX=minX;mask.maxX=maxX;mask.minY=minY;mask.maxY=maxY;
       mask.minDepth=minDepth;mask.maxDepth=maxDepth;
+      mask.worldX=worldX/8;mask.worldY=worldY/8;mask.worldZ=worldZ/8;
     }
   }
-  function withRuinPlatformGlyphClip(ctx,meshRadius,meshCenter,draw){
+  function withRuinPlatformGlyphClip(ctx,mesh,meshRadius,meshCenter,draw){
     if(!ruinGlowPlatforms.length||!ctx.rect||!ctx.clip)return draw();
     const rect=lightingDeps.getThreeRect?.()||{};
     const width=Number(rect.width)||ctx.canvas?.width||1,height=Number(rect.height)||ctx.canvas?.height||1;
     const depth=(meshCenter.x-ruinGlowCameraPosition.x)*ruinGlowCameraDirection.x
       +(meshCenter.y-ruinGlowCameraPosition.y)*ruinGlowCameraDirection.y
       +(meshCenter.z-ruinGlowCameraPosition.z)*ruinGlowCameraDirection.z;
+    const position=mesh.geometry?.getAttribute?.('position'),indices=mesh.geometry?.index?.array;
+    let planeValid=false,nx=0,ny=0,nz=0,cameraSide=0; // For a planar engraving, the plane separates physically foreground slabs from background slabs.
+    if(position?.array&&position.count>=3){
+      const vertices=position.array,i0=indices?indices[0]:0,i1=indices?indices[1]:1,i2=indices?indices[2]:2;
+      ruinGlowWallPlaneA.set(vertices[i0*3],vertices[i0*3+1],vertices[i0*3+2]).applyMatrix4(mesh.matrixWorld);
+      ruinGlowWallPlaneB.set(vertices[i1*3],vertices[i1*3+1],vertices[i1*3+2]).applyMatrix4(mesh.matrixWorld);
+      ruinGlowWallPlaneC.set(vertices[i2*3],vertices[i2*3+1],vertices[i2*3+2]).applyMatrix4(mesh.matrixWorld);
+      const bx=ruinGlowWallPlaneB.x-ruinGlowWallPlaneA.x,by=ruinGlowWallPlaneB.y-ruinGlowWallPlaneA.y,bz=ruinGlowWallPlaneB.z-ruinGlowWallPlaneA.z;
+      const cx=ruinGlowWallPlaneC.x-ruinGlowWallPlaneA.x,cy=ruinGlowWallPlaneC.y-ruinGlowWallPlaneA.y,cz=ruinGlowWallPlaneC.z-ruinGlowWallPlaneA.z;
+      nx=by*cz-bz*cy;ny=bz*cx-bx*cz;nz=bx*cy-by*cx;
+      cameraSide=(ruinGlowCameraPosition.x-ruinGlowWallPlaneA.x)*nx
+        +(ruinGlowCameraPosition.y-ruinGlowWallPlaneA.y)*ny
+        +(ruinGlowCameraPosition.z-ruinGlowWallPlaneA.z)*nz;
+      planeValid=nx*nx+ny*ny+nz*nz>1e-8
+        &&Math.abs(nx*ruinGlowCameraDirection.x+ny*ruinGlowCameraDirection.y+nz*ruinGlowCameraDirection.z)>1e-6
+        &&Math.abs(cameraSide)>1e-6;
+    }
     const projected=lightingDeps.worldToOverlay(meshCenter.x,meshCenter.y,meshCenter.z);
     const radius=lightScreenRadius(meshCenter.x,meshCenter.z,meshCenter.y,meshRadius);
     let saved=false;
     try{
       for(const mask of ruinGlowPlatforms){
-        if(!mask.ready||mask.minDepth>=depth-.035||mask.maxX<projected.x-radius||mask.minX>projected.x+radius
+        if(!mask.ready||mask.maxX<projected.x-radius||mask.minX>projected.x+radius
           ||mask.maxY<projected.y-radius||mask.minY>projected.y+radius)continue;
+        if(planeValid){
+          const slabSide=(mask.worldX-ruinGlowWallPlaneA.x)*nx+(mask.worldY-ruinGlowWallPlaneA.y)*ny+(mask.worldZ-ruinGlowWallPlaneA.z)*nz;
+          if(cameraSide*slabSide<=1e-5)continue; // A slab behind the actual wall plane cannot obscure its glyph, even if the screen silhouettes overlap.
+        }else if(mask.minDepth>=depth-.035)continue; // Degenerate or edge-on glyphs retain the conservative camera-depth fallback.
         if(!saved){ctx.save();saved=true;}
         ctx.beginPath();ctx.rect(-2,-2,width+4,height+4);
         const hull=mask.hull;ctx.moveTo(hull[0].x,hull[0].y);
@@ -1208,7 +1233,7 @@
       if(kanthic&&ruinGlyphOccluded(ruinGlowProjection))continue; // Skip expensive 3D depth rays for offscreen engravings; nearby solid masonry still blocks them.
       if(kanthic){
         ruinGlowDrawResult.drawn=0;ruinGlowDrawResult.examined=0; // A sealed-room clip may decline the draw callback entirely.
-        withRuinRoomLightClip(ctx,ruinGlowSource,()=>withRuinPlatformGlyphClip(ctx,surfaceRadius,ruinGlowProjection,()=>{
+        withRuinRoomLightClip(ctx,ruinGlowSource,()=>withRuinPlatformGlyphClip(ctx,mesh,surfaceRadius,ruinGlowProjection,()=>{
           drawRuinGlyphSilhouette(ctx,mesh,MAX_RUIN_GLOW_TRIANGLES-ruinGlowStats.examined,ruinGlowDrawResult);
         })); // Real platform silhouettes subtract only the hidden glyph pixels, never their visible wall neighbor.
         ruinGlowStats.examined+=ruinGlowDrawResult.examined;
