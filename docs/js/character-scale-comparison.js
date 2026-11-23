@@ -318,7 +318,7 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid!important;v
             <input id="maaFullScaleAgeRange${name}" type="range" min="${min}" max="${max}" step="1" value="100" aria-label="Global ${name.toLowerCase()} size for selected age mode">
             <input id="maaFullScaleAgeNum${name}" type="number" min="${min}" max="${max}" step="1" value="100" aria-label="Global ${name.toLowerCase()} percent (exact)">%
           </div>`).join('')}
-          <div class="scaleActions"><button id="maaFullScaleAgeExport" type="button" class="secondary">Export age defaults JSON</button><button id="maaFullScaleAgeApply" type="button" class="good">Apply to game on this device</button><button id="maaFullScaleAgeUnapply" type="button" class="secondary">Restore game's defaults</button></div>
+          <div class="scaleActions"><button id="maaFullScaleAgeExport" type="button" class="secondary">Export age defaults JSON</button><button id="maaFullScaleAgeApply" type="button" class="good">Apply to game (same site)</button><button id="maaFullScaleAgeUnapply" type="button" class="secondary">Restore game's defaults</button></div>
           <div id="maaFullScaleRuntimeStatus" class="scaleStatus" aria-live="polite">Draft only until applied.</div>
         </section>
         <section id="maaFullScaleLongoranControls" aria-label="Longoran hunch and kyphosis posture" hidden>
@@ -514,8 +514,8 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid!important;v
     const runtimeStatus = document.getElementById('maaFullScaleRuntimeStatus'); // Remains visible while a user is tuning a growth stage.
     const applied = window.HobunjiCharacterAgeRigConfig?.snapshot?.()?.applied || false;
     if (runtimeStatus) runtimeStatus.textContent = applied
-      ? 'This device uses an applied age configuration. Existing game avatars refresh when rebuilt or after reloading the game.'
-      : 'Draft only: game still uses its checked-in age proportions. Apply to this device to test gameplay.';
+      ? 'Applied for this site in this browser. Reload the same-site game to rebuild existing NPCs; other domains require JSON integration.'
+      : 'Draft only. Apply to the same-site game for a local test, or export JSON for deployment.';
     const title = document.getElementById('maaFullScaleAgeTitle');
     if (title) title.textContent = ageMode;
     const values = ageValues();
@@ -654,7 +654,7 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid!important;v
       const saved = window.HobunjiCharacterAgeRigConfig?.applyOnThisDevice?.(ageModifiers);
       if (!saved) throw new Error('Shared game age configuration is unavailable');
       syncAgeControls();
-      status('Applied all three growth stages to this device’s game configuration. Reload gameplay to rebuild existing NPC portraits; no saved world data was changed.');
+      status('Applied all growth stages for this browser/site origin. Open or reload the game at the SAME site to build children with these settings. Other hosted domains need an exported JSON/config update.');
     } catch (error) { status(`Could not apply age configuration: ${error.message}`); }
   }
 
@@ -662,7 +662,7 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid!important;v
     try {
       window.HobunjiCharacterAgeRigConfig?.restoreRepositoryOnThisDevice?.();
       syncAgeControls();
-      status('Restored game age defaults on this device. Your draft remains editable; reload gameplay to rebuild existing NPC portraits.');
+      status('Restored game age defaults for this browser/site. Your draft remains editable; reload the game to rebuild existing NPC portraits.');
     } catch (error) { status(`Could not restore game defaults: ${error.message}`); }
   }
 
@@ -688,8 +688,7 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid!important;v
     const spineValues = api?.spineFor?.(entry.gender); // Single authored posture source shared with the game's portrait rig.
     const spine = window.HobunjiCharacterSpine?.bind?.(entry.model, { speciesId: 'longoran', gender: entry.gender, spine: spineValues });
     entry.spinePreviewApplied = !!(spine && window.HobunjiCharacterSpine?.applyToRig?.(entry.model.userData.neckRig, spine, Number(entry.model.userData.portraitModelHeight))); // Exposed in mobile diagnostics if a portrait could not build its skinned spline.
-    const scale = window.HobunjiCharacterRigScale?.scaleFor?.('longoran', entry.gender, entry.profile);
-    if (scale) applyPreviewProportions(entry); // Preserve the currently chosen age-wide proportions when the Longoran spine is rebound.
+    applyPreviewProportions(entry); // Preserve the currently chosen age-wide proportions when the Longoran spine is rebound. // Preserve the currently chosen age-wide proportions when the Longoran spine is rebound.
   }
 
   function rebuildLongoranFeet(entry) {
@@ -803,7 +802,6 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid!important;v
     const percent = clampAgePercent(document.getElementById('maaFullScaleRangeAge').value);
     setSliderValue('Age', percent);
     host()?.setNpcAge?.(selected.npc.id, percent / 100);
-    const scale = window.HobunjiCharacterRigScale?.scaleFor?.(selected.species, selected.gender, selected.profile) || { x: 1, y: 1, head: 1, offsetY: 0 };
     applyPreviewProportions(selected); // Keep the selected NPC's age hunch and lineup stage independent.
   }
 
@@ -833,6 +831,7 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid!important;v
     ageModifiers = repositoryAgeModifiers(); // Reset global baby/toddler/child modifiers alongside per-species edits.
     try { localStorage.removeItem(AGE_SAVE_KEY); } catch (_) {}
     syncAgeControls();
+    try { window.HobunjiCharacterAgeRigConfig?.restoreRepositoryOnThisDevice?.(); } catch (error) { console.warn('[full-character-scale] game age reset failed', error); }
     const count = host()?.resetToRepositoryDefaults?.() || 0;
     for (const entry of entries) {
       applyPreviewProportions(entry); // Reapply repository species scales with repository age modifiers across the whole lineup.
