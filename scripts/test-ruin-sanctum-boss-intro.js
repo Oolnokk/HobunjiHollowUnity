@@ -59,7 +59,7 @@ const context={theme:'kanthic',specialBoss:true,meta:{floorSurfaceY:0},
 composer.buildRooms({deps},context,()=>.5,[],{sanctum:true});
 const state=win.DevRandomRuinSanctum.getState();
 state.built=true; // The fixture supplies the room state directly; composer.update may tick only the real introduction pose.
-Object.assign(state,{entry:{x:12,z:12},door:{front:{x:3,z:12}},bossType:'kanthic',
+Object.assign(state,{entry:{x:12,z:12},door:{front:{x:3,z:12},decals:[]},bossType:'kanthic',
   coffins:[{index:0,open:false,lidT:0,rise:{x:20,z:10}}],arenaFires:[]});
 const arenaLight={x:12,y:1.4,z:12,active:false}; // Source follows ignition, cancellation and reset.
 state.arenaFires=[{lit:false,anchor:{visible:false,id:1},halo:{material:{opacity:0}},lightSource:arenaLight}];
