@@ -128,11 +128,33 @@ for (const rank of ['grunt', 'lieutenant', 'captain', 'flasker']) {
     }
   }
 }
-assert.equal(actualEnemyDef(config, 'grunt', 0).maxHealth, 17, 'tier-zero grunt HP remains at the balanced marked-Breaker threshold');
-assert.equal(actualEnemyDef(config, 'lieutenant', 0).maxHealth, 29, 'tier-zero lieutenant HP stays unchanged');
+assert.equal(actualEnemyDef(config, 'grunt', 0).maxHealth, 30, 'tier-zero grunt HP leaves room for repeated hits and knockback');
+assert.equal(actualEnemyDef(config, 'lieutenant', 0).maxHealth, 50, 'tier-zero lieutenant HP extends combat without increasing damage');
+assert.equal(actualEnemyDef(config, 'flasker', 0).maxHealth, 43, 'tier-zero flasker gains Health without becoming a lieutenant');
+assert.equal(actualEnemyDef(config, 'captain', 0).maxHealth, 90, 'captain durability is unchanged');
+const originalHumanoidStats = { ...config, healthMultiplierByRankAndTier: null }; // Factory comparison disables only the new HP override to catch accidental attack/Stamina amplification.
+for (let tier = 0; tier <= 7; tier++) {
+  for (const rank of ['grunt', 'flasker', 'lieutenant', 'captain']) {
+    const actual = actualEnemyDef(config, rank, tier); // Full production factory with new Health-only multiplier.
+    const before = actualEnemyDef(originalHumanoidStats, rank, tier); // Same factory, original combined offensive/stamina curve.
+    const healthCurve = config.healthMultiplierByRankAndTier?.[rank] || config.statMultiplierByRankAndTier[rank]; // Captains intentionally use their original tier curve.
+    const expectedHp = Math.round(context.BANDIT_BASE_MAX_HEALTH * healthCurve[tier] * (1 + tier * config.difficultyTiers.tierStatBonusPerTier)); // Verifies the authored HP for every rank and tier.
+    assert.equal(actual.maxHealth, expectedHp, rank + ' tier ' + tier + ' health-only curve is applied');
+    assert.equal(actual.attackDamage, before.attackDamage, rank + ' tier ' + tier + ' attack must not increase');
+    assert.equal(actual.maxStamina, before.maxStamina, rank + ' tier ' + tier + ' Stamina must not increase');
+    assert.equal(actual.attackCooldownS, before.attackCooldownS, rank + ' tier ' + tier + ' attack speed must not change');
+    assert.equal(actual.chaseSpeed, before.chaseSpeed, rank + ' tier ' + tier + ' pursuit speed must not change');
+    if (rank === 'captain') assert.equal(actual.maxHealth, before.maxHealth, 'captain health remains untouched');
+    if (rank !== 'captain') assert(actual.maxHealth > before.maxHealth, rank + ' tier ' + tier + ' must become more durable');
+  }
+  const health = rank => actualEnemyDef(config, rank, tier).maxHealth; // Checks that each danger tier preserves the intended rank hierarchy.
+  assert(health('grunt') < health('flasker') && health('flasker') < health('lieutenant') && health('lieutenant') < health('captain'), 'humanoid HP hierarchy must remain intact at tier ' + tier);
+}
+
 const originalMineStamina = Math.round(context.BANDIT_BASE_MAX_STAMINA * preservedMine.grunt[1] * (1 + 0.12)); // Existing Ghoul grunt capacity before new bandit tiers.
 const mineBaseline = actualEnemyDef({ ...config, _preserveMineEnemyTiers: true }, 'grunt', 1);
 assert.equal(mineBaseline.maxStamina, originalMineStamina, 'mine stamina stays historically calibrated when sufficient for one attack');
+assert.equal(mineBaseline.maxHealth, Math.round(context.BANDIT_BASE_MAX_HEALTH * preservedMine.grunt[1] * (1 + 0.12)), 'mine Ghouls ignore the new wilderness HP curve');
 const mineHeavy = actualEnemyDef({ ...config, _preserveMineEnemyTiers: true }, 'grunt', 1, 0.5);
 assert(mineHeavy.maxStamina >= mineHeavy.attackStaminaCost, 'even a Ghoul with an inefficient weapon cannot be permanently unable to attack');
 
