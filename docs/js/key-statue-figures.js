@@ -77,6 +77,12 @@
     mesh.name='key_statue_carved_army_weapon';
     mesh.rotation.copy(livePlane.rotation); // Original tool sprite's -90-degree X basis.
     mesh.renderOrder=0; // World sculpture, never an actor's held-overlay render pass.
+    tool.traverse?.(node=>{ // The canonical held-weapon factory's temporary model never enters the scene.
+      if(node.isMesh){
+        if(!node.userData?.sharedToolGeometry)node.geometry?.dispose?.();
+        for(const mat of Array.isArray(node.material)?node.material:[node.material])mat?.dispose?.();
+      }
+    }); // The cached source textures remain owned by CharacterHeldTools.
     return mesh;
   }
 
@@ -114,7 +120,10 @@
       const display=new THREE.Group();display.name='key_statue_harlyao_ghost_army_soldier';
       display.add(figure.model);
       const blade=await weaponFigure(THREE,spec,figure.stone);
-      if(entry.disposed)return false;
+      if(entry.disposed){
+        blade?.geometry?.dispose?.();blade?.material?.map?.dispose?.();blade?.material?.dispose?.();
+        return false;
+      }
       if(blade) {
         const d=figure.model.userData || {};
         const gripX=Number(d.handAttachX)||-0.2;
