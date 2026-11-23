@@ -165,6 +165,16 @@ const carried={billboardAnchor:{position:{},rotation:{}},backCarry:{position:{},
 const originalSocket=carried.handTargets.left;
 profile.applyTo(carried,.3,.4,anchors);
 assert.equal(carried.handTargets.left,originalSocket,'live refresh preserves the exact hand socket');
+const firstRevision=carried._backCarryRevision; // Revision belongs to this baby carryable, not a global renderer toggle.
+assert(firstRevision>0,'initial authoring of an empty back mount creates a first pose revision');
+profile.applyTo(carried,.3,.4,anchors);
+assert.equal(carried._backCarryRevision,firstRevision,'identical family sync does not invalidate the body mount');
+const altered=profile.snapshot();altered.back.posteriorOffset.z-=.07;
+profile.save(altered);
+profile.applyTo(carried,.3,.4,anchors);
+assert.equal(carried._backCarryRevision,firstRevision+1,'editing the back stow increments the revision exactly once');
+profile.applyTo(carried,.3,.4,anchors);
+assert.equal(carried._backCarryRevision,firstRevision+1,'stable edited profile does not repeatedly invalidate the pose');
 profile.save({held:{position:{x:Infinity,y:-100,z:100}}});
 assert(Number.isFinite(profile.forSize(.3,.3).billboardAnchor.position.x),'invalid imported numbers are sanitized');
 profile.reset();
