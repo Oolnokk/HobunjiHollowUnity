@@ -52,7 +52,7 @@
   const gitHackHost = pageLocation?.hostname === 'raw.githack.com'
     || pageLocation?.hostname === 'rawcdn.githack.com'; // Both documented GitHack preview hosts.
   const commitRoute = gitHackHost
-    ? String(pageLocation.pathname || '').match(/^\\/[^/]+\\/[^/]+\\/[0-9a-f]{40}(?=\\/docs(?:\\/|$))/i)
+    ? String(pageLocation.pathname || '').match(/^\/[^/]+\/[^/]+\/[0-9a-f]{40}(?=\/docs(?:\/|$))/i)
     : null; // Never redirect a mutable branch name or an unrelated local document.
   const manifestUrl = commitRoute
     ? 'https://rawcdn.githack.com' + commitRoute[0] + '/docs/js/bootstrap/classic-groups/' + group + '.js'
