@@ -112,7 +112,7 @@
     { name: 'Long Lunge',   damageMul: 1.25, halfConeDeg: 13, rangeMul: 1.65, knockbackMul: 2.85, staminaCost: 25, windupS: 0.405, strikeS: 0.12, returnS: 0.35, anim: 'thrust', dirSign: 1, power: 1.35, holdS: 0.4325, dmgTag: 'sharp', heavy: true, lungeMul: 1.0 },
   ];
 
-  function now() { return performance.now() / 1000; }
+  function now() { return (window.SimClock ? window.SimClock.now() : performance.now()) / 1000; } // Shared sim clock (js/sim-clock.js).
 
   function powerHitVulnerabilityTotal(entity) {
     const rs = window.ResourceSystem; // Used to detect whether a finisher will actually consume Bruised/Corroded Health for its impact cue.

@@ -720,24 +720,24 @@
         onBranch: null, branchT: 0, branchSurfaceY: 0,
       };
 
-      // All players present in this session — just the local `player` today
-      // (there is no networking in this repo yet). Hostile-creature target
-      // acquisition reads from this list via nearestPlayer() below instead
-      // of hardcoding `player` directly, so a second connected player would
-      // just need to be pushed into this array for hostiles to be able to
-      // notice and chase them too, with nothing in the AI itself to change.
-      const players = [player];
+      // Every player in this session lives in js/actor-registry.js. Today that is
+      // just the local `player`; `players` is the registry's live array (never
+      // reassign it — modules hold it by reference), so a second/remote player
+      // registered there is seen by hostile targeting, companion/pet targeting
+      // and the combat deps with nothing else to change.
+      const players = window.ActorRegistry.getPlayers();
+      window.ActorRegistry.registerPlayer(player, { local: true });
+      window.ActorRegistry.setLocalAreaResolver(() => currentArea); // player.areaId is not always rewritten on a map swap.
 
       // Nearest live player to (x, y) — see updateHostiles' targetPlayer.
-      // Identical to hardcoding `player` while `players` has one entry.
-      function nearestPlayer(x, y) {
-        let best = null, bestDist = Infinity;
-        for (const p of players) {
-          const d = Math.hypot(p.x - x, p.y - y);
-          if (d < bestDist) { best = p; bestDist = d; }
-        }
-        return best;
-      }
+      // Pass { areaId } to prefer players in the creature's own area.
+      function nearestPlayer(x, y, opts) { return window.ActorRegistry.nearestPlayer(x, y, opts); }
+
+      // One entry for "attacker hurts target" (js/damage-authority.js): routes to
+      // damagePlayer for the local avatar, a remote-player handler for any other
+      // player, and damageCreature for everything else. damagePlayer/damageCreature
+      // are hoisted function declarations defined further down this closure.
+      window.DamageAuthority.init({ damageLocalPlayer: damagePlayer, damageCreature, getLocalPlayer: () => player });
 
       // Health/Stamina afflictions + Exhausted/black-stamina debt — see
       // docs/js/combat/resource-system.js. Adds player.afflictions/
@@ -7412,7 +7412,7 @@
           // humanoid a live actor target and zeroes its player aggro; chase,
           // leash and sight below must follow that actor, not the player.
           const chunkCombatTarget = c.isBandit && c._chunkCombatTarget?.health > 0 && c._chunkCombatTarget.areaId === c.areaId ? c._chunkCombatTarget : null;
-          let targetPlayer = chunkCombatTarget || c.targetPlayer || nearestPlayer(c.x, c.y); // Scent priority can change this frame's active chase target before movement/attack.
+          let targetPlayer = chunkCombatTarget || c.targetPlayer || nearestPlayer(c.x, c.y, { areaId: c.areaId }); // Scent priority can change this frame's active chase target before movement/attack.
           if (window.ClimbSystem?.updateBranchDefender?.(c, entityDt, targetPlayer)) continue;
           // Attackers scale cliffs after a target that climbed away from them
           // (js/creature-cliff-climb.js); the scripted climb owns position.
@@ -7789,8 +7789,7 @@
                         direction: enemyAim?.direction,
                       })) {
                         const biteDamageOptions = { tag: attackTag, afflictionBonuses: window.ResourceSystem?.afflictionBonusesForTag(attackTag), attacker: c }; // Routes creature targets through their normal resilience/downed pipeline.
-                        if (players.includes(targetPlayer)) damagePlayer(def.attackDamage, c.x, c.y, HOSTILE_BITE_KNOCKBACK_PX_S, biteDamageOptions);
-                        else damageCreature(targetPlayer, def.attackDamage, c.x, c.y, HOSTILE_BITE_KNOCKBACK_PX_S, biteDamageOptions);
+                        window.DamageAuthority.hit(targetPlayer, def.attackDamage, c.x, c.y, HOSTILE_BITE_KNOCKBACK_PX_S, biteDamageOptions); // Routes by who was actually bitten (local player, another player, or a companion).
                         window.AudioSystem?.playCreatureClawHit(c);
                       }
                       c.retreatT = JUMP_BACK_DUR_S;

@@ -6,6 +6,45 @@ single-browser-tab, `localStorage`-only). This document exists so the intended
 shape of multiplayer isn't lost, and to track what in the current codebase
 already lines up with it versus what will actively fight it.
 
+## Target: 4-player co-op, built single-player-first
+
+Goal: up to 4 players (`ActorRegistry.MAX_PLAYERS`), host-authoritative, no
+deterministic lockstep. Single-player is the same game with zero guests, not a
+second code path. Order of work:
+
+1. **Multiplayer-compatible single-player** (in progress — see below).
+2. Dev-controlled dummy second player (walk, equip, take damage, change area) to prove 1 without a network.
+3. Two connected clients: session, movement, appearance, equipment, animation state.
+4. Shared simulation: NPCs, combat, farming, inventories, world mutations.
+5. Independent exploration: simulation residency vs asset residency vs render visibility (`WildernessChunks`).
+6. Reconnect, cutscenes/festivals/sleep consensus, permissions, latency, mobile.
+
+### Foundations that exist now (step 1)
+
+| Module | Replaces | Use it for |
+| --- | --- | --- |
+| `js/actor-registry.js` (`ActorRegistry`) | the `player` singleton / `[player]` | stable entity ids (kept off the entity, never saved), `getPlayers()`, `getLocalPlayer()`, `areaOf()`, area-aware `nearestPlayer()`, `ownerOf()` for companion `master` / projectile `owner` |
+| `js/damage-authority.js` (`DamageAuthority.hit(target, …)`) | `damagePlayer(...)` having no target | one entry for attacker→target; local player → `damagePlayer`, remote player → registered handler (never the local player), else `damageCreature`; emits id-tagged hit events for a future host broadcast |
+| `js/sim-clock.js` (`SimClock.now()`) | `performance.now()` in gameplay timers | host-synced time; offset is 0 today so it is identical |
+
+Migrated so far: hostile melee bite, enemy ranged projectiles (now test every
+player, nearest first), animal pounce/guard-charge, combo/charged-breaker/
+resource-system timers, hostile target acquisition (area-aware, non-strict).
+
+### Still singleton-bound (next up)
+
+- ~14 other `damagePlayer` callers that do not know *which* player they hit
+  (`combat-bandit.js`, `combat-attach.js`, `combat-voorg-ass-rear-kick.js`,
+  `skeeri-ruins.js`, `tzatzul-flight-runtime.js`, `amphibious-fishing.js`,
+  `combat-camera-alignment-bridge.js`, ruin/cave-trap deps in `game.js`) → move to `DamageAuthority.hit`.
+- `damagePlayer`/`respawnPlayer`/`PlayerDowned`/`GameFeel.playerHurt` hardcode the local avatar; remote players need their own downed/bleed-out state.
+- Other `performance.now()` gameplay timers (`invulnUntil`, `combat-input.js`, stamina windows set from `game.js`) are still wall-clock.
+- `nearestPlayer` callers should switch to `strict: true` once a second player can be in another zone.
+- Rootledoot encounter, `WildernessChunks` residency, sleep/time advance and cutscenes assume one player.
+
+Rule for new code: **never assume the local player is the only player.** Take a
+target/actor, ask the registry for players, and read time from `SimClock`.
+
 ## The intended model
 
 - One player is the **world owner**. Their character save is the "main"

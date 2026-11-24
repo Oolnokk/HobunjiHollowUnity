@@ -331,7 +331,10 @@
   <script src="js/farm-world-settings.js?v=20261013h4299425"></script>
   <script src="onboarding.js?v=20261124rootledoot2"></script>
   <!-- Combat system modules (windup/strike pipeline, loadout, abilities) -->
-  <script src="js/combat/resource-system.js?v=20261122familyBaby4"></script>
+  <script src="js/sim-clock.js?v=20261124mp1"></script> <!-- Shared gameplay clock; must precede resource-system and combat timers. -->
+  <script src="js/actor-registry.js?v=20261124mp1"></script> <!-- Stable actor ids + the players list; must precede game.js. -->
+  <script src="js/damage-authority.js?v=20261124mp1"></script> <!-- Target-aware damage routing; initialised by game.js. -->
+  <script src="js/combat/resource-system.js?v=20261124h27ea2d2"></script>
   <script src="js/sacred-ground.js?v=20261108h9e2416f"></script> <!-- Global sacred-ground provider registry for totems, temple and future blessings. -->
   <script src="js/combat/knockback-collision-impact.js?v=20261105aerialAudit2"></script>
   <!-- Burning creatures and short-lived corpse flames share fire-hazard contact across knockback and adventuring torches. -->
@@ -2988,7 +2991,7 @@
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups2" data-classic-group="render"></script>
   <script src="js/held-gift-policy.js?v=20261122heldGiftPolicy1"></script> <!-- Shared gifting policy and clothing visual preparation; game.js owns equipment state. -->
   <script src="js/rootledoot-encounter.js?v=20261124shared1"></script>
-  <script src="game.js?v=20261124hd5efb22"></script>
+  <script src="game.js?v=20261124h928dd0d"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261115nativeArena1"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->

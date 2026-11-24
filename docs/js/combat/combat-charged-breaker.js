@@ -54,7 +54,7 @@
     lastRelease: null,
   }; // Used by mobile-friendly diagnostics without requiring console access.
 
-  function now() { return performance.now() / 1000; }
+  function now() { return (window.SimClock ? window.SimClock.now() : performance.now()) / 1000; } // Shared sim clock (js/sim-clock.js).
   function clamp01(value) { return Math.max(0, Math.min(1, Number(value) || 0)); }
   function lerp(a, b, t) { return a + (b - a) * t; }
 

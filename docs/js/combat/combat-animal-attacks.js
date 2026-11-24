@@ -427,6 +427,14 @@
     return out;
   }
 
+  // The leap/charge cone can catch any player in `state.targets`; hit the one it
+  // actually caught (DamageAuthority), falling back to the legacy local-player
+  // damagePlayer dep for ad-hoc deps objects loaded without it.
+  function hitPlayer(deps, target, amount, x, y, knockback, opts) {
+    if (window.DamageAuthority) return window.DamageAuthority.hit(target, amount, x, y, knockback, opts);
+    return deps.damagePlayer(amount, x, y, knockback, opts);
+  }
+
   function pounceStart(c, state, ctx, deps) {
     state.stage = 'windup';
     state.t = 0;
@@ -544,7 +552,7 @@
     const ref = stopReason === 'target' ? state.lungeContact : null; // The first living target the moving cone caught.
     if (!ref) return false; // Ran out of travel or hit terrain: stop in place.
     const isPlayer = state.targets.some(target => target.isPlayer && target.ref === ref);
-    if (isPlayer) deps.damagePlayer(state.damage, c.x, c.y, POUNCE_KNOCKBACK_PX_S, { tag: dmgTag, afflictionBonuses, attacker: c });
+    if (isPlayer) hitPlayer(deps, ref, state.damage, c.x, c.y, POUNCE_KNOCKBACK_PX_S, { tag: dmgTag, afflictionBonuses, attacker: c });
     else if (window.CompanionOffense) window.CompanionOffense.damageCreature(deps.damageCreature, c, ref, state.damage, c.x, c.y, POUNCE_KNOCKBACK_PX_S, { tag: dmgTag, afflictionBonuses, attacker: c }); // Whistle/Sicced empowerment for player companions; wild attackers pass through unchanged.
     else deps.damageCreature(ref, state.damage, c.x, c.y, POUNCE_KNOCKBACK_PX_S, { tag: dmgTag, afflictionBonuses });
     deps.playCreatureClawHit?.(c);
@@ -619,7 +627,7 @@
     const chargeDamage = Math.max(0, Number(c.def?.guardChargeDamage) || 0); // Wild Moot and defending nest adults can inflict blunt Health damage; existing companion Guard Charge stays knockback-only.
     const chargeOptions = { tag: dmgTag, afflictionBonuses, attacker: c }; // Shared damage attribution for both player and creature charge contacts.
     const isPlayer = state.targets.some(target => target.isPlayer && target.ref === ref);
-    if (isPlayer) deps.damagePlayer(chargeDamage, c.x, c.y, GUARD_CHARGE_KNOCKBACK_PX_S, chargeOptions);
+    if (isPlayer) hitPlayer(deps, ref, chargeDamage, c.x, c.y, GUARD_CHARGE_KNOCKBACK_PX_S, chargeOptions);
     else if (window.CompanionOffense) window.CompanionOffense.damageCreature(deps.damageCreature, c, ref, chargeDamage, c.x, c.y, GUARD_CHARGE_KNOCKBACK_PX_S, chargeOptions); // Scales charge afflictions for player companions.
     else deps.damageCreature(ref, chargeDamage, c.x, c.y, GUARD_CHARGE_KNOCKBACK_PX_S, chargeOptions);
     deps.playCreatureClawHit?.(c);
