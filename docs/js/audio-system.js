@@ -59,6 +59,10 @@
     preloadStoneBeatBuffers(); // Decode all four real recordings before a player steps onto a timed melody plate.
     preloadAnimalVoices();
     preloadConfiguredFootstepSfx();
+    // A short takeoff stroke can end before its first native media request starts; warm the three tiny positional clips ahead of flight.
+    if (typeof window.AudioContext === 'function' || typeof window.webkitAudioContext === 'function') {
+      for (const url of WINGFLAP_URLS) prepareCombatPositionalClip(url);
+    }
     installFootstepAudioUnlock();
     preloadHardFootstepNormalization();
   }
@@ -112,10 +116,13 @@
     'assets/audio/sfx/footsteps/sfx_wingflap_3.mp3',
   ]);
   const WINGFLAP_PITCH_FROM_LARGE = Object.freeze({ large: 0, medium: 2.5, small: 5 }); // Voice fallback: 2.5-semitone size steps, with Large at original pitch.
+  const WINGFLAP_EARSHOT_TILES = Object.freeze({ large: 24, medium: 15, small: 9 }); // Large wings are audible over cliffs and above the player; smaller wings keep a shorter 3D range.
   const WINGFLAP_MAX_BURSTS = 6; // Three two-voice pools: prevent a synchronized flock from repeatedly stealing active clips.
   const WINGFLAP_BURST_WINDOW_MS = 85; // At most six wingbeats start during a shared stroke; the next cycle opens a new window.
   let wingflapWindowStartMs = -Infinity; // Last flock-level burst window; only checked on a requested wingbeat.
   let wingflapStartsInWindow = 0; // O(1) mobile-safe simultaneous-bird cap.
+  let wingflapAttempts = 0; // Includes rejected stroke requests so the mobile probe distinguishes silence from an absent visual cue.
+  let lastWingflapRejection = null; // Records the latest rejected stroke and its acoustic distance where available.
   let wingflapRequests = 0; // Copyable mobile diagnostics count audible-range wingbeats.
   let wingflapSuppressed = 0; // Copyable mobile diagnostics count flock polyphony limits.
   let lastWingflapSfxDebug = null; // Copyable mobile diagnostics show which bird, recording, pitch, and rate were requested.
@@ -670,14 +677,25 @@
     return releaseWingflapPlay(actor && activeWingflaps.get(actor), true);
   }
 
+  function rejectWingflap(actor, reason, spatial = null) {
+    lastWingflapRejection = { actor: String(actor?.id || actor?.creatureKey || '-'), reason,
+      distanceTiles: spatial ? +(spatial.distance / (deps?.TILE || 64)).toFixed(2) : null,
+      earshotTiles: spatial ? +(spatial.earshotPx / (deps?.TILE || 64)).toFixed(2) : null,
+      atMs: Math.round(performance.now()) }; // Mobile diagnostics, without logging every wingbeat.
+    return false;
+  }
+
   function playWingflapSfx(actor, volumeScale = 1) {
+    wingflapAttempts++;
     const audioCfg = gameAudioConfig();
-    if (!actor || !(actor.health > 0) || !Number.isFinite(actor.x) || !Number.isFinite(actor.y)
+    if (!deps?.player || !actor || !(actor.health > 0) || !Number.isFinite(actor.x) || !Number.isFinite(actor.y)
       || audioCfg.enabled === false || audioCfg.footsteps?.enabled === false) {
       if (actor) stopWingflapSfx(actor); // A mute/death gate also stops a tail from an earlier stroke.
-      return false;
+      return rejectWingflap(actor, 'unavailable-or-muted');
     }
-    const spatial = combatAudioSpatial(actor, { earshotTiles: 9 }); // Reuses 3D separation, zone gate and camera-relative direction for creature footsteps.
+    const reportedSize = window.AnimalVocalizations?.creatureSizeClass?.(actor);
+    const size = Object.prototype.hasOwnProperty.call(WINGFLAP_PITCH_FROM_LARGE, reportedSize) ? reportedSize : 'medium';
+    const spatial = combatAudioSpatial(actor, { earshotTiles: WINGFLAP_EARSHOT_TILES[size] }); // Preserve genuine 3D distance and the existing camera-relative route.
     const scale = Number(volumeScale);
     const footstepCfg = audioCfg.footsteps || {};
     const footstepVolume = Number(footstepCfg.volume ?? 0.65); // Honors an intentionally muted zero-volume footstep channel.
@@ -685,10 +703,8 @@
       * FOOTSTEP_BASE.volume * (Number.isFinite(scale) ? Math.max(0, scale) : 1) * spatial.gain;
     if (!Number.isFinite(volume) || volume <= 0.002) {
       stopWingflapSfx(actor); // A bird that has left earshot cannot leave a still-audible sample behind.
-      return false;
+      return rejectWingflap(actor, spatial.gain <= 0 ? 'out-of-range-or-area' : 'too-quiet-or-muted', spatial);
     }
-    const reportedSize = window.AnimalVocalizations?.creatureSizeClass?.(actor);
-    const size = Object.prototype.hasOwnProperty.call(WINGFLAP_PITCH_FROM_LARGE, reportedSize) ? reportedSize : 'medium';
     const authoredPitch = window.AnimalVocalizations?.sizePitchDifferenceFromLarge?.(actor);
     const pitchSemitones = Math.max(0, Math.min(12, Number.isFinite(authoredPitch) ? authoredPitch : WINGFLAP_PITCH_FROM_LARGE[size]));
     const playbackRate = Math.pow(2, pitchSemitones / 12); // Large 1x, Medium/Small progressively higher like their authored calls.
@@ -704,7 +720,7 @@
       wingflapStartsInWindow = 0;
     }
     if (liveWingflapPlays.size >= WINGFLAP_MAX_BURSTS || wingflapStartsInWindow >= WINGFLAP_MAX_BURSTS) {
-      wingflapSuppressed++; return false; // Both simultaneously playing voices and synchronized start bursts remain bounded.
+      wingflapSuppressed++; return rejectWingflap(actor, 'voice-cap', spatial); // Both simultaneously playing voices and synchronized start bursts remain bounded.
     }
     const first = Math.floor(Math.random() * WINGFLAP_URLS.length); // Rotates the three recordings without allocating an additional shuffle list.
     let url = null; // Prefer a free voice instead of cutting off an audible wingbeat from another bird.
@@ -713,13 +729,13 @@
       const pool = ensureFootstepAudioPool(candidate);
       if (pool?.some(voice => (voice.paused || voice.ended) && !voice._wingflapPlay)) { url = candidate; break; }
     }
-    if (!url) { wingflapSuppressed++; return false; } // All six native slots busy: dropping a stroke is better than stealing another bird's cue.
+    if (!url) { wingflapSuppressed++; return rejectWingflap(actor, 'native-pool-busy', spatial); } // All six native slots busy: dropping a stroke is better than stealing another bird's cue.
     const snd = acquireFootstepAudio(url, true);
-    if (!snd) return false;
+    if (!snd) return rejectWingflap(actor, 'native-pool-unavailable', spatial);
     disablePitchPreservation(snd); // Existing native-audio helper disables time stretching, so playbackRate genuinely transposes pitch.
     snd.playbackRate = playbackRate;
     const handle = playRecordedFootstepClip(snd, url, 'wingflap', Math.min(1, volume), 1, false, spatial);
-    if (!handle) return false;
+    if (!handle) return rejectWingflap(actor, 'play-failed', spatial);
     const playing = { actor, handle, nativeVoice: snd, startedAt }; // Used by the bounded live-voice set and the matching per-actor stop.
     if (handle === snd) {
       snd._wingflapOwner = actor;
@@ -733,13 +749,16 @@
       actor: String(actor.id || actor.creatureKey || '-'), size, url,
       pitchSemitones: +pitchSemitones.toFixed(3), playbackRate: +playbackRate.toFixed(3),
       volume: +Math.min(1, volume).toFixed(3), area: actor.areaId || actor.area || null,
+      distanceTiles: +(spatial.distance / (deps.TILE || 64)).toFixed(2), earshotTiles: WINGFLAP_EARSHOT_TILES[size],
+      backend: handle === snd ? 'native' : 'decoded', // Identifies the first-stroke fallback versus a warmed positional clip.
       atMs: Math.round(startedAt), // Pixel Probe distinguishes a live flap from a stale recording without devtools.
     };
     return true;
   }
 
   function wingflapSfxDebugSnapshot() {
-    return { requests: wingflapRequests, suppressed: wingflapSuppressed,
+    return { attempts: wingflapAttempts, requests: wingflapRequests, suppressed: wingflapSuppressed,
+      lastRejection: lastWingflapRejection ? { ...lastWingflapRejection } : null,
       active: liveWingflapPlays.size, // Grounded voice count for Pixel Probe and concurrent-HRTF regression checks.
       last: lastWingflapSfxDebug ? { ...lastWingflapSfxDebug } : null };
   }
