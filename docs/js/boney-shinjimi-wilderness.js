@@ -588,6 +588,7 @@
           const prize=window.BoneyShinjimiRewards?.grant?.(kind,deps);
           if(!prize){bumpEvent('Reward not available; encounter remains retriable');return;}
           granted=true;state.reward=prize;state.hatTaken=kind==='hat';
+          window.CookingSystem?.consumeFeySight?.(); // Only successful dialogue reward delivery consumes the persistent stacks.
           if(state.hatTaken&&walker?.rec) {
             walker.rec.equippedCosmetics=walker.rec.equippedCosmetics.filter(id=>id!==HAT_ID);
             void window.NpcWardrobe?.refreshWalkerAppearance?.(walker);
