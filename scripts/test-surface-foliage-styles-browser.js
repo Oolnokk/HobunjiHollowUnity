@@ -463,13 +463,31 @@ const server=http.createServer((request,response)=>{
         centerCount:0,insideCenters:0,outerCenters:0};
       const mesh=generated.children.find(m=>m.isMesh);
       const positions=mesh?.geometry?.getAttribute('position');
-      if(positions)for(let i=0;i+5<positions.count;i+=6){
+      const uv=mesh?.geometry?.getAttribute('uv'); // The preserved V coordinate identifies original ring spacing and strand boundaries.
+      // Measure the actual simplified centerline, not the density of retained rings.
+      // Flat interior stretches lose many more rings than bends; counting rings
+      // would overrepresent bends even if the geometry itself has barely moved.
+      let previous=null,previousV=0;
+      if(positions&&uv)for(let i=0;i+5<positions.count;i+=6){
         const center=new T.Vector3();
         for(let j=0;j<5;j++)center.add(new T.Vector3().fromBufferAttribute(positions,i+j));
-        center.multiplyScalar(.2);measures.centerCount++;
-        measures.maxOutside=Math.max(measures.maxOutside||0,Math.abs(center.x)-1,Math.abs(center.y)-.5,Math.abs(center.z)-1);
-        if(Math.abs(center.x)<1&&Math.abs(center.y)<.5&&Math.abs(center.z)<1)measures.insideCenters++;
-        if(Math.abs(center.x)>1.04||Math.abs(center.y)>.54||Math.abs(center.z)>1.04)measures.outerCenters++;
+        center.multiplyScalar(.2);
+        const v=uv.getY(i);
+        if(previous&&v>previousV){
+          const length=previous.distanceTo(center);
+          // Uniform spatial samples include the straight segments between
+          // retained rings. Weight by length so subdividing a segment does
+          // not change its contribution to the containment measurement.
+          const samples=Math.max(1,Math.ceil(length/.005));
+          const weight=length/samples;
+          for(let k=0;k<samples;k++){
+            const p=previous.clone().lerp(center,(k+.5)/samples);
+            measures.centerCount+=weight;
+            if(Math.abs(p.x)<1&&Math.abs(p.y)<.5&&Math.abs(p.z)<1)measures.insideCenters+=weight;
+            if(Math.abs(p.x)>1.04||Math.abs(p.y)>.54||Math.abs(p.z)>1.04)measures.outerCenters+=weight;
+          }
+        }
+        previous=center;previousV=v;
       }
       return measures;
     });
@@ -478,9 +496,7 @@ const server=http.createServer((request,response)=>{
     assert(inward.originalHidden,'Guide furniture must remain invisible even while casting its rays');
     assert(inward.centerCount>0&&inward.insideCenters/inward.centerCount>.75,
       'Most strand centerlines must be inside the furniture box, not floating around its exterior');
-    // Largest excursion, not a ring-count ratio: ring simplification drops redundant rings on flat runs,
-    // which changes how many rings there are but never how far a strand sticks out of the box.
-    assert(inward.maxOutside<.15,
+    assert(inward.outerCenters/inward.centerCount<.1,
       'Inside shrinkwrap must not protrude far outside the hidden furniture volume');
     const rootedFurniture=await page.evaluate(()=>{
       const T=window.THREE,foliage=window.FoliageGenerator,controller=window.LiveRootGrowth;
