@@ -164,3 +164,46 @@ assert.equal(tables.blocksBox('indexed', 8, 4.5), false, 'a same-frame removal i
   assert.equal(ropeEvents.length,afterClearCount+1,'a stale authored load cannot register an orphaned rope');
   assert.deepEqual(ropeEvents.at(-1),['unregister','late-map','pending']);
 }
+
+// A visible NPC must use an actual registered chair, never a fallback tile.
+{
+  const gameSource=fs.readFileSync('docs/game.js','utf8');
+  const start=gameSource.indexOf('      function resolveSeatWorldTransform('),end=gameSource.indexOf('      function beginSitInteraction(',start);
+  const nStart=gameSource.indexOf('      function npcSeatTransformForTarget('),nEnd=gameSource.indexOf('      async function makeNpcWalker(',nStart);
+  const resolver=gameSource.slice(start,end)+gameSource.slice(nStart,nEnd);
+  const loadTable=w=>{vm.runInNewContext(fs.readFileSync('docs/js/furniture-table-system.js','utf8'),{window:w});return w.FurnitureTableSystem;};
+  const loadResolver=w=>vm.runInNewContext(resolver+'\nnpcSeatTransformForTarget;', {window:w,DECORATIVE_FURNITURE_DEFS:{chairSimple:{sit:true,fw:1,fd:1},stool:{sit:true,fw:1,fd:1},bench:{sit:true,fw:1,fd:1}}});
+  const check=(condition,message)=>assert.ok(condition,message);
+
+  class SeatVector { set(x,y,z){Object.assign(this,{x,y,z});return this;} }
+  const w={THREE:{Vector3:SeatVector},AuthoredFurniture:{
+    peek:()=>({}),seatAnchorFor:(_data,index)=>({position:{x:index*.2,y:.3,z:0},rotationDeg:{y:0}}),
+  }};
+  const tables=loadTable(w);
+  const area='map_i_chair_qa';
+  tables.init({getArea:()=>area,surfaceY:()=>.4});
+  const mesh=(x,y,z)=>({parent:{},position:{x,y,z},scale:{x:1,y:1,z:1},userData:{},localToWorld(v){v.x+=this.position.x;v.y+=this.position.y;v.z+=this.position.z;return v;}});
+  const chair=mesh(8.5,1.2,9.5);
+  tables.registerPlacement(area,{id:'moved',key:'chairSimple',col:1,row:2,npcStationId:'legacy-station'},chair,{sit:true});
+  tables.registerPlacement(area,{id:'other',key:'stool',col:1,row:2},mesh(1.5,0,2.5),{sit:true});
+  const target={area,pose:'sit',furnitureId:'moved',furnitureKey:'chairSimple',c:1,r:2,seatIndex:1};
+  const resolve=loadResolver(w);
+  const anchor=resolve(target);
+  check(anchor.x===8.7&&anchor.z===9.5&&Math.abs(anchor.worldY-1.5)<1e-9&&Math.abs(anchor.y-1.1)<1e-9,'live moved chair and absolute elevation');
+  check(resolve({...target,furnitureId:'gone'})===null,'missing named chair does not substitute another');
+  check(resolve({...target,furnitureId:'',stationId:'legacy-station',c:99,r:99}).x===8.7,'legacy station follows stable placement');
+  check(resolve({...target,furnitureId:'',furnitureKey:'bench'})===null,'legacy coordinate cannot substitute another type');
+  check(resolve({...target,furnitureId:'',furnitureKey:'stool'}).x===1.7,'legacy typed lookup still works');
+  tables.registerPlacement(area,{id:'ambiguous',key:'chairSimple',col:1,row:2},mesh(3,0,4),{sit:true});
+  check(resolve({...target,furnitureId:''})===null,'ambiguous legacy NPC chair is rejected');
+  chair.position.x=11;
+  check(resolve(target).x===11.2,'live transform tracks subsequent movement');
+  tables.unregisterPlacement(area,'moved');
+  check(resolve(target)===null,'removed chair clears seated anchor');
+  tables.clearArea(area);
+  check(resolve(target)===null,'active area with no registered furniture cannot air sit');
+  check(resolve({...target,area:'unloaded'}).x===1.7,'unloaded offscreen schedules retain logical anchor');
+  check(resolve({...target,area:undefined}).x===1.7,'area-less authored cutscene retains logical anchor');
+
+  console.log('NPC physical seat anchor regression passed');
+}

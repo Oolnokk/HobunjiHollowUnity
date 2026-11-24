@@ -84,11 +84,28 @@
   function entries(area) { return areas.get(areaId(area)) || EMPTY; }
   function findSeat(area, seat) {
     if (!seat) return null;
-    const id = seat.furnitureId || seat.id; // Schedule stations may explicitly reference a chair instance.
-    const list = entries(area); // Coordinate fallback supports existing authored stations and player save data.
-    if (id && list.get(id)?.def.sit && list.get(id).root?.parent) return list.get(id);
-    for (const entry of list.values()) if (entry.def.sit && entry.root?.parent && entry.record.col === (seat.col ?? seat.c) && entry.record.row === (seat.row ?? seat.r)) return entry;
-    return null;
+    const list = entries(area); // Explicit instance ids survive moved furniture and shared navigation tiles.
+    const live = entry => entry?.def.sit && entry.root?.parent;
+    if (seat.furnitureId) {
+      const entry = list.get(String(seat.furnitureId));
+      return live(entry) ? entry : null; // Never replace a removed named chair with another piece on its former tile.
+    }
+    const direct = seat.id && list.get(String(seat.id));
+    if (live(direct)) return direct;
+    const stationId = seat.stationId || seat.id; // Legacy stations can still identify a chair via its registered station.
+    const c = seat.col ?? seat.c, r = seat.row ?? seat.r;
+    const key = seat.furnitureKey; // Legacy coordinate lookup must match the requested furniture type.
+    let candidate = null, ambiguous = false; // Reject ambiguous legacy NPC bindings instead of choosing a random chair.
+    for (const entry of list.values()) {
+      if (!live(entry)) continue;
+      if (stationId && entry.record.npcStationId === stationId) return entry;
+      if (entry.record.col !== c || entry.record.row !== r) continue;
+      if (key && key !== entry.record.key && key !== entry.record.itemKey && key !== entry.def.itemKey
+          && key !== entry.record.key + 'Furniture') continue;
+      if (candidate) ambiguous = true;
+      else candidate = entry;
+    }
+    return ambiguous && seat.pose === 'sit' ? null : candidate;
   }
   const bedKeys = new Set(['basicBed', 'doubleBed', 'bedroll']); // Furniture eligible for scheduled and player sleep.
   const lieClaims = new WeakMap(); // Sleeper -> claimed placement and side, retained across schedule refreshes.
@@ -193,6 +210,10 @@
     deps?.assignmentChanged?.(areaId(area), chair.record);
     return true;
   }
+  function requiresLiveSeat(area) {
+    const scope = areaId(area); // Unloaded offscreen maps may keep logical schedules; rendered maps require an actual chair.
+    return !!scope && (areas.has(scope) || areaId(deps?.getArea?.()) === scope);
+  }
   function seatTransform(area, seat) {
     const entry = findSeat(area, seat); // Respects the actual outdoor/interior mesh transform, including locale offsets.
     const data = entry && window.AuthoredFurniture?.peek?.(entry.record.key); // Canonical furniture-author posterior anchor.
@@ -206,7 +227,7 @@
     const matrix = entry.root.matrixWorld?.elements; // Includes grid quarter-turns and post-placement transforms, not just residual authored yaw.
     const rootYaw = matrix ? Math.atan2(matrix[8], matrix[10]) * 180 / Math.PI : Number(entry.record.rotY ?? entry.record.rotYDeg) || 0;
     const yaw = rootYaw + (anchor.rotationDeg?.y || 0);
-    return { x: location.x, y: location.y - floor, z: location.z, facingRad: Math.PI / 2 - yaw * Math.PI / 180,
+    return { x: location.x, y: location.y - floor, worldY: location.y, z: location.z, facingRad: Math.PI / 2 - yaw * Math.PI / 180,
       normalDeg: { x: anchor.rotationDeg?.x || 0, z: anchor.rotationDeg?.z || 0 },
       footprintHalfDepth: (window.AuthoredFurniture?.seatedKneeReach?.(data) || 0.11) * (entry.root.scale?.z || 1), anchorZ: anchor.position.z || 0 }; // Calves bend at the actual seat edge, not the tile footprint.
   }
@@ -649,8 +670,9 @@
 
   function snapshot(area = deps?.getArea?.()) {
     return { latestChange: 'Camera lift depends only on an authored upward surface occupying the player tile or any of eight neighboring tiles; looking direction and camera pitch do not affect it.',
+      seatingLatestChange: 'NPCs on loaded maps require a real chair instance; named seats never fall back to another chair or a stale tile.',
       surfaceCamera:{...surfaceView,probe:{...surfaceProbe,refreshMs:SURFACE_PROBE_REFRESH_MS}}, collision:{...collisionStats},
       socialReach:deps?.npcReach?.()||6, socialIgnoresColliders:true, area: areaId(area), focused:focused?.kind || null, focusedNpc:focused?.walker?.rec?.id || null, focusedNpcDistance:focused?.walker ? npcDistance(focused.walker) : null, seatReservations:seatClaims.size, wardrobeLocks:{...wardrobeLockDebug}, placements: [...entries(area).values()].map(entry => ({ id: entry.id, tableId: entry.record.tableId || null, serviceId: entry.record.serviceId || null, wardrobeFor: window.NpcFurnitureWardrobes?.ownerForPlacement?.(area, entry.record)?.npcId || null })) };
   }
-  window.FurnitureTableSystem = { nearbySurface, init, clearArea, registerPlacement, unregisterPlacement, assignTable, tableForSeat, members, findSeat, seatTransform, lieTransform, releaseLieSlot, registerService, aimedService, objectAt, refreshServices, invalidateFocus, snapshot, seatKey, isSeatTaken, setSeatTarget, blocksBox, grassFootprintKeys, focusedTarget, npcDistance, companionSeat };
+  window.FurnitureTableSystem = { nearbySurface, init, clearArea, registerPlacement, unregisterPlacement, assignTable, tableForSeat, members, findSeat, requiresLiveSeat, seatTransform, lieTransform, releaseLieSlot, registerService, aimedService, objectAt, refreshServices, invalidateFocus, snapshot, seatKey, isSeatTaken, setSeatTarget, blocksBox, grassFootprintKeys, focusedTarget, npcDistance, companionSeat };
 })();

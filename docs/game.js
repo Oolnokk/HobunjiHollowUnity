@@ -13169,6 +13169,9 @@
         if (!def?.sit) return null;
         const placedSeat = window.FurnitureTableSystem?.seatTransform(target.area, target); // Named chairs retain their table binding and locale transform.
         if (placedSeat) return placedSeat;
+        // Visible/loaded maps must never create a seated pose at a stale schedule coordinate.
+        // Unloaded offscreen maps and area-less authored cutscenes keep the logical transform.
+        if (target.area && window.FurnitureTableSystem?.requiresLiveSeat?.(target.area)) return null;
         return resolveSeatWorldTransform(
           target.furnitureKey, target.c, target.r, def.fw || 1, def.fd || 1,
           target.rotY || 0, target.seatIndex || 0
@@ -13834,7 +13837,7 @@
             }
             if (Math.hypot(root.position.x - tx, root.position.z - tz) <= arrival) this.state = 'idle';
             if (this.state === 'idle' && Math.hypot(root.position.x - tx, root.position.z - tz) <= arrival) {
-              const groundY = npcSurfaceY(this.area, target.c, target.r);
+              const groundY = npcSurfaceY(this.area, seatTransform ? Math.floor(tx) : target.c, seatTransform ? Math.floor(tz) : target.r);
               if (seatTransform) {
                 root.position.x = seatTransform.x;
                 root.position.z = seatTransform.z;
@@ -13843,7 +13846,9 @@
                 const scaledPosteriorY = standingPosteriorY * (Number.isFinite(visualRigScaleY) && visualRigScaleY > 0 ? visualRigScaleY : 1); // Chair sink uses actual world hip height, not pre-scale height.
                 const seatSink = Number.isFinite(scaledPosteriorY) ? seatTransform.y - scaledPosteriorY
                   : avatarGroup.userData?.avatarGroundLift === 0 ? 0 : -0.32; // Floor-relative compound bodies have no humanoid hip/leg solve to sink into a chair.
-                root.position.y += (groundY + seatSink - root.position.y) * (1 - Math.exp(-11.9 * dt)); // Framerate-independent seat-sink catch-up.
+                const seatBaseY = Number.isFinite(scaledPosteriorY) && Number.isFinite(seatTransform.worldY)
+                  ? seatTransform.worldY - seatTransform.y : groundY; // Live anchor already includes floor elevation and postY; do not add the scheduled tile elevation again.
+                root.position.y += (seatBaseY + seatSink - root.position.y) * (1 - Math.exp(-11.9 * dt)); // Framerate-independent seat-sink catch-up.
                 this.applyFacingDeadzone(-seatTransform.facingRad + Math.PI / 2, 1);
               } else {
                 root.position.y = groundY + (target.pose === 'lie' ? 0 : Math.sin(performance.now() / 600) * 0.005);
