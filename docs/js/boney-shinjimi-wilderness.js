@@ -54,6 +54,7 @@
   function clamp(n,a,b) { return Math.max(a,Math.min(b,n)); }
   function activeScene() { return window.GridTileAccessors?.getActiveScene?.() || null; }
   function area() { return String(deps?.getCurrentArea?.() || ''); }
+  function ownsActiveScene() { return !!encounterScene && area()===state.zone && activeScene()===encounterScene; } // Synchronous guard for input/callbacks between scheduler ticks.
   function tileSize() { return Math.max(1, finite(deps?.TILE,64)); }
   function layout() { return state.zone ? deps?.getZoneLayout?.(state.zone) : null; }
   function houseSector(home, map) {
@@ -498,7 +499,7 @@
     const inv = giftingDeps?.inventory;
     return state.phase === 'leaving' && !!state.reward && !sceneRunning
       && state.milksGiven < MAX_MILK_GIFTS && !!window.AuthoredCutsceneRuntime?.run
-      && area() === state.zone && !!walker && insideHome(playerTile(), 0.1)
+      && ownsActiveScene() && !!walker && insideHome(playerTile(), 0.1)
       && insideHome(position() && { x:position().x, z:position().z }, 0.1)
       && isMilkGift(held, giftingDeps) && (Number(inv?.[held.key]) || 0) > 0;
   }
@@ -536,6 +537,7 @@
     const milkKey = held.key; // Captures the offered stack while the asynchronously presented dialogue is open.
     const count = state.milksGiven; // Selects first, second, or third dialogue without changing the limit early.
     const encounterGeneration = generation; // Invalidates stale dialogue continuations after world reload, house teardown or encounter replacement.
+    const dialogueScene=encounterScene; // A scene swap can precede the next scheduled teardown.
     let handled = false; // A double Continue or an unsuccessful grant cannot retry the same milk handover mid-dialogue.
     sceneRunning = true; // Locks the action synchronously, before the cutscene promise yields.
     void (async () => {
@@ -543,7 +545,7 @@
         await window.AuthoredCutsceneRuntime.run(milkSceneDefinition(count), {
           onDialogueContinue(stage) {
             if (stage?.id !== 'milk_reward' || handled || generation !== encounterGeneration || state.phase !== 'leaving'
-              || state.milksGiven !== count || area() !== state.zone
+              || state.milksGiven !== count || !ownsActiveScene() || dialogueScene!==encounterScene
               || !insideHome(playerTile(), 0.1) || (Number(giftingDeps.inventory?.[milkKey]) || 0) <= 0) return;
             handled = true;
             const previousMilk = Number(giftingDeps.inventory[milkKey]); // Rollback value if the Fey weapon could not be granted.
@@ -572,7 +574,7 @@
           },
         });
       } catch(err) {
-        bumpEvent('Milk dialogue interrupted: ' + (err?.message || err));
+        if(generation===encounterGeneration&&ownsActiveScene())bumpEvent('Milk dialogue interrupted: ' + (err?.message || err));
       } finally {
         if(generation===encounterGeneration){sceneRunning = false;giftingDeps.refreshActionBar?.();} // A stale cutscene cannot unlock a newer dialogue.
       }
@@ -580,16 +582,17 @@
     return true; // The existing gift dispatcher is synchronous; the cutscene owns the actual handover.
   }
   async function enterScene() {
-    if(sceneRunning||state.phase!=='home'||!window.AuthoredCutsceneRuntime?.run)return;
+    if(sceneRunning||state.phase!=='home'||!ownsActiveScene()||!window.AuthoredCutsceneRuntime?.run)return;
     sceneRunning=true;state.phase='scene';
     const encounterGeneration=generation; // Restore/area unload must invalidate old choice callbacks just like milk callbacks.
+    const dialogueScene=encounterScene; // Compare live scene identity even before the update loop runs.
     let granted=false; // Reward must be granted once upon continuing the chosen response, not when the choice menu merely opens.
     const rewards={valuable_grant:'valuable',useful_grant:'useful',apologize_grant:'apologize',hat_sure:'hat'};
     try {
       await window.AuthoredCutsceneRuntime.run(sceneDefinition(),{
         onDialogueContinue(stage) {
           const kind=rewards[stage?.id];
-          if(!kind||granted||generation!==encounterGeneration||state.phase!=='scene'||area()!==state.zone)return;
+          if(!kind||granted||generation!==encounterGeneration||state.phase!=='scene'||!ownsActiveScene()||dialogueScene!==encounterScene)return;
           const prize=grantFeyReward(kind,deps);
           if(!prize){bumpEvent('Reward not available; encounter remains retriable');return;}
           granted=true;state.reward=prize;state.hatTaken=kind==='hat';
