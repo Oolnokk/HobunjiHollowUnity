@@ -600,7 +600,10 @@
       if (facingReady && previousCarrier.equals(group.matrixWorld) && previousCamera.equals(cameraPosition)
           && previousFacing.equals(mesh.quaternion)) {
         mesh.userData.ropeFacingReuses = (mesh.userData.ropeFacingReuses || 0) + 1;
-        if (mesh.matrixWorldNeedsUpdate) mesh.updateMatrixWorld();
+        // Local position/scale or a replay hook may have changed the leaf
+        // matrix even though its required facing is unchanged. Refresh it
+        // exactly as the uncached path does, without rebuilding the basis.
+        mesh.updateMatrixWorld();
         return;
       }
       previousCarrier.copy(group.matrixWorld);
@@ -666,7 +669,7 @@
     // Exact equilibrium only: a hanging, motionless connector with no
     // sideways acceleration has zero torque at every substep. No epsilon,
     // sleep threshold or reduced physical update rate.
-    if (w.x === 0 && w.y === 0 && w.z === 0 && Number.isFinite(ax) && Number.isFinite(ay) && Number.isFinite(az)
+    if (w.x === 0 && w.y === 0 && w.z === 0 && Number.isFinite(damping) && Number.isFinite(ax) && Number.isFinite(ay) && Number.isFinite(az)
         && d.y*az-d.z*ay === 0 && d.z*ax-d.x*az === 0 && d.x*ay-d.y*ax === 0) {
       if (typeof body.equilibriumSkips === 'number') body.equilibriumSkips += steps;
       return;

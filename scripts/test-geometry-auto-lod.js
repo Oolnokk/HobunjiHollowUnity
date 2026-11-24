@@ -158,7 +158,6 @@ assert.equal(lod.protectedMesh(authored),true,'GLBs must not be reduced again at
     renderer.render({isScene:true,children:[]},{layers:{mask:2}});
     assert.equal(lod.snapshot().renderGeometryChecks,beforeMasked);
     const matchingCamera={layers:{mask:2}};
-    const candidateBuilds=lod.snapshot().frameCandidateBuilds;
     const group={parent:scene,visible:false,children:[a,b]}; // Same world, temporarily hidden ancestor in a replay.
     a.parent=group; b.parent=group;
     rendered=[];
@@ -171,12 +170,14 @@ assert.equal(lod.protectedMesh(authored),true,'GLBs must not be reduced again at
     renderer.render(scene,matchingCamera);
     assert.equal(rendered[0].geo.index.count,360);
     assert.equal(rendered[1].geo.index.count,360);
-    assert.equal(lod.snapshot().frameCandidateBuilds,candidateBuilds,'all world passes reuse the scene candidate list');
-    assert(lod.snapshot().frameCandidateReuses>=2);
     group.parent={isScene:true,visible:true}; // A hook can move an existing holder out of the active scene.
     rendered=[];
     renderer.render(scene,matchingCamera);
     assert.equal(rendered[0].geo,actualOriginal,'cross-scene reparenting remains live within a frame');
+    group.parent=scene;
+    rendered=[];
+    renderer.render(scene,matchingCamera);
+    assert.equal(rendered[0].geo.index.count,360,'a holder reentering the scene is immediately eligible in the same frame');
     a.parent=scene; b.parent=scene;
     const position=actualOriginal.attributes.position;
     position.version++;

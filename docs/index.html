@@ -38,7 +38,7 @@
   <script src="js/xray-hierarchy.js?v=20261122babyFront1"></script>
   <script src="https://unpkg.com/three@0.128.0/examples/js/controls/TransformControls.js"></script>
   <script src="js/geometry-quality.js?v=20261110cloneaudit2"></script> <!-- Baked GLB quality profiles; source fallback. -->
-  <script src="js/geometry-auto-lod.js?v=20261124cpuHotpaths1"></script> <!-- Opt-in render-only idle-time optimization. -->
+  <script src="js/geometry-auto-lod.js?v=20261124cpuAudit2"></script> <!-- Opt-in render-only idle-time optimization. -->
   <script src="js/GLTFLoader.js?v=20260712d"></script>
   <script src="js/instanced-mesh-bounds.js?v=20261112meshbounds1"></script>
   <script src="js/WallBuilder.js?v=20261112h0cf072a"></script>
@@ -104,7 +104,7 @@
        toolEmoji/actionName/formatClock, so must load after it and before
        game.js, which calls window.HudUpdate.init(...) (binds its own
        itemPrev/itemNext listeners) during its own setup. -->
-  <script src="js/hud-update.js?v=20261124cpuHotpaths1"></script>
+  <script src="js/hud-update.js?v=20261124cpuAudit2"></script>
   <!-- Desktop/touch radial arc selector (tool/item wheels, ammo/potion
        entry menus, utilities wheel), extracted out of game.js; uses
        window.HudUpdate.refreshItemScroll, so must load after it and before
@@ -180,8 +180,8 @@
       window.SCRATCHBONES_CONFIG.game.assets.portrait.configBase = './config/';
     }
   </script>
-  <script src="js/beard-hood-cutout.js?v=20261124cpuHotpaths1"></script>
-  <script src="js/portrait-utils.js?v=20261124cpuHotpaths1"></script>
+  <script src="js/beard-hood-cutout.js?v=20261124cpuAudit2"></script>
+  <script src="js/portrait-utils.js?v=20261124cpuAudit2"></script>
   <script src="js/portrait-breathing.js?v=20260831syllable4"></script>
   <script src="js/npc-avatar-preview-utils.js?v=20261122hKasa3"></script>
   <script src="js/character-spine.js?v=20261112longoran1"></script>
@@ -342,9 +342,9 @@
        weapon-tool-stances.js / enemy-weapon-stances.js, and game.js. -->
   <script src="config/portrait-mouth-points.js?v=20261025mouth1"></script>
   <script src="js/combat/shared-attack-pose.js?v=20261111flailPose1"></script>
-  <script src="config/weapon-sprite-assemblies.js?v=20261124cpuHotpaths1"></script> <!-- Authoritative multi-sprite weapon recipes shared with Tool Hub. -->
+  <script src="config/weapon-sprite-assemblies.js?v=20261124cpuAudit2"></script> <!-- Authoritative multi-sprite weapon recipes shared with Tool Hub. -->
   <script src="js/weapon-layer-effects.js?v=20261115torchWick2"></script> <!-- Recolor, visibility masks and fire behind head overlays. -->
-  <script src="js/weapon-sprite-assemblies.js?v=20261124cpuHotpaths1"></script> <!-- Shared layered PNG weapon + flail component runtime; pre-render updates player and enemy assemblies. -->
+  <script src="js/weapon-sprite-assemblies.js?v=20261124cpuAudit2"></script> <!-- Shared layered PNG weapon + flail component runtime; pre-render updates player and enemy assemblies. -->
   <script src="js/tool-activity-stages.js?v=20261111modToolWork2"></script> <!-- NPC dig/tool-action stages. -->
   <!-- Combat stats, core, attack processing, player abilities, loadout and enchantment systems. Edit js/bootstrap/classic-groups/combat-main.js instead of this entrypoint. -->
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="combat-main"></script>

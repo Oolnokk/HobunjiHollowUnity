@@ -306,10 +306,15 @@
     parts.push('<div class="kh-group"><span class="kh-key">Esc</span><span class="kh-label">Menu</span></div>');
 
     const html = parts.join('');
-    if (keyHudMarkup.get(deps.keyHudEl) === html && deps.keyHudEl.firstChild) { keyHudWriteSkips++; return; }
-    deps.keyHudEl.innerHTML = html;
-    keyHudMarkup.set(deps.keyHudEl,html);
-    keyHudWrites++;
+    if (keyHudMarkup.get(deps.keyHudEl) === html && deps.keyHudEl.firstChild) keyHudWriteSkips++;
+    else {
+      deps.keyHudEl.innerHTML = html;
+      keyHudMarkup.set(deps.keyHudEl,html);
+      keyHudWrites++;
+    }
+    // The canonical sprite renderer already deduplicates identical requests.
+    // Recheck it even if the text matches: two items may share a label/icon,
+    // and item definitions or asynchronously loaded art can change independently.
     if (item) {
       deps.applyItemSpriteIcon(deps.keyHudEl.querySelector('.kh-item-icon'), deps.ITEM_DEFS[item.key], item.key);
     }

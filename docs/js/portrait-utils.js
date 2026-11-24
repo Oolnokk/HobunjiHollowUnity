@@ -858,7 +858,7 @@ const _BEARD_HOOD_RESULT_CACHE = new PortraitPixelCache(8 * 1024 * 1024, 32); //
 const _BEARD_HOOD_SOURCE_CACHE = new PortraitPixelCache(4 * 1024 * 1024, 24); // Pristine beard ImageData, never mutated by negotiation.
 const _BEARD_HOOD_IMAGE_IDS = new WeakMap(); // Identifies decoded canonical images without keeping them alive.
 let _beardHoodNextImageId = 0;
-const _beardHoodPerf = { hits:0, misses:0, beardReadHits:0, beardReads:0, bypasses:0 };
+const _beardHoodPerf = { hits:0, misses:0, beardReadHits:0, beardReads:0, hoodReadHits:0, bypasses:0 };
 function beardHoodLayerKey(layers, imgMap, resolveXform) {
   const parts = []; // Include the actual resolved art and transform, not merely a cosmetic name.
   for (const entry of layers) {
@@ -2164,13 +2164,15 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
       }
       const stretch = cutoutApi.stretchHoodToRoots(hoodScratch, tuftRoots, {
         maxStretch:beardAuthoring.maxStretch,subdivision:beardAuthoring.subdivision,
-        aboveInfluence:beardAuthoring.aboveInfluence,belowInfluence:beardAuthoring.belowInfluence
+        aboveInfluence:beardAuthoring.aboveInfluence,belowInfluence:beardAuthoring.belowInfluence,
+        retainUnchangedImageData:true
       });
+      if (stretch.unchangedImageData) _beardHoodPerf.hoodReadHits++;
       const result = cutoutApi.negotiateBeardHood(beardScratch, hoodScratch, paintedBeardMask, hoodPolicy.mask,
         {hoodMoves:stretch.moves,permissionMode:hoodPolicy.mode,coneSpread:hoodPolicy.coneSpread,
           topConeSpread:hoodPolicy.topConeSpread,topUpConeSpread:hoodPolicy.topUpConeSpread,
           topDownConeLength:hoodPolicy.topDownConeLength,hoodAlphaFloor:hoodPolicy.alphaFloor,whiskerMask,
-          requestMode:beardAuthoring.requestMode,beardImageData});
+          requestMode:beardAuthoring.requestMode,beardImageData,unchangedHoodImageData:stretch.unchangedImageData});
       if (!result.error) {
         negotiatedBeard = beardScratch;
         negotiatedHood = hoodScratch;

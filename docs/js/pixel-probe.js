@@ -759,7 +759,7 @@
     const portraitCpu=window.__portraitPixelCacheDebug?.()?.beardHood; // On-demand CPU-readback counters.
     if(portraitCpu) lines.push(`Beard/hood CPU cache: ${JSON.stringify(portraitCpu)}`);
     const lodCpu=window.GeometryAutoLOD?.snapshot?.();
-    if(lodCpu) lines.push(`Geometry AutoLOD CPU: ${JSON.stringify({candidateBuilds:lodCpu.frameCandidateBuilds,candidateReuses:lodCpu.frameCandidateReuses,visits:lodCpu.candidateVisits,hiddenSkips:lodCpu.hiddenAncestorSkips,geometryChecks:lodCpu.renderGeometryChecks})}`);
+    if(lodCpu) lines.push(`Geometry AutoLOD CPU: ${JSON.stringify({visits:lodCpu.candidateVisits,hiddenSkips:lodCpu.hiddenAncestorSkips,geometryChecks:lodCpu.renderGeometryChecks})}`);
     const keyHudCpu=window.__keyHudWriteDebug?.();
     if(keyHudCpu) lines.push(`Key HUD writes: ${JSON.stringify(keyHudCpu)}`);
     const erroring = entries.filter(entry => entry.errorCount > 0);

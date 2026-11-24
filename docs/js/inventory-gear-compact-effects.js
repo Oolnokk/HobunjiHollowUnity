@@ -508,6 +508,10 @@
 
     let lastGearVisible = gearActuallyVisible(pane); // Tracks Gear tab, active inventory pane, AND the menu's actual open class.
     inventoryMutationObserver = new MutationObserver((records) => {
+      const gearActive = gearActuallyVisible(pane);
+      const visibilityChanged = gearActive !== lastGearVisible;
+      lastGearVisible = gearActive;
+      if (!gearActive && !visibilityChanged) { fitStats.ignoredMutations += records.length; return; } // No record array allocation while gameplay is active.
       records = records.filter(record => {
         const target = record.target;
         if (record.type !== 'attributes' || record.attributeName !== 'data-menu-font-floor' || !ownFloorRemovals.has(target)) return true;
@@ -517,10 +521,7 @@
         fitStats.ownFloorSkips++;
         return false;
       });
-      if (!records.length) return;
-      const gearActive = gearActuallyVisible(pane);
-      const visibilityChanged = gearActive !== lastGearVisible;
-      lastGearVisible = gearActive;
+      if (!records.length && !visibilityChanged) return;
       const relevant = visibilityChanged || (gearActive && records.some((record) => {
         const target = record.target?.nodeType === 1 ? record.target : record.target?.parentElement;
         if (target?.closest?.('.gear-active-buff-list')) return false; // One-second buff countdown, icon, or description updates cannot change the independent right-hand item-detail geometry.
