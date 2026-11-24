@@ -14,7 +14,7 @@
 (() => {
   'use strict';
 
-  const VERSION = 28; // 2026-11-23: adult proportions match main 493ccfb: legacy shared Height becomes both portrait Y and independent legLength. Other runtime/rig improvements remain available.
+  const VERSION = 29; // 2026-11-24: calibrate the common world-size multiplier to a 6'3" default adult Mao'ao male, without rewriting authored species ratios.
   const NUHONGAN_PART_SCALE_AXES = Object.freeze({ x: 31 / 24, y: 31 / 24, z: 31 / 24 }); // Mean of prior inverse 0.8/0.75 adjustments: keep donor-sized extremities without stretching one axis.
   const NUHONGAN_HAND_SCALE_AXES = Object.freeze({ x: 31 / 24 * 0.88, y: 31 / 24 * 0.88, z: 31 / 24 * 0.88 }); // Nov 22: Nuhongan hands a little smaller (88%) than the shared extremity size; feet keep NUHONGAN_PART_SCALE_AXES.
   // Longoran extremities are thinner, never shorter (lanky look). Axes are in the
@@ -44,6 +44,18 @@
     'mammakhbuur::male': Object.freeze({ x: 0.96, y: 1.69, legLength: 1.69, head: 0.9771, offsetY: -0.095 }),
     'mammakhbuur::female': Object.freeze({ x: 1.0153, y: 1.3331, legLength: 1.3331, head: 0.8402, offsetY: -0.02 }),
   });
+  // Reference: chairSimple.json's authored back top is 0.431 + 0.458/2 = 0.660 world units.
+  // As in the six-foot overlay, that complete chair corresponds to approximately 3 feet.
+  const CHAIR_BACK_WORLD_HEIGHT = 0.431 + 0.458 / 2; // Single physical yardstick shared with Full Character Scale's six-foot ruler.
+  const MAOAO_BASE_MODEL_HEIGHT = 0.9; // Gameplay pngPlaneAvatar.worldModelWidth; Mao'ao adult portraitScaleBySpecies is 1.
+  const MAOAO_ADULT_DEFAULT_HEIGHT = VALUES['mao-ao::male'].y; // Main-authored Mao'ao body height, before new world calibration.
+  const WORLD_HEIGHT_CALIBRATION = Object.freeze({
+    chairReference: 'chairSimple', chairBackWorldHeight: CHAIR_BACK_WORLD_HEIGHT, chairHeightFeet: 3,
+    referenceSpecies: 'mao-ao', referenceGender: 'male', targetFeet: 6.25,
+    referenceUnscaledWorldHeight: MAOAO_BASE_MODEL_HEIGHT * MAOAO_ADULT_DEFAULT_HEIGHT,
+    targetWorldHeight: CHAIR_BACK_WORLD_HEIGHT * (6.25 / 3),
+    uniformScale: (CHAIR_BACK_WORLD_HEIGHT * (6.25 / 3)) / (MAOAO_BASE_MODEL_HEIGHT * MAOAO_ADULT_DEFAULT_HEIGHT),
+  }); // Applied once at the assembled floor-parent transform to all humanlike avatars (including saved overrides); species relative proportions stay unchanged.
   const ALIASES = Object.freeze({ rakakoan: 'kenkari', ghoul: 'mao-ao', 'harlyao-skeleton': 'harlyao', 'mao-ao-skeleton': 'mao-ao' }); // Transform-equivalent NPC-only species inherit shared full-rig defaults; Harlyao Skeleton deliberately shares Harlyao's 1.2x Engh-sho scale.
   const MAOAO_FOOT_SCALE = Object.freeze({ male: 1.3125, female: 1.28125 }); // +25% over the canonical authored Mao-ao foot scales (1.05 male / 1.025 female).
 
@@ -73,6 +85,7 @@
     version: VERSION,
     coordinateSpace: 'character-floor-parent',
     values: VALUES,
+    worldHeightCalibration: WORLD_HEIGHT_CALIBRATION, // Consumed by the gameplay/editor shared parent scaler; numeric authored values remain unchanged for save compatibility.
     nuhonganPartScaleAxes: NUHONGAN_PART_SCALE_AXES,
     nuhonganHandScaleAxes: NUHONGAN_HAND_SCALE_AXES,
     longoranHandScaleAxes: LONGORAN_HAND_SCALE_AXES,
