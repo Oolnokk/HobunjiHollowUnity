@@ -18,7 +18,9 @@
       }
     },
     "layers": {
-      "base": "A"
+      "base": "A",
+      "exposed": "NONE",
+      "exposedSkin": "BODY"
     }
   },
   "speciesVariants": {
@@ -82,6 +84,66 @@
               },
               "behindImage": {
                 "url": "./assets/cosmetics/clothes/hood/mashtz_finehood-back_m.png"
+              }
+            },
+            "front_exposed_ear": {
+              "layerRole": "exposedSkin",
+              "image": {
+                "exposedPart": "ear",
+                "url": "./assets/fightersprites/mashtzarr-m/exposed_ear.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              }
+            },
+            "front_exposed_tusk": {
+              "layerRole": "exposed",
+              "image": {
+                "exposedPart": "tusk",
+                "url": "./assets/fightersprites/mashtzarr-m/exposed_tusk.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              }
+            },
+            "front_exposed_trunk": {
+              "layerRole": "exposedSkin",
+              "image": {
+                "exposedPart": "trunk",
+                "url": "./assets/fightersprites/mashtzarr-m/exposed_trunk.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
               }
             }
           }
@@ -379,6 +441,66 @@
               },
               "behindImage": {
                 "url": "./assets/cosmetics/clothes/hood/mashtz_finehood-back_f.png"
+              }
+            },
+            "front_exposed_ear": {
+              "layerRole": "exposedSkin",
+              "image": {
+                "exposedPart": "ear",
+                "url": "./assets/fightersprites/mashtzarr-f/exposed_ear.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              }
+            },
+            "front_exposed_tusk": {
+              "layerRole": "exposed",
+              "image": {
+                "exposedPart": "tusk",
+                "url": "./assets/fightersprites/mashtzarr-f/exposed_tusk.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              }
+            },
+            "front_exposed_trunk": {
+              "layerRole": "exposedSkin",
+              "image": {
+                "exposedPart": "trunk",
+                "url": "./assets/fightersprites/mashtzarr-f/exposed_trunk.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
               }
             }
           }

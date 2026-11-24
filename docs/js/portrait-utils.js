@@ -1213,6 +1213,18 @@ function eyeAccessoryLayersAboveUnderHoodHat(eyes, hat) {
   return hasPortraitTag(eyes, eyeAccessoryAboveUnderHoodHatTag);
 }
 
+// Role of one cosmetic hood layer inside the crafted fur-hood stack
+// (FurHoodLeatherworking.orderLayersForView). Exposed wearer anatomy
+// (mashtzarr ear/tusk/trunk) keeps its authored side of the trim instead of
+// being sorted in with the hood fabric under the animal pieces.
+function furHoodStackRole(layer, index, layers) {
+  if (layer?.layerRole === 'exposed' || layer?.layerRole === 'exposedSkin') {
+    const trimIndex = layers.findIndex(other => other?.paletteColorKey === 'B' && other?.layerRole !== 'exposed' && other?.layerRole !== 'exposedSkin');
+    return trimIndex >= 0 && index < trimIndex ? 'exposedUnderTrim' : 'exposed';
+  }
+  return layer?.paletteColorKey === 'B' ? 'trim' : 'base';
+}
+
 function furHoodProfileLayers(profile) {
   const descriptors = profile?.bodyColors?.__hobunjiWovenClothing; // Item-specific decoration metadata shared by saved player and NPC portrait builders.
   const furHood = Array.isArray(descriptors) ? descriptors.find(item => item?.slot === 'hood' && item?.furHood)?.furHood : null;
@@ -1298,7 +1310,7 @@ function getProfileSpriteXforms(profile) {
     const hoodFront = resolveOptionLayers(hood, resolvedFighter).filter(layer => layer.pos !== 'back'); // Keep the exact wearer-fit hood sprite and transforms.
     const furPieces = furHoodProfileLayers(profile); // Both front/back-named animal pieces are visible in the hood stack.
     if(profile?.bodyColors?.__hobunjiWovenClothing?.some(item=>item?.slot==='hood' && item?.furHood)){
-      const stack=[...hoodFront.map(layer=>({role:layer.paletteColorKey==='B'?'trim':'base',layer})),
+      const stack=[...hoodFront.map((layer,index)=>({role:furHoodStackRole(layer,index,hoodFront),layer})),
         ...furPieces.map(layer=>({role:layer.role,layer}))]; // Match the rendered front plane's exact layer order.
       for(const entry of window.FurHoodLeatherworking?.orderLayersForView?.(stack,'front')||stack)
         records.push(toRecord('cosmetic',entry.layer,{group:hood?.id||null,pos:'front'}));
@@ -1665,8 +1677,9 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
           : tintFor(resolveLayerTintSlot(part.paletteColorKey,hood.tintSlot)); // Drenkirra front and all other parts tint independently of trim.
       };
       if(furData){
-        const stack=[...groupLayers.filter(layer=>layer.pos!=='back').map(layer=>({
-          role:layer.paletteColorKey==='B'?'trim':'base',
+        const frontHoodLayers=groupLayers.filter(layer=>layer.pos!=='back');
+        const stack=[...frontHoodLayers.map((layer,index)=>({
+          role:furHoodStackRole(layer,index,frontHoodLayers),
           layer,tint:tintFor(resolveLayerTintSlot(layer.paletteColorKey,hood.tintSlot)),group:hood,metalState,
         })),...animalParts.map(part=>({role:part.role,layer:part,tint:tintForAnimalPart(part),group:hood,metalState:null}))];
         // Front: animal back, base, animal front, trim. Rear: trim, animal front, furhood-behind, animal back.
@@ -2262,6 +2275,7 @@ function _extractLayersFromParts(partsJson, paletteLayerMap, allowNonPortraitAss
             sy:  xf.scaleY ?? 1,
             pos: layerName === 'back' ? 'back' : 'front',
             paletteColorKey,
+            layerRole, // Lets layered renderers (fur-hood stack) keep exposed wearer anatomy in its authored place.
             pixelDye: layer.pixelDye || null,
             materialKind: layer.materialKind || null, // Per-layer hybrid material survives cosmetic portrait layer extraction.
             xformPreset: 'B',

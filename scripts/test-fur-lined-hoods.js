@@ -45,8 +45,9 @@ for (const [key, variant] of Object.entries(fine.speciesVariants)) {
   assert.equal(lined.speciesVariants[key].parts.head.layers.front_trim.behindImage, undefined, key + ': fur trim must not override the rear sprite');
   const gender = key.split('_').at(-1); // Selects the same male/female rear-view resolver option as the portrait renderer.
   const expectedRuntimeBack = expectedBackUrl.replace(/^\.\/assets\//, ''); // The runtime stores asset paths relative to docs/assets.
-  const simpleLayers = liveSimple.variantLayers[key]; // Shared Fine Hood back art must be selected through the live renderer, not just JSON.
-  const linedLayers = liveLined.variantLayers[key]; // The live renderer must discard only the fur trim when facing away.
+  const wearable = layers => (layers || []).filter(layer => !/\/exposed_[a-z]+\.png$/.test(layer.url || '')); // Mashtzarr exposed ear/tusk/trunk overlays are wearer anatomy, not hood fabric.
+  const simpleLayers = wearable(liveSimple.variantLayers[key]); // Shared Fine Hood back art must be selected through the live renderer, not just JSON.
+  const linedLayers = wearable(liveLined.variantLayers[key]); // The live renderer must discard only the fur trim when facing away.
   assert.equal(simpleLayers?.length, 1, key + ': Simple Hood must have one layer');
   assert.equal(linedLayers?.length, 2, key + ': Fur-lined Hood must retain base and trim for its front view');
   assert.equal(portraitContext._getBehindLayerUrl(simpleLayers[0], liveSimple, gender), expectedRuntimeBack, key + ': Simple Hood resolver did not select Fine Hood art');
@@ -69,7 +70,7 @@ assert.deepEqual(trophyHoodLayers.map(entry=>entry.layer.paletteColorKey), ['A',
 for (const [key, suffix] of [['tletingan_male', 'tl_m'], ['mashtzarr_male', 'mashtz_m']]) {
   const plain = simple.speciesVariants[key].parts.head.layers;
   const fur = lined.speciesVariants[key].parts.head.layers;
-  assert.deepEqual(Object.keys(plain), ['front'], key + ' plain hood must contain no trim');
+  assert.deepEqual(Object.keys(plain).filter(name => !name.startsWith('front_exposed_')), ['front'], key + ' plain hood must contain no trim');
   assert.equal(plain.front.layerRole, 'base');
   assert.equal(plain.front.image.url, './assets/cosmetics/clothes/hood/simplehood_' + suffix + '.png');
   assert.equal(fur.front.image.url, plain.front.image.url);

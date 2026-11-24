@@ -12,7 +12,9 @@
       }
     },
     "layers": {
-      "base": "A"
+      "base": "A",
+      "exposed": "NONE",
+      "exposedSkin": "BODY"
     }
   },
   "speciesVariants": {
@@ -756,6 +758,661 @@
                 "colors": [
                   "A"
                 ]
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              }
+            },
+            "front_exposed_ear": {
+              "layerRole": "exposedSkin",
+              "image": {
+                "exposedPart": "ear",
+                "url": "./assets/fightersprites/mashtzarr-m/exposed_ear.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              }
+            },
+            "front_exposed_tusk": {
+              "layerRole": "exposed",
+              "image": {
+                "exposedPart": "tusk",
+                "url": "./assets/fightersprites/mashtzarr-m/exposed_tusk.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              }
+            },
+            "front_exposed_trunk": {
+              "layerRole": "exposedSkin",
+              "image": {
+                "exposedPart": "trunk",
+                "url": "./assets/fightersprites/mashtzarr-m/exposed_trunk.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "beardCutoutPermissionMode": "painted",
+      "beardCutoutConeSpread": 0.625,
+      "beardCutoutTopConeSpread": null,
+      "beardCutoutTopUpConeSpread": 3,
+      "beardCutoutTopDownConeLength": 0,
+      "beardCutoutPaintAlphaFloor": 247,
+      "beardCutoutAllowedMask": {
+        "size": 200,
+        "runs": [
+          [
+            0,
+            12107
+          ],
+          [
+            12111,
+            190
+          ],
+          [
+            12311,
+            186
+          ],
+          [
+            12512,
+            180
+          ],
+          [
+            12712,
+            176
+          ],
+          [
+            12914,
+            171
+          ],
+          [
+            13122,
+            160
+          ],
+          [
+            13326,
+            152
+          ],
+          [
+            13533,
+            143
+          ],
+          [
+            13734,
+            140
+          ],
+          [
+            13936,
+            136
+          ],
+          [
+            14137,
+            133
+          ],
+          [
+            14338,
+            129
+          ],
+          [
+            14538,
+            127
+          ],
+          [
+            14739,
+            123
+          ],
+          [
+            14939,
+            121
+          ],
+          [
+            15140,
+            118
+          ],
+          [
+            15341,
+            115
+          ],
+          [
+            15542,
+            111
+          ],
+          [
+            15743,
+            108
+          ],
+          [
+            15945,
+            102
+          ],
+          [
+            16146,
+            99
+          ],
+          [
+            16281,
+            1
+          ],
+          [
+            16348,
+            94
+          ],
+          [
+            16479,
+            2
+          ],
+          [
+            16549,
+            90
+          ],
+          [
+            16679,
+            1
+          ],
+          [
+            16750,
+            87
+          ],
+          [
+            16878,
+            1
+          ],
+          [
+            16951,
+            84
+          ],
+          [
+            17077,
+            1
+          ],
+          [
+            17152,
+            80
+          ],
+          [
+            17353,
+            76
+          ],
+          [
+            17476,
+            1
+          ],
+          [
+            17554,
+            73
+          ],
+          [
+            17755,
+            70
+          ],
+          [
+            17955,
+            70
+          ],
+          [
+            18156,
+            69
+          ],
+          [
+            18356,
+            71
+          ],
+          [
+            18557,
+            71
+          ],
+          [
+            18757,
+            73
+          ],
+          [
+            18958,
+            75
+          ],
+          [
+            19158,
+            77
+          ],
+          [
+            19358,
+            79
+          ],
+          [
+            19559,
+            79
+          ],
+          [
+            19759,
+            81
+          ],
+          [
+            19959,
+            82
+          ],
+          [
+            20160,
+            82
+          ],
+          [
+            20360,
+            83
+          ],
+          [
+            20561,
+            82
+          ],
+          [
+            20761,
+            83
+          ],
+          [
+            20961,
+            83
+          ],
+          [
+            21162,
+            83
+          ],
+          [
+            21362,
+            83
+          ],
+          [
+            21518,
+            2
+          ],
+          [
+            21562,
+            83
+          ],
+          [
+            21718,
+            2
+          ],
+          [
+            21763,
+            82
+          ],
+          [
+            21918,
+            2
+          ],
+          [
+            21925,
+            2
+          ],
+          [
+            21941,
+            2
+          ],
+          [
+            21963,
+            83
+          ],
+          [
+            22112,
+            18
+          ],
+          [
+            22139,
+            5
+          ],
+          [
+            22164,
+            82
+          ],
+          [
+            22307,
+            26
+          ],
+          [
+            22338,
+            7
+          ],
+          [
+            22364,
+            82
+          ],
+          [
+            22505,
+            29
+          ],
+          [
+            22537,
+            9
+          ],
+          [
+            22564,
+            82
+          ],
+          [
+            22704,
+            42
+          ],
+          [
+            22764,
+            82
+          ],
+          [
+            22904,
+            44
+          ],
+          [
+            22966,
+            80
+          ],
+          [
+            23104,
+            45
+          ],
+          [
+            23166,
+            79
+          ],
+          [
+            23304,
+            46
+          ],
+          [
+            23366,
+            79
+          ],
+          [
+            23504,
+            47
+          ],
+          [
+            23566,
+            78
+          ],
+          [
+            23704,
+            47
+          ],
+          [
+            23767,
+            76
+          ],
+          [
+            23904,
+            47
+          ],
+          [
+            23954,
+            1
+          ],
+          [
+            23967,
+            76
+          ],
+          [
+            24103,
+            47
+          ],
+          [
+            24152,
+            4
+          ],
+          [
+            24167,
+            75
+          ],
+          [
+            24302,
+            55
+          ],
+          [
+            24367,
+            74
+          ],
+          [
+            24491,
+            67
+          ],
+          [
+            24568,
+            72
+          ],
+          [
+            24690,
+            69
+          ],
+          [
+            24769,
+            70
+          ],
+          [
+            24889,
+            72
+          ],
+          [
+            24969,
+            69
+          ],
+          [
+            25088,
+            74
+          ],
+          [
+            25169,
+            69
+          ],
+          [
+            25287,
+            76
+          ],
+          [
+            25368,
+            69
+          ],
+          [
+            25487,
+            77
+          ],
+          [
+            25568,
+            69
+          ],
+          [
+            25686,
+            79
+          ],
+          [
+            25768,
+            68
+          ],
+          [
+            25885,
+            81
+          ],
+          [
+            25967,
+            69
+          ],
+          [
+            26085,
+            149
+          ],
+          [
+            26283,
+            151
+          ],
+          [
+            26479,
+            154
+          ],
+          [
+            26676,
+            158
+          ],
+          [
+            26874,
+            160
+          ],
+          [
+            27038,
+            12
+          ],
+          [
+            27072,
+            184
+          ],
+          [
+            27270,
+            189
+          ],
+          [
+            27469,
+            193
+          ],
+          [
+            27668,
+            198
+          ],
+          [
+            27867,
+            12133
+          ]
+        ]
+      }
+    },
+    "mashtzarr_female": {
+      "parts": {
+        "head": {
+          "layers": {
+            "back": {
+              "layerRole": "base",
+              "image": {
+                "url": "./assets/cosmetics/clothes/hood/mashtz_raggedhood-back_m.png",
+                "colors": [
+                  "A"
+                ]
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              }
+            },
+            "front": {
+              "layerRole": "base",
+              "image": {
+                "url": "./assets/cosmetics/clothes/hood/mashtz_raggedhood_m.png",
+                "colors": [
+                  "A"
+                ]
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              }
+            },
+            "front_exposed_ear": {
+              "layerRole": "exposedSkin",
+              "image": {
+                "exposedPart": "ear",
+                "url": "./assets/fightersprites/mashtzarr-f/exposed_ear.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              }
+            },
+            "front_exposed_tusk": {
+              "layerRole": "exposed",
+              "image": {
+                "exposedPart": "tusk",
+                "url": "./assets/fightersprites/mashtzarr-f/exposed_tusk.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              }
+            },
+            "front_exposed_trunk": {
+              "layerRole": "exposedSkin",
+              "image": {
+                "exposedPart": "trunk",
+                "url": "./assets/fightersprites/mashtzarr-f/exposed_trunk.png"
               },
               "spriteStyle": {
                 "base": {
