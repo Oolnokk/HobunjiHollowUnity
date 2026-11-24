@@ -30,6 +30,9 @@
   let selected = null;
   let previewRoot = null; // Holds comparison-only avatar groups and is never registered in Animation Author mode state.
   let chair = null;
+  let sixFootGuide = null; // One camera-facing 6 ft reference behind the lineup, independent of camera-fit bounds.
+  let sixFootHeight = null; // World-space reference computed once from the authored chair back height.
+  let sixFootGuideDepth = 2; // Cached depth needed to remain behind all chair/character geometry; updated only during lineup layout.
   let THREE = null;
   let persistTimer = 0;
   let handScaleTimer = 0; // Debounces hand-GLB rebuilds during touch drags; numeric profile changes still save immediately.
@@ -1334,16 +1337,71 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
     return group;
   }
 
+  function installSixFootGuide(referenceChair, scene) {
+    if (!THREE || !referenceChair || !scene) return;
+    const bounds = new THREE.Box3().setFromObject(referenceChair);
+    if (bounds.isEmpty()) return;
+    const chairBackHeight = bounds.max.y - Math.min(0, bounds.min.y); // Authored chairSimple back top from real JSON geometry.
+    if (!(chairBackHeight > 0)) return;
+    sixFootHeight = chairBackHeight * (6 / 3); // A standard ~3 ft full chair height is the game's physical ruler; 6 ft = two chair backs.
+    const line = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({
+      color: 0xb6c9d6, transparent: true, opacity: 0.58, depthTest: true, depthWrite: false, side: THREE.DoubleSide,
+    })); // Single 1.5-screen-pixel stripe; no shadows, textures or extra scene searches per frame.
+    line.name = 'FullScaleReference_sixFootLine';
+    line.frustumCulled = false; // Its camera-following position changes during onBeforeRender, after frustum tests.
+    line.renderOrder = -1000; // Draw behind portrait sprites; their depth/alpha remains in front of the marker.
+    line.userData.fullCharacterScalePreviewOnly = true;
+    line.userData.referenceHeightFeet = 6;
+    const forward = new THREE.Vector3(); // Reused per draw; camera direction towards the center of the lineup.
+    const rotation = new THREE.Quaternion(); // Reused per draw; billboard faces the live orbit/pinch camera.
+    const projected = new THREE.Vector3(); // Camera-space projection of the proposed world-height marker.
+    const center = new THREE.Vector3(); // NDC-to-world horizontal centering at the reference depth.
+    const edgeL = new THREE.Vector3(); // Clip-space left extent, unprojected at that depth.
+    const edgeR = new THREE.Vector3(); // Clip-space right extent, unprojected at that depth.
+    const edgeTop = new THREE.Vector3(); // Clip-space top extent for constant pixel-thickness.
+    const edgeBottom = new THREE.Vector3(); // Clip-space bottom extent for constant pixel-thickness.
+    const fallbackTarget = new THREE.Vector3(); // Used when the backdrop has no OrbitControls target.
+    line.onBeforeRender = (_renderer, _scene, camera) => {
+      if ((!active && !building) || !camera || !previewRoot) return;
+      camera.getWorldDirection(forward); // Orbit controls can rotate freely; stay behind the characters along viewing direction.
+      forward.y = 0;
+      if (forward.lengthSq() < 1e-8) forward.set(0, 0, -1);
+      else forward.normalize();
+      const target = window.HobunjiGameplayBackdrop?.getCameraControls?.()?.target || fallbackTarget;
+      line.position.set(target.x + forward.x * sixFootGuideDepth, sixFootHeight, target.z + forward.z * sixFootGuideDepth);
+      projected.copy(line.position).project(camera);
+      if (![projected.x, projected.y, projected.z].every(Number.isFinite)) return;
+      center.set(0, projected.y, projected.z).unproject(camera);
+      line.position.x += center.x - line.position.x; // Fix the horizontal shift from the orthographic author sidebar.
+      line.position.z += center.z - line.position.z; // Still level at precisely six feet, even when orbiting.
+      edgeL.set(-1, projected.y, projected.z).unproject(camera);
+      edgeR.set(1, projected.y, projected.z).unproject(camera);
+      edgeTop.set(0, 1, projected.z).unproject(camera);
+      edgeBottom.set(0, -1, projected.z).unproject(camera);
+      const viewWidth = edgeL.distanceTo(edgeR);
+      const viewHeight = edgeTop.distanceTo(edgeBottom);
+      const pixels = Math.max(1, document.getElementById('view3d')?.clientHeight || 450);
+      camera.getWorldQuaternion(rotation);
+      line.quaternion.copy(rotation);
+      line.scale.set(viewWidth * 1.04, viewHeight / pixels * 1.5, 1); // Width tracks zoom; line remains ~1.5 pixels thick on mobile.
+      line.updateMatrixWorld(true); // onBeforeRender runs after the renderer's normal world-matrix update.
+    };
+    scene.add(line); // Keep OUTSIDE previewRoot so Frame lineup and Focus do not include the screen-following ruler.
+    sixFootGuide = line;
+  }
+
   function layout() {
     if (!THREE || !entries.length || !previewRoot) return;
     if (chair) chair.parent?.remove?.(chair);
     let cursor = 0;
+    let minDepth = Infinity, maxDepth = -Infinity; // Cached Box3 depth of all previews; avoids an all-NPC traversal on each camera frame.
     let previous = null; // Family boundaries get more breathing room than male/female companions, without extra geometry.
     for (const entry of entries) {
       cursor += lineupSpacing(previous, entry); // Linear pass: no sorting or scene-wide search during size edits.
       entry.group.position.set(0,0,0);
       entry.group.updateMatrixWorld(true);
       const box = new THREE.Box3().setFromObject(entry.group);
+      minDepth = Math.min(minDepth, box.min.z); maxDepth = Math.max(maxDepth, box.max.z); // Reuse the Box3 already computed for pair spacing.
       const width = Math.max(0.45, box.getSize(new THREE.Vector3()).x);
       const centerX = box.getCenter(new THREE.Vector3()).x;
       entry._lineX = cursor + width / 2 - centerX;
@@ -1355,10 +1413,12 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
       chair.position.set(cursor + 0.48,0,0);
       chair.updateMatrixWorld(true);
       const box = new THREE.Box3().setFromObject(chair);
+      minDepth = Math.min(minDepth, box.min.z); maxDepth = Math.max(maxDepth, box.max.z); // Chair must also stay in front of the ruler.
       const width = Math.max(0.45, box.getSize(new THREE.Vector3()).x);
       chair.position.x += width / 2 - box.getCenter(new THREE.Vector3()).x;
       cursor += 0.48 + width;
     }
+    if (Number.isFinite(minDepth) && Number.isFinite(maxDepth)) sixFootGuideDepth = Math.max(1.5, Math.abs(minDepth), Math.abs(maxDepth)) + 1; // Conservative back-plane distance for all orbit directions.
     const shift = cursor / 2;
     for (const entry of entries) entry.group.position.x = entry._lineX - shift;
     if (chair) chair.position.x -= shift;
@@ -1503,6 +1563,7 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
     const finishedChair = await buildChair();
     if (buildId !== generation) return;
     chair = finishedChair;
+    installSixFootGuide(chair, scene); // Uses chairSimple's measured back top; scene-owned so camera fitting excludes the line.
     layout();
     // The final chair/layout must not undo manually chosen camera orientation or placement.
     window.ProceduralHandFrameDriver?.syncNow?.();
@@ -1538,6 +1599,15 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
       try { entry.group?.parent?.remove?.(entry.group); } catch (_) {}
     }
     entries = [];
+    if (sixFootGuide) {
+      sixFootGuide.parent?.remove?.(sixFootGuide);
+      sixFootGuide.onBeforeRender = () => {}; // Clear captured camera/scene references on editor exit.
+      sixFootGuide.geometry.dispose();
+      sixFootGuide.material.dispose();
+      sixFootGuide = null;
+      sixFootHeight = null;
+      sixFootGuideDepth = 2;
+    }
     if (chair) {
       try { chair.parent?.remove?.(chair); } catch (_) {}
       chair.traverse?.(node => {
@@ -1668,6 +1738,7 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
         active,
         building,
         isolation: { ...isolationDebug, nativeWorkspaceHidden: !!nativeWorkspaceVisibility }, // Mobile-visible: zero project imports and balanced scene isolation.
+        sixFootReference: { visible: !!sixFootGuide?.parent, worldHeight: sixFootHeight, feet: 6, chairReferenceFeet: 3, behindDepth: sixFootGuideDepth }, // Persistent mobile diagnostics without console access.
         exiting: !!exitingPromise, // Visible mobile diagnostic while an actor import is running.
         requestedTab: pendingExitMode, // Last native mode requested by the user.
         currentTabMode: document.body.dataset.animationAuthorMode,
