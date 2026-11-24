@@ -1052,7 +1052,7 @@
         row.setAttribute('role', 'group');
         menuCategoryBar.appendChild(row);
       }
-      const label = navigationLabel(owner) + ' categories'; // Accessible names distinguish the hierarchy levels.
+      const label = (owner === menuPageRoot ? (owner.closest('.mp-pane')?.id || owner.id).replace(/^mp/, '').replace(/([a-z])([A-Z])/g, '$1 $2') : navigationLabel(owner)) + ' categories'; // Accessible names distinguish the hierarchy levels.
       if (row.getAttribute('aria-label') !== label) row.setAttribute('aria-label', label);
       updateSectionChoices(row, { node: owner }, subtabsByGroup.get(owner), panel);
     });
@@ -1088,11 +1088,13 @@
           const prior = remembered.get(owner);
           const prepared = prior
             ? prepareSubtabsWithMemory(owner, panel, prior.id || null, prior.id ? 0 : Math.max(0, prior.index), false)
-            : prepareSubtabs(owner, panel, owner.getAttribute('data-ctrl-initial-subtab'));
+            : prepareSubtabs(owner, panel, owner.getAttribute('data-ctrl-initial-subtab') || (owner.id === 'farmLivestockList' ? 'livestockNurseryAdults' : null)); // Prefer the ordinary livestock page until the Nursery is chosen.
           if (!prepared) { menuPageLeaf = owner; break; }
         }
         owners.push(owner);
-        owner = subtabsByGroup.get(owner).selected; // Nested categories follow the selected parent only.
+        const selected = subtabsByGroup.get(owner).selected; // Nested categories follow the selected parent only.
+        // The Nursery is authored inside a separate controller group, not a direct Farm section.
+        owner = selected.id === 'farmSectionLivestock' ? selected.querySelector('#farmLivestockList[data-ctrl-group]') || selected : selected;
       }
       for (const previous of previousOwners.reverse()) if (!owners.includes(previous)) restoreSubtabs(previous);
       menuPageOwners = owners;
@@ -1477,7 +1479,7 @@
     // below, so detail-only rebuilds must not re-run the whole subtab/focus/hint reconcile per press.
     const focusOutsideDetail = !!currentTarget?.isConnected && !currentTarget.closest('[data-ctrl-detail-panel]');
     const inOwnDetailPanel = target => focusOutsideDetail && !!target?.closest?.('[data-ctrl-detail-panel]');
-    const panelContentChanged = !!panel && (!currentTarget || subtabsByGroup.size > 0) && records.some(record => panel.contains(record.target) && record.target !== hintEl && !hintEl?.contains(record.target) && !menuCategoryBar?.contains(record.target) && !inOwnDetailPanel(record.target.nodeType === 1 ? record.target : record.target.parentElement));
+    const panelContentChanged = !!panel && (!currentTarget || subtabsByGroup.size > 0 || panel.id === 'menuPanel') && records.some(record => panel.contains(record.target) && record.target !== hintEl && !hintEl?.contains(record.target) && !menuCategoryBar?.contains(record.target) && !inOwnDetailPanel(record.target.nodeType === 1 ? record.target : record.target.parentElement));
     if (panelTreeChanged || (currentTarget && !currentTarget.isConnected) || panelContentChanged) scheduleReconcile();
   });
   const attrObserver = new MutationObserver(() => {
@@ -1581,7 +1583,7 @@
         groupDepth: panel ? enteredGroups(panel).length : 0,
         groupId: panel ? navigationRoot(panel).id || navigationRoot(panel).getAttribute('data-tree') || null : null,
         latestChange: 'Main menu categories are persistent pages for mouse, keyboard and controller; Back releases focus without revealing inactive pages.',
-        menuCategories: menuPageOwners.map(owner => ({ owner: owner.id || navigationLabel(owner), selected: subtabsByGroup.get(owner)?.selected.id || navigationLabel(subtabsByGroup.get(owner)?.selected), count: subtabsByGroup.get(owner)?.sections.length || 0 })),
+        menuCategories: menuPageOwners.filter(owner => subtabsByGroup.has(owner)).map(owner => ({ owner: owner.id || navigationLabel(owner), selected: subtabsByGroup.get(owner).selected.id || navigationLabel(subtabsByGroup.get(owner).selected), count: subtabsByGroup.get(owner).sections.length })),
         rememberedSubtabs: Object.fromEntries(lastSubtabByGroupKey), // Mobile debug can verify each pane independently.
         subtab: panel ? (() => { const state = subtabsByGroup.get(localSubtabs(panel)?.node); return state ? { id: state.selected.id, index: state.sections.indexOf(state.selected), count: state.sections.length } : null; })() : null,
         detailOriginId: panel ? enteredGroups(panel).at(-1)?.returnPath?.steps.at(-1)?.value || null : null,
