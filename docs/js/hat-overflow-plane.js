@@ -179,8 +179,66 @@
     }
   }
 
+  // Per-plane variant for avatars that take the portrait's front and back
+  // meshes apart (bandit/enemy portraits re-parent each onto its own pivot,
+  // where each faces its pivot's +Z). planes: [{ view: 'front' | 'behind',
+  // mesh, headBone? }]. The overflow mesh goes on the plane's head bone at its
+  // rest offset when the plane was neck-skinned, else beside the mesh.
+  async function attachToPlanes(THREE, options = {}) {
+    const { profile, sourceCanvas: src, modelWidth, modelHeight } = options;
+    const planes = (options.planes || []).filter(plane => plane?.mesh);
+    if (!THREE || !planes.length || !hasHat(profile) || !src?.width || !src?.height || !(modelWidth > 0) || !(modelHeight > 0)) return [];
+    stats.checked++;
+    try {
+      const canvases = await Promise.all(planes.map(plane => renderOverflowCanvas(profile, plane.view === 'behind' ? 'behind' : 'front', src.width, src.height)));
+      if (options.isCancelled?.()) return [];
+      const api = window.PNGPlaneAvatar, attached = [];
+      planes.forEach((plane, index) => {
+        const canvas = canvases[index];
+        if (!canvas) return;
+        const behind = plane.view === 'behind';
+        // Size from the plane actually drawn (its geometry), falling back to the portrait size.
+        const geometry = plane.mesh.geometry;
+        if (geometry && !geometry.boundingBox) geometry.computeBoundingBox?.();
+        const box = geometry?.boundingBox;
+        const planeW = box && box.max.x > box.min.x ? box.max.x - box.min.x : modelWidth;
+        const planeH = box && box.max.y > box.min.y ? box.max.y - box.min.y : modelHeight;
+        const texture = api.makePortraitTexture(THREE, api.makeVariantCanvas(canvas, behind ? { flipX: true } : {}), `hat_overflow_${behind ? 'back' : 'front'}_texture`, behind ? 'back' : 'front');
+        const mesh = markOverflowMesh(THREE, new THREE.Mesh(
+          new THREE.PlaneGeometry(planeW * canvas.width / src.width, planeH * canvas.height / src.height),
+          api.makeSpriteMaterial(THREE, texture, `hat_overflow_${behind ? 'back' : 'front'}_material`)));
+        mesh.name = `hat_overflow_${behind ? 'back' : 'front'}_plane`;
+        const holder = new THREE.Group(); // Carries the plane's own rest transform; the mesh adds the small facing offset.
+        holder.name = 'hat_overflow_planes';
+        holder.userData.hatOverflowPlane = true;
+        mesh.position.z = FACE_OFFSET;
+        holder.add(mesh);
+        const target = plane.mesh, bone = plane.headBone;
+        const skeleton = target.isSkinnedMesh ? target.skeleton : null;
+        const boneIndex = bone && skeleton ? skeleton.bones.indexOf(bone) : -1;
+        if (boneIndex >= 0 && skeleton.boneInverses?.[boneIndex]) {
+          // Same rest offset as attachToSkinnedHead: a skinned vertex lands at
+          // boneWorld * boneInverse * bindMatrix * geometryPoint.
+          const rest = skeleton.boneInverses[boneIndex].clone().multiply(target.bindMatrix);
+          rest.decompose(holder.position, holder.quaternion, holder.scale);
+          bone.add(holder);
+        } else if (target.parent) {
+          holder.position.copy(target.position); holder.quaternion.copy(target.quaternion); holder.scale.copy(target.scale);
+          target.parent.add(holder);
+        } else return;
+        attached.push(holder);
+      });
+      if (attached.length) stats.attached++; else stats.empty++;
+      return attached;
+    } catch (error) {
+      stats.failed++;
+      console.warn('[hat-overflow] skipped', error);
+      return [];
+    }
+  }
+
   window.HatOverflowPlane = Object.freeze({
-    PAD, ALPHA_MIN, INSET, hasHat, renderOverflowCanvas, attach, remove: removeOverflow,
+    PAD, ALPHA_MIN, INSET, hasHat, renderOverflowCanvas, attach, attachToPlanes, remove: removeOverflow,
     stats: () => ({ ...stats }),
   });
 })();

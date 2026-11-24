@@ -471,7 +471,7 @@
       {
         backCanvas, profile, modelWidth: MODEL_W, modelHeight: MODEL_W, anchorZ: 0,
         alphaTest: avatarCfg.worldAlphaTest ?? 0.01, name: 'bandit_portrait', meshBudget: 'npc', // Enemies use the capped mesh budget.
-        hatOverflow: false, // The front/back meshes are re-parented onto separate pivots below; hat-overflow-plane.js has no target there yet (CharacterVisuals gap).
+        hatOverflow: false, // The front/back meshes are re-parented onto separate pivots below; HatOverflowPlane.attachToPlanes is called on those instead.
         mountSpecies: roster.mountSpecies || null, mountGenotype: roster.mountGenotype || null, // Ridden mount card (omgurku-species-runtime.js MOUNTS); returns a compound avatar.
       },
     );
@@ -534,11 +534,16 @@
     const neckPivotNormalized = neckPivotPx
       ? { x: neckPivotPx.x / frontCanvas.width, y: neckPivotPx.y / frontCanvas.height }
       : null;
+    // The back mesh's geometry is a clone without PlaneGeometry parameters, so the
+    // skin upgrade falls back to these: they must include the species scale
+    // multiplier, or the back view is drawn smaller than the front.
+    const portraitPlaneW = portrait.userData?.portraitModelWidth || MODEL_W;
+    const portraitPlaneH = portrait.userData?.portraitModelHeight || MODEL_W;
     const frontNeckSkin = neckPivotNormalized
-      ? window.PNGPlaneAvatar.upgradePlaneToAutoNeckSkin?.(THREE, frontMesh, neckPivotNormalized, false, { width: MODEL_W, height: MODEL_W, sourceCanvas:originalHeadRigFront, headCanvas, headGate, headMaskCanvas, speciesId: roster.appearance?.speciesId, gender: roster.appearance?.gender, placementRatio: portrait.userData?.portraitVerticalPlacementRatio ?? 0.5, handAttachY: portrait.userData?.handAttachY, freezePortrait: true, cosmeticIds: roster.equippedCosmetics })
+      ? window.PNGPlaneAvatar.upgradePlaneToAutoNeckSkin?.(THREE, frontMesh, neckPivotNormalized, false, { width: portraitPlaneW, height: portraitPlaneH, sourceCanvas:originalHeadRigFront, headCanvas, headGate, headMaskCanvas, speciesId: roster.appearance?.speciesId, gender: roster.appearance?.gender, placementRatio: portrait.userData?.portraitVerticalPlacementRatio ?? 0.5, handAttachY: portrait.userData?.handAttachY, freezePortrait: true, cosmeticIds: roster.equippedCosmetics })
       : null;
     const backNeckSkin = neckPivotNormalized
-      ? window.PNGPlaneAvatar.upgradePlaneToAutoNeckSkin?.(THREE, backMesh, neckPivotNormalized, true, { width: MODEL_W, height: MODEL_W, sourceCanvas:originalHeadRigBack, headCanvas, headGate, headMaskCanvas, speciesId: roster.appearance?.speciesId, gender: roster.appearance?.gender, placementRatio: portrait.userData?.portraitVerticalPlacementRatio ?? 0.5, handAttachY: portrait.userData?.handAttachY, freezePortrait: true, cosmeticIds: roster.equippedCosmetics })
+      ? window.PNGPlaneAvatar.upgradePlaneToAutoNeckSkin?.(THREE, backMesh, neckPivotNormalized, true, { width: portraitPlaneW, height: portraitPlaneH, sourceCanvas:originalHeadRigBack, headCanvas, headGate, headMaskCanvas, speciesId: roster.appearance?.speciesId, gender: roster.appearance?.gender, placementRatio: portrait.userData?.portraitVerticalPlacementRatio ?? 0.5, handAttachY: portrait.userData?.handAttachY, freezePortrait: true, cosmeticIds: roster.equippedCosmetics })
       : null;
     const renderedFrontMesh = frontNeckSkin?.mesh || frontMesh;
     const renderedBackMesh = backNeckSkin?.mesh || backMesh;
@@ -557,6 +562,15 @@
     frontPivot.position.y = backPivot.position.y = assembly.position.y || 0;
     group.add(frontPivot);
     group.add(backPivot);
+    // Big hats: brim/crown pixels past the portrait square ride each plane's head bone (js/hat-overflow-plane.js).
+    window.HatOverflowPlane?.attachToPlanes?.(THREE, {
+      profile, sourceCanvas: frontCanvas,
+      modelWidth: portraitPlaneW, modelHeight: portraitPlaneH,
+      planes: [
+        { view: 'front', mesh: renderedFrontMesh, headBone: frontNeckSkin?.headScaleBone || null },
+        { view: 'behind', mesh: renderedBackMesh, headBone: backNeckSkin?.headScaleBone || null },
+      ],
+    });
     // The normal PNG root becomes a hidden hand-driver identity below. Move
     // its authored mask light onto the visible hostile neck before discarding
     // that original hierarchy, so the real fake-light registry sees it.
@@ -719,6 +733,7 @@
   // because the rider portrait already renders its own back face.
   function buildCompoundBanditAvatar(portrait, { roster, profile, resolvedRosterDyes, frontCanvas, backCanvas, neutralFrontCanvas, combatFrownCanvas, MODEL_W }) {
     const upper = portrait.userData.proceduralBodyRoot; // Rider portrait root; owns the textures the combat frown refreshes.
+    if (upper?.userData?.sourceCanvas) window.HatOverflowPlane?.attach?.(THREE, upper, { profile, backCanvas }); // The rider keeps its own portrait hierarchy, so the ordinary overflow attach applies (the build itself opted out).
     const riderFrame = portrait.userData.proceduralHandParent; // Floor-relative rider frame the procedural hands already attach to.
     const modelWidth = upper.userData?.portraitModelWidth || MODEL_W;
     const modelHeight = upper.userData?.portraitModelHeight || MODEL_W;
@@ -3634,6 +3649,7 @@
     availableFlaskRecipeIds: availableBanditFlaskRecipeIds,
     characterBuildSnapshot: () => ({ pending: characterBuildPending, active: characterBuildActive, ...characterBuildStatus }), // Existing debug report reads queue pressure without retaining roster objects.
     discardEntity: discardBanditEntity, // Scene teardown for a built-but-never-registered entity (late async spawns).
+    buildAvatar: buildBanditAvatar, // Debug/headless: builds one hostile humanoid avatar from a roster without spawning an entity.
     setCombatExpression, // Synchronously swaps the live humanoid hostile portrait between its pre-baked resting and combat-frown canvases.
     applyRosterDyesToProfile, // Shared/testable world-avatar dye reconciliation used by Bandits, Minions, and Liches.
     ensureEnemyPants, // Shared hostile wardrobe fallback, including explicit skeleton/ghoul/lich/ghost rosters.

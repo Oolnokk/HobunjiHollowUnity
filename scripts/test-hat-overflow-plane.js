@@ -105,6 +105,16 @@ assert.equal(Overflow.hasHat(hatProfile), true);
   assert(!/portraitModel(Width|Height)\s*=/.test(planeSource), 'Overflow never rewrites portrait dimensions');
   assert(planeSource.includes('skeleton.boneInverses[index].clone().multiply(plane.bindMatrix)'), 'Skinned avatars carry the overflow on the head-scale bone at its rest offset');
   assert(avatarSource.includes('window.HatOverflowPlane.attach(THREE, root,'), 'Every single-plane avatar build checks for hat overflow');
+  const banditSource = read('docs/js/combat/combat-bandit.js');
+  assert(planeSource.includes('async function attachToPlanes('), 'Split front/back portraits get per-plane overflow');
+  assert(/HatOverflowPlane\?\.attachToPlanes\?\.\(THREE, \{[\s\S]{0,400}headBone: frontNeckSkin\?\.headScaleBone[\s\S]{0,200}headBone: backNeckSkin\?\.headScaleBone/.test(banditSource),
+    'Bandit portraits carry overflow on each plane\'s head bone');
+  assert(banditSource.includes('window.HatOverflowPlane?.attach?.(THREE, upper, { profile, backCanvas })'), 'Mounted/compound riders get the ordinary overflow');
+  assert.equal((banditSource.match(/\{ width: portraitPlaneW, height: portraitPlaneH, sourceCanvas:/g) || []).length, 2,
+    'Both bandit neck skins use the scaled portrait size, so the back view matches the front');
+  for (const tool of ['attack-animation-editor/index.html', 'character-studio/index.html', 'cutscene-director/index.html', 'animation-author/index.html',
+    'procedural-animation-editor/index.html', 'enemy-loadout-editor/preview.js', 'furniture-avatar-author/index.html'])
+    assert(read('docs/tools/' + tool).includes('hat-overflow-plane.js'), 'Tool previews load the overflow module: ' + tool);
   assert(avatarSource.includes('root.userData.portraitDisposed = true'), 'A late overflow bake never attaches to a disposed avatar');
   assert(avatarSource.includes('texture.wrapS = THREE.ClampToEdgeWrapping;'), 'Portrait textures clamp, so a hat at one edge never bleeds onto the other');
   assert(indexHtml.indexOf('js/hat-overflow-plane.js') >= 0 && indexHtml.indexOf('js/hat-overflow-plane.js') < indexHtml.indexOf('js/png-plane-avatar.js'),

@@ -233,7 +233,7 @@ table (`CAPABILITIES` in `js/character-visuals.js`, keep it accurate):
 | System | Covers | Gap |
 |---|---|---|
 | held tool/weapon planes (`character-held-tools.js`) | player, NPC, enemy | holder's own mastery/metal; metal variants per appearance |
-| hat overflow plane (`hat-overflow-plane.js`) | player, NPC | enemies (bandit portraits re-parent their planes) |
+| hat overflow plane (`hat-overflow-plane.js`) | player, NPC, enemy (split planes: `attachToPlanes`) | — |
 | held bag-item plane (game.js) | player | NPCs never hold bag items |
 | held-item x-ray through grass/ground (`held-object-render-order.js`) | player, short species (porakaneki) | other NPCs/enemies: hands ordinary depth, feet within 6 tiles only, weapons/tools in the base pass by default (user decision, ~11 ms on a GTX 1060; Settings → Render optimizations restores weapon x-ray) |
 | procedural hands, pants, ground shadow, outline occlusion, rig layers | all humanoids (shadow/occlusion/rig: every kind) | — |

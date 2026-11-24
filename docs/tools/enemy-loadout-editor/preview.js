@@ -13,6 +13,7 @@ const files = [
   'js/portrait-breathing.js?v=20261028a',
   'js/npc-avatar-preview-utils.js?v=20261122hKasa3',
   'js/character-spine.js?v=20261112longoran1', // Hunchback weights/deformation, read by the portrait skin, shoulder aim and leg solver.
+  'js/hat-overflow-plane.js', // Big hats: hat pixels past the portrait square (HatOverflowPlane).
   'js/png-plane-avatar.js?v=20261124h4f60280',
   'js/species-pose-scaling.js?v=20261115shoulders3',
   'js/character-dimensions.js?v=20261007he86e7d1', // Species heights drive the held weapon's height factor and grip offset, exactly as in the game and Attack Animation Editor.
