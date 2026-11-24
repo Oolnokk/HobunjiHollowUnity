@@ -118,23 +118,40 @@ const defaultsSource = fs.readFileSync('docs/config/character-rig-scale-defaults
 const editor = fs.readFileSync('docs/js/character-scale-comparison.js','utf8'); // Full Character Scale button wiring and migration.
 const window = { SCRATCHBONES_CONFIG: { game: { assets: { pngPlaneAvatar: { proceduralFeet: { footScale: {} } } } } } };
 vm.runInNewContext(defaultsSource, { window });
-const actual = window.HobunjiCharacterRigScaleDefaults?.values || {};
-assert.equal(Object.keys(expected).length, 18, 'all main adult species/gender pairs are pinned');
-assert.deepEqual(Object.keys(actual).sort(), Object.keys(expected).sort(), 'no adult species missing or spuriously created');
+const canonical = window.HobunjiCharacterRigScaleDefaults;
+const actual = canonical?.values || {}; // All 26 approved scale tuples.
+const pinnedMain = canonical?.mainReferenceValues || {}; // Pinned main values for exact same-sex baseline verification.
+const maleShift = canonical?.maoaoRelativeShift?.male || {};
+const femaleShift = canonical?.maoaoRelativeShift?.female || {};
+const near=(a,b,label)=>assert(Math.abs(a-b)<1e-8, label + ': '+a+' != '+b);
+assert.equal(Object.keys(expected).length, 18, 'the 18 original main profiles are pinned');
+assert.deepEqual(Object.keys(pinnedMain).sort(), Object.keys(expected).sort(), 'all pinned main reference keys remain present');
+assert.equal(Object.keys(actual).length,26,'all 26 imported profiles have canonical defaults');
 for (const [key, main] of Object.entries(expected)) {
-  const pr = actual[key];
+  const original = pinnedMain[key];
+  const changed = actual[key];
   for (const axis of ['x','y','head','offsetY'])
-    assert.equal(pr[axis], main[axis], key + ' adult ' + axis + ' must match main at full numeric precision');
-  assert.equal(pr.legLength, main.y, key + ' legs must equal main\'s shared Height, not old PR lanky ratios');
-  assert.equal(pr.legLength / pr.y, 1, key + ' independent leg-to-portrait ratio is exactly one at the adult baseline');
+    near(original[axis],main[axis],key+' pinned main '+axis);
+  near(changed.x, original.x*maleShift.x,key+' same MALE Maoao width adjustment');
+  near(changed.y, original.y*maleShift.y,key+' same MALE Maoao height adjustment');
+  near(changed.legLength, original.y*maleShift.y,key+' procedural legs scale together with portrait');
+  near(changed.offsetY, original.offsetY,key+' head offset unchanged');
+  assert(Number.isFinite(changed.head)&&changed.head>0,key+' has a valid raw 65% Head factor');
 }
+for(const axis of ['x','y','handScale','footScale'])
+  near(maleShift[axis],femaleShift[axis],'Maoao male adjustment applied to female '+axis);
+near(actual['mao-ao::female'].x,.895*maleShift.x,'female Maoao x derived only from male anchor');
+near(actual['mao-ao::female'].y,.94*maleShift.y,'female Maoao y derived only from male anchor');
+near(actual['mao-ao::female'].handScale,maleShift.handScale,'female Maoao hands from main 1.0');
+near(actual['mao-ao::female'].footScale,1.28125*maleShift.footScale,'female Maoao feet from main 1.28125');
+near(actual['mao-ao::female'].head*.8,.65,'female Maoao raw head 65%');
 assert.match(editor, /maaFullScaleMatchMainAdults/, 'adult alignment is available without wiping child defaults');
 assert.match(editor, /addEventListener\('click', matchMainAdultScales\)/, 'new button invokes actual baseline reapply');
 const start = editor.indexOf('  function matchMainAdultScales()');
 const end = editor.indexOf('  // Discards every author override', start);
 assert(start > 0 && end > start, 'find actual migration function without copying logic into test');
-const changes = []; // In-memory save receiver for all 18 adult keys.
-const before = { handScale: 1.37, footScale: 0.83 }; // Hand/foot author overrides are NOT part of main adult height migration.
+const changes = []; // In-memory save receiver for all 26 approved scale profiles.
+const before = { handScale: 1.37, footScale: 0.83 }; // Explicit apply replaces stale limb author overrides with approved defaults.
 let saved = 0, refreshes = 0, childBody = 0.36, hunch = 0.42;
 let message = ''; // Mimics the mobile status text seen after applying the values.
 const context = {
@@ -155,14 +172,14 @@ const context = {
 };
 vm.runInNewContext(editor.slice(start,end) + '\nthis.matchMainAdultScales = matchMainAdultScales;', context);
 context.matchMainAdultScales();
-assert.equal(changes.length,18,'one saved adult entry per canonical species/gender');
+assert.equal(changes.length,26,'persist every one of the 26 approved species/gender profiles');
 assert.equal(refreshes,2,'reapply the newly aligned adult base to both active preview entries');
 assert.equal(saved,1,'reuse shared Rig profile persistence once');
 const k = changes.find(record => record.species === 'kenkari' && record.gender === 'female');
-assert.equal(k.scale.handScale,before.handScale,'existing authored hand scale preserved');
-assert.equal(k.scale.footScale,before.footScale,'existing authored foot scale preserved');
-assert.equal(k.scale.legLength,expected['kenkari::female'].y,'synced adult leg uses main Height');
+near(k.scale.handScale,actual['kenkari::female'].handScale,'apply approved hands, including female Maoao shifts');
+near(k.scale.footScale,actual['kenkari::female'].footScale,'apply approved feet, including female Maoao shifts');
+near(k.scale.legLength,actual['kenkari::female'].legLength,'saved legs use male Maoao relative Height');
 assert.equal(childBody,0.36,'baby/toddler/child author modifiers remain untouched');
 assert.equal(hunch,0.42,'per NPC hunch tuning remains untouched');
-assert.match(message,/Matched 18\/18 adult scales to main/,'mobile confirmation includes full count');
-console.log('PASS main adult parity: 18 canonical profiles, exact X/Y/head/offset, shared Height => independent leg/portrait, preserves child/limb authoring');
+assert.match(message,/Applied 26\/26 Mao/,'mobile confirmation includes all 26 approved profiles');
+console.log('PASS pinned main references + 26 male-Maoao-anchored scales, corrected female shifts, 65% Head, explicit editor reset and age preservation');
