@@ -125,7 +125,7 @@
       });
       if (key === 'feyHeftroot') {
         const ordinary = deps.ITEM_DEFS.heftroot; // Match ordinary root art and economics without inheriting its Fortitude effect.
-        Object.assign(deps.ITEM_DEFS[key], { icon: ordinary?.icon || icon, cat: ordinary?.cat || 'food', spriteIcon: ordinary?.spriteIcon || 'heftroot.png', sellPrice: ordinary?.sellPrice || deps.ITEM_DEFS[key].sellPrice });
+        Object.assign(deps.ITEM_DEFS[key], { icon: ordinary?.icon || icon, cat: ordinary?.cat || 'food', spriteIcon: ordinary?.spriteIcon || 'heftroot.png', spriteColor: ordinary?.spriteColor, spriteMode: ordinary?.spriteMode, ingredientColor: ordinary?.ingredientColor || 0xAAA07C, sellPrice: ordinary?.sellPrice || deps.ITEM_DEFS[key].sellPrice });
       }
       if (!deps.inventoryItems.some(entry => entry.key === key)) deps.inventoryItems.push({ key, icon: deps.ITEM_DEFS[key].icon || icon, label: item.name.toUpperCase(), max: 99 });
     });
