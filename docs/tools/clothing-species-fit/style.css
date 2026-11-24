@@ -40,3 +40,7 @@ button[aria-pressed="true"]{outline:2px solid var(--blue);background:#163247}
 .headband-whole-field input[type=range]{width:100%;min-width:0}
 .headband-whole-field input[type=number]{width:100%;min-width:0;padding:6px;text-align:right;font-variant-numeric:tabular-nums}
 @media(max-width:400px){.headband-whole-field{grid-template-columns:66px minmax(65px,1fr) 63px;gap:4px}}
+.hole-legend{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0}
+.hole-legend:empty{display:none}
+.hole-legend span{display:inline-flex;align-items:center;gap:6px;padding:3px 9px 3px 5px;border-radius:999px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);font-size:12px}
+.hole-legend i{width:12px;height:12px;border-radius:50%;box-shadow:0 0 0 2px rgba(0,0,0,.35)}

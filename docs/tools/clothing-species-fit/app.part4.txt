@@ -286,11 +286,21 @@ function applyHoleDeform(canvas,grid,width,height,hole){
   if(!Hole||!hole?.enabled||Hole.isIdentity(hole.corners))return canvas;
   const profile=holeProfileForGrid(grid,width,height);
   if(!profile)return canvas;
-  const ctx=canvas.getContext('2d',{alpha:true}),image=ctx.getImageData(0,0,width,height);
-  const warped=Hole.warp(image.data,width,height,profile,hole.corners,hole.rate);
+  // Forward mesh warp: the region inside the (smoothed) hood outline is
+  // erased and redrawn through displaced polar triangles, the same affine
+  // triangle drawing the 6×6 grid uses. Every layer goes through the same
+  // mesh, so base, trim and any other material move together, and growing or
+  // shrinking the opening stretches the cloth instead of tearing it.
+  const mesh=Hole.mesh(profile,hole.corners,hole.rate);
+  if(!mesh)return canvas;
   const result=Object.assign(document.createElement('canvas'),{width,height});
-  const rctx=result.getContext('2d',{alpha:true}),out=rctx.createImageData(width,height);
-  out.data.set(warped);rctx.putImageData(out,0,0);
+  const rctx=result.getContext('2d',{alpha:true});rctx.imageSmoothingEnabled=false;
+  rctx.drawImage(canvas,0,0);
+  const edge=mesh.rings[mesh.rings.length-1]; // Pad ring: d === s, outside every moving pixel.
+  rctx.save();rctx.globalCompositeOperation='destination-out';rctx.beginPath();
+  edge.forEach((v,i)=>i?rctx.lineTo(v.s.x,v.s.y):rctx.moveTo(v.s.x,v.s.y));
+  rctx.closePath();rctx.fill();rctx.restore();
+  Hole.forEachTriangle(mesh,(s0,s1,s2,d0,d1,d2)=>drawTriangleWarp(rctx,canvas,s0,s1,s2,d0,d1,d2));
   return result;
 }
 function warpClothing(source,grid,width,height,fitContourState=null,options={}){

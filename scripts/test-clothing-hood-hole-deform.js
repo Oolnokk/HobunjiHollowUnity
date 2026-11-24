@@ -57,4 +57,36 @@ for (let r = 12.5; r <= 30; r += 0.25) {
   assert(x >= prev - 1e-9, 'band folds over at r=' + r);
   prev = x;
 }
-console.log('Hood-hole deform OK: opening quad, outline lock, falloff and fold limit.');
+// Forward mesh: every layer is drawn through it. The pad ring never moves
+// (seamless over the untouched image), and along every bearing the rings stay
+// in radial order whether the opening grows or shrinks, so the cloth stretches
+// instead of tearing or folding.
+for (const [label, cs] of [['grow', [{x:-6,y:-6},{x:6,y:-6},{x:-6,y:6},{x:6,y:6}]], ['shrink', [{x:5,y:5},{x:-5,y:5},{x:5,y:-5},{x:-5,y:-5}]], ['shift', [0,1,2,3].map(() => ({x:7,y:-3}))]]) {
+  const m = Hole.mesh(profile, cs, 1.5, {angles: 48});
+  const last = m.rings[m.rings.length - 1];
+  assert(last.every(v => v.s.x === v.d.x && v.s.y === v.d.y), label + ': pad ring is fixed');
+  for (let j = 0; j < m.angles; j++) {
+    const a = (j / m.angles) * 2 * Math.PI - Math.PI, ux = Math.cos(a), uy = Math.sin(a);
+    let prevR = -Infinity;
+    for (let i = 2; i < m.rings.length; i++) { // Ring 1 is the opening's middle; order matters from the rim band outward.
+      const v = m.rings[i][j].d, r = (v.x - cx) * ux + (v.y - cy) * uy;
+      assert(r >= prevR - 0.75, `${label}: rings fold at bearing ${j}, ring ${i}`);
+      prevR = r;
+    }
+  }
+  let triangles = 0;
+  Hole.forEachTriangle(m, () => triangles++);
+  assert.equal(triangles, m.angles * (1 + 2 * (m.rings.length - 2)), label + ': fan + quad strips cover every ring');
+}
+// The opening's own edge band moves rigidly with the rim (no smear).
+const shrinkCorners = [{x:5,y:5},{x:-5,y:5},{x:5,y:-5},{x:-5,y:-5}];
+const atRim = Hole.displacementAt(profile, shrinkCorners, 1.5, cx + 12.5, cy).x;
+const inBand = Hole.displacementAt(profile, shrinkCorners, 1.5, cx + 12.5 + Math.min(profile.edgeBand, 5), cy).x;
+assert(Math.abs(atRim - inBand) < 1e-9, 'edge band travels with the rim');
+
+// A tracer seed jammed against one side of the opening is re-centred on the hole.
+const offSeed = Hole.buildProfile(rgba, W, H, ringPoints, {x: cx - 9, y: cy - 8});
+assert(Math.hypot(offSeed.seed.x - cx, offSeed.seed.y - cy) < 1, 'seed re-centred on the opening: ' + JSON.stringify(offSeed.seed));
+const rimSpread = Math.max(...offSeed.rim) - Math.min(...offSeed.rim);
+assert(rimSpread < 2, 'rim measured from the centred seed is round: spread ' + rimSpread.toFixed(2));
+console.log('Hood-hole deform OK: opening quad, outline lock, falloff, fold limit, forward mesh and re-centring.');

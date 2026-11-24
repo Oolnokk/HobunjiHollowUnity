@@ -184,7 +184,10 @@ function render(scheduleRig=true){
           ?'Game-matched: front portrait shared; imported extended sprite planes appear in 3D only.'
           :'Game-matched: both views share the same front portrait artwork, inverse-projected for the 2D fit grid. 3D adds neck, hands, feet and perspective.')
         :'Rendering game-matched '+(rearView?'backplane':'front')+' portrait; showing raw art until the rig is ready…';
-  if(matched){
+  if(mode==='hole'&&fitRegion()==='headwear'&&!rearView&&E.holeLayerColors?.checked&&R.cloth&&R.body){
+    drawHoleLayerView(C); // Each hood material in its own colour, so it is visible that all of them follow the opening.
+    R.warped=null;
+  }else if(matched){
     C.drawImage(matched,0,0); // Display pixels only: neither grids nor fitted PNG exports are rewritten.
     R.warped=null;
   }else if(fitRegion()==='headwear'){
@@ -238,7 +241,8 @@ function render(scheduleRig=true){
   }
 
   if(mode==='quad')drawQuadHandles(C); // Just the quad: a plain outline with four square corner handles, no grid.
-  if(mode==='hole'&&fitRegion()==='headwear')drawHoleOverlay(C); // Detected opening rim, outer outline and the opening's quad handles (independent of the grid toggle).
+  if(mode==='hole'&&fitRegion()==='headwear')drawHoleOverlay(C);
+  else if(E.holeLegend?.innerHTML)syncHoleLegend([]); // Legend only belongs to Hood hole mode. // Detected opening rim, outer outline and the opening's quad handles (independent of the grid toggle).
   E.label.textContent=(fitRegion()==='headwear'?'HEADWEAR • ':'BODY • ')+
     (mode==='transform'
       ?`Base Transform • ${garmentRecord()?.label||''} • ${E.species.options[E.species.selectedIndex]?.text||E.species.value} ${E.gender.value}`

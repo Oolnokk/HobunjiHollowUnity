@@ -65,12 +65,66 @@
     return out;
   }
 
+  // Circular moving average / maximum over +-radius bins.
+  function circularAverage(values, radius) {
+    const n = values.length, out = new Array(n);
+    for (let i = 0; i < n; i++) {
+      let sum = 0;
+      for (let k = -radius; k <= radius; k++) sum += values[(i + k + n) % n];
+      out[i] = sum / (2 * radius + 1);
+    }
+    return out;
+  }
+  function circularMax(values, radius) {
+    const n = values.length, out = new Array(n);
+    for (let i = 0; i < n; i++) {
+      let best = -Infinity;
+      for (let k = -radius; k <= radius; k++) best = Math.max(best, values[(i + k + n) % n]);
+      out[i] = best;
+    }
+    return out;
+  }
+
   // Builds the polar profile of an opening from rim points (sprite pixels)
   // and the opening seed. The outer outline is the farthest opaque pixel on
   // each ray from the seed.
-  function buildProfile(rgba, width, height, ringPoints, seed, options = {}) {
-    if (!seed || !Array.isArray(ringPoints) || ringPoints.length < 8) return null;
+  // Centroid of the transparent opening around a seed: flood fill through
+  // transparent pixels, bounded to the traced rim's box (grown by half) so a
+  // leak through a gap in the hood cannot run off into empty space.
+  function openingCentroid(rgba, width, height, seed, box, alphaLimit) {
+    const gx = (box.x1 - box.x0) * 0.5, gy = (box.y1 - box.y0) * 0.5;
+    const x0 = Math.max(0, Math.floor(box.x0 - gx)), x1 = Math.min(width - 1, Math.ceil(box.x1 + gx));
+    const y0 = Math.max(0, Math.floor(box.y0 - gy)), y1 = Math.min(height - 1, Math.ceil(box.y1 + gy));
+    const sx = Math.floor(seed.x), sy = Math.floor(seed.y);
+    if (sx < x0 || sx > x1 || sy < y0 || sy > y1 || rgba[(sy * width + sx) * 4 + 3] >= alphaLimit) return null;
+    const seen = new Uint8Array(width * height), stack = [sy * width + sx];
+    seen[stack[0]] = 1;
+    let n = 0, cx = 0, cy = 0, touchesBound = false;
+    while (stack.length) {
+      const i = stack.pop(), x = i % width, y = (i - x) / width;
+      n++; cx += x + 0.5; cy += y + 0.5;
+      if (x === x0 || x === x1 || y === y0 || y === y1) touchesBound = true;
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const nx = x + dx, ny = y + dy;
+        if (nx < x0 || nx > x1 || ny < y0 || ny > y1) continue;
+        const j = ny * width + nx;
+        if (seen[j] || rgba[j * 4 + 3] >= alphaLimit) continue;
+        seen[j] = 1; stack.push(j);
+      }
+    }
+    if (touchesBound || n < 16) return null; // Leaked (opening not closed) or a speck: keep the tracer's seed.
+    return { x: cx / n, y: cy / n };
+  }
+
+  function buildProfile(rgba, width, height, ringPoints, seedInput, options = {}) {
+    if (!seedInput || !Array.isArray(ringPoints) || ringPoints.length < 8) return null;
     const alphaLimit = Number.isFinite(options.alphaLimit) ? options.alphaLimit : 64;
+    let bx0 = Infinity, by0 = Infinity, bx1 = -Infinity, by1 = -Infinity;
+    for (const p of ringPoints) { bx0 = Math.min(bx0, p.x); by0 = Math.min(by0, p.y); bx1 = Math.max(bx1, p.x); by1 = Math.max(by1, p.y); }
+    // The tracer's seed can sit right against one side of the opening, which
+    // makes every bearing on the far side graze the rim. Re-centre on the
+    // opening itself when it is a closed transparent region.
+    const seed = openingCentroid(rgba, width, height, seedInput, {x0:bx0, y0:by0, x1:bx1, y1:by1}, alphaLimit) || seedInput;
     const rim = new Array(BINS).fill(NaN);
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
     for (const p of ringPoints) {
@@ -82,7 +136,20 @@
     }
     const covered = rim.filter(Number.isFinite).length;
     if (covered < BINS * 0.25 || !(x1 - x0 >= 4) || !(y1 - y0 >= 4)) return null;
-    const rimFilled = fillCircularGaps(rim);
+    const traced = fillCircularGaps(rim);
+    // The tracer's rim can be partial (gaps filled by interpolation, which on
+    // one side lands inside the cloth). Measure the real opening edge on every
+    // bearing instead: the first opaque pixel outward from the seed, kept when
+    // it is plausibly the same edge as the traced rim.
+    const rimFilled = traced.map((tracedR, b) => {
+      const angle = (b / BINS) * 2 * Math.PI - Math.PI, sx = Math.cos(angle), sy = Math.sin(angle);
+      for (let d = 0.5; d < tracedR * 1.6 + 4; d += 0.5) {
+        const x = Math.floor(seed.x + sx * d), y = Math.floor(seed.y + sy * d);
+        if (x < 0 || y < 0 || x >= width || y >= height) break;
+        if (rgba[(y * width + x) * 4 + 3] >= alphaLimit) return d >= tracedR * 0.5 ? d : tracedR;
+      }
+      return tracedR;
+    });
     const outline = new Array(BINS);
     const maxR = Math.hypot(width, height);
     for (let b = 0; b < BINS; b++) {
@@ -95,8 +162,16 @@
       }
       outline[b] = Math.max(far, rimFilled[b] + 1);
     }
+    // Partial or ragged rims (fur trims, a beard-tool rim that only closed on
+    // one side) jump between neighbouring bearings; a displacement field built
+    // on them shears the cloth into slivers. Smooth both curves: the rim by a
+    // plain average, the outline by max-then-average so it never pulls inside
+    // the cloth it has to enclose.
+    const rimSmooth = circularAverage(rimFilled, 4);
+    const outlineSmooth = circularAverage(circularMax(outline, 4), 4)
+      .map((r, b) => Math.max(r, rimSmooth[b] + 2));
     return {
-      seed:{x:seed.x,y:seed.y}, rim:rimFilled, outline, covered,
+      seed:{x:seed.x,y:seed.y}, rim:rimSmooth, outline:outlineSmooth, edgeBand: Number.isFinite(options.edgeBand) ? options.edgeBand : 6, rimRaw:rimFilled, outlineRaw:outline, covered,
       box:{x0,y0,x1,y1},
       quad:[{x:x0,y:y0},{x:x1,y:y0},{x:x0,y:y1},{x:x1,y:y1}], // TL, TR, BL, BR of the opening.
     };
@@ -122,20 +197,28 @@
 
   // Rim displacement on one bearing, with its outward (radial) part limited so
   // the band between rim and outline compresses but never folds over.
+  // Width of the opening's own ink/edge band on the cloth side of the rim:
+  // it moves rigidly with the rim (never stretched into a smear), capped to a
+  // third of the band so thin hoods still have room to absorb the move.
+  function edgeBandAt(profile, rimR, outR) {
+    const want = Number.isFinite(profile.edgeBand) ? profile.edgeBand : 0;
+    return Math.max(0, Math.min(want, (outR - rimR) / 3));
+  }
   function rimDisplacement(profile, corners, rate, angle) {
     const rimR = sampleBins(profile.rim, angle), outR = sampleBins(profile.outline, angle);
+    const edgeR = rimR + edgeBandAt(profile, rimR, outR);
     const ux = Math.cos(angle), uy = Math.sin(angle);
     const edge = holeDelta(profile, corners, profile.seed.x + ux * rimR, profile.seed.y + uy * rimR);
-    const radial = edge.x * ux + edge.y * uy, limit = 0.9 * (outR - rimR) / falloffMaxSlope(rate);
+    const radial = edge.x * ux + edge.y * uy, limit = 0.9 * (outR - edgeR) / falloffMaxSlope(rate);
     if (radial > limit) { edge.x -= (radial - limit) * ux; edge.y -= (radial - limit) * uy; }
-    return {edge, rimR, outR};
+    return {edge, rimR, outR, edgeR};
   }
 
   // Forward displacement of a source pixel position.
   function displacementAt(profile, corners, rate, x, y) {
     const dx = x - profile.seed.x, dy = y - profile.seed.y, r = Math.hypot(dx, dy);
     const angle = Math.atan2(dy, dx);
-    const {edge, rimR, outR} = rimDisplacement(profile, corners, rate, angle);
+    const {edge, rimR, outR, edgeR} = rimDisplacement(profile, corners, rate, angle);
     if (r <= rimR) {
       // Inside the opening: the quad, blended toward the (possibly limited)
       // rim displacement so the opening edge and the cloth stay continuous.
@@ -143,7 +226,8 @@
       return {x:inner.x + (edge.x - inner.x) * s * s, y:inner.y + (edge.y - inner.y) * s * s};
     }
     if (r >= outR) return {x:0, y:0};
-    const w = falloffWeight((r - rimR) / Math.max(1e-6, outR - rimR), rate);
+    if (r <= edgeR) return {x:edge.x, y:edge.y}; // The opening's ink edge travels intact.
+    const w = falloffWeight((r - edgeR) / Math.max(1e-6, outR - edgeR), rate);
     return {x:edge.x * w, y:edge.y * w};
   }
 
@@ -169,6 +253,70 @@
     return out;
   }
 
+  // Forward mesh for drawing layers: rings of vertices around the seed, each
+  // with its source position (s) and displaced position (d). Ring 0 is the
+  // seed, then points inside the opening, the rim, the cloth band out to the
+  // outline, and one pad ring past it (d === s there, so drawing the mesh over
+  // the untouched image is seamless). Every layer drawn through the same mesh
+  // moves identically, and nothing is lost to a failed inverse.
+  function mesh(profile, cornersInput, rateInput, options = {}) {
+    const corners = normalizeCorners(cornersInput), rate = normalizeRate(rateInput);
+    if (!profile) return null;
+    const angles = Math.max(16, Math.round(options.angles || 96));
+    const bandRings = Math.max(2, Math.round(options.bandRings || 8));
+    const pad = Number.isFinite(options.pad) ? options.pad : 3;
+    const rings = [];
+    const rimBand = Number.isFinite(options.rimBand) ? options.rimBand : 8; // Px just inside the rim that move rigidly with it.
+    const point = (x, y, still, lockTo) => {
+      if (still) return { s: { x, y }, d: { x, y } };
+      const v = displacementAt(profile, corners, rate, lockTo ? lockTo.x : x, lockTo ? lockTo.y : y);
+      return { s: { x, y }, d: { x: x + v.x, y: y + v.y } };
+    };
+    const seed = profile.seed;
+    rings.push(new Array(angles).fill(0).map(() => point(seed.x, seed.y, false)));
+    const radiiFor = angle => {
+      const rimR = sampleBins(profile.rim, angle), outR = sampleBins(profile.outline, angle);
+      // The opening's own ink edge sits just inside the detected rim: carry
+      // that band rigidly with the rim so it travels intact instead of
+      // being smeared across the opening when the hole grows.
+      const lockR = Math.max(rimR * 0.6, rimR - rimBand);
+      const edgeR = rimR + edgeBandAt(profile, rimR, outR);
+      const list = [{ r: lockR * 0.5 }, { r: lockR, lockRim: true }, { r: rimR }, { r: edgeR }];
+      for (let k = 1; k < bandRings; k++) {
+        const t = k / bandRings;
+        list.push({ r: edgeR + (outR - edgeR) * t });
+      }
+      list.push({ r: outR, still: true }, { r: outR + pad, still: true });
+      return list;
+    };
+    const perAngle = [];
+    for (let j = 0; j < angles; j++) perAngle.push(radiiFor((j / angles) * 2 * Math.PI - Math.PI));
+    const ringCount = perAngle[0].length;
+    for (let i = 0; i < ringCount; i++) {
+      rings.push(perAngle.map((radii, j) => {
+        const angle = (j / angles) * 2 * Math.PI - Math.PI, entry = radii[i];
+        const ux = Math.cos(angle), uy = Math.sin(angle);
+        const lock = entry.lockRim ? { x: seed.x + ux * sampleBins(profile.rim, angle), y: seed.y + uy * sampleBins(profile.rim, angle) } : null;
+        return point(seed.x + ux * entry.r, seed.y + uy * entry.r, !!entry.still, lock);
+      }));
+    }
+    return { rings, angles };
+  }
+
+  // Calls emit(s0, s1, s2, d0, d1, d2) for every triangle of a mesh.
+  function forEachTriangle(meshData, emit) {
+    const { rings, angles } = meshData;
+    for (let i = 0; i + 1 < rings.length; i++) {
+      const inner = rings[i], outer = rings[i + 1];
+      for (let j = 0; j < angles; j++) {
+        const k = (j + 1) % angles;
+        if (i === 0) { emit(inner[j].s, outer[j].s, outer[k].s, inner[j].d, outer[j].d, outer[k].d); continue; }
+        emit(inner[j].s, outer[j].s, outer[k].s, inner[j].d, outer[j].d, outer[k].d);
+        emit(inner[j].s, outer[k].s, inner[k].s, inner[j].d, outer[k].d, inner[k].d);
+      }
+    }
+  }
+
   // Maps opening detection from 200px portrait space (beard tool) back into
   // raw sprite space. rect is the sprite's portrait draw rectangle.
   function ringFromPortrait(lower, upper, rect, width, height) {
@@ -182,6 +330,6 @@
 
   root.ClothingHoodHoleDeform = Object.freeze({
     BINS, DEFAULT_RATE, normalizeRate, normalizeCorners, zeroCorners, isIdentity, falloffWeight,
-    buildProfile, displacementAt, warp, ringFromPortrait,
+    buildProfile, displacementAt, warp, mesh, forEachTriangle, ringFromPortrait,
   });
 })();
