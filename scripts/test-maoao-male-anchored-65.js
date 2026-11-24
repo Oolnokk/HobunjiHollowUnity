@@ -1,5 +1,5 @@
 'use strict';
-// Only the uploaded Mao'ao MALE dimensions are edited; everyone of either gender inherits exactly HIS deltas.
+// Both independently uploaded Mao'ao dimensions are authored; each gender inherits its own deltas, with explicit male height goals superseding eight Ys.
 const assert = require('node:assert/strict'); // Guards profile mathematics, legacy scale compatibility and one-time gameplay limb synchronization.
 const fs = require('node:fs'); // Reads actual shipped profiles and scaling code.
 const vm = require('node:vm'); // Executes the browser modules without the 3D renderer or mobile devtools.
@@ -43,30 +43,32 @@ const main=cfg.mainReferenceValues;
 const shift=cfg.maoaoRelativeShift;
 const maleAnchor={x:.85,y:1.29,handScale:1.2,footScale:1.05}; // Only deliberately changed profile supplied by the user.
 const maleMain={x:.81675,y:1.089,handScale:1.1,footScale:1.3125}; // Exact current-main source reference.
+const femaleAnchor={x:.895,y:.94,handScale:1.15,footScale:1.025}; // Exact independently uploaded female source; previously discarded by the male-only implementation.
+const femaleMain={x:.895,y:.94,handScale:1,footScale:1.28125}; // Current-main female anchor.
 assert.equal(Object.keys(values).length,26,'all 26 profiles in the author export are covered');
 assert.equal(Object.keys(main).length,18,'original 18 main profiles remain available as an audit baseline');
 assert.equal(cfg.rawHeadScale,.65,'user raw PNG Head target is 65%');
 for(const axis of ['x','y','handScale','footScale']){
   const ratio=maleAnchor[axis]/maleMain[axis];
   close(shift.male[axis],ratio,'single male anchor '+axis);
-  close(shift.female[axis],ratio,'female MUST use identical male anchor '+axis);
+  close(shift.female[axis],femaleAnchor[axis]/femaleMain[axis],'female uses HER uploaded delta '+axis);
 }
-assert.equal(shift.male,shift.female,'there is literally one shared shift object, not a second female calculation');
+assert.notEqual(shift.male,shift.female,'male/female anchors must be independently represented');
 for(const [key,base] of Object.entries(main)){
   const value=values[key], [species,gender]=key.split('::');
-  close(value.x,base.x*shift.male.x,key+' width follows MALE shift');
-  close(value.y,base.y*shift.male.y,key+' height follows MALE shift');
+  close(value.x,base.x*shift[gender].x,key+' width follows its own Maoao gender shift');
+  if(!(species in cfg.maleHeightFeet)) close(value.y,base.y*shift[gender].y,key+' main-relative height for unspecified species');
   close(value.legLength,value.y,key+' original leg-to-portrait ratio remains unchanged');
   close(value.offsetY,base.offsetY,key+' authored head vertical offset is preserved');
   assert(value.head>0,'every head uses nonzero internal compensator');
   assert(value.handScale>0&&value.footScale>0,'every default has complete extremities');
 }
 const female=values['mao-ao::female'];
-close(female.x,.895*shift.male.x,'female Maoao inherits male width delta');
-close(female.y,.94*shift.male.y,'female Maoao inherits male height delta');
-close(female.handScale,1*shift.male.handScale,'female Maoao inherits MALE hand delta, NOT 1.15 from upload');
-close(female.footScale,1.28125*shift.male.footScale,'female Maoao inherits male foot delta');
+close(female.x,femaleAnchor.x,'female Maoao width from uploaded source');
+close(female.handScale,femaleAnchor.handScale,'female Maoao hand size from uploaded source');
+close(female.footScale,femaleAnchor.footScale,'female Maoao foot size from uploaded source');
 close(female.head,.65/.8,'female Maoao internal head compensates her own portrait art');
+assert(female.y>femaleAnchor.y,'the separate *provisional* 93%-of-male standing-height rule supersedes source female Y for the height target');
 const male=values['mao-ao::male'];
 for(const axis of ['x','y','handScale','footScale'])close(male[axis],maleAnchor[axis], 'edited male anchor unchanged: '+axis);
 close(male.head,.65,'male Maoao raw head exactly 65%');
@@ -105,4 +107,4 @@ const syncs=window.HobunjiHandModelProfiles.updates;
 cfg.applyApprovedScaleDefaultsToProfiles();
 assert.equal(window.HobunjiHandModelProfiles.updates,syncs,'repeated bootstrap does not re-mutate all hand models');
 close(.9*values['mao-ao::male'].y*runtime.worldVisualScale(),1.375,'one global world factor keeps Maoao male at nominal 6ft3, no double growth');
-console.log('PASS 26 profiles: same Maoao MALE shifts on every gender, Head raw 65%, saved profile/hand/foot/runtime consistency, one-time application, and 6ft3 calibration');
+console.log('PASS 26 profiles: both uploaded Maoao gender shifts, Head raw 65%, shared profile/hand/foot/runtime consistency, and 6ft3 nominal calibration');
