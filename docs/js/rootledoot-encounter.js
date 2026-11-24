@@ -147,7 +147,8 @@
   function tryActivate() {
     const zone=area(),p=playerTile(),chunk=chunkOf(p.c,p.r),key=keyFor(zone,chunk.c,chunk.r);
     const day=Math.floor(Number(deps.day?.())||0),previous=ledger.get(key);
-    if(previous?.cleared||npcInChunk(zone,chunk))return;
+    if(previous?.cleared||(previous?.day===day&&!previous.ready))return; // Failed/used daily rolls perform no NPC scans on later ticks.
+    if(npcInChunk(zone,chunk))return;
     if(previous?.day===day){
       if(previous.ready){const site=siteInChunk(zone,chunk);if(site)activate(zone,chunk,site,key);}
       return;
@@ -243,12 +244,22 @@
       removeRoot(rec);rec.phase='combat';rec.delay=0;void spawnWave(rec);return true;
     }
     if(!rec.boss||!deps.canReceiveRoot?.()){deps.toast?.('No room for Fey Heftroot.',false);return false;}
-    const weapon=window.BanditCaptainArmaments?.grantCorpseWeapon?.(rec.boss);
-    if(!weapon){deps.toast?.('Could not collect the Fey weapon. Try again.',false);return false;}
-    deps.giveRoot();window.CookingSystem?.consumeFeySight?.();
-    ledger.set(rec.key,{day:Math.floor(Number(deps.day?.())||0),cleared:true});
-    reset('Fey Heftroot and weapon collected');
-    window.FeyArmamentQuest?.maybeStart?.();deps.save?.();deps.toast?.('Fey Heftroot and '+weapon+' collected!',true);return true;
+    const previous=ledger.get(rec.key); // Transaction rolls back the locale and buff alongside the bag and character gear.
+    const cooking=window.CookingSystem, stacks=cooking?.getFoodEffectStacks?.('feySight')||0;
+    const transaction=window.GearMemberTransaction?.run?.({inventoryKeys:['feyHeftroot'],mutate(){
+      const weapon=window.BanditCaptainArmaments?.grantCorpseWeapon?.(rec.boss,{deferSave:true});
+      if(!weapon)return {ok:false,reason:'weapon'};
+      deps.giveRoot();cooking?.consumeFeySight?.();
+      ledger.set(rec.key,{day:Math.floor(Number(deps.day?.())||0),cleared:true});
+      return {ok:true,weapon};
+    }});
+    if(!transaction?.ok){
+      if(previous)ledger.set(rec.key,previous);else ledger.delete(rec.key);
+      cooking?.consumeFeySight?.();if(stacks>0)cooking?.grantFeySight?.(stacks);
+      deps.toast?.('Could not save the Fey reward. Try again.',false);return false;
+    }
+    reset('Fey Heftroot and weapon collected'); // Clears the unlooted enchantment state only after the durable transaction.
+    deps.refreshRewards?.();window.FeyArmamentQuest?.maybeStart?.();deps.toast?.('Fey Heftroot and '+transaction.weapon+' collected!',true);return true;
   }
   function noteDown(attacker,damageBeyondHealth) {
     downedByRoot=!!(active&&active.phase==='combat'&&attacker?.rootledoot&&active.actors.has(attacker));
@@ -301,4 +312,5 @@
   window.Rootledoots=Object.freeze({init,tick,action,pick,onDeath,noteDown,noteDownedHit,handleDefeat,paintPortrait,serialize,restore,reset,
     debugSnapshot:()=>({lastEvent,worldStamp,checkedChunks:ledger.size,active:active&&{zone:active.zone,site:active.site,phase:active.phase,wave:active.wave,actors:active.actors.size},downedByRoot,overkill}),
     __test:Object.freeze({chunkOf,siteInChunk,npcInChunk,BASE_CHANCE,WAVES})});
+  window.DevCompanion?.registerStateProvider?.('rootledoots',window.Rootledoots.debugSnapshot);
 })();
