@@ -1,10 +1,10 @@
 'use strict';
-// Global stature calibration is a single outer parent scale, not 18 permanently rewritten author profiles.
+// Global stature calibration is a single outer parent scale, separate from the 26 Mao'ao-male-relative author profiles.
 const assert = require('node:assert/strict'); // Checks reference measurements and idempotent game/editor scaling.
 const fs = require('node:fs'); // Loads actual runtime/default modules and chairSimple geometry.
 const vm = require('node:vm'); // Executes shared browser code without Three.js or devtools.
 
-const defaultsSource = fs.readFileSync('docs/config/character-rig-scale-defaults.js', 'utf8'); // Main-equivalent adult species scale map plus new world calibration.
+const defaultsSource = fs.readFileSync('docs/config/character-rig-scale-defaults.js', 'utf8'); // Mao'ao male-anchored scale map plus shared chair-based world calibration.
 const scaleSource = fs.readFileSync('docs/js/character-rig-scale.js', 'utf8'); // Shared runtime applied to actual avatar parent.
 const chair = JSON.parse(fs.readFileSync('docs/config/furniture-authored/chairSimple.json', 'utf8')); // Same chair used by six-foot reference line.
 const height = Math.max(...chair.parts.map(part => Number(part.transform?.y) + Number(part.transform?.sy)/2));
@@ -33,10 +33,10 @@ assert.equal(calibration.targetFeet,6.25);
 assert.equal(calibration.chairHeightFeet,3);
 close(height,calibration.chairBackWorldHeight,'uses the authored chair top, not a separate arbitrary ruler');
 close(calibration.targetWorldHeight,1.375,'6 ft 3 in in game-world units');
-close(calibration.referenceUnscaledWorldHeight,.9*1.089,'Mao-ao normal adult pre-calibration stature');
+close(calibration.referenceUnscaledWorldHeight,.9*1.29,'edited Mao-ao male adult pre-calibration stature');
 const factor=calibration.targetWorldHeight/calibration.referenceUnscaledWorldHeight;
 close(api.worldVisualScale(),factor,'same uniform factor is exposed by runtime and defaults');
-assert(factor>1.4&&factor<1.41,'current calibration yields roughly a 40.3% increase');
+assert(factor>1.18&&factor<1.19,'world calibration is recalibrated from Mao-ao male 1.29 Height, not compounded with the former main baseline');
 
 function rigParent(withNeck=false){
   const neck=withNeck?{
@@ -51,9 +51,9 @@ function rigParent(withNeck=false){
   };
 }
 const male=win.HobunjiCharacterRigScaleDefaults.scaleFor('mao-ao','male');
-close(male.y,1.089,'authored Mao-ao height is unchanged');
-close(male.x,.81675,'authored width is unchanged');
-close(male.head,.726,'authored head factor is unchanged');
+close(male.y,1.29,'approved male Mao-ao Height is kept as the anchor');
+close(male.x,.85,'approved male Mao-ao width is kept as the anchor');
+close(male.head,.65,'male Mao-ao Head is 65% of original PNG');
 const reference=rigParent(true);
 assert(api.applyToParent(reference,'mao-ao','male'),'runtime applies parent scaling to normal adult');
 close(reference.scale.y*.9,1.375,'adult Mao-ao male world portrait reaches nominal 6 ft 3 in');
@@ -64,7 +64,7 @@ close(reference.scale.y*reference.neck.scale.y,male.head*factor,'visible head Y 
 close(reference.userData.hobunjiCharacterRigScaleState.worldVisualScale,factor,'idempotent scaling remembers world factor separately from authored fields');
 
 const defaults=win.HobunjiCharacterRigScaleDefaults.values;
-assert.equal(Object.keys(defaults).length,18,'all 18 canonical male/female scale profiles remain available');
+assert.equal(Object.keys(defaults).length,26,'all 26 canonical and special scale profiles are available');
 for(const [key,authored] of Object.entries(defaults)){
   const [species,gender]=key.split('::');
   const avatar=rigParent(true);
@@ -101,4 +101,4 @@ api.clearFromParent(customized);
 close(customized.scale.y,1,'custom profile clear restores original scale');
 assert.match(scaleSource,/worldVisualScale: worldMultiplier/,'runtime persists calibration only as reversible parent state');
 assert.doesNotMatch(defaultsSource,/rigScaleX = [^\n]*WORLD_HEIGHT_CALIBRATION/,'global factor is NOT baked into exported authored profiles');
-console.log('PASS whole-character 6ft3 calibration: chair parity, 18 adult species, head/body/limb scaling, saved overrides, repeated updates and clear');
+console.log('PASS 6ft3 calibration: chair parity, 26 profiles, corrected male/female ratios, head/body scaling, saved overrides, repeat/clear');
