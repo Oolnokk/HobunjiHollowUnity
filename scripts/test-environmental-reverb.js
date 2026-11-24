@@ -97,12 +97,15 @@ const flush = async () => { for (let i = 0; i < 16; i++) await Promise.resolve()
 (async () => {
   let offset = 0.1; // Native playback advances while its reflected buffer is decoding.
   const cancelled = R.playWetUrl('wing.mp3', { context: ctx, area: 'cavern', getOffsetS: () => null });
+  let observedSend = null; // Assert outside the optional callback, whose errors must not interrupt sound.
   const live = R.playWetUrl('wing.mp3', { context: ctx, area: 'cavern', playbackRate: 1.25,
     extraWet: 0.05, volume: 0.5, getOffsetS: () => offset,
-    onStarted(send) { assert.equal(send.profile.preset, 'cavern'); assert(send.wet > 0.235); } });
+    onStarted(send) { observedSend = send; } });
   offset = 0.4;
   resolveWetFetch({ ok: true, arrayBuffer: () => Promise.resolve(new ArrayBuffer(16)) });
   await flush();
+  assert.equal(observedSend?.profile.preset, 'cavern');
+  assert(observedSend.wet > 0.235, 'native reflection applies the authored distance wet boost');
   assert.equal(starts.length, 1, 'a stale native wingbeat must not start when its delayed wet decode resolves');
   assert.equal(starts[0].offset, 0.4, 'live wet source uses current rather than requested native offset');
   assert.equal(starts[0].source.playbackRate.value, 1.25, 'reflected audio retains the dry size pitch');
