@@ -5689,6 +5689,7 @@
         if (!c.isCompanion) {
           window.HobunjiActivityEvents?.emitCreatureKilled?.(c); // Kill attribution and barbarian/self-defense classification now live in js/activity-events.js.
         }
+        if (window.Rootledoots?.onDeath?.(c)) return true; // Rootledoots leave no ordinary corpse; the boss becomes a harvestable root.
         if (c._wildlifeVisualsReleased) {
           createCreatureVisuals(c); // Environmental/resource deaths still produce the normal visible, lootable corpse.
           c._wildlifeVisualLodHidden = false;
@@ -5841,7 +5842,7 @@
       function damagePlayer(amount, fromX, fromY, knockbackPxS = PLAYER_KNOCKBACK_PX_S, dmgOpts) {
         const environmentalImpact = dmgOpts?.environmentalImpact === true; // Collision Health damage cannot be countered or treated as a second incoming attack.
         if (window.PlayerDowned?.isDowned?.()) { // A downed player takes no Health damage, knockback or stagger; each hit only shortens the bleed-out timer (js/player-downed.js).
-          if (!environmentalImpact) window.PlayerDowned.noteHitWhileDowned();
+          if (!environmentalImpact) { window.Rootledoots?.noteDownedHit?.(dmgOpts?.attacker, amount); window.PlayerDowned.noteHitWhileDowned(); }
           return environmentalImpact ? { applied: 0, lethal: false } : undefined;
         }
         if (!environmentalImpact && performance.now() < player.invulnUntil) return;
@@ -5863,6 +5864,7 @@
           window.BanditCamps?.interruptTentHold(); // ...and a bandit-tent loot/burn, same reasoning
           window.CorpseHoldLoot?.interrupt(); // ...and a hold-to-loot body
         }
+        window.Rootledoots?.noteDown?.(null, 0); // A new actual hit invalidates earlier down attribution; ResourceSystem records lethal Rootledoot overkill after mitigation.
         const healthBeforeImpact = environmentalImpact ? Math.max(0, Number(player.health) || 0) : 0; // Used before respawn can replace lethal zero Health with a restored value.
         if (window.ResourceSystem) window.ResourceSystem.applyDamage(player, resourceDamage.health, dmgOpts || {});
         else player.health = Math.max(0, player.health - resourceDamage.health);
@@ -5904,6 +5906,7 @@
           window.ImpactRagdollPlayback?.stop?.(); // Clear the held break-throw rig before placing the player at a respawn point.
         }
         window.PlayerDowned?.reset?.(); // Any respawn ends the downed state.
+        if (window.Rootledoots?.handleDefeat?.()) return; // Nonlethal Fey blackout replaces the normal checkpoint death only for Rootledoot-caused defeat.
         if (window.DevRandomRuinSimplePuzzles?.respawnAtCheckpoint?.(reason)) { window.CompanionDowned?.reviveAll?.({ reason: 'player-respawn', teleport: 'deferred' }); return; } // Session ruin checkpoints override every canonical death source before mine/totem/farm recovery while preserving the source for mobile diagnostics.
         if (window.CombatTutorial?.active?.()) {
           window.CombatTutorial.leave(true);
@@ -9434,6 +9437,7 @@
       // lives in js/mount-system.js (window.Mounts) — see window.Mounts.init(...) below.
 
       function clearHostileObjects() {
+        window.Rootledoots?.reset?.('area hostiles cleared'); // Invalidate asynchronous waves before the shared teardown disposes their rigs.
         hostileObjects.forEach(c => despawnCreature(c));
         hostileObjects.clear();
       }
@@ -9602,6 +9606,7 @@
         member.alchemyReagentState = window.ReagentPlants.serializeZoneReagentState();
         member.knownFurnitureBlueprints = window.CraftingPanel?.serializeBlueprints?.() || [];
         member.cookingState = window.CookingSystem.serialize();
+        member.rootledootState = window.Rootledoots?.serialize?.() || null; // Cleared locales and daily encounter checks survive reloads.
         member.animalHides = window.AnimalHides?.serialize?.() || { version: 1, pack: {} }; // Persist individual hide genetics beside the world-member's count inventory.
         member.wildBerryState = window.WildBerries.serializeState();
         member.zoneTreasureState = window.WildTreasure.serializeState();
@@ -21046,6 +21051,7 @@
           commitFurniturePlacementAt(furniturePlacementReticle.col, furniturePlacementReticle.row);
           return;
         }
+        if (activeAction === 'rootledoot_pick') { const aimed = getReticleTile(); window.Rootledoots?.pick?.(aimed.col, aimed.row); refreshActionBar(); return; }
         if (heldMode === 'none' && activeAction === 'none') return;
         if (activeAction === 'consume_held_item') {
           // Compatibility fallback only — ordinary press/hold/release input
@@ -26695,6 +26701,7 @@
             window.CompanionDowned?.update?.(dt); // Downed-companion timers/pose and deferred revive teleports (js/companion-downed.js).
           }
           window.PlayerDowned?.update?.(dt); // Bleed-out timer and Health pin while the player is down (js/player-downed.js).
+          if (!window.DevTestingSwitchbox?.flags?.noNpcBehavior) window.Rootledoots?.tick?.(dt); // Module returns immediately outside eligible zones and throttles chunk checks.
           window.PlayerCrawl?.update?.(dt); // Lean/lowering channels and blend for the downed crawl (js/player-crawl.js).
           // Runs in every area so any phase of a mount transition is cleared
           // immediately on entering an interior. Mounts remain exterior-only.
@@ -27724,6 +27731,9 @@
         // down: same hold contract as hives (js/companion-downed.js).
         const companionReviveButton = window.CompanionDowned?.getHoldButton?.(reticle.col, reticle.row);
         if (companionReviveButton && eligibleWorldButtons([companionReviveButton]).length) return [companionReviveButton];
+
+        const rootledootAction = window.Rootledoots?.action?.(reticle.col, reticle.row); // Same action bar and reticle on desktop, controller and touch.
+        if (rootledootAction && eligibleWorldButtons([rootledootAction]).length) return [rootledootAction];
 
         // Bandit tents are runtime props rather than worldObjects, so expose
         // their context action explicitly. Pointer/keyboard holds still feed
@@ -33404,6 +33414,17 @@
         makeTaskId: window.ProceduralTasks.makeTaskId,
       });
 
+      window.Rootledoots?.init({
+        TILE, player, rnd, hostiles: hostileObjects, corpses: corpseObjects, companions: companionObjects,
+        getArea: () => currentArea, getGrid: window.GridTileAccessors.getActiveGrid, getScene: window.GridTileAccessors.getActiveScene,
+        getZoneDef: zone => EXTERIOR_ZONES[zone], getNpcWalkers: () => npcWalkers,
+        worldId: _tothalWorldId, cycle: currentTothalYear, day: () => calendar.day, chunkSize: wildernessChunkTileSize,
+        surfaceY: activeSurfaceYAtWorld, walkable: (c,r) => creatureTileWalkable(c,r),
+        isBareGround: tile => tile.type === TileType.GRASS && !tile.crop?.type && !tile.mapBoundary,
+        despawn: despawnCreature, dirt: (c,r) => spawnActionParticles(c,r,'dig',true), toast: showToast, save: saveMemberWorldData,
+        canReceiveRoot: () => !!ITEM_DEFS.feyHeftroot && (Number(inventory.feyHeftroot)||0) < window.InventoryStacks.MAX_TOTAL,
+        giveRoot: () => { inventory.feyHeftroot=(Number(inventory.feyHeftroot)||0)+1; window.HudUpdate.refreshItemScroll(); buildInventoryGrid(); refreshActionBar(); },
+      });
       window.BanditCamps?.init({
         clamp: window.FormatUtils.clamp,
         rnd,
@@ -33621,6 +33642,7 @@
         window.NpcGifting?.restoreDiscoveredPrefs?.(playerData.npcDiscoveredGiftTraits);
         packClothing = [...(playerData.packClothing || [])];
         window.CookingSystem.restore(playerData.cookingState);
+        window.Rootledoots?.restore?.(playerData.rootledootState);
         window.AnimalHides?.restore?.(playerData.isNewWorld ? null : playerData.animalHides, inventory); // Restore coat records only after the authoritative bag counts load.
         window.SkillSystem.restore(playerData);
         window.PerkSystem?.restore(playerData);
