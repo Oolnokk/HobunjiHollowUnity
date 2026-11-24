@@ -78,9 +78,18 @@ async function main() {
   assert.equal(root.pick(bait.c,bait.r),false,'stale bait action cannot fire during combat');inCombat=false;
   let s=aim();walkers.push({area:zone,root:{position:{x:7,z:7}}});assert.equal(root.pick(s.c,s.r),false,'NPC entering after activation blocks trigger');
   walkers.pop();root.tick(.5);await flush();s=aim();assert.equal(root.debugSnapshot().active.phase,'bait','same-day bait reactivates without reroll');
+  let releaseFirst;block={index:spawnCount+1,promise:new Promise(r=>{releaseFirst=r;})};
+  assert.equal(root.pick(s.c,s.r),true);await flush();
+  walkers.push({area:zone,root:{position:{x:7,z:7}}});
+  releaseFirst();await flush();
+  assert.equal(hostiles.size,0,'NPC arriving during first async build prevents combat activation');
+  assert.equal(root.debugSnapshot().active,null);
+  walkers.pop();block=null;root.tick(.5);await flush();s=aim();
+  assert.equal(root.debugSnapshot().active.phase,'bait','suppressed first wave retains the daily roll');
+  retired.length=0;
   let release;block={index:spawnCount+2,promise:new Promise(r=>{release=r;})};
   assert.equal(root.pick(s.c,s.r),true);await flush();assert.equal(hostiles.size,1);
-  let a=[...hostiles][0];root.noteDown(a,20);root.noteDownedHit(a,10);
+  let a=[...hostiles][0];day++;root.noteDown(a,20);root.noteDownedHit(a,10); // Fight started yesterday, defeat happens today.
   assert.equal(root.handleDefeat(),true);assert.equal(deficit,30);assert.equal(cooking.getFoodEffectStacks('feySight'),5);assert.equal(hostiles.size,0);
   release();await flush();assert.equal(hostiles.size,0,'late actor cannot revive defeated encounter');
   assert.equal(retired.length,2,'both spawned and late-arriving actors retire their projectiles');
