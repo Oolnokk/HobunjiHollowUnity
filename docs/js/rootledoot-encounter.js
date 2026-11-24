@@ -271,7 +271,9 @@
       if(!sameChunk(deps.player.x/deps.TILE,deps.player.y/deps.TILE,rec.chunk)||npcInChunk(zone,rec.chunk))reset('bait dormant');
       return;
     }
-    if(rec.phase!=='combat'||rec.building||rec.actors.size||window.PlayerDowned?.isDowned?.())return;
+    if(rec.phase!=='combat'||rec.building||window.PlayerDowned?.isDowned?.())return;
+    for(const actor of rec.actors)if(!deps.hostiles.has(actor)){reset('encounter actor removed by zone teardown');return;}
+    if(rec.actors.size)return;
     if(rec.wave>=WAVES.length){
       if(!rec.boss){reset('missing boss reward');return;}
       rec.phase='reward';void showRoot(rec,true).then(ok=>{if(!ok&&active===rec)reset('reward unavailable');}).catch(error=>{if(active===rec)reset('reward failed: '+error.message);});return;
@@ -280,7 +282,7 @@
     if(rec.delay>=WAVE_DELAY){rec.delay=0;void spawnWave(rec);}
   }
   function serialize(){syncWorld();return {stamp:worldStamp,ledger:[...ledger]};}
-  function restore(raw){reset('restore');worldStamp=stamp();ledger=new Map(raw?.stamp===worldStamp&&Array.isArray(raw.ledger)?raw.ledger.filter(e=>Array.isArray(e)&&typeof e[0]==='string'&&Number.isFinite(e[1]?.day)):[]);checkTime=0;}
+  function restore(raw){reset('restore');worldStamp=typeof raw?.stamp==='string'?raw.stamp:stamp();ledger=new Map(Array.isArray(raw?.ledger)?raw.ledger.filter(e=>Array.isArray(e)&&typeof e[0]==='string'&&Number.isFinite(e[1]?.day)):[]);checkTime=0;} // First eligible tick validates the fully restored world/cycle.
   window.Rootledoots=Object.freeze({init,tick,action,pick,onDeath,noteDown,noteDownedHit,handleDefeat,paintPortrait,serialize,restore,reset,
     debugSnapshot:()=>({lastEvent,worldStamp,checkedChunks:ledger.size,active:active&&{zone:active.zone,site:active.site,phase:active.phase,wave:active.wave,actors:active.actors.size},downedByRoot,overkill}),
     __test:Object.freeze({chunkOf,siteInChunk,npcInChunk,BASE_CHANCE,WAVES})});
