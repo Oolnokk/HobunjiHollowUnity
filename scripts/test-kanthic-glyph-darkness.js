@@ -104,6 +104,15 @@ assert.equal(win.CloudForestFog.getDebugState().ruinEngravingGlowMasks.platformC
   'a projected slab silhouette subtracts only the obscured part of a wall glyph');
 assert(draws.some(d=>d.kind==='platform-clip'&&d.mode==='destination-out'),
   'partial occlusion is applied to the destination-out glyph ink, not the entire scene lighting');
+// A platform can be on screen but far away from the rune. Its screen-space bounds must
+// reject it before inverse clipping, even when it sits between the camera and the wall plane.
+platform.geometry.boundingBox.min.x=30;platform.geometry.boundingBox.max.x=31;
+draws.length=0;
+assert.equal(win.__probeGlyphMasks(platformScene,deps,7050).drawn,1,'the distant slab cannot hide an unrelated on-screen wall engraving');
+assert(!draws.some(d=>d.kind==='platform-clip'),'nonoverlapping platform is culled by actual projected screen bounds');
+assert.equal(win.CloudForestFog.getDebugState().ruinEngravingGlowMasks.platformClips,0,
+  'mobile diagnostics count zero clip operations for distant on-screen slabs');
+platform.geometry.boundingBox.min.x=.5;platform.geometry.boundingBox.max.x=1.6;
 platform.visible=false;draws.length=0;
 assert.equal(win.__probeGlyphMasks(platformScene,deps,7100).drawn,1,'a hidden platform does not erase the visible wall glyph');
 assert(!draws.some(d=>d.kind==='platform-clip'),'a hidden upper story never generates a platform cutout');
