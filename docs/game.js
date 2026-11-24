@@ -8044,7 +8044,7 @@
         TILE, player, getCurrentArea: () => currentArea, isZoneArea: _isZoneArea,
         getActiveGrid: window.GridTileAccessors.getActiveGrid,
         surfaceYForTile: tileSurfaceYInArea, creatureCanEnter: creatureCanEnterTile,
-        getCamera: () => camera,
+        canOccupy: canOccupyAt, getCamera: () => camera,
       });
       window.FamilyBabyFollow?.init?.({
         TILE, player, getCurrentArea: () => currentArea, getActiveGrid: window.GridTileAccessors.getActiveGrid,
@@ -8998,6 +8998,17 @@
           followDebug.distancePx = Math.round(followGoal.distance);
           followDebug.destinationX = Math.round(followGoal.x); followDebug.destinationY = Math.round(followGoal.y);
           followDebug.routeActive = !!c._cliffClimb || !!c._cliffRouteTravel; // Included in the existing mobile-friendly CompanionCombatResponse diagnostics.
+          const hardCatchup = window.CompanionFollowNavigation.isHardDistance(c, followGoal); // Check before target scans or a potentially zone-wide detour.
+          if (hardCatchup && window.CompanionFollowNavigation.tickRecovery(c, master, followGoal, dt)) {
+            const catchupFacing = Math.atan2(master.y - c.y, master.x - c.x); // Face the owner after the invisible relocation.
+            c.facing = catchupFacing;
+            _restoreCompanionHead(c, dt);
+            followDebug.mode = 'distance-recovery'; followDebug.distancePx = Math.round(Math.hypot(master.x - c.x, master.y - c.y));
+            followDebug.routeActive = false;
+            updateCreatureMesh(c, dt, catchupFacing);
+            updateCreatureAnimFrame(c, dt, false);
+            continue;
+          }
           if (master.climbing && c.stableRole === 'companion') {
             if (c.treasureCue) _clearCompanionTreasureCue(c, dt, 'owner climbing');
             if (c.watchPlayerIdle) _clearCompanionWatchIdle(c, 'owner climbing');
@@ -9262,7 +9273,7 @@
           c.facing = aimAngle;
           c.x = window.FormatUtils.clamp(c.x, 0, (c.areaCols || COLS) * TILE);
           c.y = window.FormatUtils.clamp(c.y, 0, (c.areaRows || ROWS) * TILE);
-          if (window.CompanionFollowNavigation.tickRecovery(c, master, followGoal, dt)) {
+          if (!hardCatchup && window.CompanionFollowNavigation.tickRecovery(c, master, followGoal, dt)) {
             moving = false; runInPlace = false; // The invisible snap has already updated the animal's true and rendered positions.
           }
 
