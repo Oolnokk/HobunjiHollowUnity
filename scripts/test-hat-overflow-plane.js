@@ -116,6 +116,36 @@ assert.equal(Overflow.hasHat(hatProfile), true);
   for(let i=0;i<40;i++)await cacheBake('color'+i);
   assert(Overflow.stats().cacheBytes<=4*1024*1024 && Overflow.stats().cacheEntries<=32,'bounded cache');
 
+  // Real module, mocked GPU factories with ownership counters.
+  const disposed={geometry:0,texture:0,material:0};
+  class Group{
+    constructor(){this.children=[];this.userData={};this.position={z:0,copy(){}};this.quaternion={copy(){}};this.scale={copy(){}};}
+    add(x){this.children.push(x);x.parent=this;}
+    remove(x){this.children=this.children.filter(y=>y!==x);x.parent=null;}
+    traverse(fn){fn(this);for(const child of this.children)child.traverse(fn);}
+  }
+  class Mesh extends Group{constructor(geometry,material){super();this.geometry=geometry;this.material=material;this.rotation={};}}
+  const THREE={Group,Mesh,PlaneGeometry:class{dispose(){disposed.geometry++;}},Box3:class{},Sphere:class{},Vector3:class{}};
+  let failMaterial=false;
+  ctx.PNGPlaneAvatar={makeVariantCanvas:c=>c,makePortraitTexture:()=>({dispose(){disposed.texture++;}}),
+    makeSpriteMaterial:(_three,map)=>{if(failMaterial)throw Error('fixture material failure');return {map,dispose(){disposed.material++;}};}};
+  const root={userData:{sourceCanvas:{width:200,height:200},portraitModelWidth:1,portraitModelHeight:1}};
+  const profile={...hatProfile,hex:'red'};
+  assert.equal(await Overflow.attach(THREE,root,{profile}),null,'missing assembly rejects overflow');
+  assert.deepEqual(disposed,{geometry:1,texture:1,material:1},'failed attachment disposes all owned GPU objects');
+  root.userData.portraitAssembly=new Group();
+  assert(await Overflow.attach(THREE,root,{profile}),'valid assembly attaches');
+  await Overflow.attach(THREE,root,{profile:{hat:{id:'none'}}});
+  assert.deepEqual(disposed,{geometry:2,texture:2,material:2},'removing a hat releases the previous overflow');
+  failMaterial=true;
+  assert.equal(await Overflow.attach(THREE,root,{profile}),null);
+  assert.deepEqual(disposed,{geometry:3,texture:3,material:2},'partial material construction releases prior resources');
+  failMaterial=false;
+  const parent=new Group(),target=new Group();parent.add(target);
+  const before={...disposed};
+  const cancelled=await Overflow.attachToPlanes(THREE,{profile,sourceCanvas:{width:200,height:200},modelWidth:1,modelHeight:1,planes:[{mesh:target}],isCancelled:()=>true});
+  assert.equal(cancelled.length,0);assert.deepEqual(disposed,before,'cancelled split-plane bake allocates no GPU resources');
+
   // Mesh hygiene: never measured, picked or outlined.
   for (const needle of ['mesh.userData.noOutline = true', 'mesh.raycast = emptyRaycast', 'mesh.frustumCulled = false',
     'mesh.geometry.boundingBox = new THREE.Box3()'])
