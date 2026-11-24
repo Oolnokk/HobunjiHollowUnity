@@ -59,19 +59,21 @@
         !!c._cliffClimb || !!c._cliffRouteTravel };
   }
 
-  function worldVisible(camera, worldPoint) {
-    if (!camera || !worldPoint) return true; // Unknown projection is NOT permission for a visible teleport.
-    let p = null;
-    if (window.THREE?.Vector3 && camera.projectionMatrix) {
-      p = new window.THREE.Vector3(worldPoint.x, worldPoint.y, worldPoint.z).project(camera);
-    } else if (typeof camera.projectPoint === 'function') p = camera.projectPoint(worldPoint);
-    if (!p || ![p.x, p.y, p.z].every(Number.isFinite)) return true;
-    return p.z >= -1 && p.z <= 1 && Math.abs(p.x) <= 1.2 && Math.abs(p.y) <= 1.2;
+  function project(camera, point) {
+    let p = null; // Invalid or unavailable projection is never permission to teleport.
+    if (window.THREE?.Vector3 && camera?.projectionMatrix) {
+      p = new window.THREE.Vector3(point.x, point.y, point.z).project(camera);
+    } else if (typeof camera?.projectPoint === 'function') p = camera.projectPoint(point);
+    return p && [p.x, p.y, p.z].every(Number.isFinite) ? p : null;
   }
 
   function hiddenAt(camera, x, z, footY, height = 1.25) {
-    return !worldVisible(camera, { x, y: footY + 0.12, z }) &&
-      !worldVisible(camera, { x, y: footY + Math.max(0.9, height), z });
+    const low = project(camera, { x, y: footY, z }); // Feet and head must lie outside the same padded screen edge.
+    const high = project(camera, { x, y: footY + Math.max(0.9, height), z });
+    if (!low || !high) return false;
+    return (low.x < -1.2 && high.x < -1.2) || (low.x > 1.2 && high.x > 1.2) ||
+      (low.y < -1.2 && high.y < -1.2) || (low.y > 1.2 && high.y > 1.2) ||
+      (low.z < -1 && high.z < -1) || (low.z > 1 && high.z > 1);
   }
 
   function floorForOwner(master, currentArea) {
@@ -109,7 +111,7 @@
       if (!ground || ground.incline || UNSAFE_TYPES.has(String(ground.type).toLowerCase()) ||
           (Number(ground.water) || 0) >= 0.003 || window.MapBoundaryGuard?.isBoundaryTile?.(ground)) continue;
       const x = px / tile, z = py / tile;
-      const landingY = ruin ? ownerSurface : deps.surfaceYForTile?.(ground, currentArea); // Use the candidate's actual ground height.
+      let landingY = ruin ? ownerSurface : deps.surfaceYForTile?.(ground, currentArea); // Use the candidate's actual ground height.
       if (!Number.isFinite(landingY) || Math.abs(landingY - ownerSurface) > 0.55) continue;
       if (!hiddenAt(camera, x, z, landingY, c.halfHeight * 2 || 1.25)) continue; // Reject visible points before expensive collision and path probes.
       if (Number.isInteger(ownerComponent) && ownerComponent >= 0 &&
@@ -120,9 +122,12 @@
         if (!support || Math.abs(support.y - ownerSurface) > Y_TOLERANCE ||
             DS?.pointInPit?.(x, z, 0.12) ||
             window.DevRandomRuin?.shaftBodyBlocksAtFeet?.(x, z, 0.2, ownerSurface)) continue;
+        landingY = support.y; // Snap to the actual candidate floor, not the owner's approximate Y.
+        if (!hiddenAt(camera, x, z, landingY, c.halfHeight * 2 || 1.25)) continue;
         if (window.DevRandomRuin?.shaftCreatureCanEnter?.(probe, px, py, true) === false) continue;
       }
       if (DS?.blockerAt?.(x, z, { radius: 0.2, actorHeight: 1.25 })) continue;
+      if (!ruin && !baby && deps.canOccupy?.(px, py, tile * 0.2) === false) continue; // Check existing sub-tile prop/furniture occupancy.
       if (!deps.creatureCanEnter?.(c.def, px, py, NaN, NaN, probe, true)) continue;
       if (ruin) {
         const navigator = window.TilePathfinding; // Existing tile navigator proves a floor-matched path back to the owner.
@@ -144,7 +149,7 @@
             !window.DevRandomRuin?.shaftBodyBlocksAtFeet?.(tx / tile, ty / tile, 0.2, ownerSurface) &&
             window.DevRandomRuin?.shaftCreatureCanEnter?.(probe, tx, ty, true) !== false &&
             !!deps.creatureCanEnter?.(c.def, tx, ty, NaN, NaN, probe, true);
-        }, { bounds: navigator.boxAround(startCol, startRow, goalCol, goalRow, 3), maxNodes: 550 });
+        }, { bounds: navigator.boxAround(startCol, startRow, goalCol, goalRow, 3), maxNodes: 550, cacheWalkability: true });
         if (!path) continue;
       }
       return { x: px, y: py, supportY: landingY };
@@ -190,6 +195,7 @@
     c._companionCombatTarget = null; c._companionCombatPriority = null;
     c._companionEffectiveTarget = null; c._companionBiteTarget = null; c._companionDecisionNextAt = 0; c._travelPathFailure = null;
     c._honeyfuzzleRescueTarget = null;
+    c.treasureCue = null; c.watchPlayerIdle = null; c.wanderTarget = null; c.wanderT = 0; // Retire remote secondary movement goals too.
     c.x = candidate.x; c.y = candidate.y; c.vx = 0; c.vy = 0;
     c.knockbackT = 0; c.knockbackVX = 0; c.knockbackVY = 0;
     if (ruin) c.shaftSupportY = candidate.supportY;
@@ -204,6 +210,12 @@
     debug.lastFailure = null;
     window.__farmLog?.(`[companion-follow] ${reason} follower recovered offscreen near owner`, 'wildlife');
     return true;
+  }
+
+  function isHardDistance(c, followGoal) {
+    return !!deps && c?.isCompanion && !c.banditCompanion && c.stableRole === 'companion' &&
+      !c._familyBabyFollower && (c.master || deps.player) === deps.player &&
+      Number(followGoal?.distance) > deps.TILE * HARD_FAR_TILES;
   }
 
   function tickRecovery(c, master, followGoal, dt) {
@@ -222,9 +234,10 @@
     }
     const elapsed = Math.min(0.1, Math.max(0, Number(dt) || 0)); // Pause/hitches cannot instantly trigger recovery.
     state.cooldown = Math.max(0, state.cooldown - elapsed);
+    state.retry = Math.max(0, state.retry - elapsed); // Count down even while briefly busy or crossing the distance boundary.
     const distance = Number(followGoal?.distance); // Shared follow goal already computed by the live movement loop.
     const far = distance > tile * FAR_TILES;
-    const hardFar = !c._familyBabyFollower && distance > tile * HARD_FAR_TILES; // A moving animal can still be excessively distant.
+    const hardFar = isHardDistance(c, followGoal); // A moving animal can still be excessively distant.
     const playerFloor = ruin ? floorForOwner(master, currentArea) : null;
     const rawPetFloor = c.shaftSupportY ?? c.surfaceYOverride?.();
     const modelPos = c.avatarRef?.group?.position; // Fallback only when the ruin has not yet assigned a shaft support to this pet.
@@ -233,14 +246,14 @@
         ? modelPos.y - (c.groundLift ?? c.halfHeight ?? 0) : null) : null;
     const differentFloor = (ruin && Number.isFinite(playerFloor) && Number.isFinite(petFloor) &&
       Math.abs(playerFloor - petFloor) > 0.75) || (c._familyBabyFollower && followGoal?.routeRequired === true);
-    const unsafe = c.prone || c._knockbackLedgeFall || c._cliffClimb ||
-      c.knockbackT > 0 || c._animalAttack ||
+    const unsafe = c.prone || c._knockbackLedgeFall || c._cliffClimb || c._climbLeap ||
+      c.knockbackT > 0 || c._animalAttack || c._furiousSpecial ||
       (!c._familyBabyFollower && window.Combat?.telegraph?.isBusy?.(c)) || master.climbing || master._freeJump;
     const busy = c._cliffRouteTravel || c._honeyfuzzleRescueTarget ||
       c._companionEffectiveTarget || c._companionCombatTarget || c.treasureCue; // Distant intentions must not indefinitely retain an abandoned path or target.
     const unable = unsafe || (!hardFar && busy);
     if ((!far && !differentFloor) || unable) {
-      state.stalled = 0; state.retry = 0; state.bestDistance = Infinity; return false;
+      state.stalled = 0; state.bestDistance = Infinity; return false;
     }
     const remaining = Math.max(0, Number(followGoal?.distance) || 0) +
       (differentFloor ? tile * 4 : 0);
@@ -248,11 +261,10 @@
       state.bestDistance = remaining; state.stalled = 0;
       // Keep the retry throttle if a recent hard-distance probe failed.
     } else if (state.bestDistance === Infinity) state.bestDistance = remaining;
-    state.stalled += elapsed;
+    state.stalled = hardFar ? 0 : state.stalled + elapsed; // A long-distance attempt is not evidence of ordinary stalling.
     const cooldownLimit = hardFar ? COOLDOWN_SECONDS - HARD_COOLDOWN_SECONDS : 0; // Any successful jump still enforces the short minimum interval.
     if ((!hardFar && state.stalled < STALL_SECONDS) || state.cooldown > cooldownLimit) return false;
-    state.retry -= elapsed;
-    if (state.retry > 0) return false;
+    if (state.retry > 0.000001) return false;
     state.retry = RETRY_SECONDS;
     if (!tryRecover(c, master, currentArea, hardFar ? 'distance-limit' : 'stalled')) return false;
     state.stalled = 0; state.retry = 0; state.cooldown = COOLDOWN_SECONDS;
@@ -261,7 +273,7 @@
   }
 
   window.CompanionFollowNavigation = Object.freeze({
-    init, goal, descentState, tickRecovery,
+    init, goal, descentState, isHardDistance, tickRecovery,
     debugSnapshot: () => ({ ...debug }),
     tuning: Object.freeze({ FAR_TILES, HARD_FAR_TILES, HARD_COOLDOWN_SECONDS, STALL_SECONDS, RETRY_SECONDS, COOLDOWN_SECONDS, PROGRESS_TILES }),
   });

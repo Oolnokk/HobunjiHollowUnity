@@ -118,11 +118,15 @@ owner.x = 25.5 * TILE;
 owner.angle = 0; // +x is forward; recoveries must land behind (-x).
 const distant = makePet(1.5 * TILE);
 distant._travelPath = [{ col: 2, row: 18 }];
+distant.treasureCue = { phase: 'lead' }; distant.wanderTarget = { x: 1, y: 1 }; distant.watchPlayerIdle = { timer: 5 };
 distant._companionCombatTarget = { health: 100 }; // Abandoned remote combat intention.
 assert.equal(simulate(distant, 1), true, 'an unseen distant pet recovers without eight seconds of stalling');
 assert(distant.x < owner.x, 'landing is behind the player, not an arbitrary visible-side ring point');
 assert(Math.hypot(distant.x - owner.x, distant.y - owner.y) <= 7 * TILE, 'uses a nearby hidden landing');
 assert.equal(distant._travelPath, null, 'abandoned path is cleared');
+assert.equal(distant.treasureCue, null, 'distant treasure cannot immediately send the pet back');
+assert.equal(distant.wanderTarget, null, 'remote wander goal is retired');
+assert.equal(distant.watchPlayerIdle, null, 'old idle pose is retired');
 assert.equal(distant._companionCombatTarget, null, 'remote combat target is released');
 assert.equal(Navigation.debugSnapshot().lastEvent.reason, 'distance-limit');
 distant.x = 1.5 * TILE;
@@ -150,16 +154,36 @@ for (let i = 0; i < 10; i++) {
   assert.equal(simulate(retryPet, 1), false);
 }
 assert.equal(routedChecks, checksAfter, 'no additional A* probes on every frame');
+// A brief busy state cannot clear a failed-search throttle.
+retryPet._animalAttack = {};
+assert.equal(simulate(retryPet, 1), false);
+retryPet._animalAttack = null;
+assert.equal(simulate(retryPet, 1), false);
+assert.equal(routedChecks, checksAfter, 'busy-state transitions do not rearm the expensive search');
 state.pathExists = true;
 assert.equal(simulate(retryPet, 10), true, 'retry can succeed after the obstruction clears');
 owner.x = 18.5 * TILE;
 delete owner.angle;
+
+// An actor spanning the screen is not hidden even when both end points are outside.
+const ordinaryProject = camera.projectPoint;
+camera.projectPoint = p => ({ x: 0, y: p.y < 5.4 ? -3 : 3, z: 0 });
+const spanning = makePet(0.1 * TILE);
+owner.x = 25.5 * TILE;
+assert.equal(simulate(spanning, 1), false, 'opposite screen edges cannot prove the whole animal is off-camera');
+camera.projectPoint = ordinaryProject;
+owner.x = 18.5 * TILE;
 
 const acrossArea = makePet();
 acrossArea.areaId = 'town';
 assert.equal(simulate(acrossArea), false, 'no cross-area teleport');
 assert.match(game, /CompanionFollowNavigation\.tickRecovery\(c, master, followGoal, dt\)/,
   'game.js runs recovery from the one existing companion update loop');
+const loopStart = game.indexOf('function updateCompanions(dt)');
+const loopEnd = game.indexOf('// Second pass for the real player', loopStart);
+const loop = game.slice(loopStart, loopEnd); // Verify real movement integration, not only the isolated module.
+assert(loop.indexOf('isHardDistance(c, followGoal)') < loop.indexOf('shouldReevaluate(c, master'), 'hard catch-up precedes target scoring');
+assert.match(loop, /!hardCatchup && window\.CompanionFollowNavigation\.tickRecovery/, 'no double recovery timer tick');
 assert.doesNotMatch(game, /function companionFollowGoal\(c, master\)/,
   'follow destination calculations have been extracted from game.js');
 console.log('Companion off-screen stuck recovery and ruin-floor safety passed');
