@@ -166,10 +166,11 @@
 
   function visualFor(state, rng = random) {
     const es = window.EnchantmentSystem;
-    const counts = { Tothal: 0, Hronal: 0, Kanthic: 0, Ohthic: 0, Fey: 0 };
+    const counts = { Tothal: 0, Hronal: 0, Kanthic: 0, Ohthic: 0 };
     for (const id of [...state.base, ...Object.values(state.flourishes)]) {
       const alignment = es?.DEFINITIONS?.[id]?.alignment;
-      if (Object.hasOwn(counts, alignment)) counts[alignment]++;
+      if (alignment === 'Fey') counts.Fey = (counts.Fey || 0) + 1;
+      else if (Object.hasOwn(counts, alignment)) counts[alignment]++;
     }
     const alignments = Object.keys(counts).filter(plane => counts[plane] > 0 && window.WeaponEnchantmentVFX?.ALIGNMENTS?.[plane]);
     const alignment = choose(alignments, rng), catalog = window.WeaponEnchantmentVFX?.ALIGNMENTS?.[alignment];
