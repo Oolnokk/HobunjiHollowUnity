@@ -34,7 +34,7 @@ function makeParent() {
   return {parent,bone};
 }
 
-assert.equal(Object.keys(expected).length,26,'all canonical and special character profiles remain present');
+assert.equal(Object.keys(expected).length,18,'old-main 18 canonical adult profiles are the baseline; auxiliary species inherit their native rigs');
 for (const [index,[key,authored]] of Object.entries(expected).entries()) {
   const [species,gender]=key.split('::');
   const portrait=[.55,.75,.85,.95,1,1.18,1.35,1.7][index%8]; // Includes very differently scaled species portrait planes.
@@ -142,4 +142,4 @@ eq(saved.scale.handScale,1.25,'fallback retains unrelated hand authoring');
 eq(saved.scale.footScale,.9,'fallback retains unrelated foot authoring');
 assert.equal(calls.filter(x=>x.kind==='refresh').length,1,'fallback invokes exactly one editor preview refresh');
 
-console.log('PASS 26-profile raw-PNG head parity: width/height/aspect, different body and portrait scales, actual renderer basis, UI save conversion and diagnostics');
+console.log('PASS 18-profile raw-PNG head parity: width/height/aspect, different body and portrait scales, actual renderer basis, UI save conversion and diagnostics');
