@@ -13,12 +13,17 @@ assert.equal(preference(false).isAutoTargetEnabled(), false, 'fresh mobile start
 assert.equal(preference(false, 'false').isAutoTargetEnabled(), false, 'mobile saved off is respected');
 assert.equal(preference(false, null, true).isAutoTargetEnabled(), false, 'blocked storage starts off');
 assert.equal(preference(false, 'true').isAutoTargetEnabled(), false, 'saved on cannot enable targeting automatically');
+const disabledMobile = preference(false, 'true'); // Execute the shipped feature gate, not an enabled fixture.
+assert.equal(disabledMobile.autoTargetAvailable, false);
+assert.equal(disabledMobile.setAutoTargetEnabled(true), false, 'mobile activation cannot bypass the feature gate');
+assert.equal(disabledMobile.autoTargetSettingsSnapshot().preferenceEnabled, false);
+assert.equal(disabledMobile.mountAutoTargetSetting(), false, 'disabled setting never mounts or touches DOM');
 const desktop = preference(true, 'true'); // Desktop fixture must stay manual regardless of preference changes.
 assert.equal(desktop.isAutoTargetEnabled(), false);
 desktop.setAutoTargetEnabled(true);
 assert.equal(desktop.isAutoTargetEnabled(), false, 'desktop cannot enable assist');
 
-const targetContext = { isDesktop:false,enabled:true,window:{Combat:{input:{isAutoTargetEnabled:()=>targetContext.enabled},attackAlignmentStep:(p,c,dt,o)=>({eligible:Math.abs(Math.atan2(c.y-p.y,c.x-p.x)-o.facing)<=o.halfConeRad,deltaRad:Math.atan2(c.y-p.y,c.x-p.x)-o.facing})},RangedWeapons:{playerLockRangePx:()=>100}},heldMode:'tool',activeTool:'ranged',equipmentSlots:{weapon:'sword',ranged:'bow'},TILE:10,combatConfig:()=>({autoTargetRangeTiles:4}),player:{x:0,y:0},currentArea:'farm',hostileObjects:[],manualAutoTarget:null,meleeAttackTargetLock:null,mobileArchCombatAim:null,currentMeleeAimAngle:()=>0,angleDiff:(a,b)=>Math.atan2(Math.sin(a-b),Math.cos(a-b)),invalidateAutoTargetCache(){} }; // Executes the shared selector against changing actor state.
+const targetContext = { isDesktop:false,enabled:true,window:{Combat:{input:{autoTargetAvailable:true,isAutoTargetEnabled:()=>targetContext.enabled},attackAlignmentStep:(p,c,dt,o)=>({eligible:Math.abs(Math.atan2(c.y-p.y,c.x-p.x)-o.facing)<=o.halfConeRad,deltaRad:Math.atan2(c.y-p.y,c.x-p.x)-o.facing})},RangedWeapons:{playerLockRangePx:()=>100}},heldMode:'tool',activeTool:'ranged',equipmentSlots:{weapon:'sword',ranged:'bow'},TILE:10,combatConfig:()=>({autoTargetRangeTiles:4}),player:{x:0,y:0},currentArea:'farm',hostileObjects:[],manualAutoTarget:null,meleeAttackTargetLock:null,mobileArchCombatAim:null,currentMeleeAimAngle:()=>0,angleDiff:(a,b)=>Math.atan2(Math.sin(a-b),Math.cos(a-b)),invalidateAutoTargetCache(){} }; // Executes the shared selector against changing actor state.
 vm.createContext(targetContext);
 function load(start,end) { vm.runInContext(game.slice(game.indexOf(start),game.indexOf(end,game.indexOf(start))),targetContext); }
 load('      function mobileAutoTargetEnabled()', '      const mobileAutoTargetView');
@@ -102,10 +107,15 @@ const handlers = {}; // Captures handlers attached by the real target-stick inst
 const timers = new Map(); // Deterministic hold timer callbacks without sleeping.
 let timerId = 0, selectedAngle = null, enabled = true, transitions = 0, buttonHidden = false; // Shared observable gesture results.
 const button = {classList:{contains:name=>name==='abt-hidden'&&buttonHidden},style:{},addEventListener:(name,fn)=>handlers[name]=fn,getBoundingClientRect:()=>({left:10,top:10,width:44,height:44}),setPointerCapture(){},releasePointerCapture(){}}; // Only the existing button's required DOM methods.
-const gesture = {btnSwapTarget:button,isDesktop:false,window:{Combat:{input:{setAutoTargetEnabled(value){enabled=value;transitions++;}}},addEventListener(){}},document:{hidden:false,body:{appendChild(){}},createElement:()=>({style:{},remove(){}}),addEventListener(){}},mobileAutoTargetEnabled:()=>enabled,targetStickWorldAngle:(x,y)=>Math.atan2(y,x),swapAutoTarget:angle=>{selectedAngle=angle;},syncMobileAutoTargetButton(){},setTimeout:fn=>{timers.set(++timerId,fn);return timerId;},clearTimeout:id=>timers.delete(id)}; // Runs production pointerdown/move/up/cancel lifecycle.
+const gesture = {btnSwapTarget:button,isDesktop:false,window:{Combat:{input:{autoTargetAvailable:true,setAutoTargetEnabled(value){enabled=value;transitions++;}}},addEventListener(){}},document:{hidden:false,body:{appendChild(){}},createElement:()=>({style:{},remove(){}}),addEventListener(){}},mobileAutoTargetEnabled:()=>enabled,targetStickWorldAngle:(x,y)=>Math.atan2(y,x),swapAutoTarget:angle=>{selectedAngle=angle;},syncMobileAutoTargetButton(){},setTimeout:fn=>{timers.set(++timerId,fn);return timerId;},clearTimeout:id=>timers.delete(id)}; // Runs production pointerdown/move/up/cancel lifecycle.
 const gestureStart = game.indexOf('      if (btnSwapTarget && !isDesktop)'); // Isolates the real handler block rather than recreating its state machine.
 vm.runInNewContext(game.slice(gestureStart,game.indexOf('      const desktopTapWindowMs',gestureStart)),gesture);
 const event = id => ({pointerId:id,clientX:32,clientY:32,preventDefault(){},stopPropagation(){}}); // Button-centered pointer fixture.
+gesture.window.Combat.input.autoTargetAvailable=false;
+handlers.pointerdown(event(99));handlers.pointerup(event(99));
+assert.equal(timers.size,0,'unavailable feature cannot begin a gesture even if its button is visible');
+assert.equal(transitions,0,'unavailable feature cannot toggle through a stale button');
+gesture.window.Combat.input.autoTargetAvailable=true;
 handlers.pointerdown(event(1));handlers.pointerup(event(1));
 assert.equal(enabled,false,'tap turns assist off');
 handlers.pointerdown(event(2));[...timers.values()].forEach(fn=>fn());handlers.pointerup(event(2));
@@ -252,7 +262,7 @@ console.log('executed runtime target size, label, and social-ring layout regress
 const visibilityClasses = new Set(); // Tracks the production control's active and hidden state without a browser renderer.
 let visibilityWrites = 0, eligibleTarget = false, visibilityEnabled = true; // Verifies combat transitions and deduplicated DOM updates.
 const visibilityAttrs = {}; // Cached accessibility state written by the production sync function.
-const visibilityContext = {btnSwapTarget:{classList:{contains:name=>visibilityClasses.has(name),toggle(name,value){visibilityWrites++;if(value)visibilityClasses.add(name);else visibilityClasses.delete(name);}},getAttribute:name=>visibilityAttrs[name],setAttribute(name,value){visibilityWrites++;visibilityAttrs[name]=value;}},isDesktop:false,mobileAutoTargetEnabled:()=>visibilityEnabled,findAvailableAutoTarget:()=>eligibleTarget?{id:"prey"}:null}; // Isolated live button presentation owner.
+const visibilityContext = {window:{Combat:{input:{autoTargetAvailable:true}}},btnSwapTarget:{classList:{contains:name=>visibilityClasses.has(name),toggle(name,value){visibilityWrites++;if(value)visibilityClasses.add(name);else visibilityClasses.delete(name);}},getAttribute:name=>visibilityAttrs[name],setAttribute(name,value){visibilityWrites++;visibilityAttrs[name]=value;}},isDesktop:false,mobileAutoTargetEnabled:()=>visibilityEnabled,findAvailableAutoTarget:()=>eligibleTarget?{id:"prey"}:null}; // Isolated live button presentation owner.
 const visibilityStart = game.indexOf('      function syncMobileAutoTargetButton()'); // Runs the actual owner rather than mirroring its logic.
 vm.runInNewContext(game.slice(visibilityStart,game.indexOf("      window.addEventListener('hobunji-auto-target-change'",visibilityStart)),visibilityContext);
 visibilityContext.syncMobileAutoTargetButton();
@@ -269,7 +279,17 @@ assert.equal(visibilityWrites,settledWrites,'unchanged visibility does not rewri
 eligibleTarget=false;
 visibilityContext.syncMobileAutoTargetButton();
 assert(visibilityClasses.has('abt-hidden'),'losing every eligible target hides the control');
-eligibleTarget=true;visibilityContext.isDesktop=true;
+eligibleTarget=true;visibilityContext.window.Combat.input.autoTargetAvailable=false;
+visibilityEnabled=true; // Even an active deliberate lock must not light up the unavailable mobile control.
+const previousPreview=visibilityContext.findAvailableAutoTarget;
+visibilityContext.findAvailableAutoTarget=()=>{throw Error('unavailable feature must not scan for targets');};
+visibilityContext.syncMobileAutoTargetButton();
+assert(visibilityClasses.has('abt-hidden'), 'disabled feature stays hidden even with an eligible target');
+assert(!visibilityClasses.has('active'));
+assert.equal(visibilityAttrs['aria-pressed'],'false');
+visibilityContext.findAvailableAutoTarget=previousPreview;
+visibilityContext.window.Combat.input.autoTargetAvailable=true;
+visibilityContext.isDesktop=true;
 visibilityContext.syncMobileAutoTargetButton();
 assert(visibilityClasses.has('abt-hidden'),'desktop never exposes the mobile button');
 assert.equal(declaration(labelsCss,'#btnSwapTarget .arch-meaning-label','color'),'#b8b8b8','disabled target label is gray');
@@ -281,6 +301,9 @@ targetContext.manualAutoTarget=null;targetContext.hostileObjects=[near];near.sta
 targetContext.gameFrameSerial=100;targetContext.availableAutoTargetCacheFrame=-1;targetContext.availableAutoTargetCacheValue=null;
 load('      function findAvailableAutoTarget()', '      function currentPlayerAimAngle()');
 assert.equal(targetContext.findAvailableAutoTarget(),near,'disabled ranged assist previews idle prey without requiring aggression');
+targetContext.window.Combat.input.autoTargetAvailable=false;
+assert.equal(targetContext.findAvailableAutoTarget(),null,'unavailable feature cannot return even a cached candidate');
+targetContext.window.Combat.input.autoTargetAvailable=true;
 assert.equal(targetContext.manualAutoTarget,null,'availability preview does not select a target while disabled');
 assert.equal(targetContext.enabled,false,'availability preview does not enable aiming');
 targetContext.activeTool='weapon';targetContext.gameFrameSerial++;
@@ -294,11 +317,17 @@ assert.equal(targetContext.findAvailableAutoTarget(),null,'an unequipped weapon 
 console.log('executed disabled-mode prey acquisition preview checks passed');
 
 const lifecycleListeners = {};
-const lifecycle = {isDesktop:false,inCombat:false,weaponOut:false,enabled:false,transitions:0,window:{dispatchEvent(event){lifecycleListeners[event.type]?.();},Combat:{input:{setAutoTargetEnabled(value){lifecycle.enabled=value;lifecycle.transitions++;}}}},CustomEvent:function(type){this.type=type;},isPlayerInCombat:()=>lifecycle.inCombat,shoulderSurfCombatStanceActive:()=>lifecycle.weaponOut};
+const lifecycle = {isDesktop:false,inCombat:false,weaponOut:false,enabled:false,transitions:0,window:{dispatchEvent(event){lifecycleListeners[event.type]?.();},Combat:{input:{autoTargetAvailable:true,setAutoTargetEnabled(value){lifecycle.enabled=value;lifecycle.transitions++;}}}},CustomEvent:function(type){this.type=type;},isPlayerInCombat:()=>lifecycle.inCombat,shoulderSurfCombatStanceActive:()=>lifecycle.weaponOut};
 const lifecycleStart = game.indexOf('      let mobileAutoTargetWasInCombat');
 vm.createContext(lifecycle);
 vm.runInContext(game.slice(lifecycleStart,game.indexOf('      function syncMobileAutoTargetButton()',lifecycleStart)),lifecycle);
 function combatTick() { vm.runInContext('syncMobileAutoTargetCombatState()',lifecycle); }
+lifecycle.window.Combat.input.autoTargetAvailable=false;
+const previousCombatCheck=lifecycle.isPlayerInCombat;
+lifecycle.isPlayerInCombat=()=>{throw Error('unavailable feature must not check combat state');};
+combatTick();
+lifecycle.isPlayerInCombat=previousCombatCheck;
+lifecycle.window.Combat.input.autoTargetAvailable=true;
 combatTick();lifecycle.inCombat=true;lifecycle.weaponOut=true;combatTick();
 assert.equal(lifecycle.enabled,false,'combat entry never enables assist');
 lifecycle.enabled=true;combatTick();assert.equal(lifecycle.enabled,true,'explicit activation survives active combat');

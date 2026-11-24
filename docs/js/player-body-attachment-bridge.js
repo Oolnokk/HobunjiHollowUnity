@@ -30,8 +30,8 @@
     }
   }
   if (window.HobunjiAuthoredAnimalHeadRigs?.version !== '2026-11-18-nine-authored-rigs2') {
-    if (!parserLoad('js/animal-head-rig-authored.js?v=20261118NineAuthoredRigs2', 'animal-head-rig-authored')) {
-      lateLoad('js/animal-head-rig-authored.js?v=20261118NineAuthoredRigs2', 'animal-head-rig-authored');
+    if (!parserLoad('js/animal-head-rig-authored.js?v=20261123h77c301d', 'animal-head-rig-authored')) {
+      lateLoad('js/animal-head-rig-authored.js?v=20261123h77c301d', 'animal-head-rig-authored');
     }
   }
   if (!window.HobunjiShoulderSplineProfiles || Number(window.HobunjiShoulderSplineProfiles.version) < 5) {
@@ -305,7 +305,7 @@
         if (!mask) throw new Error(warp?.debugSnapshot?.()?.lastMaskError || 'No opaque head pixels in the idle frame');
       }
       let composed = null;
-      try { composed = await renderer?.composeFrame?.(kind, frameName, companion.genotype, false); }
+      try { composed = await renderer?.composeFrame?.(kind, frameName, companion.genotype, false, { priority: 'pet' }); }
       catch (error) {
         if (renderer?.SPECIES?.[kind]) throw error; // A supported species must retry its own eyes/coat, never cache a plain fallback.
         smallPetHeadDebug.lastError = 'Unsupported genotype, using raw sprite: ' + String(error?.message || error);
@@ -356,8 +356,8 @@
 
     if (kind && typeof renderer?.composeFrame === 'function') {
       try {
-        idleSource = await renderer.composeFrame(kind, 'idle', companion.genotype, false);
-        rightSource = rightUsesIdle ? idleSource : await renderer.composeFrame(kind, 'run1', companion.genotype, false);
+        idleSource = await renderer.composeFrame(kind, 'idle', companion.genotype, false, { priority: 'pet' });
+        rightSource = rightUsesIdle ? idleSource : await renderer.composeFrame(kind, 'run1', companion.genotype, false, { priority: 'pet' });
       } catch (error) {
         if (renderer?.SPECIES?.[kind]) throw error; // Preserve painted split layers; retry temporary compositor failures.
         idleSource = null;
@@ -566,7 +566,7 @@
       && companion._shoulderPresentedBackMap === (currentBackMap || null);
     if (companion.currentFrameUrl === frameUrl && composedReady && mapsUnchanged) return true;
     if (expectsGenotype && Date.now() < (companion._shoulderGenotypeRetryAt || 0)) return true; // Retry cold genotypes at a bounded cadence, not every render frame.
-    const applied = combatDeps.setCreatureFrame(companion.avatarRef, frameUrl, selected.genotypeKind, frameName, companion.genotype);
+    const applied = combatDeps.setCreatureFrame(companion.avatarRef, frameUrl, selected.genotypeKind, frameName, companion.genotype, false, 'pet');
     const actualMap = shoulderFrameMap(companion.avatarRef?.frontPlane); // Refresh after the authoritative game texture swap.
     const fullAppearance = !expectsGenotype || (applied !== false && actualMap?.isCanvasTexture === true); // A declined swap may leave an older tinted canvas bound; it is not proof the requested genotype arrived.
     companion._shoulderGenotypeRetryAt = expectsGenotype && !fullAppearance ? Date.now() + 150 : 0; // Plain fallbacks are temporary even when setCreatureFrame returned success.
@@ -585,7 +585,7 @@
     companion.avatarRef?.setShoulderSplitOverlayEnabled?.(false);
     const idle = shoulderIdleFrame(companion, combatDeps);
     if (idle.url && typeof combatDeps?.setCreatureFrame === 'function' && companion.avatarRef && companion.currentFrameUrl !== idle.url) {
-      const applied = combatDeps.setCreatureFrame(companion.avatarRef, idle.url, idle.genotypeKind, 'idle', companion.genotype);
+      const applied = combatDeps.setCreatureFrame(companion.avatarRef, idle.url, idle.genotypeKind, 'idle', companion.genotype, false, 'pet');
       if (applied !== false) companion.currentFrameUrl = idle.url; // Never mark a failed post-shoulder restore as complete.
     }
     companion.__hobunjiShoulderFrame = null;

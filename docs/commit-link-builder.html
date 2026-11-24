@@ -61,6 +61,12 @@
     .branch-picker { grid-column: 1 / -1; }
     .branch-picker select { max-width: 100%; }
     .branch-list-status { min-height: 1.4em; }
+    .pr-watch { display: grid; gap: 10px; margin-top: 14px; }
+    .pr-watch fieldset { margin: 0; min-width: 0; border: 1px solid var(--border); border-radius: 10px; }
+    .pr-watch legend { padding: 0 5px; overflow-wrap: anywhere; }
+    .pr-watch label { display: flex; align-items: center; gap: 8px; margin: 0; width: fit-content; min-height: 36px; font-weight: normal; }
+    .pr-watch input[type="checkbox"] { width: 18px; min-height: 18px; accent-color: var(--accent); }
+    #prAlert[hidden] { display: none; }
     button {
       background: var(--accent);
       color: #071426;
@@ -167,6 +173,28 @@
     </section>
   </div>
 
+  <section class="panel" aria-labelledby="prMonitorHeading">
+    <h2 id="prMonitorHeading">Watch open pull requests</h2>
+    <form id="prAccess" autocomplete="off">
+      <label for="prToken">GitHub read-only token</label>
+      <input id="prToken" type="password" aria-describedby="prTokenHelp" spellcheck="false" autocomplete="off">
+      <p id="prTokenHelp" class="hint">Use a <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener noreferrer">fine-grained token</a> with read access to pull requests, checks, and commit statuses for this repository. This page keeps it in memory until you close or reload it.</p>
+      <div class="actions"><button type="submit" class="secondary" id="prLoad">Load open PRs</button></div>
+    </form>
+    <form id="prPicker" hidden>
+      <label for="prChoices">Choose a pull request</label>
+      <select id="prChoices"></select>
+      <div class="actions"><button type="submit" id="prAdd">Add PR to watch list</button></div>
+    </form>
+    <div id="prStatus" class="status">Choose PRs and alert conditions to check every 10 seconds while this page is open.</div>
+    <div class="hint" id="prSound"></div>
+    <div class="pr-watch" id="prWatchList"></div>
+    <div class="actions" id="prAlert" hidden>
+      <div id="prAlertText" role="status"></div>
+      <button type="button" class="secondary" id="prAcknowledge">Dismiss alerts</button>
+    </div>
+  </section>
+
   <section class="panel" aria-label="Other options">
     <div class="actions" style="margin-top: 0">
       <button id="copyBoth" class="secondary" type="button">Copy both URLs</button>
@@ -179,7 +207,7 @@
       <div class="actions"><button id="copyDebug" type="button" class="secondary">Copy diagnostics</button></div>
     </details>
   </section>
-  <footer>No login or access token required for a public repository. GitHub may limit anonymous API requests; manual SHA entry continues working if the API is unavailable.</footer>
+  <footer>Building links for this public repository needs no token. Manual SHA entry works even when GitHub's API is unavailable.</footer>
 </main>
 
 <script>
@@ -189,7 +217,8 @@
   const REPO = "Oolnokk/HobunjiHollowUnity"; // Used by the GitHub API and both generated links.
   const STORAGE_KEY = "hobunji.githack-link-builder.v1"; // Stores branch and page paths (never a stale SHA).
   const elements = {}; // Holds UI nodes accessed throughout the builder.
-  const ids = ["branch", "recentBranches", "recentHelp", "refreshBranches", "commit", "gamePath", "hubPath", "gameLink", "hubLink", "fetchLatest", "copySha", "openGame", "copyGame", "openHub", "copyHub", "copyBoth", "copyBuilder", "copyDebug", "commitsPage", "commitMeta", "status", "debugLog"];
+  const ids = ["branch", "recentBranches", "recentHelp", "refreshBranches", "commit", "gamePath", "hubPath", "gameLink", "hubLink", "fetchLatest", "copySha", "openGame", "copyGame", "openHub", "copyHub", "copyBoth", "copyBuilder", "copyDebug", "commitsPage", "commitMeta", "status", "debugLog",
+    "prAccess", "prToken", "prLoad", "prPicker", "prChoices", "prAdd", "prStatus", "prSound", "prWatchList", "prAlert", "prAlertText", "prAcknowledge"];
   ids.forEach(function (id) { elements[id] = document.getElementById(id); });
 
   let requestGeneration = 0; // Prevents stale GitHub replies from overwriting newer selections.
@@ -540,6 +569,392 @@
     status("Opened " + (kind === "game" ? "Game" : "Tool Hub") + " in a new tab.", "good");
   }
 
+  function setupPrMonitor() {
+    const pollInterval = 10000; // Normal interval between polling rounds.
+    const [owner, name] = REPO.split("/"); // Passed to the repository query.
+    const watched = new Map(); // User-added PRs and their armed conditions.
+    const conditions = [
+      { id: "checks", label: "All checks pass", alert: "all checks passed", perCommit: true },
+      { id: "merge", label: "Becomes mergeable", alert: "became mergeable" },
+      { id: "five", label: "5 minutes since latest commit", alert: "latest commit reached 5 minutes", perCommit: true },
+      { id: "ten", label: "10 minutes since latest commit", alert: "latest commit reached 10 minutes", perCommit: true }
+    ]; // Drives each PR's checkboxes and alert text.
+    const pendingAlerts = new Map(); // Keeps unseen results until dismissed.
+    const pageTitle = document.title; // Restored when the tab regains focus.
+    let token = ""; // In-memory credential used only for direct GitHub requests.
+    let choices = []; // Snapshot of open PRs for the selection menu.
+    let pollTimer = 0; // Tracks the next scheduled poll.
+    let nextPollAt = 0; // Lets the tab catch up if the browser delayed a background timer.
+    let pollController = null; // Cancels in-flight status requests when monitoring stops.
+    let retryDelay = 0; // Carries GitHub's retry window across checkbox changes.
+    let retryAt = 0; // Earliest time another request can be made after throttling.
+    let audio = null; // Unlocked by a user gesture before any background chime.
+    let flashTimer = 0; // Alternates the tab title while it is in the background.
+
+    function monitorStatus(message, tone) {
+      elements.prStatus.textContent = message;
+      elements.prStatus.className = "status" + (tone ? " " + tone : "");
+    }
+
+    function unlockAudio() {
+      try {
+        const Audio = window.AudioContext || window.webkitAudioContext; // Covers browsers with prefixed Web Audio.
+        if (!audio) audio = new Audio();
+        audio.resume().then(function () {
+          elements.prSound.textContent = "";
+        }).catch(showSoundBlocked);
+      } catch (_) {
+        showSoundBlocked();
+      }
+    }
+
+    function showSoundBlocked() {
+      elements.prSound.textContent = "Sound is unavailable. Changing an alert checkbox tries again.";
+    }
+
+    function playChime() {
+      if (audio?.state !== "running") {
+        showSoundBlocked();
+        return;
+      }
+      const start = audio.currentTime; // Schedules the two notes as one chime.
+      [660, 880].forEach(function (frequency, index) {
+        const time = start + index * 0.14; // Offsets the second note.
+        const note = audio.createOscillator(); // Plays one tone.
+        const volume = audio.createGain(); // Applies a short fade to each tone.
+        note.frequency.value = frequency;
+        volume.gain.setValueAtTime(0.001, time);
+        volume.gain.exponentialRampToValueAtTime(0.23, time + 0.025);
+        volume.gain.exponentialRampToValueAtTime(0.001, time + 0.24);
+        note.connect(volume);
+        volume.connect(audio.destination);
+        note.start(time);
+        note.stop(time + 0.25);
+      });
+    }
+
+    function clearFlash() {
+      clearTimeout(flashTimer);
+      flashTimer = 0;
+      document.title = pageTitle;
+    }
+
+    function flashTab() {
+      clearFlash();
+      const flashesUntil = Date.now() + 6000; // Limits title flashing when this tab is already active.
+      function tick() {
+        if (!document.hidden && document.hasFocus() && Date.now() >= flashesUntil) {
+          clearFlash();
+          return;
+        }
+        document.title = document.title === pageTitle ? "🔔 PR ready · " + pageTitle : pageTitle;
+        flashTimer = setTimeout(tick, 850);
+      }
+      tick();
+    }
+
+    async function queryGitHub(query, variables, signal) {
+      const response = await fetch("https://api.github.com/graphql", {
+        method: "POST", headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
+        body: JSON.stringify({ query, variables: { owner, name, ...variables } }),
+        cache: "no-store", redirect: "error", signal
+      }); // GitHub receives the token only at its GraphQL endpoint.
+      const result = await response.json().catch(function () { return {}; }); // Accepts non-JSON upstream errors.
+      if (signal.aborted) throw new DOMException("Request canceled", "AbortError");
+      const errors = Array.isArray(result.errors) ? result.errors : []; // Used to classify credential and quota errors.
+      const failure = new Error("GitHub could not load PR data (HTTP " + response.status + ")."); // Safe for diagnostics.
+      if (response.status === 429 || response.headers.get("x-ratelimit-remaining") === "0"
+        || errors.some(error => error.type === "RATE_LIMITED" || /rate limit/i.test(error.message || ""))
+        || (response.status === 403 && /rate limit/i.test(result.message || ""))) {
+        const retryAfter = Number(response.headers.get("retry-after")) * 1000; // Delay from a secondary limit.
+        const resetAt = Number(response.headers.get("x-ratelimit-reset")) * 1000; // Expiry of a primary limit.
+        retryDelay = Math.max(60000, retryDelay * 2, retryAfter,
+          response.headers.get("x-ratelimit-remaining") === "0" ? resetAt - Date.now() : 0);
+        retryAt = Date.now() + retryDelay;
+        failure.message = "GitHub rate limit reached. Retry after " + new Date(retryAt).toLocaleTimeString() + ".";
+        throw failure;
+      }
+      if ([401, 403, 404].includes(response.status) || errors.some(error => error.type === "FORBIDDEN")
+        || result.data?.repository === null) {
+        failure.credentials = true;
+        failure.message = "GitHub denied access. Load open PRs with a token that can read this repository and its checks.";
+        throw failure;
+      }
+      if (!response.ok || errors.length || !result.data?.repository) throw failure;
+      retryDelay = 0;
+      return result.data.repository;
+    }
+
+    function updateChoices() {
+      const options = choices.filter(pr => !watched.has(pr.number)).map(function (pr) {
+        const option = document.createElement("option"); // One manually selectable PR.
+        option.value = String(pr.number);
+        option.textContent = "#" + pr.number + " " + pr.title;
+        return option;
+      });
+      elements.prChoices.replaceChildren(...options);
+      elements.prChoices.disabled = !options.length;
+      elements.prAdd.disabled = !options.length;
+    }
+
+    async function loadPrChoices(event) {
+      event.preventDefault();
+      if (elements.prLoad.disabled) return;
+      unlockAudio();
+      const enteredToken = elements.prToken.value.trim(); // Replaces the current credential only when entered.
+      if (!enteredToken && !token) {
+        monitorStatus("Enter a GitHub read-only token to load open PRs.", "warning");
+        elements.prToken.focus();
+        return;
+      }
+      if (Date.now() < retryAt) {
+        monitorStatus("GitHub rate limit reached. Retry after " + new Date(retryAt).toLocaleTimeString() + ".", "warning");
+        return;
+      }
+      if (enteredToken) token = enteredToken;
+      elements.prToken.value = "";
+      elements.prLoad.disabled = true;
+      stopPoll();
+      const controller = new AbortController(); // Bounds the paginated picker request.
+      const timeout = setTimeout(() => controller.abort(), 15000); // Stops a stalled picker load.
+      monitorStatus("Loading open PRs…");
+      try {
+        const openPrs = new Map(); // Deduplicates PRs if GitHub updates the list during pagination.
+        let cursor = null; // Advances through the open PR selection menu.
+        do {
+          const repo = await queryGitHub(`query($owner: String!, $name: String!, $cursor: String) {
+            repository(owner: $owner, name: $name) {
+              pullRequests(first: 100, after: $cursor, states: OPEN, orderBy: {field: CREATED_AT, direction: DESC}) {
+                nodes { number title }
+                pageInfo { hasNextPage endCursor }
+              }
+            }
+          }`, { cursor }, controller.signal);
+          for (const pr of repo.pullRequests.nodes) {
+            if (Number.isSafeInteger(pr?.number) && pr.number > 0) openPrs.set(pr.number, pr);
+          }
+          cursor = repo.pullRequests.pageInfo.hasNextPage ? repo.pullRequests.pageInfo.endCursor : null;
+        } while (cursor);
+        choices = Array.from(openPrs.values());
+        updateChoices();
+        elements.prPicker.hidden = false;
+        elements.prLoad.textContent = "Refresh open PR list";
+        monitorStatus(choices.length ? "Add a PR and tick the conditions you’re waiting for." : "No open PRs found.");
+      } catch (error) {
+        if (error.credentials) token = "";
+        reportPollError(error);
+      } finally {
+        clearTimeout(timeout);
+        elements.prLoad.disabled = false;
+        schedulePoll(0);
+      }
+    }
+
+    function addPr(event) {
+      event.preventDefault();
+      const pr = choices.find(pr => pr.number === Number(elements.prChoices.value)); // The user's selected PR.
+      if (!pr || watched.has(pr.number)) return;
+      const row = document.createElement("fieldset"); // Groups checkboxes with their PR link.
+      const legend = document.createElement("legend"); // Labels the group with the PR number and title.
+      const link = document.createElement("a"); // Opens this PR independently of the builder.
+      link.href = "https://github.com/" + REPO + "/pull/" + pr.number;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      link.textContent = "#" + pr.number + " " + pr.title;
+      legend.appendChild(link);
+      row.appendChild(legend);
+      const armed = new Map(); // Maps enabled conditions to their most recent known state.
+      const checkboxes = []; // Disabled when GitHub reports the PR is closed.
+      const state = document.createElement("p"); // Holds the latest GitHub status for this PR.
+      state.className = "hint";
+      state.textContent = "Choose at least one condition to start watching.";
+      for (const condition of conditions) {
+        const label = document.createElement("label"); // Provides a mobile-friendly checkbox target.
+        const checkbox = document.createElement("input"); // Enables a single condition for this PR.
+        checkbox.type = "checkbox";
+        checkboxes.push(checkbox);
+        checkbox.addEventListener("change", function () {
+          if (checkbox.checked) {
+            unlockAudio();
+            armed.set(condition.id, { previous: null });
+          } else {
+            armed.delete(condition.id);
+          }
+          if (!armed.size && !watched.get(pr.number).closed) {
+            state.textContent = "Choose at least one condition to start watching.";
+          }
+          updatePolling();
+        });
+        label.appendChild(checkbox);
+        label.appendChild(document.createTextNode(condition.label));
+        row.appendChild(label);
+      }
+      const remove = document.createElement("button"); // Removes this PR from the watch list.
+      remove.type = "button";
+      remove.className = "secondary";
+      remove.textContent = "Remove #" + pr.number;
+      remove.addEventListener("click", function () {
+        watched.delete(pr.number);
+        row.remove();
+        updateChoices();
+        updatePolling();
+      });
+      row.appendChild(state);
+      row.appendChild(remove);
+      watched.set(pr.number, { armed, state, checkboxes, closed: false });
+      elements.prWatchList.appendChild(row);
+      updateChoices();
+    }
+
+    function activePrs() {
+      return Array.from(watched).filter(([, entry]) => !entry.closed && entry.armed.size);
+    }
+
+    function stopPoll() {
+      clearTimeout(pollTimer);
+      pollTimer = 0;
+      pollController?.abort();
+      pollController = null;
+    }
+
+    function updatePolling() {
+      if (!activePrs().length) {
+        stopPoll();
+        monitorStatus("No active alerts. Tick a condition on an open PR to start.");
+        return;
+      }
+      schedulePoll(0);
+    }
+
+    function schedulePoll(delay) {
+      if (!token || pollTimer || pollController || elements.prLoad.disabled || !activePrs().length) return;
+      nextPollAt = Math.max(Date.now() + Math.max(0, delay), retryAt);
+      pollTimer = setTimeout(pollPrs, Math.max(0, nextPollAt - Date.now()));
+    }
+
+    function reportPollError(error) {
+      const message = error.name === "AbortError" ? "GitHub PR request timed out."
+        : error instanceof TypeError ? "Could not reach GitHub. Check your connection." : error.message; // Visible without devtools.
+      monitorStatus(message, "warning");
+      log("PR monitor: " + message);
+    }
+
+    function checkPr(number, entry, armedAtRequest, pr, now) {
+      if (pr.state !== "OPEN") {
+        entry.closed = true;
+        for (const checkbox of entry.checkboxes) checkbox.disabled = true;
+        choices = choices.filter(choice => choice.number !== number);
+        updateChoices();
+        entry.state.textContent = "PR " + (pr.state === "MERGED" ? "merged" : "closed") + ". Monitoring stopped.";
+        return false;
+      }
+      const commit = pr.commits.nodes[0]?.commit; // GitHub's last commit in the PR.
+      const head = commit?.oid === pr.headRefOid ? commit : null; // Avoids mixing statuses from different revisions.
+      const checkState = head?.statusCheckRollup?.state; // Includes check runs and legacy commit statuses.
+      const age = head?.committedDate ? Math.max(0, now - Date.parse(head.committedDate)) : NaN; // Shared by the two timers.
+      let merge = null; // Unknown results retain the previous known merge state.
+      if (pr.isDraft || pr.mergeable === "CONFLICTING" || ["BLOCKED", "BEHIND", "DIRTY"].includes(pr.mergeStateStatus)) {
+        merge = false;
+      } else if (pr.mergeable === "MERGEABLE" && ["CLEAN", "HAS_HOOKS", "UNSTABLE"].includes(pr.mergeStateStatus)) {
+        merge = true;
+      }
+      const states = {
+        checks: head ? checkState === "SUCCESS" : null,
+        merge,
+        five: Number.isFinite(age) ? age >= 300000 : null,
+        ten: Number.isFinite(age) ? age >= 600000 : null
+      }; // Maps the current GitHub response to each condition's readiness.
+      const alerts = []; // Coalesces multiple transitions for a PR into one notification.
+      for (const condition of conditions) {
+        const armed = entry.armed.get(condition.id); // Ignore conditions changed while the request was in flight.
+        const ready = states[condition.id]; // Unknown readings never replace a known baseline.
+          if (!armed || armed !== armedAtRequest.get(condition.id) || ready === null) continue;
+        const previous = armed.previous; // First reading establishes a quiet baseline.
+        const sha = condition.perCommit ? head?.oid : null; // A new head rearms checks and both age thresholds.
+        if (ready && previous && (!previous.ready || previous.sha !== sha)) alerts.push(condition.alert);
+        armed.previous = { ready, sha };
+      }
+      entry.state.textContent = [
+        "Checks: " + (checkState ? checkState.toLowerCase() : head ? "none reported" : "unknown"),
+        "Merge: " + (merge === null ? "unknown" : merge ? "mergeable" : "blocked"),
+        "Latest commit: " + (Number.isFinite(age) ? Math.floor(age / 60000) + " min ago" : "unknown")
+      ].join(" · ");
+      if (!alerts.length) return false;
+      pendingAlerts.set(number, [...new Set([...(pendingAlerts.get(number) || []), ...alerts])]);
+      log("PR #" + number + ": " + alerts.join(", "));
+      return true;
+    }
+
+    async function pollPrs() {
+      pollTimer = 0;
+      const active = activePrs(); // Only PRs manually added and given an alert condition are queried.
+      const started = Date.now(); // Keeps the normal start-to-start interval at ten seconds.
+      const controller = new AbortController(); // Cancels all batches if the monitor is paused.
+      const timeout = setTimeout(() => controller.abort(), 15000); // Prevents overlapping or stalled polls.
+      pollController = controller;
+      let hasAlerts = false; // Plays one chime for everything that changed in this round.
+      try {
+        for (let offset = 0; offset < active.length; offset += 50) {
+          const batch = active.slice(offset, offset + 50); // Bounds the GraphQL request size.
+          const armed = new Map(batch.map(([number, entry]) => [number, new Map(entry.armed)])); // Snapshot for in-flight edits.
+          const queries = batch.map(([number]) => `pr${number}: pullRequest(number: ${number}) {
+            state isDraft mergeable mergeStateStatus headRefOid
+            commits(last: 1) { nodes { commit { oid committedDate statusCheckRollup { state } } } }
+          }`); // Fetches status only for explicitly selected PR numbers.
+          const results = await queryGitHub(`query($owner: String!, $name: String!) {
+            repository(owner: $owner, name: $name) { ${queries.join("\n")} }
+          }`, {}, controller.signal);
+          if (pollController !== controller) return;
+          for (const [number, entry] of batch) {
+            const pr = results["pr" + number]; // Matches the result to its watched row.
+            if (pr && watched.get(number) === entry) {
+              hasAlerts = checkPr(number, entry, armed.get(number), pr, Date.now()) || hasAlerts;
+            }
+          }
+        }
+        const count = activePrs().length; // Excludes PRs that closed during the poll.
+        monitorStatus(count ? "Watching " + count + " PR" + (count === 1 ? "" : "s") + " · Checked "
+          + new Date().toLocaleTimeString() : "No open PRs with active alerts.", count ? "good" : "");
+      } catch (error) {
+        if (pollController !== controller) return;
+        if (error.credentials) token = "";
+        reportPollError(error);
+      } finally {
+        clearTimeout(timeout);
+        if (pollController === controller) {
+          pollController = null;
+          if (hasAlerts) {
+            elements.prAlertText.textContent = Array.from(pendingAlerts, ([number, alerts]) =>
+              "#" + number + " " + alerts.join(", ")).join(" · ");
+            elements.prAlert.hidden = false;
+            flashTab();
+            playChime();
+          }
+          schedulePoll(pollInterval - (Date.now() - started));
+        }
+      }
+    }
+
+    elements.prAccess.addEventListener("submit", loadPrChoices);
+    elements.prPicker.addEventListener("submit", addPr);
+    elements.prAcknowledge.addEventListener("click", function () {
+      pendingAlerts.clear();
+      elements.prAlert.hidden = true;
+      clearFlash();
+    });
+    window.addEventListener("focus", clearFlash);
+    document.addEventListener("visibilitychange", function () {
+      if (!document.hidden) {
+        clearFlash();
+        if (pollTimer && Date.now() >= nextPollAt) {
+          clearTimeout(pollTimer);
+          pollTimer = 0;
+          schedulePoll(0);
+        }
+      }
+    });
+  }
+
   elements.branch.addEventListener("input", branchChanged);
   elements.recentBranches.addEventListener("change", function () {
     if (!elements.recentBranches.value) {
@@ -581,6 +996,7 @@
   window.addEventListener("error", function (event) { log("Page error: " + event.message); });
   window.addEventListener("unhandledrejection", function (event) { log("Unhandled promise: " + String(event.reason)); });
   loadPreferences();
+  setupPrMonitor();
   updateCommitPage();
   renderLinks();
   fetchLatest();

@@ -51,8 +51,8 @@
     return false;
   }
 
-  function classifySurface(object, hints = {}) {
-    if (!object?.isMesh || object.isSkinnedMesh) return SURFACE.SOLID;
+  function classifyCover(object) {
+    if (!object?.isMesh || object.isSkinnedMesh) return null;
 
     const data = object.userData || {};
     // Explicit translucent/solid cover tags take priority over path/ground
@@ -80,6 +80,14 @@
       ));
     if (grassBillboard) return SURFACE.BILLBOARD_GRASS;
 
+    return null;
+  }
+
+  function classifySurface(object, hints = {}) {
+    if (!object?.isMesh || object.isSkinnedMesh) return SURFACE.SOLID;
+    const cover = classifyCover(object); // Cover classification never requires path/floor ancestry.
+    if (cover) return cover;
+    const data = object.userData || {};
     if (hints.topFaceGround === true || data.hobunjiGroundTopFacesOnly === true) {
       return SURFACE.TOP_FACE_GROUND;
     }
@@ -171,6 +179,7 @@
     SURFACE,
     WATER_DEPTH_ALPHA_THRESHOLD,
     classifySurface,
+    classifyCover,
     resolvePolicy,
     getGroundXrayKind,
     isProtectedCover,

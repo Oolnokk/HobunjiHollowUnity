@@ -689,11 +689,58 @@
       : Math.max(0, Number(def?.projectileRadiusPx) || 0) / deps.TILE; // Aim/LOS degrade safely before the image finishes decoding.
   }
 
+  // Retain bounded retired GPU resources without sharing mutable live shots.
+  const projectileMaterialPool = []; // Used by projectile sprite acquire/release.
+  const projectileGeometryPool = []; // Used by exact-dimension plane/collider acquire/release.
+  const projectileGeometryKeys = new WeakMap(); // Ownership and dimensions.
+  const pooledProjectileMaterials = new WeakSet(); // Ownership of sprite materials.
+  const projectileTrailPool = []; // Retired trail buffer/material pairs; mesh wrappers are never reused across scenes.
+  const PROJECTILE_POOL_LIMIT = 16;
+  const projectilePoolStats = { materialReuses: 0, geometryReuses: 0, trailReuses: 0, overflowDisposals: 0 };
+  function acquireProjectileMaterial(texture) {
+    const material = projectileMaterialPool.pop();
+    if (material) {
+      projectilePoolStats.materialReuses++;
+      material.map = texture;
+      material.opacity = 1;
+      material.visible = true;
+      material.transparent = true;
+      return material;
+    }
+    const fresh = new THREE.MeshBasicMaterial({ map: texture, transparent: true, alphaTest: 0.08, side: THREE.DoubleSide });
+    pooledProjectileMaterials.add(fresh);
+    return fresh;
+  }
+  function acquireProjectileGeometry(key, create) {
+    const index = projectileGeometryPool.findIndex(geometry => projectileGeometryKeys.get(geometry) === key);
+    if (index >= 0) {
+      projectilePoolStats.geometryReuses++;
+      return projectileGeometryPool.splice(index, 1)[0];
+    }
+    const geometry = create();
+    projectileGeometryKeys.set(geometry, key);
+    return geometry;
+  }
+  function releaseProjectileGeometry(geometry) {
+    if (!geometry) return;
+    if (projectileGeometryKeys.has(geometry) && projectileGeometryPool.length < PROJECTILE_POOL_LIMIT) {
+      projectileGeometryPool.push(geometry);
+    } else { geometry.dispose?.(); projectilePoolStats.overflowDisposals++; }
+  }
+  function releaseProjectileMaterial(material) {
+    if (!material) return;
+    material.map?.dispose?.();
+    if (pooledProjectileMaterials.has(material) && projectileMaterialPool.length < PROJECTILE_POOL_LIMIT) {
+      material.map = null; // Per-shot textures remain independently owned.
+      projectileMaterialPool.push(material);
+    } else { material.dispose?.(); projectilePoolStats.overflowDisposals++; }
+  }
+
   function createProjectileMesh(def, radiusPx, textureSource = null, sourceTransform = null) {
     const root = new THREE.Group();
     root.name = 'rangedProjectile';
     const collider = new THREE.Mesh(
-      new THREE.SphereGeometry(radiusPx / deps.TILE, 8, 6),
+      acquireProjectileGeometry('collider:' + radiusPx / deps.TILE, () => new THREE.SphereGeometry(radiusPx / deps.TILE, 8, 6)),
       new THREE.MeshBasicMaterial({ visible: false })
     );
     collider.name = 'hiddenProjectileCollider';
@@ -719,7 +766,7 @@
     let pendingAspect = 1;
     let pendingOpaqueBounds = null; // Delayed image decode may precede the plane mesh constructor; applied as soon as it exists.
     const updateAspect = loadedTexture => {
-      if (!weaponSprite) return;
+      if (root.userData.projectileRetired || !weaponSprite) return; // Delayed image load cannot touch a retired shot.
       const imageW = Math.max(1, Number(loadedTexture?.image?.width) || Number(loadedTexture?.image?.naturalWidth) || 1);
       const imageH = Math.max(1, Number(loadedTexture?.image?.height) || Number(loadedTexture?.image?.naturalHeight) || 1);
       pendingAspect = imageH / imageW;
@@ -746,8 +793,9 @@
     const projectilePlaneWidth = hasExactSourcePlane ? sourcePlaneWidth : (weaponSprite ? weaponWidth : (longArrow ? 0.09 : 0.065)); // Used by this projectile's one visual plane.
     const projectilePlaneHeight = hasExactSourcePlane ? sourcePlaneHeight : (weaponSprite ? weaponWidth : (longArrow ? 0.72 : 0.38)); // Generic PNG aspect path now matches the stowed and held torch art without redundant scaling.
     plane = new THREE.Mesh(
-      new THREE.PlaneGeometry(projectilePlaneWidth, projectilePlaneHeight),
-      new THREE.MeshBasicMaterial({ map: texture, transparent: true, alphaTest: 0.08, side: THREE.DoubleSide })
+      acquireProjectileGeometry('plane:' + projectilePlaneWidth + ':' + projectilePlaneHeight,
+        () => new THREE.PlaneGeometry(projectilePlaneWidth, projectilePlaneHeight)),
+      acquireProjectileMaterial(texture)
     );
     if (weaponSprite && !hasExactSourcePlane) plane.scale.y = pendingAspect;
     plane.userData.opaqueBounds = pendingOpaqueBounds;
@@ -825,6 +873,17 @@
   function createProjectileTrails(scene, colorEntries, radiusPx) {
     const trailWidth = Math.max(0.012, radiusPx / deps.TILE * 0.32);
     return colorEntries.map((entry, laneIndex) => {
+      const recycled = projectileTrailPool.pop();
+      if (recycled) {
+        projectilePoolStats.trailReuses++;
+        const mesh = new THREE.Mesh(recycled.geometry, recycled.material);
+        mesh.name = `projectileCometTrail:${entry.id}`;
+        mesh.frustumCulled = false;
+        mesh.renderOrder = (deps.heldObjectRenderOrder || 1.5) - 0.01;
+        mesh.geometry.setDrawRange(0, 0);
+        scene.add(mesh);
+        return { mesh, color: new THREE.Color(entry.color), id: entry.id, laneIndex, laneCount: colorEntries.length, trailWidth };
+      }
       const geometry = new THREE.BufferGeometry();
       const positions = new Float32Array(PROJECTILE_TRAIL_MAX_POINTS * 2 * 3);
       const colors = new Float32Array(PROJECTILE_TRAIL_MAX_POINTS * 2 * 3);
@@ -925,8 +984,15 @@
   function disposeProjectileTrails(p) {
     for (const lane of p.trailMeshes || []) {
       lane.mesh.parent?.remove(lane.mesh);
-      lane.mesh.geometry?.dispose?.();
-      lane.mesh.material?.dispose?.();
+      if (projectileTrailPool.length < PROJECTILE_POOL_LIMIT) {
+        lane.mesh.geometry.setDrawRange(0, 0);
+        lane.mesh.visible = false;
+        projectileTrailPool.push({ geometry: lane.mesh.geometry, material: lane.mesh.material });
+      } else {
+        lane.mesh.geometry?.dispose?.();
+        lane.mesh.material?.dispose?.();
+        projectilePoolStats.overflowDisposals++;
+      }
     }
     p.trailMeshes = [];
     p.trailPoints = [];
@@ -1766,11 +1832,11 @@
     if (!p || p.dead) return;
     window.DungeonFire?.disposeProjectile?.(p); // Remove attached embers and detached flame zones before projectile geometry is released.
     p.dead = true;
+    p.mesh.userData.projectileRetired = true;
     p.mesh.parent?.remove(p.mesh);
     p.mesh.traverse(child => {
-      child.geometry?.dispose?.();
-      child.material?.map?.dispose?.();
-      child.material?.dispose?.();
+      releaseProjectileGeometry(child.geometry);
+      releaseProjectileMaterial(child.material);
     });
     disposeProjectileTrails(p);
   }
@@ -2359,6 +2425,7 @@
     get config() { return CONFIG; },
   };
   window.__rangedDebug = {
+    get projectilePool() { return { ...projectilePoolStats, materials: projectileMaterialPool.length, geometries: projectileGeometryPool.length, trails: projectileTrailPool.length }; }, // Read only when mobile diagnostics are opened.
     get hitboxWork() { return { builds: actorHitboxBuilds, reuses: actorHitboxReuses }; }, // Shared CPU-work evidence, available without browser devtools.
     get projectiles() { return projectiles.map(p => ({ itemKey: p.itemKey, team: p.team, ammoId: p.ammoId, x: p.x, y: p.y, vx: p.vx, vy: p.vy, worldY: p.worldY, vyWorld: p.vyWorld, distancePx: p.distancePx, flightDistancePx: p.flightDistancePx, projectileSpeedPxS: p.projectileSpeedPxS, projectileSpeedMultiplier: p.projectileSpeedMultiplier, projectileDropStartTiles: p.projectileDropStartTiles, projectileGravityWorldS2: p.projectileGravityWorldS2, lockLaunchAlignment: p.lockLaunchAlignment, embedded: p.embedded, embeddedAgeS: p.embeddedAgeS, impactKind: p.impactKind, fading: p.fading, fadeReason: p.fadeReason, launchTransformMode: p.launchTransformMode, facingSource: p.launchTransformMode === 'held-strike-plane' ? 'sampled-held-plane' : (p.def?.toolEndFlip === true ? 'config-flip-fallback' : 'flight-frame'), spinAxis: p.spinRateRad ? 'png-local-z' : null, collisionRadiusWorld: projectileCollisionRadiusWorld(p), opaqueBounds: p.mesh?.userData?.projectilePlane?.userData?.opaqueBounds || null, trailAfflictionIds: [...p.trailAfflictionIds] })); },
     get playerAction() { return playerAction ? { ...playerAction, def: undefined, releaseAtS: playerAction.durationS * fireReleaseFrac(playerAction.def) } : null; },
@@ -2404,7 +2471,7 @@
     firePlayer: (itemKey) => startPlayerAction(itemKey),
     idlePose: itemKey => ({ ...idlePose(itemKey) }),
     snapshot: () => ({
-      latestChange: 'Players and enemies can shoot between elevations where 3D sightlines clear terrain, supports and solid cover.',
+      latestChange: 'Bounded projectile material, exact-size geometry and trail buffer pools retain independent shot artwork and fade.',
       staminaCosts: { loadFraction: DEFAULT_RANGED_LOAD_STAMINA_FRACTION, thrownChargeReady: chargeStaminaCostForPose(window.Combat?.chargedBreakerData?.MIN_READY_POSE ?? HELD_CHARGE_MIN_READY_POSE), thrownChargeFull: chargeStaminaCostForPose(1), thrownChargeReadyPose: window.Combat?.chargedBreakerData?.MIN_READY_POSE ?? HELD_CHARGE_MIN_READY_POSE },
       lastEvent, lastAudioEvent, lastTerrainImpact: lastTerrainImpact ? { ...lastTerrainImpact } : null, lastTorchThrow, fireTriggerToProjectileMaxMs: MAX_FIRE_TRIGGER_TO_PROJECTILE_S * 1000, projectileDeadzoneDeg: PROJECTILE_PERP_DEAD_DEG, defaultProjectileSpeedMultiplier: DEFAULT_PROJECTILE_SPEED_MULTIPLIER,
       equippedRanged: deps?.getEquippedRangedKey?.() || null,
@@ -2415,6 +2482,7 @@
       embeddedProjectiles: projectiles.filter(p => p.embedded && !p.dead).length,
       fadingEmbeddedProjectiles: projectiles.filter(p => p.embedded && p.fading && !p.dead).length,
       activeTrailMeshes: projectiles.reduce((sum, p) => sum + (p.trailMeshes?.length || 0), 0),
+      projectilePool: { ...projectilePoolStats, materials: projectileMaterialPool.length, geometries: projectileGeometryPool.length, trails: projectileTrailPool.length },
       friendlyFireHits, losRepositions, wouldHitCacheHits,
       loaded: Object.fromEntries(playerLoaded),
     }),

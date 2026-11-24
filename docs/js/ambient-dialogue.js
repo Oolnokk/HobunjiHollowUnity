@@ -800,7 +800,7 @@
           const pulseAtMs = unit.revealAtMs + (unit.pulseOffsetsMs[index] || 0);
           event.cadenceTimers.push(setTimeout(() => {
             if (!state.active.includes(event)) return;
-            window.DialogueContent?.playSpeechTick?.(unit.vowels[index], event.profile);
+            window.DialogueContent?.playSpeechTick?.(unit.vowels[index], event.profile, event.speakerId); // Family age uses the exact speaker ID, not the portrait display profile.
             if (event.headPart) window.portraitBreathingComposer?.triggerYap(event.seatId);
           }, pulseAtMs));
         }

@@ -279,10 +279,10 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
   assert.equal(moot.weightMap.height, 75);
   assert.equal(moot.weightMap.data.filter((_, i) => !(i % 2)).reduce((a, b) => a + b, 0), 9600);
   assert.equal(moot.compressibilityMap.data.filter((_, i) => !(i % 2)).reduce((a, b) => a + b, 0), 9600);
-  assert.equal(moot.pivot.x, 0.37400034701593793);
+  assert.equal(moot.pivot.x, 0.37400034701593793 * (1617 / 1295));
   assert.equal(moot.babyHeadScale, 1.35, 'Moot keeps its newly uploaded 135% baby-head override');
-  assert.equal(moot.babyHeadFrame.width, 0.46468750000000003);
-  assert.equal(moot.shoulderRest.afterPoints[6].y, 1.2450764506711192, 'new Moot shoulder curve is active');
+  assert.equal(moot.babyHeadFrame.width, 0.46468750000000003 * (1617 / 1295));
+  assert.equal(moot.shoulderRest.afterPoints[6].y, 1.2450764506711192 * (1000 / 920), 'new Moot shoulder curve is active');
 
   // A naturally Small adult in a split perch also has genotype art, even though its head is not enlarged.
   const naturallySmallSplitPet = companion('pingdort', 'small');

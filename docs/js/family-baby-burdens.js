@@ -5,12 +5,12 @@
   if (window.FamilyBabyBurdens) return;
   const entries = new Map(); // child ID -> shared burden + live NPC and persistence callback.
   const proxySources = new WeakMap(); // Proxy group -> source model/geometry, kept OUT of serializable Object3D.userData.
-  const areas = new Set(['interior', 'farm', 'town']); // Baby carry is confined to the settlement.
+  const areas = new Set(['interior', 'farm', 'town']); // Settlement maps plus the real exterior zone registry.
   const debug = { latestChange: 'Carried babies bake their live head-scaled portrait; silhouette-only backs use colored art', lastError: null }; // Mobile-facing failures.
 
   function isAllowedArea(value) {
     const area = String(value || ''); // Farmhouse and barn interior maps share the home policy.
-    return areas.has(area) || /^map_i_(?:farmhouse|barn)(?:_|$)/.test(area);
+    return areas.has(area) || /^map_i_(?:farmhouse|barn)(?:_|$)/.test(area) || window.FamilyBabyFollow?.isWilderness?.(area) === true;
   }
   function currentArea() {
     return window.RomanceSystem?.helpers?.deps?.()?.getCurrentArea?.() || null; // The normal world adapter, not a second area tracker.
@@ -192,8 +192,17 @@
   function settle(entry, item, basket = false) {
     if (entry.disposing) return;
     const child = entry.child;
+    const follow = window.FamilyBabyFollow;
+    if (!basket && follow?.canFollowIn?.(item.mapId) && item.mapId === currentArea()) {
+      const landing = follow.safeLanding?.(item.mapId, item.col, item.row);
+      if (landing) { item.col = landing.c; item.row = landing.r; }
+      else if (follow.safeLanding) basket = true; // No valid ground: return safely instead of occupying water or solid terrain.
+    }
+    const wasPlayer = child.carryBy === 'player'; // Capture ownership before releasing the shared burden.
     child.carryBy = null; child.carryPose = null;
-    clearNpcGrip(entry); entry.npcCarryPose = null; // NPC hands return to their own idle.
+    clearNpcGrip(entry); entry.npcCarryPose = null; // Release NPC hands before transferring ownership to crawl.
+    child.followPlayer = !basket && isAllowedArea(item.mapId) && (wasPlayer || child.followPlayer) && window.FamilyBabyFollow?.canFollowIn?.(item.mapId) === true;
+    window.FamilyBabyFollow?.clearWalker?.(entry.walker);
     item.group.userData.familyBabyFlying = false;
     child.carrySpot = basket || !isAllowedArea(item.mapId)
       ? null : { area: item.mapId, c: item.col, r: item.row }; // Dropped baby stays where it landed, across save/reload.
@@ -201,13 +210,24 @@
     item.group.visible = false;
     showWalker(entry, true);
     const root = entry.walker?.root;
+    if (basket && root) {
+      const ctx = window.RomanceFamily?.careContext?.();
+      const target = ctx?.basketObject?.(child) || ctx?.helpers?.bedSpot?.();
+      const c = target?.col ?? target?.c, r = target?.row ?? target?.r;
+      if (Number.isFinite(c) && Number.isFinite(r)) {
+        if (entry.walker.area !== 'interior') entry.walker.transferToArea?.('interior', { c, r });
+        if (entry.walker.area === 'interior') { root.position.x = c + .5; root.position.z = r + .5; }
+      }
+    }
     if (!basket && root) {
       if (entry.walker.area !== item.mapId) entry.walker.transferToArea?.(item.mapId, { c: item.col, r: item.row }); // The existing NPC zone mover relocates the authoritative baby after farm/town landings.
       if (entry.walker.area === item.mapId) {
         root.position.x = item.col + .5; root.position.z = item.row + .5;
+        if (item.mapId === currentArea() && Number.isFinite(item.group.position.y)) root.position.y = item.group.position.y; // Initial grounded height; follower settles to terrain on the next frame.
       }
     }
     moveToWalker(entry);
+    if (child.followPlayer) window.FamilyBabyFollow?.bind?.(child, entry.walker, 'basket');
     entry.persist?.();
     debug.lastError = null;
   }
@@ -258,7 +278,8 @@
       } },
       onPickup: () => {
         clearNpcGrip(entry); entry.npcCarryPose = null; // Spouse hands the baby over: its hand rig lets go.
-        entry.child.carryBy = 'player'; entry.child.carryPose = 'arms'; entry.child.carrySpot = null;
+        entry.child.carryBy = 'player'; entry.child.carryPose = 'arms'; entry.child.carrySpot = null; entry.child.followPlayer = false;
+        window.FamilyBabyFollow?.clearWalker?.(entry.walker);
         group.visible = true; showWalker(entry, false);
         entry.persist?.();
       },
@@ -271,7 +292,7 @@
       },
       onLost: item => {
         if (entry.disposing) return;
-        settle(entry, item, true); // Out-of-settlement transitions always return the infant to the basket.
+        settle(entry, item, true); // Unsupported maps retain the existing safe basket fallback.
         disposeProxy(entry); // The registry already removed this burden; do not strand an invisible mesh in the old scene.
         entries.delete(child.id);
       },
@@ -304,10 +325,11 @@
     if (held || back) {
       child.carryBy = 'player';
       child.carryPose = back ? 'back' : 'arms';
+      child.followPlayer = false;
       entry.burden.group.visible = true;
       showWalker(entry, false);
     } else if (child.carryBy === 'player') {
-      child.carryBy = null; child.carryPose = null; child.carrySpot = null;
+      child.carryBy = null; child.carryPose = null; child.carrySpot = null; child.followPlayer = false;
       entry.persist?.(); // Restore cannot invent an unsaved held-burden slot.
       showWalker(entry, true);
       moveToWalker(entry);
@@ -404,7 +426,8 @@
     showWalker(entry, false);
     const next = back ? 'back' : 'arms';
     const changed = child.carryBy !== 'spouse' || child.carryPose !== next;
-    child.carryBy = 'spouse'; child.carryPose = next; child.carrySpot = null;
+    child.carryBy = 'spouse'; child.carryPose = next; child.carrySpot = null; child.followPlayer = false;
+    window.FamilyBabyFollow?.clearWalker?.(walker);
     if (changed) entry.persist?.();
     return true;
   }
@@ -431,12 +454,14 @@
     showWalker(entry, true);
     window.Shattercasks?.discardBurden?.(entry.burden); // Shared registry cleans the actor's real physical burden.
     disposeProxy(entry); // Remove one shared mesh and its two materials, leaving the portrait texture alive.
-    entry.child.carryBy = null; entry.child.carryPose = null;
+    entry.child.carryBy = null; entry.child.carryPose = null; entry.child.followPlayer = false;
+    window.FamilyBabyFollow?.clearWalker?.(entry.walker);
     entries.delete(id);
   }
   function clear() { for (const id of [...entries.keys()]) discard(id); }
   window.FamilyBabyBurdens = Object.freeze({
     isAllowedArea, sync, takeIntoArms, spouseCarry, returnToBasket, discard, clear,
+    syncFollowingWalker: id => { const entry = entries.get(id); if (entry && !entry.child.carryBy && !entry.burden.flying) moveToWalker(entry); },
     carrying: id => ['player', 'spouse'].includes(entries.get(id)?.child?.carryBy), // Dev Companion knows either parent is holding the infant.
     isProxyActive: id => { // The NPC command wheel must never target the original invisible baby while a proxy is carried or flying.
       const entry = entries.get(id);

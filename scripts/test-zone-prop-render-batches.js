@@ -232,4 +232,50 @@ Batches.setEnabled(false);
 assert.strictEqual(frame(), null);
 Batches.setEnabled(true);
 
+// Actual Three.js integration for separate furniture source materials. Untextured
+// transparent= true/opacity=1 is provably opaque without needing a browser.
+const furnitureScene = new THREE.Scene();
+const furniture = new THREE.Group();
+furniture.userData.authoredFurnitureKey = 'campfire';
+furnitureScene.add(furniture);
+const parts = Array.from({length: 3}, (_, i) => {
+  const part = new THREE.Mesh(new THREE.BoxGeometry(.2,.2,.2),
+    new THREE.MeshLambertMaterial({ color: 0x887766, transparent: true }));
+  part.position.set(i * .3, 0, 0);
+  part.userData.authoredPart = { kind: 'box' };
+  furniture.add(part);
+  return part;
+});
+function furnitureFrame() {
+  furnitureScene.updateMatrixWorld(true);
+  const restore = Batches.suspendForRender(furnitureScene, {isZone:true});
+  clock += 100;
+  return restore;
+}
+const furnitureHolder = () => furnitureScene.children.find(c => c.userData.hobunjiZonePropBatchHolder);
+assert.strictEqual(furnitureFrame(), null);
+clock += 1000;
+let restoreFurniture = furnitureFrame();
+assert(restoreFurniture);
+assert(parts.every(m => !m.visible));
+const furnitureBatch = furnitureHolder().children[0];
+assert.strictEqual(furnitureBatch.material.transparent, false);
+assert(parts.every(m => m.material.transparent && m.material !== furnitureBatch.material));
+restoreFurniture();
+const stableFurniture = Batches.snapshot().fastReuseFrames;
+restoreFurniture = furnitureFrame();
+assert(Batches.snapshot().fastReuseFrames > stableFurniture);
+restoreFurniture();
+parts[0].material.opacity = .4;
+restoreFurniture = furnitureFrame();
+assert(parts[0].visible, 'fading part leaves the batch immediately');
+assert(parts.slice(1).every(m => !m.visible), 'unchanged siblings remain batched');
+restoreFurniture();
+parts[1].geometry.setAttribute('position', parts[1].geometry.attributes.position.clone());
+restoreFurniture = furnitureFrame();
+assert(parts.every(m => m.visible), 'replacement attribute resets stillness immediately');
+restoreFurniture?.();
+assert.strictEqual(furnitureHolder().children.length, 0);
+assert(parts.every(m => m.material.transparent), 'render-proxy disposal never changes source material');
+
 console.log(`ok zone prop render batches (${JSON.stringify(Batches.snapshot())})`);

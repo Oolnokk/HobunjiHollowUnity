@@ -12,20 +12,20 @@
   const RETIRED_STORAGE_KEYS = ['hobunji.familyBabyCarryPose.v1'];
   // Authored defaults (screenshot-verified in game against a newborn Mao'ao bust, Nov 22):
   // HELD = cradle. The infant lies ~65 degrees across the carrier's lower chest, head in the
-  // carrier's RIGHT arm, face tipped slightly up; the right hand cups the head/neck from below,
+  // carrier's RIGHT arm, face tipped diagonally upward by local yaw; the right hand cups the head/neck from below,
   // the left hand supports the bottom. The cradle pivots at the infant's REAL posterior (see
   // anchorsForAvatar), so its posteriorOffset reads as "where the baby's bottom sits" for every species.
-  // BACK = Sacajawea-style stow: upright high between the shoulder blades, offset toward the
-  // carrier's left shoulder, facing BEHIND the carrier so the over-the-shoulder gameplay camera
+  // BACK = upright high and centered between the shoulder blades, facing BEHIND the
+  // carrier so the over-the-shoulder gameplay camera
   // sees the face; head leans in against the carrier's neck and peeks over the shoulder line.
   // Euler values are the gameplay ANCHOR (Shattercasks applies their inverse to the infant).
   const DEFAULT_PROFILE = {
-    held: { pivot: 'posterior', position: { x: 0, y: 0, z: 0 }, rotation: { x: 4.95, y: -10.92, z: -64.53 }, size: 1,
+    held: { pivot: 'posterior', position: { x: 0, y: 0, z: 0 }, rotation: { x: 4.95, y: -50.46, z: -64.53 }, size: 1,
       posteriorOffset: { x: .11, y: .075, z: .13 } },
     // Back pivots at the NECK: whatever the newborn's size, its head peeks over the shoulder line
     // (same pose as a posterior pivot at {.065,.19,-.07} for the verified Mao'ao newborn).
     back: { pivot: 'neck', position: { x: 0, y: 0, z: 0 }, rotation: { x: -174.07, y: -.94, z: 171.05 }, size: 1,
-      posteriorOffset: { x: .0581, y: .282, z: -.0603 }, portraitAnchor: { x: 0, y: 0, z: 0 } },
+      posteriorOffset: { x: -.025, y: .282, z: -.0603 }, portraitAnchor: { x: 0, y: 0, z: 0 } },
     grips: {
       left: { anchor: 'posterior', offset: { x: -.046, y: -.043, z: -.02 }, rotation: { x: 180, y: 0, z: -90 } }, // Under the bottom.
       right: { anchor: 'neck', offset: { x: -.12, y: .044, z: -.02 }, rotation: { x: 0, y: 0, z: 90 } }, // Under the head, toward the crown.
@@ -73,7 +73,7 @@
     };
   }
   let profile = normalize(DEFAULT_PROFILE); // Live device override used by new babies and refreshed carry rigs.
-  const storage = { clearedRetired: 0, rejectedStored: false }; // Mobile diagnostics for the automatic clean-up.
+  const storage = { clearedRetired: 0, rejectedStored: false, migratedStored: false }; // Mobile diagnostics for the automatic clean-up.
   const anatomical = raw => ['held', 'back'].every(key => PIVOTS.has(raw?.[key]?.pivot)); // Every stored pose must name its pivot.
   try {
     for (const key of RETIRED_STORAGE_KEYS) {
@@ -84,8 +84,25 @@
     const stored = window.localStorage?.getItem(STORAGE_KEY);
     let parsed = null;
     try { parsed = stored ? JSON.parse(stored) : null; } catch (_) { parsed = null; } // Corrupt JSON is cleared like a legacy pose.
-    if (parsed && anatomical(parsed)) profile = normalize(parsed);
-    else if (stored) { window.localStorage.removeItem(STORAGE_KEY); storage.rejectedStored = true; }
+    if (parsed && anatomical(parsed)) {
+      // Only update values still at the PREVIOUS defaults. Preserve intentionally authored
+      // local yaw, back placement, hand grips and all other personalized carry settings.
+      let migrated = false; // Whether these two old default fields need rewriting in v3 storage.
+      if (parsed.held.rotation && typeof parsed.held.rotation === 'object' && [-10.92, -90].includes(parsed.held.rotation.y)) {
+        parsed.held.rotation.y = DEFAULT_PROFILE.held.rotation.y;
+        migrated = true;
+      }
+      if (parsed.back.posteriorOffset && typeof parsed.back.posteriorOffset === 'object'
+          && parsed.back.posteriorOffset.x === .0581) {
+        parsed.back.posteriorOffset.x = DEFAULT_PROFILE.back.posteriorOffset.x;
+        migrated = true;
+      }
+      profile = normalize(parsed);
+      if (migrated) {
+        storage.migratedStored = true;
+        window.localStorage?.setItem(STORAGE_KEY, JSON.stringify(profile)); // One-time migration; no recurring frame work.
+      }
+    } else if (stored) { window.localStorage.removeItem(STORAGE_KEY); storage.rejectedStored = true; }
   } catch (_) { /* Private/file preview or corrupt JSON: authored defaults remain usable. */ }
   const scaled = (value, width, height) => ({ x: value.x * width, y: value.y * height, z: value.z * height });
   const unscaled = (value, width, height) => ({ x: finite(value?.x, 0) / width,

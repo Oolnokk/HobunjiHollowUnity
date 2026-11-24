@@ -63,7 +63,7 @@ assert.match(source, /if \(group\.regions\.length\) lastForcedGroundDepthMateria
   'the local floor-exception path rebuilds its registered ground depth');
 assert.match(source, /else if \(ordinaryGroundMaterials\.size\) lastForcedGroundDepthMaterials \+= forceGroundDepthForHeldReplay\(ordinaryGroundMaterials, depthMaterialStates\);/,
   'ordinary above-floor equipment also rebuilds missing ground depth instead of x-raying outside the circle');
-assert.match(source, /hideOrdinaryDepthRedraws\(scene, cutoutDepthMeshes, protectedDepthMeshes, ordinaryGroundMeshes\)/,
+assert.match(source, /hideOrdinaryDepthRedraws\(scene, cutoutDepthMeshes, protectedDepthMeshes, ordinaryGroundMeshes, ordinarySnapshot, originalCameraMask\)/,
   'the optimized ordinary replay retains the precise ground leaves whose base material omitted depth');
 assert.match(source, /restoreMaterialStates\(depthMaterialStates\);/,
   'material state returns to normal after the colorless depth draw');

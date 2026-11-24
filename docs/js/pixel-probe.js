@@ -754,8 +754,14 @@
     const cachedFlails=window.HobunjiWeaponSpriteAssemblies?.debugSnapshot?.().filter(entry=>entry.connector); // Only flails matter for detached rope/head ownership; omit ordinary weapons.
     if(cachedFlails?.length) lines.push(`Flail retained roots: ${JSON.stringify(cachedFlails.slice(0,6).map(entry=>({
       itemKey:entry.itemKey,attached:entry.attached,loaded:entry.loaded,cachedPlayerOwned:entry.cachedPlayerOwned,
-      detachedForMs:entry.detachedForMs,connector:entry.connector,poseLength:entry.scale?.poseLength ?? 1, // Mobile Debug tab shows the actual sampled connector multiplier (0.6 = 40% shorter).
+      detachedForMs:entry.detachedForMs,connector:entry.connector,performance:entry.performance,poseLength:entry.scale?.poseLength ?? 1, // Mobile Debug tab shows the actual sampled connector multiplier (0.6 = 40% shorter).
     })))}`);
+    const portraitCpu=window.__portraitPixelCacheDebug?.()?.beardHood; // On-demand CPU-readback counters.
+    if(portraitCpu) lines.push(`Beard/hood CPU cache: ${JSON.stringify(portraitCpu)}`);
+    const lodCpu=window.GeometryAutoLOD?.snapshot?.();
+    if(lodCpu) lines.push(`Geometry AutoLOD CPU: ${JSON.stringify({visits:lodCpu.candidateVisits,hiddenSkips:lodCpu.hiddenAncestorSkips,geometryChecks:lodCpu.renderGeometryChecks})}`);
+    const keyHudCpu=window.__keyHudWriteDebug?.();
+    if(keyHudCpu) lines.push(`Key HUD writes: ${JSON.stringify(keyHudCpu)}`);
     const erroring = entries.filter(entry => entry.errorCount > 0);
     if (erroring.length) {
       lines.push(`>>> Frame scheduler subscriber errors: ${erroring.map(entry => `${entry.id}(${entry.owner}) x${entry.errorCount}: ${String(entry.lastError || '').split('\n')[0]}`).join(' | ')}`);
@@ -1209,12 +1215,24 @@
     if (farmhouseLightingDebug) lines.push(`Farmhouse lighting: installed=${farmhouseLightingDebug.installed} playerScenes=${farmhouseLightingDebug.playerFarmhouseSceneCount} overlay=${farmhouseLightingDebug.overlayLightingAuthority} activePlayerHouse=${activeScene?.userData?.hobunjiPlayerFarmhouseInterior === true}`);
     const heldRenderDebug = window.HeldObjectRenderOrder?.snapshot?.(); // Exposes the retained selective-x-ray render mode and pass counters on mobile.
     if (heldRenderDebug) lines.push(`Held x-ray: mode=${heldRenderDebug.mode} ground=${heldRenderDebug.groundMeshes} interiorFloor=${heldRenderDebug.interiorFloorMeshes ?? 0} cavernShell=${heldRenderDebug.topFaceGroundMeshes ?? 0} farmhouseFloor=${heldRenderDebug.farmhouseFloorMeshes ?? 0} held=${heldRenderDebug.heldMeshes} footWater=${heldRenderDebug.waterOccludedMeshes ?? '-'}/${heldRenderDebug.waterReplayMeshes ?? '-'}/${heldRenderDebug.waterReplays ?? '-'} stencil=${heldRenderDebug.stencilBits ?? '-'} skips=${heldRenderDebug.missingStencilFootReplaySkips ?? '-'} passes=${heldRenderDebug.baseWorldRenders}/${heldRenderDebug.selectiveOverlays}/${heldRenderDebug.nonGroundDepthReplays}/${heldRenderDebug.groundDepthRestores} shellXray=${heldRenderDebug.shellXrayPasses ?? 0}/${heldRenderDebug.shellXrayMeshes ?? 0} elevationGroups=${heldRenderDebug.elevationReplayGroups ?? 0} unknownElevation=${heldRenderDebug.unknownElevationMeshes ?? 0} elevationShaders=${heldRenderDebug.elevationShaderMaterials ?? 0}/${heldRenderDebug.elevationShaderFallbacks ?? 0} surfaceComposer=${heldRenderDebug.surfaceOcclusionComposer?.version ?? '-'}:${heldRenderDebug.surfaceOcclusionComposer?.consumers?.join(',') ?? '-'} waterDepthAlpha=${heldRenderDebug.surfaceOcclusionComposer?.waterDepthAlphaThreshold ?? '-'}`);
+    if (heldRenderDebug) lines.push(`Actor x-ray: ${heldRenderDebug.allActorXrayDisabled ? 'ALL OFF (fast path)' : 'enabled categories'} | bypass frames=${heldRenderDebug.actorXrayBypassFrames ?? 0} | wet portrait-only frames=${heldRenderDebug.actorXrayWaterOnlyFrames ?? 0}`); // Distinguishes genuine disabled mode from the ordinary presentation work.
+    if (heldRenderDebug) lines.push(`Conditional replay savings: empty replay transactions=${heldRenderDebug.emptyHeldReplayTransactionsAvoided ?? 0} | empty depth=${heldRenderDebug.emptyOrdinaryDepthPassesAvoided ?? 0} | shared scene walks=${heldRenderDebug.ordinaryDepthSceneWalksAvoided ?? 0}`); // Lifetime counts, no per-frame logging.
     if (heldRenderDebug) lines.push(`Held replay budget: offscreen=${heldRenderDebug.baseOffscreenFiltered ?? '-'}/${heldRenderDebug.baseReplayCandidates ?? '-'} shellOffscreen=${heldRenderDebug.shellOffscreenFiltered ?? '-'}/${heldRenderDebug.shellReplayCandidates ?? '-'} tileRegions=${heldRenderDebug.xrayTileRegions ?? '-'} ordinaryDepth=${heldRenderDebug.xrayOrdinaryMeshes ?? '-'} groupScissors=${heldRenderDebug.groupScissors ?? '-'} fullscreenReasons=${heldRenderDebug.lastHeldFullscreenReason ?? '-'}/${heldRenderDebug.lastShellFullscreenReason ?? '-'} scissorCoverage=${heldRenderDebug.lastReplayScissorCoverage ?? '-'}`); // Mobile A/B proof that expensive outdoor depth passes are filtered and individually bounded.
     if (heldRenderDebug) lines.push(`Held shell depth mask: draws=${heldRenderDebug.shellMaskedDepthDraws ?? 0} opaqueMaterialWritesAvoided=${heldRenderDebug.shellOpaqueMaterialWritesAvoided ?? 0}`); // Mobile counters distinguish the fast GPU-masked shell path from the fallback material transaction.
     if (heldRenderDebug) lines.push(`Ordinary held depth: clears avoided=${heldRenderDebug.ordinaryDepthClearsAvoided ?? 0} redundant leaves skipped=${heldRenderDebug.ordinaryDepthLeavesSkipped ?? 0}; floor x-ray scope=holder tile + 8 neighbors`); // Explains the bounded floor exception and actual saved replay work.
     const sightWork = window.EnemySearchAI?.debugSnapshot?.(); // Copyable hostile-perception cadence and query counts.
     const hitboxWork = window.__rangedDebug?.hitboxWork; // Counts reticle/AI reuse against the same game frame.
     if (sightWork || hitboxWork) lines.push(`Combat CPU work: sight=${JSON.stringify(sightWork || null)} hitboxes=${JSON.stringify(hitboxWork || null)}`);
+    const projectilePool = window.__rangedDebug?.projectilePool; // Inspect resource reuse without devtools.
+    const propBatches = window.ZonePropRenderBatches?.snapshot?.(); // Inspect draw savings and alpha-proof backlog.
+    if (projectilePool) lines.push(`Projectile pools: ${JSON.stringify(projectilePool)}`);
+    if (propBatches) lines.push(`Wilderness prop batches: ${JSON.stringify(propBatches)}`);
+    const treeBatches = window.WildernessTreeInstancer?.snapshot?.(); // On-demand mobile A/B: spatial cells, key hits, uploads and retired buffers.
+    if (treeBatches) lines.push(`Wilderness tree instances: ${JSON.stringify(treeBatches)}`);
+    const brickLod = window.InstancedBrickLod?.snapshot?.(); // Far brick meshes drawn with the octant hull and triangles avoided.
+    if (brickLod?.frames) lines.push(`Brick LOD: ${JSON.stringify(brickLod)}`);
+    const wallBatches = window.DenseForestWallBatches?.snapshot?.(); // Cloud Forest wall merge + distance LOD split (far/near trees, triangles avoided).
+    if (wallBatches?.frames) lines.push(`Dense wall batches: ${JSON.stringify({ ...wallBatches, liteTwins: window.FoliageGenerator?.liteTreeStats?.() || null })}`);
 
     const waterFootLines = _pixelProbeWaterFootContactLines(activeScene, currentArea, playerMesh); // Used to distinguish real foot/water intersection from camera-perspective illusions on mobile.
     if (waterFootLines) lines.push(...waterFootLines);
@@ -1244,6 +1262,14 @@
       const ready = objectSfxDebug.preloads.filter(entry => entry.readyState >= 2).length;
       const lastCueAgeMs = lastCue ? Math.max(0, Math.round(performance.now() - lastCue.atMs)) : null; // Distinguishes a recent tool cue from unrelated companion footsteps.
       lines.push(`Tool SFX: preload ready=${ready}/${objectSfxDebug.preloads.length} last=${lastCue ? `${lastCue.key}/${lastCueAgeMs}ms ago found=${lastCue.found} preloaded=${lastCue.preloaded} readyState=${lastCue.readyState}` : 'none'}`);
+    }
+    const wingflapDebug = window.AudioSystem?.wingflapSfxDebugSnapshot?.(); // Low-cost flight-footstep readout in the mobile copyable Pixel Probe.
+    if (wingflapDebug) {
+      const last = wingflapDebug.last;
+      const ageMs = last ? Math.max(0, Math.round(performance.now() - last.atMs)) : null;
+      const rejected = wingflapDebug.lastRejection; // Exposes silent attempts and their range even if no sample could start.
+      lines.push(`Flying wing SFX: attempts=${wingflapDebug.attempts ?? '-'} played=${wingflapDebug.requests} active=${wingflapDebug.active ?? '-'} suppressed=${wingflapDebug.suppressed} last=${last ? `${last.actor}/${last.size} ${last.url.split('/').pop()} pitch=+${last.pitchSemitones}st rate=${last.playbackRate}x gain=${last.volume} distance=${last.distanceTiles ?? '-'}/${last.earshotTiles ?? '-'}tiles route=${last.backend ?? '-'} echo=${last.wetRoute ?? '-'}:${last.wetPreset ?? '-'} wet=${last.wetGain ?? '-'} age=${ageMs}ms` : 'none'}`);
+      if (rejected) lines.push(`Flying wing SFX rejected: ${rejected.actor} ${rejected.reason} distance=${rejected.distanceTiles ?? '-'}/${rejected.earshotTiles ?? '-'}tiles age=${Math.max(0, Math.round(performance.now() - rejected.atMs))}ms`);
     }
     const combatSfxDebug = window.AudioSystem?.combatSfxDebugSnapshot?.(); // Copyable proof of the chosen swing/impact/block cue on mobile.
     if (combatSfxDebug) {

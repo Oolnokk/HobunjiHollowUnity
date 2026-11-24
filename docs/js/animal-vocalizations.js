@@ -93,7 +93,7 @@
     ? document.currentScript.src
     : null;
   const REVERB_MODULE_SRC = MODULE_BASE_SRC
-    ? new URL('environmental-reverb.js?v=20261114posobj1754', MODULE_BASE_SRC).href
+    ? new URL('environmental-reverb.js?v=20261124wingflapEcho2', MODULE_BASE_SRC).href
     : null;
   const PLAYBACK_MODULE_SRC = MODULE_BASE_SRC
     ? new URL('animal-voice-independent-playback.js?v=20261119nativeYawnPitch1', MODULE_BASE_SRC).href
@@ -257,6 +257,12 @@
 
   function sizePitchOffsetSemitones(c, profile) {
     return finite(profile?.sizePitchSemitones?.[creatureSizeClass(c)], 0);
+  }
+
+  function sizePitchDifferenceFromLarge(c) {
+    const pitch = profileFor(c).sizePitchSemitones; // Shared authored voice size steps also tune the same species' wingflap recording.
+    const baseline = finite(pitch.large, DEFAULT_SIZE_PITCH.large); // Large birds preserve the source recording's original pitch.
+    return Math.max(0, sizePitchOffsetSemitones(c, { sizePitchSemitones: pitch }) - baseline);
   }
 
   function authoredAllowedClips(cfg, opts) {
@@ -501,5 +507,6 @@
     setAuthoredProfiles,
     profileForDebug: profileFor,
     creatureSizeClass,
+    sizePitchDifferenceFromLarge, // Reuse authored relative Small/Medium/Large intervals for flying footsteps.
   };
 })();

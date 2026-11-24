@@ -517,7 +517,7 @@
       // discards this session-only map; no partially playable network is kept.
       throw error;
     }
-    const allRooms={...roomLayout,rooms:[...roomLayout.rooms,...(options.initialRooms||[])]}; // Original V50 vestibule participates in light/hostile isolation without rebuilding its authored walls.
+    const allRooms={...roomLayout,shaft:plan.shaft,rooms:[...roomLayout.rooms,...(options.initialRooms||[])]}; // Original V50 vestibule participates in light/hostile isolation without rebuilding its authored walls.
     roomSession=RoomSystem.mount({layout:allRooms,getPlayerPosition,getPlayerY,
       mapId:String(rec.mapData?.id||'map_i_dev_random_ruin'),
       tile:Number(root.Combat?.deps?.TILE)||64,

@@ -18,7 +18,7 @@ class Vector2 { constructor(x = 0, y = 0) { this.x = x; this.y = y; } set(x, y) 
 class Stub { constructor(...args) { this.args = args; this.texture = {}; this.width = 1; this.height = 1; this.uniforms = args[0]?.uniforms; } add() {} setSize(w, h) { this.width = w; this.height = h; } }
 const THREE = {
   Vector3, Box3, Vector2, Color: Stub, WebGLRenderTarget: Stub, Scene: Stub, OrthographicCamera: Stub, ShaderMaterial: Stub,
-  Mesh: Stub, PlaneGeometry: Stub, MeshBasicMaterial: Stub, LinearFilter: 1, RGBAFormat: 1, DoubleSide: 2,
+  Mesh: Stub, PlaneGeometry: Stub, MeshBasicMaterial: Stub, LinearFilter: 1, RGBAFormat: 1, FrontSide: 0, BackSide: 1, DoubleSide: 2,
 }; // Enough of three.js for renderOverlay's mask + composite passes against a mock renderer.
 
 function node(name, pos, parent) {
@@ -112,6 +112,8 @@ sandbox.window.FarmAnimals = {
   }])),
 };
 vm.createContext(sandbox);
+vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'docs', 'js', 'perception-mask-renderer.js'), 'utf8'), sandbox);
+vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'docs', 'js', 'perception-info-lists.js'), 'utf8'), sandbox);
 vm.runInContext(SRC, sandbox);
 const PM = sandbox.window.PerceptionMode;
 assert.ok(PM, 'PerceptionMode is exported');
@@ -252,6 +254,18 @@ assert.strictEqual(button.attrs['aria-pressed'], 'false');
 button.listeners.pointerdown({ preventDefault() {} });
 assert.strictEqual(PM.isActive(), true, 'and back on, no cooldown');
 
+// Opposing animal cards and shared-material generic target.
+const animalFront = wolf.avatarRef.group.children[0]; // Rigid source-facing card.
+const animalBack = mesh(wolf.avatarRef.group); // Rigged mirrored card.
+animalFront.userData.hobunjiPlaneFace = 'front';
+animalBack.userData.hobunjiPlaneFace = 'back';
+animalFront.material.side = THREE.FrontSide;
+animalBack.material.side = THREE.FrontSide;
+animalBack.isSkinnedMesh = true;
+const reverseMaterial = animalBack.material; // Restored after each mask pass.
+const genericHostile = bandit.avatarRef.group.children[0]; // Same category/material, no face marker.
+genericHostile.material = animalFront.material;
+
 // renderOverlay: the mask pass swaps materials/layers only for its own
 // render, and every piece of renderer state is restored afterwards — even when
 // the mask render throws (a stuck render target would black out the canvas).
@@ -269,6 +283,11 @@ const renderer = {
     const mask = renderScene === scene;
     if (mask) {
       assert.notStrictEqual(targetMesh.material, originalMaterial, 'mask pass draws with the category material');
+      assert.strictEqual(targetMesh.material.args[0].side, originalMaterial.side, 'front animal card preserves face culling');
+      assert.strictEqual(animalBack.material.args[0].side, reverseMaterial.side, 'rigged reverse card preserves face culling');
+      assert.strictEqual(animalBack.material.args[0].skinning, true, 'reverse card retains skinning');
+      assert.strictEqual(targetMesh.material.args[0].depthTest, false, 'animal remains visible through obstacles');
+      assert.strictEqual(genericHostile.material.args[0].side, THREE.DoubleSide, 'generic target retains two-sided mask even with shared material');
       assert.strictEqual(cliffDoorAt12.children[0].material.args[0].color, PM.COLORS.landmark, 'landmarks render in bronze verdigris through the actual mask pipeline');
       assert.strictEqual(herbAt12.children[0].material.args[0].map, leafTexture, 'herb highlight uses the custom grass blade silhouette rather than an opaque rectangle');
       assert.strictEqual(herbAt12.children[0].material.args[0].alphaTest, 0.5, 'herb highlight clips to the existing grass alpha threshold');
@@ -283,6 +302,8 @@ const assertRestored = label => {
   assert.strictEqual(renderer.autoClear, true, `${label}: autoClear restored`);
   assert.strictEqual(renderer.shadowMap.autoUpdate, true, `${label}: shadow auto-update restored`);
   assert.strictEqual(targetMesh.material, originalMaterial, `${label}: source material restored`);
+  assert.strictEqual(animalBack.material, reverseMaterial, `${label}: reverse source material restored`);
+  assert.strictEqual(animalBack.layers.mask, 1, `${label}: reverse layer restored`);
   assert.strictEqual(targetMesh.layers.mask, 1, `${label}: perception layer removed`);
   assert.strictEqual(camera.layers.mask, 1, `${label}: camera layers restored`);
 };
@@ -316,6 +337,41 @@ renderer.failMask = true;
 assert.throws(() => PM.renderOverlay(renderer, scene, camera), /mask failure/);
 assert.deepStrictEqual(renderer.passes, [], 'no composite of an incomplete mask');
 assertRestored('failed mask pass');
+
+// Material preparation can throw after an earlier mesh has already been swapped.
+renderer.failMask = false;
+Object.defineProperty(reverseMaterial, 'map', { configurable: true, get() { throw new Error('texture preparation failure'); } });
+assert.throws(() => PM.renderOverlay(renderer, scene, camera), /texture preparation failure/);
+delete reverseMaterial.map;
+assert.deepStrictEqual(renderer.passes, [], 'preparation failure does not draw or composite');
+assertRestored('failed preparation');
+PM.renderOverlay(renderer, scene, camera);
+assertRestored('successful retry');
+renderer.passes.length = 0;
+
+// Overlapping roots can expose the same child. Its source and layer mask must
+// be restored exactly once, and an invisible slot must not become a silhouette.
+{
+  const isolated = sandbox.window.PerceptionMaskRenderer.create(() => THREE, PM.COLORS);
+  const mixed = mesh(wolf.avatarRef.group); // Exercise multi-material filtering and duplicate membership.
+  const hidden = { visible: false }; // A hidden material group must stay out of the mask.
+  const slots = [originalMaterial, hidden, null];
+  mixed.material = slots;
+  const originalLayers = (1 << 25) | 1;
+  mixed.layers.mask = originalLayers;
+  const local = { ...renderer, passes: [], render(renderScene) {
+    if (renderScene === scene) {
+      assert.strictEqual(mixed.material[0].args[0].color, PM.COLORS.hostile, 'first target owns overlapping mesh');
+      assert.strictEqual(mixed.material[1], null, 'hidden material is excluded');
+      assert.strictEqual(mixed.material[2], null, 'missing material slot is safe');
+    }
+  } };
+  assert.strictEqual(isolated.renderOverlay(local, scene, camera, [{ category: 'hostile', meshes: [mixed] }, { category: 'friendly', meshes: [mixed] }]), 1);
+  assert.strictEqual(mixed.material, slots);
+  assert.strictEqual(mixed.layers.mask, originalLayers);
+  wolf.avatarRef.group.children.pop();
+  mixed.parent = null;
+}
 
 // Farmwork uses the exact same mask/composite while keeping Perception speed/info semantics off.
 PM.setActive(false);

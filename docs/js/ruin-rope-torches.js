@@ -11,7 +11,9 @@
   const AURA_OPACITY = 0.27; // Halo is deliberately subtle beside the shared full-strength fuel flames.
   const MAX_CAMERA_DISTANCE_SQ = 24 * 24; // Far-off rope fire stops spawning particles on mobile.
   const active = new Set(); // Active rope-end visuals; exposed in the in-game diagnostic badge.
+  const activeLights=[]; // The shared darkness compositor reads these cached rope-end sources without traversing scene meshes.
   const cameraLocal = new THREE.Vector3(); // Reused to billboard the head and distance-cull emission.
+  const lightPosition = new THREE.Vector3(); // Reused world point tracks the swinging rope head's localized Kanthic light.
   const facing = new THREE.Vector3(); // Billboard forward axis (horizontal so flames remain upright).
   const right = new THREE.Vector3(); // Billboard side axis for the authored layered PNGs.
   const up = new THREE.Vector3(0, 1, 0); // Upright brazier orientation, independent of pendulum pitch.
@@ -86,7 +88,9 @@
       THREE, headRoot, headParts: [], itemKey: 'ruinRopeTorch', materialLayers: [],
       resolveAsset: path => path, masteryLevel: () => 5,
     }; // The existing fire runtime only needs these fields; no tool inventory or combat assembly is created.
-    const torch = { root, marker, aura, facingRoot, headRoot, state, ready: false, disposed: false, wasVisible: false, phase: Math.random() * Math.PI * 2 };
+    const light={x:0,y:0,z:0,floorY:0,floorTolerance:2,radius:0.78,strength:0.32,color:[255,154,82],active:false}; // The head illuminates its own grip, never the whole shaft.
+    activeLights.push(light);
+    const torch = { root, marker, aura, facingRoot, headRoot, state, light, ready: false, disposed: false, wasVisible: false, phase: Math.random() * Math.PI * 2 };
     active.add(torch);
 
     texturesFor(spec).then(textures => {
@@ -167,6 +171,12 @@
       }
     }
     torch.root.visible = visible && torch.ready; // Never show a floating halo until the authored brazier and its fire emitter are ready.
+    torch.light.active=torch.root.visible && !!torch.marker.getWorldPosition;
+    if(torch.light.active){
+      torch.marker.getWorldPosition(lightPosition);
+      torch.light.x=lightPosition.x;torch.light.y=lightPosition.y;torch.light.z=lightPosition.z;
+      torch.light.floorY=lightPosition.y; // The small light follows the actual rope end in all three axes.
+    }
     if (!visible || !torch.ready) { torch.wasVisible = false; return; }
     if (!torch.wasVisible) window.HobunjiLayeredWeaponEffects?.stepFire?.(torch.state, 0.4); // Kill stale flames when a previously culled rope returns to view.
     torch.wasVisible = true;
@@ -179,6 +189,8 @@
     torch.disposed = true;
     torch.state.dead = true; // Late bronze recolor/image promises cannot reattach materials after a ruin reroll.
     active.delete(torch);
+    torch.light.active=false;
+    const lightIndex=activeLights.indexOf(torch.light);if(lightIndex!==-1)activeLights.splice(lightIndex,1);
     window.HobunjiLayeredWeaponEffects?.dispose?.(torch.state); // Retires pooled and live flame sprite materials.
     torch.headRoot.traverse(node => {
       node.geometry?.dispose?.();
@@ -201,5 +213,5 @@
     return { total: active.size, ready, emitting, liveParticles, lastError };
   }
 
-  window.RuinRopeTorch = Object.freeze({ attach, tick, dispose, debugSnapshot });
+  window.RuinRopeTorch = Object.freeze({ attach, tick, dispose, lightSources:()=>activeLights, debugSnapshot });
 })();

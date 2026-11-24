@@ -50,8 +50,8 @@ assert.equal(avatars.buildAnimalPlaneAvatarModel(null,'',{creatureId:'gar-wolf'}
 
 const expectedMaps={
   "moot": {
-    "weightMap": "e2dd3c3c",
-    "compressibilityMap": "18759591"
+    "weightMap": "c0e7f597",
+    "compressibilityMap": "21d1da34"
   },
   "voorg-ass": {
     "weightMap": "5596eaec",

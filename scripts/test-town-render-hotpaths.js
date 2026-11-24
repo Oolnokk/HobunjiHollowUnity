@@ -91,6 +91,22 @@ assert.equal(surfaceComposer.resolvePolicy('portrait-plane', 'water').tintableCo
   'future portrait consumers receive the same translucent-water decision');
 assert.equal(surfaceComposer.resolvePolicy('hat-plane', 'billboard-grass').protectedCover, true,
   'future headgear consumers retain the same solid-cover policy');
+// Cover-only questions cannot walk terrain ancestry, but must agree with full classification.
+const coverCases = [
+  coverMesh({waterSurfaceRole:'flood'}), coverMesh({environmentSurfaceMicroPlateau:true},null,{userData:{environmentSurfaceMicroPlateauMaterial:'slush'}}),
+  coverMesh({environmentSurfaceMicroPlateau:true}), coverMesh({isWildernessGrassChunk:true}),
+  coverMesh({isRichFoliageBillboard:true}), coverMesh({},null,{isShaderMaterial:true,uniforms:{uGrassTex:{},uDensity:{},uStrength:{}}}),
+  coverMesh({hobunjiGroundTopFacesOnly:true}), coverMesh({}, {userData:{hobunjiPathSurface:true}}), coverMesh({})
+];
+for (const object of coverCases) {
+  const full=surfaceComposer.classifySurface(object);
+  const cover=surfaceComposer.classifyCover(object);
+  assert.equal(surfaceComposer.isProtectedCover(cover),surfaceComposer.isProtectedCover(full));
+  assert.equal(surfaceComposer.isTintableCover(cover),surfaceComposer.isTintableCover(full));
+}
+const noAncestor=coverMesh({});
+Object.defineProperty(noAncestor,'parent',{get(){throw Error('cover-only query walked the scene');}});
+assert.equal(surfaceComposer.classifyCover(noAncestor),null);
 const baseGrass = coverMesh({ isWildernessGrassChunk: false }, null,
   { userData: { hobunjiBaseGrassTerrainMaterial: true } });
 assert.equal(surfaceComposer.classifySurface(baseGrass, { baseGround: true }), 'base-ground',

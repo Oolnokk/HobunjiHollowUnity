@@ -10,16 +10,18 @@ class Node {
   constructor(tag = 'div') {
     this.tagName = tag.toUpperCase();
     this.children = []; // Tracks actual visible/source clothing cells for assertions.
-    this.style = {}; // Used by the inventory detail and quantity badge.
+    this.style = { setProperty(name, value) { this[name] = value; } }; // Used by the inventory detail and quantity badge.
     this.dataset = {}; // Used by the clothing editor and grid bridge.
     this.attributes = {}; // Tracks stable key and controller metadata.
     this.listeners = {}; // Dispatches clicks into the real action handlers.
     this.textContent = '';
     this.className = '';
+    this.classList = { toggle: (name, enabled) => { const classes = this.className.split(/\s+/).filter(c => c && c !== name); if (enabled) classes.push(name); this.className = classes.join(' '); }, contains: name => this.className.split(/\s+/).includes(name), add: () => {}, remove: () => {} };
   }
   set innerHTML(value) { this.children = []; this._html = value; }
   get innerHTML() { return this._html || ''; }
   appendChild(child) { this.children.push(child); return child; }
+  append(...children) { children.forEach(child => this.appendChild(child)); }
   setAttribute(key, value) { this.attributes[key] = String(value); }
   getAttribute(key) { return this.attributes[key] || null; }
   addEventListener(type, callback) { this.listeners[type] = callback; }
@@ -29,10 +31,13 @@ const nodes = new Map(); // One set of menu detail/source nodes is enough for al
 for (const id of ['invPackClothing', 'iiEmpty', 'iiDetail', 'iiIcon', 'iiName', 'iiPrice', 'iiQuality', 'iiTags', 'iiDesc', 'iiActions']) {
   nodes.set(id, new Node());
 }
+const nestRoot = new Node(); // Mounted name nests for testing the live disclosure handlers.
+const descendants = node => node.children.flatMap(child => [child, ...descendants(child)]);
 const document = {
   getElementById: id => nodes.get(id) || null,
   createElement: tag => new Node(tag),
   addEventListener: () => {},
+  querySelectorAll: selector => selector === '.clothing-nest' ? descendants(nestRoot).filter(node => node.classList.contains('clothing-nest')) : [],
 };
 const windowStub = { InventoryUI: { init: () => {} } }; // Avoids an unrelated dynamic script load.
 const script = fs.readFileSync(path.join(__dirname, '../docs/js/equipment-panel.js'), 'utf8');
@@ -200,6 +205,33 @@ nodes.get('invPackClothing').children[0].click();
 nodes.get('iiActions').children.find(child => child.textContent.startsWith('Sell')).click();
 assert.equal(pack.length, 1, 'a late duplicate UID cannot cause a sale to destroy the whole stack');
 
+// New visible hierarchy: one name stack, independent pattern pieces and bounded recent thumbnails.
+pack = [...Array.from({ length: 6 }, (_, i) => ({ ...copy(base), uid: 'plain-' + i, baseLabel: 'Rugged Poncho', sprite: 'plain-' + i + '.png' })),
+  { ...banditClothA, baseLabel: 'Rugged Poncho', sprite: 'glyph-a.png' },
+  { ...banditClothB, baseLabel: 'Rugged Poncho', sprite: 'glyph-b.png' },
+  { ...copy(base), uid: 'hood', cosmeticId: 'ragged_hood', baseLabel: 'Hood', label: 'Hood' }];
+nestRoot.append(...panel.buildPackClothingNests());
+assert.equal(nestRoot.children.length, 2, 'only one root per shared article name');
+const [ponchoNest, hoodNest] = nestRoot.children;
+const [ponchoToggle, ponchoBody] = ponchoNest.children;
+assert(ponchoBody.hidden);
+assert.deepEqual(ponchoToggle.children[0].children.map(icon => icon.src), ['plain-3.png','plain-4.png','plain-5.png','glyph-a.png','glyph-b.png'], 'five latest acquisitions appear oldest to newest');
+ponchoToggle.click();
+assert(!ponchoBody.hidden);
+assert.equal(ponchoBody.children.length, 3, 'plain stack plus two distinct patterned garments');
+const [plainNest, patternB, patternA] = ponchoBody.children;
+assert.equal(patternB.getAttribute('data-key'), banditClothB.uid);
+assert.equal(patternA.getAttribute('data-key'), banditClothA.uid);
+assert.deepEqual(plainNest.children[0].children[0].children.map(icon => icon.src), ['plain-3.png','plain-4.png','plain-5.png']);
+plainNest.children[0].click();
+assert(!ponchoBody.hidden && !plainNest.children[1].hidden, 'entering the child retains the parent');
+assert.equal(plainNest.children[1].children.length, 6, 'all six physical plain garments remain individually accessible');
+plainNest.children[0].click();
+assert(!ponchoBody.hidden && plainNest.children[1].hidden, 'closing child preserves its parent');
+hoodNest.children[0].click();
+assert(ponchoBody.hidden && !hoodNest.children[1].hidden, 'opening an unrelated stack closes the former hierarchy');
+assert.equal(pack.length, 9, 'disclosure never consumes or merges a physical garment');
+
 // Exercise the real General Store buy callback: repeated purchases of the same daily listing
 // must create distinct physical articles, even with constant clock/random sources.
 const storeSource = fs.readFileSync(path.join(__dirname, '../docs/js/general-store.js'), 'utf8');
@@ -221,26 +253,34 @@ const storeDeps = {
 const storeButtons = []; // Stubbed DOM holds the real clothing-buy click handler.
 const storeDocument = {
   createElement: () => ({
-    className: '', textContent: '', innerHTML: '',
+    className: '', textContent: '', innerHTML: '', children: [],
+    appendChild(child) { this.children.push(child); }, setAttribute() {},
+    addEventListener(type, handler) { this[type] = handler; },
     querySelector(selector) {
       if (selector !== '.gs-cloth-buy') return null;
-      const button = { addEventListener(type, handler) { if (type === 'click') this.click = handler; } };
+      const button = { before(node) { this.controls = node; }, addEventListener(type, handler) { if (type === 'click') this.click = handler; } };
       storeButtons.push(button);
       return button;
     },
   }),
 };
+const storeWindow = {};
+vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../docs/js/shop-quantity.js'), 'utf8'), { window:storeWindow, document:storeDocument });
 const renderStoreClothing = vm.runInNewContext(
   storeSource.slice(storeStart, storeEnd) + '\nrenderGeneralStoreClothing',
-  { document:storeDocument, deps:storeDeps, generateDailyClothingStock:() => storeItems,
+  { window:storeWindow, document:storeDocument, deps:storeDeps, generateDailyClothingStock:() => storeItems,
     renderGeneralStorePage:() => {}, Date:{ now:() => 42 }, Math:{ random:() => 0.123456 } },
 );
 renderStoreClothing({ appendChild() {} });
 assert.equal(storeButtons.length, 1, 'one daily stock row has one purchase action');
+storeButtons[0].controls.children[2].click();
 storeButtons[0].click();
-storeButtons[0].click();
-assert.equal(purchases.length, 2, 'two purchases create two literal pack articles');
+assert.equal(purchases.length, 2, 'one bulk purchase creates two literal pack articles');
 assert.notEqual(purchases[0].uid, purchases[1].uid, 'even identical purchases made within the same millisecond have distinct UIDs');
+storeButtons[0].click();
+assert.equal(purchases.length, 3, 'another purchase after a bulk order still creates an article');
+assert.equal(new Set(purchases.map(article => article.uid)).size, 3, 'UIDs remain unique across bulk and single transactions');
+assert.equal(storeDeps.inventory.gold, 70, 'bulk and single clothing purchases charge the exact total');
 assert.equal(groupClothingForDisplay(purchases).length, 1, 'both identically configured purchases display in the same stack');
 
 console.log('Clothing stack rendering, migration, sale, and transfer transactions passed');

@@ -26,9 +26,14 @@
 //   propBatchesOff  still wilderness props (tents, camp furniture, berry
 //                   bushes, ore-rock stones...) drawn one mesh at a time
 //                   instead of merged per 8x8 cell (zone-prop-render-batches.js)
+//   brickLodOff     far brick walls/path chunks drawn with the full 70-triangle
+//                   brick again (instanced-brick-lod.js)
 //   denseWallBatchesOff
 //                   the Cloud Forest dense wall drawn as one instanced mesh per
 //                   chunk part again (dense-forest-wall-batches.js)
+//   denseWallLodOff
+//                   far Cloud Forest wall chunks drawn with full-detail bark
+//                   and vines again (dense-forest-wall-batches.js distance LOD)
 //   denCollisionEveryTile
 //                   creature pathfinding looks up every den's collision shape
 //                   for every tile again, instead of once per game-loop tick
@@ -336,9 +341,16 @@
     if (typeof propBatches?.setEnabled === 'function' && propBatches.snapshot?.().enabled === true && propBatches.snapshot().batches > 0) {
       variants.push({ id: 'propBatchesOff', apply: () => propBatches.setEnabled(false), undo: () => propBatches.setEnabled(true) });
     }
+    const brickLod = window.InstancedBrickLod;
+    if (typeof brickLod?.setEnabled === 'function' && brickLod.enabled() && brickLod.snapshot().farMeshes > 0) {
+      variants.push({ id: 'brickLodOff', apply: () => brickLod.setEnabled(false), undo: () => brickLod.setEnabled(true) });
+    }
     const wallBatches = window.DenseForestWallBatches;
     if (typeof wallBatches?.setEnabled === 'function' && wallBatches.snapshot?.().enabled === true && wallBatches.snapshot().batches > 0) {
       variants.push({ id: 'denseWallBatchesOff', apply: () => wallBatches.setEnabled(false), undo: () => wallBatches.setEnabled(true) });
+      if (wallBatches.snapshot().lodEnabled === true && wallBatches.snapshot().lodFarTrees > 0) {
+        variants.push({ id: 'denseWallLodOff', apply: () => wallBatches.setLodEnabled(false), undo: () => wallBatches.setLodEnabled(true) });
+      }
     }
     const tiles = window.GridTileAccessors;
     if (typeof tiles?.setDenStateMemoEnabled === 'function' && tiles.denStateMemoEnabled?.() === true) {

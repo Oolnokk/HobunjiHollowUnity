@@ -164,3 +164,93 @@ assert.equal(tables.blocksBox('indexed', 8, 4.5), false, 'a same-frame removal i
   assert.equal(ropeEvents.length,afterClearCount+1,'a stale authored load cannot register an orphaned rope');
   assert.deepEqual(ropeEvents.at(-1),['unregister','late-map','pending']);
 }
+
+// A visible NPC must use an actual registered chair, never a fallback tile.
+{
+  const gameSource=fs.readFileSync('docs/game.js','utf8');
+  const start=gameSource.indexOf('      function resolveSeatWorldTransform('),end=gameSource.indexOf('      function beginSitInteraction(',start);
+  const nStart=gameSource.indexOf('      function npcSeatTransformForTarget('),nEnd=gameSource.indexOf('      async function makeNpcWalker(',nStart);
+  const resolver=gameSource.slice(start,end)+gameSource.slice(nStart,nEnd);
+  const loadTable=w=>{vm.runInNewContext(fs.readFileSync('docs/js/furniture-table-system.js','utf8'),{window:w});return w.FurnitureTableSystem;};
+  const loadResolver=w=>vm.runInNewContext(resolver+'\n({resolve:npcSeatTransformForTarget, navigate:npcSeatNavigationTarget});', {window:w,DECORATIVE_FURNITURE_DEFS:{chairSimple:{sit:true,fw:1,fd:1},stool:{sit:true,fw:1,fd:1},bench:{sit:true,fw:1,fd:1}}});
+  const check=(condition,message)=>assert.ok(condition,message);
+
+  class SeatVector { set(x,y,z){Object.assign(this,{x,y,z});return this;} }
+  const w={THREE:{Vector3:SeatVector},AuthoredFurniture:{
+    peek:()=>({}),seatAnchorFor:(_data,index)=>({position:{x:index*.2,y:.3,z:0},rotationDeg:{y:0}}),
+  }};
+  const tables=loadTable(w);
+  const area='map_i_chair_qa';
+  let playerSeat=null; // Used to exercise exact-instance claims during the player handoff.
+  tables.init({getArea:()=>area,surfaceY:()=>.4,getPlayerSeat:()=>playerSeat});
+  const mesh=(x,y,z)=>({parent:{},position:{x,y,z},scale:{x:1,y:1,z:1},userData:{},localToWorld(v){v.x+=this.position.x;v.y+=this.position.y;v.z+=this.position.z;return v;}});
+  const chair=mesh(8.5,1.2,9.5);
+  tables.registerPlacement(area,{id:'moved',key:'chairSimple',col:1,row:2,npcStationId:'legacy-station'},chair,{sit:true});
+  tables.registerPlacement(area,{id:'other',key:'stool',col:1,row:2},mesh(1.5,0,2.5),{sit:true});
+  const target={area,pose:'sit',furnitureId:'moved',furnitureKey:'chairSimple',c:1,r:2,seatIndex:1};
+  const {resolve,navigate}=loadResolver(w);
+  const anchor=resolve(target);
+  const walker={};
+  const nav=navigate(walker,target,anchor);
+  check(nav.c===8&&nav.r===9&&nav.furnitureId==='moved','navigation routes to the live chair tile, not its outdated station');
+  check(!tables.isPlayerSeatTaken(area,target),'no player reservation before seating');
+  playerSeat={furnitureId:'moved',seatIndex:1,col:8,row:9,phase:'in'};
+  check(tables.isPlayerSeatTaken(area,target),'player reserves the exact seat even during the sit transition');
+  check(!tables.isPlayerSeatTaken(area,{...target,seatIndex:0}),'other seats on a bench remain available');
+  check(!tables.isPlayerSeatTaken(area,{...target,furnitureId:'other'}),'a different chair on the same old tile remains available');
+  check(!tables.isPlayerSeatTaken('unloaded',target),'player reservation is area scoped');
+  check(!tables.isSeatTaken(area,target,'player'),'player is not blocked by their own reservation');
+  playerSeat=null;
+  check(!tables.isPlayerSeatTaken(area,target),'standing releases the player reservation');
+  check(navigate(walker,target,anchor)===nav,'unchanged seat reuses navigation target');
+  const missingTarget={...target,furnitureId:'gone'};
+  const standing=navigate(walker,missingTarget,null);
+  check(standing.pose==='stand'&&!standing.furnitureId&&!standing.furnitureKey,'invalid chair releases reservation and overlap privilege');
+  check(navigate(walker,missingTarget,null)===standing,'missing chair fallback is cached');
+  const floorSit={...target,furnitureId:'',furnitureKey:''};
+  check(navigate(walker,floorSit,null)===floorSit,'floor sitting is unaffected');
+  const offscreen={...target,area:'unloaded'};
+  check(navigate(walker,offscreen,resolve(offscreen))===offscreen,'offscreen logical schedule stays unchanged');
+  check(anchor.x===8.7&&anchor.z===9.5&&Math.abs(anchor.worldY-1.5)<1e-9&&Math.abs(anchor.y-1.1)<1e-9,'live moved chair and absolute elevation');
+  check(resolve({...target,furnitureId:'gone'})===null,'missing named chair does not substitute another');
+  check(resolve({...target,furnitureId:'',stationId:'legacy-station',c:99,r:99}).x===8.7,'legacy station follows stable placement');
+  check(resolve({...target,furnitureId:'',furnitureKey:'bench'})===null,'legacy coordinate cannot substitute another type');
+  check(resolve({...target,furnitureId:'',furnitureKey:'stool'}).x===1.7,'legacy typed lookup still works');
+  tables.registerPlacement(area,{id:'ambiguous',key:'chairSimple',col:1,row:2},mesh(3,0,4),{sit:true});
+  check(resolve({...target,furnitureId:''})===null,'ambiguous legacy NPC chair is rejected');
+  chair.position.x=11;
+  check(resolve(target).x===11.2,'live transform tracks subsequent movement');
+  check(navigate(walker,target,resolve(target)).c===11,'moving an attached chair invalidates the navigation destination');
+  check(resolve({...target,furnitureId:'',sourceFurnitureId:'moved',c:99,r:99}).x===11.2,'authored source identity cannot fall back to stale coordinates');
+  tables.unregisterPlacement(area,'moved');
+  check(resolve(target)===null,'removed chair clears seated anchor');
+  tables.clearArea(area);
+  check(resolve(target)===null,'active area with no registered furniture cannot air sit');
+  check(resolve({...target,area:'unloaded'}).x===1.7,'unloaded offscreen schedules retain logical anchor');
+  check(resolve({...target,area:undefined}).x===1.7,'area-less authored cutscene retains logical anchor');
+
+  console.log('NPC physical seat anchor regression passed');
+}
+
+// A player taking a moved NPC's chair must retain the same physical seat id and height.
+{
+  const gameSource=fs.readFileSync('docs/game.js','utf8');
+  const start=gameSource.indexOf('      function beginSitInteraction('),end=gameSource.indexOf('      function endSitInteraction(',start);
+  const ctx={window:{FarmAnimals:{isHarvesting:()=>false},FurnitureTableSystem:{
+    isSeatTaken:(_area,target)=>target.furnitureId==='occupied',
+    seatTransform:(_area,target)=>target.furnitureId==='moved' ? {x:8.5,z:9.5,y:1.5,worldY:1.5,facingRad:0,furnitureId:'moved'} : null,
+  }},sitInteraction:null,currentArea:'interior',dialogueOpen:false,player:{x:0,y:0},facingAngle:0,TILE:32,
+  activeCameraMode:'default',activeCameraTarget:null,activeSurfaceYAtWorld:()=>.4,THREE:{Vector3:class{constructor(x,y,z){Object.assign(this,{x,y,z});}}},
+  wrapAzimuthDeg:x=>x,cameraModeConfig:()=>({azimuthDeg:0}),cameraAzimuthOffsetDeg:0,cameraAngleOffsetDeg:0,
+  resolveSeatWorldTransform:()=>{throw Error('named seat must never fall back to tile geometry');}};
+  const begin=vm.runInNewContext(gameSource.slice(start,end)+'\nbeginSitInteraction;',ctx);
+  assert.equal(begin('chairSimple',1,2,1,1,0,0,'missing').ok,false);
+  assert.equal(begin('chairSimple',1,2,1,1,0,0,'occupied').ok,false);
+  assert.equal(begin('chairSimple',1,2,1,1,0,0,'moved').ok,true);
+  assert.equal(ctx.sitInteraction.furnitureId,'moved');
+  assert.equal(ctx.sitInteraction.targetX,8.5*32);
+  assert.equal(ctx.sitInteraction.targetY,9.5*32);
+  assert.equal(ctx.sitInteraction.seatAbsoluteWorldY,1.5);
+  assert.equal(ctx.sitInteraction.seatWorldY,1.1);
+  assert.equal(ctx.activeCameraTarget.position.y,1.65);
+}

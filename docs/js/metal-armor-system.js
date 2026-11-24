@@ -751,6 +751,31 @@
     return motifDataUrl ? { ...pattern, motifDataUrl } : pattern;
   }
 
+  // Both direct library selection and custom authoring use the existing paid treatment transaction.
+  function applyVerdigrisPattern(item, patternData, sourceLibraryId) {
+    if (!patternData || !canTreat(item) || treatment(item)?.mode === 'painted') return false;
+    const baseMetal = metalDef(item.metalKey); // Used to report the unchanged material requirement.
+    const barKey = deps.metalBarItemKey?.(item.metalKey);
+    if (!barKey || inventoryCount(barKey) < TREATMENT_BAR_COST) {
+      deps.showToast?.(`Not enough ${baseMetal.label} bars.`, false);
+      return false;
+    }
+    if (inventoryCount('gold') < TREATMENT_LABOR_GOLD) {
+      deps.showToast?.('Not enough gold.', false);
+      return false;
+    }
+    deps.inventory[barKey] = inventoryCount(barKey) - TREATMENT_BAR_COST;
+    deps.clampInventoryStack?.(barKey);
+    deps.inventory.gold = inventoryCount('gold') - TREATMENT_LABOR_GOLD;
+    refundTreatmentBar(item, treatment(item)); // Replacing a treatment returns the old one's bar, same as clearing it does.
+    return commitTreatment(item, {
+      mode: 'pattern',
+      metalKey: item.metalKey,
+      pattern: clone(patternData),
+      patternLibraryId: sourceLibraryId || null,
+    }, 'Verdigris carefully stripped into an armor pattern.');
+  }
+
   async function openVerdigrisPatternEditor(item) {
     if (treatment(item)?.mode === 'painted') {
       deps?.showToast?.('Guardian plating is painted on and cannot be re-patterned.', false);
@@ -785,27 +810,7 @@
         oxidationAmount: 1,
         authoredPattern: patternData,
       }),
-      onSave: (patternData, sourceLibraryId) => {
-        const barKey = deps.metalBarItemKey?.(item.metalKey);
-        if (!barKey || inventoryCount(barKey) < TREATMENT_BAR_COST) {
-          deps.showToast?.(`Not enough ${baseMetal.label} bars.`, false);
-          return false;
-        }
-        if (inventoryCount('gold') < TREATMENT_LABOR_GOLD) {
-          deps.showToast?.('Not enough gold.', false);
-          return false;
-        }
-        deps.inventory[barKey] = inventoryCount(barKey) - TREATMENT_BAR_COST;
-        deps.clampInventoryStack?.(barKey);
-        deps.inventory.gold = inventoryCount('gold') - TREATMENT_LABOR_GOLD;
-        refundTreatmentBar(item, treatment(item)); // Replacing a treatment returns the old one's bar, same as clearing it does.
-        return commitTreatment(item, {
-          mode: 'pattern',
-          metalKey: item.metalKey,
-          pattern: clone(patternData),
-          patternLibraryId: sourceLibraryId || null,
-        }, 'Verdigris carefully stripped into an armor pattern.');
-      },
+      onSave: (patternData, sourceLibraryId) => applyVerdigrisPattern(item, patternData, sourceLibraryId),
     });
     return true;
   }
@@ -819,6 +824,7 @@
       '<option value="clear">— live verdigris (clear treatment) —</option>',
       `<option value="resistant">Verdigris-resistant coat (${deps.esc?.(baseMetal.label) || baseMetal.label})</option>`,
       ...cosmeticOptions,
+      ...(window.PatternLibrary?.listAvailable?.() || []).map(entry => `<option value="library-pattern:${deps.esc(entry.id)}">Pattern: ${deps.esc(entry.label || entry.id)}</option>`),
       '<option value="pattern">Author a verdigris-removal pattern…</option>',
     ].join('');
   }
@@ -926,7 +932,12 @@
       row.querySelector('.mc-metal-armor-treatment-btn')?.addEventListener('click', () => {
         const choice = row.querySelector('.mc-metal-armor-treatment-select')?.value;
         if (choice === 'pattern') openVerdigrisPatternEditor(item);
-        else applyTreatment(item, choice);
+        else if (choice?.startsWith('library-pattern:')) {
+          const patternId = choice.slice('library-pattern:'.length); // Selected owned library motif; no authoring panel is needed.
+          const pattern = window.PatternLibrary?.getById?.(patternId);
+          if (pattern) applyVerdigrisPattern(item, pattern, patternId);
+          else deps.showToast?.('That pattern is unavailable.', false);
+        } else applyTreatment(item, choice);
       });
       if (treatment(item)?.mode === 'pattern') {
         window.PatternQuickControls?.mount(row.querySelector('.sh-info') || row, {

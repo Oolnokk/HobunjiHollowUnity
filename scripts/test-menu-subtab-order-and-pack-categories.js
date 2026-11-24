@@ -187,6 +187,11 @@ let stablePageClicks = 0; // Confirms configured controller input operates the s
 let stablePageFocused = '';
 let stableTabSelected = true;
 let focusInsideStable = true; // Focus on the top menu tab bar must restore ordinary main-tab bumper behavior.
+let focusOnStableRoleStrip = false; // Native role buttons keep the original role-switch behavior.
+let stableAgeScope = null; // A real entered age group borrows bumpers only while inside its content.
+const stableAgePages = [{ id: 'adult' }, { id: 'baby' }];
+const stableAgeState = { sections: stableAgePages, selected: stableAgePages[0] };
+const ageOwner = { id: 'stableList' };
 const stableRoleButtons = ['companion', 'mount', 'shoulderPet'].map(role => ({
   dataset: { stableRole: role },
   getAttribute: key => key === 'aria-pressed' ? String(activeStableRole === role) : null,
@@ -199,9 +204,11 @@ const stableTestPanel = {
 };
 const stableControllerContext = vm.createContext({
   activePanel: () => stableTestPanel,
-  currentTarget: { closest: selector => selector === '#mpStable' && focusInsideStable ? {} : null },
+  currentTarget: { closest: selector => (selector === '#mpStable' && focusInsideStable) || (selector === '#stableRoleTabs' && focusOnStableRoleStrip) ? {} : null },
   panelOwnsAction: () => false,
-  localSubtabs: () => null,
+  localSubtabs: () => stableAgeScope,
+  subtabsByGroup: new Map([[ageOwner, stableAgeState]]),
+  selectLocalSection: (owner, panel, index) => { assert.equal(owner, ageOwner); assert.equal(panel, stableTestPanel); stableAgeState.selected = stableAgePages[index]; },
   findTabGroup: () => null, // An absent menu-bar fallback means other pages must not turn Stable categories.
   clearGroups() {},
   setFocus: node => { stablePageFocused = node.dataset.stableRole; },
@@ -220,6 +227,19 @@ assert.equal(stablePageClicks, 3, 'top-level menu tab focus keeps its ordinary c
 stableTabSelected = false;
 stableControllerContext.cycleStablePage(1);
 assert.equal(stablePageClicks, 3, 'other main menu tabs do not borrow Stable role navigation');
+stableTabSelected = true;
+focusInsideStable = true;
+stableAgeScope = { node: ageOwner };
+stableControllerContext.cycleStablePage(1);
+assert.equal(stableAgeState.selected.id, 'baby', 'inside a Stable age page, bumpers reach the baby page instead of switching role');
+assert.equal(stablePageClicks, 3, 'age navigation never changes the animal role');
+stableControllerContext.cycleStablePage(-1);
+assert.equal(stableAgeState.selected.id, 'adult');
+focusOnStableRoleStrip = true;
+stableControllerContext.cycleStablePage(1);
+assert.equal(activeStableRole, 'companion', 'role strip retains its configured role shortcut even when age pages exist');
+assert.equal(stablePageClicks, 4);
+
 
 const categories = [...htmlSource.matchAll(/class="inv-cat(?: active)?" data-cat="([^"]+)"/g)].map(match => match[1]); // Matches the real Pack filter bar, not the shipping filters.
 assert.equal(new Set(categories).size, 16, 'Sixteen distinct Pack filters are present');

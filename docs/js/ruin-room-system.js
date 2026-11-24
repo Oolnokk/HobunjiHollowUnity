@@ -245,6 +245,22 @@
     // was the camera-moving coloured tunnel frame, not a necessary part of room light isolation.
     const byId=new Map(rooms.map(r=>[r.id,r])); // O(1) stable room-id lookup for encounters and diagnostics.
     const lookup=(x,z,y)=>roomAt(rooms,x,z,y);
+    const shaft=layout?.shaft; // The generated shaft is one vertical visual region, distinct from every room and corridor.
+    const glyphBounds=new Map(); // Cached region extents: a broad wall may belong to more than one room.
+    function registerGlyphBounds(room){
+      let low=room.y,high=room.y;
+      if(room.supportYAt)for(let z=Math.floor(room.z);z<room.z+room.d;z++)for(let x=Math.floor(room.x);x<room.x+room.w;x++){
+        const h=room.supportYAt(x+.5,z+.5);if(Number.isFinite(h)){low=Math.min(low,h);high=Math.max(high,h);}
+      }
+      glyphBounds.set('room:'+room.id,{minX:room.x-.16,maxX:room.x+room.w+.16,minZ:room.z-.16,maxZ:room.z+room.d+.16,minY:low-.65,maxY:high+WALL_HEIGHT+1});
+    }
+    if(shaft)glyphBounds.set('shaft',{minX:shaft.x-.16,maxX:shaft.x+shaft.w+.16,minZ:shaft.z-.16,maxZ:shaft.z+shaft.d+.16,minY:-Infinity,maxY:Infinity});
+    function glyphRegionAt(x,y,z){
+      if(![x,y,z].every(Number.isFinite))return null;
+      const room=lookup(x,z,y);
+      if(room)return 'room:'+room.id;
+      return shaft&&inside(shaft,x,z)?'shaft':null; // Unowned corridors never activate unrelated glyphs.
+    }
     const sleepingArea=SLEEP_AREA+mapId;
     function wake(record){
       if(!record.sleeping)return;
@@ -313,6 +329,7 @@
         for(const room of additional||[]){
           if(!room?.id||byId.has(room.id))continue;
           rooms.push(room);byId.set(room.id,room);
+          root.CloudForestFog?.invalidateKanthicGlyphs?.();
         }
       }, // Native V50 upper stories are registered after their meshes are mounted in the same scene.
       get activeRoomId(){return active?.id||null;},
@@ -336,6 +353,14 @@
           illumination,roomId:active.id}; // Only lit sources in the occupied room reduce its darkness uniformly.
       },
       roomAt:lookup,
+      glyphRegionAt,
+      glyphRegionBounds(id){
+        if(!glyphBounds.has(id)&&typeof id==='string'&&id.startsWith('room:')){
+          const room=byId.get(id.slice(5));if(room)registerGlyphBounds(room);
+        }
+        return glyphBounds.get(id)||null; // Build only a room the player actually visits, not every native room at startup.
+      },
+      activeGlyphRegion(){const p=getPlayerPosition?.();return p?glyphRegionAt(p.x,Number(getPlayerY?.()),p.z):null;},
       prepareLightClip(){}, // Compatibility hook: the full-screen tint has no projected box or feathered contour.
       withLightRegion(_ctx,_project,draw){
         if(typeof draw!=='function')return false;
@@ -381,6 +406,7 @@
           walker.area=record.area;walker.root.visible=record.originallyVisible;
         }
         walkersOwnership.clear();if(live===session)live=null;
+        root.CloudForestFog?.invalidateKanthicGlyphs?.();
       },
       snapshot(){return {activeRoomId:active?.id||null,totalRooms:rooms.length,
         sleepingEnemies:[...ownership.values()].filter(r=>r.sleeping).length,
@@ -390,13 +416,16 @@
         localLightBoundary:{mode:active?.theme==='kanthic'?'unclipped-kanthic-screen-overlay':active?.theme==='tothal'?'unclipped-tothal-overcast':'unclipped-hronal-screen-overlay',
           active:false,roomIsolated:!!active,canvasPasses:0,illumination:session.ambient()?.illumination||0}};},
     };
-    live=session;
+    live=session;root.CloudForestFog?.invalidateKanthicGlyphs?.();
     return session;
   }
   return Object.freeze({DOOR_SPAN,WALL_HEIGHT,planRooms,v50Rooms,projectedFloorArea,floorAudit,wallAudit,makeShell,roomAt,doorNear,mount,
     mounted:()=>!!live,
     isRoomActive:id=>live?.isRoomActive(id)===true,
     ambient:()=>live?.ambient()||null,
+    glyphRegionAt:(x,y,z)=>live?.glyphRegionAt(x,y,z)||null,
+    activeGlyphRegion:()=>live?.activeGlyphRegion()||null,
+    glyphRegionBounds:id=>live?.glyphRegionBounds(id)||null,
     lightAllowed:source=>live?live.lightAllowed(source):true,
     withLightClip:(ctx,light,project,draw)=>live?live.withLightClip(ctx,light,project,draw):(draw(),true),
     withLightRegion:(ctx,project,draw)=>live?live.withLightRegion(ctx,project,draw):(typeof draw==='function'?(draw(),true):false),

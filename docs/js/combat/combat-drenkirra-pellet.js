@@ -154,9 +154,9 @@
 
   function gatherTargets(creature, deps) {
     const targets = []; // Used as the opposing actors this pellet can physically intersect while flying.
-    if (creature.isCompanion) {
+    if (creature.isCompanion && !creature.banditCompanion) {
       for (const hostile of deps.hostileObjects || []) {
-        if (hostile.health > 0 && hostile.areaId === creature.areaId) targets.push({ kind: 'creature', ref: hostile });
+        if (hostile !== creature && hostile.health > 0 && hostile.areaId === creature.areaId && !hostile._downed && !hostile._denHidden && !hostile._deathTransitionStarted) targets.push({ kind: 'creature', ref: hostile });
       }
       return targets;
     }
@@ -169,7 +169,7 @@
       // a shot aimed at the player, so exclude it here the same way the
       // rest of the game treats it as part of the player's silhouette
       // (see game.js's updatePetLayering/_avatarDepthParticipants).
-      if (companion.stableRole === 'shoulderPet') continue;
+      if (companion === creature || companion.stableRole === 'shoulderPet' || (creature.banditCompanion && companion.banditCompanion)) continue;
       if (companion.health > 0 && companion.areaId === creature.areaId) targets.push({ kind: 'creature', ref: companion });
     }
     return targets;
@@ -230,7 +230,7 @@
   }
 
   function aimVectorFor(creature, target, deps) {
-    if (!target || !Number.isFinite(target.x) || !Number.isFinite(target.y)) return null;
+    if (!target || target._downed || target._denHidden || target._deathTransitionStarted || !Number.isFinite(target.x) || !Number.isFinite(target.y)) return null;
     if (Number.isFinite(target.health) && target.health <= 0) return null;
 
     const targetDxPx = target.x - creature.x, targetDzPx = target.y - creature.y; // Used to choose the horizontal mouth bearing before converting into world units.
@@ -434,7 +434,7 @@
       let hit = false; // Used to stop this pellet on the first opposing actor its swept segment intersects.
       for (const targetEntry of projectile.targets) {
         const target = targetEntry.ref;
-        if (!target || (Number.isFinite(target.health) && target.health <= 0)) continue;
+        if (!target || target._downed || target._denHidden || target._deathTransitionStarted || (Number.isFinite(target.health) && target.health <= 0)) continue;
         if (targetEntry.kind === 'creature' && target.areaId != null && creature.areaId != null && target.areaId !== creature.areaId) continue;
         const hitRadius = hitRadiusFor(target, targetEntry.kind, deps); // Used as the target-plus-projectile swept collision radius.
         const horizontalHit = pointSegmentDistanceSqT(target.x, target.y, projectile.prevX, projectile.prevY, projectile.x, projectile.y);

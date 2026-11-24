@@ -465,6 +465,8 @@
   "npcStations": [
     {
       "id": "station_ikmc_hark_counter",
+      "sourceFurnitureId": "f_ikmc_hark_chair",
+      "furnitureId": "f_ikmc_hark_chair",
       "label": "Surveyor's Counter Chair",
       "col": 4,
       "row": 6,

@@ -391,7 +391,7 @@
 
   function applySicced(event, def, power) {
     const target = event.target;
-    if (!target || target.health <= 0) return;
+    if (!validSiccedTarget(target)) return;
     target._siccedUntilMs = Math.max(Number(target._siccedUntilMs) || 0, nowMs() + TUNING.SICCED_DURATION_S * 1000);
     target._siccedCompanionPowerMul = 1 + TUNING.SICCED_COMPANION_POWER_BONUS * power;
     siccedTargets.add(target);
@@ -536,10 +536,14 @@
     return true;
   }
 
+  function validSiccedTarget(target) {
+    return !!target && Number(target.health) > 0 && !target._downed && !target._denHidden && !target._deathTransitionStarted; // Explicit marks cannot hold the pet on an unattackable actor.
+  }
+
   function pruneSiccedTargets() {
     const t = nowMs();
-    for (const target of Array.from(siccedTargets)) {
-      if (!target || target.health <= 0 || t >= (Number(target._siccedUntilMs) || 0)) siccedTargets.delete(target);
+    for (const target of siccedTargets) {
+      if (!validSiccedTarget(target) || t >= (Number(target._siccedUntilMs) || 0)) siccedTargets.delete(target);
     }
     if (currentSiccedTarget && siccedTargets.has(currentSiccedTarget)) return currentSiccedTarget;
     currentSiccedTarget = null;
@@ -556,12 +560,16 @@
     return currentSiccedTarget;
   }
 
-  function getCurrentSiccedTarget() {
-    return pruneSiccedTargets();
+  function getCurrentSiccedTarget(areaId) {
+    const current = pruneSiccedTargets(); // Global newest mark remains authoritative when no area is requested.
+    if (areaId == null || current?.areaId === areaId) return current;
+    let local = null; // Find a living marked enemy in this area without erasing a still-valid mark in another area.
+    for (const target of siccedTargets) if (target.areaId === areaId && (!local || target.health < local.health)) local = target;
+    return local;
   }
 
   function getCompanionTargetPowerMultiplier(companion, target) {
-    if (!companion?.isCompanion || !target || !siccedTargets.has(target) || nowMs() >= (Number(target._siccedUntilMs) || 0)) return 1;
+    if (!companion?.isCompanion || companion.banditCompanion || !validSiccedTarget(target) || !siccedTargets.has(target) || nowMs() >= (Number(target._siccedUntilMs) || 0)) return 1;
     return Math.max(1, Number(target._siccedCompanionPowerMul) || 1);
   }
 
@@ -751,7 +759,7 @@
     // the Engraved Whistle (or anything else) without either knowing.
     window.CompanionOffense?.registerProvider?.('sicced', (companion, target) => {
       const mul = getCompanionTargetPowerMultiplier(companion, target);
-      return mul > 1 ? { damage: mul, footing: mul, affliction: mul } : null;
+      return mul > 1 ? { damage: mul, footing: mul, affliction: mul, knockback: mul } : null;
     });
   }
 

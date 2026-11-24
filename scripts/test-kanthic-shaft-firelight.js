@@ -45,6 +45,9 @@ assert.equal(ruin.shaftConnection.kanthicSconces,sconces.length,'diagnostics rep
 assert.equal(ruin.shaftConnection.kanthicOptionalBraziers,0,'Kanthic lighting creates no duplicate fire on the universal travel pedestal');
 assert.equal(ruin.shaftConnection.kanthicRequiredBrazierLights,2,'real required wing and native sources feed the same light list');
 assert(lights.includes(wingGoal)&&lights.includes(nativeGoal),'no completed-wing flame can be omitted from Kanthic projection');
+assert(sconces.every(light=>light.radius<=1.05&&light.strength<=.32),'permanent Kanthic fire only illuminates a tiny local area');
+assert.equal(wingGoal.radius,10,'completed-wing illumination remains an earned progression reward');
+assert.equal(nativeGoal.radius,10.5,'native upper-story reward brazier retains its full radius');
 assert(!wingGoal.active&&!nativeGoal.active,'unlit goal braziers do not reveal their chamber');
 const wallSconces=sconces.filter(l=>l.anchor.name==='kanthic-wall-giant-sconce'
   &&l.anchor.position.x<55&&l.anchor.position.z<55); // Ignore outer-wing fixtures beyond the shaft.
@@ -76,9 +79,16 @@ assert.doesNotThrow(()=>new vm.Script(fog),'darkness compositor parses');
 assert(fog.includes("ruinTradition === 'kanthic') drawRuinTraditionLightMasks(window.RuinMultifloorV50Style?.lightSources?.() || [])"),
   'Kanthic only draws dedicated firelight, not all generic furniture lamps');
 assert(fog.includes('light.active === false'),'unlit fixtures do not clear the darkness');
+assert(fog.includes('const mistActive = active;'),'Kanthic uses actual Cloud Forest mist rather than an overlay-only imitation');
+assert(fog.includes("drawRuinTraditionLightMasks(window.RuinRopeTorch?.lightSources?.()"),'rope-end lanterns feed the same shared darkness pass');
+assert.equal(fog.split('drawRuinTraditionLightMasks(window.RuinCheckpointTravel?.lightSources?.() || [])').length-1,2,
+  'earned shaft travel and checkpoint lights project through both enclosed and actual-fog paths');
+assert(fog.includes('ruinFireMaskStats.sources+=lights.length')&&fog.includes('ruinFireMaskStats.projected+=visible.length'),
+  'the mobile lighting diagnostics accumulate separate fixture groups within one draw');
 assert.equal(fog.split('drawRuinPatternGlowMasks(activeScene,now)').length-1,2,
   'engraved glow ignores both enclosed darkness and underground fog');
-assert(fog.includes("node.name === 'engraving-glyph-glow'"),'glow pass uses real emissive glyphs');
+assert(/node\.name\s*===\s*['"]engraving-glyph-glow['"]/.test(fog),'glow pass uses real emissive glyphs');
+assert(fog.includes('renderer.render(kanthicProxyScene,camera)'),'Kanthic emission is a world-depth draw, not a projected canvas light mask');
 assert(connector.includes('routeTiles:route.tiles,showToast,onStateChange:onMechanismStateChange'),
   'existing shaft control callbacks reach the Kanthic lighting runtime');
 
@@ -110,9 +120,13 @@ assert(maskDraws.some(draw=>draw.mode==='source-over'&&draw.stops[0][1].includes
   'the same active light renders a warm firelight halo');
 assert.equal(fakeWindow.CloudForestFog.getDebugState().kanthicFirelight.drawn,1,
   'mobile darkness diagnostics report the actual projected/drawn light');
+fakeWindow.__probeRuinMasks([source],drawingDeps);
+assert.equal(fakeWindow.CloudForestFog.getDebugState().kanthicFirelight.drawn,2,
+  'two independent fixture groups accumulate two darkness-cutout draws');
 const above={...source,floorY:16,y:17.4};
 maskDraws.length=0;
-assert.equal(fakeWindow.__probeRuinMasks([above],drawingDeps).drawn,0,'a lit upper-story goal does not shine through lower floors');
+const beforeUpperStory=visibleResult.drawn+1; // The diagnostics count all masks in this instrumented redraw, even when the next source is culled.
+assert.equal(fakeWindow.__probeRuinMasks([above],drawingDeps).drawn,beforeUpperStory,'a lit upper-story goal does not shine through lower floors');
 
 
 const Plan=require('../docs/js/ruin-layer-plan.js'); // Real seed layouts cover four entrances, varying wing portals, and 3–5 shaft stories.

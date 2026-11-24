@@ -68,6 +68,32 @@
     const xp = num(stage === 'adult' ? record.xp : record.usefulnessXp, 0);
     return { level, xp, nextLevelXp: Math.max(1, num(usefulnessCfg().xpPerLevelFactor, 40)) * level * level, stage, intelligenceMultiplier: multiplier };
   }
+  // One saved usefulness XP pool; infants accumulate experience but cannot perform jobs.
+  const BABY_OBSERVATION_XP_RATE = 0.01; // Share of actual player skill XP while back-stowed.
+  let unsubscribeObservationXp = null; // One subscription across family reinitialization.
+  function awardObservationXp(event) {
+    if (!H?.rawDay) return; // Progression can fire before the family system has initialized.
+    const gain = Number(event?.amount) * BABY_OBSERVATION_XP_RATE;
+    if (!Number.isFinite(gain) || gain <= 0) return;
+    const id = window.Shattercasks?.backCarriedInfo?.()?.id;
+    if (!id) return;
+    const child = fam.children.find(c => phaseOf(c) === 'basket' && id === 'family_baby_' + c.id);
+    if (!child) return;
+    const maxLevel = Math.max(1, Math.floor(num(usefulnessCfg().maxLevel, 5)));
+    child.usefulnessLevel = clamp(Math.floor(num(child.usefulnessLevel, 1)), 1, maxLevel);
+    if (child.usefulnessLevel >= maxLevel) return; // Maxed babies need no repeated saves.
+    child.usefulnessXp = Math.max(0, num(child.usefulnessXp, 0)) + gain;
+    while (child.usefulnessLevel < maxLevel) {
+      const threshold = Math.max(1, num(usefulnessCfg().xpPerLevelFactor, 40)) * child.usefulnessLevel ** 2;
+      if (child.usefulnessXp < threshold) break;
+      child.usefulnessXp -= threshold;
+      child.usefulnessLevel++;
+      H.toast(`⭐ ${child.name} reached usefulness level ${child.usefulnessLevel}!`, true);
+    }
+    if (child.usefulnessLevel >= maxLevel) child.usefulnessXp = 0;
+    // Family XP is world-member data, not character skill metadata; coalesce writes with the existing idle-save queue.
+    if (deps().scheduleMemberSave) deps().scheduleMemberSave(); else H.persist();
+  }
   function awardWork(workerId, action) {
     const profile = workProfileFor(workerId);
     if (!profile || !Object.prototype.hasOwnProperty.call(workActions(), action)) return null;
@@ -281,6 +307,13 @@
     if (age < Math.max(basketDays() + toddlingDays(), num(cfg().independentAfterDays, 168))) return 'toddler';
     return 'child';
   }
+  function voiceAgePhase(npcId) {
+    if (!H?.rawDay) return null; // Saved family ages are unavailable until the family system has initialized.
+    const child = fam.children.find(entry => entry.id === npcId); // Only a recognized family child can override a generic NPC's authored age band.
+    if (!child) return null;
+    const phase = phaseOf(child); // Share the existing day-accurate basket/toddler/child transition.
+    return phase === 'basket' ? 'baby' : phase;
+  }
   function isBasketBaby(npcId) {
     const child = fam.children.find(entry => entry.id === npcId); // Saved family age is authoritative for follower commands.
     return !!child && phaseOf(child) === 'basket';
@@ -406,6 +439,8 @@
     const phase = phaseOf(child);
     const hour = H.clockHour();
     if (phase === 'basket') {
+      const following = window.FamilyBabyFollow?.scheduleTarget?.(child);
+      if (following) return following;
       const carry = child.carrySpot; // Saved safe landing spot: a put-down or thrown baby does not teleport to the basket on reload.
       if (carry && window.FamilyBabyBurdens?.isAllowedArea?.(carry.area)
           && Number.isFinite(carry.c) && Number.isFinite(carry.r)) {
@@ -449,6 +484,7 @@
     const walker = walkerFor(child);
     const phase = phaseOf(child);
     syncChildAmbientGreetings(child); // Sync only on phase changes; module caches the last stage.
+    if (phase !== 'basket') { child.followPlayer = false; window.FamilyBabyFollow?.clearWalker?.(walker); }
     if (phase !== 'basket' && child.basketId) {
       const basket = basketObject(child);
       if (basket) deps().furniture?.removeInteriorFurniture?.(basket.id);
@@ -469,12 +505,14 @@
     // scale + the rig scaler's head compensation), so a child who grows into
     // the next phase is rebuilt once with that phase's body/head scale.
     if (walker._childPhase && walker._childPhase !== phase && deps().despawnNpcWalker) {
+      window.FamilyBabyBurdens?.discard?.(child.id); // Retire held infant proxy before destroying its source rig.
       deps().despawnNpcWalker(walker);
       return;
     }
     walker._childPhase = phase;
     if (phase === 'basket') window.FamilyBabyLimbs?.balanceWalker?.(walker, cfg().phaseScales?.basket); // Resize newborn-only visuals before the carried proxy copies their GLBs.
-    window.FamilyBabyBurdens?.sync?.(child,walker,phase,()=>H.persist()); // One real infant burden proxies the hidden walker; no alternate movement/throw system.
+    window.FamilyBabyBurdens?.sync?.(child,walker,phase,()=>H.persist());
+    window.FamilyBabyFollow?.bind?.(child, walker, phase); // The normal walker tick owns the baby's movement.
     if (phase === 'toddler') {
       const footing = toddlingFooting(child) / 99;
       const now = performance.now();
@@ -495,6 +533,7 @@
     for (const child of fam.children) {
       const walker = walkerFor(child);
       if (!walker?.root) continue;
+      if (phaseOf(child) === 'basket') continue; // The shared crawl owns infant presentation.
       const footing = num(walker._toddlingFooting, 0) / 99;
       const tumbling = walker._toddleTumbleUntil > now;
       const target = tumbling ? 1.15 : Math.sin(now / 160 + child.id.length) * 0.11 * footing;
@@ -871,16 +910,27 @@
   function init(romanceApi) {
     R = romanceApi;
     H = romanceApi.helpers;
+    unsubscribeObservationXp?.();
+    unsubscribeObservationXp = window.SkillSystem?.onAward?.(awardObservationXp) || null;
     window.NpcScheduling?.registerTargetOverride?.('romance-family', scheduleOverride);
     window.addEventListener('hobunji-time-passage', onTimePassage);
     registerDoorstep();
     registerDevCompanionPanel();
     return api;
   }
-  function serialize() { return JSON.parse(JSON.stringify(fam)); }
+  function serialize() {
+    const saved = JSON.parse(JSON.stringify(fam));
+    // The shared Burden slots are not serialized. Save a safe nearby landing for
+    // a baby held in the wilderness so reloading never sends them back home.
+    const carried = H?.rawDay ? saved.children.filter(c => c.carryBy === 'player' && phaseOf(c) === 'basket') : [];
+    const spot = carried.length && window.FamilyBabyFollow?.savedCarrySpot?.();
+    if (spot) for (const child of carried) { child.carrySpot = { ...spot }; child.followPlayer = true; child.carryBy = null; child.carryPose = null; }
+    return saved;
+  }
   function restore(saved) {
     closeUi(); // A naming/dream dialog belongs to the former character/world, not the one being loaded.
     window.FamilyBabyBurdens?.clear?.(); // A new world gets its own baby burden handles.
+    window.FamilyBabyFollow?.clear?.();
     window.FamilyBabyCare?.clear?.(); // No childcare intervals leak across restored families.
     window.FamilyBabyAmbientVoice?.clear?.(); // Remove prior world child speech registrations.
     window.DewVats?.clearFamilyWorkers?.(); // Remove stale assignments before rehydrating the newly loaded family's vats.
@@ -908,17 +958,18 @@
       pendingAdoption: !!fam.pendingAdoption,
       pendingBaby: !!fam.pendingBaby, // Mobile diagnostics reveal a naming prompt waiting to resume after reload.
       spouseUsefulness: R?.getSpouse?.()?.npcId ? usefulnessInfo(R.getSpouse().npcId) : null,
+      babyFollow: window.FamilyBabyFollow?.snapshot?.() || null,
       babyCare: window.FamilyBabyCare?.snapshot?.() || [], // Mobile debug rows show arms/back/basket and current shift.
       babyBurdens: window.FamilyBabyBurdens?.snapshot?.() || null, // Mobile shows proxy geometry, reverse-art policy and parent scene without devtools.
-      children: fam.children.map(child => ({ id: child.id, name: child.name, speciesId: child.speciesId, gender: child.gender, origin: child.origin, ageDays: ageDays(child), phase: phaseOf(child), carrySpot: child.carrySpot || null, carrying: window.FamilyBabyBurdens?.carrying?.(child.id) || false, toddlingFooting: toddlingFooting(child), vatId: child.vatId, usefulness: usefulnessInfo(child.id), spawned: !!walkerFor(child) })), 
+      children: fam.children.map(child => ({ id: child.id, name: child.name, speciesId: child.speciesId, gender: child.gender, origin: child.origin, ageDays: ageDays(child), phase: phaseOf(child), carrySpot: child.carrySpot || null, carrying: window.FamilyBabyBurdens?.carrying?.(child.id) || false, toddlingFooting: toddlingFooting(child), vatId: child.vatId, usefulness: usefulnessInfo(child.id) || (phaseOf(child) === 'basket' ? { level: num(child.usefulnessLevel, 1), xp: num(child.usefulnessXp, 0), observationRate: BABY_OBSERVATION_XP_RATE } : null), spawned: !!walkerFor(child) })), 
     };
   }
 
   const api = {
     init, tick, serialize, restore, snapshot,
-    spouseTargetOverride, commandOptionsFor, spouseHoldingEgg, isBasketBaby, babyAmbientSound,
+    spouseTargetOverride, commandOptionsFor, spouseHoldingEgg, isBasketBaby, babyAmbientSound, voiceAgePhase,
     careContext: () => ({ family: fam, helpers: H, romance: R, phaseOf, walkerFor, basketObject, persist: () => H.persist() }), // One source of family state for childcare.
-    usefulnessInfo, awardWork, rollWorkQuality,
+    usefulnessInfo, awardWork, rollWorkQuality, awardObservationXp,
     isAssignedToVat: id => fam.children.some(child => child.id === id && phaseOf(child) !== 'basket' && !!child.vatId), // Only non-infant children can reserve vats and interrupt family plot claims.
     openDreamPicker, openNamingPrompt, createChild,
     wardrobeRecordFor: id => { const child = fam.children.find(entry => entry.id === id); return child ? childRecord(child) : null; }, // Offscreen children still have identity/clothing for their family chest.

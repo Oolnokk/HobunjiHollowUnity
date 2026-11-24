@@ -281,6 +281,7 @@
     const group = new THREE.Group(); group.name = 'jump-shaft'; parent.add(group);
     const tradition = String(deps.tradition || plan.options.theme || 'hronal').toLowerCase();
     const owned = [], materials = [], columns = new Map();
+    const platformEngravings=[]; // Each Kanthic slab owns its top-face glyph surfaces and disposable atlases.
     const makeStone = () => root.ProceduralFurniture?.makePartMaterial?.({ materialTexture: 'carved_smooth.png', materialLighting: 'unlit', materialFillMode: 'never', color: '#726d63' })
       || new THREE.MeshBasicMaterial({ color: 0x726d63 }); // Slabs and pillars reuse the same finish and cached PNG.
     const stone = makeStone(), pillarStone = makeStone(); // Floor x-ray uniforms affect slabs only.
@@ -334,8 +335,19 @@
       const holder = new THREE.Group(); holder.name = p.id; holder.position.set(p.x, p.y, p.z); group.add(holder);
       const slab = new THREE.Mesh(new THREE.BoxGeometry(p.w, THICKNESS, p.d), stone);
       slab.userData.hobunjiGroundTopFacesOnly = true; // Only the walkable face participates in same-level x-ray.
+      slab.userData.ruinShaftPlatform = true; // Fog uses the physical slab's transformed bounds to clip wall engravings, even after TileSpan replaces its geometry.
       slab.position.y = -THICKNESS / 2; slab.name = p.id + '-stone';
       supportPillars?.stretchStoneFaces?.(slab);
+      if(tradition==='kanthic'){
+        const motifUrl=root.RuinEmblem?.MOTIFS?.kanthic||'assets/patterns/motif_harlyao_glyph_ignorance.png'; // Reuse the actual Kanthic tradition motif.
+        root.FurniturePatternSurfaces?.applyPart?.(slab,{patternSurfaces:[{
+          slot:'top',selector:'top',mode:'engraving',pattern:{motifUrl},
+          scale:0.9,opacity:.55,palette:['#aaa1bc','#d9c8ff'],
+          glowColor:'#d6c9ff',glowIntensity:1.35,glowPulseDepth:.06,
+          maxAtlasPx:256,tilePx:192, // Bound individual slab textures and retain readable repeat density on mobile.
+        }]});
+        platformEngravings.push(...slab.children.filter(child=>child.userData?.furniturePattern));
+      }
       holder.add(slab); owned.push(slab);
       // Kanthic slabs show the actual oil on hazardous tiles and bare stone on safe ones.
       // Hronal and Tothal use a top-facing trim so it is hidden from the floor below.
@@ -417,13 +429,19 @@
       plasmHandles = [];
       platformSupports?.dispose?.(); // Free TileSpan's hidden geometries and prevent late load reattachment.
       group.parent?.remove(group);
+      for(const engraving of platformEngravings){
+        engraving.parent?.remove(engraving);
+        engraving.geometry?.dispose?.();
+        engraving.material?.dispose?.(); // Canonical material disposal also releases the atlas and paired glyph-glow pass.
+      }
+      platformEngravings.length=0;
       for (const node of owned) node.geometry?.dispose?.();
       for (const m of materials) m.dispose?.();
       columns.clear();
     };
     const state = () => ({ method: TRAVERSAL, active: false, beat: 0, measure: 0, moving: 0,
       // 'active' stays false: the ambient-music silencer keys on the obelisk beat clock.
-      platforms: plan.platforms.length, hazards: tradition, hazardsAttached, falls: fallEvents,
+      platforms: plan.platforms.length, engravedPlatformTops:platformEngravings.length, hazards: tradition, hazardsAttached, falls: fallEvents,
       fixtures: plan.platforms.filter(p => p.fixtureSlot?.occupiedBy
         && !['explodingPillar','plasm'].includes(p.fixtureSlot.occupiedBy)).map(p => [p.id, p.fixtureSlot.occupiedBy, p.originalKind || null]),
       route0: plan.platforms.filter(p => p.floor === 0).map(p => [p.kind, +p.x.toFixed(2), +p.z.toFixed(2), +p.y.toFixed(2), +p.w.toFixed(2), +p.d.toFixed(2)]), // Compact layout for on-device checks and headless drivers.

@@ -175,6 +175,105 @@
     material.dispose();
   }
 
+  // Icon materials differ from text materials (authored PNG cutoff and
+  // tone mapping); keep their leases separate. Only immutable canvases
+  // explicitly supplied by the reaction owner may survive an event.
+  const ICON_MATERIAL_POOL_MAX = 32;
+  const ICON_GEOMETRY_POOL_MAX = 8;
+  const ICON_TEXTURE_CACHE_MAX = 32;
+  const iconResourcesByThree = new WeakMap(); // Renderer namespace -> bounded session cache.
+  function iconResourcesFor(THREE) {
+    let resources = iconResourcesByThree.get(THREE);
+    if (!resources) {
+      resources = { materials: [], geometries: [], textures: new Map(),
+        stats: { materialCreated: 0, materialReused: 0, geometryCreated: 0, geometryReused: 0,
+          textureCreated: 0, textureReused: 0, textureDisposed: 0, materialDisposed: 0, geometryDisposed: 0 } };
+      iconResourcesByThree.set(THREE, resources);
+    }
+    return resources;
+  }
+  function acquireIconTexture(resources, THREE, pngSurface, canvas, name, immutable) {
+    const cached = immutable && resources.textures.get(canvas);
+    if (cached) {
+      cached.refs++;
+      resources.stats.textureReused++;
+      // Refresh LRU order only at acquisition, never during animation.
+      resources.textures.delete(canvas);
+      resources.textures.set(canvas, cached);
+      return cached;
+    }
+    if (immutable && resources.textures.size >= ICON_TEXTURE_CACHE_MAX) {
+      for (const [key, entry] of resources.textures) {
+        if (entry.refs) continue;
+        resources.textures.delete(key);
+        entry.texture.dispose();
+        resources.stats.textureDisposed++;
+        break;
+      }
+    }
+    const texture = pngSurface.makeCanvasTexture(THREE, canvas, name);
+    const shared = immutable && resources.textures.size < ICON_TEXTURE_CACHE_MAX;
+    const entry = { texture, refs: 1, shared }; // One reference per event, not per ray/coin.
+    resources.stats.textureCreated++;
+    if (shared) resources.textures.set(canvas, entry);
+    return entry;
+  }
+  function releaseIconTexture(resources, entry) {
+    if (!entry || entry.refs <= 0) return;
+    entry.refs--;
+    if (!entry.refs && !entry.shared) {
+      entry.texture.dispose();
+      resources.stats.textureDisposed++;
+    }
+  }
+  function acquireIconMaterial(resources, THREE, pngSurface, texture, name) {
+    const cutoff = pngSurface.alphaTest?.() ?? null; // Match the live authored sprite config.
+    const index = resources.materials.findIndex(entry => entry.cutoff === cutoff);
+    if (index >= 0) {
+      const { material } = resources.materials.splice(index, 1)[0];
+      material.map = texture;
+      material.name = name;
+      material.opacity = 0;
+      material.visible = true;
+      resources.stats.materialReused++;
+      return { material, cutoff };
+    }
+    const material = pngSurface.makeMaterial(THREE, texture, name, {
+      opacity: 0, depthTest: false, depthWrite: false, fog: false, toneMapped: false, side: THREE.DoubleSide,
+    });
+    resources.stats.materialCreated++;
+    return { material, cutoff };
+  }
+  function releaseIconMaterial(resources, lease) {
+    const material = lease.material;
+    material.map = null; // A retired material must not pin a unique or evicted texture.
+    material.opacity = 0;
+    if (resources.materials.length < ICON_MATERIAL_POOL_MAX) resources.materials.push(lease);
+    else { material.dispose(); resources.stats.materialDisposed++; }
+  }
+  function acquireIconGeometry(resources, THREE) {
+    if (resources.geometries.length) {
+      resources.stats.geometryReused++;
+      return resources.geometries.pop();
+    }
+    resources.stats.geometryCreated++;
+    return new THREE.PlaneGeometry(1, 1);
+  }
+  function releaseIconGeometry(resources, geometry) {
+    if (!geometry) return;
+    if (resources.geometries.length < ICON_GEOMETRY_POOL_MAX) resources.geometries.push(geometry);
+    else { geometry.dispose(); resources.stats.geometryDisposed++; }
+  }
+  // Track row work without allocations; sampled only by the debug snapshot.
+  let rowLayoutBuilds = 0;
+  function iconResourceSnapshot() {
+    const resources = state.deps?.THREE && iconResourcesByThree.get(state.deps.THREE);
+    return resources ? { ...resources.stats, pooledMaterials: resources.materials.length,
+      pooledGeometries: resources.geometries.length, cachedTextures: resources.textures.size,
+      liveCachedTextures: [...resources.textures.values()].filter(entry => entry.refs > 0).length,
+      limits: { materials: ICON_MATERIAL_POOL_MAX, geometries: ICON_GEOMETRY_POOL_MAX, textures: ICON_TEXTURE_CACHE_MAX } } : null;
+  }
+
   function makePlane(text, kind, layout) {
     const THREE = state.deps.THREE;
     const size = layout.worldHeight;
@@ -376,10 +475,17 @@
   function dispose(event) {
     event.plane.parent?.remove(event.plane);
     if (event.mode === 'iconEffect') {
-      event.cancelled = true; // An image that resolves after clear/replacement cannot attach a popup.
-      for (const item of event.items) item.mesh.material.dispose();
-      for (const texture of event.textures.values()) texture.dispose();
-      event.geometry?.dispose();
+      if (event.cancelled) return;
+      event.cancelled = true; // Delayed loads cannot attach a retired popup or release its leases twice.
+      for (const item of event.items) {
+        event.plane.remove(item.mesh);
+        releaseIconMaterial(event.resources, item.lease);
+      }
+      for (const entry of event.textures.values()) releaseIconTexture(event.resources, entry);
+      releaseIconGeometry(event.resources, event.geometry);
+      event.items.length = 0;
+      event.textures.clear();
+      event.geometry = null;
       event.onDispose?.();
       return;
     }
@@ -466,7 +572,7 @@
     return null;
   }
 
-  function showIconEffect(root, { kind, duration, height, offsetX = 0, headOffset = null, getSide, size, loadParts, sample, onDispose }) {
+  function showIconEffect(root, { kind, duration, height, offsetX = 0, headOffset = null, getSide, size, loadParts, sample, onDispose, immutableCanvases = false }) {
     const THREE = state.deps?.THREE; // Uses the same scene and Three instance as text popups.
     const pngSurface = window.HobunjiSpritePngSurface; // Shared authored-PNG canvas and unlit material factories.
     const scene = iconAnchorScene(root); // Capture the real scene so zone eviction also cancels loading effects.
@@ -478,35 +584,40 @@
     const plane = new THREE.Group(); // One world-space billboard for all animated icon parts.
     plane.visible = false;
     const event = { mode: 'iconEffect', kind, root, scene, plane, items: [], textures: new Map(),
-      height, offsetX, headOffset, getSide, size, sample, onDispose, animalSide: -1, lifetimeMs: duration, startedAt: null };
+      resources: iconResourcesFor(THREE), height, offsetX, headOffset, getSide, size, sample, onDispose, animalSide: -1, lifetimeMs: duration, startedAt: null };
     state.active.push(event);
     Promise.resolve().then(loadParts).then(parts => {
       if (event.cancelled) return;
       if (iconAnchorScene(root) !== scene || !parts.some(part => part.canvas)) throw new Error('Icon popup has no visible anchor or artwork');
-      event.geometry = new THREE.PlaneGeometry(1, 1);
+      event.geometry = acquireIconGeometry(event.resources, THREE);
       for (const part of parts) {
         if (!part.canvas) continue;
-        let texture = event.textures.get(part.canvas); // Repeated particles share an upload within this popup.
-        if (!texture) {
-          texture = pngSurface.makeCanvasTexture(THREE, part.canvas, part.name);
-          event.textures.set(part.canvas, texture);
+        let entry = event.textures.get(part.canvas); // Coins share one reference/upload per artwork per event.
+        if (!entry) {
+          entry = acquireIconTexture(event.resources, THREE, pngSurface, part.canvas, part.name, immutableCanvases === true);
+          event.textures.set(part.canvas, entry);
         }
-        const material = pngSurface.makeMaterial(THREE, texture, part.name, {
-          opacity: 0, depthTest: false, depthWrite: false, fog: false, toneMapped: false, side: THREE.DoubleSide,
-        });
-        const mesh = new THREE.Mesh(event.geometry, material); // Canvas-backed mesh qualifies for the popup overlay.
+        const lease = acquireIconMaterial(event.resources, THREE, pngSurface, entry.texture, part.name);
+        let mesh;
+        try {
+          mesh = new THREE.Mesh(event.geometry, lease.material); // Canvas-backed mesh qualifies for the popup overlay.
+        } catch (error) {
+          releaseIconMaterial(event.resources, lease);
+          throw error;
+        }
+        event.items.push({ ...part, mesh, lease }); // Register the lease before attaching, even if an add-time hook throws.
         mesh.name = part.name;
         mesh.renderOrder = POPUP_RENDER_ORDER;
         mesh.frustumCulled = false;
         mesh.visible = false;
         plane.add(mesh);
-        event.items.push({ ...part, mesh });
       }
       scene.add(plane);
       event.startedAt = performance.now();
     }).catch(() => {
       if (event.cancelled) return;
-      state.active.splice(state.active.indexOf(event), 1);
+      const index = state.active.indexOf(event);
+      if (index >= 0) state.active.splice(index, 1);
       dispose(event);
     });
     return true;
@@ -980,13 +1091,14 @@
   const _updateScratch = { right: null, forward: null };
   function update(now) {
     const camera = state.deps?.camera;
-    if (!camera) return;
+    if (!camera || (!state.active.length && !state.conditionCallout && !state.aimLabel && !state.infoLists.size)) return;
     camera.updateMatrixWorld?.(); // Apply this frame's camera turn before reading its screen-right axis.
     if (!_updateScratch.right) { _updateScratch.right = new state.deps.THREE.Vector3(); _updateScratch.forward = new state.deps.THREE.Vector3(); }
     const cameraRight = _updateScratch.right.setFromMatrixColumn(camera.matrixWorld, 0).normalize(); // Reused per frame (was a new Vector3 every frame).
     const cameraBack = _updateScratch.forward.setFromMatrixColumn(camera.matrixWorld, 2).normalize(); // Camera looks down -Z, so view depth is minus the dot with this axis.
     const halfFovTan = Math.tan(((Number(camera.fov) || 42) * Math.PI / 180) / 2);
     const finishedRewards = []; // Completed rewards are forwarded in their original event order after the reverse removal pass.
+    let rowLayouts = null; // Allocate only if a live row needs layout; damage numbers and emojis do not.
     for (let index = state.active.length - 1; index >= 0; index--) {
       const event = state.active[index];
       if (event.mode === 'iconEffect') {
@@ -1000,6 +1112,7 @@
       const center = popupAnchorWorld(event.root, event.mode);
       if (!center || progress >= 1) {
         finishedRewards.push(event); // Also covers a player root lost during a scene change.
+        rowLayouts?.delete(event.root); // Remaining rows retain the original same-frame compaction behavior.
         dispose(event);
         state.active.splice(index, 1);
         continue;
@@ -1019,8 +1132,16 @@
         center.addScaledVector(cameraRight, event.offsetX + Math.sin(progress * Math.PI) * event.height * 0.12);
         center.y += event.offsetY + 0.075 * (1 - Math.pow(1 - progress, 2));
       } else {
-        const list = event.interactionPrompt ? interactionListFor(event.root) : listFor(event.root);
-        list.forEach((item, slot) => { item.listSlot = slot; });
+        if (!rowLayouts) rowLayouts = new Map();
+        let layouts = rowLayouts.get(event.root);
+        if (!layouts) { layouts = {}; rowLayouts.set(event.root, layouts); }
+        const key = event.interactionPrompt ? 'interaction' : 'reward';
+        let list = layouts[key];
+        if (!list) {
+          list = layouts[key] = event.interactionPrompt ? interactionListFor(event.root) : listFor(event.root);
+          rowLayoutBuilds++;
+          for (let slot = 0; slot < list.length; slot++) list[slot].listSlot = slot;
+        }
         const centerSlot = event.interactionPrompt
           ? (Math.max(1, list.length) - 1) * 0.5
           : (state.settings.centeredFiveRow.maxRows - 1) * 0.5;
@@ -1096,7 +1217,7 @@
   const api = {
     releaseScene,
     init, update, showChange, queueReward, queueSocialGain, queueLevelUp,
-    showIconEffect, countIconEffects,
+    showIconEffect, countIconEffects, iconResourceSnapshot,
     setInteractionPrompts, syncInteractionPrompts, clearInteractionPrompts,
     setConditionCallout, clearConditionCallout,
     setAimLabel, clearAimLabel,
@@ -1104,7 +1225,7 @@
     avatarCentroidWorld, loadSettings, applySettings, clear,
     defaults: clone(DEFAULTS), storageKey: STORAGE_KEY,
     debugSnapshot: () => ({
-      latestChange: 'Scratchbones reactions use the shared world-popup overlay and scene cleanup.',
+      latestChange: 'Bounded emoji resource reuse and one row layout per active root/list; idle popup updates skip camera work.',
       lastSocialGains: lastSocialGains.map(gain => ({ ...gain, recipients: [...gain.recipients] })),
       pendingSocialGainKinds: [...socialGains.keys()],
       interactionSignature: state.interactionSignature,
@@ -1119,6 +1240,8 @@
       levelUpActive: state.levelUpActive ? { ...state.levelUpActive } : null,
       infoLists: [...state.infoLists.keys()],
       rewardReadout: window.RewardReadout?.debugSnapshot?.() || null, // Mobile debug surfaces can inspect the five visible and remaining queued gains.
+      rowLayoutBuilds, // Actual sorted row groups, not the number of rows drawn.
+      iconResources: iconResourceSnapshot(), // Mobile debug: allocation/reuse counters and cache bounds.
       popupMaterials: { ...popupMaterialStats, pooled: popupMaterialPool.length }, // Reuse keeps the shared shader program alive between popups.
     }),
   };

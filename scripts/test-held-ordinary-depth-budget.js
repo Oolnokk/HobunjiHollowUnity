@@ -6,7 +6,7 @@ const source = fs.readFileSync('docs/js/held-object-render-order.js', 'utf8'); /
 const begin = source.indexOf('  let ordinaryDepthLeavesSkipped ='); // Includes the supplement helper and complete held replay.
 const end = source.indexOf('  function isShellOutlinePass(', begin);
 
-function fixture({ bounded = false, ordinary = true, fail = false, colorLock = true, tint = false, nested = false, airborne = false, wildernessGround = false, groundShaderSupported = true, staleStencil = false } = {}) {
+function fixture({ bounded = false, ordinary = true, fail = false, colorLock = true, tint = false, nested = false, airborne = false, wildernessGround = false, groundShaderSupported = true, staleStencil = false, emptyDepth = false, emptyScissor = false } = {}) {
   const groundMaterial = wildernessGround ? { depthWrite: false,
     userData: { hobunjiXrayElevationShader: { supported: groundShaderSupported } } } : null; // Reproduces wilderness ground, including unsupported/cold elevation shaders.
   const opaque = { isMesh: true, visible: true, children: [], material: groundMaterial }; // Base world terrain whose held-only depth flag is tested below.
@@ -19,7 +19,7 @@ function fixture({ bounded = false, ordinary = true, fail = false, colorLock = t
   const parent = { isMesh: true, visible: true, children: [cutout] }; // A mesh ancestor of a required cutout cannot be hidden.
   const hooked = { isMesh: true, visible: true, children: [], onBeforeRender() {} }; // Unknown draw-time behavior is retained.
   const scene = { background: 'sky', autoUpdate: true,
-    traverseVisible(fn) { for (const node of [sky, opaque, cover, weapon, ...(!nested ? [hand] : []), parent, hooked]) { if (node.visible) { fn(node); for (const child of node.children) if (child.visible) fn(child); } } },
+    traverseVisible(fn) { for (const node of [sky, opaque, ...(!emptyDepth ? [cover] : []), weapon, ...(!nested ? [hand] : []), ...(!emptyDepth ? [parent, hooked] : [])]) { if (node.visible) { fn(node); for (const child of node.children) if (child.visible) fn(child); } } },
   };
   const draws = []; // Captures submitted passes and visible world leaves.
   let clears = 0; // Counts destructive depth clears, not stencil clears.
@@ -48,8 +48,8 @@ function fixture({ bounded = false, ordinary = true, fail = false, colorLock = t
     backgroundDepthRegistry: 'background',
     airborneDepthRebuilds: 0, backgroundDepthMeshesExcluded: 0,
     objectProto: { onBeforeRender: undefined }, internalReplay: false,
-    lastBaseStencilBits: tint ? 8 : 0, replayScissorEnabled: staleStencil, replayCullEnabled: false,
-    replayScissorRect: () => true, scissorRect: { z: 2, w: 1 }, scissorTargetWidth: 3, scissorTargetHeight: 1,
+    lastBaseStencilBits: tint ? 8 : 0, replayScissorEnabled: staleStencil || emptyScissor, replayCullEnabled: false,
+    replayScissorRect: () => true, scissorRect: { z: emptyScissor ? 0 : 2, w: 1 }, scissorTargetWidth: 3, scissorTargetHeight: 1,
     scissoredReplayCount: 0, applyElevationScissor: () => false,
     restoreRendererScissor() { scissorTest = false; },
     buildXrayGroups: () => ({ groups: bounded ? [{ meshes: [hand], regions: [{ col: 0, row: 0 }] }] : [], ordinary: ordinary ? [weapon] : [], scopes: [], hasUnknownOwner: false, tintScopeByMesh: new Map() }),
@@ -60,7 +60,7 @@ function fixture({ bounded = false, ordinary = true, fail = false, colorLock = t
     hideObjects, restoreVisibility: states => { for (const [object, visible] of states) object.visible = visible; },
     hideColorOnlyHeldVfx: () => null, // Colour-only VFX skip has its own test (test-held-color-only-depth-skip.js).
     showGroupGearParticles: () => null, // Drawn-once gear particles have their own test (test-held-gear-particles-once.js).
-    collectVisible: registry => registry === 'png' ? [cutout] : registry === 'background' ? [sky] : [cover],
+    collectVisible: registry => registry === 'background' ? [sky] : emptyDepth ? [] : registry === 'png' ? [cutout] : [cover],
     pngDepthRegistry: 'png', protectedCoverRegistry: 'cover',
     setGroundElevationFilter() {}, prepareCutoutDepthMaterials: () => new Map(), prepareNonGroundDepthMaterials: () => new Map(),
     saveMaterialState(states, material) { if (!states.has(material)) states.set(material, { depthWrite: material.depthWrite }); }, // The actual renderer transaction restores every property; only depth writes matter to this fixture.
@@ -108,6 +108,11 @@ assert.equal(normal.clears, 0);
 assert.equal(normal.draws.length, 2);
 assert(!normal.draws[0].nodes.includes(normal.opaque), 'opaque terrain is absent from the depth supplement');
 for (const required of [normal.cutout, normal.cover, normal.parent, normal.hooked]) assert(normal.draws[0].nodes.includes(required));
+const empty = fixture({ emptyDepth: true });
+assert.equal(empty.draws.length, 1, 'no drawable depth source: omit native supplement, retain held color');
+assert.equal(empty.draws[0].mask, 2);
+assert.equal(empty.clears, 0);
+assert.equal(fixture({ emptyScissor: true }).draws.length, 0, 'a proven zero-pixel union performs no native replay');
 const airborneNormal = fixture({ airborne: true });
 assert(airborneNormal.clears >= 2, 'airborne ordinary group and the fallback scene restore both rebuild depth');
 assert(!airborneNormal.draws[0].nodes.includes(airborneNormal.sky), 'visual sky masks are omitted from weapon depth reconstruction');

@@ -320,6 +320,47 @@ const root = path.resolve(__dirname, '..');
         'mode click automatically builds the Gear loadout when it first becomes visible');
       assert.deepEqual(await page.evaluate(() => window.__observerLoops), [],
         'lazy Gear decoration never starts an inventory mutation feedback loop');
+      // Use the actual equipment owner, rather than the legacy clothing-clone adapter,
+      // to exercise the two disclosure levels with semantic controller A/B actions.
+      await page.addScriptTag({ path: path.join(root, 'docs/js/equipment-panel.js') });
+      const nested = await page.evaluate(() => {
+        const pane = document.getElementById('mpInventory');
+        pane.classList.remove('inv-mode-gear');
+        const grid = document.getElementById('invGrid');
+        grid.replaceChildren();
+        grid.style.cssText = '--inv-col:12px;--inv-row:12px;--inv-gap:4px;--inv-pad:4px;display:grid;grid-template-columns:repeat(7,minmax(40px,1fr));gap:4px;width:490px;';
+        const articles = [
+          { uid:'plain-1', label:'Test Coat', baseLabel:'Test Coat', cosmeticId:'test-coat', slot:'overwear' },
+          { uid:'plain-2', label:'Test Coat', baseLabel:'Test Coat', cosmeticId:'test-coat', slot:'overwear' },
+          { uid:'woven-1', label:'Test Coat', baseLabel:'Test Coat', cosmeticId:'test-coat', slot:'overwear', weaving:{pattern:{motifDataUrl:'data:test'}} },
+          { uid:'hood-1', label:'Test Hood', baseLabel:'Test Hood', cosmeticId:'test-hood', slot:'hood' },
+        ];
+        window.EquipmentPanel.__test.setCrownTestDeps({getPackClothing:()=>articles,clearInvSelection(){},clearInventoryDetail(){}});
+        window.EquipmentPanel.previewPackClothingItem = () => {}; // This fixture exercises focus scope, not the detail transaction.
+        window.InventoryUI.refreshPackClothing();
+        const [coat,hood] = grid.querySelectorAll(':scope > .clothing-nest-pack');
+        const isOpen = node => node.querySelector(':scope > [data-ctrl-group-open]').getAttribute('aria-expanded') === 'true';
+        const focus = node => { node.tabIndex = 0; node.focus(); };
+        window.ControllerUI.showSection('mpInventory','invGridArea');
+        focus(coat);
+        window.ControllerUI.press('confirm');
+        const openedParent = isOpen(coat);
+        const plain = coat.querySelector('.clothing-nest-body > .clothing-nest');
+        if (!plain) return {openedParent, missingPlain:true,debug:window.ControllerUI.debugState()};
+        focus(plain);
+        window.ControllerUI.press('confirm');
+        const openedChild = isOpen(plain);
+        window.ControllerUI.press('cancel');
+        const backToParent = isOpen(coat) && !isOpen(plain) && window.ControllerUI.focusedElement() === plain;
+        window.ControllerUI.press('cancel');
+        const backToGrid = !isOpen(coat) && window.ControllerUI.focusedElement() === coat;
+        focus(hood);
+        window.ControllerUI.press('confirm');
+        const unrelatedOnly = isOpen(hood) && !isOpen(coat);
+        window.ControllerUI.showSection('mpInventory','invGridArea');
+        return {openedParent,openedChild,backToParent,backToGrid,unrelatedOnly,sectionClosed:!isOpen(hood),articleCount:articles.length};
+      });
+      assert.deepEqual(nested,{openedParent:true,openedChild:true,backToParent:true,backToGrid:true,unrelatedOnly:true,sectionClosed:true,articleCount:4}, 'A opens and B collapses exactly one real clothing nest; section changes leave none open');
       assert.deepEqual(errors, []);
     }
     console.log('controller mastery inventory browser tests passed');

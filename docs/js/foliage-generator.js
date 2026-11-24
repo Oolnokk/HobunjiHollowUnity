@@ -153,15 +153,28 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
   }
 
   // ─── Tube mesh from spine ─────────────────────────────────────────────────
+  // Set only while buildConiferTreeGroup emits a far-distance twin of a shared
+  // tree variant (see liteTreeGeometry): the SAME spine, radius, twist and
+  // noise functions are sampled at a subset of the original rings and with
+  // fewer sides, so the low-detail tube follows the full-detail one exactly.
+  let _tubeLite = null; // { trunk|root|branch|vine: { ringStep, radial } } while a far twin is built
+  let _tubeKind = 'trunk'; // Which profile the next tube uses (set by buildConiferTreeGroupImpl).
   function buildMeshFromSpineWithRadiusFn({ seedU32, spine, radiusFn, radialSegments, twist, noiseAmt, noiseScale, noiseOctaves, stretchUv = false }) {
     const { pts, tangents, normals, binormals } = spine;
     const rings = pts.length;
-    const radial = Math.max(3, Math.floor(radialSegments));
+    const lite = _tubeLite ? _tubeLite[_tubeKind] || null : null;
+    const radial = Math.max(3, Math.floor(lite ? Math.min(radialSegments, lite.radial) : radialSegments));
     const positions = [], indices = [], uvs = []; // Optional per-strand PNG coordinates are separate from ordinary tree geometry.
     const stride = radial + (stretchUv ? 1 : 0); // Duplicate the seam only for textured growth, keeping the existing tree topology intact.
     const TT = new T.Vector3(), N = new T.Vector3(), B = new T.Vector3();
+    // Original ring indices to emit: all of them, or every ringStep-th plus the tip ring.
+    const ringIndices = [];
+    for (let i = 0; i < rings; i += lite ? lite.ringStep : 1) ringIndices.push(i);
+    if (ringIndices[ringIndices.length - 1] !== rings - 1) ringIndices.push(rings - 1);
+    const emitted = ringIndices.length;
 
-    for (let i = 0; i < rings; i++) {
+    for (let k = 0; k < emitted; k++) {
+      const i = ringIndices[k]; // Radius, noise and twist read the ORIGINAL ring position.
       const t = rings <= 1 ? 0 : i / (rings - 1);
       TT.copy(tangents[i]).normalize();
       N.copy(normals[i]); B.copy(binormals[i]);
@@ -184,7 +197,7 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
                        center.z + N.z * nx * r + B.z * ny * r);
       }
     }
-    for (let i = 0; i < rings - 1; i++) {
+    for (let i = 0; i < emitted - 1; i++) {
       const r0 = i * stride, r1 = (i + 1) * stride;
       for (let j = 0; j < radial; j++) {
         const next = stretchUv ? j + 1 : (j + 1) % radial; // Seam vertices sample opposite PNG edges without interpolating across its middle.
@@ -1186,7 +1199,31 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
   }
 
   const treeRootSpansByVariant = new WeakMap(); // Shared native spine metadata lives outside Object3D.userData so clone() never deep-copies it for every tree.
-  function buildConiferTreeGroup(preset, seedU32) {
+  // options.lite: emit the far-distance twin of this exact variant (same seed,
+  // same random sequence, so every spine, branch, root, vine and leaf position
+  // matches). Every part is kept; only tube tessellation drops, most where it
+  // is least visible: the trunk is unchanged; roots, canopy branches and
+  // vines use every other ring (roots 5 sides, branches 4, vines their own). Leaf cards and blossoms are not emitted: the full-detail ones are
+  // reused as they are. Parts come back tagged with the same
+  // userData.treePartRole as the full tree.
+  function buildConiferTreeGroup(preset, seedU32, options = null) {
+    if (options?.lite !== true) return buildConiferTreeGroupImpl(preset, seedU32, false);
+    const previous = _tubeLite, previousKind = _tubeKind;
+    const radial = Math.max(4, Math.floor(preset.radialSegments));
+    _tubeLite = {
+      // The trunk (~150 triangles) is not reduced: its noisy surface is what the
+      // vines wrap against, and resampling it at other angles buried them.
+      trunk: { ringStep: 1, radial },
+      root: { ringStep: 2, radial: 5 },
+      branch: { ringStep: 2, radial: 4 },
+      // Vines keep their sides: a thinner cross-section lets the generated
+      // shell outline swallow the green tube (measured: dark lines at 8 tiles).
+      vine: { ringStep: 2, radial: Math.max(3, Math.floor(preset.vineRadialSegments ?? 5)) },
+    };
+    try { return buildConiferTreeGroupImpl(preset, seedU32, true); }
+    finally { _tubeLite = previous; _tubeKind = previousKind; }
+  }
+  function buildConiferTreeGroupImpl(preset, seedU32, lite) {
     const rand = mulberry32(seedU32);
     const DOWN = new T.Vector3(0, -1, 0);
     const UP   = new T.Vector3(0,  1, 0);
@@ -1219,6 +1256,7 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
     // Trunk
     const trunkLen = Math.max(1e-4, preset.trunkLength * trunkLenMul);
     const trunkRad = Math.max(1e-4, preset.trunkRadius * trunkRadMul);
+    _tubeKind = 'trunk';
     const trunk = buildWonkyChain({
       seedU32: seedU32 ^ 0xA11CE, length: trunkLen,
       ringSegments: RINGS, radialSegments: RADIAL,
@@ -1265,6 +1303,7 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
         const rootBaseRadius = Math.max(preset.rootRadius * (0.75 + 0.55 * rand()), attachR * 0.6);
         const rampRings = Math.max(1, Math.floor(rootRings * 0.22));
 
+        _tubeKind = 'root';
         const root = buildWonkyChain({
           seedU32: seedU32 ^ (0xB00B1E + i * 1337),
           length: preset.rootLength * (0.75 + 0.6 * rand()),
@@ -1361,6 +1400,7 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
           const branchRad = Math.max(1e-4, preset.knotRadius * tierRadScale * (0.75 + 0.5 * rand()));
           const branchRings = Math.max(4, Math.floor(RINGS * 0.75));
 
+          _tubeKind = 'branch';
           const knot = buildWonkyChain({
             seedU32: seedU32 ^ (0xC0FFEE + tier * 1009 + i * 271),
             length: branchLen, ringSegments: branchRings, radialSegments: RADIAL,
@@ -1413,6 +1453,12 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
         for (let si = 0; si < strandCount; si++) {
           const phi0 = rand() * Math.PI * 2;
           const wraps = wrapsBase * (0.8 + 0.5 * rand());
+          // Far twin only: its vine keeps every other sample, and each straight
+          // segment then cuts a chord into the trunk (green tube buried, only the
+          // black shell outline left showing). Lift the wrap so chord midpoints
+          // sit on the full-detail radius. Random draws are unchanged.
+          const vineStep = lite ? (_tubeLite?.vine?.ringStep || 1) : 1;
+          const wrapLift = vineStep > 1 ? 1 / Math.max(0.5, Math.cos(Math.PI * wraps * vineStep / Math.max(1, sampleCount))) : 1;
           const cps = [];
           for (let k = 0; k <= controlCount; k++) {
             const u = k / controlCount;
@@ -1421,7 +1467,7 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
             const N = trunk.spine.normals[idx], B = trunk.spine.binormals[idx];
             const phi = phi0 + Math.PI * 2 * wraps * u;
             const outward = new T.Vector3().copy(N).multiplyScalar(Math.cos(phi)).addScaledVector(B, Math.sin(phi)).normalize();
-            const r = trunkRadiusAt(idx) + surfaceOffset;
+            const r = (trunkRadiusAt(idx) + surfaceOffset) * wrapLift;
             const p = center.clone().addScaledVector(outward, r);
             const wob = tailWobble * 0.15;
             p.addScaledVector(outward, (rand() - 0.5) * wob);
@@ -1434,7 +1480,7 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
             const endN = trunk.spine.normals[endIdx], endB = trunk.spine.binormals[endIdx];
             const phiEnd = phi0 + Math.PI * 2 * wraps;
             const outwardEnd = new T.Vector3().copy(endN).multiplyScalar(Math.cos(phiEnd)).addScaledVector(endB, Math.sin(phiEnd)).normalize();
-            const baseP = endCenter.clone().addScaledVector(outwardEnd, trunkRadiusAt(endIdx) + surfaceOffset);
+            const baseP = endCenter.clone().addScaledVector(outwardEnd, (trunkRadiusAt(endIdx) + surfaceOffset) * wrapLift);
             const tailSteps = 4;
             for (let s = 1; s <= tailSteps; s++) {
               const tu = s / tailSteps;
@@ -1450,6 +1496,7 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
           const vineSpine = framesFromPoints(sampled);
           const baseR = Math.max(1e-4, preset.vineTubeRadius ?? 0.035);
           const taperEnd = clamp(preset.vineTubeTaper ?? 0.7, 0.05, 1);
+          _tubeKind = 'vine';
           const vgeo = buildMeshFromSpineWithRadiusFn({
             seedU32: seedU32 ^ (0xA57E1E + si * 113),
             spine: vineSpine,
@@ -1665,6 +1712,7 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
       const origin = anchor.clone().addScaledVector(right, attachR);
       const branchLen = Math.max(1e-4, (preset.climbBranchLength ?? 7) * (0.85 + 0.3 * rand()));
       const branchRad = Math.max(1e-4, preset.climbBranchRadius ?? 0.55);
+      _tubeKind = 'branch';
       const climbBranch = buildWonkyChain({
         seedU32: seedU32 ^ 0xC1113B,
         length: branchLen, ringSegments: Math.max(4, Math.floor(RINGS * 0.75)), radialSegments: RADIAL,
@@ -1689,6 +1737,7 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
       const merged = mergeGeoms(woodGeoms);
       merged.computeVertexNormals();
       const stemMesh = new T.Mesh(merged, hexBarkMat(preset.barkColorHex ?? 0x4a3b33)); // Shared variant's trunk plus single branch rung.
+      stemMesh.userData.treePartRole = 'wood'; // Matches the full and lite twins (liteTreeGeometry).
       applyPottedBlossomFinish(stemMesh, preset, 'wood');
       group.add(stemMesh);
     }
@@ -1702,6 +1751,7 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
       climbBranchGeom.computeVertexNormals();
       const climbBranchMesh = new T.Mesh(climbBranchGeom, hexBarkMat(preset.barkColorHex ?? 0x4a3b33));
       climbBranchMesh.name = 'climbBranch';
+      climbBranchMesh.userData.treePartRole = 'climb';
       group.add(climbBranchMesh);
     }
     if (vineGeoms.length) {
@@ -1710,9 +1760,11 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
       // both assume that.
       const merged = mergeGeoms(vineGeoms);
       merged.computeVertexNormals();
-      group.add(new T.Mesh(merged, hexBarkMat(preset.vineColorHex ?? 0x3a5f3a)));
+      const vineMesh = new T.Mesh(merged, hexBarkMat(preset.vineColorHex ?? 0x3a5f3a));
+      vineMesh.userData.treePartRole = 'vines';
+      group.add(vineMesh);
     }
-    if (blossomGeoms.length) {
+    if (blossomGeoms.length && !lite) {
       const petals = new T.Mesh(mergeGeomsWithUV(blossomGeoms),new T.MeshBasicMaterial({
         map:getLeafTexture('assets/leaves/leaf_1.png'),color:new T.Color(preset.blossomColorHex),
         side:T.DoubleSide,transparent:false,depthWrite:true,alphaTest:0.5
@@ -1723,7 +1775,7 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
       group.add(petals); // Keep the actual leaf canopy last: other tree callers inspect the last mesh for canopy bounds.
       petals.renderOrder = 2; // Draw the outer colored cluster after native cutout leaves without disabling world-depth occlusion.
     }
-    if (leafGeoms.length) {
+    if (leafGeoms.length && !lite) {
       const merged = mergeGeomsWithUV(leafGeoms);
       const leafMesh = new T.Mesh(merged, getLeafCardMaterial(preset));
       applyPottedBlossomFinish(leafMesh, preset, 'petals'); // Preserve the bush plane UVs; fill each PNG pixel like the animal genotype renderer.
@@ -1736,7 +1788,7 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
     }
     unitLeaf.dispose();
 
-    if(rootSpansLocal.length) treeRootSpansByVariant.set(group,rootSpansLocal); // Immutable variant-local geometry; each placed tree references this one copy.
+    if(rootSpansLocal.length && !lite) treeRootSpansByVariant.set(group,rootSpansLocal); // Immutable variant-local geometry; each placed tree references this one copy.
     if(blossomSources.length) group.userData.wildernessBlossomPetalSources = blossomSources; // The particles use real colored branch sites, not guessed canopy-height boxes.
     group.rotation.y = instYaw;
     group.scale.setScalar(instScale * (preset.scaleMul ?? 1));
@@ -1760,6 +1812,45 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
   // underlying geometry/material by reference, so a clone costs a few small
   // JS objects, not a new vertex buffer.
   const TREE_VARIANT_COUNT = 3;
+
+  // Far-distance twins of shared variants (built lazily, cached for the session).
+  // liteTreeGeometry(fullGeometry) answers, for one full-detail part geometry:
+  //   a geometry -> draw this low-detail tube part in its place (same spines);
+  //   null       -> omit this part at distance (no current part does);
+  //   undefined  -> unknown part or one kept as is (leaf cards, blossoms).
+  // Only render-time owners use it (dense-forest-wall-batches.js); gameplay
+  // meshes, raycasts and collision keep the full geometry.
+  const _treePartInfo = new WeakMap(); // full part geometry -> { key, preset, seed, role }
+  const _liteVariantCache = new Map(); // key -> Map(role -> lite geometry)
+  const _liteStats = { variantsBuilt: 0, sourceTriangles: 0, liteTriangles: 0 };
+  function triangleCount(geometry) {
+    return Math.round((geometry?.index ? geometry.index.count : (geometry?.attributes?.position?.count || 0)) / 3);
+  }
+  function liteTreeGeometry(geometry) {
+    const info = geometry && _treePartInfo.get(geometry);
+    if (!info) return undefined;
+    if (info.role !== 'wood' && info.role !== 'climb' && info.role !== 'vines') return undefined;
+    let parts = _liteVariantCache.get(info.key);
+    if (!parts) {
+      parts = new Map();
+      const lite = buildConiferTreeGroup(info.preset, info.seed, { lite: true });
+      for (const child of lite.children) {
+        if (!child.isMesh) continue;
+        const role = child.userData?.treePartRole;
+        if (role) parts.set(role, child.geometry);
+        child.material?.dispose?.(); // Only the geometry is kept; renderers draw it with the full part's live material.
+      }
+      _liteVariantCache.set(info.key, parts);
+      _liteStats.variantsBuilt++;
+    }
+    const lite = parts.get(info.role);
+    if (lite && !lite.userData.liteTreeCounted) {
+      lite.userData.liteTreeCounted = true;
+      _liteStats.sourceTriangles += triangleCount(geometry);
+      _liteStats.liteTriangles += triangleCount(lite);
+    }
+    return lite || undefined;
+  }
   const _treeVariantCache = new Map(); // presetKey -> Group[]
 
   function getTreeVariants(presetKey, preset) {
@@ -1794,6 +1885,10 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
           radius: Math.max(Math.abs(bb.min.x), Math.abs(bb.max.x), Math.abs(bb.min.z), Math.abs(bb.max.z)),
           undersideY: bb.min.y,
         };
+      }
+      for (const child of group.children) { // Lets a far-distance renderer ask for this variant's lite twin by geometry.
+        const role = child.userData?.treePartRole;
+        if (child.isMesh && role) _treePartInfo.set(child.geometry, { key: presetKey + '|' + variantSeed, preset, seed: variantSeed, role });
       }
       variants.push(group);
     }
@@ -2754,6 +2849,86 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
     return {strandRadiusMin:Number.isFinite(radiusMin)?radiusMin:settings.radius,strandRadiusMax:radiusMax||settings.radius};
   }
 
+  // Final pass, after radius variation and shrinkwrap: drop tube rings that a
+  // straight segment between their kept neighbours reproduces within a small
+  // fraction of the strand's radius (Douglas-Peucker on ring centres, also
+  // bounding the radius change). Tracing needs ~3x-radius steps to hug walls
+  // and corners, but on flat runs most rings are redundant: the town temple's
+  // roots were ~200k triangles. Ends, kept rings' exact (shrinkwrapped)
+  // positions and their PNG stretch UVs are unchanged, so the tube never moves
+  // more than the tolerance and its texture still runs 0..1 along it.
+  const STRAND_RING_TOLERANCE = 0.12; // Fraction of the strand radius.
+  const STRAND_MAX_SKIP = 12; // Never merge more than this many ring gaps into one segment.
+  function simplifySurfaceStrandRings(geometries, settings) {
+    let before = 0, after = 0;
+    for (let g = 0; g < geometries.length; g++) {
+      const geometry = geometries[g], position = geometry.getAttribute('position'), uv = geometry.getAttribute('uv');
+      const stride = 6; // Five sides plus the duplicated PNG seam vertex (radialSegments 5, stretchUv).
+      if (!position || !uv || position.count % stride) continue;
+      const rings = position.count / stride;
+      before += rings;
+      if (rings < 3) { after += rings; continue; }
+      const cx = new Float64Array(rings), cy = new Float64Array(rings), cz = new Float64Array(rings), rr = new Float64Array(rings);
+      for (let i = 0; i < rings; i++) {
+        let x = 0, y = 0, z = 0;
+        for (let j = 0; j < 5; j++) { x += position.getX(i * stride + j); y += position.getY(i * stride + j); z += position.getZ(i * stride + j); }
+        x /= 5; y /= 5; z /= 5;
+        let r = 0;
+        for (let j = 0; j < 5; j++) r += Math.hypot(position.getX(i * stride + j) - x, position.getY(i * stride + j) - y, position.getZ(i * stride + j) - z);
+        cx[i] = x; cy[i] = y; cz[i] = z; rr[i] = r / 5;
+      }
+      const tol = Math.max(1e-4, (geometry.userData?.surfaceGrowthRadius ?? settings.radius) * STRAND_RING_TOLERANCE);
+      const keep = new Uint8Array(rings); keep[0] = keep[rings - 1] = 1;
+      const stack = [0, rings - 1];
+      while (stack.length) {
+        const b = stack.pop(), a = stack.pop();
+        if (b - a < 2) continue;
+        const dx = cx[b] - cx[a], dy = cy[b] - cy[a], dz = cz[b] - cz[a], len2 = dx * dx + dy * dy + dz * dz;
+        let worst = -1, worstErr = 0;
+        for (let i = a + 1; i < b; i++) {
+          const t = len2 > 1e-12 ? Math.max(0, Math.min(1, ((cx[i] - cx[a]) * dx + (cy[i] - cy[a]) * dy + (cz[i] - cz[a]) * dz) / len2)) : 0;
+          const ex = cx[a] + dx * t - cx[i], ey = cy[a] + dy * t - cy[i], ez = cz[a] + dz * t - cz[i];
+          const along = (i - a) / (b - a); // Radius is interpolated by ring position, like the kept vertices will be.
+          const err = Math.max(Math.hypot(ex, ey, ez), Math.abs(rr[a] + (rr[b] - rr[a]) * along - rr[i]));
+          if (err > worstErr) { worstErr = err; worst = i; }
+        }
+        if (worstErr > tol || b - a > STRAND_MAX_SKIP) {
+          const split = worstErr > tol ? worst : (a + b) >> 1;
+          keep[split] = 1;
+          stack.push(a, split, split, b);
+        }
+      }
+      let kept = 0;
+      for (let i = 0; i < rings; i++) kept += keep[i];
+      after += kept;
+      if (kept === rings) continue;
+      const positions = new Float32Array(kept * stride * 3), uvs = new Float32Array(kept * stride * 2), indices = [];
+      let k = 0;
+      for (let i = 0; i < rings; i++) {
+        if (!keep[i]) continue;
+        for (let j = 0; j < stride; j++) {
+          const src = i * stride + j, dst = k * stride + j;
+          positions[dst * 3] = position.getX(src); positions[dst * 3 + 1] = position.getY(src); positions[dst * 3 + 2] = position.getZ(src);
+          uvs[dst * 2] = uv.getX(src); uvs[dst * 2 + 1] = uv.getY(src);
+        }
+        k++;
+      }
+      for (let i = 0; i < kept - 1; i++) {
+        const r0 = i * stride, r1 = (i + 1) * stride;
+        for (let j = 0; j < 5; j++) indices.push(r0 + j, r0 + j + 1, r1 + j, r1 + j, r0 + j + 1, r1 + j + 1); // Same winding as buildMeshFromSpineWithRadiusFn.
+      }
+      const simplified = new T.BufferGeometry();
+      simplified.setAttribute('position', new T.Float32BufferAttribute(positions, 3));
+      simplified.setAttribute('uv', new T.Float32BufferAttribute(uvs, 2));
+      simplified.setIndex(indices);
+      simplified.userData = { ...(geometry.userData || {}) };
+      simplified.computeBoundingSphere();
+      geometry.dispose();
+      geometries[g] = simplified;
+    }
+    return { strandRingsBefore: before, strandRingsAfter: after };
+  }
+
   function shrinkwrapSurfaceStrands(geometries,parent,settings,triangles,cells,large,keyOf,cellSize) {
     if(!settings.shrinkwrapFinal||!geometries.length)return {rays:0,hits:0};
     parent.updateWorldMatrix(true,true);
@@ -2892,6 +3067,8 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
           stats.guideBoundaries+=metrics.guideBoundaries||0;
           stats.shrinkwrapRays+=metrics.shrinkwrapRays||0;
           stats.shrinkwrapHits+=metrics.shrinkwrapHits||0;
+          stats.strandRingsBefore=(stats.strandRingsBefore||0)+(metrics.strandRingsBefore||0);
+          stats.strandRingsAfter=(stats.strandRingsAfter||0)+(metrics.strandRingsAfter||0);
           stats.generatedStrands+=produced;
           details.push({id:region.userData.surfaceFoliageGuideId,region:idx+1,
             requested:each,actual:produced,triangles:metrics.triangles||0});
@@ -3046,6 +3223,7 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
       const shrinkReport=shrinkwrapSurfaceStrands(geometries,parent,settings,triangles,cells,large,keyOf,cellSize);
       group.userData.surfaceGrowthStats.shrinkwrapRays=shrinkReport.rays;
       group.userData.surfaceGrowthStats.shrinkwrapHits=shrinkReport.hits;
+      Object.assign(group.userData.surfaceGrowthStats,simplifySurfaceStrandRings(geometries,settings)); // After shrinkwrap: kept rings sit exactly where they were placed.
       const mesh=new T.Mesh(mergeGeomsWithUV(geometries),hexBarkMat(parseInt(settings.color.slice(1),16))); // Keep each strand's own 0..1 PNG wrap through the merge.
       const originalMaterial = mesh.material; // Release the temporary color source after the shared renderer has read it.
       const surfaces = naturalSurfaces || window.NaturalSurfaceMaterials; // Match the material/texture constructors to the geometry and renderer.
@@ -3107,6 +3285,9 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
     },
     surfaceGrowthDefaults, surfaceMaterialPalette, normalizeSurfaceGrowth, architecturalSurfaceSources, recognizeArchitecturalSurfaceRegions, replaceSemanticSurfaceGuides, buildSurfaceGrowth, applySurfaceGrowth, caveGrowthRecipes,
     getClimbBranchWorld,
+    simplifySurfaceStrandRings, // Final ring reduction of surface-growth tubes (exposed for tests and tools).
+    liteTreeGeometry, // Far-distance bark twin of a shared tree variant part (see its definition).
+    liteTreeStats: () => ({ ..._liteStats, cachedVariants: _liteVariantCache.size }),
     buildLogMesh(options) {
       return buildGeneratedLogMesh(options);
     },

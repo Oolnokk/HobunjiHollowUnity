@@ -183,4 +183,30 @@ assert.equal(pill.spItemDiv.writes.filter(entry => entry === 'style.display').le
 deps.spItemDiv = null; // Condensed HUDs can omit the optional desktop item separator.
 assert.doesNotThrow(() => hudWindow.HudUpdate.updateHud(), 'missing optional desktop separator does not crash the HUD refresh');
 
+// Key HUD: identical text must not recreate the icon element, while item
+// identity / asset requests continue through the canonical sprite owner.
+const keyHud=trackedElement(), icon=trackedElement();
+keyHud.firstChild=icon; keyHud.querySelector=()=>icon;
+deps.keyHudEl=keyHud;
+deps.getGrid=()=>[[tile]];
+deps.getWorldObjectAt=()=>null;
+deps.toolSelectIconHTML=()=>'*';
+const requests=[];
+deps.applyItemSpriteIcon=(_element,def,key)=>requests.push({def,key});
+deps.ITEM_DEFS.seed={sprite:'seed.png'};
+deps.ITEM_DEFS.other={sprite:'other.png'};
+deps.inventory.other=2;
+hudWindow.HudUpdate.refreshKeyHud([]);
+hudWindow.HudUpdate.refreshKeyHud([]);
+assert.equal(keyHud.writes.filter(x=>x==='innerHTML').length,1);
+assert.equal(requests.length,2,'same markup retains sprite request validation');
+item.key='other'; // Same label, icon and count, different source artwork.
+hudWindow.HudUpdate.refreshKeyHud([]);
+assert.equal(keyHud.writes.filter(x=>x==='innerHTML').length,1);
+assert.equal(requests.at(-1).key,'other');
+assert.equal(requests.at(-1).def,deps.ITEM_DEFS.other);
+item.label='Other';
+hudWindow.HudUpdate.refreshKeyHud([]);
+assert.equal(keyHud.writes.filter(x=>x==='innerHTML').length,2);
+assert.equal(hudWindow.__keyHudWriteDebug().skipped,2);
 console.log('HUD DOM style-write dedup regression checks passed.');

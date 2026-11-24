@@ -74,10 +74,10 @@ assert.equal(tactics.chooseAttack(actor).id, 'pounce');
 assert.equal(tactics.combatTempo(actor).stamina, 1.3);
 const hit = context.CompanionOffense.scaleHit(actor, {}, 10, { footingDamageMultiplier: 2, afflictionBonuses: { poison: 10 } }); // Shared hit path must keep Footing independent of Health scaling.
 assert.equal(hit.amount, 13.5);
-assert(Math.abs(hit.amount * hit.opts.afflictionBonuses.poison - 75) < 1e-9, 'damage and affliction focus scale independent channels');
+assert(Math.abs(hit.opts.afflictionBonuses.poison - 7.5) < 1e-9, 'independent Attack Power coefficients receive the full affliction focus');
 assert(Math.abs(hit.amount * hit.opts.footingDamageMultiplier - 15) < 1e-9);
 assert.equal(definitions['dabinggi-hound'].attackDamage, 10, 'shared species definition remains untouched');
-// Test final buildup through ResourceSystem, whose affliction coefficients multiply the actual hit damage.
+// Test final buildup through ResourceSystem, whose affliction coefficients multiply independent Attack Power.
 context.performance = performance;
 context.dispatchEvent = () => {};
 context.CustomEvent = class { constructor(type, options) { this.type = type; this.detail = options.detail; } };
@@ -87,12 +87,12 @@ const victim = { health: 1000, maxHealth: 1000, stamina: 100, maxStamina: 100, f
 resources.initEntity(victim);
 context.CompanionOffense.damageCreature((target, amount, x, y, kb, opts) => resources.applyDamage(target, amount, opts), actor, victim, 10, 0, 0, 0, { afflictionBonuses: { bleedingHealth: 1 } });
 const tacticBuildup = resources.getAffliction(victim, 'bleedingHealth'); // Independent Attack Power replaces the previous final-Health-damage status formula.
-assert.ok(tacticBuildup > 0 && tacticBuildup < resources.attackPowerForAttack({}), 'Power focus reduces status buildup without using its damage boost');
+assert.ok(Math.abs(tacticBuildup - resources.attackPowerForAttack({}) * 0.75) < 0.11, 'Power focus reduces status buildup by precisely its configured factor');
 const removeStackedProvider = context.CompanionOffense.registerProvider('stacked-test', () => ({ damage: 1.3, affliction: 1.4 })); // Simulates existing Whistle/training bonuses alongside a tactical focus.
 resources.removeAffliction(victim, 'bleedingHealth', 1000);
 context.CompanionOffense.damageCreature((target, amount, x, y, kb, opts) => resources.applyDamage(target, amount, opts), actor, victim, 10, 0, 0, 0, { afflictionBonuses: { bleedingHealth: 1 } });
 assert.ok(resources.getAffliction(victim, 'bleedingHealth') > tacticBuildup, 'stacked affliction providers increase status buildup even after separating Attack Power from Health damage');
-assert.ok(resources.getAffliction(victim, 'bleedingHealth') < resources.attackPowerForAttack({}) * 1.4, 'stacked status buildup stays below a full 140% neutral Attack Power hit');
+assert.ok(Math.abs(resources.getAffliction(victim, 'bleedingHealth') - resources.attackPowerForAttack({}) * 0.75 * 1.4) < 0.11, 'stacked status buildup uses both factors exactly once');
 removeStackedProvider();
 
 const enemy = { ...actor, banditCompanion: true }; // Enemy pets must retain baseline species behavior and hit strength.

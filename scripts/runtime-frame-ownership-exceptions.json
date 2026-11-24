@@ -15,7 +15,7 @@
     "function": "loadBuildingScene",
     "reason": "Defers loading-label rendering to the next paints before worker-backed den carving, mine generation or their synchronous fallbacks; each deferral runs once per scene-load request.",
     "migrationStage": "not-planned",
-    "line": 14747
+    "line": 14798
   },
   {
     "file": "docs/game.js",
@@ -24,7 +24,7 @@
     "function": "runMove",
     "reason": "Steps a previewed cutscene actor toward its move target every frame and stops rescheduling once advanceActorToward reports arrival or the preview's running flag clears.",
     "migrationStage": "not-planned",
-    "line": 34643
+    "line": 34733
   },
   {
     "file": "docs/game.js",
@@ -33,7 +33,7 @@
     "function": "runFade",
     "reason": "Defers writing the fade element's target opacity to the next paint so the CSS transition actually animates instead of jumping instantly; runs once per fade stage.",
     "migrationStage": "not-planned",
-    "line": 34799
+    "line": 34889
   },
   {
     "file": "docs/game.js",
@@ -42,7 +42,7 @@
     "function": "runZoom",
     "reason": "Eases the preview camera's zoom toward a target percentage over the stage's authored duration and stops once t reaches 1.",
     "migrationStage": "not-planned",
-    "line": 34818
+    "line": 34908
   },
   {
     "file": "docs/game.js",
@@ -51,7 +51,7 @@
     "function": "cutsceneRotationTick",
     "reason": "Eases previewed actors' facing every frame for the scene's lifetime, gated on the same running flag every other preview RAF loop checks, so stopping the preview stops it too.",
     "migrationStage": "not-planned",
-    "line": 34904
+    "line": 34994
   },
   {
     "file": "docs/js/action-arc-ui.js",
@@ -150,7 +150,7 @@
     "function": "frame (active ring-tumbler re-arm)",
     "reason": "The dial physics and pin indicators advance via RAF only while a player has an active chest-lock minigame session. The frame callback stops immediately when session becomes null, and close() cancels its pending request; no session-lifetime idle loop remains after a chest is picked or cancelled.",
     "migrationStage": "not-planned",
-    "line": 494
+    "line": 368
   },
   {
     "file": "docs/js/chest-lockpicking.js",
@@ -159,7 +159,7 @@
     "function": "open (start ring-tumbler session)",
     "reason": "A single requestAnimationFrame starts the ring-dial animation when the overlay opens. All later frames are owned by frame(), and the registered animation is canceled on close, cancellation, invalid chest or completed lock. It is not an independent perpetual gameplay ticker.",
     "migrationStage": "not-planned",
-    "line": 616
+    "line": 480
   },
   {
     "file": "docs/js/combat/combat-input.js",
@@ -321,7 +321,7 @@
     "function": "scheduleMenuReadability",
     "reason": "Guarded single RAF re-enforces menu text readability (font floor/color) after a click/input/mutation; does not reschedule itself.",
     "migrationStage": "not-planned",
-    "line": 213
+    "line": 299
   },
   {
     "file": "docs/js/inventory-ui.js",
@@ -330,7 +330,7 @@
     "function": "scheduleDecorate",
     "reason": "Separate guarded single RAF that redecorates inventory mode tabs/pack slots after a change; independent debounce flow from scheduleMenuReadability, also not a loop.",
     "migrationStage": "not-planned",
-    "line": 298
+    "line": 436
   },
   {
     "file": "docs/js/item-arch-category-colors.js",
@@ -483,7 +483,7 @@
     "function": "nextTick (inside flicker diagnostic loop)",
     "reason": "A single requestAnimationFrame races a 200ms setTimeout purely to await the next paint inside a bounded 45-sample flicker diagnostic; it never reschedules itself and the outer sampling loop is a plain for-loop, not a RAF recursion.",
     "migrationStage": "not-planned",
-    "line": 1628
+    "line": 1693
   },
   {
     "file": "docs/js/procedural-hand-frame-driver.js",

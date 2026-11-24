@@ -213,7 +213,7 @@ for (const [kind, expected] of Object.entries(novemberAnimalAuthoring)) {
 // New November 16 Rig Coordinates import: use exact species-authored data, not the older Pingdort 1x floor/scale fallback.
 const plainAnimalRig = value => JSON.parse(JSON.stringify(value)); // Normalizes cross-realm VM objects for these strict data-only assertions.
 const expectedSkeeriChathead = { x: 0.6611149088541667, y: 0.24899449865398673, width: 0.04, height: 0.04, coordinateSpace: 'sprite-normalized-top-left', version: 1 }; // Canonical crop shared by all three Skeeri kinds.
-const expectedMootChathead = { x: 0.0843, y: 0.085, width: 0.26, height: 0.37, coordinateSpace: 'sprite-normalized-top-left', version: 1 }; // Newly approved Moot idle-sprite crop.
+const expectedMootChathead = { x: 0.10526108108108108, y: 0.0923913043478261, width: 0.3246486486486486, height: 0.4021739130434782, coordinateSpace: 'sprite-normalized-top-left', version: 1 }; // Newly approved Moot idle-sprite crop.
 const pingdort = profiles.creatures.pingdort; // Check the independent bird baseline instead of the old native-foot scaled default.
 assert.deepStrictEqual(plainAnimalRig(pingdort.anchors.saddle), { position: { x: 0, y: 0, z: 0 }, rotationDeg: { x: 0, y: 0, z: 0 }, scale: { x: 1, y: 1, z: 1 } }, 'Pingdort uses the authored neutral saddle anchor');
 assert.deepStrictEqual(plainAnimalRig(pingdort.anchors.shoulderGrip.position), { x: 0, y: -0.05596633162050327, z: 0.06962064405051654 }, 'Pingdort shoulder grip XYZ matches export');

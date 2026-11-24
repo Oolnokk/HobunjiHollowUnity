@@ -854,10 +854,50 @@ function getBodyTintedCanvas(img, sourceKey, color, speciesId = '', slot = 'A') 
 // these surface PNGs into the body's tonal envelope BEFORE the exact same body
 // tint stage. The body sprites themselves are untouched.
 const _AUTHORED_SURFACE_TONE_CACHE = new PortraitPixelCache(4 * 1024 * 1024);
+// Small bounded caches shared by temporary NPC portrait canvases and persistent player/dialogue canvases.
+const _BEARD_HOOD_RESULT_CACHE = new PortraitPixelCache(8 * 1024 * 1024, 32); // Two 200x200 negotiated layers per entry.
+const _BEARD_HOOD_SOURCE_CACHE = new PortraitPixelCache(4 * 1024 * 1024, 24); // Pristine beard ImageData, never mutated by negotiation.
+const _BEARD_HOOD_IMAGE_IDS = new WeakMap(); // Identifies decoded canonical images without keeping them alive.
+let _beardHoodNextImageId = 0;
+const _beardHoodPerf = { hits:0, misses:0, beardReadHits:0, beardReads:0, hoodReadHits:0, bypasses:0 };
+function beardHoodIdentity(value) {
+  let id = _BEARD_HOOD_IMAGE_IDS.get(value);
+  if (!id) { id = ++_beardHoodNextImageId; _BEARD_HOOD_IMAGE_IDS.set(value,id); }
+  return id;
+}
+function beardHoodLayerKey(layers, imgMap, resolveXform, prepared) {
+  const parts = [PORTRAIT_CW,PORTRAIT_CH,PORTRAIT_L]; // Authoring can change logical dimensions and layer size.
+  for (const entry of layers) {
+    const layer = entry.layer;
+    const image = imgMap.get(layer.url);
+    if (layer.pixelDye || !(image instanceof Image) || !image.complete || !image.naturalWidth || !image.naturalHeight) return null;
+    const tint = entry.tint || entry.filter;
+    const options = tint?.mode === 'shadeFill' || tint?.mode === 'hueSatFill' ? (tint.options || getPortraitTintingConfig()) : null;
+    if (options && !options.cacheEnabled) return null; // Authoring tools may deliberately request a fresh tint.
+    const xform = resolveXform(layer);
+    if (![xform.ax,xform.ay,xform.sx,xform.sy].every(Number.isFinite)) return null;
+    // Resolve each immutable tint once and draw that exact object. Even a
+    // tint-cache eviction during another layer's preparation cannot make
+    // the key describe different pixels than the actual source draw.
+    const tinted = _imageForTint(image,layer.url,tint);
+    prepared.set(entry,{image:tinted,xform});
+    parts.push([beardHoodIdentity(image),beardHoodIdentity(tinted),image.currentSrc||image.src,
+      image.naturalWidth,image.naturalHeight,layer.url,xform]);
+  }
+  return JSON.stringify(parts);
+}
+function beardHoodReadContext(scratch) {
+  // The FIRST getContext call chooses backing-store policy. Request the CPU
+  // surface before clear/draw/stretch, not only when negotiation reads pixels.
+  if (scratch.width !== PORTRAIT_CW) scratch.width = PORTRAIT_CW;
+  if (scratch.height !== PORTRAIT_CH) scratch.height = PORTRAIT_CH;
+  return scratch.getContext('2d',{willReadFrequently:true});
+}
 window.__portraitPixelCacheDebug = () => ({
   images: IMG_CACHE.snapshot(), hueSat: _HUESAT_FILL_CACHE.snapshot(),
   shade: _SHADE_FILL_CACHE.snapshot(), surfaceTone: _AUTHORED_SURFACE_TONE_CACHE.snapshot(),
   imageLoads: { ...portraitImageLoadDebug },
+  beardHood: { ..._beardHoodPerf, negotiated: _BEARD_HOOD_RESULT_CACHE.snapshot(), pristine: _BEARD_HOOD_SOURCE_CACHE.snapshot() },
 });
 function _surfaceToneConfig() {
   const cfg = window.SCRATCHBONES_CONFIG?.game?.portrait?.tinting || {};
@@ -1149,9 +1189,9 @@ function _buildNeutralGrid(cols, rows) {
  * in normalised body-layer space). Applied additively on top of the breathing animation
  * (or on top of the neutral grid when no breathing composer is present).
  */
-function drawPortraitLayerWarped(ctx, img, xform, tint, breathingComposer, speciesId, gender, nowMs, phaseOffsetMs, seatId, staticDeform, sourceKey, imageForTint = _imageForTint) {
+function drawPortraitLayerWarped(ctx, img, xform, tint, breathingComposer, speciesId, gender, nowMs, phaseOffsetMs, seatId, staticDeform, sourceKey, imageForTint = _imageForTint, preparedBreathing = null) {
   const { sx } = xform;
-  const { x: layerX, y: layerY, w, h } = _portraitLayerDrawRect(img, xform);
+  const { x: layerX, y: layerY, w, h } = _portraitLayerDrawRect(img, xform); // Padded big-hat PNGs: see _portraitLayerDrawRect.
   // See drawPortraitLayer's identical pre-flip: a negative sx (a behind-view
   // layer pre-flipped in _cloneBehindLayer) is handled by flipping the pixel
   // content itself via _getFlippedImage, not a canvas transform -- a transform
@@ -1162,7 +1202,7 @@ function drawPortraitLayerWarped(ctx, img, xform, tint, breathingComposer, speci
   let drawImg = imageForTint(img, sourceKey, tint);
   if (sx < 0) drawImg = _getFlippedImage(drawImg);
 
-  const breathingPts = breathingComposer?.getInterpolatedPoints(speciesId, gender, nowMs, phaseOffsetMs, seatId);
+  const breathingPts = preparedBreathing ? preparedBreathing.points : breathingComposer?.getInterpolatedPoints(speciesId, gender, nowMs, phaseOffsetMs, seatId);
   if (!breathingPts && !staticDeform) {
     ctx.save();
     ctx.filter = 'none';
@@ -1171,7 +1211,7 @@ function drawPortraitLayerWarped(ctx, img, xform, tint, breathingComposer, speci
     return;
   }
 
-  const anim = breathingPts ? breathingComposer.getAnimData(speciesId, gender) : null;
+  const anim = breathingPts ? (preparedBreathing ? preparedBreathing.anim : breathingComposer.getAnimData(speciesId, gender)) : null;
   const gridCols = anim?.gridCols ?? 4;
   const gridRows = anim?.gridRows ?? 6;
   const neutralPts = _buildNeutralGrid(gridCols, gridRows);
@@ -1930,7 +1970,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   const emoteNeutralPts  = emoteDeformedPts ? _buildNeutralGrid(4, 6) : null;
 
   // Draws a single image with emote deformation if active, else plain.
-  const drawLayerWithEmote = (img, xform, tint, alpha = 1, sourceKey, destination = ctx) => {
+  const drawLayerWithEmote = (img, xform, tint, alpha = 1, sourceKey, destination = ctx, tintResolver = imageForTint) => {
     const numericAlpha = Number(alpha);
     const opacity = Number.isFinite(numericAlpha) ? Math.max(0, Math.min(1, numericAlpha)) : 1;
     if (opacity <= 0) return;
@@ -1940,7 +1980,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
       // See drawPortraitLayer's identical pre-flip via _getFlippedImage.
       destination.save();
       destination.globalAlpha = opacity;
-      let drawImg = imageForTint(img, sourceKey, tint);
+      let drawImg = tintResolver(img, sourceKey, tint);
       if (sx < 0) drawImg = _getFlippedImage(drawImg);
       destination.filter = 'none';
       _drawPortraitLayerWarped(destination, drawImg, rx, ry, w, h, emoteNeutralPts, emoteDeformedPts, 4, 6);
@@ -1948,10 +1988,10 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
     } else if (opacity < 1) {
       destination.save();
       destination.globalAlpha = opacity;
-      drawPortraitLayer(destination, img, xform, tint, sourceKey, imageForTint);
+      drawPortraitLayer(destination, img, xform, tint, sourceKey, tintResolver);
       destination.restore();
     } else {
-      drawPortraitLayer(destination, img, xform, tint, sourceKey, imageForTint);
+      drawPortraitLayer(destination, img, xform, tint, sourceKey, tintResolver);
     }
   };
 
@@ -2004,19 +2044,24 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   };
 
   // Draws a list of layers with emote deformation applied to each (head, hair, eyes, hat, etc.).
-  const drawEmoteLayers = (layerList, destination = ctx) => {
+  const drawEmoteLayers = (layerList, destination = ctx, prepared = null) => {
     for (const entry of layerList) withPixelDyeLayer(entry, (img, tint, sourceKey) => {
-      drawLayerWithEmote(img, resolveXform(entry.layer), tint, 1, sourceKey, destination);
+      const ready = prepared?.get(entry);
+      drawLayerWithEmote(img, ready?.xform || resolveXform(entry.layer), tint, 1, sourceKey, destination,
+        ready ? () => ready.image : imageForTint);
     }, destination);
   };
 
   // Draws body/cosmetic/hood layers with full breathing + emote deformation.
-  const drawBreathingLayers = (layerList, destination = ctx) => {
+  const drawBreathingLayers = (layerList, destination = ctx, preparedBreathing = null, prepared = null) => {
     for (const entry of layerList) withPixelDyeLayer(entry, (img, tint, sourceKey) => {
+      const ready = prepared?.get(entry);
+      const xform = ready?.xform || resolveXform(entry.layer);
+      const tintResolver = ready ? () => ready.image : imageForTint;
       if (breathingComposer || staticDeform) {
-        drawPortraitLayerWarped(destination, img, resolveXform(entry.layer), tint, breathingComposer, speciesId, gender, nowMs, breathingPhaseOffset, seatId, staticDeform, sourceKey, imageForTint);
+        drawPortraitLayerWarped(destination, img, xform, tint, breathingComposer, speciesId, gender, nowMs, breathingPhaseOffset, seatId, staticDeform, sourceKey, tintResolver, preparedBreathing);
       } else {
-        drawPortraitLayer(destination, img, resolveXform(entry.layer), tint, sourceKey, imageForTint);
+        drawPortraitLayer(destination, img, xform, tint, sourceKey, tintResolver);
       }
     }, destination);
   };
@@ -2139,37 +2184,93 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
       && !hiddenCosmeticGroups.has(facialHair)
       && (paintedBeardMask?.runs?.length || whiskerMask?.runs?.length
         || beardAuthoring.requestMode==='silhouette')) {
-    const beardScratch = canvas.hobunjiBeardHoodBeardCanvas || document.createElement('canvas'); // Reused per portrait instance, not per redraw.
-    const hoodScratch = canvas.hobunjiBeardHoodTempCanvas || document.createElement('canvas'); // Existing front-hood scratch surface.
-    for (const scratch of [beardScratch, hoodScratch]) {
-      if (scratch.width !== PORTRAIT_CW) scratch.width = PORTRAIT_CW;
-      if (scratch.height !== PORTRAIT_CH) scratch.height = PORTRAIT_CH;
-      scratch.getContext('2d').clearRect(0,0,PORTRAIT_CW,PORTRAIT_CH);
-    }
-    canvas.hobunjiBeardHoodBeardCanvas = beardScratch;
-    canvas.hobunjiBeardHoodTempCanvas = hoodScratch;
-    drawEmoteLayers(facialHairLayers, beardScratch.getContext('2d'));
-    drawBreathingLayers(hoodLayers, hoodScratch.getContext('2d'));
-    const stretch = cutoutApi.stretchHoodToRoots(hoodScratch, tuftRoots, {
-      maxStretch:beardAuthoring.maxStretch,subdivision:beardAuthoring.subdivision,
-      aboveInfluence:beardAuthoring.aboveInfluence,belowInfluence:beardAuthoring.belowInfluence
-    });
     const hoodPolicy = resolveHoodBeardPolicy(hood, resolvedFighter);
-    const result = cutoutApi.negotiateBeardHood(beardScratch, hoodScratch, paintedBeardMask, hoodPolicy.mask,
-      {hoodMoves:stretch.moves,permissionMode:hoodPolicy.mode,coneSpread:hoodPolicy.coneSpread,
-        topConeSpread:hoodPolicy.topConeSpread,
-        topUpConeSpread:hoodPolicy.topUpConeSpread,
-        topDownConeLength:hoodPolicy.topDownConeLength,
-        hoodAlphaFloor:hoodPolicy.alphaFloor,whiskerMask,
-        requestMode:beardAuthoring.requestMode}); // The upper cover cone, when authored, beats even whiskers; the lower cone permits ordinary requests.
-    if (!result.error) {
-      negotiatedBeard = beardScratch;
-      negotiatedHood = hoodScratch;
-      negotiation = { ...result,maskPixels:result.approvedPixels,
-        requestedRoots:stretch.requested,stretchedRoots:stretch.stretched,
-        limitedRoots:stretch.limited,skippedRoots:stretch.missingRing,
-        deformationError:stretch.error||null }; // Counts exposed to mobile/gameplay diagnostics.
-    } else negotiationError=result.error;
+    const canonicalArt = imageForTint === _imageForTint && !layerImageOverrides
+      && PORTRAIT_CW === cutoutApi.SIZE && PORTRAIT_CH === cutoutApi.SIZE;
+    // Custom preview composers may be stateful: never skip or resample their draws.
+    const canonicalBreathing = !breathingComposer || breathingComposer === window.portraitBreathingComposer;
+    const preparedBreathing = canonicalArt && canonicalBreathing ? (() => {
+      const points = breathingComposer?.getInterpolatedPoints(speciesId,gender,nowMs,breathingPhaseOffset,seatId) || null;
+      return {points,anim:points ? breathingComposer.getAnimData(speciesId,gender) : null};
+    })() : null;
+    const preparedBeard = canonicalArt && !emoteDeformedPts ? new Map() : null;
+    const beardKey = preparedBeard ? beardHoodLayerKey(facialHairLayers,imgMap,resolveXform,preparedBeard) : null;
+    // Editor mask overrides can be mutable/non-JSON. Cache only the authored
+    // policy, and keep the pristine beard cache independent of those edits.
+    const authoredPolicy = !renderOptions?.beardHoodCutoutMaskOverride && !renderOptions?.beardHoodWhiskerMaskOverride
+      && !renderOptions?.beardHoodTuftRootsOverride;
+    const validStaticDeform = staticDeform == null || (Array.isArray(staticDeform)
+      && staticDeform.every(point => point == null || (Array.isArray(point)
+        && point.every(value => value == null || Number.isFinite(value)))));
+    const preparedHood = beardKey && preparedBreathing && !preparedBreathing.points && authoredPolicy && validStaticDeform ? new Map() : null;
+    const hoodKey = preparedHood ? beardHoodLayerKey(hoodLayers,imgMap,resolveXform,preparedHood) : null;
+    // Static deformation and every authoring permission value participate.
+    // Animated hoods always negotiate their current pixels; the unwarped
+    // beard can still reuse its pristine readback independently.
+    let resultKey = null; // Unserializable authoring data must not break the original compositor.
+    if (hoodKey) {
+      try {
+        resultKey = JSON.stringify([beardHoodIdentity(cutoutApi),beardKey,hoodKey,staticDeform,
+          paintedBeardMask,whiskerMask,tuftRoots,beardAuthoring.requestMode,
+          beardAuthoring.maxStretch,beardAuthoring.subdivision,beardAuthoring.aboveInfluence,
+          beardAuthoring.belowInfluence,hoodPolicy]);
+      } catch (_) { /* Preserve uncached behavior. */ }
+    }
+    const cached = resultKey ? _BEARD_HOOD_RESULT_CACHE.get(resultKey) : null;
+    if (cached) {
+      _beardHoodPerf.hits++;
+      negotiatedBeard = cached.beard;
+      negotiatedHood = cached.hood;
+      negotiation = {...cached.stats}; // Diagnostics cannot mutate the shared result.
+    } else {
+      if (resultKey) _beardHoodPerf.misses++; else _beardHoodPerf.bypasses++;
+      // Cache-owned canvases are immutable after the successful render.
+      // Dynamic/editor canvases are per-target scratch and never alias them.
+      const beardScratch = resultKey ? document.createElement('canvas')
+        : (canvas.hobunjiBeardHoodBeardCanvas || document.createElement('canvas'));
+      const hoodScratch = resultKey ? document.createElement('canvas')
+        : (canvas.hobunjiBeardHoodTempCanvas || document.createElement('canvas'));
+      const beardCtx = beardHoodReadContext(beardScratch);
+      const hoodCtx = beardHoodReadContext(hoodScratch);
+      beardCtx.clearRect(0,0,PORTRAIT_CW,PORTRAIT_CH);
+      hoodCtx.clearRect(0,0,PORTRAIT_CW,PORTRAIT_CH);
+      if (!resultKey) {
+        canvas.hobunjiBeardHoodBeardCanvas = beardScratch;
+        canvas.hobunjiBeardHoodTempCanvas = hoodScratch;
+      }
+      drawEmoteLayers(facialHairLayers, beardCtx, beardKey ? preparedBeard : null);
+      drawBreathingLayers(hoodLayers, hoodCtx, preparedBreathing, hoodKey ? preparedHood : null);
+      let beardImageData = beardKey ? _BEARD_HOOD_SOURCE_CACHE.get(beardKey) : null;
+      if (beardImageData) _beardHoodPerf.beardReadHits++;
+      else if (beardKey) {
+        try {
+          beardImageData = beardCtx.getImageData(0,0,PORTRAIT_CW,PORTRAIT_CH);
+          _BEARD_HOOD_SOURCE_CACHE.set(beardKey,beardImageData);
+          _beardHoodPerf.beardReads++;
+        } catch (_) { /* Shared negotiation retains its safe error fallback. */ }
+      }
+      const stretch = cutoutApi.stretchHoodToRoots(hoodScratch, tuftRoots, {
+        maxStretch:beardAuthoring.maxStretch,subdivision:beardAuthoring.subdivision,
+        aboveInfluence:beardAuthoring.aboveInfluence,belowInfluence:beardAuthoring.belowInfluence,
+        retainUnchangedImageData:true
+      });
+      if (stretch.unchangedImageData) _beardHoodPerf.hoodReadHits++;
+      const result = cutoutApi.negotiateBeardHood(beardScratch, hoodScratch, paintedBeardMask, hoodPolicy.mask,
+        {hoodMoves:stretch.moves,permissionMode:hoodPolicy.mode,coneSpread:hoodPolicy.coneSpread,
+          topConeSpread:hoodPolicy.topConeSpread,topUpConeSpread:hoodPolicy.topUpConeSpread,
+          topDownConeLength:hoodPolicy.topDownConeLength,hoodAlphaFloor:hoodPolicy.alphaFloor,whiskerMask,
+          requestMode:beardAuthoring.requestMode,beardImageData,unchangedHoodImageData:stretch.unchangedImageData});
+      if (!result.error) {
+        negotiatedBeard = beardScratch;
+        negotiatedHood = hoodScratch;
+        negotiation = { ...result,maskPixels:result.approvedPixels,
+          requestedRoots:stretch.requested,stretchedRoots:stretch.stretched,
+          limitedRoots:stretch.limited,skippedRoots:stretch.missingRing,
+          deformationError:stretch.error||null };
+        if (resultKey && !stretch.error) _BEARD_HOOD_RESULT_CACHE.set(resultKey,{
+          width:PORTRAIT_CW,height:PORTRAIT_CH*2,beard:beardScratch,hood:hoodScratch,stats:{...negotiation}});
+      } else negotiationError=result.error;
+    }
   }
   const drawNegotiatedBeard = () => negotiatedBeard
     ? ctx.drawImage(negotiatedBeard,0,0,PORTRAIT_CW,PORTRAIT_CH)
@@ -2255,7 +2356,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
     if (cloth.width !== PORTRAIT_CW) cloth.width = PORTRAIT_CW;
     if (cloth.height !== PORTRAIT_CH) cloth.height = PORTRAIT_CH;
     canvas.hobunjiBeardHoodTempCanvas = cloth;
-    const clothContext = cloth.getContext('2d');
+    const clothContext = beardHoodReadContext(cloth);
     clothContext.clearRect(0,0,PORTRAIT_CW,PORTRAIT_CH);
     drawBreathingLayers(hoodLayers, clothContext);
     const stretch = cutoutApi.stretchHoodToRoots(cloth, tuftRoots, {

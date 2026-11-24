@@ -110,16 +110,38 @@ function assertClosedPit(mesh, { minX, minZ, size, bottom, top }, label) {
 // 2. Jump-platform shaft (every tier) mounts a closed pit.
 {
   const DS = { registerSurface() {}, registerPit() {}, clearScope() {} };
+  const priorPatterns=globalThis.FurniturePatternSurfaces; // Restored after the Kanthic face-authoring integration checks.
+  const authored=[]; // Captures the real shaft mount's calls into the existing surface-pattern renderer.
+  globalThis.FurniturePatternSurfaces={applyPart(mesh,part){
+    assert.equal(part.patternSurfaces.length,1,'one top-face rune treatment per slab, not layered duplicate sheets');
+    assert.equal(part.patternSurfaces[0].selector,'top','the slab sides and underside remain plain carved stone');
+    assert.equal(part.patternSurfaces[0].mode,'engraving','platform runes use the canonical emissive engraving path');
+    const overlay=new Mesh({dispose(){this.disposed=true;}},{dispose(){this.disposed=true;}});
+    overlay.userData.furniturePattern={slot:'top'};mesh.add(overlay);authored.push(overlay);
+  }};
   for (const tier of ['cave', 'hole', 'lich']) for (const theme of ['tothal', 'hronal', 'kanthic']) {
     const o = Plan.tierOptions(tier);
     const plan = Jump.compose({ shaft:o.shaftSize, spacing:o.floorHeight, floors:o.floors, seed:11, theme, originX:40, originZ:60, baseY:0 });
     assert(plan.ok, `${tier}/${theme} jump plan`);
+    const priorCount=authored.length;
     const parent = new Node(), runtime = Jump.mount(plan, { THREE, DynamicSurfaces:DS, parent, tradition:theme });
+    const added=authored.slice(priorCount);
+    assert.equal(added.length,theme==='kanthic'?plan.platforms.length:0,
+      'every Kanthic rope/jump slab gets exactly one top rune; other traditions remain unchanged');
+    assert.equal(runtime.getState().engravedPlatformTops,added.length,'mobile shaft diagnostics count active rune surfaces');
+    const visualSlabs=[]; // Exercises the real mount, including Hronal and Tothal parity, before it is disposed.
+    parent.traverse(node=>{if(node.userData?.ruinShaftPlatform===true)visualSlabs.push(node);});
+    assert.equal(visualSlabs.length,plan.platforms.length,
+      'every walkable shaft slab keeps its explicit platform-occlusion marker when geometries are stretched');
     const half = plan.central / 2;
     assertClosedPit(find(parent, 'jump-shaft-death-pit-walls'), { minX:plan.centre.x - half, minZ:plan.centre.z - half, size:plan.central, bottom:plan.pit.bottomY - .42, top:0 }, `${tier}/${theme} jump shaft`);
     runtime.dispose();
+    assert(added.every(overlay=>!overlay.parent&&overlay.geometry.disposed&&overlay.material.disposed),
+      'every Kanthic glyph overlay releases its geometry and material on shaft teardown');
     assert.equal(parent.children.length, 0, 'the walls leave with the shaft');
   }
+  if(priorPatterns===undefined)delete globalThis.FurniturePatternSurfaces;
+  else globalThis.FurniturePatternSurfaces=priorPatterns;
 }
 
 // 3. Reaching-obelisk shaft (dev Random Test Ruin) mounts a closed pit too.

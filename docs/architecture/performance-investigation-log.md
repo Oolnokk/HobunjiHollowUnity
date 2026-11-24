@@ -1,5 +1,77 @@
 # Performance investigation log
 
+## 23 Nov 2026: prioritized animal colors and patterns for owned pets
+
+**Observed bottleneck in code:** \`CreatureGeneticsRender.composeFrame\` processed every native-resolution
+genotype appearance in strict first-in-first-out order, including wilderness spawns, farm
+livestock, mounts, ordinary companions and shoulder pets. A burst of wild requests could
+delay the player's own animal, making its fully authored base colors, inherited patterns,
+Color Pools surface motifs and eye overlays appear late. The existing wild and farm
+texture caches already deduplicate requests; they were not the cause of the ordering.
+
+The same canonical compositor now schedules by role: **player-owned active pets / mounts /
+shoulder pets**, then **farm livestock**, then **wilderness and regular previews**.
+Only one native-resolution composition runs at once, retaining the existing memory cap;
+all patterns and eyes remain atomic (a missing required layer rejects and retries).
+Priority is FIFO within each class, with one lower-priority frame allowed after four
+consecutive pet frames so wilderness is not starved. The game texture owner can promote
+an existing in-flight wildlife request to pet priority instead of composing twice.
+Small shoulder heads and split shoulder frames explicitly request pet priority.
+For owned pets, the compositor also starts only the *selected* idle/run frame's
+required base/pattern/eye artwork and masks while queued CPU work is still finishing.
+Ordinary global three-frame prewarming remains opt-in for developer tools.
+
+In-game mobile texture diagnostics through \`CreatureGeneticsRender.memorySnapshot()\`
+expose \`queuedPets\`, \`queuedFarm\`, \`composePending\`, \`composeActive\`,
+\`composePetStarts\`, \`composePromotions\` and \`petSpritePrefetches\`.
+\`scripts/test-animal-appearance-priority.js\` executes the production queue to
+assert pet/farm/wild ordering, fairness, promotion, per-pet prefetch and failure recovery.
+
+**Limits:** This removes avoidable *waiting behind other animals* and overlaps pet
+network loads with other composition work; a single expensive recolor/pattern pass
+still costs its original CPU time. Actual mobile seconds saved and FPS impact have
+not yet been benchmarked in an on-device run.
+
+
+## 23 Nov 2026: Skeeri source-art prewarm and appearance review
+
+Entering a generated ruin now starts `SkeeriRuins.prewarm()` on the normal transition
+without awaiting it. The first call downloads the three shared source sprites and rig
+JSON, extracts the base coat, darker mint pattern, off-hue details, and independently
+colored purple eye once. Later birds reuse the preparation while their individual
+body, marking and glowing-eye material colors remain separate. Repeated entry calls
+share the same promise and do not allocate another set of source masks.
+
+The eye selector now matches the **scaled #7F00FF marker family**, not arbitrary
+purple pixels. It preserves the value of shaded purple pixels; mint body pixels and
+dark-green markings remain distinct. The real-art PNG regression checks that every
+original opaque pixel belongs to exactly one source partition (the runtime glow is
+allowed to blur beyond that partition). Large source passes yield through the
+existing `PixelWorkYield` authority between flying/perched/wing masks rather than
+running every pose back-to-back during ruin entry. No new recurring frame work.
+
+Mobile Wildlife diagnostics display prewarm-ready state, request/failure counts,
+marked eye pixels and fur-marking pixels. Reviewed the priority compositor as well:
+optional pet-prefetch errors now fail open to full composition, without permanently
+stranding a pet on plain artwork. Standalone tests verify role ordering, fairness,
+in-flight promotion, failed downloads, failed composite rejection and queue cleanup.
+Legacy cutscene and shoulder animation fixtures were updated to inject the new
+priority bookkeeping and owner dependency; the latter now checks that another
+player's animal is *not* prioritized.
+
+**Measured here:** functional regressions and synthetic scheduler/appearance
+fixtures. **Not measured on device:** wall-clock speedup, GPU material upload
+latency per individual Skeeri, or whether the first entry still causes visible
+hitches on low-end phones. The prewarm caches *source masks*, not GPU textures for
+every possible individual palette. Keep those distinctions when profiling.
+
+## 23 Nov 2026: fog and sky lighting work
+
+Fog reads the skydome's lunar sampler directly, avoiding a full diagnostic
+snapshot for each lighting sample. The skydome reuses its time-of-day lighting
+table and skips overcast easing once the current value reaches its target.
+Device frame times have yet to be measured.
+
 ## 23 Nov 2026: Cloud Forest dense wall merged across chunks; wilderness leads measured
 
 A per-render-call draw census of a Southern Cloud Forest frame (headless, fresh world, 480×320,
@@ -40,6 +112,48 @@ Measured and ruled out in the same session (Cloud Forest, same harness):
 - **Rain planes** (15–17 draws everywhere it rains) are overlapping transparent sheets with
   per-sheet UV transforms: not mergeable.
 - Remaining wall cost: the fading chunks' 36 draws (per-chunk transparent clones).
+
+## 22 Nov 2026: town houses and NPC farm plots drawn as merged batches
+
+A main-pass draw census in town (headless, fresh world outside the temple) found the largest
+draw source was nameless: `Group > Mesh`, 111–549 draws per main pass depending on the camera
+heading. Those are authored house faces (`HousePieceGen.buildGroupFromPiece`): every wall,
+roof, porch and tunnel quad is its own 6-vertex mesh with its own geometry, ~1,070 across
+town's house groups, sharing only 3–5 materials per house. Looking at the NPC farm plots
+(`npc-farm-plots.js`), their per-tile soil, trench and water meshes were 339 of 517 draws.
+
+`FarmTileRenderBatches` (render scope `farm-tile-batches`) now also merges, outside wilderness
+zones, the children tagged `hobunjiStaticBatchable` of scene-level groups tagged
+`hobunjiStaticBatchGroup`, per 8×8 cell and render state. House faces and plot soil, trench
+and water tiles carry the tags (water is transparent, so it also sets
+`hobunjiStaticBatchFlat`: tiles that never overlap can share one draw). These batches are
+render proxies only, with no terrain tags, so the held/x-ray classifiers see what they saw
+for the sources. Each batch sits at its members' centroid for Three's sort. A group's member
+list is cached while its children, their materials and geometries, and the group's own
+transform are unchanged; a full rescan, including the geometry/matrix signature, runs at
+least every second. Tagged batches set `geometryAutoLODExclude`: opt-in AutoLOD never touched
+the 2-triangle sources (below its 96-triangle floor) and must not decimate their merge. Signatures now include attribute
+identity, so a replaced attribute at version 0 counts as a change.
+
+Measured headless (480×320, same save, batches on vs off in the same session): main-pass
+draws −151 at the spawn view, −56 to −669 across four headings (1,182 → 513 facing the houses),
+−289 facing the plots (531 → 242). 1,331 sources become 41 batches. Raw same-task renders,
+tiles vs batches: 0–1 px differ in house views; 25–32 px of 129,600 (maxd ~30) seam speckles on
+the plots, from vertex rounding where adjacent tiles meet. One view showed ~770 px, all in
+the player's portrait: the first raw render after a game frame differs there from every
+later one (tiles vs tiles too), and with the player hidden tiles vs batches is 0 px.
+Measurement trap for raw-render parity checks: discard the first render after a frame. Whole
+profile at the spawn view (30 s, A/B on the same save): 219 → 186 ms a frame in software GL,
+world render JS 19.4 → 15.3 ms a frame, with the scope's own cost 0.2 → 0.7 ms (the 1 s full
+rescans run every ~5th frame at this frame rate, so the rescan share is smaller on a device). Not yet measured on a device; the
+draw counts are what should carry over to a draw-call-bound GPU like the GTX 1060. A/B:
+Settings → Render optimizations → "Merge farm ground tiles" (also covers these groups),
+`FarmTileRenderBatches.setEnabled(false)`. `snapshot()` reports `groupFullScans` /
+`groupCachedScans`.
+
+Not done: the remaining plot draws are crops (per-crop materials, and crops sway through
+frame hooks, so they stay unbatched). The first house builder (`_buildFaceMeshes`) emits
+faces without UVs and is not tagged.
 
 ## 22 Nov 2026: incremental NPC combat resource rings
 
@@ -393,6 +507,16 @@ replay cull cannot drop them outside a replay's scissor (32 tree-batch draws sho
 x-ray shell replays alone), and the per-frame regroup costs CPU. `WildernessTreeInstancer` is
 now off by default under a new opt-in key (benchmark windows had persisted the old key as on);
 chunk-local batches with tight bounds are the version to try next (`treeInstancingOn`).
+
+**24 Nov follow-up — spatial instancing experiment:** the optional tree scope now groups
+by 8×8 world cells as well as variant/render state. Existing instance bounds give each
+cell a separate camera/replay cull decision. Weakly cached grouping keys eliminate repeated
+string construction for unchanged parts; inactive buffers release source references,
+expire after 30 render frames, and are capped at 64. Negative transforms and child-bearing
+source meshes stay unbatched. Pixel Probe exposes cells, grouping-key hits, uploads and
+retired buffers. Real Three.js fixtures exercise actual view culling and source restoration.
+Still off by default until a device A/B proves it faster; no new FPS claim.
+Audit: all five initial CI workflows passed. Refresh drawn tree world transforms before the first render after streaming; fail open for custom shader/uncullable/group-order members; guard duplicate discoveries and restore originals on partial setup failure. Rebased after the popup optimization merge, retaining both log entries.
 
 ## 20 Nov 2026: procedural wilderness trees drawn instanced
 
@@ -2110,3 +2234,196 @@ Ranked roughly by how much the numbers say they matter. None of these were the "
 - Exhausted Stamina and the orange Health-risk overlay each combine nine dashes into one indexed mesh. The batch preserves disconnected dash geometry, per-dash elevation, material and snow/slush projection. This saves eight meshes and eight world-pass submissions per visible dashed arc. Arc geometry writes its final height during construction.
 - Affliction pulses update only the three possible resource groups instead of visiting the descendant meshes every frame. The ring fixture verifies projection binding, open gaps, pulse timing, and disposal. Pixel Probe shows dash batches and mesh allocations avoided. Real-device frame time has yet to be measured.
 - A headless Three.js r128 WebGL comparison confirmed pixel-for-pixel parity in three workloads, including two overlapping actors and a simulated snow lift. World-pass submission counts for the ring fixture were 35 → 27 (one dashed arc), 44 → 28 (two), and 86 → 54 (four). Triangle counts matched.
+
+## 23 Nov 2026: Kanthic engraving through-wall and performance regression
+
+The separate 2D glyph darkness exemption could not sample the actual world depth and approximated it using per-wall raycasts, projected triangles and platform silhouettes. Replace it with the existing lighting canvas as a reusable GPU texture plus a depth-tested redraw of the occupied room or shaft's authored glyph meshes. The room system supplies distinct room/shaft IDs; unowned corridors are not one shared glow region. Cache discovery and proxies, hide inactive emissive meshes during world presentation, upload lighting only on a new paint, and restore visibility on frame exit. Pixel Probe exposes region, candidates, depth passes, texture uploads and errors. Real-device FPS and rendered visual parity are not yet measured.
+
+### Kanthic audit follow-up
+
+CI identified an obsolete exact-source assertion in the shaft firelight fixture. Bounds-based selection and local GPU clipping address wide panels across room boundaries and tall shaft walls. Lighting uploads are capped at 524,288 pixels (at most 2 MiB of RGBA per paint); this is a transfer bound, not measured FPS. Room bounds are cached at session creation and native room registration. The original DOM lighting placement is restored when the effect sleeps or during transition fades.
+
+Further render-order audit: the lighting compositor's presentation-surface repair can reset the WebGL target. Paint before any world depth pass. Disable all three clear flags while replaying PNG silhouettes (a THREE.Color scene background can force a clear even when autoClear=false). Added real alpha-cutout sprite regression coverage for both direct and offscreen depth paths. Cache native room extents lazily; reject camera-offscreen glyphs before uploading the darkness texture; observe pending atlas promises and use a five-second fallback discovery interval rather than 1.6 seconds. These are correctness/operation-count changes, not a measured mobile speedup.
+
+## 23 Nov 2026: companion combat and targeting audit
+
+- Friendly target decisions retain the existing 140 ms cadence and validate roster membership immediately. Beastmaster pets now reuse their proximity decision for the same interval, with immediate invalidation on a lost, removed, or out-of-range target. Wild scent selection no longer creates roster arrays or writes diagnostic objects on every frame; shoulder passengers and mounts are excluded as independent marked targets. Sicced is resolved once per companion update, not separately for each follower.
+- Attack geometry is evaluated only when a move could commit, with a short 100 ms per-target lease; the fallback bite validates current geometry on impact. Blocked pursuit reuses the existing delayed tile detour. Furious move-cost normalization is skipped when the animal has no Furious Stamina. Ambient scanning/idle checks are skipped while combat owns focus. Ground-follow diagnostics are reused. Owner-speed lookup skips redundant unmounted alchemy/global reads and no longer copies the tracked roster every update.
+- These are source-level operation reductions; mobile FPS and real-world latency remain unmeasured. The short decision leases do not throttle movement or committed attack animations. Regression fixtures cover target and terrain-lease invalidation.
+
+- Animal pounce/Guard Charge substep collision now selects `Combat.meleeHit`'s scratch probe mode, with one reused options object per committed lunge, rather than allocating diagnostic collider geometry for every candidate and substep. Rear Kick's approach also uses scratch probes; its actual strike still publishes the normal diagnostic. Drenkirra pellet candidates now distinguish Beastmaster pets from player companions and skip unavailable actors at contact. Enemy scent selection avoids copied rosters and redundant diagnostic writes. The cached Beastmaster fixture counts one roster enumeration across eight updates, then verifies immediate invalidation on removal.
+
+## 23 Nov 2026: opaque furniture render proxies and projectile resource reuse
+
+The wilderness prop batcher merges compatible authored leaf parts within one
+placement even when their materials are separate. A shared texture must be
+proven opaque at native resolution before a transparent source is eligible.
+The proof is sliced over timer turns, cached by image and fails closed.
+Sources keep independent materials; only proxies own clones. The settled
+fast path revalidates live material keys, and liquids, unsupported materials
+and partially transparent images stay on the original path. Existing
+ZonePropRenderBatches A/B switch and draw counts apply.
+
+Ranged projectiles retain up to 16 retired PNG materials, 16 exact-dimension
+geometries and 16 trail meshes. Trail draw ranges reset on reuse; active
+projectiles never share mutable materials. Per-shot textures remain separately
+owned and disposed. Ranged debug snapshots report reuse and pool counts.
+Actual device frame times and visual parity remain unmeasured.
+
+### Review follow-up
+
+CI caught the versioned enemy editor's transitive preview/app loader chain.
+Both loader tokens are now bumped. Furniture settled reuse compares scalar
+material state and leaf flags directly rather than rebuilding strings/owner
+keys every frame; attribute identity changes invalidate cached geometry.
+The existing Three.js integration fixture now exercises creation, restoration,
+material changes and attribute replacement. Retired projectile texture
+callbacks cannot mutate dead shots; trail buffers/materials are leased to
+fresh mesh wrappers so scene-specific object metadata is never recycled.
+Pixel Probe exposes resource-pool and prop-batch statistics on mobile.
+
+## 24 Nov 2026: world popup and emoji allocation churn
+
+The remaining icon-effect path created and disposed a separate shader material
+for every coin/ray and a fresh GPU texture per completed reaction, although
+Scratchbones already cached its immutable tinted canvases. WorldPopupText now
+owns a per-Three-namespace, bounded LRU of 32 immutable artwork textures with
+one live reference per event, plus 32 retired icon materials and eight retired
+quad geometries. The PNG factory and cutoff remain canonical; mutable canvas
+consumers opt out by default. Scene eviction cancels pending loads and returns
+leases without destroying resources still used by other scenes. No new frame
+loop; no active material or geometry is shared across events. Popup updates
+skip the camera entirely when idle and sort each active row list once per
+root/list kind until a removal invalidates it. Counters are exposed in the
+existing WorldPopupText and emoji debug snapshots.
+
+The earlier headless lunge-stamp result (15 Nov) found no meaningful frame
+cost from ring geometry allocation. That optimization is not pursued here;
+the large game.js owner also exceeds the connected file retrieval limit.
+No measured FPS or shader-rebuild reduction is claimed until a device A/B.
+
+Follow-up: lazy row-layout allocation leaves emoji-only and damage-only frames untouched; partial icon construction failures release already acquired leases. Added overlapping scene/cache eviction and row compaction coverage, and an on-demand pool-stat button in the existing emoji debug UI. Rebased onto latest main, preserving intervening changes.
+
+## 24 Nov 2026: CPU trace follow-up — portrait readbacks, X-ray, AutoLOD, HUD and flails
+
+Pre-#2142 trace (271b1fca, ~5.8 s, 46 game frames): ~818 ms sampled in getImageData, ~906 ms inclusive in held-overlay replay, ~722 ms inclusive in shell X-ray, ~212 ms AutoLOD self time. Browser style recalc includes ~50 ms spikes involving 5,209 nodes; the trace does not establish which mutation caused the whole-tree invalidation.
+
+- Beard/hood scratch contexts request willReadFrequently on the first context acquisition. A bounded shared cache stores pristine unwarped beard readbacks, and a separate bounded cache reuses exact negotiated still layers (actual resolved art/tint identity, transform, static deformation, masks, stretch and cone policy). Animated hoods still negotiate their actual current pixels; emote-deformed beards, pixel dyes, mutable/custom art and custom composers are conservative fallbacks. No pose quantization or new redraw timer. Pristine input is read-only and refused edges write a separate ImageData.
+- X-ray protected/tint cover queries now call the canonical surface composer's cover-only classifier rather than recomputing terrain/floor/path ancestry; ordinary scene groups bypass drawable-only scissor checks. Depth/material/visibility rules and all render passes remain.
+- AutoLOD builds active-scene candidates once per world frame and memoizes effective ancestor visibility per native draw; live geometry signatures are still validated on each eligible draw. No visual LOD is applied to hidden or detached scene objects.
+- Keyboard HUD skips unchanged HTML; Gear fit ignores only its own completed font-floor removal notifications, not external re-additions. These remove identifiable DOM writes, not proof of the trace's whole-tree CSS cost.
+- Flail physics remains at 240 Hz substeps except exact zero-torque/zero-velocity equilibrium; share one inverse holder matrix between connector and head; repeated identical rendered camera/carrier poses reuse the rope facing. Pixel Probe reports the readback, LOD, HUD and flail counters. Real-device frame-time and rendered-pixel A/B measurement remains pending.
+
+Audit follow-up: first full CI run passed 1,417/1,418 fast tests and all eight other workflows; the flail depth fixture lacked Quaternion support. Extended it to exercise actual cache hit/miss behavior and unconditional leaf matrix refresh. AutoLOD no longer snapshots candidate membership across native draws: a scene move during a render hook could make the list stale. It retains shared, per-draw ancestor visibility checks and live source validation, and avoids allocating a candidate list each frame. The HUD always rechecks the canonical deduplicated sprite request, including same-label item changes. A no-op hood stretch transfers its exact current readback to negotiation, avoiding a redundant read; a real warp deliberately rereads the canvas to preserve browser alpha-roundtrip behavior. Closed Gear observer batches now avoid filtering allocations and the real self-removal path has regression coverage.
+
+Additional cache audit: logical portrait dimensions and layer size are mutable via the authoring config, and resolving multiple tint canvases can evict earlier entries. Keys now include logical dimensions and capture the exact resolved immutable tint and transform used for each layer, with noncanonical or invalid inputs falling back. The shared result key includes the cutout API identity. Added no-op versus warped hood readback parity and identical-label HUD item replacement coverage.
+
+Final targeted audit: isolated executions of the real AutoLOD, Gear cadence, flail depth/facing, HUD dedup and beard matte/readback fixtures passed. Added an actual renderer-block cache integration fixture for separate portrait targets, exact still hits, dynamic bypass, immutable retained pixels, policy and dimension changes, tint changes, editor and pixel-dye bypass, context policy, and bounded eviction. Gear self-removal markers now last only through the next observer delivery and no filtering array is built unless such a release actually occurred. Mutable mask overrides and invalid/unserializable static deformation or policy values use the original uncached path.
+
+## 24 Nov 2026: Cloud Forest dense wall distance LOD (triangles, not draws)
+
+**Where the frame goes (headless, SwiftShader).** A CPU profile of town and the Southern Cloud
+Forest put only 12–20% of frame time in JS; ~80% was native `(program)` time. Wrapping every
+WebGL call showed tiny call overhead (no `readPixels`/`getError` stalls), so the cost is
+rasterising and vertex work. The Cloud Forest main pass drew ~0.9–1.24 M triangles at 360×240,
+and a per-mesh census put ~87% of the in-view triangles in the dense shadewood wall
+(`AuthoredCloudForestDenseChunk_*`). Hiding the wall raised headless fps 5.07 → 7.13 (+40%). This
+was the "dense-wall triangles / tree LOD" lead left open in the 20 Nov entry. (Town's equivalent
+is `Roughbrick1.glb` instancing, ~570 k triangles, and HousePieceGen "Surface roots", ~200 k:
+hiding them gave +23% / +30%. Not addressed here.)
+
+**What a wall tree is.** A procedural shadewood is 4,218 triangles: bark (trunk + 9 roots + 15
+canopy branches merged) 2,592, vines 1,500, climb branch 96, leaf cards 30. The baked
+`shadewood_0N_lod-decimate-90.glb` LODs (661 triangles) are not used, because tree assets default
+to procedural mode and their materials and shapes differ from the procedural trees.
+
+**Change.**
+- `FoliageGenerator.liteTreeGeometry(fullPartGeometry)` (foliage-generator.js) builds, once per
+  shared variant, a far twin from the same seed and random sequence. The spines, branch tips,
+  roots, vine wraps and leaf-card positions are therefore identical. Only tube emission changes:
+  the trunk is unchanged; roots, canopy branches and the climb branch keep every other ring (5/4
+  sides); vines keep their sides and every other ring, lifted by 1/cos(half the chord angle) so
+  straight segments do not cut into the trunk. Full bark 2,592 → 864, vines 1,500 → 750, so a far
+  tree is ~1,670 triangles. Bounds match within ~0.07 units. Leaf cards are reused as they are.
+- `dense-forest-wall-batches.js` (the existing render-only scope) classifies each wall tree by
+  its own base distance from the camera (default 12 tiles, 1.5-tile hysteresis). Near and far
+  trees of a part go to separate batches, so far trees use the twin with the chunk's own instance
+  matrices, live material and layers (shell outline). Fading chunks' transparent parts are never
+  merged: an all-far part swaps its geometry in place for the render (no extra draw), and a
+  straddling one splits into its own near/far batches. Chunk meshes keep full geometry for
+  gameplay.
+- `border-terrain.js` instanced every mesh of each wall tree, including the climb branch that
+  the tree's own roll had hidden, and every level of a baked tree's `THREE.LOD`. It now
+  instances only drawn meshes (level 0 of a LOD). It also builds the twins at zone build time.
+
+**Visual checks (1280×720, same camera, LOD off vs 8 vs 12 tiles).**
+- The first twin dropped roots and vines and used 3-sided vines. At 8 tiles that visibly removed
+  root flares and the green vines.
+- Coarse vines then showed as black zigzags: chords buried the green tube under the trunk's
+  noisy surface, leaving only its shell outline. A 6-sided trunk did the same, because its noise
+  is sampled at different angles.
+- Both fixed (trunk unchanged, vines lifted). At 12 tiles, off and LOD frames are
+  indistinguishable by eye; pixel differences (6.3–8.0% > 24 levels) are within the off-vs-off
+  animation/rain noise (7.2–9.2%). 8 tiles still showed small differences, so 12 is the default.
+
+**Measured (headless, same spawn view, 360×240, alternating 12 s windows):** main-pass triangles
+895 k → 601 k (−33%; −40% from another spawn, 1.24 M → 748 k); all passes 1.09 M → 0.80 M; fps
+6.72 → 7.30 average over three pairs (+8.6%; noisy); draws +12 to +18 (near/far splits); 0 batch
+rebuilds while standing still. Walking the same 12 s route (south then back): frames 74/70 →
+76/79; batch rebuilds ~0.4 → ~3 per frame (small matrix copies as trees cross the boundary);
+instance-buffer allocations 23 → 35–45, mostly new per-chunk batches for corridor-edge fading
+chunks. Tried and removed: keeping emptied LOD batches hidden for 30 frames and 1.5× capacity
+headroom (allocations 35–49 with them, no measurable change). **Not yet measured on a device.** A/B: Settings → Render
+optimizations → "Lighter far Cloud Forest wall trees", benchmark variant `denseWallLodOff`,
+`DenseForestWallBatches.setLodEnabled(false)` / `setLodDistance(n)`; `snapshot()` reports
+far/near trees, triangles avoided, in-place swaps and buffer allocations.
+
+## 24 Nov 2026: surface-growth root/vine tubes drop redundant rings
+
+**Found while profiling the Cloud Forest wall LOD.** A per-mesh triangle census of town put
+~200 k in-view triangles in 18 "Surface roots" meshes (the temple's Corner Fill roots: radius
+0.2, length 12, up to 48 strands per recognized surface; single meshes up to 43,820 triangles).
+Hiding them raised headless town fps 2.93 → 3.80 (+30%). Strand tracing places a ring every
+~3× radius (Corner Fill: every 0.14 units, up to 128 rings) so that paths hug walls, seams and
+corners. On flat runs, most of those rings add no shape.
+
+**Change.** `simplifySurfaceStrandRings` (foliage-generator.js) is a final pass on every
+surface-growth tube (houses, temple, caves, furniture), after `varySurfaceStrandRadii` and the
+shrinkwrap. Douglas–Peucker on ring centres drops a ring only when the straight tube between its
+kept neighbours stays within 12% of the strand radius of its centre and its radius, with at most
+12 ring gaps per segment. Kept rings keep their exact shrinkwrapped vertices and PNG stretch UVs,
+so strands cannot sink further than the tolerance and their texture still runs 0..1. Ends and
+corners are kept. Build stats report `strandRingsBefore/After`.
+
+**Measured (headless, fresh world, town spawn, main vs branch in separate sessions):**
+surface-growth triangles 217 k → 106 k (−51%; rings 22,281 → 11,157); all-pass triangles
+1.62 M → 1.29 M; town fps 2.95 → 3.47 average over three 12 s windows (+18%). Screenshots of the
+temple's roots and vines are indistinguishable at 1280×720. Generation-time only: no per-frame
+cost, and the same savings apply to cave and furniture growth. **Not yet measured on a device.**
+
+### Same pass: far brick walls and paths draw a 12-triangle brick
+
+`Roughbrick1.glb` is a 70-triangle faceted rock (37 corners, flat-shaded) that WallBuilder
+instances for house walls, gables and path chunks: ~8,000 bricks and ~570 k triangles in the town
+view (hiding them: +23% headless fps). AutoLOD skips it (below its 96-triangle floor), and a
+per-brick decimation does not pay for itself.
+
+New render scope `instanced-brick-lod` (`js/instanced-brick-lod.js`, order 450). WallBuilder tags
+its default-brick InstancedMeshes; logs, stacks and custom GLBs are untouched. The far brick is the
+**octant hull** of the same geometry: for each of the 8 box-corner directions, the source corner
+reaching furthest that way. These are joined as 12 outward-wound, flat-shaded triangles and
+stretched per axis to the brick's exact bounding box (volume within ~5% of the source). uv, when a
+tint added projected uvs, is copied from the matching source corner, and the hull is rebuilt if
+the source's attributes change. Selection is per mesh, since WallBuilder groups bricks per wall or
+path chunk. A mesh whose InstancedMeshBounds sphere edge is ≥ 14 tiles from the camera swaps
+geometry for the world render only and is restored afterwards: no extra draws, no buffer copies.
+Matrices, count, material, layers and raycasts are unchanged.
+
+**Measured (headless town, same session, toggled, with the roots fix above):** 6,061 of ~6,700
+in-view bricks drew the hull; main pass 697 k → 526 k triangles (−25%), all passes 1.29 M →
+1.11 M; fps 3.45 → 3.58 (+4%, three alternating 12 s windows each, noisy). At 8 tiles: 499 k,
+3.83 fps. At 1280×720, distant walls keep the same courses, sizes and outlines; far bricks shade
+slightly more evenly (fewer facets), visible only at 2× zoom. Default 14. **Not yet measured on a
+device.** A/B: Settings → Render optimizations → "Lighter far brick walls and paths", benchmark
+variant `brickLodOff`, `InstancedBrickLod.setEnabled(false)` / `setDistance(n)`; Pixel Probe shows
+far meshes, instances and triangles avoided.

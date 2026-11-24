@@ -394,8 +394,19 @@ const unmarked = CO.getModifiers(companion, makeEntity());
 assert.equal(unmarked.damage, 1.3, '25. Whistle alone off the Sicced target');
 const scaled = CO.scaleHit(companion, a, 10, { afflictionBonuses: { bleedingHealth: 1 } });
 assert.ok(Math.abs(scaled.amount - 10 * both.damage) < 1e-9);
-assert.ok(Math.abs(scaled.amount * scaled.opts.afflictionBonuses.bleedingHealth - 10 * both.affliction) < 1e-9, '25. affliction buildup scaled through the shared hit path');
+assert.ok(Math.abs(scaled.opts.afflictionBonuses.bleedingHealth - both.affliction) < 1e-9, '25. independent Attack Power uses the full stacked affliction multiplier');
+assert.ok(siccedOnly.knockback > 1, 'Sicced also empowers the defensive Guard Charge impulse');
 assert.equal(CO.getModifiers(makeEntity({ isCompanion: false }), a).damage, 1, 'wild attackers are never empowered');
+a.areaId = 'forest';
+b.health = 30; b.areaId = 'mine';
+CAE.hit(CAE.prepare({ abilityId: 'swingCombo', comboFinisher: true }), { target: b, actualDamage: 1 });
+assert.equal(ES.getCurrentSiccedTarget('forest'), a, 'newest mark elsewhere cannot hide a local mark');
+assert.equal(ES.getCurrentSiccedTarget('mine'), b, 'local mark is still available in its own area');
+b._denHidden = true;
+assert.equal(ES.getCurrentSiccedTarget('mine'), null, 'hidden mark cannot hijack targeting');
+a._downed = true;
+assert.equal(ES.getCurrentSiccedTarget('forest'), null, 'downed mark cannot hijack targeting');
+assert.equal(ES.getCompanionTargetPowerMultiplier(companion, a), 1, 'invalid mark cannot empower an attack');
 
 // ── 22-24: Attunement ─────────────────────────────────────────────
 reset();

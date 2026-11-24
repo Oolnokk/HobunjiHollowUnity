@@ -53,6 +53,18 @@
       Math.hypot(enemy.x - enemy.homeX, enemy.y - enemy.homeY) <= leash;
   }
 
+  const beastmasterLeases = new WeakMap(); // Each pet owns a short target-decision lease; per-frame attack and movement remain live.
+  function chooseBeastmasterTargetCached(enemyPet, master, players, companions, areaId, alertRangePx) {
+    if (!enemyPet?.banditCompanion || !master || !(alertRangePx > 0)) return null;
+    const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    const lease = beastmasterLeases.get(enemyPet);
+    const incumbent = enemyPet._beastmasterCombatTarget;
+    const incumbentPresent = !incumbent || players?.includes?.(incumbent) || ((companions?.has?.(incumbent) || companions?.includes?.(incumbent)) && groundPet(incumbent, areaId, players));
+    if (lease && lease.master === master && lease.area === areaId && lease.radius === alertRangePx && now < lease.until && incumbentPresent && (!incumbent || (viable(incumbent, areaId) && Math.hypot(incumbent.x - master.x, incumbent.y - master.y) <= alertRangePx))) return incumbent || null;
+    beastmasterLeases.set(enemyPet, { master, area: areaId, radius: alertRangePx, until: now + 140 });
+    return chooseBeastmasterTarget(enemyPet, master, players, companions, areaId, alertRangePx);
+  }
+
   function chooseBeastmasterTarget(enemyPet, master, players, companions, areaId, alertRangePx) {
     if (!enemyPet?.banditCompanion || !master || !(alertRangePx > 0)) return null;
     let best = null; // Nearest player-side combatant inside the Beastmaster's alert circle.
@@ -86,7 +98,7 @@
   }
 
   window.EnemyPetTargeting = Object.freeze({
-    viable, groundPet, chooseAggroTarget, shouldRetaliateToPetHit, chooseBeastmasterTarget,
+    viable, groundPet, chooseAggroTarget, shouldRetaliateToPetHit, chooseBeastmasterTarget, chooseBeastmasterTargetCached,
     snapshot: enemy => ({
       target: enemy?.targetPlayer?.id || enemy?.targetPlayer?.creatureKey || null,
       targetIsPet: !!enemy?.targetPlayer?.isCompanion && !enemy?.targetPlayer?.banditCompanion,

@@ -202,6 +202,15 @@ const reverse = simulate(body(0, -8), 1, 0.5, 60, 0); // Mirrored attacks produc
 assert(Math.abs(reverse.direction.x + free.direction.x) < 1e-10);
 const resting = simulate(body(), 1, 2); // Hanging motionless is a stable equilibrium.
 assert.deepEqual(resting, body());
+const sleeping=body(); sleeping.equilibriumSkips=0;
+api.stepPendulum(sleeping,{x:0,y:0,z:0},1,1/60);
+assert.deepEqual(sleeping.direction,body().direction);
+assert.deepEqual(sleeping.angularVelocity,body().angularVelocity);
+assert(sleeping.equilibriumSkips>0,'exact equilibrium avoids physical substeps');
+const awake=body(); awake.equilibriumSkips=0;
+api.stepPendulum(awake,{x:.000001,y:0,z:0},1,1/60);
+assert.equal(awake.equilibriumSkips,0,'even the smallest nonzero lateral torque must integrate');
+assert.notEqual(awake.angularVelocity.z,0);
 const short = body(0.4), long = body(0.4); // Torque/inertia produces acceleration proportional to 1 / lever length.
 pendulum(short, still, 1, 1 / 240, 9.81, 0);
 pendulum(long, still, 2, 1 / 240, 9.81, 0);

@@ -36,8 +36,8 @@
     { "id": "route_724vf", "label": "Route 4", "nodes": [[2, 6], [2, 9]] }
   ],
   "npcStations": [
-    { "id": "station_jayis", "label": "Kaboku's Dinner Seat", "col": 2, "row": 9, "rotY": 270, "pose": "sit", "furnitureKey": "chairSimpleFurniture", "seatIndex": 0, "toolKey": "", "toolIntervalSec": 0, "toolAnimStyle": "" },
-    { "id": "station_njyek", "label": "Kinami's Dinner Seat", "col": 8, "row": 9, "rotY": 90, "pose": "sit", "furnitureKey": "chairSimpleFurniture", "seatIndex": 0, "toolKey": "", "toolIntervalSec": 0, "toolAnimStyle": "" },
+    { "id": "station_jayis", "sourceFurnitureId": "fmqf8na7z6qev", "furnitureId": "fmqf8na7z6qev", "label": "Kaboku's Dinner Seat", "col": 2, "row": 9, "rotY": 270, "pose": "sit", "furnitureKey": "chairSimpleFurniture", "seatIndex": 0, "toolKey": "", "toolIntervalSec": 0, "toolAnimStyle": "" },
+    { "id": "station_njyek", "sourceFurnitureId": "fmqf8l692av3v", "furnitureId": "fmqf8l692av3v", "label": "Kinami's Dinner Seat", "col": 8, "row": 9, "rotY": 90, "pose": "sit", "furnitureKey": "chairSimpleFurniture", "seatIndex": 0, "toolKey": "", "toolIntervalSec": 0, "toolAnimStyle": "" },
     { "id": "station_di22s", "label": "Kaboku's Bed", "col": 7, "row": 2, "rotY": 0, "pose": "lie", "toolKey": "", "toolIntervalSec": 0, "toolAnimStyle": "" },
     { "id": "station_20tpy", "label": "Kinami's Bed", "col": 8, "row": 2, "rotY": 0, "pose": "lie", "toolKey": "", "toolIntervalSec": 0, "toolAnimStyle": "" }
   ],

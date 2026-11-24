@@ -3,7 +3,7 @@
   // HUD action icons and item sprites, in their original parser order.
   const scriptUrls = [
     "js/tool-icon-render.js?v=20261119hce29781",
-    "js/sprite-recolor.js?v=20261122mushroomAudit2",
+    "js/sprite-recolor.js?v=20261123companionAudit1",
     "js/object-sprite-catalog.js?v=20261114potionAudit2"
   ]; // Cache versions are owned by this feature area, rather than the shared index page.
   if (document.readyState !== 'loading') throw new Error('Classic script group must run during parsing');

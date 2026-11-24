@@ -123,13 +123,17 @@
     const genome = furHood.genotype || {}; // Source genotype determines whether each natural dye gene exists and is expressed.
     const ids = window.CreatureGenetics?.PATTERN_DEFS?.[normalizeKind(furHood.kind)] || []; // Official animal-gene order is the stable color priority.
     const appearance = Array.isArray(furHood.appearance?.patterns) ? furHood.appearance.patterns : [];
-    const known = [...new Set([...ids, ...appearance.map(g => g?.id), ...Object.keys(genome).filter(id => id !== 'base' && typeof genome[id]?.color === 'string'), ...Object.keys(entryForKind(furHood.kind)?.patterns || {})])].filter(Boolean); // Saved genotype works before genetics registry initialization.
+    const known = [...new Set([...ids, ...appearance.map(g => g?.id), ...Object.keys(genome).filter(id => id !== 'base' && id !== 'secondary' && typeof genome[id]?.color === 'string'), ...Object.keys(entryForKind(furHood.kind)?.patterns || {})])].filter(Boolean); // Saved genotype works before genetics registry initialization.
     return known.flatMap(id => {
+      if (id === 'base' || id === 'secondary') return []; // Pigment loci are not expressed markings.
       const gene = genome[id], trait = appearance.find(x => x?.id === id); // Old visual summaries are consulted only when genotype is missing.
       if (gene) {
         if (gene.enabled === false || (gene.copies != null && Number(gene.copies) <= 0)) return [];
       } else if (!trait?.enabled) return [];
-      const color = colorHex(gene?.color || trait?.color);
+      const kind = normalizeKind(furHood.kind); // The shared gene wins over obsolete per-mask mirrors in modern hides.
+      const primary = (kind === 'grehlr' && id === 'beard') || (kind === 'drenkirra' && id === 'bodystripes');
+      const shared = genome.secondary?.color ? (primary ? genome.base?.color : genome.secondary.color) : null;
+      const color = colorHex(shared || gene?.color || trait?.color);
       return color ? [{ geneId: id, colorHex: color }] : [];
     });
   }

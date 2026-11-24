@@ -185,12 +185,13 @@ pass and returns a restore function; restores run in reverse order in `finally`.
 
 | Order | id | Owner | Effect |
 |---|---|---|---|
-| 100 | `farm-tile-batches` | farm-tile-render-batches.js | farm ground tiles → 8×8 merged batches |
+| 100 | `farm-tile-batches` | farm-tile-render-batches.js | farm ground tiles → 8×8 merged batches; outside wilderness zones also children tagged `hobunjiStaticBatchable` of scene-level groups tagged `hobunjiStaticBatchGroup` (town NPC farm plots, authored house faces) → merged per 8×8 cell + render state, as render proxies with no terrain tags |
 | 200 | `zone-prop-batches` | zone-prop-render-batches.js | still wilderness props (tents, camp furniture, berries, herbs, totems, nests, ore-rock stones) → merged per 8×8 cell + material |
-| 250 | `wilderness-tree-instancing` | wilderness-tree-instancer.js | **off by default** (a net loss on a GTX 1060: corridor-wide batches defeat frustum/replay culling). Opted in: drawn, non-fading procedural trees/bushes → one InstancedMesh per shared variant part |
-| 270 | `dense-forest-wall-batches` | dense-forest-wall-batches.js | Cloud Forest dense wall: opaque, on-camera chunk parts → one InstancedMesh per part across chunks (background scenery, never in a replay) |
+| 250 | `wilderness-tree-instancing` | wilderness-tree-instancer.js | **off by default** pending device A/B. Opted in: drawn, non-fading procedural trees/bushes → one InstancedMesh per shared variant part per 8×8 cell; tracked by camera and replay bounds |
+| 270 | `dense-forest-wall-batches` | dense-forest-wall-batches.js | Cloud Forest dense wall: opaque, on-camera chunk parts → one InstancedMesh per part across chunks (background scenery, never in a replay); trees ≥ 12 tiles from the camera draw their roots, branches and vines with `FoliageGenerator.liteTreeGeometry` twins (same spines, fewer rings/sides; a fading part is never merged: swapped in place when all its trees are far) |
 | 300 | `npc-view-cull` | npc-view-frustum-cull.js | off-camera NPC walkers hidden |
 | 400 | `grass-chunks` | grass-billboard-render-chunks.js | farm/town grass → spatial chunks |
+| 450 | `instanced-brick-lod` | instanced-brick-lod.js | WallBuilder default-brick (`Roughbrick1.glb`) meshes whose nearest brick is ≥ 14 tiles away swap to a 12-triangle octant hull of the brick (same bounds, flat-shaded, uv copied), restored after the frame |
 | 500 | `instanced-view-cull` | instanced-mesh-view-cull.js | off-camera instanced walls/grass hidden |
 | 600 | `wilderness-distance-cull` | wilderness-distance-cull.js | far static wilderness geometry hidden |
 
@@ -270,7 +271,7 @@ Rules:
 | Pose/offset something only while drawing | `RenderHooks.register({ scope: 'frame', … })` |
 | Hide or merge things only while drawing | `WorldRenderPipeline.registerRenderScope(...)` |
 | Add a pass | Add it in `renderOutlinedPasses`/`renderDirectPasses` with a `pass('name')` label and a PerfProfiler bucket; add a layer to the registry; update §1 |
-| Change wilderness tree culling/fade | `js/zone-vegetation-cull.js` (corridor), `js/zone-tree-fade.js` (animation). A tree whose corridor-edge fade has settled at opacity 0 (`ZoneTreeFade.isFadedOut`) is left undrawn until its target rises (A/B `ZoneVegetationCull.setHideFadedOut(false)`); the corridor hysteresis still counts it as in view. `js/wilderness-tree-instancer.js` can draw opaque trees as instanced batches per shared variant part, but it is off by default (net loss on device; needs chunk-local batches first): `WildernessTreeInstancer.setEnabled(true)`, benchmark variant `treeInstancingOn` |
+| Change wilderness tree culling/fade | `js/zone-vegetation-cull.js` (corridor), `js/zone-tree-fade.js` (animation). A tree whose corridor-edge fade has settled at opacity 0 (`ZoneTreeFade.isFadedOut`) is left undrawn until its target rises (A/B `ZoneVegetationCull.setHideFadedOut(false)`); the corridor hysteresis still counts it as in view. `js/wilderness-tree-instancer.js` can draw opaque trees as instanced batches per shared variant part, within spatial 8×8 cells, but it remains off by default pending verification against the old corridor-wide net loss: `WildernessTreeInstancer.setEnabled(true)`, benchmark variant `treeInstancingOn` |
 | Draw held items in front of grass/water | `js/held-object-render-order.js` + `js/xray-hierarchy.js` rules |
 | Give NPCs/enemies a visual the player has | §6: enumerate with `CharacterVisuals`, take the character as a parameter, update `CAPABILITIES` |
 | Change how a weapon looks in an enemy's hand | its holder: `weaponMasteryLevel` / `weaponMetalOptions` on the bandit definition |
@@ -350,3 +351,13 @@ the held colour overlay. If its material writes no depth and no stencil it is
 skipped in the colourless depth submissions (`hideColorOnlyHeldVfx`). Keep VFX
 that way (`depthWrite: false`, no stencil) unless it must occlude. Every
 separate sprite is a draw call in each colour pass that includes it.
+
+### Kanthic engraving presentation
+
+Kanthic only: after the main scene and (when enabled) mist/shell depth restores, `CloudForestFog` applies the existing lighting canvas as a fullscreen texture without clearing depth, then renders the occupied room/shaft's original additive glyph geometry against the same depth buffer. The DOM lighting canvas is hidden only when already applied on the GPU and restored outside the effect. Other traditions retain their existing Canvas2D radial illumination. The original scene's glow visibility is restored in the world frame's finally block. No scene-wide depth raycasts, CPU atlas triangle projection or platform silhouette clipping are used for Kanthic.
+
+The two auxiliary draws use the named `KANTHIC_GLYPH_DEPTH` camera layer, so neither is classified as a main world draw by the held-object X-ray replay. The camera layer mask and renderer clear flag are restored even when a depth draw throws.
+
+The Kanthic redraw selects meshes by cached world-space bounds, then clips their fragments against the occupied region's world-space planes. A wide wall may span multiple rooms; a tall shaft panel is not rejected on its center height. Source material clipping state and renderer flags are restored transactionally. Lighting uploads are bounded to 524,288 pixels with a reusable downsample canvas and tracked by paint revision rather than timestamp. The GPU darkness pass sits below the DOM gameplay overlay; during unowned corridors or transition fades the existing DOM darkness path is retained.
+
+Before world rendering, the Kanthic owner prepares the ordinary lighting canvas; its resize-recovery path is not allowed to execute while mainRT's depth is bound. The glyph pass disables all autoClear flags (Color backgrounds otherwise force a clear) and restores them after direct PNG depth replay and glyph drawing. Camera-frustum rejection prevents empty glyph frames from invoking the GPU darkness pass.

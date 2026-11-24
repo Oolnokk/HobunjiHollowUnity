@@ -399,7 +399,7 @@
 
   function resize(pixelW, pixelH) {
     if (!_mainRT) return;
-    const seamOn = !!deps.settings.seamOutlines();
+    const seamOn = !!deps.settings.seamOutlines() && window.OutlineRenderPerformance?.nonShellOutlinesSuppressed !== true; // Retired seam output cannot justify a target switch, clear or full-size ID buffer.
     _mainRT.setSize(pixelW, pixelH);
     // The material-ID buffer stays 1x1 while seam outlines are off.
     _edgeIdRT.setSize(seamOn ? pixelW : 1, seamOn ? pixelH : 1);
@@ -421,9 +421,10 @@
   // Built-in scopes (same order and arguments game.js used to hard-code).
   // The farm's ~1,000 per-tile ground meshes draw as merged 8x8-tile batches
   // (js/farm-tile-render-batches.js); the tiles stay the authority for edits
-  // and raycasts.
+  // and raycasts. Outside zones the same scope merges tagged static groups
+  // (town NPC farm plots, authored house faces).
   registerRenderScope({ id: 'farm-tile-batches', owner: 'farm-tile-render-batches.js', order: 100,
-    suspend: ctx => window.FarmTileRenderBatches?.suspendForRender?.(ctx.scene) });
+    suspend: ctx => window.FarmTileRenderBatches?.suspendForRender?.(ctx.scene, { isZone: ctx.isZone }) });
   // Still wilderness props (tents, totems, herbs, berry bushes, camp
   // furniture, cliff-door caves) draw as merged 8x8-tile batches.
   registerRenderScope({ id: 'zone-prop-batches', owner: 'zone-prop-render-batches.js', order: 200,
@@ -446,6 +447,10 @@
   // instanced meshes are hidden.
   registerRenderScope({ id: 'grass-chunks', owner: 'grass-billboard-render-chunks.js', order: 400,
     suspend: ctx => window.GrassBillboardRenderChunks?.suspendForRender?.(ctx.scene) });
+  // Whole far brick meshes (house walls, path chunks) draw a 12-triangle
+  // octant hull of the default brick instead of its 70 triangles.
+  registerRenderScope({ id: 'instanced-brick-lod', owner: 'instanced-brick-lod.js', order: 450,
+    suspend: ctx => window.InstancedBrickLod?.suspendForRender?.(ctx.scene, ctx.camera) });
   registerRenderScope({ id: 'instanced-view-cull', owner: 'instanced-mesh-view-cull.js', order: 500,
     suspend: ctx => window.InstancedMeshViewCull?.suspendForRender?.(ctx.scene, ctx.camera) });
   // Static wilderness objects outside the vegetation corridor can stay
@@ -525,7 +530,7 @@
     scopeCtx.scene = activeScene; scopeCtx.camera = camera; scopeCtx.isZone = isZone;
     scopeCtx.walkers = deps.npcWalkers; scopeCtx.renderer = renderer; scopeCtx.area = area;
     const outlines = !!deps.settings.outlines();
-    const seamOn = !!deps.settings.seamOutlines();
+    const seamOn = !!deps.settings.seamOutlines() && window.OutlineRenderPerformance?.nonShellOutlinesSuppressed !== true; // Retired seam output cannot justify a target switch, clear or full-size ID buffer.
 
     let captureHookOff = null;
     if (captureArmed && window.RenderHooks?.register) {
@@ -547,10 +552,12 @@
       occlusionFrame.renderer = renderer; occlusionFrame.camera = camera; occlusionFrame.scene = activeScene;
       occlusionFrame.walkers = deps.npcWalkers; occlusionFrame.hostiles = deps.hostileObjects; occlusionFrame.area = area;
       window.ActorRenderOcclusion?.beginFrame?.(occlusionFrame);
+      window.CloudForestFog?.prepareKanthicGlyphFrame?.(activeScene,now,camera); // Hide base-pass glow; only the occupied region receives depth-tested emission.
       if (outlines) renderOutlinedPasses(renderer, camera, activeScene, seamOn, area);
       else renderDirectPasses(renderer, camera, activeScene, area);
     } finally {
       pass('cleanup');
+      window.CloudForestFog?.endKanthicGlyphFrame?.(); // Restore authored visibility before resuming gameplay.
       window.ActorRenderOcclusion?.endFrame?.(); // Release all render-only hostile/NPC suppressions before resuming game systems.
       const nativeRenders = worldFrame?.renders ?? null;
       hooks?.endWorldFrame?.(); // Undo 'frame' presentation hooks (composed body, crop/NPC sway) before gameplay resumes.
@@ -627,6 +634,8 @@
       window.CloudForestFog.renderOutlineMist(renderer, camera, activeScene);
       PerfProfiler?.end(rpMistPerf);
     }
+    pass('kanthicEngraving');
+    window.CloudForestFog?.renderKanthicGlyphFrame?.(renderer,camera,activeScene); // World depth is still intact in mainRT.
     renderer.autoClearColor = true;
     renderer.autoClearDepth = true;
 
@@ -690,6 +699,8 @@
         renderer.autoClearColor = true;
         renderer.autoClearDepth = true;
       }
+      pass('kanthicEngraving');
+      window.CloudForestFog?.renderKanthicGlyphFrame?.(renderer,camera,activeScene,true);
       worldPresented = true;
     } finally {
       finishScore?.(worldPresented);

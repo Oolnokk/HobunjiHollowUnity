@@ -45,9 +45,10 @@
 
   function startFuriousSpecial(c, ctx) {
     if (!ctx?.target || c?._animalAttack || !window.ResourceSystem?.removeAffliction) return false;
+    const available = window.ResourceSystem.getAffliction?.(c, 'furiousStamina') ?? c.afflictions?.furiousStamina ?? 0;
+    if (!(available > 0)) return false; // Do not normalize Stable tactics or enumerate special costs for the common unbuffed companion.
     const special = mostExpensiveCompanionSpecial(c, ctx); // No species special means Furious Stamina waits rather than forcing Guard Charge.
     if (!special) return false;
-    const available = window.ResourceSystem.getAffliction?.(c, 'furiousStamina') ?? c.afflictions?.furiousStamina ?? 0;
     if (available + 0.0001 < special.cost) return false;
     const now = performance.now(); // Snapshots a real-time signature cooldown that normally uses performance.now rather than attackCooldownT.
     const cooldownBefore = Math.max(0, Number(c.attackCooldownT) || 0);
@@ -256,7 +257,7 @@
   function coneLungeContact(c, state, deps) {
     for (const target of state.lungeTargets) {
       if (!target || !Number.isFinite(target.x) || !Number.isFinite(target.y)
-          || target._downed || (Number.isFinite(target.health) && target.health <= 0)
+          || target._downed || target._denHidden || target._deathTransitionStarted || (Number.isFinite(target.health) && target.health <= 0)
           || (target.areaId != null && c.areaId != null && target.areaId !== c.areaId)) continue;
       if (state.lungeDetect) {
         if (state.lungeDetect(c, target, state, deps)) return target;
@@ -406,7 +407,7 @@
     const out = [];
     if (c.isCompanion && !c.banditCompanion) {
       for (const h of deps.hostileObjects) {
-        if (h.health > 0 && h.areaId === c.areaId) out.push({ isPlayer: false, ref: h });
+        if (h !== c && h.health > 0 && h.areaId === c.areaId && !h._downed && !h._denHidden && !h._deathTransitionStarted) out.push({ isPlayer: false, ref: h });
       }
     } else {
       // deps.players is the full player list (see game.js's `players` array)
@@ -420,7 +421,7 @@
         // leap/charge cone (see combat-drenkirra-pellet.js's gatherTargets
         // for the same exclusion and reasoning).
         if (comp.stableRole === 'shoulderPet' || (c.banditCompanion && comp.banditCompanion)) continue; // Enemy pets can strike player companions, never their allied Beastmaster pets.
-        if (comp.health > 0 && comp.areaId === c.areaId) out.push({ isPlayer: false, ref: comp });
+        if (comp !== c && comp.health > 0 && comp.areaId === c.areaId && !comp._downed && !comp._denHidden && !comp._deathTransitionStarted) out.push({ isPlayer: false, ref: comp });
       }
     }
     return out;
@@ -471,12 +472,14 @@
   // contact test; null falls back to advanceConeLunge's flat cone check.
   function leapConeDetect() {
     if (!window.Combat?.meleeHit) return null;
-    return (c, target, state) => window.Combat.meleeHit(c, target, {
-      rangePx: state.lungeRangePx,
-      halfConeRad: state.lungeHalfConeRad,
-      yaw: state.lungeAngle,
-      pitch: state.aimPitch || 0,
-    });
+    const probe = { debug: false }; // Reused substep options select the existing scratch collider rather than recording diagnostic geometry for every candidate.
+    return (c, target, state) => {
+      probe.rangePx = state.lungeRangePx;
+      probe.halfConeRad = state.lungeHalfConeRad;
+      probe.yaw = state.lungeAngle;
+      probe.pitch = state.aimPitch || 0;
+      return window.Combat.meleeHit(c, target, probe);
+    };
   }
 
   // One frame of a committed leap: sub-stepped travel (dt capped, so a frame

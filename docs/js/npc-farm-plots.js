@@ -448,6 +448,7 @@
     if (!scene || !window.THREE) return null;
     if (!v) v = { group: new window.THREE.Group(), tiles: new Map() };
     v.group.name = 'npc_farm_plots';
+    (v.group.userData ||= {}).hobunjiStaticBatchGroup = true; // FarmTileRenderBatches merges its tagged soil/trench/water tiles per 8x8 cell for the world render only.
     scene.add(v.group);
     visuals.set(areaId, v);
     for (const o of v.tiles.values()) o.sig = null; // Re-add everything into the (possibly rebuilt) scene.
@@ -485,6 +486,7 @@
       const material = window.TerrainTileMaterials?.resolveTileMat?.(plot.mapId, 'trench') || assets.pitMat; // Same PNG shade-fill as the player's trenches.
       const pit = new THREE.Mesh(worldUvSoilGeometry(assets.pit, c, r, trenchMask), material);
       pit.userData.ownGeometry = true; // disposeTile releases this tile's offset UV buffer.
+      pit.userData.hobunjiStaticBatchable = true; // Static tile: drawn merged by FarmTileRenderBatches (js/farm-tile-render-batches.js).
       pit.position.set(c + 0.5, y, r + 0.5);
       objects.push(pit);
       if (s.water) {
@@ -494,12 +496,15 @@
         const z0 = trenchMask & 1 ? -0.5 : -0.4, z1 = trenchMask & 4 ? 0.5 : 0.4; // Extend water to any open north/south edge.
         water.scale.set((x1 - x0) / 0.8, (z1 - z0) / 0.8, 1); // Shared 0.8 plane spans a continuous channel, not isolated puddles.
         water.position.set(c + 0.5 + (x0 + x1) / 2, y + 0.046, r + 0.5 + (z0 + z1) / 2);
+        water.userData.hobunjiStaticBatchable = true; // Merged per cell by FarmTileRenderBatches (js/farm-tile-render-batches.js).
+        water.userData.hobunjiStaticBatchFlat = true; // Transparent but never overlaps another plot's water: safe to draw as one.
         objects.push(water);
       }
     } else {
       const material = window.TerrainTileMaterials?.resolveTileMat?.(plot.mapId, 'tilled') || assets.tilledMat; // Reuse the authored canvas soil material, not a flat brown box.
       const patch = new THREE.Mesh(worldUvSoilGeometry(assets.patch, c, r), material);
       patch.userData.ownGeometry = true; // Always free this tile's own shifted UV geometry.
+      patch.userData.hobunjiStaticBatchable = true; // Static tile: drawn merged by FarmTileRenderBatches (js/farm-tile-render-batches.js).
       patch.position.set(c + 0.5, y, r + 0.5);
       objects.push(patch);
       if (s.crop) {

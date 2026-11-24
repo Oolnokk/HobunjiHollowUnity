@@ -81,12 +81,51 @@ for(const axis of ['x','y','z'])close(reapplied[axis],legacyPose.billboardAnchor
   const w2={localStorage:{getItem:k=>store.has(k)?store.get(k):null,setItem:(k,v)=>store.set(k,v),removeItem:k=>store.delete(k)}};
   vm.runInNewContext(files.profile,{window:w2,console});
   assert.equal(store.size,0,'retired and legacy stored poses are removed');
-  assert.deepEqual(JSON.parse(JSON.stringify(w2.FamilyBabyCarryPose.storageStatus())),{key:'hobunji.familyBabyCarryPose.v3',clearedRetired:1,rejectedStored:true},'mobile status reports the clean-up');
+  assert.deepEqual(JSON.parse(JSON.stringify(w2.FamilyBabyCarryPose.storageStatus())),{key:'hobunji.familyBabyCarryPose.v3',clearedRetired:1,rejectedStored:true,migratedStored:false},'mobile status reports the clean-up');
   assert.equal(w2.FamilyBabyCarryPose.snapshot().held.pivot,'posterior','defaults are used after clean-up');
   const keep=new Map([['hobunji.familyBabyCarryPose.v3',JSON.stringify({...profile.defaultProfile,held:{...profile.defaultProfile.held,posteriorOffset:{x:.2,y:.1,z:.1}}})]]);
   const w3={localStorage:{getItem:k=>keep.has(k)?keep.get(k):null,setItem:(k,v)=>keep.set(k,v),removeItem:k=>keep.delete(k)}};
   vm.runInNewContext(files.profile,{window:w3,console});
   assert.equal(w3.FamilyBabyCarryPose.snapshot().held.posteriorOffset.x,.2,'an anatomical stored pose is kept');
+  const previousDefaults={...profile.defaultProfile,
+    held:{...profile.defaultProfile.held,rotation:{...profile.defaultProfile.held.rotation,y:-10.92}},
+    back:{...profile.defaultProfile.back,posteriorOffset:{...profile.defaultProfile.back.posteriorOffset,x:.0581}},
+    grips:{...profile.defaultProfile.grips,left:{...profile.defaultProfile.grips.left,offset:{x:.05,y:-.02,z:.03}}}}; // Old v3 defaults plus an authored left grip.
+  const legacyV3=new Map([['hobunji.familyBabyCarryPose.v3',JSON.stringify(previousDefaults)]]); // Device profile before the default rotation/recenter.
+  const w4={localStorage:{getItem:k=>legacyV3.get(k)||null,
+    setItem:(k,v)=>legacyV3.set(k,v),removeItem:k=>legacyV3.delete(k)}};
+  vm.runInNewContext(files.profile,{window:w4,console});
+  close(w4.FamilyBabyCarryPose.snapshot().held.rotation.y,D.held.rotation.y,'old untouched yaw migrates to the midpoint');
+  close(w4.FamilyBabyCarryPose.snapshot().back.posteriorOffset.x,D.back.posteriorOffset.x,'old shoulder offset migrates to center');
+  close(w4.FamilyBabyCarryPose.snapshot().grips.left.offset.x,.05,'stored custom hand grip survives migration');
+  assert.equal(w4.FamilyBabyCarryPose.storageStatus().migratedStored,true,'migration visible in mobile diagnostics');
+  assert.equal(JSON.parse(legacyV3.get('hobunji.familyBabyCarryPose.v3')).held.rotation.y,D.held.rotation.y,
+    'revised pose is persisted once rather than re-migrated on each load');
+  // Devices that loaded the intermediate face-up release must migrate too.
+  const faceUpV3={...profile.defaultProfile,held:{...profile.defaultProfile.held,
+    rotation:{...profile.defaultProfile.held.rotation,y:-90}}}; // Last release's stored default.
+  const faceUpStore=new Map([['hobunji.familyBabyCarryPose.v3',JSON.stringify(faceUpV3)]]); // Simulated device storage.
+  const faceUpWindow=()=>({localStorage:{getItem:k=>faceUpStore.get(k)||null,
+    setItem:(k,v)=>faceUpStore.set(k,v),removeItem:k=>faceUpStore.delete(k)}}); // Fresh page load.
+  const wFaceUp=faceUpWindow(); // First load after the midpoint update.
+  vm.runInNewContext(files.profile,{window:wFaceUp,console});
+  close(wFaceUp.FamilyBabyCarryPose.snapshot().held.rotation.y,-50.46,'face-up default migrates to the midpoint');
+  close(wFaceUp.FamilyBabyCarryPose.snapshot().back.posteriorOffset.x,-.025,'centered stow is unchanged');
+  assert.equal(wFaceUp.FamilyBabyCarryPose.storageStatus().migratedStored,true);
+  const wReload=faceUpWindow(); // Reload verifies persisted migration is idempotent.
+  vm.runInNewContext(files.profile,{window:wReload,console});
+  close(wReload.FamilyBabyCarryPose.snapshot().held.rotation.y,-50.46,'midpoint remains after reload');
+  assert.equal(wReload.FamilyBabyCarryPose.storageStatus().migratedStored,false);
+  const customV3={...previousDefaults,
+    held:{...previousDefaults.held,rotation:{...previousDefaults.held.rotation,y:-50}},
+    back:{...previousDefaults.back,posteriorOffset:{...previousDefaults.back.posteriorOffset,x:.01}}}; // User-authored deviations from both old defaults.
+  const customStore=new Map([['hobunji.familyBabyCarryPose.v3',JSON.stringify(customV3)]]); // Test that user authoring outranks defaults.
+  const w5={localStorage:{getItem:k=>customStore.get(k)||null,
+    setItem:(k,v)=>customStore.set(k,v),removeItem:k=>customStore.delete(k)}};
+  vm.runInNewContext(files.profile,{window:w5,console});
+  close(w5.FamilyBabyCarryPose.snapshot().held.rotation.y,-50,'authored held yaw is not overwritten');
+  close(w5.FamilyBabyCarryPose.snapshot().back.posteriorOffset.x,.01,'authored back offset is not overwritten');
+  assert.equal(w5.FamilyBabyCarryPose.storageStatus().migratedStored,false,'no unnecessary write for an authored pose');
   const bad=new Map([['hobunji.familyBabyCarryPose.v3','{not json']]);
   vm.runInNewContext(files.profile,{window:{localStorage:{getItem:k=>bad.has(k)?bad.get(k):null,setItem:()=>{},removeItem:k=>bad.delete(k)}},console});
   assert.equal(bad.size,0,'corrupt stored pose JSON is removed');
@@ -106,6 +145,17 @@ for(const axis of ['x','y','z'])close(reapplied[axis],legacyPose.billboardAnchor
   assert.equal('pivot' in furniture.billboardAnchor||'pivot' in furniture.backCarry,false,'furniture exports gain no pivot field');
 }
 close(sized.backCarry.rotation.z,D.back.rotation.z,'back stow pose retains authored orientation');
+// Shattercasks inverts the XYZ anchor rotation. Its transformed +Z face normal must point
+// diagonally upward and forward in arms, while the body remains cradled across the torso.
+const radians = axis => D.held.rotation[axis]*Math.PI/180; // The live solver consumes these degrees.
+const faceUpY = Math.sin(radians('z'))*Math.sin(radians('y'))*Math.cos(radians('x'))
+  + Math.cos(radians('z'))*Math.sin(radians('x')); // Y of inverse XYZ rotation applied to +Z.
+const faceForwardZ = Math.cos(radians('y'))*Math.cos(radians('x')); // Z of the same transformed face normal.
+close(D.held.rotation.y,(-10.92-90)/2,'held yaw is halfway between both previous defaults');
+assert(faceUpY>.65&&faceUpY<.8&&faceForwardZ>.55&&faceForwardZ<.75,
+  'default held infant looks diagonally upward and forward');
+assert(D.back.posteriorOffset.x<0&&D.back.posteriorOffset.x>-.04,
+  'default back-stowed infant has a small spine-centering offset, not the old shoulder offset');
 assert.equal(sized.elbows.left,null,'legacy shoulder fallback remains when elbow is not explicitly authored');
 
 // Readout-only portrait coordinates are separate from saved world-local offsets.

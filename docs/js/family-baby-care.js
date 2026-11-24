@@ -12,7 +12,7 @@
     const H = ctx?.helpers, R = ctx?.romance; // Existing family clock/romance API remains the only schedule authority.
     const spouse = R?.getSpouse?.();
     if (!isNewborn(child, ctx) || !spouse || spouse.npcId !== child.otherParentId
-        || child.carryBy === 'player' || R.isOnDateWith?.(spouse.npcId)
+        || child.carryBy === 'player' || child.followPlayer || R.isOnDateWith?.(spouse.npcId)
         || R.activeSpouseOuting?.()?.npcId === spouse.npcId) return null;
     const walker = H?.findWalker?.(spouse.npcId); // Physical caregiver for same-area pickup and attachment.
     if (!walker?.root) return null;

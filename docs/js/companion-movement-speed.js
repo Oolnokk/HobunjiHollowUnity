@@ -103,8 +103,6 @@
     const mounts = window.Mounts;
     const rideState = String(mounts?.rideState || '');
     const mountActive = ['mounted', 'mountingUp', 'climbLeap'].includes(rideState) && !!mounts?.rideEntity;
-    const alchemy = alchemyMovementMultiplier();
-    const devGlobal = devGlobalMovementMultiplier();
     if (mountActive) {
       const mount = mounts.rideEntity;
       const actualVelocity = Math.hypot(Number(mount?.vx) || 0, Number(mount?.vy) || 0);
@@ -113,7 +111,7 @@
       if (Number.isFinite(topSpeed) && topSpeed >= 0) return topSpeed;
       const base = Math.max(0, Number(mount?.def?.mountSpeed) || Number(mountDeps?.MOVE_SPEED) || Number(deps?.MOVE_SPEED) || DEFAULT_PLAYER_MOVE_SPEED);
       const perception = multiplier(() => window.PerceptionMode?.speedMultiplier?.(), 1);
-      return base * alchemy * devGlobal * perception; // Legacy standalone Mounts fixtures can lack the cap getter.
+      return base * alchemyMovementMultiplier() * devGlobalMovementMultiplier() * perception; // Legacy standalone Mounts fixtures can lack the cap getter.
     }
 
     const actualFootSpeed = Math.hypot(Number(player.vx) || 0, Number(player.vy) || 0);
@@ -257,7 +255,7 @@
 
   function followCatchupMultiplier(companion) {
     if (!companion || companion.stableRole === 'mount' || companion.stableRole === 'shoulderPet'
-      || companion.banditCompanion || companion._companionCombatTarget || companion._honeyfuzzleRescueTarget
+      || companion.banditCompanion || companion._companionEffectiveTarget || companion._companionCombatTarget || companion._honeyfuzzleRescueTarget
       || companion.treasureCue || companion._animalAttack || companion._furiousSpecial
       || ownerSpeedRatio(companion) !== DEFAULT_OWNER_SPEED_RATIO) return 1;
     const distance = Number(companion._companionGroundFollow?.distancePx);
@@ -267,9 +265,9 @@
     // The actual combat target can come from Sicced or PlayerDowned rather than
     // _companionCombatTarget. These orders must never inherit follow acceleration.
     const owner = companion.master || deps?.player;
-    if (owner === deps?.player && companion.stableRole === 'companion') {
+    if (owner === deps?.player && companion.stableRole === 'companion' && !Object.hasOwn(companion, '_companionEffectiveTarget')) {
       const areaId = deps?.getCurrentArea?.();
-      const sicced = window.EnchantmentSystem?.getCurrentSiccedTarget?.();
+      const sicced = window.EnchantmentSystem?.getCurrentSiccedTarget?.(areaId);
       if (sicced?.health > 0 && (!areaId || sicced.areaId === areaId)) return 1;
       const downedFocus = window.PlayerDowned?.getFocusTarget?.();
       if (downedFocus?.health > 0 && !downedFocus._downed
@@ -339,7 +337,7 @@
       if (!companion?.isCompanion || companion.stableRole === 'mount') continue;
       if (applyCompanionProxy(companion)) count++;
     }
-    for (const companion of [...trackedCompanions]) {
+    for (const companion of trackedCompanions) {
       if (!active.has?.(companion)) trackedCompanions.delete(companion);
     }
     return count;

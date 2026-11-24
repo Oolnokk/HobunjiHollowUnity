@@ -7,7 +7,8 @@ const vm = require('node:vm');
 const read = path => fs.readFileSync(path, 'utf8'); // Reads the shipped module and its integration points.
 
 const win = { __farmLog() {} }; // In-game log stub for target acquisition.
-const context = vm.createContext({ window: win }); // Executes the actual pure targeting owner, not a duplicate of it.
+let clock = 0; // A deterministic decision clock for the cached live selector.
+const context = vm.createContext({ window: win, performance: { now: () => clock } }); // Executes the actual pure targeting owner, not a duplicate of it.
 vm.runInContext(read('docs/js/combat/enemy-pet-targeting.js'), context);
 const targeting = win.EnemyPetTargeting; // Public owner used by the game loop.
 assert(targeting);
@@ -86,6 +87,20 @@ roster.delete(pet); // Swapping/stowing a companion leaves the old entity alive 
 assert.equal(targeting.chooseBeastmasterTarget(banditPet, master, [player], roster, 'zone', 120), player,
   'Beastmaster pets release a despawned companion even when its Health is still positive');
 roster.add(pet);
+
+// Runtime decision lease: no scan during the 140 ms window, immediate release on removal.
+const trackedRoster = new Set([pet]); // Counts live enumeration without relying on real elapsed time.
+let iterations = 0;
+trackedRoster[Symbol.iterator] = function* () { iterations++; yield* Set.prototype[Symbol.iterator].call(this); };
+assert.equal(targeting.chooseBeastmasterTargetCached(banditPet, master, [player], trackedRoster, 'zone', 120), pet);
+for (let frame = 1; frame < 8; frame++) { clock = frame * 16; assert.equal(targeting.chooseBeastmasterTargetCached(banditPet, master, [player], trackedRoster, 'zone', 120), pet); }
+assert.equal(iterations, 1, 'eight updates require only one full target scan');
+trackedRoster.delete(pet);
+assert.equal(targeting.chooseBeastmasterTargetCached(banditPet, master, [player], trackedRoster, 'zone', 120), player, 'removed target bypasses the decision lease');
+assert.equal(iterations, 2);
+clock += 141;
+targeting.chooseBeastmasterTargetCached(banditPet, master, [player], trackedRoster, 'zone', 120);
+assert.equal(iterations, 3, 'expired lease resumes target scoring');
 
 const ranged = read('docs/js/combat/ranged-weapons.js'); // Canonical projectile sweep, not a second projectile implementation.
 const match = ranged.match(/  function nearestPlayerCompanionHit\([\s\S]*?\n  \}/);

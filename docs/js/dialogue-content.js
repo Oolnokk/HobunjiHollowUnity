@@ -849,8 +849,10 @@
     handle.stopTimer = setTimeout(() => _finishNpcSpeechHandle(handle), Math.ceil(fade * 1000) + 2);
   }
 
-  function _playNpcDialogueLetterSfx(char, rec = _dlgNpcRec || deps.getDialogueWalker()?.rec) {
+  function _playNpcDialogueLetterSfx(char, rec = _dlgNpcRec || deps.getDialogueWalker()?.rec, speakerId = null) {
     const cfg = npcDialogueLetterSfxConfig(rec);
+    const agePitchSemitones = Number(window.CombatVocalizations?.getAgePitchOffset?.(rec, speakerId)) || 0; // Same age offsets as combat/yawns; ambient ticks supply the real speaker ID.
+    const agePitchRatio = Math.pow(2, agePitchSemitones / 12); // One constant frequency ratio per syllable, with no new decoding or per-frame work.
     if (cfg.enabled === false || !char || /\s/.test(char)) return;
     const audioCfg = window.AudioSystem?.gameAudioConfig();
     if (audioCfg.enabled === false) return;
@@ -868,7 +870,13 @@
 
     if (cfg.url) {
       const snd = new Audio(cfg.url);
-      snd.playbackRate = Math.max(0.25, Number(cfg.playbackRate) || 1);
+      const authoredRate = Math.max(0.25, Number(cfg.playbackRate) || 1); // Adults retain their original authored rate even if it exceeds the young-voice compatibility range.
+      snd.playbackRate = agePitchSemitones === 0 ? authoredRate : Math.max(0.25, Math.min(4, authoredRate * agePitchRatio)); // Clamp only age-transposed native short ticks.
+      if (agePitchSemitones !== 0) {
+        try { snd.preservesPitch = false; } catch (_) {}
+        try { snd.mozPreservesPitch = false; } catch (_) {}
+        try { snd.webkitPreservesPitch = false; } catch (_) {}
+      } // Short recorded ticks use native resampling; unsupported browser-specific pitch toggles must never break dialogue.
       if (!ctx?.createMediaElementSource) {
         snd.volume = volume;
         const handle = { ownerKey, voiceClaim, audio: snd, ctx: null, gain: null, volume, startTimer: 0, stopTimer: 0, nativeFadeTimer: null, finished: false, stopping: false };
@@ -910,7 +918,7 @@
     const durationS = Math.max(0.005, (Math.max(5, Number(cfg.durationMs) || 24) / 1000));
     const startAt = ctx.currentTime + replaceDelayMs / 1000;
     osc.type = cfg.waveform || 'square';
-    osc.frequency.value = base + (Math.random() * 2 - 1) * variance;
+    osc.frequency.value = (base + (Math.random() * 2 - 1) * variance) * agePitchRatio;
     gain.gain.setValueAtTime(0.0001, startAt);
     gain.gain.linearRampToValueAtTime(volume, startAt + Math.min(NPC_SPEECH_FADE_IN_S, durationS * 0.35));
     gain.gain.exponentialRampToValueAtTime(0.001, startAt + durationS);

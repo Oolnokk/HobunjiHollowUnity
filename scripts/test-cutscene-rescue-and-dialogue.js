@@ -44,6 +44,51 @@ const clothing={_playerData:{appearance:{speciesId:'mashtzarr'},equippedCosmetic
 vm.runInNewContext(game.slice(profileStart,profileEnd)+'\nresult=fakeRec;',clothing);
 assert.deepEqual(Array.from(clothing.result.equippedCosmetics),['current-poncho']);
 assert.equal(clothing.result.appliedDyes.torso,'blue');
+
+assert.notEqual(clothing.result.id, 'player', 'cinematic NPC record must not use the live-player rig name');
+assert.notEqual(clothing.result.id.trim().toLowerCase(), 'player', 'all name-based player rig wrappers must ignore the stand-in');
+assert.match(game, /name: rec\?\.id \|\| rec\?\.name \|\| 'npc', isLivePlayer: false/, 'real NPC walker forwards the non-player role into the leg attachment chain');
+assert.match(game, /name: 'player', isLivePlayer: true/, 'real player avatar explicitly opts into the compositor');
+
+assert.equal(game.includes('payload.widePlayerShots && entity?.isPlayerStandIn'), true, 'wide player framing uses the authored role, not the runtime id');
+// Exercise the actual registration and disposal owner with live and temporary rigs.
+const composerSource = read('docs/js/player-body-transform-composer.js'); // Production registration wrapper, not a second implementation.
+const attachStart = composerSource.indexOf('  function registerPlayerRig(');
+const attachEnd = composerSource.indexOf('  // ── Render-time composition', attachStart);
+assert(attachStart >= 0 && attachEnd > attachStart);
+const liveRoot = { isObject3D: true }, temporaryRoot = { isObject3D: true }; // Separate scene graphs, just like a real cutscene.
+const activeChannels = new Map(); // Observe that disposing a stand-in cannot clear the player's active additive pose.
+const rigContext = {
+  playerMesh: null, playerLegRoot: null, playerLegHandle: null, playerPosteriorY: 0, playerNeckJointCache: null, renderFacingState: {},
+  finite: n => Number(n) || 0, setHeadAimTarget() {}, clearAllChannels() { activeChannels.clear(); },
+  window: {}, legApi: { attach() { return { group: { isObject3D: true }, standingPosteriorY: 1, dispose() { this.disposed = true; } }; } },
+};
+vm.runInNewContext(composerSource.slice(attachStart, attachEnd), rigContext);
+const liveLegs = rigContext.legApi.attach({}, liveRoot, { name: 'player', isLivePlayer: true });
+activeChannels.set('weapon-idle-stance-body-yaw', { yaw: 0.5 });
+for (const name of [clothing.result.id, 'player']) {
+  const standInLegs = rigContext.legApi.attach({}, temporaryRoot, { name, isLivePlayer: false });
+  assert.equal(rigContext.playerMesh, liveRoot, 'temporary rig must never replace the live root');
+  assert.equal(rigContext.playerLegHandle, liveLegs);
+  standInLegs.dispose();
+  assert.equal(standInLegs.disposed, true, 'temporary rig is still disposed normally');
+  assert.equal(rigContext.playerMesh, liveRoot);
+  assert.equal(activeChannels.size, 1, 'stand-in cleanup must not clear live additive channels');
+}
+const legacyStandIn = rigContext.legApi.attach({}, temporaryRoot, { name: clothing.result.id });
+legacyStandIn.dispose();
+assert.equal(rigContext.playerLegHandle, liveLegs);
+assert.equal(activeChannels.size, 1);
+liveLegs.dispose();
+assert.equal(rigContext.playerMesh, null, 'real avatar disposal still clears registration');
+assert.equal(activeChannels.size, 0);
+const replacement = rigContext.legApi.attach({}, liveRoot, { name: 'player', isLivePlayer: true });
+assert.equal(rigContext.playerLegHandle, replacement, 'real avatar rebuild can register again');
+replacement.dispose();
+const legacyPlayer = rigContext.legApi.attach({}, liveRoot, { name: 'player' });
+assert.equal(rigContext.playerLegHandle, legacyPlayer, 'independent tools retain the legacy player name contract');
+legacyPlayer.dispose();
+
 // Every external exit uses the common close authority; cutscenes must preserve dialogue and its Continue callback.
 const closeStart=game.indexOf('      function closeNpcDialogue()');
 const closeEnd=game.indexOf('\n      // renderRelationshipHearts',closeStart);

@@ -3,7 +3,7 @@
 (() => {
   'use strict';
 
-  const VERSION = 8; // Fallback yawns now use shared species/gender pitch while retaining 0.350x tempo and natural audio tails.
+  const VERSION = 9; // Fallback yawns now use shared species/gender pitch while retaining 0.350x tempo and natural audio tails.
   if (Number(window.NpcYawnRest?.version) >= VERSION) return;
   const YAWN_DURATION_S = 5; // Used for the head/body yawn pose and its movement debuff.
   const FATIGUE_SPEED_MULTIPLIER = 0.25; // While yawning, NPCs move 75% slower.
@@ -249,6 +249,9 @@
     if (actor && Number(audioSpatial?.(actor, { earshotTiles: 14 })?.gain ?? 1) < 0.002) return; // NPCs outside earshot do not request voice clips.
     const identity = sourceIdentity(walker);
     const plan = await voiceFor(identity.species, identity.gender);
+    const ageStage = window.CombatVocalizations?.getVoiceAgeStage?.(walker.rec) || 'adult'; // Re-read the saved phase at playback; file existence cache stays species/gender-only.
+    const agePitchSemitones = Number(window.CombatVocalizations?.getAgePitchOffset?.(walker.rec)) || 0; // Age shifts apply even to dedicated yawn recordings.
+    const pitchSemitones = Math.max(-24, Math.min(24, plan.pitch + agePitchSemitones)); // Renderer keeps this pitch independent from the yawn tempo.
     if (!active.has(entry) || entry.finished || walker.area !== window.Combat?.deps?.getCurrentArea?.()) return;
     const spatial = entry.isPlayer
       ? { gain: 1, panX: 0, position3d: null, extraWetBoost: 0 }
@@ -265,7 +268,7 @@
     if (!renderer) { owner?.release?.(claim); lastError = 'audio: voice renderer unavailable'; return; }
     const voiceDebug = {
       npcId: walker.rec?.id, isPlayer: entry.isPlayer, species: identity.species, gender: identity.gender,
-      source: plan.source, fallbackBreath: plan.fallbackBreath === true, url: plan.url, tempo: plan.tempo, pitch: plan.pitch, volume,
+      source: plan.source, fallbackBreath: plan.fallbackBreath === true, url: plan.url, tempo: plan.tempo, pitch: pitchSemitones, ageStage, agePitchSemitones, volume,
       positional: !entry.isPlayer, status: 'queued',
     }; // The real renderer's started/error/finished events update this same record for copyable mobile diagnostics.
     entry.voiceDebug = voiceDebug;
@@ -278,10 +281,10 @@
         voiceDebug.status = 'error';
         lastError = 'audio: ' + String(error?.message || error);
       },
-      tempo: plan.tempo, pitchSemitones: plan.pitch, volume,
+      tempo: plan.tempo, pitchSemitones, volume,
       trimSilence: !plan.fallbackBreath, // The fallback uses the complete, untrimmed intensity-5 recording.
-      preservePitchOnFallback: Math.abs(plan.pitch) < 0.05, // Neutral-pitch yawns still play slowly without lowering the original recording's pitch.
-      preferPitchShiftOnFallback: Math.abs(plan.pitch) >= 0.05, // Emergency native media prioritizes the species/gender pitch; it cannot independently retain the 0.350x yawn tempo.
+      preservePitchOnFallback: Math.abs(pitchSemitones) < 0.05, // Neutral-pitch yawns still play slowly without lowering the original recording's pitch.
+      preferPitchShiftOnFallback: Math.abs(pitchSemitones) >= 0.05, // Emergency native media prioritizes the species/gender pitch; it cannot independently retain the 0.350x yawn tempo.
       tailPadS: 0, extraWetBase: 0,
       panX: spatial.panX || 0, position3d: spatial.position3d || null,
       sourceActor: actor, extraWetBoost: spatial.extraWetBoost || 0,

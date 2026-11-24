@@ -309,7 +309,7 @@
     const cached = _farmTextureResidency.get(key);
     if (cached) return Promise.resolve(applyCached(cached));
     if (_farmGenotypeTexPending.has(key)) return _farmGenotypeTexPending.get(key).then(tex => tex ? applyCached(tex) : false);
-    const pending = window.CreatureGeneticsRender.composeFrame(kind, frame, genotype, blinkShut).then(canvas => { // One GPU texture pair per key even when multiple animals blink together.
+    const pending = window.CreatureGeneticsRender.composeFrame(kind, frame, genotype, blinkShut, { priority: 'farm' }).then(canvas => { // One GPU texture pair per key even when multiple animals blink together.
       if (!canvas) return null;
       canvas = window.CreatureTextureCache.fitGeneratedCanvas?.(canvas) || canvas; // Cached at display size, not native sprite size.
       const frontTex = new THREE.CanvasTexture(canvas); frontTex.colorSpace = THREE.SRGBColorSpace;
