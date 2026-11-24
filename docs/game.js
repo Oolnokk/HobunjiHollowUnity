@@ -14039,7 +14039,8 @@
 
       function despawnNpcVisitor(walker, allowUnregistered = false) {
         const index = npcWalkers.indexOf(walker); // Used to remove exactly this completed departure without touching another NPC.
-        if (!walker || (index < 0 && allowUnregistered !== true)) return false; // Async encounter builders may return an owned rig before roster adoption.
+        if (!walker || walker._npcVisitorDisposed || (index < 0 && allowUnregistered !== true)) return false; // Async encounter builders may return an owned rig before roster adoption.
+        walker._npcVisitorDisposed = true; // Retirement is idempotent, including an explicitly unadopted result.
         window.FamilyBabyFollow?.clearWalker?.(walker); // Retire crawl ownership before disposing the live rig.
         window.BedLiePose?.releaseNpc?.(walker);
         walker.root?.parent?.remove?.(walker.root);
@@ -33034,7 +33035,7 @@
         metalBarItemKey,
         npcWalkers,
         makeNpcWalker,
-        despawnNpcWalker: walker => despawnNpcVisitor(walker, true), // Encounter builders own unadopted results until adoption or cancellation.
+        despawnNpcWalker: despawnNpcVisitor, // Async builders may explicitly retire unadopted results; normal exits still require membership.
         npcSurfaceY,
         getZoneLayout: zoneId => _zoneLayouts.get(zoneId),
         getTownGrid: () => townGrid,
