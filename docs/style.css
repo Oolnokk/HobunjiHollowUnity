@@ -1050,7 +1050,17 @@
     }
     .shop-qty-btn:hover { background: rgba(255,255,255,0.14); }
     .shop-qty-btn:disabled { opacity: 0.3; pointer-events: none; }
+    .shop-bulk-qty .shop-qty-btn[aria-disabled="true"] { opacity: 0.3; cursor: default; }
     .shop-qty-val { font-size: 13px; color: var(--text); min-width: 18px; text-align: center; }
+    .shop-bulk-row .sh-info { min-width: 0; overflow-wrap: anywhere; }
+    .shop-bulk-qty { flex: 0 0 auto; }
+    .shop-bulk-row .shop-buy-btn { max-width: 42%; overflow-wrap: anywhere; }
+    @media (max-width: 440px) {
+      .shop-bulk-row { flex-wrap: wrap; }
+      .shop-bulk-row .sh-info { flex: 1 1 calc(100% - 52px); }
+      .shop-bulk-row .shop-bulk-qty { margin-left: auto; }
+      .shop-bulk-row .shop-qty-btn { width: 32px; height: 32px; }
+    }
     .shop-buy-btn {
       padding: 5px 12px; border-radius: 20px;
       background: rgba(240,200,60,0.14); border: 1px solid rgba(240,200,60,0.35);

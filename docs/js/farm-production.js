@@ -550,8 +550,20 @@
       const row = document.createElement('div'); row.className = 'shop-row'; // Every tier remains available independently of starting specialization, once the town is big enough.
       const label = document.createElement('div'); label.className = 'sh-info'; label.textContent = definition.label + ' Plan · ' + definition.price + 'g' + (locked ? ' · 🔒 Requires Town Value ' + required : ''); row.append(label);
       const buy = document.createElement('button'); buy.className = 'shop-buy-btn'; buy.textContent = locked ? 'Locked' : 'Buy'; buy.disabled = locked; // Purchase follows the existing carpenter transaction.
-      buy.onclick = () => { if ((Number(window.TownMine?.getTownValue?.()) || 0) < required) { shopDeps.showToast('Dzibim won\'t build that until the town has grown (Town Value ' + required + ').', false); return; } if ((shopDeps.inventory.gold || 0) < definition.price || (shopDeps.inventory[definition.planItem] || 0) >= 9) { shopDeps.showToast('Not enough ganang or plan stack is full.', false); return; } shopDeps.inventory.gold -= definition.price; shopDeps.inventory[definition.planItem] = (shopDeps.inventory[definition.planItem] || 0) + 1; shopDeps.saveMemberWorldData(); shopDeps.buildInventoryGrid(); shopDeps.showToast('Bought ' + definition.label + ' Plan.', true); };
-      row.append(buy); list.append(row);
+      row.append(buy);
+      if (!locked) {
+        const maximum = () => (Number(window.TownMine?.getTownValue?.()) || 0) < required ? 0 : window.ShopQuantity.max(shopDeps.inventory, { price: definition.price, grants: { [definition.planItem]: 1 }, stackCap: 9 }); // Preserve the processor plan's existing cap.
+        window.ShopQuantity.attach(buy, { maximum, price: definition.price, purchase: quantity => {
+          if (!window.ShopQuantity.valid(quantity, maximum())) { shopDeps.showToast('Not enough ganang or plan stack is full.', false); return; }
+          shopDeps.inventory.gold -= definition.price * quantity;
+          shopDeps.inventory[definition.planItem] = (shopDeps.inventory[definition.planItem] || 0) + quantity;
+          shopDeps.saveMemberWorldData();
+          shopDeps.buildInventoryGrid();
+          shopDeps.showToast('Bought ' + quantity + '× ' + definition.label + ' Plan.', true);
+          window.CarpenterShop?.render?.();
+        } });
+      }
+      list.append(row);
     }
   }
   function refreshColors() { for (const entry of buildings) { removeVisual(entry); spawn(entry); } }

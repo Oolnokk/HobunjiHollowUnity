@@ -1060,53 +1060,8 @@
     interiorSyncTimer = window.setInterval(() => syncSleepingBabies(false), CONFIG.visuals.syncMs); // Low-cost visual reconciliation while an interior is loaded.
   }
 
-  function buyIncubatorPlan() {
-    const definition = stockDefinition(); // Shop-stock authored price, plan key, and conditions.
-    const deps = carpenterDeps; // Carpenter wallet/inventory seam.
-    const key = ensurePlanItemDef(); // Physical plan stack granted on purchase.
-    if (!definition || !deps || !key) return { ok: false, message: 'Incubator plan stock is not loaded yet.' };
-    if (window.ConditionRegistry?.entryEligible && !window.ConditionRegistry.entryEligible(definition, deps.lootShopWorldState?.() || {})) {
-      return { ok: false, message: 'That plan is not available right now.' };
-    }
-    const gold = Number(deps.inventory.gold) || 0; // Current wallet.
-    if (gold < definition.price) return { ok: false, message: `Not enough gold (need ${definition.price}g).` };
-    deps.inventory.gold = gold - definition.price;
-    deps.inventory[key] = Math.min(window.InventoryStacks.MAX_TOTAL, (deps.inventory[key] || 0) + 1);
-    deps.saveMemberWorldData?.();
-    deps.buildInventoryGrid?.();
-    deps.showToast?.(`Bought ${definition.label}!`, true);
-    window.CarpenterShop?.render?.();
-    return { ok: true, message: `Bought ${definition.label}.` };
-  }
-
-  function decorateCarpenterShop() {
-    if (typeof document === 'undefined') return;
-    const list = document.getElementById('carpenterShopList'); // Existing Carpenter list receiving a generic Barn Additions section.
-    const definition = stockDefinition(); // Authored addition stock.
-    if (!list || !definition || list.querySelector('[data-barn-incubator-shop]')) return;
-    ensurePlanItemDef();
-    const header = document.createElement('div'); // Section heading inserted before furniture blueprints when possible.
-    header.className = 'shop-section-label';
-    header.dataset.barnIncubatorShop = 'header';
-    header.textContent = '🏚 Barn Additions';
-    const row = document.createElement('div'); // Purchase row matching existing carpenter shop styling.
-    row.className = 'shop-row';
-    row.dataset.barnIncubatorShop = 'incubator';
-    const owned = Number(carpenterDeps?.inventory?.[planItemKey()]) || 0; // Current unplaced plan count.
-    row.innerHTML = `
-      <div class="sh-icon">${definition.icon || '🪺'}</div>
-      <div class="sh-info">
-        <div class="sh-name">${panelDeps?.esc?.(definition.label) || definition.label}</div>
-        <div class="sh-desc">${panelDeps?.esc?.(definition.desc) || definition.desc} Owned: ${owned}</div>
-        <div class="sh-price">${definition.price}g each</div>
-      </div>
-      <button class="shop-buy-btn" type="button">Buy</button>`;
-    row.querySelector('button')?.addEventListener('click', buyIncubatorPlan);
-    const blueprintHeader = [...list.querySelectorAll('.shop-section-label')].find(element => /Furniture Blueprints/i.test(element.textContent || '')); // Keeps building additions grouped with other structural purchases.
-    list.insertBefore(header, blueprintHeader || null);
-    list.insertBefore(row, blueprintHeader || null);
-  }
-
+  // CarpenterShop owns all configured barn-addition rows and purchases, including incubators.
+  // This module only supplies their item definitions and placement/runtime behavior.
   function wrapCarpenterShop(api) {
     if (!api || api.__barnIncubatorWrapped) return !!api;
     api.__barnIncubatorWrapped = true;
@@ -1115,15 +1070,7 @@
       api.init = function incubatorCarpenterInit(injectedDeps, ...args) {
         const result = original.carpenterInit.call(this, injectedDeps, ...args);
         carpenterDeps = injectedDeps;
-        ensurePlanItemDef();
-        return result;
-      };
-    }
-    original.carpenterRender = api.render; // Existing three carpenter sections render first.
-    if (typeof original.carpenterRender === 'function') {
-      api.render = function incubatorCarpenterRender(...args) {
-        const result = original.carpenterRender.apply(this, args);
-        decorateCarpenterShop();
+        for (const tier of Object.keys(CONFIG.tiers)) ensurePlanItemDef(tier);
         return result;
       };
     }
@@ -1515,7 +1462,7 @@
     window.FarmPanel?.refreshLayoutEditor?.();
     refreshManagement();
     if (document.getElementById('mpFarm')?.classList.contains('active')) decorateFarmPanel();
-    carpenterDeps && decorateCarpenterShop();
+    // The canonical CarpenterShop renderer owns its own rows; do not append duplicates.
   }
 
   function install() {

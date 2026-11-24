@@ -122,7 +122,7 @@
   }
 
   function configuredGrants(item) {
-    const grants = { ...(item?.gives || {}) }; // Used for ordinary shop item stacks.
+    const grants = Object.fromEntries(Object.entries(item?.gives || {}).map(([key, value]) => [key, Number(value)])); // Numeric grant counts also merge correctly with configured potion grants.
     if (item?.alchemyRecipeId && window.AlchemySystem?.ensureRecipeItemDef) {
       const potencyTier = Math.max(0, Number(item.alchemyPotencyTier) || 0); // Used to register the exact authored potion tier.
       const key = window.AlchemySystem.ensureRecipeItemDef(item.alchemyRecipeId, potencyTier);
@@ -153,19 +153,26 @@
   }
 
   // Optional barter component: { itemKey: qty } consumed alongside price.
-  function tradeCostShortfall(item) {
-    return Object.entries(item?.tradeCost || {}).filter(([key, qty]) => (Number(deps.inventory[key]) || 0) < (Number(qty) || 0));
+  function tradeCostShortfall(item, quantity = 1) {
+    return Object.entries(item?.tradeCost || {}).filter(([key, qty]) => (Number(deps.inventory[key]) || 0) < (Number(qty) || 0) * quantity);
   }
 
-  function tradeCostText(item) {
-    const parts = Object.entries(item?.tradeCost || {}).map(([key, qty]) => `${qty}× ${deps.itemLabel?.(key) || key}`);
+  function tradeCostText(item, quantity = 1) {
+    const parts = Object.entries(item?.tradeCost || {}).map(([key, qty]) => `${Number(qty) * quantity}× ${deps.itemLabel?.(key) || key}`);
     return parts.join(', ');
   }
 
-  function buyGeneralStoreItem(item) {
+  function goodsLimit(item, grants = configuredGrants(item)) {
+    return window.ShopQuantity.max(deps.inventory, { price: item.price, grants, tradeCost: item.tradeCost,
+      limit: item.givesTool || item.givesTrinket ? 1 : undefined });
+  }
+
+  function buyGeneralStoreItem(item, quantity = 1) {
     const gold = deps.inventory.gold || 0;
-    if (gold < (Number(item.price) || 0)) { deps.showToast('Not enough ganang.', false); return; }
-    if (tradeCostShortfall(item).length) { deps.showToast(`You need ${tradeCostText(item)} to trade for that.`, false); return; }
+    if (!Number.isSafeInteger(quantity) || quantity < 1 || ((item.givesTool || item.givesTrinket) && quantity !== 1)) return;
+    if ((item.givesTool || item.givesTrinket) && !window.ShopQuantity.valid(quantity, goodsLimit(item))) { deps.showToast('Not enough room or resources for that quantity.', false); return; }
+    if (gold < (Number(item.price) || 0) * quantity) { deps.showToast('Not enough ganang.', false); return; }
+    if (tradeCostShortfall(item, quantity).length) { deps.showToast(`You need ${tradeCostText(item)} per order to trade for that.`, false); return; }
     if (item.givesTool) {
       const gear = deps.getGearInventory?.(); // Store weapons belong to character gear, like smith-crafted weapons.
       const def = deps.TOOL_ITEM_DEFS?.[item.givesTool]; // Validate before charging or consuming barter goods.
@@ -204,10 +211,11 @@
     }
 
     const qualityStars = configuredQualityStars(item); // Used for minimum-quality food staples without changing ordinary shop goods.
-    deps.inventory.gold = gold - item.price;
-    for (const [key, qty] of Object.entries(item.tradeCost || {})) deps.inventory[key] = Math.max(0, (Number(deps.inventory[key]) || 0) - (Number(qty) || 0));
-    Object.entries(grants).forEach(([key, value]) => addConfiguredGrant(key, value, qualityStars));
-    deps.showToast('Bought ' + item.name + '!', true);
+    if (!window.ShopQuantity.valid(quantity, goodsLimit(item, grants))) { deps.showToast('Not enough room or resources for that quantity.', false); return; }
+    deps.inventory.gold = gold - (Number(item.price) || 0) * quantity;
+    for (const [key, qty] of Object.entries(item.tradeCost || {})) deps.inventory[key] = Math.max(0, (Number(deps.inventory[key]) || 0) - (Number(qty) || 0) * quantity);
+    Object.entries(grants).forEach(([key, value]) => addConfiguredGrant(key, Number(value) * quantity, qualityStars));
+    deps.showToast('Bought ' + quantity + '× ' + item.name + '!', true);
     renderGeneralStorePage();
     deps.buildInventoryGrid();
     deps.refreshActionBar?.();
@@ -236,7 +244,19 @@
         </div>
         <button class="shop-buy-btn" type="button">Buy</button>
       `;
-      row.querySelector('.shop-buy-btn')?.addEventListener('click', () => buyGeneralStoreItem(item));
+      const buy = row.querySelector('.shop-buy-btn'); // Used for either a repeatable order or a unique gear purchase.
+      if (item.givesTool || item.givesTrinket) buy?.addEventListener('click', () => buyGeneralStoreItem(item));
+      else {
+        const grants = configuredGrants(item); // Avoids registering potion definitions on every arrow click.
+        window.ShopQuantity.attach(buy, { maximum: () => Object.keys(grants).length ? goodsLimit(item, grants) : 0,
+          price: item.price, describeCost: quantity => {
+            const costs = []; // Show the entire order's gold and barter, not just the money portion.
+            if (Number(item.price) > 0) costs.push(`${Number(item.price) * quantity}g`);
+            const barter = tradeCostText(item, quantity);
+            if (barter) costs.push(barter);
+            return costs.join(' + ') || 'Free';
+          }, purchase: quantity => buyGeneralStoreItem(item, quantity) });
+      }
       list.appendChild(row);
     });
   }
@@ -327,20 +347,25 @@
         </div>
         <button class="shop-buy-btn gs-cloth-buy">Buy</button>
       `;
-      row.querySelector('.gs-cloth-buy')?.addEventListener('click', () => {
-        if ((deps.inventory.gold || 0) < item.price) { deps.showToast('Not enough ganang.', false); return; }
-        deps.inventory.gold = (deps.inventory.gold || 0) - item.price;
-        const ownedClothing = deps.getPackClothing(); // Purchases are literal articles; the store's daily listing ID is not an instance ID.
-        let purchasedUid; // Used to make repeated buys of one day's listing individually selectable and sellable.
-        let purchaseSerial = 0; // Ensures a collision can never loop forever when time/random sources repeat.
-        do {
-          purchasedUid = item.uid + '_' + Date.now().toString(36) + '_' + (++purchaseSerial).toString(36) + '_' + Math.random().toString(36).slice(2, 10);
-        } while (ownedClothing.some(article => article?.uid === purchasedUid));
-        ownedClothing.push({ ...item, uid: purchasedUid });
-        deps.showToast('Bought ' + item.label + '!', true);
+      const maximum = () => window.ShopQuantity.max(deps.inventory, { price: item.price, limit: 999 }); // Bounds literal clothing allocations per purchase.
+      window.ShopQuantity.attach(row.querySelector('.gs-cloth-buy'), { maximum, price: item.price, purchase: quantity => {
+        if (!window.ShopQuantity.valid(quantity, maximum())) { deps.showToast('Not enough ganang.', false); return; }
+        const ownedClothing = deps.getPackClothing(); // Purchases are literal articles; the daily listing ID is not an instance ID.
+        const used = new Set(ownedClothing.map(article => article?.uid)); // Avoid scanning the entire clothing pack for every purchased article.
+        let purchaseSerial = 0; // Guarantees distinct UIDs even if time/random sources repeat.
+        for (let i = 0; i < quantity; i++) {
+          let purchasedUid;
+          do {
+            purchasedUid = item.uid + '_' + Date.now().toString(36) + '_' + (++purchaseSerial).toString(36) + '_' + Math.random().toString(36).slice(2, 10);
+          } while (used.has(purchasedUid));
+          used.add(purchasedUid);
+          ownedClothing.push({ ...item, uid: purchasedUid });
+        }
+        deps.inventory.gold = (deps.inventory.gold || 0) - item.price * quantity;
+        deps.showToast('Bought ' + quantity + '× ' + item.label + '!', true);
         renderGeneralStorePage(); deps.buildInventoryGrid(); deps.buildPackClothingSection();
         deps.saveMemberWorldData();
-      });
+      } });
       list.appendChild(row);
     });
   }
@@ -368,7 +393,7 @@
   function debugSnapshot() {
     const state = activeShopState();
     return {
-      mostRecentChange: 'The General Store sells a Copper Work Hammer as character gear; acquiring it unlocks its smithy shape.',
+      mostRecentChange: 'Repeatable shop goods and clothing support bulk purchases; unique gear remains single-copy.',
       poolId: state.poolId,
       label: state.shop.label,
       mapId: currentMapId(),
