@@ -527,6 +527,18 @@
       ],
     };
   }
+  function grantFeyReward(kind, rewardDeps) {
+    const cooking=window.CookingSystem;
+    const stacks=cooking?.consumeFeySight?.()||0; // Reward owners may persist internally; their first save must already see Fey-sight consumed.
+    let accepted=false;
+    try {
+      const prize=window.BoneyShinjimiRewards?.grant?.(kind,rewardDeps);
+      accepted=!!prize&&(kind!=='milk'||(prize.kind==='boundRelic'&&prize.origin==='Fey'));
+      return accepted?prize:null;
+    } finally {
+      if(!accepted&&stacks>0)cooking?.grantFeySight?.(stacks); // Failed or unavailable rewards retain every existing stack.
+    }
+  }
   function offerMilk(held, giftingDeps) {
     if (!canAcceptMilkGift(held, giftingDeps)) return false;
     const milkKey = held.key; // Captures the offered stack while the asynchronously presented dialogue is open.
@@ -547,7 +559,7 @@
             state.milksGiven = count + 1; // HarlyaoRelics.grantBoundRelic saves immediately, so the first save must already include the exchanged milk and count.
             let prize = null;
             try {
-              prize = window.BoneyShinjimiRewards?.grant?.('milk', giftingDeps);
+              prize = grantFeyReward('milk', giftingDeps);
             } catch (err) {
               bumpEvent('Fey weapon grant failed: ' + (err?.message || err));
             }
@@ -558,7 +570,6 @@
               bumpEvent('Milk offer unavailable; item and exchange count restored');
               return;
             }
-            window.CookingSystem?.consumeFeySight?.(); // A successful milk dialogue reward is also a Fey encounter reward.
             giftingDeps.clampInventoryStack?.(milkKey);
             giftingDeps.refreshItemScroll?.();
             giftingDeps.buildInventoryGrid?.();
@@ -571,8 +582,7 @@
       } catch(err) {
         bumpEvent('Milk dialogue interrupted: ' + (err?.message || err));
       } finally {
-        sceneRunning = false;
-        giftingDeps.refreshActionBar?.();
+        if(generation===encounterGeneration){sceneRunning = false;giftingDeps.refreshActionBar?.();} // A stale cutscene cannot unlock a newer dialogue.
       }
     })();
     return true; // The existing gift dispatcher is synchronous; the cutscene owns the actual handover.
@@ -580,17 +590,17 @@
   async function enterScene() {
     if(sceneRunning||state.phase!=='home'||!window.AuthoredCutsceneRuntime?.run)return;
     sceneRunning=true;state.phase='scene';
+    const encounterGeneration=generation; // Restore/area unload must invalidate old choice callbacks just like milk callbacks.
     let granted=false; // Reward must be granted once upon continuing the chosen response, not when the choice menu merely opens.
     const rewards={valuable_grant:'valuable',useful_grant:'useful',apologize_grant:'apologize',hat_sure:'hat'};
     try {
       await window.AuthoredCutsceneRuntime.run(sceneDefinition(),{
         onDialogueContinue(stage) {
           const kind=rewards[stage?.id];
-          if(!kind||granted)return;
-          const prize=window.BoneyShinjimiRewards?.grant?.(kind,deps);
+          if(!kind||granted||generation!==encounterGeneration||state.phase!=='scene'||area()!==state.zone)return;
+          const prize=grantFeyReward(kind,deps);
           if(!prize){bumpEvent('Reward not available; encounter remains retriable');return;}
           granted=true;state.reward=prize;state.hatTaken=kind==='hat';
-          window.CookingSystem?.consumeFeySight?.(); // Only successful dialogue reward delivery consumes the persistent stacks.
           if(state.hatTaken&&walker?.rec) {
             walker.rec.equippedCosmetics=walker.rec.equippedCosmetics.filter(id=>id!==HAT_ID);
             void window.NpcWardrobe?.refreshWalkerAppearance?.(walker);
@@ -598,12 +608,12 @@
           save(); // Item grant and logical reward use the existing member/world save seam.
         },
       });
+      if(generation!==encounterGeneration)return;
       state.phase=granted?'leaving':'home';
       if(granted)bumpEvent('Reward claimed; house vanishes when the player leaves');
     }catch(err) {
-      state.phase=granted?'leaving':'home';
-      bumpEvent('Cutscene interrupted: '+(err?.message||err));
-    }finally{sceneRunning=false;}
+      if(generation===encounterGeneration){state.phase=granted?'leaving':'home';bumpEvent('Cutscene interrupted: '+(err?.message||err));}
+    }finally{if(generation===encounterGeneration)sceneRunning=false;}
   }
   function finishEncounter() {
     if(state.phase!=='leaving'||!state.home)return;
@@ -630,7 +640,7 @@
     updateHouseVisibility();
   }
   function tryFeyApproach(dt) {
-    if (state.phase !== 'roam' || !walker || area() !== state.zone) { feyApproachTimer = 0; return; }
+    if (state.phase !== 'roam' || !walker || area() !== state.zone || !(deps.player?.health>0) || window.PlayerDowned?.isDowned?.()) { feyApproachTimer = 0; return; }
     feyApproachTimer += dt;
     if (feyApproachTimer < 20) return;
     feyApproachTimer = 0;
@@ -725,7 +735,7 @@
   }
   function restore(raw) {
     clearHouse();releaseWalker();
-    feyApproachTimer=0;
+    feyApproachTimer=0;sceneRunning=false;
     Object.assign(state,initialState());
     if(raw?.version!==SAVE_VERSION)return;
     state.cycle=Number.isInteger(raw.cycle)?raw.cycle:-1;
