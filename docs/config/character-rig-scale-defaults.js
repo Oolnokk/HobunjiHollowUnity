@@ -14,7 +14,7 @@
 (() => {
   'use strict';
 
-  const VERSION = 31; // 2026-11-24: only Mao'ao male is the edited anchor; both genders inherit HIS relative shifts; every raw PNG head targets 65%.
+  const VERSION = 32; // 2026-11-24: eight authored male heights are chair-calibrated; paired females are 93% of male visible stature, with all raw PNG heads still 65%.
   const NUHONGAN_PART_SCALE_AXES = Object.freeze({ x: 31 / 24, y: 31 / 24, z: 31 / 24 }); // Mean of prior inverse 0.8/0.75 adjustments: keep donor-sized extremities without stretching one axis.
   const NUHONGAN_HAND_SCALE_AXES = Object.freeze({ x: 31 / 24 * 0.88, y: 31 / 24 * 0.88, z: 31 / 24 * 0.88 }); // Nov 22: Nuhongan hands a little smaller (88%) than the shared extremity size; feet keep NUHONGAN_PART_SCALE_AXES.
   // Longoran extremities are thinner, never shorter (lanky look). Axes are in the
@@ -94,16 +94,33 @@
   });
   const portraitScaleFor = (species, gender) => species === 'mao-ao' && gender === 'female' ? .8
     : PORTRAIT_SCALE_BY_SPECIES[species] || 1; // The editor still measures the actual rendered plane when displaying/saving Head edits.
+  const MALE_HEIGHT_FEET = Object.freeze({ // Explicit adult standing-height targets; other/non-paired species retain Mao'ao-relative shifts from main.
+    kenkari: 4, tletingan: 4 + 5 / 12, nuhongan: 3, longoran: 8,
+    'mao-ao': 6 + 3 / 12, 'engh-sho': 5 + 5 / 12, mammakhbuur: 8, mashtzarr: 7 + 3 / 12,
+  });
+  const FEMALE_VISIBLE_HEIGHT_RATIO = 0.93; // Humanlike dimorphism: female world-space height is 93% of her larger male, not 93% of an unrelated authored y field.
+  const MAOAO_REFERENCE_FEET = MALE_HEIGHT_FEET['mao-ao']; // The sole metric anchor; preserve approved male Mao'ao y=1.29 and the existing 6-foot ruler.
+  function calibratedHeightFor(species, gender) {
+    const target = MALE_HEIGHT_FEET[species];
+    if (!(Number(target) > 0)) return null; // Unlisted NPC/skeleton identities retain their prior main-relative body/leg changes.
+    const malePortraitScale = portraitScaleFor(species, 'male'); // Portrait-plane magnification affects actual standing stature.
+    const maleHeight = MAOAO_SOURCE_APPROVED.male.y * target / MAOAO_REFERENCE_FEET / malePortraitScale;
+    if (gender === 'male') return maleHeight;
+    return maleHeight * FEMALE_VISIBLE_HEIGHT_RATIO * malePortraitScale / portraitScaleFor(species, 'female'); // Female Mao'ao has a distinct 0.8× portrait plane; compensate physically.
+  }
+
   const VALUES = Object.freeze(Object.fromEntries(Object.entries({...MAIN_VALUES, ...ADDITIONAL_MAIN_VALUES}).map(([key, base]) => {
     const [species, gender] = key.split('::');
     const delta = MAOAO_RELATIVE_SHIFT[gender]; // Male Mao'ao is the only authored shift; each other identity (including females) inherits it.
     const part = SOURCE_PART_SCALES[key] || [1,1]; // Defaults are the uploaded hand/foot values for every included identity.
     const isMaoao = species === 'mao-ao';
     const reference = MAOAO_SOURCE_APPROVED[gender];
+    const targetHeight = calibratedHeightFor(species, gender); // Height is the only exception to inherited Mao'ao-relative shifts for these eight species.
+    const approvedY = targetHeight ?? (isMaoao ? reference.y : base.y * delta.y);
     return [key, Object.freeze({
       x: isMaoao ? reference.x : base.x * delta.x,
-      y: isMaoao ? reference.y : base.y * delta.y,
-      legLength: isMaoao ? reference.y : (base.legLength ?? base.y) * delta.y, // Identical body/leg changes preserve beltline geometry.
+      y: approvedY,
+      legLength: targetHeight ?? (isMaoao ? reference.y : (base.legLength ?? base.y) * delta.y), // Portrait and procedural-leg length change together: beltline fractions stay unchanged.
       head: RAW_HEAD_SCALE / portraitScaleFor(species, gender), // Internal factor cancels actual source portrait multiplier: displayed raw Head=65%.
       offsetY: base.offsetY, // No independently changed Mao'ao head offset; keep Longoran/Mashtzarr authored positions.
       handScale: isMaoao ? reference.handScale : part[0] * delta.handScale,
@@ -118,7 +135,8 @@
   const MAOAO_ADULT_DEFAULT_HEIGHT = VALUES['mao-ao::male'].y; // Main-authored Mao'ao body height, before new world calibration.
   const WORLD_HEIGHT_CALIBRATION = Object.freeze({
     chairReference: 'chairSimple', chairBackWorldHeight: CHAIR_BACK_WORLD_HEIGHT, chairHeightFeet: 3,
-    referenceSpecies: 'mao-ao', referenceGender: 'male', targetFeet: 6.25,
+    referenceSpecies: 'mao-ao', referenceGender: 'male', targetFeet: MAOAO_REFERENCE_FEET,
+    maleHeightFeet: MALE_HEIGHT_FEET, femaleVisibleHeightRatio: FEMALE_VISIBLE_HEIGHT_RATIO, // Mobile diagnostics expose the intended measurements.
     referenceUnscaledWorldHeight: MAOAO_BASE_MODEL_HEIGHT * MAOAO_ADULT_DEFAULT_HEIGHT,
     targetWorldHeight: CHAIR_BACK_WORLD_HEIGHT * (6.25 / 3),
     uniformScale: (CHAIR_BACK_WORLD_HEIGHT * (6.25 / 3)) / (MAOAO_BASE_MODEL_HEIGHT * MAOAO_ADULT_DEFAULT_HEIGHT),
@@ -136,6 +154,10 @@
   };
   const scaleFor = (species, gender) => VALUES[`${normalizeSpecies(species)}::${normalizeGender(gender)}`] || { x: 1, y: 1, head: RAW_HEAD_SCALE, offsetY: 0 }; // Fallback characters also have a 65% raw head at unscaled portrait size.
   const uniformScaleFor = (species, gender) => scaleFor(species, gender).x; // Back-compat for readers that only need one scalar.
+  const nominalHeightFeetFor = (species, gender) => { // Chair-calibrated standing-height estimate from the same values used to render the whole avatar.
+    const visualY = scaleFor(species, gender).y * portraitScaleFor(normalizeSpecies(species), normalizeGender(gender));
+    return MAOAO_REFERENCE_FEET * (visualY / (MAOAO_SOURCE_APPROVED.male.y * portraitScaleFor('mao-ao','male')));
+  };
 
   function applyMaoaoFootScaleTuning() {
     const footScale = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.proceduralFeet?.footScale; // Gameplay procedural feet use the same 26 defaults as the Animation Author.
@@ -195,7 +217,10 @@
     rawHeadScale: RAW_HEAD_SCALE, // Raw PNG target shared by UI, game defaults and the uploaded 26-profile export.
     maoaoRelativeShift: MAOAO_RELATIVE_SHIFT, // Both genders have exactly the Mao'ao MALE ratios, without an independent female anchor.
     applyApprovedScaleDefaultsToProfiles, // Called after all species modules have completed their own rig profile registration.
-    worldHeightCalibration: WORLD_HEIGHT_CALIBRATION, // Consumed by the gameplay/editor shared parent scaler; numeric authored values remain unchanged for save compatibility.
+    worldHeightCalibration: WORLD_HEIGHT_CALIBRATION, // Runtime applies one shared world multiplier; individual species heights are authored independently of it.
+    maleHeightFeet: MALE_HEIGHT_FEET,
+    femaleVisibleHeightRatio: FEMALE_VISIBLE_HEIGHT_RATIO,
+    nominalHeightFeetFor, // Used by tests and mobile diagnostics; never scans scene objects.
     nuhonganPartScaleAxes: NUHONGAN_PART_SCALE_AXES,
     nuhonganHandScaleAxes: NUHONGAN_HAND_SCALE_AXES,
     longoranHandScaleAxes: LONGORAN_HAND_SCALE_AXES,
