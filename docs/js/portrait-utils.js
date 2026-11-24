@@ -2130,15 +2130,27 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
     })() : null;
     const preparedBeard = canonicalArt && !emoteDeformedPts ? new Map() : null;
     const beardKey = preparedBeard ? beardHoodLayerKey(facialHairLayers,imgMap,resolveXform,preparedBeard) : null;
-    const preparedHood = beardKey && preparedBreathing && !preparedBreathing.points ? new Map() : null;
+    // Editor mask overrides can be mutable/non-JSON. Cache only the authored
+    // policy, and keep the pristine beard cache independent of those edits.
+    const authoredPolicy = !renderOptions?.beardHoodCutoutMaskOverride && !renderOptions?.beardHoodWhiskerMaskOverride
+      && !renderOptions?.beardHoodTuftRootsOverride;
+    const validStaticDeform = staticDeform == null || (Array.isArray(staticDeform)
+      && staticDeform.every(point => point == null || (Array.isArray(point)
+        && point.every(value => value == null || Number.isFinite(value)))));
+    const preparedHood = beardKey && preparedBreathing && !preparedBreathing.points && authoredPolicy && validStaticDeform ? new Map() : null;
     const hoodKey = preparedHood ? beardHoodLayerKey(hoodLayers,imgMap,resolveXform,preparedHood) : null;
     // Static deformation and every authoring permission value participate.
     // Animated hoods always negotiate their current pixels; the unwarped
     // beard can still reuse its pristine readback independently.
-    const resultKey = hoodKey ? JSON.stringify([beardHoodIdentity(cutoutApi),beardKey,hoodKey,staticDeform,
-      paintedBeardMask,whiskerMask,tuftRoots,beardAuthoring.requestMode,
-      beardAuthoring.maxStretch,beardAuthoring.subdivision,beardAuthoring.aboveInfluence,
-      beardAuthoring.belowInfluence,hoodPolicy]) : null;
+    let resultKey = null; // Unserializable authoring data must not break the original compositor.
+    if (hoodKey) {
+      try {
+        resultKey = JSON.stringify([beardHoodIdentity(cutoutApi),beardKey,hoodKey,staticDeform,
+          paintedBeardMask,whiskerMask,tuftRoots,beardAuthoring.requestMode,
+          beardAuthoring.maxStretch,beardAuthoring.subdivision,beardAuthoring.aboveInfluence,
+          beardAuthoring.belowInfluence,hoodPolicy]);
+      } catch (_) { /* Preserve uncached behavior. */ }
+    }
     const cached = resultKey ? _BEARD_HOOD_RESULT_CACHE.get(resultKey) : null;
     if (cached) {
       _beardHoodPerf.hits++;

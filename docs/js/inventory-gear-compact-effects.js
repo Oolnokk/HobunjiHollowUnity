@@ -20,7 +20,7 @@
   let detailFitInvalidated = true; // Item-detail mutations, visibility changes, or resizes require a new measured font fit.
   let lastFittedInfo = null; // The specific detail node whose most recent fit can be reused during left-rail updates.
   let lastDetailFit = null; // Result reused when only the independent Gear summary/inventory changes.
-  const ownFloorRemovals = new WeakSet(); // A font-floor release performed by our fit must not schedule a second fit.
+  let ownFloorRemovals = null; // Only the pending observer delivery owns self-removal markers.
   const fitStats = { passes: 0, detailFits: 0, reusedDetailFits: 0, inactiveSkips: 0, ignoredMutations: 0, ownFloorSkips:0 }; // Counts layout work avoided or performed for the in-game debug snapshot.
 
   function installStyles() {
@@ -354,7 +354,7 @@
     let released = 0;
     root.querySelectorAll('[data-menu-font-floor="1"]').forEach((element) => {
       element.style.removeProperty('font-size'); // Item detail intentionally scales below the global menu text floor to stay fully visible without scrolling.
-      ownFloorRemovals.add(element);
+      (ownFloorRemovals ||= new WeakSet()).add(element);
       delete element.dataset.menuFontFloor;
       released += 1;
     });
@@ -511,11 +511,13 @@
       const gearActive = gearActuallyVisible(pane);
       const visibilityChanged = gearActive !== lastGearVisible;
       lastGearVisible = gearActive;
+      const pendingRemovals = ownFloorRemovals;
+      ownFloorRemovals = null; // Discard delivered markers, including when the menu closed before delivery.
       if (!gearActive && !visibilityChanged) { fitStats.ignoredMutations += records.length; return; } // No record array allocation while gameplay is active.
-      records = records.filter(record => {
+      if (pendingRemovals) records = records.filter(record => {
         const target = record.target;
-        if (record.type !== 'attributes' || record.attributeName !== 'data-menu-font-floor' || !ownFloorRemovals.has(target)) return true;
-        ownFloorRemovals.delete(target);
+        if (record.type !== 'attributes' || record.attributeName !== 'data-menu-font-floor' || !pendingRemovals.has(target)) return true;
+        pendingRemovals.delete(target);
         // An external readability pass that immediately re-adds the floor must still invalidate the fit.
         if (target.dataset?.menuFontFloor === '1') return true;
         fitStats.ownFloorSkips++;
