@@ -51,7 +51,7 @@ assert(/_behindFlippedLayer\(\{ \.\.\.layer, url, frame \}\)/.test(portraitUtils
 // ── Hat-only padded render ─────────────────────────────────
 assert(portraitUtils.includes('const hatOverflowPad = Math.max(0, Number(renderOptions?.hatOverflowPad) || 0);'));
 assert(portraitUtils.includes('ctx.translate(hatOverflowPad, hatOverflowPad)'), 'Padding translates; the portrait scale is unchanged');
-assert(/if \(hatOnly\) \{[\s\S]{0,700}for \(const key of order\) drawEmoteLayers\(hatDraw\[key\]\);/.test(portraitUtils),
+assert(/if \(hatOnly\) \{[\s\S]{0,1600}for \(const key of order\) drawEmoteLayers\(hatDraw\[key\]\);/.test(portraitUtils),
   'Hat-only bakes draw nothing but the hat layers');
 assert(portraitUtils.includes('window.getPortraitCanvasLogicalSize'), 'Logical portrait size is exposed for overflow bakes');
 
@@ -97,6 +97,24 @@ assert.equal(Overflow.hasHat(hatProfile), true);
   // A 400px portrait canvas (2x) scales the padding with it.
   const big = await Overflow.renderOverflowCanvas(hatProfile, 'front', 400, 400, async canvas => canvas.paint(1, 1));
   assert.equal(big.width, 400 + 4 * pad, 'Padding follows the portrait canvas scale');
+
+  const image={src:'x.png',naturalWidth:32,naturalHeight:32};
+  let paints=0; // Count actual rasterization after the resolved-layer lookup.
+  ctx.renderPortraitProfile=async(canvas,profile,options)=>{
+    if(options.reuseHatOverflow?.([{image,url:'x.png',xform:{ax:0,sx:1},tint:{mode:'none',hex:profile.hex}}]))return;
+    paints++;if(profile.hex!=='empty')canvas.paint(1,1);
+  };
+  const cacheBake=hex=>Overflow.renderOverflowCanvas({...hatProfile,hex},'front',200,200,undefined,true);
+  const one=await cacheBake('red');
+  assert.equal(await cacheBake('red'),one,'identical resolved layers reuse the bake');
+  assert.notEqual(await cacheBake('blue'),one,'changed dye cannot reuse old pixels');
+  assert.equal(await cacheBake('empty'),null);
+  assert.equal(await cacheBake('empty'),null,'no-overflow result is cached too');
+  assert.equal(paints,3,'repeat requests skipped rasterization and readback');
+  image.src='updated.png';
+  await cacheBake('red');assert.equal(paints,4,'changed image source invalidates reuse');
+  for(let i=0;i<40;i++)await cacheBake('color'+i);
+  assert(Overflow.stats().cacheBytes<=4*1024*1024 && Overflow.stats().cacheEntries<=32,'bounded cache');
 
   // Mesh hygiene: never measured, picked or outlined.
   for (const needle of ['mesh.userData.noOutline = true', 'mesh.raycast = emptyRaycast', 'mesh.frustumCulled = false',
