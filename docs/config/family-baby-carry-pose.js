@@ -12,7 +12,7 @@
   const RETIRED_STORAGE_KEYS = ['hobunji.familyBabyCarryPose.v1'];
   // Authored defaults (screenshot-verified in game against a newborn Mao'ao bust, Nov 22):
   // HELD = cradle. The infant lies ~65 degrees across the carrier's lower chest, head in the
-  // carrier's RIGHT arm, face turned upward by local yaw; the right hand cups the head/neck from below,
+  // carrier's RIGHT arm, face tipped diagonally upward by local yaw; the right hand cups the head/neck from below,
   // the left hand supports the bottom. The cradle pivots at the infant's REAL posterior (see
   // anchorsForAvatar), so its posteriorOffset reads as "where the baby's bottom sits" for every species.
   // BACK = upright high and centered between the shoulder blades, facing BEHIND the
@@ -20,7 +20,7 @@
   // sees the face; head leans in against the carrier's neck and peeks over the shoulder line.
   // Euler values are the gameplay ANCHOR (Shattercasks applies their inverse to the infant).
   const DEFAULT_PROFILE = {
-    held: { pivot: 'posterior', position: { x: 0, y: 0, z: 0 }, rotation: { x: 4.95, y: -90, z: -64.53 }, size: 1,
+    held: { pivot: 'posterior', position: { x: 0, y: 0, z: 0 }, rotation: { x: 4.95, y: -50.46, z: -64.53 }, size: 1,
       posteriorOffset: { x: .11, y: .075, z: .13 } },
     // Back pivots at the NECK: whatever the newborn's size, its head peeks over the shoulder line
     // (same pose as a posterior pivot at {.065,.19,-.07} for the verified Mao'ao newborn).
@@ -88,7 +88,7 @@
       // Only update values still at the PREVIOUS defaults. Preserve intentionally authored
       // local yaw, back placement, hand grips and all other personalized carry settings.
       let migrated = false; // Whether these two old default fields need rewriting in v3 storage.
-      if (parsed.held.rotation && typeof parsed.held.rotation === 'object' && parsed.held.rotation.y === -10.92) {
+      if (parsed.held.rotation && typeof parsed.held.rotation === 'object' && [-10.92, -90].includes(parsed.held.rotation.y)) {
         parsed.held.rotation.y = DEFAULT_PROFILE.held.rotation.y;
         migrated = true;
       }
