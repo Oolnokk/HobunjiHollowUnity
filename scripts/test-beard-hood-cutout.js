@@ -724,9 +724,9 @@ const differentPolicy=buildCacheFixture.render({...fixtureConfig,permission:{siz
 assert.equal(differentPolicy.stats.approvedPixels,0,'new policy renegotiates rather than reusing old holes');
 assert.notEqual(differentPolicy.hood,firstResult.hood);
 assert.notEqual(buildCacheFixture.render({...fixtureConfig,layerSize:90}).hood,firstResult.hood,'logical layer-size edits invalidate the cache');
-const tintedImage=new Canvas(); tintedImage.pixels.set(originalBeard); tintedImage.pixels[at(106,80)*4]=17;
+const tintedImage=new Canvas(); tintedImage.pixels.set(originalBeard); tintedImage.pixels[at(110,80)*4]=17;
 const tinted=buildCacheFixture.render({...fixtureConfig,tint:{image:tintedImage}});
-assert.equal(tinted.beard.pixels[at(106,80)*4],17,'new tint uses the exact resolved art');
+assert.equal(tinted.beard.pixels[at(110,80)*4],17,'new tint uses the exact resolved art');
 assert.notEqual(tinted.beard,firstResult.beard);
 assert.notEqual(buildCacheFixture.render({...fixtureConfig,customTint:image=>image}).hood,firstResult.hood,'custom editor tint bypasses shared cache');
 assert.notEqual(buildCacheFixture.render({...fixtureConfig,renderOptions:{beardHoodCutoutMaskOverride:requestMask}}).hood,firstResult.hood,'editor mask override bypasses the result cache');
