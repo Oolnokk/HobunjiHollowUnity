@@ -39,6 +39,13 @@ hostile target acquisition is area-aware (non-strict).
 Try it in the console: `DevDummyPlayer.spawn(); DevDummyPlayer.follow(true);
 DamageAuthority.hit(DevDummyPlayer.get(), 40, 0, 0, 100, {}); RemotePlayerState.debugSnapshot()`.
 
+Simulation LOD is player-set aware: bandit sleep/wake (`wilderness-simulation-lod.js`)
+and Porakaneki ecology/aggro radii use `ActorRegistry.distanceToNearestPlayer` /
+nearest-player tile position, so a camp beside a guest stays awake on the host and a
+player in another zone does not hold it awake. **Purely visual LOD** (wildlife
+avatar hiding, NPC leg suppression, tree/brick/grass LOD, outline budget) stays
+keyed to the *local* player/camera on purpose — each client renders for itself.
+
 ### Still singleton-bound (next up)
 
 - Deliberately local-only (they are the local avatar's own action): `skeeri-ruins.js` swoop, `combat-camera-alignment-bridge.js` aerial wall impact, ruin/cave-trap deps in `game.js`, `respawnPlayer`/`PlayerDowned`/`GameFeel.playerHurt`. Ruin hazards must become "every player in the ruin" before co-op ruins.

@@ -112,6 +112,14 @@
     if (!combatDeps?.player || !combatDeps?.TILE) return null;
     return { col: combatDeps.player.x / combatDeps.TILE, row: combatDeps.player.y / combatDeps.TILE };
   }
+  // Tile position of the player nearest this entity (all players, entity's own area first), so
+  // ecology/aggro radii wake a camp beside a guest, not only beside the local player.
+  function playerTilePositionNear(entity) {
+    if (!combatDeps?.TILE) return null;
+    const near = window.ActorRegistry?.nearestPlayer(entity.x, entity.y, { areaId: entity.areaId });
+    if (!near) return playerTilePosition();
+    return { col: near.x / combatDeps.TILE, row: near.y / combatDeps.TILE };
+  }
   function streamChunkOfTile(col, row) {
     const size = streamChunkSizeTiles();
     return { x: Math.floor(num(col, 0) / size), y: Math.floor(num(row, 0) / size) };
@@ -129,7 +137,7 @@
   let ecologyRadiusTiles = 24; // Replaced from the first tribe's behavior.ecologyRadiusTiles (default fullSimulationReleaseRadiusTiles).
   function entityInPlayerEcologyRange(entity) {
     if (!entity || entity.areaId !== currentArea() || !combatDeps?.TILE) return false;
-    const player = playerTilePosition();
+    const player = playerTilePositionNear(entity);
     return !!player && Math.hypot(entity.x / combatDeps.TILE - player.col, entity.y / combatDeps.TILE - player.row) <= ecologyRadiusTiles;
   }
 
@@ -202,7 +210,7 @@
     const pursuingPlayer = (entity.state === 'chase' || entity.state === 'searching') && !entity._chunkCombatTarget; // A target reference, even a just-dead one, means the ecology (not the player) set this 'chase'; the pass below releases it.
     if (pursuingPlayer) return true;
     if (nowMs() - num(entity._teamHitAt, -Infinity) <= PLAYER_ENGAGEMENT_HOLD_MS) return true; // Stamped by PlayerDowned.noteTeamHit for every player/companion hit.
-    const player = playerTilePosition();
+    const player = playerTilePositionNear(entity);
     const aggroTiles = num(entity.def?.aggroRangePx, 0) / (combatDeps?.TILE || 1);
     return !!player && aggroTiles > 0 && Math.hypot(entity.x / combatDeps.TILE - player.col, entity.y / combatDeps.TILE - player.row) <= aggroTiles;
   }

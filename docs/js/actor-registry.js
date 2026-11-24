@@ -137,6 +137,14 @@
     return best || (strict ? null : fallback);
   }
 
+  // Distance in px from (x, y) to the nearest player (same-area players first).
+  // Simulation LOD (sleep/wake, ecology radius) must use this, never the local
+  // player alone: a camp next to a guest has to stay awake on the host.
+  function distanceToNearestPlayer(x, y, opts) {
+    const p = nearestPlayer(x, y, opts);
+    return p ? Math.hypot(p.x - x, p.y - y) : Infinity;
+  }
+
   // Which player an entity belongs to / answers to: a companion's `master`, a
   // projectile's `owner`, or the entity itself when it is a player.
   function ownerOf(entity) {
@@ -160,7 +168,7 @@
     assignId, idOf, getById,
     registerPlayer, unregisterPlayer, onPlayersChanged,
     getPlayers, getLocalPlayer, isPlayer, isLocalPlayer, playerCount,
-    setLocalAreaResolver, areaOf, playersInArea, nearestPlayer,
+    setLocalAreaResolver, areaOf, playersInArea, nearestPlayer, distanceToNearestPlayer,
     ownerOf, ownerPlayerOf, getDebug,
   };
 })();
