@@ -32,6 +32,24 @@ assert(index.some(e=>e.speciesId===species.speciesId));
 assert.match(read('docs/js/attachment-rig-latest-authored-snapshot.js'),/boney-shinjimi-skeleton-species-runtime\.js/);
 const html=read('docs/index.html');
 assert(html.indexOf('boney-shinjimi-wilderness.js')>0&&html.indexOf('boney-shinjimi-wilderness.js')<html.indexOf('slagothim-traders.js'));
+// Exercise the actual game-owned disposal seam, rather than a permissive mock.
+const gameSource=read('docs/game.js'); // Live game injection must not diverge from the encounter fixture.
+const injection=gameSource.slice(gameSource.indexOf('window.SlagothimTraders?.init({'),gameSource.indexOf('window.DyeSystem?.init({',gameSource.indexOf('window.SlagothimTraders?.init({')));
+assert.match(injection,/\bTILE, player, hostileObjects,/,'live Shinjimi receives player, tile scale and hostiles');
+assert.match(injection,/despawnNpcWalker: walker => despawnNpcVisitor\(walker, true\)/,'encounter adapter owns cancelled unregistered walkers');
+const disposeStart=gameSource.indexOf('function despawnNpcVisitor('),disposeEnd=gameSource.indexOf('let visitorArrivalCheckT',disposeStart);
+assert(disposeStart>=0&&disposeEnd>disposeStart,'production disposal seam found');
+const disposeSource=gameSource.slice(disposeStart,disposeEnd);
+const activeWalker={}; // Must never be removed by an unregistered walker's index of -1.
+const roster=[activeWalker];
+const retired=[];
+const disposeVisitor=new Function('npcWalkers','window',disposeSource+'\nreturn despawnNpcVisitor;')(roster,{PNGPlaneAvatar:{disposeAvatarModel:rig=>retired.push(rig)}});
+const rejectedRig={parent:{remove(){}}}; // Unique construction output not yet adopted into the roster.
+const unadopted={avatarGroup:rejectedRig,root:{parent:{remove(){}},_npcScene:{remove(){}},traverse(){}}};
+assert.equal(disposeVisitor(unadopted),false,'ordinary visitor exit still requires registry membership');
+assert.equal(disposeVisitor(unadopted,true),true,'explicit encounter cancellation retires an unadopted avatar');
+assert.deepEqual(retired,[rejectedRig]);
+assert.deepEqual(roster,[activeWalker],'unregistered cleanup must not remove a different live NPC');
 const travellers=read('docs/js/slagothim-traders.js');
 assert.match(travellers,/BoneyShinjimiWilderness\?\.init/);
 assert.match(travellers,/BoneyShinjimiWilderness\?\.update/);
