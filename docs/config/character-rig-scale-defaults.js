@@ -165,6 +165,23 @@
       anatomy.footScale = target.footScale;
       applied++;
     }
+    applyMaoaoFootScaleTuning(); // Species modules may restore old GLB foot defaults after this module first initializes; reassert the approved 26 values now.
+    const handProfiles = window.HobunjiHandModelProfiles; // Shared gameplay hand sizes are stored outside the attachment-rig anatomy.
+    if (handProfiles?.mutate) {
+      const overrides = handProfiles.data?.speciesScaleOverrides || {};
+      const mismatch = Object.entries(VALUES).some(([key, value]) => {
+        const [species, gender] = key.split('::');
+        return Number(overrides[species]?.[gender]) !== value.handScale;
+      }); // One-time bootstrap comparison only, not a per-frame scan.
+      if (mismatch) handProfiles.mutate(data => {
+        data.speciesScaleOverrides ||= {};
+        for (const [key, value] of Object.entries(VALUES)) {
+          const [species, gender] = key.split('::');
+          data.speciesScaleOverrides[species] ||= {};
+          data.speciesScaleOverrides[species][gender] = value.handScale;
+        }
+      }); // A single atomic update keeps hands in the game identical to the Full Character Scale editor.
+    }
     return applied;
   }
 
