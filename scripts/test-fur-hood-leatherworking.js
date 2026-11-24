@@ -105,6 +105,15 @@
     const furHoodStackRole=new Function(roleSource+'\nreturn furHoodStackRole;')();
     const mashHoodLayers=[{paletteColorKey:'A',layerRole:'base'},{paletteColorKey:'BODY',layerRole:'exposedSkin'},{paletteColorKey:'B',layerRole:'trim'},{paletteColorKey:'NONE',layerRole:'exposed'},{paletteColorKey:'BODY',layerRole:'exposedSkin'}];
     assert.deepEqual(mashHoodLayers.map((layer,index)=>furHoodStackRole(layer,index,mashHoodLayers)),['base','exposedUnderTrim','trim','exposed','exposed'],'crafted fur hoods keep the authored ear/tusk/trunk placement');
+    const anatomySource=portraitSource.slice(portraitSource.indexOf('const _BORROWED_ANATOMY_CACHE'),portraitSource.indexOf('function resolveBeardHoodAuthoring('));
+    const withoutBorrowedAnatomy=new Function('_normalizeSpeciesKey','_speciesParentChain',anatomySource+'\nreturn _withoutBorrowedAnatomy;')(
+      id=>String(id||'').toLowerCase(),id=>({mammakhbuur:['mashtzarr'],rakakoan:['kenkari']})[id]||[]);
+    const mashLayers=[{layerRole:'base'},{layerRole:'exposedSkin'},{layerRole:'trim'},{layerRole:'exposed'}];
+    assert.equal(withoutBorrowedAnatomy(mashLayers,'mashtzarr_male',{speciesId:'mashtzarr'}),mashLayers,'own variant keeps its anatomy');
+    assert.equal(withoutBorrowedAnatomy(mashLayers,'mashtzarr_male',{speciesId:'mammakhbuur'}),mashLayers,'child species keeps parent anatomy');
+    const borrowed=withoutBorrowedAnatomy(mashLayers,'mashtzarr_male',{speciesId:'kenkari'});
+    assert.deepEqual(borrowed.map(layer=>layer.layerRole),['base','trim'],'a fallback-group neighbour never inherits another species\' trunk/ear/tusk');
+    assert.equal(withoutBorrowedAnatomy(mashLayers,'mashtzarr_male',{speciesId:'rakakoan'}),borrowed,'filtered layers are cached, not reallocated per render');
     const withAnatomy=['exposed','animalFront','trim','exposedUnderTrim','animalBack','base'].map(role=>({role}));
     assert.deepEqual([...window.FurHoodLeatherworking.orderLayersForView(withAnatomy,'front')].map(entry=>entry.role),['animalBack','base','animalFront','exposedUnderTrim','trim','exposed'],'wearer ear sits under the trim, tusk/trunk over every fur piece');
     assert.deepEqual([...window.FurHoodLeatherworking.orderLayersForView(withAnatomy,'behind')].map(entry=>entry.role),['exposed','exposedUnderTrim','trim','animalFront','base','animalBack'],'wearer face anatomy is hidden behind the hood from the rear');

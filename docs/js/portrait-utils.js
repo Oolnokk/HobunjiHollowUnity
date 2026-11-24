@@ -2453,10 +2453,29 @@ function resolveOptionLayers(option, fighter) {
   if (vl && fighter) {
     for (const key of portraitVariantKeysForFighter(fighter, option)) {
       const resolved = vl[key];
-      if (resolved && resolved.length) return resolved;
+      if (resolved && resolved.length) return _withoutBorrowedAnatomy(resolved, key, fighter);
     }
   }
   return option.layers || [];
+}
+
+// Exposed/exposedSkin layers (e.g. a mashtzarr hood's ear/tusk/trunk) are the
+// owning species' own anatomy. A wearer may inherit them from its own variant
+// or its parent species' (mammakhbuur -> mashtzarr), but never from a
+// fallback-group neighbour: kenkari borrowing the mashtzarr fur hood must not
+// grow a trunk. Filtered arrays are cached so per-render calls never allocate.
+const _BORROWED_ANATOMY_CACHE = new WeakMap();
+function _withoutBorrowedAnatomy(layers, variantKey, fighter) {
+  if (!layers.some(layer => layer?.layerRole === 'exposed' || layer?.layerRole === 'exposedSkin')) return layers;
+  const owner = _normalizeSpeciesKey(String(variantKey).replace(/_(male|female)$/i, ''));
+  const wearer = _normalizeSpeciesKey(fighter?.speciesId);
+  if (owner === wearer || _speciesParentChain(wearer).some(parent => _normalizeSpeciesKey(parent) === owner)) return layers;
+  let filtered = _BORROWED_ANATOMY_CACHE.get(layers);
+  if (!filtered) {
+    filtered = layers.filter(layer => layer?.layerRole !== 'exposed' && layer?.layerRole !== 'exposedSkin');
+    _BORROWED_ANATOMY_CACHE.set(layers, filtered);
+  }
+  return filtered;
 }
 
 function resolveBeardHoodAuthoring(option, fighter) {
