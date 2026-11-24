@@ -7,7 +7,7 @@
   const CATEGORY_ICONS = {
     mineral: '💎', material: '🔩', wool: '🧶', sweetPaste: '🍯', sweetLiquid: '🫙', liquor: '🍶', grain: '🌾', teaBlend: '🍃', powder: '🥣', curds: '🥛', mayonnaise: '🥚', mustardSeed: '🌱', pungentPaste: '🧄', noodleBase: '🍜', cheese: '🧀', poultry: '🍗', meat: '🥩', whiteMilk: '🥛', seeds: '🌱', spice: '🌶️', fish: '🐟', mollusk: '🐚', starchVegetable: '🥔', butter: '🧈', vegetable: '🥬', brothBase: '🫕', berry: '🫐', fruit: '🍎', flour: '🥣', bread: '🍞', oil: '🫗', nut: '🥜', egg: '🥚', dairy: '🥛', sauce: '🫙', juice: '🧃', wine: '🍷', mead: '🍯', herb: '🌿', crop: '🌾', processedCrop: '🥣', processedProtein: '🍖', uumkaoiiDew: '💧', uumkaoiiMilk: '🥛', uumkaoiiCurds: '🥣', uumkaoiiCheese: '🧀', whiteCurds: '🥣', whiteCheese: '🧀',
   }; // Used to give every prototype ingredient an inventory and picker icon.
-  const EFFECT_ICONS = { strength: '💪', fortitude: '🛡️', vigor: '⚡', speed: '🏃', perception: '👁️', combat: '⚔️', farming: '🌾', fishing: '🎣', foraging: '🌿', cooking: '🍲', mining: '⛏️' }; // Used by food previews and the shared buff bar.
+  const EFFECT_ICONS = { strength: '💪', fortitude: '🛡️', vigor: '⚡', speed: '🏃', perception: '👁️', combat: '⚔️', farming: '🌾', fishing: '🎣', foraging: '🌿', cooking: '🍲', mining: '⛏️', feySight: '✨' }; // Used by food previews and the shared buff bar.
 
   const FOOD_EFFECT_BENEFITS = Object.freeze({
     strength: 'Increases outgoing damage.', fortitude: 'Reduces incoming Health damage.',
@@ -16,6 +16,7 @@
     combat: 'Improves Combat skill bonuses.', farming: 'Improves Farming skill bonuses.',
     fishing: 'Improves Fishing skill bonuses.', foraging: 'Improves Foraging skill bonuses.',
     cooking: 'Improves Cooking skill bonuses.', mining: 'Improves Mining skill bonuses.',
+    feySight: 'Increases fey encounter chance by 100% per stack until a fey reward is received.',
   }); // Food effect keys translated into explanations for the active buff menu.
   let deps = null; // Used as the only bridge to inventory, saving, and the host game's UI refreshes.
   let selectedRecipeId = null; // Used to preserve the selected recipe while rerendering.
@@ -23,6 +24,8 @@
   let heldQuality = null; // Explicit Pack Hold selection; automatic consumption uses this tier while available.
   let qualityBuckets = {}; // Used to persist actual 1–5-star quantities without changing the game's stack inventory shape.
   let cookedDefinitions = {}; // Used to restore procedurally named food item definitions on reload.
+  const feyEncounterMultipliers = new Map(); // Future equipment, prayer and other providers can register independent chance multipliers.
+  let feySightStacks = 0; // Persistent member-world stacks; only a successful fey reward consumes them.
   let activeFoodEffects = []; // Used as an independent timed effect source beside alchemy.
   const externalFoodProviders = new Map(); // Independent festival meals augment cooked-food stats without refreshing or replacing real meal timers.
   let unlockedRecipeIds = new Set(); // Used to persist opt-in recipe templates such as Banubu's Three-Fish Pie.
@@ -120,7 +123,11 @@
         cookingProcessingTier: item.processingTier || 'raw',
         cookingDefaultStars: defaultStarsFor(item),
       });
-      if (!deps.inventoryItems.some(entry => entry.key === key)) deps.inventoryItems.push({ key, icon, label: item.name.toUpperCase(), max: 99 });
+      if (key === 'feyHeftroot') {
+        const ordinary = deps.ITEM_DEFS.heftroot; // Match ordinary root art and economics without inheriting its Fortitude effect.
+        Object.assign(deps.ITEM_DEFS[key], { icon: ordinary?.icon || icon, cat: ordinary?.cat || 'food', spriteIcon: ordinary?.spriteIcon || 'heftroot.png', spriteColor: ordinary?.spriteColor, spriteMode: ordinary?.spriteMode, ingredientColor: ordinary?.ingredientColor || 0xAAA07C, sellPrice: ordinary?.sellPrice || deps.ITEM_DEFS[key].sellPrice });
+      }
+      if (!deps.inventoryItems.some(entry => entry.key === key)) deps.inventoryItems.push({ key, icon: deps.ITEM_DEFS[key].icon || icon, label: item.name.toUpperCase(), max: 99 });
     });
 
     Object.entries(deps.ITEM_DEFS).forEach(([key, definition]) => {
@@ -390,7 +397,7 @@
 
   function effectLabel(effectKey) {
     const canonical = canonicalFoodEffectKey(effectKey); // Legacy callers also see the Perception label.
-    return data().effectLabels?.[canonical] || String(canonical || ''); // Used by quests and diagnostics to present canonical cooking-effect names.
+    return canonical === 'feySight' ? 'Fey-sight' : data().effectLabels?.[canonical] || String(canonical || ''); // Used by quests and diagnostics to present canonical cooking-effect names.
   }
 
   function effectStrengthLabel(stacks) {
@@ -617,6 +624,47 @@
     }, 1800);
   }
 
+  function grantFeySight(stacks = 1) {
+    const amount = Number(stacks); // Validate encounter and food grants before modifying the saved balance.
+    if (!Number.isFinite(amount) || amount <= 0 || !Number.isFinite(feySightStacks + amount)) return feySightStacks;
+    feySightStacks += amount;
+    window.EffectBuffBar?.refresh(true);
+    return feySightStacks;
+  }
+
+  function consumeFeySight() {
+    const consumed = feySightStacks; // Reward owners call after successful delivery and before saving.
+    feySightStacks = 0;
+    if (consumed) window.EffectBuffBar?.refresh(true);
+    return consumed;
+  }
+
+  function registerFeyEncounterMultiplier(id, provider) {
+    if (!id) return false;
+    if (typeof provider === 'function') feyEncounterMultipliers.set(String(id), provider);
+    else feyEncounterMultipliers.delete(String(id));
+    return true;
+  }
+
+  function feyEncounterChance(baseChance) {
+    const base = Number(baseChance); // Encounter owners supply a probability in [0,1].
+    if (!Number.isFinite(base) || base <= 0) return 0;
+    let chance = base * (1 + feySightStacks);
+    for (const provider of feyEncounterMultipliers.values()) {
+      try { const mul=Number(provider()); if(Number.isFinite(mul)&&mul>=0)chance=mul===0?0:chance*mul; }
+      catch(error) { window.__farmLog?.('[fey] chance provider failed: '+error.message,'warn'); }
+    }
+    return Math.min(1, chance);
+  }
+
+  function feySightEntries() {
+    return feySightStacks > 0 ? [{
+      key: 'feySight', label: 'Fey-sight', icon: '✨', kind: 'boon',
+      sourceLabel: 'Fey', description: 'Fey encounter chance +' + feySightStacks * 100 + '%. Lost only when a fey reward is received.',
+      stacks: feySightStacks, persistent: true, timeBasis: 'conditional', remainingLabel: 'Until fey reward',
+    }] : [];
+  }
+
   function eat(key, selectedStars = null) {
     const definition = deps.ITEM_DEFS[key];
     if (!definition?.isCookedFood || (deps.inventory[key] || 0) < 1) return { ok: false, message: 'Nothing edible is selected.' };
@@ -626,6 +674,7 @@
     if (!consumeQuality(key, quality, 1)) return { ok: false, message: 'That quality stack is no longer available.' };
     hydratePendingFoodTimers(now);
     Object.entries(normalizeFoodEffects(definition.foodEffects)).forEach(([effect, stacks]) => {
+      if (effect === 'feySight') { grantFeySight(stacks); return; }
       const existing = activeFoodEffects.find(entry => entry.key === effect && entry.expiresAtGameHour > now);
       if (existing) { existing.stacks += Math.max(1, Number(stacks) || 1); existing.expiresAtGameHour = now + FOOD_DURATION_HOURS; }
       else activeFoodEffects.push({ key: effect, stacks: Math.max(1, Number(stacks) || 1), durationHours: FOOD_DURATION_HOURS, expiresAtGameHour: now + FOOD_DURATION_HOURS });
@@ -636,13 +685,13 @@
     deps.buildInventoryGrid();
     deps.refreshActionBar();
     deps.saveMemberWorldData();
-    return { ok: true, message: `Ate ${definition.label}. Food effects last ${FOOD_DURATION_HOURS} in-game hours.` };
+    return { ok: true, message: `Ate ${definition.label}. ${definition.foodEffects?.feySight ? 'Fey-sight lasts until a fey reward. Other effects last 24 in-game hours.' : `Food effects last ${FOOD_DURATION_HOURS} in-game hours.`}` };
   }
 
   function foodBuffEntries() {
-    if (!activeFoodEffects.length) return [];
+    if (!activeFoodEffects.length) return feySightEntries();
     const now = currentGameHour(); // HUD countdowns use the same in-game clock as effect expiry.
-    if (!Number.isFinite(now)) return [];
+    if (!Number.isFinite(now)) return feySightEntries();
     hydratePendingFoodTimers(now);
     const displayed = new Map(); // One HUD icon per effect while independently expiring legacy meal stacks retain their original deadlines.
     for (const effect of activeFoodEffects) {
@@ -654,17 +703,18 @@
         group.lastExpiry = Math.max(group.lastExpiry, effect.expiresAtGameHour);
       } else displayed.set(effect.key, { stacks: effect.stacks, nextExpiry: effect.expiresAtGameHour, lastExpiry: effect.expiresAtGameHour });
     }
-    return [...displayed].map(([key, effect]) => ({
+    return [...feySightEntries(), ...[...displayed].map(([key, effect]) => ({
       key, label: `${effectStrengthLabel(effect.stacks)} ${effectLabel(key)}`, icon: EFFECT_ICONS[key] || '🍲', kind: 'boon',
       sourceLabel: 'Food',
       description: (FOOD_EFFECT_BENEFITS[key] || 'Adds a temporary food skill or stat bonus.') + ` +${effect.stacks} food stacks.`
         + (effect.nextExpiry < effect.lastExpiry ? ' Some stacks expire earlier than others.' : ''),
       stacks: effect.stacks, durationS: FOOD_DURATION_HOURS * 3600, remainingS: (effect.nextExpiry - now) * 3600,
-    }));
+    }))];
   }
 
   function getFoodEffectStacks(effectKey) {
     const canonical = canonicalFoodEffectKey(effectKey); // Read legacy requests through the same Perception tally.
+    if (canonical === 'feySight') return feySightStacks;
     let total = 0; // Food timers are only consulted while ordinary food buffs are actually active.
     if (activeFoodEffects.length) {
       const now = currentGameHour(); // Expiry and stat reads pause whenever the calendar clock pauses.
@@ -698,6 +748,7 @@
     const now = currentGameHour(); // Persist remaining game-hours, never wall-clock seconds.
     hydratePendingFoodTimers(now);
     return {
+      feySightStacks,
       qualityBuckets: JSON.parse(JSON.stringify(qualityBuckets)),
       cookedDefinitions: JSON.parse(JSON.stringify(cookedDefinitions)),
       processedDefinitions: window.ItemProcessing?.serializeProcessedDefinitions?.() || [], // Restore the buffs and provenance of completed ingredient batches.
@@ -718,6 +769,8 @@
   }
 
   function restore(saved = {}) {
+    const savedFeySight = Number(saved.feySightStacks); // Legacy saves default to zero.
+    feySightStacks = Number.isFinite(savedFeySight) ? Math.max(0, savedFeySight) : 0;
     if (cookTimer !== null) clearTimeout(cookTimer); // A pending batch belongs to the character who started it.
     cookTimer = null;
     selectedSlots = {};
@@ -913,6 +966,7 @@
     registerCookedDefinition, recordItemQuality, getFoodEffectStacks, getSpeedMultiplier, getStaminaRegenMultiplier, registerIngredientItems, availableQualityEntries,
     setHeldQuality, consumeQuality, consumeLowestQuality, consumeQualityByPolicy, peekLowestQuality, valueMultiplierForStars, cookedSellPrice,
     registerExternalFoodProvider, canonicalFoodEffectKey, normalizeFoodEffects,
+    grantFeySight, consumeFeySight, feyEncounterChance, registerFeyEncounterMultiplier,
     unlockRecipe, isRecipeUnlocked, listIngredientDefinitions, listCookedInventory, consumeCookedInventoryItem, effectLabel,
     FOOD_DURATION_HOURS, FOOD_EFFECT_STRENGTH_TIERS, effectStrengthLabel, formatEffectStrength, ingredientEffectTotals, ingredientBuffText,
     bestAvailableSelection, get favoriteRecipes() { return favoriteRecipes.map(entry => ({ ...entry, ingredients: { ...entry.ingredients } })); }, loadFavorite,

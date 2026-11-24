@@ -98,7 +98,7 @@
   <script src="js/den-nest-system.js?v=20261123h467446c"></script>
   <script src="js/corpse-hold-loot.js?v=20261113inputrouter1"></script>
   <script src="js/companion-downed.js?v=20261024downed1"></script> <!-- Downed animal companion: auto-revive timer, held revive, Root Totem recall. Initialised by game.js. -->
-  <script src="js/player-downed.js?v=20261103downedhold3"></script> <!-- Player downed/Second Wind state. Initialised by game.js. -->
+  <script src="js/player-downed.js?v=20261124rootledoot3"></script> <!-- Player downed/Second Wind state. Initialised by game.js. -->
   <script src="js/player-crawl.js?v=20261124babyFollowRebase1"></script> <!-- Procedural left-side lean crawl for the downed player; driven by player-downed.js. -->
   <!-- Key HUD row, item-scroll widget, and per-frame status-pill HUD
        refresh, extracted out of game.js; uses window.FormatUtils.
@@ -152,7 +152,7 @@
        js/wild-berries.js also read from it via their own init() calls
        further down game.js. Doesn't touch the DOM (see player-vitals.js's
        comment above and the plan notes on that bug class). -->
-  <script src="js/item-processing.js?v=20261123perceptionFlour2"></script>
+  <script src="js/item-processing.js?v=20261124rootledoot1"></script>
   <script src="js/inventory-wheel-list.js?v=20261121wheelList1"></script> <!-- Item wheel list + cross-frame cache; game.js delegates getInventoryStackItems() here. -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -329,7 +329,7 @@
   <script src="config/farm-specializations.js?v=20261114queenPerf1"></script>
   <script src="config/crop-economy.js?v=20261008crop1"></script>
   <script src="js/farm-world-settings.js?v=20261013h4299425"></script>
-  <script src="onboarding.js?v=20261122hAdopt4"></script>
+  <script src="onboarding.js?v=20261124rootledoot2"></script>
   <!-- Combat system modules (windup/strike pipeline, loadout, abilities) -->
   <script src="js/combat/resource-system.js?v=20261122familyBaby4"></script>
   <script src="js/sacred-ground.js?v=20261108h9e2416f"></script> <!-- Global sacred-ground provider registry for totems, temple and future blessings. -->
@@ -380,7 +380,7 @@
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
-  <script src="js/effect-buff-bar.js?v=20261113buffStyleWrites2"></script>
+  <script src="js/effect-buff-bar.js?v=20261124rootledoot1"></script>
   <script src="js/skill-system.js?v=20261122perception1"></script>
   <script src="js/perk-system.js?v=20261031aoeWidth1"></script>
   <!-- Trinkets + base 8-point Attunement budget (expanded by character-owned Lich-hearts). -->
@@ -388,7 +388,7 @@
   <!-- Wearer-only trinket hooks: imported from PR #1421 and child #1426, before Combat.init in game.js. -->
   <script src="js/combat/specialized-combat-trinket-hooks.js?v=20261106trinkets20"></script>
   <script src="js/combat/double-edged-combat-trinkets.js?v=20261106trinkets20"></script>
-  <script src="js/cooking-data.js?v=20261124noodleBase1"></script>
+  <script src="js/cooking-data.js?v=20261124rootledoot1"></script>
   <script src="js/food-processing.js?v=20261115terminalFood3"></script>
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="cooking-runtime"></script>
   <script src="js/key-item-system.js?v=20261114heartAudit4"></script>
@@ -499,7 +499,7 @@
        Slagothim culture names for caravan members. -->
   <script src="js/scratchbones-name-generator.js?v=20261108harlyao2"></script>
   <script src="js/boney-shinjimi-rewards.js?v=20261116milk1"></script> <!-- Existing museum/relic/trinket reward adapters. -->
-  <script src="js/boney-shinjimi-wilderness.js?v=20261118houseSpoilers1"></script> <!-- Full-moon hermit, house and chase; shares traveller scheduler/save seam. -->
+  <script src="js/boney-shinjimi-wilderness.js?v=20261124rootledoot7"></script> <!-- Full-moon hermit, house and chase; shares traveller scheduler/save seam. -->
   <script src="js/slagothim-traders.js?v=20261124bulkAudit3"></script>
   <!-- Khymeryyan civil calendar (day/week/month/year derivations + regional
        seasons) and the Calendar tab UI (window.CalendarSystem) —
@@ -656,7 +656,7 @@
   <script src="config/modular-weapons.js?v=20261118captainWarCleaver2"></script>
   <script src="js/modular-weapon-bridge-fill.js?v=20261109boreflex1"></script>
   <script src="js/modular-weapons.js?v=20261119sideTangSweep2"></script>
-  <script src="js/bandit-captain-armaments.js?v=20261118captain1"></script> <!-- Cultural donor pool + Foundry legal pair selection; registers unique loot before game startup. -->
+  <script src="js/bandit-captain-armaments.js?v=20261124rootledoot1"></script> <!-- Cultural donor pool + Foundry legal pair selection; registers unique loot before game startup. -->
   <script src="js/town-proposals.js?v=20261016proposals1"></script>
   <script src="js/foundry-shop.js?v=20261116subtiers1"></script>
   <script src="js/metal-reinforcement.js?v=20261116bar50PowerRange075150"></script>
@@ -2986,7 +2986,8 @@
   <script src="js/lunge-targeting.js?v=20261121lungeAoeAudit2"></script>
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups2" data-classic-group="render"></script>
   <script src="js/held-gift-policy.js?v=20261122heldGiftPolicy1"></script> <!-- Shared gifting policy and clothing visual preparation; game.js owns equipment state. -->
-  <script src="game.js?v=20261124physicalChair4"></script>
+  <script src="js/rootledoot-encounter.js?v=20261124rootledoot8"></script>
+  <script src="game.js?v=20261124hd5efb22"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261115nativeArena1"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->

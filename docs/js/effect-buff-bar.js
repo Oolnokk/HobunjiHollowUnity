@@ -29,15 +29,15 @@
       try { supplied = provider() || []; }
       catch (error) { window.__farmLog?.(`[buff-bar] ${sourceId} provider failed: ${error.message}`, 'error'); }
       for (const raw of supplied) {
-        if (!raw || !(Number(raw.remainingS) > 0)) continue;
+        if (!raw || (raw.persistent !== true && !(Number(raw.remainingS) > 0))) continue;
         const key = String(raw.key || raw.id || 'effect'); // Used to namespace duplicate potion/food effect ids.
         entries.push({
           ...raw,
           sourceId,
           domId: `${sourceId}:${key}`,
           kind: raw.kind === 'bane' ? 'bane' : 'boon',
-          durationS: Math.max(0.001, Number(raw.durationS) || Number(raw.remainingS) || 1),
-          remainingS: Math.max(0, Number(raw.remainingS) || 0),
+          durationS: raw.persistent === true ? null : Math.max(0.001, Number(raw.durationS) || Number(raw.remainingS) || 1),
+          remainingS: raw.persistent === true ? null : Math.max(0, Number(raw.remainingS) || 0),
           stacks: Math.max(1, Math.floor(Number(raw.stacks) || 1)),
         });
       }
@@ -65,7 +65,7 @@
         const sourceLabel = entry.sourceLabel || entry.sourceId; // Used in the accessible tooltip.
         const stackBadge = entry.stacks > 1 ? `<span class="buff-icon-stacks">${entry.stacks}</span>` : '';
         const fractionBadge = entry.fractionLabel ? `<span class="buff-icon-fraction" data-fraction="${escapeHtml(entry.domId)}" style="position:absolute;bottom:-1.2em;left:50%;transform:translateX(-50%);font-size:9px;white-space:nowrap;text-shadow:0 1px 2px #000">${escapeHtml(entry.fractionLabel)}</span>` : ''; // Timed festival meals show in-game hours left out of their ten-portion duration.
-        return `<div class="buff-icon ${entry.kind}" data-buff="${escapeHtml(entry.domId)}" title="${escapeHtml(`${entry.label} · ${sourceLabel} · ${entry.stacks} stack${entry.stacks === 1 ? '' : 's'}`)}">
+        return `<div class="buff-icon ${entry.kind}" data-buff="${escapeHtml(entry.domId)}" title="${escapeHtml(`${entry.label} · ${sourceLabel} · ${entry.stacks} stack${entry.stacks === 1 ? '' : 's'}${entry.persistent ? ' · '+(entry.remainingLabel || 'Conditional') : ''}`)}">
           <span class="buff-icon-glyph">${escapeHtml(entry.icon || '✦')}</span>${stackBadge}${fractionBadge}
           <div class="buff-icon-track"><div class="buff-icon-fill" data-fill="${escapeHtml(entry.domId)}"></div></div>
         </div>`;
@@ -85,7 +85,7 @@
     for (const entry of entries) {
       const nodes = iconNodes.get(entry.domId); // Cached until the icon markup changes; includes both countdown and fraction-label nodes.
       if (!nodes) continue;
-      const percentage = Math.round(Math.max(0, Math.min(100, entry.remainingS / entry.durationS * 100)) * 10) / 10; // Tenths of a percent avoid subpixel style churn for long buffs.
+      const percentage = entry.persistent === true ? 100 : Math.round(Math.max(0, Math.min(100, entry.remainingS / entry.durationS * 100)) * 10) / 10; // Tenths of a percent avoid subpixel style churn for long buffs.
       const width = `${percentage}%`; // Used as the stable CSS width for unchanged active durations.
       if (nodes.fill) {
         if (nodes.fill.style.width !== width) { nodes.fill.style.width = width; styleDebug.appliedWrites++; }

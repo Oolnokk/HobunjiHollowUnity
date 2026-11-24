@@ -402,13 +402,14 @@
     if (!window.NpcAvatarPreview || !window.PNGPlaneAvatar) throw new Error('Humanoid portrait modules are unavailable.');
     characterBuildStatus.stage = 'cosmetics';
     await window.NpcAvatarPreview.ensurePortraitCosmetics({ assetBase: './assets/', configBase: './config/' });
-    characterBuildStatus.garmentId = ensureEnemyPants(roster); // Existing mobile build diagnostics show the selected leg garment.
+    characterBuildStatus.garmentId = roster.rootledoot ? null : ensureEnemyPants(roster); // Existing mobile build diagnostics show the selected leg garment.
     characterBuildStatus.stage = 'profile';
     await window.ProceduralMaskPatterns?.ready; // Mask pattern library (config/patterns) must be loaded before the profile is built.
     const avatarData = window.MetalArmorSystem?.decorateAvatarDataWithMetalArmor?.(roster, roster.metalArmorItems || []) || roster; // Portrait colors retain the same alloy/Temper state as corpse loot.
     const profile = window.NpcAvatarPreview.buildProfileFromNpcExport(avatarData);
     if (!profile) throw new Error('Humanoid portrait profile could not be built.');
     window.SpecialHarlyaoLiches?.decoratePortraitProfile?.(profile,roster); // Named eye-glow appearance uses the canonical two-pass mask pixel dye; Imlao explicitly clears all face/headwear slots.
+    if (roster.rootledoot) profile.bodyColors = roster.appearance.bodyColors; // Rootledoot hands and feet use the root's authored color.
     const resolvedRosterDyes = applyRosterDyesToProfile(profile, roster); // Final world-avatar authority: visible pixels must use the same appliedDyes record that loot preserves.
     const avatarCfg = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar || {};
     const MODEL_W = avatarCfg.worldModelWidth ?? 0.9;
@@ -424,14 +425,16 @@
       warmCanvas.width = warmCanvas.height = PORTRAIT_SIZE;
       await window.NpcAvatarPreview.renderProfileToCanvas(warmCanvas, profile, { forceEyesOpen: true });
     }
-    await window.NpcAvatarPreview.renderProfileToCanvas(frontCanvas, profile, { forceEyesOpen: true });
+    if (roster.rootledoot) await window.Rootledoots.paintPortrait(frontCanvas);
+    else await window.NpcAvatarPreview.renderProfileToCanvas(frontCanvas, profile, { forceEyesOpen: true });
     const neutralFrontCanvas = document.createElement('canvas'); // Immutable neutral/resting source used to restore this enemy immediately when combat ends.
     neutralFrontCanvas.width = neutralFrontCanvas.height = PORTRAIT_SIZE;
     neutralFrontCanvas.getContext('2d').drawImage(frontCanvas, 0, 0);
     const combatFrownCanvas = document.createElement('canvas'); // Pre-baked frown source used for synchronous combat entry and therefore available before an afterimage snapshots the live texture.
     combatFrownCanvas.width = combatFrownCanvas.height = PORTRAIT_SIZE;
     characterBuildStatus.stage = 'combat-portrait';
-    await window.NpcAvatarPreview.renderProfileToCanvas(combatFrownCanvas, profile, {
+    if (roster.rootledoot) combatFrownCanvas.getContext('2d').drawImage(frontCanvas,0,0);
+    else await window.NpcAvatarPreview.renderProfileToCanvas(combatFrownCanvas, profile, {
       forceEyesOpen: true,
       breathingComposer: COMBAT_FROWN_COMPOSER,
       seatId: 'bandit-combat-frown',
@@ -439,14 +442,15 @@
     const backCanvas = document.createElement('canvas');
     backCanvas.width = backCanvas.height = PORTRAIT_SIZE;
     characterBuildStatus.stage = 'back-portrait';
-    await window.NpcAvatarPreview.renderProfileToCanvas(backCanvas, profile, { portraitView: 'behind', forceEyesOpen: true });
+    if (roster.rootledoot) await window.Rootledoots.paintPortrait(backCanvas,true);
+    else await window.NpcAvatarPreview.renderProfileToCanvas(backCanvas, profile, { portraitView: 'behind', forceEyesOpen: true });
     // Imlao keeps an articulated, normally sized head rig but has no skull: the portrait is re-rendered with the head sprite skipped,
     // so the torso, collar and rear cloth the skull normally hides show through (not an erased hole).
     // The untouched renders below stay as the rig canvases, so head bones and weights still come from the real skull.
     const transparentLichSkull = roster.specialLichId === 'imlao'; // Limits the headless render to this named boss.
     const headCanvas = document.createElement('canvas'); // Shared front head-only portrait also locates every humanoid's neck pivot.
     headCanvas.width = headCanvas.height = PORTRAIT_SIZE;
-    await window.NpcAvatarPreview.renderProfileToCanvas(headCanvas, profile, { forceEyesOpen: true, onlyHeadSprite: true });
+    if (!roster.rootledoot) await window.NpcAvatarPreview.renderProfileToCanvas(headCanvas, profile, { forceEyesOpen: true, onlyHeadSprite: true });
     const originalHeadRigFront = transparentLichSkull ? document.createElement('canvas') : frontCanvas; // Skull-bearing pixels retain correct head-skin weights.
     const originalHeadRigBack = transparentLichSkull ? document.createElement('canvas') : backCanvas; // The rear neck shares the same true head proportions.
     if (transparentLichSkull) {
@@ -529,8 +533,8 @@
       await window.NpcAvatarPreview.renderProfileToCanvas(headMaskCanvas, profile, { forceEyesOpen: true, headCosmeticsOnly: true });
     }
     const headGate = window.PNGPlaneAvatar.npcHeadGateFor?.(roster.appearance?.speciesId, roster.headGate) ?? roster.headGate; // All non-Harlyao humanoid enemies default to legacy; authored workshop overrides and skeleton defaults remain intact.
-    const neckPivotPx = window.PNGPlaneAvatar.detectHeadRigPixels?.(headCanvas, originalHeadRigFront, 12)?.pivotPx
-      || window.PNGPlaneAvatar.detectNeckPivotPx?.(originalHeadRigFront, 12);
+    const neckPivotPx = roster.rootledoot ? null : (window.PNGPlaneAvatar.detectHeadRigPixels?.(headCanvas, originalHeadRigFront, 12)?.pivotPx
+      || window.PNGPlaneAvatar.detectNeckPivotPx?.(originalHeadRigFront, 12)); // A Rootledoot is a single rigid root portrait, not an articulated head.
     const neckPivotNormalized = neckPivotPx
       ? { x: neckPivotPx.x / frontCanvas.width, y: neckPivotPx.y / frontCanvas.height }
       : null;
@@ -3426,6 +3430,7 @@
       roster.appearance.bodyColors = opts.bodyColorsOverride; // Caller-owned explicit body tint applied before portrait generation without changing any other seeded appearance choices.
     }
     roster = loadoutRules?.applyRoster(loadoutKind, roster, deps.rnd, cfg) || roster;
+    if (opts.extra?.rootledoot && opts.rosterOverride) roster = {...opts.rosterOverride, rootledoot:true}; // Keep the bare root and matching limb colors instead of Workshop clothing.
     const spineRule = loadoutRules?.spineFor?.(loadoutKind);
     if (spineRule && !roster.spine) roster = { ...roster, spine: { hunch: spineRule.hunch, ...(spineRule.sway ? { sway: spineRule.sway } : {}), ...(spineRule.kyphosis != null ? { kyphosis: spineRule.kyphosis } : {}) } }; // Authored hunchback (old, skeletal, Maskbound): read by the portrait's legs, shoulders, neck and weapon orbit.
     if(roster.specialLichId)window.SpecialHarlyaoLiches?.applyBodyColor3ToRoster?.(roster,roster.lichType); // Deterministic body C after Workshop rules, so eyes and generated wall emissions cannot diverge.

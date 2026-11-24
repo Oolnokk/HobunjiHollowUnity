@@ -586,6 +586,7 @@
       alchemyActiveEffects: [],       // [{ key, remainingS }] — still-active buffs/debuffs at last save
       alchemyReagentState: {},        // { [zoneMapId]: { day, placements: [{col,row,key}] } }
       cookingState: {},               // quality buckets, generated meals, and active food effects
+      rootledootState: null,           // Persistent wilderness locale attempt/clear ledger.
       animalHides: { version: 1, pack: {} }, // Exact coat/genotype records for the count-based world-member hide inventory.
       // A brand-new member has no legacy favor to fix, so it starts already
       // "migrated" — see game.js's DialogueContent.loadNpcRelationships/
@@ -1514,6 +1515,7 @@
       alchemyReagentState: { ...(memberState.alchemyReagentState || {}) },
       knownFurnitureBlueprints: [...(memberState.knownFurnitureBlueprints || [])],
       cookingState:      { ...(memberState.cookingState || {}) },
+      rootledootState: memberState.rootledootState || null,
       animalHides:       memberState.animalHides || { version: 1, pack: {} }, // Pass saved per-hide genetics from the world member into game.js restore.
       // These were being saved by game.js's saveMemberWorldData() but never
       // actually read back out here — every one of them silently reset on
@@ -1903,6 +1905,7 @@
       playerData.alchemyReagentState = { ...(memberState.alchemyReagentState || {}) };
       playerData.knownFurnitureBlueprints = [...(memberState.knownFurnitureBlueprints || [])];
       playerData.cookingState = { ...(memberState.cookingState || {}) };
+      playerData.rootledootState = memberState.rootledootState || null;
       playerData.animalHides = memberState.animalHides || { version: 1, pack: {} }; // New characters use the same saved-hide payload shape.
       // Same fields as the returning-player branch above, for consistency —
       // memberState here is always freshly empty (a brand-new world/member),

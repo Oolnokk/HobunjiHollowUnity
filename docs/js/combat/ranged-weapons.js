@@ -2331,6 +2331,12 @@
       delete c._rangedLosDebug;
     }
   }
+  function retireOwnerProjectiles(owner) {
+    if(!owner)return 0;
+    let removed=0; // Explicit encounter teardown also retires airborne and embedded projectiles from these actors only.
+    for(const p of projectiles)if(!p.dead&&p.owner===owner){disposeProjectile(p);removed++;}
+    return removed;
+  }
   function disposeOwner(c) { cancelBanditAction(c); if (c?._banditRangedToolHolder) c._banditRangedToolHolder.parent?.remove(c._banditRangedToolHolder); }
 
   function computeWouldHitTarget() {
@@ -2406,7 +2412,7 @@
     isLoaded, setLoaded, update, updateBanditAI, updateBanditVisual,
     beginBanditAction, // Shared timing/charge setup for isolated loadout animation previews.
     rangedLoadStaminaCost, chargeStaminaCostForPose, // Shared balance helpers used by thrown-charge payment and regression coverage.
-    cancelBanditAction, disposeOwner, playerLockRangePx, playerIdlePose: itemKey => idlePose(itemKey),
+    cancelBanditAction, disposeOwner, retireOwnerProjectiles, playerLockRangePx, playerIdlePose: itemKey => idlePose(itemKey),
     isPlayerAttacking: () => playerAction?.kind === 'fire', // Lets shared body-facing logic distinguish firing from the visually similar reload action.
     debugProjectileColliders: () => projectiles.filter(p => !p.dead && !p.embedded && p.areaId === deps?.getCurrentArea()).map(p => ({
       x: p.x / deps.TILE, y: p.worldY, z: p.y / deps.TILE, radius: projectileCollisionRadiusWorld(p),

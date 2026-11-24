@@ -87,6 +87,7 @@
     window.PlayerCrawl?.setActive(false);
     player.health = Math.max(1, Math.round(max * CONFIG.reviveHealthFraction));
     player.invulnUntil = now() + CONFIG.reviveInvulnSeconds * 1000;
+    window.Rootledoots?.noteDown?.(null, 0); // A rescued player must not carry old ambush overkill into a later unrelated death.
     lastEvent = { type: 'second-wind', reason, at: Date.now() };
     deps.showToast?.('💨 Second Wind! You get back up.', true);
     refreshHud();

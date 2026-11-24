@@ -30,6 +30,7 @@
   let houseBuilding = false; // Prevents repeated fetches during an in-flight build.
   let houseUnregister = null; // Shared hard-wall collision registration, active even when invisible.
   let generation = 0; // Invalidates pending asynchronous builders after map/world/encounter changes.
+  let feyApproachTimer = 0; // Rare nearby-arrival rolls run at most once every 20 active-zone seconds.
   let scanTimer = 0; // LOS and NPC scans are not repeated every animation frame.
   let planTimer = 0; // Chore route choices are throttled separately from body updates.
   let debugTimer = 0; // Mobile in-page diagnostics repaint at most twice per second.
@@ -169,6 +170,8 @@
   }
   function releaseWalker() {
     generation++;
+    // Invalidated cutscenes cannot finish against the old encounter. Return to the last valid phase and release only their own lock.
+    if(sceneRunning){sceneRunning=false;if(state.phase==='scene')state.phase=state.reward?'leaving':'home';}
     if(walker) {
       const old=walker;walker=null;
       if(!deps?.despawnNpcWalker?.(old)) old.root?.parent?.remove?.(old.root);
@@ -198,12 +201,13 @@
     if(houseMesh?.parent)houseMesh.parent.remove(houseMesh);
     houseMesh=null;houseScene=null;
     if(!window.HousePieceGen?.buildGroupFromPiece||!window.THREE)return;
-    houseBuilding=true;
+    const buildToken={};houseBuilding=buildToken; // Only this async request owns its loading flag.
     const serial=generation;
     try {
       const response=await fetch(HOUSE_FILE);
       if(!response.ok)throw new Error('HTTP '+response.status+' for Highland house piece');
       const piece=await response.json();
+      if(serial!==generation||area()!==state.zone||!state.home||scene!==window.GridTileAccessors?.getActiveScene?.())return; // Do not construct stale house geometry or dereference a removed home.
       const base=piece.currentPiece||piece;
       if(!Array.isArray(base.footprint?.cells)||base.footprint.cells.length!==9)
         throw new Error('Highland 3x3 footprint no longer matches its authored asset');
@@ -221,8 +225,8 @@
       scene.add(group);houseMesh=group;houseScene=scene;
       bumpEvent('Authored Highland house geometry loaded');
     } catch(err) {
-      bumpEvent('House geometry unavailable: '+(err?.message||err)); // Mobile diagnostics: no silent cube substitute.
-    } finally {houseBuilding=false;}
+      if(serial===generation)bumpEvent('House geometry unavailable: '+(err?.message||err)); // Mobile diagnostics: no silent cube substitute.
+    } finally {if(houseBuilding===buildToken)houseBuilding=false;}
   }
   function updateHouseVisibility() {
     if(!houseMesh)return;
@@ -263,7 +267,7 @@
   }
   async function ensureWalker() {
     if(walker||walkerBuilding||!deps?.makeNpcWalker||!state.home||area()!==state.zone)return;
-    walkerBuilding=true;
+    const buildToken={};walkerBuilding=buildToken; // A superseded builder cannot unlock a newer asynchronous walker request.
     const serial=generation,spot=state.target||{c:state.home.c+1,r:state.home.r+3};
     try {
       const w=await deps.makeNpcWalker(record(),{area:state.zone,c:spot.c,r:spot.r});
@@ -281,8 +285,8 @@
         };
       }
       bumpEvent('Boney entered '+state.zone);
-    }catch(err){bumpEvent('NPC build failed: '+(err?.message||err));}
-    finally{walkerBuilding=false;}
+    }catch(err){if(serial===generation)bumpEvent('NPC build failed: '+(err?.message||err));}
+    finally{if(walkerBuilding===buildToken)walkerBuilding=false;}
   }
   function sightProxy(w) {
     let proxy=sightProxies.get(w); // Stable actor identity lets RangedWeapons reuse its existing 80 ms LOS and one-frame portrait-hitbox caches.
@@ -526,6 +530,18 @@
       ],
     };
   }
+  function grantFeyReward(kind, rewardDeps) {
+    const cooking=window.CookingSystem;
+    const stacks=cooking?.consumeFeySight?.()||0; // Reward owners may persist internally; their first save must already see Fey-sight consumed.
+    let accepted=false;
+    try {
+      const prize=window.BoneyShinjimiRewards?.grant?.(kind,rewardDeps);
+      accepted=!!prize&&(kind!=='milk'||(prize.kind==='boundRelic'&&prize.origin==='Fey'));
+      return accepted?prize:null;
+    } finally {
+      if(!accepted&&stacks>0)cooking?.grantFeySight?.(stacks); // Failed or unavailable rewards retain every existing stack.
+    }
+  }
   function offerMilk(held, giftingDeps) {
     if (!canAcceptMilkGift(held, giftingDeps)) return false;
     const milkKey = held.key; // Captures the offered stack while the asynchronously presented dialogue is open.
@@ -546,7 +562,7 @@
             state.milksGiven = count + 1; // HarlyaoRelics.grantBoundRelic saves immediately, so the first save must already include the exchanged milk and count.
             let prize = null;
             try {
-              prize = window.BoneyShinjimiRewards?.grant?.('milk', giftingDeps);
+              prize = grantFeyReward('milk', giftingDeps);
             } catch (err) {
               bumpEvent('Fey weapon grant failed: ' + (err?.message || err));
             }
@@ -569,8 +585,7 @@
       } catch(err) {
         bumpEvent('Milk dialogue interrupted: ' + (err?.message || err));
       } finally {
-        sceneRunning = false;
-        giftingDeps.refreshActionBar?.();
+        if(generation===encounterGeneration){sceneRunning = false;giftingDeps.refreshActionBar?.();} // A stale cutscene cannot unlock a newer dialogue.
       }
     })();
     return true; // The existing gift dispatcher is synchronous; the cutscene owns the actual handover.
@@ -578,14 +593,15 @@
   async function enterScene() {
     if(sceneRunning||state.phase!=='home'||!window.AuthoredCutsceneRuntime?.run)return;
     sceneRunning=true;state.phase='scene';
+    const encounterGeneration=generation; // Restore/area unload must invalidate old choice callbacks just like milk callbacks.
     let granted=false; // Reward must be granted once upon continuing the chosen response, not when the choice menu merely opens.
     const rewards={valuable_grant:'valuable',useful_grant:'useful',apologize_grant:'apologize',hat_sure:'hat'};
     try {
       await window.AuthoredCutsceneRuntime.run(sceneDefinition(),{
         onDialogueContinue(stage) {
           const kind=rewards[stage?.id];
-          if(!kind||granted)return;
-          const prize=window.BoneyShinjimiRewards?.grant?.(kind,deps);
+          if(!kind||granted||generation!==encounterGeneration||state.phase!=='scene'||area()!==state.zone)return;
+          const prize=grantFeyReward(kind,deps);
           if(!prize){bumpEvent('Reward not available; encounter remains retriable');return;}
           granted=true;state.reward=prize;state.hatTaken=kind==='hat';
           if(state.hatTaken&&walker?.rec) {
@@ -595,12 +611,12 @@
           save(); // Item grant and logical reward use the existing member/world save seam.
         },
       });
+      if(generation!==encounterGeneration)return;
       state.phase=granted?'leaving':'home';
       if(granted)bumpEvent('Reward claimed; house vanishes when the player leaves');
     }catch(err) {
-      state.phase=granted?'leaving':'home';
-      bumpEvent('Cutscene interrupted: '+(err?.message||err));
-    }finally{sceneRunning=false;}
+      if(generation===encounterGeneration){state.phase=granted?'leaving':'home';bumpEvent('Cutscene interrupted: '+(err?.message||err));}
+    }finally{if(generation===encounterGeneration)sceneRunning=false;}
   }
   function finishEncounter() {
     if(state.phase!=='leaving'||!state.home)return;
@@ -616,8 +632,9 @@
   function syncZone() {
     const active=area()===state.zone;
     if(!active) {
-      if(houseMesh){clearHouse();ensureCollision();}
-      if(walker)releaseWalker();
+      if(houseMesh||houseBuilding){clearHouse();ensureCollision();}
+      if(walker||walkerBuilding)releaseWalker(); // Pending builders must be invalidated even before their first mesh is attached.
+      feyApproachTimer=0;
       return;
     }
     if(!state.home)return;
@@ -626,6 +643,38 @@
     if(!walker&&!walkerBuilding)void ensureWalker();
     updateHouseVisibility();
   }
+  function tryFeyApproach(dt) {
+    if (state.phase !== 'roam' || !walker || area() !== state.zone || !(deps.player?.health>0) || window.PlayerDowned?.isDowned?.()) { feyApproachTimer = 0; return; }
+    feyApproachTimer += dt;
+    if (feyApproachTimer < 20) return;
+    feyApproachTimer = 0;
+    const player = playerTile(), current = position(); // Only move a distant, unobserved wanderer, never interrupt a chase.
+    if (!player || !current || dist(current, player) < SIGHT_TILES * 2) return; // Already outside mutual sight; avoid a redundant LOS query.
+    const chance = window.CookingSystem?.feyEncounterChance?.(0.005) ?? 0.005; // Tunable baseline: one half-percent per eligible interval.
+    if (rnd() >= chance) return;
+    const h = homeCenter();
+    const candidates=new Set(); // Duplicate sampled cells must not repeat expensive route checks.
+    let pathSearches=0; // At most four A* attempts per rare approach roll; cheap direct paths are tried first.
+    for (let attempt = 0; attempt < 16; attempt++) {
+      const angle = rnd() * Math.PI * 2, radius = 7 + rnd() * 2;
+      const c = Math.floor(player.x + Math.cos(angle) * radius), r = Math.floor(player.z + Math.sin(angle) * radius);
+      const key=c+','+r;if(candidates.has(key))continue;candidates.add(key);
+      if (!validTile(c, r) || !h || dist({x:c+.5,z:r+.5},h) < 4) continue;
+      if (window.NpcPathfinding?.isNpcPositionWalkable?.(state.zone,c+.5,r+.5) === false) continue; // Reject narrow prop and furniture collisions too.
+      if (!window.NpcPathfinding?.canNpcBeeline?.(state.zone,c+.5,r+.5,state.home.c+1,state.home.r+3)) {
+        if(pathSearches>=4)continue;
+        pathSearches++;
+        if(!window.NpcPathfinding?.findNpcPath?.(state.zone,c+.5,r+.5,state.home.c+1,state.home.r+3))continue;
+      }
+      releaseWalker(); // The existing async walker constructor places the new avatar on a validated surface.
+      state.target={c,r}; state.activity='wander'; state.resourceTarget=null; state.workLeft=0;
+      planTimer=0; scanTimer=SCAN_SECONDS; // Give the newly arrived walker its ordinary chase check before choosing a new chore.
+      void ensureWalker();
+      bumpEvent('Fey encounter: Boney materialized near the player');
+      return;
+    }
+  }
+
   function update(dt) {
     if(!deps||window.__hobunjiGameStarted!==true)return;
     dt=clamp(finite(dt),0,0.1);
@@ -636,6 +685,8 @@
     if(state.phase==='leaving') {if(!sceneRunning)finishEncounter();return;} // Never despawn the house during milk dialogue.
     if(area()!==state.zone||!walker)return;
     if(state.phase==='scene')return;
+    tryFeyApproach(dt);
+    if (!walker) return;
     contactBoost(dt);
     scanTimer+=dt;
     if(scanTimer>=SCAN_SECONDS) {
@@ -694,6 +745,7 @@
   }
   function restore(raw) {
     clearHouse();releaseWalker();
+    feyApproachTimer=0;sceneRunning=false;
     Object.assign(state,initialState());
     if(raw?.version!==SAVE_VERSION)return;
     state.cycle=Number.isInteger(raw.cycle)?raw.cycle:-1;
