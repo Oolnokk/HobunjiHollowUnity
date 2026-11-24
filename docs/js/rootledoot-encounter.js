@@ -9,14 +9,14 @@
   const WAVES = Object.freeze([['grunt','grunt'],['grunt','lieutenant','grunt'],['captain']]); // Final wave has exactly one Big Rootledoot.
   const ROOT_COLOR = '#AAA07C'; // Sampled ingredient color shared by ordinary Heftroot and extremities.
   const ROOT_ASSET = 'assets/objectsprites/heftroot.png'; // Same sprite as the farm's ready crop.
-  const ROOT_SCALE = .5625; // Matches HobunjiHeftrootBillboardBridge.
+  const ROOT_SCALE = .5625 * .68 * .96; // Farm billboard × per-plant cluster scale × mature crop scale.
   let deps = null; // Narrow game-owned adapters; no independent AI, combat or save loop.
   let active = null; // The one live locale, from bait through reward; each has its own async generation identity.
   let checkTime = 0; // Accumulated only in eligible zones or with an active locale.
   let ledger = new Map(); // Chunk-keyed last attempt day and cleared status, persisted with the member.
   let worldStamp = null; // World and Tothal cycle identity; regenerated wilderness resets locale positions.
   let artPromise = null; // Cache a single alpha-cropped image across all Rootledoots.
-  let rootTexture = null; // Shared immutable texture; individual bait materials are disposed on removal.
+  const rootTextures = new Map(); // One full authored farm image and one cropped boss image, shared by all locales.
   let overkill = 0; // Damage beyond zero Health for the current Rootledoot-caused down.
   let downedByRoot = false; // Attribution is reset on every new down and on encounter cleanup.
   let lastEvent = 'idle'; // In-game diagnostic snapshot and mobile farm log.
@@ -64,11 +64,12 @@
   }
   function npcInChunk(zone,chunk) {
     for(const w of deps.getNpcWalkers?.()||[]) {
-      const p=w?.root?.position;if(w?.area!==zone||!p||w.isAnimal===true||w.rec?.isAnimal===true)continue;
+      const p=w?.root?.position; // Named animals are NPC walkers but use the same animal presentation registry as wild creatures.
+      if(w?.area!==zone||!p||w.isAnimal===true||w.rec?.isAnimal===true||w.avatarGroup?.userData?.namedAnimalNpc||w.root?.userData?.namedAnimalNpc||window.HobunjiNpcSpeciesRegistry?.isCreatureSpecies?.(w.rec?.appearance?.speciesId))continue;
       if(sameChunk(p.x,p.z,chunk))return true;
     }
-    for(const c of deps.hostiles||[]) {
-      if(c?.areaId!==zone||!(c.health>0)||c.rootledoot||!(c.isBandit||c.isMinion||c.isLich||c.isNpc))continue;
+    for(const collection of [deps.hostiles,deps.companions])for(const c of collection||[]) {
+      if(c?.areaId!==zone||!(c.health>0)||c.rootledoot||!(c.isBandit||c.isMinion||c.isLich||c.isNpc||c.isPorakanekiHunter||c._familyBabyFollower))continue;
       if(sameChunk(c.x/deps.TILE,c.y/deps.TILE,chunk))return true;
     }
     return false;
@@ -86,16 +87,17 @@
           if(r<l||b<t)throw Error('Heftroot sprite is transparent');
           const crop=document.createElement('canvas');crop.width=r-l+1;crop.height=b-t+1;
           crop.getContext('2d').drawImage(raw,l,t,crop.width,crop.height,0,0,crop.width,crop.height);
-          resolve(crop);
+          resolve({raw,crop});
         }catch(error){reject(error);}
       };image.onerror=()=>reject(Error('Heftroot sprite could not load'));image.src=ROOT_ASSET;
     }).catch(error=>{artPromise=null;throw error;});
     return artPromise;
   }
   async function paintPortrait(canvas,behind=false) {
-    const crop=await loadArt(),ctx=canvas.getContext('2d');
+    const {crop}=await loadArt(),ctx=canvas.getContext('2d');
     const scale=Math.min(canvas.width/crop.width,canvas.height/crop.height);
     const w=crop.width*scale,h=crop.height*scale;
+    canvas.rootledootOpaqueHeightFraction=h/canvas.height; // The boss harvest visual must match the actual visible portion of this portrait.
     ctx.clearRect(0,0,canvas.width,canvas.height);
     ctx.save();ctx.imageSmoothingEnabled=false;
     if(behind){ctx.translate(canvas.width,0);ctx.scale(-1,1);}
@@ -105,16 +107,17 @@
     if(!rec?.mesh)return;rec.mesh.parent?.remove(rec.mesh);rec.mesh.material?.dispose();rec.mesh=null;
   }
   async function showRoot(rec,large=false) {
-    const crop=await loadArt();
+    const {raw,crop}=await loadArt();
     if(active!==rec||area()!==rec.zone)return false;
     const THREE=window.THREE;if(!THREE)return false;
-    if(!rootTexture){rootTexture=new THREE.CanvasTexture(crop);rootTexture.magFilter=THREE.NearestFilter;rootTexture.minFilter=THREE.NearestFilter;if(THREE.sRGBEncoding!==undefined)rootTexture.encoding=THREE.sRGBEncoding;}
+    const art=large?crop:raw; // The bait preserves the farm PNG's authored padding; only NPC portraits and the boss reward use the opaque crop.
+    if(!rootTextures.has(art)){const texture=new THREE.CanvasTexture(art);texture.magFilter=THREE.NearestFilter;texture.minFilter=THREE.NearestFilter;if(THREE.sRGBEncoding!==undefined)texture.encoding=THREE.sRGBEncoding;rootTextures.set(art,texture);}
     removeRoot(rec);
-    const root=new THREE.Sprite(new THREE.SpriteMaterial({map:rootTexture,transparent:true,alphaTest:.04,depthWrite:true}));
+    const root=new THREE.Sprite(new THREE.SpriteMaterial({map:rootTextures.get(art),transparent:true,alphaTest:.04,depthWrite:true}));
     const height=large?(rec.bossRootHeight||1.2):ROOT_SCALE;
-    root.scale.set(height*crop.width/crop.height,height,1);
+    root.scale.set(height*art.width/art.height,height,1);
     // A centered sprite at soil level is half buried, like a ripe farm Heftroot.
-    root.position.set(rec.site.c+.5,deps.surfaceY(rec.site.c+.5,rec.site.r+.5),rec.site.r+.5);
+    root.position.set(rec.site.c+.5,deps.surfaceY(rec.site.c+.5,rec.site.r+.5)+.01,rec.site.r+.5);
     root.userData.noOutline=true;root.name=large?'fey_heftroot_reward':'heftroot_bait';
     deps.getScene().add(root);rec.mesh=root;return true;
   }
@@ -122,7 +125,9 @@
     const live = deps.hostiles.has(c) || deps.corpses?.has(c) || c.avatarRef?.group?.parent; // World teardown may already have disposed this actor.
     deps.hostiles.delete(c);deps.corpses?.delete(c);deps.companions?.delete(c);
     window.Combat?.cancelStagedForAttacker?.(c);window.Combat?.telegraph?.cancel?.(c);
-    window.RangedWeapons?.cancelBanditAction?.(c);window.BanditCombat?.cancelLunge?.(c);
+    window.RangedWeapons?.cancelBanditAction?.(c);window.RangedWeapons?.retireOwnerProjectiles?.(c);window.BanditCombat?.cancelLunge?.(c);
+    window.EnemyDodge?.cancel?.(c);window.Combat?.animalAttacks?.cancel?.(c);
+    c.health=0;c._deathTransitionStarted=true;c._banditAction=null; // Prevent stale staged callbacks from treating a removed actor as alive.
     if(live)deps.despawn(c);
     window.BanditCaptainArmaments?.discard?.(c); // Release a unique weapon texture only after its holder has been disposed.
   }
@@ -141,8 +146,12 @@
   function activate(zone,chunk,site,key) {
     const rec={zone,chunk,site,key,phase:'bait',actors:new Set(),wave:0,delay:0,mesh:null,boss:null,building:false};
     active=rec;
-    void showRoot(rec).then(ok=>{if(!ok&&active===rec)reset('bait unavailable');}).catch(error=>{if(active===rec)reset('bait failed: '+error.message);});
+    void showRoot(rec).then(ok=>{if(!ok&&active===rec)failBait(rec,'bait unavailable');}).catch(error=>{if(active===rec)failBait(rec,'bait failed: '+error.message);});
     log('bait activated at '+zone+' '+site.c+','+site.r);
+  }
+  function failBait(rec,reason){
+    ledger.set(rec.key,{day:Math.floor(Number(deps.day?.())||0),cleared:false,ready:false}); // Missing art or invalidated terrain must not create a retry storm every half-second.
+    reset(reason);
   }
   function tryActivate() {
     const zone=area(),p=playerTile(),chunk=chunkOf(p.c,p.r),key=keyFor(zone,chunk.c,chunk.r);
@@ -150,7 +159,7 @@
     if(previous?.cleared||(previous?.day===day&&!previous.ready))return; // Failed/used daily rolls perform no NPC scans on later ticks.
     if(npcInChunk(zone,chunk))return;
     if(previous?.day===day){
-      if(previous.ready){const site=siteInChunk(zone,chunk);if(site)activate(zone,chunk,site,key);}
+      if(previous.ready){const site=siteInChunk(zone,chunk);if(site)activate(zone,chunk,site,key);else ledger.set(key,{day,cleared:false,ready:false});}
       return;
     }
     // Each eligible chunk rolls once per day, not every frame or every boundary crossing.
@@ -220,13 +229,13 @@
       rec.boss={_banditCaptainArmament:c._banditCaptainArmament};
       const col=Math.floor(c.x/deps.TILE),row=Math.floor(c.y/deps.TILE); // The Big Rootledoot becomes the root where it actually fell.
       if(tileEligible(col,row))rec.site={c:col,r:row};
-      rec.bossRootHeight=Math.max(.8,Number(c.avatarRef?.modelHeight||.9));
+      rec.bossRootHeight=Math.max(.1,Number(c.avatarRef?.modelHeight||.9)*(Number(c.avatarRef?.frontCanvas?.rootledootOpaqueHeightFraction)||1));
       c._banditCaptainArmament=null;c._captainEnchantmentFx?.dispose?.();c._captainEnchantmentFx=null;
     }
     disposeActor(c);return true;
   }
   function eligibleTarget(c,r) {
-    const rec=active;if(!rec?.mesh||area()!==rec.zone||!['bait','reward'].includes(rec.phase))return false;
+    const rec=active;if(!rec?.mesh||area()!==rec.zone||!['bait','reward'].includes(rec.phase)||deps.isInCombat?.()||window.PlayerDowned?.isDowned?.())return false;
     if(c!==rec.site.c||r!==rec.site.r)return false;
     return Math.hypot(deps.player.x/deps.TILE-c-.5,deps.player.y/deps.TILE-r-.5)<=2.5;
   }
@@ -291,7 +300,7 @@
     const elapsed=checkTime;checkTime=0;
     syncWorld(); // World/cycle strings and ledger maintenance are throttled too.
     const rec=active;
-    if(!rec){if(!window.PlayerDowned?.isDowned?.()&&deps.player.health>0)tryActivate();return;}
+    if(!rec){if(!window.PlayerDowned?.isDowned?.()&&deps.player.health>0&&deps.canActivate?.()!==false)tryActivate();return;}
     if(rec.phase==='combat'&&!window.PlayerDowned?.isDowned?.()&&Math.hypot(deps.player.x/deps.TILE-rec.site.c-.5,deps.player.y/deps.TILE-rec.site.r-.5)>chunkSize()*2){reset('player escaped locale');return;}
     if(rec.phase==='bait'){
       if(!sameChunk(deps.player.x/deps.TILE,deps.player.y/deps.TILE,rec.chunk)||npcInChunk(zone,rec.chunk))reset('bait dormant');
