@@ -101,7 +101,7 @@
     ['js/inventory-character-effects.js?v=20261118hee4dd2c', () => Number(window.InventoryCharacterEffects?.version) >= 1],
     ['js/inventory-gear-compact-effects.js?v=20261118h5d03562', () => Number(window.InventoryGearCompactEffects?.version) >= 2],
     ['js/combat/technique-scrolls.js?v=20261116mountedCombat1', () => !!window.TechniqueScrolls],
-    ['js/combat/combat-vocalizations.js?v=20261115coffinVoice3', () => Number(window.CombatVocalizations?.version) >= 5],
+    ['js/combat/combat-vocalizations.js?v=20261123youngVoices1', () => Number(window.CombatVocalizations?.version) >= 6],
     ['js/held-seed-action-bridge.js?v=20261119hb63b4be', () => !!window.HobunjiHeldSeedActionBridge],
     ['js/held-seed-desktop-capture.js?v=20260814a', () => !!window.HobunjiHeldSeedDesktopCapture],
     ['js/held-item-action-input.js?v=20261116holdReleaseAudit3', () => !!window.HeldItemActionInput],
