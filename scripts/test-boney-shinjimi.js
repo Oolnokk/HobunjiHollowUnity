@@ -210,6 +210,8 @@ async function testRealEncounterFlow() {
   game.despawnNpcWalker=w=>{despawned.push(w); const at=game.npcWalkers.indexOf(w);if(at>=0)game.npcWalkers.splice(at,1);return true;};
   moonWindow.RangedWeapons={hasLineOfSight:()=>visible,actorHitbox:()=>({center:{x:npc.root.position.x,y:0.6,z:npc.root.position.z}})};
   const rewards=[];
+  let feyStacks=4; // Simulates persistent player stacks with the same CookingSystem contract.
+  moonWindow.CookingSystem={consumeFeySight(){const previous=feyStacks;feyStacks=0;return previous;},grantFeySight(n){feyStacks+=n;return feyStacks;}};
   const milkDialogues=[]; // Captures each actual authored milk conversation, including its three distinct greetings.
   const snapshotsAtGrant=[]; // The real relic owner saves synchronously while granting; confirm milk and count are already updated at that point.
   let failNextMilkGrant=false; // Simulates a failed relic award to verify rollback, without consuming the single-night allowance.
@@ -217,6 +219,7 @@ async function testRealEncounterFlow() {
   let continueDelayedMilk=null; // Test-only callback that releases the paused cutscene after a restore.
   let savedDuringGrant=null;
   moonWindow.BoneyShinjimiRewards={grant(kind){
+    assert.equal(feyStacks,0,'reward helper may save immediately, so the first save already sees consumed Fey-sight');
     if(kind==='milk'){
       snapshotsAtGrant.push({count:C.serialize().milksGiven,milk:milkInventory[held.key]});
       if(failNextMilkGrant){failNextMilkGrant=false;throw new Error('intentional test grant failure');}
@@ -311,6 +314,7 @@ async function testRealEncounterFlow() {
   assert.equal(C.debugSnapshot().phase,'leaving','the confrontation must finish before gifting becomes available');
   assert.equal(rewards.length,1,'entering while Boney is home grants exactly one chosen prize');
   assert.equal(rewards[0],'useful');
+  assert.equal(feyStacks,0,'successful choice clears every stack');
   assert.equal(savedDuringGrant.phase,'leaving','an immediate mid-cutscene save must not revive the gift dialogue');
   assert.equal(C.serialize().phase,'leaving');
 
@@ -340,12 +344,13 @@ async function testRealEncounterFlow() {
   assert.equal(gifting.offerGift(npc),false,'direct non-milk press cannot bypass rejection');
   assert.equal(milkInventory.apple,2,'rejected ordinary gift not consumed');
   held={kind:'item',key:'puktukMilk',def:milkDefs.puktukMilk};
-  failNextMilkGrant=true;
+  feyStacks=7;failNextMilkGrant=true;
   assert.equal(gifting.offerGift(npc),true,'failed grant is attempted through real gifting');
   await new Promise(resolve=>setImmediate(resolve));
   assert.equal(milkInventory.puktukMilk,2,'a failed weapon grant rolls milk back');
   assert.equal(C.serialize().milksGiven,0,'failed weapon grant does not use a milk allowance');
   assert.equal(rewards.length,1,'a failed weapon grant creates no new prize');
+  assert.equal(feyStacks,7,'failed reward preserves all prior stacks');
   assert.equal(snapshotsAtGrant.length,1,'a duplicate Continue does not retry a failed award');
   assert(gifting.getNpcGiftOfferAction(npc),'the gift can be retried after an unsuccessful award');
   deferNextMilk=true;
@@ -357,6 +362,7 @@ async function testRealEncounterFlow() {
   assert.equal(milkInventory.puktukMilk,2,'a stale post-reload dialogue cannot consume milk');
   assert.equal(C.serialize().milksGiven,0,'a stale post-reload dialogue cannot increment the limit');
   assert.equal(snapshotsAtGrant.length,1,'a stale post-reload dialogue cannot create another Fey relic');
+  assert.equal(feyStacks,7,'stale post-reload reward cannot consume Fey-sight');
   C.update(.1); // Restores the ordinary NPC walker after scene cancellation without changing the encounter.
   await new Promise(resolve=>setImmediate(resolve));
   assert.equal(C.debugSnapshot().phase,'leaving','reloaded completed confrontation remains in post-dialogue phase');
@@ -373,6 +379,7 @@ async function testRealEncounterFlow() {
     assert.equal(gifting.offerGift(npc),false,'repeated input during the active cutscene is rejected');
     await new Promise(resolve=>setImmediate(resolve)); // Finish the VM-owned milk cutscene before offering the next milk.
     assert.equal(C.debugSnapshot().phase,'leaving','Boney remains in the house after a milk exchange');
+    assert.equal(feyStacks,0,'successful milk reward consumes Fey-sight');
   }
   assert.equal(milkInventory.puktukMilk,1);
   assert.equal(milkInventory.yellowDewMilk,0);
