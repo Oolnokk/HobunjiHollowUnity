@@ -181,7 +181,8 @@
           extra:{rootledoot:true,rootledootBig:big,homeX:x,homeY:y,state:'chase'}});
       },
       validate:(actor,rank,point)=>tileEligible(point.c,point.r)&&(rank!=='captain'||!!actor._banditCaptainArmament),
-      adopt(actor,_rank,point){rec.actors.add(actor);deps.hostiles.add(actor);deps.dirt?.(point.c,point.r);},
+      adopt(actor){rec.actors.add(actor);deps.hostiles.add(actor);},
+      onAdopted:(_actor,_rank,point)=>deps.dirt?.(point.c,point.r),
       dispose:disposeActor,random:rand,
       onSuppressed:()=>cancelInitialAmbush(rec),
       onFailure:error=>reset('wave failed: '+error.message),
