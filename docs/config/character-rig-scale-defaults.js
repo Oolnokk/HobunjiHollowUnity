@@ -44,6 +44,44 @@
     'mammakhbuur::male': Object.freeze({ x: 0.96, y: 1.69, legLength: 1.69, head: 0.9771, offsetY: -0.095 }),
     'mammakhbuur::female': Object.freeze({ x: 1.0153, y: 1.3331, legLength: 1.3331, head: 0.8402, offsetY: -0.02 }),
   });
+  // Values beyond the 18 canonical main silhouettes are opt-in restoration references,
+  // not automatic rig overrides; full old-main character defaults remain unchanged.
+  const MAIN_AUXILIARY_SILHOUETTES = Object.freeze({ // Used by the adult-only restore control, never by gameplay bootstrap.
+    'boney-shinjimi-skeleton::male': { x: 1, y: 1, legLength: 1, head: 1, offsetY: 0 },
+    'harlyao-skeleton::male': { ...VALUES['harlyao::male'] },
+    'harlyao-skeleton::female': { ...VALUES['harlyao::female'] },
+    'mao-ao-skeleton::male': { ...VALUES['mao-ao::male'] },
+    'maskbound-guardian::male': { x: 1, y: 1, legLength: 1, head: 1, offsetY: 0 },
+    'nohuknuk::male': { x: 1, y: 1, legLength: 1, head: 1, offsetY: 0 },
+    'omgurku::male': { x: 1, y: 1, legLength: 1, head: 1, offsetY: 0 },
+    'porakaneki::male': { x: 1, y: 1, legLength: 1, head: 1, offsetY: 0 },
+  });
+  const MAIN_LIMB_REFERENCE = Object.freeze({ // Explicit adult-only restore: original hand/foot sizes before uploaded Mao'ao-relative edits.
+    'kenkari::male': [1, 1], 'kenkari::female': [.93, 1],
+    'tletingan::male': [.95, .95], 'tletingan::female': [.925, 1.025],
+    'nuhongan::male': [.95, .95], 'nuhongan::female': [.925, 1.025],
+    'longoran::male': [.95, .95], 'longoran::female': [.925, 1.025],
+    'engh-sho::male': [1.45, 1.25], 'engh-sho::female': [1.3, 1.17],
+    'harlyao::male': [1.45, 1.25], 'harlyao::female': [1.3, 1.17],
+    'mao-ao::male': [1.1, 1.3125], 'mao-ao::female': [1, 1.28125],
+    'mashtzarr::male': [1, 1.175], 'mashtzarr::female': [.95, 1],
+    'mammakhbuur::male': [1, 1.175], 'mammakhbuur::female': [.95, 1],
+    'boney-shinjimi-skeleton::male': [1.2, 1.05],
+    'harlyao-skeleton::male': [1.45, 1.25], 'harlyao-skeleton::female': [1.3, 1.17],
+    'mao-ao-skeleton::male': [1.1, 1.3125],
+    'maskbound-guardian::male': [1.2, 1.05],
+    'nohuknuk::male': [1, 1], 'omgurku::male': [1.45, 1.25], 'porakaneki::male': [1, 1],
+  });
+  const MAIN_SILHOUETTE_RESTORE = Object.freeze(Object.fromEntries(
+    Object.entries({ ...VALUES, ...MAIN_AUXILIARY_SILHOUETTES }).map(([key, base]) => [
+      key, Object.freeze({
+        ...base, legLength: base.legLength ?? base.y,
+        handScale: MAIN_LIMB_REFERENCE[key]?.[0] ?? 1, // Only the explicit restore action writes hands.
+        footScale: MAIN_LIMB_REFERENCE[key]?.[1] ?? 1, // Only the explicit restore action writes feet.
+      }),
+    ]),
+  ));
+
   const ALIASES = Object.freeze({ rakakoan: 'kenkari', ghoul: 'mao-ao', 'harlyao-skeleton': 'harlyao', 'mao-ao-skeleton': 'mao-ao' }); // Transform-equivalent NPC-only species inherit shared full-rig defaults; Harlyao Skeleton deliberately shares Harlyao's 1.2x Engh-sho scale.
   const MAOAO_FOOT_SCALE = Object.freeze({ male: 1.3125, female: 1.28125 }); // +25% over the canonical authored Mao-ao foot scales (1.05 male / 1.025 female).
 
@@ -73,6 +111,7 @@
     version: VERSION,
     coordinateSpace: 'character-floor-parent',
     values: VALUES,
+    mainSilhouetteRestoreValues: MAIN_SILHOUETTE_RESTORE, // Opt-in, non-destructive-to-age reference for already persisted local adult authoring.
     nuhonganPartScaleAxes: NUHONGAN_PART_SCALE_AXES,
     nuhonganHandScaleAxes: NUHONGAN_HAND_SCALE_AXES,
     longoranHandScaleAxes: LONGORAN_HAND_SCALE_AXES,
