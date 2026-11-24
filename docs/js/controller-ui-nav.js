@@ -445,8 +445,10 @@
     navClassAdd(group, 'ctrl-nav-subtabs');
     navClassAdd(selected, 'ctrl-nav-subtab-selected');
     for (const section of sections) if (section !== selected) navClassAdd(section, 'ctrl-nav-subtab-hidden');
-    const opener = Array.from(selected.querySelectorAll('[data-ctrl-group-open]')).find(control => isNavTarget(control) && groupTarget(control, selected, panel) === control && control.getAttribute('aria-expanded') === 'false'); // Open a collapsed baby inventory on selection without requiring another Confirm.
-    if (openSelected && opener) clickOnScreen(opener, 'auto-open');
+    if (openSelected) {
+      const opener = Array.from(selected.querySelectorAll('[data-ctrl-group-open]')).find(control => isNavTarget(control) && groupTarget(control, selected, panel) === control && control.getAttribute('aria-expanded') === 'false'); // Only deliberate selection opens a collapsed baby inventory.
+      if (opener) clickOnScreen(opener, 'auto-open');
+    }
     return true;
   }
 
@@ -913,7 +915,8 @@
   function cycleTabs(delta) { invalidateVisibility();
     const panel = activePanel();
     if (!panel || panelOwnsAction(panel, delta < 0 ? 'previous' : 'next')) return;
-    const stableTabOpen = panel.id === 'menuPanel' && !!panel.querySelector('.mp-tab.active[data-mpanel="stable"]') && !!currentTarget?.closest?.('#mpStable'); // Only focus inside Stable borrows bumpers; focus on the top tab bar still switches main destinations.
+    const local = localSubtabs(panel); // Existing controller focus owns page scope, rather than the presence of a mouse bar.
+    const stableTabOpen = panel.id === 'menuPanel' && !!panel.querySelector('.mp-tab.active[data-mpanel="stable"]') && !!currentTarget?.closest?.('#mpStable') && (!local || !!currentTarget.closest('#stableRoleTabs')); // Role strip cycles roles; inside an age page, bumpers cycle ages.
     if (stableTabOpen) {
       const pages = [...panel.querySelectorAll('#stableRoleTabs > .stable-role-tab')]; // Existing clickable/tappable buttons are the single role-page selection authority.
       if (pages.length > 1) {
@@ -927,7 +930,6 @@
         return;
       }
     }
-    const local = localSubtabs(panel); // The deepest entered section borrows configured tab actions until Back leaves it.
     if (local) {
       const state = subtabsByGroup.get(local.node); // The visible choice strip and bumpers share the same section owner.
       selectLocalSection(local.node, panel, (state.sections.indexOf(state.selected) + delta + state.sections.length) % state.sections.length);
@@ -1075,6 +1077,7 @@
       if (!root || !isVisible(root)) { if (menuCategoryBar) menuCategoryBar.hidden = true; return; }
       if (!refresh && !menuPagesDirty && menuPageLeaf) return; // Ordinary focus updates do not query category labels or rebuild DOM.
       refresh = refresh || menuPagesDirty;
+      if (refresh) watchMenuPanes(panel); // Register newly authored sections even if activation consumed the dirty flag first.
       menuPagesDirty = false;
       const previousOwners = menuPageOwners.slice(); // Obsolete branches are restored child-first.
       const remembered = new Map(); // Retain selected identity/index through content rebuilds.
@@ -1119,9 +1122,9 @@
       const index = rows.indexOf(row);
       const nextIndex = index < 0 ? (event.shiftKey ? rows.length - 1 : 0) : index + (event.shiftKey ? -1 : 1);
       if (nextIndex < 0 || nextIndex >= rows.length) {
-        // F6 traverses the category rows and then returns to the last content control.
-        if (currentTarget && isNavTarget(currentTarget)) setFocus(currentTarget, { scroll: false });
-        else refreshFocusIfStale();
+        // F6 traverses category rows and returns to a valid control in the current navigation scope.
+        const targets = navigationTargets(panel);
+        setFocus(targets.includes(currentTarget) ? currentTarget : pickDefaultTarget(panel, targets) || navigationRoot(panel), { scroll: false });
       } else rows[nextIndex]?.querySelector('button[aria-pressed="true"]')?.focus({ preventScroll: true });
       return true;
     }
@@ -1437,7 +1440,6 @@
       reconcileStack();
       const panel = activePanel(); // Refresh section pages only when menu content changed, not from controller idle polling.
       if (panel) {
-        if (panel.id === 'menuPanel' && menuPagesDirty) watchMenuPanes(panel);
         syncMenuPages(panel, menuPagesDirty);
         for (const entry of enteredGroups(panel)) {
           if (panel.id === 'menuPanel' && menuPageOwners.includes(entry.node)) continue; // Already refreshed by the persistent page presentation.
@@ -1511,7 +1513,10 @@
     const relevant = value => String(value || '').split(/\s+/).filter(name => name === 'active' || name.startsWith('inv-mode-')).sort().join(' ');
     if (records.some(record => record.type === 'attributes' && relevant(record.oldValue) !== relevant(record.target.className))) { menuPagesDirty = true; scheduleReconcile(); }
   }); // Major-tab and Pack/Gear changes only; ignore focus/highlight class churn.
-  const menuSectionWatcher = new MutationObserver(() => { menuPagesDirty = true; scheduleReconcile(); }); // Hidden/permission changes can add or remove a category without replacing its DOM.
+  const menuSectionWatcher = new MutationObserver(records => {
+    if (activePanel()?.id !== 'menuPanel') return; // Hidden menus are refreshed when opened, never while gameplay is active.
+    if (records.some(record => record.type === 'attributes')) { menuPagesDirty = true; scheduleReconcile(); }
+  }); // Hidden/permission changes can add or remove a category without replacing its DOM.
   const watchedMenuSections = new WeakSet(); // Watch authored boundaries only, never per-item class/style changes.
   const watchedMenuPanes = new WeakSet(); // Register each actual pane once without a document-wide class observer.
   function watchMenuPanes(panel) {
@@ -1521,9 +1526,12 @@
       menuPaneWatcher.observe(pane, { attributes: true, attributeFilter: ['class'], attributeOldValue: true });
     }
     for (const section of panel.querySelectorAll(SUBTAB_SELECTOR)) {
-      if (watchedMenuSections.has(section)) continue;
-      watchedMenuSections.add(section);
-      menuSectionWatcher.observe(section, { attributes: true, attributeFilter: ['hidden', 'aria-hidden', 'style'] });
+      // Some page visibility belongs to a structural ancestor (e.g. locked Farm Storage), not the page itself.
+      for (let node = section; node && node !== panel && !node.matches('.mp-pane'); node = node.parentElement) {
+        if (watchedMenuSections.has(node)) continue;
+        watchedMenuSections.add(node);
+        menuSectionWatcher.observe(node, { attributes: true, attributeFilter: ['hidden', 'aria-hidden', 'style'] });
+      }
     }
   }
   const attrWatchedPanels = new WeakSet();
