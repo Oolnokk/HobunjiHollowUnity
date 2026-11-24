@@ -172,7 +172,7 @@ assert.equal(tables.blocksBox('indexed', 8, 4.5), false, 'a same-frame removal i
   const nStart=gameSource.indexOf('      function npcSeatTransformForTarget('),nEnd=gameSource.indexOf('      async function makeNpcWalker(',nStart);
   const resolver=gameSource.slice(start,end)+gameSource.slice(nStart,nEnd);
   const loadTable=w=>{vm.runInNewContext(fs.readFileSync('docs/js/furniture-table-system.js','utf8'),{window:w});return w.FurnitureTableSystem;};
-  const loadResolver=w=>vm.runInNewContext(resolver+'\nnpcSeatTransformForTarget;', {window:w,DECORATIVE_FURNITURE_DEFS:{chairSimple:{sit:true,fw:1,fd:1},stool:{sit:true,fw:1,fd:1},bench:{sit:true,fw:1,fd:1}}});
+  const loadResolver=w=>vm.runInNewContext(resolver+'\n({resolve:npcSeatTransformForTarget, navigate:npcSeatNavigationTarget});', {window:w,DECORATIVE_FURNITURE_DEFS:{chairSimple:{sit:true,fw:1,fd:1},stool:{sit:true,fw:1,fd:1},bench:{sit:true,fw:1,fd:1}}});
   const check=(condition,message)=>assert.ok(condition,message);
 
   class SeatVector { set(x,y,z){Object.assign(this,{x,y,z});return this;} }
@@ -187,8 +187,20 @@ assert.equal(tables.blocksBox('indexed', 8, 4.5), false, 'a same-frame removal i
   tables.registerPlacement(area,{id:'moved',key:'chairSimple',col:1,row:2,npcStationId:'legacy-station'},chair,{sit:true});
   tables.registerPlacement(area,{id:'other',key:'stool',col:1,row:2},mesh(1.5,0,2.5),{sit:true});
   const target={area,pose:'sit',furnitureId:'moved',furnitureKey:'chairSimple',c:1,r:2,seatIndex:1};
-  const resolve=loadResolver(w);
+  const {resolve,navigate}=loadResolver(w);
   const anchor=resolve(target);
+  const walker={};
+  const nav=navigate(walker,target,anchor);
+  check(nav.c===8&&nav.r===9&&nav.furnitureId==='moved','navigation routes to the live chair tile, not its outdated station');
+  check(navigate(walker,target,anchor)===nav,'unchanged seat reuses navigation target');
+  const missingTarget={...target,furnitureId:'gone'};
+  const standing=navigate(walker,missingTarget,null);
+  check(standing.pose==='stand'&&!standing.furnitureId&&!standing.furnitureKey,'invalid chair releases reservation and overlap privilege');
+  check(navigate(walker,missingTarget,null)===standing,'missing chair fallback is cached');
+  const floorSit={...target,furnitureId:'',furnitureKey:''};
+  check(navigate(walker,floorSit,null)===floorSit,'floor sitting is unaffected');
+  const offscreen={...target,area:'unloaded'};
+  check(navigate(walker,offscreen,resolve(offscreen))===offscreen,'offscreen logical schedule stays unchanged');
   check(anchor.x===8.7&&anchor.z===9.5&&Math.abs(anchor.worldY-1.5)<1e-9&&Math.abs(anchor.y-1.1)<1e-9,'live moved chair and absolute elevation');
   check(resolve({...target,furnitureId:'gone'})===null,'missing named chair does not substitute another');
   check(resolve({...target,furnitureId:'',stationId:'legacy-station',c:99,r:99}).x===8.7,'legacy station follows stable placement');
@@ -198,6 +210,8 @@ assert.equal(tables.blocksBox('indexed', 8, 4.5), false, 'a same-frame removal i
   check(resolve({...target,furnitureId:''})===null,'ambiguous legacy NPC chair is rejected');
   chair.position.x=11;
   check(resolve(target).x===11.2,'live transform tracks subsequent movement');
+  check(navigate(walker,target,resolve(target)).c===11,'moving an attached chair invalidates the navigation destination');
+  check(resolve({...target,furnitureId:'',sourceFurnitureId:'moved',c:99,r:99}).x===11.2,'authored source identity cannot fall back to stale coordinates');
   tables.unregisterPlacement(area,'moved');
   check(resolve(target)===null,'removed chair clears seated anchor');
   tables.clearArea(area);

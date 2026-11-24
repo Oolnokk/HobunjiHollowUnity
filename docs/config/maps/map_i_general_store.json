@@ -51,7 +51,7 @@
     { "id": "route_t10d3", "label": "Route 5", "nodes": [[10,6],[13,6]] }
   ],
   "npcStations": [
-    { "id": "station_p2x4t", "label": "Sitting at Counter", "col": 5, "row": 6, "rotY": 0, "pose": "sit", "furnitureKey": "stoolFurniture", "seatIndex": 0, "toolKey": "", "toolIntervalSec": 0, "toolAnimStyle": "" },
+    { "id": "station_p2x4t", "sourceFurnitureId": "fmqf949thrwvs", "furnitureId": "fmqf949thrwvs", "label": "Sitting at Counter", "col": 5, "row": 6, "rotY": 0, "pose": "sit", "furnitureKey": "stoolFurniture", "seatIndex": 0, "toolKey": "", "toolIntervalSec": 0, "toolAnimStyle": "" },
     { "id": "station_k7m3q", "label": "Checking Shelves", "col": 2, "row": 6, "rotY": 180, "pose": "stand", "toolKey": "", "toolIntervalSec": 0, "toolAnimStyle": "" },
     { "id": "station_w9r6j", "label": "Cooking", "col": 9, "row": 2, "rotY": 180, "pose": "stand", "toolKey": "", "toolIntervalSec": 0, "toolAnimStyle": "" }
   ],

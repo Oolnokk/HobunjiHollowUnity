@@ -66,6 +66,11 @@ for (const [map, id, furnitureKey, seatIndex] of authoredSeatBindings) {
   assert.equal(station.pose, 'sit', `${id} remains a sit station`);
   assert.equal(station.furnitureKey, furnitureKey, `${id} identifies its actual seat furniture`);
   assert.equal(station.seatIndex, seatIndex, `${id} identifies the intended seat anchor`);
+  if (station.furnitureId) {
+    const piece=map.furniture.find(f=>f.id===station.furnitureId);
+    assert.equal(piece?.itemKey,furnitureKey,`${id} binds to real furniture, even when its original schedule tile differs`);
+    assert.equal(station.sourceFurnitureId,station.furnitureId,'layout moves the named chair and its station together');
+  }
 }
 for (const id of ['station_temple_counsel_teacup', 'station_temple_counsel_ring_1', 'station_temple_counsel_ring_2', 'station_temple_counsel_ring_3', 'station_temple_counsel_ring_4', 'station_temple_counsel_ring_5', 'station_temple_counsel_ring_6']) {
   const station = stationById(temple, id);

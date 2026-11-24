@@ -82,22 +82,23 @@
     return false;
   }
   function entries(area) { return areas.get(areaId(area)) || EMPTY; }
+  function liveSeatEntry(entry) { return entry?.def.sit && entry.root?.parent; }
   function findSeat(area, seat) {
     if (!seat) return null;
     const list = entries(area); // Explicit instance ids survive moved furniture and shared navigation tiles.
-    const live = entry => entry?.def.sit && entry.root?.parent;
-    if (seat.furnitureId) {
-      const entry = list.get(String(seat.furnitureId));
-      return live(entry) ? entry : null; // Never replace a removed named chair with another piece on its former tile.
+    const furnitureId = seat.furnitureId || seat.sourceFurnitureId; // Authored source bindings are also authoritative.
+    if (furnitureId) {
+      const entry = list.get(String(furnitureId));
+      return liveSeatEntry(entry) ? entry : null; // Never replace a removed named chair with another piece on its former tile.
     }
     const direct = seat.id && list.get(String(seat.id));
-    if (live(direct)) return direct;
+    if (liveSeatEntry(direct)) return direct;
     const stationId = seat.stationId || seat.id; // Legacy stations can still identify a chair via its registered station.
     const c = seat.col ?? seat.c, r = seat.row ?? seat.r;
     const key = seat.furnitureKey; // Legacy coordinate lookup must match the requested furniture type.
     let candidate = null, ambiguous = false; // Reject ambiguous legacy NPC bindings instead of choosing a random chair.
     for (const entry of list.values()) {
-      if (!live(entry)) continue;
+      if (!liveSeatEntry(entry)) continue;
       if (stationId && entry.record.npcStationId === stationId) return entry;
       if (entry.record.col !== c || entry.record.row !== r) continue;
       if (key && key !== entry.record.key && key !== entry.record.itemKey && key !== entry.def.itemKey
@@ -227,7 +228,7 @@
     const matrix = entry.root.matrixWorld?.elements; // Includes grid quarter-turns and post-placement transforms, not just residual authored yaw.
     const rootYaw = matrix ? Math.atan2(matrix[8], matrix[10]) * 180 / Math.PI : Number(entry.record.rotY ?? entry.record.rotYDeg) || 0;
     const yaw = rootYaw + (anchor.rotationDeg?.y || 0);
-    return { x: location.x, y: location.y - floor, worldY: location.y, z: location.z, facingRad: Math.PI / 2 - yaw * Math.PI / 180,
+    return { x: location.x, y: location.y - floor, worldY: location.y, z: location.z, furnitureId: entry.id, facingRad: Math.PI / 2 - yaw * Math.PI / 180,
       normalDeg: { x: anchor.rotationDeg?.x || 0, z: anchor.rotationDeg?.z || 0 },
       footprintHalfDepth: (window.AuthoredFurniture?.seatedKneeReach?.(data) || 0.11) * (entry.root.scale?.z || 1), anchorZ: anchor.position.z || 0 }; // Calves bend at the actual seat edge, not the tile footprint.
   }

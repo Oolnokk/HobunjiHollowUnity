@@ -13178,6 +13178,22 @@
         );
       }
 
+      // Keep the scheduler's station identity, but route to the live chair's tile.
+      // Cache the adjusted target so offset chairs do not allocate a new object every frame.
+      function npcSeatNavigationTarget(walker, target, seat) {
+        if (target?.pose !== 'sit' || !target.furnitureKey) return target;
+        const live = !!seat?.furnitureId;
+        if (!live && (seat || !window.FurnitureTableSystem?.requiresLiveSeat?.(target.area))) return target;
+        const c = live ? Math.floor(seat.x) : target.c, r = live ? Math.floor(seat.z) : target.r;
+        if (live && target.furnitureId === seat.furnitureId && target.c === c && target.r === r) return target;
+        const furnitureId = live ? seat.furnitureId : ''; // Missing chairs must not publish reservations or permit furniture collision overlap.
+        const prior = walker._seatNavigationTarget; // Reused until the planner's target or physical seat tile changes.
+        if (prior?.source === target && prior.c === c && prior.r === r && prior.furnitureId === furnitureId) return prior.target;
+        const adjusted = live ? { ...target, furnitureId, c, r } : { ...target, pose: 'stand', furnitureId: '', furnitureKey: '' };
+        walker._seatNavigationTarget = { source: target, c, r, furnitureId, target: adjusted };
+        return adjusted;
+      }
+
       async function makeNpcWalker(rec, initialTarget) {
         window.PantsGarmentRenderer?.ensureNpcPants?.(rec); // Nearly every humanoid NPC wears the free default pants (js/pants-garment-renderer.js); animals and opted-out records are skipped.
         window.NpcWardrobe?.captureDefaultOutfitTraits?.(rec); // Covers direct/late walker construction paths that do not pass through the initial database loop.
@@ -13653,8 +13669,11 @@
               window.CreatureGenetics.applyCreatureBillboardScale(this.avatarGroup, this.animalSizeScale, breathScaleY);
             }
             const scheduledTarget = window.NpcScheduling.resolveNpcScheduleTargetCached(this, this.area === currentArea); // Schedule decisions use short leases while movement/pose remain per-frame.
-            const target = scheduledTarget && scheduledTarget.pose !== 'lie' && /sleep/i.test(String(scheduledTarget.activity || ''))
+            let target = scheduledTarget && scheduledTarget.pose !== 'lie' && /sleep/i.test(String(scheduledTarget.activity || ''))
               ? { ...scheduledTarget, pose: 'lie' } : scheduledTarget; // Unifies all humanoid sleepers with existing authored pose:'lie' stations.
+            const targetArea = target ? normalizeNpcArea(target.area) : null;
+            const seatTransform = targetArea === this.area ? npcSeatTransformForTarget(target) : null; // Resolve once before publishing reservation and navigation.
+            if (targetArea === this.area) target = npcSeatNavigationTarget(this, target, seatTransform);
             window.FurnitureTableSystem?.setSeatTarget(this.rec.id, target); // Publish the reservation before movement/arrival so later walkers cannot choose the same physical seat.
             this.currentScheduleTarget = target || null;
             // Running remains limited to player-following, combat escape and flood evacuation.
@@ -13664,7 +13683,6 @@
               && (target?.floodShelter || target?.area !== this.area || Math.hypot(root.position.x - (target.c + 0.5), root.position.z - (target.r + 0.5)) > (npcMovementConfig().arrivalRadiusTiles ?? 0.18));
             this._animalSleepRequested = !!this.animalDef && /sleep/i.test(String(target?.activity || '')); // Schedule-authored sleeping named animals enter the same visual sleep system before any state module can early-return.
             if (this._animalSleepRequested && this.rec && typeof this.rec._animalDialogueEyesOpen !== 'boolean') this.rec._animalDialogueEyesOpen = false; // Closed is the safe default until an authored dialogue system explicitly wakes the animal's eyes.
-            const targetArea = target ? normalizeNpcArea(target.area) : null;
             const bedTransform = window.FurnitureTableSystem?.lieTransform?.(
               this.area, targetArea === this.area && !this.animalDef ? target : null, this);
             this._bedLieSurface = null; // Clear stale bedroom contacts before state handlers can return early.
@@ -13674,7 +13692,6 @@
               shadowSurfaceOffset: characterGroundShadowSurfaceOffset,
             })) return;
             const cfg = npcMovementConfig();
-            const seatTransform = targetArea === this.area ? npcSeatTransformForTarget(target) : null; // Supplies the same authored seat anchor the player uses.
             const tx = seatTransform?.x ?? ((target?.c ?? root.position.x - 0.5) + 0.5);
             const tz = seatTransform?.z ?? ((target?.r ?? root.position.z - 0.5) + 0.5);
             this._bedLieSurface = targetArea === this.area && target?.pose === 'lie' && !bedTransform?.occupied
@@ -13721,12 +13738,20 @@
               }
             }
             const seatedStationKey = seatedAtTarget ? (target.stationId || target.id || `${target.area}_${target.c}_${target.r}`) : null;
+            const leftSeat = !!this._seatedStationKey && !seatedStationKey; // Dialogue pauses still need to recover from a removed seat.
             if (seatedStationKey !== this._seatedStationKey) {
               window.__farmLog?.(`[schedule] ${rec?.id || 'npc'} ${seatedStationKey ? `sat at ${seatedStationKey}` : `stood from ${this._seatedStationKey}`}`, 'info');
               this._seatedStationKey = seatedStationKey;
             }
             this._legsPrevX = root.position.x; this._legsPrevZ = root.position.z;
-            if (this.pause === Infinity) return;
+            if (this.pause === Infinity) {
+              if (leftSeat && dialogueOpen && _dialogueWalker === this) {
+                const floor = npcSurfaceY(this.area, Math.floor(root.position.x), Math.floor(root.position.z));
+                root.position.y = floor;
+                groundShadow.position.y = characterGroundShadowSurfaceOffset();
+              }
+              return;
+            }
             this.applyFacingDeadzone(this.desiredRot, 0.15);
             if (!target) return;
             if (target.visitorDeparture && targetArea === this.area && Math.hypot(root.position.x - tx, root.position.z - tz) <= arrival) {
@@ -13797,7 +13822,7 @@
             // radius set: he'd circle near the stage, kurraya never in hand, no
             // ambient music. A performer needs to actually stay at their
             // instrument to play it, so toolKey stations opt out of wandering.
-            const wanderEnabled = !target.toolKey && (target.wanderMode === 'shape' ? !!target.wanderShapeTiles?.length : (target.wanderRadiusTiles || 0) > 0);
+            const wanderEnabled = !seatTransform && !target.toolKey && (target.wanderMode === 'shape' ? !!target.wanderShapeTiles?.length : (target.wanderRadiusTiles || 0) > 0);
             const wanderKey = target.stationId || target.id || null;
             // Station wander (see _updateStationWander) takes over completely
             // once entered, instead of the plain freeze-at-the-exact-tile
@@ -13837,17 +13862,17 @@
             }
             if (Math.hypot(root.position.x - tx, root.position.z - tz) <= arrival) this.state = 'idle';
             if (this.state === 'idle' && Math.hypot(root.position.x - tx, root.position.z - tz) <= arrival) {
-              const groundY = npcSurfaceY(this.area, seatTransform ? Math.floor(tx) : target.c, seatTransform ? Math.floor(tz) : target.r);
+              const groundY = npcSurfaceY(this.area, Math.floor(tx), Math.floor(tz));
               if (seatTransform) {
                 root.position.x = seatTransform.x;
                 root.position.z = seatTransform.z;
                 const standingPosteriorY = Number(this.legs?.standingPosteriorY); // Per-species hip in the floor-relative leg rig.
                 const visualRigScaleY = Number(this._npcCharacterRigRoot?.scale?.y); // NPC species/age scaling lives on this shared parent of legs, torso and hands.
                 const scaledPosteriorY = standingPosteriorY * (Number.isFinite(visualRigScaleY) && visualRigScaleY > 0 ? visualRigScaleY : 1); // Chair sink uses actual world hip height, not pre-scale height.
+                const seatBaseY = Number.isFinite(scaledPosteriorY) && Number.isFinite(seatTransform.worldY)
+                  ? seatTransform.worldY - seatTransform.y : groundY; // Live anchor already includes floor elevation and postY; never add the scheduled tile elevation again.
                 const seatSink = Number.isFinite(scaledPosteriorY) ? seatTransform.y - scaledPosteriorY
                   : avatarGroup.userData?.avatarGroundLift === 0 ? 0 : -0.32; // Floor-relative compound bodies have no humanoid hip/leg solve to sink into a chair.
-                const seatBaseY = Number.isFinite(scaledPosteriorY) && Number.isFinite(seatTransform.worldY)
-                  ? seatTransform.worldY - seatTransform.y : groundY; // Live anchor already includes floor elevation and postY; do not add the scheduled tile elevation again.
                 root.position.y += (seatBaseY + seatSink - root.position.y) * (1 - Math.exp(-11.9 * dt)); // Framerate-independent seat-sink catch-up.
                 this.applyFacingDeadzone(-seatTransform.facingRad + Math.PI / 2, 1);
               } else {
