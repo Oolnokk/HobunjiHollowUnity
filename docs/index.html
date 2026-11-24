@@ -334,6 +334,8 @@
   <script src="js/sim-clock.js?v=20261124mp1"></script> <!-- Shared gameplay clock; must precede resource-system and combat timers. -->
   <script src="js/actor-registry.js?v=20261124mp1"></script> <!-- Stable actor ids + the players list; must precede game.js. -->
   <script src="js/damage-authority.js?v=20261124mp1"></script> <!-- Target-aware damage routing; initialised by game.js. -->
+  <script src="js/remote-player-state.js?v=20261124mp1"></script> <!-- Health/downed/bleed-out/respawn for non-local players; registers as DamageAuthority's remote handler. -->
+  <script src="js/dev-dummy-player.js?v=20261124mp1"></script> <!-- Dev-only second-player stand-in (window.DevDummyPlayer). -->
   <script src="js/combat/resource-system.js?v=20261124h27ea2d2"></script>
   <script src="js/sacred-ground.js?v=20261108h9e2416f"></script> <!-- Global sacred-ground provider registry for totems, temple and future blessings. -->
   <script src="js/combat/knockback-collision-impact.js?v=20261105aerialAudit2"></script>
@@ -606,7 +608,7 @@
   <script src="js/skeeri-ruins.js?v=20261123skeeriEyePrewarm1"></script> <!-- Three authored Skeeri sizes, concealed ruin hatches and shaft witch-bomb runs. -->
   <script src="js/tzatzul-live-visuals.js?v=20261123wingflapAudit2"></script>
   <script src="js/tzatzul-cliff-sites.js?v=20261108tzflightnest2"></script> <!-- Separate rock-textured, non-climbable Tzatzul spires. -->
-  <script src="js/tzatzul-flight-runtime.js?v=20261122proneCaptureMerge1"></script> <!-- Shared swept-body dive for exterior and nest mothers. -->
+  <script src="js/tzatzul-flight-runtime.js?v=20261124h585debe"></script> <!-- Shared swept-body dive for exterior and nest mothers. -->
   <script src="js/tzatzul-nest-encounter.js?v=20261120hpaperheadless2"></script> <!-- Authoritative indoor mother and hatchling combat in the existing wildlife tick. -->
   <!-- Funji & Son's General Store (window.GeneralStore) — self-contained
        aside from deps injected via init(), and reads window.DyeSystem/

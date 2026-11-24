@@ -13,7 +13,7 @@ deterministic lockstep. Single-player is the same game with zero guests, not a
 second code path. Order of work:
 
 1. **Multiplayer-compatible single-player** (in progress — see below).
-2. Dev-controlled dummy second player (walk, equip, take damage, change area) to prove 1 without a network.
+2. Dev-controlled dummy second player (walk, take damage, go down, change area) — logic done (`DevDummyPlayer`), avatar mesh/equipment pending.
 3. Two connected clients: session, movement, appearance, equipment, animation state.
 4. Shared simulation: NPCs, combat, farming, inventories, world mutations.
 5. Independent exploration: simulation residency vs asset residency vs render visibility (`WildernessChunks`).
@@ -27,19 +27,24 @@ second code path. Order of work:
 | `js/damage-authority.js` (`DamageAuthority.hit(target, …)`) | `damagePlayer(...)` having no target | one entry for attacker→target; local player → `damagePlayer`, remote player → registered handler (never the local player), else `damageCreature`; emits id-tagged hit events for a future host broadcast |
 | `js/sim-clock.js` (`SimClock.now()`) | `performance.now()` in gameplay timers | host-synced time; offset is 0 today so it is identical |
 
-Migrated so far: hostile melee bite, enemy ranged projectiles (now test every
-player, nearest first), animal pounce/guard-charge, combo/charged-breaker/
-resource-system timers, hostile target acquisition (area-aware, non-strict).
+| `js/remote-player-state.js` (`RemotePlayerState`) | `damagePlayer` + `PlayerDowned` being local-only | health, downed/bleed-out timer, Second Wind (`noteKillBy`) and respawn for every non-local player, no HUD; registered as `DamageAuthority`'s remote handler |
+| `js/dev-dummy-player.js` (`DevDummyPlayer`) | — | dev stand-in second player: `spawn({x,y,areaId})`, `walkTo`, `follow`, `setArea`, `despawn`. No avatar mesh yet |
+
+Migrated to `DamageAuthority.hit`: hostile bite, companion bite, enemy ranged
+projectiles (test every player, nearest first), animal pounce/guard-charge/leap,
+bandit swings, Voorg kick, swarm attach ticks/swats/rescues, Tzatzul dives,
+knockback-collision impact; combo/charged-breaker/resource timers use `SimClock`;
+hostile target acquisition is area-aware (non-strict).
+
+Try it in the console: `DevDummyPlayer.spawn(); DevDummyPlayer.follow(true);
+DamageAuthority.hit(DevDummyPlayer.get(), 40, 0, 0, 100, {}); RemotePlayerState.debugSnapshot()`.
 
 ### Still singleton-bound (next up)
 
-- ~14 other `damagePlayer` callers that do not know *which* player they hit
-  (`combat-bandit.js`, `combat-attach.js`, `combat-voorg-ass-rear-kick.js`,
-  `skeeri-ruins.js`, `tzatzul-flight-runtime.js`, `amphibious-fishing.js`,
-  `combat-camera-alignment-bridge.js`, ruin/cave-trap deps in `game.js`) → move to `DamageAuthority.hit`.
-- `damagePlayer`/`respawnPlayer`/`PlayerDowned`/`GameFeel.playerHurt` hardcode the local avatar; remote players need their own downed/bleed-out state.
-- Other `performance.now()` gameplay timers (`invulnUntil`, `combat-input.js`, stamina windows set from `game.js`) are still wall-clock.
-- `nearestPlayer` callers should switch to `strict: true` once a second player can be in another zone.
+- Deliberately local-only (they are the local avatar's own action): `skeeri-ruins.js` swoop, `combat-camera-alignment-bridge.js` aerial wall impact, ruin/cave-trap deps in `game.js`, `respawnPlayer`/`PlayerDowned`/`GameFeel.playerHurt`. Ruin hazards must become "every player in the ruin" before co-op ruins.
+- The dummy has no avatar: register remote players with `CharacterVisuals` (held items, portrait, shadow) and add their shoulder pet / companion via `ownerOf`.
+- Other `performance.now()` gameplay timers (`invulnUntil` on the local player, `combat-input.js`, stamina windows set from `game.js`) are still wall-clock.
+- `nearestPlayer` callers should switch to `strict: true` once hostiles in other zones are simulated.
 - Rootledoot encounter, `WildernessChunks` residency, sleep/time advance and cutscenes assume one player.
 
 Rule for new code: **never assume the local player is the only player.** Take a

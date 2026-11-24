@@ -1277,7 +1277,10 @@
         attacker: c,
       });
     } else {
-      outcome = deps.damagePlayer(amount, fromX, fromY, knockbackPxS, { ...opts, attacker: c });
+      const struckPlayer = window.ActorRegistry?.isPlayer(target) ? target : null; // Hit the player actually targeted; no target keeps the legacy local-player behaviour.
+      outcome = struckPlayer && window.DamageAuthority
+        ? window.DamageAuthority.hit(struckPlayer, amount, fromX, fromY, knockbackPxS, { ...opts, attacker: c })
+        : deps.damagePlayer(amount, fromX, fromY, knockbackPxS, { ...opts, attacker: c });
     }
     if (c?._banditCaptainArmament) {
       const afterHealth = Number(target?.health); // Uses the actual victim (player or NPC), so allied skirmishes can proc enchantments too.

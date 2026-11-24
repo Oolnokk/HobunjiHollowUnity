@@ -214,7 +214,7 @@
     const ref = stopReason === 'target' ? state.lungeContact : null; // First living target the moving cone caught.
     if (!ref) return false; // Ran out of travel or hit terrain; animalAttacks.update lowers the hop.
     const damageOpts = { tag: 'amphibiousFish', afflictionBonuses, amphibiousFish: true, attacker: c };
-    if (state.targets.some(target => target.isPlayer && target.ref === ref)) deps.damagePlayer(state.damage, c.x, c.y, FISH_LEAP_KNOCKBACK_PX_S, damageOpts);
+    if (state.targets.some(target => target.isPlayer && target.ref === ref)) (window.DamageAuthority ? window.DamageAuthority.hit(ref, state.damage, c.x, c.y, FISH_LEAP_KNOCKBACK_PX_S, damageOpts) : deps.damagePlayer(state.damage, c.x, c.y, FISH_LEAP_KNOCKBACK_PX_S, damageOpts));
     else deps.damageCreature(ref, state.damage, c.x, c.y, FISH_LEAP_KNOCKBACK_PX_S, damageOpts);
     deps.playCreatureClawHit?.(c);
     return false;

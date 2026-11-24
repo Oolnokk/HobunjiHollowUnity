@@ -31,7 +31,7 @@ assert.match(campSource, /hound\.def = tunedDef[\s\S]{0,180}hound\.stamina = hou
 assert.match(gameSource, /if \(c\.banditCompanion\) continue;/, 'hostile AI must not double-tick a hound owned by companion AI');
 assert.match(gameSource, /EnemyPetTargeting\?\.chooseBeastmasterTarget/, 'Beastmaster pets use player-and-ground-companion targeting');
 assert.match(gameSource, /Math\.hypot\(player\.x - master\.x, player\.y - master\.y\) <= ALERT_RANGE_PX/, "Beastmaster's player-only fallback preserves the master's normal alert radius");
-assert.match(gameSource, /if \(target === player\) damagePlayer/, 'fallback companion bites must use the player damage path');
+assert.match(gameSource, /if \(window\.ActorRegistry\.isPlayer\(target\)\) window\.DamageAuthority\.hit\(target, def\.attackDamage/, 'fallback companion bites must use the player damage path');
 assert.match(gameSource, /window\.BanditCamps\?\.init\(\{[\s\S]{0,900}makeCreatureEntity,/, 'BanditCamps must receive the shared creature factory');
 
 const renderSource = fs.readFileSync('docs/js/creature-genetics-render.js', 'utf8'); // Checks the existing species compositor already has the eye art that the spawn genotype enables.

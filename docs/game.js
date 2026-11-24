@@ -3715,9 +3715,7 @@
         return {
           dealHealthDamage(target, amount) {
             const opts = { environmentalImpact: true, reason: 'knockback collision', source: descriptor.label }; // Retains normal death authority without treating impact as a second weapon hit.
-            return target === player
-              ? damagePlayer(amount, sourceX, sourceY, 0, opts)
-              : damageCreature(target, amount, sourceX, sourceY, 0, opts);
+            return window.DamageAuthority.hit(target, amount, sourceX, sourceY, 0, opts); // Local/remote player or creature, by victim.
           },
           afterFootingDamage(target) {
             if (target.prone || target.footing > 0) return;
@@ -9223,7 +9221,7 @@
                         onStrike: () => {
                           if (window.CompanionCombatResponse.validFocus(target, currentArea) && Math.hypot(target.x - c.x, target.y - c.y) <= def.attackRangePx && (window.RangedWeapons?.hasLineOfSight?.(c, target, true) ?? true)) {
                             const damageOptions = { tag: def.attackTag || 'sharp', afflictionBonuses: window.ResourceSystem?.afflictionBonusesForTag(def.attackTag), attacker: c }; // Fallback animal bites retain their attacker identity for scent spending and debuff attribution.
-                            if (target === player) damagePlayer(def.attackDamage, c.x, c.y, COMPANION_BITE_KNOCKBACK_PX_S, damageOptions);
+                            if (window.ActorRegistry.isPlayer(target)) window.DamageAuthority.hit(target, def.attackDamage, c.x, c.y, COMPANION_BITE_KNOCKBACK_PX_S, damageOptions);
                             else if (window.CompanionOffense) window.CompanionOffense.damageCreature(damageCreature, c, target, def.attackDamage, c.x, c.y, COMPANION_BITE_KNOCKBACK_PX_S, damageOptions); // Shared Whistle/Sicced companion empowerment (js/combat/companion-offense.js).
                             else damageCreature(target, def.attackDamage, c.x, c.y, COMPANION_BITE_KNOCKBACK_PX_S, damageOptions);
                             window.AudioSystem?.playCreatureClawHit(c);
