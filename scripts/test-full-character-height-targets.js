@@ -1,5 +1,5 @@
 'use strict';
-// Eight requested adult heights and 93%-of-male female stature, against the game's existing 6ft chair ruler.
+// Eight NOMINAL adult heights and a provisional 93%-of-male female ratio; actual PNG crown heights require painted-pixel measurement.
 const assert = require('node:assert/strict'); // Ensures numerical size goals survive future sprite-scale adjustments.
 const fs = require('node:fs'); // Reads actual canonical character defaults and authored chair geometry.
 const vm = require('node:vm'); // Runs the production default installer without WebGL.
@@ -15,7 +15,7 @@ const portrait={'kenkari':.75,tletingan:.85,nuhongan:.85,longoran:.85,
   'mao-ao':1,'engh-sho':.95,mammakhbuur:1.18,mashtzarr:1.18}; // Existing adult PNGPlaneAvatar portrait-plane multipliers.
 const close=(a,b,label)=>assert(Math.abs(a-b)<1e-9,label+': '+a+' != '+b); // Subpixel numerical parity, rather than integer-rounded display.
 assert.deepEqual(Object.keys(rig.maleHeightFeet).sort(),Object.keys(goals).sort(),'all eight and only eight named species calibrated');
-assert.equal(rig.version,32,'old cached default bundles cannot silently pass the new target test');
+assert.equal(rig.version,33,'independent uploaded female anchors must be reflected in the current default bundle');
 assert.equal(Object.keys(rig.values).length,26,'all 26 approved canonical and special profiles retained');
 assert.equal(rig.rawHeadScale,.65,'65 percent raw source-PNG head size remains canonical');
 assert.equal(rig.femaleVisibleHeightRatio,.93,'female physical stature is humanlike relative to the larger male');
@@ -39,12 +39,12 @@ for (const [species,feet] of Object.entries(goals)) {
   assert(male.y>0&&male.y<=4,'male still within the existing 10–400% rig range');
 }
 const base=rig.mainReferenceValues;
-const delta=rig.maoaoRelativeShift.male;
+const deltas=rig.maoaoRelativeShift;
 for(const [key,profile] of Object.entries(rig.values)) {
   const [species,gender]=key.split('::');
   const original=base[key];
   if(original) {
-    close(profile.x, original.x*delta.x,key+' width retains approved Mao-ao relative change');
+    close(profile.x, original.x*deltas[gender].x,key+' width retains uploaded Mao-ao gender-specific relative change');
     close(profile.offsetY,original.offsetY,key+' authored head offset is unchanged');
   }
   assert(Number.isFinite(profile.head)&&profile.head>0,key+' Head factor remains finite');
@@ -58,4 +58,4 @@ close(rig.nominalHeightFeetFor('harlyao','male'),rig.values['harlyao::male'].y*
 assert.match(source,/const FEMALE_VISIBLE_HEIGHT_RATIO = 0\.93/,'humanlike female/male ratio is centralized');
 assert.match(source,/const targetHeight = calibratedHeightFor\(species, gender\)/,
   'target heights are applied by one shared resolution path, not rewritten save snapshots');
-console.log('PASS all eight adult male heights, female stature, world/chair calibration, 65% heads and 26-profile identity preservation');
+console.log('PASS eight NOMINAL adult male canvas heights, provisional female targets, world/chair math, 65% heads and 26-profile identity preservation (pixel crown heights NOT verified)');
