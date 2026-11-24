@@ -30,18 +30,11 @@ const plain = v => ({ x: v.x, y: v.y, head: v.head, offsetY: v.offsetY });
 // Hand-authored via Full Character Scale itself (an exported
 // hobunji_full_character_scales.json), each axis genuinely independent now —
 // no longer x === y === head per species/gender.
-const authoredDefaults = {
-  'tletingan::male': { x: 0.6075, y: 0.81, head: 0.5742, offsetY: 0 },
-  'tletingan::female': { x: 0.6939, y: 0.8874, head: 0.6552, offsetY: 0 },
-  'engh-sho::male': { x: 0.8, y: 0.845, head: 0.7894736842105263, offsetY: 0 },
-  'engh-sho::female': { x: 0.795, y: 0.81, head: 0.7894736842105263, offsetY: 0 },
-  'mao-ao::male': { x: 0.81675, y: 1.089, head: 0.726, offsetY: 0 },
-  'mao-ao::female': { x: 0.895, y: 0.94, head: 0.7813, offsetY: 0 },
-  'kenkari::male': { x: 1.1025, y: 1.1025, head: 0.9, offsetY: 0 },
-  'kenkari::female': { x: 0.99, y: 0.99, head: 0.9, offsetY: 0 },
-  'mashtzarr::male': { x: 0.955, y: 1.255, head: 0.9856, offsetY: -0.095 },
-  'mashtzarr::female': { x: 1.01, y: 0.99, head: 0.8475, offsetY: -0.02 },
-};
+const authoredDefaults = Object.fromEntries( // Current canonical main-equivalent adult values are verified numerically by test-full-character-main-adult-parity.js.
+  ['tletingan::male','tletingan::female','engh-sho::male','engh-sho::female',
+    'mao-ao::male','mao-ao::female','kenkari::male','kenkari::female',
+    'mashtzarr::male','mashtzarr::female']
+    .map(key => [key, plain(context.HobunjiCharacterRigScaleDefaults.values[key])]));
 for (const [key, expected] of Object.entries(authoredDefaults)) {
   const [species, gender] = key.split('::');
   assert.deepStrictEqual(plain(context.HobunjiCharacterRigScaleDefaults.scaleFor(species, gender)), expected,
@@ -55,6 +48,8 @@ assert.deepStrictEqual(plain(context.HobunjiCharacterRigScaleDefaults.scaleFor('
   'Rakakoan must inherit Kenkari female transform scale');
 
 const api = context.HobunjiCharacterRigScale;
+const worldFactor = api.worldVisualScale(); // Only the assembled visual parent gains this calibration; authored fields remain main-equivalent.
+const scaled = (...values) => values.map(value => value * worldFactor); // Used in runtime parent-scaling expectations below.
 assert(api, 'whole-rig scale API must install');
 assert.strictEqual(profile.anatomy.rigScaleX, 0.81675, 'live shared rig profiles must receive the authored x default when no override exists');
 assert.strictEqual(profile.anatomy.rigScaleY, 1.089, 'live shared rig profiles must receive the authored y default when no override exists');
@@ -92,7 +87,7 @@ function makeParent(neckJoint = null, modelHeight = null) {
 
 const parent = makeParent();
 api.applyToParent(parent, 'mao-ao', 'male');
-assert.deepStrictEqual([parent.scale.x, parent.scale.y, parent.scale.z], [0.81675, 1.089, 0.81675]);
+assert.deepStrictEqual([parent.scale.x, parent.scale.y, parent.scale.z], scaled(0.81675, 1.089, 0.81675));
 
 // Changing an explicit authored/imported legacy value must override the default without
 // multiplying the previous result cumulatively, and still resolves uniformly on every axis.
@@ -101,22 +96,22 @@ profile.anatomy.rigScaleY = undefined;
 profile.anatomy.headScale = undefined;
 profile.anatomy.rigScale = 0.5;
 api.applyToParent(parent, 'mao-ao', 'male');
-assert.deepStrictEqual([parent.scale.x, parent.scale.y, parent.scale.z], [0.5, 0.5, 0.5]);
+assert.deepStrictEqual([parent.scale.x, parent.scale.y, parent.scale.z], scaled(0.5, 0.5, 0.5));
 
 // If another system recomputes the parent scale (body-scale preview), treat that
 // as the new assembled base and reapply whole-rig scale exactly once.
 parent.scale.set(1.2, 1.2, 1.2);
 api.applyToParent(parent, 'mao-ao', 'male');
-assert.deepStrictEqual([parent.scale.x, parent.scale.y, parent.scale.z], [0.6, 0.6, 0.6]);
+assert.deepStrictEqual([parent.scale.x, parent.scale.y, parent.scale.z], scaled(0.6, 0.6, 0.6));
 
 // Body width and height must be independently settable — z (depth) tracks x, since these
 // are camera-facing planes with no independently authored depth.
 const nonUniformParent = makeParent();
 api.applyToParent(nonUniformParent, 'mao-ao', 'male', { x: 1.3, y: 0.9, head: 1 });
-assert.deepStrictEqual([nonUniformParent.scale.x, nonUniformParent.scale.y, nonUniformParent.scale.z], [1.3, 0.9, 1.3]);
+assert.deepStrictEqual([nonUniformParent.scale.x, nonUniformParent.scale.y, nonUniformParent.scale.z], scaled(1.3, 0.9, 1.3));
 // Reapplying with a different y-only change must not cumulatively multiply x.
 api.applyToParent(nonUniformParent, 'mao-ao', 'male', { x: 1.3, y: 1.5, head: 1 });
-assert.deepStrictEqual([nonUniformParent.scale.x, nonUniformParent.scale.y, nonUniformParent.scale.z], [1.3, 1.5, 1.3]);
+assert.deepStrictEqual([nonUniformParent.scale.x, nonUniformParent.scale.y, nonUniformParent.scale.z], scaled(1.3, 1.5, 1.3));
 
 // Rendering Width/Head/age edits must not resample the procedural leg chain.
 // Only the leg-to-portrait ratio affects the underlying hip-to-ankle solver.
@@ -143,8 +138,8 @@ delete context.ProceduralLegAnimation; // Restores the test's ordinary no-leg st
 const neckJoint = makeBone();
 const headParent = makeParent(neckJoint);
 api.applyToParent(headParent, 'mao-ao', 'male', { x: 1.3, y: 0.7, head: 1.1 });
-assert.strictEqual(headParent.scale.x, 1.3);
-assert.strictEqual(headParent.scale.y, 0.7);
+assert.strictEqual(headParent.scale.x, 1.3 * worldFactor);
+assert.strictEqual(headParent.scale.y, 0.7 * worldFactor);
 assert.ok(Math.abs(neckJoint.scale.x - (1.1 / 1.3)) < 1e-9, 'neck bone must cancel body width stretch and land on the authored head scale');
 assert.ok(Math.abs(neckJoint.scale.y - (1.1 / 0.7)) < 1e-9, 'neck bone must cancel body height stretch and land on the authored head scale');
 assert.strictEqual(neckJoint.scale.z, 1);
@@ -293,7 +288,7 @@ const runtimeParent = {
   traverse(visit) { visit(this); },
 };
 hands.attach(null, runtimeParent, { speciesId: 'engh-sho', gender: 'male' });
-assert.deepStrictEqual([runtimeParent.scale.x, runtimeParent.scale.y, runtimeParent.scale.z], [0.8, 0.845, 0.8]);
+assert.deepStrictEqual([runtimeParent.scale.x, runtimeParent.scale.y, runtimeParent.scale.z], scaled(0.8, 0.845, 0.8));
 assert.strictEqual(runtimeParent.userData.hobunjiCharacterRigScaleState.coordinateSpace, 'character-floor-parent');
 
 assert.match(source, /coordinateSpace: 'character-floor-parent'/);
