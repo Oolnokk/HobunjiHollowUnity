@@ -991,6 +991,41 @@
   const MAX_RUIN_GLOW_PLATFORMS=96; // Upper bound on moving-platform stencil preparation in a large multi-story ruin.
   const ruinGlowPlatformVertex=new window.THREE.Vector3(); // Reused local-to-world corner and camera-depth scratch for slab silhouettes.
   const ruinGlowWallPlaneA=new window.THREE.Vector3(),ruinGlowWallPlaneB=new window.THREE.Vector3(),ruinGlowWallPlaneC=new window.THREE.Vector3(); // Three reused transformed glyph vertices define the wall plane for front/behind slab classification.
+  const ruinGlowBoxEdges=[[0,1],[0,2],[0,4],[1,3],[1,5],[2,3],[2,6],[3,7],[4,5],[4,6],[5,7],[6,7]]; // The exact 12 edges of a box for slabs that cross the glyph's wall plane.
+  const ruinGlowClipPointPool=Array.from({length:20},()=>({x:0,y:0})); // Reused projected points; no per-frame allocations for intersecting platforms.
+  const ruinGlowClipPoints=[],ruinGlowClipHull=[]; // Bounded scratch arrays hold only the camera-facing portion of a straddling box.
+  const ruinGlowCross=(a,b,c)=>(b.x-a.x)*(c.y-a.y)-(b.y-a.y)*(c.x-a.x);
+  function ruinGlowConvexHull(points,hull){
+    points.sort((a,b)=>a.x-b.x||a.y-b.y);hull.length=0;
+    for(const point of points){while(hull.length>=2&&ruinGlowCross(hull[hull.length-2],hull[hull.length-1],point)<=0)hull.pop();hull.push(point);}
+    const lowerLength=hull.length;
+    for(let i=points.length-2;i>=0;i--){const point=points[i];while(hull.length>lowerLength&&ruinGlowCross(hull[hull.length-2],hull[hull.length-1],point)<=0)hull.pop();hull.push(point);}
+    hull.pop();return hull.length>=3;
+  }
+  function ruinGlowFrontHalfHull(mask,nx,ny,nz,ax,ay,az,cameraSide,near){
+    const corners=mask.corners;ruinGlowClipPoints.length=0;
+    const positive=cameraSide>0?1:-1,depths=mask.planeDistances; // Classified in the camera-side half-space of the engraved wall.
+    let count=0;
+    const project=(x,y,z)=>{
+      if((x-ruinGlowCameraPosition.x)*ruinGlowCameraDirection.x
+        +(y-ruinGlowCameraPosition.y)*ruinGlowCameraDirection.y
+        +(z-ruinGlowCameraPosition.z)*ruinGlowCameraDirection.z<=near)return;
+      const projected=lightingDeps.worldToOverlay(x,y,z);
+      if(!Number.isFinite(projected.x)||!Number.isFinite(projected.y))return;
+      const p=ruinGlowClipPointPool[count++];p.x=projected.x;p.y=projected.y;ruinGlowClipPoints.push(p);
+    };
+    for(let i=0;i<8;i++){
+      const corner=corners[i],distance=((corner.x-ax)*nx+(corner.y-ay)*ny+(corner.z-az)*nz)*positive;
+      depths[i]=distance;
+      if(distance>=0)project(corner.x,corner.y,corner.z);
+    }
+    for(const [i,j] of ruinGlowBoxEdges){
+      const a=depths[i],b=depths[j];if((a<0&&b<=0)||(a>=0&&b>=0))continue;
+      const fraction=a/(a-b),start=corners[i],end=corners[j];
+      project(start.x+(end.x-start.x)*fraction,start.y+(end.y-start.y)*fraction,start.z+(end.z-start.z)*fraction);
+    }
+    return ruinGlowClipPoints.length>=3&&ruinGlowConvexHull(ruinGlowClipPoints,ruinGlowClipHull)?ruinGlowClipHull:null;
+  }
   let ruinGlowPlatformClipCount=0; // Pixel Probe reports how often a platform actually subtracts from a projected rune panel.
   function updateRuinPlatformMasks() {
     const near=Math.max(.001,Number(lightingDeps.camera?.near)||.001);
@@ -1000,7 +1035,8 @@
       mask.ready=false;
       let node=mask.node,visible=true;
       for(let parent=node;parent;parent=parent.parent)if(parent.visible===false){visible=false;break;}
-      if(!visible)continue;
+      const material=Array.isArray(node.material)?node.material[0]:node.material;
+      if(!visible||material?.visible===false||(material?.transparent===true&&Number(material.opacity)<.5))continue; // An invisible/faded slab cannot block a visible glyph.
       node.updateWorldMatrix?.(true,false);
       const bounds=node.geometry?.boundingBox;
       if(!bounds)continue;
@@ -1009,6 +1045,7 @@
       const points=mask.points; // Eight reusable projected corners, including the sides and underside of each solid slab.
       for(let i=0;i<8;i++){
         ruinGlowPlatformVertex.set(i&1?bounds.max.x:bounds.min.x,i&2?bounds.max.y:bounds.min.y,i&4?bounds.max.z:bounds.min.z).applyMatrix4(node.matrixWorld);
+        const corner=mask.corners[i];corner.x=ruinGlowPlatformVertex.x;corner.y=ruinGlowPlatformVertex.y;corner.z=ruinGlowPlatformVertex.z;
         worldX+=ruinGlowPlatformVertex.x;worldY+=ruinGlowPlatformVertex.y;worldZ+=ruinGlowPlatformVertex.z;
         const dx=ruinGlowPlatformVertex.x-ruinGlowCameraPosition.x,dy=ruinGlowPlatformVertex.y-ruinGlowCameraPosition.y,dz=ruinGlowPlatformVertex.z-ruinGlowCameraPosition.z;
         const depth=dx*ruinGlowCameraDirection.x+dy*ruinGlowCameraDirection.y+dz*ruinGlowCameraDirection.z;
@@ -1021,14 +1058,7 @@
         minDepth=Math.min(minDepth,depth);maxDepth=Math.max(maxDepth,depth);
       }
       if(!visible||maxX<0||maxY<0||minX>width||minY>height)continue;
-      points.sort((a,b)=>a.x-b.x||a.y-b.y);
-      const hull=mask.hull;hull.length=0;
-      const cross=(a,b,c)=>(b.x-a.x)*(c.y-a.y)-(b.y-a.y)*(c.x-a.x);
-      for(const point of points){while(hull.length>=2&&cross(hull[hull.length-2],hull[hull.length-1],point)<=0)hull.pop();hull.push(point);}
-      const lowerLength=hull.length;
-      for(let i=points.length-2;i>=0;i--){const point=points[i];while(hull.length>lowerLength&&cross(hull[hull.length-2],hull[hull.length-1],point)<=0)hull.pop();hull.push(point);}
-      hull.pop(); // Monotone chain produces the convex *silhouette* of a box, including visible sides.
-      mask.ready=hull.length>=3;mask.minX=minX;mask.maxX=maxX;mask.minY=minY;mask.maxY=maxY;
+      mask.ready=ruinGlowConvexHull(points,mask.hull); // Convex silhouette includes solid slab top and sides.mask.minX=minX;mask.maxX=maxX;mask.minY=minY;mask.maxY=maxY;
       mask.minDepth=minDepth;mask.maxDepth=maxDepth;
       mask.worldX=worldX/8;mask.worldY=worldY/8;mask.worldZ=worldZ/8;
     }
@@ -1064,13 +1094,22 @@
       for(const mask of ruinGlowPlatforms){
         if(!mask.ready||mask.maxX<projected.x-radius||mask.minX>projected.x+radius
           ||mask.maxY<projected.y-radius||mask.minY>projected.y+radius)continue;
+        let hull=mask.hull;
         if(planeValid){
-          const slabSide=(mask.worldX-ruinGlowWallPlaneA.x)*nx+(mask.worldY-ruinGlowWallPlaneA.y)*ny+(mask.worldZ-ruinGlowWallPlaneA.z)*nz;
-          if(cameraSide*slabSide<=1e-5)continue; // A slab behind the actual wall plane cannot obscure its glyph, even if the screen silhouettes overlap.
+          let front=0,back=0;const sign=cameraSide>0?1:-1;
+          for(const corner of mask.corners){
+            const side=((corner.x-ruinGlowWallPlaneA.x)*nx+(corner.y-ruinGlowWallPlaneA.y)*ny+(corner.z-ruinGlowWallPlaneA.z)*nz)*sign;
+            if(side>1e-5)front++;else if(side< -1e-5)back++;
+          }
+          if(!front)continue; // Entire slab is physically behind the wall.
+          if(back){
+            hull=ruinGlowFrontHalfHull(mask,nx,ny,nz,ruinGlowWallPlaneA.x,ruinGlowWallPlaneA.y,ruinGlowWallPlaneA.z,cameraSide,Math.max(.001,Number(lightingDeps.camera?.near)||.001));
+            if(!hull)continue; // Only the camera-facing portion of a slab crossing the wall plane can erase glyph ink.
+          }
         }else if(mask.minDepth>=depth-.035)continue; // Degenerate or edge-on glyphs retain the conservative camera-depth fallback.
         if(!saved){ctx.save();saved=true;}
         ctx.beginPath();ctx.rect(-2,-2,width+4,height+4);
-        const hull=mask.hull;ctx.moveTo(hull[0].x,hull[0].y);
+        ctx.moveTo(hull[0].x,hull[0].y);
         for(let i=1;i<hull.length;i++)ctx.lineTo(hull[i].x,hull[i].y);
         ctx.closePath();ctx.clip('evenodd'); // Intersect inverse silhouettes: overlap between slabs can never uncover a rune again.
         ruinGlowPlatformClipCount++;
@@ -1189,7 +1228,7 @@
         if(node.userData?.ruinShaftPlatform===true){ // TileSpan may replace BoxGeometry with BufferGeometry; the authored slab flag survives.
           if(ruinGlowPlatforms.length<MAX_RUIN_GLOW_PLATFORMS){
             node.geometry.computeBoundingBox?.();
-            ruinGlowPlatforms.push({node,points:Array.from({length:8},()=>({x:0,y:0})),hull:[],ready:false});
+            ruinGlowPlatforms.push({node,points:Array.from({length:8},()=>({x:0,y:0})),corners:Array.from({length:8},()=>({x:0,y:0,z:0})),planeDistances:new Float32Array(8),hull:[],ready:false});
           }
           return; // The box silhouette must clip partially obscured wall glyphs instead of hiding their entire atlas.
         }
@@ -1205,7 +1244,8 @@
     const ctx = lightingDeps.lctx, playerY = Number(lightingDeps.getPlayerWorldY?.());
     const kanthic=activeRuinTradition()==='kanthic'; // Other ruin traditions keep their existing atmospheric glow radius.
     ruinGlowStats.drawn = 0;ruinGlowStats.triangles=0;ruinGlowStats.examined=0;ruinGlowOcclusionChecks=0;ruinGlowOccluded=0;ruinGlowPlatformClipCount=0;
-    if(kanthic){lightingDeps.camera?.getWorldPosition?.(ruinGlowCameraPosition);lightingDeps.camera?.getWorldDirection?.(ruinGlowCameraDirection);updateRuinPlatformMasks();}
+    let platformMasksPrepared=false; // A scene may contain dozens of shaft slabs but no glyph in view; defer 3D corner projection until one actually needs it.
+    if(kanthic){lightingDeps.camera?.getWorldPosition?.(ruinGlowCameraPosition);lightingDeps.camera?.getWorldDirection?.(ruinGlowCameraDirection);}
     ctx.globalCompositeOperation = 'destination-out';
     for (const mesh of ruinGlowMeshes) {
       if (ruinGlowStats.drawn >= 80 || kanthic && ruinGlowStats.examined>=MAX_RUIN_GLOW_TRIANGLES
@@ -1232,6 +1272,7 @@
       if (!(radius > 0) || !lightMaskIntersectsViewport(center,radius,ctx,ruinGlowProjection.x,ruinGlowProjection.y,ruinGlowProjection.z,radiusTiles)) continue;
       if(kanthic&&ruinGlyphOccluded(ruinGlowProjection))continue; // Skip expensive 3D depth rays for offscreen engravings; nearby solid masonry still blocks them.
       if(kanthic){
+        if(!platformMasksPrepared){updateRuinPlatformMasks();platformMasksPrepared=true;}
         ruinGlowDrawResult.drawn=0;ruinGlowDrawResult.examined=0; // A sealed-room clip may decline the draw callback entirely.
         withRuinRoomLightClip(ctx,ruinGlowSource,()=>withRuinPlatformGlyphClip(ctx,mesh,surfaceRadius,ruinGlowProjection,()=>{
           drawRuinGlyphSilhouette(ctx,mesh,MAX_RUIN_GLOW_TRIANGLES-ruinGlowStats.examined,ruinGlowDrawResult);
