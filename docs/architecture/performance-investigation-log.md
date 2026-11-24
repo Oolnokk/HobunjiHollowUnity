@@ -2377,3 +2377,53 @@ headroom (allocations 35–49 with them, no measurable change). **Not yet measur
 optimizations → "Lighter far Cloud Forest wall trees", benchmark variant `denseWallLodOff`,
 `DenseForestWallBatches.setLodEnabled(false)` / `setLodDistance(n)`; `snapshot()` reports
 far/near trees, triangles avoided, in-place swaps and buffer allocations.
+
+## 24 Nov 2026: surface-growth root/vine tubes drop redundant rings
+
+**Found while profiling the Cloud Forest wall LOD.** A per-mesh triangle census of town put
+~200 k in-view triangles in 18 "Surface roots" meshes (the temple's Corner Fill roots: radius
+0.2, length 12, up to 48 strands per recognized surface; single meshes up to 43,820 triangles).
+Hiding them raised headless town fps 2.93 → 3.80 (+30%). Strand tracing places a ring every
+~3× radius (Corner Fill: every 0.14 units, up to 128 rings) so that paths hug walls, seams and
+corners. On flat runs, most of those rings add no shape.
+
+**Change.** `simplifySurfaceStrandRings` (foliage-generator.js) is a final pass on every
+surface-growth tube (houses, temple, caves, furniture), after `varySurfaceStrandRadii` and the
+shrinkwrap. Douglas–Peucker on ring centres drops a ring only when the straight tube between its
+kept neighbours stays within 12% of the strand radius of its centre and its radius, with at most
+12 ring gaps per segment. Kept rings keep their exact shrinkwrapped vertices and PNG stretch UVs,
+so strands cannot sink further than the tolerance and their texture still runs 0..1. Ends and
+corners are kept. Build stats report `strandRingsBefore/After`.
+
+**Measured (headless, fresh world, town spawn, main vs branch in separate sessions):**
+surface-growth triangles 217 k → 106 k (−51%; rings 22,281 → 11,157); all-pass triangles
+1.62 M → 1.29 M; town fps 2.95 → 3.47 average over three 12 s windows (+18%). Screenshots of the
+temple's roots and vines are indistinguishable at 1280×720. Generation-time only: no per-frame
+cost, and the same savings apply to cave and furniture growth. **Not yet measured on a device.**
+
+### Same pass: far brick walls and paths draw a 12-triangle brick
+
+`Roughbrick1.glb` is a 70-triangle faceted rock (37 corners, flat-shaded) that WallBuilder
+instances for house walls, gables and path chunks: ~8,000 bricks and ~570 k triangles in the town
+view (hiding them: +23% headless fps). AutoLOD skips it (below its 96-triangle floor), and a
+per-brick decimation does not pay for itself.
+
+New render scope `instanced-brick-lod` (`js/instanced-brick-lod.js`, order 450). WallBuilder tags
+its default-brick InstancedMeshes; logs, stacks and custom GLBs are untouched. The far brick is the
+**octant hull** of the same geometry: for each of the 8 box-corner directions, the source corner
+reaching furthest that way. These are joined as 12 outward-wound, flat-shaded triangles and
+stretched per axis to the brick's exact bounding box (volume within ~5% of the source). uv, when a
+tint added projected uvs, is copied from the matching source corner, and the hull is rebuilt if
+the source's attributes change. Selection is per mesh, since WallBuilder groups bricks per wall or
+path chunk. A mesh whose InstancedMeshBounds sphere edge is ≥ 14 tiles from the camera swaps
+geometry for the world render only and is restored afterwards: no extra draws, no buffer copies.
+Matrices, count, material, layers and raycasts are unchanged.
+
+**Measured (headless town, same session, toggled, with the roots fix above):** 6,061 of ~6,700
+in-view bricks drew the hull; main pass 697 k → 526 k triangles (−25%), all passes 1.29 M →
+1.11 M; fps 3.45 → 3.58 (+4%, three alternating 12 s windows each, noisy). At 8 tiles: 499 k,
+3.83 fps. At 1280×720, distant walls keep the same courses, sizes and outlines; far bricks shade
+slightly more evenly (fewer facets), visible only at 2× zoom. Default 14. **Not yet measured on a
+device.** A/B: Settings → Render optimizations → "Lighter far brick walls and paths", benchmark
+variant `brickLodOff`, `InstancedBrickLod.setEnabled(false)` / `setDistance(n)`; Pixel Probe shows
+far meshes, instances and triangles avoided.

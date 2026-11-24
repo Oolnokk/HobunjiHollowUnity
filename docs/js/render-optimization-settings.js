@@ -95,6 +95,10 @@
       available: () => typeof window.WildernessTreeInstancer?.setEnabled === 'function',
       read: () => window.WildernessTreeInstancer.enabled?.(), write: on => window.WildernessTreeInstancer.setEnabled(on, { persist: true }) },
 
+    { group: 'Culling (skip what cannot be seen)', id: 'brickLod', name: 'Lighter far brick walls and paths', on: true,
+      desc: 'Brick walls and path chunks whose nearest brick is 14+ tiles away draw each brick as a 12-triangle block of the same size instead of 70 triangles.',
+      available: () => typeof window.InstancedBrickLod?.setEnabled === 'function',
+      read: () => window.InstancedBrickLod.enabled(), write: on => window.InstancedBrickLod.setEnabled(on) },
     { group: 'Culling (skip what cannot be seen)', id: 'instancedViewCull', name: 'Cull off-camera instanced walls and grass', on: true,
       desc: 'Instanced walls, path bricks and grass outside the camera view are skipped.',
       available: () => typeof window.InstancedMeshViewCull?.setEnabled === 'function',

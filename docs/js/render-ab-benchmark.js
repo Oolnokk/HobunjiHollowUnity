@@ -26,6 +26,8 @@
 //   propBatchesOff  still wilderness props (tents, camp furniture, berry
 //                   bushes, ore-rock stones...) drawn one mesh at a time
 //                   instead of merged per 8x8 cell (zone-prop-render-batches.js)
+//   brickLodOff     far brick walls/path chunks drawn with the full 70-triangle
+//                   brick again (instanced-brick-lod.js)
 //   denseWallBatchesOff
 //                   the Cloud Forest dense wall drawn as one instanced mesh per
 //                   chunk part again (dense-forest-wall-batches.js)
@@ -338,6 +340,10 @@
     const propBatches = window.ZonePropRenderBatches;
     if (typeof propBatches?.setEnabled === 'function' && propBatches.snapshot?.().enabled === true && propBatches.snapshot().batches > 0) {
       variants.push({ id: 'propBatchesOff', apply: () => propBatches.setEnabled(false), undo: () => propBatches.setEnabled(true) });
+    }
+    const brickLod = window.InstancedBrickLod;
+    if (typeof brickLod?.setEnabled === 'function' && brickLod.enabled() && brickLod.snapshot().farMeshes > 0) {
+      variants.push({ id: 'brickLodOff', apply: () => brickLod.setEnabled(false), undo: () => brickLod.setEnabled(true) });
     }
     const wallBatches = window.DenseForestWallBatches;
     if (typeof wallBatches?.setEnabled === 'function' && wallBatches.snapshot?.().enabled === true && wallBatches.snapshot().batches > 0) {

@@ -191,6 +191,7 @@ pass and returns a restore function; restores run in reverse order in `finally`.
 | 270 | `dense-forest-wall-batches` | dense-forest-wall-batches.js | Cloud Forest dense wall: opaque, on-camera chunk parts → one InstancedMesh per part across chunks (background scenery, never in a replay); trees ≥ 12 tiles from the camera draw their roots, branches and vines with `FoliageGenerator.liteTreeGeometry` twins (same spines, fewer rings/sides; a fading part is never merged: swapped in place when all its trees are far) |
 | 300 | `npc-view-cull` | npc-view-frustum-cull.js | off-camera NPC walkers hidden |
 | 400 | `grass-chunks` | grass-billboard-render-chunks.js | farm/town grass → spatial chunks |
+| 450 | `instanced-brick-lod` | instanced-brick-lod.js | WallBuilder default-brick (`Roughbrick1.glb`) meshes whose nearest brick is ≥ 14 tiles away swap to a 12-triangle octant hull of the brick (same bounds, flat-shaded, uv copied), restored after the frame |
 | 500 | `instanced-view-cull` | instanced-mesh-view-cull.js | off-camera instanced walls/grass hidden |
 | 600 | `wilderness-distance-cull` | wilderness-distance-cull.js | far static wilderness geometry hidden |
 

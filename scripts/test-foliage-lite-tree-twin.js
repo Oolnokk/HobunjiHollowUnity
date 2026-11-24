@@ -41,7 +41,7 @@ for (const [label, build] of [['shadewood', (c, r) => generator.buildShadewoodMe
   assert.strictEqual(generator.liteTreeGeometry(wood.geometry), lite, label + ': the twin is built once and cached');
   assert.strictEqual(generator.liteTreeGeometry(build(4, 9).children.find(o => o.userData.treePartRole === 'wood').geometry), lite,
     label + ': every placed clone of the variant shares the twin');
-  assert.ok(triangles(lite) * 3 < triangles(wood.geometry), label + ': at least 3x fewer bark triangles (' + triangles(wood.geometry) + ' -> ' + triangles(lite) + ')');
+  assert.ok(triangles(lite) * 2.5 < triangles(wood.geometry), label + ': at least 2.5x fewer bark triangles (trunk is kept at full detail; ' + triangles(wood.geometry) + ' -> ' + triangles(lite) + ')');
   assert.ok(lite.attributes.normal, label + ': twin has smooth normals for the same Lambert shading');
   // Same spines: the canopy/branch extent matches; only the below-ground roots are gone.
   const full = box(wood.geometry), small = box(lite);

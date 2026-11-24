@@ -2849,6 +2849,86 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
     return {strandRadiusMin:Number.isFinite(radiusMin)?radiusMin:settings.radius,strandRadiusMax:radiusMax||settings.radius};
   }
 
+  // Final pass, after radius variation and shrinkwrap: drop tube rings that a
+  // straight segment between their kept neighbours reproduces within a small
+  // fraction of the strand's radius (Douglas-Peucker on ring centres, also
+  // bounding the radius change). Tracing needs ~3x-radius steps to hug walls
+  // and corners, but on flat runs most rings are redundant: the town temple's
+  // roots were ~200k triangles. Ends, kept rings' exact (shrinkwrapped)
+  // positions and their PNG stretch UVs are unchanged, so the tube never moves
+  // more than the tolerance and its texture still runs 0..1 along it.
+  const STRAND_RING_TOLERANCE = 0.12; // Fraction of the strand radius.
+  const STRAND_MAX_SKIP = 12; // Never merge more than this many ring gaps into one segment.
+  function simplifySurfaceStrandRings(geometries, settings) {
+    let before = 0, after = 0;
+    for (let g = 0; g < geometries.length; g++) {
+      const geometry = geometries[g], position = geometry.getAttribute('position'), uv = geometry.getAttribute('uv');
+      const stride = 6; // Five sides plus the duplicated PNG seam vertex (radialSegments 5, stretchUv).
+      if (!position || !uv || position.count % stride) continue;
+      const rings = position.count / stride;
+      before += rings;
+      if (rings < 3) { after += rings; continue; }
+      const cx = new Float64Array(rings), cy = new Float64Array(rings), cz = new Float64Array(rings), rr = new Float64Array(rings);
+      for (let i = 0; i < rings; i++) {
+        let x = 0, y = 0, z = 0;
+        for (let j = 0; j < 5; j++) { x += position.getX(i * stride + j); y += position.getY(i * stride + j); z += position.getZ(i * stride + j); }
+        x /= 5; y /= 5; z /= 5;
+        let r = 0;
+        for (let j = 0; j < 5; j++) r += Math.hypot(position.getX(i * stride + j) - x, position.getY(i * stride + j) - y, position.getZ(i * stride + j) - z);
+        cx[i] = x; cy[i] = y; cz[i] = z; rr[i] = r / 5;
+      }
+      const tol = Math.max(1e-4, (geometry.userData?.surfaceGrowthRadius ?? settings.radius) * STRAND_RING_TOLERANCE);
+      const keep = new Uint8Array(rings); keep[0] = keep[rings - 1] = 1;
+      const stack = [0, rings - 1];
+      while (stack.length) {
+        const b = stack.pop(), a = stack.pop();
+        if (b - a < 2) continue;
+        const dx = cx[b] - cx[a], dy = cy[b] - cy[a], dz = cz[b] - cz[a], len2 = dx * dx + dy * dy + dz * dz;
+        let worst = -1, worstErr = 0;
+        for (let i = a + 1; i < b; i++) {
+          const t = len2 > 1e-12 ? Math.max(0, Math.min(1, ((cx[i] - cx[a]) * dx + (cy[i] - cy[a]) * dy + (cz[i] - cz[a]) * dz) / len2)) : 0;
+          const ex = cx[a] + dx * t - cx[i], ey = cy[a] + dy * t - cy[i], ez = cz[a] + dz * t - cz[i];
+          const along = (i - a) / (b - a); // Radius is interpolated by ring position, like the kept vertices will be.
+          const err = Math.max(Math.hypot(ex, ey, ez), Math.abs(rr[a] + (rr[b] - rr[a]) * along - rr[i]));
+          if (err > worstErr) { worstErr = err; worst = i; }
+        }
+        if (worstErr > tol || b - a > STRAND_MAX_SKIP) {
+          const split = worstErr > tol ? worst : (a + b) >> 1;
+          keep[split] = 1;
+          stack.push(a, split, split, b);
+        }
+      }
+      let kept = 0;
+      for (let i = 0; i < rings; i++) kept += keep[i];
+      after += kept;
+      if (kept === rings) continue;
+      const positions = new Float32Array(kept * stride * 3), uvs = new Float32Array(kept * stride * 2), indices = [];
+      let k = 0;
+      for (let i = 0; i < rings; i++) {
+        if (!keep[i]) continue;
+        for (let j = 0; j < stride; j++) {
+          const src = i * stride + j, dst = k * stride + j;
+          positions[dst * 3] = position.getX(src); positions[dst * 3 + 1] = position.getY(src); positions[dst * 3 + 2] = position.getZ(src);
+          uvs[dst * 2] = uv.getX(src); uvs[dst * 2 + 1] = uv.getY(src);
+        }
+        k++;
+      }
+      for (let i = 0; i < kept - 1; i++) {
+        const r0 = i * stride, r1 = (i + 1) * stride;
+        for (let j = 0; j < 5; j++) indices.push(r0 + j, r0 + j + 1, r1 + j, r1 + j, r0 + j + 1, r1 + j + 1); // Same winding as buildMeshFromSpineWithRadiusFn.
+      }
+      const simplified = new T.BufferGeometry();
+      simplified.setAttribute('position', new T.Float32BufferAttribute(positions, 3));
+      simplified.setAttribute('uv', new T.Float32BufferAttribute(uvs, 2));
+      simplified.setIndex(indices);
+      simplified.userData = { ...(geometry.userData || {}) };
+      simplified.computeBoundingSphere();
+      geometry.dispose();
+      geometries[g] = simplified;
+    }
+    return { strandRingsBefore: before, strandRingsAfter: after };
+  }
+
   function shrinkwrapSurfaceStrands(geometries,parent,settings,triangles,cells,large,keyOf,cellSize) {
     if(!settings.shrinkwrapFinal||!geometries.length)return {rays:0,hits:0};
     parent.updateWorldMatrix(true,true);
@@ -2987,6 +3067,8 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
           stats.guideBoundaries+=metrics.guideBoundaries||0;
           stats.shrinkwrapRays+=metrics.shrinkwrapRays||0;
           stats.shrinkwrapHits+=metrics.shrinkwrapHits||0;
+          stats.strandRingsBefore=(stats.strandRingsBefore||0)+(metrics.strandRingsBefore||0);
+          stats.strandRingsAfter=(stats.strandRingsAfter||0)+(metrics.strandRingsAfter||0);
           stats.generatedStrands+=produced;
           details.push({id:region.userData.surfaceFoliageGuideId,region:idx+1,
             requested:each,actual:produced,triangles:metrics.triangles||0});
@@ -3141,6 +3223,7 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
       const shrinkReport=shrinkwrapSurfaceStrands(geometries,parent,settings,triangles,cells,large,keyOf,cellSize);
       group.userData.surfaceGrowthStats.shrinkwrapRays=shrinkReport.rays;
       group.userData.surfaceGrowthStats.shrinkwrapHits=shrinkReport.hits;
+      Object.assign(group.userData.surfaceGrowthStats,simplifySurfaceStrandRings(geometries,settings)); // After shrinkwrap: kept rings sit exactly where they were placed.
       const mesh=new T.Mesh(mergeGeomsWithUV(geometries),hexBarkMat(parseInt(settings.color.slice(1),16))); // Keep each strand's own 0..1 PNG wrap through the merge.
       const originalMaterial = mesh.material; // Release the temporary color source after the shared renderer has read it.
       const surfaces = naturalSurfaces || window.NaturalSurfaceMaterials; // Match the material/texture constructors to the geometry and renderer.
@@ -3202,6 +3285,7 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
     },
     surfaceGrowthDefaults, surfaceMaterialPalette, normalizeSurfaceGrowth, architecturalSurfaceSources, recognizeArchitecturalSurfaceRegions, replaceSemanticSurfaceGuides, buildSurfaceGrowth, applySurfaceGrowth, caveGrowthRecipes,
     getClimbBranchWorld,
+    simplifySurfaceStrandRings, // Final ring reduction of surface-growth tubes (exposed for tests and tools).
     liteTreeGeometry, // Far-distance bark twin of a shared tree variant part (see its definition).
     liteTreeStats: () => ({ ..._liteStats, cachedVariants: _liteVariantCache.size }),
     buildLogMesh(options) {
