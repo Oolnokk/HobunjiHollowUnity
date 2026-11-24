@@ -503,6 +503,7 @@
     if (entity === window.Combat?.deps?.player) return false; // Never grant an animal allele to the rider.
     const multiplier = practicalMultiplier(genotype, 'enduring');
     let applied = enduringCapacityApplied.get(entity) || 0; // Bit flags allow a late-initialized resource to be handled independently.
+    if (applied === 3) return true; // No allocations or writes during ordinary resource ticks after initialization.
     for (const [maxKey, currentKey, flag] of [['maxHealth', 'health', 1], ['maxStamina', 'stamina', 2]]) {
       if (applied & flag) continue;
       const base = entity[maxKey];
