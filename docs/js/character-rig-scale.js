@@ -154,9 +154,9 @@
     if (!Number.isFinite(fraction)) fraction = heightBeltlineFor(scale, base).beltline;
     // Prevent either derived field leaving the runtime's 10-400% scale envelope.
     // This clamps the beltline instead of independently clamping both pieces, which would unexpectedly change total height.
-    const lower = Math.max(.05, MIN_SCALE * base / target, 1 - MAX_SCALE * (1 - base) / target);
-    const upper = Math.min(.95, MAX_SCALE * base / target, 1 - MIN_SCALE * (1 - base) / target);
-    const resolvedFraction = Math.max(lower, Math.min(upper, Math.min(.95, Math.max(.05, fraction))));
+    const lower = Math.max(0, MIN_SCALE * base / target, 1 - MAX_SCALE * (1 - base) / target);
+    const upper = Math.min(1, MAX_SCALE * base / target, 1 - MIN_SCALE * (1 - base) / target);
+    const resolvedFraction = Math.max(lower, Math.min(upper, Math.min(1, Math.max(0, fraction)))); // Keep valid historical extremes rather than silently converting them to an arbitrary 5%-95% range.
     const portrait = clampScale(target * (1 - resolvedFraction) / (1 - base));
     const legLength = clampScale(target * resolvedFraction / base);
     return { ...scale, y: portrait, portraitHeight: portrait, legLength }; // Keep head, width, hand/foot and authored head-Y unchanged.
