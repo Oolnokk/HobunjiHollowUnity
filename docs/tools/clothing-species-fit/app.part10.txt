@@ -374,6 +374,7 @@ E.stage.addEventListener('pointerdown',e=>{
     pushUndo();contourStroke=null;contourPaintAt(pointer(e));
     E.stage.setPointerCapture(e.pointerId);e.preventDefault();return;
   }
+  if(mode==='quad'){if(quadPointerDown(e))e.preventDefault();return}
   if(mode==='transform'){
     const p=pointer(e),tr=currentTransform();
     pushUndo();transformDrag={x:p.x,y:p.y,translateX:tr.translateX,translateY:tr.translateY};
@@ -413,6 +414,7 @@ E.stage.addEventListener('pointermove',e=>{
   if(mode==='protect'&&contourStroke){
     contourPaintAt(pointer(e));e.preventDefault();return;
   }
+  if(mode==='quad'){if(quadPointerMove(e))e.preventDefault();return}
   if(mode==='transform'&&transformDrag){
     const p=pointer(e),tr=currentTransform();
     tr.translateX=transformDrag.translateX+(p.x-transformDrag.x);
@@ -446,6 +448,7 @@ function endDrag(e){
     contourStroke=null;
     log('Protected pixels saved for '+contourSelectionKey()+'.');
   }
+  quadPointerUp();
   dragIndex=null;dragSnapshotTaken=false;transformDrag=null;
   if(e?.pointerId!=null&&E.stage.hasPointerCapture?.(e.pointerId))E.stage.releasePointerCapture(e.pointerId);
 }

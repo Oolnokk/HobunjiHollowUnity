@@ -121,6 +121,7 @@ async function loadRepositoryData(){
     if(!active())return;
     addGarments(priorityResults);
     rebuildSelectors();
+    if(typeof loadRecipeLibrary==='function')void loadRecipeLibrary(); // Library recipes load beside the catalog; the editor never waits for them.
     status('Loading source art for first available garment…');
     await refreshAssets();
     if(!active())return;
@@ -199,6 +200,7 @@ function rebuildGarmentSelector(){
     ?`${E.garment.options.length} ${region==='headwear'?'headwear':'clothing'} items with ${E.sourceSpecies.value} ${E.sourceGender.value} artwork.`
     :`No ${region==='headwear'?'headwear':'clothing'} sprites authored for ${E.sourceSpecies.value} ${E.sourceGender.value}. Choose a different starting species/gender.`;
   E.showBody.parentElement.lastChild.textContent=region==='headwear'?' head':' body';
+  if(typeof rebuildRecipeGarmentList==='function'&&E.recipeGarments)rebuildRecipeGarmentList(); // Batch checklist mirrors the items available for this starting sprite.
 }
 function bodyLayers(species,gender){
   return(R.speciesCfg.get(species)?.[gender]?.portraitBodyLayers||[]).map(x=>({id:x.id,path:x.url,url:assetUrl(x.url)})).filter(x=>x.path);

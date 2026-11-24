@@ -385,6 +385,35 @@ async function main() {
     gameLayers.map(layer => !/exposed_/.test(layer.url)),
     'Only base/trim are replaced by fitted rasters; exposed anatomy stays in its authored position');
 
+  // Quad corners: each corner's delta spreads with its bilinear weight over the 6x6 grid.
+  const grid36 = Array.from({length: 36}, (_, i) => ({x: (i % 6) / 5, y: Math.floor(i / 6) / 5}));
+  const quadApi = new Function('GRID_SIZE','SOURCE_GRID',
+    sourceBetween('const QUAD_CORNERS=', 'let quadDrag=null;') + '\nreturn {QUAD_CORNERS, applyQuadCornerDelta};')(6, grid36);
+  assert.deepEqual(quadApi.QUAD_CORNERS, [0, 5, 30, 35]);
+  const zero36 = grid36.map(() => ({x: 0, y: 0}));
+  const quadMoved = quadApi.applyQuadCornerDelta(zero36, 1, 0.1, -0.2);
+  assert.deepEqual(quadMoved[5], {x: 0.1, y: -0.2}, 'the dragged corner moves by the full delta');
+  assert.deepEqual(quadMoved[30], {x: 0, y: 0}, 'the opposite corner stays put');
+  assert(Math.abs(quadMoved[14].x - 0.1 * 0.4 * 0.6) < 1e-12, 'interior nodes follow with bilinear falloff');
+  const stacked = quadApi.applyQuadCornerDelta(quadMoved, 2, 0, 0.1);
+  assert.equal(stacked[5].x, 0.1, 'corner edits stack instead of resetting earlier deformation');
+
+  // Recipes: validation and application to the current fit key.
+  const recipeState = {baseTransforms: {}, localOffsets: {}};
+  const recipeApi = new Function('SOURCE_GRID','A','ensureTargetData','E',
+    sourceBetween('const RECIPE_FORMAT=', 'function recipeFromCurrentFit(') +
+    sourceBetween('function applyRecipeToCurrentFit(', 'function allRecipes(') + '\nreturn {validRecipe, applyRecipeToCurrentFit};')(
+    grid36, recipeState, () => 'headwear::mashtzarr_male', {species: {value: 'mashtzarr'}, gender: {value: 'male'}});
+  const recipe = {format: 'hobunji-clothing-fit-recipe-v1', name: 'r', id: 'r',
+    transform: {scaleX: 1.2, scaleY: 1.1, translateX: -2, translateY: 4}, offsets: quadMoved};
+  assert(recipeApi.validRecipe(recipe));
+  assert(!recipeApi.validRecipe({...recipe, offsets: quadMoved.slice(1)}), 'recipes must carry all 36 offsets');
+  assert(!recipeApi.validRecipe({...recipe, transform: {...recipe.transform, scaleX: 0}}), 'zero scale is rejected');
+  assert.equal(recipeApi.applyRecipeToCurrentFit(recipe), 'headwear::mashtzarr_male');
+  assert.deepEqual(recipeState.baseTransforms['headwear::mashtzarr_male'], recipe.transform);
+  assert.deepEqual(recipeState.localOffsets['headwear::mashtzarr_male'], quadMoved);
+  assert.notStrictEqual(recipeState.localOffsets['headwear::mashtzarr_male'], quadMoved, 'applied offsets are copies of the recipe');
+
   console.log('PASS clothing-fit source layers, installable ZIP filenames/config, patch composition, fallback rasters, fit keys and script syntax');
 }
 

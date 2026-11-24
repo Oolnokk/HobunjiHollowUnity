@@ -222,6 +222,225 @@ if(A.settings?.gender)E.gender.value=A.settings.gender;
 if(A.settings?.headbandEditCurve==='source')E.headbandEditCurve.value='source';
 if(A.settings?.headbandView==='back')E.headbandView.value='back';
 E.headbandWholeDrag.checked=!!A.settings?.headbandWholeDrag; // Restore whole-curve touch preference without changing saved spline nodes.
+// ---------------------------------------------------------------------------
+// Simple quad deformation: four corner handles. Dragging a corner spreads its
+// movement over all 36 nodes with that corner's bilinear weight, so it layers
+// on top of the base transform and any existing local node edits.
+// ---------------------------------------------------------------------------
+const QUAD_CORNERS=[0,GRID_SIZE-1,GRID_SIZE*(GRID_SIZE-1),GRID_SIZE*GRID_SIZE-1]; // Top-left, top-right, bottom-left, bottom-right grid indices.
+function quadCornerWeight(index,corner){
+  const p=SOURCE_GRID[index];
+  return [(1-p.x)*(1-p.y),p.x*(1-p.y),(1-p.x)*p.y,p.x*p.y][corner];
+}
+function applyQuadCornerDelta(offsets,corner,dx,dy){
+  return offsets.map((o,i)=>{const w=quadCornerWeight(i,corner);return{x:o.x+w*dx,y:o.y+w*dy}});
+}
+let quadDrag=null;
+function quadPointerDown(e){
+  const p=pointer(e),px=toDisplayPixels(targetGrid(),E.stage.width,E.stage.height);
+  let corner=-1,best=Infinity;
+  QUAD_CORNERS.forEach((gridIndex,c)=>{const d=Math.hypot(px[gridIndex].x-p.x,px[gridIndex].y-p.y);if(d<best){best=d;corner=c}});
+  if(corner<0||best>HIT_RADIUS*3)return false;
+  pushUndo();
+  quadDrag={corner,start:p,offsets:currentOffsets().map(o=>({x:o.x,y:o.y}))};
+  E.stage.setPointerCapture(e.pointerId);
+  return true;
+}
+function quadPointerMove(e){
+  if(!quadDrag)return false;
+  const p=pointer(e);
+  const dx=(p.x-quadDrag.start.x)/Math.max(1,E.stage.width-1),dy=(p.y-quadDrag.start.y)/Math.max(1,E.stage.height-1);
+  A.localOffsets[ensureTargetData(E.species.value,E.gender.value)]=applyQuadCornerDelta(quadDrag.offsets,quadDrag.corner,dx,dy);
+  saveState();render();
+  return true;
+}
+function quadPointerUp(){
+  if(!quadDrag)return;
+  quadDrag=null;saveState();log('Saved quad corner deformation for '+targetKey(E.species.value,E.gender.value)+'.');
+}
+function drawQuadHandles(ctx){
+  const px=toDisplayPixels(targetGrid(),E.stage.width,E.stage.height);
+  ctx.save();ctx.strokeStyle='#ffe066';ctx.fillStyle='#ffe066';ctx.lineWidth=1.6;
+  ctx.beginPath();[0,1,3,2,0].forEach((c,i)=>{const q=px[QUAD_CORNERS[c]];i?ctx.lineTo(q.x,q.y):ctx.moveTo(q.x,q.y)});ctx.stroke();
+  for(const gridIndex of QUAD_CORNERS){const q=px[gridIndex];ctx.beginPath();ctx.arc(q.x,q.y,HANDLE_RADIUS*1.6,0,Math.PI*2);ctx.fill()}
+  ctx.restore();
+}
+
+// ---------------------------------------------------------------------------
+// Fit recipes: a reusable base transform + 6×6 local offsets that can be
+// applied to the current item or to several items at once. Recipes come from
+// the repository library (config/clothing-fit-recipes/index.json) or are
+// saved in this browser, and import/export as JSON.
+// ---------------------------------------------------------------------------
+const RECIPE_FORMAT='hobunji-clothing-fit-recipe-v1';
+function validRecipe(recipe){
+  const tr=recipe?.transform;
+  return !!recipe&&recipe.format===RECIPE_FORMAT&&typeof recipe.name==='string'&&!!tr&&
+    ['scaleX','scaleY','translateX','translateY'].every(key=>Number.isFinite(+tr[key]))&&+tr.scaleX>0&&+tr.scaleY>0&&
+    Array.isArray(recipe.offsets)&&recipe.offsets.length===SOURCE_GRID.length&&
+    recipe.offsets.every(point=>Number.isFinite(+point?.x)&&Number.isFinite(+point?.y));
+}
+function recipeFromCurrentFit(name,description=''){
+  const fit=captureFitState();
+  return{
+    format:RECIPE_FORMAT,id:safeName(name).toLowerCase()||'recipe-'+Date.now(),name,description,region:fitRegion(),
+    source:{species:E.sourceSpecies.value,gender:E.sourceGender.value},
+    target:{species:E.species.value,gender:E.gender.value},
+    transform:fit.transform,offsets:fit.offsets,createdAt:new Date().toISOString()
+  };
+}
+function applyRecipeToCurrentFit(recipe){
+  if(!validRecipe(recipe))throw new Error('Not a valid fit recipe.');
+  const key=ensureTargetData(E.species.value,E.gender.value);
+  const tr=recipe.transform;
+  A.baseTransforms[key]={scaleX:+tr.scaleX,scaleY:+tr.scaleY,translateX:+tr.translateX,translateY:+tr.translateY};
+  A.localOffsets[key]=recipe.offsets.map(point=>({x:+point.x,y:+point.y}));
+  return key;
+}
+function allRecipes(){
+  return [
+    ...(R.recipeLibrary||[]).map(recipe=>({recipe,origin:'library'})),
+    ...Object.values(A.recipes||{}).map(recipe=>({recipe,origin:'saved'}))
+  ].filter(entry=>validRecipe(entry.recipe));
+}
+function selectedRecipeEntry(){
+  const [origin,id]=String(E.recipeSelect.value||'').split('::');
+  return allRecipes().find(entry=>entry.origin===origin&&entry.recipe.id===id)||null;
+}
+function describeRecipe(recipe){
+  const tr=recipe.transform,moved=recipe.offsets.filter(o=>Math.abs(o.x)>1e-6||Math.abs(o.y)>1e-6).length;
+  const pair=recipe.source&&recipe.target?`${recipe.source.species} ${recipe.source.gender} → ${recipe.target.species} ${recipe.target.gender}`:'';
+  return `${pair}${pair?' • ':''}scale ${(+tr.scaleX).toFixed(3)}×${(+tr.scaleY).toFixed(3)}, move ${(+tr.translateX).toFixed(2)}, ${(+tr.translateY).toFixed(2)} px • ${moved}/36 nodes deformed${recipe.description?' • '+recipe.description:''}`;
+}
+function rebuildRecipeSelector(){
+  const previous=E.recipeSelect.value;
+  E.recipeSelect.innerHTML='';
+  const entries=allRecipes();
+  for(const origin of ['library','saved']){
+    const group=document.createElement('optgroup');group.label=origin==='library'?'Repository library':'Saved in this browser';
+    for(const {recipe} of entries.filter(entry=>entry.origin===origin)){
+      const option=document.createElement('option');option.value=origin+'::'+recipe.id;option.textContent=recipe.name;group.appendChild(option);
+    }
+    if(group.children.length)E.recipeSelect.appendChild(group);
+  }
+  if([...E.recipeSelect.options].some(option=>option.value===previous))E.recipeSelect.value=previous;
+  syncRecipeInfo();
+}
+function syncRecipeInfo(){
+  const entry=selectedRecipeEntry();
+  E.recipeInfo.textContent=entry?describeRecipe(entry.recipe):(allRecipes().length?'Choose a recipe.':'No recipes yet: fit an item, then save it as a recipe.');
+  E.recipeApply.disabled=E.recipeDownload.disabled=E.recipeBatch.disabled=!entry;
+  E.recipeDelete.disabled=entry?.origin!=='saved';
+  rebuildRecipeGarmentList();
+}
+function rebuildRecipeGarmentList(){
+  const checked=new Set([...E.recipeGarments.querySelectorAll('input:checked')].map(input=>input.value));
+  E.recipeGarments.innerHTML='';
+  for(const option of E.garment.options){
+    const label=document.createElement('label');label.className='small';label.style.display='block';
+    const input=document.createElement('input');input.type='checkbox';input.value=option.value;input.checked=checked.has(option.value);
+    label.append(input,' '+option.textContent);E.recipeGarments.appendChild(label);
+  }
+}
+async function loadRecipeLibrary(){
+  R.recipeLibrary=[];
+  try{
+    const index=await fetchJson('config/clothing-fit-recipes/index.json');
+    const results=await Promise.allSettled((index.entries||[]).map(entry=>fetchJson('config/clothing-fit-recipes/'+String(entry.path||'').replace(/^\.\//,''))));
+    R.recipeLibrary=results.filter(result=>result.status==='fulfilled'&&validRecipe(result.value)).map(result=>result.value);
+    log(`Loaded ${R.recipeLibrary.length} library fit recipe(s).`);
+  }catch(error){log('Recipe library unavailable: '+error.message)}
+  rebuildRecipeSelector();
+}
+async function selectRecipeSpecies(recipe){
+  if(!recipe.source||!recipe.target)return;
+  const has=(select,value)=>[...select.options].some(option=>option.value===value);
+  if(recipe.region&&E.fitRegion.value!==recipe.region){E.fitRegion.value=recipe.region;rebuildGarmentSelector()}
+  if(has(E.sourceSpecies,recipe.source.species))E.sourceSpecies.value=recipe.source.species;
+  E.sourceGender.value=recipe.source.gender||E.sourceGender.value;
+  if(has(E.species,recipe.target.species))E.species.value=recipe.target.species;
+  E.gender.value=recipe.target.gender||E.gender.value;
+  lastTargetSelection='';syncTargetGenderChoices();
+  const garment=E.garment.value;rebuildGarmentSelector();
+  if([...E.garment.options].some(option=>option.value===garment))E.garment.value=garment;
+  await refreshAssets();
+}
+async function applySelectedRecipe(){
+  const entry=selectedRecipeEntry();if(!entry)return;
+  if(E.recipeUseSpecies.checked)await selectRecipeSpecies(entry.recipe);
+  pushUndo();
+  const key=applyRecipeToCurrentFit(entry.recipe);
+  saveState();syncTransformControls();render();
+  log(`Applied recipe "${entry.recipe.name}" to ${key}.`);
+}
+async function batchExportRecipe(){
+  const entry=selectedRecipeEntry();if(!entry)return;
+  const ids=[...E.recipeGarments.querySelectorAll('input:checked')].map(input=>input.value);
+  if(!ids.length){E.recipeStatus.textContent='Tick at least one item to export.';return}
+  const zipTools=window.ClothingFitZip;
+  if(!zipTools){E.recipeStatus.textContent='ZIP helper not loaded yet.';return}
+  if(E.recipeUseSpecies.checked)await selectRecipeSpecies(entry.recipe);
+  pushUndo();
+  const original=E.garment.value,entries=[],done=[],skipped=[];
+  E.recipeBatch.disabled=true;
+  try{
+    for(const id of ids){
+      E.recipeStatus.textContent=`Exporting ${id}…`;
+      E.garment.value=id;await refreshAssets();
+      if(E.garment.value!==id||!R.cloth||!R.body){skipped.push(id);continue}
+      applyRecipeToCurrentFit(entry.recipe);
+      const fit=captureFitState(),layers=fittedLayerOutputs(fit);
+      if(!layers.length){skipped.push(id);continue}
+      const selection={garmentId:id,fitRegion:fitRegion(),sourceSpecies:E.sourceSpecies.value,
+        sourceGender:E.sourceGender.value,targetSpecies:E.species.value,targetGender:E.gender.value};
+      const built=await buildFittedArchiveEntries(fit,layers,selection,zipTools,`fitted-layers-manifest_${safeName(id)}.json`);
+      for(const item of built.entries)if(!entries.some(existing=>existing.name===item.name))entries.push(item);
+      done.push(id);
+    }
+    if(entries.length){
+      entries.push({name:'README-FITTED-LAYERS.txt',bytes:new TextEncoder().encode(fittedArchiveReadme(true))});
+      entries.push({name:'fit-recipe.json',bytes:new TextEncoder().encode(JSON.stringify(entry.recipe,null,2)+'\n')});
+      zipTools.downloadBlob(zipTools.buildStoredZip(entries),`${safeName(entry.recipe.id)}_${safeName(E.species.value)}_${E.gender.value}_recipe_batch.zip`);
+    }
+    E.recipeStatus.textContent=`Exported ${done.length} item(s) with "${entry.recipe.name}".${skipped.length?' Skipped (no source art): '+skipped.join(', '):''}`;
+    log(E.recipeStatus.textContent);
+  }finally{
+    E.recipeBatch.disabled=false;
+    if(E.garment.value!==original&&[...E.garment.options].some(option=>option.value===original)){E.garment.value=original;await refreshAssets()}
+  }
+}
+function downloadRecipe(recipe){
+  const blob=new Blob([JSON.stringify(recipe,null,2)+'\n'],{type:'application/json'});
+  const link=document.createElement('a');link.href=URL.createObjectURL(blob);link.download=safeName(recipe.id)+'.fit-recipe.json';link.click();
+  setTimeout(()=>URL.revokeObjectURL(link.href),1500);
+}
+E.recipeSelect.onchange=syncRecipeInfo;
+E.recipeApply.onclick=()=>applySelectedRecipe().catch(error=>{E.recipeStatus.textContent='Apply failed: '+error.message});
+E.recipeBatch.onclick=()=>batchExportRecipe().catch(error=>{E.recipeStatus.textContent='Batch export failed: '+error.message});
+E.recipeSave.onclick=()=>{
+  const name=String(E.recipeName.value||'').trim();
+  if(!name){E.recipeStatus.textContent='Name the recipe first.';return}
+  const recipe=recipeFromCurrentFit(name,String(E.recipeDescription.value||'').trim());
+  A.recipes ||= {};A.recipes[recipe.id]=recipe;saveState();rebuildRecipeSelector();
+  E.recipeSelect.value='saved::'+recipe.id;syncRecipeInfo();
+  E.recipeStatus.textContent=`Saved recipe "${name}" in this browser. Download it to add it to the repository library.`;
+};
+E.recipeDownload.onclick=()=>{const entry=selectedRecipeEntry();if(entry)downloadRecipe(entry.recipe)};
+E.recipeDelete.onclick=()=>{
+  const entry=selectedRecipeEntry();if(entry?.origin!=='saved')return;
+  delete A.recipes[entry.recipe.id];saveState();rebuildRecipeSelector();E.recipeStatus.textContent=`Deleted "${entry.recipe.name}".`;
+};
+E.recipeImport.onclick=()=>E.recipeFile.click();
+E.recipeFile.onchange=async()=>{
+  const file=E.recipeFile.files?.[0];if(!file)return;
+  try{
+    const recipe=JSON.parse(await file.text());
+    if(!validRecipe(recipe))throw new Error('file is not a '+RECIPE_FORMAT+' recipe');
+    A.recipes ||= {};A.recipes[recipe.id]=recipe;saveState();rebuildRecipeSelector();
+    E.recipeSelect.value='saved::'+recipe.id;syncRecipeInfo();E.recipeStatus.textContent=`Imported "${recipe.name}".`;
+  }catch(error){E.recipeStatus.textContent='Import failed: '+error.message}
+  E.recipeFile.value='';
+};
 if(A.settings?.region==='headwear')E.fitRegion.value='headwear';
 document.getElementById('headbandSplineSection').hidden=fitRegion()!=='headwear';
 E.modeBtns.find(btn=>btn.dataset.mode==='headband').disabled=fitRegion()!=='headwear';
@@ -230,7 +449,7 @@ document.getElementById('contourFitSection').hidden=fitRegion()==='headwear';
 E.modeBtns.find(btn=>btn.dataset.mode==='protect').disabled=fitRegion()==='headwear';
 document.getElementById('bodyMaskSection').hidden=fitRegion()==='headwear';
 document.getElementById('bodyExtendedSection').hidden=fitRegion()==='headwear';
-if(!['transform','body','fit','preview','protect','headband','rear-paint'].includes(mode)||mode==='protect'&&fitRegion()==='headwear'||['headband','rear-paint'].includes(mode)&&fitRegion()!=='headwear')mode='transform';
+if(!['transform','body','fit','quad','preview','protect','headband','rear-paint'].includes(mode)||mode==='protect'&&fitRegion()==='headwear'||['headband','rear-paint'].includes(mode)&&fitRegion()!=='headwear')mode='transform';
 window.addEventListener('hobunji-clothing-fit-three-ready',()=>{
   if(startOptionalThreePreview()&&R.body)scheduleThreePreview(0);
 }); // The CDN can load after the 2D editor has already initialized.

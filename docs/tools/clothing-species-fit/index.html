@@ -45,6 +45,7 @@
           <button data-mode="transform" class="active">Base transform</button>
           <button data-mode="body">Grid only</button>
           <button data-mode="fit">Species fit</button>
+          <button data-mode="quad">Quad corners</button>
           <button data-mode="preview">Preview</button>
           <button data-mode="protect">Protect pixels</button>
           <button data-mode="headband">Band spline</button>
@@ -80,6 +81,21 @@
         <div class="field"><label for="translateY">Translate Y (px)</label><div class="row"><input id="translateY" type="range" min="-120" max="120" step="0.25" value="0"><input id="translateYNumber" type="number" min="-120" max="120" step="0.25" value="0" aria-label="Translate Y pixels"></div></div>
         <div class="row"><button id="resetTransform">Reset base transform</button></div>
         <div class="small">Saved separately for body and headwear per species+gender. In Base Transform mode, drag the canvas to reposition the selected art.</div>
+      </section>
+
+      <section id="recipeSection">
+        <h2>Fit recipes</h2>
+        <div class="small">A recipe is a saved base transform + 6×6 deformation. Apply it to the current item, or to several items at once (one ZIP). Library recipes come from <code>config/clothing-fit-recipes/</code>.</div>
+        <div class="field"><label for="recipeSelect">Recipe</label><select id="recipeSelect"></select></div>
+        <div id="recipeInfo" class="small" aria-live="polite">Loading recipes…</div>
+        <div class="row"><label class="small"><input id="recipeUseSpecies" type="checkbox" checked> switch to the recipe's starting/target species</label></div>
+        <div class="row"><button type="button" id="recipeApply">Apply to current item</button><button type="button" id="recipeDownload">Download recipe JSON</button></div>
+        <div class="field"><label>Apply to these items and export one ZIP</label><div id="recipeGarments" style="max-height:140px;overflow:auto;border:1px solid #334155;border-radius:6px;padding:4px"></div></div>
+        <div class="row"><button type="button" id="recipeBatch">Apply to ticked items &amp; export</button></div>
+        <div class="field"><label for="recipeName">Save current fit as recipe</label><input id="recipeName" placeholder="Recipe name"></div>
+        <div class="field"><label for="recipeDescription">Description (optional)</label><input id="recipeDescription" placeholder="What the recipe does"></div>
+        <div class="row"><button type="button" id="recipeSave">Save recipe</button><button type="button" id="recipeImport">Import recipe JSON</button><button type="button" id="recipeDelete">Delete saved</button><input id="recipeFile" type="file" accept=".json,application/json" hidden></div>
+        <div id="recipeStatus" class="small" aria-live="polite"></div>
       </section>
 
       <section>

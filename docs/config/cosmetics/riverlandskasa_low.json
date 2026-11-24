@@ -527,7 +527,7 @@
           "layers": {
             "back": {
               "image": {
-                "url": "./assets/cosmetics/clothes/hat/riverlandskasa_low-back.png"
+                "url": "./assets/cosmetics/clothes/hat/riverlandskasa_low-back_mashtzarr_m.png"
               },
               "spriteStyle": {
                 "base": {
@@ -545,7 +545,7 @@
             },
             "front": {
               "image": {
-                "url": "./assets/cosmetics/clothes/hat/riverlandskasa_low-front.png"
+                "url": "./assets/cosmetics/clothes/hat/riverlandskasa_low-front_mashtzarr_m.png"
               },
               "spriteStyle": {
                 "base": {

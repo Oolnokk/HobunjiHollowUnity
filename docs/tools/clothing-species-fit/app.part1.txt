@@ -32,6 +32,7 @@ const E={
   scaleXNumber:$('scaleXNumber'),scaleYNumber:$('scaleYNumber'),translateXNumber:$('translateXNumber'),translateYNumber:$('translateYNumber'),resetTransform:$('resetTransform'),
   reset:$('reset'),undo:$('undo'),redo:$('redo'),bodyPng:$('bodyPng'),clothPng:$('clothPng'),compositePng:$('compositePng'),overlayPng:$('overlayPng'),exportHeadwearFront:$('exportHeadwearFront'),exportHeadwearBack:$('exportHeadwearBack'),
   exportJson:$('exportJson'),importJson:$('importJson'),file:$('file'),diagnosticsInput:$('diagnosticsInput'),importDiagnostics:$('importDiagnostics'),copyDebug:$('copyDebug'),debug:$('debug'),
+  recipeSelect:$('recipeSelect'),recipeInfo:$('recipeInfo'),recipeApply:$('recipeApply'),recipeUseSpecies:$('recipeUseSpecies'),recipeName:$('recipeName'),recipeDescription:$('recipeDescription'),recipeSave:$('recipeSave'),recipeDownload:$('recipeDownload'),recipeImport:$('recipeImport'),recipeFile:$('recipeFile'),recipeDelete:$('recipeDelete'),recipeGarments:$('recipeGarments'),recipeBatch:$('recipeBatch'),recipeStatus:$('recipeStatus'),
   label:$('label'),stage:$('stage'),modeBtns:[...document.querySelectorAll('[data-mode]')]
 };
 const C=E.stage.getContext('2d',{alpha:true}); // Paints the interactive reference canvas.
@@ -78,7 +79,7 @@ function defaultMaskTransform(){return{scaleX:1,scaleY:1,translateY:0}}
 function zeroOffsets(){return SOURCE_GRID.map(()=>({x:0,y:0}))}
 function fresh(){
   return{
-    version:4,gridSize:GRID_SIZE,baseTransforms:{},localOffsets:{},maskPreviewTransforms:{},contourFits:{},headbandSplines:{},
+    version:4,gridSize:GRID_SIZE,baseTransforms:{},localOffsets:{},maskPreviewTransforms:{},contourFits:{},headbandSplines:{},recipes:{},
     settings:{mode:'transform',region:'body',gender:'male',species:'mao-ao',sourceSpecies:'mao-ao',sourceGender:'male',garment:'',headGarment:'',repo:E.repo.value}
   };
 }
@@ -100,7 +101,7 @@ function loadState(){
   try{
     const v=JSON.parse(localStorage.getItem(STORE)||'null');
     if(v&&(v.version===2||v.version===3||v.version===4)&&v.gridSize===GRID_SIZE){
-      return{version:4,gridSize:GRID_SIZE,baseTransforms:v.baseTransforms||{},localOffsets:v.localOffsets||{},maskPreviewTransforms:v.maskPreviewTransforms||{},contourFits:v.contourFits||{},headbandSplines:v.headbandSplines||{},settings:v.settings||{}};
+      return{version:4,gridSize:GRID_SIZE,baseTransforms:v.baseTransforms||{},localOffsets:v.localOffsets||{},maskPreviewTransforms:v.maskPreviewTransforms||{},contourFits:v.contourFits||{},headbandSplines:v.headbandSplines||{},recipes:v.recipes||{},settings:v.settings||{}};
     }
     return migrateLegacyV1()||fresh();
   }catch{return migrateLegacyV1()||fresh()}
