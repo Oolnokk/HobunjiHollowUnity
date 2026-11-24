@@ -151,7 +151,7 @@
     if (!identity || !profile) return null;
     const before = currentScale(identity);
     const portrait = portraitScaleFor(identity);
-    const next = nextScale(before, field, percent, portrait, comparisonApi()?.selectedBeltlineBaseFraction ?? .5);
+    const next = nextScale(before, field, percent, portrait, comparisonApi()?.selectedBeltlineGeometry ?? .5);
 
     // The host owns the durable scale override map used by Rig export/reload.
     // Calling it directly avoids the old document-bubble listener, which cannot
@@ -181,7 +181,7 @@
     if (field === 'head') return scale.head * portraitScaleFor(identity) * 100;
     if (field === 'offsetY') return scale.offsetY * 100;
     if (field === 'height' || field === 'beltline') {
-      const dimensions = window.HobunjiCharacterRigScale?.heightBeltlineFor?.(scale, comparisonApi()?.selectedBeltlineBaseFraction ?? .5);
+      const dimensions = window.HobunjiCharacterRigScale?.heightBeltlineFor?.(scale, comparisonApi()?.selectedBeltlineGeometry ?? .5);
       return (field === 'height' ? dimensions?.height : dimensions?.beltline) * 100 || 50;
     }
     return scale[field] * 100;
@@ -215,7 +215,7 @@
     const pair = document.getElementById(spec.pair); // Mirrors valid range/number partners.
     if (pair) pair.value = String(percent);
     const applied = applyScaleField(spec.field, percent);
-    if (applied && (spec.field === 'height' || spec.field === 'beltline')) syncHeightBeltlineInputs(identity, applied); // A physically unreachable beltline clamps to real derived values, never a misleading number.
+    if (applied && (spec.field === 'height' || spec.field === 'beltline' || spec.field === 'footScale')) syncHeightBeltlineInputs(identity, applied); // A physically unreachable beltline clamps to real derived values, never a misleading number.
   }
 
   function commitScaleNumber(event) {
@@ -235,7 +235,7 @@
     const pair = document.getElementById(spec.pair);
     if (pair) pair.value = String(percent);
     const applied = applyScaleField(spec.field, percent);
-    if (applied && (spec.field === 'height' || spec.field === 'beltline')) syncHeightBeltlineInputs(identity, applied);
+    if (applied && (spec.field === 'height' || spec.field === 'beltline' || spec.field === 'footScale')) syncHeightBeltlineInputs(identity, applied);
   }
 
   function install() {
