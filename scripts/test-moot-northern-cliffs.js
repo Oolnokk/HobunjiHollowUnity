@@ -178,6 +178,7 @@ assert(!('coloredneck' in child), 'Colored neck is not a competing new genotype'
 const originalOvercoat = parentA.overcoat; // Only legacy input is overwritten below; actual generated specimens remain unchanged.
 const legacyMoot = { ...parentA, coloredneck: { color: '#c7aa77', copies: 2, enabled: true, inheritance: 'dominant' } }; // Simulates an older saved marking and its exact pigmentation.
 delete legacyMoot.overcoat;
+delete legacyMoot.secondary; // A pre-A/B record does not have a separate secondary locus.
 const migrated = windowStub.CreatureGenetics.normalizeLegacyGenotype('moot', legacyMoot); // Read-time migration keeps old saves and wild bloodlines intact.
 assert.equal(migrated.overcoat.color, '#c7aa77', 'Colored neck now appears as overcoat without losing its color');
 assert.equal(migrated.overcoat.copies, 2, 'Migration preserves inherited allele strength');
