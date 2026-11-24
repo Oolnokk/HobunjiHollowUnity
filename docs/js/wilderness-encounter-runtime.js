@@ -17,10 +17,10 @@
     });
   }
   function createInterval(seconds) {
-    if(!(seconds>0))throw new RangeError('Encounter interval must be positive');
+    if(!Number.isFinite(seconds)||!(seconds>0))throw new RangeError('Encounter interval must be positive');
     let elapsed=0; // Accumulated only while the consumer is eligible.
     return Object.freeze({
-      advance(dt){elapsed+=Math.max(0,Number(dt)||0);if(elapsed<seconds)return 0;const result=elapsed;elapsed=0;return result;},
+      advance(dt){const delta=Number(dt);if(Number.isFinite(delta)&&delta>0)elapsed+=delta;if(elapsed<seconds)return 0;const result=elapsed;elapsed=0;return result;},
       reset(){elapsed=0;},
     });
   }
@@ -30,7 +30,7 @@
       w?.root?.userData?.namedAnimalNpc||window.HobunjiNpcSpeciesRegistry?.isCreatureSpecies?.(w?.rec?.appearance?.speciesId));
   }
   function isHumanoidActor(c) {
-    return !!(c&&(c.isBandit||c.isMinion||c.isLich||c.isNpc||c.isPorakanekiHunter||c.isTribeHunter||c.isBarbarian||c._familyBabyFollower||
+    return !!(c&&!c.creatureKey&&!isAnimalWalker(c)&&(c.isBandit||c.isMinion||c.isLich||c.isNpc||c.isPorakanekiHunter||c.isTribeHunter||c.isBarbarian||c._familyBabyFollower||
       (!c.creatureKey&&c.rosterRecord?.appearance?.speciesId&&c.avatarRef?.group)));
   }
   // Lazy query: no global snapshot to go stale while a builder awaits.
@@ -122,6 +122,7 @@
           onAdopted?.(actor,member,point);
         }finally{if(!adopted)dispose(actor);}
       }
+      if(!owns())return false;
       if(!count)throw Error('no valid wave spawn');
       record.wave++;onComplete?.(count);return true;
     }catch(error){if(owns())onFailure?.(error);return false;}
@@ -129,7 +130,7 @@
   }
   function createDefeatTracker(isOwned) {
     let attributed=false,deficit=0; // Shared downed-hit attribution, independent of the chosen consequence.
-    const amount=n=>Math.max(0,Number(n)||0);
+    const amount=n=>Number.isFinite(Number(n))?Math.max(0,Number(n)):0;
     return Object.freeze({
       noteDown(attacker,extra){attributed=!!isOwned(attacker);deficit=attributed?amount(extra):0;},
       noteHit(attacker,damage){if(attributed&&isOwned(attacker))deficit+=amount(damage);},
@@ -139,9 +140,9 @@
   }
   function recoverNonlethal({player,maxHealth,deficit,blackout,healthFraction=.25,invulnerableMs=1000,now=()=>performance.now()}) {
     if(!player||typeof blackout!=='function')return false;
-    const max=Number(maxHealth)>0?Number(maxHealth):100; // Normalize damage excess to the same percentage contract as alcohol.
+    const max=Number.isFinite(Number(maxHealth))&&Number(maxHealth)>0?Number(maxHealth):100; // Normalize damage excess to the same percentage contract as alcohol.
     player.health=Math.max(1,Math.round(max*healthFraction));player.vx=player.vy=0;player.invulnUntil=now()+invulnerableMs;
-    blackout(Math.max(0,Number(deficit)||0)/max*100);return true;
+    blackout((Number.isFinite(Number(deficit))?Math.max(0,Number(deficit)):0)/max*100);return true;
   }
   function createRouteBudget(maxSearches=4) {
     const seen=new Set();let searches=0; // Per rare relocation attempt, not a global gameplay budget.
