@@ -198,27 +198,30 @@
     revealReward(rec);
     return true;
   }
-  function spawnPoint(rec,used) {
-    const p=playerTile(),n=chunkSize();
-    const origin=sameChunk(p.c,p.r,rec.chunk)?p:rec.site; // If the player retreats across the chunk edge, reinforcements still emerge from the locale.
-    for(let attempt=0;attempt<40;attempt++){
-      const a=rand()*Math.PI*2,d=2+rand()*3;
-      const c=Math.floor(origin.c+.5+Math.cos(a)*d),r=Math.floor(origin.r+.5+Math.sin(a)*d);
-      const k=c+','+r;if(used.has(k)||!tileEligible(c,r))continue;
-      if(c<rec.chunk.c*n||r<rec.chunk.r*n||c>=(rec.chunk.c+1)*n||r>=(rec.chunk.r+1)*n)continue;
-      if(Math.abs((Number(tileAt(c,r)?.elevTier)||0)-(Number(tileAt(origin.c,origin.r)?.elevTier)||0))>0)continue;
-      if(Math.hypot(c-p.c,r-p.r)<2)continue;
-      used.add(k);return {c,r};
+  function connectedSpawnTiles(rec) {
+    // One bounded flood fill per wave, not one path search per candidate or per actor.
+    const p=playerTile(),origin=sameChunk(p.c,p.r,rec.chunk)&&tileEligible(p.c,p.r)?p:rec.site;
+    if(!tileEligible(origin.c,origin.r))return {near:[],far:[]};
+    const elevation=Number(tileAt(origin.c,origin.r)?.elevTier)||0;
+    const queue=[origin],seen=new Set([origin.c+','+origin.r]),near=[],far=[];
+    for(let i=0;i<queue.length;i++){
+      const point=queue[i],distance=Math.hypot(point.c-p.c,point.r-p.r);
+      if(distance>=2)(Math.hypot(point.c-origin.c,point.r-origin.r)<=5?near:far).push(point);
+      for(const [dc,dr] of [[1,0],[-1,0],[0,1],[0,-1]]){
+        const c=point.c+dc,r=point.r+dr,key=c+','+r;
+        if(seen.has(key)||!sameChunk(c,r,rec.chunk))continue;
+        seen.add(key);
+        if(!tileEligible(c,r)||(Number(tileAt(c,r)?.elevTier)||0)!==elevation)continue;
+        queue.push({c,r});
+      }
     }
-    // Deterministic fallback avoids failing an entire wave on an unlucky random sample.
-    for(let radius=2;radius<=n;radius++)for(let dr=-radius;dr<=radius;dr++)for(let dc=-radius;dc<=radius;dc++){
-      if(Math.max(Math.abs(dc),Math.abs(dr))!==radius)continue;
-      const c=origin.c+dc,r=origin.r+dr,k=c+','+r;
-      if(!sameChunk(c,r,rec.chunk)||used.has(k)||!tileEligible(c,r)||Math.hypot(c-p.c,r-p.r)<2)continue;
-      if((Number(tileAt(c,r)?.elevTier)||0)!==(Number(tileAt(origin.c,origin.r)?.elevTier)||0))continue;
-      used.add(k);return {c,r};
-    }
-    return null;
+    // Prefer emergence around the player/locale, with connected fallback sites.
+    return {near,far};
+  }
+  function spawnPoint(pool) {
+    const candidates=pool?.near?.length?pool.near:pool?.far;
+    if(!candidates?.length)return null;
+    return candidates.splice(Math.min(candidates.length-1,Math.floor(rand()*candidates.length)),1)[0];
   }
   async function spawnWave(rec) {
     if(active!==rec||rec.building||area()!==rec.zone)return;
@@ -226,14 +229,16 @@
     try {
       const cfg=await window.BanditCombat?.loadGangConfig?.();
       if(!cfg)throw Error('bandit config unavailable');
-      const used=new Set(),zoneDef=deps.getZoneDef?.(rec.zone)||{};
+      const pool=connectedSpawnTiles(rec),zoneDef=deps.getZoneDef?.(rec.zone)||{}; // All members of this wave share a reachable, non-overlapping spawn pool.
       const firstAmbush=rec.wave===0; // NPC exclusion applies until the first actor is actually adopted, not to combat already in progress.
-      const distance=Math.hypot(rec.site.c-(zoneDef.entryCol||0),rec.site.r-(zoneDef.entryRow||0));
-      const tier=window.EnemyTierProgression?.clampTier?.(Math.floor(distance/(Number(cfg.difficultyTiers?.tierDistanceTiles)||12)))??0;
+      const distance=Math.hypot(rec.site.c+.5-(zoneDef.entryCol||0),rec.site.r+.5-(zoneDef.entryRow||0));
+      const per=Number(cfg.difficultyTiers?.tierDistanceTiles)||12; // Same distance/rank model and configured tier ceiling as ordinary bandit camps.
+      const rawTier=per>0?Math.min(Math.floor(distance/per),Number(cfg.difficultyTiers?.maxTier??7)):0;
+      const tier=window.EnemyTierProgression?.clampTier?.(rawTier)??0;
       for(const rank of WAVES[rec.wave]){
         if(active!==rec||area()!==rec.zone)return;
         if(firstAmbush&&!count&&npcInChunk(rec.zone,rec.chunk)){cancelInitialAmbush(rec);return;}
-        const point=spawnPoint(rec,used);if(!point)throw Error('no valid spawn for '+rank);
+        const point=spawnPoint(pool);if(!point)throw Error('no connected spawn for '+rank);
         const big=rank==='captain',name=big?'Big Rootledoot':'Rootledoot';
         const x=(point.c+.5)*deps.TILE,y=(point.r+.5)*deps.TILE;
         const roster={name,appearance:{speciesId:'mao-ao',gender:'male',cosmetics:{},bodyColors:Object.fromEntries(['A','B','C'].map(k=>[k,{hex:ROOT_COLOR}]))},equippedCosmetics:[],cosmeticSlots:{},appliedDyes:{},rootledoot:true};
@@ -244,6 +249,7 @@
         if(!c)throw Error('bandit avatar construction failed for '+rank);
         if(active!==rec||area()!==rec.zone){disposeActor(c);return;}
         if(firstAmbush&&!count&&npcInChunk(rec.zone,rec.chunk)){disposeActor(c);cancelInitialAmbush(rec);return;}
+        if(!tileEligible(point.c,point.r)){disposeActor(c);throw Error('spawn blocked during avatar construction');}
         if(big&&!c._banditCaptainArmament){disposeActor(c);throw Error('Fey weapon construction failed');}
         rec.actors.add(c);deps.hostiles.add(c);count++;
         deps.dirt?.(point.c,point.r);
@@ -386,6 +392,6 @@
   } // First eligible tick validates the fully restored world/cycle.
   window.Rootledoots=Object.freeze({init,tick,action,pick,onDeath,noteDown,noteDownedHit,handleDefeat,paintPortrait,serialize,restore,reset,
     debugSnapshot:()=>({lastEvent,worldStamp,checkedChunks:ledger.size,pendingRewards:pendingRewards.size,active:active&&{zone:active.zone,site:active.site,phase:active.phase,wave:active.wave,actors:active.actors.size},downedByRoot,overkill}),
-    __test:Object.freeze({chunkOf,siteInChunk,npcInChunk,BASE_CHANCE,WAVES})});
+    __test:Object.freeze({chunkOf,siteInChunk,npcInChunk,connectedSpawnTiles,BASE_CHANCE,WAVES})});
   window.DevCompanion?.registerStateProvider?.('rootledoots',window.Rootledoots.debugSnapshot);
 })();
