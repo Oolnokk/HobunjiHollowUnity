@@ -111,8 +111,12 @@ assert.equal(Overflow.hasHat(hatProfile), true);
   assert.equal(await cacheBake('empty'),null);
   assert.equal(await cacheBake('empty'),null,'no-overflow result is cached too');
   assert.equal(paints,3,'repeat requests skipped rasterization and readback');
+  const cyclic={};cyclic.self=cyclic; // Unexpected metadata must fall back to ordinary drawing rather than hiding a hat.
+  const uncacheableProfile={...hatProfile,hex:cyclic};
+  assert(await Overflow.renderOverflowCanvas(uncacheableProfile,'front',200,200,undefined,true));
+  assert.equal(paints,4,'unserializable metadata falls back to the original renderer');
   image.src='updated.png';
-  await cacheBake('red');assert.equal(paints,4,'changed image source invalidates reuse');
+  await cacheBake('red');assert.equal(paints,5,'changed image source invalidates reuse');
   for(let i=0;i<40;i++)await cacheBake('color'+i);
   assert(Overflow.stats().cacheBytes<=4*1024*1024 && Overflow.stats().cacheEntries<=32,'bounded cache');
 
