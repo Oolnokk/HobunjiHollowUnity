@@ -13269,7 +13269,7 @@
           speciesId: appearance.speciesId, gender: appearance.gender, bodyColors: profile?.bodyColors || appearance.bodyColors,
           modelWidth: avatarGroup.userData?.portraitModelWidth || MODEL_W, modelHeight: avatarHeight,
           handAttachY: avatarGroup.userData?.handAttachY,
-          name: rec?.id || rec?.name || 'npc', profile, portraitSize: PORTRAIT_SIZE,
+          name: rec?.id || rec?.name || 'npc', isLivePlayer: false, profile, portraitSize: PORTRAIT_SIZE, // NPC/cinematic rigs must never register as the gameplay player's compositor root.
           drunkLossProvider: () => window.HobunjiDrunkGameplayBridge?.npcDrunkFraction?.(rec?.id) || 0,
           drunkBodyRoot: avatarGroup,
           spine: window.HobunjiCharacterSpine?.resolve({ profile, npcRecord: rec, appearance }), // Elders' authored aging.hunch widens the stance and stride (js/character-spine.js).
@@ -18802,7 +18802,7 @@
         playerLegs = window.ProceduralLegAnimation?.attach(THREE, playerMesh, {
           speciesId: _playerData?.appearance?.speciesId, gender: _playerData?.appearance?.gender, bodyColors: profile?.bodyColors || _playerData?.appearance?.bodyColors,
           modelWidth: avatarWidth, modelHeight: avatarHeight, handAttachY: avatarGroup.userData?.handAttachY,
-          name: 'player', profile, portraitSize: PORTRAIT_SIZE,
+          name: 'player', isLivePlayer: true, profile, portraitSize: PORTRAIT_SIZE, // Explicitly identifies the real gameplay rig to the body compositor.
           portraitRig: avatarGroup.userData?.neckRig, // "Show bones" also draws the portrait's spine and neck.
         }) || null;
         // Stagger/Footing ragdoll playback (see docs/js/combat/impact-ragdoll-
@@ -34244,7 +34244,7 @@
               // back to.
               const playerProfile = window.EquipmentPanel.applyGearClothingToPlayerData(_playerData || window.__hobunjiPlayerProfile); // Uses the same equipped clothing/dye overlay as the live player avatar.
               const fakeRec = {
-                id: 'player', name: actor.name || 'Player',
+                id: '__cutscene_player_' + (actor.id || 'standin'), name: actor.name || 'Player', // Keep the authored actor id separate from the reserved live-player runtime identity.
                 appearance: playerProfile?.appearance,
                 equippedCosmetics: playerProfile?.equippedCosmetics || [],
                 appliedDyes: playerProfile?.appliedDyes || {},
@@ -34259,6 +34259,7 @@
             }
           } catch (e) { console.error('[cutscene preview] actor spawn failed for', actor.name, e); }
           if (!entity) entity = window.CutscenePreviewHelpers.cutscenePreviewMakePlaceholder(actor, area, targetScene);
+          entity.isPlayerStandIn = actor.isPlayer === true; // Cinematic framing follows the authored role, not a reserved runtime rig id.
           entity.root.visible = actor.visible !== false; // Authored entrances keep the real rig hidden until its reveal stage.
           entities.set(actor.id, entity);
           if (actor.lantern) window.CutsceneLanternCarriers?.add(entity.root); // Lantern-carrying cutscene rigs light the scene through WeatherFX's lantern mask (docs/js/cutscene-lantern-carriers.js).
@@ -34442,7 +34443,7 @@
           if (povShot || (!cinematicCameraReady && window.CinematicCameraRuntime?.isActive?.())) { /* This stage's authored/procedural view remains live across dialogue. */ }
           else if (cinematicCameraReady && (payload.cinematicCamera || (payload.cinematicCameraId && entity?.walker))) {
             if (!payload.cinematicCamera || payload.cinematicCamera.trackSpeaker || window.CinematicCameraRuntime?.activeRecord?.()?.camera?.id !== payload.cinematicCamera.id) window.CinematicCameraRuntime?.activate?.(area, payload.cinematicCameraId || payload.cinematicCamera, { reason: 'authored-cutscene', targetWalker: entity?.walker });
-          } else if (payload.widePlayerShots && entity?.rec?.id === 'player') {
+          } else if (payload.widePlayerShots && entity?.isPlayerStandIn) {
             activeCameraMode = idleCameraMode;
             activeCameraTarget = idleCameraTarget;
           } else if (!options.preserveCamera) {
