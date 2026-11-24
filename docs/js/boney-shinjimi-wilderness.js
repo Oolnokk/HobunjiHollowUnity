@@ -201,12 +201,13 @@
     if(houseMesh?.parent)houseMesh.parent.remove(houseMesh);
     houseMesh=null;houseScene=null;
     if(!window.HousePieceGen?.buildGroupFromPiece||!window.THREE)return;
-    houseBuilding=true;
+    const buildToken={};houseBuilding=buildToken; // Only this async request owns its loading flag.
     const serial=generation;
     try {
       const response=await fetch(HOUSE_FILE);
       if(!response.ok)throw new Error('HTTP '+response.status+' for Highland house piece');
       const piece=await response.json();
+      if(serial!==generation||area()!==state.zone||!state.home||scene!==window.GridTileAccessors?.getActiveScene?.())return; // Do not construct stale house geometry or dereference a removed home.
       const base=piece.currentPiece||piece;
       if(!Array.isArray(base.footprint?.cells)||base.footprint.cells.length!==9)
         throw new Error('Highland 3x3 footprint no longer matches its authored asset');
@@ -224,8 +225,8 @@
       scene.add(group);houseMesh=group;houseScene=scene;
       bumpEvent('Authored Highland house geometry loaded');
     } catch(err) {
-      bumpEvent('House geometry unavailable: '+(err?.message||err)); // Mobile diagnostics: no silent cube substitute.
-    } finally {houseBuilding=false;}
+      if(serial===generation)bumpEvent('House geometry unavailable: '+(err?.message||err)); // Mobile diagnostics: no silent cube substitute.
+    } finally {if(houseBuilding===buildToken)houseBuilding=false;}
   }
   function updateHouseVisibility() {
     if(!houseMesh)return;
@@ -266,7 +267,7 @@
   }
   async function ensureWalker() {
     if(walker||walkerBuilding||!deps?.makeNpcWalker||!state.home||area()!==state.zone)return;
-    walkerBuilding=true;
+    const buildToken={};walkerBuilding=buildToken; // A superseded builder cannot unlock a newer asynchronous walker request.
     const serial=generation,spot=state.target||{c:state.home.c+1,r:state.home.r+3};
     try {
       const w=await deps.makeNpcWalker(record(),{area:state.zone,c:spot.c,r:spot.r});
@@ -284,8 +285,8 @@
         };
       }
       bumpEvent('Boney entered '+state.zone);
-    }catch(err){bumpEvent('NPC build failed: '+(err?.message||err));}
-    finally{walkerBuilding=false;}
+    }catch(err){if(serial===generation)bumpEvent('NPC build failed: '+(err?.message||err));}
+    finally{if(walkerBuilding===buildToken)walkerBuilding=false;}
   }
   function sightProxy(w) {
     let proxy=sightProxies.get(w); // Stable actor identity lets RangedWeapons reuse its existing 80 ms LOS and one-frame portrait-hitbox caches.
@@ -631,8 +632,9 @@
   function syncZone() {
     const active=area()===state.zone;
     if(!active) {
-      if(houseMesh){clearHouse();ensureCollision();}
-      if(walker)releaseWalker();
+      if(houseMesh||houseBuilding){clearHouse();ensureCollision();}
+      if(walker||walkerBuilding)releaseWalker(); // Pending builders must be invalidated even before their first mesh is attached.
+      feyApproachTimer=0;
       return;
     }
     if(!state.home)return;
@@ -651,13 +653,19 @@
     const chance = window.CookingSystem?.feyEncounterChance?.(0.005) ?? 0.005; // Tunable baseline: one half-percent per eligible interval.
     if (rnd() >= chance) return;
     const h = homeCenter();
+    const candidates=new Set(); // Duplicate sampled cells must not repeat expensive route checks.
+    let pathSearches=0; // At most four A* attempts per rare approach roll; cheap direct paths are tried first.
     for (let attempt = 0; attempt < 16; attempt++) {
       const angle = rnd() * Math.PI * 2, radius = 7 + rnd() * 2;
       const c = Math.floor(player.x + Math.cos(angle) * radius), r = Math.floor(player.z + Math.sin(angle) * radius);
+      const key=c+','+r;if(candidates.has(key))continue;candidates.add(key);
       if (!validTile(c, r) || !h || dist({x:c+.5,z:r+.5},h) < 4) continue;
       if (window.NpcPathfinding?.isNpcPositionWalkable?.(state.zone,c+.5,r+.5) === false) continue; // Reject narrow prop and furniture collisions too.
-      if (!window.NpcPathfinding?.findNpcPath?.(state.zone,c+.5,r+.5,state.home.c+1,state.home.r+3)
-        && !window.NpcPathfinding?.canNpcBeeline?.(state.zone,c+.5,r+.5,state.home.c+1,state.home.r+3)) continue;
+      if (!window.NpcPathfinding?.canNpcBeeline?.(state.zone,c+.5,r+.5,state.home.c+1,state.home.r+3)) {
+        if(pathSearches>=4)continue;
+        pathSearches++;
+        if(!window.NpcPathfinding?.findNpcPath?.(state.zone,c+.5,r+.5,state.home.c+1,state.home.r+3))continue;
+      }
       releaseWalker(); // The existing async walker constructor places the new avatar on a validated surface.
       state.target={c,r}; state.activity='wander'; state.resourceTarget=null; state.workLeft=0;
       planTimer=0; scanTimer=SCAN_SECONDS; // Give the newly arrived walker its ordinary chase check before choosing a new chore.
