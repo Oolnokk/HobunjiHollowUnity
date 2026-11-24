@@ -7,6 +7,7 @@ const vm = require('node:vm'); // Executes the browser modules without the 3D re
 const defaultsSource=fs.readFileSync('docs/config/character-rig-scale-defaults.js','utf8'); // Contains pinned main values and the single male anchor.
 const profilesSource=fs.readFileSync('docs/config/attachment-rig-profiles.js','utf8'); // Real source portrait scales and limb anatomy.
 const runtimeSource=fs.readFileSync('docs/js/character-rig-scale.js','utf8'); // Real game/editor shared visual transform.
+const mammakhbuurSource=fs.readFileSync('docs/js/mammakhbuur-species-runtime.js','utf8'); // Real bootstrap clones donor rigs before installing independent mammakhbuur geometry.
 const close=(actual,expected,label)=>assert(Math.abs(actual-expected)<1e-9,label+': '+actual+' !== '+expected); // No creeping relative errors.
 
 const window={
@@ -32,6 +33,7 @@ const context=vm.createContext({window,location:window.location,document:{},perf
   setInterval:()=>1,clearInterval:()=>{}});
 vm.runInContext(defaultsSource,context);
 vm.runInContext(profilesSource,context);
+vm.runInContext(mammakhbuurSource,context); // Mirrors attachment-rig bootstrap load order; do not rely on shared alias profile references in the test.
 vm.runInContext(runtimeSource,context);
 
 const cfg=window.HobunjiCharacterRigScaleDefaults;
@@ -78,7 +80,8 @@ for(const [key,authored] of Object.entries(values)){
   const [species,gender]=key.split('::');
   const plane=species==='mao-ao' && gender==='female' ? .8 : portraits[species]||1;
   close(runtime.rawPngHeadScaleFor(authored.head,plane),.65,key+' displays Head 65% of raw PNG');
-  const resolved=runtime.scaleFor(species,gender);
+  const profile=window.HOBUNJI_ATTACHMENT_RIG_PROFILES.characters[key] || null;
+  const resolved=runtime.scaleFor(species,gender,profile); // Explicit rig profile is authoritative for species that reuse donor cosmetics and anchors.
   close(resolved.x,authored.x,key+' game runtime inherited the corrected width');
   close(resolved.y,authored.y,key+' game runtime inherited the corrected height');
   close(resolved.head,authored.head,key+' game runtime inherited the correct raw-head compensator');
