@@ -370,7 +370,7 @@
   }
 
   function worldVisualScale() {
-    const authored = Number(window.HobunjiCharacterRigScaleDefaults?.worldHeightCalibration?.uniformScale); // Shared canonical chair-based calibration; no local save mutation.
+    const authored = Number(window.HobunjiCharacterRigScaleDefaults?.worldHeightCalibration?.uniformScale); // Absent in restored main silhouette defaults: 1.0 instead of the later 6'3\" global enlargement.
     return Number.isFinite(authored) && authored > 0 ? authored : 1; // Safe during early bootstrap before the defaults script finishes loading.
   }
 
@@ -379,7 +379,8 @@
   const _knownParents = typeof WeakMap === 'function' ? new WeakMap() : null; // Deduplicates repeated actor updates without retaining their meshes.
   function trackScaledParent(parent) {
     if (!_knownParents || typeof WeakRef !== 'function' || _knownParents.has(parent)
-      || window.HobunjiCharacterDimensions?.status === 'ready') return; // Do not retain weak-reference wrappers for new NPCs after calibration finished.
+      || !window.HobunjiCharacterRigScaleDefaults?.maleHeightFeet
+      || window.HobunjiCharacterDimensions?.status === 'ready') return; // No height goals in the restored main baseline, so skip the obsolete measured-crown rescale registry altogether.
     const reference = new WeakRef(parent); // Does not prevent off-screen/NPC/despawned actors from being garbage collected.
     _knownParents.set(parent, reference);
     _scaledParents.add(reference);
@@ -673,11 +674,14 @@
   });
   window.HobunjiCharacterRigScale = api;
 
-  const approvedProfileCount = window.HobunjiCharacterRigScaleDefaults?.applyApprovedScaleDefaultsToProfiles?.() || 0; // Apply the 26 canonical Mao'ao-relative defaults AFTER all special species profiles exist, BEFORE persisted author overrides are restored.
+  // Main-silhouette parity: the post-main height targets and 65%-head profile injection
+  // are intentionally absent. No profile mutations happen at bootstrap; authored and
+  // persisted rig values are restored through the explicit adult-only editor action.
   window.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS ||= {};
-  window.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS.maoaoScaleParity = { appliedProfiles: approvedProfileCount,
-    rawHeadPercent: (window.HobunjiCharacterRigScaleDefaults?.rawHeadScale || 0.65) * 100,
-    relativeChanges: window.HobunjiCharacterRigScaleDefaults?.maoaoRelativeShift || null }; // Mobile-visible confirmation without per-frame introspection.
+  window.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS.mainSilhouetteParity = {
+    reference: '4cfb39c', canonicalAdults: Object.keys(window.HobunjiCharacterRigScaleDefaults?.values || {}).length,
+    globalVisualScale: worldVisualScale(), mainReferenceAvailable: !!window.HobunjiCharacterRigScaleDefaults?.mainSilhouetteRestoreValues,
+  }; // Mobile diagnostics, no mesh iteration.
 
   function installHandParentRuntime() {
     const hands = window.ProceduralHandAttachments;
