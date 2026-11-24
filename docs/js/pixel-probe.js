@@ -1229,6 +1229,8 @@
     if (propBatches) lines.push(`Wilderness prop batches: ${JSON.stringify(propBatches)}`);
     const treeBatches = window.WildernessTreeInstancer?.snapshot?.(); // On-demand mobile A/B: spatial cells, key hits, uploads and retired buffers.
     if (treeBatches) lines.push(`Wilderness tree instances: ${JSON.stringify(treeBatches)}`);
+    const wallBatches = window.DenseForestWallBatches?.snapshot?.(); // Cloud Forest wall merge + distance LOD split (far/near trees, triangles avoided).
+    if (wallBatches?.frames) lines.push(`Dense wall batches: ${JSON.stringify({ ...wallBatches, liteTwins: window.FoliageGenerator?.liteTreeStats?.() || null })}`);
 
     const waterFootLines = _pixelProbeWaterFootContactLines(activeScene, currentArea, playerMesh); // Used to distinguish real foot/water intersection from camera-perspective illusions on mobile.
     if (waterFootLines) lines.push(...waterFootLines);
