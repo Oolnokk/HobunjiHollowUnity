@@ -7,6 +7,7 @@ const defaultsSrc=fs.readFileSync('docs/config/character-rig-scale-defaults.js',
 const rigSrc=fs.readFileSync('docs/js/character-rig-scale.js','utf8'); // Live parent/body/head/IK scale code.
 const editorSrc=fs.readFileSync('docs/js/character-scale-comparison.js','utf8'); // Delayed bare art measurement and UI update.
 const toolHtml=fs.readFileSync('docs/tools/animation-author/index.html','utf8'); // Loads the same CharacterDimensions module as gameplay.
+const realDimensionsSource=fs.readFileSync('docs/js/character-dimensions.js','utf8'); // Independently verifies the actual PNG alpha-bounds composition, not just the test's synthetic adapter.
 const close=(a,b,label)=>assert(Math.abs(a-b)<1e-8,label+': '+a+' != '+b);
 let measureCalls=0; // Only first measurement per identity runs the bounded solver.
 const pixels=new Map(); // Synthetic samples represent actual opaque PNG art; distinct for each identity.
@@ -102,4 +103,35 @@ assert.match(editorSrc,/unsubscribePixelHeights\?\.\(\)/,'an unmounted editor ca
 assert.match(editorSrc,/pixelCrownCalibration:/,'mobile debug reveals actual measured heights');
 assert.match(toolHtml,/character-dimensions\.js\?v=/,'the editor loads the existing game bare-PNG measurement system');
 assert.match(rigSrc,/_pixelHeightFactors = new Map\(\)/,'the source-height solve is cached for each species identity');
+// Cross-check against the ACTUAL source-pixel measuring module, whose top-of-head
+// equations include portrait placement and a separately compensated 65% head bone.
+win.__hobunjiCharacterDimensionsNoAutoMeasure=true; // Unit tests supply measured art; no async asset requests.
+const document={currentScript:{src:'https://example.test/docs/js/character-dimensions.js'}};
+vm.runInNewContext(realDimensionsSource,{window:win,document,URL,console,setTimeout:()=>1});
+const real=win.HobunjiCharacterDimensions;
+for(const [species,gender,headTop,bodyTop] of [
+  ['mao-ao','male',.04,.26],
+  ['mao-ao','female',.10,.28],
+  ['kenkari','male',.07,.21],
+  ['mammakhbuur','male',.06,.32],
+]){
+  real._setMeasurement(species,gender,{
+    body:{top:bodyTop,bottom:.91,left:.12,right:.88,centroidU:.5,centroidV:.55},
+    head:{top:headTop,bottom:.38,left:.3,right:.7,centroidU:.5,centroidV:.2,pivotU:.5,pivotV:.36},
+  });
+  const factor=rig.pixelHeightCorrectionFor(species,gender);
+  assert(Number.isFinite(factor)&&factor>0,species+' '+gender+' real measured source has a finite correction');
+  const value=defaults.scaleFor(species,gender);
+  const corrected={...value,y:value.y*factor,legLength:value.legLength*factor};
+  const painted=real.dimensionsFor(species,gender,{rigScale:corrected});
+  const requested=goals[species]*(gender==='female'?defaults.femaleVisibleHeightRatio:1);
+  close(painted.height*worldFactor,.66*requested/3,
+    species+' '+gender+' actual CharacterDimensions formula reaches the user physical height target');
+}
+win.hobunjiTransformSpeciesId=species=>species==='mammakhbuur'?'mashtzarr':species; // Donor sprites must not steal Mammakhbuur's independent 8-foot goal.
+const independent=rig.pixelHeightCorrectionFor('mammakhbuur','male');
+const authoredMammakh=defaults.scaleFor('mammakhbuur','male');
+const actualMammakh=real.dimensionsFor('mammakhbuur','male',{rigScale:{...authoredMammakh,y:authoredMammakh.y*independent}});
+close(actualMammakh.height*worldFactor,.66*8/3,'Mammakhbuur retains eight feet even when its portrait derives from Mashtzarr');
+
 console.log('PASS pixel crown heights: 16 gender-specific painted-source measurements, source placement, 65% heads, width, IK, cache, edits, teardown, and editor lifecycle');
