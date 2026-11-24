@@ -115,4 +115,24 @@ assert.match(status[0],/Restored 26\/26 adult silhouettes to main \(4cfb39c\)/,
   'mobile status confirms exact main baseline');
 assert.match(editor,/maaFullScaleMatchMainAdults[^>]+>Restore main silhouettes<\/button>/,
   'touch-friendly restore action has an unambiguous label');
+
+const migrateStart=editor.indexOf('  function migratePersistedMainSilhouettesOnce()');
+const migrateEnd=editor.indexOf('  // Discards every author override',migrateStart);
+assert(migrateStart>0 && migrateEnd>migrateStart,'one-time local autosave migration exists');
+const storage=new Map(); // Simulation of the same raw.githack.com localStorage reused across commit-pinned previews.
+const fakeStorage={getItem:key=>storage.get(key)||null,setItem:(key,v)=>storage.set(key,v)};
+let migrations=0;
+const migrateFixture={localStorage:fakeStorage,MAIN_SILHOUETTE_RESTORE_KEY:'test-main-silhouette-4cfb39c',
+  RIG_SAVE_KEY:'hobunjiAttachmentRigProfiles.v2',matchMainAdultScales(){migrations++;return 26;}};
+vm.runInNewContext(editor.slice(migrateStart,migrateEnd)+'\nthis.tryMigrate=migratePersistedMainSilhouettesOnce;',migrateFixture);
+assert.equal(migrateFixture.tryMigrate(),false,'fresh devices do not receive unwanted local saves');
+assert.equal(migrations,0,'no main-migration writes for a clean browser');
+storage.set('hobunjiFullCharacterRigScales.v2','{"mao-ao::male":{"head":0.65,"y":1.29}}'); // Older device holds a post-main override.
+assert.equal(migrateFixture.tryMigrate(),true,'older local scale overrides are restored automatically on first new preview');
+assert.equal(migrations,1,'migration calls adult-only restore once');
+assert.equal(migrateFixture.tryMigrate(),false,'later custom slider edits are not overwritten on each visit');
+assert.equal(migrations,1,'restore is idempotent across repeated editor entry');
+assert.match(editor,/const migrated = migratePersistedMainSilhouettesOnce\(\)/,
+  'one-time migration is wired into actual editor entry, not just a dead helper');
+
 console.log('PASS: old-main adult silhouettes (18 exact defaults, 26 restore profiles), no later height/65% overrides, original limbs, no global multiplier, saved-age preservation');
