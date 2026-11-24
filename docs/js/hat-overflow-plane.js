@@ -70,7 +70,7 @@
     canvas.height = sourceHeight + 2 * padY;
     let key=null, hit=null; // Only the canonical resolved-layer renderer may authorize reuse.
     const reuseHatOverflow = useCache && renderer===window.renderPortraitProfile ? layers=>{
-      key=keyForLayers(layers,sourceWidth,sourceHeight,logical);
+      try{key=keyForLayers(layers,sourceWidth,sourceHeight,logical);}catch(_){return false;} // Cache metadata must never prevent a normal render.
       if(!overflowCache.has(key)){stats.cacheMisses++;return false;}
       hit=overflowCache.get(key);overflowCache.delete(key);overflowCache.set(key,hit);
       stats.cacheHits++;return true;
