@@ -568,6 +568,12 @@
   });
   window.HobunjiCharacterRigScale = api;
 
+  const approvedProfileCount = window.HobunjiCharacterRigScaleDefaults?.applyApprovedScaleDefaultsToProfiles?.() || 0; // Apply the 26 canonical Mao'ao-relative defaults AFTER all special species profiles exist, BEFORE persisted author overrides are restored.
+  window.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS ||= {};
+  window.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS.maoaoScaleParity = { appliedProfiles: approvedProfileCount,
+    rawHeadPercent: (window.HobunjiCharacterRigScaleDefaults?.rawHeadScale || 0.65) * 100,
+    relativeChanges: window.HobunjiCharacterRigScaleDefaults?.maoaoRelativeShift || null }; // Mobile-visible confirmation without per-frame introspection.
+
   function installHandParentRuntime() {
     const hands = window.ProceduralHandAttachments;
     if (!hands?.attach) return false;
