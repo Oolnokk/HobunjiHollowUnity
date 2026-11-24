@@ -136,30 +136,37 @@
 
   // The adult editor's Height and Beltline % are two coordinates for the SAME legacy
   // portrait-height/leg-length geometry. The saved fields stay unchanged for gameplay.
-  const beltlineFraction = value => { // Used by both conversions; a nonpositive hip or malformed profile gets a stable midpoint.
-    const n = Number(value);
-    return Number.isFinite(n) && n > 0 && n < 1 ? Math.max(.05, Math.min(.95, n)) : .5;
+  const beltlineGeometry = value => { // Shared by editor conversion and game scale: the leg's true sole-contact point matters.
+    const hipRaw = typeof value === 'object' ? value?.hip : value;
+    const n = Number(hipRaw); // Unscaled floor-to-hip / floor-to-avatar-top before authored scale.
+    const hip = Number.isFinite(n) && n > 0 && n < 1 ? Math.max(.05, Math.min(.95, n)) : .5;
+    const rawContact = Number(typeof value === 'object' ? value?.contact : 0);
+    const contact = Number.isFinite(rawContact) && rawContact > 0 && rawContact < hip ? rawContact : 0; // Foot center/sole-contact height in the same baseline units.
+    return { hip, contact, reach: hip - contact, torso: 1 - hip + contact }; // Both weights sum to one for unchanged main adult Height.
   };
-  function heightBeltlineFor(scale, unscaledHipFraction = .5) {
-    const base = beltlineFraction(unscaledHipFraction); // Floor-to-hip / floor-to-top before ANY authored scaling.
+  function heightBeltlineFor(scale, original = .5) {
+    const g = beltlineGeometry(original);
     const portrait = clampScale(scale?.portraitHeight ?? scale?.y ?? 1);
     const leg = clampScale(scale?.legLength ?? scale?.y ?? 1);
-    const height = (1 - base) * portrait + base * leg; // Old portrait offset raises the whole upper half by (leg - portrait) * hip.
-    return { height, beltline: base * leg / height }; // One true floor-to-hip fraction, not an arbitrary leg/portrait ratio.
+    // ProceduralLegAnimation uses hipY = contact + (restHip - contact) * (leg/portrait).
+    // Its portrait offset shifts the upper torso by the SAME hip delta, so the top is:
+    const height = g.torso * portrait + g.reach * leg;
+    const hipHeight = g.contact * portrait + g.reach * leg;
+    return { height, beltline: hipHeight / height }; // Actual hip/floor-to-top %, including nonzero foot contact.
   }
-  function scaleForHeightBeltline(scale, height, beltline, unscaledHipFraction = .5) {
-    const base = beltlineFraction(unscaledHipFraction);
-    const target = clampScale(height); // Overall stature relative to the unscaled preview's original top.
-    let fraction = Number(beltline);
-    if (!Number.isFinite(fraction)) fraction = heightBeltlineFor(scale, base).beltline;
-    // Prevent either derived field leaving the runtime's 10-400% scale envelope.
-    // This clamps the beltline instead of independently clamping both pieces, which would unexpectedly change total height.
-    const lower = Math.max(0, MIN_SCALE * base / target, 1 - MAX_SCALE * (1 - base) / target);
-    const upper = Math.min(1, MAX_SCALE * base / target, 1 - MIN_SCALE * (1 - base) / target);
-    const resolvedFraction = Math.max(lower, Math.min(upper, Math.min(1, Math.max(0, fraction)))); // Keep valid historical extremes rather than silently converting them to an arbitrary 5%-95% range.
-    const portrait = clampScale(target * (1 - resolvedFraction) / (1 - base));
-    const legLength = clampScale(target * resolvedFraction / base);
-    return { ...scale, y: portrait, portraitHeight: portrait, legLength }; // Keep head, width, hand/foot and authored head-Y unchanged.
+  function scaleForHeightBeltline(scale, height, beltline, original = .5) {
+    const g = beltlineGeometry(original);
+    const total = clampScale(height);
+    let requested = Number(beltline);
+    if (!Number.isFinite(requested)) requested = heightBeltlineFor(scale, original).beltline;
+    // Holding total height fixes the weighted average of the two old scalars; solve the requested beltline as one variable.
+    const desiredPortrait = total * (1 - requested) / (1 - g.hip);
+    const desiredLeg = (total - g.torso * desiredPortrait) / g.reach;
+    const minLeg = Math.max(MIN_SCALE, (total - g.torso * MAX_SCALE) / g.reach);
+    const maxLeg = Math.min(MAX_SCALE, (total - g.torso * MIN_SCALE) / g.reach);
+    const legLength = Math.max(minLeg, Math.min(maxLeg, desiredLeg)); // Physically unreachable hip percentages clamp without changing total height.
+    const portrait = (total - g.reach * legLength) / g.torso;
+    return { ...scale, y: clampScale(portrait), portraitHeight: clampScale(portrait), legLength: clampScale(legLength) }; // Preserve legacy runtime save fields and all unrelated authoring.
   }
 
   function installProfileDefaults() {
