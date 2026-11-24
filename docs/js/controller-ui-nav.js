@@ -187,7 +187,7 @@
   const lastFocusedByPanel = new WeakMap();
   const groupsByPanel = new WeakMap(); // Retains entered nests while a modal temporarily owns focus.
   const releasedAutoGroup = new WeakMap(); // Prevents Back from immediately reentering the automatic content owner.
-  let automaticEntryEnabled = false; // Actual controller input enables automatic pages; pointer input restores the complete layout.
+  let automaticEntryEnabled = false; // Actual controller input enables automatic focus entry, not main-menu page visibility.
   const lastFocusedByGroup = new WeakMap(); // Remembers the control selected when leaving an entered section.
   const knownPanels = new Set(); // Reused by visibility reconciliation so gameplay never scans the entire DOM for panel roots.
   let currentTarget = null;
@@ -237,7 +237,10 @@
     const prevTop = activePanel();
 
     for (const panel of stack) {
-      if (!currentSet.has(panel)) clearGroups(panel, true);
+      if (!currentSet.has(panel)) {
+        clearGroups(panel, true);
+        if (panel.id === 'menuPanel') resetMenuPages();
+      }
     }
     stack = stack.filter(p => currentSet.has(p));
     for (const p of current) {
@@ -323,7 +326,7 @@
     releasedAutoGroup.delete(panel);
     const entries = groupsByPanel.get(panel) || []; // Child-first cleanup leaves each parent valid until its own turn.
     for (const entry of [...entries].reverse()) {
-      restoreSubtabs(entry.node);
+      releaseGroupSubtabs(entry.node);
       navClassRemove(entry.node, 'ctrl-nav-group-active');
       if (collapse) collapseDisclosure(entry.node);
     }
@@ -341,7 +344,7 @@
       const associated = origin && parent.contains(origin) && panel.contains(node) && node?.hasAttribute('data-ctrl-detail-panel');
       const closedDisclosure = disclosureOpener(node)?.getAttribute('aria-expanded') === 'false'; // Pointer collapse or a filtered/rebuilt stack must not trap the controller inside a closed group.
       if (!node || node === parent || closedDisclosure || (!parent.contains(node) && !associated) || !isGroup(node) || !isNavTarget(node) || !belongsToNavigation(node, panel)) {
-        for (const removed of entries.splice(index)) { restoreSubtabs(removed.node); navClassRemove(removed.node, 'ctrl-nav-group-active'); }
+        for (const removed of entries.splice(index)) { releaseGroupSubtabs(removed.node); navClassRemove(removed.node, 'ctrl-nav-group-active'); }
         break;
       }
       if (entry.node !== node) {
@@ -377,6 +380,7 @@
 
   function projectSingleChild(target, panel) {
     if (!isGroup(target)) return target;
+    if (subtabsByGroup.has(target) && target.closest?.('#menuPanel')) return target; // Actual page owners remain enterable even with one visible action.
     const children = directTargets(target, panel); // A single route is transparent; read-only sections remain selectable for inspection.
     return children.length === 1 && !children[0].hasAttribute('data-ctrl-group-open') ? projectSingleChild(children[0], panel) : target;
   }
@@ -472,7 +476,7 @@
     if (!entry) return false;
     if (entry.node.hasAttribute('data-ctrl-auto-enter') || entry.node.matches('.mp-pane')) releasedAutoGroup.set(panel, entry.node);
     lastFocusedByGroup.set(entry.node, currentTarget);
-    restoreSubtabs(entry.node);
+    releaseGroupSubtabs(entry.node);
     navClassRemove(entry.node, 'ctrl-nav-group-active');
     collapseDisclosure(entry.node); // Back closes only this disclosure, retaining its parent.
     invalidateVisibility();
@@ -872,10 +876,22 @@
 
   function selectLocalSection(group, panel, nextIndex) {
     if (activePanel() !== panel || !subtabsByGroup.has(group)) return;
-    const entries = enteredGroups(panel); // Switching sections drops only descendants of the local owner.
+    let entries = enteredGroups(panel); // Switching sections drops only descendants of the local owner.
     const state = subtabsByGroup.get(group); // Retains index even for authored sections without ids.
     const next = state.sections[nextIndex]; // Selected DOM identity is retained before restoring sibling visibility.
-    if (!next || !entries.some(entry => entry.node === group)) return;
+    if (!next) return;
+    if (!entries.some(entry => entry.node === group)) {
+      if (panel.id !== 'menuPanel' || !menuPageOwners.includes(group)) return;
+      // Direct category selection adopts the owner hierarchy without clicking its contents.
+      clearGroups(panel);
+      entries = menuPageOwners.slice(0, menuPageOwners.indexOf(group) + 1).map(node => {
+        rememberFocusPath(node);
+        navClassAdd(node, 'ctrl-nav-group-active');
+        return { node, path: focusPath, explicit: false };
+      });
+      groupsByPanel.set(panel, entries);
+    }
+    if (panel.id === 'menuPanel' && menuPageOwners.includes(group)) discardMenuPageDescendants(group);
     for (const removed of entries.splice(entries.findIndex(entry => entry.node === group) + 1).reverse()) {
       restoreSubtabs(removed.node);
       navClassRemove(removed.node, 'ctrl-nav-group-active');
@@ -883,6 +899,7 @@
     }
     saveSectionScroll(state.selected, panel);
     prepareSubtabsWithMemory(group, panel, next.id || null, next.id ? 0 : nextIndex, false);
+    if (panel.id === 'menuPanel') syncMenuPages(panel);
     restoreSectionScroll(next, panel);
     lastFocusedByGroup.set(state.selected, currentTarget);
     scrolledSelection = null;
@@ -983,7 +1000,145 @@
     });
   }
 
+
+  // Main-menu presentation persists independently of the controller focus stack.
+  // The existing discovery, labels, selection and scroll memory remain authoritative.
+  let menuPageRoot = null; // Active major pane, or Stable's transparent roster owner.
+  let menuPageOwners = []; // Ordered ancestor-to-descendant owners of visible category rows.
+  let menuPageLeaf = null; // Avoids rediscovering a non-paginated leaf on every focus update.
+  let menuCategoryBar = null; // Fixed header-level bar, independent of optional gamepad hints.
+  let syncingMenuPages = false; // Prevents reentry from authored auto-open actions.
+
+  function releaseGroupSubtabs(group) {
+    if (!menuPageOwners.includes(group)) restoreSubtabs(group);
+  }
+
+  function resetMenuPages() {
+    for (const owner of menuPageOwners.slice().reverse()) restoreSubtabs(owner);
+    menuPageOwners = [];
+    menuPageRoot = menuPageLeaf = null;
+    if (menuCategoryBar) menuCategoryBar.hidden = true;
+  }
+
+  function discardMenuPageDescendants(group) {
+    const index = menuPageOwners.indexOf(group);
+    if (index < 0) return;
+    for (const owner of menuPageOwners.splice(index + 1).reverse()) restoreSubtabs(owner);
+    menuPageLeaf = null;
+  }
+
+  function renderMenuCategoryBar(panel) {
+    const owners = menuPageOwners.filter(owner => subtabsByGroup.has(owner)); // Only real multi-page groups get rows.
+    if (!owners.length) {
+      if (menuCategoryBar) menuCategoryBar.hidden = true;
+      return;
+    }
+    if (menuCategoryBar?.parentElement !== panel) {
+      menuCategoryBar = document.createElement('div');
+      menuCategoryBar.className = 'mp-category-bar';
+      menuCategoryBar.setAttribute('role', 'group');
+      menuCategoryBar.setAttribute('aria-label', 'Menu categories');
+      menuCategoryBar.setAttribute('data-ctrl-skip', '');
+      menuCategoryBar.title = 'F6: focus categories; arrow keys: change category';
+      panel.insertBefore(menuCategoryBar, panel.querySelector('.mp-body'));
+    }
+    menuCategoryBar.hidden = false;
+    while (menuCategoryBar.children.length > owners.length) menuCategoryBar.lastElementChild.remove();
+    owners.forEach((owner, index) => {
+      let row = menuCategoryBar.children[index];
+      if (!row) {
+        row = document.createElement('div');
+        row.className = 'ctrl-nav-section-choices';
+        row.setAttribute('role', 'group');
+        menuCategoryBar.appendChild(row);
+      }
+      const label = navigationLabel(owner) + ' categories'; // Accessible names distinguish the hierarchy levels.
+      if (row.getAttribute('aria-label') !== label) row.setAttribute('aria-label', label);
+      updateSectionChoices(row, { node: owner }, subtabsByGroup.get(owner), panel);
+    });
+  }
+
+  function syncMenuPages(panel, refresh = false) {
+    if (panel?.id !== 'menuPanel' || syncingMenuPages) return;
+    syncingMenuPages = true;
+    try {
+      const pane = panel.querySelector('.mp-pane.active'); // Actual pane visibility, not last input device.
+      const root = pane?.hasAttribute('data-ctrl-transparent') ? pane.querySelector('[data-ctrl-auto-enter]') : pane;
+      if (root !== menuPageRoot) {
+        resetMenuPages();
+        menuPageRoot = root;
+        refresh = true;
+      }
+      if (!root || !isVisible(root)) return;
+      const previousOwners = menuPageOwners.slice(); // Obsolete branches are restored child-first.
+      const remembered = new Map(); // Retain selected identity/index through content rebuilds.
+      if (refresh) {
+        for (const owner of previousOwners.slice().reverse()) {
+          const state = subtabsByGroup.get(owner);
+          if (state) remembered.set(owner, { id: state.selected.id, index: state.sections.indexOf(state.selected) });
+          restoreSubtabs(owner);
+        }
+        menuPageLeaf = null;
+      }
+      const owners = [];
+      let owner = root;
+      while (owner && isVisible(owner)) {
+        if (!subtabsByGroup.has(owner)) {
+          if (owner === menuPageLeaf) break;
+          const prior = remembered.get(owner);
+          const prepared = prior
+            ? prepareSubtabsWithMemory(owner, panel, prior.id || null, prior.id ? 0 : Math.max(0, prior.index), false)
+            : prepareSubtabs(owner, panel, owner.getAttribute('data-ctrl-initial-subtab'));
+          if (!prepared) { menuPageLeaf = owner; break; }
+        }
+        owners.push(owner);
+        owner = subtabsByGroup.get(owner).selected; // Nested categories follow the selected parent only.
+      }
+      for (const previous of previousOwners.reverse()) if (!owners.includes(previous)) restoreSubtabs(previous);
+      menuPageOwners = owners;
+      renderMenuCategoryBar(panel);
+    } finally {
+      syncingMenuPages = false;
+    }
+  }
+
+  function handleMenuCategoryKey(event, panel) {
+    if (panel?.id !== 'menuPanel' || !menuCategoryBar || menuCategoryBar.hidden) return false;
+    const focused = document.activeElement; // Native keyboard access without redundant controller stops.
+    const row = focused?.closest?.('.mp-category-bar .ctrl-nav-section-choices');
+    const rows = Array.from(menuCategoryBar.children);
+    if (event.key === 'F6') {
+      const index = rows.indexOf(row);
+      const next = rows[(index < 0 ? (event.shiftKey ? rows.length - 1 : 0) : (index + (event.shiftKey ? -1 : 1) + rows.length) % rows.length)];
+      next?.querySelector('button[aria-pressed="true"]')?.focus({ preventScroll: true });
+      return true;
+    }
+    if (event.altKey && (event.key === 'ArrowLeft' || event.key === 'ArrowRight') && !row) {
+      const owner = localSubtabs(panel)?.node || menuPageOwners.at(-1);
+      const state = subtabsByGroup.get(owner);
+      if (!state) return false;
+      selectLocalSection(owner, panel, (state.sections.indexOf(state.selected) + (event.key === 'ArrowLeft' ? -1 : 1) + state.sections.length) % state.sections.length);
+      return true;
+    }
+    if (!row) return false;
+    if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+      const next = rows[rows.indexOf(row) + (event.key === 'ArrowUp' ? -1 : 1)];
+      next?.querySelector('button[aria-pressed="true"]')?.focus({ preventScroll: true });
+      return true;
+    }
+    const buttons = Array.from(row.children);
+    const index = buttons.indexOf(focused);
+    const nextIndex = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1
+      : event.key === 'ArrowLeft' ? (index - 1 + buttons.length) % buttons.length
+      : event.key === 'ArrowRight' ? (index + 1) % buttons.length : -1;
+    if (nextIndex < 0 || !buttons[nextIndex]) return false;
+    buttons[nextIndex].click(); // Same route as pointer choices and configured bumpers.
+    if (row.isConnected) row.children[nextIndex]?.focus({ preventScroll: true });
+    return true;
+  }
+
   function updateHintBar(panel) {
+    syncMenuPages(panel);
     if (!panel || !padEverSeen) { hideHintBar(); return; }
     const el = ensureHintEl();
     const host = panel.id === 'menuPanel' ? panel : document.body; // The main menu reserves footer space; other panels retain their existing floating hints.
@@ -1000,7 +1155,7 @@
     glyphs.forEach((glyph, index) => { if (glyph.textContent !== labels[index]) glyph.textContent = labels[index]; });
     const tabHint = el.querySelector('.ctrl-nav-hint-tabs'); // Include section position/name so hidden siblings remain discoverable.
     const state = local && subtabsByGroup.get(local.node); // Used only while updating menu hints, never on idle gameplay frames.
-    updateSectionChoices(el.querySelector('.ctrl-nav-section-choices'), local, state, panel);
+    updateSectionChoices(el.querySelector('.ctrl-nav-section-choices'), local, panel.id === 'menuPanel' && menuPageOwners.includes(local?.node) ? null : state, panel);
     const sectionLabel = state && navigationLabel(state.selected); // Prefer authored human-facing labels.
     const hintText = state ? ` ${String(sectionLabel).trim()} (${state.sections.indexOf(state.selected) + 1}/${state.sections.length})` : ' Switch pages'; // Communicates the currently borrowed scope.
     if (tabHint.lastChild?.nodeType === 3 && tabHint.lastChild.textContent !== hintText) tabHint.lastChild.textContent = hintText;
@@ -1195,6 +1350,12 @@
       event.stopPropagation();
       return;
     }
+    if (handleMenuCategoryKey(event, activePanel())) {
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+    if (document.activeElement?.closest?.('.mp-category-bar') && ['Tab', 'Enter', ' '].includes(event.key)) return; // Native focus and button activation in the category bar.
     switch (event.key) {
       case 'ArrowUp': move('up'); break;
       case 'ArrowDown': move('down'); break;
@@ -1216,7 +1377,12 @@
   // Keep the tracked focus target in sync with real mouse/touch clicks too,
   // so switching input devices mid-session (controller ↔ mouse) never
   // leaves the highlighted target pointing somewhere stale.
-  document.addEventListener('pointerdown', event => { if (event.target?.closest?.('.ctrl-nav-section-choices')) return; automaticEntryEnabled = false; const panel = activePanel(); if (panel && subtabsByGroup.size) { clearGroups(panel); updateHintBar(panel); } }, true);
+  document.addEventListener('pointerdown', event => {
+    if (event.target?.closest?.('.ctrl-nav-section-choices')) return;
+    automaticEntryEnabled = false;
+    const panel = activePanel();
+    if (panel && subtabsByGroup.size) { clearGroups(panel); updateHintBar(panel); } // Persistent main-menu pages remain selected; temporary floating-menu scopes release normally.
+  }, true);
 
   document.addEventListener('focusin', (event) => {
     const panel = activePanel();
@@ -1254,7 +1420,10 @@
       reconcileStack();
       const panel = activePanel(); // Refresh section pages only when menu content changed, not from controller idle polling.
       if (panel) {
+        if (panel.id === 'menuPanel') watchMenuPanes(panel);
+        syncMenuPages(panel, true);
         for (const entry of enteredGroups(panel)) {
+          if (panel.id === 'menuPanel' && menuPageOwners.includes(entry.node)) continue; // Already refreshed by the persistent page presentation.
           const state = subtabsByGroup.get(entry.node); // Reapply presentation after dynamic section/list rebuilds.
           if (state) prepareSubtabsWithMemory(entry.node, panel, state.selected.id || null, state.selected.id ? 0 : state.sections.indexOf(state.selected), false);
         }
@@ -1285,6 +1454,7 @@
     const added = !knownPanels.has(panel);
     knownPanels.add(panel);
     watchPanelAttributes(panel);
+    if (panel.id === 'menuPanel') watchMenuPanes(panel);
     return added;
   }
   function registerPanelsIn(node) {
@@ -1307,13 +1477,25 @@
     // below, so detail-only rebuilds must not re-run the whole subtab/focus/hint reconcile per press.
     const focusOutsideDetail = !!currentTarget?.isConnected && !currentTarget.closest('[data-ctrl-detail-panel]');
     const inOwnDetailPanel = target => focusOutsideDetail && !!target?.closest?.('[data-ctrl-detail-panel]');
-    const panelContentChanged = !!panel && (!currentTarget || subtabsByGroup.size > 0) && records.some(record => panel.contains(record.target) && record.target !== hintEl && !hintEl?.contains(record.target) && !inOwnDetailPanel(record.target.nodeType === 1 ? record.target : record.target.parentElement));
+    const panelContentChanged = !!panel && (!currentTarget || subtabsByGroup.size > 0) && records.some(record => panel.contains(record.target) && record.target !== hintEl && !hintEl?.contains(record.target) && !menuCategoryBar?.contains(record.target) && !inOwnDetailPanel(record.target.nodeType === 1 ? record.target : record.target.parentElement));
     if (panelTreeChanged || (currentTarget && !currentTarget.isConnected) || panelContentChanged) scheduleReconcile();
   });
   const attrObserver = new MutationObserver(() => {
     scheduleReconcile();
     scheduleVisibilitySettle();
   });
+  const menuPaneWatcher = new MutationObserver(records => {
+    const relevant = value => String(value || '').split(/\s+/).filter(name => name === 'active' || name.startsWith('inv-mode-')).sort().join(' ');
+    if (records.some(record => record.type === 'attributes' && relevant(record.oldValue) !== relevant(record.target.className))) scheduleReconcile();
+  }); // Major-tab and Pack/Gear changes only; ignore focus/highlight class churn.
+  const watchedMenuPanes = new WeakSet(); // Register each actual pane once without a document-wide class observer.
+  function watchMenuPanes(panel) {
+    for (const pane of panel.querySelectorAll('.mp-pane')) {
+      if (watchedMenuPanes.has(pane)) continue;
+      watchedMenuPanes.add(pane);
+      menuPaneWatcher.observe(pane, { attributes: true, attributeFilter: ['class'], attributeOldValue: true });
+    }
+  }
   const attrWatchedPanels = new WeakSet();
   function watchPanelAttributes(panel) {
     if (attrWatchedPanels.has(panel)) return;
@@ -1374,6 +1556,7 @@
       const group = document.getElementById(groupId); // Existing pause-pane scope retains normal Back behavior.
       if (!panel || !group || !panel.contains(group)) return false;
       clearGroups(panel, true);
+      if (panel.id === 'menuPanel' && menuPageOwners.includes(group)) discardMenuPageDescendants(group);
       automaticEntryEnabled = true;
       enterGroup(group, panel, null, sectionId); // Jump directly; do not activate the remembered page first.
       const selected = subtabsByGroup.get(group)?.selected; // Explicit placement-page jumps must also clear an unrelated page's scroll offset.
@@ -1397,7 +1580,8 @@
         navigationMode: 'nested-vector-cone',
         groupDepth: panel ? enteredGroups(panel).length : 0,
         groupId: panel ? navigationRoot(panel).id || navigationRoot(panel).getAttribute('data-tree') || null : null,
-        latestChange: 'Controller Back unwinds nested sections and closes the current floating menu using its own close action or document Escape.',
+        latestChange: 'Main menu categories are persistent pages for mouse, keyboard and controller; Back releases focus without revealing inactive pages.',
+        menuCategories: menuPageOwners.map(owner => ({ owner: owner.id || navigationLabel(owner), selected: subtabsByGroup.get(owner)?.selected.id || navigationLabel(subtabsByGroup.get(owner)?.selected), count: subtabsByGroup.get(owner)?.sections.length || 0 })),
         rememberedSubtabs: Object.fromEntries(lastSubtabByGroupKey), // Mobile debug can verify each pane independently.
         subtab: panel ? (() => { const state = subtabsByGroup.get(localSubtabs(panel)?.node); return state ? { id: state.selected.id, index: state.sections.indexOf(state.selected), count: state.sections.length } : null; })() : null,
         detailOriginId: panel ? enteredGroups(panel).at(-1)?.returnPath?.steps.at(-1)?.value || null : null,
