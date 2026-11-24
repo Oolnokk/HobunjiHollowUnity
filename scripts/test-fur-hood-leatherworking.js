@@ -119,6 +119,7 @@
     const withAnatomy=['exposed','animalFront','trim','exposedUnderTrim','animalBack','base'].map(role=>({role}));
     assert.deepEqual([...window.FurHoodLeatherworking.orderLayersForView(withAnatomy,'front')].map(entry=>entry.role),['animalBack','base','animalFront','exposedUnderTrim','trim','exposed'],'wearer ear sits under the trim, tusk/trunk over every fur piece');
     assert.deepEqual([...window.FurHoodLeatherworking.orderLayersForView(withAnatomy,'behind')].map(entry=>entry.role),['exposed','exposedUnderTrim','trim','animalFront','base','animalBack'],'wearer face anatomy is hidden behind the hood from the rear');
+    assert(read('docs/js/portrait-utils.js').includes("if(furData||isFurHood){"),'a plain (uncrafted) Fur Hood uses the crafted stack order, so its trim sits under the rear shell');
     const hoodConfig=JSON.parse(read('docs/config/cosmetics/fur_hood.json'));
     for(const [key,suffix] of [['tletingan_male','tl_m'],['mashtzarr_male','mashtz_m']]){
       const layers=hoodConfig.speciesVariants[key].parts.head.layers;

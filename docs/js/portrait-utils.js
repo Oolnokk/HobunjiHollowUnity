@@ -1704,7 +1704,8 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
         return naturalHex ? shadeFillTintForBodyColor({hex:naturalHex},_dyeReferenceHexForSlot(hood.tintSlot,_tintSpeciesId))
           : tintFor(resolveLayerTintSlot(part.paletteColorKey,hood.tintSlot)); // Drenkirra front and all other parts tint independently of trim.
       };
-      if(furData){
+      const isFurHood=[hood?.id,hood?.originalId].includes('fur_hood'); // A plain (uncrafted) Fur Hood still needs the crafted stack's rear order: trim under the rear shell.
+      if(furData||isFurHood){
         const frontHoodLayers=groupLayers.filter(layer=>layer.pos!=='back');
         const stack=[...frontHoodLayers.map((layer,index)=>({
           role:furHoodStackRole(layer,index,frontHoodLayers),

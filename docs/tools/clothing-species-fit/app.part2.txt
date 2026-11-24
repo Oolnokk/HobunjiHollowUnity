@@ -300,6 +300,7 @@ async function buildVariantGarmentCanvas(id,species,gender,width,height){
       const behindView=Object.assign(document.createElement('canvas'),{width,height});
       let hasFront=false,hasBack=false,hasBehindOverride=false; // Avoid wasting headwear warps and exports on unused orientations.
       const exportedLayers=[]; // Keeps headwear materials/front-back source identities separate for the fitted ZIP.
+      const rearDraws=[]; // Rear-view composite, drawn after the loop in the game's rear order.
       for(const record of records){
         try{
           const image=await loadImage(assetUrl(record.path));
@@ -324,12 +325,16 @@ async function buildVariantGarmentCanvas(id,species,gender,width,height){
                 exportedLayers.push({name:`head.layers.${record.name}.behindImage`,path:[...layerPath,'behindImage'],url:record.behindPath,role:record.layer.layerRole||'',view:'behind',canvas:rearCanvas});
               }catch(error){rearFrame=record.layer.image?.frame||null;log(`Missing rear ${garment.label} layer ${record.behindPath}; falling back to front art: ${error.message}`)}
             }
-            const rearCtx=behindView.getContext('2d',{alpha:true});rearCtx.imageSmoothingEnabled=false;
-            drawPortraitRaster(rearCtx,rearImage,width,height,rearFrame); // Compose cap then metal band in the same author-specified layer order.
+            rearDraws.push({image:rearImage,frame:rearFrame,trim:String(record.layer.layerRole||'')==='trim'});
             if(record.behindPath)hasBehindOverride=true;
           }
         }catch(error){log(`Missing ${garment.label} layer ${record.path}: ${error.message}`)}
       }
+      // Seen from behind, a hood's trim sits under the rear shell (the game's
+      // fur-lined and fur hood rear order); everything else keeps the authored
+      // order (e.g. a hat's cap, then its metal band).
+      const rearCtx=behindView.getContext('2d',{alpha:true});rearCtx.imageSmoothingEnabled=false;
+      for(const draw of [...rearDraws.filter(d=>d.trim),...rearDraws.filter(d=>!d.trim)])drawPortraitRaster(rearCtx,draw.image,width,height,draw.frame);
       const canvas=Object.assign(document.createElement('canvas'),{width,height});
       const x=canvas.getContext('2d',{alpha:true});x.imageSmoothingEnabled=false;
       x.drawImage(back,0,0);x.drawImage(front,0,0);
