@@ -399,7 +399,7 @@
 
   function resize(pixelW, pixelH) {
     if (!_mainRT) return;
-    const seamOn = !!deps.settings.seamOutlines();
+    const seamOn = !!deps.settings.seamOutlines() && window.OutlineRenderPerformance?.nonShellOutlinesSuppressed !== true; // Retired seam output cannot justify a target switch, clear or full-size ID buffer.
     _mainRT.setSize(pixelW, pixelH);
     // The material-ID buffer stays 1x1 while seam outlines are off.
     _edgeIdRT.setSize(seamOn ? pixelW : 1, seamOn ? pixelH : 1);
@@ -526,7 +526,7 @@
     scopeCtx.scene = activeScene; scopeCtx.camera = camera; scopeCtx.isZone = isZone;
     scopeCtx.walkers = deps.npcWalkers; scopeCtx.renderer = renderer; scopeCtx.area = area;
     const outlines = !!deps.settings.outlines();
-    const seamOn = !!deps.settings.seamOutlines();
+    const seamOn = !!deps.settings.seamOutlines() && window.OutlineRenderPerformance?.nonShellOutlinesSuppressed !== true; // Retired seam output cannot justify a target switch, clear or full-size ID buffer.
 
     let captureHookOff = null;
     if (captureArmed && window.RenderHooks?.register) {
