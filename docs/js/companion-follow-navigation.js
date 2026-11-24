@@ -88,6 +88,7 @@
   }
 
   function hiddenAt(camera, x, z, footY, c, planes) {
+    if (![x, z, footY].every(Number.isFinite)) return false; // Invalid render coordinates cannot establish invisibility.
     const halfHeight = Math.max(0.45, Number(c.halfHeight) || 0.625); // Actual scaled portrait half-height.
     const lift = Number.isFinite(c.groundLift) ? c.groundLift : halfHeight; // Authored origin may differ from half-height.
     const width = Math.max(0, Number(c.visualModelWidth) || Number(c.def?.modelWidth) || 0); // Full scaled animal sprite width.
@@ -137,12 +138,33 @@
     const angleCount = baby ? ANGLES : REAR_OFFSETS.length; // Fixed candidate fan size.
     const total = radii.length * angleCount; // Maximum probes in one full pass.
     const goalCol = Math.floor(master.x / tile), goalRow = Math.floor(master.y / tile); // Same-floor path destination.
-    const searchKey = ruin ? `${goalCol},${goalRow},${Math.round(ownerSurface / Y_TOLERANCE)},${Math.round(rear * ANGLES / (Math.PI * 2))}` : null; // Restart near-first when the owner changes tile, floor or heading.
-    const start = ruin && state.searchKey === searchKey ? state.searchCursor || 0 : 0; // Resume only an unchanged search.
+    const searchKey = ruin ? Math.round(ownerSurface / Y_TOLERANCE) : null; // Floor changes restart near-first; moving/turning on the same floor must not starve later candidates.
+    const start = ruin && state.searchKey === searchKey ? state.searchCursor || 0 : 0; // Positions and collision are recomputed from the live owner each time.
     state.searchKey = searchKey; state.searchCursor = 0;
     let pathAttempts = 0; // Caps expensive ruin path validations to a few hidden candidates per retry.
     const walkability = ruin ? new Map() : null; // Share collision results across the synchronous A* probes, never across frames.
     const triedTiles = ruin ? new Set() : null; // Multiple sampled offsets in one tile need only one A* proof.
+    function cachedWalkable(col, row) {
+      const key = col + ',' + row; // Reuse tile results across distinct start points within this attempt.
+      if (walkability.has(key)) return walkability.get(key);
+      const allowed = pathTileWalkable(col, row);
+      walkability.set(key, allowed);
+      return allowed;
+    }
+    function pathTileWalkable(col, row) {
+      const tx = (col + 0.5) * tile, ty = (row + 0.5) * tile;
+      const cell = tileAt(grid, tx, ty, tile); // A tile occupancy wall is impassable even if an underlying floor remains.
+      if (!cell || cell.incline || UNSAFE_TYPES.has(String(cell.type).toLowerCase()) ||
+          (Number(cell.water) || 0) >= 0.003 || window.MapBoundaryGuard?.isBoundaryTile?.(cell)) return false;
+      const surface = DS?.sampleSupport?.(tx / tile, ty / tile, {
+        minY: ownerSurface - Y_TOLERANCE, maxY: ownerSurface + Y_TOLERANCE, pad: 0,
+      });
+      return !!surface && Math.abs(surface.y - ownerSurface) <= Y_TOLERANCE && !DS?.pointInPit?.(tx / tile, ty / tile, 0.12) &&
+        !DS?.blockerAt?.(tx / tile, ty / tile, { radius: 0.2, actorHeight: 1.25, worldY: surface.y, y: surface.y }) &&
+        !window.DevRandomRuin?.shaftBodyBlocksAtFeet?.(tx / tile, ty / tile, 0.2, ownerSurface) &&
+        window.DevRandomRuin?.shaftCreatureCanEnter?.(probe, tx, ty, true) !== false &&
+        !!deps.creatureCanEnter?.(c.def, tx, ty, NaN, NaN, probe, true);
+    }
     for (let step = 0; step < total; step++) {
       const index = (start + step) % total; // A failed bounded batch resumes at the next point on the next retry.
       const radius = radii[Math.floor(index / angleCount)], i = index % angleCount;
@@ -162,7 +184,7 @@
       if (ruin) {
         const support = DS?.sampleSupport?.(x, z,
           { minY: ownerSurface - Y_TOLERANCE, maxY: ownerSurface + Y_TOLERANCE, pad: 0 });
-        if (!support || Math.abs(support.y - ownerSurface) > Y_TOLERANCE ||
+        if (!support || !Number.isFinite(support.y) || Math.abs(support.y - ownerSurface) > Y_TOLERANCE ||
             DS?.pointInPit?.(x, z, 0.12) ||
             window.DevRandomRuin?.shaftBodyBlocksAtFeet?.(x, z, 0.2, ownerSurface)) continue;
         landingY = support.y; // Snap to the actual candidate floor, not the owner's approximate Y.
@@ -179,14 +201,11 @@
         const tileKey = startCol + ',' + startRow; // Deduplicate same-tile path probes within this attempt.
         if (triedTiles.has(tileKey)) continue;
         triedTiles.add(tileKey);
+        // The generic A* deliberately permits escaping a blocked start tile; a teleport must not create one.
+        if (!cachedWalkable(startCol, startRow)) continue;
         pathAttempts++;
-        const path = navigator.findPath(startCol, startRow, goalCol, goalRow, (col, row) => {
-          const key = col + ',' + row; // Reuse the same tile result even across distinct start points.
-          if (walkability.has(key)) return walkability.get(key);
-          const allowed = pathTileWalkable(col, row);
-          walkability.set(key, allowed);
-          return allowed;
-        }, { bounds: navigator.boxAround(startCol, startRow, goalCol, goalRow, 3), maxNodes: 550, cacheWalkability: true });
+        const path = navigator.findPath(startCol, startRow, goalCol, goalRow, cachedWalkable,
+          { bounds: navigator.boxAround(startCol, startRow, goalCol, goalRow, 3), maxNodes: 550, cacheWalkability: true });
         if (!path) {
           if (pathAttempts >= RUIN_PATH_BUDGET) {
             state.searchCursor = (index + 1) % total; // No starvation on a fifth or later viable landing.
@@ -194,21 +213,7 @@
           }
           continue;
         }
-        function pathTileWalkable(col, row) {
-          const tx = (col + 0.5) * tile, ty = (row + 0.5) * tile;
-          const cell = tileAt(grid, tx, ty, tile); // A tile occupancy wall is impassable even if an underlying floor surface remains.
-          if (!cell || cell.incline || UNSAFE_TYPES.has(String(cell.type).toLowerCase()) ||
-              (Number(cell.water) || 0) >= 0.003 ||
-              window.MapBoundaryGuard?.isBoundaryTile?.(cell)) return false;
-          const surface = DS?.sampleSupport?.(tx / tile, ty / tile, {
-            minY: ownerSurface - Y_TOLERANCE, maxY: ownerSurface + Y_TOLERANCE, pad: 0,
-          }); // A path on a different overlapping shaft story does not count.
-          return !!surface && Math.abs(surface.y - ownerSurface) <= Y_TOLERANCE && !DS?.pointInPit?.(tx / tile, ty / tile, 0.12) &&
-            !DS?.blockerAt?.(tx / tile, ty / tile, { radius: 0.2, actorHeight: 1.25, worldY: surface.y, y: surface.y }) &&
-            !window.DevRandomRuin?.shaftBodyBlocksAtFeet?.(tx / tile, ty / tile, 0.2, ownerSurface) &&
-            window.DevRandomRuin?.shaftCreatureCanEnter?.(probe, tx, ty, true) !== false &&
-            !!deps.creatureCanEnter?.(c.def, tx, ty, NaN, NaN, probe, true);
-        }
+
       }
       return { x: px, y: py, supportY: landingY };
     }

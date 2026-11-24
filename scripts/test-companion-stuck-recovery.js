@@ -7,6 +7,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 
 const game = fs.readFileSync('docs/game.js', 'utf8'); // Ensures the single live companion frame loop calls this module.
+const pathSource = fs.readFileSync('docs/js/tile-pathfinding.js', 'utf8'); // Exercise real A* in addition to the bounded-budget mock.
 const source = fs.readFileSync('docs/js/companion-follow-navigation.js', 'utf8'); // Actual runtime implementation, not a copied helper.
 const TILE = 64; // Pixels per tile in this controlled ruin fixture.
 const AREA = 'map_i_dev_random_ruin'; // Same map identifier as the real procedural ruin runtime.
@@ -176,6 +177,16 @@ assert.equal(routedChecks - beforeBatch, 4, 'exactly four A* probes in the first
 assert.equal(visited.size, 4);
 assert.equal(simulate(laterCandidate, 16), true, 'second retry reaches a fifth distinct viable landing');
 assert(visited.size >= 5, 'candidate cursor prevents repeating the same four failures');
+// Live movement changes the absolute start tiles but should not reset the relative fan.
+state.pathGate = () => false;
+const movingOwnerPet = makePet(1.5*TILE);
+assert.equal(simulate(movingOwnerPet, 1), false);
+const cursor = movingOwnerPet._companionStuckRecovery.searchCursor;
+assert(cursor > 0, 'bounded batch retains its position');
+owner.x += TILE;
+assert.equal(simulate(movingOwnerPet, 16), false);
+assert(movingOwnerPet._companionStuckRecovery.searchCursor > cursor, 'owner walking one tile cannot restart the same four candidates');
+owner.x -= TILE;
 state.pathGate = null;
 owner.x = 18.5 * TILE;
 delete owner.angle;
@@ -210,6 +221,17 @@ owner.x = 18.5*TILE; delete owner.angle;
 Navigation.init({ TILE, player: owner, getCurrentArea: () => AREA, isZoneArea: () => false,
   getActiveGrid: () => grid, getCamera: () => camera, surfaceYForTile: () => 0, creatureCanEnter: () => true });
 
+// Run the production pathfinder and place a wall from map edge to map edge.
+const mockPathfinder = windowMock.TilePathfinding;
+vm.runInNewContext(pathSource, context, { filename: 'tile-pathfinding.js' });
+owner.x = 25.5*TILE; owner.angle = 0;
+for (const row of grid) row[24].type = 'rock';
+const realWall = makePet(1.5*TILE);
+assert.equal(simulate(realWall, 60), false, 'actual A* cannot certify a landing behind a sealed wall');
+for (const row of grid) row[24].type = 'floor';
+assert.equal(simulate(realWall, 20), true, 'actual A* finds a route once the wall opens');
+windowMock.TilePathfinding = mockPathfinder;
+owner.x = 18.5*TILE; delete owner.angle;
 const acrossArea = makePet();
 acrossArea.areaId = 'town';
 assert.equal(simulate(acrossArea), false, 'no cross-area teleport');
