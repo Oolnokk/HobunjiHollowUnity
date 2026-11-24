@@ -90,6 +90,58 @@
     if(!candidates?.length)return null;
     return candidates.splice(clamp(Math.floor(rng()*candidates.length),0,candidates.length-1),1)[0];
   }
+  // A wave owns construction only while its record belongs to the current
+  // scene. The caller supplies the existing NPC factory, adoption and disposal.
+  async function runWave(record,{owns,prepare,canBegin=()=>true,create,validate=()=>true,adopt,dispose,random=Math.random,onSuppressed,onFailure,onComplete}) {
+    if(!owns()||record.building)return false;
+    record.building=true;
+    let count=0; // Counts actors adopted into live gameplay, not just built.
+    const first=record.wave===0;
+    const suppressed=()=>{onSuppressed?.();return false;};
+    try{
+      const prepared=await prepare();
+      if(!owns())return false;
+      if(!prepared)return false;
+      const {pool,members}=prepared;
+      if(!Array.isArray(members)||!members.length)throw Error('empty encounter wave');
+      if(pool.near.length+pool.far.length<members.length){if(first)return suppressed();throw Error('insufficient connected spawn tiles');}
+      for(const member of members){
+        if(!owns())return false;
+        if(first&&!count&&!canBegin())return suppressed();
+        const point=takeSpawn(pool,random);
+        if(!point)throw Error('no connected spawn for '+member);
+        const actor=await create(member,point,prepared);
+        if(!actor)throw Error('actor construction failed for '+member);
+        let adopted=false;
+        try{
+          if(!owns())return false;
+          if(first&&!count&&!canBegin())return suppressed();
+          if(!validate(actor,member,point))throw Error('invalid constructed actor: '+member);
+          adopt(actor,member,point);
+          adopted=true;count++;
+        }finally{if(!adopted)dispose(actor);}
+      }
+      if(!count)throw Error('no valid wave spawn');
+      record.wave++;onComplete?.(count);return true;
+    }catch(error){if(owns())onFailure?.(error);return false;}
+    finally{record.building=false;}
+  }
+  function createDefeatTracker(isOwned) {
+    let attributed=false,deficit=0; // Shared downed-hit attribution, independent of the chosen consequence.
+    const amount=n=>Math.max(0,Number(n)||0);
+    return Object.freeze({
+      noteDown(attacker,extra){attributed=!!isOwned(attacker);deficit=attributed?amount(extra):0;},
+      noteHit(attacker,damage){if(attributed&&isOwned(attacker))deficit+=amount(damage);},
+      reset(){attributed=false;deficit=0;},
+      snapshot(){return {attributed,deficit};},
+    });
+  }
+  function recoverNonlethal({player,maxHealth,deficit,blackout,healthFraction=.25,invulnerableMs=1000,now=()=>performance.now()}) {
+    if(!player||typeof blackout!=='function')return false;
+    const max=Number(maxHealth)>0?Number(maxHealth):100; // Normalize damage excess to the same percentage contract as alcohol.
+    player.health=Math.max(1,Math.round(max*healthFraction));player.vx=player.vy=0;player.invulnUntil=now()+invulnerableMs;
+    blackout(Math.max(0,Number(deficit)||0)/max*100);return true;
+  }
   function createRouteBudget(maxSearches=4) {
     const seen=new Set();let searches=0; // Per rare relocation attempt, not a global gameplay budget.
     return Object.freeze({
@@ -162,5 +214,5 @@
     try{ctx.drawImage(crop,(canvas.width-w)/2,canvas.height-h,w,h);}finally{ctx.restore();}
     return h/canvas.height;
   }
-  window.WildernessEncounterRuntime=Object.freeze({sceneMatches,createBuildSlot,createInterval,isAnimalWalker,isHumanoidActor,peopleInArea,chunkOf,sameChunk,flatFootprint,siteInChunk,connectedSpawnTiles,takeSpawn,createRouteBudget,createJournal,withConditionalReward,createSpriteSource,paintPortrait});
+  window.WildernessEncounterRuntime=Object.freeze({sceneMatches,createBuildSlot,createInterval,isAnimalWalker,isHumanoidActor,peopleInArea,chunkOf,sameChunk,flatFootprint,siteInChunk,connectedSpawnTiles,takeSpawn,runWave,createDefeatTracker,recoverNonlethal,createRouteBudget,createJournal,withConditionalReward,createSpriteSource,paintPortrait});
 })();
