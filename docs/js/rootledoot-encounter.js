@@ -111,6 +111,7 @@
   async function showRoot(rec,large=false) {
     const {raw,crop}=await loadArt();
     if(active!==rec||area()!==rec.zone)return false;
+    if(!large&&(deps.canActivate?.()===false||npcInChunk(rec.zone,rec.chunk))){reset('bait suppressed during artwork load');return false;} // Recheck asynchronous activation without spending the successful daily roll.
     const THREE=window.THREE;if(!THREE)return false;
     const art=large?crop:raw; // The bait preserves the farm PNG's authored padding; only NPC portraits and the boss reward use the opaque crop.
     if(!rootTextures.has(art)){const texture=new THREE.CanvasTexture(art);texture.magFilter=THREE.NearestFilter;texture.minFilter=THREE.NearestFilter;if(THREE.sRGBEncoding!==undefined)texture.encoding=THREE.sRGBEncoding;rootTextures.set(art,texture);}
@@ -171,9 +172,10 @@
     const site=siteInChunk(zone,chunk);if(site){ledger.set(key,{day,cleared:false,ready:true});activate(zone,chunk,site,key);}
   }
   function resumeReward(zone,chunk) {
-    if(!pendingRewards.size||deps.canActivate?.()===false)return false;
+    if(!pendingRewards.size)return false;
     for(const [key,saved] of pendingRewards) {
       if(saved.zone!==zone||!sameChunk(saved.site.c,saved.site.r,chunk)||(rewardRetryAt.get(key)||0)>performance.now())continue;
+      if(deps.canActivate?.()===false)return false; // Avoid scanning combat for rewards in distant chunks.
       if(!tileEligible(saved.site.c,saved.site.r))continue; // Keep the reward data if the scene is not yet available.
       const rec={zone,chunk,site:{...saved.site},key,phase:'reward',actors:new Set(),wave:WAVES.length,delay:0,mesh:null,
         boss:{_banditCaptainArmament:saved.armament},bossRootHeight:saved.height,building:false};
@@ -225,10 +227,12 @@
       const cfg=await window.BanditCombat?.loadGangConfig?.();
       if(!cfg)throw Error('bandit config unavailable');
       const used=new Set(),zoneDef=deps.getZoneDef?.(rec.zone)||{};
+      const firstAmbush=rec.wave===0; // NPC exclusion applies until the first actor is actually adopted, not to combat already in progress.
       const distance=Math.hypot(rec.site.c-(zoneDef.entryCol||0),rec.site.r-(zoneDef.entryRow||0));
       const tier=window.EnemyTierProgression?.clampTier?.(Math.floor(distance/(Number(cfg.difficultyTiers?.tierDistanceTiles)||12)))??0;
       for(const rank of WAVES[rec.wave]){
         if(active!==rec||area()!==rec.zone)return;
+        if(firstAmbush&&!count&&npcInChunk(rec.zone,rec.chunk)){cancelInitialAmbush(rec);return;}
         const point=spawnPoint(rec,used);if(!point)throw Error('no valid spawn for '+rank);
         const big=rank==='captain',name=big?'Big Rootledoot':'Rootledoot';
         const x=(point.c+.5)*deps.TILE,y=(point.r+.5)*deps.TILE;
@@ -239,6 +243,7 @@
           extra:{rootledoot:true,rootledootBig:big,homeX:x,homeY:y,state:'chase'}});
         if(!c)throw Error('bandit avatar construction failed for '+rank);
         if(active!==rec||area()!==rec.zone){disposeActor(c);return;}
+        if(firstAmbush&&!count&&npcInChunk(rec.zone,rec.chunk)){disposeActor(c);cancelInitialAmbush(rec);return;}
         if(big&&!c._banditCaptainArmament){disposeActor(c);throw Error('Fey weapon construction failed');}
         rec.actors.add(c);deps.hostiles.add(c);count++;
         deps.dirt?.(point.c,point.r);
@@ -247,6 +252,10 @@
       rec.wave++;log('wave '+rec.wave+' spawned '+count);
     }catch(error){if(active===rec)reset('wave failed: '+error.message);}
     finally{rec.building=false;}
+  }
+  function cancelInitialAmbush(rec){
+    ledger.set(rec.key,{day:Math.floor(Number(deps.day?.())||0),cleared:false,ready:true}); // No actor was adopted; the ambush may reappear after the NPC leaves.
+    reset('initial ambush suppressed by arriving NPC');
   }
   function onDeath(c) {
     const rec=active;
@@ -313,6 +322,7 @@
   function handleDefeat() {
     const rec=active;if(!rec||rec.phase!=='combat')return false;
     const rootDefeat=downedByRoot,deficit=overkill; // Preserve before reset invalidates all actor and wave state.
+    ledger.set(rec.key,{day:Math.floor(Number(deps.day?.())||0),cleared:false,ready:false}); // A fight crossing midnight still cannot reroll on its actual defeat day.
     reset('defeat: locale reset, all actors despawned');
     window.CookingSystem?.grantFeySight?.(1);
     if(rootDefeat&&window.HobunjiAlcohol?.triggerFeyBlackout){
