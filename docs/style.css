@@ -4075,13 +4075,30 @@ body:not([data-dev-mode="true"]) [data-dev-only] { display: none !important; }
   width: 100%;
   box-sizing: border-box;
 }
-/* Inventory uses absolute coordinates; keep the selected page left of item details. */
+/* Inventory uses absolute coordinates; pages stay within the reduced menu body
+   and preserve the right-hand item detail panel. */
 #mpInventory.ctrl-nav-subtabs > .ctrl-nav-subtab-selected {
   left: calc(1 * var(--inv-col));
   top: calc(6 * var(--inv-row));
   width: calc(33 * var(--inv-col));
-  height: calc(21 * var(--inv-row));
+  height: auto;
+  bottom: 0;
+  max-height: none;
 }
+#mpInventory.ctrl-nav-subtabs > #invGridArea.ctrl-nav-subtab-selected {
+  max-height: none;
+}
+#mpInventory.ctrl-nav-subtabs:has(> #invGridArea.ctrl-nav-subtab-selected) > #invPgScroll {
+  top: calc(6 * var(--inv-row));
+  height: auto;
+  bottom: 0;
+  max-height: none;
+}
+#mpInventory.ctrl-nav-subtabs:has(> #invGridArea.ctrl-nav-subtab-hidden) > :is(#invPgScroll, .inv-cats, #invSearch) {
+  display: none !important;
+}
+#mpProgress .progress-section-header:has(+ .ctrl-nav-subtab-hidden) { display: none; }
+#mpFarm .farm-storage-col.ctrl-nav-subtab-selected { grid-column: 1 / -1; width: 100%; }
 
 .ctrl-nav-subtabs .farm-pane { max-width: none; }
 
@@ -4108,6 +4125,51 @@ body:not([data-dev-mode="true"]) [data-dev-only] { display: none !important; }
   border: 0; border-top: 1px solid var(--border);
 }
 #menuPanel > .ctrl-nav-hint-bar .ctrl-nav-section-choices { max-width: 100%; }
+
+/* Permanent nested category bar below the major menu tabs. Each row scrolls
+   horizontally on small screens and reserves layout space instead of overlaying content. */
+#menuPanel > .mp-category-bar {
+  flex: 0 0 auto;
+  min-width: 0;
+  max-height: 34%;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
+  box-sizing: border-box;
+  background: rgba(10, 14, 10, .35);
+}
+#menuPanel > .mp-category-bar[hidden] { display: none; }
+#menuPanel > .mp-category-bar .ctrl-nav-section-choices {
+  flex: 0 0 auto;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+  touch-action: pan-x;
+  -webkit-overflow-scrolling: touch;
+  gap: 5px;
+}
+#menuPanel > .mp-category-bar .ctrl-nav-section-choices + .ctrl-nav-section-choices {
+  padding-left: 12px;
+  border-left: 2px solid var(--border-bright, var(--border));
+}
+#menuPanel > .mp-category-bar button {
+  min-height: clamp(25px, 5vmin, 34px);
+  padding: 3px 9px;
+  font-size: clamp(10px, 1.8vmin, 13px);
+  cursor: pointer;
+  white-space: nowrap;
+}
+#menuPanel > .mp-category-bar button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -3px;
+}
+#menuPanel > .mp-category-bar button:hover { border-color: var(--accent); }
+
 
 
 /* Five-note instrument puzzle replaces the old rhythmic lane and side panels only in puzzle mode. */
