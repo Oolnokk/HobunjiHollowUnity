@@ -133,15 +133,22 @@ for (const [key, main] of Object.entries(expected)) {
   for (const axis of ['x','y','head','offsetY'])
     near(original[axis],main[axis],key+' pinned main '+axis);
   near(changed.x, original.x*maleShift.x,key+' same MALE Maoao width adjustment');
-  near(changed.y, original.y*maleShift.y,key+' same MALE Maoao height adjustment');
-  near(changed.legLength, original.y*maleShift.y,key+' procedural legs scale together with portrait');
+  const [species, gender] = key.split('::');
+  const targetFeet = canonical.maleHeightFeet?.[species]; // Eight explicitly requested species override old main-derived heights.
+  if (Number(targetFeet) > 0) {
+    const expectedFeet = targetFeet * (gender === 'female' ? canonical.femaleVisibleHeightRatio : 1);
+    near(canonical.nominalHeightFeetFor(species, gender), expectedFeet, key+' physically calibrated stature');
+  } else {
+    near(changed.y, original.y*maleShift.y,key+' unlisted species retain MALE Maoao relative height adjustment');
+  }
+  near(changed.legLength, changed.y,key+' procedural legs scale together with portrait, preserving beltline');
   near(changed.offsetY, original.offsetY,key+' head offset unchanged');
   assert(Number.isFinite(changed.head)&&changed.head>0,key+' has a valid raw 65% Head factor');
 }
 for(const axis of ['x','y','handScale','footScale'])
   near(maleShift[axis],femaleShift[axis],'Maoao male adjustment applied to female '+axis);
 near(actual['mao-ao::female'].x,.895*maleShift.x,'female Maoao x derived only from male anchor');
-near(actual['mao-ao::female'].y,.94*maleShift.y,'female Maoao y derived only from male anchor');
+near(canonical.nominalHeightFeetFor('mao-ao','female'),6.25*.93,'female Maoao has a physically humanlike 93% height of the larger male');
 near(actual['mao-ao::female'].handScale,maleShift.handScale,'female Maoao hands from main 1.0');
 near(actual['mao-ao::female'].footScale,1.28125*maleShift.footScale,'female Maoao feet from main 1.28125');
 near(actual['mao-ao::female'].head*.8,.65,'female Maoao raw head 65%');
@@ -182,4 +189,4 @@ near(k.scale.legLength,actual['kenkari::female'].legLength,'saved legs use male 
 assert.equal(childBody,0.36,'baby/toddler/child author modifiers remain untouched');
 assert.equal(hunch,0.42,'per NPC hunch tuning remains untouched');
 assert.match(message,/Applied 26\/26 Mao/,'mobile confirmation includes all 26 approved profiles');
-console.log('PASS pinned main references + 26 male-Maoao-anchored scales, corrected female shifts, 65% Head, explicit editor reset and age preservation');
+console.log('PASS pinned main references + eight male targets, female visible-height ratios, 26 Maoao-anchored width/limb scales, 65% Head, explicit editor reset and age preservation');
