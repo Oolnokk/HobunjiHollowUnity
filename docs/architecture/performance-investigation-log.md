@@ -2242,3 +2242,32 @@ Further render-order audit: the lighting compositor's presentation-surface repai
 - These are source-level operation reductions; mobile FPS and real-world latency remain unmeasured. The short decision leases do not throttle movement or committed attack animations. Regression fixtures cover target and terrain-lease invalidation.
 
 - Animal pounce/Guard Charge substep collision now selects `Combat.meleeHit`'s scratch probe mode, with one reused options object per committed lunge, rather than allocating diagnostic collider geometry for every candidate and substep. Rear Kick's approach also uses scratch probes; its actual strike still publishes the normal diagnostic. Drenkirra pellet candidates now distinguish Beastmaster pets from player companions and skip unavailable actors at contact. Enemy scent selection avoids copied rosters and redundant diagnostic writes. The cached Beastmaster fixture counts one roster enumeration across eight updates, then verifies immediate invalidation on removal.
+
+## 23 Nov 2026: opaque furniture render proxies and projectile resource reuse
+
+The wilderness prop batcher merges compatible authored leaf parts within one
+placement even when their materials are separate. A shared texture must be
+proven opaque at native resolution before a transparent source is eligible.
+The proof is sliced over timer turns, cached by image and fails closed.
+Sources keep independent materials; only proxies own clones. The settled
+fast path revalidates live material keys, and liquids, unsupported materials
+and partially transparent images stay on the original path. Existing
+ZonePropRenderBatches A/B switch and draw counts apply.
+
+Ranged projectiles retain up to 16 retired PNG materials, 16 exact-dimension
+geometries and 16 trail meshes. Trail draw ranges reset on reuse; active
+projectiles never share mutable materials. Per-shot textures remain separately
+owned and disposed. Ranged debug snapshots report reuse and pool counts.
+Actual device frame times and visual parity remain unmeasured.
+
+### Review follow-up
+
+CI caught the versioned enemy editor's transitive preview/app loader chain.
+Both loader tokens are now bumped. Furniture settled reuse compares scalar
+material state and leaf flags directly rather than rebuilding strings/owner
+keys every frame; attribute identity changes invalidate cached geometry.
+The existing Three.js integration fixture now exercises creation, restoration,
+material changes and attribute replacement. Retired projectile texture
+callbacks cannot mutate dead shots; trail buffers/materials are leased to
+fresh mesh wrappers so scene-specific object metadata is never recycled.
+Pixel Probe exposes resource-pool and prop-batch statistics on mobile.

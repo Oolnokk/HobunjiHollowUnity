@@ -66,6 +66,7 @@
   const stats = { frames: 0, sources: 0, batches: 0, rebuilds: 0, moving: 0, drawsSaved: 0, fastReuseFrames: 0, fullCollects: 0 };
   const rejectReasons = {};
   const defaultBeforeRender = window.THREE?.Object3D?.prototype?.onBeforeRender;
+  const defaultAfterRender = window.THREE?.Object3D?.prototype?.onAfterRender;
   const defaultBeforeCompile = window.THREE?.Material?.prototype?.onBeforeCompile;
   const now = () => (typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now());
   let currentKind = '';
@@ -116,6 +117,126 @@
     return material.onBeforeCompile?.__hobunjiWorldBakeSafe === true;
   }
 
+  // Immutable shared authored images are tested once at native resolution.
+  // Run small readback slices off the render path; unknown/tainted alpha
+  // always leaves the original transparent material in place.
+  const furnitureAlphaProof = new WeakMap(); // Image -> pending/opaque/transparent.
+  const furnitureProofQueue = []; // Serial, bounded alpha-proof jobs.
+  let furnitureProofScheduled = false;
+  function queueFurnitureProof() {
+    if (furnitureProofScheduled || !furnitureProofQueue.length) return;
+    furnitureProofScheduled = true;
+    setTimeout(runFurnitureProof, 16);
+  }
+  function runFurnitureProof() {
+    furnitureProofScheduled = false;
+    const job = furnitureProofQueue[0];
+    if (!job) return;
+    let done = false;
+    try {
+      const rows = Math.min(32, job.height - job.y);
+      if (!job.canvas) {
+        job.canvas = document.createElement('canvas');
+        job.canvas.width = job.width;
+        job.canvas.height = 32;
+        job.ctx = job.canvas.getContext('2d', { willReadFrequently: true });
+      }
+      job.ctx.clearRect(0, 0, job.width, rows);
+      job.ctx.drawImage(job.image, 0, job.y, job.width, rows, 0, 0, job.width, rows);
+      const rgba = job.ctx.getImageData(0, 0, job.width, rows).data;
+      for (let i = 3; i < rgba.length; i += 4) {
+        if (rgba[i] !== 255) { done = true; break; }
+      }
+      if (done) furnitureAlphaProof.set(job.image, 'transparent');
+      else {
+        job.y += rows;
+        if (job.y >= job.height) { furnitureAlphaProof.set(job.image, 'opaque'); done = true; }
+      }
+    } catch (_) { furnitureAlphaProof.set(job.image, 'transparent'); done = true; }
+    if (done) {
+      if (job.canvas) job.canvas.width = job.canvas.height = 0;
+      furnitureProofQueue.shift();
+    }
+    queueFurnitureProof();
+  }
+  function furnitureTextureOpaque(texture) {
+    if (!texture) return true;
+    if (texture.userData?.furnitureShared !== true) return false;
+    const image = texture.image;
+    const width = Number(image?.naturalWidth || image?.width);
+    const height = Number(image?.naturalHeight || image?.height);
+    if (!image || !(width > 0 && height > 0) || image.complete === false) return false;
+    const proof = furnitureAlphaProof.get(image);
+    if (proof) return proof === 'opaque';
+    if (typeof document === 'undefined' || furnitureProofQueue.length >= 24) return false;
+    furnitureAlphaProof.set(image, 'pending');
+    furnitureProofQueue.push({ image, width, height, y: 0 });
+    queueFurnitureProof();
+    return false;
+  }
+
+  // No source material sharing: puzzle emissions, liquids, and interactive
+  // furniture retain independent materials. Only compatible leaf parts get
+  // a render-only clone; live edits invalidate the material key immediately.
+  const FURNITURE_STATE_FIELDS = ['type', 'emissiveIntensity', 'side', 'shadowSide',
+    'depthFunc', 'alphaTest', 'fog', 'toneMapped', 'dithering', 'flatShading',
+    'transparent', 'reflectivity', 'refractionRatio', 'combine']; // Used by full key and allocation-free fast matching.
+  function furnitureMaterialEligible(mesh, material = drawnMaterial(mesh)) {
+    const part = mesh.userData?.authoredPart;
+    const T = window.THREE;
+    if (!part || !mesh.parent?.userData?.authoredFurnitureKey
+      || part.kind === 'liquidSurface' || part.kind === 'banner'
+      || part.kind === 'transparentBillboardSurface' || mesh.children?.length
+      || mesh.customDepthMaterial || mesh.customDistanceMaterial
+      || mesh.onAfterRender !== defaultAfterRender
+      || (T.Material?.prototype?.customProgramCacheKey && material?.customProgramCacheKey !== T.Material.prototype.customProgramCacheKey)
+      || !material || !(material.isMeshBasicMaterial || material.isMeshLambertMaterial)
+      || isCustomShader(material) || material.visible === false
+      || material.opacity !== 1 || !material.depthWrite || !material.depthTest || !material.colorWrite
+      || material.blending !== T.NormalBlending || material.wireframe || material.vertexColors
+      || material.premultipliedAlpha || material.stencilWrite || material.clippingPlanes?.length
+      || material.alphaToCoverage || material.polygonOffset || material.alphaMap
+      || material.lightMap || material.aoMap || material.envMap || material.emissiveMap
+      || material.specularMap || material.map && material.map.userData?.furnitureShared !== true
+      || material.transparent && !furnitureTextureOpaque(material.map)) return null;
+    return !!material.color;
+  }
+  function furnitureMaterialKey(mesh, material = drawnMaterial(mesh)) {
+    if (!furnitureMaterialEligible(mesh, material)) return null;
+    const color = material.color, emissive = material.emissive;
+    return ['furniture', material.map?.id ?? '-', material.map?.version ?? '-',
+      color.r, color.g, color.b, emissive?.r, emissive?.g, emissive?.b,
+      ...FURNITURE_STATE_FIELDS.map(field => material[field])].join('|');
+  }
+  function carriedLeafFlag(key, value) {
+    return CARRIED_FLAG_PATTERN.test(key) && (value === true || typeof value === 'string' || typeof value === 'number');
+  }
+  function captureFurnitureState(mesh, material) {
+    const flags = Object.create(null); // Leaf flags affecting replay classifications.
+    for (const key in mesh.userData) if (carriedLeafFlag(key, mesh.userData[key])) flags[key] = mesh.userData[key];
+    return { parent: mesh.parent, map: material.map, mapVersion: material.map?.version,
+      color: [material.color.r, material.color.g, material.color.b],
+      emissive: [material.emissive?.r, material.emissive?.g, material.emissive?.b],
+      values: FURNITURE_STATE_FIELDS.map(field => material[field]), flags,
+      flagCount: Object.keys(flags).length };
+  }
+  function furnitureStateMatches(mesh, state) {
+    const material = drawnMaterial(mesh);
+    if (mesh.parent !== state.parent || !furnitureMaterialEligible(mesh, material)
+      || material.map !== state.map || material.map?.version !== state.mapVersion
+      || material.color.r !== state.color[0] || material.color.g !== state.color[1] || material.color.b !== state.color[2]
+      || material.emissive?.r !== state.emissive[0] || material.emissive?.g !== state.emissive[1] || material.emissive?.b !== state.emissive[2]) return false;
+    for (let i = 0; i < FURNITURE_STATE_FIELDS.length; i++) if (material[FURNITURE_STATE_FIELDS[i]] !== state.values[i]) return false;
+    let count = 0;
+    for (const key in mesh.userData) {
+      const value = mesh.userData[key];
+      if (!carriedLeafFlag(key, value)) continue;
+      if (state.flags[key] !== value) return false;
+      count++;
+    }
+    return count === state.flagCount;
+  }
+
   function materialEligible(material) {
     if (!material) return reject('multiMaterial');
     if (material.transparent) return reject('transparent');
@@ -142,12 +263,20 @@
     if (mesh.userData?.hobunjiZonePropBatch) return false;
     if (mesh.onBeforeRender !== defaultBeforeRender) return reject('hook');
     const material = drawnMaterial(mesh);
-    if (!materialEligible(material)) return false;
+    if (!(currentKind === 'furniture' && furnitureMaterialKey(mesh, material)) && !materialEligible(material)) return false;
     return geometryEligible(mesh.geometry, !isCustomShader(material));
   }
 
   // Per-mesh motion signature: world matrix + geometry identity/versions. Any change restarts the still timer.
-  const SIG = 22;
+  const SIG = 27;
+  const attributeIds = new WeakMap(); // Detect attribute replacement even when both versions are zero.
+  let nextAttributeId = 0;
+  function attributeId(attribute) {
+    if (!attribute) return 0;
+    let id = attributeIds.get(attribute);
+    if (!id) { id = ++nextAttributeId; attributeIds.set(attribute, id); }
+    return id;
+  }
   function writeSignature(out, mesh) {
     const e = mesh.matrixWorld.elements, g = mesh.geometry, a = g.attributes;
     for (let i = 0; i < 16; i++) out[i] = e[i];
@@ -157,6 +286,11 @@
     out[19] = a.uv ? a.uv.version : -1;
     out[20] = a.color ? a.color.version : -1;
     out[21] = g.index ? g.index.version : -1;
+    out[22] = attributeId(a.position);
+    out[23] = attributeId(a.normal);
+    out[24] = attributeId(a.uv);
+    out[25] = attributeId(a.color);
+    out[26] = attributeId(g.index);
   }
   const scratchSig = new Float64Array(SIG);
   function isStill(mesh, t) {
@@ -180,7 +314,13 @@
     const c = geometry.boundingSphere.center;
     const wx = e[0] * c.x + e[4] * c.y + e[8] * c.z + e[12], wz = e[2] * c.x + e[6] * c.y + e[10] * c.z + e[14];
     const cx = Math.floor(wx / CELL_TILES), cz = Math.floor(wz / CELL_TILES);
-    return cx + ',' + cz + '|' + owner.kind + '|' + drawnMaterial(mesh).id + '|' + (mesh.layers.mask >>> 0) + '|' + (mesh.castShadow ? 1 : 0) + (mesh.receiveShadow ? 1 : 0)
+    const furnitureKey = owner.kind === 'furniture' ? furnitureMaterialKey(mesh) : null;
+    // Limit equivalent materials to direct siblings of the same placement.
+    // All flags copied by the replay classifier must also agree.
+    const materialKey = furnitureKey ? owner.root.id + '|' + furnitureKey + '|' +
+      Object.keys(mesh.userData || {}).filter(k => carriedLeafFlag(k, mesh.userData[k])).sort()
+        .map(k => k + ':' + String(mesh.userData[k])).join(',') : drawnMaterial(mesh).id;
+    return cx + ',' + cz + '|' + owner.kind + '|' + materialKey + '|' + (mesh.layers.mask >>> 0) + '|' + (mesh.castShadow ? 1 : 0) + (mesh.receiveShadow ? 1 : 0)
       + '|' + mesh.renderOrder + '|' + vertexLayoutKey(mesh.geometry);
   }
 
@@ -271,9 +411,14 @@
 
   function buildBatch(THREE, record, batch, members, owner, t) {
     const first = members[0];
+    const furnitureKey = owner.kind === 'furniture' ? furnitureMaterialKey(first) : null;
     const geometry = mergeWorldGeometry(THREE, members);
     if (!batch.mesh) {
-      batch.mesh = new THREE.Mesh(geometry, drawnMaterial(first));
+      const material = furnitureKey ? drawnMaterial(first).clone() : drawnMaterial(first);
+      if (furnitureKey) material.transparent = false; // Original source never changes.
+      batch.furnitureKey = furnitureKey;
+      batch.furnitureState = furnitureKey ? captureFurnitureState(first, drawnMaterial(first)) : null;
+      batch.mesh = new THREE.Mesh(geometry, material);
       batch.mesh.name = 'zone_prop_render_batch';
       batch.mesh.matrixAutoUpdate = false; // World-space geometry under an identity holder.
       batch.mesh.raycast = noRaycast; // The props themselves keep answering raycasts.
@@ -284,7 +429,7 @@
       batch.mesh.geometry = geometry;
     }
     const mesh = batch.mesh;
-    mesh.material = drawnMaterial(first);
+    if (!batch.furnitureKey) mesh.material = drawnMaterial(first);
     mesh.layers.mask = first.layers.mask;
     mesh.castShadow = first.castShadow;
     mesh.receiveShadow = first.receiveShadow;
@@ -398,7 +543,8 @@
         if (!attachedTo(member, scene) || !effectivelyVisible(member)
           || !member.isMesh || member.isInstancedMesh || member.isSkinnedMesh
           || member.onBeforeRender !== defaultBeforeRender
-          || (Array.isArray(member.material) ? drawnMaterial(member) : member.material) !== drawn.material
+          || (batch.furnitureState ? !furnitureStateMatches(member, batch.furnitureState)
+            : (Array.isArray(member.material) ? drawnMaterial(member) : member.material) !== drawn.material)
           || member.layers.mask !== drawn.layers.mask
           || member.castShadow !== drawn.castShadow || member.receiveShadow !== drawn.receiveShadow
           || member.renderOrder !== drawn.renderOrder || !settledMemberEligible(member, drawn.material)
@@ -417,11 +563,17 @@
     };
   }
 
+  function disposeBatch(batch) {
+    batch.mesh.geometry.dispose();
+    if (batch.furnitureKey) batch.mesh.material.dispose(); // Only the proxy owns this clone.
+  }
+
   // Returns a restore function, or null when nothing was swapped.
   function suspendForRender(scene, { isZone = false } = {}) {
     if (!enabled || !isZone || !scene?.isScene || window.THREE == null) return null;
     stats.frames++;
     stats.moving = 0;
+    stats.sources = stats.batches = stats.drawsSaved = 0;
     for (const key of Object.keys(rejectReasons)) delete rejectReasons[key];
     const t = now();
     // World matrices are last render's (no extra scene-wide update): a prop that starts moving this frame is drawn one frame
@@ -434,7 +586,7 @@
     const groups = new Map();
     if (!collect(scene, record, t, groups)) {
       if (record.batches.size) markBatchMembershipChanged(scene); // Deleted candidate meshes must leave the culler list too.
-      for (const batch of record.batches.values()) { record.holder.remove(batch.mesh); batch.mesh.geometry.dispose(); }
+      for (const batch of record.batches.values()) { record.holder.remove(batch.mesh); disposeBatch(batch); }
       record.batches.clear();
       return null;
     }
@@ -442,7 +594,7 @@
     for (const [key, batch] of record.batches) {
       if ((groups.get(key)?.members.length || 0) >= 2) continue;
       record.holder.remove(batch.mesh);
-      batch.mesh.geometry.dispose(); // The material belongs to the props.
+      disposeBatch(batch); // Never dispose a source material or its shared texture.
       record.batches.delete(key);
       markBatchMembershipChanged(scene);
     }
@@ -475,6 +627,6 @@
   window.ZonePropRenderBatches = {
     suspendForRender,
     setEnabled,
-    snapshot: () => ({ enabled, cellTiles: CELL_TILES, stillMs: STILL_MS, stableCollectMs: STABLE_COLLECT_MS, ...stats, rejectReasons: { ...rejectReasons } }),
+    snapshot: () => ({ enabled, cellTiles: CELL_TILES, stillMs: STILL_MS, stableCollectMs: STABLE_COLLECT_MS, ...stats, furnitureAlphaProofPending: furnitureProofQueue.length, rejectReasons: { ...rejectReasons } }),
   };
 })();
