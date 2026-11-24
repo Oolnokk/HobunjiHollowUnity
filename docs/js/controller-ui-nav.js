@@ -1075,7 +1075,11 @@
         refresh = true;
       }
       if (!root || !isVisible(root)) { if (menuCategoryBar) menuCategoryBar.hidden = true; return; }
-      if (!refresh && !menuPagesDirty && menuPageLeaf) return; // Ordinary focus updates do not query category labels or rebuild DOM.
+      if (!refresh && !menuPagesDirty && menuPageLeaf) {
+        // A briefly hidden pane can become visible again without changing its identity.
+        if (menuCategoryBar?.hidden && menuPageOwners.length) renderMenuCategoryBar(panel);
+        return; // Ordinary focus updates do not query category labels or rebuild DOM.
+      }
       refresh = refresh || menuPagesDirty;
       if (refresh) watchMenuPanes(panel); // Register newly authored sections even if activation consumed the dirty flag first.
       menuPagesDirty = false;
@@ -1494,8 +1498,16 @@
     const panel = activePanel(); // A target-less panel retries only when its own content changes, not on every HUD text update.
     if (panel?.id === 'menuPanel') {
       const sectionBoundary = node => node?.nodeType === 1 && (node.matches?.(SUBTAB_SELECTOR) || node.querySelector?.(SUBTAB_SELECTOR));
+      // An initially empty authored section can acquire its first real control without replacing its wrapper.
+      const knownSections = new Set(menuPageOwners.flatMap(owner => subtabsByGroup.get(owner)?.sections || []));
+      const fillsUndiscoveredSection = record => {
+        const target = record.target.nodeType === 1 ? record.target : record.target.parentElement;
+        const section = target?.closest?.(SUBTAB_SELECTOR);
+        if (!section || knownSections.has(section) || section === menuPageLeaf || section.closest('.ctrl-nav-subtab-hidden')) return false;
+        return record.addedNodes.length > 0 && !nodeHidesSubtree(section); // Hidden permission-gated wrappers refresh through attribute observers.
+      };
       // Do not unhide every page and force layout for ordinary inventory rows, labels, or detail updates.
-      if (records.some(record => panel.contains(record.target) && !menuCategoryBar?.contains(record.target) && (Array.from(record.addedNodes || []).some(sectionBoundary) || Array.from(record.removedNodes || []).some(sectionBoundary) || (!menuPageRoot && record.target.closest?.('.mp-pane'))))) menuPagesDirty = true;
+      if (records.some(record => panel.contains(record.target) && !menuCategoryBar?.contains(record.target) && (Array.from(record.addedNodes || []).some(sectionBoundary) || Array.from(record.removedNodes || []).some(sectionBoundary) || fillsUndiscoveredSection(record) || (!menuPageRoot && record.target.closest?.('.mp-pane'))))) menuPagesDirty = true;
     }
     // Selecting an item rebuilds its detail panel (name, tags, action buttons). Those controls are read
     // fresh by every directional press, and a vanished focus target still reconciles via isConnected
@@ -1515,7 +1527,7 @@
   }); // Major-tab and Pack/Gear changes only; ignore focus/highlight class churn.
   const menuSectionWatcher = new MutationObserver(records => {
     if (activePanel()?.id !== 'menuPanel') return; // Hidden menus are refreshed when opened, never while gameplay is active.
-    if (records.some(record => record.type === 'attributes')) { menuPagesDirty = true; scheduleReconcile(); }
+    if (records.some(record => record.type === 'attributes' && (record.attributeName !== 'data-dev-mode' || record.target === document.body))) { menuPagesDirty = true; scheduleReconcile(); }
   }); // Hidden/permission changes can add or remove a category without replacing its DOM.
   const watchedMenuSections = new WeakSet(); // Watch authored boundaries only, never per-item class/style changes.
   const watchedMenuPanes = new WeakSet(); // Register each actual pane once without a document-wide class observer.
@@ -1530,7 +1542,7 @@
       for (let node = section; node && node !== panel && !node.matches('.mp-pane'); node = node.parentElement) {
         if (watchedMenuSections.has(node)) continue;
         watchedMenuSections.add(node);
-        menuSectionWatcher.observe(node, { attributes: true, attributeFilter: ['hidden', 'aria-hidden', 'style'] });
+        menuSectionWatcher.observe(node, { attributes: true, attributeFilter: ['hidden', 'aria-hidden', 'style', 'data-dev-only'] });
       }
     }
   }
@@ -1546,6 +1558,7 @@
   }
   function startObserving() {
     structuralObserver.observe(document.body, { childList: true, subtree: true });
+    menuSectionWatcher.observe(document.body, { attributes: true, attributeFilter: ['data-dev-mode'] }); // CSS gates developer-only Settings from this single attribute.
     document.body.addEventListener('transitionend', (event) => {
       if (event.target?.matches?.(PANEL_SELECTOR)) scheduleReconcile();
     }, true);
