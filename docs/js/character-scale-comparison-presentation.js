@@ -66,15 +66,17 @@
   }
 
   function portraitScaleFor(identity) {
-    const profileScale = Number(profileFor(identity)?.anatomy?.portraitScale); // Preferred because the preview copies this exact authored multiplier into PNGPlaneAvatar.
-    if (Number.isFinite(profileScale) && profileScale > EPSILON) return profileScale;
+    const comparison = comparisonApi();
+    const rendered = Number(comparison?.selectedKey === identity?.key ? comparison?.selectedPortraitScaleMultiplier : null); // The real skinned portrait records the multiplier used during its build.
+    if (Number.isFinite(rendered) && rendered > EPSILON) return rendered; // Match the guard and renderer even if an authored profile was normalized through a donor or alias.
     try {
-      return finitePositive(window.PNGPlaneAvatar?.avatarScaleMultiplierFor?.({
+      const effective = Number(window.PNGPlaneAvatar?.avatarScaleMultiplierFor?.({
         appearance: { speciesId: identity?.species, gender: identity?.gender },
-      }), 1);
-    } catch (_) {
-      return 1;
-    }
+      }));
+      if (Number.isFinite(effective) && effective > EPSILON) return effective;
+    } catch (_) { /* May run before the portrait renderer installs its config bridge. */ }
+    const profileScale = Number(profileFor(identity)?.anatomy?.portraitScale);
+    return Number.isFinite(profileScale) && profileScale > EPSILON ? profileScale : 1;
   }
 
   function runtimeScaleFor(identity) {
@@ -208,14 +210,18 @@ body[data-animation-author-mode="${MODE}"] #${HEAD_NUMBER_ID}{min-width:0;width:
     const bounds = rawHeadBounds(portrait);
     const clampedRaw = clamp(Number(rawPercent), bounds.min, bounds.max);
     const runtimeHead = clamp(runtimeHeadPercentFromRaw(clampedRaw, portrait) / 100, MIN_RUNTIME_HEAD, MAX_RUNTIME_HEAD);
-    profile.anatomy ||= {};
-    profile.anatomy.headScale = runtimeHead;
+    const shared = window.HobunjiFullScaleBodyInputGuard; // Same host persistence and active-preview update as every other Full Character Scale slider.
+    const committed = shared?.applyScaleField?.('head', clampedRaw);
+    if (!committed) {
+      profile.anatomy ||= {};
+      profile.anatomy.headScale = runtimeHead; // Compatibility fallback for older Animation Author bootstraps without the input guard.
+    }
 
     const scale = runtimeScaleFor(identity); // Uses current authored body X/Y so the head remains aspect-correct under non-uniform body scale.
     const joint = headScaleJointFor(previewGroupFor(identity));
-    if (comparisonApi()?.refreshSelectedPreview) {
-      comparisonApi().refreshSelectedPreview(); // Preserve the selected baby/toddler/child global proportions when Head (raw PNG) changes.
-    } else if (joint?.scale?.set) {
+    if (!committed && comparisonApi()?.refreshSelectedPreview) {
+      comparisonApi().refreshSelectedPreview(); // Guard already updates the preview; fallback must preserve the selected age stage.
+    } else if (!committed && joint?.scale?.set) {
       joint.scale.set(scale.head / scale.x, scale.head / scale.y, 1);
       joint.updateMatrix?.();
       joint.updateMatrixWorld?.(true);
