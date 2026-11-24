@@ -395,6 +395,10 @@ async function main() {
   assert.deepEqual(quadMoved[5], {x: 0.1, y: -0.2}, 'the dragged corner moves by the full delta');
   assert.deepEqual(quadMoved[30], {x: 0, y: 0}, 'the opposite corner stays put');
   assert(Math.abs(quadMoved[14].x - 0.1 * 0.4 * 0.6) < 1e-12, 'interior nodes follow with bilinear falloff');
+  // The quad sits on the item's bounding box: nodes beyond the box follow its nearest edge.
+  const boxMoved = quadApi.applyQuadCornerDelta(zero36, 0, 0.1, 0, {u0: 0.4, v0: 0.4, u1: 0.6, v1: 0.6});
+  assert.equal(boxMoved[0].x, 0.1, 'nodes beyond the top-left of the box move fully with the top-left corner');
+  assert.equal(boxMoved[35].x, 0, 'nodes beyond the opposite corner stay put');
   const stacked = quadApi.applyQuadCornerDelta(quadMoved, 2, 0, 0.1);
   assert.equal(stacked[5].x, 0.1, 'corner edits stack instead of resetting earlier deformation');
 

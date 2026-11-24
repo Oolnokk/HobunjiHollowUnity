@@ -500,7 +500,7 @@ function wireMaskPair(slider,number,field){
 }
 
 function exportGrids(){
-  const payload={version:4,gridSize:GRID_SIZE,exportedAt:new Date().toISOString(),repoBase:base(),baseTransforms:A.baseTransforms,localOffsets:A.localOffsets,maskPreviewTransforms:A.maskPreviewTransforms,contourFits:A.contourFits,headbandSplines:A.headbandSplines};
+  const payload={version:4,gridSize:GRID_SIZE,exportedAt:new Date().toISOString(),repoBase:base(),baseTransforms:A.baseTransforms,localOffsets:A.localOffsets,maskPreviewTransforms:A.maskPreviewTransforms,contourFits:A.contourFits,headbandSplines:A.headbandSplines,holeDeforms:A.holeDeforms||{},recipes:A.recipes||{}}; // Hood-hole edits and saved recipes travel with the grid export.
   const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');
   a.href=url;a.download='hobunji_6x6_species_clothing_headwear_transforms.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
 }

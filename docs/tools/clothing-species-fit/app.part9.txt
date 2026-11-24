@@ -231,13 +231,13 @@ function render(scheduleRig=true){
 
   if(fitRegion()==='body'&&(mode==='protect'||(R.cloth&&R.sourceTorso&&R.targetTorso&&currentContourRecord().enabled)))paintContourOverlay(C);
   if(mode==='headband'&&fitRegion()==='headwear')drawHeadbandOverlay(C);
-  if(E.showMeshes.checked&&mode!=='protect'&&mode!=='headband'&&mode!=='rear-paint'){
+  if(E.showMeshes.checked&&['transform','body','fit'].includes(mode)){ // The grid only shows while it is being edited.
     drawGrid(C,SOURCE_GRID,'#ffb84a',false); // Fixed normalized starting-species source.
     drawGrid(C,transformedSourceGrid(),'#65d48a',mode==='transform'); // Recorded scale + translation.
     if(mode!=='transform')drawGrid(C,targetGrid(),'#45c3ff',mode!=='preview'&&mode!=='quad'); // Base transform plus local fit.
-    if(mode==='quad')drawQuadHandles(C); // Four draggable corners of the fitted grid.
   }
 
+  if(mode==='quad')drawQuadHandles(C); // Just the quad: a plain outline with four square corner handles, no grid.
   if(mode==='hole'&&fitRegion()==='headwear')drawHoleOverlay(C); // Detected opening rim, outer outline and the opening's quad handles (independent of the grid toggle).
   E.label.textContent=(fitRegion()==='headwear'?'HEADWEAR • ':'BODY • ')+
     (mode==='transform'
