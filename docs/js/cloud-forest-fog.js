@@ -988,9 +988,11 @@
   const KANTHIC_LIGHT_UPLOAD_PIXELS=524288; // Bound mobile canvas-to-GPU transfers to 2 MiB of RGBA per new lighting paint.
   const kanthicClipPlanes=[]; // World-space clipping planes for the occupied region, rebuilt only on transition.
   const kanthicMaterialStates=new Map(); // Restore borrowed materials' clipping state after the auxiliary draw.
+  const kanthicPendingAtlases=new WeakSet(); // Async engraving atlas promises invalidate discovery once, without a per-frame scene traversal.
+  let kanthicFrustum=null,kanthicFrustumMatrix=null,kanthicLightingPrepared=false; // Scratch camera cull and pre-world lighting readiness.
   const ruinGlowSource={x:0,y:0,z:0}; // Legacy Hronal/Tothal radial light source.
   const ruinGlowStats={found:0,drawn:0,triangles:0,examined:0,scans:0,region:null,roomCandidates:0,depthPasses:0,textureUploads:0,uploadPixels:0,lastError:null};
-  let ruinGlowScene=null,ruinGlowNextScan=0,ruinGlowMeshes=[]; // Shared scene cache for late-loading atlas meshes.
+  let ruinGlowScene=null,ruinGlowNextScan=0,ruinGlowMeshes=[],kanthicIndexedScene=null; // Discovery follows scene/room lifecycle and delayed atlases.
   let kanthicRecords=[],kanthicActiveRecords=[],kanthicRegion=null,kanthicRegionBounds=null,kanthicFrame=false; // Room-local GPU candidates, rebuilt only on region change or discovery.
   let kanthicProxyScene=null,kanthicQuadScene=null,kanthicQuadCamera=null,kanthicTexture=null; // Borrowed geometry/materials and one reusable darkness quad.
   let kanthicCanvas=null,kanthicCanvasVisibility='',kanthicUploadAt=-Infinity,kanthicWidth=0,kanthicHeight=0,kanthicUploadCanvas=null; // Restore the DOM darkness canvas on exit and upload only new paints.
@@ -1034,9 +1036,17 @@
   function scanRuinGlowMeshes(scene,now,force=false){
     if(!scene?.traverse)return false;
     if(!force&&ruinGlowScene===scene&&now<ruinGlowNextScan)return false;
-    ruinGlowScene=scene;ruinGlowNextScan=now+1600;ruinGlowMeshes=[];
+    const kanthic=isKanthicGlyphArea();
+    ruinGlowScene=scene;ruinGlowNextScan=now+(kanthic?5000:1600);ruinGlowMeshes=[]; // Slow safety net for live rule edits; atlas completion and room registration invalidate sooner.
     scene.traverse(node=>{
-      if(node.isMesh&&(node.name==='engraving-glyph-glow'||node.userData?.ruinLadderRuneGlow))ruinGlowMeshes.push(node);
+      if(node.isMesh&&(node.name==='engraving-glyph-glow'||node.userData?.ruinLadderRuneGlow)){ruinGlowMeshes.push(node);return;}
+      const pending=node.userData?.patternReady;
+      if(kanthic&&node.userData?.furniturePattern?.mode==='engraving'&&!node.userData?.engravingGlowMesh
+        &&pending?.then&&!kanthicPendingAtlases.has(pending)){
+        kanthicPendingAtlases.add(pending);
+        const invalidate=()=>{if(ruinGlowScene===scene)ruinGlowNextScan=0;};
+        pending.then(invalidate,invalidate); // Coalesces late PNG atlas readiness into the next frame's discovery.
+      }
     });
     ruinGlowStats.found=ruinGlowMeshes.length;ruinGlowStats.scans++;
     return true;
@@ -1055,19 +1065,21 @@
     if(kanthicQuadScene)kanthicQuadScene.children[0].material.uniforms.tLighting.value=null;
     ruinGlowStats.uploadPixels=0;
     if(kanthicProxyScene)for(let i=kanthicProxyScene.children.length-1;i>=0;i--)kanthicProxyScene.remove(kanthicProxyScene.children[i]);
-    ruinGlowScene=null;ruinGlowMeshes=[];ruinGlowNextScan=0;
+    ruinGlowScene=null;ruinGlowMeshes=[];ruinGlowNextScan=0;kanthicIndexedScene=null;kanthicLightingPrepared=false;
     ruinGlowStats.found=ruinGlowStats.drawn=ruinGlowStats.roomCandidates=0;ruinGlowStats.region=null;
   }
-  function prepareKanthicGlyphFrame(scene,now){
+  function prepareKanthicGlyphFrame(scene,now,camera){
+    kanthicLightingPrepared=false;
     if(!isKanthicGlyphArea()||!scene?.traverse){
-      if(kanthicRecords.length||kanthicCanvas||kanthicRegion!==null)resetKanthicGlyphCache();
+      if(kanthicIndexedScene||kanthicRecords.length||kanthicCanvas||kanthicRegion!==null)resetKanthicGlyphCache();
       return false;
     }
     const system=window.RuinRoomSystem;
     const region=system?.activeGlyphRegion?.()||null; // One occupied chamber or the shared vertical shaft, never all unassigned corridors.
     const bounds=region?system?.glyphRegionBounds?.(region):null;
     const changed=region!==kanthicRegion||bounds!==kanthicRegionBounds;
-    const scanned=scanRuinGlowMeshes(scene,now);
+    const scanned=scanRuinGlowMeshes(scene,now,kanthicIndexedScene!==scene);
+    kanthicIndexedScene=scene;
     if(scanned){
       kanthicRecords=ruinGlowMeshes.map(mesh=>({mesh,bounds:glyphBounds(mesh),hidden:false,proxy:null}));
     }
@@ -1091,10 +1103,20 @@
     ruinGlowStats.region=region;ruinGlowStats.roomCandidates=kanthicActiveRecords.length;
     ruinGlowStats.drawn=0;ruinGlowStats.examined=0;ruinGlowStats.triangles=0;
     kanthicFrame=true; // endKanthicGlyphFrame restores the actual scene's visibility even if rendering fails.
+    const THREE=window.THREE;
+    const cull=!!(camera?.isCamera&&THREE.Frustum&&THREE.Matrix4);
+    if(cull){
+      kanthicFrustum||=new THREE.Frustum();kanthicFrustumMatrix||=new THREE.Matrix4();
+      camera.updateWorldMatrix?.(true,false);
+      kanthicFrustum.setFromProjectionMatrix(kanthicFrustumMatrix.multiplyMatrices(camera.projectionMatrix,camera.matrixWorldInverse));
+    }
     for(const record of kanthicActiveRecords){
       const mesh=record.mesh,proxy=record.proxy;
       proxy.visible=glyphAttachedAndVisible(mesh,scene)&&!!mesh.material?.map&&mesh.material.visible!==false;
-      if(proxy.visible)mesh.updateWorldMatrix?.(true,false); // Moving slabs keep current transforms; tall shaft panels are not rejected by center height.
+      if(proxy.visible){
+        mesh.updateWorldMatrix?.(true,false); // Moving slabs keep their current transforms.
+        if(cull&&!kanthicFrustum.intersectsObject(mesh))proxy.visible=false; // Avoid a fullscreen lighting upload and draw when no active glyph is in view.
+      }
       if(!proxy.visible)continue;
       proxy.geometry=mesh.geometry;proxy.material=mesh.material;proxy.renderOrder=mesh.renderOrder;
       proxy.matrix.copy(mesh.matrixWorld);proxy.matrixWorldNeedsUpdate=true;
@@ -1105,13 +1127,25 @@
       if(record.hidden)record.mesh.visible=false; // No base-pass emissive draw, including every off-room glyph.
     }
     if(kanthicProxyScene)kanthicProxyScene.fog=scene.fog;
-    if(!ruinGlowStats.drawn||Number(lightingDeps.getSceneTransAlpha?.())>0)restoreKanthicCanvas();
+    if(!ruinGlowStats.drawn||Number(lightingDeps.getSceneTransAlpha?.())>0){restoreKanthicCanvas();return true;}
+    const canvas=lightingDeps.lctx?.canvas;
+    if(!canvas?.style||!canvas.width||!canvas.height){restoreKanthicCanvas();return true;}
+    try{
+      if(kanthicWidth!==canvas.width||kanthicHeight!==canvas.height){
+        lastUnifiedLightingDraw=-Infinity;kanthicUploadAt=-Infinity;
+      }
+      // Surface recovery can dispatch a resize or switch the renderer target.
+      // Paint before mainRT/base rendering, NEVER while its world depth is bound.
+      window.WeatherFX?.drawLightingOverlay?.();
+      kanthicWidth=canvas.width;kanthicHeight=canvas.height;
+      kanthicLightingPrepared=true;
+    }catch(error){ruinGlowStats.lastError=String(error?.message||error);restoreKanthicCanvas();}
     return true;
   }
   function endKanthicGlyphFrame(){
     if(!kanthicFrame)return;
     for(const record of kanthicRecords)if(record.hidden){record.mesh.visible=true;record.hidden=false;}
-    kanthicFrame=false;
+    kanthicFrame=false;kanthicLightingPrepared=false;
   }
   function boundedKanthicTextureSource(canvas){
     const pixels=canvas.width*canvas.height;
@@ -1124,17 +1158,13 @@
     return kanthicUploadCanvas;
   }
   function renderKanthicGlyphFrame(renderer,camera,scene,direct=false){
-    if(!kanthicFrame||!ruinGlowStats.drawn||Number(lightingDeps.getSceneTransAlpha?.())>0)return false;
+    if(!kanthicFrame||!kanthicLightingPrepared||!ruinGlowStats.drawn||Number(lightingDeps.getSceneTransAlpha?.())>0){restoreKanthicCanvas();return false;}
     const canvas=lightingDeps.lctx?.canvas;
     if(!canvas?.style||!canvas.width||!canvas.height){restoreKanthicCanvas();return false;}
     const THREE=window.THREE;
-    const oldAutoClear=renderer.autoClear,oldMask=camera.layers.mask,oldClipping=renderer.localClippingEnabled; // Existing target and depth buffer stay bound for both draws.
+    const oldAutoClear=renderer.autoClear,oldClearColor=renderer.autoClearColor,oldClearDepth=renderer.autoClearDepth,oldClearStencil=renderer.autoClearStencil,oldMask=camera.layers.mask,oldClipping=renderer.localClippingEnabled; // Existing target and depth buffer stay bound for both draws.
     let painted=false;
     try{
-      if(kanthicWidth!==canvas.width||kanthicHeight!==canvas.height){
-        kanthicWidth=canvas.width;kanthicHeight=canvas.height;lastUnifiedLightingDraw=-Infinity;kanthicUploadAt=-Infinity;
-      }
-      drawUnifiedLightingOverlay(); // Reuse the normal throttled light paint, including lanterns, checkpoints and fog tint.
       const uploadSource=boundedKanthicTextureSource(canvas);
       if(!kanthicTexture||kanthicTexture.image!==uploadSource){
         kanthicTexture?.dispose?.();
@@ -1161,7 +1191,7 @@
         kanthicTexture.needsUpdate=true;kanthicUploadAt=unifiedLightingPaintRevision;ruinGlowStats.textureUploads++;
         ruinGlowStats.uploadPixels=uploadSource.width*uploadSource.height;
       }
-      renderer.autoClear=false; // Never clear world depth or stencil.
+      renderer.autoClear=false;renderer.autoClearColor=false;renderer.autoClearDepth=false;renderer.autoClearStencil=false; // THREE's Color background can force a clear despite autoClear=false.
       if(direct)window.PngPlaneOutlineOccluder?.renderDepth?.(scene); // The outlines-off path also respects alpha-cutout actors/props.
       renderer.render(kanthicQuadScene,kanthicQuadCamera);
       painted=true;
@@ -1182,7 +1212,7 @@
     }finally{
       for(const [material,state] of kanthicMaterialStates){material.clippingPlanes=state.planes;material.clipIntersection=state.intersection;}
       kanthicMaterialStates.clear();renderer.localClippingEnabled=oldClipping;
-      renderer.autoClear=oldAutoClear;camera.layers.mask=oldMask;
+      renderer.autoClear=oldAutoClear;renderer.autoClearColor=oldClearColor;renderer.autoClearDepth=oldClearDepth;renderer.autoClearStencil=oldClearStencil;camera.layers.mask=oldMask;
       if(painted){
         if(kanthicCanvas!==canvas){restoreKanthicCanvas();kanthicCanvas=canvas;kanthicCanvasVisibility=canvas.style.visibility||'';}
         if(canvas.style.visibility!=='hidden')canvas.style.visibility='hidden'; // The GPU already composited this exact canvas; never double-darken.

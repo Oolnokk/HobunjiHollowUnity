@@ -548,7 +548,7 @@
       occlusionFrame.renderer = renderer; occlusionFrame.camera = camera; occlusionFrame.scene = activeScene;
       occlusionFrame.walkers = deps.npcWalkers; occlusionFrame.hostiles = deps.hostileObjects; occlusionFrame.area = area;
       window.ActorRenderOcclusion?.beginFrame?.(occlusionFrame);
-      window.CloudForestFog?.prepareKanthicGlyphFrame?.(activeScene,now); // Hide base-pass glow; only the occupied region receives depth-tested emission.
+      window.CloudForestFog?.prepareKanthicGlyphFrame?.(activeScene,now,camera); // Hide base-pass glow; only the occupied region receives depth-tested emission.
       if (outlines) renderOutlinedPasses(renderer, camera, activeScene, seamOn, area);
       else renderDirectPasses(renderer, camera, activeScene, area);
     } finally {

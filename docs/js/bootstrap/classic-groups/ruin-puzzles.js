@@ -8,7 +8,7 @@
     "js/ruin-melody-glyph-decal.js?v=20261114ruinCaveParity1",
     "js/ruin-layer-challenges.js?v=20261123h5c3f01e",
     "js/ruin-hidden-secrets.js?v=20261122h5fef1bb",
-    "js/ruin-room-system.js?v=20261124kanthicAudit3",
+    "js/ruin-room-system.js?v=20261124kanthicAudit4",
     "js/ruin-layer-playable.js?v=20261124kanthicAudit3",
     "js/ruin-v50-native-mechanisms.js?v=20261122hbc5c6e2",
     "js/ruin-v50-native-floors.js?v=20261116ruinFloorXray2",

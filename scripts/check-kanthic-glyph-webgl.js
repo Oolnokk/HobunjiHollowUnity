@@ -10,15 +10,17 @@ const {chromium}=require('playwright');
     await page.setContent('<html><body></body></html>');
     await page.addScriptTag({path:require.resolve('three/build/three.min.js')});
     const source=fs.readFileSync('docs/js/cloud-forest-fog.js','utf8').replace('  function ordinaryBuildingInterior(area) {',
-      '  window.__glyphTest=(deps,paint)=>{lightingDeps=deps;drawUnifiedLightingOverlay=()=>{paint();unifiedLightingPaintRevision++;};};\n  function ordinaryBuildingInterior(area) {');
+      '  window.__glyphTest=(deps,paint)=>{lightingDeps=deps;drawUnifiedLightingOverlay=()=>{paint();unifiedLightingPaintRevision++;};window.WeatherFX.drawLightingOverlay=drawUnifiedLightingOverlay;};\n  function ordinaryBuildingInterior(area) {');
     await page.evaluate(()=>{window.WeatherFX={init(){}};window.DevRandomRuinLichThemes={activeTheme:()=>'kanthic'};});
     await page.addScriptTag({content:source});
+    await page.addScriptTag({path:require('node:path').resolve('docs/js/png-plane-outline-occluder.js')});
     const results=await page.evaluate(()=>{
       const T=THREE,api=CloudForestFog;
       const renderer=new T.WebGLRenderer({antialias:false,preserveDrawingBuffer:true});
       renderer.setSize(128,128,false);document.body.appendChild(renderer.domElement);
       const camera=new T.OrthographicCamera(-2,2,2,-2,.1,20);camera.position.z=6;camera.lookAt(0,0,0);
       const scene=new T.Scene();scene.background=new T.Color(0x303030);
+      PngPlaneOutlineOccluder.init({renderer,camera});
       const wall=new T.Mesh(new T.PlaneGeometry(4,4),new T.MeshBasicMaterial({color:0x404040}));scene.add(wall);
       const textureCanvas=document.createElement('canvas');textureCanvas.width=textureCanvas.height=4;
       const tx=textureCanvas.getContext('2d');tx.fillStyle='white';tx.fillRect(0,0,4,4);
@@ -37,17 +39,24 @@ const {chromium}=require('playwright');
         api.prepareKanthicGlyphFrame(scene,clock+=20,camera);
         try{
           renderer.render(scene,camera);
+          if(!direct){renderer.autoClear=false;renderer.autoClearColor=false;renderer.autoClearDepth=false;renderer.autoClearStencil=false;PngPlaneOutlineOccluder.renderDepth(scene);renderer.autoClear=true;renderer.autoClearColor=true;renderer.autoClearDepth=true;renderer.autoClearStencil=true;}
           if(!api.renderKanthicGlyphFrame(renderer,camera,scene,direct))throw Error(JSON.stringify(api.getDebugState().ruinEngravingGlowMasks));
           function pixel(x){const a=new Uint8Array(4);if(target)renderer.readRenderTargetPixels(target,x,64,1,1,a);else renderer.getContext().readPixels(x,64,1,1,renderer.getContext().RGBA,renderer.getContext().UNSIGNED_BYTE,a);return [...a];}
-          return {left:pixel(16),covered:pixel(48),right:pixel(112),diag:api.getDebugState().ruinEngravingGlowMasks};
+          return {left:pixel(16),covered:pixel(48),right:pixel(112),spriteOpaque:pixel(19),spriteTransparent:pixel(32),diag:api.getDebugState().ruinEngravingGlowMasks};
         }finally{api.endKanthicGlyphFrame();}
       }
       const a=frame(false),b=frame(true);region='room:b';const c=frame(false);
       region='room:a';obstacle.visible=false;const d=frame(false);
+      obstacle.visible=true;
+      const actorTextureCanvas=document.createElement('canvas');actorTextureCanvas.width=actorTextureCanvas.height=16;
+      const actorContext=actorTextureCanvas.getContext('2d');actorContext.fillStyle='#404040';actorContext.fillRect(0,0,8,16);
+      const actorTexture=new T.CanvasTexture(actorTextureCanvas);actorTexture.minFilter=actorTexture.magFilter=T.NearestFilter;actorTexture.generateMipmaps=false;
+      const actor=new T.Mesh(new T.PlaneGeometry(.8,4),new T.MeshBasicMaterial({map:actorTexture,transparent:true,alphaTest:.1,depthWrite:false,depthTest:true,side:T.DoubleSide}));actor.position.set(-1.2,0,1.5);scene.add(actor);PngPlaneOutlineOccluder.markPngPlane(actor);
+      const spriteTarget=frame(false),spriteDirect=frame(true);
       region=null;api.prepareKanthicGlyphFrame(scene,clock+=20,camera);api.endKanthicGlyphFrame();
       const restored=canvas.style.visibility===''&&glyph.visible&&glyph.material.clippingPlanes===null&&renderer.localClippingEnabled===false;
       rt.dispose();renderer.dispose();
-      return {a,b,c,d,restored};
+      return {a,b,c,d,spriteTarget,spriteDirect,restored};
     });
     for(const x of [results.a,results.b]){
       assert(x.left[1]>150,'unoccluded active-room glyph is bright: '+JSON.stringify(x));
@@ -57,6 +66,11 @@ const {chromium}=require('playwright');
     }
     assert(results.c.left[1]<25&&results.c.right[1]>150,'switching rooms reverses only the occupied portion of the same panel');
     assert(results.d.covered[1]>150,'removing the occluder restores the actual hidden rune pixels');
+    for(const x of [results.spriteTarget,results.spriteDirect]){
+      assert(x.spriteOpaque[1]<25,'opaque alpha-tested actor pixels block glyphs: '+JSON.stringify(x));
+      assert(x.spriteTransparent[1]>150,'transparent actor texels retain visible wall glyphs: '+JSON.stringify(x));
+      assert(x.covered[1]<25,'sprite replay with a colored scene background must not clear the preexisting wall depth: '+JSON.stringify(x));
+    }
     assert(results.restored,'DOM canvas, source visibility, material clipping and renderer state restore');
     assert.deepEqual(errors,[],'no WebGL or page errors');
     console.log('Kanthic real WebGL: target/direct partial occlusion, room clipping, bounded upload and cleanup OK');

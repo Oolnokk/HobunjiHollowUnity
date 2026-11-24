@@ -4,7 +4,7 @@ const fs=require('node:fs');
 const vm=require('node:vm');
 const source=fs.readFileSync('docs/js/cloud-forest-fog.js','utf8');
 const fog=source.replace('  function ordinaryBuildingInterior(area) {',
-  '  window.__glyphTest=(deps,paint)=>{lightingDeps=deps;drawUnifiedLightingOverlay=()=>{paint();lastUnifiedLightingDraw=123;unifiedLightingPaintRevision=1;};};\n  function ordinaryBuildingInterior(area) {');
+  '  window.__glyphTest=(deps,paint)=>{lightingDeps=deps;drawUnifiedLightingOverlay=()=>{paint();lastUnifiedLightingDraw=123;unifiedLightingPaintRevision=1;};window.WeatherFX.drawLightingOverlay=drawUnifiedLightingOverlay;};\n  function ordinaryBuildingInterior(area) {');
 assert.notEqual(fog,source);
 class Vec{
   constructor(x=0,y=0,z=0){this.set(x,y,z);}
@@ -46,15 +46,17 @@ function glyph(x,y=1,halfWidth=1,halfHeight=1){
 const scene=new Scene(),a=glyph(1),b=glyph(7),shaft=glyph(12),high=glyph(13,20),broad=glyph(5,1,3);
 const ladder=glyph(2);ladder.name='ladder';ladder.userData={ruinLadderRuneGlow:true};
 for(const mesh of [a,b,shaft,high,ladder,broad])scene.add(mesh);
-const calls=[],camera=new Camera(),renderer={autoClear:true,localClippingEnabled:false,render(s,c){assert.equal(this.autoClear,false,'preserve world depth for both draws');assert.equal(c.layers.mask,1<<7,'auxiliary passes never trigger the base-world x-ray replay');const visible=s.children.filter(o=>o.visible);if(s.name==='kanthic_room_glyph_depth'){assert.equal(this.localClippingEnabled,true);assert(visible.every(o=>o.material.clippingPlanes.length>=4));}calls.push(visible);}};
+const calls=[],camera=new Camera(),renderer={autoClear:true,autoClearColor:true,autoClearDepth:true,autoClearStencil:true,localClippingEnabled:false,render(s,c){assert.equal(this.autoClear,false,'preserve world depth for both draws');assert.equal(this.autoClearDepth,false,'Color backgrounds must not force depth clears');assert.equal(this.autoClearColor,false);assert.equal(this.autoClearStencil,false);assert.equal(c.layers.mask,1<<7,'auxiliary passes never trigger the base-world x-ray replay');const visible=s.children.filter(o=>o.visible);if(s.name==='kanthic_room_glyph_depth'){assert.equal(this.localClippingEnabled,true);assert(visible.every(o=>o.material.clippingPlanes.length>=4));}calls.push(visible);}};
 function frame(now,direct=false){
   calls.length=0;
   assert.equal(api.prepareKanthicGlyphFrame(scene,now),true);
   assert([a,b,shaft,high,ladder,broad].every(m=>!m.visible),'off-room glow and duplicate base-pass glow sleep');
+  const beforeRenderPaints=paintCount;
   const result=api.renderKanthicGlyphFrame(renderer,camera,scene,direct);
+  assert.equal(paintCount,beforeRenderPaints,'lighting and potential surface repair must finish before the world depth is bound');
   api.endKanthicGlyphFrame();
   assert([a,b,shaft,high,ladder,broad].every(m=>m.visible),'render-only visibility restores');
-  assert.equal(renderer.autoClear,true);assert.equal(renderer.localClippingEnabled,false);assert.equal(camera.layers.mask,0xffffffff,'camera mask restores');
+  assert.equal(renderer.autoClear,true);assert.equal(renderer.autoClearDepth,true);assert.equal(renderer.autoClearColor,true);assert.equal(renderer.autoClearStencil,true);assert.equal(renderer.localClippingEnabled,false);assert.equal(camera.layers.mask,0xffffffff,'camera mask restores');
   assert([a,b,shaft,high,ladder,broad].every(m=>m.material.clippingPlanes===undefined),'borrowed materials restored');
   return result;
 }
@@ -95,7 +97,7 @@ py=0;assert.equal(rooms.activeGlyphRegion(),'shaft','the vertical shaft is one r
 player={x:7,z:7};assert.equal(rooms.activeGlyphRegion(),null,'unassigned corridors are not the shaft');
 session.dispose();assert.equal(rooms.activeGlyphRegion(),null);assert.equal(rooms.glyphRegionBounds('shaft'),null);
 const pipeline=fs.readFileSync('docs/js/world-render-pipeline.js','utf8');
-assert(pipeline.includes('prepareKanthicGlyphFrame?.(activeScene,now)'));
+assert(pipeline.includes('prepareKanthicGlyphFrame?.(activeScene,now,camera)'));
 assert(pipeline.includes('endKanthicGlyphFrame?.()'));
 assert.equal((pipeline.match(/renderKanthicGlyphFrame\?\.\(/g)||[]).length,2,'both outline paths share the depth pass');
 assert(!source.includes('ruinGlowRaycaster')&&!source.includes('drawRuinGlyphSilhouette'),'remove the expensive and inaccurate Canvas2D glyph reconstruction');

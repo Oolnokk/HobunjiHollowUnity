@@ -254,7 +254,6 @@
       }
       glyphBounds.set('room:'+room.id,{minX:room.x-.16,maxX:room.x+room.w+.16,minZ:room.z-.16,maxZ:room.z+room.d+.16,minY:low-.65,maxY:high+WALL_HEIGHT+1});
     }
-    for(const room of rooms)registerGlyphBounds(room);
     if(shaft)glyphBounds.set('shaft',{minX:shaft.x-.16,maxX:shaft.x+shaft.w+.16,minZ:shaft.z-.16,maxZ:shaft.z+shaft.d+.16,minY:-Infinity,maxY:Infinity});
     function glyphRegionAt(x,y,z){
       if(![x,y,z].every(Number.isFinite))return null;
@@ -329,7 +328,7 @@
       addRooms(additional){
         for(const room of additional||[]){
           if(!room?.id||byId.has(room.id))continue;
-          rooms.push(room);byId.set(room.id,room);registerGlyphBounds(room);
+          rooms.push(room);byId.set(room.id,room);
           root.CloudForestFog?.invalidateKanthicGlyphs?.();
         }
       }, // Native V50 upper stories are registered after their meshes are mounted in the same scene.
@@ -355,7 +354,12 @@
       },
       roomAt:lookup,
       glyphRegionAt,
-      glyphRegionBounds:id=>glyphBounds.get(id)||null,
+      glyphRegionBounds(id){
+        if(!glyphBounds.has(id)&&typeof id==='string'&&id.startsWith('room:')){
+          const room=byId.get(id.slice(5));if(room)registerGlyphBounds(room);
+        }
+        return glyphBounds.get(id)||null; // Build only a room the player actually visits, not every native room at startup.
+      },
       activeGlyphRegion(){const p=getPlayerPosition?.();return p?glyphRegionAt(p.x,Number(getPlayerY?.()),p.z):null;},
       prepareLightClip(){}, // Compatibility hook: the full-screen tint has no projected box or feathered contour.
       withLightRegion(_ctx,_project,draw){
