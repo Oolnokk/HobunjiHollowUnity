@@ -1748,6 +1748,7 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
         building,
         isolation: { ...isolationDebug, nativeWorkspaceHidden: !!nativeWorkspaceVisibility }, // Mobile-visible: zero project imports and balanced scene isolation.
         sixFootReference: { visible: !!sixFootGuide?.parent, worldHeight: sixFootHeight, feet: 6, chairReferenceFeet: 3, behindDepth: sixFootGuideDepth, lineupBoundsCached: !!sixFootLineupBounds }, // Persistent mobile diagnostics without console access.
+        worldHeightCalibration: { ...(window.HobunjiCharacterRigScaleDefaults?.worldHeightCalibration || {}), activeMultiplier: window.HobunjiCharacterRigScale?.worldVisualScale?.() || 1 }, // Compares canonical Mao'ao 6'3" calibration against the actual loaded game/editor transform on mobile.
         exiting: !!exitingPromise, // Visible mobile diagnostic while an actor import is running.
         requestedTab: pendingExitMode, // Last native mode requested by the user.
         currentTabMode: document.body.dataset.animationAuthorMode,
