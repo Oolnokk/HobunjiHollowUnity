@@ -270,10 +270,9 @@ body[data-animation-author-mode="${MODE}"] #${HEAD_NUMBER_ID}{min-width:0;width:
       return;
     }
 
-    // Width/Height/Head-Y use the original handler. That handler also reads Head,
-    // so lend it the internal runtime percentage only for the duration of this
-    // event, then restore the raw-PNG display in a microtask.
-    if (!['maaFullScaleRangeX','maaFullScaleNumX','maaFullScaleRangePortraitHeight','maaFullScaleNumPortraitHeight','maaFullScaleRangeOffsetY','maaFullScaleNumOffsetY'].includes(id)) return;
+    // Width/Height/Beltline/Head-Y are owned by the capture-phase input guard. This fallback
+    // preserves raw-PNG Head display on older tool builds without reinterpreting its value.
+    if (!['maaFullScaleRangeX','maaFullScaleNumX','maaFullScaleRangeHeight','maaFullScaleNumHeight','maaFullScaleRangeBeltline','maaFullScaleNumBeltline','maaFullScaleRangeOffsetY','maaFullScaleNumOffsetY'].includes(id)) return;
     const identity = selectedIdentity();
     if (!identity) return;
     const range = document.getElementById(HEAD_RANGE_ID);
