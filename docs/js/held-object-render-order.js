@@ -2776,6 +2776,7 @@
     hasDisabledActorXray = Object.values(actorXrayEnabled).includes(false);
     allActorXrayDisabled = !Object.values(actorXrayEnabled).some(Boolean);
     if (wasAllDisabled && !allActorXrayDisabled) lastSceneScan = new WeakMap(); // Re-enable discovery before the next actor replay.
+    if (!wasAllDisabled && allActorXrayDisabled) window.XrayHierarchy?.updateGroundZone?.(null, null, 0); // Remove a previously visible developer circle.
     actorXrayRoots.clear();
     actorXrayScene = null;
     if (group === 'animals') syncShoulderPetLayering();
