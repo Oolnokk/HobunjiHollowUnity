@@ -122,7 +122,14 @@
     holder.userData.hobunjiHeldPortraitOwner = entity.avatarRef?.group || null; // Preserve owner masking when changing a live holder.
     holder.visible = !entity._rangedMode;
     entity.scene.add(holder);
-    entity._banditToolHolder?.parent?.remove?.(entity._banditToolHolder);
+    const old=entity._banditToolHolder; // Replacing the original weapon must release its sprite assembly and private GPU materials.
+    old?.parent?.remove?.(old);
+    for(const child of old?.children||[]) window.HobunjiWeaponSpriteAssemblies?.drop?.(child);
+    old?.traverse?.(object=>{
+      if(!object.userData?.sharedToolGeometry)object.geometry?.dispose?.();
+      if(Array.isArray(object.material))for(const material of object.material)material?.dispose?.();
+      else object.material?.dispose?.();
+    });
     entity._banditToolHolder = holder;
     entity.banditWeaponMeshAttached = true;
     const root = entity.avatarRef?.handRigAvatarRoot;
@@ -196,7 +203,7 @@
     const key = PREFIX + [choice.shaft, choice.head, metal, uid].join(':');
     const record = { ...choice, metal, uid, stars: capStars(tier), enchantments: state, ...(fey ? {origin:'Fey'} : {}) };
     if (!registerDefinition(key, record)) return entity;
-    if (!replaceHolder(entity, key, d)) { delete d.TOOL_ITEM_DEFS[key]; return entity; }
+    if (!replaceHolder(entity, key, d)) { releaseUnownedDefinition(key,d); return entity; }
     applyWeaponStats(entity, key, metal, d);
     const { visual, counts } = visualFor(state, d.rnd || random);
     entity._banditCaptainArmament = { ...record, key, visual, counts }; // The living NPC and its eventual corpse share the exact same roll.
@@ -264,12 +271,24 @@
     return deps.TOOL_ITEM_DEFS[record.key]?.label || 'Captain\'s modular weapon';
   }
 
+  function releaseUnownedDefinition(key,d=deps) {
+    if(!key?.startsWith(PREFIX)||gear()?.tools?.[key])return false;
+    const held=window.CharacterHeldTools; // Per-item caches are public and this key belongs exclusively to the discarded rare weapon.
+    const texture=held?.toolTextures?.[key];texture?.dispose?.();
+    if(held?.toolTextures)delete held.toolTextures[key];
+    const loaded=held?.loadedToolTextures?.[key];if(loaded!==texture)loaded?.dispose?.();
+    if(held?.loadedToolTextures)delete held.loadedToolTextures[key];
+    held?.modularToolGeometries?.get(key)?.dispose?.();held?.modularToolGeometries?.delete(key);
+    if(d?.TOOL_ITEM_DEFS)delete d.TOOL_ITEM_DEFS[key];
+    return true;
+  }
+
   function discard(entity) {
     const record=entity?._banditCaptainArmament; // Release unclaimed unique weapon state when a Rootledoot encounter resets.
     if(!record)return;
     unlooted.delete(record.key);
     entity._captainEnchantmentFx?.dispose?.();entity._captainEnchantmentFx=null;
-    if(!gear()?.tools?.[record.key]&&deps?.TOOL_ITEM_DEFS)delete deps.TOOL_ITEM_DEFS[record.key];
+    releaseUnownedDefinition(record.key); // Owned loot retains its definition and cached presentation.
   }
 
   function patchBanditCombat() {
