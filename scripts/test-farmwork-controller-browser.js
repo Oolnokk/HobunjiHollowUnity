@@ -162,6 +162,8 @@ const source = name => fs.readFileSync(path.join(root, 'docs/js', name), 'utf8')
     // Real r128 geometry and the production shared glow renderer, including cleanup on mode changes.
     if (process.env.FARMWORK_THREE_PATH) await page.addScriptTag({ content: fs.readFileSync(process.env.FARMWORK_THREE_PATH, 'utf8') });
     else await page.addScriptTag({ url: 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js' });
+    await page.addScriptTag({ content: source('perception-mask-renderer.js') });
+    await page.addScriptTag({ content: source('perception-info-lists.js') });
     await page.addScriptTag({ content: source('perception-mode.js') });
     const visuals = await page.evaluate(() => {
       const T = window.THREE, scene = new T.Scene();
