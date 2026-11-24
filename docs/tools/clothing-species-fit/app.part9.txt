@@ -184,7 +184,10 @@ function render(scheduleRig=true){
           ?'Game-matched: front portrait shared; imported extended sprite planes appear in 3D only.'
           :'Game-matched: both views share the same front portrait artwork, inverse-projected for the 2D fit grid. 3D adds neck, hands, feet and perspective.')
         :'Rendering game-matched '+(rearView?'backplane':'front')+' portrait; showing raw art until the rig is ready…';
-  if(mode==='hole'&&fitRegion()==='headwear'&&!rearView&&E.holeLayerColors?.checked&&R.cloth&&R.body){
+  if(mode==='pin'&&fitRegion()==='headwear'&&R.cloth&&R.body){
+    drawPinSourceView(C); // Original art at its source position: that is where pins hold.
+    R.warped=null;
+  }else if(mode==='hole'&&fitRegion()==='headwear'&&!rearView&&E.holeLayerColors?.checked&&R.cloth&&R.body){
     drawHoleLayerView(C); // Each hood material in its own colour, so it is visible that all of them follow the opening.
     R.warped=null;
   }else if(matched){
@@ -242,6 +245,7 @@ function render(scheduleRig=true){
 
   if(mode==='quad')drawQuadHandles(C); // Just the quad: a plain outline with four square corner handles, no grid.
   if(mode==='hole'&&fitRegion()==='headwear')drawHoleOverlay(C);
+  if(fitRegion()==='headwear'&&!rearView&&R.cloth)drawPinOverlay(C); // Pinned outline in every front-view headwear mode.
   else if(E.holeLegend?.innerHTML)syncHoleLegend([]); // Legend only belongs to Hood hole mode. // Detected opening rim, outer outline and the opening's quad handles (independent of the grid toggle).
   E.label.textContent=(fitRegion()==='headwear'?'HEADWEAR • ':'BODY • ')+
     (mode==='transform'
@@ -256,6 +260,8 @@ function render(scheduleRig=true){
           ?`Paint protected pixels • ${garmentRecord()?.label||''} • ${E.species.value} ${E.gender.value}`
         :mode==='hole'
           ?`Hood hole • ${garmentRecord()?.label||''} • ${E.species.value} ${E.gender.value}`
+        :mode==='pin'
+          ?`Pin outline • ${garmentRecord()?.label||''} • original ${E.sourceSpecies.value} ${E.sourceGender.value} art`
         :mode==='quad'
           ?`Quad corners • ${garmentRecord()?.label||''} • ${E.sourceSpecies.value} ${E.sourceGender.value} → ${E.species.value} ${E.gender.value}`
         :mode==='fit'
@@ -278,6 +284,8 @@ function refreshHelp(){
           ?'Use your finger or mouse to paint the magenta protected pixels; transparent collar holes are included. Painted pixels remain stationary during automatic torso contour fit. Brush controls are in the left panel.'
         :mode==='hole'
           ?'The face opening is detected with the beard mask tool\'s rim tracing (cyan) and the hood outline (magenta). Drag the four YELLOW opening corners: the opening follows the quad, and cloth between the rim and the outline follows with your falloff, so the outer silhouette stays put.'
+        :mode==='pin'
+          ?'The item is shown as originally drawn. Paint along outline parts that must stay put; the brush snaps to the silhouette pixels under it (red). Tick “erase pins” to remove them. Every other mode shows the pins where they will be held.'
         :mode==='quad'
           ?'Drag the four YELLOW corners to skew, taper or stretch the whole sprite as one quad. Each corner pulls the 6×6 grid with bilinear falloff and stacks on top of any blue-node edits.'
         :mode==='fit'

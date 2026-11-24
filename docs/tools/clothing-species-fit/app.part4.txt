@@ -282,6 +282,42 @@ function holeProfileForGrid(grid,width,height){
   R.holeProfileCache={key,front,profile};
   return profile;
 }
+// Pinned outline: parts of an item's silhouette the author marked as
+// immovable. Stored per item (same key as its contour record) in source
+// sprite pixels; applied after the grid and hood-hole deforms.
+function currentPinRecord(){
+  A.silhouettePins ||= {};
+  const key=contourSelectionKey();
+  const saved=A.silhouettePins[key];
+  if(saved&&Array.isArray(saved.points))return saved;
+  return A.silhouettePins[key]={points:[],sigma:window.ClothingSilhouettePins?.DEFAULT_SIGMA??8};
+}
+// Where the fit (6×6 cage, then the hood-hole deform for base cloth) moves a source pixel.
+function forwardFitPoint(p,grid,width,height,hole){
+  const N=GRID_SIZE-1,u=Math.max(0,Math.min(1,p.x/width)),v=Math.max(0,Math.min(1,p.y/height));
+  const col=Math.min(N-1,Math.floor(u*N)),row=Math.min(N-1,Math.floor(v*N));
+  const tl=row*GRID_SIZE+col,tr=tl+1,bl=tl+GRID_SIZE,br=bl+1;
+  const q=bilerpPoint(grid[tl],grid[tr],grid[bl],grid[br],u*N-col,v*N-row);
+  let x=q.x*width,y=q.y*height;
+  const Hole=window.ClothingHoodHoleDeform;
+  if(Hole&&hole?.enabled&&!Hole.isIdentity(hole.corners)){
+    const profile=holeProfileForGrid(grid,width,height);
+    if(profile){const d=Hole.displacementAt(profile,Hole.normalizeCorners(hole.corners),Hole.normalizeRate(hole.rate),x,y,0);x+=d.x;y+=d.y}
+  }
+  return{x,y};
+}
+function applySilhouettePins(canvas,grid,width,height,pins,hole){
+  const Pins=window.ClothingSilhouettePins;
+  if(!Pins||!canvas||!pins?.points?.length)return canvas;
+  const list=pins.points.map(p=>{const f=forwardFitPoint(p,grid,width,height,hole);return{x:f.x,y:f.y,ex:p.x-f.x,ey:p.y-f.y}});
+  const ctx=canvas.getContext('2d',{alpha:true}),image=ctx.getImageData(0,0,width,height);
+  const warped=Pins.warp(image.data,width,height,list,pins.sigma);
+  if(warped===image.data)return canvas;
+  const result=Object.assign(document.createElement('canvas'),{width,height});
+  const rctx=result.getContext('2d',{alpha:true}),out=rctx.createImageData(width,height);
+  out.data.set(warped);rctx.putImageData(out,0,0);
+  return result;
+}
 // How closely a layer rides along with the opening: trim follows it (so the
 // base can show where the trim moved away), every other material uses the
 // cloth falloff. Older saved records have no trimFollow and follow fully.
@@ -322,7 +358,8 @@ function warpClothing(source,grid,width,height,fitContourState=null,options={}){
     const splined=applyHeadbandSplineWarp(garment,state,width,height);
     if(options.view==='behind')return splined; // Rear-view art has no face opening; the hole edit never touches it.
     const hole=options.hole!==undefined?options.hole:currentHoleRecord();
-    return applyHoleDeform(splined,grid,width,height,hole,options.role);
+    const holed=applyHoleDeform(splined,grid,width,height,hole,options.role);
+    return applySilhouettePins(holed,grid,width,height,options.pins!==undefined?options.pins:currentPinRecord(),hole); // Pinned outline returns to its source position last.
   }
   if(routedPatchIsBody()||!R.sourceTorso||!R.targetTorso)return garment;
   if(!state?.enabled)return garment;

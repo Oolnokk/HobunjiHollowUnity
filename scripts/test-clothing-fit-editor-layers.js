@@ -308,7 +308,10 @@ async function main() {
   assert(/exportLayers\.length<=1&&!exportLayers\.some\(layer=>layer\.frame\)/.test(core), 'A framed single-layer hat still exports as a ZIP with its config');
   assert(core.includes('function drawPortraitRaster(ctx,image,width,height,frame=null)'), 'Framed source PNGs load at their standard-canvas position');
   assert(core.includes("if(String(role||'')!=='trim')return 0;"), 'Only trim layers follow the hood opening');
-  assert(core.includes('{view:layer.view,hole:fitState.hole,role:layer.role}'), 'Exported layers deform by their own role');
+  assert(core.includes('{view:layer.view,hole:fitState.hole,pins:fitState.pins,role:layer.role}'), 'Exported layers deform by their own role and carry the pinned outline');
+  assert(core.includes('return applySilhouettePins(holed,grid,width,height,options.pins!==undefined?options.pins:currentPinRecord(),hole);'), 'Pinned outline applies after the hood-hole deform');
+  for (const store of ['silhouettePins:A.silhouettePins||{}', 'if(v.silhouettePins)A.silhouettePins=v.silhouettePins', 'silhouettePins:v.silhouettePins||{}', 'A.silhouettePins=v.silhouettePins||{}'])
+    assert(core.includes(store), 'Pinned outlines persist through save/export/import/undo: ' + store);
   assert(core.includes('{view:layer.view,role:layer.role}') && core.includes('{role:sprite.role}'), 'Hood hole and runtime previews deform each layer by its role');
   assert(core.includes('Hole.mesh(profile,hole.corners,hole.rate,{follow:holeFollowForRole(hole,role)})'), 'Hood hole deform draws through the forward mesh');
 

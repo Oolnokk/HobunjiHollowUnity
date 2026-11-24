@@ -46,6 +46,8 @@
     (0,eval)(beardHood);
     const hoodHole=await fetchPart('hood-hole-deform.js'); // Pure hood-opening quad warp with distance falloff.
     (0,eval)(hoodHole);
+    const silhouettePins=await fetchPart('silhouette-pins.js'); // Pure pinned-outline correction applied after the fit and hood-hole deform.
+    (0,eval)(silhouettePins);
     const core=await fetchParts('app.part',12,'clothing fit editor');
     (0,eval)(core); // The 2D tool initializes immediately, independently of Three.js and patch author.
     const behind=await fetchParts('behind.part',5,'behind-sprite extension');

@@ -165,6 +165,7 @@ async function testSuccess(){
   files['contour-fit.js']='window.contourReady=true;';
   files['../../js/beard-hood-cutout.js']='window.beardHoodReady=true;';
   files['hood-hole-deform.js']='window.hoodHoleReady=true;';
+  files['silhouette-pins.js']='window.silhouettePinsReady=true;';
   for(let i=1;i<=12;i++)files['app.part'+i+'.txt']=i===1?'window.coreReady=true;':'';
   for(let i=1;i<=5;i++)files['behind.part'+i+'.txt']=i===1?'window.behindReady=true;':'';
   const {host,status,behindPanel}=makeHost(async name=>{
@@ -174,8 +175,8 @@ async function testSuccess(){
   });
   vm.runInNewContext(loader,host,{filename:'loader.js'});
   await waitUntil(()=>status.banner?.removed);
-  assert.equal(names.length,21,'Spline + contour + hood-hole + app + behind modules must load exactly once');
-  assert.deepEqual(names.slice(2,4),['../../js/beard-hood-cutout.js','hood-hole-deform.js'],'Hood-opening detection and hole warp load before the main editor');
+  assert.equal(names.length,22,'Spline + contour + hood-hole + pins + app + behind modules must load exactly once');
+  assert.deepEqual(names.slice(2,5),['../../js/beard-hood-cutout.js','hood-hole-deform.js','silhouette-pins.js'],'Hood-opening detection, hole warp and outline pins load before the main editor');
   assert.equal(host.beardHoodReady,true,'The beard/hood rim tracer initializes');
   assert.equal(host.hoodHoleReady,true,'The hood-hole warp initializes');
   assert.equal(names[0],'headband-spline-fit.js','Headband spline must load before the main editor');

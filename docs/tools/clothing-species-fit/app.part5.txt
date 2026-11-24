@@ -24,7 +24,7 @@ function headwearWarpForView(view,finalFit=false,fitState=null){
   const source=view==='back'?(R.cloth._behindView||R.cloth._back||R.cloth._front):view==='under'?R.cloth._back:R.cloth._front;
   if(!source)return null;
   const grid=finalFit?targetGridFromFitState(fitState||captureFitState()):warpGridForMode();
-  const options={view:view==='back'?'behind':view,...(fitState?{hole:fitState.hole}:{})};
+  const options={view:view==='back'?'behind':view,...(fitState?{hole:fitState.hole,pins:fitState.pins}:{})};
   const hole=options.hole!==undefined?options.hole:currentHoleRecord();
   const layers=(R.cloth._layers||[]).filter(layer=>layer.view===view&&layer.canvas);
   if(view!=='back'&&hole?.enabled&&layers.some(layer=>holeFollowForRole(hole,layer.role)>0)){
@@ -40,7 +40,7 @@ function headwearWarpForView(view,finalFit=false,fitState=null){
 function clothOut(fitState=captureFitState()){
   const source=mainClothSource();
   if(!source||!R.body)return null;
-  return warpClothing(source,targetGridFromFitState(fitState),R.body.width,R.body.height,fitRegion()==='headwear'?fitState.headband:fitState.contour,{hole:fitState.hole}); // Final fitted-clothing PNG uses an immutable base-transform + local-fit snapshot.
+  return warpClothing(source,targetGridFromFitState(fitState),R.body.width,R.body.height,fitRegion()==='headwear'?fitState.headband:fitState.contour,{hole:fitState.hole,pins:fitState.pins}); // Final fitted-clothing PNG uses an immutable base-transform + local-fit snapshot.
 }
 // Headwear whose fit pushes pixels past the standard layer canvas (a kasa
 // brim scaled up for a bigger head) would be clipped at the PNG edge. Re-warp
@@ -52,6 +52,7 @@ function paddedHeadwearOutput(source,targetNorm,width,height,fitState,view){
   if(fitRegion()!=='headwear'||!source||fitState?.headband?.enabled)return null;
   const Hole=window.ClothingHoodHoleDeform;
   if(view!=='behind'&&fitState?.hole?.enabled&&Hole&&!Hole.isIdentity(fitState.hole.corners))return null;
+  if(view!=='behind'&&fitState?.pins?.points?.length)return null; // Pinned outlines work in the fixed canvas too.
   const px=Math.round(width/2),py=Math.round(height/2),W=width+2*px,H=height+2*py;
   const grid=targetNorm.map(point=>({x:(px+point.x*width)/W,y:(py+point.y*height)/H}));
   const big=warpGarment(source,grid,W,H);
@@ -79,7 +80,7 @@ function fittedLayerOutputs(fitState=captureFitState()){
   const layers=(R.cloth._layers||[]).map(layer=>{
     const isPatched=layerMatchesRoutedClothingPatch(layer);
     const source=fittedSourceCanvasForLayer(layer);
-    const canvas=warpClothing(source,targetNorm,R.body.width,R.body.height,fitRegion()==='headwear'?fitState.headband:fitState.contour,{view:layer.view,hole:fitState.hole,role:layer.role});
+    const canvas=warpClothing(source,targetNorm,R.body.width,R.body.height,fitRegion()==='headwear'?fitState.headband:fitState.contour,{view:layer.view,hole:fitState.hole,pins:fitState.pins,role:layer.role});
     const padded=paddedHeadwearOutput(source,targetNorm,R.body.width,R.body.height,fitState,layer.view);
     return padded?{...layer,patched:!!isPatched,canvas:padded.canvas,frame:padded.frame}:{...layer,patched:!!isPatched,canvas,frame:null};
   });

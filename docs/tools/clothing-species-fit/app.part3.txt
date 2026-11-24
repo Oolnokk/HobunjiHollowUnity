@@ -89,7 +89,8 @@ function captureFitState(){
     outputHeight:R.body?.height||Math.max(1,E.stage.height||173),
     contour:captureContourState(), // Snapshots painted collar mask pixels, separate from spline headwear.
     headband:captureHeadbandState(), // Seven target/source nodes travel with final PNG and behind-sprite export snapshots.
-    hole:fitRegion()==='headwear'?JSON.parse(JSON.stringify(currentHoleRecord())):null // Hood-opening quad + falloff, pinned for exports.
+    hole:fitRegion()==='headwear'?JSON.parse(JSON.stringify(currentHoleRecord())):null, // Hood-opening quad + falloff, pinned for exports.
+    pins:fitRegion()==='headwear'?JSON.parse(JSON.stringify(currentPinRecord())):null // Pinned outline pixels of this item.
   }; // Used by PNG/ZIP exports so the complete fitted state cannot change between authoring and baking.
 }
 function targetGridFromFitState(fitState){

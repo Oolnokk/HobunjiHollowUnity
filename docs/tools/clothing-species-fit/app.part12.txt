@@ -101,18 +101,20 @@ window.ClothingSpeciesFitTool=Object.freeze({
   logMessage:message=>log(String(message||''))
 }); // Narrow bridge for the behind.part1-5.txt patch author; repository loading and deformation math remain owned by the core editor.
 
-E.modeBtns.forEach(b=>b.onclick=()=>{if((b.dataset.mode==='protect'&&fitRegion()==='headwear')||(['headband','rear-paint','hole'].includes(b.dataset.mode)&&fitRegion()!=='headwear'))return;mode=b.dataset.mode;if(mode==='rear-paint')E.headbandView.value='back';saveState();syncHeadbandControls();render()});
+E.modeBtns.forEach(b=>b.onclick=()=>{if((b.dataset.mode==='protect'&&fitRegion()==='headwear')||(['headband','rear-paint','hole','pin'].includes(b.dataset.mode)&&fitRegion()!=='headwear'))return;mode=b.dataset.mode;if(mode==='rear-paint')E.headbandView.value='back';saveState();syncHeadbandControls();render()});
 E.reload.onclick=loadRepositoryData;
 E.fitRegion.onchange=()=>{
   ++R.garmentSelectionEpoch; // Region switches invalidate any deferred catalog auto-restoration.
   // Keep the last item selection for each region and never reuse body transforms for headwear.
   R.three.portraitCache.clear();
   R.assetGeneration++;
-  if(mode==='protect'&&fitRegion()==='headwear'||['headband','rear-paint','hole'].includes(mode)&&fitRegion()!=='headwear')mode='fit'; // Painting is body/poncho-only, never a hidden headwear edit.
+  if(mode==='protect'&&fitRegion()==='headwear'||['headband','rear-paint','hole','pin'].includes(mode)&&fitRegion()!=='headwear')mode='fit'; // Painting is body/poncho-only, never a hidden headwear edit.
   rebuildGarmentSelector();
   document.getElementById('headbandSplineSection').hidden=fitRegion()!=='headwear';
   if(E.holeSection)E.holeSection.hidden=fitRegion()!=='headwear';
+  if(E.pinSection)E.pinSection.hidden=fitRegion()!=='headwear';
   E.modeBtns.find(btn=>btn.dataset.mode==='hole').disabled=fitRegion()!=='headwear';
+  E.modeBtns.find(btn=>btn.dataset.mode==='pin').disabled=fitRegion()!=='headwear';
   E.modeBtns.find(btn=>btn.dataset.mode==='headband').disabled=fitRegion()!=='headwear';
   E.modeBtns.find(btn=>btn.dataset.mode==='rear-paint').disabled=fitRegion()!=='headwear';
   document.getElementById('contourFitSection').hidden=fitRegion()==='headwear';
@@ -623,17 +625,89 @@ if(E.holeEnabled){
   E.holeReset.onclick=()=>{pushUndo();const hole=currentHoleRecord();hole.corners=window.ClothingHoodHoleDeform.zeroCorners();saveState();syncHoleControls();render()};
   window.addEventListener('hobunji-clothing-fit-assets-refreshed',()=>{R.holeProfileCache=null;syncHoleControls()});
 }
+// ---------------------------------------------------------------------------
+// Pinned outline: paint silhouette pixels of the original art that must not
+// move. The fit pipeline (applySilhouettePins in part 4) returns them to
+// their source position after the grid and hood-hole deforms.
+// ---------------------------------------------------------------------------
+let pinStroke=null;
+function pinSnapMask(){
+  const cloth=R.cloth;if(!cloth)return null;
+  if(R.pinSnapMask?.cloth===cloth)return R.pinSnapMask;
+  const data=cloth.getContext('2d').getImageData(0,0,cloth.width,cloth.height).data; // Back + front layers together: the whole item's silhouette.
+  return R.pinSnapMask={cloth,data,width:cloth.width,height:cloth.height};
+}
+function drawPinSourceView(C){
+  C.save();C.fillStyle='#0b1118';C.fillRect(0,0,C.canvas.width,C.canvas.height);C.restore();
+  C.drawImage(R.cloth,0,0); // Untransformed source art: pins are painted where they are in the original sprite.
+  syncPinStatus();
+}
+function drawPinOverlay(C){
+  const pins=currentPinRecord().points;if(!pins.length)return;
+  C.save();
+  C.fillStyle=mode==='pin'?'rgba(255,40,40,1)':'rgba(255,40,40,.85)';
+  for(const p of pins)C.fillRect(p.x-.5,p.y-.5,1,1); // Each pinned outline pixel, at the position it is held to.
+  C.restore();
+}
+function pinBrushRadius(){const n=+E.pinBrush?.value;return Number.isFinite(n)?Math.max(1,Math.min(12,n)):3}
+function paintPinsAt(p){
+  const rec=currentPinRecord(),radius=pinBrushRadius();
+  if(E.pinErase?.checked){rec.points=rec.points.filter(q=>Math.hypot(q.x-p.x,q.y-p.y)>radius);return}
+  const mask=pinSnapMask(),Pins=window.ClothingSilhouettePins;if(!mask||!Pins)return;
+  const have=new Set(rec.points.map(q=>q.x+','+q.y));
+  for(const q of Pins.outlinePixelsNear(mask.data,mask.width,mask.height,p.x,p.y,radius)){
+    const key=q.x+','+q.y;if(have.has(key))continue;have.add(key);rec.points.push(q);
+  }
+}
+function pinPointerDown(e){
+  if(!R.cloth)return false;
+  pushUndo();const p=pointer(e);pinStroke={last:p};paintPinsAt(p);
+  E.stage.setPointerCapture(e.pointerId);render(false);return true;
+}
+function pinPointerMove(e){
+  if(!pinStroke)return false;
+  const p=pointer(e),from=pinStroke.last,steps=Math.max(1,Math.ceil(Math.hypot(p.x-from.x,p.y-from.y)/Math.max(.5,pinBrushRadius()/2)));
+  for(let i=1;i<=steps;i++)paintPinsAt({x:from.x+(p.x-from.x)*i/steps,y:from.y+(p.y-from.y)*i/steps});
+  pinStroke.last=p;render(false);return true;
+}
+function pinPointerUp(){
+  if(!pinStroke)return;
+  pinStroke=null;saveState();render();
+  log(`Saved ${currentPinRecord().points.length} pinned outline pixels for ${contourSelectionKey()}.`);
+}
+function syncPinStatus(){
+  if(!E.pinStatus||fitRegion()!=='headwear'||!R.body)return;
+  const n=currentPinRecord().points.length;
+  E.pinStatus.textContent=n?`${n} outline pixels pinned on this item.`:'No pinned outline on this item.';
+}
+function syncPinControls(){
+  if(!E.pinSigma||fitRegion()!=='headwear'||!R.body)return;
+  const sigma=window.ClothingSilhouettePins?.normalizeSigma(currentPinRecord().sigma)??8;
+  E.pinSigma.value=String(sigma);E.pinSigmaNumber.value=String(sigma);syncPinStatus();
+}
+if(E.pinSigma){
+  const setSigma=value=>{currentPinRecord().sigma=window.ClothingSilhouettePins?.normalizeSigma(value)??+value;saveState();syncPinControls();render()};
+  E.pinSigma.addEventListener('pointerdown',()=>pushUndo(),{passive:true});
+  E.pinSigma.oninput=()=>setSigma(E.pinSigma.value);
+  E.pinSigmaNumber.onchange=()=>{pushUndo();setSigma(E.pinSigmaNumber.value)};
+  E.pinBrush.oninput=()=>{E.pinBrushNumber.value=E.pinBrush.value};
+  E.pinBrushNumber.onchange=()=>{E.pinBrush.value=E.pinBrushNumber.value;E.pinBrushNumber.value=String(pinBrushRadius())};
+  E.pinClear.onclick=()=>{pushUndo();currentPinRecord().points=[];saveState();syncPinControls();render()};
+  window.addEventListener('hobunji-clothing-fit-assets-refreshed',()=>{R.pinSnapMask=null;syncPinControls()});
+}
 if(A.settings?.region==='headwear')E.fitRegion.value='headwear';
 document.getElementById('headbandSplineSection').hidden=fitRegion()!=='headwear';
 if(E.holeSection)E.holeSection.hidden=fitRegion()!=='headwear';
+if(E.pinSection)E.pinSection.hidden=fitRegion()!=='headwear';
 E.modeBtns.find(btn=>btn.dataset.mode==='hole').disabled=fitRegion()!=='headwear';
+E.modeBtns.find(btn=>btn.dataset.mode==='pin').disabled=fitRegion()!=='headwear';
 E.modeBtns.find(btn=>btn.dataset.mode==='headband').disabled=fitRegion()!=='headwear';
 E.modeBtns.find(btn=>btn.dataset.mode==='rear-paint').disabled=fitRegion()!=='headwear';
 document.getElementById('contourFitSection').hidden=fitRegion()==='headwear';
 E.modeBtns.find(btn=>btn.dataset.mode==='protect').disabled=fitRegion()==='headwear';
 document.getElementById('bodyMaskSection').hidden=fitRegion()==='headwear';
 document.getElementById('bodyExtendedSection').hidden=fitRegion()==='headwear';
-if(!['transform','body','fit','quad','hole','preview','protect','headband','rear-paint'].includes(mode)||mode==='protect'&&fitRegion()==='headwear'||['headband','rear-paint'].includes(mode)&&fitRegion()!=='headwear')mode='transform';
+if(!['transform','body','fit','quad','hole','pin','preview','protect','headband','rear-paint'].includes(mode)||mode==='protect'&&fitRegion()==='headwear'||['headband','rear-paint','pin'].includes(mode)&&fitRegion()!=='headwear')mode='transform';
 window.addEventListener('hobunji-clothing-fit-three-ready',()=>{
   if(startOptionalThreePreview()&&R.body)scheduleThreePreview(0);
 }); // The CDN can load after the 2D editor has already initialized.
