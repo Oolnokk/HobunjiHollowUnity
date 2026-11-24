@@ -46,10 +46,11 @@ assert(start>=0 && end>start,'production scene guide function remains findable')
 const setup=author.slice(start,end);
 const context={THREE,window,document,active:true,building:false,previewRoot:{children:[]},
   sixFootHeight:null,sixFootGuide:null,sixFootGuideDepth:2};
+const sandbox={env:context,console}; // Persist the isolated VM global so its exported test API is accessible.
 vm.runInNewContext('let { THREE, window, document, active, building, previewRoot, sixFootHeight, sixFootGuide, sixFootGuideDepth } = env;\n'
   + setup + '\nthis.fixture={ installSixFootGuide, getGuide:()=>sixFootGuide, getHeight:()=>sixFootHeight };',
-  {env:context,console});
-const api=context.fixture; // Fixture directly calls the production function, without adding test hooks to the game.
+  sandbox);
+const api=sandbox.fixture; // Fixture directly calls the production function, without adding test hooks to the game.
 api.installSixFootGuide({maxY:actualTop,minY:actualBottom},scene);
 const line=api.getGuide(); // Scene-owned mesh must not alter the lineup's camera-frame bounds.
 assert(line,'six-foot reference gets installed');
