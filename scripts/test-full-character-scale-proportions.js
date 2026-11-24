@@ -12,18 +12,18 @@ const guardSource = fs.readFileSync('docs/js/character-scale-comparison-body-inp
 const hostSource = fs.readFileSync('docs/js/character-scale-comparison-host-bridge.js', 'utf8'); // Owns the persisted rigScale map, import migration and Reset.
 const rigSource = fs.readFileSync('docs/js/character-rig-scale.js', 'utf8'); // Runtime legacy-Y and independent-leg handling.
 const legSource = fs.readFileSync('docs/js/procedural-leg-animation.js', 'utf8'); // Shared procedural leg-length/foot-size implementation.
-const headAdapter = fs.readFileSync('docs/js/character-scale-comparison-presentation.js', 'utf8'); // Raw-PNG Head input must recognize the renamed Portrait height field.
+const headAdapter = fs.readFileSync('docs/js/character-scale-comparison-presentation.js', 'utf8'); // Raw-PNG Head input must recognize Height and Beltline fields.
 
-for (const axis of ['X', 'PortraitHeight', 'LegLength', 'Hand', 'Foot', 'Head', 'OffsetY', 'Age']) {
+for (const axis of ['X', 'Height', 'Beltline', 'Hand', 'Foot', 'Head', 'OffsetY', 'Age']) {
   assert.match(comparison, new RegExp("scaleRow\\('"+axis+"'"), 'editor has the '+axis+' control');
 }
-assert.doesNotMatch(comparison, /scaleRow\('Y', 'Height'/, 'old combined Height slider is gone');
+assert.doesNotMatch(comparison, /scaleRow\('PortraitHeight'|scaleRow\('LegLength'/, 'the separate old Portrait/Leg sliders have been replaced by total Height and Beltline percentage');
 assert.doesNotMatch(comparison, /function applyBodyHeadSliders\(/,
   'old all-fields slider writer must be removed: single-field input guard owns all dimension changes');
 assert.match(comparison, /HobunjiFullScaleBodyInputGuard\?\.applyScaleField/,
   'mobile preview must report an unavailable guard rather than falling back to destructive legacy writes');
-assert.match(headAdapter, /maaFullScaleRangePortraitHeight/, 'raw-PNG Head adapter observes the new Portrait height slider');
-assert.match(guardSource, /maaFullScaleRangeLegLength/, 'mobile input guard owns independent leg scale');
+assert.match(headAdapter, /maaFullScaleRangeHeight/, 'raw-PNG Head adapter observes total Height without writing the internal runtime head factor');
+assert.match(guardSource, /maaFullScaleRangeBeltline/, 'mobile input guard owns Beltline percentage while keeping legacy leg factors internal');
 assert.match(guardSource, /maaFullScaleRangeHand/, 'mobile input guard owns hand size');
 assert.match(guardSource, /maaFullScaleRangeFoot/, 'mobile input guard owns foot size');
 assert.match(comparison, /refreshFromScaleChange,/, 'host input guard has a live preview callback');
