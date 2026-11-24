@@ -409,10 +409,14 @@
     if (target?.pose !== 'sit') { seatClaims.delete(id); return; }
     seatClaims.set(id, { key:seatKey(target.area, target), target, until:seatNow()+5000 });
   }
+  function isPlayerSeatTaken(area, seat, key = null) {
+    const player = deps?.getPlayerSeat?.(); // Constant-time idle fast path; no NPC enumeration or claim scans.
+    if (!player || areaId(deps?.getArea?.()) !== areaId(area)) return false;
+    return seatKey(area, player) === (key ?? seatKey(area, seat));
+  }
   function isSeatTaken(area, seat, exceptId = '') {
     const key = seatKey(area, seat), now = seatNow(); // Reservations count while approaching, not just after the sitting pose starts.
-    const player = deps?.getPlayerSeat?.();
-    if (exceptId !== 'player' && player && areaId(deps.getArea()) === areaId(area) && seatKey(area, player) === key) return true;
+    if (exceptId !== 'player' && isPlayerSeatTaken(area, seat, key)) return true;
     for (const [id, claim] of seatClaims) {
       if (claim.until < now) { seatClaims.delete(id); continue; }
       if (id !== exceptId && claim.key === key) return true;
@@ -675,5 +679,5 @@
       surfaceCamera:{...surfaceView,probe:{...surfaceProbe,refreshMs:SURFACE_PROBE_REFRESH_MS}}, collision:{...collisionStats},
       socialReach:deps?.npcReach?.()||6, socialIgnoresColliders:true, area: areaId(area), focused:focused?.kind || null, focusedNpc:focused?.walker?.rec?.id || null, focusedNpcDistance:focused?.walker ? npcDistance(focused.walker) : null, seatReservations:seatClaims.size, wardrobeLocks:{...wardrobeLockDebug}, placements: [...entries(area).values()].map(entry => ({ id: entry.id, tableId: entry.record.tableId || null, serviceId: entry.record.serviceId || null, wardrobeFor: window.NpcFurnitureWardrobes?.ownerForPlacement?.(area, entry.record)?.npcId || null })) };
   }
-  window.FurnitureTableSystem = { nearbySurface, init, clearArea, registerPlacement, unregisterPlacement, assignTable, tableForSeat, members, findSeat, requiresLiveSeat, seatTransform, lieTransform, releaseLieSlot, registerService, aimedService, objectAt, refreshServices, invalidateFocus, snapshot, seatKey, isSeatTaken, setSeatTarget, blocksBox, grassFootprintKeys, focusedTarget, npcDistance, companionSeat };
+  window.FurnitureTableSystem = { nearbySurface, init, clearArea, registerPlacement, unregisterPlacement, assignTable, tableForSeat, members, findSeat, requiresLiveSeat, seatTransform, lieTransform, releaseLieSlot, registerService, aimedService, objectAt, refreshServices, invalidateFocus, snapshot, seatKey, isPlayerSeatTaken, isSeatTaken, setSeatTarget, blocksBox, grassFootprintKeys, focusedTarget, npcDistance, companionSeat };
 })();

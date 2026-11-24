@@ -4878,6 +4878,7 @@
           seatAnchorZ: seat.anchorZ,
           prevCameraMode: activeCameraMode, prevCameraTarget: activeCameraTarget,
         };
+        window.NpcScheduling?.invalidateTargetDecisions?.(); // A newly occupied seat must immediately invalidate cached NPC destinations.
         activeCameraMode = 'seated';
         activeCameraTarget = { position: new THREE.Vector3(seat.x, seatAbsoluteWorldY + 0.15, seat.z) };
         // Start looking at the seated character's BACK rather than whatever
@@ -4950,6 +4951,7 @@
               cameraAngleOffsetDeg = 0;
             }
             sitInteraction = null;
+            window.NpcScheduling?.invalidateTargetDecisions?.(); // A vacated seat is immediately available to NPC planners again.
           }
         }
       }
@@ -13673,7 +13675,8 @@
             let target = scheduledTarget && scheduledTarget.pose !== 'lie' && /sleep/i.test(String(scheduledTarget.activity || ''))
               ? { ...scheduledTarget, pose: 'lie' } : scheduledTarget; // Unifies all humanoid sleepers with existing authored pose:'lie' stations.
             const targetArea = target ? normalizeNpcArea(target.area) : null;
-            const seatTransform = targetArea === this.area ? npcSeatTransformForTarget(target) : null; // Resolve once before publishing reservation and navigation.
+            let seatTransform = targetArea === this.area ? npcSeatTransformForTarget(target) : null; // Resolve once before publishing reservation and navigation.
+            if (seatTransform?.furnitureId && window.FurnitureTableSystem?.isPlayerSeatTaken?.(this.area, target)) seatTransform = null; // The player wins even during a stale schedule decision lease.
             if (targetArea === this.area) target = npcSeatNavigationTarget(this, target, seatTransform);
             window.FurnitureTableSystem?.setSeatTarget(this.rec.id, target); // Publish the reservation before movement/arrival so later walkers cannot choose the same physical seat.
             this.currentScheduleTarget = target || null;

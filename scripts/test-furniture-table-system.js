@@ -181,7 +181,8 @@ assert.equal(tables.blocksBox('indexed', 8, 4.5), false, 'a same-frame removal i
   }};
   const tables=loadTable(w);
   const area='map_i_chair_qa';
-  tables.init({getArea:()=>area,surfaceY:()=>.4});
+  let playerSeat=null; // Used to exercise exact-instance claims during the player handoff.
+  tables.init({getArea:()=>area,surfaceY:()=>.4,getPlayerSeat:()=>playerSeat});
   const mesh=(x,y,z)=>({parent:{},position:{x,y,z},scale:{x:1,y:1,z:1},userData:{},localToWorld(v){v.x+=this.position.x;v.y+=this.position.y;v.z+=this.position.z;return v;}});
   const chair=mesh(8.5,1.2,9.5);
   tables.registerPlacement(area,{id:'moved',key:'chairSimple',col:1,row:2,npcStationId:'legacy-station'},chair,{sit:true});
@@ -192,6 +193,15 @@ assert.equal(tables.blocksBox('indexed', 8, 4.5), false, 'a same-frame removal i
   const walker={};
   const nav=navigate(walker,target,anchor);
   check(nav.c===8&&nav.r===9&&nav.furnitureId==='moved','navigation routes to the live chair tile, not its outdated station');
+  check(!tables.isPlayerSeatTaken(area,target),'no player reservation before seating');
+  playerSeat={furnitureId:'moved',seatIndex:1,col:8,row:9,phase:'in'};
+  check(tables.isPlayerSeatTaken(area,target),'player reserves the exact seat even during the sit transition');
+  check(!tables.isPlayerSeatTaken(area,{...target,seatIndex:0}),'other seats on a bench remain available');
+  check(!tables.isPlayerSeatTaken(area,{...target,furnitureId:'other'}),'a different chair on the same old tile remains available');
+  check(!tables.isPlayerSeatTaken('unloaded',target),'player reservation is area scoped');
+  check(!tables.isSeatTaken(area,target,'player'),'player is not blocked by their own reservation');
+  playerSeat=null;
+  check(!tables.isPlayerSeatTaken(area,target),'standing releases the player reservation');
   check(navigate(walker,target,anchor)===nav,'unchanged seat reuses navigation target');
   const missingTarget={...target,furnitureId:'gone'};
   const standing=navigate(walker,missingTarget,null);
