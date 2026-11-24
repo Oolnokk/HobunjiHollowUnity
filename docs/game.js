@@ -33419,11 +33419,15 @@
         getArea: () => currentArea, getGrid: window.GridTileAccessors.getActiveGrid, getScene: window.GridTileAccessors.getActiveScene,
         getZoneDef: zone => EXTERIOR_ZONES[zone], getNpcWalkers: () => npcWalkers,
         worldId: _tothalWorldId, cycle: currentTothalYear, day: () => calendar.day, chunkSize: wildernessChunkTileSize,
-        surfaceY: activeSurfaceYAtWorld, walkable: (c,r) => creatureTileWalkable(c,r),
+        surfaceY: activeSurfaceYAtWorld, walkable: (c,r) => {
+          const tile=window.GridTileAccessors.getActiveGrid()?.[r]?.[c]; // Reject solid terrain and water even where animal movement allows them.
+          return !!tile&&!isSolid(tile.type)&&!WATERWAY_TYPES.has(tile.type)&&creatureTileWalkable(c,r)&&canOccupyAt((c+.5)*TILE,(r+.5)*TILE,TILE*.22);
+        },
         isBareGround: tile => tile.type === TileType.GRASS && !tile.crop?.type && !tile.mapBoundary,
         despawn: despawnCreature, dirt: (c,r) => spawnActionParticles(c,r,'dig',true), toast: showToast, save: saveMemberWorldData,
         canReceiveRoot: () => !!ITEM_DEFS.feyHeftroot && (Number(inventory.feyHeftroot)||0) < window.InventoryStacks.MAX_TOTAL,
-        giveRoot: () => { inventory.feyHeftroot=(Number(inventory.feyHeftroot)||0)+1; window.HudUpdate.refreshItemScroll(); buildInventoryGrid(); refreshActionBar(); },
+        giveRoot: () => { inventory.feyHeftroot=(Number(inventory.feyHeftroot)||0)+1; }, // Only mutate the bag inside the atomic reward transaction.
+        refreshRewards: () => { window.HudUpdate.refreshItemScroll(); buildInventoryGrid(); window.EquipmentPanel?.buildEquipmentSlots?.(); refreshActionBar(); },
       });
       window.BanditCamps?.init({
         clamp: window.FormatUtils.clamp,
