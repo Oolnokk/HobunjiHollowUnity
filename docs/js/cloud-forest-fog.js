@@ -1058,7 +1058,8 @@
         minDepth=Math.min(minDepth,depth);maxDepth=Math.max(maxDepth,depth);
       }
       if(!visible||maxX<0||maxY<0||minX>width||minY>height)continue;
-      mask.ready=ruinGlowConvexHull(points,mask.hull); // Convex silhouette includes solid slab top and sides.mask.minX=minX;mask.maxX=maxX;mask.minY=minY;mask.maxY=maxY;
+      mask.ready=ruinGlowConvexHull(points,mask.hull); // Convex silhouette includes the slab's visible top and side faces.
+      mask.minX=minX;mask.maxX=maxX;mask.minY=minY;mask.maxY=maxY; // Pixel Probe and the broad-phase wall-overlap test use these screen-space bounds.
       mask.minDepth=minDepth;mask.maxDepth=maxDepth;
       mask.worldX=worldX/8;mask.worldY=worldY/8;mask.worldZ=worldZ/8;
     }
