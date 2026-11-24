@@ -7,7 +7,7 @@ const vm = require('node:vm'); // Runs browser-owned math in a headless test.
 const rig=fs.readFileSync('docs/js/character-rig-scale.js','utf8'); // Shared source of truth for height/beltline conversions.
 const editor=fs.readFileSync('docs/js/character-scale-comparison.js','utf8'); // Full Character Scale panel and preview.
 const guard=fs.readFileSync('docs/js/character-scale-comparison-body-input-guard.js','utf8'); // Guarded mobile input handler.
-const start=rig.indexOf('  const beltlineFraction =');
+const start=rig.indexOf('  const beltlineGeometry =');
 const end=rig.indexOf('  function installProfileDefaults()',start);
 assert(start>=0 && end>start,'find actual production converter');
 const ctx={ Math };
