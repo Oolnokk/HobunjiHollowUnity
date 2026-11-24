@@ -1169,6 +1169,7 @@
       || { ordinaryRemaining: remaining }; // Drunken Health converts first, then Resolute/Mirrored Health absorb what would otherwise reach real Health.
     const before = Number(entity.health) || 0;
     if (enhanced.ordinaryRemaining > 0) entity.health = round1(clamp(before - enhanced.ordinaryRemaining, 0, original.getEffectiveMax(entity, "health")));
+    if (entity === window.Combat?.deps?.player && opts.attacker?.rootledoot && entity.health <= 0) window.Rootledoots?.noteDown?.(opts.attacker, Math.max(0, enhanced.ordinaryRemaining - before)); // Actual excess after damage conversion/absorption, before Health clamp.
     const lost = round1(before - (Number(entity.health) || 0));
 
     if (opts.afflictionBonuses) {
@@ -1619,7 +1620,7 @@
     const skippedMinutes = skipBlackoutTime(effectivePercent);
     const travel = performBlackoutTravel(effectivePercent, safeStars);
     lastBlackout = { source, deficitPercent: effectivePercent, stars: safeStars, skippedMinutes, travel, at: performance.now() };
-    devDeps?.showToast?.(`🍺 Blackout — ${skippedMinutes} minutes passed.`, true);
+    devDeps?.showToast?.(`${source === 'rootledoot' ? '✨' : '🍺'} Blackout — ${skippedMinutes} minutes passed.`, true);
     return lastBlackout;
   }
 
@@ -1767,6 +1768,7 @@
       return RS.addDrunkenness(player, fake.footing, fake.health * (HEALTH_QUALITY_MULTIPLIERS[safeStars] || 1), { source: `debug:${profile}`, stars: safeStars });
     },
     triggerBlackout(percent, stars) { return triggerBlackout(percent, "debug", stars); },
+    triggerFeyBlackout(percent) { return triggerBlackout(percent, 'rootledoot', 3); }, // Same time-skip and collision-safe travel, no drunkenness mutation.
     clear() {
       const player = window.Combat?.deps?.player;
       if (!player) return;
