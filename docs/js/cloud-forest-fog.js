@@ -1038,28 +1038,49 @@
       const material=Array.isArray(node.material)?node.material[0]:node.material;
       if(!visible||material?.visible===false||(material?.transparent===true&&Number(material.opacity)<.5))continue; // An invisible/faded slab cannot block a visible glyph.
       node.updateWorldMatrix?.(true,false);
+      if(!node.geometry?.boundingBox)node.geometry?.computeBoundingBox?.(); // TileSpan may replace the source geometry after scene discovery.
       const bounds=node.geometry?.boundingBox;
       if(!bounds)continue;
       let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity,minDepth=Infinity,maxDepth=-Infinity;
-      let worldX=0,worldY=0,worldZ=0; // Mean of the eight world corners is the real slab center, even during a shaft platform move.
-      const points=mask.points; // Eight reusable projected corners, including the sides and underside of each solid slab.
+      let worldX=0,worldY=0,worldZ=0; // Mean of world corners follows the actual moving slab.
+      const corners=mask.corners,points=mask.points; // Per-slab storage survives every lighting refresh.
       for(let i=0;i<8;i++){
         ruinGlowPlatformVertex.set(i&1?bounds.max.x:bounds.min.x,i&2?bounds.max.y:bounds.min.y,i&4?bounds.max.z:bounds.min.z).applyMatrix4(node.matrixWorld);
-        const corner=mask.corners[i];corner.x=ruinGlowPlatformVertex.x;corner.y=ruinGlowPlatformVertex.y;corner.z=ruinGlowPlatformVertex.z;
-        worldX+=ruinGlowPlatformVertex.x;worldY+=ruinGlowPlatformVertex.y;worldZ+=ruinGlowPlatformVertex.z;
-        const dx=ruinGlowPlatformVertex.x-ruinGlowCameraPosition.x,dy=ruinGlowPlatformVertex.y-ruinGlowCameraPosition.y,dz=ruinGlowPlatformVertex.z-ruinGlowCameraPosition.z;
-        const depth=dx*ruinGlowCameraDirection.x+dy*ruinGlowCameraDirection.y+dz*ruinGlowCameraDirection.z;
-        if(depth<=near){visible=false;break;} // Never project a polygon crossing behind the camera's near plane.
-        const point=lightingDeps.worldToOverlay(ruinGlowPlatformVertex.x,ruinGlowPlatformVertex.y,ruinGlowPlatformVertex.z);
-        if(!Number.isFinite(point.x)||!Number.isFinite(point.y)){visible=false;break;}
-        points[i].x=point.x;points[i].y=point.y;
-        minX=Math.min(minX,point.x);maxX=Math.max(maxX,point.x);
-        minY=Math.min(minY,point.y);maxY=Math.max(maxY,point.y);
+        const corner=corners[i];corner.x=ruinGlowPlatformVertex.x;corner.y=ruinGlowPlatformVertex.y;corner.z=ruinGlowPlatformVertex.z;
+        worldX+=corner.x;worldY+=corner.y;worldZ+=corner.z;
+        const depth=(corner.x-ruinGlowCameraPosition.x)*ruinGlowCameraDirection.x
+          +(corner.y-ruinGlowCameraPosition.y)*ruinGlowCameraDirection.y
+          +(corner.z-ruinGlowCameraPosition.z)*ruinGlowCameraDirection.z;
         minDepth=Math.min(minDepth,depth);maxDepth=Math.max(maxDepth,depth);
       }
-      if(!visible||maxX<0||maxY<0||minX>width||minY>height)continue;
-      mask.ready=ruinGlowConvexHull(points,mask.hull); // Convex silhouette includes the slab's visible top and side faces.
-      mask.minX=minX;mask.maxX=maxX;mask.minY=minY;mask.maxY=maxY; // Pixel Probe and the broad-phase wall-overlap test use these screen-space bounds.
+      if(maxDepth<=near+.012)continue; // Entire slab is behind the camera's near plane.
+      if(minDepth<=near+.012){
+        // Slab crossing the near plane: retain the camera-facing part of its real box,
+        // rather than dropping the entire platform and revealing wall runes through it.
+        const margin=near+.012,cam=ruinGlowCameraPosition,dir=ruinGlowCameraDirection;
+        const visibleHull=ruinGlowFrontHalfHull(mask,dir.x,dir.y,dir.z,
+          cam.x+dir.x*margin,cam.y+dir.y*margin,cam.z+dir.z*margin,1,near);
+        if(!visibleHull)continue;
+        mask.hull.length=0;
+        for(let i=0;i<visibleHull.length;i++){
+          const point=visibleHull[i],owned=mask.hullPoints[i];owned.x=point.x;owned.y=point.y;mask.hull.push(owned);
+          minX=Math.min(minX,point.x);maxX=Math.max(maxX,point.x);
+          minY=Math.min(minY,point.y);maxY=Math.max(maxY,point.y);
+        }
+        mask.ready=true;
+      }else{
+        for(let i=0;i<8;i++){
+          const corner=corners[i],point=lightingDeps.worldToOverlay(corner.x,corner.y,corner.z);
+          if(!Number.isFinite(point.x)||!Number.isFinite(point.y)){visible=false;break;}
+          points[i].x=point.x;points[i].y=point.y;
+          minX=Math.min(minX,point.x);maxX=Math.max(maxX,point.x);
+          minY=Math.min(minY,point.y);maxY=Math.max(maxY,point.y);
+        }
+        if(!visible)continue;
+        mask.ready=ruinGlowConvexHull(points,mask.hull); // Convex silhouette includes the slab's solid top and sides.
+      }
+      if(!mask.ready||maxX<0||maxY<0||minX>width||minY>height)continue;
+      mask.minX=minX;mask.maxX=maxX;mask.minY=minY;mask.maxY=maxY; // Broad-phase screen bounds keep offscreen slabs from clipping unrelated runes.
       mask.minDepth=minDepth;mask.maxDepth=maxDepth;
       mask.worldX=worldX/8;mask.worldY=worldY/8;mask.worldZ=worldZ/8;
     }
@@ -1229,7 +1250,7 @@
         if(node.userData?.ruinShaftPlatform===true){ // TileSpan may replace BoxGeometry with BufferGeometry; the authored slab flag survives.
           if(ruinGlowPlatforms.length<MAX_RUIN_GLOW_PLATFORMS){
             node.geometry.computeBoundingBox?.();
-            ruinGlowPlatforms.push({node,points:Array.from({length:8},()=>({x:0,y:0})),corners:Array.from({length:8},()=>({x:0,y:0,z:0})),planeDistances:new Float32Array(8),hull:[],ready:false});
+            ruinGlowPlatforms.push({node,points:Array.from({length:8},()=>({x:0,y:0})),corners:Array.from({length:8},()=>({x:0,y:0,z:0})),planeDistances:new Float32Array(8),hullPoints:Array.from({length:20},()=>({x:0,y:0})),hull:[],ready:false});
           }
           return; // The box silhouette must clip partially obscured wall glyphs instead of hiding their entire atlas.
         }
