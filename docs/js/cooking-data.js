@@ -64,7 +64,8 @@
     "fishing": "Fishing",
     "foraging": "Foraging",
     "cooking": "Cooking",
-    "mining": "Mining"
+    "mining": "Mining",
+    "feySight": "Fey-sight"
   },
   "effectPrefixVariants": {
     "strength": [
@@ -570,6 +571,17 @@
         "Root",
         "Crop"
       ]
+    },
+    "feyHeftroot": {
+      "id": "feyHeftroot",
+      "name": "Fey Heftroot",
+      "categories": ["starchVegetable", "vegetable", "crop"],
+      "quality": 2,
+      "baseBoost": 1,
+      "processingTier": "raw",
+      "primaryEffect": "feySight",
+      "tags": ["Root", "Crop", "Fey"],
+      "description": "A heftroot left by a Big Rootledoot. Its Fey-sight lasts until a fey reward is received."
     },
     "garlink": {
       "id": "garlink",
