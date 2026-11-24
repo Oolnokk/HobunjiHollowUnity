@@ -31,7 +31,9 @@
     const parts = Object.values(cosmetic.speciesVariants[key].parts.head.layers); // Uses real wearer-specific sprites rather than a fine-hood stand-in.
     for (const role of ['base','trim']) {
       const image = parts.find(part => part.layerRole === role)?.image?.url;
-      assert(image?.includes('furhood-' + role + '_' + suffix + '.png'), key + ' must use its uploaded fur artwork');
+      // The uploaded sprite, or a clothing-fitter refit of it (furhood-base_mashtz_mashtzarr_m.png).
+      const fitted = suffix.replace(/_(m|f)$/, '_' + key.split('_')[0] + '_$1');
+      assert(image?.endsWith('furhood-' + role + '_' + suffix + '.png') || image?.endsWith('furhood-' + role + '_' + fitted + '.png'), key + ' must use its uploaded fur artwork: ' + image);
       assert(fs.existsSync(path.join(root, 'docs', image.replace(/^\.\//, ''))), 'missing garment PNG: ' + image);
     }
   }
@@ -120,8 +122,11 @@
     const hoodConfig=JSON.parse(read('docs/config/cosmetics/fur_hood.json'));
     for(const [key,suffix] of [['tletingan_male','tl_m'],['mashtzarr_male','mashtz_m']]){
       const layers=hoodConfig.speciesVariants[key].parts.head.layers;
-      assert(layers.front.behindImage.url.endsWith('furhood-behind_'+suffix+'.png'),'backplane replaces base with dedicated rear art');
-      assert(layers.front_trim.behindImage.url.endsWith('furhood-trim_'+suffix+'.png'),'rear plane retains furhood-trim sprite');
+      // Uploaded art, or its clothing-fitter refit (e.g. furhood-behind_mashtz_mashtzarr_m.png).
+      const fitted=suffix.replace(/_(m|f)$/,'_'+key.split('_')[0]+'_$1');
+      const isArt=(url,stem)=>url.endsWith(stem+'_'+suffix+'.png')||url.endsWith(stem+'_'+fitted+'.png');
+      assert(isArt(layers.front.behindImage.url,'furhood-behind'),'backplane replaces base with dedicated rear art: '+layers.front.behindImage.url);
+      assert(isArt(layers.front_trim.behindImage.url,'furhood-trim'),'rear plane retains furhood-trim sprite: '+layers.front_trim.behindImage.url);
       assert(fs.existsSync(path.join(root,'docs',layers.front.behindImage.url)),'rear hood art must be bundled in the feature branch');
     }
     assert.equal(window.FurHoodLeatherworking.isPendingAsset(expectedNelkBack),false,'newly imported Nelk rear image is no longer pending');

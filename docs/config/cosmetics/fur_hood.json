@@ -95,7 +95,7 @@
             "front": {
               "layerRole": "base",
               "image": {
-                "url": "./assets/cosmetics/clothes/hood/furhood-base_mashtz_m.png",
+                "url": "./assets/cosmetics/clothes/hood/furhood-base_mashtz_mashtzarr_m.png",
                 "colors": [
                   "A"
                 ]
@@ -114,7 +114,7 @@
                 }
               },
               "behindImage": {
-                "url": "./assets/cosmetics/clothes/hood/furhood-behind_mashtz_m.png"
+                "url": "./assets/cosmetics/clothes/hood/furhood-behind_mashtz_mashtzarr_m.png"
               }
             },
             "front_exposed_ear": {
@@ -140,7 +140,7 @@
             "front_trim": {
               "layerRole": "trim",
               "image": {
-                "url": "./assets/cosmetics/clothes/hood/furhood-trim_mashtz_m.png",
+                "url": "./assets/cosmetics/clothes/hood/furhood-trim_mashtz_mashtzarr_m.png",
                 "colors": [
                   "B"
                 ]
@@ -159,7 +159,7 @@
                 }
               },
               "behindImage": {
-                "url": "./assets/cosmetics/clothes/hood/furhood-trim_mashtz_m.png"
+                "url": "./assets/cosmetics/clothes/hood/furhood-trim_mashtz_mashtzarr_m.png"
               }
             },
             "front_exposed_tusk": {
@@ -213,7 +213,7 @@
             "front": {
               "layerRole": "base",
               "image": {
-                "url": "./assets/cosmetics/clothes/hood/furhood-base_mashtz_m.png",
+                "url": "./assets/cosmetics/clothes/hood/furhood-base_mashtz_mashtzarr_m.png",
                 "colors": [
                   "A"
                 ]
@@ -232,7 +232,7 @@
                 }
               },
               "behindImage": {
-                "url": "./assets/cosmetics/clothes/hood/furhood-behind_mashtz_m.png"
+                "url": "./assets/cosmetics/clothes/hood/furhood-behind_mashtz_mashtzarr_m.png"
               }
             },
             "front_exposed_ear": {
@@ -258,7 +258,7 @@
             "front_trim": {
               "layerRole": "trim",
               "image": {
-                "url": "./assets/cosmetics/clothes/hood/furhood-trim_mashtz_m.png",
+                "url": "./assets/cosmetics/clothes/hood/furhood-trim_mashtz_mashtzarr_m.png",
                 "colors": [
                   "B"
                 ]
@@ -277,7 +277,7 @@
                 }
               },
               "behindImage": {
-                "url": "./assets/cosmetics/clothes/hood/furhood-trim_mashtz_m.png"
+                "url": "./assets/cosmetics/clothes/hood/furhood-trim_mashtz_mashtzarr_m.png"
               }
             },
             "front_exposed_tusk": {
