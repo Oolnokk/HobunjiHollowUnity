@@ -157,7 +157,7 @@
     const zone=area(),p=playerTile(),chunk=chunkOf(p.c,p.r),key=keyFor(zone,chunk.c,chunk.r);
     const day=Math.floor(Number(deps.day?.())||0),previous=ledger.get(key);
     if(previous?.cleared||(previous?.day===day&&!previous.ready))return; // Failed/used daily rolls perform no NPC scans on later ticks.
-    if(npcInChunk(zone,chunk))return;
+    if(deps.canActivate?.()===false||npcInChunk(zone,chunk))return; // Check combat and population only after cheap daily ledger rejection.
     if(previous?.day===day){
       if(previous.ready){const site=siteInChunk(zone,chunk);if(site)activate(zone,chunk,site,key);else ledger.set(key,{day,cleared:false,ready:false});}
       return;
@@ -235,9 +235,9 @@
     disposeActor(c);return true;
   }
   function eligibleTarget(c,r) {
-    const rec=active;if(!rec?.mesh||area()!==rec.zone||!['bait','reward'].includes(rec.phase)||deps.isInCombat?.()||window.PlayerDowned?.isDowned?.())return false;
-    if(c!==rec.site.c||r!==rec.site.r)return false;
-    return Math.hypot(deps.player.x/deps.TILE-c-.5,deps.player.y/deps.TILE-r-.5)<=2.5;
+    const rec=active;if(!rec?.mesh||area()!==rec.zone||!['bait','reward'].includes(rec.phase))return false;
+    if(c!==rec.site.c||r!==rec.site.r||Math.hypot(deps.player.x/deps.TILE-c-.5,deps.player.y/deps.TILE-r-.5)>2.5)return false;
+    return !window.PlayerDowned?.isDowned?.()&&!deps.isInCombat?.(); // Combat scans only for a genuinely aimed and reachable root.
   }
   function action(c,r) {
     if(!eligibleTarget(c,r))return null;
@@ -300,7 +300,7 @@
     const elapsed=checkTime;checkTime=0;
     syncWorld(); // World/cycle strings and ledger maintenance are throttled too.
     const rec=active;
-    if(!rec){if(!window.PlayerDowned?.isDowned?.()&&deps.player.health>0&&deps.canActivate?.()!==false)tryActivate();return;}
+    if(!rec){if(!window.PlayerDowned?.isDowned?.()&&deps.player.health>0)tryActivate();return;}
     if(rec.phase==='combat'&&!window.PlayerDowned?.isDowned?.()&&Math.hypot(deps.player.x/deps.TILE-rec.site.c-.5,deps.player.y/deps.TILE-rec.site.r-.5)>chunkSize()*2){reset('player escaped locale');return;}
     if(rec.phase==='bait'){
       if(!sameChunk(deps.player.x/deps.TILE,deps.player.y/deps.TILE,rec.chunk)||npcInChunk(zone,rec.chunk))reset('bait dormant');
