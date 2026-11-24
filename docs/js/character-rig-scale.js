@@ -377,7 +377,7 @@
   const _pixelHeightFactors = new Map(); // One solved correction per source-art measurement and species/gender, not per NPC or render frame.
   function pixelHeightCorrectionFor(species, gender) {
     const defaults = window.HobunjiCharacterRigScaleDefaults; // Eight requested physical-height goals; other species retain their authored relative shifts.
-    const normalizedSpecies = transformSpecies(species);
+    const normalizedSpecies = normalizeKey(species); // Keep explicit Mammakhbuur/other subspecies goals; transformation aliases may borrow a donor portrait but NOT the donor's height target.
     const g = normalizeGender(gender);
     const maleFeet = Number(defaults?.maleHeightFeet?.[normalizedSpecies]);
     if (!(maleFeet > 0)) return 1;
