@@ -87,8 +87,8 @@ assert.deepEqual(rectCalls, [{ x: 100, y: 20, z: 40, w: 60 }, rect],
 const held = block('  function replaySelectiveHeldOverlay(', '  function isShellOutlinePass(');
 const shell = block('  function replayShellOutlineXray(', '  function wrappedRender(');
 const hiddenAt = held.indexOf('suppressedOverlay = suppressDraws('); // Runtime must first hide hands/tools/feet before collecting the ordinary depth blockers.
-const cutoutAt = held.indexOf('const cutoutDepthMeshes = canLockColorMask ? collectVisible(pngDepthRegistry, scene)');
-const coverAt = held.indexOf('const protectedDepthMeshes = canLockColorMask ? collectVisible(protectedCoverRegistry, scene)');
+const cutoutAt = held.indexOf('const cutoutDepthMeshes = groups.length && canLockColorMask ? collectVisible(pngDepthRegistry, scene)');
+const coverAt = held.indexOf('const protectedDepthMeshes = groups.length && canLockColorMask ? collectVisible(protectedCoverRegistry, scene)');
 const groupAt = held.indexOf('for (const group of groups)');
 assert(hiddenAt >= 0 && hiddenAt < cutoutAt && cutoutAt < coverAt && coverAt < groupAt,
   'visible depth registries are resolved once, after hiding replay participants and before elevation-group iteration');
@@ -132,9 +132,9 @@ const diagnosticNames = ['lastBaseReplayCandidates', 'lastBaseOffscreenFiltered'
   'lastForcedGroundDepthMaterials', 'lastElevationReplayGroups', 'lastXrayTileRegions',
   'lastXrayOrdinaryMeshes', 'lastUnknownElevationMeshes', 'lastNearbyTintCovers',
   'lastDistantTintCovers', 'lastWaterClipScopes', 'lastWaterClipOverflow'];
-const noReplay = new Function(block('  function wrappedRender(', '  wrappedRender.__hobunjiHeldRenderOrderWrapped')
+const noReplay = new Function(block('  function resetBaseReplayDiagnostics(', '  wrappedRender.__hobunjiHeldRenderOrderWrapped')
   + `
-    const internalReplay = false, enabled = true, hasDisabledActorXray = false;
+    const internalReplay = false, enabled = true, hasDisabledActorXray = false, allActorXrayDisabled = false;
     const retiredScenes = new WeakSet(), window = {};
     const heldRegistry = {}, groundRegistry = {}, topFaceGroundRegistry = {}, tintCoverRegistry = {};
     const waterOccludedRegistry = {}, waterPortraitRegistry = {};
