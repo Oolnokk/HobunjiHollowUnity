@@ -1,0 +1,173 @@
+{
+  "format": "hobunji-clothing-fit-recipe-v1",
+  "id": "mashtzarr-hood-shape-from-mao-ao-female",
+  "name": "Mashtzarr hood shape (female) from mao-ao",
+  "description": "Warp fitted so the mao-ao female fine hood (finehood-base/trim_f) takes the shape of the mashtzarr female fine hood (mashtz_finehood-base/trim_f). Apply to any hood the mao-ao wears to get its mashtzarr female version.",
+  "region": "headwear",
+  "source": {
+    "species": "mao-ao",
+    "gender": "female"
+  },
+  "target": {
+    "species": "mashtzarr",
+    "gender": "female"
+  },
+  "transform": {
+    "scaleX": 1.1837,
+    "scaleY": 0.8936,
+    "translateX": 3.6327,
+    "translateY": 5.5213
+  },
+  "offsets": [
+    {
+      "x": 0,
+      "y": 0
+    },
+    {
+      "x": 0,
+      "y": 0
+    },
+    {
+      "x": 0,
+      "y": 0
+    },
+    {
+      "x": 0,
+      "y": 0.057803
+    },
+    {
+      "x": 0,
+      "y": 0
+    },
+    {
+      "x": 0,
+      "y": 0
+    },
+    {
+      "x": 0,
+      "y": 0
+    },
+    {
+      "x": -0.143162,
+      "y": -0.325145
+    },
+    {
+      "x": 0.016026,
+      "y": -0.049133
+    },
+    {
+      "x": 0.068376,
+      "y": 0.057803
+    },
+    {
+      "x": -0.147436,
+      "y": -0.00578
+    },
+    {
+      "x": 0,
+      "y": 0
+    },
+    {
+      "x": 0,
+      "y": 0
+    },
+    {
+      "x": 0.00641,
+      "y": -0.026012
+    },
+    {
+      "x": 0,
+      "y": 0.057803
+    },
+    {
+      "x": 0,
+      "y": 0.057803
+    },
+    {
+      "x": -0.017094,
+      "y": -0.031792
+    },
+    {
+      "x": 0,
+      "y": 0
+    },
+    {
+      "x": 0,
+      "y": 0
+    },
+    {
+      "x": 0.011752,
+      "y": 0.083815
+    },
+    {
+      "x": -0.012821,
+      "y": -0.00289
+    },
+    {
+      "x": 0,
+      "y": -0.034682
+    },
+    {
+      "x": 0.025641,
+      "y": -0.034682
+    },
+    {
+      "x": 0,
+      "y": 0
+    },
+    {
+      "x": 0,
+      "y": 0
+    },
+    {
+      "x": 0.086538,
+      "y": 0.054913
+    },
+    {
+      "x": -0.032051,
+      "y": 0.060694
+    },
+    {
+      "x": 0.042735,
+      "y": 0
+    },
+    {
+      "x": 0.025641,
+      "y": 0.130058
+    },
+    {
+      "x": 0,
+      "y": 0
+    },
+    {
+      "x": 0,
+      "y": 0
+    },
+    {
+      "x": 0,
+      "y": 0
+    },
+    {
+      "x": 0,
+      "y": 0
+    },
+    {
+      "x": 0,
+      "y": 0
+    },
+    {
+      "x": 0,
+      "y": 0
+    },
+    {
+      "x": 0,
+      "y": 0
+    }
+  ],
+  "createdAt": "2026-11-24T02:51:05+00:00",
+  "fitQuality": {
+    "weightedMismatchPx": 890,
+    "bboxOnlyMismatchPx": 3848,
+    "targetWeightedPx": 11284
+  }
+}

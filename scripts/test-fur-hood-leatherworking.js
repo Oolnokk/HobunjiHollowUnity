@@ -20,14 +20,13 @@
   }
   assert(index.entries.some(entry => entry.id === 'fur_hood'), 'new wearable cosmetic is published in portrait registry');
   assert.deepEqual(Object.keys(cosmetic.speciesVariants).sort(), ['mashtzarr_female','mashtzarr_male','tletingan_male']);
-  // Mashtzarr females reuse the male fur art (as they did through fallback) but carry their own exposed ear/tusk/trunk.
+  // Mashtzarr females get their own fine-hood-shaped fur art (recipe mashtzarr-hood-shape-from-mao-ao-female) and their own exposed ear/tusk/trunk.
   const mashF = cosmetic.speciesVariants.mashtzarr_female.parts.head.layers;
   for (const role of ['base','trim'])
-    assert.equal(Object.values(mashF).find(part => part.layerRole === role)?.image?.url,
-      Object.values(cosmetic.speciesVariants.mashtzarr_male.parts.head.layers).find(part => part.layerRole === role)?.image?.url);
+    assert(Object.values(mashF).find(part => part.layerRole === role)?.image?.url?.endsWith('furhood-' + role + '_mashtz_fine_f.png'), 'female fur hood ' + role + ' art');
   for (const part of ['ear','tusk','trunk'])
     assert(mashF['front_exposed_' + part]?.image?.url?.includes('/mashtzarr-f/exposed_' + part + '.png'), 'female fur hood shows female ' + part);
-  for (const [key, suffix] of Object.entries({ tletingan_male:'tl_m', mashtzarr_male:'mashtz_m' })) {
+  for (const [key, suffix] of Object.entries({ tletingan_male:'tl_m', mashtzarr_male:'mashtz_fine_m' })) { // Mashtzarr art is the tletingan fur hood warped by the mashtzarr fine-hood shape recipe.
     const parts = Object.values(cosmetic.speciesVariants[key].parts.head.layers); // Uses real wearer-specific sprites rather than a fine-hood stand-in.
     for (const role of ['base','trim']) {
       const image = parts.find(part => part.layerRole === role)?.image?.url;
@@ -118,7 +117,7 @@
     assert.deepEqual([...window.FurHoodLeatherworking.orderLayersForView(withAnatomy,'front')].map(entry=>entry.role),['animalBack','base','animalFront','exposedUnderTrim','trim','exposed'],'wearer ear sits under the trim, tusk/trunk over every fur piece');
     assert.deepEqual([...window.FurHoodLeatherworking.orderLayersForView(withAnatomy,'behind')].map(entry=>entry.role),['exposed','exposedUnderTrim','trim','animalFront','base','animalBack'],'wearer face anatomy is hidden behind the hood from the rear');
     const hoodConfig=JSON.parse(read('docs/config/cosmetics/fur_hood.json'));
-    for(const [key,suffix] of [['tletingan_male','tl_m'],['mashtzarr_male','mashtz_m']]){
+    for(const [key,suffix] of [['tletingan_male','tl_m'],['mashtzarr_male','mashtz_fine_m'],['mashtzarr_female','mashtz_fine_f']]){ // Mashtzarr rear art follows the fine-hood shape recipe too.
       const layers=hoodConfig.speciesVariants[key].parts.head.layers;
       assert(layers.front.behindImage.url.endsWith('furhood-behind_'+suffix+'.png'),'backplane replaces base with dedicated rear art');
       assert(layers.front_trim.behindImage.url.endsWith('furhood-trim_'+suffix+'.png'),'rear plane retains furhood-trim sprite');

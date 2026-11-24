@@ -73,10 +73,12 @@ for (const [key, suffix] of [['tletingan_male', 'tl_m'], ['mashtzarr_male', 'mas
   assert.deepEqual(Object.keys(plain).filter(name => !name.startsWith('front_exposed_')), ['front'], key + ' plain hood must contain no trim');
   assert.equal(plain.front.layerRole, 'base');
   assert.equal(plain.front.image.url, './assets/cosmetics/clothes/hood/simplehood_' + suffix + '.png');
-  assert.equal(fur.front.image.url, plain.front.image.url);
+  // Mashtzarr's fur-lined hood follows the mashtzarr fine-hood silhouette (fit recipe), so it no longer shares the simple hood's base.
+  const furSuffix = key === 'mashtzarr_male' ? 'mashtz_fine_m' : suffix;
+  assert.equal(fur.front.image.url, './assets/cosmetics/clothes/hood/simplehood_' + furSuffix + '.png');
   assert.equal(fur.front_trim.layerRole, 'trim');
   assert.deepEqual(fur.front_trim.image.colors, ['B']);
-  assert.equal(fur.front_trim.image.url, './assets/cosmetics/clothes/hood/furlinedhood-trim_' + suffix + '.png');
+  assert.equal(fur.front_trim.image.url, './assets/cosmetics/clothes/hood/furlinedhood-trim_' + furSuffix + '.png');
   for (const value of [plain.front, fur.front, fur.front_trim]) {
     assert(assetExists(value.image.url), key + ': missing source sprite ' + value.image.url);
     if (value.behindImage?.url) assert(assetExists(value.behindImage.url), key + ': missing behind sprite ' + value.behindImage.url);

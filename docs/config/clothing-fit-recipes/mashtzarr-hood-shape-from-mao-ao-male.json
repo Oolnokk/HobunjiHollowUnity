@@ -1,0 +1,173 @@
+{
+  "format": "hobunji-clothing-fit-recipe-v1",
+  "id": "mashtzarr-hood-shape-from-mao-ao-male",
+  "name": "Mashtzarr hood shape (male) from mao-ao",
+  "description": "Warp fitted so the mao-ao male fine hood (finehood-base/trim_m) takes the shape of the mashtzarr male fine hood (mashtz_finehood-base/trim_m). Apply to any hood the mao-ao wears to get its mashtzarr male version.",
+  "region": "headwear",
+  "source": {
+    "species": "mao-ao",
+    "gender": "male"
+  },
+  "target": {
+    "species": "mashtzarr",
+    "gender": "male"
+  },
+  "transform": {
+    "scaleX": 1.2353,
+    "scaleY": 0.9263,
+    "translateX": -0.2353,
+    "translateY": 4.1316
+  },
+  "offsets": [
+    {
+      "x": 0,
+      "y": 0
+    },
+    {
+      "x": 0,
+      "y": 0
+    },
+    {
+      "x": 0.111111,
+      "y": -0.070809
+    },
+    {
+      "x": 0.00641,
+      "y": -0.069364
+    },
+    {
+      "x": 0,
+      "y": 0
+    },
+    {
+      "x": 0,
+      "y": 0
+    },
+    {
+      "x": 0,
+      "y": 0
+    },
+    {
+      "x": -0.017094,
+      "y": -0.00578
+    },
+    {
+      "x": 0.028846,
+      "y": -0.034682
+    },
+    {
+      "x": 0.084402,
+      "y": 0.057803
+    },
+    {
+      "x": -0.189103,
+      "y": -0.031792
+    },
+    {
+      "x": 0,
+      "y": 0
+    },
+    {
+      "x": 0,
+      "y": 0
+    },
+    {
+      "x": -0.017094,
+      "y": 0.08526
+    },
+    {
+      "x": 0.023504,
+      "y": 0.057803
+    },
+    {
+      "x": -0.023504,
+      "y": 0.017341
+    },
+    {
+      "x": -0.00641,
+      "y": -0.021676
+    },
+    {
+      "x": 0,
+      "y": 0
+    },
+    {
+      "x": 0,
+      "y": 0
+    },
+    {
+      "x": -0.012821,
+      "y": 0.096821
+    },
+    {
+      "x": 0.012821,
+      "y": -0.056358
+    },
+    {
+      "x": 0,
+      "y": -0.057803
+    },
+    {
+      "x": 0.00641,
+      "y": 0
+    },
+    {
+      "x": 0,
+      "y": 0
+    },
+    {
+      "x": 0,
+      "y": 0
+    },
+    {
+      "x": 0.07265,
+      "y": 0.115607
+    },
+    {
+      "x": -0.063034,
+      "y": 0.052023
+    },
+    {
+      "x": 0.036325,
+      "y": 0.004335
+    },
+    {
+      "x": 0.05235,
+      "y": 0.040462
+    },
+    {
+      "x": 0,
+      "y": 0
+    },
+    {
+      "x": 0,
+      "y": 0
+    },
+    {
+      "x": 0,
+      "y": 0
+    },
+    {
+      "x": 0,
+      "y": 0
+    },
+    {
+      "x": 0,
+      "y": 0
+    },
+    {
+      "x": 0,
+      "y": 0
+    },
+    {
+      "x": 0,
+      "y": 0
+    }
+  ],
+  "createdAt": "2026-11-24T02:51:05+00:00",
+  "fitQuality": {
+    "weightedMismatchPx": 1045,
+    "bboxOnlyMismatchPx": 3962,
+    "targetWeightedPx": 12328
+  }
+}
