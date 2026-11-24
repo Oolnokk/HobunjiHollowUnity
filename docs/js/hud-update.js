@@ -243,6 +243,8 @@
     });
   }
 
+  const keyHudMarkup = new WeakMap(); // Last source HTML for each actual HUD node, not browser-reserialized img markup.
+  let keyHudWrites = 0, keyHudWriteSkips = 0;
   function refreshKeyHud(btns) {
     if (!deps.keyHudEl) return;
     const item = deps.getActiveInventoryItem();
@@ -303,7 +305,11 @@
     parts.push('<div class="kh-div"></div>');
     parts.push('<div class="kh-group"><span class="kh-key">Esc</span><span class="kh-label">Menu</span></div>');
 
-    deps.keyHudEl.innerHTML = parts.join('');
+    const html = parts.join('');
+    if (keyHudMarkup.get(deps.keyHudEl) === html && deps.keyHudEl.firstChild) { keyHudWriteSkips++; return; }
+    deps.keyHudEl.innerHTML = html;
+    keyHudMarkup.set(deps.keyHudEl,html);
+    keyHudWrites++;
     if (item) {
       deps.applyItemSpriteIcon(deps.keyHudEl.querySelector('.kh-item-icon'), deps.ITEM_DEFS[item.key], item.key);
     }
@@ -333,6 +339,8 @@
 
   // ── Item scroll ────────────────────────────────────────
   let _lastItemScrollKey = null;
+  window.__keyHudWriteDebug = () => ({ writes:keyHudWrites, skipped:keyHudWriteSkips });
+
   function refreshItemScroll(stacks = deps.getInventoryStackItems()) {
     const n = stacks.length;
     const iBtnEl = deps.itemBtnEl;

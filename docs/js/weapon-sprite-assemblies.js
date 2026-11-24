@@ -587,9 +587,23 @@
     const up = new THREE.Vector3(0, 1, 0); // The carrier's local Y remains the taut suspension axis.
     const basis = new THREE.Matrix4(); // Reused to orient the plane without allocations per frame.
     const inverseWorld = new THREE.Matrix4(); // Uses the rendered carrier matrix directly, avoiding a holder-pose recomputation during onBeforeRender.
+    const previousCarrier = new THREE.Matrix4(); // Exact world-matrix key across base/depth/outline replays.
+    const previousCamera = new THREE.Vector3();
+    const previousFacing = new THREE.Quaternion();
+    let facingReady = false;
     mesh.onBeforeRender = (_renderer, _scene, camera) => {
       if (!camera?.getWorldPosition) return;
-      camera.getWorldPosition(cameraPosition);
+      // The renderer already updated the actual camera matrix for this pass.
+      if (camera.matrixWorld?.elements) cameraPosition.setFromMatrixPosition(camera.matrixWorld);
+      else camera.getWorldPosition(cameraPosition);
+      if (facingReady && previousCarrier.equals(group.matrixWorld) && previousCamera.equals(cameraPosition)
+          && previousFacing.equals(mesh.quaternion)) {
+        mesh.userData.ropeFacingReuses = (mesh.userData.ropeFacingReuses || 0) + 1;
+        if (mesh.matrixWorldNeedsUpdate) mesh.updateMatrixWorld();
+        return;
+      }
+      previousCarrier.copy(group.matrixWorld);
+      previousCamera.copy(cameraPosition);
       cameraPosition.applyMatrix4(inverseWorld.copy(group.matrixWorld).invert()); // Match the ruin rope billboard without recomputing the game's baked tool-holder pose.
       normal.set(cameraPosition.x, 0, cameraPosition.z);
       if (normal.lengthSq() < 1e-8) normal.set(0, 0, 1);
@@ -598,6 +612,9 @@
       normal.crossVectors(right, up).normalize();
       mesh.quaternion.setFromRotationMatrix(basis.makeBasis(right, up, normal));
       mesh.updateMatrixWorld(); // Face the actual rendering camera, including Tool Hub/attack preview cameras.
+      previousFacing.copy(mesh.quaternion);
+      facingReady = true;
+      mesh.userData.ropeFacingUpdates = (mesh.userData.ropeFacingUpdates || 0) + 1;
     };
     return group; // The grapple head replaces the ruin rope's brush-shaped grip tip.
   }
@@ -645,6 +662,14 @@
     const d = body.direction, w = body.angularVelocity; // Mutated per-instance direction and angular velocity; no frame allocations.
     const steps = Math.ceil(Math.min(MAX_DT, dt) * 240), h = Math.min(MAX_DT, dt) / steps; // At most 20 substeps per render frame.
     const ax = -acceleration.x, ay = -gravity - acceleration.y, az = -acceleration.z; // Effective gravity in the accelerating pivot frame.
+    // Exact equilibrium only: a hanging, motionless connector with no
+    // sideways acceleration has zero torque at every substep. No epsilon,
+    // sleep threshold or reduced physical update rate.
+    if (w.x === 0 && w.y === 0 && w.z === 0 && Number.isFinite(ax) && Number.isFinite(ay) && Number.isFinite(az)
+        && d.y*az-d.z*ay === 0 && d.z*ax-d.x*az === 0 && d.x*ay-d.y*ax === 0) {
+      body.equilibriumSkips = (body.equilibriumSkips || 0) + steps;
+      return;
+    }
     const decay = Math.exp(-Math.max(0, damping) * h); // Mild air/bearing loss expressed per second, independent of frame rate.
     for (let i = 0; i < steps; i++) { // Kick/rotate/kick preserves free rotation and the exact connector length.
       w.x += (d.y * az - d.z * ay) * h / (2 * length);
@@ -895,9 +920,9 @@
     worldQ.multiply(q.correction.setFromUnitVectors(chainSpan, q.axisUp)); // Align both opaque chain endpoints, not the image rectangle.
     const chainCenterWorld = q.chainCenter.copy(pivot).sub(q.tmp.copy(topLocal).multiplyScalar(attachmentScale).applyQuaternion(worldQ)); // Keep the already axis-scaled top contact pinned to the haft.
     const rootQInverse = q.rootInverseQ.copy(q.rootWorldQ).invert(); // root's baked matrixWorld was refreshed above and is unchanged since.
-    state.chain.position.copy(bakedPoint(chainCenterWorld, null, root, q.inverseRootMatrix, q.chainLocal));
-    state.chain.quaternion.copy(rootQInverse).multiply(worldQ);
-    const inverseRootWorld = q.rootInverseWorld.copy(root.matrixWorld).invert(); // Shared parent correction; a species' nonuniform body dimensions never distort world-facing suspension.
+    const inverseRootWorld = q.rootInverseWorld.copy(root.matrixWorld).invert(); // One inverse serves both local anchors and both corrected part matrices.
+    state.chain.position.copy(q.chainLocal.copy(chainCenterWorld).applyMatrix4(inverseRootWorld));
+    state.chain.quaternion.copy(rootQInverse).multiply(worldQ); // Shared parent correction; a species' nonuniform body dimensions never distort world-facing suspension.
     const ropeWidthScale = state.chain.userData?.hobunjiRuinRopeSprite ? authoredChainScaleY : chainScaleX; // Pose length changes only Y, not the rope ribbon's visible width.
     const ropeDepthScale = state.chain.userData?.hobunjiRuinRopeSprite ? authoredChainScaleY : (state.chain.userData?.hobunjiGeneratedRope ? chainScaleX : 1);
     placeFlexiblePartWorld(state.chain, inverseRootWorld, chainCenterWorld, worldQ,
@@ -926,7 +951,7 @@
       headCenterWorld.add(q.tmp.set(dx * unit, -dy * unit, 0)
         .multiplyScalar(attachmentScale * headScale).applyQuaternion(headQ)); // Pair X/Y nudges move only head art, never the rope/chain.
     }
-    state.headRoot.position.copy(bakedPoint(headCenterWorld, null, root, q.inverseRootMatrix, q.headLocal));
+    state.headRoot.position.copy(q.headLocal.copy(headCenterWorld).applyMatrix4(inverseRootWorld));
     state.headRoot.quaternion.copy(rootQInverse).multiply(headQ);
     placeFlexiblePartWorld(state.headRoot, inverseRootWorld, headCenterWorld, headQ,
       q.partWorldScale.setScalar(attachmentScale * headScale), q.partWorldMatrix); // A single world-size head, independent of body-axis stretch and rope reach.
@@ -986,7 +1011,8 @@
         head: relativePartScale(s.config.flail.head),
         renderedHaftLong: s.renderedHaftLongScale ?? null, renderedHaftWidth: s.renderedHaftWidthScale ?? null, // Mobile-readable evidence of which baked haft axis drives the flexible parts.
       } : null, // Mobile diagnostics expose both independent connector axes.
-      connector: s.config.flail?.chain?.type === 'rope' ? 'rope' : s.config.flail ? 'chain' : null, // Mobile diagnostics expose both handle-relative multipliers.
+      connector: s.config.flail?.chain?.type === 'rope' ? 'rope' : s.config.flail ? 'chain' : null,
+      performance: s.config.flail ? { equilibriumSubstepsSkipped:s.equilibriumSkips||0, ropeFacingUpdates:s.chain?.children?.[0]?.userData?.ropeFacingUpdates||0, ropeFacingReuses:s.chain?.children?.[0]?.userData?.ropeFacingReuses||0 } : null, // Mobile diagnostics expose both handle-relative multipliers.
       ropeArt: s.chain?.userData?.hobunjiRuinRopeSprite ? 'assets/objectsprites/rope_long.png' : null, // Mobile confirmation of the rope source.
       ropeTint: s.chain?.userData?.hobunjiRuinRopeSprite ? { color: s.config.flail.chain.color, method: s.chain.children?.[0]?.userData?.ropeTintMethod || 'unavailable' } : null, // Confirms the real 3D texture was shade-filled, including editor previews, without accessing devtools.
       lifetime: weakRegistry ? 'root-weak' : 'explicit-drop', // Visible fallback for browsers without weak references.

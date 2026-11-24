@@ -30,7 +30,7 @@
   const counters = {
     scanned: 0, submitted: 0, processed: 0, skipped: 0, cached: 0,
     sourceTriangles: 0, optimizedTriangles: 0, prebakedRegistered: 0, lastDrawSaved: 0,
-    lastRenderMeshes: 0, renderSwaps: 0, renderGeometryChecks: 0, lastSkip: '', lastError: '',
+    lastRenderMeshes: 0, renderSwaps: 0, renderGeometryChecks: 0, frameCandidateBuilds:0, frameCandidateReuses:0, candidateVisits:0, hiddenAncestorSkips:0, lastSkip: '', lastError: '',
   }; // Mobile-visible diagnostic counters, not per-frame logger output.
 
   let enabled = readEnabled(); // Persisted experimental graphics-quality preference.
@@ -40,6 +40,34 @@
   let renderer = null; // Only the real __hobunjiGameRenderer, never an editor renderer.
   let renderSequence = 0; // Marks which sources were already checked for the current draw.
   const swapped = []; // Reused restore pairs for the current native draw.
+  const worldCandidates = new WeakMap(); // World-frame token -> active-scene candidates; never retained across frames.
+  const visibilityStamp = new WeakMap(); // Object -> signed draw sequence, reused by siblings in this draw.
+  function sceneCandidates(scene, frame) {
+    if (!frame || frame.scene !== scene) return readyMeshes; // Standalone/preview fallback.
+    let list = worldCandidates.get(frame);
+    if (list) { counters.frameCandidateReuses++; return list; }
+    list = [];
+    const roots = new WeakMap(); // One root lookup per ancestor, irrespective of how many ready meshes share it.
+    function rootOf(node) {
+      if (!node.parent) return node;
+      let root = roots.get(node);
+      if (!root) { root = rootOf(node.parent); roots.set(node,root); }
+      return root;
+    }
+    for (const pair of readyMeshes) if (rootOf(pair[0]) === scene) list.push(pair);
+    worldCandidates.set(frame,list);
+    counters.frameCandidateBuilds++;
+    return list;
+  }
+  function visibleForDraw(node,scene,sequence) {
+    if (!node) return false;
+    const stamp = visibilityStamp.get(node);
+    if (stamp === sequence) return true;
+    if (stamp === -sequence) return false;
+    const visible = node.visible !== false && (node === scene || visibleForDraw(node.parent,scene,sequence));
+    visibilityStamp.set(node,visible ? sequence : -sequence);
+    return visible;
+  }
   const staleBakedSources = new WeakSet(); // An edited GLB clone cannot reattach to its old baked variant.
   let scan = null; // Iterative object tree cursor for the current scene.
   let lastScanAt = 0;
@@ -523,17 +551,21 @@
       }
     });
   }
-  function beforeDraw(scene, camera) {
+  function beforeDraw(scene, camera, frame = null) {
     if (scene.children?.length > 3 && now() - lastScanAt > SCAN_INTERVAL_MS) {
       startScan(scene); // Discovery remains idle-only.
     }
     const sequence = ++renderSequence; // Shared by every mesh using a given source on this draw.
     let trianglesAvoided = 0; // Submitted triangle reduction, reported by the existing status UI.
     try {
-      for (const [mesh, entry] of readyMeshes) {
+      for (const [mesh, entry] of sceneCandidates(scene,frame)) {
         if (swapped.length >= MAX_SWAPS_PER_RENDER * 2) break;
+        counters.candidateVisits++;
         if (!mesh.visible || (camera?.layers && mesh.layers && !(camera.layers.mask & mesh.layers.mask)) ||
-            mesh.geometry !== entry.source || !entry.variant || !validateForDraw(entry, sequence)) continue;
+            mesh.geometry !== entry.source || !entry.variant) continue;
+        if (!visibleForDraw(mesh,scene,sequence)) { counters.hiddenAncestorSkips++; continue; }
+        // Never reuse geometry validity between passes: a draw hook may replace an attribute.
+        if (!validateForDraw(entry, sequence)) continue;
         swapped.push(mesh, entry);
         mesh.geometry = entry.variant;
         trianglesAvoided += entry.triangles - entry.optimizedTriangles;
@@ -579,7 +611,7 @@
     // the replay culler and gameplay code always see original geometry.
     appliesTo: ctx => enabled && ctx.renderer === renderer && ctx.depth === 0 &&
       ctx.scene?.isScene && (!ctx.frame || ctx.worldScene),
-    before: ctx => beforeDraw(ctx.scene, ctx.camera),
+    before: ctx => beforeDraw(ctx.scene, ctx.camera, ctx.frame),
     after: restoreDraw,
   });
   function attachWhenReady() {

@@ -598,7 +598,9 @@
     try {
       const beardCtx = beardCanvas.getContext('2d',{willReadFrequently:true});
       const hoodCtx = hoodCanvas.getContext('2d',{willReadFrequently:true});
-      const beard = beardCtx.getImageData(0,0,SIZE,SIZE);
+      const cachedBeard = options.beardImageData;
+      const beard = cachedBeard?.width === SIZE && cachedBeard?.height === SIZE
+        && cachedBeard.data?.length === PIXELS*4 ? cachedBeard : beardCtx.getImageData(0,0,SIZE,SIZE); // Optional pristine input, never mutated.
       const hood = hoodCtx.getImageData(0,0,SIZE,SIZE);
       const automatic=options.permissionMode==='auto'
         ? (options.autoPermission || autoHoodAllowanceMask(hood.data,options.coneSpread,{
@@ -627,8 +629,9 @@
       let erasedPixels = 0, outlinedPixels = 0;
       if (refusedPixels) {
         const outlined = applyRefusedBeardOutline(beard.data,refused);
-        beard.data.set(outlined.pixels);
-        beardCtx.putImageData(beard,0,0);
+        const output = beard === cachedBeard ? beardCtx.createImageData(SIZE,SIZE) : beard;
+        output.data.set(outlined.pixels);
+        beardCtx.putImageData(output,0,0);
         erasedPixels = outlined.erasedPixels;
         outlinedPixels = outlined.outlinedPixels;
       }
