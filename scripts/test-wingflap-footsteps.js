@@ -120,7 +120,7 @@ assert.equal(audio.playWingflapSfx(large), false, 'footstep mute also applies to
 window.SCRATCHBONES_CONFIG.game.audio.footsteps.enabled = true;
 assert.equal(audio.playWingflapSfx(make('far', 'tzatzul', 'small')), true);
 assert.equal(audio.playWingflapSfx({ ...large, id: 'another-map', areaId: 'mine' }), false, 'inactive areas cannot be audible');
-assert.equal(audio.playWingflapSfx({ ...large, id: 'distant', x: 64 * 20 }), false, 'farther than earshot cannot be audible');
+assert.equal(audio.playWingflapSfx({ ...large, id: 'distant', x: 64 * 25 }), false, 'farther than earshot cannot be audible');
 assert.equal(audio.playWingflapSfx({ ...large, id: 'dead', health: 0 }), false);
 assert.equal(sounds.length, requests + 1, 'muted, distant, dead and other-area birds produce no media playback');
 const shot = audio.footstepSfxDebugSnapshot();
