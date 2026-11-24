@@ -527,7 +527,13 @@
           "layers": {
             "back": {
               "image": {
-                "url": "./assets/cosmetics/clothes/hat/riverlandskasa_wide-back_mashtzarr_m.png"
+                "url": "./assets/cosmetics/clothes/hat/riverlandskasa_wide-back_mashtzarr_m.png",
+                "frame": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 234,
+                  "height": 173
+                }
               },
               "spriteStyle": {
                 "base": {
@@ -545,7 +551,13 @@
             },
             "front": {
               "image": {
-                "url": "./assets/cosmetics/clothes/hat/riverlandskasa_wide-front_mashtzarr_m.png"
+                "url": "./assets/cosmetics/clothes/hat/riverlandskasa_wide-front_mashtzarr_m.png",
+                "frame": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 234,
+                  "height": 173
+                }
               },
               "spriteStyle": {
                 "base": {
