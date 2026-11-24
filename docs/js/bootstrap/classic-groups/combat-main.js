@@ -20,7 +20,7 @@
     "js/companion-combat-response.js?v=20261118followArbiter1",
     "js/combat/enemy-pet-targeting.js?v=20261114enemyPetAggro1",
     "js/combat/animal-scent-targeting.js?v=20261122herdPanicAudit1",
-    "js/combat/combat-input.js?v=20261117hypedInput2",
+    "js/combat/combat-input.js?v=20261123autoTargetDisabled1",
     "js/combat/attack-pose-templates.js?v=20261115h01bf772",
     "js/combat/combat-combo.js?v=20261117hypedCombo3",
     "js/combat/combat-quickattacks.js?v=20261117hypedQuick3",
