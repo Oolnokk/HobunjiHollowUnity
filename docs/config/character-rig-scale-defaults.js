@@ -14,7 +14,7 @@
 (() => {
   'use strict';
 
-  const VERSION = 32; // 2026-11-24: eight authored male heights are chair-calibrated; paired females are 93% of male visible stature, with all raw PNG heads still 65%.
+  const VERSION = 33; // 2026-11-24: restore exact independently uploaded Mao'ao female width/hands/feet; nominal feet remain estimates until PNG pixel bounds are verified.
   const NUHONGAN_PART_SCALE_AXES = Object.freeze({ x: 31 / 24, y: 31 / 24, z: 31 / 24 }); // Mean of prior inverse 0.8/0.75 adjustments: keep donor-sized extremities without stretching one axis.
   const NUHONGAN_HAND_SCALE_AXES = Object.freeze({ x: 31 / 24 * 0.88, y: 31 / 24 * 0.88, z: 31 / 24 * 0.88 }); // Nov 22: Nuhongan hands a little smaller (88%) than the shared extremity size; feet keep NUHONGAN_PART_SCALE_AXES.
   // Longoran extremities are thinner, never shorter (lanky look). Axes are in the
@@ -53,13 +53,14 @@
   const MAOAO_MALE_SHIFT = Object.freeze(Object.fromEntries(['x', 'y', 'handScale', 'footScale'].map(field => [
     field, MAOAO_MALE_APPROVED[field] / MAOAO_SOURCE_MAIN.male[field],
   ]))); // One exact proportional shift relative to main, applied to ALL characters regardless of gender.
-  const MAOAO_SOURCE_APPROVED = Object.freeze({
-    male: MAOAO_MALE_APPROVED,
-    female: Object.freeze(Object.fromEntries(Object.entries(MAOAO_SOURCE_MAIN.female).map(([field, baseline]) => [
-      field, baseline * MAOAO_MALE_SHIFT[field],
-    ]))), // Female Mao'ao was NOT independently edited: derive every dimension from main female × MALE Mao'ao shift.
-  });
-  const MAOAO_RELATIVE_SHIFT = Object.freeze({ male: MAOAO_MALE_SHIFT, female: MAOAO_MALE_SHIFT }); // Identical axes for both genders; genders retain their distinct main sizes.
+  const MAOAO_FEMALE_APPROVED = Object.freeze({
+    x: .895, y: .94, handScale: 1.15, footScale: 1.025,
+  }); // Exact female Mao'ao transform from the uploaded 'hobunji_full_character_scales (2).json'; never manufacture her dimensions from the male's changes.
+  const MAOAO_FEMALE_SHIFT = Object.freeze(Object.fromEntries(['x', 'y', 'handScale', 'footScale'].map(field => [
+    field, MAOAO_FEMALE_APPROVED[field] / MAOAO_SOURCE_MAIN.female[field],
+  ]))); // Other females inherit HER authored relative changes from main (independent from the male's deltas).
+  const MAOAO_SOURCE_APPROVED = Object.freeze({ male: MAOAO_MALE_APPROVED, female: MAOAO_FEMALE_APPROVED });
+  const MAOAO_RELATIVE_SHIFT = Object.freeze({ male: MAOAO_MALE_SHIFT, female: MAOAO_FEMALE_SHIFT }); // Distinct main-relative anchors avoid silently discarding the uploaded female values.
 
   const ADDITIONAL_MAIN_VALUES = Object.freeze({ // Source export includes these non-canonical skeleton/bipedal profiles in addition to the 18 core pairs.
     'boney-shinjimi-skeleton::male': Object.freeze({x:1, y:1, legLength:1, offsetY:0}),
@@ -98,8 +99,8 @@
     kenkari: 4, tletingan: 4 + 5 / 12, nuhongan: 3, longoran: 8,
     'mao-ao': 6 + 3 / 12, 'engh-sho': 5 + 5 / 12, mammakhbuur: 8, mashtzarr: 7 + 3 / 12,
   });
-  const FEMALE_VISIBLE_HEIGHT_RATIO = 0.93; // Humanlike dimorphism: female world-space height is 93% of her larger male, not 93% of an unrelated authored y field.
-  const MAOAO_REFERENCE_FEET = MALE_HEIGHT_FEET['mao-ao']; // The sole metric anchor; preserve approved male Mao'ao y=1.29 and the existing 6-foot ruler.
+  const FEMALE_VISIBLE_HEIGHT_RATIO = 0.93; // Provisional humanlike interpretation, not user-specified or validated against painted PNG bounds.
+  const MAOAO_REFERENCE_FEET = MALE_HEIGHT_FEET['mao-ao']; // Nominal, chair-derived reference; not a verified source-art crown measurement.
   function calibratedHeightFor(species, gender) {
     const target = MALE_HEIGHT_FEET[species];
     if (!(Number(target) > 0)) return null; // Unlisted NPC/skeleton identities retain their prior main-relative body/leg changes.
@@ -111,11 +112,11 @@
 
   const VALUES = Object.freeze(Object.fromEntries(Object.entries({...MAIN_VALUES, ...ADDITIONAL_MAIN_VALUES}).map(([key, base]) => {
     const [species, gender] = key.split('::');
-    const delta = MAOAO_RELATIVE_SHIFT[gender]; // Male Mao'ao is the only authored shift; each other identity (including females) inherits it.
+    const delta = MAOAO_RELATIVE_SHIFT[gender]; // Match each gender's independently uploaded Mao'ao transform change relative to main.
     const part = SOURCE_PART_SCALES[key] || [1,1]; // Defaults are the uploaded hand/foot values for every included identity.
     const isMaoao = species === 'mao-ao';
     const reference = MAOAO_SOURCE_APPROVED[gender];
-    const targetHeight = calibratedHeightFor(species, gender); // Height is the only exception to inherited Mao'ao-relative shifts for these eight species.
+    const targetHeight = calibratedHeightFor(species, gender); // Nominal height goals override the uploaded Y shift for eight paired species; they are NOT yet measured painted-head heights.
     const approvedY = targetHeight ?? (isMaoao ? reference.y : base.y * delta.y);
     return [key, Object.freeze({
       x: isMaoao ? reference.x : base.x * delta.x,
@@ -142,7 +143,7 @@
     uniformScale: (CHAIR_BACK_WORLD_HEIGHT * (6.25 / 3)) / (MAOAO_BASE_MODEL_HEIGHT * MAOAO_ADULT_DEFAULT_HEIGHT),
   }); // Applied once at the assembled floor-parent transform to all humanlike avatars (including saved overrides); species relative proportions stay unchanged.
   const ALIASES = Object.freeze({ rakakoan: 'kenkari', ghoul: 'mao-ao' }); // Skeleton identities now own their imported transforms; unrelated aliases still share canonical species. // Transform-equivalent NPC-only species inherit shared full-rig defaults; Harlyao Skeleton deliberately shares Harlyao's 1.2x Engh-sho scale.
-  const MAOAO_FOOT_SCALE = Object.freeze({ male: 1.05, female: 1.025 }); // Exact new Mao'ao reference foot scales; +25% old main tuning has been removed.
+  const MAOAO_FOOT_SCALE = Object.freeze({ male: 1.05, female: 1.025 }); // Exact uploaded reference foot scales.
 
   const normalizeSpecies = value => {
     const raw = String(value || '').trim().toLowerCase().replace(/[’']/g, '').replace(/_/g, '-');
