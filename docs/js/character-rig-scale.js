@@ -378,7 +378,8 @@
   const _scaledParents = new Set(); // Only weak references to live character parents; one batched reapplication when bare-PNG measurement finishes.
   const _knownParents = typeof WeakMap === 'function' ? new WeakMap() : null; // Deduplicates repeated actor updates without retaining their meshes.
   function trackScaledParent(parent) {
-    if (!_knownParents || typeof WeakRef !== 'function' || _knownParents.has(parent)) return;
+    if (!_knownParents || typeof WeakRef !== 'function' || _knownParents.has(parent)
+      || window.HobunjiCharacterDimensions?.status === 'ready') return; // Do not retain weak-reference wrappers for new NPCs after calibration finished.
     const reference = new WeakRef(parent); // Does not prevent off-screen/NPC/despawned actors from being garbage collected.
     _knownParents.set(parent, reference);
     _scaledParents.add(reference);
@@ -399,6 +400,7 @@
           authored: state.authoredScale, age: state.ageFraction });
     }
     const count = eligible.length;
+    _scaledParents.clear(); // The scan has completed; release registry wrappers after capturing only affected live actors.
     let cursor = 0; // Each tracked actor is revisited once after the existing PNG scan, not shifted through an O(n²) queue.
     const applyChunk = () => {
       for (let n = 0; n < 24 && cursor < eligible.length; n++) {
