@@ -30,6 +30,7 @@
   let houseBuilding = false; // Prevents repeated fetches during an in-flight build.
   let houseUnregister = null; // Shared hard-wall collision registration, active even when invisible.
   let generation = 0; // Invalidates pending asynchronous builders after map/world/encounter changes.
+  let feyApproachTimer = 0; // Rare nearby-arrival rolls run at most once every 20 active-zone seconds.
   let scanTimer = 0; // LOS and NPC scans are not repeated every animation frame.
   let planTimer = 0; // Chore route choices are throttled separately from body updates.
   let debugTimer = 0; // Mobile in-page diagnostics repaint at most twice per second.
@@ -627,6 +628,30 @@
     if(!walker&&!walkerBuilding)void ensureWalker();
     updateHouseVisibility();
   }
+  function tryFeyApproach(dt) {
+    if (state.phase !== 'roam' || !walker || area() !== state.zone) { feyApproachTimer = 0; return; }
+    feyApproachTimer += dt;
+    if (feyApproachTimer < 20) return;
+    feyApproachTimer = 0;
+    const player = playerTile(), current = position(); // Only move a distant, unobserved wanderer, never interrupt a chase.
+    if (!player || !current || dist(current, player) < SIGHT_TILES * 2 || visiblePlayer()) return;
+    const chance = window.CookingSystem?.feyEncounterChance?.(0.005) ?? 0.005; // Tunable baseline: one half-percent per eligible interval.
+    if (rnd() >= chance) return;
+    const h = homeCenter();
+    for (let attempt = 0; attempt < 16; attempt++) {
+      const angle = rnd() * Math.PI * 2, radius = 7 + rnd() * 2;
+      const c = Math.floor(player.x + Math.cos(angle) * radius), r = Math.floor(player.z + Math.sin(angle) * radius);
+      if (!validTile(c, r) || !h || dist({x:c+.5,z:r+.5},h) < 4) continue;
+      if (!window.NpcPathfinding?.findNpcPath?.(state.zone,c+.5,r+.5,state.home.c+1,state.home.r+3)
+        && !window.NpcPathfinding?.canNpcBeeline?.(state.zone,c+.5,r+.5,state.home.c+1,state.home.r+3)) continue;
+      releaseWalker(); // The existing async walker constructor places the new avatar on a validated surface.
+      state.target={c,r}; state.activity='wander'; state.resourceTarget=null; state.workLeft=0;
+      void ensureWalker();
+      bumpEvent('Fey encounter: Boney materialized near the player');
+      return;
+    }
+  }
+
   function update(dt) {
     if(!deps||window.__hobunjiGameStarted!==true)return;
     dt=clamp(finite(dt),0,0.1);
@@ -637,6 +662,8 @@
     if(state.phase==='leaving') {if(!sceneRunning)finishEncounter();return;} // Never despawn the house during milk dialogue.
     if(area()!==state.zone||!walker)return;
     if(state.phase==='scene')return;
+    tryFeyApproach(dt);
+    if (!walker) return;
     contactBoost(dt);
     scanTimer+=dt;
     if(scanTimer>=SCAN_SECONDS) {
@@ -695,6 +722,7 @@
   }
   function restore(raw) {
     clearHouse();releaseWalker();
+    feyApproachTimer=0;
     Object.assign(state,initialState());
     if(raw?.version!==SAVE_VERSION)return;
     state.cycle=Number.isInteger(raw.cycle)?raw.cycle:-1;
