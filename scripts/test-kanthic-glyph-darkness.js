@@ -112,6 +112,11 @@ assert.equal(win.__probeGlyphMasks(platformScene,deps,7050).drawn,1,'the distant
 assert(!draws.some(d=>d.kind==='platform-clip'),'nonoverlapping platform is culled by actual projected screen bounds');
 assert.equal(win.CloudForestFog.getDebugState().ruinEngravingGlowMasks.platformClips,0,
   'mobile diagnostics count zero clip operations for distant on-screen slabs');
+platform.geometry.boundingBox.min.x=70;platform.geometry.boundingBox.max.x=71;
+draws.length=0;
+assert.equal(win.__probeGlyphMasks(platformScene,deps,7060).drawn,1,'offscreen platform cannot erase an onscreen wall rune');
+assert(!draws.some(d=>d.kind==='platform-clip'),
+  'a slab moved entirely outside the viewport must clear its previous clipping state');
 platform.geometry.boundingBox.min.x=.5;platform.geometry.boundingBox.max.x=1.6;
 platform.visible=false;draws.length=0;
 assert.equal(win.__probeGlyphMasks(platformScene,deps,7100).drawn,1,'a hidden platform does not erase the visible wall glyph');
