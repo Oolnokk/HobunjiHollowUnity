@@ -110,13 +110,15 @@ for (const sizeClass of ['small','medium','large']) {
 
 const sire=genetic.makeDefaultGenotype('skeeri');
 const dam=genetic.makeDefaultGenotype('skeeri');
-Object.assign(sire,{skeeriTradition:'hronal',skeeriPattern:'#967d55',skeeriEyes:'#ff8027'});
-Object.assign(dam,{skeeriTradition:'tothal',skeeriPattern:'#5f788d',skeeriEyes:'#2b98ff'});
+Object.assign(sire,{skeeriTradition:'hronal',secondary:{...sire.secondary,color:'#967d55'},skeeriPattern:'#967d55',skeeriEyes:'#ff8027'});
+Object.assign(dam,{skeeriTradition:'tothal',secondary:{...dam.secondary,color:'#5f788d'},skeeriPattern:'#5f788d',skeeriEyes:'#2b98ff'});
 for(let n=0;n<25;n++){
   const chick=genetic.crossOffspring(sire,dam,'skeeri',0);
   const parent=[sire,dam].find(candidate=>candidate.skeeriTradition===chick.skeeriTradition);
   assert(parent,'a domesticated offspring must inherit one real parent tradition');
-  assert.equal(chick.skeeriPattern,parent.skeeriPattern,'marking colors must follow the same parent');
+  assert.equal(chick.skeeriPattern,chick.secondary.color,'marking colors follow inherited body color B');
+  assert(colors.has(chick.secondary.color),'inherited B uses an allowed Skeeri coat color');
+  assert.equal(api.paletteForGenotype(chick).pattern,chick.secondary.color,'flying rig reads the shared B gene');
   assert.equal(chick.skeeriEyes,parent.skeeriEyes,'glowing eyes must follow the same parent');
 }
 const geneticsSource=read('docs/js/creature-genetics.js');
