@@ -1,43 +1,21 @@
 'use strict';
+// Exact pre-calibration Mao'ao foot size parity; do NOT propagate the later Mao'ao male 0.8x foot shift to every species.
+const fs=require('fs'); // Reads the current shipped legacy main-silhouette configuration.
+const vm=require('vm'); // Loads the real startup module without WebGL.
+const assert=require('assert'); // Rejects reintroduced scaling edits.
 
-const fs = require('fs');
-const vm = require('vm');
-const assert = require('assert');
-
-const source = fs.readFileSync('docs/config/character-rig-scale-defaults.js', 'utf8');
-const footScale = {
-  default: 1,
-  'engh-sho': { male: 1.275, female: 1.325 },
-  'mao-ao': { male: 1.05, female: 1.025 },
-};
-const windowObject = {
-  SCRATCHBONES_CONFIG: {
-    game: {
-      assets: {
-        pngPlaneAvatar: {
-          proceduralFeet: { footScale },
-        },
-      },
-    },
-  },
-};
-windowObject.window = windowObject;
-vm.runInContext(source, vm.createContext(windowObject), { filename: 'character-rig-scale-defaults.js' });
-
-const values = windowObject.HobunjiCharacterRigScaleDefaults.values; // Every species now inherits the Mao'ao MALE's 0.8x foot-size shift.
-assert.strictEqual(footScale['mao-ao'].male, 1.05, 'approved male Mao-ao foot size from source export');
-assert(Math.abs(footScale['mao-ao'].female - 1.025) < 1e-12, 'female Mao-ao inherits male foot multiplier from her 1.28125 main value');
-assert.strictEqual(footScale['engh-sho'].male, 1.0, 'Engh-sho male feet also inherit the 0.8x male shift');
-assert(Math.abs(footScale['engh-sho'].female - .936) < 1e-12, 'Engh-sho female feet ALSO inherit the same male 0.8x shift');
-assert(Math.abs(windowObject.HobunjiCharacterRigScaleDefaults.maoaoRelativeShift.female.footScale - .8) < 1e-12,
-  'both genders have the same single male Mao-ao foot shift');
-for(const [key, value] of Object.entries(values)) {
-  const [species, gender] = key.split('::');
-  assert(Math.abs(footScale[species][gender] - value.footScale) < 1e-9, key+' live procedural foot config must match its authored value');
-}
-assert.deepStrictEqual(
-  JSON.parse(JSON.stringify(windowObject.HobunjiCharacterRigScaleDefaults.maoaoFootScale)),
-  { male: 1.05, female: 1.025 }, 'live debug config reports approved Mao-ao sizes without the old +25% pre-shift',
-);
-
-console.log('Mao-ao male-anchored foot scaling: 26 profiles and both genders passed');
+const source=fs.readFileSync('docs/config/character-rig-scale-defaults.js','utf8'); // Snapshot pinned to main-silhouette commit 4cfb39c.
+const footScale={default:1,'engh-sho':{male:1.275,female:1.325},'mao-ao':{male:1.05,female:1.025}};
+const windowObject={SCRATCHBONES_CONFIG:{game:{assets:{pngPlaneAvatar:{proceduralFeet:{footScale}}}}}};
+windowObject.window=windowObject;
+vm.runInContext(source,vm.createContext(windowObject),{filename:'character-rig-scale-defaults.js'});
+const defaults=windowObject.HobunjiCharacterRigScaleDefaults;
+assert.strictEqual(footScale['mao-ao'].male,1.3125,'restore main Mao-ao male 25%-larger original foot default');
+assert.strictEqual(footScale['mao-ao'].female,1.28125,'restore main Mao-ao female original foot default');
+assert.strictEqual(footScale['engh-sho'].male,1.275,'unrelated male feet cannot inherit later Mao-ao changes');
+assert.strictEqual(footScale['engh-sho'].female,1.325,'unrelated female feet cannot inherit later Mao-ao changes');
+assert.deepStrictEqual(JSON.parse(JSON.stringify(defaults.maoaoFootScale)),{male:1.3125,female:1.28125});
+assert.strictEqual(defaults.maoaoRelativeShift,undefined,'gender-wide Mao-ao adjustment has been removed');
+assert.strictEqual(defaults.mainSilhouetteRestoreValues['mao-ao::male'].footScale,1.3125,
+  'explicit saved-rig restoration uses exactly the same original foot value');
+console.log('PASS restored original Mao-ao feet; no inherited male/female foot shift');
