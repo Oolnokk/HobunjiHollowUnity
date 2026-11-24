@@ -188,5 +188,5 @@ near(k.scale.footScale,actual['kenkari::female'].footScale,'apply approved feet,
 near(k.scale.legLength,actual['kenkari::female'].legLength,'saved legs use male Maoao relative Height');
 assert.equal(childBody,0.36,'baby/toddler/child author modifiers remain untouched');
 assert.equal(hunch,0.42,'per NPC hunch tuning remains untouched');
-assert.match(message,/Applied 26\/26 Mao/,'mobile confirmation includes all 26 approved profiles');
+assert.match(message,/Applied 26\/26 adult profiles/,'mobile confirmation includes all 26 calibrated profiles');
 console.log('PASS pinned main references + eight male targets, female visible-height ratios, 26 Maoao-anchored width/limb scales, 65% Head, explicit editor reset and age preservation');
