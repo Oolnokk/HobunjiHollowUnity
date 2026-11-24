@@ -128,6 +128,38 @@
     return window.HobunjiAnimationAuthorScaleHost || window.HobunjiAnimationAuthorHost || null;
   }
 
+  const LINEUP_SPECIES_ORDER = Object.freeze([ // Family order matches onboarding lore; male/female remain adjacent for every entry.
+    'kenkari',
+    'tletingan', 'nuhongan', 'longoran', // Slagothim subspecies, together after Kenkari.
+    'engh-sho', 'mao-ao', // These two species compare directly next to each other.
+    'mashtzarr', 'mammakhbuur', // Oliphanti subspecies, after Engh-sho and Mao'ao.
+  ]);
+  const LINEUP_SPECIES_RANK = new Map(LINEUP_SPECIES_ORDER.map((species, index) => [species, index])); // Reused for preview, dropdown and stable future-species sorting.
+  function lineupFamily(species) {
+    const id = normalizeSpecies(species); // Normalize data from the species registry, not NPC display names.
+    if (id === 'kenkari') return 0;
+    if (['tletingan', 'nuhongan', 'longoran'].includes(id)) return 1;
+    if (id === 'engh-sho' || id === 'mao-ao') return 2;
+    if (id === 'mashtzarr' || id === 'mammakhbuur') return 3;
+    return 4; // All other species follow alphabetically, including future registrations.
+  }
+  function compareLineupEntries(left, right) {
+    const familyDiff = lineupFamily(left.species) - lineupFamily(right.species);
+    if (familyDiff) return familyDiff;
+    const firstRank = LINEUP_SPECIES_RANK.get(left.species) ?? LINEUP_SPECIES_ORDER.length;
+    const secondRank = LINEUP_SPECIES_RANK.get(right.species) ?? LINEUP_SPECIES_ORDER.length;
+    if (firstRank !== secondRank) return firstRank - secondRank;
+    const speciesDiff = String(left.species).localeCompare(String(right.species));
+    if (speciesDiff) return speciesDiff;
+    const genderRank = gender => gender === 'male' ? 0 : gender === 'female' ? 1 : 2; // Same-species males appear directly before females.
+    return genderRank(left.gender) - genderRank(right.gender);
+  }
+  function lineupSpacing(previous, next) {
+    if (!previous || !next) return 0;
+    if (previous.species === next.species) return 0.14; // Tight male/female pair without overlapping feet or portraits.
+    return lineupFamily(previous.species) === lineupFamily(next.species) ? 0.42 : 0.72; // Clear family transitions without inserting extra meshes.
+  }
+
   function profileDescriptors() {
     const profiles = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters || {};
     const seen = new Set();
@@ -144,7 +176,7 @@
       seen.add(canonicalKey);
       out.push({ key: canonicalKey, species, gender });
     }
-    return out;
+    return out.sort(compareLineupEntries); // One canonical order for loading, the visual lineup and the species chooser.
   }
 
   function portraitExportFor(npc) {
@@ -1289,14 +1321,17 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
     if (!THREE || !entries.length || !previewRoot) return;
     if (chair) chair.parent?.remove?.(chair);
     let cursor = 0;
+    let previous = null; // Family boundaries get more breathing room than male/female companions, without extra geometry.
     for (const entry of entries) {
+      cursor += lineupSpacing(previous, entry); // Linear pass: no sorting or scene-wide search during size edits.
       entry.group.position.set(0,0,0);
       entry.group.updateMatrixWorld(true);
       const box = new THREE.Box3().setFromObject(entry.group);
       const width = Math.max(0.45, box.getSize(new THREE.Vector3()).x);
       const centerX = box.getCenter(new THREE.Vector3()).x;
       entry._lineX = cursor + width / 2 - centerX;
-      cursor += width + 0.34;
+      cursor += width;
+      previous = entry;
     }
     if (chair) {
       previewRoot.add(chair);
@@ -1391,10 +1426,7 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
   async function buildLineup(buildId) {
     const reps = await representatives();
     if (buildId !== generation) return; // Abort immediately if a tab switch occurred while fetching the NPC roster.
-    const ordered = [
-      ...reps.filter(item => item.species === 'longoran'),
-      ...reps.filter(item => item.species !== 'longoran'),
-    ]; // Show the species currently being authored first, without dropping or duplicating the other comparison entries.
+    const ordered = reps.sort(compareLineupEntries); // Kenkari → Slagothim → Engh-sho/Mao'ao → Oliphanti → others; each male/female pair is adjacent.
     const missing = ordered.filter(item => !item.npc);
     if (missing.length) status(`Missing preview NPC: ${missing.map(item => item.key).join(', ')}`);
     entries = [];
@@ -1437,9 +1469,9 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
         chooser.appendChild(option);
       }
       if (!selected) {
-        active = true; // The first Longoran becomes tweakable without waiting for every other species image.
+        active = true; // The first Kenkari is editable as soon as its preview is available.
         layout();
-        select(entry); // The first Longoran can be edited immediately, without forcing a new camera angle.
+        select(entry); // The first Kenkari can be edited immediately, without forcing a new camera angle.
         frame(); // Establish one initial framing; later edits and background loading must not move the camera.
       } else {
         layout(); // Every newly loaded character receives its own slot immediately; never overlap previews while images stream.
