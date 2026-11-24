@@ -217,6 +217,7 @@
       direction: new THREE.Vector3(0, -1, 0), strikeStartDirection: new THREE.Vector3(0, -1, 0), lastPivot: new THREE.Vector3(), hasPivot: false, // Preserves the gravitational chain orientation only when the strike begins.
       lastMovementPosition: new THREE.Vector3(), hasMovementPosition: false, movementPosition: null, // Character movement source supplied by gameplay, not the weapon's animated joint.
       angularVelocity: new THREE.Vector3(), pivotVelocity: new THREE.Vector3(), hasPhysicsVelocity: false, physicsLength: 0, // Persistent world-space pendulum momentum and measured lever length.
+      equilibriumSkips: 0, // Diagnostic count of exact no-torque integration substeps skipped.
       lastShaftUp: new THREE.Vector3(), hasShaftUp: false, // Tracks observed pitch travel for procedural swings lacking authored pitch values.
       strikeTurnRad: 0, hasStrikeStart: false, wasAttacking: false, lastFrameProgress: 0, // The strike begins from the most recent gravity-and-lag position, never the shaft pose in windup.
       baseAnchorImage: null, baseAnchor: null, chainTop: null, chainBottom: null, headAnchor: null,
@@ -667,7 +668,7 @@
     // sleep threshold or reduced physical update rate.
     if (w.x === 0 && w.y === 0 && w.z === 0 && Number.isFinite(ax) && Number.isFinite(ay) && Number.isFinite(az)
         && d.y*az-d.z*ay === 0 && d.z*ax-d.x*az === 0 && d.x*ay-d.y*ax === 0) {
-      body.equilibriumSkips = (body.equilibriumSkips || 0) + steps;
+      if (typeof body.equilibriumSkips === 'number') body.equilibriumSkips += steps;
       return;
     }
     const decay = Math.exp(-Math.max(0, damping) * h); // Mild air/bearing loss expressed per second, independent of frame rate.

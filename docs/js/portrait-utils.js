@@ -868,9 +868,16 @@ function beardHoodLayerKey(layers, imgMap, resolveXform) {
     const tint = entry.tint || entry.filter;
     const options = tint?.mode === 'shadeFill' || tint?.mode === 'hueSatFill' ? (tint.options || getPortraitTintingConfig()) : null;
     if (options && !options.cacheEnabled) return null; // Authoring tools may deliberately request a fresh tint.
-    let id = _BEARD_HOOD_IMAGE_IDS.get(image);
-    if (!id) { id = ++_beardHoodNextImageId; _BEARD_HOOD_IMAGE_IDS.set(image,id); }
-    parts.push([id,image.currentSrc||image.src,image.naturalWidth,image.naturalHeight,layer.url,resolveXform(layer),tint,options]);
+    // Include the actual tinted canvas identity as well: if a tint cache
+    // is evicted or regenerated, even a rounded tint-key collision cannot
+    // cause an old negotiated result to survive the new pixels.
+    const tinted = _imageForTint(image,layer.url,tint);
+    const identity = value => {
+      let id = _BEARD_HOOD_IMAGE_IDS.get(value);
+      if (!id) { id = ++_beardHoodNextImageId; _BEARD_HOOD_IMAGE_IDS.set(value,id); }
+      return id;
+    };
+    parts.push([identity(image),identity(tinted),image.currentSrc||image.src,image.naturalWidth,image.naturalHeight,layer.url,resolveXform(layer),tint,options]);
   }
   return JSON.stringify(parts);
 }

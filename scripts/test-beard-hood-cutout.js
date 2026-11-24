@@ -560,6 +560,25 @@ assert.equal(whiskerOnly.whiskerWins,1,'whisker override is counted independentl
 
 
 const approved=Cut.negotiateBeardHood(sampleBeard,sampleHood,requestMask,permission,{includeMasks:true});
+// Cached pristine beard pixels are read-only, even when the hood refuses
+// a request and the surviving beard must receive a new inward black edge.
+const cachedBeardCanvas=new Canvas(),cachedHoodCanvas=new Canvas();
+cachedBeardCanvas.pixels.set(originalBeard); cachedHoodCanvas.pixels.set(originalHood);
+const pristine=cachedBeardCanvas.getContext().getImageData();
+let beardReadbacks=0;
+const originalContext=cachedBeardCanvas.getContext.bind(cachedBeardCanvas);
+cachedBeardCanvas.getContext=()=>{
+  const ctx=originalContext();
+  ctx.getImageData=()=>{beardReadbacks++;throw Error('cached beard unexpectedly read');};
+  return ctx;
+};
+const cachedNegotiation=Cut.negotiateBeardHood(cachedBeardCanvas,cachedHoodCanvas,requestMask,permission,
+  {includeMasks:true,beardImageData:pristine});
+assert.equal(beardReadbacks,0);
+assert.deepEqual(cachedNegotiation,approved);
+assert.deepEqual(cachedBeardCanvas.pixels,sampleBeard.pixels);
+assert.deepEqual(cachedHoodCanvas.pixels,sampleHood.pixels);
+assert.deepEqual(pristine.data,originalBeard,'cached input survives rejected pixels and outlines unchanged');
 assert.equal(approved.requested,6,'only beard pixels under actual opaque hood need arbitration');
 assert.equal(approved.approvedPixels,3,'hood author allows three removal pixels');
 assert.equal(approved.refusedPixels,3,'hood author protects three conflict pixels');
@@ -788,7 +807,7 @@ assert(beardBelow>=0 && beardBelow<beardDraw && beardDraw<hoodDraw && hoodDraw<f
 assert(portrait.includes('!hiddenCosmeticGroups.has(facialHair)')
   && portrait.includes('facialHairLayers.length && hoodLayers.length'),
   'no active beard or a facewrap never performs two-way arbitration');
-assert(portrait.includes('drawEmoteLayers(facialHairLayers, beardScratch.getContext')
+assert(portrait.includes('drawEmoteLayers(facialHairLayers, beardCtx')
   && portrait.includes('const result = cutoutApi.negotiateBeardHood(beardScratch, hoodScratch')
   && portrait.includes('ctx.drawImage(negotiatedHood'),
   'beard and hood are negotiated offscreen and composite back only at their original positions');
@@ -797,7 +816,7 @@ assert(portrait.includes('variantBeardCutoutAllowedMasks')&&portrait.includes('r
   'gameplay resolves automatic, painted and permissive hood policy from cosmetic JSON');
 assert(portrait.includes('hoodWhiskerMask')&&portrait.includes('variantHoodWhiskerMasks')
   && portrait.includes('whiskerMask,')
-  && portrait.includes('requestMode:beardAuthoring.requestMode});'),
+  && portrait.includes('requestMode:beardAuthoring.requestMode,beardImageData});'),
   'gameplay resolves priority whiskers and artwork-based requests independently');
 assert(portrait.includes('const exactSharedArt=key===keys[0]')
   && portrait.includes('option.variantHoodCutoutMasks'),

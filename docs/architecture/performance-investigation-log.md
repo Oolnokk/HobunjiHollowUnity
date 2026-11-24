@@ -2303,3 +2303,13 @@ the large game.js owner also exceeds the connected file retrieval limit.
 No measured FPS or shader-rebuild reduction is claimed until a device A/B.
 
 Follow-up: lazy row-layout allocation leaves emoji-only and damage-only frames untouched; partial icon construction failures release already acquired leases. Added overlapping scene/cache eviction and row compaction coverage, and an on-demand pool-stat button in the existing emoji debug UI. Rebased onto latest main, preserving intervening changes.
+
+## 24 Nov 2026: CPU trace follow-up — portrait readbacks, X-ray, AutoLOD, HUD and flails
+
+Pre-#2142 trace (271b1fca, ~5.8 s, 46 game frames): ~818 ms sampled in getImageData, ~906 ms inclusive in held-overlay replay, ~722 ms inclusive in shell X-ray, ~212 ms AutoLOD self time. Browser style recalc includes ~50 ms spikes involving 5,209 nodes; the trace does not establish which mutation caused the whole-tree invalidation.
+
+- Beard/hood scratch contexts request willReadFrequently on the first context acquisition. A bounded shared cache stores pristine unwarped beard readbacks, and a separate bounded cache reuses exact negotiated still layers (actual resolved art/tint identity, transform, static deformation, masks, stretch and cone policy). Animated hoods still negotiate their actual current pixels; emote-deformed beards, pixel dyes, mutable/custom art and custom composers are conservative fallbacks. No pose quantization or new redraw timer. Pristine input is read-only and refused edges write a separate ImageData.
+- X-ray protected/tint cover queries now call the canonical surface composer's cover-only classifier rather than recomputing terrain/floor/path ancestry; ordinary scene groups bypass drawable-only scissor checks. Depth/material/visibility rules and all render passes remain.
+- AutoLOD builds active-scene candidates once per world frame and memoizes effective ancestor visibility per native draw; live geometry signatures are still validated on each eligible draw. No visual LOD is applied to hidden or detached scene objects.
+- Keyboard HUD skips unchanged HTML; Gear fit ignores only its own completed font-floor removal notifications, not external re-additions. These remove identifiable DOM writes, not proof of the trace's whole-tree CSS cost.
+- Flail physics remains at 240 Hz substeps except exact zero-torque/zero-velocity equilibrium; share one inverse holder matrix between connector and head; repeated identical rendered camera/carrier poses reuse the rope facing. Pixel Probe reports the readback, LOD, HUD and flail counters. Real-device frame-time and rendered-pixel A/B measurement remains pending.

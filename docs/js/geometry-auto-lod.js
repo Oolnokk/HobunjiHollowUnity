@@ -48,13 +48,15 @@
     if (list) { counters.frameCandidateReuses++; return list; }
     list = [];
     const roots = new WeakMap(); // One root lookup per ancestor, irrespective of how many ready meshes share it.
-    function rootOf(node) {
-      if (!node.parent) return node;
-      let root = roots.get(node);
-      if (!root) { root = rootOf(node.parent); roots.set(node,root); }
-      return root;
+    function belongs(node) {
+      if (!node) return false;
+      if (node === scene) return true;
+      if (roots.has(node)) return roots.get(node);
+      const result = belongs(node.parent);
+      roots.set(node,result);
+      return result;
     }
-    for (const pair of readyMeshes) if (rootOf(pair[0]) === scene) list.push(pair);
+    for (const pair of readyMeshes) if (belongs(pair[0])) list.push(pair);
     worldCandidates.set(frame,list);
     counters.frameCandidateBuilds++;
     return list;
