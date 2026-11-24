@@ -19,8 +19,7 @@
   const {ledger,pendingRewards}=journal; // Preserve the existing on-disk ledger and pending-reward format.
   const loadArt=runtime.createSpriteSource(ROOT_ASSET); // Shared alpha crop, cached lazily for the root source.
   const rootTextures = new Map(); // One full authored farm image and one cropped boss image, shared by all locales.
-  let overkill = 0; // Damage beyond zero Health for the current Rootledoot-caused down.
-  let downedByRoot = false; // Attribution is reset on every new down and on encounter cleanup.
+  const defeat=runtime.createDefeatTracker(attacker=>!!(active?.phase==='combat'&&attacker?.rootledoot&&active.actors.has(attacker))); // Only this locale's attackers contribute to its defeat.
   let lastEvent = 'idle'; // In-game diagnostic snapshot and mobile farm log.
 
   const rand = () => deps?.rnd?.() ?? Math.random();
@@ -88,7 +87,7 @@
     window.BanditCaptainArmaments?.discard?.(c); // Release a unique weapon texture only after its holder has been disposed.
   }
   function reset(reason='reset') {
-    const rec=active;active=null;overkill=0;downedByRoot=false;
+    const rec=active;active=null;defeat.reset();
     if(!rec)return;removeRoot(rec);
     for(const c of rec.actors)disposeActor(c);
     rec.actors.clear();if(rec.boss)window.BanditCaptainArmaments?.discard?.(rec.boss);
@@ -157,41 +156,37 @@
   }
   async function spawnWave(rec) {
     if(!ownsScene(rec)||rec.building)return;
-    rec.building=true;rec.phase='combat';let count=0;
-    try {
-      const cfg=await window.BanditCombat?.loadGangConfig?.();
-      if(!cfg)throw Error('bandit config unavailable');
-      if(!ownsScene(rec))return; // No terrain scan or RNG use against a replacement scene.
-      const pool=connectedSpawnTiles(rec),zoneDef=deps.getZoneDef?.(rec.zone)||{}; // All members of this wave share a reachable, non-overlapping spawn pool.
-      const firstAmbush=rec.wave===0; // NPC exclusion applies until the first actor is actually adopted, not to combat already in progress.
-      const distance=Math.hypot(rec.site.c+.5-(zoneDef.entryCol||0),rec.site.r+.5-(zoneDef.entryRow||0));
-      const per=Number(cfg.difficultyTiers?.tierDistanceTiles)||12; // Same distance/rank model and configured tier ceiling as ordinary bandit camps.
-      const rawTier=per>0?Math.min(Math.floor(distance/per),Number(cfg.difficultyTiers?.maxTier??7)):0;
-      const tier=window.EnemyTierProgression?.clampTier?.(rawTier)??0;
-      if(pool.near.length+pool.far.length<WAVES[rec.wave].length){if(firstAmbush){cancelInitialAmbush(rec);return;}throw Error('insufficient connected spawn tiles');}
-      for(const rank of WAVES[rec.wave]){
-        if(!ownsScene(rec))return;
-        if(firstAmbush&&!count&&!canBeginAmbush(rec)){cancelInitialAmbush(rec);return;}
-        const point=runtime.takeSpawn(pool,rand);if(!point)throw Error('no connected spawn for '+rank);
+    rec.phase='combat';
+    return runtime.runWave(rec,{
+      owns:()=>ownsScene(rec),
+      async prepare(){
+        const cfg=await window.BanditCombat?.loadGangConfig?.();
+        if(!cfg)throw Error('bandit config unavailable');
+        if(!ownsScene(rec))return null;
+        const zoneDef=deps.getZoneDef?.(rec.zone)||{};
+        const distance=Math.hypot(rec.site.c+.5-(zoneDef.entryCol||0),rec.site.r+.5-(zoneDef.entryRow||0));
+        const per=Number(cfg.difficultyTiers?.tierDistanceTiles)||12;
+        const rawTier=per>0?Math.min(Math.floor(distance/per),Number(cfg.difficultyTiers?.maxTier??7)):0;
+        const tier=window.EnemyTierProgression?.clampTier?.(rawTier)??0;
+        return {cfg,tier,pool:connectedSpawnTiles(rec),members:WAVES[rec.wave]};
+      },
+      canBegin:()=>canBeginAmbush(rec),
+      create(rank,point,{cfg,tier}){
         const big=rank==='captain',name=big?'Big Rootledoot':'Rootledoot';
         const x=(point.c+.5)*deps.TILE,y=(point.r+.5)*deps.TILE;
         const roster={name,appearance:{speciesId:'mao-ao',gender:'male',cosmetics:{},bodyColors:Object.fromEntries(['A','B','C'].map(k=>[k,{hex:ROOT_COLOR}]))},equippedCosmetics:[],cosmeticSlots:{},appliedDyes:{},rootledoot:true};
         const scale=big?1.35:rank==='lieutenant'?.82:.65;
-        const c=await window.BanditCombat.makeEntity(cfg,rank,tier,x,y,{zoneId:rec.zone,enemyClass:'rootledoot',rosterOverride:roster,preserveRoster:true,
+        return window.BanditCombat.makeEntity(cfg,rank,tier,x,y,{zoneId:rec.zone,enemyClass:'rootledoot',rosterOverride:roster,preserveRoster:true,
           avatarRigScale:{x:scale,y:scale,head:1,offsetY:0},defOverride:{label:name},
           extra:{rootledoot:true,rootledootBig:big,homeX:x,homeY:y,state:'chase'}});
-        if(!c)throw Error('bandit avatar construction failed for '+rank);
-        if(!ownsScene(rec)){disposeActor(c);return;}
-        if(firstAmbush&&!count&&!canBeginAmbush(rec)){disposeActor(c);cancelInitialAmbush(rec);return;}
-        if(!tileEligible(point.c,point.r)){disposeActor(c);throw Error('spawn blocked during avatar construction');}
-        if(big&&!c._banditCaptainArmament){disposeActor(c);throw Error('Fey weapon construction failed');}
-        rec.actors.add(c);deps.hostiles.add(c);count++;
-        deps.dirt?.(point.c,point.r);
-      }
-      if(!count)throw Error('no valid wave spawn');
-      rec.wave++;log('wave '+rec.wave+' spawned '+count);
-    }catch(error){if(active===rec)reset('wave failed: '+error.message);}
-    finally{rec.building=false;}
+      },
+      validate:(actor,rank,point)=>tileEligible(point.c,point.r)&&(rank!=='captain'||!!actor._banditCaptainArmament),
+      adopt(actor,_rank,point){rec.actors.add(actor);deps.hostiles.add(actor);deps.dirt?.(point.c,point.r);},
+      dispose:disposeActor,random:rand,
+      onSuppressed:()=>cancelInitialAmbush(rec),
+      onFailure:error=>reset('wave failed: '+error.message),
+      onComplete:count=>log('wave '+rec.wave+' spawned '+count),
+    });
   }
   function canBeginAmbush(rec){
     return deps.player.health>0&&!window.PlayerDowned?.isDowned?.()&&deps.canActivate?.()!==false&&sameChunk(deps.player.x/deps.TILE,deps.player.y/deps.TILE,rec.chunk)&&!npcInChunk(rec.zone,rec.chunk);
@@ -254,23 +249,17 @@
     reset('Fey Heftroot and weapon collected'); // Clears the unlooted enchantment state only after the durable transaction.
     deps.refreshRewards?.();window.FeyArmamentQuest?.maybeStart?.();deps.toast?.('Fey Heftroot and '+transaction.weapon+' collected!',true);return true;
   }
-  function noteDown(attacker,damageBeyondHealth) {
-    downedByRoot=!!(active&&active.phase==='combat'&&attacker?.rootledoot&&active.actors.has(attacker));
-    overkill=downedByRoot?Math.max(0,Number(damageBeyondHealth)||0):0;
-  }
-  function noteDownedHit(attacker,damage) {
-    if(downedByRoot&&active?.actors.has(attacker))overkill+=Math.max(0,Number(damage)||0);
-  }
+  function noteDown(attacker,damageBeyondHealth){defeat.noteDown(attacker,damageBeyondHealth);}
+  function noteDownedHit(attacker,damage){defeat.noteHit(attacker,damage);}
   function handleDefeat() {
     const rec=active;if(!rec||rec.phase!=='combat')return false;
-    const rootDefeat=downedByRoot,deficit=overkill; // Preserve before reset invalidates all actor and wave state.
+    const {attributed:rootDefeat,deficit}=defeat.snapshot(); // Preserve before reset invalidates all actor and wave state.
     ledger.set(rec.key,{day:Math.floor(Number(deps.day?.())||0),cleared:false,ready:false}); // A fight crossing midnight still cannot reroll on its actual defeat day.
     reset('defeat: locale reset, all actors despawned');
     window.CookingSystem?.grantFeySight?.(1);
     if(rootDefeat&&window.HobunjiAlcohol?.triggerFeyBlackout){
       const max=window.ResourceSystem?.getEffectiveMax?.(deps.player,'health')||deps.player.maxHealth||100;
-      deps.player.health=Math.max(1,Math.round(max*.25));deps.player.vx=deps.player.vy=0;deps.player.invulnUntil=performance.now()+1000;
-      window.HobunjiAlcohol.triggerFeyBlackout(deficit/max*100);
+      runtime.recoverNonlethal({player:deps.player,maxHealth:max,deficit,blackout:percent=>window.HobunjiAlcohol.triggerFeyBlackout(percent)});
       deps.save?.();return true;
     }
     deps.save?.();return false;
@@ -309,7 +298,7 @@
   function serialize(){return journal.serialize();}
   function restore(raw){reset('restore');journal.restore(raw);clock.reset();}
   window.Rootledoots=Object.freeze({init,tick,action,pick,onDeath,noteDown,noteDownedHit,handleDefeat,paintPortrait,serialize,restore,reset,
-    debugSnapshot:()=>({lastEvent,worldStamp:journal.stamp,checkedChunks:ledger.size,pendingRewards:pendingRewards.size,active:active&&{zone:active.zone,site:active.site,phase:active.phase,wave:active.wave,actors:active.actors.size},downedByRoot,overkill}),
+    debugSnapshot:()=>({lastEvent,worldStamp:journal.stamp,checkedChunks:ledger.size,pendingRewards:pendingRewards.size,active:active&&{zone:active.zone,site:active.site,phase:active.phase,wave:active.wave,actors:active.actors.size},downedByRoot:defeat.snapshot().attributed,overkill:defeat.snapshot().deficit}),
     __test:Object.freeze({chunkOf,siteInChunk,npcInChunk,connectedSpawnTiles,BASE_CHANCE,WAVES})});
   window.DevCompanion?.registerStateProvider?.('rootledoots',window.Rootledoots.debugSnapshot);
 })();
