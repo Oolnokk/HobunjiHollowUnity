@@ -374,10 +374,69 @@
     return Number.isFinite(authored) && authored > 0 ? authored : 1; // Safe during early bootstrap before the defaults script finishes loading.
   }
 
+  const _pixelHeightFactors = new Map(); // One solved correction per source-art measurement and species/gender, not per NPC or render frame.
+  function pixelHeightCorrectionFor(species, gender) {
+    const defaults = window.HobunjiCharacterRigScaleDefaults; // Eight requested physical-height goals; other species retain their authored relative shifts.
+    const normalizedSpecies = transformSpecies(species);
+    const g = normalizeGender(gender);
+    const maleFeet = Number(defaults?.maleHeightFeet?.[normalizedSpecies]);
+    if (!(maleFeet > 0)) return 1;
+    const dim = window.HobunjiCharacterDimensions; // Existing one-per-session bare PNG pixel scanner, not a new texture readback.
+    const measurement = dim?.measurementFor?.(normalizedSpecies, g);
+    if (!measurement || typeof dim?.dimensionsFor !== 'function') return 1; // Early startup uses nominal defaults until exact PNGs are measured.
+    const portraitOptions = { speciesId: normalizedSpecies, gender: g };
+    const portraitMultiplier = Number(window.PNGPlaneAvatar?.avatarScaleMultiplierFor?.(portraitOptions)) || 1;
+    const placement = Number(window.PNGPlaneAvatar?.avatarPlacementRatioFor?.(portraitOptions)) || .5;
+    const base = defaults.scaleFor(normalizedSpecies, g); // The shipped authored values; independent of a user's local live edits.
+    const world = worldVisualScale();
+    const ratio = g === 'female' ? Number(defaults.femaleVisibleHeightRatio) || 1 : 1;
+    const target = (Number(defaults.worldHeightCalibration?.chairBackWorldHeight) || .66)
+      * maleFeet * ratio / (Number(defaults.worldHeightCalibration?.chairHeightFeet) || 3) / world;
+    const key = `${normalizedSpecies}::${g}`;
+    const cached = _pixelHeightFactors.get(key);
+    if (cached && cached.measurement === measurement && cached.base === base
+      && cached.portraitMultiplier === portraitMultiplier && cached.placement === placement && cached.target === target)
+      return cached.correction;
+    const heightAt = candidateY => { // Actual alpha-measured bare crown, including the head bone's 65% scale and portrait Y offset.
+      const dimensions = dim.dimensionsFor(normalizedSpecies, g, {
+        portraitScale: portraitMultiplier, placementRatio: placement, age: 0,
+        rigScale: { ...base, y: candidateY, legLength: candidateY },
+      });
+      return Number(dimensions?.height);
+    };
+    const lower = .1, upper = 4; // Current authored body-height envelope, never NaN or unbounded scaling.
+    let lo = lower, hi = upper;
+    const lowHeight = heightAt(lo), highHeight = heightAt(hi);
+    if (!Number.isFinite(lowHeight) || !Number.isFinite(highHeight) || !(highHeight > lowHeight)
+      || !(Number(base?.y) > 0)) return 1;
+    if (target <= lowHeight) hi = lo;
+    else if (target >= highHeight) lo = hi;
+    else for (let n = 0; n < 28; n++) { // Fixed-cost solve ONCE per identity; no per-frame scans.
+      const mid = (lo + hi) / 2;
+      if (heightAt(mid) < target) lo = mid; else hi = mid;
+    }
+    const effectiveY = (lo + hi) / 2;
+    const correction = effectiveY / Number(base.y); // Apply vertically to the assembled parent, not to unrelated width/hand/foot transforms.
+    _pixelHeightFactors.set(key, { measurement, base, portraitMultiplier, placement, target, correction,
+      solvedWorldHeight: heightAt(effectiveY) * world, targetWorldHeight: target * world });
+    return Number.isFinite(correction) && correction > 0 ? correction : 1;
+  }
+  function pixelHeightCalibrationSnapshot() {
+    return Object.fromEntries([..._pixelHeightFactors].map(([key, value]) => [key, {
+      correction: value.correction, measuredWorldHeight: value.solvedWorldHeight,
+      targetWorldHeight: value.targetWorldHeight,
+    }])); // Mobile diagnostics: measured actual crown instead of the older nominal plane-height estimate.
+  }
+
   function applyToParent(parent, species, gender, explicitScale = null, ageFraction = 0) {
     if (!parent?.isObject3D || !parent.scale) return false;
     const resolved = normalizeExplicitScale(explicitScale, scaleFor(species, gender));
-    const next = { x: clampScale(resolved.x), y: clampScale(resolved.y) }; // Authored portrait/beltline dimensions remain unchanged in exports and local saves.
+    const artHeightCorrection = pixelHeightCorrectionFor(species, gender); // Source-PNG measured crown calibration; defaults to 1 before artwork has loaded.
+    const corrected = artHeightCorrection === 1 ? resolved : {
+      ...resolved, y: resolved.y * artHeightCorrection,
+      legLength: (Number(resolved.legLength) > 0 ? Number(resolved.legLength) : Number(resolved.y) || 1) * artHeightCorrection,
+    }; // Both portrait and legs follow calibrated height; preserve beltline ratio and authored body/limb settings.
+    const next = { x: clampScale(corrected.x), y: clampScale(corrected.y) }; // Body Y is refined from painted PNG bounds rather than nominal canvas height.
     const worldMultiplier = worldVisualScale(); // Common outer transform scales portrait, hands, feet, head, and offsets together without resetting species ratios.
     parent.userData ||= {};
     const previous = parent.userData.hobunjiCharacterRigScaleState || null;
@@ -391,7 +450,7 @@
     }
     const output = { x: base.x * next.x * worldMultiplier, y: base.y * next.y * worldMultiplier,
       z: base.z * next.x * worldMultiplier }; // One uniform outer size factor; depth and head must grow with the body, not remain fixed.
-    const legLength = clampScale(resolved.legLength || next.y); // Independently authored hip-to-foot reach in the same canonical scale units as portrait Y.
+    const legLength = clampScale(corrected.legLength || next.y); // Measured height scales legs and portrait together, leaving the relative IK ratio intact.
     const previousLegRatio = previous
       ? (Number(previous.legLength) || clampScale(previous.factor?.y ?? previous.factor)) / clampScale(previous.factor?.y ?? previous.factor)
       : null; // Used to avoid notifying every NPC's procedural leg handle when only Head, Width or age changed.
@@ -410,7 +469,7 @@
     };
     parent.updateMatrix?.();
     parent.updateMatrixWorld?.(true);
-    applyHeadCompensation(parent, species, gender, resolved, ageFraction);
+    applyHeadCompensation(parent, species, gender, corrected, ageFraction); // The neck compensates effective Y; 65%-raw head size stays independent of body height.
     if (previousLegRatio == null || Math.abs(previousLegRatio - nextLegRatio) > EPSILON)
       window.ProceduralLegAnimation?.syncScaleForParent?.(parent, nextLegRatio); // Leg IK changes only when its actual leg/portrait ratio changes, never on unrelated head/age redraws.
     return true;
@@ -552,7 +611,9 @@
     scaleFor,
     rawPngHeadScaleFor, // Head=100% means source-PNG pixel proportions across all species/genders.
     runtimeHeadScaleForRaw, // Existing rig saves keep runtime head factors; Full Character Scale inverts the portrait multiplier.
-    worldVisualScale, // Mobile diagnostics and comparison UI can verify the shared 6'3" Mao'ao reference without devtools.
+    worldVisualScale, // Shared chair-world factor; new pixel correction refines only body Y.
+    pixelHeightCorrectionFor,
+    pixelHeightCalibrationSnapshot, // Exposes actual measured crown-to-height accuracy on mobile.
     heightBeltlineFor,
     scaleForHeightBeltline,
     legLengthRatioFor: (species, gender, profile = null) => { const resolved = scaleFor(species, gender, profile); return resolved.legLength / resolved.y; }, // Real game and lineup feet read the same post-migration ratio.
