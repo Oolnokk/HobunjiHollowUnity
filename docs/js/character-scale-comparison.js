@@ -375,7 +375,7 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
         </section>
         ${scaleRow('X', 'Width', 10, 400, 0.5, 100, 'Body width scale')}
         ${scaleRow('Height', 'Height', 10, 400, 0.5, 100, 'Total stature relative to the unscaled avatar; beltline changes do not change overall height')}
-        ${scaleRow('Beltline', 'Beltline height', 5, 95, 0.5, 50, 'Beltline height as a percent of floor-to-head stature; higher values give longer legs and a shorter torso')}
+        ${scaleRow('Beltline', 'Beltline height', 0.1, 99.9, 0.1, 50, 'Beltline height as a percent of floor-to-head stature; higher values give longer legs and a shorter torso')}
         ${scaleRow('Hand', 'Hand scale', 10, 400, 0.5, 100, 'Independent size of both procedural hands')}
         ${scaleRow('Foot', 'Foot scale', 10, 400, 0.5, 100, 'Independent size of both procedural feet')}
         ${scaleRow('Head', 'Head', 10, 400, 0.5, 100, 'Head scale')}
@@ -566,7 +566,7 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
     }
     const dimensions = window.HobunjiCharacterRigScale?.heightBeltlineFor?.(scale, entry.beltlineBaseFraction);
     setSliderValue('Height', clampPercent((dimensions?.height || scale.y || 1) * 100));
-    setSliderValue('Beltline', Math.max(5, Math.min(95, (dimensions?.beltline || entry.beltlineBaseFraction || .5) * 100))); // Display the actual floor-to-hip percentage after migration from legacy Y/legLength.
+    setSliderValue('Beltline', Math.max(.1, Math.min(99.9, (dimensions?.beltline || entry.beltlineBaseFraction || .5) * 100))); // Display the actual floor-to-hip percentage after migration from legacy Y/legLength.
     setSliderValue('Hand', clampPercent(partScaleFor(entry, 'hand') * 100));
     setSliderValue('Foot', clampPercent(partScaleFor(entry, 'foot') * 100));
     setSliderValue('OffsetY', clampOffsetPercent(scale.offsetY * 100));
