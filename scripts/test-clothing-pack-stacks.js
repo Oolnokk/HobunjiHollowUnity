@@ -253,26 +253,34 @@ const storeDeps = {
 const storeButtons = []; // Stubbed DOM holds the real clothing-buy click handler.
 const storeDocument = {
   createElement: () => ({
-    className: '', textContent: '', innerHTML: '',
+    className: '', textContent: '', innerHTML: '', children: [],
+    appendChild(child) { this.children.push(child); }, setAttribute() {},
+    addEventListener(type, handler) { this[type] = handler; },
     querySelector(selector) {
       if (selector !== '.gs-cloth-buy') return null;
-      const button = { addEventListener(type, handler) { if (type === 'click') this.click = handler; } };
+      const button = { before(node) { this.controls = node; }, addEventListener(type, handler) { if (type === 'click') this.click = handler; } };
       storeButtons.push(button);
       return button;
     },
   }),
 };
+const storeWindow = {};
+vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../docs/js/shop-quantity.js'), 'utf8'), { window:storeWindow, document:storeDocument });
 const renderStoreClothing = vm.runInNewContext(
   storeSource.slice(storeStart, storeEnd) + '\nrenderGeneralStoreClothing',
-  { document:storeDocument, deps:storeDeps, generateDailyClothingStock:() => storeItems,
+  { window:storeWindow, document:storeDocument, deps:storeDeps, generateDailyClothingStock:() => storeItems,
     renderGeneralStorePage:() => {}, Date:{ now:() => 42 }, Math:{ random:() => 0.123456 } },
 );
 renderStoreClothing({ appendChild() {} });
 assert.equal(storeButtons.length, 1, 'one daily stock row has one purchase action');
+storeButtons[0].controls.children[2].click();
 storeButtons[0].click();
-storeButtons[0].click();
-assert.equal(purchases.length, 2, 'two purchases create two literal pack articles');
+assert.equal(purchases.length, 2, 'one bulk purchase creates two literal pack articles');
 assert.notEqual(purchases[0].uid, purchases[1].uid, 'even identical purchases made within the same millisecond have distinct UIDs');
+storeButtons[0].click();
+assert.equal(purchases.length, 3, 'another purchase after a bulk order still creates an article');
+assert.equal(new Set(purchases.map(article => article.uid)).size, 3, 'UIDs remain unique across bulk and single transactions');
+assert.equal(storeDeps.inventory.gold, 70, 'bulk and single clothing purchases charge the exact total');
 assert.equal(groupClothingForDisplay(purchases).length, 1, 'both identically configured purchases display in the same stack');
 
 console.log('Clothing stack rendering, migration, sale, and transfer transactions passed');

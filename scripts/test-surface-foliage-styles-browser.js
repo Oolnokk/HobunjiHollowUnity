@@ -127,6 +127,7 @@ const server=http.createServer((request,response)=>{
         }
         return {
           rings:centers.length,
+          tracedRings:generated.userData.surfaceGrowthStats?.strandRingsBefore||0, // Before ring simplification drops redundant straight-run rings.
           maxDeviation:Math.max(...centers.map(p=>Math.hypot(p.x-renderLift-clearance,p.z-renderLift-clearance))),
           endDeviation:Math.max(Math.hypot(centers[0].x-renderLift-clearance,centers[0].z-renderLift-clearance),
             Math.hypot(centers[centers.length-1].x-renderLift-clearance,centers[centers.length-1].z-renderLift-clearance))
@@ -462,12 +463,31 @@ const server=http.createServer((request,response)=>{
         centerCount:0,insideCenters:0,outerCenters:0};
       const mesh=generated.children.find(m=>m.isMesh);
       const positions=mesh?.geometry?.getAttribute('position');
-      if(positions)for(let i=0;i+5<positions.count;i+=6){
+      const uv=mesh?.geometry?.getAttribute('uv'); // The preserved V coordinate identifies original ring spacing and strand boundaries.
+      // Measure the actual simplified centerline, not the density of retained rings.
+      // Flat interior stretches lose many more rings than bends; counting rings
+      // would overrepresent bends even if the geometry itself has barely moved.
+      let previous=null,previousV=0;
+      if(positions&&uv)for(let i=0;i+5<positions.count;i+=6){
         const center=new T.Vector3();
         for(let j=0;j<5;j++)center.add(new T.Vector3().fromBufferAttribute(positions,i+j));
-        center.multiplyScalar(.2);measures.centerCount++;
-        if(Math.abs(center.x)<1&&Math.abs(center.y)<.5&&Math.abs(center.z)<1)measures.insideCenters++;
-        if(Math.abs(center.x)>1.04||Math.abs(center.y)>.54||Math.abs(center.z)>1.04)measures.outerCenters++;
+        center.multiplyScalar(.2);
+        const v=uv.getY(i);
+        if(previous&&v>previousV){
+          const length=previous.distanceTo(center);
+          // Uniform spatial samples include the straight segments between
+          // retained rings. Weight by length so subdividing a segment does
+          // not change its contribution to the containment measurement.
+          const samples=Math.max(1,Math.ceil(length/.005));
+          const weight=length/samples;
+          for(let k=0;k<samples;k++){
+            const p=previous.clone().lerp(center,(k+.5)/samples);
+            measures.centerCount+=weight;
+            if(Math.abs(p.x)<1&&Math.abs(p.y)<.5&&Math.abs(p.z)<1)measures.insideCenters+=weight;
+            if(Math.abs(p.x)>1.04||Math.abs(p.y)>.54||Math.abs(p.z)>1.04)measures.outerCenters+=weight;
+          }
+        }
+        previous=center;previousV=v;
       }
       return measures;
     });
@@ -534,7 +554,7 @@ const server=http.createServer((request,response)=>{
         name+': the elevated surface must fill after its supporting posts');
       assert(report.done,name+': every part must finish growth');
     }
-    assert(data.rawEdgeSpline.rings>=10,'Corner Fill should have intermediate spline rings along long straight architectural edges');
+    assert(data.rawEdgeSpline.tracedRings>=10,'Corner Fill should have intermediate spline rings along long straight architectural edges');
     assert(data.rawEdgeSpline.maxDeviation<.001,'With zero curl and zero clearance the spline must run on the actual corner, not float a radius off it');
     assert(data.curledEdgeSpline.maxDeviation>.008&&data.curledEdgeSpline.maxDeviation<.055,'Curl should be visible but bounded to roughly the strand radius');
     assert(data.curledEdgeSpline.endDeviation<.001,'Cosmetic curl must pin the spline back to the real edge at section endpoints');

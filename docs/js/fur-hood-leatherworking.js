@@ -263,8 +263,8 @@
   }
 
   const FUR_HOOD_LAYER_ORDER = Object.freeze({
-    front: Object.freeze(['animalBack','base','animalFront','trim']), // Front plane, back-to-front: animal back behind hood, face piece, trim.
-    behind: Object.freeze(['trim','animalFront','base','animalBack']), // Rear plane, back-to-front: trim, animal front, furhood-behind, animal back.
+    front: Object.freeze(['animalBack','base','animalFront','exposedUnderTrim','trim','exposed']), // Front plane, back-to-front: animal back behind hood, face piece, wearer ear, trim, wearer tusk/trunk.
+    behind: Object.freeze(['exposed','exposedUnderTrim','trim','animalFront','base','animalBack']), // Rear plane, back-to-front: wearer anatomy hidden first, then trim, animal front, furhood-behind, animal back.
   });
   function orderLayersForView(layers, view = 'front') {
     const order=FUR_HOOD_LAYER_ORDER[view === 'behind' ? 'behind' : 'front']; // One order for portrait, icons and the garment-space authoring preview.

@@ -23,7 +23,9 @@ function makeCanvas() {
     getContext() {
       return {
         drawImage: (...args) => this.draws.push(args),
-        set imageSmoothingEnabled(value) { /* draw scale belongs to the sprite */ }
+        save() {}, restore() {},
+        set imageSmoothingEnabled(value) { /* draw scale belongs to the sprite */ },
+        set imageSmoothingQuality(value) {}
       };
     }
   };
@@ -45,20 +47,28 @@ async function main() {
     id, slot, label: id, configPath: file.replace(/^docs\//,''),
     cfg: JSON.parse(fs.readFileSync(path.join(root, file), 'utf8'))
   }));
+  // A plain front/back hat (no behindImage) authored on a non-portrait-sized canvas.
+  cosmetics.push({id: 'bighat', slot: 'hat', label: 'bighat', configPath: 'config/cosmetics/bighat.json', cfg: {
+    slot: 'hat', parts: {head: {layers: {
+      back: {image: {url: './assets/cosmetics/clothes/hat/bighat-back.png'}},
+      front: {image: {url: './assets/cosmetics/clothes/hat/bighat-front.png'}}
+    }}}
+  }});
   const R = {garments: cosmetics, garmentCanvases: new Map()};
   const E = {sourceSpecies: {value: 'mao-ao'}, sourceGender: {value: 'male'}};
   let region = 'headwear'; // The harness tests both normal clothing and layered hats/hoods.
   const harness = [
     sourceBetween('function headwearLayerRecords(', 'async function buildHeadReferenceCanvas'),
     sourceBetween('function sourceHasGarmentArt(', 'function rebuildGarmentSelector'),
-    sourceBetween('async function buildVariantGarmentCanvas(', 'async function buildGarmentCanvas'),
+    sourceBetween('function validLayerFrame(', 'async function buildGarmentCanvas'),
     sourceBetween('function collectPatchImageNodes(', 'function behindPatchCatalog'),
     sourceBetween('function targetKey(', 'function ensureTargetData')
   ].join('\n');
   const api = new Function('R', 'E', 'document', 'HEAD_SLOTS', 'assetUrl', 'loadImage', 'fitRegion', 'log',
     harness + '\nreturn {buildVariantGarmentCanvas, sourceHasGarmentArt, targetKey};')(
     R, E, {createElement: makeCanvas}, new Set(['hat', 'hood']), value => value,
-    url => Promise.resolve({url, naturalWidth: 128, naturalHeight: 128}),
+    url => Promise.resolve(url.includes('bighat')
+      ? {url, naturalWidth: 540, naturalHeight: 484} : {url, naturalWidth: 128, naturalHeight: 128}),
     () => region, () => {}
   );
 
@@ -70,6 +80,15 @@ async function main() {
   assert(helm._layers[2].url.endsWith('headband.png'), 'Metal rear image uses the distinct circlet asset');
   assert.deepEqual(Array.from(helm._layers[2].path), ['parts', 'head', 'layers', 'front', 'behindImage']);
   assert(helm._layers.every(layer => layer.canvas.width === 128 && layer.canvas.height === 128));
+
+  // The game sizes portrait layers by height and centers them, so a 540x484 hat
+  // must be scaled into the 234x173 frame, never pasted unscaled at the origin.
+  const bigHat = await api.buildVariantGarmentCanvas('bighat', 'mao-ao', 'male', 234, 173);
+  const bigFront = bigHat._layers.find(layer => layer.name === 'head.layers.front').canvas.draws[0];
+  assert.equal(bigFront.length, 5, 'Oversized headwear is drawn with an explicit destination size');
+  assert(Math.abs(bigFront[4] - 173) < 1e-9, 'Height fills the portrait frame');
+  assert(Math.abs(bigFront[3] - 540 / 484 * 173) < 1e-9, 'Width keeps the authored aspect ratio');
+  assert(Math.abs(bigFront[1] - (234 - 540 / 484 * 173) / 2) < 1e-9, 'Narrower art is centered like portraitLayerRect');
 
   const hood = await api.buildVariantGarmentCanvas('hood', 'kenkari', 'female', 128, 128);
   assert.equal(hood._layers.length, 2, 'Kenkari female fine hood retains separate base and trim');
@@ -249,6 +268,54 @@ async function main() {
     './'+plan.files[0].outputName, 'An equal front/behind cap asset continues pointing to the same new PNG');
   assert.equal(plan.config.speciesVariants.kenkari_female.parts.head.layers.front.behindImage.url,
     './'+plan.files[2].outputName, 'The separate back-view metal PNG gets its own target config URL');
+  const rearNamed=archiveApi.buildFittedLayerArchivePlan([{...helm._layers[2],
+    url:'./assets/cosmetics/clothes/hat/tl_headband_behind.png'}],
+    {sourceSpecies:'mao-ao',sourceGender:'male',targetSpecies:'tletingan',targetGender:'female'});
+  assert(rearNamed.files[0].outputName.endsWith('/tl_headband_tletingan_f_behind.png'),
+    'Fitted rear headwear keeps the *_behind class suffix last: '+rearNamed.files[0].outputName);
+
+  // Exporting a front/back hat to a species with NO existing variant must not
+  // invent (or crash writing) a behindImage that the source never had.
+  archiveGarment = cosmetics[3];
+  plan = archiveApi.buildFittedLayerArchivePlan(bigHat._layers,
+    {sourceSpecies:'mao-ao',sourceGender:'male',targetSpecies:'tletingan',targetGender:'female'});
+  assert.deepEqual(plan.files.map(file => file.outputName), [
+    'assets/cosmetics/clothes/hat/bighat-back_tletingan_f.png',
+    'assets/cosmetics/clothes/hat/bighat-front_tletingan_f.png'
+  ]);
+  const newHatLayers = plan.config.speciesVariants.tletingan_female.parts.head.layers;
+  assert.equal(newHatLayers.front.image.url, './assets/cosmetics/clothes/hat/bighat-front_tletingan_f.png');
+  assert.equal(newHatLayers.front.behindImage, undefined, 'No behindImage is created for a hat that has none');
+  assert.equal(newHatLayers.front.image.frame, undefined, 'An unpadded fit writes no frame');
+
+  // A fit that spills past the standard layer canvas exports a padded PNG and
+  // records where the standard canvas sits inside it; a later unpadded export
+  // of the same layer removes the stale frame again.
+  const framedLayers = bigHat._layers.map(layer => layer.name === 'head.layers.front'
+    ? {...layer, frame: {x: 12, y: 0, width: 128, height: 128}} : layer);
+  plan = archiveApi.buildFittedLayerArchivePlan(framedLayers,
+    {sourceSpecies:'mao-ao',sourceGender:'male',targetSpecies:'tletingan',targetGender:'female'});
+  const framedFront = plan.config.speciesVariants.tletingan_female.parts.head.layers.front;
+  assert.deepEqual(framedFront.image.frame, {x: 12, y: 0, width: 128, height: 128}, 'Padded PNG frame is written beside its URL');
+  assert.deepEqual(plan.files.find(file => file.outputName.endsWith('bighat-front_tletingan_f.png')).frame,
+    {x: 12, y: 0, width: 128, height: 128}, 'Manifest records the frame');
+  archiveGarment = {...cosmetics[3], cfg: plan.config};
+  plan = archiveApi.buildFittedLayerArchivePlan(bigHat._layers,
+    {sourceSpecies:'mao-ao',sourceGender:'male',targetSpecies:'tletingan',targetGender:'female'});
+  assert(plan.config, 'Dropping a stale frame is a config change');
+  assert.equal(plan.config.speciesVariants.tletingan_female.parts.head.layers.front.image.frame, undefined, 'Stale frame removed');
+  assert(core.includes('function paddedHeadwearOutput('), 'Fitter pads headwear exports that spill past the layer canvas');
+  assert(/exportLayers\.length<=1&&!exportLayers\.some\(layer=>layer\.frame\)/.test(core), 'A framed single-layer hat still exports as a ZIP with its config');
+  assert(core.includes('function drawPortraitRaster(ctx,image,width,height,frame=null)'), 'Framed source PNGs load at their standard-canvas position');
+  assert(core.includes("if(String(role||'')!=='trim')return 0;"), 'Only trim layers follow the hood opening');
+  assert(core.includes('{view:layer.view,hole:fitState.hole,pins:fitState.pins,role:layer.role}'), 'Exported layers deform by their own role and carry the pinned outline');
+  assert(core.includes('return applySilhouettePins(holed,grid,width,height,options.pins!==undefined?options.pins:currentPinRecord(),hole);'), 'Pinned outline applies after the hood-hole deform');
+  assert(core.includes('return applySilhouettePins(splined,grid,width,height,pins?.rearPoints?.length?{points:pins.rearPoints,sigma:pins.sigma}:null,null);'), 'Rear-view art applies its own pinned outline (no hood-hole deform)');
+  assert(core.includes('function copyFrontPinsToRear(') && core.includes("C.drawImage(rear?flipCanvasX(art):art,0,0)"), 'Rear pins are painted on mirrored rear art and can be snapped from the front pins');
+  for (const store of ['silhouettePins:A.silhouettePins||{}', 'if(v.silhouettePins)A.silhouettePins=v.silhouettePins', 'silhouettePins:v.silhouettePins||{}', 'A.silhouettePins=v.silhouettePins||{}'])
+    assert(core.includes(store), 'Pinned outlines persist through save/export/import/undo: ' + store);
+  assert(core.includes('{view:layer.view,role:layer.role}') && core.includes('{role:sprite.role}'), 'Hood hole and runtime previews deform each layer by its role');
+  assert(core.includes('Hole.mesh(profile,hole.corners,hole.rate,{follow:holeFollowForRole(hole,role)})'), 'Hood hole deform draws through the forward mesh');
 
   archiveGarment = cosmetics[2];
   selection = {sourceSpecies:'mao-ao',sourceGender:'male',targetSpecies:'engh-sho',targetGender:'female'};
@@ -296,6 +363,90 @@ async function main() {
   assert.equal(new Set(entryNames.map(name=>name.toLowerCase())).size,entryNames.length,
     'ZIP contains no conflicting entry names');
   assert.equal(testE.clothPng.disabled,false,'Export control is restored after ZIP encoding');
+
+  // Identity fits must be lossless: an untouched 6x6 grid copies pixels and an
+  // unshaped headband spline (target === source nodes) is skipped entirely.
+  const identityApi = new Function('document','SOURCE_GRID','window',
+    sourceBetween('function warpGarment(', 'async function buildSourceReferenceCanvas(') +
+    sourceBetween('function applyHeadbandSplineWarp(', 'function warpClothing(') +
+    '\nreturn {warpGarment, applyHeadbandSplineWarp};')(
+    {createElement: makeCanvas},
+    Array.from({length: 36}, (_, i) => ({x: (i % 6) / 5, y: Math.floor(i / 6) / 5})),
+    {ClothingHeadbandSpline: {valid: nodes => Array.isArray(nodes) && nodes.length === 7,
+      warp: () => {throw new Error('Identity spline must not resample')}}}
+  );
+  const identitySource = makeCanvas();identitySource.width = 234;identitySource.height = 173;
+  const identityOut = identityApi.warpGarment(identitySource,
+    Array.from({length: 36}, (_, i) => ({x: (i % 6) / 5, y: Math.floor(i / 6) / 5})), 234, 173);
+  assert.deepEqual(identityOut.draws, [[identitySource, 0, 0]], 'Untouched grid copies the source pixels 1:1');
+  const nodes = Array.from({length: 7}, (_, i) => ({x: 80 + i * 10, y: 60}));
+  const garmentCanvas = makeCanvas();
+  assert.strictEqual(identityApi.applyHeadbandSplineWarp(garmentCanvas,
+    {enabled: true, source: nodes, target: nodes.map(point => ({...point}))}, 234, 173), garmentCanvas,
+    'An unshaped spline returns the 6x6 result untouched');
+
+  // Base fallback art is never traced as the fitted headband target.
+  const headbandTargetApi = new Function('R','flipCanvasX','traceHeadbandCanvas',
+    sourceBetween('function autoHeadbandTargetNodes(', 'function currentHeadbandRecord(') +
+    '\nreturn autoHeadbandTargetNodes;')(
+    {authoredTargetIsBase: true, authoredTargetCloth: {_front: makeCanvas()}}, value => value,
+    () => {throw new Error('Base fallback art must not be traced')}
+  );
+  assert.equal(headbandTargetApi(), null, 'No authored target for this species: the curve starts as identity');
+
+  // Hoods with exposed anatomy (ear/tusk/trunk) must still pass the runtime
+  // parity check, and the target's own anatomy stays drawn over the fitted hood.
+  const mashHood = cosmetics[1].cfg.speciesVariants.mashtzarr_male.parts.head.layers;
+  const gameLayers = Object.values(mashHood).map(layer => ({url: layer.image.url.replace(/^\.\/assets\//,''),
+    pos: 'front', paletteColorKey: layer.layerRole === 'trim' ? 'B' : layer.layerRole === 'base' ? 'A' : null}));
+  assert.equal(gameLayers.length, 5, 'Mashtzarr fine hood: base, trim and three exposed anatomy layers');
+  const previewE = {sourceSpecies: {value: 'mashtzarr'}, sourceGender: {value: 'male'}, species: {value: 'mashtzarr'}, gender: {value: 'male'}};
+  const mashSource = await api.buildVariantGarmentCanvas('hood', 'mashtzarr', 'male', 128, 128);
+  assert.equal(mashSource._layers.length, 2, 'The fit editor loads only the two wearable materials');
+  const previewOption = new Function('E','R','document','warpClothing','fittedSourceCanvasForLayer','warpGridForMode','fitRegion','headwearWarpForView',
+    sourceBetween('function exposedPortraitUrls(', 'async function canonicalFittedGarmentPortrait(') +
+    '\nreturn canonicalPreviewGarmentOption;')(
+    previewE, {body: {width: 128, height: 128}, headbandRearCanvas: null}, {createElement: makeCanvas},
+    () => Object.assign(makeCanvas(), {width: 128, height: 128}), layer => layer.canvas, () => [], () => 'headwear', () => null
+  );
+  const previewLayers = previewOption(cosmetics[1], mashSource, {variantLayers: {mashtzarr_male: gameLayers}}, new Map(), 1, 7);
+  assert.equal(previewLayers.length, 5, 'Preview keeps all five game layers');
+  assert.deepEqual(previewLayers.map(layer => /#fit-/.test(layer.url)),
+    gameLayers.map(layer => !/exposed_/.test(layer.url)),
+    'Only base/trim are replaced by fitted rasters; exposed anatomy stays in its authored position');
+
+  // Quad corners: each corner's delta spreads with its bilinear weight over the 6x6 grid.
+  const grid36 = Array.from({length: 36}, (_, i) => ({x: (i % 6) / 5, y: Math.floor(i / 6) / 5}));
+  const quadApi = new Function('GRID_SIZE','SOURCE_GRID',
+    sourceBetween('const QUAD_CORNERS=', 'let quadDrag=null;') + '\nreturn {QUAD_CORNERS, applyQuadCornerDelta};')(6, grid36);
+  assert.deepEqual(quadApi.QUAD_CORNERS, [0, 5, 30, 35]);
+  const zero36 = grid36.map(() => ({x: 0, y: 0}));
+  const quadMoved = quadApi.applyQuadCornerDelta(zero36, 1, 0.1, -0.2);
+  assert.deepEqual(quadMoved[5], {x: 0.1, y: -0.2}, 'the dragged corner moves by the full delta');
+  assert.deepEqual(quadMoved[30], {x: 0, y: 0}, 'the opposite corner stays put');
+  assert(Math.abs(quadMoved[14].x - 0.1 * 0.4 * 0.6) < 1e-12, 'interior nodes follow with bilinear falloff');
+  // The quad sits on the item's bounding box: nodes beyond the box follow its nearest edge.
+  const boxMoved = quadApi.applyQuadCornerDelta(zero36, 0, 0.1, 0, {u0: 0.4, v0: 0.4, u1: 0.6, v1: 0.6});
+  assert.equal(boxMoved[0].x, 0.1, 'nodes beyond the top-left of the box move fully with the top-left corner');
+  assert.equal(boxMoved[35].x, 0, 'nodes beyond the opposite corner stay put');
+  const stacked = quadApi.applyQuadCornerDelta(quadMoved, 2, 0, 0.1);
+  assert.equal(stacked[5].x, 0.1, 'corner edits stack instead of resetting earlier deformation');
+
+  // Recipes: validation and application to the current fit key.
+  const recipeState = {baseTransforms: {}, localOffsets: {}};
+  const recipeApi = new Function('SOURCE_GRID','A','ensureTargetData','E',
+    sourceBetween('const RECIPE_FORMAT=', 'function recipeFromCurrentFit(') +
+    sourceBetween('function applyRecipeToCurrentFit(', 'function allRecipes(') + '\nreturn {validRecipe, applyRecipeToCurrentFit};')(
+    grid36, recipeState, () => 'headwear::mashtzarr_male', {species: {value: 'mashtzarr'}, gender: {value: 'male'}});
+  const recipe = {format: 'hobunji-clothing-fit-recipe-v1', name: 'r', id: 'r',
+    transform: {scaleX: 1.2, scaleY: 1.1, translateX: -2, translateY: 4}, offsets: quadMoved};
+  assert(recipeApi.validRecipe(recipe));
+  assert(!recipeApi.validRecipe({...recipe, offsets: quadMoved.slice(1)}), 'recipes must carry all 36 offsets');
+  assert(!recipeApi.validRecipe({...recipe, transform: {...recipe.transform, scaleX: 0}}), 'zero scale is rejected');
+  assert.equal(recipeApi.applyRecipeToCurrentFit(recipe), 'headwear::mashtzarr_male');
+  assert.deepEqual(recipeState.baseTransforms['headwear::mashtzarr_male'], recipe.transform);
+  assert.deepEqual(recipeState.localOffsets['headwear::mashtzarr_male'], quadMoved);
+  assert.notStrictEqual(recipeState.localOffsets['headwear::mashtzarr_male'], quadMoved, 'applied offsets are copies of the recipe');
 
   console.log('PASS clothing-fit source layers, installable ZIP filenames/config, patch composition, fallback rasters, fit keys and script syntax');
 }

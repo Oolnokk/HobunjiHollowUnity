@@ -39,24 +39,30 @@ for (const [key, variant] of Object.entries(fine.speciesVariants)) {
   for (const [label, hood] of [['simple', simple], ['fur-lined', lined]]) {
     const layers = hood.speciesVariants[key]?.parts?.head?.layers;
     assert(layers?.front, key + ': missing ' + label + ' front hood layer');
-    assert.equal(layers.front.behindImage?.url, expectedBackUrl, key + ': ' + label + ' rear art differs from Fine Hood');
+    // Fine Hood's rear sprite, or a clothing-fitter refit of it (same stem + _<species>_<g>) that matches a refitted front.
+    const rear = layers.front.behindImage?.url || '';
+    const fittedRear = expectedBackUrl.replace(/_(m|f)\.png$/, '_' + key.split('_')[0] + '_$1.png');
+    assert(rear === expectedBackUrl || rear === fittedRear, key + ': ' + label + ' rear art differs from Fine Hood: ' + rear);
     assert(assetExists(expectedBackUrl), key + ': missing shared Fine Hood rear PNG ' + expectedBackUrl);
   }
   assert.equal(lined.speciesVariants[key].parts.head.layers.front_trim.behindImage, undefined, key + ': fur trim must not override the rear sprite');
   const gender = key.split('_').at(-1); // Selects the same male/female rear-view resolver option as the portrait renderer.
   const expectedRuntimeBack = expectedBackUrl.replace(/^\.\/assets\//, ''); // The runtime stores asset paths relative to docs/assets.
-  const simpleLayers = liveSimple.variantLayers[key]; // Shared Fine Hood back art must be selected through the live renderer, not just JSON.
-  const linedLayers = liveLined.variantLayers[key]; // The live renderer must discard only the fur trim when facing away.
+  const wearable = layers => (layers || []).filter(layer => !/\/exposed_[a-z]+\.png$/.test(layer.url || '')); // Mashtzarr exposed ear/tusk/trunk overlays are wearer anatomy, not hood fabric.
+  const simpleLayers = wearable(liveSimple.variantLayers[key]); // Shared Fine Hood back art must be selected through the live renderer, not just JSON.
+  const linedLayers = wearable(liveLined.variantLayers[key]); // The live renderer must discard only the fur trim when facing away.
   assert.equal(simpleLayers?.length, 1, key + ': Simple Hood must have one layer');
   assert.equal(linedLayers?.length, 2, key + ': Fur-lined Hood must retain base and trim for its front view');
   assert.equal(portraitContext._getBehindLayerUrl(simpleLayers[0], liveSimple, gender), expectedRuntimeBack, key + ': Simple Hood resolver did not select Fine Hood art');
-  assert.equal(portraitContext._getBehindLayerUrl(linedLayers[0], liveLined, gender), expectedRuntimeBack, key + ': Fur-lined Hood resolver did not select Fine Hood art');
+  const linedRear = portraitContext._getBehindLayerUrl(linedLayers[0], liveLined, gender); // Fine Hood art, or its refit copy when the front was refitted.
+  assert(linedRear === expectedRuntimeBack || linedRear === expectedRuntimeBack.replace(/_(m|f)\.png$/, '_' + key.split('_')[0] + '_$1.png'), key + ': Fur-lined Hood resolver did not select Fine Hood art: ' + linedRear);
   assert.equal(portraitContext._getBehindLayerUrl(linedLayers[1], liveLined, gender), linedLayers[1].url, key + ': fur trim must reuse its existing art on the rear plane');
   const linedRearLayers = linedLayers.map(layer => ({ layer })); // A rear-only stack allows comparison without mutating the real front-view order.
   portraitContext._placeFurLinedTrimBehindRearHood(linedRearLayers, liveLined);
   assert.equal(linedRearLayers[0].layer.paletteColorKey, 'B', key + ': fur trim must render behind the rear hood shell');
   assert.equal(linedRearLayers[1].layer.paletteColorKey, 'A', key + ': the rear hood shell must cover the trim');
-  assert.equal(portraitContext._getBehindLayerUrl(linedRearLayers[1].layer, liveLined, gender), expectedRuntimeBack, key + ': rear shell mapping changed');
+  const shell = portraitContext._getBehindLayerUrl(linedRearLayers[1].layer, liveLined, gender);
+  assert(shell === expectedRuntimeBack || shell === expectedRuntimeBack.replace(/_(m|f)\.png$/, '_' + key.split('_')[0] + '_$1.png'), key + ': rear shell mapping changed: ' + shell);
   assert.equal(linedLayers[0].paletteColorKey, 'A', key + ': front hood base must retain its original first-layer position');
   assert.equal(linedLayers[1].paletteColorKey, 'B', key + ': front fur trim must retain its original second-layer position');
 }
@@ -69,13 +75,15 @@ assert.deepEqual(trophyHoodLayers.map(entry=>entry.layer.paletteColorKey), ['A',
 for (const [key, suffix] of [['tletingan_male', 'tl_m'], ['mashtzarr_male', 'mashtz_m']]) {
   const plain = simple.speciesVariants[key].parts.head.layers;
   const fur = lined.speciesVariants[key].parts.head.layers;
-  assert.deepEqual(Object.keys(plain), ['front'], key + ' plain hood must contain no trim');
+  assert.deepEqual(Object.keys(plain).filter(name => !name.startsWith('front_exposed_')), ['front'], key + ' plain hood must contain no trim');
   assert.equal(plain.front.layerRole, 'base');
   assert.equal(plain.front.image.url, './assets/cosmetics/clothes/hood/simplehood_' + suffix + '.png');
-  assert.equal(fur.front.image.url, plain.front.image.url);
+  const refit = url => url.replace(/_(m|f)\.png$/, '_' + key.split('_')[0] + '_$1.png'); // Clothing-fitter refit of the same sprite.
+  assert(fur.front.image.url === plain.front.image.url || fur.front.image.url === refit(plain.front.image.url), key + ': fur-lined base is the simple hood art or its refit: ' + fur.front.image.url);
   assert.equal(fur.front_trim.layerRole, 'trim');
   assert.deepEqual(fur.front_trim.image.colors, ['B']);
-  assert.equal(fur.front_trim.image.url, './assets/cosmetics/clothes/hood/furlinedhood-trim_' + suffix + '.png');
+  const trimUrl = './assets/cosmetics/clothes/hood/furlinedhood-trim_' + suffix + '.png';
+  assert(fur.front_trim.image.url === trimUrl || fur.front_trim.image.url === refit(trimUrl), key + ': fur-lined trim art: ' + fur.front_trim.image.url);
   for (const value of [plain.front, fur.front, fur.front_trim]) {
     assert(assetExists(value.image.url), key + ': missing source sprite ' + value.image.url);
     if (value.behindImage?.url) assert(assetExists(value.behindImage.url), key + ': missing behind sprite ' + value.behindImage.url);

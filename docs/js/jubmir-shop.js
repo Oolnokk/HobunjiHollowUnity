@@ -63,20 +63,26 @@
     return stock;
   }
 
-  function buyJubmirGood(entry) {
+  function purchaseLimit(entry, stock = getJubmirStock()) {
+    const remaining = Math.max(0, (Math.max(1, Number(entry.maxPerRestock) || 1)) - (Number(stock.purchasedByKey[entry.key]) || 0));
+    return window.ShopQuantity.max(deps.inventory, { price: entry.price, grants: { [entry.key]: 1 },
+      limit: entry.abilityId || entry.givesGenotype ? Math.min(remaining, 1) : remaining });
+  }
+
+  function buyJubmirGood(entry, quantity = 1) {
     const stock = getJubmirStock();
     const purchased = Number(stock.purchasedByKey[entry.key]) || 0; // Used to enforce this goods entry's authored daily stock cap.
     const maxPerRestock = Math.max(1, Number(entry.maxPerRestock) || 1); // Used as the maximum copies Jubmir carries today.
     if (purchased >= maxPerRestock) { deps.showToast("Jubmir's sold out of that for today.", false); return; }
     if (entry.abilityId && window.TechniqueScrolls?.isUnlocked?.(entry.abilityId)) { deps.showToast(`${entry.name}: you already know that technique.`, false); return; }
     const gold = deps.inventory.gold || 0;
-    if (gold < entry.price) { deps.showToast('Not enough ganang.', false); return; }
-    deps.inventory.gold = gold - entry.price;
-    deps.inventory[entry.key] = Math.min(window.InventoryStacks.MAX_TOTAL, (deps.inventory[entry.key] || 0) + 1);
+    if (!window.ShopQuantity.valid(quantity, purchaseLimit(entry, stock))) { deps.showToast('Not enough ganang, stock or inventory space.', false); return; }
+    deps.inventory.gold = gold - entry.price * quantity;
+    deps.inventory[entry.key] = (deps.inventory[entry.key] || 0) + quantity;
     if (entry.givesGenotype) window.FarmAnimals.queueItemGenotype(entry.key, stock.eggGenotype);
-    stock.purchasedByKey[entry.key] = purchased + 1;
+    stock.purchasedByKey[entry.key] = purchased + quantity;
     _saveJubmirStock(stock);
-    deps.showToast(`Bought ${entry.name} from Jubmir!`, true);
+    deps.showToast(`Bought ${quantity}× ${entry.name} from Jubmir!`, true);
     renderJubmirShopPage();
     deps.buildInventoryGrid();
     deps.saveMemberWorldData();
@@ -106,7 +112,9 @@
         </div>
         <button class="shop-buy-btn" ${soldOut || learned ? 'disabled' : ''}>${learned ? 'Learned' : soldOut ? 'Sold Out' : 'Buy'}</button>
       `;
-      if (!soldOut && !learned) row.querySelector('button')?.addEventListener('click', () => buyJubmirGood(entry));
+      if (!soldOut && !learned) window.ShopQuantity.attach(row.querySelector('button'), {
+        maximum: () => purchaseLimit(entry, stock), price: entry.price, showControls: !entry.abilityId && !entry.givesGenotype && Number(entry.maxPerRestock) > 1,
+        purchase: quantity => buyJubmirGood(entry, quantity) });
       list.appendChild(row);
     }
   }

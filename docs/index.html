@@ -29,6 +29,7 @@
   <!-- Bag stack sizing (999 per box, overflow spills into another box).
        Must load before every module that grants inventory items. -->
   <script src="js/inventory-stacks.js?v=20261105-stack999"></script>
+  <script src="js/shop-quantity.js?v=20261124bulkAudit3"></script>
   <script src="js/scene-ready-poller.js?v=20260920startup4"></script>
   <!-- Dev Companion bridge (window.DevCompanion): session-tied channel to the
        docs/tools/dev-companion window. Loaded before every config-fetching
@@ -53,7 +54,7 @@
   <!-- Small formatting/math helpers (esc/clamp/roundRect/formatClock/etc.)
        extracted out of game.js; must load before game.js and before every
        other module whose init(deps) is handed window.FormatUtils.clamp/esc. -->
-  <script src="js/format-utils.js?v=20261123babyPortraitUtils1"></script>
+  <script src="js/format-utils.js?v=20261124bulkAudit3"></script>
   <!-- Default building entry tile (buildingSpawnFromExit) extracted out of
        game.js; uses window.FormatUtils.clamp and must load before game.js. -->
   <script src="js/building-entry-spawn.js?v=20261026hfbed948"></script>
@@ -167,7 +168,7 @@
   <script src="js/metal-armor-system.js?v=20261124patternNestAudit2"></script>
   <script src="config/colors/config.js?v=20261026h7f369c3"></script>
   <script src="config/attachment-rig-profiles.js?v=20261123h19fa06a"></script>
-  <link rel="stylesheet" href="style.css?v=20261118instrumentLoadout1">
+  <link rel="stylesheet" href="style.css?v=20261124bulkRebase4">
   <link rel="stylesheet" href="cooking-ui.css?v=20261109craftHours1">
   <link rel="stylesheet" href="ui-element-editor.css?v=20260814a">
   <!-- Shared gameplay presentation: mirrors the outlined text + light translucent containers used by character/save select. -->
@@ -181,11 +182,12 @@
     }
   </script>
   <script src="js/beard-hood-cutout.js?v=20261124cpuAudit2"></script>
-  <script src="js/portrait-utils.js?v=20261124cpuAudit3"></script>
+  <script src="js/portrait-utils.js?v=20261124he37c11c"></script>
   <script src="js/portrait-breathing.js?v=20260831syllable4"></script>
   <script src="js/npc-avatar-preview-utils.js?v=20261122hKasa3"></script>
   <script src="js/character-spine.js?v=20261112longoran1"></script>
-  <script src="js/png-plane-avatar.js?v=20261122babyPortraitPosed1"></script>
+  <script src="js/hat-overflow-plane.js?v=20261124hatOverflow1"></script>
+  <script src="js/png-plane-avatar.js?v=20261124h4f60280"></script>
   <script src="js/creature-ground-anchor.js?v=20261023hf1"></script> <!-- Creature sprite ground-anchor scan/offset (extracted from game.js). -->
   <script src="js/species-pose-scaling.js?v=20261115shoulders3"></script>
   <script src="js/character-dimensions.js?v=20261007he86e7d1"></script>
@@ -269,7 +271,7 @@
   <!-- Loads the richer per-piece data authored by furniture-avatar-author (seat
        anchors, processing VFX/warps, livestock stomp points) on top of it -->
   <script src="js/table-chair-placement.js?v=20261102chairreview3"></script>
-  <script src="js/furniture-table-system.js?v=20261122airrope4"></script>
+  <script src="js/furniture-table-system.js?v=20261124physicalChair4"></script>
   <script src="js/furniture-surface-png-runtime.js?v=20261103materialv3"></script> <!-- Opt-in per-face PNG tiling, alpha padding and opacity from Furniture Editor. -->
   <script src="js/furniture-tile-span.js?v=20261114vertical1"></script> <!-- Shared, on-demand rigid ends + surface-rooted elastic middle. -->
   <script src="js/authored-furniture-runtime.js?v=20261119visualauth1"></script>
@@ -434,7 +436,7 @@
        global by then), so load order relative to the other systems above
        doesn't matter; must load before game.js, which calls
        window.FarmAnimals.init(...) during its own setup. -->
-  <script src="js/farm-production.js?v=20261115farmStarterGrantSafe1"></script>
+  <script src="js/farm-production.js?v=20261124bulk1"></script>
   <script src="js/honeyfuzzle-house.js?v=20261114queenPerf1"></script> <!-- Honeyfuzzle House: 1x1 queen/swarm slot on a FarmProduction entry; hooked by farm-production.js, initialized by game.js. -->
   <script src="js/farm-layout-editor.js?v=20261016a"></script>
   <script src="js/world-meta-store.js?v=20261122cancelAnimal2"></script>
@@ -480,7 +482,7 @@
        call time (already global by then), so load order relative to the
        other systems above doesn't matter; must load before game.js, which
        calls window.JubmirShop.init(...) during its own setup. -->
-  <script src="js/jubmir-shop.js?v=20261008h176df45"></script>
+  <script src="js/jubmir-shop.js?v=20261124bulkAudit3"></script>
   <!-- Bound Harlyao relic weapons + Garanki Gabu's unbinding/enchanting panel. -->
   <script src="js/artifact-collection.js?v=20261116knotwork1"></script>
   <script src="js/menu-panel-renderers.js?v=20261116decouple1"></script> <!-- One tab renderer per panel; no duplicate menu dispatch in game.js. -->
@@ -499,7 +501,7 @@
   <script src="js/boney-shinjimi-rewards.js?v=20261116milk1"></script> <!-- Existing museum/relic/trinket reward adapters. -->
   <script src="js/wilderness-encounter-runtime.js?v=20261124shared2"></script>
   <script src="js/boney-shinjimi-wilderness.js?v=20261124shared1"></script> <!-- Full-moon hermit, house and chase; shares traveller scheduler/save seam. -->
-  <script src="js/slagothim-traders.js?v=20261116boneyKasaTraders1"></script>
+  <script src="js/slagothim-traders.js?v=20261124bulkAudit3"></script>
   <!-- Khymeryyan civil calendar (day/week/month/year derivations + regional
        seasons) and the Calendar tab UI (window.CalendarSystem) —
        self-contained aside from deps injected via init(), so load order
@@ -609,14 +611,14 @@
        load order relative to the other systems above doesn't matter; must
        load before game.js, which calls window.GeneralStore.init(...)
        during its own setup. -->
-  <script src="js/general-store.js?v=20261114potionStacks2"></script>
+  <script src="js/general-store.js?v=20261124bulkAudit3"></script>
   <!-- Carpenter's shop: barn plans + furniture blueprints
        (window.CarpenterShop) — self-contained aside from deps injected via
        init(), and reads window.ConditionRegistry at render time (already
        global by then), so load order relative to the other systems above
        doesn't matter; must load before game.js, which calls
        window.CarpenterShop.init(...) during its own setup. -->
-  <script src="js/carpenter-shop.js?v=20261027blueprintRead1"></script>
+  <script src="js/carpenter-shop.js?v=20261124bulkAudit3"></script>
   <!-- Off-save storage for a per-item "Custom" pattern's motif PNG
        (window.MotifStore) — see the file's own header comment. No deps
        injection and everything on it fails soft, so load order doesn't
@@ -2986,14 +2988,14 @@
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups2" data-classic-group="render"></script>
   <script src="js/held-gift-policy.js?v=20261122heldGiftPolicy1"></script> <!-- Shared gifting policy and clothing visual preparation; game.js owns equipment state. -->
   <script src="js/rootledoot-encounter.js?v=20261124shared1"></script>
-  <script src="game.js?v=20261124rootledoot3"></script>
+  <script src="game.js?v=20261124hd5efb22"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261115nativeArena1"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->
   <script src="js/banubu-snore.js?v=20261110banubuNightAudit3"></script>
   <script src="js/ui-element-editor.js?v=20261112keyPack2"></script>
   <script src="js/controller-menu-dismissal.js?v=20261122ha0c2da7"></script> <!-- Shared legacy Close/Escape policy; load before controller navigation. -->
-  <script src="js/controller-ui-nav.js?v=20261124patternNestAudit4"></script>
+  <script src="js/controller-ui-nav.js?v=20261124menuCategoryPages3"></script>
   <!-- ◀/▶ stepper buttons beside every <select> so controller players can change any dropdown. -->
   <script src="js/controller-select-steppers.js?v=20261014h3e0bf66"></script>
   <script>

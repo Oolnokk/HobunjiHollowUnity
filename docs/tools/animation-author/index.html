@@ -1227,7 +1227,7 @@ const KURRAYA_STORAGE_KEY = 'hobunjiNpcPlaneAvatarRepoViewer.kurrayaProfiles.v1'
 const CREATURE_STORAGE_KEY = 'hobunjiGameplayBackdropRepoViewer.creatureProfiles.v1';
 const CREATURE_RENDER_SCRIPT = 'js/creature-genetics-render.js';
 const AUTHOR_HAND_RUNTIME_SCRIPT = new URL('../../js/held-action-animations.js?v=20261123npcBabyCarry1', location.href).href; // Keeps the hand preview paired with this exact Animation Author build instead of an older selected repository ref.
-const AUTHOR_PORTRAIT_RUNTIME_SCRIPT = new URL('../../js/png-plane-avatar.js?v=20261122h2cff8de', location.href).href; // Always pair the editor controls with the local portrait-density/wireframe API, even when previewing older repository art.
+const AUTHOR_PORTRAIT_RUNTIME_SCRIPT = new URL('../../js/png-plane-avatar.js?v=20261124h4f60280', location.href).href; // Always pair the editor controls with the local portrait-density/wireframe API, even when previewing older repository art.
 const AUTHOR_SPINE_RUNTIME_SCRIPT = new URL('../../js/character-spine.js?v=20261112longoran1', location.href).href; // The paired Longoran preview must load the same real spline solver as gameplay before it builds a skinned portrait.
 const AUTHOR_LEG_BONES_SCRIPT = new URL('../../js/leg-bones.js?v=20260821a', location.href).href; // Supplies the exact invisible two-bone solver used by the paired feet preview.
 const AUTHOR_FEET_RUNTIME_SCRIPT = new URL('../../js/procedural-leg-animation.js?v=20261119hf31697a', location.href).href; // Keeps rig-preview feet paired with this author build instead of the selected repository ref.
@@ -1246,6 +1246,7 @@ const REQUIRED_SCRIPTS = [
   'js/portrait-breathing.js',
   'js/npc-avatar-preview-utils.js',
   'js/character-spine.js', // Before PNGPlaneAvatar: otherwise Longoran's bind/applyToRig calls silently skip its forward-curved spine.
+  'js/hat-overflow-plane.js', // Big hats: hat pixels past the portrait square (HatOverflowPlane).
   'js/png-plane-avatar.js',
   'config/portrait-mouth-points.js', // Shared species/gender lip pixels used by B'shuakauitl and the Kiss contact diagnostic.
   'js/combat/shared-attack-pose.js', // The exact skinned mouth-frame resolver, without a second face-coordinate formula.

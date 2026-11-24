@@ -48,6 +48,7 @@ function makeHarness({ townValue = 3, season = 'Stormtide', townBuildings = [], 
   vm.runInContext(fs.readFileSync(path.join(ROOT, 'docs/js/building-subtle-elevation.js'), 'utf8'), context);
   vm.runInContext(fs.readFileSync(path.join(ROOT, 'docs/js/town-mine.js'), 'utf8'), context);
   window.TownMine.restore({ townValue });
+  vm.runInContext(fs.readFileSync(path.join(ROOT, 'docs/js/shop-quantity.js'), 'utf8'), context);
   vm.runInContext(fs.readFileSync(path.join(ROOT, 'docs/js/slagothim-traders.js'), 'utf8'), context);
   const zone = makeZoneLayout();
   const townGrid = Array.from({ length: 30 }, (_, r) => Array.from({ length: 30 }, (_, c) => ({ type: r === 15 || c === 15 ? 'path' : 'grass' })));
@@ -242,7 +243,7 @@ function makeHarness({ townValue = 3, season = 'Stormtide', townBuildings = [], 
 
 // ── Buying + save/restore ────────────────────────────────────────────
 {
-  const { T, inventory, calendar } = makeHarness();
+  const { T, inventory, calendar, saves, window } = makeHarness();
   const caravan = T.spawnCaravan(calendar.day, null);
   caravan.stock = [{ id: 'item:fish_winter', kind: 'item', key: 'fish_winter', qty: 1, price: 66, label: 'Winter Fish' }];
   const result = T.buy(caravan.id, 'item:fish_winter');
@@ -250,6 +251,30 @@ function makeHarness({ townValue = 3, season = 'Stormtide', townBuildings = [], 
   assert.equal(inventory.fish_winter, 1);
   assert.equal(inventory.gold, 10000 - 66);
   assert.equal(T.buy(caravan.id, 'item:fish_winter').ok, false, 'limited stock');
+  caravan.stock[0].qty = 5;
+  const savesBeforeBulk = saves(); // A bulk order is one persisted transaction.
+  assert.equal(T.buy(caravan.id, 'item:fish_winter', 3).ok, true);
+  assert.equal(saves(), savesBeforeBulk + 1);
+  assert.equal(inventory.fish_winter, 4);
+  assert.equal(inventory.gold, 10000 - 66 * 4);
+  assert.equal(caravan.stock[0].qty, 2);
+  for (const invalid of [0, -1, 1.5, NaN, Infinity, 3]) assert.equal(T.buy(caravan.id, 'item:fish_winter', invalid).ok, false);
+  assert.equal(caravan.stock[0].qty, 2);
+  assert.equal(inventory.gold, 10000 - 66 * 4);
+  const savesAfterBulk = saves();
+  inventory.gold = 100;
+  assert.equal(T.buy(caravan.id, 'item:fish_winter', 2).reason, 'gold');
+  assert.equal(inventory.gold, 100);
+  assert.equal(caravan.stock[0].qty, 2);
+  inventory.gold = 10000 - 66 * 4;
+  window.InventoryStacks = { MAX_TOTAL: 9999 };
+  inventory.fish_winter = 9998;
+  assert.equal(T.buy(caravan.id, 'item:fish_winter', 2).reason, 'full');
+  assert.equal(inventory.fish_winter, 9998);
+  assert.equal(inventory.gold, 10000 - 66 * 4);
+  assert.equal(caravan.stock[0].qty, 2);
+  assert.equal(saves(), savesAfterBulk, 'failed purchases do not save or change stock');
+  inventory.fish_winter = 4;
   caravan.dist = 12.5;
   const saved = JSON.parse(JSON.stringify(T.serialize()));
   T.restore(null);
@@ -258,7 +283,7 @@ function makeHarness({ townValue = 3, season = 'Stormtide', townBuildings = [], 
   const restored = T.debugSnapshot().caravans[0];
   assert.equal(restored.id, caravan.id);
   assert.equal(restored.dist, 12.5);
-  assert.deepEqual([...restored.stock], ['Winter Fish×0@66g']);
+  assert.deepEqual([...restored.stock], ['Winter Fish×2@66g'], 'remaining bulk-purchase stock persists across reload');
   saved.caravans[0].members[0] = { index: 0, gender: 'female', name: 'Old Female', roster: { appearance: { speciesId: 'tletingan', gender: 'female' } } };
   T.restore(saved);
   const migrated = T.__test.state.caravans[0].members[0];

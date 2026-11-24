@@ -104,15 +104,24 @@ function exitWithResult(){setImmediate(()=>process.exit(process.exitCode||0));}
     const chair=await page.evaluate(async()=>{
       await window.AuthoredFurniture.load('chairSimple');
       const deps=window.RomanceSystem.helpers.deps(),walker=window.__omgurkuGameWalker;
-      const target={area:walker.area,c:Math.floor(walker.root.position.x),r:Math.floor(walker.root.position.z),pose:'sit',furnitureKey:'chairSimple'};
-      const seat=deps.seatTransformForTarget(target);
-      if(!seat)return {available:false};
-      window.NpcScheduling.registerTargetOverride('omgurku-chair-qa',rec=>rec.id===walker.rec.id?target:null);
-      walker.root.position.set(seat.x,0,seat.z);walker.state='idle';
-      for(let i=0;i<60;i++)walker.update(1/60);
-      const y=walker.root.position.y,station=walker._seatedStationKey;
-      window.NpcScheduling.registerTargetOverride('omgurku-chair-qa',null);
-      return {available:true,y,station};
+      const target={area:walker.area,c:Math.floor(walker.root.position.x),r:Math.floor(walker.root.position.z),pose:'sit',furnitureKey:'chairSimple',furnitureId:'omgurku-chair-qa'};
+      const chairRoot=new window.THREE.Group(); // Register an actual scene anchor rather than inventing a chair on an empty tile.
+      chairRoot.position.set(target.c+.5,0,target.r+.5);
+      walker.root.parent.add(chairRoot);
+      window.FurnitureTableSystem.registerPlacement(target.area,{id:target.furnitureId,key:target.furnitureKey,col:target.c,row:target.r},chairRoot,{sit:true,fw:1,fd:1});
+      try {
+        const seat=deps.seatTransformForTarget(target);
+        if(!seat)return {available:false};
+        window.NpcScheduling.registerTargetOverride('omgurku-chair-qa',rec=>rec.id===walker.rec.id?target:null);
+        walker.root.position.set(seat.x,0,seat.z);walker.state='idle';
+        for(let i=0;i<60;i++)walker.update(1/60);
+        const y=walker.root.position.y,station=walker._seatedStationKey;
+        return {available:true,y,station};
+      } finally {
+        window.NpcScheduling.registerTargetOverride('omgurku-chair-qa',null);
+        window.FurnitureTableSystem.unregisterPlacement(target.area,target.furnitureId);
+        chairRoot.parent?.remove(chairRoot);
+      }
     });
     assert(chair.available,'chair fixture uses a real authored seat anchor');
     assert(Math.abs(chair.y)<.02,'a resting hybrid never sinks its quadruped body below the floor to fit a humanoid chair');

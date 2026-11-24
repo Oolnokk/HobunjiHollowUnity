@@ -55,7 +55,7 @@ async function loadBehindPatchSource(id){
 function warpBehindPatchCanvas(sourceCanvas,fitState=null,bodyPatch=false){
   if(!sourceCanvas||!R.body)throw new Error('The clothing species-fit editor is not ready to deform a behind sprite yet.');
   if(bodyPatch)return warpGarment(sourceCanvas,fitState?targetGridFromFitState(fitState):targetGrid(),R.body.width,R.body.height); // Corrective body pixels intentionally skip garment contour fitting.
-  return warpClothing(sourceCanvas,fitState?targetGridFromFitState(fitState):targetGrid(),R.body.width,R.body.height,fitState?(fitRegion()==='headwear'?fitState.headband:fitState.contour):null); // Export callers can pin the exact base transform + 6×6 fit active when the job was authored.
+  return warpClothing(sourceCanvas,fitState?targetGridFromFitState(fitState):targetGrid(),R.body.width,R.body.height,fitState?(fitRegion()==='headwear'?fitState.headband:fitState.contour):null,{view:'behind'}); // Export callers can pin the exact base transform + 6×6 fit active when the job was authored.
 }
 function setMainWorkflowPatch(sourceCanvas,meta={}){
   if(!sourceCanvas)throw new Error('Cannot route an empty patch source into the main workflow.');
@@ -101,16 +101,20 @@ window.ClothingSpeciesFitTool=Object.freeze({
   logMessage:message=>log(String(message||''))
 }); // Narrow bridge for the behind.part1-5.txt patch author; repository loading and deformation math remain owned by the core editor.
 
-E.modeBtns.forEach(b=>b.onclick=()=>{if((b.dataset.mode==='protect'&&fitRegion()==='headwear')||(['headband','rear-paint'].includes(b.dataset.mode)&&fitRegion()!=='headwear'))return;mode=b.dataset.mode;if(mode==='rear-paint')E.headbandView.value='back';saveState();syncHeadbandControls();render()});
+E.modeBtns.forEach(b=>b.onclick=()=>{if((b.dataset.mode==='protect'&&fitRegion()==='headwear')||(['headband','rear-paint','hole','pin'].includes(b.dataset.mode)&&fitRegion()!=='headwear'))return;mode=b.dataset.mode;if(mode==='rear-paint')E.headbandView.value='back';saveState();syncHeadbandControls();render()});
 E.reload.onclick=loadRepositoryData;
 E.fitRegion.onchange=()=>{
   ++R.garmentSelectionEpoch; // Region switches invalidate any deferred catalog auto-restoration.
   // Keep the last item selection for each region and never reuse body transforms for headwear.
   R.three.portraitCache.clear();
   R.assetGeneration++;
-  if(mode==='protect'&&fitRegion()==='headwear'||['headband','rear-paint'].includes(mode)&&fitRegion()!=='headwear')mode='fit'; // Painting is body/poncho-only, never a hidden headwear edit.
+  if(mode==='protect'&&fitRegion()==='headwear'||['headband','rear-paint','hole','pin'].includes(mode)&&fitRegion()!=='headwear')mode='fit'; // Painting is body/poncho-only, never a hidden headwear edit.
   rebuildGarmentSelector();
   document.getElementById('headbandSplineSection').hidden=fitRegion()!=='headwear';
+  if(E.holeSection)E.holeSection.hidden=fitRegion()!=='headwear';
+  if(E.pinSection)E.pinSection.hidden=fitRegion()!=='headwear';
+  E.modeBtns.find(btn=>btn.dataset.mode==='hole').disabled=fitRegion()!=='headwear';
+  E.modeBtns.find(btn=>btn.dataset.mode==='pin').disabled=fitRegion()!=='headwear';
   E.modeBtns.find(btn=>btn.dataset.mode==='headband').disabled=fitRegion()!=='headwear';
   E.modeBtns.find(btn=>btn.dataset.mode==='rear-paint').disabled=fitRegion()!=='headwear';
   document.getElementById('contourFitSection').hidden=fitRegion()==='headwear';
@@ -156,6 +160,7 @@ E.sourceSpecies.onchange=changeStartingSprite;E.sourceGender.onchange=changeStar
 E.showBody.onchange=()=>render(false); // Hiding the 2D body is an editing aid, not a change to the game's 3D character.
 E.showGarment.onchange=render;
 E.showMeshes.onchange=()=>render(false); // Grid visibility never needs to rebuild the runtime rig.
+E.showHair.onchange=()=>render(); // Rebuilds the runtime portrait with or without the seeded hair/eyes/beard (separate portrait cache key).
 E.match3D.onchange=()=>render(false); // Toggle between synchronized front portrait pixels and raw PNG inspection.
 E.opacity.oninput=render;
 E.showAuthored.onchange=render;E.authoredOpacity.oninput=render;
@@ -221,15 +226,512 @@ if(A.settings?.gender)E.gender.value=A.settings.gender;
 if(A.settings?.headbandEditCurve==='source')E.headbandEditCurve.value='source';
 if(A.settings?.headbandView==='back')E.headbandView.value='back';
 E.headbandWholeDrag.checked=!!A.settings?.headbandWholeDrag; // Restore whole-curve touch preference without changing saved spline nodes.
+// ---------------------------------------------------------------------------
+// Simple quad deformation: four corner handles. Dragging a corner spreads its
+// movement over all 36 nodes with that corner's bilinear weight, so it layers
+// on top of the base transform and any existing local node edits.
+// ---------------------------------------------------------------------------
+const QUAD_CORNERS=[0,GRID_SIZE-1,GRID_SIZE*(GRID_SIZE-1),GRID_SIZE*GRID_SIZE-1]; // Top-left, top-right, bottom-left, bottom-right grid indices.
+const FULL_QUAD_BOX={u0:0,v0:0,u1:1,v1:1};
+// The quad is a plain square on the item's bounding box (source-normalized);
+// nodes beyond the box follow its nearest edge.
+function quadCornerWeight(index,corner,box=FULL_QUAD_BOX){
+  const p=SOURCE_GRID[index];
+  const u=Math.max(0,Math.min(1,(p.x-box.u0)/Math.max(1e-6,box.u1-box.u0)));
+  const v=Math.max(0,Math.min(1,(p.y-box.v0)/Math.max(1e-6,box.v1-box.v0)));
+  return [(1-u)*(1-v),u*(1-v),(1-u)*v,u*v][corner];
+}
+function applyQuadCornerDelta(offsets,corner,dx,dy,box=FULL_QUAD_BOX){
+  return offsets.map((o,i)=>{const w=quadCornerWeight(i,corner,box);return{x:o.x+w*dx,y:o.y+w*dy}});
+}
+let quadDrag=null;
+function quadSourceBox(){
+  const cloth=R.cloth; // Whole item (back + front layers), so the square encloses everything that moves.
+  if(!cloth)return FULL_QUAD_BOX;
+  if(R.quadBoxCache?.cloth===cloth)return R.quadBoxCache.box;
+  const w=cloth.width,h=cloth.height,data=cloth.getContext('2d').getImageData(0,0,w,h).data;
+  let x0=w,y0=h,x1=-1,y1=-1;
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++)if(data[(y*w+x)*4+3]>40){if(x<x0)x0=x;if(x>x1)x1=x;if(y<y0)y0=y;if(y>y1)y1=y}
+  const box=x1<0?FULL_QUAD_BOX:{u0:x0/(w-1),v0:y0/(h-1),u1:x1/(w-1),v1:y1/(h-1)};
+  R.quadBoxCache={cloth,box};
+  return box;
+}
+function mapSourcePoint(grid,u,v){
+  // Bilinear lookup of a source-normalized point through the fitted 6×6 grid.
+  const n=GRID_SIZE-1,fx=Math.max(0,Math.min(n-1e-9,u*n)),fy=Math.max(0,Math.min(n-1e-9,v*n));
+  const c=Math.floor(fx),r=Math.floor(fy),s=fx-c,t=fy-r;
+  const p00=grid[r*GRID_SIZE+c],p10=grid[r*GRID_SIZE+c+1],p01=grid[(r+1)*GRID_SIZE+c],p11=grid[(r+1)*GRID_SIZE+c+1];
+  return{x:(1-s)*(1-t)*p00.x+s*(1-t)*p10.x+(1-s)*t*p01.x+s*t*p11.x,y:(1-s)*(1-t)*p00.y+s*(1-t)*p10.y+(1-s)*t*p01.y+s*t*p11.y};
+}
+function quadDisplayCorners(){
+  const box=quadSourceBox(),grid=targetGrid();
+  return [[box.u0,box.v0],[box.u1,box.v0],[box.u0,box.v1],[box.u1,box.v1]].map(([u,v])=>{
+    const p=mapSourcePoint(grid,u,v);return{x:p.x*(E.stage.width-1),y:p.y*(E.stage.height-1)};
+  });
+}
+function quadPointerDown(e){
+  const p=pointer(e),corners=quadDisplayCorners();
+  let corner=-1,best=Infinity;
+  corners.forEach((q,c)=>{const d=Math.hypot(q.x-p.x,q.y-p.y);if(d<best){best=d;corner=c}});
+  if(corner<0||best>HIT_RADIUS*2)return false;
+  pushUndo();
+  quadDrag={corner,start:p,box:quadSourceBox(),offsets:currentOffsets().map(o=>({x:o.x,y:o.y}))};
+  E.stage.setPointerCapture(e.pointerId);
+  return true;
+}
+function quadPointerMove(e){
+  if(!quadDrag)return false;
+  const p=pointer(e);
+  const dx=(p.x-quadDrag.start.x)/Math.max(1,E.stage.width-1),dy=(p.y-quadDrag.start.y)/Math.max(1,E.stage.height-1);
+  A.localOffsets[ensureTargetData(E.species.value,E.gender.value)]=applyQuadCornerDelta(quadDrag.offsets,quadDrag.corner,dx,dy,quadDrag.box);
+  saveState();render();
+  return true;
+}
+function quadPointerUp(){
+  if(!quadDrag)return;
+  quadDrag=null;saveState();log('Saved quad corner deformation for '+targetKey(E.species.value,E.gender.value)+'.');
+}
+function drawQuadHandles(ctx){
+  const q=quadDisplayCorners();
+  ctx.save();ctx.strokeStyle='#ffe066';ctx.fillStyle='#ffe066';ctx.lineWidth=1.4;
+  ctx.beginPath();[0,1,3,2,0].forEach((c,i)=>{i?ctx.lineTo(q[c].x,q[c].y):ctx.moveTo(q[c].x,q[c].y)});ctx.stroke();
+  const side=HANDLE_RADIUS*2;
+  for(const p of q)ctx.fillRect(p.x-side/2,p.y-side/2,side,side); // Square handles.
+  ctx.restore();
+}
+
+// ---------------------------------------------------------------------------
+// Fit recipes: a reusable base transform + 6×6 local offsets that can be
+// applied to the current item or to several items at once. Recipes come from
+// the repository library (config/clothing-fit-recipes/index.json) or are
+// saved in this browser, and import/export as JSON.
+// ---------------------------------------------------------------------------
+const RECIPE_FORMAT='hobunji-clothing-fit-recipe-v1';
+function validRecipe(recipe){
+  const tr=recipe?.transform;
+  return !!recipe&&recipe.format===RECIPE_FORMAT&&typeof recipe.name==='string'&&!!tr&&
+    ['scaleX','scaleY','translateX','translateY'].every(key=>Number.isFinite(+tr[key]))&&+tr.scaleX>0&&+tr.scaleY>0&&
+    Array.isArray(recipe.offsets)&&recipe.offsets.length===SOURCE_GRID.length&&
+    recipe.offsets.every(point=>Number.isFinite(+point?.x)&&Number.isFinite(+point?.y));
+}
+function recipeFromCurrentFit(name,description=''){
+  const fit=captureFitState();
+  return{
+    format:RECIPE_FORMAT,id:safeName(name).toLowerCase()||'recipe-'+Date.now(),name,description,region:fitRegion(),
+    source:{species:E.sourceSpecies.value,gender:E.sourceGender.value},
+    target:{species:E.species.value,gender:E.gender.value},
+    transform:fit.transform,offsets:fit.offsets,
+    ...(fit.hole&&fit.hole.enabled?{hole:{rate:fit.hole.rate,corners:fit.hole.corners}}:{}), // Optional hood-opening quad, in sprite pixels relative to each item's detected opening.
+    createdAt:new Date().toISOString()
+  };
+}
+function applyRecipeToCurrentFit(recipe){
+  if(!validRecipe(recipe))throw new Error('Not a valid fit recipe.');
+  const key=ensureTargetData(E.species.value,E.gender.value);
+  const tr=recipe.transform;
+  A.baseTransforms[key]={scaleX:+tr.scaleX,scaleY:+tr.scaleY,translateX:+tr.translateX,translateY:+tr.translateY};
+  A.localOffsets[key]=recipe.offsets.map(point=>({x:+point.x,y:+point.y}));
+  if(recipe.hole&&Array.isArray(recipe.hole.corners)){
+    A.holeDeforms ||= {};
+    A.holeDeforms[key]={enabled:true,rate:Number.isFinite(+recipe.hole.rate)?+recipe.hole.rate:1.5,
+      corners:[0,1,2,3].map(i=>({x:+recipe.hole.corners[i]?.x||0,y:+recipe.hole.corners[i]?.y||0}))};
+  }
+  return key;
+}
+function allRecipes(){
+  return [
+    ...(R.recipeLibrary||[]).map(recipe=>({recipe,origin:'library'})),
+    ...Object.values(A.recipes||{}).map(recipe=>({recipe,origin:'saved'}))
+  ].filter(entry=>validRecipe(entry.recipe));
+}
+function selectedRecipeEntry(){
+  const [origin,id]=String(E.recipeSelect.value||'').split('::');
+  return allRecipes().find(entry=>entry.origin===origin&&entry.recipe.id===id)||null;
+}
+function describeRecipe(recipe){
+  const tr=recipe.transform,moved=recipe.offsets.filter(o=>Math.abs(o.x)>1e-6||Math.abs(o.y)>1e-6).length;
+  const pair=recipe.source&&recipe.target?`${recipe.source.species} ${recipe.source.gender} → ${recipe.target.species} ${recipe.target.gender}`:'';
+  return `${pair}${pair?' • ':''}scale ${(+tr.scaleX).toFixed(3)}×${(+tr.scaleY).toFixed(3)}, move ${(+tr.translateX).toFixed(2)}, ${(+tr.translateY).toFixed(2)} px • ${moved}/36 nodes deformed${recipe.description?' • '+recipe.description:''}`;
+}
+function rebuildRecipeSelector(){
+  const previous=E.recipeSelect.value;
+  E.recipeSelect.innerHTML='';
+  const entries=allRecipes();
+  for(const origin of ['library','saved']){
+    const group=document.createElement('optgroup');group.label=origin==='library'?'Repository library':'Saved in this browser';
+    for(const {recipe} of entries.filter(entry=>entry.origin===origin)){
+      const option=document.createElement('option');option.value=origin+'::'+recipe.id;option.textContent=recipe.name;group.appendChild(option);
+    }
+    if(group.children.length)E.recipeSelect.appendChild(group);
+  }
+  if([...E.recipeSelect.options].some(option=>option.value===previous))E.recipeSelect.value=previous;
+  syncRecipeInfo();
+}
+function syncRecipeInfo(){
+  const entry=selectedRecipeEntry();
+  E.recipeInfo.textContent=entry?describeRecipe(entry.recipe):(allRecipes().length?'Choose a recipe.':'No recipes yet: fit an item, then save it as a recipe.');
+  E.recipeApply.disabled=E.recipeDownload.disabled=E.recipeBatch.disabled=!entry;
+  E.recipeDelete.disabled=entry?.origin!=='saved';
+  rebuildRecipeGarmentList();
+}
+function rebuildRecipeGarmentList(){
+  const checked=new Set([...E.recipeGarments.querySelectorAll('input:checked')].map(input=>input.value));
+  E.recipeGarments.innerHTML='';
+  for(const option of E.garment.options){
+    const label=document.createElement('label');label.className='small';label.style.display='block';
+    const input=document.createElement('input');input.type='checkbox';input.value=option.value;input.checked=checked.has(option.value);
+    label.append(input,' '+option.textContent);E.recipeGarments.appendChild(label);
+  }
+}
+async function loadRecipeLibrary(){
+  R.recipeLibrary=[];
+  try{
+    const index=await fetchJson('config/clothing-fit-recipes/index.json');
+    const results=await Promise.allSettled((index.entries||[]).map(entry=>fetchJson('config/clothing-fit-recipes/'+String(entry.path||'').replace(/^\.\//,''))));
+    R.recipeLibrary=results.filter(result=>result.status==='fulfilled'&&validRecipe(result.value)).map(result=>result.value);
+    log(`Loaded ${R.recipeLibrary.length} library fit recipe(s).`);
+  }catch(error){log('Recipe library unavailable: '+error.message)}
+  rebuildRecipeSelector();
+}
+async function selectRecipeSpecies(recipe){
+  if(!recipe.source||!recipe.target)return;
+  const has=(select,value)=>[...select.options].some(option=>option.value===value);
+  if(recipe.region&&E.fitRegion.value!==recipe.region){E.fitRegion.value=recipe.region;rebuildGarmentSelector()}
+  if(has(E.sourceSpecies,recipe.source.species))E.sourceSpecies.value=recipe.source.species;
+  E.sourceGender.value=recipe.source.gender||E.sourceGender.value;
+  if(has(E.species,recipe.target.species))E.species.value=recipe.target.species;
+  E.gender.value=recipe.target.gender||E.gender.value;
+  lastTargetSelection='';syncTargetGenderChoices();
+  const garment=E.garment.value;rebuildGarmentSelector();
+  if([...E.garment.options].some(option=>option.value===garment))E.garment.value=garment;
+  await refreshAssets();
+}
+async function applySelectedRecipe(){
+  const entry=selectedRecipeEntry();if(!entry)return;
+  if(E.recipeUseSpecies.checked)await selectRecipeSpecies(entry.recipe);
+  pushUndo();
+  const key=applyRecipeToCurrentFit(entry.recipe);
+  saveState();syncTransformControls();render();
+  log(`Applied recipe "${entry.recipe.name}" to ${key}.`);
+}
+async function batchExportRecipe(){
+  const entry=selectedRecipeEntry();if(!entry)return;
+  const ids=[...E.recipeGarments.querySelectorAll('input:checked')].map(input=>input.value);
+  if(!ids.length){E.recipeStatus.textContent='Tick at least one item to export.';return}
+  const zipTools=window.ClothingFitZip;
+  if(!zipTools){E.recipeStatus.textContent='ZIP helper not loaded yet.';return}
+  if(E.recipeUseSpecies.checked)await selectRecipeSpecies(entry.recipe);
+  pushUndo();
+  const original=E.garment.value,entries=[],done=[],skipped=[];
+  E.recipeBatch.disabled=true;
+  try{
+    for(const id of ids){
+      E.recipeStatus.textContent=`Exporting ${id}…`;
+      E.garment.value=id;await refreshAssets();
+      if(E.garment.value!==id||!R.cloth||!R.body){skipped.push(id);continue}
+      applyRecipeToCurrentFit(entry.recipe);
+      const fit=captureFitState(),layers=fittedLayerOutputs(fit);
+      if(!layers.length){skipped.push(id);continue}
+      const selection={garmentId:id,fitRegion:fitRegion(),sourceSpecies:E.sourceSpecies.value,
+        sourceGender:E.sourceGender.value,targetSpecies:E.species.value,targetGender:E.gender.value};
+      const built=await buildFittedArchiveEntries(fit,layers,selection,zipTools,`fitted-layers-manifest_${safeName(id)}.json`);
+      for(const item of built.entries)if(!entries.some(existing=>existing.name===item.name))entries.push(item);
+      done.push(id);
+    }
+    if(entries.length){
+      entries.push({name:'README-FITTED-LAYERS.txt',bytes:new TextEncoder().encode(fittedArchiveReadme(true))});
+      entries.push({name:'fit-recipe.json',bytes:new TextEncoder().encode(JSON.stringify(entry.recipe,null,2)+'\n')});
+      zipTools.downloadBlob(zipTools.buildStoredZip(entries),`${safeName(entry.recipe.id)}_${safeName(E.species.value)}_${E.gender.value}_recipe_batch.zip`);
+    }
+    E.recipeStatus.textContent=`Exported ${done.length} item(s) with "${entry.recipe.name}".${skipped.length?' Skipped (no source art): '+skipped.join(', '):''}`;
+    log(E.recipeStatus.textContent);
+  }finally{
+    E.recipeBatch.disabled=false;
+    if(E.garment.value!==original&&[...E.garment.options].some(option=>option.value===original)){E.garment.value=original;await refreshAssets()}
+  }
+}
+function downloadRecipe(recipe){
+  const blob=new Blob([JSON.stringify(recipe,null,2)+'\n'],{type:'application/json'});
+  const link=document.createElement('a');link.href=URL.createObjectURL(blob);link.download=safeName(recipe.id)+'.fit-recipe.json';link.click();
+  setTimeout(()=>URL.revokeObjectURL(link.href),1500);
+}
+E.recipeSelect.onchange=syncRecipeInfo;
+E.recipeApply.onclick=()=>applySelectedRecipe().catch(error=>{E.recipeStatus.textContent='Apply failed: '+error.message});
+E.recipeBatch.onclick=()=>batchExportRecipe().catch(error=>{E.recipeStatus.textContent='Batch export failed: '+error.message});
+E.recipeSave.onclick=()=>{
+  const name=String(E.recipeName.value||'').trim();
+  if(!name){E.recipeStatus.textContent='Name the recipe first.';return}
+  const recipe=recipeFromCurrentFit(name,String(E.recipeDescription.value||'').trim());
+  A.recipes ||= {};A.recipes[recipe.id]=recipe;saveState();rebuildRecipeSelector();
+  E.recipeSelect.value='saved::'+recipe.id;syncRecipeInfo();
+  E.recipeStatus.textContent=`Saved recipe "${name}" in this browser. Download it to add it to the repository library.`;
+};
+E.recipeDownload.onclick=()=>{const entry=selectedRecipeEntry();if(entry)downloadRecipe(entry.recipe)};
+E.recipeDelete.onclick=()=>{
+  const entry=selectedRecipeEntry();if(entry?.origin!=='saved')return;
+  delete A.recipes[entry.recipe.id];saveState();rebuildRecipeSelector();E.recipeStatus.textContent=`Deleted "${entry.recipe.name}".`;
+};
+E.recipeImport.onclick=()=>E.recipeFile.click();
+E.recipeFile.onchange=async()=>{
+  const file=E.recipeFile.files?.[0];if(!file)return;
+  try{
+    const recipe=JSON.parse(await file.text());
+    if(!validRecipe(recipe))throw new Error('file is not a '+RECIPE_FORMAT+' recipe');
+    A.recipes ||= {};A.recipes[recipe.id]=recipe;saveState();rebuildRecipeSelector();
+    E.recipeSelect.value='saved::'+recipe.id;syncRecipeInfo();E.recipeStatus.textContent=`Imported "${recipe.name}".`;
+  }catch(error){E.recipeStatus.textContent='Import failed: '+error.message}
+  E.recipeFile.value='';
+};
+// ---------------------------------------------------------------------------
+// Hood hole: drag the detected face opening's quad corners. The warp itself
+// lives in hood-hole-deform.js and is applied inside warpClothing().
+// ---------------------------------------------------------------------------
+let holeDrag=null;
+function currentHoleProfile(){
+  if(fitRegion()!=='headwear'||!R.body||!R.cloth)return null;
+  return holeProfileForGrid(targetGrid(),R.body.width,R.body.height);
+}
+function holeHandlePoints(profile,hole){
+  return profile.quad.map((corner,i)=>({x:corner.x+hole.corners[i].x,y:corner.y+hole.corners[i].y}));
+}
+const HOLE_LAYER_COLORS=['#4da3ff','#ff9a3c','#6fdc8c','#e46fd0','#ffd84a','#57e0de'];
+function holeLayerEntries(){return (R.cloth?._layers||[]).filter(layer=>layer.view!=='behind')}
+function holeLayerLabel(layer){
+  const leaf=String(layer.name||'').split('.').pop()||'layer';
+  return layer.role&&layer.role!==leaf?`${leaf} (${layer.role})`:leaf;
+}
+// Hood hole mode: every material warped on its own and tinted, rear cloth
+// behind the head and front cloth over it, exactly as they will export.
+function drawHoleLayerView(C){
+  const layers=holeLayerEntries(),grid=warpGridForMode(),W=R.body.width,H=R.body.height;
+  const drawLayer=layer=>{
+    const index=layers.indexOf(layer),color=HOLE_LAYER_COLORS[index%HOLE_LAYER_COLORS.length];
+    const warped=warpClothing(fittedSourceCanvasForLayer(layer),grid,W,H,null,{view:layer.view,role:layer.role});
+    const tinted=Object.assign(document.createElement('canvas'),{width:W,height:H});
+    const t=tinted.getContext('2d');t.imageSmoothingEnabled=false;t.drawImage(warped,0,0);
+    t.globalCompositeOperation='color';t.fillStyle=color;t.fillRect(0,0,W,H); // Hue from the layer colour, light and dark (ink) from the art.
+    t.globalCompositeOperation='destination-in';t.drawImage(warped,0,0); // Back to the layer's own alpha.
+    C.save();C.globalAlpha=E.showGarment.checked?Math.max(.35,+E.opacity.value||1):0;C.drawImage(tinted,0,0);C.restore();
+  };
+  layers.filter(layer=>layer.view==='under').forEach(drawLayer);
+  if(E.showBody.checked&&R.headReference){C.save();C.globalAlpha=.6;C.drawImage(R.headReference,0,0);C.restore()}
+  layers.filter(layer=>layer.view!=='under').forEach(drawLayer);
+  syncHoleLegend(layers);
+}
+function syncHoleLegend(layers=holeLayerEntries()){
+  if(!E.holeLegend)return;
+  const show=mode==='hole'&&fitRegion()==='headwear'&&!!E.holeLayerColors?.checked;
+  const html=show?layers.map((layer,i)=>`<span><i style="background:${HOLE_LAYER_COLORS[i%HOLE_LAYER_COLORS.length]}"></i>${escapeHtmlText(holeLayerLabel(layer))}</span>`).join(''):'';
+  if(E.holeLegend.innerHTML!==html)E.holeLegend.innerHTML=html;
+}
+function escapeHtmlText(value){return String(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+function drawHoleOverlay(ctx){
+  const profile=currentHoleProfile();
+  if(!profile){syncHoleStatus(null);return}
+  const hole=currentHoleRecord(),Hole=window.ClothingHoodHoleDeform;
+  const corners=Hole.normalizeCorners(hole.corners),rate=Hole.normalizeRate(hole.rate);
+  const ring=(bins,displaced)=>bins.map((r,b)=>{
+    const a=(b/bins.length)*2*Math.PI-Math.PI,x=profile.seed.x+Math.cos(a)*r,y=profile.seed.y+Math.sin(a)*r;
+    if(!displaced)return{x,y};
+    const v=Hole.displacementAt(profile,corners,rate,x,y);
+    return{x:x+v.x,y:y+v.y};
+  });
+  const trace=points=>points.forEach((q,i)=>i?ctx.lineTo(q.x,q.y):ctx.moveTo(q.x,q.y));
+  const outline=ring(profile.outline),rim=ring(profile.rim);
+  const active=!!(hole.enabled&&!Hole.isIdentity(hole.corners));
+  ctx.save();ctx.lineJoin='round';ctx.lineCap='round';
+  // Falloff band: the cloth that moves with the opening, as a soft tint.
+  ctx.beginPath();trace(outline);ctx.closePath();trace(rim);ctx.closePath();
+  ctx.fillStyle='rgba(244,114,182,.10)';ctx.fill('evenodd');
+  ctx.beginPath();trace(outline);ctx.closePath();
+  ctx.setLineDash([3,2.2]);ctx.strokeStyle='rgba(244,114,182,.85)';ctx.lineWidth=.8;ctx.stroke();ctx.setLineDash([]);
+  ctx.beginPath();trace(rim);ctx.closePath();
+  ctx.strokeStyle=active?'rgba(34,211,238,.45)':'rgba(34,211,238,.95)';ctx.lineWidth=active?.8:1.1;ctx.stroke();
+  if(active){ // Where the opening ends up, over a dark halo so it reads on any art.
+    ctx.beginPath();trace(ring(profile.rim,true));ctx.closePath();
+    ctx.strokeStyle='rgba(0,0,0,.55)';ctx.lineWidth=2.6;ctx.stroke();
+    ctx.strokeStyle='#67e8f9';ctx.lineWidth=1.2;ctx.stroke();
+  }
+  const handles=holeHandlePoints(profile,hole);
+  ctx.beginPath();[0,1,3,2].forEach((c,i)=>i?ctx.lineTo(handles[c].x,handles[c].y):ctx.moveTo(handles[c].x,handles[c].y));ctx.closePath();
+  ctx.fillStyle='rgba(255,224,102,.07)';ctx.fill();
+  ctx.strokeStyle='rgba(0,0,0,.5)';ctx.lineWidth=2.2;ctx.stroke();
+  ctx.strokeStyle='rgba(255,224,102,.9)';ctx.lineWidth=1;ctx.stroke();
+  handles.forEach((q,i)=>{
+    const r=HANDLE_RADIUS*(holeDrag?.corner===i?.95:.72);
+    ctx.beginPath();ctx.arc(q.x,q.y,r,0,Math.PI*2);
+    ctx.fillStyle='#ffe066';ctx.fill();ctx.strokeStyle='rgba(0,0,0,.65)';ctx.lineWidth=1.2;ctx.stroke();
+    ctx.beginPath();ctx.arc(q.x-r*.28,q.y-r*.28,r*.32,0,Math.PI*2);ctx.fillStyle='rgba(255,255,255,.75)';ctx.fill();
+  });
+  ctx.restore();
+  syncHoleStatus(profile);
+}
+function syncHoleStatus(profile){
+  if(!E.holeStatus)return;
+  const hole=fitRegion()==='headwear'&&R.body?currentHoleRecord():null;
+  E.holeStatus.textContent=!window.PortraitBeardHoodCutout?'Beard/hood rim tracer not loaded.'
+    :!profile?'No face opening detected in this item (needs a transparent opening around the face).'
+    :`Opening ${Math.round(profile.box.x1-profile.box.x0)}×${Math.round(profile.box.y1-profile.box.y0)} px${profile.clockwiseComplete?'':' (partial rim)'} • ${hole?.enabled?'deform ON':'deform off'} • falloff ${(+hole?.rate||0).toFixed(2)}`;
+}
+function syncHoleControls(){
+  if(!E.holeEnabled||fitRegion()!=='headwear'||!R.body)return;
+  const hole=currentHoleRecord(),rate=window.ClothingHoodHoleDeform?.normalizeRate(hole.rate)??1.5;
+  E.holeEnabled.checked=!!hole.enabled;E.holeRate.value=String(rate);E.holeRateNumber.value=String(rate);
+  if(E.holeTrimFollow){
+    const follow=holeFollowForRole(hole,'trim');
+    E.holeTrimFollow.value=String(follow);E.holeTrimFollowNumber.value=String(follow);
+    E.holeTrimField.hidden=!(R.cloth?._layers||[]).some(layer=>layer.role==='trim'); // Only hoods with a trim material.
+  }
+}
+function holePointerDown(e){
+  const profile=currentHoleProfile();if(!profile)return false;
+  const p=pointer(e),hole=currentHoleRecord(),handles=holeHandlePoints(profile,hole);
+  let corner=-1,best=Infinity;
+  handles.forEach((q,i)=>{const d=Math.hypot(q.x-p.x,q.y-p.y);if(d<best){best=d;corner=i}});
+  if(corner<0||best>HIT_RADIUS*2)return false;
+  pushUndo();
+  holeDrag={corner,start:p,from:{...hole.corners[corner]}};
+  E.stage.setPointerCapture(e.pointerId);
+  return true;
+}
+function holePointerMove(e){
+  if(!holeDrag)return false;
+  const p=pointer(e),hole=currentHoleRecord();
+  hole.corners[holeDrag.corner]={x:holeDrag.from.x+p.x-holeDrag.start.x,y:holeDrag.from.y+p.y-holeDrag.start.y};
+  hole.enabled=true;saveState();syncHoleControls();render();
+  return true;
+}
+function holePointerUp(){
+  if(!holeDrag)return;
+  holeDrag=null;saveState();log('Saved hood-hole quad for '+targetKey(E.species.value,E.gender.value)+'.');
+}
+function setHoleRate(value){
+  const hole=currentHoleRecord();
+  hole.rate=window.ClothingHoodHoleDeform?.normalizeRate(value)??+value;
+  saveState();syncHoleControls();render();
+}
+if(E.holeEnabled){
+  E.holeEnabled.onchange=()=>{pushUndo();currentHoleRecord().enabled=E.holeEnabled.checked;saveState();render()};
+  if(E.holeLayerColors)E.holeLayerColors.onchange=()=>{syncHoleLegend();render()};
+  if(E.holeTrimFollow){
+    const setFollow=value=>{const hole=currentHoleRecord(),n=Number(value);hole.trimFollow=Number.isFinite(n)?Math.max(0,Math.min(1,n)):1;saveState();syncHoleControls();render()};
+    E.holeTrimFollow.addEventListener('pointerdown',()=>pushUndo(),{passive:true});
+    E.holeTrimFollow.oninput=()=>setFollow(E.holeTrimFollow.value);
+    E.holeTrimFollowNumber.onchange=()=>{pushUndo();setFollow(E.holeTrimFollowNumber.value)};
+  }
+  E.holeRate.addEventListener('pointerdown',()=>pushUndo(),{passive:true});
+  E.holeRate.oninput=()=>setHoleRate(E.holeRate.value);
+  E.holeRateNumber.onchange=()=>{pushUndo();setHoleRate(E.holeRateNumber.value)};
+  E.holeReset.onclick=()=>{pushUndo();const hole=currentHoleRecord();hole.corners=window.ClothingHoodHoleDeform.zeroCorners();saveState();syncHoleControls();render()};
+  window.addEventListener('hobunji-clothing-fit-assets-refreshed',()=>{R.holeProfileCache=null;syncHoleControls()});
+}
+// ---------------------------------------------------------------------------
+// Pinned outline: paint silhouette pixels of the original art that must not
+// move. The fit pipeline (applySilhouettePins in part 4) returns them to
+// their source position after the grid and hood-hole deforms.
+// ---------------------------------------------------------------------------
+let pinStroke=null;
+// Rear art is stored in the same (pre-mirror) orientation as the front, and
+// the game mirrors it when drawn from behind: show and paint it mirrored.
+function pinRearSource(){return R.cloth?._behindView||R.cloth?._back||R.cloth||null}
+function pinSnapMask(rear=false){
+  const cloth=rear?pinRearSource():R.cloth;if(!cloth)return null;
+  R.pinSnapMasks ||= new WeakMap();
+  let mask=R.pinSnapMasks.get(cloth);
+  if(!mask){mask={data:cloth.getContext('2d').getImageData(0,0,cloth.width,cloth.height).data,width:cloth.width,height:cloth.height};R.pinSnapMasks.set(cloth,mask)} // Whole silhouette of that view's art.
+  return mask;
+}
+function pinRearView(){return fitRegion()==='headwear'&&headbandView()==='back'}
+function pinList(rec,rear){if(rear){rec.rearPoints ||= [];return rec.rearPoints}return rec.points}
+function drawPinSourceView(C,rear=false){
+  C.save();C.fillStyle='#0b1118';C.fillRect(0,0,C.canvas.width,C.canvas.height);C.restore();
+  const art=rear?pinRearSource():R.cloth;
+  if(art)C.drawImage(rear?flipCanvasX(art):art,0,0); // Untransformed source art (rear mirrored, as seen from behind).
+  syncPinStatus();
+}
+function drawPinOverlay(C,rear=false){
+  const pins=pinList(currentPinRecord(),rear);if(!pins.length)return;
+  const W=C.canvas.width;
+  C.save();
+  C.fillStyle=mode==='pin'?'rgba(255,40,40,1)':'rgba(255,40,40,.85)';
+  for(const p of pins)C.fillRect((rear?W-p.x:p.x)-.5,p.y-.5,1,1); // Where each pinned outline pixel is held.
+  C.restore();
+}
+function pinBrushRadius(){const n=+E.pinBrush?.value;return Number.isFinite(n)?Math.max(1,Math.min(12,n)):3}
+function pinPointerToArt(p,rear){return rear?{x:(R.body?.width||E.stage.width)-p.x,y:p.y}:p}
+function paintPinsAt(p,rear=false){
+  const rec=currentPinRecord(),list=pinList(rec,rear),radius=pinBrushRadius();
+  if(E.pinErase?.checked){const keep=list.filter(q=>Math.hypot(q.x-p.x,q.y-p.y)>radius);list.length=0;list.push(...keep);return}
+  const mask=pinSnapMask(rear),Pins=window.ClothingSilhouettePins;if(!mask||!Pins)return;
+  const have=new Set(list.map(q=>q.x+','+q.y));
+  for(const q of Pins.outlinePixelsNear(mask.data,mask.width,mask.height,p.x,p.y,radius)){
+    const key=q.x+','+q.y;if(have.has(key))continue;have.add(key);list.push(q);
+  }
+}
+function pinPointerDown(e){
+  if(!R.cloth)return false;
+  const rear=pinRearView();
+  pushUndo();const p=pinPointerToArt(pointer(e),rear);pinStroke={last:p,rear};paintPinsAt(p,rear);
+  E.stage.setPointerCapture(e.pointerId);render(false);return true;
+}
+function pinPointerMove(e){
+  if(!pinStroke)return false;
+  const p=pinPointerToArt(pointer(e),pinStroke.rear),from=pinStroke.last,steps=Math.max(1,Math.ceil(Math.hypot(p.x-from.x,p.y-from.y)/Math.max(.5,pinBrushRadius()/2)));
+  for(let i=1;i<=steps;i++)paintPinsAt({x:from.x+(p.x-from.x)*i/steps,y:from.y+(p.y-from.y)*i/steps},pinStroke.rear);
+  pinStroke.last=p;render(false);return true;
+}
+function pinPointerUp(){
+  if(!pinStroke)return;
+  const rear=pinStroke.rear;pinStroke=null;saveState();render();
+  log(`Saved ${pinList(currentPinRecord(),rear).length} pinned ${rear?'rear':'front'} outline pixels for ${contourSelectionKey()}.`);
+}
+// Snap every front pin to the nearest rear-art outline pixel (same stored
+// orientation, so the same side), within a few pixels.
+function copyFrontPinsToRear(maxDistance=8){
+  const rec=currentPinRecord(),mask=pinSnapMask(true),Pins=window.ClothingSilhouettePins;
+  if(!mask||!Pins)return 0;
+  const rear=pinList(rec,true),have=new Set(rear.map(q=>q.x+','+q.y));let added=0;
+  for(const p of rec.points){
+    let best=null,bestD=Infinity;
+    for(const q of Pins.outlinePixelsNear(mask.data,mask.width,mask.height,p.x,p.y,maxDistance)){const d=Math.hypot(q.x-p.x,q.y-p.y);if(d<bestD){bestD=d;best=q}}
+    if(best&&!have.has(best.x+','+best.y)){have.add(best.x+','+best.y);rear.push(best);added++}
+  }
+  return added;
+}
+function syncPinStatus(){
+  if(!E.pinStatus||fitRegion()!=='headwear'||!R.body)return;
+  const rec=currentPinRecord(),n=rec.points.length,r=(rec.rearPoints||[]).length;
+  E.pinStatus.textContent=n||r?`${n} front and ${r} rear outline pixels pinned on this item.`:'No pinned outline on this item.';
+}
+function syncPinControls(){
+  if(!E.pinSigma||fitRegion()!=='headwear'||!R.body)return;
+  const sigma=window.ClothingSilhouettePins?.normalizeSigma(currentPinRecord().sigma)??8;
+  E.pinSigma.value=String(sigma);E.pinSigmaNumber.value=String(sigma);syncPinStatus();
+}
+if(E.pinSigma){
+  const setSigma=value=>{currentPinRecord().sigma=window.ClothingSilhouettePins?.normalizeSigma(value)??+value;saveState();syncPinControls();render()};
+  E.pinSigma.addEventListener('pointerdown',()=>pushUndo(),{passive:true});
+  E.pinSigma.oninput=()=>setSigma(E.pinSigma.value);
+  E.pinSigmaNumber.onchange=()=>{pushUndo();setSigma(E.pinSigmaNumber.value)};
+  E.pinBrush.oninput=()=>{E.pinBrushNumber.value=E.pinBrush.value};
+  E.pinBrushNumber.onchange=()=>{E.pinBrush.value=E.pinBrushNumber.value;E.pinBrushNumber.value=String(pinBrushRadius())};
+  E.pinClear.onclick=()=>{pushUndo();const rec=currentPinRecord();if(pinRearView())rec.rearPoints=[];else rec.points=[];saveState();syncPinControls();render()}; // Clears the view being shown.
+  if(E.pinCopyRear)E.pinCopyRear.onclick=()=>{pushUndo();const added=copyFrontPinsToRear();saveState();syncPinControls();render();log(`Copied front pins onto the rear art: ${added} rear outline pixels added.`)};
+  window.addEventListener('hobunji-clothing-fit-assets-refreshed',()=>{R.pinSnapMasks=null;syncPinControls()});
+}
 if(A.settings?.region==='headwear')E.fitRegion.value='headwear';
 document.getElementById('headbandSplineSection').hidden=fitRegion()!=='headwear';
+if(E.holeSection)E.holeSection.hidden=fitRegion()!=='headwear';
+if(E.pinSection)E.pinSection.hidden=fitRegion()!=='headwear';
+E.modeBtns.find(btn=>btn.dataset.mode==='hole').disabled=fitRegion()!=='headwear';
+E.modeBtns.find(btn=>btn.dataset.mode==='pin').disabled=fitRegion()!=='headwear';
 E.modeBtns.find(btn=>btn.dataset.mode==='headband').disabled=fitRegion()!=='headwear';
 E.modeBtns.find(btn=>btn.dataset.mode==='rear-paint').disabled=fitRegion()!=='headwear';
 document.getElementById('contourFitSection').hidden=fitRegion()==='headwear';
 E.modeBtns.find(btn=>btn.dataset.mode==='protect').disabled=fitRegion()==='headwear';
 document.getElementById('bodyMaskSection').hidden=fitRegion()==='headwear';
 document.getElementById('bodyExtendedSection').hidden=fitRegion()==='headwear';
-if(!['transform','body','fit','preview','protect','headband','rear-paint'].includes(mode)||mode==='protect'&&fitRegion()==='headwear'||['headband','rear-paint'].includes(mode)&&fitRegion()!=='headwear')mode='transform';
+if(!['transform','body','fit','quad','hole','pin','preview','protect','headband','rear-paint'].includes(mode)||mode==='protect'&&fitRegion()==='headwear'||['headband','rear-paint','pin'].includes(mode)&&fitRegion()!=='headwear')mode='transform';
 window.addEventListener('hobunji-clothing-fit-three-ready',()=>{
   if(startOptionalThreePreview()&&R.body)scheduleThreePreview(0);
 }); // The CDN can load after the 2D editor has already initialized.
