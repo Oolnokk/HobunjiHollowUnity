@@ -237,7 +237,7 @@
     const prevTop = activePanel();
 
     for (const panel of stack) {
-      if (!currentSet.has(panel)) clearGroups(panel);
+      if (!currentSet.has(panel)) clearGroups(panel, true);
     }
     stack = stack.filter(p => currentSet.has(p));
     for (const p of current) {
@@ -308,13 +308,27 @@
   }
 
 
-  function clearGroups(panel) { invalidateVisibility();
+  function disclosureOpener(node) {
+    if (!node?.hasAttribute('data-ctrl-collapse-on-back')) return null;
+    // Find this group's own opener without depending on visibility; closed menus and hidden subtabs still need cleanup.
+    return Array.from(node.querySelectorAll('[data-ctrl-group-open]')).find(control => control.closest('[data-ctrl-collapse-on-back]') === node) || null;
+  }
+
+  function collapseDisclosure(node) {
+    const opener = disclosureOpener(node);
+    if (opener?.getAttribute('aria-expanded') === 'true') opener.click();
+  }
+
+  function clearGroups(panel, collapse = false) { invalidateVisibility();
     releasedAutoGroup.delete(panel);
-    for (const entry of groupsByPanel.get(panel) || []) {
+    const entries = groupsByPanel.get(panel) || []; // Child-first cleanup leaves each parent valid until its own turn.
+    for (const entry of [...entries].reverse()) {
       restoreSubtabs(entry.node);
       navClassRemove(entry.node, 'ctrl-nav-group-active');
+      if (collapse) collapseDisclosure(entry.node);
     }
     groupsByPanel.delete(panel);
+    invalidateVisibility();
   }
 
   function enteredGroups(panel) {
@@ -325,7 +339,8 @@
       const node = entry.node.isConnected ? entry.node : resolveFocusPath(entry.path, true).container; // Reuses stable ids/data-tree and sibling positions.
       const origin = entry.returnPath ? resolveFocusPath(entry.returnPath).container : null; // Associated siblings belong logically to the source item's current nest.
       const associated = origin && parent.contains(origin) && panel.contains(node) && node?.hasAttribute('data-ctrl-detail-panel');
-      if (!node || node === parent || (!parent.contains(node) && !associated) || !isGroup(node) || !isNavTarget(node) || !belongsToNavigation(node, panel)) {
+      const closedDisclosure = disclosureOpener(node)?.getAttribute('aria-expanded') === 'false'; // Pointer collapse or a filtered/rebuilt stack must not trap the controller inside a closed group.
+      if (!node || node === parent || closedDisclosure || (!parent.contains(node) && !associated) || !isGroup(node) || !isNavTarget(node) || !belongsToNavigation(node, panel)) {
         for (const removed of entries.splice(index)) { restoreSubtabs(removed.node); navClassRemove(removed.node, 'ctrl-nav-group-active'); }
         break;
       }
@@ -459,6 +474,8 @@
     lastFocusedByGroup.set(entry.node, currentTarget);
     restoreSubtabs(entry.node);
     navClassRemove(entry.node, 'ctrl-nav-group-active');
+    collapseDisclosure(entry.node); // Back closes only this disclosure, retaining its parent.
+    invalidateVisibility();
     updateHintBar(panel);
     const targets = navigationTargets(panel); // Return to the original item or its nearest surviving neighbor after a consume/equip rebuild.
     const origin = entry.returnPath ? recoverFocusTarget(panel, targets, entry.returnPath) : projectSingleChild(entry.node, panel);
@@ -792,7 +809,7 @@
     const tabGroup = currentTarget.closest(TABS_SELECTOR); // Tab selection releases its chooser nest so directional input can enter the selected page.
     if (tabGroup) {
       if (!clickOnScreen(currentTarget, 'confirm')) return;
-      clearGroups(panel);
+      clearGroups(panel, true);
       scrolledSelection = null;
       setFocus(groupTarget(tabGroup, panel, panel), { scroll: false });
       return;
@@ -859,7 +876,11 @@
     const state = subtabsByGroup.get(group); // Retains index even for authored sections without ids.
     const next = state.sections[nextIndex]; // Selected DOM identity is retained before restoring sibling visibility.
     if (!next || !entries.some(entry => entry.node === group)) return;
-    for (const removed of entries.splice(entries.findIndex(entry => entry.node === group) + 1)) { restoreSubtabs(removed.node); navClassRemove(removed.node, 'ctrl-nav-group-active'); }
+    for (const removed of entries.splice(entries.findIndex(entry => entry.node === group) + 1).reverse()) {
+      restoreSubtabs(removed.node);
+      navClassRemove(removed.node, 'ctrl-nav-group-active');
+      collapseDisclosure(removed.node); // Switching sections must not leave the previous clothing hierarchy open.
+    }
     saveSectionScroll(state.selected, panel);
     prepareSubtabsWithMemory(group, panel, next.id || null, next.id ? 0 : nextIndex, false);
     restoreSectionScroll(next, panel);
@@ -902,7 +923,7 @@
     if (idx < 0) idx = 0;
     const next = items[(idx + delta + items.length) % items.length];
     if (!clickOnScreen(next, 'tab')) return;
-    clearGroups(panel);
+    clearGroups(panel, true);
     scrolledSelection = null;
     setFocus(groupTarget(group, panel, panel), { scroll: false });
   }
@@ -1352,7 +1373,7 @@
       const panel = activePanel(); // Explicit page jumps support legacy map-placement actions without leaving controls on the overview.
       const group = document.getElementById(groupId); // Existing pause-pane scope retains normal Back behavior.
       if (!panel || !group || !panel.contains(group)) return false;
-      clearGroups(panel);
+      clearGroups(panel, true);
       automaticEntryEnabled = true;
       enterGroup(group, panel, null, sectionId); // Jump directly; do not activate the remembered page first.
       const selected = subtabsByGroup.get(group)?.selected; // Explicit placement-page jumps must also clear an unrelated page's scroll offset.

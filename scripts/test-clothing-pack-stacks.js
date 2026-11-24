@@ -10,16 +10,18 @@ class Node {
   constructor(tag = 'div') {
     this.tagName = tag.toUpperCase();
     this.children = []; // Tracks actual visible/source clothing cells for assertions.
-    this.style = {}; // Used by the inventory detail and quantity badge.
+    this.style = { setProperty(name, value) { this[name] = value; } }; // Used by the inventory detail and quantity badge.
     this.dataset = {}; // Used by the clothing editor and grid bridge.
     this.attributes = {}; // Tracks stable key and controller metadata.
     this.listeners = {}; // Dispatches clicks into the real action handlers.
     this.textContent = '';
     this.className = '';
+    this.classList = { toggle: (name, enabled) => { const classes = this.className.split(/\s+/).filter(c => c && c !== name); if (enabled) classes.push(name); this.className = classes.join(' '); }, contains: name => this.className.split(/\s+/).includes(name), add: () => {}, remove: () => {} };
   }
   set innerHTML(value) { this.children = []; this._html = value; }
   get innerHTML() { return this._html || ''; }
   appendChild(child) { this.children.push(child); return child; }
+  append(...children) { children.forEach(child => this.appendChild(child)); }
   setAttribute(key, value) { this.attributes[key] = String(value); }
   getAttribute(key) { return this.attributes[key] || null; }
   addEventListener(type, callback) { this.listeners[type] = callback; }
@@ -29,10 +31,13 @@ const nodes = new Map(); // One set of menu detail/source nodes is enough for al
 for (const id of ['invPackClothing', 'iiEmpty', 'iiDetail', 'iiIcon', 'iiName', 'iiPrice', 'iiQuality', 'iiTags', 'iiDesc', 'iiActions']) {
   nodes.set(id, new Node());
 }
+const nestRoot = new Node(); // Mounted name nests for testing the live disclosure handlers.
+const descendants = node => node.children.flatMap(child => [child, ...descendants(child)]);
 const document = {
   getElementById: id => nodes.get(id) || null,
   createElement: tag => new Node(tag),
   addEventListener: () => {},
+  querySelectorAll: selector => selector === '.clothing-nest' ? descendants(nestRoot).filter(node => node.classList.contains('clothing-nest')) : [],
 };
 const windowStub = { InventoryUI: { init: () => {} } }; // Avoids an unrelated dynamic script load.
 const script = fs.readFileSync(path.join(__dirname, '../docs/js/equipment-panel.js'), 'utf8');
@@ -199,6 +204,33 @@ pack[1].uid = saleUid; // Collision after display: the sale handler must still r
 nodes.get('invPackClothing').children[0].click();
 nodes.get('iiActions').children.find(child => child.textContent.startsWith('Sell')).click();
 assert.equal(pack.length, 1, 'a late duplicate UID cannot cause a sale to destroy the whole stack');
+
+// New visible hierarchy: one name stack, independent pattern pieces and bounded recent thumbnails.
+pack = [...Array.from({ length: 6 }, (_, i) => ({ ...copy(base), uid: 'plain-' + i, baseLabel: 'Rugged Poncho', sprite: 'plain-' + i + '.png' })),
+  { ...banditClothA, baseLabel: 'Rugged Poncho', sprite: 'glyph-a.png' },
+  { ...banditClothB, baseLabel: 'Rugged Poncho', sprite: 'glyph-b.png' },
+  { ...copy(base), uid: 'hood', cosmeticId: 'ragged_hood', baseLabel: 'Hood', label: 'Hood' }];
+nestRoot.append(...panel.buildPackClothingNests());
+assert.equal(nestRoot.children.length, 2, 'only one root per shared article name');
+const [ponchoNest, hoodNest] = nestRoot.children;
+const [ponchoToggle, ponchoBody] = ponchoNest.children;
+assert(ponchoBody.hidden);
+assert.deepEqual(ponchoToggle.children[0].children.map(icon => icon.src), ['plain-3.png','plain-4.png','plain-5.png','glyph-a.png','glyph-b.png'], 'five latest acquisitions appear oldest to newest');
+ponchoToggle.click();
+assert(!ponchoBody.hidden);
+assert.equal(ponchoBody.children.length, 3, 'plain stack plus two distinct patterned garments');
+const [plainNest, patternB, patternA] = ponchoBody.children;
+assert.equal(patternB.getAttribute('data-key'), banditClothB.uid);
+assert.equal(patternA.getAttribute('data-key'), banditClothA.uid);
+assert.deepEqual(plainNest.children[0].children[0].children.map(icon => icon.src), ['plain-3.png','plain-4.png','plain-5.png']);
+plainNest.children[0].click();
+assert(!ponchoBody.hidden && !plainNest.children[1].hidden, 'entering the child retains the parent');
+assert.equal(plainNest.children[1].children.length, 6, 'all six physical plain garments remain individually accessible');
+plainNest.children[0].click();
+assert(!ponchoBody.hidden && plainNest.children[1].hidden, 'closing child preserves its parent');
+hoodNest.children[0].click();
+assert(ponchoBody.hidden && !hoodNest.children[1].hidden, 'opening an unrelated stack closes the former hierarchy');
+assert.equal(pack.length, 9, 'disclosure never consumes or merges a physical garment');
 
 // Exercise the real General Store buy callback: repeated purchases of the same daily listing
 // must create distinct physical articles, even with constant clock/random sources.

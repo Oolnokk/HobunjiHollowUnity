@@ -164,7 +164,7 @@
   <!-- Shared frame-budget yield for long async pixel jobs (clothing weaving, creature genetics). -->
   <script src="js/pixel-work-yield.js?v=20261010pwy1"></script>
   <script src="js/tool-metal-recolor.js?v=20261109profile1"></script>
-  <script src="js/metal-armor-system.js?v=20261112h9fb31ab"></script>
+  <script src="js/metal-armor-system.js?v=20261124patternNestAudit2"></script>
   <script src="config/colors/config.js?v=20261026h7f369c3"></script>
   <script src="config/attachment-rig-profiles.js?v=20261123h19fa06a"></script>
   <link rel="stylesheet" href="style.css?v=20261118instrumentLoadout1">
@@ -277,7 +277,7 @@
   <script src="js/ruin-emblem.js?v=20261108emblem1"></script>
   <script src="js/furniture-decal-ink.js?v=20261115chromaticGlow3"></script> <!-- Alpha-only recolor + glow shared with the furniture editor. -->
   <script src="js/furniture-decal-runtime.js?v=20261115lichInk1"></script>
-  <script src="js/furniture-pattern-surfaces.js?v=20261119truePillarWrap1"></script>
+  <script src="js/furniture-pattern-surfaces.js?v=20261124patternNestAudit2"></script>
   <script src="js/ruin-pattern-surface-rules.js?v=20261107ruinpngglow1"></script>
   <!-- Shared plateau/ramp fold math (Map Editor preview + Tothal Shift) and the
        headless Wilderness Map Generator core (Tothal Shift wilderness reroll) -->
@@ -628,7 +628,7 @@
        definition; used today by metal-craft-shop.js's authored
        verdigris-removal pattern service, meant to be reused later by a
        weaving/dye system. No deps injection, so load order doesn't matter. -->
-  <script src="js/pattern-authoring.js?v=20261104hPatternQuick1435a"></script>
+  <script src="js/pattern-authoring.js?v=20261124patternNestAudit5"></script>
   <!-- Character-saved pattern library (window.PatternLibrary) — the
        player's own saved motifs plus a small unlockable premade catalog,
        reusable across whatever pattern-authoring.js sessions the game
@@ -658,7 +658,7 @@
   <script src="js/town-proposals.js?v=20261016proposals1"></script>
   <script src="js/foundry-shop.js?v=20261116subtiers1"></script>
   <script src="js/metal-reinforcement.js?v=20261116bar50PowerRange075150"></script>
-  <script src="js/metal-craft-shop.js?v=20261116subtiers1"></script>
+  <script src="js/metal-craft-shop.js?v=20261124patternNestAudit3"></script>
   <!-- Ambient wildlife den spawning, per-den shared genotype rolls, and
        wildlife-vs-wildlife skirmish damage (window.WildlifeSpawn) — reads
        window.BanditCamps/window.CreatureGenetics/window.CreatureGeneticsRender
@@ -792,7 +792,7 @@
        window.EquipmentPanel directly (including at top-level, in
        window.__climbDebug) and calls window.EquipmentPanel.init(...)
        during its own setup. -->
-  <script src="js/equipment-panel.js?v=20261122invCatWheelLoaderEdge2"></script>
+  <script src="js/equipment-panel.js?v=20261124patternNestAudit2"></script>
   <!-- Per-map terrain tile texture overrides (window.TerrainTileMaterials:
        resolveTileMat/resolveCliffMat/loadTerrainTileTexture) — must load
        before game.js, which calls window.TerrainTileMaterials.init(...) near
@@ -2989,7 +2989,7 @@
   <script src="js/banubu-snore.js?v=20261110banubuNightAudit3"></script>
   <script src="js/ui-element-editor.js?v=20261112keyPack2"></script>
   <script src="js/controller-menu-dismissal.js?v=20261122ha0c2da7"></script> <!-- Shared legacy Close/Escape policy; load before controller navigation. -->
-  <script src="js/controller-ui-nav.js?v=20261122h9493fd3"></script>
+  <script src="js/controller-ui-nav.js?v=20261124patternNestAudit4"></script>
   <!-- ◀/▶ stepper buttons beside every <select> so controller players can change any dropdown. -->
   <script src="js/controller-select-steppers.js?v=20261014h3e0bf66"></script>
   <script>

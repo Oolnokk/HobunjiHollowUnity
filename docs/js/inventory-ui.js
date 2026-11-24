@@ -92,6 +92,29 @@
       #mpInventory .pack-clothing-tile { padding:0; }
       #mpInventory .pack-clothing-tile .ipc-sprite { width:68%; height:68%; object-fit:contain; image-rendering:pixelated; }
       #mpInventory .pack-clothing-tile .ipc-name { display:none; }
+      #mpInventory .clothing-nest { min-width:0; }
+      #mpInventory #invGrid { --clothing-cell:calc((33 * var(--inv-col) - 8 * var(--inv-gap) - 2 * var(--inv-pad)) / 7); }
+      #mpInventory #invGrid:has(> .clothing-nest-open) { grid-auto-rows:minmax(var(--clothing-cell),auto); }
+      #mpInventory .clothing-nest-pack { display:grid; grid-template-columns:minmax(0,1fr); align-content:start; }
+      #mpInventory .clothing-nest-pack.clothing-nest-open { grid-column:1 / -1; }
+      #mpInventory .clothing-nest-toggle { position:relative; min-width:0; overflow:hidden; }
+      #mpInventory .clothing-nest-pack > .clothing-nest-toggle { width:100%; height:var(--clothing-cell); flex-direction:column; }
+      #mpInventory .clothing-nest-pack .clothing-nest-body > .inv-item-box { height:var(--clothing-cell); }
+      #mpInventory .clothing-nest-pack.clothing-nest-open > .clothing-nest-toggle { width:var(--clothing-cell); max-width:100%; }
+      #mpInventory .clothing-nest-body { display:grid; grid-template-columns:repeat(auto-fill,minmax(calc(4 * var(--inv-col)),1fr)); gap:var(--inv-gap); padding:var(--inv-gap); border-left:1px solid #f9e28a66; min-width:0; }
+      #mpInventory .clothing-nest-body[hidden] { display:none !important; }
+      #mpInventory .clothing-stack-art { position:relative; display:block; width:90%; height:68%; min-height:0; pointer-events:none; }
+      #mpInventory .clothing-stack-art > img, #mpInventory .clothing-stack-art > span { position:absolute; left:50%; top:50%; width:70% !important; height:90% !important; object-fit:contain; image-rendering:pixelated; transform:translate(calc(-50% + var(--clothing-stack-x,0%)),calc(-50% + var(--clothing-stack-y,0%))); pointer-events:none; }
+      #mpInventory .clothing-stack-name { font-size:var(--inv-font-xs,11px); overflow:hidden; white-space:nowrap; text-overflow:ellipsis; width:100%; text-align:center; }
+      #mpInventory .pack-clothing-tile.clothing-nest-toggle::after { content:none; }
+      #mpInventory .clothing-nest-toggle .ipc-stack-count { top:3px; bottom:auto; }
+      #mpInventory .clothing-nest-gear { flex:0 0 calc((100% - 3 * var(--inv-gap)) / 4); min-width:0; }
+      #mpInventory .clothing-nest-gear.clothing-nest-open { flex-basis:100%; grid-column:1 / -1; }
+      #mpInventory .clothing-nest-gear > .clothing-nest-toggle { width:100%; height:calc(3.2 * var(--inv-row)); min-height:calc(3.2 * var(--inv-row)); display:flex; flex-direction:column; align-items:center; justify-content:center; }
+      #mpInventory .clothing-nest-gear.clothing-nest-open > .clothing-nest-toggle { width:calc((100% - 3 * var(--inv-gap)) / 4); }
+      #mpInventory .clothing-nest-gear .clothing-nest-body { grid-template-columns:repeat(4,minmax(0,1fr)); }
+      #mpInventory .clothing-nest-gear .clothing-nest-body > .clothing-nest-open { grid-column:1 / -1; }
+      #mpInventory .clothing-nest-gear .clothing-nest-body > .inv-equip-slot { min-width:0; width:100%; }
       #mpInventory .pack-clothing-tile::after { content:'CLOTHING'; position:absolute; left:3px; bottom:3px; max-width:calc(100% - 6px); overflow:hidden; text-overflow:ellipsis; font-size:var(--inv-font-xs); letter-spacing:.08em; color:#dce9dd94; pointer-events:none; }
       #mpInventory .iib-count { bottom:3px; right:3px; min-width:16px; min-height:14px; padding:2px 4px 1px; border:1px solid #ffffff29; border-radius:999px; display:inline-flex; align-items:center; justify-content:center; color:#fff; background:#030906d4; font-weight:800; line-height:1; text-shadow:0 1px 2px #000; }
       #mpInventory .iib-count.zero { color:var(--danger); opacity:.72; }
@@ -242,7 +265,7 @@
     const tile = event.target?.closest?.('#invGrid .inv-item-box:not(.empty)'); // Includes normal item stacks and integrated Pack clothing.
     if (!tile || !pane.contains(tile) || tile.disabled || tile.style.display === 'none') return;
     lastControllerPackPreview = { key: tile.dataset.key || null, stackId: tile.dataset.stackId || null, clothing: tile.classList.contains('pack-clothing-tile') }; // Read-only preview identity for in-game diagnostics.
-    if (tile.classList.contains('pack-clothing-tile')) window.EquipmentPanel?.previewPackClothingItem?.(tile.dataset.key); // Ordinary stacks preview in game.js using their exact variant; clothing uses its own detail renderer without a click.
+    if (tile.classList.contains('pack-clothing-tile') && !tile.classList.contains('clothing-nest-toggle')) window.EquipmentPanel?.previewPackClothingItem?.(tile.dataset.key, !!tile.closest('.clothing-nest')); // Ordinary stacks preview in game.js using their exact variant; clothing uses its own detail renderer without a click.
   }
 
   function installMenuReadability() {
@@ -418,6 +441,16 @@
     });
   }
 
+  function refreshPackClothing() {
+    // Keep controller recovery synchronous when Pack is visible; otherwise defer icon/layout work until opening.
+    if (!inventoryPaneVisible() || document.getElementById('mpInventory')?.classList.contains('inv-mode-gear')) {
+      scheduleDecorate();
+      return;
+    }
+    syncPackClothingTiles();
+    decoratePackSlots();
+  }
+
   function decorate() {
     decorateModeTabs();
     const gearActive = document.getElementById('mpInventory')?.classList.contains('inv-mode-gear'); // Hidden Gear work can wait until its tab is shown.
@@ -461,6 +494,11 @@
     const grid = document.getElementById('invGrid');
     if (!source || !grid) return;
 
+    const equipment = window.EquipmentPanel; // Modern rendering retains the exact physical garment UID, independent of the legacy hidden strip.
+    if (equipment?.buildPackClothingNests && equipment?.getPackClothingRevision) {
+      syncPackClothingNests(grid, equipment);
+      return;
+    }
     const sourceButtons = [...source.querySelectorAll('.inv-pcloth-item')];
     const fingerprint = sourceButtons.map((button) => {
       const img = button.querySelector('img');
@@ -516,6 +554,39 @@
     const nextReservedSet = new Set(nextReservedEmpty); // Membership checks stay linear with large Pack grids.
     for (const empty of reservedEmpty) if (!nextReservedSet.has(empty)) empty.classList.remove('inventory-clothing-reserved-empty');
     for (const empty of nextReservedEmpty) if (!empty.classList.contains('inventory-clothing-reserved-empty')) empty.classList.add('inventory-clothing-reserved-empty');
+  }
+
+  function syncPackClothingNests(grid, equipment) {
+    const revision = String(equipment.getPackClothingRevision()); // Rebuild only when the inventory owner rebuilds its clothing source or the grid is replaced.
+    const oldRoots = [...grid.querySelectorAll(':scope > .clothing-nest-pack')];
+    if (grid.dataset.clothingNestRevision !== revision || (grid.dataset.clothingNestCount !== String(oldRoots.length))) {
+      oldRoots.forEach(root => root.remove());
+      const roots = equipment.buildPackClothingNests();
+      const fragment = document.createDocumentFragment();
+      roots.forEach(root => fragment.appendChild(root));
+      const firstEmpty = grid.querySelector('.inv-item-box.empty');
+      if (firstEmpty?.parentNode === grid) grid.insertBefore(fragment, firstEmpty);
+      else grid.appendChild(fragment);
+      grid.dataset.clothingNestRevision = revision;
+      grid.dataset.clothingNestCount = String(roots.length);
+    }
+    const category = document.querySelector('#mpInventory .inv-cat.active')?.dataset.cat || 'all';
+    const search = window.InventorySearch?.query || '';
+    let occupied = 0;
+    for (const root of grid.querySelectorAll(':scope > .clothing-nest-pack')) {
+      const matches = !search || (root.clothingSearchLabels || []).some(label =>
+        window.InventorySearch?.matches?.(root.dataset.key, { label }) ?? String(label).toLowerCase().includes(search));
+      const visible = (category === 'all' || category === 'clothing') && matches;
+      root.style.display = visible ? '' : 'none';
+      if (!visible && root.classList.contains('clothing-nest-open')) equipment.closeClothingNests?.();
+      if (visible) occupied++;
+    }
+    const empty = [...grid.querySelectorAll('.inv-item-box.empty')];
+    const reserved = new Set(empty.slice(Math.max(0, empty.length - occupied)));
+    for (const slot of empty) {
+      const next = reserved.has(slot);
+      if (slot.classList.contains('inventory-clothing-reserved-empty') !== next) slot.classList.toggle('inventory-clothing-reserved-empty', next);
+    }
   }
 
   function decoratePackSlots() {
@@ -1023,6 +1094,7 @@
       deferredDecorates, decoratePending, // Observer passes skipped while the inventory was not on screen.
       stackIcons: window.InventoryStacks?.getDebug?.() || null,
       packItems: document.querySelectorAll('#invGrid .inv-item-box:not(.empty)').length,
+      clothingNests: window.EquipmentPanel?.getClothingNestDebug?.(),
       integratedPackClothing: document.querySelectorAll('#invGrid .pack-clothing-tile').length,
       gearLoadoutColumns: document.querySelectorAll('#invEquipSection .gear-loadout-grid > .gear-loadout-column').length,
       equippedToolSlots: document.querySelectorAll('#invEquipSection .gear-tool-slots .inv-equip-slot.occupied').length,
@@ -1048,7 +1120,7 @@
     };
   }
 
-  window.InventoryUI = { init, decorate, debugSnapshot, enforceMenuReadability,
+  window.InventoryUI = { init, decorate, refreshPackClothing, debugSnapshot, enforceMenuReadability, usesClothingNests: true,
     __test: { selectedDetailToolKey, installCategoryScroll, onCategoryWheel }, // Exercise the real mastery resolver and Pack wheel listener in isolated tests.
   };
 })();

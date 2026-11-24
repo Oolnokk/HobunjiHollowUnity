@@ -197,11 +197,43 @@
     return motifDataUrl ? { ...pattern, motifDataUrl } : pattern;
   }
 
+  // The library shortcut and full editor share the same purchase and ownership checks.
+  function applyVerdigrisPattern(itemKey, patternData, sourceLibraryId) {
+    const def = deps.TOOL_ITEM_DEFS[itemKey]; // Resolve the live item again at commit time.
+    if (!patternData || !def?.metalKey || !deps.getGearInventory()?.tools?.[itemKey] || !deps.toolVerdigrisPatternEligible(itemKey)) return false;
+    const baseMetal = deps.METAL_DEFS[def.metalKey]; // Determines the existing plating material cost.
+    const barKey = deps.metalBarItemKey(def.metalKey);
+    if ((deps.inventory[barKey] || 0) < PLATE_BAR_COST) { deps.showToast(`Not enough ${baseMetal.label} bars.`, false); return false; }
+    if ((deps.inventory.gold || 0) < PLATE_LABOR_GOLD) { deps.showToast('Not enough gold.', false); return false; }
+    deps.inventory[barKey] -= PLATE_BAR_COST;
+    deps.clampInventoryStack(barKey);
+    deps.inventory.gold -= PLATE_LABOR_GOLD;
+    deps.setToolVerdigrisPattern(itemKey, patternData, sourceLibraryId);
+    deps.refreshMetalToolWorldTexture(itemKey);
+    deps.showToast('Verdigris carefully stripped into a pattern.', true);
+    renderMetalCraftShopPage();
+    deps.buildInventoryGrid();
+    deps.saveMemberWorldData();
+    return true;
+  }
+
+  function updateToolPatternPlacement(itemKey, pattern) {
+    const active = deps.toolPlating(itemKey); // Read the latest authoritative plating, not a stale shop-row capture.
+    if (!pattern || active?.mode !== 'pattern' || !deps.getGearInventory()?.tools?.[itemKey]) return false;
+    const sourceId = active.patternLibraryId || active.pattern?.sourcePatternLibraryId || pattern.sourcePatternLibraryId; // Retain provenance separately from an unmodified-library reference.
+    const snapshot = sourceId ? { ...pattern, sourcePatternLibraryId: sourceId } : { ...pattern };
+    // game.js stores a reference INSTEAD of a snapshot when the third argument is non-null.
+    // An edited frame must use a snapshot; this also makes the tool's existing icon cache key include the new placement.
+    deps.setToolVerdigrisPattern(itemKey, snapshot, null);
+    deps.refreshMetalToolWorldTexture(itemKey);
+    deps.saveMemberWorldData();
+    return true;
+  }
+
   async function openVerdigrisPatternEditor(itemKey) {
     const def = deps.TOOL_ITEM_DEFS[itemKey];
     const baseMetal = deps.METAL_DEFS[def.metalKey];
     const existing = deps.toolPlating(itemKey);
-    const barKey = deps.metalBarItemKey(def.metalKey);
     const initialPattern = await resolvedForEditing(existing?.mode === 'pattern' ? (existing.pattern || (existing.patternLibraryId ? window.PatternLibrary?.getById?.(existing.patternLibraryId) : null)) : null);
 
     window.PatternAuthoring?.openEditor({
@@ -221,20 +253,7 @@
         oxidationAmount: 1,
         authoredPattern: patternData,
       }),
-      onSave: (patternData, sourceLibraryId) => {
-        if ((deps.inventory[barKey] || 0) < PLATE_BAR_COST) { deps.showToast(`Not enough ${baseMetal.label} bars.`, false); return false; }
-        if ((deps.inventory.gold || 0) < PLATE_LABOR_GOLD) { deps.showToast('Not enough gold.', false); return false; }
-        deps.inventory[barKey] -= PLATE_BAR_COST;
-        deps.clampInventoryStack(barKey);
-        deps.inventory.gold -= PLATE_LABOR_GOLD;
-        deps.setToolVerdigrisPattern(itemKey, patternData, sourceLibraryId);
-        deps.refreshMetalToolWorldTexture(itemKey);
-        deps.showToast('Verdigris carefully stripped into a pattern.', true);
-        renderMetalCraftShopPage();
-        deps.buildInventoryGrid();
-        deps.saveMemberWorldData();
-        return true;
-      },
+      onSave: (patternData, sourceLibraryId) => applyVerdigrisPattern(itemKey, patternData, sourceLibraryId),
     });
   }
 
@@ -345,7 +364,10 @@
           // (mastery 5) — see toolVerdigrisPatternEligible. Mutually
           // exclusive with every option above: picking it (and saving in the
           // editor) replaces whatever plating/pattern this tool already had.
-          ...(patternEligible ? [`<option value="pattern">Author a verdigris-removal pattern…</option>`] : []),
+          ...(patternEligible ? [
+            ...(window.PatternLibrary?.listAvailable?.() || []).map(entry => `<option value="library-pattern:${deps.esc(entry.id)}">Pattern: ${deps.esc(entry.label || entry.id)}</option>`),
+            '<option value="pattern">Author a verdigris-removal pattern…</option>',
+          ] : []),
         ].join('');
         const row = document.createElement('div');
         row.className = 'shop-row mc-tool-row';
@@ -367,6 +389,13 @@
         row.querySelector('.mc-plate-btn')?.addEventListener('click', () => {
           const choice = row.querySelector('.mc-plate-select').value;
           if (choice === 'pattern') { openVerdigrisPatternEditor(itemKey); return; }
+          if (choice.startsWith('library-pattern:')) {
+            const patternId = choice.slice('library-pattern:'.length); // Selected owned library motif, without the authoring editor.
+            const pattern = window.PatternLibrary?.getById?.(patternId);
+            if (pattern) applyVerdigrisPattern(itemKey, pattern, patternId);
+            else deps.showToast('That pattern is unavailable.', false);
+            return;
+          }
           applyMetalToolPlating(itemKey, choice);
         });
         row.querySelector('.mc-reinforce-btn')?.addEventListener('click', () => reinforceMetalTool(itemKey));
@@ -377,13 +406,7 @@
               const active = deps.toolPlating(itemKey);
               return active?.mode === 'pattern' ? (active.pattern || window.PatternLibrary?.getById?.(active.patternLibraryId) || null) : null;
             },
-            onChange: pattern => {
-              const active = deps.toolPlating(itemKey);
-              if (active?.mode !== 'pattern') return;
-              deps.setToolVerdigrisPattern(itemKey, pattern, active.patternLibraryId || null); // Updates only this owned tool's pattern snapshot; no new plating materials.
-              deps.refreshMetalToolWorldTexture(itemKey);
-              deps.saveMemberWorldData();
-            },
+            onChange: pattern => updateToolPatternPlacement(itemKey, pattern), // No second plating charge for instance placement edits.
           });
         }
         list.appendChild(row);
@@ -395,6 +418,6 @@
     init,
     render: renderMetalCraftShopPage,
     refreshAllMetalToolWorldTextures,
-    __test: Object.freeze({ resolvedForEditing }),
+    __test: Object.freeze({ resolvedForEditing, updateToolPatternPlacement }),
   };
 })();

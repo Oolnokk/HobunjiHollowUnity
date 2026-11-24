@@ -9,11 +9,12 @@ class FakeElement {
   constructor(tagName = 'div') {
     this.tagName = String(tagName).toUpperCase();
     this.children = []; // Used to inspect the actual buttons emitted by EquipmentPanel.
-    this.style = {}; // Used by the existing gear thumbnail renderer.
+    this.style = { setProperty(name, value) { this[name] = value; } }; // Used by the existing gear thumbnail renderer.
     this.dataset = {}; // Retains per-tool and per-garment selectors.
     this.attributes = {}; // Retains accessible drawer expanded state.
     this.listeners = {}; // Calls real click listeners without a browser.
     this.className = '';
+    this.classList = { toggle: (name, enabled) => { const classes = this.className.split(/\s+/).filter(c => c && c !== name); if (enabled) classes.push(name); this.className = classes.join(' '); }, contains: name => this.className.split(/\s+/).includes(name) };
     this.textContent = '';
     this.parentNode = null;
   }
@@ -21,6 +22,7 @@ class FakeElement {
   set innerHTML(_) { this.children = []; } // Reproduces the Gear pane replacing its previous visible rows.
   get innerHTML() { return ''; }
   appendChild(child) { child.parentNode = this; this.children.push(child); return child; }
+  append(...children) { children.forEach(child => this.appendChild(child)); }
   addEventListener(type, callback) { this.listeners[type] = callback; }
   setAttribute(name, value) {
     this.attributes[name] = String(value);
@@ -68,7 +70,7 @@ const document = {
   addEventListener() {},
   getElementById: id => id === 'invEquipSection' ? root
     : id === 'iiDetail' ? itemDetail : id === 'iiName' ? itemName : id === 'iiActions' ? itemActions : null,
-  querySelectorAll: () => [], // Empty unrelated selections in the inventory mastery resolver.
+  querySelectorAll: selector => selector === '.clothing-nest' ? descendants(root).filter(node => node.classList.contains('clothing-nest')) : [], // Empty unrelated selections in the inventory mastery resolver.
   createElement: tag => new FakeElement(tag),
   createTextNode: text => Object.assign(new FakeElement('#text'), { textContent: text }),
 };
@@ -94,7 +96,16 @@ const panel = window.EquipmentPanel;
 panel.init(dependencies);
 panel.buildEquipmentSlots();
 assert(findAction(root, 'axe1', 'Stow'), 'available owned tools have a direct Stow button');
-assert(findAction(root, 'hat1', 'Stow'), 'available owned clothing has a direct Stow button');
+function openHatNest() {
+  const hatNest = descendants(root).find(node => node.classList.contains('clothing-nest') && node.children[0]?.title === 'Hat');
+  assert(hatNest, 'Hat name stack exists');
+  if (hatNest.children[1].hidden) hatNest.children[0].listeners.click();
+  const plain = hatNest.children[1].children.find(node => node.classList.contains('clothing-nest'));
+  assert(plain, 'plain clothing is nested under its name');
+  if (plain.children[1].hidden) plain.children[0].listeners.click();
+}
+openHatNest();
+assert(findAction(root, 'hat1', 'Stow'), 'individual owned clothing retains its Stow button');
 
 findAction(root, 'axe1', 'Stow').listeners.click({ stopPropagation() {} });
 assert.equal(equipmentSlots.axe, null);
@@ -118,6 +129,7 @@ assert.equal(panel.isToolArchived('axe1'), false);
 panel.equipItem('axe1', 'axe');
 assert.equal(equipmentSlots.axe, 'axe1', 'withdrawn tool can be equipped again');
 
+openHatNest();
 findAction(root, 'hat1', 'Stow').listeners.click({ stopPropagation() {} });
 assert.equal(gear.clothing.hat, null, 'worn clothing is removed before archiving');
 assert.equal(events.avatar, 1, 'stowing worn clothing updates its avatar once');
@@ -128,6 +140,7 @@ const inventoryLayout = fs.readFileSync('docs/js/inventory-ui.js', 'utf8'); // V
 assert.match(inventoryLayout, /if \(toolsArchive\) ownedToolsGroup\.appendChild\(toolsArchive\)/);
 assert.match(inventoryLayout, /if \(clothingArchive\) ownedClothingGroup\.appendChild\(clothingArchive\)/);
 assert.match(inventoryLayout, /matchedCell\?\.dataset\?\.itemKey/, 'mastery view reads the canonical item key after archive reordering');
+openHatNest();
 findAction(root, 'hat1', 'Take Out').listeners.click({ stopPropagation() {} });
 assert.equal(hat.archived, undefined, 'withdrawing restores the original physical article');
 assert.equal(panel.getArchiveDebug().stowedClothing, 0);
