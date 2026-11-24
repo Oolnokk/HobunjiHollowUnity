@@ -388,7 +388,7 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
         ${scaleRow('Age', 'Age (hunch)', 0, 100, 1, 0, 'Per-NPC age hunch, lowers the head further')}
         <label class="maaToggleLine" style="margin:8px 0"><input id="maaFullScaleShowSpine" type="checkbox" checked> Show live spine and neck attachment</label>
         <div class="maaSmall maaMuted" style="margin-bottom:8px">Spine: green pelvis → orange vertebrae → violet shoulder/neck base; cyan marks the scaled head attachment. The selected avatar is highlighted, and hunch edits update the bones without changing the portrait art.</div>
-        <div class="scaleActions"><button id="maaFullScaleExport" type="button" class="good">Export scale JSON</button><button id="maaFullScaleFrame" type="button" class="secondary">Frame lineup</button><button id="maaFullScaleFocus" type="button" class="secondary" disabled>Focus selected</button><button id="maaFullScaleMatchMainAdults" type="button" class="secondary" title="Apply eight calibrated adult height targets, humanlike female heights, Mao’ao-relative widths/limbs and raw Head 65% to all 26 profiles; preserves child age stages and NPC hunch">Apply calibrated heights + 65% heads</button><button id="maaFullScaleReset" type="button" class="secondary">Reset all to repo defaults</button></div>
+        <div class="scaleActions"><button id="maaFullScaleExport" type="button" class="good">Export scale JSON</button><button id="maaFullScaleFrame" type="button" class="secondary">Frame lineup</button><button id="maaFullScaleFocus" type="button" class="secondary" disabled>Focus selected</button><button id="maaFullScaleMatchMainAdults" type="button" class="secondary" title="Restore the exact original main adult silhouettes (width, Height, Leg/Beltline, Head, offsets, hands and feet) without changing child age stages or NPC hunch">Restore main silhouettes</button><button id="maaFullScaleReset" type="button" class="secondary">Reset all to repo defaults</button></div>
         <div id="maaFullScaleStatus" class="scaleStatus">Height controls total floor-to-head stature. Beltline height (%) is the hip/posterior junction measured upward from the feet, as a percent of that total. The legs and portrait are derived together, preserving planted feet and existing saved proportions.</div>`;
       workspace.appendChild(panel);
       panel.querySelector('#maaFullScaleMatchMainAdults').addEventListener('click', matchMainAdultScales); // Existing saved adult overrides can explicitly adopt the new 26-profile Mao'ao-relative defaults without erasing NPC age/Longoran posture.
@@ -1025,39 +1025,58 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
     } catch (error) { console.warn('[full-character-scale] profile autosave failed', error); }
   }
 
-  // Apply the 26 imported Mao'ao-relative adult defaults (including 65% raw PNG heads and limb sizes)
-  // to persisted rigs on explicit user action. Child age modifiers, NPC hunches and spine tuning stay independent.
+  // Restore the EXACT main adult silhouettes from the 4cfb39c reference, not the later
+  // 65% Head, Mao'ao-relative dimensions or nominal foot-height estimates. A saved local
+  // rig can outlive default-file changes, so make this available as an explicit adult-only action.
   function matchMainAdultScales() {
     if (!active) return;
-    const baseline = window.HobunjiCharacterRigScaleDefaults?.values; // The approved same-gender Mao'ao-relative 26-profile map.
-    const bridge = host(); // Existing per-profile scale store owns saved overrides and native Rig export parity.
+    const baseline = window.HobunjiCharacterRigScaleDefaults?.mainSilhouetteRestoreValues; // All 18 main plus 8 auxiliary identities; their original parts are included.
+    const bridge = host();
     if (!baseline || typeof bridge?.setRigScale !== 'function') {
-      status('Cannot align adults: canonical scale defaults or Rig scale persistence is unavailable.');
+      status('Cannot restore silhouettes: main reference or Rig persistence is unavailable.');
       return;
     }
-    const profiles = Object.entries(baseline); // All 26 source profiles, including independently authored skeleton and special biped rigs.
-    let count = 0; // Reported in the mobile status after updating saved adult overrides.
-    for (const [key, authored] of profiles) {
-      const [species, gender] = key.split('::'); // Rig bridge stores entries by canonical species and gender.
-      if (!species || !gender || !(Number(authored.y) > 0)) continue;
+    const items = Object.entries(baseline); // Stable per-profile order; only the final write persists the completed map.
+    let count = 0; // Reported on mobile, never inferred from the number of visible preview actors.
+    for (let i = 0; i < items.length; i++) {
+      const [key, original] = items[i];
+      const [species, gender] = key.split('::');
+      if (!species || !gender || !(Number(original?.y) > 0)) continue;
       const next = {
-        x: authored.x, y: authored.y, legLength: authored.legLength ?? authored.y, head: authored.head, offsetY: authored.offsetY,
-        handScale: authored.handScale, footScale: authored.footScale,
-      }; // Reset all adult character dimensions to the uploaded Mao'ao-relative set; age-mode modifiers remain independent.
-      if (bridge.setRigScale(species, gender, next) != null) count++;
+        x: original.x, y: original.y, legLength: original.legLength ?? original.y,
+        head: original.head, offsetY: original.offsetY,
+        handScale: original.handScale, footScale: original.footScale,
+      }; // All authored adult dimensions revert together; no 65%-head residue or stale independent reach.
+      if (bridge.setRigScale(species, gender, next, { persist: i === items.length - 1 }) != null) count++;
     }
+    const pngFeet = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.proceduralFeet?.footScale; // Keep newly spawned gameplay feet consistent with restored author scales.
+    if (pngFeet) for (const [key, original] of items) {
+      const [species, gender] = key.split('::');
+      pngFeet[species] ||= {};
+      pngFeet[species][gender] = original.footScale;
+    }
+    const handApi = window.HobunjiHandModelProfiles; // One mutation instead of 26 separate GLB reloads.
+    if (typeof handApi?.mutate === 'function') handApi.mutate(data => {
+      data.speciesScaleOverrides ||= {};
+      for (const [key, original] of items) {
+        const [species, gender] = key.split('::');
+        data.speciesScaleOverrides[species] ||= {};
+        data.speciesScaleOverrides[species][gender] = original.handScale;
+      }
+    }, { kind: 'data' });
     for (const entry of entries) {
-      applyPreviewProportions(entry); // Updates whichever lineup age is visible from its newly aligned adult base.
-      syncLegPortraitAlignment(entry); // The solver retains real feet-on-ground placement when adult Height changes.
-      if (entry.species === 'longoran') refreshLongoranSpine(entry); // Preserve independent hunch/kyphosis authoring.
+      entry.feet?.setFootScaleMultiplier?.(baseline[entry.key]?.footScale || partScaleFor(entry, 'foot')); // Actual procedural foot shapes update, not just their JSON profile.
+      applyPreviewProportions(entry);
+      syncLegPortraitAlignment(entry);
+      if (entry.species === 'longoran') refreshLongoranSpine(entry); // Restore silhouettes without resetting authored kyphosis.
     }
-    window.ProceduralHandFrameDriver?.syncNow?.(); // A single hand attachment refresh; no per-NPC GLB reloads.
+    window.ProceduralHandFrameDriver?.syncNow?.();
     syncSpineGuides();
-    if (selected) select(selected); // Refresh exact numeric editor fields from the persisted baseline.
-    persistProfiles(); // Retain the same authored Rig export and autosave path as all other scale changes.
+    if (selected) select(selected);
+    persistProfiles(); // Native Rig export and local backup get the same restored adult values.
     layout();
-    frame(); // Explicit button action reframes the adult-sized lineup rather than silently shifting the camera on slider edits.
-    status(`Applied ${count}/${profiles.length} adult profiles: eight calibrated male heights, female stature at 93% of male, 65% raw-PNG heads, and approved Mao’ao-relative widths/hands/feet. Child modifiers and NPC hunches remain unchanged.`);
+    frame();
+    status(`Restored ${count}/${items.length} adult silhouettes to main (4cfb39c). Baby/toddler/child modifiers and per-NPC hunches remain unchanged.`);
   }
 
   // Discards every author override — in-memory, both localStorage persistence keys,
