@@ -50,6 +50,7 @@ async function main() {
   w.RangedWeapons={retireOwnerProjectiles:actor=>retired.push(actor)};
   const rand=()=>((seed=Math.imul(1664525,seed)+1013904223|0)>>>0)/4294967296;
   const scene={children:[],add(c){c.parent=this;this.children.push(c)},remove(c){c.parent=null;this.children=this.children.filter(v=>v!==c)}},pos=()=>({set(x,y,z){Object.assign(this,{x,y,z})}});
+  let activeScene=scene; // Simulate replacement of the rendered scene without changing its area ID.
   class Img{set src(s){this.width=2;this.height=2;this.onload()}}
   const canvasDoc={createElement:()=>({width:2,height:2,getContext:()=>({drawImage(){},getImageData:()=>({data:new Uint8Array(16).fill(255)})})})};
   w.THREE={CanvasTexture:class{},SpriteMaterial:class{dispose(){}},Sprite:class{constructor(m){this.material=m;this.position=pos();this.scale=pos();this.userData={}}}};
@@ -64,7 +65,7 @@ async function main() {
   w.GearMemberTransaction.init({inventory:bag,getGearInventory:()=>gear,captureMemberWorldData:()=>({}),showToast(){}});
   load('rootledoot-encounter.js',w,canvasDoc,Img);
   const root=w.Rootledoots;
-  root.init({player,TILE:64,rnd:rand,hostiles,worldId:()=>'test',cycle:()=>1,day:()=>day,getArea:()=>zone,getGrid:()=>grid,walkable:(c,r)=>!!grid[r]?.[c]&&!grid[r][c].blocked,isBareGround:()=>true,getNpcWalkers:()=>walkers,isInCombat:()=>inCombat,canActivate:()=>canActivate,surfaceY:()=>0,getScene:()=>scene,despawn:c=>c.avatarRef.group.parent=null,canReceiveRoot:()=>true,giveRoot:()=>bag.feyHeftroot=(bag.feyHeftroot||0)+1});
+  root.init({player,TILE:64,rnd:rand,hostiles,worldId:()=>'test',cycle:()=>1,day:()=>day,getArea:()=>zone,getGrid:()=>grid,walkable:(c,r)=>!!grid[r]?.[c]&&!grid[r][c].blocked,isBareGround:()=>true,getNpcWalkers:()=>walkers,isInCombat:()=>inCombat,canActivate:()=>canActivate,surfaceY:()=>0,getScene:()=>activeScene,despawn:c=>c.avatarRef.group.parent=null,canReceiveRoot:()=>true,giveRoot:()=>bag.feyHeftroot=(bag.feyHeftroot||0)+1});
   // Every suitable chunk owns one 3x3 footprint, and a wall separates even same-tier spawn tiles.
   for(let r=0;r<3;r++)for(let c=0;c<3;c++){
     const site=root.__test.siteInChunk(zone,{c,r});
@@ -90,6 +91,7 @@ async function main() {
   assert.equal(scene.children[0].scale.y,.5625*.68*.96,'bait matches the actual mature farm sprite scale');
   inCombat=true;let bait=aim();assert.equal(root.action(bait.c,bait.r),null,'bait does not override attack buttons');
   assert.equal(root.pick(bait.c,bait.r),false,'stale bait action cannot fire during combat');inCombat=false;
+  canActivate=false;assert.equal(root.pick(bait.c,bait.r),false,'visible bait cannot be picked during scene transition');canActivate=true;
   let s=aim();walkers.push({area:zone,root:{position:{x:7,z:7}}});assert.equal(root.pick(s.c,s.r),false,'NPC entering after activation blocks trigger');
   walkers.pop();root.tick(.5);await flush();s=aim();assert.equal(root.debugSnapshot().active.phase,'bait','same-day bait reactivates without reroll');
   let releaseFirst;block={index:spawnCount+1,promise:new Promise(r=>{releaseFirst=r;})};
@@ -100,6 +102,12 @@ async function main() {
   assert.equal(root.debugSnapshot().active,null);
   walkers.pop();block=null;root.tick(.5);await flush();s=aim();
   assert.equal(root.debugSnapshot().active.phase,'bait','suppressed first wave retains the daily roll');
+  let releaseScene;block={index:spawnCount+1,promise:new Promise(r=>{releaseScene=r;})};
+  assert.equal(root.pick(s.c,s.r),true);await flush();
+  activeScene={...scene,children:[]};releaseScene();await flush();
+  assert.equal(hostiles.size,0,'same-zone scene replacement rejects stale actors');
+  root.tick(.5);assert.equal(root.debugSnapshot().active,null,'replaced scene encounter resets');
+  activeScene=scene;block=null;day++;root.tick(.5);await flush();s=aim();
   retired.length=0;
   let release;block={index:spawnCount+2,promise:new Promise(r=>{release=r;})};
   assert.equal(root.pick(s.c,s.r),true);await flush();assert.equal(hostiles.size,1);
