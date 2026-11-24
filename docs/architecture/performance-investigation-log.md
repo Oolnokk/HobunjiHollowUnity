@@ -2319,3 +2319,28 @@ Audit follow-up: first full CI run passed 1,417/1,418 fast tests and all eight o
 Additional cache audit: logical portrait dimensions and layer size are mutable via the authoring config, and resolving multiple tint canvases can evict earlier entries. Keys now include logical dimensions and capture the exact resolved immutable tint and transform used for each layer, with noncanonical or invalid inputs falling back. The shared result key includes the cutout API identity. Added no-op versus warped hood readback parity and identical-label HUD item replacement coverage.
 
 Final targeted audit: isolated executions of the real AutoLOD, Gear cadence, flail depth/facing, HUD dedup and beard matte/readback fixtures passed. Added an actual renderer-block cache integration fixture for separate portrait targets, exact still hits, dynamic bypass, immutable retained pixels, policy and dimension changes, tint changes, editor and pixel-dye bypass, context policy, and bounded eviction. Gear self-removal markers now last only through the next observer delivery and no filtering array is built unless such a release actually occurred. Mutable mask overrides and invalid/unserializable static deformation or policy values use the original uncached path.
+
+## 24 Nov 2026: surface-growth root/vine tubes drop redundant rings
+
+**Found while profiling the Cloud Forest wall LOD.** A per-mesh triangle census of town put
+~200 k in-view triangles in 18 "Surface roots" meshes (the temple's Corner Fill roots: radius
+0.2, length 12, up to 48 strands per recognized surface; single meshes up to 43,820 triangles).
+Hiding them raised headless town fps 2.93 → 3.80 (+30%). Strand tracing places a ring every
+~3× radius (Corner Fill: every 0.14 units, up to 128 rings) so that paths hug walls, seams and
+corners. On flat runs, most of those rings add no shape.
+
+**Change.** `simplifySurfaceStrandRings` (foliage-generator.js) is a final pass on every
+surface-growth tube (houses, temple, caves, furniture), after `varySurfaceStrandRadii` and the
+shrinkwrap. Douglas–Peucker on ring centres drops a ring only when the straight tube between its
+kept neighbours stays within 12% of the strand radius of its centre and its radius, with at most
+12 ring gaps per segment. Kept rings keep their exact shrinkwrapped vertices and PNG stretch UVs,
+so strands cannot sink further than the tolerance and their texture still runs 0..1. Ends and
+corners are kept. Build stats report `strandRingsBefore/After`.
+
+**Measured (headless, fresh world, town spawn, main vs branch in separate sessions):**
+surface-growth triangles 217 k → 106 k (−51%; rings 22,281 → 11,157); all-pass triangles
+1.62 M → 1.29 M; town fps 2.95 → 3.47 average over three 12 s windows (+18%). Screenshots of the
+temple's roots and vines are indistinguishable at 1280×720. Generation-time only: no per-frame
+cost, and the same savings apply to cave and furniture growth. **Not yet measured on a device.**
+`Roughbrick1.glb` path/wall bricks (~570 k town triangles, 70 per brick) remain the next town
+lead.
