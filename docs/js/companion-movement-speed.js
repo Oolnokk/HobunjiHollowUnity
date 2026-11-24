@@ -308,7 +308,21 @@
         if (!(speed > 0)) return originalValue;
         const ratio = ownerSpeedRatio(companion);
         const catchup = property === 'chaseSpeed' ? followCatchupMultiplier(companion) : 1;
-        const desiredWorldSpeed = speed * ratio * catchup; // World-space pace after any temporary follow recovery.
+        let practical = 1; // Normal followers and animals without Speedy never inspect combat orders.
+        if (companion.genotype?.practical?.speedy) {
+          const gene = window.CreatureGenetics?.practicalMultiplier?.(companion.genotype, 'speedy') || 1;
+          if (gene !== 1) {
+            let combatActive = !!(companion._companionCombatTarget || companion._animalAttack || companion._furiousSpecial);
+            if (!combatActive && (companion.master || deps?.player) === deps?.player && companion.stableRole === 'companion') {
+              const areaId = deps?.getCurrentArea?.(); // Only unresolved Speedy combat orders need global target lookups.
+              const sicced = window.EnchantmentSystem?.getCurrentSiccedTarget?.();
+              const focus = window.PlayerDowned?.getFocusTarget?.();
+              combatActive = !!((sicced?.health > 0 && (!areaId || sicced.areaId === areaId)) || (focus?.health > 0 && !focus._downed && (!areaId || focus.areaId === areaId)));
+            }
+            if (combatActive) practical = gene;
+          }
+        }
+        const desiredWorldSpeed = speed * ratio * catchup * practical; // World-space pace after any temporary follow recovery.
         const global = devGlobalMovementMultiplier();
         const commandSpeed = compensateGlobalCreatureMovement(companion) && global > 0
           ? desiredWorldSpeed / global : desiredWorldSpeed; // The creature mover restores the global multiplier once.
@@ -317,6 +331,7 @@
         debug.ownerSpeedPxS = speed;
         debug.ownerSpeedPercent = ratio * 100;
         debug.catchupMultiplier = catchup;
+        debug.practicalSpeedMultiplier = practical;
         debug.property = String(property);
         debug.baseSpeciesSpeedPxS = baseline;
         debug.resolvedSpeedPxS = desiredWorldSpeed;

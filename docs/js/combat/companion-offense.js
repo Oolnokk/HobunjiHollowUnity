@@ -22,6 +22,7 @@
   }
 
   registerProvider('companionTactics', companion => window.StableAnimalTrainingRefinements?.hitModifiers?.(companion));
+  registerProvider('practicalGenes', companion => ({ damage: window.CreatureGenetics?.practicalMultiplier?.(companion.genotype, 'fierce') || 1 }));
 
   function isPlayerCompanion(companion) {
     if (!companion?.isCompanion || companion.banditCompanion === true) return false;

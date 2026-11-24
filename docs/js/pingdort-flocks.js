@@ -67,7 +67,8 @@
       {x:to.x*unit(),y:to.z*unit(),worldY:to.y});
     if(!line||!window.PerchSupport.attach(actor,line,0))return false;
     const distance=Math.hypot(to.x-from.x,to.z-from.z,to.y-from.y);
-    state.leg={from,to,elapsed:0,duration:Math.max(.28,distance/speed)};
+    const geneSpeed=window.CreatureGenetics?.practicalMultiplier?.(actor.genotype,'speedy')||1; // Flight legs bypass the ground speed definition.
+    state.leg={from,to,elapsed:0,duration:Math.max(.28,distance/(speed*geneSpeed))};
     state.phase=phase;state.struck=false;actor.pingdortFlightPose='flap';
     actor.pingdortDivePitchRad=Math.atan2(to.y-from.y,Math.hypot(to.x-from.x,to.z-from.z))*.7;
     return true;
@@ -273,6 +274,7 @@
       pingdortFlockId:nest.id,
     });
     if(!actor)return null;
+    window.CreatureGenetics?.applyWildPracticalTraits?.(actor,genotype); // Same inherited boosts as other wildlife.
     actor.areaId=session.area;actor.isWildPingdort=true;actor.pingdortFlightPose='perched';
     actor.def=Object.assign(Object.create(actor.def||null),{hostile:false,attacks:[]}); // Wild birds never choose the player/large prey in generic AI.
     const home={x:pos.x,z:pos.z,y:nest.worldY}; // The shelf is the actual perch surface; native groundLift determines each bird's foot height, not an extra invisible air gap.
@@ -403,11 +405,13 @@
     const isHypedReplay = pendingHypedRatio != null && Number.isFinite(Number(pendingHypedRatio)); // A 50-point (100%-strength) echo is still a replay, never an ordinary attack.
     const feyScale = isHypedReplay ? Math.max(0, Number(pendingHypedRatio)) : 1; // Preserve the exact authored ratio, including a valid 0, without affecting ordinary boulders.
     delete burden.pendingFeyHypedImpactRatio; // A boulder picked up and thrown again later is an ordinary burden, not a permanently enchanted projectile.
+    const practicalDamage=Number(burden.pendingPracticalFierceMultiplier)||1; // Inherited damage belongs to the bombing run, not the rock.
+    delete burden.pendingPracticalFierceMultiplier;
     const combat=window.Combat?.deps,t=Number(combat?.TILE)||64;
     for(const enemy of combat?.hostileObjects||[]){
       if(enemy.health<=0||enemy.areaId!==burden.mapId)continue;
       if(Math.hypot(enemy.x/t-p.x,enemy.y/t-p.z)>1.35)continue;
-      combat.damageCreature?.(enemy,18*feyScale,p.x*t,p.z*t,150*feyScale,{tag:'blunt',source:'pingdort-boulder',
+      combat.damageCreature?.(enemy,18*feyScale*practicalDamage,p.x*t,p.z*t,150*feyScale,{tag:'blunt',source:'pingdort-boulder',
         feyHypedReplay:isHypedReplay}); // Genuine burden collision scales both Health and knockback once, not the whole world damage owner.
     }
     return false; // The landed boulder remains a physical, pickable and throwable burden.
@@ -501,8 +505,10 @@
       if(!state.struck&&state.target?.health>0&&bodySweep(actor,state.target,
         {x:old.x,y:oldY+.3,z:old.z},{x:now.x,y:newY+.3,z:now.z})){
         state.struck=true;
-        combat?.damageCreature?.(state.target,actor.def?.attackDamage||6,actor.x,actor.y,40,
-          {tag:'sharp',attacker:actor,aerialSwoop:true,impactCollider:'body'});
+        const damage=actor.def?.attackDamage||6; // Companion swoops use the shared offensive provider, not wild actor stat overrides.
+        const opts={tag:'sharp',attacker:actor,aerialSwoop:true,impactCollider:'body'};
+        if(window.CompanionOffense?.damageCreature) window.CompanionOffense.damageCreature(combat?.damageCreature,actor,state.target,damage,actor.x,actor.y,40,opts);
+        else combat?.damageCreature?.(state.target,damage,actor.x,actor.y,40,opts);
       }
       if(ended)flight(actor,state,state.home,'land',7);
       return true;
@@ -530,6 +536,7 @@
         if(state.boulder){
           const echoScale = Number(state.feyHypedEchoRatio); // The second authored bombing run may land after the special itself finishes.
           if(Number.isFinite(echoScale) && echoScale>=0) state.boulder.pendingFeyHypedImpactRatio=echoScale;
+          state.boulder.pendingPracticalFierceMultiplier=window.CreatureGenetics?.practicalMultiplier?.(actor.genotype,'fierce')||1; // Snapshot at actual release so a later impact gets the bomber's gene once.
           if(window.Shattercasks?.releaseBurdenDownward?.(state.boulder,'pingdort-bomber'))debug.bouldersDropped++;
           else window.Shattercasks?.discardBurden?.(state.boulder);
           state.boulder=null;

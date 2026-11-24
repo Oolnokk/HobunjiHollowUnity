@@ -202,7 +202,7 @@
   <!-- Shared rig ownership must load before the NPC dance/hand scripts injected by action locks. -->
   <script src="js/rig-transform-layers.js?v=20261122hc3370fb"></script>
   <!-- Reusable movement/tool/action suppression and dynamically loaded social presentation. -->
-  <script src="js/character-action-locks.js?v=20261123hc1852a6"></script> <!-- Shared quaternion-safe ownership for procedural rig deformations. -->
+  <script src="js/character-action-locks.js?v=20261124practicalAudit1"></script> <!-- Shared quaternion-safe ownership for procedural rig deformations. -->
   <script src="js/npc-character-state.js?v=20261117kissPoseLock2"></script>
   <script src="js/npc-movement-head-target.js?v=20261117kissHeadLock3"></script> <!-- Shared invisible movement gaze for allied NPC walkers and humanoid hostiles. -->
   <!-- Accepted alcohol handoff + NPC playback; game.js supplies private-state adapters. -->
@@ -234,7 +234,7 @@
   <script src="js/pingdort-registration.js?v=20261119dairyWild1"></script> <!-- Early hatchable egg and livestock config, before the game snapshots item kinds. -->
   <script src="js/skeeri-livestock-registration.js?v=20261115skeeriEgg1"></script> <!-- Register fertile ruin eggs before the game snapshots livestock item kinds. -->
   <script src="js/moot-registration.js?v=20261123h75e7502"></script> <!-- Moot surface-wildlife and farm-baby registration; config must precede the main game snapshot. -->
-  <script src="js/creature-genetics.js?v=20261122hCreatureVariants28"></script>
+  <script src="js/creature-genetics.js?v=20261124practicalAudit1"></script>
   <script src="js/animal-hides.js?v=20261119dairyWild1"></script> <!-- Per-unit genetics, rarity, price, and save data for butchered hides. -->
   <!-- Creature genotype recolor + pattern-overlay compositing. -->
   <script src="js/creature-texture-cache.js?v=20261105h5c6c35c"></script>
@@ -329,7 +329,7 @@
   <script src="js/farm-world-settings.js?v=20261013h4299425"></script>
   <script src="onboarding.js?v=20261122hAdopt4"></script>
   <!-- Combat system modules (windup/strike pipeline, loadout, abilities) -->
-  <script src="js/combat/resource-system.js?v=20261122familyBaby4"></script>
+  <script src="js/combat/resource-system.js?v=20261124practicalAudit1"></script>
   <script src="js/sacred-ground.js?v=20261108h9e2416f"></script> <!-- Global sacred-ground provider registry for totems, temple and future blessings. -->
   <script src="js/combat/knockback-collision-impact.js?v=20261105aerialAudit2"></script>
   <!-- Burning creatures and short-lived corpse flames share fire-hazard contact across knockback and adventuring torches. -->
@@ -386,7 +386,7 @@
   <!-- Wearer-only trinket hooks: imported from PR #1421 and child #1426, before Combat.init in game.js. -->
   <script src="js/combat/specialized-combat-trinket-hooks.js?v=20261106trinkets20"></script>
   <script src="js/combat/double-edged-combat-trinkets.js?v=20261106trinkets20"></script>
-  <script src="js/cooking-data.js?v=20261122perception1"></script>
+  <script src="js/cooking-data.js?v=20261124practicalAudit1"></script>
   <script src="js/food-processing.js?v=20261115terminalFood3"></script>
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="cooking-runtime"></script>
   <script src="js/key-item-system.js?v=20261114heartAudit4"></script>
@@ -438,7 +438,7 @@
   <script src="js/honeyfuzzle-house.js?v=20261114queenPerf1"></script> <!-- Honeyfuzzle House: 1x1 queen/swarm slot on a FarmProduction entry; hooked by farm-production.js, initialized by game.js. -->
   <script src="js/farm-layout-editor.js?v=20261016a"></script>
   <script src="js/world-meta-store.js?v=20261122cancelAnimal2"></script>
-  <script src="js/farm-animals.js?v=20261123animalAppearancePriority1"></script>
+  <script src="js/farm-animals.js?v=20261124practicalAudit1"></script>
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="farm-buildings"></script> <!-- Farm construction, barn troughs and modular house. -->
   <!-- Death ragdoll → lootable corpse (window.CreatureDeath) —
        self-contained aside from deps injected via init(), so load order
@@ -597,7 +597,7 @@
   <script src="js/animal-shoulder-spline.js?v=20261119h401d940"></script> <!-- Required by the actual seven-point flying rig perch deformation. -->
   <script src="js/flying-animal-rig.js?v=20261123wingflapSizePitch1"></script> <!-- Canonical authored two-bone bird wing/body assembly. -->
   <script src="js/tzatzul-registration.js?v=20261119dairyWild1"></script> <!-- Tzatzul dev species, hatchling peck, stable individual tint and flying-rig JSON. -->
-  <script src="js/skeeri-ruins.js?v=20261123skeeriEyePrewarm1"></script> <!-- Three authored Skeeri sizes, concealed ruin hatches and shaft witch-bomb runs. -->
+  <script src="js/skeeri-ruins.js?v=20261124practicalAudit1"></script> <!-- Three authored Skeeri sizes, concealed ruin hatches and shaft witch-bomb runs. -->
   <script src="js/tzatzul-live-visuals.js?v=20261123wingflapAudit2"></script>
   <script src="js/tzatzul-cliff-sites.js?v=20261108tzflightnest2"></script> <!-- Separate rock-textured, non-climbable Tzatzul spires. -->
   <script src="js/tzatzul-flight-runtime.js?v=20261122proneCaptureMerge1"></script> <!-- Shared swept-body dive for exterior and nest mothers. -->
@@ -665,7 +665,7 @@
        at call time (already global by then), so load order relative to the
        other systems above doesn't matter; must load before game.js, which
        calls window.WildlifeSpawn.init(...) during its own setup. -->
-  <script src="js/wildlife-spawn.js?v=20261122grehlrCustody2"></script>
+  <script src="js/wildlife-spawn.js?v=20261124practicalAudit1"></script>
   <!-- Town/zone building mesh spawning + decorative furniture/prop spawning
        (window.TownZoneBuildings) — reads globally-loaded HousePieceGen/
        WallBuilder/BuildingDoor/window.ProceduralFurniture/window.Music at
@@ -752,7 +752,7 @@
        so load order relative to the other systems above doesn't matter;
        must load before game.js, which calls window.FarmPanel.init(...)
        during its own setup. -->
-  <script src="js/farm-panel.js?v=20261122cancelAnimal2"></script>
+  <script src="js/farm-panel.js?v=20261124practicalAudit1"></script>
   <!-- Tasks tab (window.TasksPanel), Supplies tab (window.SupplyPage),
        whistle-equip row (window.WhistleEquip), and the Wildlife/genotype
        debug panel (window.WildlifeDebugPanel) — all read
@@ -876,7 +876,7 @@
   <script src="js/shattercasks.js?v=20261123babyPoseStable6"></script>
   <script src="js/crate-piles.js?v=20261121lungeAoeAudit3"></script>
   <script src="js/hronal-witch-bombs.js?v=20261115bombImpact3"></script>
-  <script src="js/pingdort-flocks.js?v=20261122roostFoot2"></script> <!-- Wild Drenkirra-hunting flocks, fertile nests, and companion rock-bomber attacks. -->
+  <script src="js/pingdort-flocks.js?v=20261124practicalAudit2"></script> <!-- Wild Drenkirra-hunting flocks, fertile nests, and companion rock-bomber attacks. -->
   <!-- Hanging ropes: the shared rope swing arithmetic (pure) and the rope component burdens hang from. Needs Shattercasks at
        call time only. See docs/architecture/ruin-capabilities.md. -->
   <script src="js/rope-core.js?v=20261122ropestraight1"></script>

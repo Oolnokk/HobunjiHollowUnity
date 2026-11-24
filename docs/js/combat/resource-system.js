@@ -486,6 +486,7 @@
   }
 
   function initEntity(entity) {
+    if (entity.genotype?.practical?.enduring) window.CreatureGenetics?.applyPracticalCapacities?.(entity); // Genetic base pools precede ordinary resource initialization.
     entity.afflictions = { ...defaultAfflictions(), ...(entity.afflictions || {}) };
     // Old sensory-only Fey segments are not carried over into the new exertion-based afflictions.
     for (const obsolete of ["phantomWoundsHealth", "phantomBloodHealth", "phantomPainFooting"]) delete entity.afflictions[obsolete];
@@ -1119,6 +1120,8 @@
   // surface a "you feel queasy" cue for the player without this module
   // needing to know about toasts/VFX.
   function tick(entity, dt, opts = {}) {
+    // Some creature constructors attach the saved genome after initEntity. The guard is O(1) and the genetic helper is idempotent.
+    if (entity.genotype?.practical?.enduring) window.CreatureGenetics?.applyPracticalCapacities?.(entity);
     const healthBeforeTick = entity.health; // Used below to aggregate passive healing and DoT popup text.
     const cfg = resourceSystemConfig();
     const rest = getRestInfo(entity, cfg);

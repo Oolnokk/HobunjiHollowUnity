@@ -777,7 +777,7 @@
     const traits = window.CreatureGenetics?.genotypeTraits?.(entry.kind, entry.genotype) || {};
     const colors = Array.isArray(traits.colors) ? traits.colors : [];
     const patterns = Array.isArray(traits.patterns) ? traits.patterns : [];
-    const special = [];
+    const special = (traits.practical || []).map(trait => trait.label); // Show inherited utility genes before adulthood.
     if (traits.size?.isNonDefault) special.push(`Rare ${String(traits.size.label || 'size').toLowerCase()} size`);
     for (const pattern of patterns) {
       if (pattern.enabled) special.push(pattern.label);

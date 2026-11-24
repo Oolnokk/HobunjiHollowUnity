@@ -293,7 +293,7 @@
 
   function mountedTopSpeedPxS() {
     const training = Number(mountedTrainingModifiers().baseSpeed); // Fleet Stride applies once outside the animal's shared species definition.
-    return currentPlayerRunningSpeedPxS() * MOUNT_PLAYER_RUN_RATIO * (Number.isFinite(training) && training > 0 ? training : 1);
+    return currentPlayerRunningSpeedPxS() * MOUNT_PLAYER_RUN_RATIO * (Number.isFinite(training) && training > 0 ? training : 1) * (window.CreatureGenetics?.practicalMultiplier?.(mountRideEntity?.genotype, 'speedy') || 1);
   }
 
   function mountedMeleeStaminaMultiplier() {
@@ -305,7 +305,7 @@
     const currentSpeed = Math.hypot(Number(mountRideEntity.vx) || 0, Number(mountRideEntity.vy) || 0); // Actual carrier displacement, not an intended or visually boosted speed.
     const baseSpeed = mountedTopSpeedPxS(); // Damage uses the same unboosted mount cap as actual riding.
     const ratio = currentSpeed / Math.max(1, baseSpeed); // Preserves extra damage from genuinely high boosted velocity, and zero bonus against collisions.
-    return (1 + Math.min(1.8, Math.max(0, ratio) * 0.65)) * (Number(mountedTrainingModifiers().meleeDamage) || 1);
+    return (1 + Math.min(1.8, Math.max(0, ratio) * 0.65)) * (Number(mountedTrainingModifiers().meleeDamage) || 1) * (window.CreatureGenetics?.practicalMultiplier?.(mountRideEntity.genotype, 'fierce') || 1); // Shared by mounted tap, charged and quick melee attacks.
   }
 
   function setMountedCombatWindupBoost(owner, peakMultiplier, spentFraction) {
@@ -346,7 +346,7 @@
     mountedCombatBoostS = Math.max(0, mountedCombatBoostS - dt);
     if (mountedCombatBoostS <= 0) mountedCombatBoostMultiplier = 1;
     if (mountBoostS <= 0 && wheatRemaining < WHEAT_MAX) {
-      wheatRecoveryS += dt;
+      wheatRecoveryS += dt * (window.CreatureGenetics?.practicalMultiplier?.(m?.genotype, 'enduring') || 1); // Regeneration only; no additional HUD charge.
       if (wheatRecoveryS >= WHEAT_RECOVER_S) {
         wheatRecoveryS -= WHEAT_RECOVER_S;
         wheatRemaining++;
@@ -640,6 +640,7 @@
       master: deps.player, genotype: activeStabled.genotype, stableRole: 'mount',
     });
     if (!mount) return;
+    window.CreatureGenetics?.applyPracticalCapacities?.(mount, activeStabled.genotype); // Mounts use the same inherited capacity rule as other animals.
     deps.companionObjects.add(mount);
     mountRideEntity = mount;
     const priorSurfaceOverride = mount.surfaceYOverride; // Preserves any authored dynamic height override outside town.
