@@ -92,8 +92,8 @@
       if (!overrides.shell && overrides.plates) overrides.shell = overrides.plates;
     }
     const first = patternIdsFor(kind)[0]; // First old pattern is the B fallback.
-    if (!overrides.secondary && first) overrides.secondary = overrides[first];
-    if (!genotype.secondary && first) genotype.secondary = { color: genotype[first]?.color };
+    if (!overrides.secondary && first) overrides.secondary = overrides[first] || overrides[patternIdsFor(kind).find(id => !baseColoredPattern(kind, id) && overrides[id])];
+    if (!genotype.secondary?.color) genotype.secondary = { color: genotype[first]?.color || genotype[patternIdsFor(kind).find(id => !baseColoredPattern(kind, id) && genotype[id]?.color)]?.color || genotype.base?.color };
     for (const layerId of colorLayersFor(kind)) {
       const color = normalizeHex(overrides[layerId]);
       if (!color) continue;
@@ -111,6 +111,7 @@
     if (!normalized) { debugState.lastError = `Invalid hex color: ${color}`; refreshDebug(); return; }
     const appearance = parseAppearance();
     const overrides = { ...(appearance.creatureColorOverrides || {}), [layerId]: normalized };
+    if (layerId === 'secondary') for (const id of patternIdsFor(kind)) delete overrides[id]; // A single B override supersedes old per-mask fields.
     const genotype = clone(appearance.creatureGenotype || {});
     genotype[layerId] = { ...(genotype[layerId] || {}), color: normalized };
     if (kind === 'grehlr' && layerId === 'base' && genotype.beard) genotype.beard.color = normalized; // Exact-hex base coat overrides recolor the beard simultaneously.
@@ -119,10 +120,11 @@
 
   function clearCustomColor(layerId) {
     const appearance = parseAppearance();
-    if (!appearance.creatureColorOverrides?.[layerId]) return;
-    const overrides = { ...appearance.creatureColorOverrides };
-    delete overrides[layerId];
     const kind = activeKind(appearance);
+    const overrides = { ...appearance.creatureColorOverrides };
+    if (!overrides[layerId] && !(layerId === 'secondary' && patternIdsFor(kind).some(id => overrides[id]))) return;
+    delete overrides[layerId];
+    if (layerId === 'secondary') for (const id of patternIdsFor(kind)) delete overrides[id];
     const normalizedGenotype = window.CharacterStudioAnimalAppearance?.normalizeGenotype
       ? window.CharacterStudioAnimalAppearance.normalizeGenotype(kind, appearance.creatureGenotype || {})
       : clone(appearance.creatureGenotype || {}); // Returning to presets also returns any custom allele color to the breeding-valid set.

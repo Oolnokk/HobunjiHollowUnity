@@ -175,7 +175,7 @@
     const genotype = { base: { color: firstColor, copies: 2, inheritance: 'dominant' }, secondary: { color: normalizedPaletteColor(secondColor, paletteFor(kind, 'secondary')), copies: 2, inheritance: 'dominant' }, sizeClass: 'medium' }; // Exact base/pattern object shape expected by CreatureGeneticsRender and breeding records.
     for (const patternId of patternIdsFor(kind)) {
       const patternColor = patternUsesBaseCoatColor(kind, patternId) ? firstColor : genotype.secondary.color; // Grehlr beard only inherits visibility, not a second fur color.
-      const permanent = kind === 'uumkaoii' && patternId === 'shell'; // This anatomical shell is mandatory, unlike the optional Nelk markings.
+      const permanent = (kind === 'uumkaoii' && patternId === 'shell') || ((kind === 'puktuk' || kind === 'voorg-ass') && patternId === 'belly'); // This anatomical shell is mandatory, unlike the optional Nelk markings.
       genotype[patternId] = { color: patternColor, copies: permanent ? 2 : 0, inheritance: 'dominant', enabled: permanent };
     }
     return genotype;
@@ -189,10 +189,10 @@
     const defaults = defaultAnimalGenotype(kind); // Supplies missing legacy/imported fields without rerolling any authored values.
     genotype.sizeClass = ['small', 'medium', 'large'].includes(genotype.sizeClass) ? genotype.sizeClass : (defaults.sizeClass || 'medium');
     genotype.base = { ...defaults.base, ...(genotype.base || {}), copies: 2, inheritance: 'dominant' };
-    genotype.secondary = { ...defaults.secondary, ...(genotype.secondary || {}), color: genotype.secondary?.color || genotype[patternIdsFor(kind)[0]]?.color || defaults.secondary.color };
+    genotype.secondary = { ...defaults.secondary, ...(genotype.secondary || {}), color: genotype.secondary?.color || genotype[patternIdsFor(kind)[0]]?.color || genotype[patternIdsFor(kind).find(id => !patternUsesBaseCoatColor(kind, id) && genotype[id]?.color)]?.color || defaults.secondary.color };
     for (const patternId of patternIdsFor(kind)) {
       const layer = { ...(defaults[patternId] || {}), ...(genotype[patternId] || {}) }; // Normalized layer feeds both UI toggles and runtime compositor.
-      const permanent = kind === 'uumkaoii' && patternId === 'shell'; // No UI/import can remove this anatomical region.
+      const permanent = (kind === 'uumkaoii' && patternId === 'shell') || ((kind === 'puktuk' || kind === 'voorg-ass') && patternId === 'belly'); // No UI/import can remove this anatomical region.
       const enabled = permanent || (layer.enabled !== false && Number(layer.copies) > 0); // Breeding renderer treats copies>0 plus non-false enabled as expressed.
       layer.color = patternUsesBaseCoatColor(kind, patternId) ? genotype.base.color : genotype.secondary.color; // Old/imported Grehlr beard colors are ignored without losing the allele.
       genotype[patternId] = { ...layer, copies: permanent ? 2 : (enabled ? Math.max(1, Number(layer.copies) || 1) : 0), inheritance: layer.inheritance || 'dominant', enabled };
@@ -272,7 +272,7 @@
     const regions = [];
     if (genotype?.base?.color) regions.push({ id: 'base', label: 'Base coat', color: genotype.base.color });
     for (const id of ids) {
-      if (patternUsesBaseCoatColor(kind, id)) continue; // A Grehlr beard uses base-coat Color Pools paint and must not appear as a separate region.
+      if (patternUsesBaseCoatColor(kind, id) && kind !== 'drenkirra') continue; // A Grehlr beard uses base-coat Color Pools paint and must not appear as a separate region.
       const layer = genotype?.[id];
       if (!layer?.color || layer.enabled === false || !(Number(layer.copies) > 0)) continue;
       regions.push({ id, label: title(id), color: layer.color });
@@ -390,7 +390,7 @@
       <div class="cosmeticRow" style="align-items:flex-start"><div class="cosmeticLabel">Body color B (secondary)</div><div class="selGroup" style="flex:1">${swatchButtons(kind, 'secondary', genotype.secondary?.color)}</div></div>`;
     for (const patternId of patternIdsFor(kind)) {
       const layer = genotype[patternId] || {}; // Breeding-authored optional or permanent layer.
-      const permanent = kind === 'uumkaoii' && patternId === 'shell'; // Permanent shell has a swatch, never a checkbox.
+      const permanent = (kind === 'uumkaoii' && patternId === 'shell') || ((kind === 'puktuk' || kind === 'voorg-ass') && patternId === 'belly'); // Permanent shell has a swatch, never a checkbox.
       geneticsHtml += `
         <div class="hr"></div>
         <div class="row" style="justify-content:space-between;align-items:center">
@@ -398,7 +398,7 @@
             ${permanent ? '' : `<input type="checkbox" class="animalNpcPatternToggle" data-pattern="${esc(patternId)}" ${layer.enabled && Number(layer.copies) > 0 ? 'checked' : ''} style="width:auto">`}
             ${esc(title(patternId))}
           </label>
-          <span class="sectionTag">${permanent ? 'permanent shell' : patternUsesBaseCoatColor(kind, patternId) ? 'base-colored pattern' : 'breeding pattern'}</span>
+          <span class="sectionTag">${permanent ? 'permanent region' : patternUsesBaseCoatColor(kind, patternId) ? 'base-colored pattern' : 'breeding pattern'}</span>
         </div>
         <div class="help" style="margin-top:7px">Uses body color ${patternUsesBaseCoatColor(kind, patternId) ? 'A' : 'B'}.</div>`;
     }
@@ -959,7 +959,7 @@
       }
       const script = document.createElement('script'); // Loads only the breeding definition module; the Character Studio does not call its runtime init().
       script.dataset.characterStudioCreatureGenetics = '1';
-      script.src = docsUrl('js/creature-genetics.js?v=20261122hCreatureVariants28'); // Prevents stale allele definitions when Character Studio loads the breeding module independently.
+      script.src = docsUrl('js/creature-genetics.js?v=20261124sharedBodyColors2'); // Prevents stale allele definitions when Character Studio loads the breeding module independently.
       script.onload = () => { debugState.lastAction = 'breeding pattern definitions loaded'; syncUi(true); resolve(true); };
       script.onerror = () => { debugState.lastError = 'creature-genetics.js failed to load; using fallback pattern ids'; resolve(false); };
       document.head.appendChild(script);

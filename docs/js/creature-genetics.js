@@ -348,9 +348,11 @@
   // compatibility mirrors, never independently inherited.
   function secondaryColor(kind, genotype) {
     kind = GENOTYPE_SPECIES_ALIAS[kind] || kind;
-    const first = LIVESTOCK_PATTERN_DEFS[kind]?.[0]; // Stable authored order, independent of expression.
+    const ids = LIVESTOCK_PATTERN_DEFS[kind] || []; // Stable authored order, independent of expression.
+    const first = ids[0];
+    const fallback = ids.find(id => !_patternUsesBaseCoatColor(kind, id) && genotype?.[id]?.color); // Sparse authored data may omit its first pattern.
     return genotype?.secondary?.color || (kind === 'skeeri' ? genotype?.skeeriPattern : null)
-      || genotype?.[first]?.color || genotype?.base?.color || null;
+      || genotype?.[first]?.color || genotype?.[fallback]?.color || genotype?.base?.color || null;
   }
   function patternColor(kind, id, genotype) {
     kind = GENOTYPE_SPECIES_ALIAS[kind] || kind;
@@ -628,7 +630,7 @@
   const LIVESTOCK_MUTATION_CHANCE = 0.05;
   function _livestockAlleleContribution(layer) {
     const copies = deps.clamp(Number(layer?.copies) || 0, 0, 2);
-    return Math.random() < copies / 2 ? { color: layer.color } : null;
+    return Math.random() < copies / 2; // Only pattern expression segregates; pigment is inherited at A/B.
   }
   // mutationChance overrides the flat LIVESTOCK_MUTATION_CHANCE de-novo-
   // trait roll used throughout this function (rarer colors, new pattern
@@ -664,7 +666,7 @@
       child[id] = { color: patternColor(kind, id, child), copies, inheritance, enabled, carrier: inheritance === 'recessive' && copies === 1 };
     }
     child.sizeClass = inheritedSizeClass(genotypeA, genotypeB, kind, mutationChance);
-    if (kind === 'skeeri') window.SkeeriLivestockRegistration?.inheritAppearance?.(child, genotypeA, genotypeB); // Domestic flying eye/marking colors follow one parent's ruin lineage, independently of ordinary coat/Size genes.
+    if (kind === 'skeeri') window.SkeeriLivestockRegistration?.inheritAppearance?.(child, genotypeA, genotypeB); // Flying eye and tradition metadata follow one parent; marking pigment is inherited as B.
     const childEnabledIds = patterns.filter(id => child[id].enabled);
     const childEnabledSummary = childEnabledIds.map(id => `${id}:${_furPaletteName(child[id].color)}`).join(','); // Helps validate restricted/permanent pattern colors without desktop devtools.
     window.__farmLog?.(`[genotype] crossOffspring(${kind}): base=${_furPaletteName(child.base.color)} enabled=[${childEnabledSummary || 'none'}]`, 'wildlife');

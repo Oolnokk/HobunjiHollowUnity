@@ -507,8 +507,10 @@
   function patternTintColor(kind, patternId, genotype) {
     if (SPECIES[kind]?.baseColorPatterns?.includes(patternId) || SPECIES[kind]?.primaryColorPatterns?.includes(patternId)) return genotype?.base?.color || null;
     if (genotype?.secondary?.color) return genotype.secondary.color;
-    const first = SPECIES[kind]?.patterns?.[0]; // Standalone tools use the same first-pattern B fallback.
-    return genotype?.[first]?.color || genotype?.base?.color || null;
+    const ids = SPECIES[kind]?.patterns || []; // Standalone tools use the same first-pattern B fallback.
+    const first = ids[0];
+    const fallback = ids.find(id => !SPECIES[kind]?.baseColorPatterns?.includes(id) && !SPECIES[kind]?.primaryColorPatterns?.includes(id) && genotype?.[id]?.color);
+    return genotype?.[first]?.color || genotype?.[fallback]?.color || genotype?.base?.color || null;
   }
 
   function compactHashText(value) {
@@ -852,7 +854,7 @@
       if (layer?.enabled === false || !(layer?.copies > 0) || !renderColor) continue;
       const url = patternUrl(kind, patternId, frame, genotype);
       try {
-        // The centralized tint resolver preserves Drenkirra's swap, and makes the Grehlr beard follow its current base rather than a separate allele.
+        // The centralized tint resolver selects the shared A/B pigment without changing sprite masks or drawing order.
         const patternSourceKey = spec.patternRecolorKeys?.[patternId] || null; // Only anatomically keyed overlay regions opt into selective pigment tinting.
         const recolored = await recoloredPattern(url, renderColor, patternSourceKey, patternSourceKey ? spec.baseShadeReferenceHex : null);
         let renderedLayer = recolored;

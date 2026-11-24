@@ -218,7 +218,7 @@
   function appearanceColors(color, genotype) {
     const base = color || genotype?.base?.color || null;
     const tail = genotype?.tailfeathers || genotype?.tailfeather; // Accept legacy/singular authoring data without multiplying genetic slots.
-    const secondary = genotype?.secondary?.color || tail?.color || base; // First pattern supplies B for old swarm data.
+    const secondary = genotype?.secondary?.color || tail?.color || genotype?.spectacles?.color || base; // First pattern supplies B for old swarm data.
     const tailColor = expressed(tail) ? secondary : base;
     const spectaclesColor = expressed(genotype?.spectacles) ? secondary : null;
     return { base, tailColor, spectaclesColor, distinctTail: expressed(tail) };
