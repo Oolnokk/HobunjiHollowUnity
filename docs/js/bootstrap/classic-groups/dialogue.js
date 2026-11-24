@@ -9,7 +9,7 @@
     "js/dialogue-templates.js?v=20260929mastery1",
     "js/dialogue-rich-text.js?v=20260929colors1",
     "js/character-voice-owner.js?v=20261027releaseOverlap1",
-    "js/dialogue-content.js?v=20261122hsharedDialogueAudit2"
+    "js/dialogue-content.js?v=20261123youngVoice1"
 ]; // Versioned modules evaluated before gameplay boot.
   if (document.readyState !== 'loading') throw new Error('Classic script group must run during parsing');
   // Parser-time writing preserves blocking evaluation and dependencies of the former inline registrations.
