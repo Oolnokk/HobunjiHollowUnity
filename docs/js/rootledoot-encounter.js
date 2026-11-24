@@ -205,7 +205,7 @@
       rec.boss={_banditCaptainArmament:c._banditCaptainArmament};
       const col=Math.floor(c.x/deps.TILE),row=Math.floor(c.y/deps.TILE); // The Big Rootledoot becomes the root where it actually fell.
       if(tileEligible(col,row))rec.site={c:col,r:row};
-      rec.bossRootHeight=Math.max(.8,Number(c.avatarRef?.modelHeight||.9)*(Number(c.visualScaleY)||1));
+      rec.bossRootHeight=Math.max(.8,Number(c.avatarRef?.modelHeight||.9));
       c._banditCaptainArmament=null;c._captainEnchantmentFx?.dispose?.();c._captainEnchantmentFx=null;
     }
     disposeActor(c);return true;
@@ -217,7 +217,7 @@
   }
   function action(c,r) {
     if(!eligibleTarget(c,r))return null;
-    if(active.phase==='bait'&&npcInChunk(active.zone,active.chunk))return null;
+    // The throttled locale tick and pick() check chunk occupancy; action-bar refreshes never scan the NPC population.
     return {icon:'🌱',label:'Pick Heftroot',action:'rootledoot_pick',style:'primary',allowed:true,worldInteraction:true,promptRoot:active.mesh};
   }
   function pick(c,r) {
@@ -265,7 +265,8 @@
     if(checkTime<CHECK_SECONDS)return;
     const elapsed=checkTime;checkTime=0;
     const rec=active;
-    if(!rec){tryActivate();return;}
+    if(!rec){if(!window.PlayerDowned?.isDowned?.())tryActivate();return;}
+    if(rec.phase==='combat'&&!window.PlayerDowned?.isDowned?.()&&Math.hypot(deps.player.x/deps.TILE-rec.site.c-.5,deps.player.y/deps.TILE-rec.site.r-.5)>chunkSize()*2){reset('player escaped locale');return;}
     if(rec.phase==='bait'){
       if(!sameChunk(deps.player.x/deps.TILE,deps.player.y/deps.TILE,rec.chunk)||npcInChunk(zone,rec.chunk))reset('bait dormant');
       return;
