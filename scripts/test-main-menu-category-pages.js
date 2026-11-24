@@ -87,7 +87,11 @@ const livestock = section('farmSectionLivestock', 'Livestock', [button('pair-act
 const farm = new Element('div', { id: 'mpFarm', class: 'mp-pane active', 'data-ctrl-initial-subtab': 'farmSectionLayout' }, [layout, storage, livestock]);
 const questLog = section('tasksSectionQuestLog', 'Quest Log', [button('quest-action')], 'menu-section');
 const rumors = section('tasksSectionRumors', 'Rumors', [button('rumor-action')], 'menu-section');
-const tasks = new Element('div', { id: 'mpTasks', class: 'mp-pane' }, [questLog, rumors]);
+const latePage = section('tasksSectionLate', 'Late Page', [], 'menu-section');
+latePage.textContent = ''; // An authored wrapper can be populated after opening the menu.
+const devPage = section('tasksSectionDev', 'Dev Page', [button('dev-action')], 'menu-section');
+devPage.setAttribute('data-dev-only', '');
+const tasks = new Element('div', { id: 'mpTasks', class: 'mp-pane' }, [questLog, rumors, latePage, devPage]);
 tasks.style.display = 'none';
 const inventoryGrid = section('invGridArea', 'Pack', [button('pack-item')], 'inv-grid-area');
 const keyItems = section('invKeySection', 'Key Items', [button('key-item')], 'inv-key-section');
@@ -105,7 +109,7 @@ document = { body, activeElement: body, createElement: tag => new Element(tag),
   dispatchEvent(event) { for (const callback of listeners.get(event.type) || []) callback(event); return true; }
 };
 const context = {
-  document, console, getComputedStyle: el => ({ display: el.hidden ? 'none' : el.style.display || 'block', visibility: 'visible', opacity: '1', overflowY: el.style.overflowY || 'visible' }),
+  document, console, getComputedStyle: el => ({ display: el.hidden || (el.hasAttribute('data-dev-only') && body.getAttribute('data-dev-mode') !== 'true') ? 'none' : el.style.display || 'block', visibility: 'visible', opacity: '1', overflowY: el.style.overflowY || 'visible' }),
   window: { innerWidth: 600, innerHeight: 400, addEventListener(type, callback) { listeners.set(type, [...(listeners.get(type) || []), callback]); }, dispatchEvent() {},
     ControllerInput: { PRIORITY: { menuNav: 10 }, subscribe() {} } },
   MutationObserver: class {
@@ -209,6 +213,18 @@ async function main() {
   questLog.hidden = false;
   await flush(questLog, { type: 'attributes', attributeName: 'hidden' });
   assert.ok(!bar().hidden && hidden(questLog), 'permission restoration remembers the surviving selected page');
+  const lateAction = button('late-action'); latePage.append(lateAction);
+  await flush(latePage, { addedNodes: [lateAction] });
+  assert.ok(choices(0).some(control => control.textContent === 'Late Page') && hidden(latePage), 'first control in an empty wrapper creates a new category');
+  assert.ok(!choices(0).some(control => control.textContent === 'Dev Page'));
+  body.setAttribute('data-dev-mode', 'true');
+  await flush(body, { type: 'attributes', attributeName: 'data-dev-mode' });
+  assert.ok(choices(0).some(control => control.textContent === 'Dev Page') && hidden(devPage), 'body dev-mode toggle exposes the gated page');
+  click(0, 'Dev Page');
+  body.setAttribute('data-dev-mode', 'false');
+  await flush(body, { type: 'attributes', attributeName: 'data-dev-mode' });
+  assert.ok(!choices(0).some(control => control.textContent === 'Dev Page'), 'turning dev mode off removes even the active gated page');
+  assert.ok(choices(0).some(control => control.getAttribute('aria-pressed') === 'true'), 'a visible category replaces the unavailable selection');
   await switchPane(tasks, inventory);
   assert.ok(!hidden(inventoryGrid) && hidden(keyItems), 'Pack pages appear on their actual pane');
   click(0, 'Key Items');
