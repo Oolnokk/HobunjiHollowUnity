@@ -13,6 +13,7 @@
   let deps = null; // Narrow game-owned adapters; no independent AI, combat or save loop.
   let active = null; // The one live locale, from bait through reward; each has its own async generation identity.
   let checkTime = 0; // Accumulated only in eligible zones or with an active locale.
+  const pendingRewards = new Map(); // Unclaimed boss harvests survive chunk unloads, area changes and save/load without retaining rigs.
   let ledger = new Map(); // Chunk-keyed last attempt day and cleared status, persisted with the member.
   let worldStamp = null; // World and Tothal cycle identity; regenerated wilderness resets locale positions.
   let artPromise = null; // Cache a single alpha-cropped image across all Rootledoots.
@@ -141,7 +142,7 @@
   function syncWorld() {
     const next=stamp();
     if(next===worldStamp)return;
-    reset('world/shift changed');ledger.clear();worldStamp=next;
+    reset('world/shift changed');ledger.clear();pendingRewards.clear();worldStamp=next;
   }
   function activate(zone,chunk,site,key) {
     const rec={zone,chunk,site,key,phase:'bait',actors:new Set(),wave:0,delay:0,mesh:null,boss:null,building:false};
@@ -156,7 +157,7 @@
   function tryActivate() {
     const zone=area(),p=playerTile(),chunk=chunkOf(p.c,p.r),key=keyFor(zone,chunk.c,chunk.r);
     const day=Math.floor(Number(deps.day?.())||0),previous=ledger.get(key);
-    if(previous?.cleared||(previous?.day===day&&!previous.ready))return; // Failed/used daily rolls perform no NPC scans on later ticks.
+    if(pendingRewards.has(key)||previous?.cleared||(previous?.day===day&&!previous.ready))return; // Failed/used daily rolls perform no NPC scans on later ticks.
     if(deps.canActivate?.()===false||npcInChunk(zone,chunk))return; // Check combat and population only after cheap daily ledger rejection.
     if(previous?.day===day){
       if(previous.ready){const site=siteInChunk(zone,chunk);if(site)activate(zone,chunk,site,key);else ledger.set(key,{day,cleared:false,ready:false});}
@@ -167,6 +168,20 @@
     const chance=window.CookingSystem?.feyEncounterChance?.(BASE_CHANCE)??BASE_CHANCE;
     if(rand()>=chance)return;
     const site=siteInChunk(zone,chunk);if(site){ledger.set(key,{day,cleared:false,ready:true});activate(zone,chunk,site,key);}
+  }
+  function resumeReward(zone,chunk) {
+    if(!pendingRewards.size||deps.canActivate?.()===false)return false;
+    for(const [key,saved] of pendingRewards) {
+      if(saved.zone!==zone||!sameChunk(saved.site.c,saved.site.r,chunk))continue;
+      if(!tileEligible(saved.site.c,saved.site.r))continue; // Keep the reward data if the scene is not yet available.
+      const rec={zone,chunk,site:{...saved.site},key,phase:'reward',actors:new Set(),wave:WAVES.length,delay:0,mesh:null,
+        boss:{_banditCaptainArmament:saved.armament},bossRootHeight:saved.height,building:false};
+      active=rec;
+      void showRoot(rec,true).then(ok=>{if(!ok&&active===rec)reset('reward unavailable');}).catch(error=>{if(active===rec)reset('reward failed: '+error.message);});
+      log('unclaimed boss harvest restored');
+      return true;
+    }
+    return false;
   }
   function spawnPoint(rec,used) {
     const p=playerTile(),n=chunkSize();
@@ -253,17 +268,19 @@
       removeRoot(rec);rec.phase='combat';rec.delay=0;void spawnWave(rec);return true;
     }
     if(!rec.boss||!deps.canReceiveRoot?.()){deps.toast?.('No room for Fey Heftroot.',false);return false;}
-    const previous=ledger.get(rec.key); // Transaction rolls back the locale and buff alongside the bag and character gear.
+    const previous=ledger.get(rec.key), previousReward=pendingRewards.get(rec.key); // Transaction rolls back the locale, pending harvest and buff alongside gear and bag.
     const cooking=window.CookingSystem, stacks=cooking?.getFoodEffectStacks?.('feySight')||0;
     const transaction=window.GearMemberTransaction?.run?.({inventoryKeys:['feyHeftroot'],mutate(){
       const weapon=window.BanditCaptainArmaments?.grantCorpseWeapon?.(rec.boss,{deferSave:true});
       if(!weapon)return {ok:false,reason:'weapon'};
       deps.giveRoot();cooking?.consumeFeySight?.();
       ledger.set(rec.key,{day:Math.floor(Number(deps.day?.())||0),cleared:true});
+      pendingRewards.delete(rec.key); // Do not serialize an already-claimed reward in the same atomic save.
       return {ok:true,weapon};
     }});
     if(!transaction?.ok){
       if(previous)ledger.set(rec.key,previous);else ledger.delete(rec.key);
+      if(previousReward)pendingRewards.set(rec.key,previousReward);
       cooking?.consumeFeySight?.();if(stacks>0)cooking?.grantFeySight?.(stacks);
       deps.toast?.('Could not save the Fey reward. Try again.',false);return false;
     }
@@ -300,10 +317,17 @@
     const elapsed=checkTime;checkTime=0;
     syncWorld(); // World/cycle strings and ledger maintenance are throttled too.
     const rec=active;
-    if(!rec){if(!window.PlayerDowned?.isDowned?.()&&deps.player.health>0)tryActivate();return;}
+    if(!rec){
+      if(!window.PlayerDowned?.isDowned?.()&&deps.player.health>0){const p=playerTile();if(!resumeReward(zone,chunkOf(p.c,p.r)))tryActivate();}
+      return;
+    }
     if(rec.phase==='combat'&&!window.PlayerDowned?.isDowned?.()&&Math.hypot(deps.player.x/deps.TILE-rec.site.c-.5,deps.player.y/deps.TILE-rec.site.r-.5)>chunkSize()*2){reset('player escaped locale');return;}
     if(rec.phase==='bait'){
       if(!sameChunk(deps.player.x/deps.TILE,deps.player.y/deps.TILE,rec.chunk)||npcInChunk(zone,rec.chunk))reset('bait dormant');
+      return;
+    }
+    if(rec.phase==='reward'){
+      if(!sameChunk(deps.player.x/deps.TILE,deps.player.y/deps.TILE,chunkOf(rec.site.c,rec.site.r)))reset('unclaimed harvest dormant');
       return;
     }
     if(rec.phase!=='combat'||rec.building||window.PlayerDowned?.isDowned?.())return;
@@ -311,15 +335,34 @@
     if(rec.actors.size)return;
     if(rec.wave>=WAVES.length){
       if(!rec.boss){reset('missing boss reward');return;}
-      rec.phase='reward';void showRoot(rec,true).then(ok=>{if(!ok&&active===rec)reset('reward unavailable');}).catch(error=>{if(active===rec)reset('reward failed: '+error.message);});return;
+      rec.phase='reward';
+      pendingRewards.set(rec.key,{zone:rec.zone,site:{...rec.site},height:rec.bossRootHeight,armament:rec.boss._banditCaptainArmament});
+      deps.save?.(); // Boss victory is a meaningful checkpoint, not a per-tick save.
+      void showRoot(rec,true).then(ok=>{if(!ok&&active===rec)reset('reward unavailable');}).catch(error=>{if(active===rec)reset('reward failed: '+error.message);});return;
     }
     rec.delay+=elapsed;
     if(rec.delay>=WAVE_DELAY){rec.delay=0;void spawnWave(rec);}
   }
-  function serialize(){syncWorld();return {stamp:worldStamp,ledger:[...ledger]};}
-  function restore(raw){reset('restore');worldStamp=typeof raw?.stamp==='string'?raw.stamp:stamp();ledger=new Map(Array.isArray(raw?.ledger)?raw.ledger.filter(e=>Array.isArray(e)&&typeof e[0]==='string'&&Number.isFinite(e[1]?.day)):[]);checkTime=0;} // First eligible tick validates the fully restored world/cycle.
+  function serialize(){
+    // Capture is read-only; a save during a scene transition must not despawn actors or clear rewards.
+    return {stamp:worldStamp??stamp(),ledger:[...ledger],pendingRewards:[...pendingRewards]};
+  }
+  function restore(raw){
+    reset('restore');
+    worldStamp=typeof raw?.stamp==='string'?raw.stamp:stamp();
+    ledger=new Map(Array.isArray(raw?.ledger)?raw.ledger.filter(e=>Array.isArray(e)&&typeof e[0]==='string'&&Number.isFinite(e[1]?.day)):[]);
+    pendingRewards.clear();
+    for(const entry of Array.isArray(raw?.pendingRewards)?raw.pendingRewards:[]){
+      if(!Array.isArray(entry)||typeof entry[0]!=='string')continue;
+      const [key,reward]=entry;
+      if(ledger.get(key)?.cleared||!ZONES.has(reward?.zone)||!Number.isInteger(reward.site?.c)||!Number.isInteger(reward.site?.r)||
+        !Number.isFinite(reward.height)||reward.height<=0||reward.armament?.origin!=='Fey'||typeof reward.armament?.key!=='string')continue;
+      pendingRewards.set(key,reward);
+    }
+    checkTime=0;
+  } // First eligible tick validates the fully restored world/cycle.
   window.Rootledoots=Object.freeze({init,tick,action,pick,onDeath,noteDown,noteDownedHit,handleDefeat,paintPortrait,serialize,restore,reset,
-    debugSnapshot:()=>({lastEvent,worldStamp,checkedChunks:ledger.size,active:active&&{zone:active.zone,site:active.site,phase:active.phase,wave:active.wave,actors:active.actors.size},downedByRoot,overkill}),
+    debugSnapshot:()=>({lastEvent,worldStamp,checkedChunks:ledger.size,pendingRewards:pendingRewards.size,active:active&&{zone:active.zone,site:active.site,phase:active.phase,wave:active.wave,actors:active.actors.size},downedByRoot,overkill}),
     __test:Object.freeze({chunkOf,siteInChunk,npcInChunk,BASE_CHANCE,WAVES})});
   window.DevCompanion?.registerStateProvider?.('rootledoots',window.Rootledoots.debugSnapshot);
 })();
