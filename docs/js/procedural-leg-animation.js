@@ -1962,6 +1962,7 @@
       group: root, update, dispose, applyRecordedLegPose, setLegLengthMultiplier, setFootScaleMultiplier,
       get standingPosteriorY() { return posteriorY; }, // Consumers such as chair/pants positioning read the live hip, not an outdated creation-time value.
       restPosteriorY, // Preview and game diagnostics can compare current leg length with its original source anatomy.
+      get standingFootContactY() { return (state.leftContactY + state.rightContactY) * .5; }, // Author height/beltline conversion measures real sole-contact height; no scene traversal or extra update pass.
       get legLengthMultiplier() { return legLengthMultiplier; },
       get footScaleMultiplier() { return footSizeScale; },
  getStandingPoseDebug, beginLunge, motionAnatomy, applyWorldFootTargets, setExternalFootTargets, releaseExternalFootTargets,
