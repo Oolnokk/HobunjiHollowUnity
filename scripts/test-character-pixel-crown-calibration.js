@@ -134,4 +134,25 @@ const authoredMammakh=defaults.scaleFor('mammakhbuur','male');
 const actualMammakh=real.dimensionsFor('mammakhbuur','male',{rigScale:{...authoredMammakh,y:authoredMammakh.y*independent}});
 close(actualMammakh.height*worldFactor,.66*8/3,'Mammakhbuur retains eight feet even when its portrait derives from Mashtzarr');
 
+// A game NPC assembled BEFORE the real source art has been measured must be
+// updated after the once-per-session scan, without a save rewrite or a per-frame poll.
+if(typeof WeakRef==='function'){
+  const early=parent();
+  const authoredEarly=defaults.scaleFor('tletingan','male');
+  rig.applyToParent(early,'tletingan','male',authoredEarly);
+  const nominalY=early.scale.y;
+  real._setMeasurement('tletingan','male',{
+    body:{top:.32,bottom:.94,left:.12,right:.9,centroidU:.5,centroidV:.62},
+    head:{top:.08,bottom:.36,left:.27,right:.73,centroidU:.5,centroidV:.18,pivotU:.5,pivotV:.35},
+  });
+  const refreshed=rig.refreshMeasuredHeights(); // Synchronous first chunk; a large town continues in small batches.
+  assert(refreshed>=1,'at least the newly measured live NPC is refreshed');
+  const correctedY=early.scale.y;
+  assert(Math.abs(nominalY-correctedY)>.02,'late PNG measurement actually corrects the already-loaded NPC');
+  const detail=real.dimensionsFor('tletingan','male',{rigScale:{...authoredEarly,y:authoredEarly.y*rig.pixelHeightCorrectionFor('tletingan','male')}});
+  close(detail.height*worldFactor,.66*goals.tletingan/3,'late-updated tletingan is calibrated to its painted bare crown');
+  close(early.scale.x,authoredEarly.x*worldFactor,'late refresh does not change authored widths');
+}
+assert.match(realDimensionsSource,/refreshMeasuredHeights\?\.\(\)/,'game pixel measurement completion triggers the once-only live NPC recalibration hook');
+
 console.log('PASS pixel crown heights: 16 gender-specific painted-source measurements, source placement, 65% heads, width, IK, cache, edits, teardown, and editor lifecycle');
