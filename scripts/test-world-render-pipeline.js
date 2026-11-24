@@ -97,6 +97,23 @@ const SCOPE_ORDER = ['farm-tile-batches', 'zone-prop-batches', 'npc-view-cull', 
   assert.equal(pipeline.hasTargetHighlights(), false);
 }
 
+// The production outline wrapper already blocks the retired material-ID source.
+// The pipeline should not allocate or clear its target just to submit a no-op.
+{
+  const h = createWorldRenderPipelineHarness({window:{OutlineRenderPerformance:{nonShellOutlinesSuppressed:true}}}).init();
+  h.settings.seamOutlines=true;
+  h.pipeline.resize(640,360);
+  assert.deepEqual([h.pipeline.targets.seamId.width,h.pipeline.targets.seamId.height],[1,1]);
+  const draws=h.renders(h.frame());
+  assert.equal(draws.length,4,'retired seam pass adds no native render');
+  assert.ok(!draws.some(draw=>draw.override===h.pipeline.materials.seamId));
+  assert.equal(h.pipeline.materials.composite.uniforms.uSeamOutlinesOn.value,0);
+  assert.equal(h.pipeline.snapshot().lastFrame.seamOutlines,false);
+  h.window.OutlineRenderPerformance.nonShellOutlinesSuppressed=false;
+  h.pipeline.resize(640,360);
+  assert.equal(h.renders(h.frame()).length,5,'a runtime that supports seams keeps its pass');
+}
+
 // ── Outlines off ───────────────────────────────────────────────────────────
 {
   const h = createWorldRenderPipelineHarness().init();
