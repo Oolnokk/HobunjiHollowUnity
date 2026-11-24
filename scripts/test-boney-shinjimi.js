@@ -118,6 +118,7 @@ const moonWindow={
   DevCompanion:{registerStateProvider(){},registerCheatPanel(spec){spoilerPanel=spec;}},
 };
 const moonContext=vm.createContext({window:moonWindow,console,Math,Date,URLSearchParams});
+vm.runInContext(read('docs/js/wilderness-encounter-runtime.js'),moonContext);
 vm.runInContext(read('docs/js/boney-shinjimi-wilderness.js'),moonContext);
 const C=moonWindow.BoneyShinjimiWilderness;
 let saved=0;const liveDay={day:13},game={

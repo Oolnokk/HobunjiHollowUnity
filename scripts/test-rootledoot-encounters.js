@@ -63,6 +63,7 @@ async function main() {
   load('gear-member-transaction.js',w,doc);
   w.CharacterMetaSave={update(fn){if(!allowSave)return false;fn({},{});return true;}};
   w.GearMemberTransaction.init({inventory:bag,getGearInventory:()=>gear,captureMemberWorldData:()=>({}),showToast(){}});
+  load('wilderness-encounter-runtime.js',w,canvasDoc,Img);
   load('rootledoot-encounter.js',w,canvasDoc,Img);
   const root=w.Rootledoots;
   root.init({player,TILE:64,rnd:rand,hostiles,worldId:()=>'test',cycle:()=>1,day:()=>day,getArea:()=>zone,getGrid:()=>grid,walkable:(c,r)=>!!grid[r]?.[c]&&!grid[r][c].blocked,isBareGround:()=>true,getNpcWalkers:()=>walkers,isInCombat:()=>inCombat,canActivate:()=>canActivate,surfaceY:()=>0,getScene:()=>activeScene,despawn:c=>c.avatarRef.group.parent=null,canReceiveRoot:()=>true,giveRoot:()=>bag.feyHeftroot=(bag.feyHeftroot||0)+1});
