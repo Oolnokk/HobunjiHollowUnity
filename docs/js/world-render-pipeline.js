@@ -548,10 +548,12 @@
       occlusionFrame.renderer = renderer; occlusionFrame.camera = camera; occlusionFrame.scene = activeScene;
       occlusionFrame.walkers = deps.npcWalkers; occlusionFrame.hostiles = deps.hostileObjects; occlusionFrame.area = area;
       window.ActorRenderOcclusion?.beginFrame?.(occlusionFrame);
+      window.CloudForestFog?.prepareKanthicGlyphFrame?.(activeScene,now,camera); // Hide base-pass glow; only the occupied region receives depth-tested emission.
       if (outlines) renderOutlinedPasses(renderer, camera, activeScene, seamOn, area);
       else renderDirectPasses(renderer, camera, activeScene, area);
     } finally {
       pass('cleanup');
+      window.CloudForestFog?.endKanthicGlyphFrame?.(); // Restore authored visibility before resuming gameplay.
       window.ActorRenderOcclusion?.endFrame?.(); // Release all render-only hostile/NPC suppressions before resuming game systems.
       const nativeRenders = worldFrame?.renders ?? null;
       hooks?.endWorldFrame?.(); // Undo 'frame' presentation hooks (composed body, crop/NPC sway) before gameplay resumes.
@@ -628,6 +630,8 @@
       window.CloudForestFog.renderOutlineMist(renderer, camera, activeScene);
       PerfProfiler?.end(rpMistPerf);
     }
+    pass('kanthicEngraving');
+    window.CloudForestFog?.renderKanthicGlyphFrame?.(renderer,camera,activeScene); // World depth is still intact in mainRT.
     renderer.autoClearColor = true;
     renderer.autoClearDepth = true;
 
@@ -691,6 +695,8 @@
         renderer.autoClearColor = true;
         renderer.autoClearDepth = true;
       }
+      pass('kanthicEngraving');
+      window.CloudForestFog?.renderKanthicGlyphFrame?.(renderer,camera,activeScene,true);
       worldPresented = true;
     } finally {
       finishScore?.(worldPresented);

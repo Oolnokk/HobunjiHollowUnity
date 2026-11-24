@@ -22,7 +22,7 @@ assert.match(fogSource, /getKanthicLanternRadiusTiles:\(\)=>tuning\.lantern\.rad
 const lanternMaskSource = fogSource.slice(fogSource.indexOf('function drawLanternMasksCompat('), fogSource.indexOf('function ruinShadowPolygons(')); // Only the lantern path is forbidden from using a hard camera-centered clipping circle.
 assert(lanternMaskSource.length > 0, 'Shared lantern-mask function is present');
 assert.doesNotMatch(lanternMaskSource, /ctx\.clip\(/, 'No hard camera-centered lantern clipping circle may survive');
-assert.match(fogSource, /function drawRuinGlyphSilhouette\(/, 'Kanthic glyph-shaped cutouts may use triangle clipping without changing lantern behavior');
+assert.match(fogSource, /function renderKanthicGlyphFrame\(/, 'Kanthic glyphs are composited with real world depth rather than triangle-shaped Canvas2D cutouts');
 assert.match(fogSource, /KANTHIC_STANDARD_DARKNESS_ALPHA = 0\.95/, 'Kanthic darkness uses the shared underground ambient rendering pass');
 assert.match(fogSource, /radiusTiles: 2\.4,/, 'default lantern tuning is explicitly bounded to 2.4 tiles, or 0.768 in Kanthic');
 assert.match(fogSource, /drawRuinTraditionLightMasks/, 'Ruin sources must be drawn through the central 2D overlay');

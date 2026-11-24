@@ -87,7 +87,8 @@ assert(fog.includes('ruinFireMaskStats.sources+=lights.length')&&fog.includes('r
   'the mobile lighting diagnostics accumulate separate fixture groups within one draw');
 assert.equal(fog.split('drawRuinPatternGlowMasks(activeScene,now)').length-1,2,
   'engraved glow ignores both enclosed darkness and underground fog');
-assert(fog.includes("node.name === 'engraving-glyph-glow'"),'glow pass uses real emissive glyphs');
+assert(/node\.name\s*===\s*['"]engraving-glyph-glow['"]/.test(fog),'glow pass uses real emissive glyphs');
+assert(fog.includes('renderer.render(kanthicProxyScene,camera)'),'Kanthic emission is a world-depth draw, not a projected canvas light mask');
 assert(connector.includes('routeTiles:route.tiles,showToast,onStateChange:onMechanismStateChange'),
   'existing shaft control callbacks reach the Kanthic lighting runtime');
 
