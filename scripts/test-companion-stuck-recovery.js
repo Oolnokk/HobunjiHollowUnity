@@ -174,6 +174,27 @@ assert.equal(simulate(spanning, 1), false, 'opposite screen edges cannot prove t
 camera.projectPoint = ordinaryProject;
 owner.x = 18.5 * TILE;
 
+// Real-camera homogeneous clip planes: use an orthographic fixture centered on the owner.
+const ortho = { projectionMatrix: { elements: [
+  .25,0,0,0, 0,0,.01,0, 0,.25,0,0, 0,0,0,1
+] }, matrixWorldInverse: { elements: [
+  1,0,0,0, 0,1,0,0, 0,0,1,0, -owner.x/TILE,0,-owner.y/TILE,1
+] } }; // Screen X/Z cover +/- four tiles; world height maps to clip depth.
+Navigation.init({ TILE, player: owner, getCurrentArea: () => AREA, isZoneArea: () => false,
+  getActiveGrid: () => grid, getCamera: () => ortho, surfaceYForTile: () => 0, creatureCanEnter: () => true });
+const wide = makePet(12.5*TILE);
+wide.visualModelWidth = 4; // Center is outside padded screen; body extends visibly into it.
+assert.equal(simulate(wide), false, 'wide body overlapping the screen cannot vanish');
+const wideDistant = makePet(0.1*TILE);
+wideDistant.visualModelWidth = 4;
+owner.x = 25.5*TILE; owner.angle = 0;
+ortho.matrixWorldInverse.elements[12] = -owner.x/TILE;
+assert.equal(simulate(wideDistant, 1), true, 'a fully offscreen wide animal can recover');
+assert(owner.x - wideDistant.x > 6.8*TILE, 'landing leaves the entire wide body beyond the padded screen');
+owner.x = 18.5*TILE; delete owner.angle;
+Navigation.init({ TILE, player: owner, getCurrentArea: () => AREA, isZoneArea: () => false,
+  getActiveGrid: () => grid, getCamera: () => camera, surfaceYForTile: () => 0, creatureCanEnter: () => true });
+
 const acrossArea = makePet();
 acrossArea.areaId = 'town';
 assert.equal(simulate(acrossArea), false, 'no cross-area teleport');

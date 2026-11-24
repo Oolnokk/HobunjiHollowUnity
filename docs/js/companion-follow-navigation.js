@@ -67,13 +67,44 @@
     return p && [p.x, p.y, p.z].every(Number.isFinite) ? p : null;
   }
 
-  function hiddenAt(camera, x, z, footY, height = 1.25) {
-    const low = project(camera, { x, y: footY, z }); // Feet and head must lie outside the same padded screen edge.
-    const high = project(camera, { x, y: footY + Math.max(0.9, height), z });
-    if (!low || !high) return false;
-    return (low.x < -1.2 && high.x < -1.2) || (low.x > 1.2 && high.x > 1.2) ||
-      (low.y < -1.2 && high.y < -1.2) || (low.y > 1.2 && high.y > 1.2) ||
-      (low.z < -1 && high.z < -1) || (low.z > 1 && high.z > 1);
+  // Transform each padded clip plane into world space once per recovery attempt.
+  // Testing the whole conservative body box also works across the perspective near plane,
+  // where dividing individual projected points by W can put a visible body on the wrong side.
+  function recoveryPlanes(camera) {
+    const projection = camera?.projectionMatrix?.elements, view = camera?.matrixWorldInverse?.elements;
+    if (!projection || !view) return null;
+    const planes = []; // Six inward-facing world planes, reused for all candidate probes.
+    for (let axis = 0; axis < 3; axis++) for (const sign of [-1, 1]) {
+      const margin = axis === 2 ? 1 : 1.2; // Preserve the existing offscreen padding.
+      const p = [0, 0, 0, 0]; // Plane coefficients before world-space transformation.
+      for (let j = 0; j < 4; j++) p[j] = margin * projection[j * 4 + 3] + sign * projection[j * 4 + axis];
+      const plane = [0, 0, 0, 0]; // Column-major view matrix multiplies the clip-plane row.
+      for (let j = 0; j < 4; j++) for (let k = 0; k < 4; k++) plane[j] += p[k] * view[j * 4 + k];
+      if (!plane.every(Number.isFinite) || Math.hypot(plane[0], plane[1], plane[2]) === 0) return null;
+      planes.push(plane);
+    }
+    return planes;
+  }
+
+  function hiddenAt(camera, x, z, footY, c, planes) {
+    const halfHeight = Math.max(0.45, Number(c.halfHeight) || 0.625); // Actual scaled portrait half-height.
+    const lift = Number.isFinite(c.groundLift) ? c.groundLift : halfHeight; // Authored origin may differ from half-height.
+    const width = Math.max(0, Number(c.visualModelWidth) || Number(c.def?.modelWidth) || 0); // Full scaled animal sprite width.
+    const halfWidth = width * 0.5; // Conservative horizontal extent regardless of billboard yaw.
+    const centerY = footY + lift; // World-space origin used by the actual avatar renderer.
+    if (planes) return planes.some(([a, b, d, e]) =>
+      a * x + b * centerY + d * z + e + (Math.abs(a) + Math.abs(d)) * halfWidth + Math.abs(b) * halfHeight < 0);
+    if (camera?.projectionMatrix || camera?.matrixWorldInverse) return false; // Malformed real camera must fail closed.
+    // Lightweight projection adapters (e.g. test fixtures) still require a common outside edge.
+    const points = []; // Bound the complete portrait rather than two centerline points.
+    for (const dx of halfWidth ? [-halfWidth, halfWidth] : [0])
+      for (const dz of halfWidth ? [-halfWidth, halfWidth] : [0])
+        for (const dy of [-halfHeight, halfHeight]) points.push(project(camera, { x: x + dx, y: centerY + dy, z: z + dz }));
+    if (points.some(p => !p)) return false;
+    return ['x', 'y', 'z'].some(axis => {
+      const limit = axis === 'z' ? 1 : 1.2; // All corners must agree on which edge excludes the body.
+      return points.every(p => p[axis] < -limit) || points.every(p => p[axis] > limit);
+    });
   }
 
   function floorForOwner(master, currentArea) {
@@ -84,7 +115,7 @@
     return null;
   }
 
-  function recoveryCandidate(c, master, camera, currentArea, tile, ownerFloor) {
+  function recoveryCandidate(c, master, camera, currentArea, tile, ownerFloor, planes) {
     const grid = activeGrid(c), ruin = currentArea === 'map_i_dev_random_ruin';
     if (!grid || !Number.isFinite(tile) || tile <= 0) return null;
     const masterTile = tileAt(grid, master.x, master.y, tile);
@@ -113,7 +144,7 @@
       const x = px / tile, z = py / tile;
       let landingY = ruin ? ownerSurface : deps.surfaceYForTile?.(ground, currentArea); // Use the candidate's actual ground height.
       if (!Number.isFinite(landingY) || Math.abs(landingY - ownerSurface) > 0.55) continue;
-      if (!hiddenAt(camera, x, z, landingY, c.halfHeight * 2 || 1.25)) continue; // Reject visible points before expensive collision and path probes.
+      if (!hiddenAt(camera, x, z, landingY, c, planes)) continue; // Reject visible points before expensive collision and path probes.
       if (Number.isInteger(ownerComponent) && ownerComponent >= 0 &&
           window.CliffRouteNetwork?.componentAt?.(network, Math.floor(x), Math.floor(z)) !== ownerComponent) continue;
       if (ruin) {
@@ -123,10 +154,10 @@
             DS?.pointInPit?.(x, z, 0.12) ||
             window.DevRandomRuin?.shaftBodyBlocksAtFeet?.(x, z, 0.2, ownerSurface)) continue;
         landingY = support.y; // Snap to the actual candidate floor, not the owner's approximate Y.
-        if (!hiddenAt(camera, x, z, landingY, c.halfHeight * 2 || 1.25)) continue;
+        if (!hiddenAt(camera, x, z, landingY, c, planes)) continue;
         if (window.DevRandomRuin?.shaftCreatureCanEnter?.(probe, px, py, true) === false) continue;
       }
-      if (DS?.blockerAt?.(x, z, { radius: 0.2, actorHeight: 1.25 })) continue;
+      if (DS?.blockerAt?.(x, z, { radius: 0.2, actorHeight: 1.25, worldY: landingY, y: landingY })) continue;
       if (!ruin && !baby && deps.canOccupy?.(px, py, tile * 0.2) === false) continue; // Check existing sub-tile prop/furniture occupancy.
       if (!deps.creatureCanEnter?.(c.def, px, py, NaN, NaN, probe, true)) continue;
       if (ruin) {
@@ -145,7 +176,7 @@
             minY: ownerSurface - Y_TOLERANCE, maxY: ownerSurface + Y_TOLERANCE, pad: 0,
           }); // A path on a different overlapping shaft story does not count.
           return !!surface && !DS?.pointInPit?.(tx / tile, ty / tile, 0.12) &&
-            !DS?.blockerAt?.(tx / tile, ty / tile, { radius: 0.2, actorHeight: 1.25 }) &&
+            !DS?.blockerAt?.(tx / tile, ty / tile, { radius: 0.2, actorHeight: 1.25, worldY: surface.y, y: surface.y }) &&
             !window.DevRandomRuin?.shaftBodyBlocksAtFeet?.(tx / tile, ty / tile, 0.2, ownerSurface) &&
             window.DevRandomRuin?.shaftCreatureCanEnter?.(probe, tx, ty, true) !== false &&
             !!deps.creatureCanEnter?.(c.def, tx, ty, NaN, NaN, probe, true);
@@ -160,6 +191,7 @@
   function tryRecover(c, master, currentArea, reason) {
     const camera = deps.getCamera?.(); // Uses the active real game camera, including zoom and camera rotation.
     if (!camera) { debug.lastFailure = 'no camera'; return false; }
+    const planes = recoveryPlanes(camera); // The last rendered camera's world clip volume, computed only on recovery attempts.
     const tile = deps.TILE, ruin = currentArea === 'map_i_dev_random_ruin';
     const ownerFloor = floorForOwner(master, currentArea);
     const grid = activeGrid(c);
@@ -175,12 +207,12 @@
     }
     const petY = Number.isFinite(petFloor) ? petFloor : 0;
     const groupPos = c.avatarRef?.group?.position;
-    if (!hiddenAt(camera, c.x / tile, c.y / tile, petY, c.halfHeight * 2 || 1.25) ||
+    if (!hiddenAt(camera, c.x / tile, c.y / tile, petY, c, planes) ||
         (groupPos && !hiddenAt(camera, groupPos.x, groupPos.z,
-          groupPos.y - (c.groundLift ?? c.halfHeight ?? 0), c.halfHeight * 2 || 1.25))) {
+          groupPos.y - (c.groundLift ?? c.halfHeight ?? 0), c, planes))) {
       debug.lastFailure = 'companion currently visible'; return false;
     }
-    const candidate = recoveryCandidate(c, master, camera, currentArea, tile, ownerFloor);
+    const candidate = recoveryCandidate(c, master, camera, currentArea, tile, ownerFloor, planes);
     if (!candidate) { debug.lastFailure = 'no unseen safe landing on owner floor'; return false; }
     if (!c._familyBabyFollower) { // Infant navigation is private; it has no combat actor to cancel.
       window.Combat?.animalAttacks?.cancel?.(c); // Clear all movement-owning attack and route state before relocating.
