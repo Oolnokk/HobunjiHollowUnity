@@ -4854,22 +4854,23 @@
         };
       }
 
-      function beginSitInteraction(furnitureKey, col, row, fw, fd, rotYDeg, seatIndex) {
+      function beginSitInteraction(furnitureKey, col, row, fw, fd, rotYDeg, seatIndex, furnitureId = null) {
         if (sitInteraction || window.FarmAnimals.isHarvesting() || dialogueOpen || (window.Mounts?.rideState ?? 'none') !== 'none') return { ok: false, message: 'Cannot sit right now.' };
-        if (window.FurnitureTableSystem?.isSeatTaken(currentArea, {col,row,seatIndex}, 'player')) return {ok:false,message:'Someone has already taken this seat.'};
-        const seat = window.FurnitureTableSystem?.seatTransform(currentArea, { furnitureKey, col, row, seatIndex })
-          || resolveSeatWorldTransform(furnitureKey, col, row, fw, fd, rotYDeg, seatIndex);
+        const seatTarget = { furnitureKey, col, row, seatIndex, furnitureId }; // The physical chair identity survives NPC handoffs and offset placements.
+        if (window.FurnitureTableSystem?.isSeatTaken(currentArea, seatTarget, 'player')) return {ok:false,message:'Someone has already taken this seat.'};
+        const placedSeat = window.FurnitureTableSystem?.seatTransform(currentArea, seatTarget);
+        const seat = placedSeat || (!furnitureId ? resolveSeatWorldTransform(furnitureKey, col, row, fw, fd, rotYDeg, seatIndex) : null); // Named chairs cannot become imaginary seats.
         if (!seat) return { ok: false, message: 'Nowhere to sit there.' };
         const seatSurfaceY = activeSurfaceYAtWorld(seat.x, seat.z); // Used to lift the seated camera with zone plateau/ramp terrain.
-        const seatAbsoluteWorldY = seatSurfaceY + seat.y; // Used only by world-space camera/debug consumers; seat.y stays floor-relative for anatomy.
+        const seatAbsoluteWorldY = Number.isFinite(seat.worldY) ? seat.worldY : seatSurfaceY + seat.y; // Match the actual chair's world height, without adding its ground elevation twice.
         const targetX = seat.x * TILE, targetY = seat.z * TILE;
         const targetAngle = seat.facingRad;
         sitInteraction = {
-          furnitureKey, col, row, seatIndex,
+          furnitureKey, col, row, seatIndex, furnitureId: seat.furnitureId || furnitureId,
           phase: 'in', t: 0,
           startX: player.x, startY: player.y, startAngle: facingAngle,
           targetX, targetY, targetAngle,
-          seatWorldY: seat.y,
+          seatWorldY: seatAbsoluteWorldY - seatSurfaceY,
           seatSurfaceY,
           seatAbsoluteWorldY,
           seatNormalDeg: seat.normalDeg,
@@ -5025,7 +5026,7 @@
       // Interactable used by both getInteriorInteractableAt (interior scene)
       // and the farm's worldObjects registration (see placeDecorativeFurniture/
       // registerSitWorldObject) — same onAction shape either call site expects.
-      function makeSitInteractable(furnitureKey, col, row, fw, fd, rotYDeg) {
+      function makeSitInteractable(furnitureKey, col, row, fw, fd, rotYDeg, furnitureId = null) {
         return {
           interactIcon: '💺',
           interactLabel: 'Sit',
@@ -5034,7 +5035,7 @@
           },
           onAction(action) {
             if (action !== 'obj_sit' && action !== 'obj_interact') return { ok: false, message: 'Unknown action.' };
-            return beginSitInteraction(furnitureKey, col, row, fw, fd, rotYDeg, 0);
+            return beginSitInteraction(furnitureKey, col, row, fw, fd, rotYDeg, 0, furnitureId);
           },
         };
       }
@@ -13744,15 +13745,14 @@
               this._seatedStationKey = seatedStationKey;
             }
             this._legsPrevX = root.position.x; this._legsPrevZ = root.position.z;
-            if (this.pause === Infinity) {
-              if (leftSeat && dialogueOpen && _dialogueWalker === this) {
-                const floor = npcSurfaceY(this.area, Math.floor(root.position.x), Math.floor(root.position.z));
-                root.position.y = floor;
-                groundShadow.position.y = characterGroundShadowSurfaceOffset();
-              }
-              return;
+            const dialogueSeatHold = this.pause === Infinity && !cutscenePreviewActive && dialogueOpen && _dialogueWalker === this && seatedAtTarget; // Ordinary paused conversations still anchor their seated participant.
+            if (leftSeat && (this.pause !== Infinity || (dialogueOpen && _dialogueWalker === this && !cutscenePreviewActive))) {
+              const floor = npcSurfaceY(this.area, Math.floor(root.position.x), Math.floor(root.position.z));
+              root.position.y = floor;
+              groundShadow.position.y = characterGroundShadowSurfaceOffset();
             }
-            this.applyFacingDeadzone(this.desiredRot, 0.15);
+            if (this.pause === Infinity && !dialogueSeatHold) return;
+            if (!dialogueSeatHold) this.applyFacingDeadzone(this.desiredRot, 0.15);
             if (!target) return;
             if (target.visitorDeparture && targetArea === this.area && Math.hypot(root.position.x - tx, root.position.z - tz) <= arrival) {
               despawnNpcVisitor(this); // Used to remove a recurring visitor only after they physically reach the authored exit.
@@ -13874,7 +13874,11 @@
                 const seatSink = Number.isFinite(scaledPosteriorY) ? seatTransform.y - scaledPosteriorY
                   : avatarGroup.userData?.avatarGroundLift === 0 ? 0 : -0.32; // Floor-relative compound bodies have no humanoid hip/leg solve to sink into a chair.
                 root.position.y += (seatBaseY + seatSink - root.position.y) * (1 - Math.exp(-11.9 * dt)); // Framerate-independent seat-sink catch-up.
-                this.applyFacingDeadzone(-seatTransform.facingRad + Math.PI / 2, 1);
+                if (!dialogueSeatHold) this.applyFacingDeadzone(-seatTransform.facingRad + Math.PI / 2, 1);
+                if (dialogueSeatHold) {
+                  groundShadow.position.y = groundY - root.position.y + characterGroundShadowSurfaceOffset();
+                  return; // Never equip tools or advance schedule behavior during a paused conversation.
+                }
               } else {
                 root.position.y = groundY + (target.pose === 'lie' ? 0 : Math.sin(performance.now() / 600) * 0.005);
                 if (Number.isFinite(target.rotY)) this.applyFacingDeadzone(THREE.MathUtils.degToRad(target.rotY), 1);
@@ -22306,9 +22310,10 @@
         // inherit the authored placement metadata from their furniture root.
         for (let node = candidate?.userData?.cameraObstacleSource || candidate; node; node = node.parent) {
           const placement = node.userData?.mapEditorRef;
-          if (placement?.kind === 'furniture' && placement.mapId === currentArea
-            && placement.itemKey === seatItemKey && placement.col === sitInteraction.col
-            && placement.row === sitInteraction.row) return true;
+          if (placement?.mapId !== currentArea || !['furniture', 'decor'].includes(placement.kind)) continue;
+          if (sitInteraction.furnitureId ? placement.id === sitInteraction.furnitureId
+            : placement.kind === 'furniture' && placement.itemKey === seatItemKey && placement.col === sitInteraction.col
+              && placement.row === sitInteraction.row) return true;
         }
         return false;
       }
@@ -22350,7 +22355,8 @@
         }
         for (const obj of interiorFurnitureObjects) {
           const isActiveSeat = sitInteraction && obj.area === currentArea
-            && obj.key === sitInteraction.furnitureKey && obj.col === sitInteraction.col && obj.row === sitInteraction.row;
+            && (sitInteraction.furnitureId ? obj.id === sitInteraction.furnitureId
+              : obj.key === sitInteraction.furnitureKey && obj.col === sitInteraction.col && obj.row === sitInteraction.row);
           if (obj.area === currentArea && obj.mesh && !isActiveSeat) meshes.push(obj.mesh);
         }
         return meshes;
@@ -31614,7 +31620,7 @@
         canSit: () => !window.FarmAnimals.isHarvesting() && (window.Mounts?.rideState ?? 'none') === 'none',
         beginSitAtTarget: target => { // The NPC's own physical seat (key, tile, seat index, facing), the same transform the player's Sit action uses.
           const def = DECORATIVE_FURNITURE_DEFS[target.furnitureKey];
-          return beginSitInteraction(target.furnitureKey, target.c, target.r, def?.fw || 1, def?.fd || 1, target.rotY || 0, target.seatIndex || 0);
+          return beginSitInteraction(target.furnitureKey, target.c, target.r, def?.fw || 1, def?.fd || 1, target.rotY || 0, target.seatIndex || 0, target.furnitureId || target.sourceFurnitureId || null);
         },
         toast: showToast,
         now: () => performance.now(),

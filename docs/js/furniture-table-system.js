@@ -338,7 +338,7 @@
     };
   }
   function chairObject(area, entry) {
-    const interactable=deps?.makeSitInteractable?.(entry.record.key,entry.record.col,entry.record.row,entry.def.fw||1,entry.def.fd||1,entry.record.rotY ?? entry.record.rotYDeg ?? 0);
+    const interactable=deps?.makeSitInteractable?.(entry.record.key,entry.record.col,entry.record.row,entry.def.fw||1,entry.def.fd||1,entry.record.rotY ?? entry.record.rotYDeg ?? 0, entry.id);
     if(!interactable)return null;
     const occupied=()=>isSeatTaken(area,{...entry.record,seatIndex:0},'player'); // Recheck reservations on press as well as prompt generation.
     return {...interactable, getButtons:()=>occupied() ? [{icon:'🪑',label:'Occupied',action:'obj_sit',allowed:false,showWhenUnavailable:true,worldInteraction:true,promptRoot:entry.root}]

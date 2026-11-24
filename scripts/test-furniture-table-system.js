@@ -221,3 +221,26 @@ assert.equal(tables.blocksBox('indexed', 8, 4.5), false, 'a same-frame removal i
 
   console.log('NPC physical seat anchor regression passed');
 }
+
+// A player taking a moved NPC's chair must retain the same physical seat id and height.
+{
+  const gameSource=fs.readFileSync('docs/game.js','utf8');
+  const start=gameSource.indexOf('      function beginSitInteraction('),end=gameSource.indexOf('      function endSitInteraction(',start);
+  const ctx={window:{FarmAnimals:{isHarvesting:()=>false},FurnitureTableSystem:{
+    isSeatTaken:(_area,target)=>target.furnitureId==='occupied',
+    seatTransform:(_area,target)=>target.furnitureId==='moved' ? {x:8.5,z:9.5,y:1.5,worldY:1.5,facingRad:0,furnitureId:'moved'} : null,
+  }},sitInteraction:null,currentArea:'interior',dialogueOpen:false,player:{x:0,y:0},facingAngle:0,TILE:32,
+  activeCameraMode:'default',activeCameraTarget:null,activeSurfaceYAtWorld:()=>.4,THREE:{Vector3:class{constructor(x,y,z){Object.assign(this,{x,y,z});}}},
+  wrapAzimuthDeg:x=>x,cameraModeConfig:()=>({azimuthDeg:0}),cameraAzimuthOffsetDeg:0,cameraAngleOffsetDeg:0,
+  resolveSeatWorldTransform:()=>{throw Error('named seat must never fall back to tile geometry');}};
+  const begin=vm.runInNewContext(gameSource.slice(start,end)+'\nbeginSitInteraction;',ctx);
+  assert.equal(begin('chairSimple',1,2,1,1,0,0,'missing').ok,false);
+  assert.equal(begin('chairSimple',1,2,1,1,0,0,'occupied').ok,false);
+  assert.equal(begin('chairSimple',1,2,1,1,0,0,'moved').ok,true);
+  assert.equal(ctx.sitInteraction.furnitureId,'moved');
+  assert.equal(ctx.sitInteraction.targetX,8.5*32);
+  assert.equal(ctx.sitInteraction.targetY,9.5*32);
+  assert.equal(ctx.sitInteraction.seatAbsoluteWorldY,1.5);
+  assert.equal(ctx.sitInteraction.seatWorldY,1.1);
+  assert.equal(ctx.activeCameraTarget.position.y,1.65);
+}
