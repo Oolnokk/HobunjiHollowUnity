@@ -351,9 +351,10 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
         ${scaleRow('Age', 'Age (hunch)', 0, 100, 1, 0, 'Per-NPC age hunch, lowers the head further')}
         <label class="maaToggleLine" style="margin:8px 0"><input id="maaFullScaleShowSpine" type="checkbox" checked> Show live spine and neck attachment</label>
         <div class="maaSmall maaMuted" style="margin-bottom:8px">Spine: green pelvis → orange vertebrae → violet shoulder/neck base; cyan marks the scaled head attachment. The selected avatar is highlighted, and hunch edits update the bones without changing the portrait art.</div>
-        <div class="scaleActions"><button id="maaFullScaleExport" type="button" class="good">Export scale JSON</button><button id="maaFullScaleFrame" type="button" class="secondary">Frame lineup</button><button id="maaFullScaleFocus" type="button" class="secondary" disabled>Focus selected</button><button id="maaFullScaleReset" type="button" class="secondary">Reset all to repo defaults</button></div>
+        <div class="scaleActions"><button id="maaFullScaleExport" type="button" class="good">Export scale JSON</button><button id="maaFullScaleFrame" type="button" class="secondary">Frame lineup</button><button id="maaFullScaleFocus" type="button" class="secondary" disabled>Focus selected</button><button id="maaFullScaleMatchMainAdults" type="button" class="secondary" title="Apply current main adult proportions to all species/genders; keeps authored hands, feet, NPC hunch and child age modifiers">Match main adult scales</button><button id="maaFullScaleReset" type="button" class="secondary">Reset all to repo defaults</button></div>
         <div id="maaFullScaleStatus" class="scaleStatus">Portrait height scales the painted upper body; Leg length adjusts the real hip-to-foot IK chain while keeping feet on the floor. Hand and Foot scale change their own GLBs independently. Existing Height saves initialize both height sliders, and all settings export per species/gender.</div>`;
       workspace.appendChild(panel);
+      panel.querySelector('#maaFullScaleMatchMainAdults').addEventListener('click', matchMainAdultScales); // Existing saved adult overrides need an explicit, non-destructive rebase to the updated main baseline.
       panel.querySelector('#maaFullScaleReset').addEventListener('click', resetAllToRepoDefaults);
       panel.querySelector('#maaFullScaleShowSpine').addEventListener('change', event => {
         showSpineGuides = event.target.checked; // Preview-only setting; not exported with species scales or Rig Coordinates data.
@@ -955,6 +956,43 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
       };
       localStorage.setItem(RIG_SAVE_KEY, JSON.stringify(data));
     } catch (error) { console.warn('[full-character-scale] profile autosave failed', error); }
+  }
+
+  // Main (493ccfb) used a single Height for body and feet. Restore adults' authored X/Y/head/offset and
+  // map that height to both independent sliders without clearing child stages, limb authorship or NPC age.
+  function matchMainAdultScales() {
+    if (!active) return;
+    const baseline = window.HobunjiCharacterRigScaleDefaults?.values; // Canonical shipped scale map, now mathematically aligned with main.
+    const bridge = host(); // Existing per-profile scale store owns saved overrides and native Rig export parity.
+    if (!baseline || typeof bridge?.setRigScale !== 'function') {
+      status('Cannot align adults: canonical scale defaults or Rig scale persistence is unavailable.');
+      return;
+    }
+    const profiles = Object.entries(baseline); // Exactly the 18 canonical adult species/gender pairs; aliases inherit normally.
+    let count = 0; // Reported in the mobile status after updating saved adult overrides.
+    for (const [key, authored] of profiles) {
+      const [species, gender] = key.split('::'); // Rig bridge stores entries by canonical species and gender.
+      if (!species || !gender || !(Number(authored.y) > 0)) continue;
+      const before = bridge.rigScaleFor?.(species, gender) || {}; // Preserve previous hand/foot sizes, which adult baseline syncing does not own.
+      const next = {
+        x: authored.x, y: authored.y, legLength: authored.y, head: authored.head, offsetY: authored.offsetY,
+        ...(Number(before.handScale) > 0 ? { handScale: before.handScale } : {}),
+        ...(Number(before.footScale) > 0 ? { footScale: before.footScale } : {}),
+      }; // Explicitly split original Height into matching portrait and leg proportions; never invent independent reach.
+      if (bridge.setRigScale(species, gender, next) != null) count++;
+    }
+    for (const entry of entries) {
+      applyPreviewProportions(entry); // Updates whichever lineup age is visible from its newly aligned adult base.
+      syncLegPortraitAlignment(entry); // The solver retains real feet-on-ground placement when adult Height changes.
+      if (entry.species === 'longoran') refreshLongoranSpine(entry); // Preserve independent hunch/kyphosis authoring.
+    }
+    window.ProceduralHandFrameDriver?.syncNow?.(); // A single hand attachment refresh; no per-NPC GLB reloads.
+    syncSpineGuides();
+    if (selected) select(selected); // Refresh exact numeric editor fields from the persisted baseline.
+    persistProfiles(); // Retain the same authored Rig export and autosave path as all other scale changes.
+    layout();
+    frame(); // Explicit button action reframes the adult-sized lineup rather than silently shifting the camera on slider edits.
+    status(`Matched ${count}/${profiles.length} adult scales to main: portrait and leg Height now agree. Child proportions, custom hand/foot sizes, and NPC hunches were preserved.`);
   }
 
   // Discards every author override — in-memory, both localStorage persistence keys,
