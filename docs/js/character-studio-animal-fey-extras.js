@@ -80,7 +80,7 @@
     return Array.isArray(rules) ? rules.includes(patternId) : kind === 'grehlr' && patternId === 'beard';
   }
   function colorLayersFor(kind) {
-    return ['base', ...patternIdsFor(kind).filter(id => !baseColoredPattern(kind, id))]; // Base-colored Grehlr beard has only presence, never an independent hex override.
+    return ['base', 'secondary']; // Base-colored Grehlr beard has only presence, never an independent hex override.
   }
 
   function genotypeWithOverrides(appearance) {
@@ -91,18 +91,22 @@
       if (!overrides.base && overrides.fur) overrides.base = overrides.fur;
       if (!overrides.shell && overrides.plates) overrides.shell = overrides.plates;
     }
+    const first = patternIdsFor(kind)[0]; // First old pattern is the B fallback.
+    if (!overrides.secondary && first) overrides.secondary = overrides[first];
+    if (!genotype.secondary && first) genotype.secondary = { color: genotype[first]?.color };
     for (const layerId of colorLayersFor(kind)) {
       const color = normalizeHex(overrides[layerId]);
       if (!color) continue;
       genotype[layerId] = { ...(genotype[layerId] || {}), color };
     }
     if (kind === 'grehlr' && genotype.beard && genotype.base?.color) genotype.beard.color = genotype.base.color; // Legacy custom beard overrides cannot change the visual coat or exported preview.
+    for (const id of patternIdsFor(kind)) if (genotype[id]) genotype[id].color = (baseColoredPattern(kind, id) || (kind === 'drenkirra' && id === 'bodystripes')) ? genotype.base?.color : genotype.secondary?.color;
     return genotype;
   }
 
   function setCustomColor(layerId, color) {
     const kind = activeKind(parseAppearance()); // Validates against the current species before writing exact RGB overrides.
-    if (baseColoredPattern(kind, layerId)) return; // Stale Grehlr beard controls cannot create an independent tint.
+    if (!colorLayersFor(kind).includes(layerId)) return; // Stale Grehlr beard controls cannot create an independent tint.
     const normalized = normalizeHex(color);
     if (!normalized) { debugState.lastError = `Invalid hex color: ${color}`; refreshDebug(); return; }
     const appearance = parseAppearance();
@@ -177,7 +181,7 @@
     }).join('');
     extras.innerHTML = `
       <div class="hr"></div>
-      <div class="help"><b>Fey / custom color overrides</b><br>Breeding colors above are presets only. Each editable coat or marking can have an independent #RRGGBB override; base-colored traits like Grehlr's beard always follow the base coat.</div>
+      <div class="help"><b>Fey / custom color overrides</b><br>Breeding colors above are presets only. Body colors A and B each accept an exact #RRGGBB override. Markings share their assigned body color.</div>
       ${colorRows}
       <div class="hr"></div>
       <label>In-game size multiplier <input id="animalNpcScaleMultiplier" type="number" min="0.1" max="4" step="0.05" value="${scaleMultiplier}"></label>

@@ -109,13 +109,14 @@
     genotype.base.color = primaryColor || genotype.base.color;
     const seed = window.HoneyfuzzleSwarm?.seedFromString?.(key) || 0; // Same deterministic markings even if the defender is not currently spawned.
     const palette = window.HoneyfuzzleColors?.zonePalette(zoneId) || []; // Secondary pigments come from the stump's region.
+    if (palette.length) genotype.secondary = { color: palette[Math.floor((window.HoneyfuzzleSwarm?.hashUnit?.(seed, 80) || 0) * palette.length)], copies: 2, inheritance: 'dominant' }; // One deterministic B per hive.
     for (const [index, id] of ['tailfeathers', 'spectacles'].entries()) {
       const layer = genotype[id];
       if (!layer) continue;
       const enabled = (window.HoneyfuzzleSwarm?.hashUnit?.(seed, 60 + index) ?? 1) < 1 / 3;
       layer.copies = enabled ? 1 : 0;
       layer.enabled = enabled;
-      if (palette.length) layer.color = palette[Math.floor((window.HoneyfuzzleSwarm?.hashUnit?.(seed, 80 + index) || 0) * palette.length)];
+      if (genotype.secondary?.color) layer.color = genotype.secondary.color;
     }
     return genotype;
   }

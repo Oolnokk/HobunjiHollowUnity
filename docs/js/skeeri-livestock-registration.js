@@ -94,7 +94,7 @@
     const palette = window.SkeeriRuins?.paletteFor?.(theme,identity) || {};
     return {...palette,
       body: validHex(genotype?.base?.color) ? genotype.base.color : (palette.body || '#854e48'),
-      pattern: validHex(genotype?.skeeriPattern) ? genotype.skeeriPattern : (palette.pattern || '#967d55'),
+      pattern: validHex(genotype?.secondary?.color) ? genotype.secondary.color : (validHex(genotype?.skeeriPattern) ? genotype.skeeriPattern : (palette.pattern || '#967d55')),
       eyes: validHex(genotype?.skeeriEyes) ? genotype.skeeriEyes : (palette.eyes || '#ff8027'),
     }; // Existing flying rig supports separately tinted fur, markings and glowing eyes.
   }
@@ -105,7 +105,7 @@
     if (!sources.length) return child;
     const donor = sources[Math.floor(Math.random()*sources.length)]; // Inherits one parent's complete visual tradition, never a random unrelated clan.
     if (validTheme(donor.skeeriTradition)) child.skeeriTradition = donor.skeeriTradition;
-    if (validHex(donor.skeeriPattern)) child.skeeriPattern = donor.skeeriPattern;
+    if (child.secondary?.color) child.skeeriPattern = child.secondary.color; // Compatibility mirror, not an independent inherited marking.
     if (validHex(donor.skeeriEyes)) child.skeeriEyes = donor.skeeriEyes;
     return child;
   }
@@ -123,7 +123,7 @@
     if (validHex(palette.body)) genotype.base.color = palette.body;
     genotype.sizeClass = 'small'; // Found eggs hatch small; breeding can produce companion-sized variants.
     genotype.skeeriTradition = validTheme(theme) ? theme : 'hronal';
-    if (validHex(palette.pattern)) genotype.skeeriPattern = palette.pattern;
+    if (validHex(palette.pattern)) { genotype.secondary = { color: palette.pattern, copies: 2, inheritance: 'dominant' }; genotype.skeeriPattern = palette.pattern; }
     if (validHex(palette.eyes)) genotype.skeeriEyes = palette.eyes;
     bag[FERTILE_EGG] = (Number(bag[FERTILE_EGG]) || 0) + 1;
     const next = remaining - 1;

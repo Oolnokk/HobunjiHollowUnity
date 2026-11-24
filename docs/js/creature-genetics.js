@@ -224,7 +224,7 @@
     nazgraku: ['spectacles'],
     honeyfuzzle: ['tailfeathers', 'spectacles'], // Tail art is always rendered; only the differently colored secondary tail is an expressed allele.
   };
-  const LIVESTOCK_BASE_COAT_COLOR_PATTERNS = { grehlr: new Set(['beard']) }; // Used by breeding, gifting, trait UI and valuation to keep Grehlr beard fur identical to its base coat.
+  const LIVESTOCK_BASE_COAT_COLOR_PATTERNS = { grehlr: new Set(['beard']), drenkirra: new Set(['bodystripes']) }; // Used by breeding, gifting, trait UI and valuation to keep Grehlr beard fur identical to its base coat.
   function _patternUsesBaseCoatColor(kind, id) {
     return !!LIVESTOCK_BASE_COAT_COLOR_PATTERNS[kind]?.has(id);
   }
@@ -247,7 +247,7 @@
   }
   function _patternPalette(kind, patternId) {
     const palette = _livestockPalette(kind);
-    const rule = _patternColorRule(kind, patternId);
+    const rule = _patternColorRule(kind, patternId === 'secondary' && kind === 'grehlr' ? 'coloredstripe' : patternId); // Existing bright-stripe restriction applies to the shared B palette.
     if (!rule?.minLightnessColorId) return palette;
     const thresholdEntry = palette.find(entry => entry.id === rule.minLightnessColorId);
     if (!thresholdEntry) return palette;
@@ -323,6 +323,10 @@
 
   // Old Uumkao'ii saves stored permanent fur/plates regions; translate them to base/shell at read time.
   function normalizeLegacyGenotype(kind, genotype) {
+    kind = GENOTYPE_SPECIES_ALIAS[kind] || kind;
+    return synchronizeBodyColors(kind, normalizeOldLayers(kind, genotype));
+  }
+  function normalizeOldLayers(kind, genotype) {
     if ((kind === 'grehlr' || kind === 'grehlr-den-mother') && genotype?.beard && genotype?.base?.color && genotype.beard.color !== genotype.base.color) {
       genotype = { ...genotype, beard: { ...genotype.beard, color: genotype.base.color } }; // Older independently colored beard saves retain expression/copies but use the current base tint.
     }
@@ -337,6 +341,34 @@
       base: { copies: 2, inheritance: 'dominant', ...base },
       shell: { ...(shell || base), copies: 2, inheritance: 'dominant', enabled: true },
     };
+  }
+
+  // Body color A is base.color; B is secondary.color. The first authored
+  // pattern supplies B for older data. Pattern color fields are derived
+  // compatibility mirrors, never independently inherited.
+  function secondaryColor(kind, genotype) {
+    kind = GENOTYPE_SPECIES_ALIAS[kind] || kind;
+    const first = LIVESTOCK_PATTERN_DEFS[kind]?.[0]; // Stable authored order, independent of expression.
+    return genotype?.secondary?.color || (kind === 'skeeri' ? genotype?.skeeriPattern : null)
+      || genotype?.[first]?.color || genotype?.base?.color || null;
+  }
+  function patternColor(kind, id, genotype) {
+    kind = GENOTYPE_SPECIES_ALIAS[kind] || kind;
+    return _patternUsesBaseCoatColor(kind, id) ? genotype?.base?.color : secondaryColor(kind, genotype);
+  }
+  function synchronizeBodyColors(kind, genotype) {
+    if (!genotype || !LIVESTOCK_PATTERN_DEFS[kind]) return genotype;
+    const secondary = secondaryColor(kind, genotype); // Resolved once for all masks.
+    if (!secondary) return genotype;
+    let out = genotype.secondary?.color ? genotype : { ...genotype, secondary: { color: secondary, copies: 2, inheritance: 'dominant' } };
+    for (const id of LIVESTOCK_PATTERN_DEFS[kind]) {
+      const layer = out[id];
+      const color = patternColor(kind, id, out);
+      if (!layer || layer.color === color) continue;
+      if (out === genotype) out = { ...genotype };
+      out[id] = { ...layer, color };
+    }
+    return out;
   }
 
   // A creature's Size (small/medium/large, carried on genotype.sizeClass)
@@ -436,7 +468,8 @@
     const colors = []; // Rendered as named color chips in Farm and Stable.
     const patterns = []; // Rendered as visible-pattern or carrier chips in Farm and Stable.
     if (genotype?.base) {
-      colors.push({ id: 'base', label: 'Base coat', color: genotype.base.color, colorName: _furPaletteName(genotype.base.color) });
+      colors.push({ id: 'base', label: 'Primary body color', color: genotype.base.color, colorName: _furPaletteName(genotype.base.color) });
+      if (genotype.secondary?.color) colors.push({ id: 'secondary', label: 'Secondary body color', color: genotype.secondary.color, colorName: _furPaletteName(genotype.secondary.color) });
       for (const id of LIVESTOCK_PATTERN_DEFS[kind] || []) {
         const layer = genotype?.[id] || {}; // Supplies expressed/carried allele details for one authored mask.
         const copies = deps.clamp(Number(layer.copies) || 0, 0, 2); // Displayed as the inherited allele count.
@@ -469,7 +502,7 @@
       return _pickWeightedFurEntry(entries.filter(entry => (Number(entry.weight) || 1) === minWeight))?.hex;
     };
     if (genotype.base && palette.length) genotype.base.color = rareColor(palette);
-    if (rank >= 2 && genotype.shell && palette.length) genotype.shell.color = rareColor(palette); // Permanent shell takes a rare color from the second tier.
+    if (rank >= 2 && genotype.secondary) genotype.secondary.color = rareColor(_patternPalette(kind, 'secondary'));
     const chances = window.SCRATCHBONES_CONFIG?.game?.creatureGenetics?.patternChances?.[kind] || {}; // Prefer the rarest optional authored masks when fewer patterns are earned.
     const patterns = (LIVESTOCK_PATTERN_DEFS[kind] || []).filter(id => !_patternAlwaysPresent(kind, id))
       .sort((a, b) => (Number(chances[a]) || 1 / 3) - (Number(chances[b]) || 1 / 3)); // Rank controls the count, including guaranteed expressed rare patterns.
@@ -477,11 +510,10 @@
       genotype[id].enabled = index < rank;
       genotype[id].copies = index < rank ? 2 : 0;
       genotype[id].carrier = false;
-      if (_patternUsesBaseCoatColor(kind, id)) genotype[id].color = genotype.base.color; // Rare gifts inherit the new base color even when the beard is not expressed.
-      else if (index < rank && _patternPalette(kind, id).length) genotype[id].color = rareColor(_patternPalette(kind, id));
+      if (index === 0 && index < rank) genotype.secondary.color = rareColor(_patternPalette(kind, 'secondary'));
     }
     if (rank >= 3 && !deps.CREATURE_DB[kind]?.fixedSizeClass) genotype.sizeClass = mutateSizeClassStep(genotype.sizeClass); // Top ordinary animal rewards also have an unusual inherited size.
-    return genotype;
+    return synchronizeBodyColors(kind, genotype);
   }
   function stableEntryRole(entry) {
     const sizeClass=creatureSizeClass(entry?.kind,entry?.genotype); // Shared size calculation remains authoritative for breedable Pingdorts.
@@ -528,7 +560,7 @@
       const [first, second] = pickTwoLivestockFurColors(kind);
       // Each pattern layer gets an independently configured chance of showing
       // up (rather than rolling "how many, then which").
-      const genotype = { base: { color: first.hex, copies: 2, inheritance: 'dominant' } };
+      const genotype = { base: { color: first.hex, copies: 2, inheritance: 'dominant' }, secondary: { color: normalizePatternColor(second.hex, kind, 'secondary'), copies: 2, inheritance: 'dominant' } };
       const geneticsCfg = window.SCRATCHBONES_CONFIG?.game?.creatureGenetics || {};
       for (const id of patterns) {
         const configuredChance = geneticsCfg.patternChances?.[kind]?.[id];
@@ -539,8 +571,8 @@
             : (1 / 3);
         const alwaysPresent = _patternAlwaysPresent(kind, id); // Keeps authored anatomical regions (Puktuk/Voorg-Ass belly) from being treated as optional genes.
         const enabled = alwaysPresent || Math.random() < chance;
-        const patternColor = _patternUsesBaseCoatColor(kind, id) ? first.hex : _patternColorRule(kind, id) ? randomPatternColor(kind, id) : second.hex; // Grehlr beard has an independent visibility allele, never an independent color.
-        genotype[id] = { color: patternColor, copies: alwaysPresent ? 2 : (enabled ? 1 : 0), inheritance: 'dominant', enabled };
+        const color = patternColor(kind, id, genotype); // Shared A/B pigment, independent pattern expression.
+        genotype[id] = { color, copies: alwaysPresent ? 2 : (enabled ? 1 : 0), inheritance: 'dominant', enabled };
       }
       genotype.sizeClass = sizeClass;
       const enabledIds = patterns.filter(id => genotype[id].enabled);
@@ -614,30 +646,22 @@
     let baseColor = blendFurHex(baseA.color, baseB.color, kind);
     if (Math.random() < mutationChance) baseColor = mutateFurColor(baseColor, kind);
     child.base = { color: baseColor, copies: 2, inheritance: 'dominant' };
+    let secondary = normalizePatternColor(blendFurHex(secondaryColor(kind, genotypeA) || randomFurColor(kind), secondaryColor(kind, genotypeB) || randomFurColor(kind), kind), kind, 'secondary'); // B is inherited even when no pattern is expressed.
+    if (Math.random() < mutationChance) secondary = mutatePatternColor(secondary, kind, 'secondary');
+    child.secondary = { color: secondary, copies: 2, inheritance: 'dominant' };
     for (const id of patterns) {
       if (_patternAlwaysPresent(kind, id)) {
-        const la = genotypeA?.[id] || { color: randomPatternColor(kind, id) }; // Supplies one parent's permanent-region color for blending.
-        const lb = genotypeB?.[id] || { color: randomPatternColor(kind, id) }; // Supplies the other parent's permanent-region color for blending.
-        let color = normalizePatternColor(blendFurHex(la.color, lb.color, kind), kind, id); // Permanent regions still inherit/mix their color normally.
-        if (Math.random() < mutationChance) color = mutatePatternColor(color, kind, id);
-        child[id] = { color, copies: 2, inheritance: 'dominant', enabled: true };
+        child[id] = { color: patternColor(kind, id, child), copies: 2, inheritance: 'dominant', enabled: true };
         continue;
       }
-      const la = genotypeA?.[id] || { copies: 0, color: randomPatternColor(kind, id), inheritance: 'dominant' };
-      const lb = genotypeB?.[id] || { copies: 0, color: randomPatternColor(kind, id), inheritance: 'dominant' };
+      const la = genotypeA?.[id] || { copies: 0, inheritance: 'dominant' };
+      const lb = genotypeB?.[id] || { copies: 0, inheritance: 'dominant' };
       const alleleA = _livestockAlleleContribution(la), alleleB = _livestockAlleleContribution(lb);
-      let copies = (alleleA ? 1 : 0) + (alleleB ? 1 : 0), mutated = false;
-      if (copies === 0 && Math.random() < mutationChance) { copies = 1; mutated = true; }
+      let copies = (alleleA ? 1 : 0) + (alleleB ? 1 : 0);
+      if (copies === 0 && Math.random() < mutationChance) { copies = 1; }
       const inheritance = (la.copies ? la.inheritance : lb.copies ? lb.inheritance : la.inheritance) || 'dominant';
       const enabled = inheritance === 'recessive' ? copies === 2 : copies >= 1;
-      if (_patternUsesBaseCoatColor(kind, id)) {
-        child[id] = { color: child.base.color, copies, inheritance, enabled, carrier: inheritance === 'recessive' && copies === 1 }; // Presence segregates normally; inherited coat pigment is shared with the body.
-        continue;
-      }
-      let color = alleleA && alleleB ? blendFurHex(alleleA.color, alleleB.color, kind) : (alleleA?.color || alleleB?.color || randomPatternColor(kind, id));
-      color = normalizePatternColor(color, kind, id); // Re-applies authored palette limits after blending inherited colors.
-      if (mutated) color = mutatePatternColor(color, kind, id);
-      child[id] = { color, copies, inheritance, enabled, carrier: inheritance === 'recessive' && copies === 1 };
+      child[id] = { color: patternColor(kind, id, child), copies, inheritance, enabled, carrier: inheritance === 'recessive' && copies === 1 };
     }
     child.sizeClass = inheritedSizeClass(genotypeA, genotypeB, kind, mutationChance);
     if (kind === 'skeeri') window.SkeeriLivestockRegistration?.inheritAppearance?.(child, genotypeA, genotypeB); // Domestic flying eye/marking colors follow one parent's ruin lineage, independently of ordinary coat/Size genes.
@@ -793,6 +817,8 @@
     creatureSizeTrait,
     genotypeTraits,
     normalizeLegacyGenotype,
+    secondaryColor,
+    patternColor,
     paletteName: _furPaletteName,
     PATTERN_DEFS: LIVESTOCK_PATTERN_DEFS,
     SPECIES_ALIAS: GENOTYPE_SPECIES_ALIAS,
