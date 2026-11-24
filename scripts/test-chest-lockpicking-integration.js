@@ -249,7 +249,8 @@ function makeElement() {
   assert.equal(api.snapshot().stutters,1);assert.equal(api.snapshot().lastStallMs,1400);
   press('Button1');flushMicrotasks();
   api.open({id:'stutter-input',tier:4,onSuccess(){}});
-  for(let i=0;i<4;i++)nextFrameTick(); // 24.75 degrees after the initial zero-delta frame.
+  for(let i=0;i<3;i++)nextFrameTick(); // 19.14 degrees: just outside the tier-four window, within stall grace.
+  assert(api.snapshot().rings[0].angle-180>api.PRESETS[4].window);
   now+=1000;press('Button4');
   assert.equal(api.snapshot().rings[0].frozen,true);
   assert.equal(api.snapshot().misses,0);
