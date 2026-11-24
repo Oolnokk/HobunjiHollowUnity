@@ -458,6 +458,7 @@
     }
 
     return { root, update, dispose, pitch, yaw, setPerchSpline, refreshPerchedDensity, setPalette, perched,
+      flapHz: rig.flapHz, // Runtime wingflap footsteps follow the same authored cycle as this wing pose.
       bodyMaterials: { flying: flying.material, perched: perched.material, wings: wings.material } }; // Live genotype recolors can replace the exact existing pose maps without disturbing the shared gripping mesh.
   }
 
