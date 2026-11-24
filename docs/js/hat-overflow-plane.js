@@ -25,7 +25,27 @@
   const INSET = 3; // Overflow keeps a band inside the square that covers the portrait texture's soft edge column.
   const SEAM_ALPHA_TEST = 0.9;
   const FACE_OFFSET = 0.0005; // Overflow sits this far in front of its portrait face, so that band wins the depth test.
-  const stats = { checked: 0, attached: 0, empty: 0, failed: 0 };
+  const stats = { checked: 0, attached: 0, empty: 0, failed: 0, cacheHits: 0, cacheMisses: 0 };
+  const overflowCache = new Map(); // Immutable bake canvases (including null), never GPU resources.
+  const imageIds = new WeakMap(); // Distinguishes replaced authored image objects without retaining them.
+  let nextImageId = 0, cacheBytes = 0; // Bounded CPU memory accounting.
+  const CACHE_BYTES = 4 * 1024 * 1024, CACHE_ENTRIES = 32;
+  function keyForLayers(layers, width, height, logical) {
+    return JSON.stringify([width,height,logical.width,logical.height,layers.map(({image,url,xform,tint})=>{
+      if(!imageIds.has(image))imageIds.set(image,++nextImageId);
+      return [imageIds.get(image),image.currentSrc||image.src,url,image.naturalWidth,image.naturalHeight,xform,tint];
+    })]);
+  }
+  function rememberBake(key,canvas) {
+    if(overflowCache.has(key))return;
+    const bytes=canvas?canvas.width*canvas.height*4:0;
+    if(bytes>CACHE_BYTES)return;
+    while(overflowCache.size>=CACHE_ENTRIES||cacheBytes+bytes>CACHE_BYTES){
+      const oldest=overflowCache.keys().next().value;
+      cacheBytes-=overflowCache.get(oldest).bytes;overflowCache.delete(oldest);
+    }
+    overflowCache.set(key,{canvas,bytes});cacheBytes+=bytes;
+  }
 
   function hasHat(profile) {
     const hat = profile?.hat;
@@ -40,7 +60,7 @@
   // Renders the hat alone into a padded canvas whose scale matches a portrait
   // canvas of sourceWidth x sourceHeight px, clears the portrait square and
   // returns the canvas, or null when no hat pixel lies outside the square.
-  async function renderOverflowCanvas(profile, view, sourceWidth, sourceHeight, renderer = window.renderPortraitProfile) {
+  async function renderOverflowCanvas(profile, view, sourceWidth, sourceHeight, renderer = window.renderPortraitProfile, useCache = false) {
     if (typeof renderer !== 'function' || !hasHat(profile)) return null;
     const logical = logicalSize();
     const scaleX = sourceWidth / logical.width, scaleY = sourceHeight / logical.height;
@@ -48,8 +68,16 @@
     const canvas = document.createElement('canvas');
     canvas.width = sourceWidth + 2 * padX;
     canvas.height = sourceHeight + 2 * padY;
-    await renderer(canvas, profile, { hatOverflowPad: PAD, forceEyesOpen: true, portraitView: view, seatId: 'hat-overflow' });
+    let key=null, hit=null; // Only the canonical resolved-layer renderer may authorize reuse.
+    const reuseHatOverflow = useCache && renderer===window.renderPortraitProfile ? layers=>{
+      key=keyForLayers(layers,sourceWidth,sourceHeight,logical);
+      if(!overflowCache.has(key)){stats.cacheMisses++;return false;}
+      hit=overflowCache.get(key);overflowCache.delete(key);overflowCache.set(key,hit);
+      stats.cacheHits++;return true;
+    } : undefined;
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    await renderer(canvas, profile, { hatOverflowPad: PAD, forceEyesOpen: true, portraitView: view, seatId: 'hat-overflow', reuseHatOverflow });
+    if(hit)return hit.canvas;
     ctx.clearRect(padX + INSET, padY + INSET, sourceWidth - 2 * INSET, sourceHeight - 2 * INSET);
     const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
     // Only pixels strictly outside the square count; the seam band alone is not overflow.
@@ -57,9 +85,10 @@
       const insideRow = y >= padY && y < padY + sourceHeight;
       for (let x = 0; x < canvas.width; x++) {
         if (insideRow && x >= padX && x < padX + sourceWidth) { x = padX + sourceWidth - 1; continue; }
-        if (data[(y * canvas.width + x) * 4 + 3] >= ALPHA_MIN) return canvas;
+        if (data[(y * canvas.width + x) * 4 + 3] >= ALPHA_MIN) { if(key!==null)rememberBake(key,canvas);return canvas; }
       }
     }
+    if(key!==null)rememberBake(key,null);
     return null;
   }
 
@@ -135,14 +164,18 @@
     return true;
   }
 
-  function removeOverflow(root) {
-    const existing = root?.userData?.hatOverflowGroup;
-    if (!existing) return;
-    existing.parent?.remove(existing);
-    existing.traverse(child => {
+  function disposeOverflow(group) {
+    if(!group)return;
+    group.parent?.remove(group);
+    group.traverse(child => {
       child.geometry?.dispose?.();
       if (child.material) { child.material.map?.dispose?.(); child.material.dispose?.(); }
     });
+  }
+  function removeOverflow(root) {
+    if(!root?.userData)return;
+    root.userData.hatOverflowToken=(root.userData.hatOverflowToken||0)+1; // Also cancel a pending bake.
+    disposeOverflow(root.userData.hatOverflowGroup);
     root.userData.hatOverflowGroup = null;
   }
 
@@ -150,29 +183,32 @@
   // Resolves to the attached group, or null when the hat fits / no hat.
   async function attach(THREE, root, options = {}) {
     const profile = options.profile;
-    if (!THREE || !root || !hasHat(profile)) return null;
+    if (!THREE || !root) return null;
+    if(!hasHat(profile)){removeOverflow(root);return null;}
     const src = root.userData?.sourceCanvas;
     if (!src?.width || !src?.height) return null;
     const token = (root.userData.hatOverflowToken || 0) + 1;
     root.userData.hatOverflowToken = token;
     stats.checked++;
+    let group=null; // Owns resources until attachment succeeds.
     try {
       const [front, back] = await Promise.all([
-        renderOverflowCanvas(profile, 'front', src.width, src.height),
-        options.backCanvas ? renderOverflowCanvas(profile, 'behind', src.width, src.height) : Promise.resolve(null),
+        renderOverflowCanvas(profile, 'front', src.width, src.height, undefined, true),
+        options.backCanvas ? renderOverflowCanvas(profile, 'behind', src.width, src.height, undefined, true) : Promise.resolve(null),
       ]);
       if (root.userData.hatOverflowToken !== token || root.userData.portraitDisposed) return null; // Superseded or the avatar was disposed meanwhile.
-      if (!front && !back) { stats.empty++; return null; }
+      if (!front && !back) { removeOverflow(root);stats.empty++; return null; }
       const rig = root.userData.neckRig;
       const skinned = !!(rig?.available && rig.headScaleJoint && rig.skinnedPlane);
-      const group = buildOverflowGroup(THREE, root, front, back, skinned);
+      group = buildOverflowGroup(THREE, root, front, back, skinned);
       if (!group) { stats.empty++; return null; }
       removeOverflow(root);
-      if (!(skinned ? attachToSkinnedHead(rig, group) : attachToRigidAssembly(root, group))) { stats.failed++; return null; }
+      if (!(skinned ? attachToSkinnedHead(rig, group) : attachToRigidAssembly(root, group))) { disposeOverflow(group);stats.failed++; return null; }
       root.userData.hatOverflowGroup = group;
       stats.attached++;
       return group;
     } catch (error) {
+      if(group!==root.userData.hatOverflowGroup)disposeOverflow(group);
       stats.failed++;
       console.warn('[hat-overflow] skipped', error);
       return null;
@@ -189,13 +225,14 @@
     const planes = (options.planes || []).filter(plane => plane?.mesh);
     if (!THREE || !planes.length || !hasHat(profile) || !src?.width || !src?.height || !(modelWidth > 0) || !(modelHeight > 0)) return [];
     stats.checked++;
+    const attached=[]; // Roll back all holders if the split-plane build fails.
     try {
-      const canvases = await Promise.all(planes.map(plane => renderOverflowCanvas(profile, plane.view === 'behind' ? 'behind' : 'front', src.width, src.height)));
+      const canvases = await Promise.all(planes.map(plane => renderOverflowCanvas(profile, plane.view === 'behind' ? 'behind' : 'front', src.width, src.height, undefined, true)));
       if (options.isCancelled?.()) return [];
-      const api = window.PNGPlaneAvatar, attached = [];
+      const api = window.PNGPlaneAvatar;
       planes.forEach((plane, index) => {
         const canvas = canvases[index];
-        if (!canvas) return;
+        if (!canvas || !plane.mesh.parent || options.isCancelled?.()) return;
         const behind = plane.view === 'behind';
         // Size from the plane actually drawn (its geometry), falling back to the portrait size.
         const geometry = plane.mesh.geometry;
@@ -225,12 +262,13 @@
         } else if (target.parent) {
           holder.position.copy(target.position); holder.quaternion.copy(target.quaternion); holder.scale.copy(target.scale);
           target.parent.add(holder);
-        } else return;
+        } else { disposeOverflow(holder);return; }
         attached.push(holder);
       });
       if (attached.length) stats.attached++; else stats.empty++;
       return attached;
     } catch (error) {
+      for(const holder of attached)disposeOverflow(holder);
       stats.failed++;
       console.warn('[hat-overflow] skipped', error);
       return [];
@@ -239,6 +277,6 @@
 
   window.HatOverflowPlane = Object.freeze({
     PAD, ALPHA_MIN, INSET, hasHat, renderOverflowCanvas, attach, attachToPlanes, remove: removeOverflow,
-    stats: () => ({ ...stats }),
+    stats: () => ({ ...stats, cacheEntries:overflowCache.size, cacheBytes }),
   });
 })();
