@@ -113,6 +113,48 @@ const blocked = makePet();
 assert.equal(simulate(blocked), false, 'registered blocker geometry prevents unsafe recovery');
 state.blocked = false;
 
+// Hard distance is independent of progress and ordinary stall patience.
+owner.x = 25.5 * TILE;
+owner.angle = 0; // +x is forward; recoveries must land behind (-x).
+const distant = makePet(1.5 * TILE);
+distant._travelPath = [{ col: 2, row: 18 }];
+distant._companionCombatTarget = { health: 100 }; // Abandoned remote combat intention.
+assert.equal(simulate(distant, 1), true, 'an unseen distant pet recovers without eight seconds of stalling');
+assert(distant.x < owner.x, 'landing is behind the player, not an arbitrary visible-side ring point');
+assert(Math.hypot(distant.x - owner.x, distant.y - owner.y) <= 7 * TILE, 'uses a nearby hidden landing');
+assert.equal(distant._travelPath, null, 'abandoned path is cleared');
+assert.equal(distant._companionCombatTarget, null, 'remote combat target is released');
+assert.equal(Navigation.debugSnapshot().lastEvent.reason, 'distance-limit');
+distant.x = 1.5 * TILE;
+distant.avatarRef.group.position.x = 1.5;
+assert.equal(simulate(distant, 20), false, 'hard distance still has a short cooldown');
+assert.equal(simulate(distant, 15), true, 'hard catch-up is not held for the full ordinary cooldown');
+
+const activeAttack = makePet(1.5 * TILE);
+activeAttack._animalAttack = {};
+assert.equal(simulate(activeAttack, 1), false, 'distance limit does not interrupt a committed attack');
+const infant = makePet(1.5 * TILE);
+infant._familyBabyFollower = true;
+assert.equal(simulate(infant, 1), false, 'shared infant recovery retains the ordinary stall threshold');
+const visiblySmoothed = makePet(1.5 * TILE);
+visiblySmoothed.avatarRef.group.position.x = owner.x / TILE;
+assert.equal(simulate(visiblySmoothed, 1), false, 'a visible render position prevents even hard-distance recovery');
+const retryPet = makePet(1.5 * TILE);
+state.pathExists = false;
+const checksBefore = routedChecks;
+assert.equal(simulate(retryPet, 1), false, 'no valid same-floor path means no hard teleport');
+const checksAfter = routedChecks;
+assert(checksAfter > checksBefore && checksAfter - checksBefore <= 4, 'hard recovery respects bounded path budget');
+for (let i = 0; i < 10; i++) {
+  retryPet.x += 0.1 * TILE; // Continuous progress must not defeat failed-search backoff.
+  assert.equal(simulate(retryPet, 1), false);
+}
+assert.equal(routedChecks, checksAfter, 'no additional A* probes on every frame');
+state.pathExists = true;
+assert.equal(simulate(retryPet, 10), true, 'retry can succeed after the obstruction clears');
+owner.x = 18.5 * TILE;
+delete owner.angle;
+
 const acrossArea = makePet();
 acrossArea.areaId = 'town';
 assert.equal(simulate(acrossArea), false, 'no cross-area teleport');
