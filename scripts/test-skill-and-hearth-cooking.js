@@ -35,7 +35,10 @@ context.window = {};
 vm.runInNewContext(fs.readFileSync('docs/js/cooking-data.js', 'utf8'), context);
 const cookingData = context.window.HobunjiCookingData;
 assert.equal(cookingData.recipes.length, 19, 'the 17 prototype meals plus mayonnaise and bread recipes are available');
-assert.equal(Object.keys(cookingData.items).length, 105, 'original ingredients plus Moot/Nazgraku milk and wild Pingdort/Tzatzul meat remain available');
+assert.equal(Object.keys(cookingData.items).length, 106, 'original ingredients plus Moot/Nazgraku milk, wild Pingdort/Tzatzul meat and Fey Heftroot remain available');
+assert.deepEqual(Array.from(cookingData.items.feyHeftroot.categories), Array.from(cookingData.items.heftroot.categories), 'Fey Heftroot fits the same recipes as ordinary Heftroot');
+assert.equal(cookingData.items.feyHeftroot.primaryEffect, 'feySight');
+assert.equal(cookingData.items.heftroot.primaryEffect, 'fortitude', 'ordinary Heftroot keeps its existing effect');
 for (const meat of ['mootMeat', 'skeeriMeat', 'pingdortMeat', 'tzatzulMeat'])
   assert(cookingData.items[meat]?.categories.includes('meat'), meat + ' participates in existing cooking and processing recipes');
 for (const milk of ['mootMilk', 'nazgrakuMilk'])
