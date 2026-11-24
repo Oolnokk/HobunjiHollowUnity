@@ -19,10 +19,10 @@
   const FIELD_SPECS = Object.freeze({
     maaFullScaleRangeX: Object.freeze({ field: 'x', pair: 'maaFullScaleNumX', min: 10, max: 400, number: false }),
     maaFullScaleNumX: Object.freeze({ field: 'x', pair: 'maaFullScaleRangeX', min: 10, max: 400, number: true }),
-    maaFullScaleRangePortraitHeight: Object.freeze({ field: 'y', pair: 'maaFullScaleNumPortraitHeight', min: 10, max: 400, number: false }),
-    maaFullScaleNumPortraitHeight: Object.freeze({ field: 'y', pair: 'maaFullScaleRangePortraitHeight', min: 10, max: 400, number: true }),
-    maaFullScaleRangeLegLength: Object.freeze({ field: 'legLength', pair: 'maaFullScaleNumLegLength', min: 10, max: 400, number: false }),
-    maaFullScaleNumLegLength: Object.freeze({ field: 'legLength', pair: 'maaFullScaleRangeLegLength', min: 10, max: 400, number: true }),
+    maaFullScaleRangeHeight: Object.freeze({ field: 'height', pair: 'maaFullScaleNumHeight', min: 10, max: 400, number: false }),
+    maaFullScaleNumHeight: Object.freeze({ field: 'height', pair: 'maaFullScaleRangeHeight', min: 10, max: 400, number: true }),
+    maaFullScaleRangeBeltline: Object.freeze({ field: 'beltline', pair: 'maaFullScaleNumBeltline', min: 5, max: 95, number: false }),
+    maaFullScaleNumBeltline: Object.freeze({ field: 'beltline', pair: 'maaFullScaleRangeBeltline', min: 5, max: 95, number: true }),
     maaFullScaleRangeHand: Object.freeze({ field: 'handScale', pair: 'maaFullScaleNumHand', min: 10, max: 400, number: false }),
     maaFullScaleNumHand: Object.freeze({ field: 'handScale', pair: 'maaFullScaleRangeHand', min: 10, max: 400, number: true }),
     maaFullScaleRangeFoot: Object.freeze({ field: 'footScale', pair: 'maaFullScaleNumFoot', min: 10, max: 400, number: false }),
@@ -91,7 +91,7 @@
     return { min: MIN_RUNTIME_HEAD * portrait * 100, max: MAX_RUNTIME_HEAD * portrait * 100 };
   }
 
-  function nextScale(current, field, percent, portraitScale = 1) {
+  function nextScale(current, field, percent, portraitScale = 1, beltlineBase = .5) {
     const next = {
       x: Number(current?.x) || 1,
       y: Number(current?.y) || 1,
@@ -101,6 +101,13 @@
     if (Number(current?.legLength) > 0) next.legLength = Number(current.legLength); // Preserve separate hip reach on any X/Head edit.
     if (Number(current?.handScale) > 0) next.handScale = Number(current.handScale);
     if (Number(current?.footScale) > 0) next.footScale = Number(current.footScale);
+    if (field === 'height' || field === 'beltline') {
+      const rig = window.HobunjiCharacterRigScale; // Same reversible geometry used for selected display, exports and runtime scaling.
+      const currentDimensions = rig?.heightBeltlineFor?.(current, beltlineBase) || { height: current.y, beltline: .5 };
+      const total = field === 'height' ? Number(percent) / 100 : currentDimensions.height;
+      const fraction = field === 'beltline' ? Number(percent) / 100 : currentDimensions.beltline;
+      return rig?.scaleForHeightBeltline?.(next, total, fraction, beltlineBase) || next; // Save old y/legLength schema; never store redundant UI fields that the runtime does not know.
+    }
     if (field === 'x' || field === 'y' || field === 'legLength' || field === 'handScale' || field === 'footScale') next[field] = Number(percent) / 100;
     else if (field === 'offsetY') next.offsetY = Number(percent) / 100;
     else if (field === 'head') next.head = clamp((Number(percent) / 100) / finitePositive(portraitScale, 1), MIN_RUNTIME_HEAD, MAX_RUNTIME_HEAD);
@@ -144,7 +151,7 @@
     if (!identity || !profile) return null;
     const before = currentScale(identity);
     const portrait = portraitScaleFor(identity);
-    const next = nextScale(before, field, percent, portrait);
+    const next = nextScale(before, field, percent, portrait, comparisonApi()?.selectedBeltlineBaseFraction ?? .5);
 
     // The host owns the durable scale override map used by Rig export/reload.
     // Calling it directly avoids the old document-bubble listener, which cannot
@@ -173,7 +180,22 @@
   function displayedPercentFor(identity, field, scale) {
     if (field === 'head') return scale.head * portraitScaleFor(identity) * 100;
     if (field === 'offsetY') return scale.offsetY * 100;
+    if (field === 'height' || field === 'beltline') {
+      const dimensions = window.HobunjiCharacterRigScale?.heightBeltlineFor?.(scale, comparisonApi()?.selectedBeltlineBaseFraction ?? .5);
+      return (field === 'height' ? dimensions?.height : dimensions?.beltline) * 100 || 50;
+    }
     return scale[field] * 100;
+  }
+
+  function syncHeightBeltlineInputs(identity, scale) {
+    for (const [axis, field] of [['Height', 'height'], ['Beltline', 'beltline']]) {
+      const percent = displayedPercentFor(identity, field, scale); // Reflect the actual height and hip percentage after runtime-scale bounds.
+      if (!Number.isFinite(percent)) continue;
+      const range = document.getElementById(`maaFullScaleRange${axis}`);
+      const number = document.getElementById(`maaFullScaleNum${axis}`);
+      if (range) range.value = String(Math.round(percent * 2) / 2); // Half-percent control precision.
+      if (number) number.value = String(Math.round(percent * 10) / 10);
+    }
   }
 
   function consumeScaleInput(event) {
@@ -192,7 +214,8 @@
     const percent = clamp(raw, bounds.min, bounds.max);
     const pair = document.getElementById(spec.pair); // Mirrors valid range/number partners.
     if (pair) pair.value = String(percent);
-    applyScaleField(spec.field, percent);
+    const applied = applyScaleField(spec.field, percent);
+    if (applied && (spec.field === 'height' || spec.field === 'beltline')) syncHeightBeltlineInputs(identity, applied); // A physically unreachable beltline clamps to real derived values, never a misleading number.
   }
 
   function commitScaleNumber(event) {
@@ -211,7 +234,8 @@
     event.target.value = String(Math.round(percent * 10) / 10);
     const pair = document.getElementById(spec.pair);
     if (pair) pair.value = String(percent);
-    applyScaleField(spec.field, percent);
+    const applied = applyScaleField(spec.field, percent);
+    if (applied && (spec.field === 'height' || spec.field === 'beltline')) syncHeightBeltlineInputs(identity, applied);
   }
 
   function install() {
