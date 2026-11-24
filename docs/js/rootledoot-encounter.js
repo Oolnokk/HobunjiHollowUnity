@@ -28,6 +28,7 @@
   function log(msg) { lastEvent=msg; window.__farmLog?.('[rootledoot] '+msg,'info'); }
   function init(injected) { if(deps)reset('reinitialized'); deps=injected; checkTime=0; }
   function area() { return deps?.getArea?.(); }
+  function ownsScene(rec) { return active===rec&&area()===rec.zone&&deps.getScene?.()===rec.scene; } // Scene identity also detects a same-zone rebuild.
   function stamp() { return String(deps?.worldId?.() || '')+':'+String(deps?.cycle?.() ?? 0); }
   function chunkSize() { return Math.max(4,Math.floor(Number(deps?.chunkSize?.())||16)); }
   function chunkOf(c,r) { const n=chunkSize(); return {c:Math.floor(c/n),r:Math.floor(r/n)}; }
@@ -110,8 +111,8 @@
   }
   async function showRoot(rec,large=false) {
     const {raw,crop}=await loadArt();
-    if(active!==rec||area()!==rec.zone)return false;
-    if(!large&&(deps.canActivate?.()===false||npcInChunk(rec.zone,rec.chunk))){reset('bait suppressed during artwork load');return false;} // Recheck asynchronous activation without spending the successful daily roll.
+    if(!ownsScene(rec))return false;
+    if(!large&&(deps.canActivate?.()===false||!sameChunk(deps.player.x/deps.TILE,deps.player.y/deps.TILE,rec.chunk)||!flatFootprint(rec.site.c,rec.site.r)||npcInChunk(rec.zone,rec.chunk))){reset('bait suppressed during artwork load');return false;} // Recheck asynchronous activation without spending the successful daily roll.
     const THREE=window.THREE;if(!THREE)return false;
     const art=large?crop:raw; // The bait preserves the farm PNG's authored padding; only NPC portraits and the boss reward use the opaque crop.
     if(!rootTextures.has(art)){const texture=new THREE.CanvasTexture(art);texture.magFilter=THREE.NearestFilter;texture.minFilter=THREE.NearestFilter;if(THREE.sRGBEncoding!==undefined)texture.encoding=THREE.sRGBEncoding;rootTextures.set(art,texture);}
@@ -122,7 +123,7 @@
     // A centered sprite at soil level is half buried, like a ripe farm Heftroot.
     root.position.set(rec.site.c+.5,deps.surfaceY(rec.site.c+.5,rec.site.r+.5)+.01,rec.site.r+.5);
     root.userData.noOutline=true;root.name=large?'fey_heftroot_reward':'heftroot_bait';
-    deps.getScene().add(root);rec.mesh=root;return true;
+    rec.scene.add(root);rec.mesh=root;return true;
   }
   function disposeActor(c) {
     const live = deps.hostiles.has(c) || deps.corpses?.has(c) || c.avatarRef?.group?.parent; // World teardown may already have disposed this actor.
@@ -147,7 +148,8 @@
     reset('world/shift changed');ledger.clear();pendingRewards.clear();rewardRetryAt.clear();worldStamp=next;
   }
   function activate(zone,chunk,site,key) {
-    const rec={zone,chunk,site,key,phase:'bait',actors:new Set(),wave:0,delay:0,mesh:null,boss:null,building:false};
+    const scene=deps.getScene?.();if(!scene)return;
+    const rec={zone,chunk,site,key,scene,phase:'bait',actors:new Set(),wave:0,delay:0,mesh:null,boss:null,building:false};
     active=rec;
     void showRoot(rec).then(ok=>{if(!ok&&active===rec)failBait(rec,'bait unavailable');}).catch(error=>{if(active===rec)failBait(rec,'bait failed: '+error.message);});
     log('bait activated at '+zone+' '+site.c+','+site.r);
@@ -177,7 +179,8 @@
       if(saved.zone!==zone||!sameChunk(saved.site.c,saved.site.r,chunk)||(rewardRetryAt.get(key)||0)>performance.now())continue;
       if(deps.canActivate?.()===false)return false; // Avoid scanning combat for rewards in distant chunks.
       if(!tileEligible(saved.site.c,saved.site.r))continue; // Keep the reward data if the scene is not yet available.
-      const rec={zone,chunk,site:{...saved.site},key,phase:'reward',actors:new Set(),wave:WAVES.length,delay:0,mesh:null,
+      const scene=deps.getScene?.();if(!scene)return false;
+      const rec={zone,chunk,site:{...saved.site},key,scene,phase:'reward',actors:new Set(),wave:WAVES.length,delay:0,mesh:null,
         boss:{_banditCaptainArmament:saved.armament},bossRootHeight:saved.height,building:false};
       active=rec;
       revealReward(rec);
@@ -224,20 +227,22 @@
     return candidates.splice(Math.min(candidates.length-1,Math.floor(rand()*candidates.length)),1)[0];
   }
   async function spawnWave(rec) {
-    if(active!==rec||rec.building||area()!==rec.zone)return;
+    if(!ownsScene(rec)||rec.building)return;
     rec.building=true;rec.phase='combat';let count=0;
     try {
       const cfg=await window.BanditCombat?.loadGangConfig?.();
       if(!cfg)throw Error('bandit config unavailable');
+      if(!ownsScene(rec))return; // No terrain scan or RNG use against a replacement scene.
       const pool=connectedSpawnTiles(rec),zoneDef=deps.getZoneDef?.(rec.zone)||{}; // All members of this wave share a reachable, non-overlapping spawn pool.
       const firstAmbush=rec.wave===0; // NPC exclusion applies until the first actor is actually adopted, not to combat already in progress.
       const distance=Math.hypot(rec.site.c+.5-(zoneDef.entryCol||0),rec.site.r+.5-(zoneDef.entryRow||0));
       const per=Number(cfg.difficultyTiers?.tierDistanceTiles)||12; // Same distance/rank model and configured tier ceiling as ordinary bandit camps.
       const rawTier=per>0?Math.min(Math.floor(distance/per),Number(cfg.difficultyTiers?.maxTier??7)):0;
       const tier=window.EnemyTierProgression?.clampTier?.(rawTier)??0;
+      if(pool.near.length+pool.far.length<WAVES[rec.wave].length){if(firstAmbush){cancelInitialAmbush(rec);return;}throw Error('insufficient connected spawn tiles');}
       for(const rank of WAVES[rec.wave]){
-        if(active!==rec||area()!==rec.zone)return;
-        if(firstAmbush&&!count&&npcInChunk(rec.zone,rec.chunk)){cancelInitialAmbush(rec);return;}
+        if(!ownsScene(rec))return;
+        if(firstAmbush&&!count&&!canBeginAmbush(rec)){cancelInitialAmbush(rec);return;}
         const point=spawnPoint(pool);if(!point)throw Error('no connected spawn for '+rank);
         const big=rank==='captain',name=big?'Big Rootledoot':'Rootledoot';
         const x=(point.c+.5)*deps.TILE,y=(point.r+.5)*deps.TILE;
@@ -247,8 +252,8 @@
           avatarRigScale:{x:scale,y:scale,head:1,offsetY:0},defOverride:{label:name},
           extra:{rootledoot:true,rootledootBig:big,homeX:x,homeY:y,state:'chase'}});
         if(!c)throw Error('bandit avatar construction failed for '+rank);
-        if(active!==rec||area()!==rec.zone){disposeActor(c);return;}
-        if(firstAmbush&&!count&&npcInChunk(rec.zone,rec.chunk)){disposeActor(c);cancelInitialAmbush(rec);return;}
+        if(!ownsScene(rec)){disposeActor(c);return;}
+        if(firstAmbush&&!count&&!canBeginAmbush(rec)){disposeActor(c);cancelInitialAmbush(rec);return;}
         if(!tileEligible(point.c,point.r)){disposeActor(c);throw Error('spawn blocked during avatar construction');}
         if(big&&!c._banditCaptainArmament){disposeActor(c);throw Error('Fey weapon construction failed');}
         rec.actors.add(c);deps.hostiles.add(c);count++;
@@ -259,9 +264,12 @@
     }catch(error){if(active===rec)reset('wave failed: '+error.message);}
     finally{rec.building=false;}
   }
+  function canBeginAmbush(rec){
+    return deps.player.health>0&&!window.PlayerDowned?.isDowned?.()&&deps.canActivate?.()!==false&&sameChunk(deps.player.x/deps.TILE,deps.player.y/deps.TILE,rec.chunk)&&!npcInChunk(rec.zone,rec.chunk);
+  }
   function cancelInitialAmbush(rec){
     ledger.set(rec.key,{day:Math.floor(Number(deps.day?.())||0),cleared:false,ready:true}); // No actor was adopted; the ambush may reappear after the NPC leaves.
-    reset('initial ambush suppressed by arriving NPC');
+    reset('initial ambush suppressed before first actor adoption');
   }
   function onDeath(c) {
     const rec=active;
@@ -280,9 +288,9 @@
     return true;
   }
   function eligibleTarget(c,r) {
-    const rec=active;if(!rec?.mesh||area()!==rec.zone||!['bait','reward'].includes(rec.phase))return false;
+    const rec=active;if(!rec?.mesh||!ownsScene(rec)||!['bait','reward'].includes(rec.phase))return false;
     if(c!==rec.site.c||r!==rec.site.r||Math.hypot(deps.player.x/deps.TILE-c-.5,deps.player.y/deps.TILE-r-.5)>2.5)return false;
-    return !window.PlayerDowned?.isDowned?.()&&!deps.isInCombat?.(); // Combat scans only for a genuinely aimed and reachable root.
+    return deps.player.health>0&&!window.PlayerDowned?.isDowned?.()&&deps.canActivate?.()!==false&&!deps.isInCombat?.(); // Combat scans only for a genuinely aimed and reachable root.
   }
   function action(c,r) {
     if(!eligibleTarget(c,r))return null;
@@ -293,7 +301,7 @@
     if(!eligibleTarget(c,r))return false;
     const rec=active;
     if(rec.phase==='bait'){
-      if(npcInChunk(rec.zone,rec.chunk)){reset('bait suppressed by nearby NPC');return false;}
+      if(!canBeginAmbush(rec)||!flatFootprint(rec.site.c,rec.site.r)){reset('bait suppressed before interaction');return false;}
       ledger.set(rec.key,{day:Math.floor(Number(deps.day?.())||0),cleared:false,ready:false}); // A triggered ambush is not rerolled again today after defeat or escape.
       removeRoot(rec);rec.phase='combat';rec.delay=0;void spawnWave(rec);return true;
     }
@@ -342,7 +350,7 @@
   function tick(dt) {
     const zone=area();
     if(!deps||(!active&&!ZONES.has(zone)))return;
-    if(active&&active.zone!==zone)reset('left encounter zone');
+    if(active&&!ownsScene(active))reset('left or rebuilt encounter scene');
     if(!ZONES.has(zone)){checkTime=0;return;}
     checkTime+=Math.max(0,Number(dt)||0);
     if(checkTime<CHECK_SECONDS)return;
@@ -355,7 +363,7 @@
     }
     if(rec.phase==='combat'&&!window.PlayerDowned?.isDowned?.()&&Math.hypot(deps.player.x/deps.TILE-rec.site.c-.5,deps.player.y/deps.TILE-rec.site.r-.5)>chunkSize()*2){reset('player escaped locale');return;}
     if(rec.phase==='bait'){
-      if(!sameChunk(deps.player.x/deps.TILE,deps.player.y/deps.TILE,rec.chunk)||npcInChunk(zone,rec.chunk))reset('bait dormant');
+      if(!sameChunk(deps.player.x/deps.TILE,deps.player.y/deps.TILE,rec.chunk)||npcInChunk(zone,rec.chunk)||!flatFootprint(rec.site.c,rec.site.r))reset('bait dormant');
       return;
     }
     if(rec.phase==='reward'){
