@@ -36,6 +36,7 @@
     const state = tracked.get(actor);
     if (!state) return false;
     tracked.delete(actor);
+    window.AudioSystem?.stopWingflapSfx?.(actor); // Despawn ends an active flap without affecting other birds in the audio pool.
     state.removed = true; // In-flight async rig loads discard their result rather than attaching to a corpse.
     clearOriginal(state);
     if (state.rig) {
@@ -59,6 +60,20 @@
       ?? state.originals?.[0]?.node?.position?.y; // Reuse the opaque-bottom correction already applied to the native idle/perched sprite.
     return Number.isFinite(Number(authoredPlaneY)) ? Number(authoredPlaneY) : 0; // An unscanned or absent plane has the original neutral local offset.
   }
+  function cueWingbeat(actor, state, pose) {
+    if (pose !== 'flap' || state.rig.root.visible === false || actor.tzatzulInNest || actor.prone || !(actor.health > 0)) {
+      if (state.wingflapActive) window.AudioSystem?.stopWingflapSfx?.(actor); // A lingering MP3 tail must not sound during a glide, perch or knockdown.
+      state.wingflapActive = false;
+      state.nextWingbeatAt = 0; // Re-entering a flap pose starts a fresh beat immediately.
+      return;
+    }
+    state.wingflapActive = true; // Only the currently animated flapping phase is allowed to produce flight footsteps.
+    if (state.lastPose === 'flap' && seconds < state.nextWingbeatAt) return;
+    const hz = Number(state.rig.flapHz); // Reads the same authored frequency used by FlyingAnimalRig.flapAngle, not an invented audio-only timer.
+    state.nextWingbeatAt = seconds + 1 / (Number.isFinite(hz) && hz > 0 ? hz : 2.2);
+    window.AudioSystem?.playWingflapSfx?.(actor); // One beat per flapping cycle, shared by Tzatzul, Pingdort and Skeeri.
+  }
+
   function present(actor, state, camera) {
     if (!state.rig) return;
     const flightPose = isSkeeriActor(actor) ? actor.skeeriFlightPose : kind(actor)==='pingdort' ? actor.pingdortFlightPose : actor.tzatzulFlightPose; // All three flyers use the shared authored wing assembly.
@@ -94,6 +109,7 @@
       try {
         state.rig.update(camera?.getWorldPosition ? camera : fallback,
           pose, seconds, !!actor.tzatzulCarrying, window.CreatureBlink?.isShut?.(actor) === true);
+        cueWingbeat(actor, state, pose); // SFX stays in lockstep with the actually rendered wing pose.
         if (!(Number(actor.hitFlashT) > 0) && state.rig.restoreTint?.(kind(actor)==='pingdort' ? actor.genotype?.base?.color : undefined)) debug.tintRestores++; // Repair native hit-flash tint and reflect any live Pingdort genotype edits.
         state.rig.root.rotation.z = pose !== 'perched' && !hatchling ? Number(isSkeeriActor(actor) ? actor.skeeriDivePitchRad : kind(actor)==='pingdort' ? actor.pingdortDivePitchRad : actor.tzatzulDivePitchRad) || 0 : 0; // Shared headfirst swoop pitch.
         if (state.rig.root.position) {
@@ -106,8 +122,11 @@
           }
           state.rig.root.position.y = nativeGroundPlaneY(actor, state) + hopY; // Never let the flying-rig swap discard authored ground-Y/opaque-padding placement.
         }
-      } catch (error) { debug.lastError = String(error); }
-    }
+      } catch (error) {
+        debug.lastError = String(error);
+        cueWingbeat(actor, state, 'perched'); // A failed rig frame cannot leave an earlier flap audible.
+      }
+    } else cueWingbeat(actor, state, 'perched'); // Detached or hidden rig art has no visible flap and must be silent.
     state.lastPose = pose;
     debug.lastPose = pose;
   }
@@ -186,7 +205,7 @@
         if (tracked.has(actor)) continue;
         if (!isSkeeri && !isPingdort) actor.tzatzulIdentity ||= window.TzatzulRegistration.identityFor(area, stableIndex(actor)); // Tzatzul retain their nest identity; Pingdort genotype tints are supplied on rig mount.
         tracked.set(actor, { rig: null, loading: false, removed: false, originals: [],
-          group: null, retryAt: 0, lastPose: null });
+          group: null, retryAt: 0, lastPose: null, nextWingbeatAt: 0, wingflapActive: false }); // Actor-local beat gate and active sound ownership require no new loop.
       }
     }
     const camera = deps.getActiveCamera?.() || window.Combat?.deps?.getActiveCamera?.()
@@ -208,6 +227,8 @@
         continue;
       }
       if (state.group && (actor.avatarRef?.group !== state.group || actor._wildlifeVisualsReleased || !state.group.parent)) {
+        if (state.wingflapActive) window.AudioSystem?.stopWingflapSfx?.(actor); // Visual unmount cannot leave an orphaned audible flap.
+        state.wingflapActive = false; state.nextWingbeatAt = 0; state.lastPose = null;
         if (state.rig) {
           clearOriginal(state);
           state.rig.dispose(); state.rig = null; debug.unmounts++;
