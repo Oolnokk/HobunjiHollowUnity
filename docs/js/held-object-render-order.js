@@ -126,7 +126,7 @@
   const frontPortraitRegistry = new SceneRegistry(); // Visible player and NPC front portrait cutouts that cover their late-rendered weapons.
   const backgroundDepthRegistry = new SceneRegistry(); // Sky depth masks and visual-only distant scenery excluded from held overlay depth.
   const preparedLights = new WeakSet();
-  const lastSceneScan = new WeakMap();
+  let lastSceneScan = new WeakMap(); // Reset on leaving the disabled mode so enabled replays discover late semantic changes.
 
   let heldCount = 0;
   let groundCount = 0;
@@ -733,10 +733,10 @@
     return minZ < -HAND_PART_BEHIND_EPS; // +z is the front face of a portrait card.
   }
 
-  function updateFrontPlaneHands(held, scene, camera) {
+  function updateFrontPlaneHands(held, scene, camera, ruleOverride = null) {
     // Per-hand state rather than clear-and-rebuild: the world is rendered more than once per frame and a pass
     // that collects no hands must not un-mask the ones an earlier pass decided about.
-    const rule = xrayRule('hand.frontPlaneMask');
+    const rule = ruleOverride ?? xrayRule('hand.frontPlaneMask');
     let frontByOwner = null; // Owner -> front portrait, built once per call and only if a hand needs it.
     for (const mesh of held) {
       if (mesh.userData?.hobunjiProceduralHand !== true) continue;
@@ -1417,8 +1417,10 @@
     if (!scene?.isScene || retiredScenes.has(scene)) return;
     if (classificationScheduled) flushClassification(); // Registries must reflect every add() made before this scan/render.
     const now = performance.now();
-    const previous = lastSceneScan.get(scene) || -Infinity;
-    if (!force && now - previous < FALLBACK_SCAN_INTERVAL_MS) return;
+    const previous = lastSceneScan.get(scene);
+    // With every actor category off, seed an existing scene once and rely on the add hooks
+    // and explicit registrations instead of repeatedly walking static terrain for x-ray casters.
+    if (!force && previous !== undefined && (allActorXrayDisabled || now - previous < FALLBACK_SCAN_INTERVAL_MS)) return;
     lastSceneScan.set(scene, now);
     classifyTree(scene);
   }
@@ -2733,6 +2735,8 @@
   const actorXrayDefaults = Object.freeze({ animals: true, enemies: false, player: true }); // Shared with Performance settings and reset.
   const actorXrayEnabled = { ...actorXrayDefaults }; // Settings gates shared by the main and shell passes.
   let hasDisabledActorXray = Object.values(actorXrayEnabled).includes(false); // All-on keeps the existing replay selection fast path.
+  let allActorXrayDisabled = !Object.values(actorXrayEnabled).some(Boolean); // Master fast path shared by world, shell and participant selection.
+  let actorXrayBypassFrames = 0, actorXrayWaterOnlyFrames = 0; // Mobile snapshot counts bypasses and independent water tint draws.
   const actorXrayRoots = new Map(); // Current frame's character roots, shared across color and shell selection.
   let actorXrayScene = null; // Scene whose actor roots the replay selector can reuse.
 
@@ -2767,8 +2771,11 @@
 
   function setActorXrayEnabled(group, value) {
     if (!Object.hasOwn(actorXrayEnabled, group)) return null;
+    const wasAllDisabled = allActorXrayDisabled;
     actorXrayEnabled[group] = value !== false;
     hasDisabledActorXray = Object.values(actorXrayEnabled).includes(false);
+    allActorXrayDisabled = !Object.values(actorXrayEnabled).some(Boolean);
+    if (wasAllDisabled && !allActorXrayDisabled) lastSceneScan = new WeakMap(); // Re-enable discovery before the next actor replay.
     actorXrayRoots.clear();
     actorXrayScene = null;
     if (group === 'animals') syncShoulderPetLayering();
@@ -2843,6 +2850,11 @@
     return isFoot ? withinFeetXrayDistance(mesh) : true;
   }
   function splitReplayParticipants(meshes, scene, others, isFoot = false, repairHeld = false) {
+    if (allActorXrayDisabled) {
+      for (const mesh of meshes) { if (repairHeld) enforceHeldMesh(mesh); others.push(mesh); }
+      nonParticipantReplaySkips += meshes.length;
+      return []; // Even orphaned gear and legacy 'all' policy cannot override the master off state.
+    }
     if (replayParticipantPolicy === 'all' && !hasDisabledActorXray) return meshes;
     const keep = []; // Parts left to the existing replay after applying the Settings gates.
     for (const mesh of meshes) {
@@ -3730,7 +3742,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
     const flight = window.PlayerJump?.debug;
     const airborne = !!flight?.active && (flight.phase === 'air' || flight.phase === 'rope')
       && Number(flight.heightAboveGround) > 0.05;
-    const backgroundMeshes = xrayRule('background.gearDepth') === 'ignore'
+    const backgroundMeshes = overlayMeshes.length && xrayRule('background.gearDepth') === 'ignore'
       ? collectVisible(backgroundDepthRegistry, scene) : [];
     const rebuildAirborne = airborne && overlayMeshes.length > 0 && backgroundMeshes.length > 0 && xrayRule('airborne.rebuildDepth') !== 'off';
     if (rebuildAirborne) airborneDepthRebuilds++; // Diagnostic counter, includes no-op frames with no ordinary group.
@@ -3789,7 +3801,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
         glState.scissor(scissorRect);
         glState.setScissorTest(true);
         scissoredReplayCount++;
-        if (replayCullEnabled && setReplayCullFrustum(camera, scissorRect, scissorTargetWidth, scissorTargetHeight)) {
+        if (overlayMeshes.length && replayCullEnabled && setReplayCullFrustum(camera, scissorRect, scissorTargetWidth, scissorTargetHeight)) {
           const cullPerf = window.PerfProfiler?.begin('held-overlay: scissor cull');
           replayCulled = hideObjects(collectReplayCulled(scene, new Set(scissorMeshes), groupCullCandidates, nearCandidates, allowFarOnly));
           window.PerfProfiler?.end(cullPerf);
@@ -3815,8 +3827,8 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
       // Multiple actor-elevation groups use the same depth-occluder registries.
       // Resolve visible entries once after hiding overlay participants; their
       // visibility is restored between groups, but membership does not change.
-      const cutoutDepthMeshes = canLockColorMask ? collectVisible(pngDepthRegistry, scene) : null; // Reused by every grouped depth replay in this render.
-      const protectedDepthMeshes = canLockColorMask ? collectVisible(protectedCoverRegistry, scene) : null; // Same occluders, independent of actor elevation.
+      const cutoutDepthMeshes = groups.length && canLockColorMask ? collectVisible(pngDepthRegistry, scene) : null; // Reused by every grouped depth replay in this render.
+      const protectedDepthMeshes = groups.length && canLockColorMask ? collectVisible(protectedCoverRegistry, scene) : null; // Same occluders, independent of actor elevation.
       // Stamp front silhouette against base world depth before clearing any
       // same-level ground. Transparent portrait pixels do not protect weapons.
       lastFrontPortraitGearCandidates = 0;
@@ -4023,7 +4035,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
         }
         depthRestored = true; // Skip the redundant floor-only restoration after a complete world rebuild.
       }
-      const needsGroundRestore = !depthRestored && (groups.some(group => group.regions.length) || !canLockColorMask); // An ordinary supplement never removes existing floor depth.
+      const needsGroundRestore = groups.length > 0 && !depthRestored && (groups.some(group => group.regions.length) || !canLockColorMask); // An ordinary supplement never removes existing floor depth.
       const groundMaterialStates = needsGroundRestore ? prepareGroundDepthMaterials(topFaceGround.length ? groundMeshes : ground) : new Map();
       try {
         camera.layers.mask = GROUND_REPLAY_MASK;
@@ -4330,13 +4342,76 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
     }
   }
 
+  function resetBaseReplayDiagnostics() {
+    // A normal-depth frame can return before replay setup. Clear the previous replay's readings here.
+    lastBaseElevationGroups = 0;
+    lastBaseReplayCandidates = 0;
+    lastBaseOffscreenFiltered = 0;
+    lastHeldFullscreenReason = 'no-visible-participants';
+    lastForcedGroundDepthMaterials = 0;
+    lastElevationReplayGroups = 0;
+    lastXrayTileRegions = 0;
+    lastXrayOrdinaryMeshes = 0;
+    lastUnknownElevationMeshes = 0;
+    lastNearbyTintCovers = 0;
+    lastDistantTintCovers = 0;
+    lastWaterClipScopes = 0;
+    lastWaterClipOverflow = 0;
+    lastFrontPortraitMaskCount = 0; // Reset per-base-pass diagnostics, including early return paths.
+    lastFrontPortraitGearCandidates = 0;
+    lastFrontPortraitMaskedGear = 0;
+    lastFrontPortraitMaskReason = 'no-overlay';
+  }
+
+  // Ordinary presentation is independent of actor ground x-ray. A dry frame with all categories
+  // disabled never enumerates actor roots, ground/foot replay registries, or replay occluders.
+  function renderWithoutActorXray(scene, camera) {
+    actorXrayBypassFrames++;
+    resetBaseReplayDiagnostics();
+    lastBaseStencilBits = currentFramebufferStencilBits(this);
+    lastShellElevationGroups = lastShellReplayCandidates = lastShellOffscreenFiltered = 0;
+    lastHeldFullscreenReason = lastShellFullscreenReason = 'all-actor-xray-disabled';
+    lastReplayCulledCount = lastReplayKeptCount = lastReplayInstancedCulled = lastReplayInstancedKept = lastReplayInertCount = 0;
+    lastReplayScissorCoverage = 0;
+    lastOtherWeaponXrayActors = lastWaterPortraits = lastDryGearWaterSkips = 0;
+    lastFrontPortraitMaskReason = 'all-actor-xray-disabled';
+    // Retain ordinary weapon/material invariants without the ownership walk. Clear old hand
+    // masking so a previous replay cannot hide a wing or shell after switching the feature off.
+    const held = collectVisible(heldRegistry, scene);
+    for (const mesh of held) enforceHeldMesh(mesh);
+    if (maskedHands.size) updateFrontPlaneHands(held, scene, camera, 'off');
+    const player = window.PlayerBodyTransformComposer?.getPlayerMesh?.();
+    const tintPossible = lastBaseStencilBits >= 1 && xrayRule('portrait.waterTint') !== 'off' && waterPortraitRegistry.all.size > 0;
+    const covers = tintPossible && tintCoverRegistry.all.size ? collectVisible(tintCoverRegistry, scene) : [];
+    const portraits = player || covers.length ? collectVisible(waterPortraitRegistry, scene) : [];
+    const portraitOrder = nearbyPortraitOrder(scene, camera, portraits);
+    lastRankedPortraitActors = portraitOrder?.count || 0;
+    const result = withPortraitDrawOrder(this, portraitOrder, () => originalRender.call(this, scene, camera), true);
+    if (!covers.length || !portraits.length) return result;
+    // Only actually wet portraits justify the independent water stencil pass. No actor ground
+    // exemptions, gear overlays, floor collections, or outline replays are admitted in this mode.
+    const bodyTint = submergedPortraits(camera, covers, portraits);
+    lastWaterPortraits = bodyTint.portraits.length;
+    if (!lastWaterPortraits) return result;
+    actorXrayWaterOnlyFrames++;
+    const baseRenderEndedAt = performance.now();
+    replaySelectiveHeldOverlay(this, scene, camera, [], [], [], [], covers, Number(camera.layers.mask) >>> 0, bodyTint, portraitOrder);
+    window.OutlineRenderPerformance?.markSceneMatricesCurrent?.(this, scene, baseRenderEndedAt);
+    return result;
+  }
+
   function wrappedRender(scene, camera) {
     if (internalReplay || !scene?.isScene || !camera?.isCamera || retiredScenes.has(scene)) {
       return originalRender.call(this, scene, camera);
     }
-    replayCameraPosition = camera.matrixWorld?.elements ? { x: camera.matrixWorld.elements[12], y: camera.matrixWorld.elements[13], z: camera.matrixWorld.elements[14] } : null; // Feet x-ray distance rule.
-
     const baseWorldPass = isBaseWorldPass(scene, camera); // Shared by actor selection and the ordinary world draw.
+    if (allActorXrayDisabled) {
+      if (!baseWorldPass) return originalRender.call(this, scene, camera); // No shell participant collection or replay.
+      scanScene(scene); // One initial registration scan, plus pending additions only.
+      syncShoulderPetLayering(camera);
+      return renderWithoutActorXray.call(this, scene, camera);
+    }
+    replayCameraPosition = camera.matrixWorld?.elements ? { x: camera.matrixWorld.elements[12], y: camera.matrixWorld.elements[13], z: camera.matrixWorld.elements[14] } : null; // Feet x-ray distance rule.
     if (baseWorldPass) {
       if (hasDisabledActorXray) refreshActorXrayRoots(scene);
       syncShoulderPetLayering(camera); // Reassert paired-sprite policy after other actor depth writers.
@@ -4419,24 +4494,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
 
     const originalCameraMask = Number(camera.layers.mask) >>> 0;
     lastBaseStencilBits = currentFramebufferStencilBits(this);
-    // A normal-depth frame can return before replay setup. Clear the previous replay's readings here.
-    lastBaseElevationGroups = 0;
-    lastBaseReplayCandidates = 0;
-    lastBaseOffscreenFiltered = 0;
-    lastHeldFullscreenReason = 'no-visible-participants';
-    lastForcedGroundDepthMaterials = 0;
-    lastElevationReplayGroups = 0;
-    lastXrayTileRegions = 0;
-    lastXrayOrdinaryMeshes = 0;
-    lastUnknownElevationMeshes = 0;
-    lastNearbyTintCovers = 0;
-    lastDistantTintCovers = 0;
-    lastWaterClipScopes = 0;
-    lastWaterClipOverflow = 0;
-    lastFrontPortraitMaskCount = 0; // Reset per-base-pass diagnostics, including early return paths.
-    lastFrontPortraitGearCandidates = 0;
-    lastFrontPortraitMaskedGear = 0;
-    lastFrontPortraitMaskReason = 'no-overlay';
+    resetBaseReplayDiagnostics();
     const replayOthers = []; // Non-participant hands/feet/held items: drawn in the base pass, hidden from the replays.
     const held = collectVisible(heldRegistry, scene, replayOthers);
     const ground = collectVisible(groundRegistry, scene);
@@ -4528,6 +4586,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
       installed: true,
       enabled,
       actorXrayEnabled: { ...actorXrayEnabled }, // Included in the existing x-ray diagnostics.
+      allActorXrayDisabled, actorXrayBypassFrames, actorXrayWaterOnlyFrames, // All-off fast-path counters for mobile diagnostics.
       mode: 'selective-depth-replay',
       legacyHeldRenderOrder: LEGACY_HELD_RENDER_ORDER,
       heldOverlayLayer: HELD_OVERLAY_LAYER,
