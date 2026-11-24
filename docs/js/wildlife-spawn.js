@@ -142,6 +142,11 @@
     installDenTurnoverDeathHook();
   }
 
+  function makeTraitCreature(kind, x, y, opts) {
+    const entity = deps.makeCreatureEntity(kind, x, y, opts); // Preserve the canonical factory and all authored spawn options.
+    return window.CreatureGenetics?.applyWildPracticalTraits?.(entity, opts?.genotype) || entity;
+  }
+
   // Once a den's whole pack/herd is wiped, it stays empty — no ambient
   // scatter-spawning — until the next in-game day, when a fresh pack
   // (species re-rolled from the zone's packSpecies pool, not necessarily
@@ -1405,7 +1410,7 @@
           carriedBabyCount: motherBabyCount,
         } : {}),
       };
-      const creature = deps.makeCreatureEntity(creatureKey, x, y, opts);
+      const creature = makeTraitCreature(creatureKey, x, y, opts);
       if (!creature) continue;
       if (isMother) attachRoamingHerdBabiesToMother(creature, motherBabyCount);
       deps.hostileObjects.add(creature);
@@ -1443,7 +1448,7 @@
       const genotype=offer.genotype && typeof offer.genotype==='object'
         ? JSON.parse(JSON.stringify(offer.genotype)) : window.CreatureGenetics?.makeDefaultGenotype?.(offer.species)||null; // Release the actually chosen bloodline, not a new random animal.
       if(genotype && !offer.genotype)genotype.sizeClass='small'; // Generic untracked babies keep the prior juvenile presentation; inherited size genes are never rewritten.
-      const creature=deps.makeCreatureEntity(offer.species,anchor.x,anchor.y,{
+      const creature=makeTraitCreature(offer.species,anchor.x,anchor.y,{
         genotype,streamVisuals:true,wildlifeRole:'prey',homeX:anchor.x,homeY:anchor.y,
         wanderRadiusPx:deps.TILE*6,festivalReleased:true,festivalReleaseId:offer.id,
       }); // Normal wildlife AI, combat, pathfinding and cleanup own the animal after liberation.
@@ -1677,7 +1682,7 @@
       }
       const opts = { streamVisuals: true, homeX: memberHomeX, homeY: memberHomeY, denEntranceX, denEntranceY, state: 'idle', denKey, genotype: wildPackGenotype, visualSizeClass: speciesKey === 'nelk' ? 'large' : null, wildlifeRole: speciesIsHerbivore ? 'prey' : 'predator' }; // Physical adult size is presentation-only: eggs, mother and exterior retain identical inheritable Size. // Explicit ecology role avoids guessing from hostility/diet overlays later.
       assignWildlifeStation(opts, zoneData, memberHomeX, memberHomeY, speciesIsHerbivore);
-      const creature = deps.makeCreatureEntity(speciesKey, x, y, opts);
+      const creature = makeTraitCreature(speciesKey, x, y, opts);
       if (creature) { deps.hostileObjects.add(creature); spawned++; }
       else window.__farmLog?.(`[wildlife] ${denKey}: makeCreatureEntity("${speciesKey}") returned null (attempt ${i + 1}/${count}) — bad/missing CREATURE_DB entry?`, 'wildlife');
     }
@@ -1895,7 +1900,7 @@
     // caustic pellet down at anyone approaching the tree. onBranch/branchT
     // plug her into the same 1D-movement/fall-to-ground-knockback rules a
     // climbed-up player gets (see climb-system.js/game.js's applyKnockback).
-    const mother = deps.makeCreatureEntity(motherKey, midX, midY, {
+    const mother = makeTraitCreature(motherKey, midX, midY, {
       homeX: midX, homeY: midY, state: 'idle', isDenMother: true, nestTreeKey: key,
       genotype: nestGenotype,
       wildlifeRole: 'prey', // Drenkirra Nestmothers remain prey ecology even though they defend their nest.
@@ -1926,7 +1931,7 @@
       // recolors a creature when opts.genotype is present).
       const opts = { homeX: branch.baseX, homeY: branch.baseY, state: 'idle', nestTreeKey: key, genotype: nestGenotype, wildlifeRole: 'prey' };
       assignWildlifeStation(opts, zoneData, branch.baseX, branch.baseY, true);
-      const creature = deps.makeCreatureEntity('drenkirra', x, y, opts);
+      const creature = makeTraitCreature('drenkirra', x, y, opts);
       if (creature) { deps.hostileObjects.add(creature); spawned++; }
     }
 

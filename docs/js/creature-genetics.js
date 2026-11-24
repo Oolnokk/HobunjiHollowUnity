@@ -202,7 +202,7 @@
   // new livestock species ships — falls back to a capitalized kind (or
   // 'Livestock') only for a kind CREATURE_DB doesn't even know about.
   function defaultLivestockName(kind) {
-    return deps.CREATURE_DB[kind]?.label || (kind ? kind[0].toUpperCase() + kind.slice(1) : 'Livestock');
+    return deps?.CREATURE_DB?.[kind]?.label || (kind ? kind[0].toUpperCase() + kind.slice(1) : 'Livestock');
   }
 
   // Optional pattern layers per species — the HTML lab's Dabinggi-hound
@@ -431,6 +431,87 @@
     const overrides = { bodystripes: 'Body stripes', colorpoint: 'Colorpoint', foxtail: 'Fox tail', coloredstripe: 'Colored stripe', tailfeathers: 'Tail feathers' }; // Keeps compact genetic IDs readable in the UI.
     return overrides[id] || String(id || '').replace(/([a-z])([A-Z])/g, '$1 $2').replace(/[-_]+/g, ' ').replace(/^./, char => char.toUpperCase());
   }
+  // Nonvisual alleles live alongside coat genes, but are never read by the texture compositor.
+  const PRACTICAL_TRAITS = Object.freeze({
+    speedy: { label: 'Speedy', description: '+20% riding and combat movement speed', chance: 0.12 },
+    fierce: { label: 'Fierce', description: '+15% attack damage', chance: 0.10 },
+    enduring: { label: 'Enduring', description: '25% faster mount acceleration-charge recovery', chance: 0.10 },
+    fertile: { label: 'Fertile', description: '+30% breeding progress per parent', chance: 0.12 },
+    productive: { label: 'Productive', description: 'One day faster multi-day goods regeneration (minimum one day)', chance: 0.14 },
+    bountiful: { label: 'Bountiful', description: 'One additional good per harvest', chance: 0.10 },
+    fineProducer: { label: 'Fine Producer', description: '+1 harvest quality star', chance: 0.10 },
+  }); // Central balancing table shared by inheritance, diagnostics and runtime.
+  const PRODUCT_GENES = Object.freeze({
+    grehlr: { id: 'milk', itemKey: 'grehlrMilk', verb: 'Milk' },
+    nelk: { id: 'milk', itemKey: 'nelkMilk', verb: 'Milk' },
+    puktuk: { id: 'milk', itemKey: 'puktukMilk', verb: 'Milk' },
+    'voorg-ass': { id: 'milk', itemKey: 'voorgAssMilk', verb: 'Milk' },
+    'dabinggi-hound': { id: 'egg', itemKey: 'dabinggiHoundEggs', verb: 'Collect' },
+  }); // Live-born species without default milk; hatchable species without default edible eggs.
+  function practicalDefinitions(kind) {
+    const family = GENOTYPE_SPECIES_ALIAS[kind] || kind; // Den variants share their species' genetic pool.
+    const product = PRODUCT_GENES[family];
+    if (!product) return PRACTICAL_TRAITS;
+    const name = defaultLivestockName(family);
+    return { ...PRACTICAL_TRAITS, [product.id]: {
+      label: (product.id === 'milk' ? 'Milk ' : 'Egg ') + name,
+      description: 'Produces ' + (product.id === 'milk' ? name + ' Milk' : name + ' Eggs'),
+      chance: 0.18,
+    } };
+  }
+  function practicalCopies(genotype, id) {
+    const count = Number(genotype?.practical?.[id]); // Legacy or malformed saves read as zero alleles.
+    return Number.isFinite(count) ? Math.max(0, Math.min(2, Math.floor(count))) : 0;
+  }
+  function rollPracticalGenes(kind) {
+    const result = {}; // Sparse dominant allele counts; appearance data remains unchanged.
+    for (const [id, def] of Object.entries(practicalDefinitions(kind))) {
+      const copies = Number(Math.random() < def.chance / 2) + Number(Math.random() < def.chance / 2);
+      if (copies) result[id] = copies;
+    }
+    return result;
+  }
+  function crossPracticalGenes(kind, a, b, mutationChance) {
+    const result = {}; // Each parent contributes at most one allele, independent of coat and Size.
+    for (const id of Object.keys(practicalDefinitions(kind))) {
+      let copies = Number(Math.random() < practicalCopies(a, id) / 2) + Number(Math.random() < practicalCopies(b, id) / 2);
+      if (!copies && Math.random() < Math.max(0, Math.min(1, Number(mutationChance) || 0)) * 0.25) copies = 1;
+      if (copies) result[id] = copies;
+    }
+    return result;
+  }
+  function practicalTraitList(kind, genotype) {
+    return Object.entries(practicalDefinitions(kind)).flatMap(([id, def]) => {
+      const copies = practicalCopies(genotype, id);
+      return copies ? [{ id, label: def.label, description: def.description, copies, inheritance: 'dominant', enabled: true }] : [];
+    });
+  }
+  function practicalMultiplier(genotype, id) {
+    if (!practicalCopies(genotype, id)) return 1;
+    return id === 'speedy' ? 1.2 : id === 'fierce' ? 1.15 : id === 'enduring' ? 1.25 : id === 'fertile' ? 1.3 : 1;
+  }
+  function practicalResource(kind, genotype) {
+    const product = PRODUCT_GENES[GENOTYPE_SPECIES_ALIAS[kind] || kind];
+    if (!product || !practicalCopies(genotype, product.id)) return null;
+    // The independent cooldown path preserves ordinary wool/venom/eggs.
+    return { itemKey: product.itemKey, cooldownDays: product.id === 'milk' ? 1 : 2, verb: product.verb, interactive: false };
+  }
+  function applyWildPracticalTraits(entity, genotype) {
+    if (!entity || entity.isCompanion || !entity.def || entity._practicalWildSpeedApplied) return entity;
+    const genes = genotype || entity.genotype; // One authoritative genome for the wild entity.
+    const multiplier = practicalMultiplier(genes, 'speedy');
+    const damage = practicalMultiplier(genes, 'fierce');
+    if (multiplier === 1 && damage === 1) return entity;
+    const original = entity.def; // Copy only once; never modify the shared CREATURE_DB baseline.
+    entity.def = { ...original };
+    for (const key of ['moveSpeed', 'chaseSpeed']) {
+      if (Number.isFinite(original[key]) && original[key] > 0) entity.def[key] = original[key] * multiplier;
+    }
+    if (Number.isFinite(original.attackDamage) && original.attackDamage > 0) entity.def.attackDamage = original.attackDamage * damage;
+    entity._practicalWildSpeedApplied = true;
+    return entity;
+  }
+
   function genotypeTraits(kind, genotype) {
     genotype = normalizeLegacyGenotype(kind, genotype); // Old fur/plates saves display as base/shell.
     const colors = []; // Rendered as named color chips in Farm and Stable.
@@ -457,7 +538,7 @@
         });
       }
     }
-    return { size: creatureSizeTrait(kind, genotype), colors, patterns };
+    return { size: creatureSizeTrait(kind, genotype), colors, patterns, practical: practicalTraitList(kind, genotype) };
   }
   function makeRareGiftGenotype(kind, rarityRank = 1) {
     const genotype = makeDefaultGenotype(kind); // The existing generator supplies correctly shaped inheritable genes.
@@ -543,6 +624,7 @@
         genotype[id] = { color: patternColor, copies: alwaysPresent ? 2 : (enabled ? 1 : 0), inheritance: 'dominant', enabled };
       }
       genotype.sizeClass = sizeClass;
+      genotype.practical = rollPracticalGenes(kind); // Stored once at generation, never rerolled on load.
       const enabledIds = patterns.filter(id => genotype[id].enabled);
       const enabledSummary = enabledIds.map(id => `${id}:${_furPaletteName(genotype[id].color)}`).join(','); // Shown in mobile-accessible farm debug logs.
       window.__farmLog?.(`[genotype] makeDefaultGenotype(${kind}): base=${first.name}(${first.hex}) enabled=[${enabledSummary || 'none'}]`, 'wildlife');
@@ -644,6 +726,7 @@
     const childEnabledIds = patterns.filter(id => child[id].enabled);
     const childEnabledSummary = childEnabledIds.map(id => `${id}:${_furPaletteName(child[id].color)}`).join(','); // Helps validate restricted/permanent pattern colors without desktop devtools.
     window.__farmLog?.(`[genotype] crossOffspring(${kind}): base=${_furPaletteName(child.base.color)} enabled=[${childEnabledSummary || 'none'}]`, 'wildlife');
+    child.practical = crossPracticalGenes(kind, genotypeA, genotypeB, mutationChance);
     return child;
   }
 
@@ -792,6 +875,14 @@
     creatureBreathScaleY,
     creatureSizeTrait,
     genotypeTraits,
+    practicalCopies,
+    practicalMultiplier,
+    practicalResource,
+    practicalTraitList,
+    applyWildPracticalTraits,
+    rollPracticalGenes,
+    crossPracticalGenes,
+    PRODUCT_GENES,
     normalizeLegacyGenotype,
     paletteName: _furPaletteName,
     PATTERN_DEFS: LIVESTOCK_PATTERN_DEFS,

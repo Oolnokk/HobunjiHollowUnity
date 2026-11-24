@@ -293,7 +293,7 @@
 
   function mountedTopSpeedPxS() {
     const training = Number(mountedTrainingModifiers().baseSpeed); // Fleet Stride applies once outside the animal's shared species definition.
-    return currentPlayerRunningSpeedPxS() * MOUNT_PLAYER_RUN_RATIO * (Number.isFinite(training) && training > 0 ? training : 1);
+    return currentPlayerRunningSpeedPxS() * MOUNT_PLAYER_RUN_RATIO * (Number.isFinite(training) && training > 0 ? training : 1) * (window.CreatureGenetics?.practicalMultiplier?.(mountRideEntity?.genotype, 'speedy') || 1);
   }
 
   function mountedMeleeStaminaMultiplier() {
@@ -346,7 +346,7 @@
     mountedCombatBoostS = Math.max(0, mountedCombatBoostS - dt);
     if (mountedCombatBoostS <= 0) mountedCombatBoostMultiplier = 1;
     if (mountBoostS <= 0 && wheatRemaining < WHEAT_MAX) {
-      wheatRecoveryS += dt;
+      wheatRecoveryS += dt * (window.CreatureGenetics?.practicalMultiplier?.(m?.genotype, 'enduring') || 1); // Regeneration only; no additional HUD charge.
       if (wheatRecoveryS >= WHEAT_RECOVER_S) {
         wheatRecoveryS -= WHEAT_RECOVER_S;
         wheatRemaining++;

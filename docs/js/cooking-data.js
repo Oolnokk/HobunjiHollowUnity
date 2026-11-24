@@ -1084,6 +1084,18 @@
         "Implied"
       ]
     },
+    "grehlrMilk": {
+      "id": "grehlrMilk", "name": "Grehlr Milk", "categories": ["whiteMilk", "dairy"],
+      "quality": 2, "baseBoost": 1, "processingTier": "raw", "primaryEffect": "fortitude", "tags": ["Milk", "Grehlr", "Live-Birth Animal"]
+    },
+    "nelkMilk": {
+      "id": "nelkMilk", "name": "Nelk Milk", "categories": ["whiteMilk", "dairy"],
+      "quality": 2, "baseBoost": 1, "processingTier": "raw", "primaryEffect": "fortitude", "tags": ["Milk", "Nelk", "Live-Birth Animal"]
+    },
+    "dabinggiHoundEggs": {
+      "id": "dabinggiHoundEggs", "name": "Dabinggi-hound Eggs", "categories": ["egg"],
+      "quality": 2, "baseBoost": 1, "processingTier": "raw", "primaryEffect": "fortitude", "tags": ["Egg", "Dabinggi-hound", "Unfertilized"]
+    },
     "mootMilk": {
       "id": "mootMilk",
       "name": "Moot Milk",

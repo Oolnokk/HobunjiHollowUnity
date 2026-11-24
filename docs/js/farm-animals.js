@@ -26,7 +26,16 @@
   // camera in and restores it after), so those three get getter+setter
   // pairs instead.
   let deps = null;
-  function init(injectedDeps) { deps = injectedDeps; }
+  function init(injectedDeps) {
+    deps = injectedDeps;
+    // Older catalogs lack these ordinary food items; keep fertile inventory keys untouched.
+    for (const [kind, product] of Object.entries(window.CreatureGenetics?.PRODUCT_GENES || {})) {
+      if (!deps.ITEM_DEFS || deps.ITEM_DEFS[product.itemKey]) continue;
+      const name = window.CreatureGenetics.defaultLivestockName(kind);
+      const milk = product.id === 'milk';
+      deps.ITEM_DEFS[product.itemKey] = { label: name + (milk ? ' Milk' : ' Eggs'), icon: milk ? '🥛' : '🥚', cat: 'ingredient', sellPrice: 8, tags: [milk ? 'Milk' : 'Egg', name, 'Animal Goods'] };
+    }
+  }
 
   // Livestock interaction must follow the *rendered* animal, not its tile
   // reservation. A wandering animal moves the worldObjects key at the start of
@@ -900,9 +909,22 @@
     animal._barnHome = false;
   }
 
-  function additionalResourceDefs(kind) {
-    const defs = window.SCRATCHBONES_CONFIG?.game?.livestock?.additionalResources?.[kind]; // Authored independent resource definitions, currently Nazgraku milk alongside eggs.
-    return Array.isArray(defs) ? defs : [];
+  function additionalResourceDefs(kind, genotype) {
+    const defs = window.SCRATCHBONES_CONFIG?.game?.livestock?.additionalResources?.[kind]; // Preserve authored independent products.
+    const existing = Array.isArray(defs) ? defs : [];
+    const genetic = window.CreatureGenetics?.practicalResource?.(kind, genotype);
+    if (!genetic || !deps.ITEM_DEFS?.[genetic.itemKey] || deps.LIVESTOCK_RESOURCE_DEFS[kind]?.itemKey === genetic.itemKey || existing.some(def => def.itemKey === genetic.itemKey)) return existing;
+    return [...existing, genetic]; // Never mutate species-wide resource definitions.
+  }
+  function practicalMultiplier(genotype, id) {
+    return window.CreatureGenetics?.practicalMultiplier?.(genotype, id) || 1;
+  }
+  function practicalCooldown(days, genotype) {
+    const shortened = window.CreatureGenetics?.practicalCopies?.(genotype, 'productive') > 0 ? 1 : 0; // Daily scheduler has a one-day floor.
+    return Math.max(1, Math.round(Number(days) || 1) - shortened);
+  }
+  function breedingGeneMultiplier(a, b) {
+    return (practicalMultiplier(a?.genotype, 'fertile') + practicalMultiplier(b?.genotype, 'fertile')) / 2;
   }
 
   function _farmAnimalGetButtons(animal, label, icon) {
@@ -919,7 +941,7 @@
       const verb = resDef.verb || deps.LIVESTOCK_RESOURCE_VERB[rec.kind] || 'Collect';
       buttons.push({ icon: deps.ITEM_DEFS[resDef.itemKey]?.icon || icon, label: `${verb} ${itemLabel}`, action: 'obj_collect_' + animal.id, style: 'primary', allowed: true });
     }
-    if (rec) for (const extraDef of additionalResourceDefs(rec.kind)) {
+    if (rec) for (const extraDef of additionalResourceDefs(rec.kind, rec.genotype)) {
       if (!rec.additionalResources?.[extraDef.itemKey]?.ready) continue;
       const itemLabel = deps.ITEM_DEFS[extraDef.itemKey]?.label || extraDef.itemKey;
       buttons.push({ icon: deps.ITEM_DEFS[extraDef.itemKey]?.icon || icon, label: `${extraDef.verb || 'Collect'} ${itemLabel}`,
@@ -974,7 +996,7 @@
     if (typeof action === 'string' && action.startsWith(collectPrefix)) { // Ignore malformed/controller-canceled inputs safely.
       const rec = deps.loadWorldLivestock().find(l => l.id === animal.livestockId);
       const itemKey = action.slice(collectPrefix.length); // Only exact authored secondary resource keys may be harvested.
-      const extraDef = additionalResourceDefs(rec?.kind).find(def => def.itemKey === itemKey);
+      const extraDef = additionalResourceDefs(rec?.kind, rec?.genotype).find(def => def.itemKey === itemKey);
       if (!extraDef) return { ok: false, message: 'Unknown livestock resource.' };
       if (extraDef.interactive) { beginHarvestInteraction(animal, itemKey); return { ok: true }; }
       return collectResource(animal.livestockId, itemKey);
@@ -1024,7 +1046,7 @@
     const progress = normalizeBreedingProgress(pair); // Migrates older readyDay/startDay pairs without discarding their elapsed time.
     if (progress >= 1) return { ok: false, message: 'That pair is already ready to give birth.' };
     const avgHeart = (parentHeartLevel(parentA) + parentHeartLevel(parentB)) / 2;
-    const dayProgress = (definition.daysReduced / LIVESTOCK_GESTATION_DAYS) * breedingSpeedMultiplier(avgHeart); // Equivalent to one full day of current heart-adjusted hourly ticks.
+    const dayProgress = (definition.daysReduced / LIVESTOCK_GESTATION_DAYS) * breedingSpeedMultiplier(avgHeart) * breedingGeneMultiplier(parentA, parentB); // Equivalent to one full day of current heart-adjusted hourly ticks.
     pair.progress = Math.min(1, progress + dayProgress);
     deps._saveWorldBreedingPairs(pairs);
     deps.inventory[itemKey]--;
@@ -1433,13 +1455,14 @@
     if (!rec) return { ok: false, message: 'Livestock not found.' };
     const primary = deps.LIVESTOCK_RESOURCE_DEFS[rec.kind]; // Legacy primary product (Nazgraku eggs) keeps its save fields.
     const extra = itemKey && itemKey !== primary?.itemKey
-      ? additionalResourceDefs(rec.kind).find(def => def.itemKey === itemKey) : null; // Secondary product (Nazgraku milk) has an independent saved cooldown.
+      ? additionalResourceDefs(rec.kind, rec.genotype).find(def => def.itemKey === itemKey) : null; // Secondary product (Nazgraku milk) has an independent saved cooldown.
     if (itemKey && itemKey !== primary?.itemKey && !extra) return { ok: false, message: 'Unknown livestock resource.' };
     const resDef = extra || primary;
     const extraState = extra ? rec.additionalResources?.[extra.itemKey] : null;
     if (!resDef || !(extra ? extraState?.ready : rec.resourceReady)) return { ok: false, message: 'Nothing to collect yet.' };
     if ((deps.inventory[resDef.itemKey] || 0) >= window.InventoryStacks.MAX_TOTAL) return { ok: false, message: 'Your bag is full.' };
-    deps.inventory[resDef.itemKey] = (deps.inventory[resDef.itemKey] || 0) + 1;
+    const quantity = Math.min(window.InventoryStacks.MAX_TOTAL - (deps.inventory[resDef.itemKey] || 0), window.CreatureGenetics?.practicalCopies?.(rec.genotype, 'bountiful') > 0 ? 2 : 1); // Capacity-safe additional harvest.
+    deps.inventory[resDef.itemKey] = (deps.inventory[resDef.itemKey] || 0) + quantity;
     const hearts = Number.isFinite(rec.heartLevel) ? rec.heartLevel : HEART_DEFAULT;
     // A well-cared-for (well-fed, high-heart) animal nudges its own
     // product quality up on top of whatever Farming rolls — every full
@@ -1449,16 +1472,16 @@
     // without replacing it — hearts stay relevant at every rank.
     const husbandryRank = window.PerkSystem?.rank('farming', 'husbandry') || 0; // 0-5
     const heartStars = Math.round((hearts - 2.5) / (HEART_MAX / 2) * (1 + husbandryRank * 0.15));
-    const stars = Math.max(1, Math.min(5, (deps.rollItemStars?.('farming') || 3) + heartStars));
-    deps.recordItemQuality?.(resDef.itemKey, stars, 1);
+    const stars = Math.max(1, Math.min(5, (deps.rollItemStars?.('farming') || 3) + heartStars + (window.CreatureGenetics?.practicalCopies?.(rec.genotype, 'fineProducer') > 0 ? 1 : 0)));
+    deps.recordItemQuality?.(resDef.itemKey, stars, quantity);
     deps.awardFarmingXp?.();
     // Higher hearts also shorten the regen cooldown — up to 40% faster at
     // a full 5 hearts, never below 1 day.
-    const nextDays = Math.max(1, Math.round(resDef.cooldownDays * (1 - hearts * 0.08))); // Shared husbandry timing for both resource channels.
+    const nextDays = practicalCooldown(resDef.cooldownDays * (1 - hearts * 0.08), rec.genotype); // Shared husbandry timing for both resource channels.
     if (extraState) { extraState.ready = false; extraState.daysUntilResource = nextDays; }
     else { rec.resourceReady = false; rec.daysUntilResource = nextDays; }
     deps.saveWorldLivestock(list);
-    return { ok: true, message: `Collected ${deps.starRatingText?.(stars) || ''} 1 ${deps.ITEM_DEFS[resDef.itemKey]?.label || resDef.itemKey}.` };
+    return { ok: true, message: `Collected ${deps.starRatingText?.(stars) || ''} ${quantity} ${deps.ITEM_DEFS[resDef.itemKey]?.label || resDef.itemKey}.` };
   }
 
   // Advances every housed animal's resource cooldown by one day — called
@@ -1471,16 +1494,18 @@
     list.forEach(l => {
       const resDef = deps.LIVESTOCK_RESOURCE_DEFS[l.kind];
       if (resDef && l.barnId && !l.resourceReady) {
-        if (l.daysUntilResource == null) l.daysUntilResource = resDef.cooldownDays;
+        if (l.daysUntilResource == null) l.daysUntilResource = practicalCooldown(resDef.cooldownDays, l.genotype);
+        if (window.CreatureGenetics?.practicalCopies?.(l.genotype, 'productive') > 0) l.daysUntilResource = Math.min(l.daysUntilResource, practicalCooldown(resDef.cooldownDays, l.genotype));
         l.daysUntilResource--;
         if (l.daysUntilResource <= 0) l.resourceReady = true;
         changed = true;
       }
-      if (l.barnId) for (const extraDef of additionalResourceDefs(l.kind)) {
+      if (l.barnId) for (const extraDef of additionalResourceDefs(l.kind, l.genotype)) {
         const saved = l.additionalResources || (l.additionalResources = {}); // Persist independent readiness alongside existing egg/resource fields.
         const state = saved[extraDef.itemKey] || (saved[extraDef.itemKey] = { ready: false, daysUntilResource: extraDef.cooldownDays }); // Old saves initialize lazily on the first housed-day tick.
         if (state.ready) continue;
-        if (!Number.isFinite(state.daysUntilResource)) state.daysUntilResource = extraDef.cooldownDays;
+        if (!Number.isFinite(state.daysUntilResource)) state.daysUntilResource = practicalCooldown(extraDef.cooldownDays, l.genotype);
+        if (window.CreatureGenetics?.practicalCopies?.(l.genotype, 'productive') > 0) state.daysUntilResource = Math.min(state.daysUntilResource, practicalCooldown(extraDef.cooldownDays, l.genotype));
         state.daysUntilResource--;
         if (state.daysUntilResource <= 0) state.ready = true;
         changed = true;
@@ -1615,7 +1640,7 @@
         resourceLabel: resDef ? (deps.ITEM_DEFS[resDef.itemKey]?.label || resDef.itemKey) : null,
         resourceReady: !!(resDef && rec.resourceReady),
         daysUntilResource: resDef && !rec.resourceReady && Number.isFinite(rec.daysUntilResource) ? Math.max(0, rec.daysUntilResource) : null,
-        additionalResources: additionalResourceDefs(rec.kind).map(def => ({
+        additionalResources: additionalResourceDefs(rec.kind, rec.genotype).map(def => ({
           itemKey: def.itemKey, label: deps.ITEM_DEFS[def.itemKey]?.label || def.itemKey,
           ready: !!rec.additionalResources?.[def.itemKey]?.ready,
           daysUntilResource: Number.isFinite(rec.additionalResources?.[def.itemKey]?.daysUntilResource)
@@ -1894,7 +1919,7 @@
       // to an equivalent starting progress instead of losing its head start.
       pair.progress = normalizeBreedingProgress(pair);
       const avgHeart = (parentHeartLevel(parentA) + parentHeartLevel(parentB)) / 2;
-      pair.progress += (dayFraction / LIVESTOCK_GESTATION_DAYS) * breedingSpeedMultiplier(avgHeart);
+      pair.progress += (dayFraction / LIVESTOCK_GESTATION_DAYS) * breedingSpeedMultiplier(avgHeart) * breedingGeneMultiplier(parentA, parentB);
       changed = true;
       if (pair.progress < 1) { remainingPairs.push(pair); continue; }
       const kind = parentA.kind;

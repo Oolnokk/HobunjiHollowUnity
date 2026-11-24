@@ -308,7 +308,13 @@
         if (!(speed > 0)) return originalValue;
         const ratio = ownerSpeedRatio(companion);
         const catchup = property === 'chaseSpeed' ? followCatchupMultiplier(companion) : 1;
-        const desiredWorldSpeed = speed * ratio * catchup; // World-space pace after any temporary follow recovery.
+        const owner = companion.master || deps?.player; // Sicced and downed-focus orders can precede the regular target field.
+        const areaId = deps?.getCurrentArea?.();
+        const sicced = owner === deps?.player && companion.stableRole === 'companion' ? window.EnchantmentSystem?.getCurrentSiccedTarget?.() : null;
+        const focus = owner === deps?.player && companion.stableRole === 'companion' ? window.PlayerDowned?.getFocusTarget?.() : null;
+        const combatActive = !!(companion._companionCombatTarget || companion._animalAttack || companion._furiousSpecial || (sicced?.health > 0 && (!areaId || sicced.areaId === areaId)) || (focus?.health > 0 && !focus._downed && (!areaId || focus.areaId === areaId))); // Ordinary following retains owner pace.
+        const practical = combatActive ? (window.CreatureGenetics?.practicalMultiplier?.(companion.genotype, 'speedy') || 1) : 1;
+        const desiredWorldSpeed = speed * ratio * catchup * practical; // World-space pace after any temporary follow recovery.
         const global = devGlobalMovementMultiplier();
         const commandSpeed = compensateGlobalCreatureMovement(companion) && global > 0
           ? desiredWorldSpeed / global : desiredWorldSpeed; // The creature mover restores the global multiplier once.
@@ -317,6 +323,7 @@
         debug.ownerSpeedPxS = speed;
         debug.ownerSpeedPercent = ratio * 100;
         debug.catchupMultiplier = catchup;
+        debug.practicalSpeedMultiplier = practical;
         debug.property = String(property);
         debug.baseSpeciesSpeedPxS = baseline;
         debug.resolvedSpeedPxS = desiredWorldSpeed;
