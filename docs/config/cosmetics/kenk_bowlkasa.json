@@ -605,50 +605,6 @@
           }
         }
       }
-    },
-    "porakaneki_male": {
-      "parts": {
-        "head": {
-          "layers": {
-            "back": {
-              "image": {
-                "url": "./assets/cosmetics/clothes/hat/bowlkasa-back_porakaneki_m.png"
-              },
-              "spriteStyle": {
-                "base": {
-                  "xform": {
-                    "head": {
-                      "ax": -0.2,
-                      "ay": 0,
-                      "scaleX": 2.55,
-                      "scaleY": 2.55,
-                      "rotDeg": 0
-                    }
-                  }
-                }
-              }
-            },
-            "front": {
-              "image": {
-                "url": "./assets/cosmetics/clothes/hat/bowlkasa-front_porakaneki_m.png"
-              },
-              "spriteStyle": {
-                "base": {
-                  "xform": {
-                    "head": {
-                      "ax": -0.2,
-                      "ay": 0,
-                      "scaleX": 2.55,
-                      "scaleY": 2.55,
-                      "rotDeg": 0
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
     }
   }
 }
