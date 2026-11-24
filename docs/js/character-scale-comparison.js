@@ -560,6 +560,17 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
     return { hip: entry?.beltlineBaseFraction ?? .5, contact: Number.isFinite(contact) && contact > 0 ? contact : 0 }; // Keeps authored hip fixed while foot sizes change.
   }
 
+  function renderedPortraitScaleFor(entry) {
+    const actual = Number(entry?.model?.userData?.portraitScaleMultiplier); // Recorded by the real PNGPlaneAvatar builder, after species/gender ancestry and any child factors.
+    if (Number.isFinite(actual) && actual > 0) return actual; // Do NOT assume the authored rig profile is what this particular preview actually rendered.
+    try {
+      const fallback = Number(window.PNGPlaneAvatar?.avatarScaleMultiplierFor?.({ appearance: { speciesId: entry?.species, gender: entry?.gender } }));
+      if (Number.isFinite(fallback) && fallback > 0) return fallback;
+    } catch (_) { /* A not-yet-loaded portrait runtime must not block selection. */ }
+    const authored = Number(entry?.profile?.anatomy?.portraitScale);
+    return Number.isFinite(authored) && authored > 0 ? authored : 1;
+  }
+
   function select(entry) {
     if (!entry) return;
     if (selected !== entry) stopLongoranWalk();
@@ -571,9 +582,13 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
     const scale = window.HobunjiCharacterRigScale?.scaleFor?.(entry.species, entry.gender, entry.profile) || { x: 1, y: 1, head: 1, offsetY: 0 };
     document.getElementById('maaFullScaleSelected').textContent = `${prettySpecies(entry.species)} · ${entry.gender}`;
     document.getElementById('maaFullScaleNpc').textContent = entry.npc?.name || entry.npc?.id || 'Repository NPC';
-    for (const [axis, field] of [['X', 'x'], ['Head', 'head']]) {
+    for (const [axis, field] of [['X', 'x']]) {
       setSliderValue(axis, clampPercent((scale[field] || 1) * 100));
     }
+    const portraitMultiplier = renderedPortraitScaleFor(entry); // The actual built model defines the source-PNG-to-world conversion.
+    const rawHead = window.HobunjiCharacterRigScale?.rawPngHeadScaleFor?.(scale.head, portraitMultiplier)
+      ?? ((Number(scale.head) || 1) * portraitMultiplier);
+    setSliderValue('Head', rawHead * 100); // Never show the internal neck runtime factor as the user's raw-PNG Head value, even for one tick.
     const dimensions = window.HobunjiCharacterRigScale?.heightBeltlineFor?.(scale, beltlineGeometryFor(entry));
     setSliderValue('Height', clampPercent((dimensions?.height || scale.y || 1) * 100));
     setSliderValue('Beltline', Math.max(.1, Math.min(99.9, (dimensions?.beltline || entry.beltlineBaseFraction || .5) * 100))); // Display the actual floor-to-hip percentage after migration from legacy Y/legLength.
@@ -1731,6 +1746,8 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
       exportJson,
       get active() { return active; },
       get selectedKey() { return selected?.key || null; },
+      get selectedPortraitScaleMultiplier() { return selected?.model ? renderedPortraitScaleFor(selected) : null; }, // Canonical rendered-model basis, shared by the Head input guard and presentation.
+
       get selectedBeltlineGeometry() { return beltlineGeometryFor(selected); }, // Unscaled hip PLUS live sole contact; one math source for editor and gameplay.
       get selectedDimensions() { return selected ? window.HobunjiCharacterRigScale?.heightBeltlineFor?.(window.HobunjiCharacterRigScale?.scaleFor?.(selected.species, selected.gender, selected.profile), beltlineGeometryFor(selected)) : null; },
       get focusKey() { return focusedEntryKey; }, // Independent of selectedKey: choosing a different editor target must never move the camera.
@@ -1754,6 +1771,14 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
         currentTabMode: document.body.dataset.animationAuthorMode,
         lineup: entries.map(entry => entry.key),
         selected: selected?.key || null, // Identifies which progressively loaded species is currently editable.
+        headScaleParity: selected ? (() => {
+          const portrait = renderedPortraitScaleFor(selected); // Read-only diagnostic: no texture readbacks or scene traversal.
+          const runtime = window.HobunjiCharacterRigScale?.scaleFor?.(selected.species, selected.gender, selected.profile)?.head ?? 1;
+          return { portraitMultiplier: portrait, runtimeHeadFactor: runtime,
+            rawPngHeadPercent: (window.HobunjiCharacterRigScale?.rawPngHeadScaleFor?.(runtime, portrait) ?? runtime * portrait) * 100,
+            expectedRuntimeForRaw100: window.HobunjiCharacterRigScale?.runtimeHeadScaleForRaw?.(1, portrait) ?? 1 / portrait,
+            worldUniformMultiplier: window.HobunjiCharacterRigScale?.worldVisualScale?.() ?? 1 }; // 100% should cancel portrait scale; global multiplier is common to every character.
+        })() : null,
         selection: 'dropdown-only',
         panelVisible: !!document.getElementById(PANEL_ID)?.offsetParent, // Detects a hidden selector on mobile.
         ageMode,
