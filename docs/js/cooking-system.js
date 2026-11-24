@@ -7,7 +7,7 @@
   const CATEGORY_ICONS = {
     mineral: '💎', material: '🔩', wool: '🧶', sweetPaste: '🍯', sweetLiquid: '🫙', liquor: '🍶', grain: '🌾', teaBlend: '🍃', powder: '🥣', curds: '🥛', mayonnaise: '🥚', mustardSeed: '🌱', pungentPaste: '🧄', noodleBase: '🍜', cheese: '🧀', poultry: '🍗', meat: '🥩', whiteMilk: '🥛', seeds: '🌱', spice: '🌶️', fish: '🐟', mollusk: '🐚', starchVegetable: '🥔', butter: '🧈', vegetable: '🥬', brothBase: '🫕', berry: '🫐', fruit: '🍎', flour: '🥣', bread: '🍞', oil: '🫗', nut: '🥜', egg: '🥚', dairy: '🥛', sauce: '🫙', juice: '🧃', wine: '🍷', mead: '🍯', herb: '🌿', crop: '🌾', processedCrop: '🥣', processedProtein: '🍖', uumkaoiiDew: '💧', uumkaoiiMilk: '🥛', uumkaoiiCurds: '🥣', uumkaoiiCheese: '🧀', whiteCurds: '🥣', whiteCheese: '🧀',
   }; // Used to give every prototype ingredient an inventory and picker icon.
-  const EFFECT_ICONS = { strength: '💪', fortitude: '🛡️', vigor: '⚡', speed: '🏃', perception: '👁️', combat: '⚔️', farming: '🌾', fishing: '🎣', foraging: '🌿', cooking: '🍲', mining: '⛏️' }; // Used by food previews and the shared buff bar.
+  const EFFECT_ICONS = { strength: '💪', fortitude: '🛡️', vigor: '⚡', speed: '🏃', perception: '👁️', combat: '⚔️', farming: '🌾', fishing: '🎣', foraging: '🌿', cooking: '🍲', mining: '⛏️', feySight: '✨' }; // Used by food previews and the shared buff bar.
 
   const FOOD_EFFECT_BENEFITS = Object.freeze({
     strength: 'Increases outgoing damage.', fortitude: 'Reduces incoming Health damage.',
@@ -16,6 +16,7 @@
     combat: 'Improves Combat skill bonuses.', farming: 'Improves Farming skill bonuses.',
     fishing: 'Improves Fishing skill bonuses.', foraging: 'Improves Foraging skill bonuses.',
     cooking: 'Improves Cooking skill bonuses.', mining: 'Improves Mining skill bonuses.',
+    feySight: 'Increases fey encounter chance by 100% per stack until a fey reward is received.',
   }); // Food effect keys translated into explanations for the active buff menu.
   let deps = null; // Used as the only bridge to inventory, saving, and the host game's UI refreshes.
   let selectedRecipeId = null; // Used to preserve the selected recipe while rerendering.
@@ -121,7 +122,11 @@
         cookingProcessingTier: item.processingTier || 'raw',
         cookingDefaultStars: defaultStarsFor(item),
       });
-      if (!deps.inventoryItems.some(entry => entry.key === key)) deps.inventoryItems.push({ key, icon, label: item.name.toUpperCase(), max: 99 });
+      if (key === 'feyHeftroot') {
+        const ordinary = deps.ITEM_DEFS.heftroot; // Match ordinary root art and economics without inheriting its Fortitude effect.
+        Object.assign(deps.ITEM_DEFS[key], { icon: ordinary?.icon || icon, cat: ordinary?.cat || 'food', spriteIcon: ordinary?.spriteIcon || 'heftroot.png', sellPrice: ordinary?.sellPrice || deps.ITEM_DEFS[key].sellPrice });
+      }
+      if (!deps.inventoryItems.some(entry => entry.key === key)) deps.inventoryItems.push({ key, icon: deps.ITEM_DEFS[key].icon || icon, label: item.name.toUpperCase(), max: 99 });
     });
 
     Object.entries(deps.ITEM_DEFS).forEach(([key, definition]) => {
