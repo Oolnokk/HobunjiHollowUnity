@@ -111,35 +111,34 @@
     return mesh;
   }
 
+  // Transfer mesh resources only after all factories succeed.
+  function makeOverflowMesh(THREE,canvas,behind,width,height) {
+    const api=window.PNGPlaneAvatar,face=behind?'back':'front';
+    let texture=null,geometry=null,material=null; // Owned locally until mesh construction succeeds.
+    try{
+      texture=api.makePortraitTexture(THREE,api.makeVariantCanvas(canvas,behind?{flipX:true}:{}),`hat_overflow_${face}_texture`,face);
+      geometry=new THREE.PlaneGeometry(width,height);
+      material=api.makeSpriteMaterial(THREE,texture,`hat_overflow_${face}_material`);
+      const mesh=markOverflowMesh(THREE,new THREE.Mesh(geometry,material));
+      mesh.name=`hat_overflow_${face}_plane`;return mesh;
+    }catch(error){geometry?.dispose?.();material?.dispose?.();texture?.dispose?.();throw error;}
+  }
+
   // Builds the front/back overflow meshes. widthScale/heightScale are the
   // padded canvas size relative to the portrait canvas; the planes share the
   // portrait plane's centre because the padding is symmetric.
   function buildOverflowGroup(THREE, root, front, back, mirrorBackX) {
-    const api = window.PNGPlaneAvatar;
     const src = root.userData.sourceCanvas;
     const modelWidth = root.userData.portraitModelWidth, modelHeight = root.userData.portraitModelHeight;
     const group = new THREE.Group();
     group.name = 'hat_overflow_planes';
     group.userData.hatOverflowPlane = true;
-    const planeFor = canvas => new THREE.PlaneGeometry(
-      modelWidth * canvas.width / src.width, modelHeight * canvas.height / src.height);
-    if (front) {
-      const texture = api.makePortraitTexture(THREE, api.makeVariantCanvas(front), 'hat_overflow_front_texture', 'front');
-      const mesh = markOverflowMesh(THREE, new THREE.Mesh(planeFor(front), api.makeSpriteMaterial(THREE, texture, 'hat_overflow_front_material')));
-      mesh.name = 'hat_overflow_front_plane';
-      mesh.position.z = FACE_OFFSET;
-      group.add(mesh);
-    }
-    if (back) {
-      const texture = api.makePortraitTexture(THREE, api.makeVariantCanvas(back, { flipX: true }), 'hat_overflow_back_texture', 'back');
-      const mesh = markOverflowMesh(THREE, new THREE.Mesh(planeFor(back), api.makeSpriteMaterial(THREE, texture, 'hat_overflow_back_material')));
-      mesh.name = 'hat_overflow_back_plane';
-      mesh.position.z = -FACE_OFFSET;
-      mesh.rotation.y = Math.PI; // Same as the rigid portrait's back plane, with the same flipX texture variant.
-      if (mirrorBackX) mesh.scale.x = -1; // The skinned portrait draws its back face unrotated (reversed winding), i.e. mirrored relative to the rigid back plane.
-      group.add(mesh);
-    }
-    return group.children.length ? group : null;
+    const planeFor=(canvas,behind)=>makeOverflowMesh(THREE,canvas,behind,modelWidth*canvas.width/src.width,modelHeight*canvas.height/src.height);
+    try{
+      if(front){const mesh=planeFor(front,false);group.add(mesh);mesh.position.z=FACE_OFFSET;}
+      if(back){const mesh=planeFor(back,true);group.add(mesh);mesh.position.z=-FACE_OFFSET;mesh.rotation.y=Math.PI;if(mirrorBackX)mesh.scale.x=-1;}
+      return group.children.length?group:null;
+    }catch(error){disposeOverflow(group);throw error;}
   }
 
   // Places the overflow group under the head-scale bone at the bone's bind
@@ -229,7 +228,6 @@
     try {
       const canvases = await Promise.all(planes.map(plane => renderOverflowCanvas(profile, plane.view === 'behind' ? 'behind' : 'front', src.width, src.height, undefined, true)));
       if (options.isCancelled?.()) return [];
-      const api = window.PNGPlaneAvatar;
       planes.forEach((plane, index) => {
         const canvas = canvases[index];
         if (!canvas || !plane.mesh.parent || options.isCancelled?.()) return;
@@ -240,16 +238,12 @@
         const box = geometry?.boundingBox;
         const planeW = box && box.max.x > box.min.x ? box.max.x - box.min.x : modelWidth;
         const planeH = box && box.max.y > box.min.y ? box.max.y - box.min.y : modelHeight;
-        const texture = api.makePortraitTexture(THREE, api.makeVariantCanvas(canvas, behind ? { flipX: true } : {}), `hat_overflow_${behind ? 'back' : 'front'}_texture`, behind ? 'back' : 'front');
-        const mesh = markOverflowMesh(THREE, new THREE.Mesh(
-          new THREE.PlaneGeometry(planeW * canvas.width / src.width, planeH * canvas.height / src.height),
-          api.makeSpriteMaterial(THREE, texture, `hat_overflow_${behind ? 'back' : 'front'}_material`)));
-        mesh.name = `hat_overflow_${behind ? 'back' : 'front'}_plane`;
-        const holder = new THREE.Group(); // Carries the plane's own rest transform; the mesh adds the small facing offset.
+        const holder = new THREE.Group(); // Track ownership before fallible mesh/attachment work.
         holder.name = 'hat_overflow_planes';
         holder.userData.hatOverflowPlane = true;
-        mesh.position.z = FACE_OFFSET;
-        holder.add(mesh);
+        attached.push(holder);
+        const mesh=makeOverflowMesh(THREE,canvas,behind,planeW*canvas.width/src.width,planeH*canvas.height/src.height);
+        holder.add(mesh);mesh.position.z=FACE_OFFSET;
         const target = plane.mesh, bone = plane.headBone;
         const skeleton = target.isSkinnedMesh ? target.skeleton : null;
         const boneIndex = bone && skeleton ? skeleton.bones.indexOf(bone) : -1;
@@ -262,8 +256,7 @@
         } else if (target.parent) {
           holder.position.copy(target.position); holder.quaternion.copy(target.quaternion); holder.scale.copy(target.scale);
           target.parent.add(holder);
-        } else { disposeOverflow(holder);return; }
-        attached.push(holder);
+        } else { disposeOverflow(holder);attached.pop();return; }
       });
       if (attached.length) stats.attached++; else stats.empty++;
       return attached;
