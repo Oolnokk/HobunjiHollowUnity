@@ -142,7 +142,7 @@ if(typeof WeakRef==='function'){
   rig.applyToParent(early,'tletingan','male',authoredEarly);
   const nominalY=early.scale.y;
   real._setMeasurement('tletingan','male',{
-    body:{top:.32,bottom:.94,left:.12,right:.9,centroidU:.5,centroidV:.62},
+    body:{top:.02,bottom:.94,left:.12,right:.9,centroidU:.5,centroidV:.62},
     head:{top:.08,bottom:.36,left:.27,right:.73,centroidU:.5,centroidV:.18,pivotU:.5,pivotV:.35},
   });
   const refreshed=rig.refreshMeasuredHeights(); // Synchronous first chunk; a large town continues in small batches.
