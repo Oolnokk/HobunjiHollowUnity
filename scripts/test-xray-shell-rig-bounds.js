@@ -253,7 +253,7 @@ function shellScenario(withException,enableScissor=false){
   };
   const setup=new Function('h',[
     'const {internalReplay,retiredScenes,originalRender,scanScene,isShellOutlinePass,heldRegistry,waterOccludedRegistry,groundRegistry,topFaceGroundRegistry,collectVisible,SHELL_LAYER,hasLayer,isAuthoredInkPlane,filterOffscreenReplayMeshes,window,buildXrayGroups,replayScissorEnabled,replayScissorRect,hideObjects,restoreVisibility,replayShellOutlineXray}=h;',
-    'const hasDisabledActorXray = false; const isBaseWorldPass = () => false; const syncShoulderPetLayering = () => { throw Error("shoulder-policy-on-shell-pass"); };',
+    'const hasDisabledActorXray = false, allActorXrayDisabled = false; const isBaseWorldPass = () => false; const syncShoulderPetLayering = () => { throw Error("shoulder-policy-on-shell-pass"); };',
     'let lastShellReplayCandidates=0,lastShellOffscreenFiltered=0,lastShellElevationGroups=0,lastShellFullscreenReason="none",ordinaryShellMeshesDrawnOnce=0,ordinaryShellReplaysAvoided=0;',
     'let nonParticipantReplaySkips=0,otherWeaponXrayBudgetSkips=0; // Counted by the base pass only; the shell pass restores them.',
     'const scissorRect={x:0,y:0,z:100,w:100};',
