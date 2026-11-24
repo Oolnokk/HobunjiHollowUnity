@@ -25,7 +25,7 @@ const testApi = [
   '    profileDescriptors, compareLineupEntries, lineupFamily, lineupSpacing,',
   '    arrangeEntries(list) {',
   '      THREE = { Box3: class {',
-  '        setFromObject(group) { this.group = group; return this; }',
+  '        setFromObject(group) { this.group = group; this.min = { z: -.2 }; this.max = { z: .2 }; return this; }',
   '        getSize(target) { target.x = this.group.width; return target; }',
   '        getCenter(target) { target.x = 0; return target; }',
   '      }, Vector3: class { constructor() { this.x = 0; } } };',
