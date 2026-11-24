@@ -123,8 +123,8 @@
     deps.hostiles.delete(c);deps.corpses?.delete(c);deps.companions?.delete(c);
     window.Combat?.cancelStagedForAttacker?.(c);window.Combat?.telegraph?.cancel?.(c);
     window.RangedWeapons?.cancelBanditAction?.(c);window.BanditCombat?.cancelLunge?.(c);
-    window.BanditCaptainArmaments?.discard?.(c);
     if(live)deps.despawn(c);
+    window.BanditCaptainArmaments?.discard?.(c); // Release a unique weapon texture only after its holder has been disposed.
   }
   function reset(reason='reset') {
     const rec=active;active=null;overkill=0;downedByRoot=false;
@@ -284,12 +284,12 @@
   function tick(dt) {
     const zone=area();
     if(!deps||(!active&&!ZONES.has(zone)))return;
-    syncWorld();
     if(active&&active.zone!==zone)reset('left encounter zone');
-    if(!ZONES.has(zone))return;
+    if(!ZONES.has(zone)){checkTime=0;return;}
     checkTime+=Math.max(0,Number(dt)||0);
     if(checkTime<CHECK_SECONDS)return;
     const elapsed=checkTime;checkTime=0;
+    syncWorld(); // World/cycle strings and ledger maintenance are throttled too.
     const rec=active;
     if(!rec){if(!window.PlayerDowned?.isDowned?.()&&deps.player.health>0)tryActivate();return;}
     if(rec.phase==='combat'&&!window.PlayerDowned?.isDowned?.()&&Math.hypot(deps.player.x/deps.TILE-rec.site.c-.5,deps.player.y/deps.TILE-rec.site.r-.5)>chunkSize()*2){reset('player escaped locale');return;}
