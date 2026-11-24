@@ -92,7 +92,7 @@
   }
   // A wave owns construction only while its record belongs to the current
   // scene. The caller supplies the existing NPC factory, adoption and disposal.
-  async function runWave(record,{owns,prepare,canBegin=()=>true,create,validate=()=>true,adopt,dispose,random=Math.random,onSuppressed,onFailure,onComplete}) {
+  async function runWave(record,{owns,prepare,canBegin=()=>true,create,validate=()=>true,adopt,dispose,onAdopted,random=Math.random,onSuppressed,onFailure,onComplete}) {
     if(!owns()||record.building)return false;
     record.building=true;
     let count=0; // Counts actors adopted into live gameplay, not just built.
@@ -119,6 +119,7 @@
           if(!validate(actor,member,point))throw Error('invalid constructed actor: '+member);
           adopt(actor,member,point);
           adopted=true;count++;
+          onAdopted?.(actor,member,point);
         }finally{if(!adopted)dispose(actor);}
       }
       if(!count)throw Error('no valid wave spawn');
