@@ -1156,31 +1156,41 @@
           <div class="sh-price">${entry.price}g</div>
         </div>
         <button class="shop-buy-btn" type="button"${short ? ` disabled title="You need ${short}g more" style="opacity:.55"` : ''}>${short ? `Need ${short}g` : 'Buy'}</button>`;
-      row.querySelector('button').addEventListener('click', () => { buy(caravan.id, entry.id); });
+      window.ShopQuantity.attach(row.querySelector('button'), { maximum: () => purchaseLimit(entry),
+        price: entry.price, showControls: entry.kind === 'item' && entry.qty > 1,
+        unavailableLabel: () => num(deps.inventory.gold, 0) < entry.price ? `Need ${entry.price - num(deps.inventory.gold, 0)}g` : 'Unavailable',
+        purchase: quantity => buy(caravan.id, entry.id, quantity) });
       list.appendChild(row);
     }
   }
 
-  function buy(caravanId, entryId) {
+  function purchaseLimit(entry) {
+    return window.ShopQuantity.max(deps.inventory, { price: entry.price, limit: entry.kind === 'item' ? entry.qty : Math.min(1, entry.qty),
+      grants: entry.kind === 'item' ? { [entry.key]: 1 } : {} });
+  }
+
+  function buy(caravanId, entryId, quantity = 1) {
     const caravan = state.caravans.find(c => c.id === caravanId);
     const entry = caravan?.stock.find(e => e.id === entryId);
-    if (!caravan || !entry || entry.qty < 1 || !deps?.inventory) return { ok: false, reason: 'unavailable' };
+    if (!caravan || !entry || !['item', 'trinket', 'relic'].includes(entry.kind) || entry.qty < 1 || !deps?.inventory) return { ok: false, reason: 'unavailable' };
     const gold = num(deps.inventory.gold, 0);
-    if (gold < entry.price) { deps.showToast?.('Not enough ganang.', false); return { ok: false, reason: 'gold' }; }
+    if (!Number.isSafeInteger(quantity) || quantity < 1 || quantity > entry.qty || (entry.kind !== 'item' && quantity !== 1)) return { ok: false, reason: 'quantity' };
+    if (gold < entry.price * quantity) { deps.showToast?.('Not enough ganang.', false); return { ok: false, reason: 'gold' }; }
+    if (!window.ShopQuantity.valid(quantity, purchaseLimit(entry))) { deps.showToast?.('You cannot carry that many.', false); return { ok: false, reason: 'full' }; }
     if (entry.kind === 'item') {
       const owned = num(deps.inventory[entry.key], 0);
       const maxTotal = num(window.InventoryStacks?.MAX_TOTAL, 9999); // Shared bag cap (js/inventory-stacks.js).
-      if (owned >= maxTotal) { deps.showToast?.('You cannot carry any more of that.', false); return { ok: false, reason: 'full' }; }
-      deps.inventory[entry.key] = owned + 1;
+      if (owned + quantity > maxTotal) { deps.showToast?.('You cannot carry any more of that.', false); return { ok: false, reason: 'full' }; }
+      deps.inventory[entry.key] = owned + quantity;
       if (entry.key.startsWith('cv_')) window.CropVarieties?.refreshBrushes?.(); // Imported seed becomes a farm-editor option immediately after buying.
     } else if (entry.kind === 'trinket') {
       if (!window.TrinketSystem?.grant?.(entry.trinketId, 'slagothim')) { deps.showToast?.('That trinket is not available.', false); return { ok: false, reason: 'trinket' }; }
     } else if (entry.kind === 'relic') {
       if (!window.HarlyaoRelics?.grantBoundRelic?.(entry.relic)) { deps.showToast?.('That blade is not available.', false); return { ok: false, reason: 'relic' }; }
     }
-    deps.inventory.gold = gold - entry.price;
-    entry.qty -= 1;
-    deps.showToast?.(`Bought ${entry.label} for ${entry.price}g.`, true);
+    deps.inventory.gold = gold - entry.price * quantity;
+    entry.qty -= quantity;
+    deps.showToast?.(`Bought ${quantity}× ${entry.label} for ${entry.price * quantity}g.`, true);
     deps.buildInventoryGrid?.();
     deps.refreshActionBar?.();
     deps.save?.();

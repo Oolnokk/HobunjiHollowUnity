@@ -44,6 +44,10 @@
 function warpGarment(source,targetNorm,outWidth,outHeight){
   const output=document.createElement('canvas');output.width=outWidth;output.height=outHeight;
   const x=output.getContext('2d',{alpha:true});x.imageSmoothingEnabled=false;
+  if(source.width===outWidth&&source.height===outHeight&&
+     targetNorm.every((point,index)=>Math.abs(point.x-SOURCE_GRID[index].x)<1e-9&&Math.abs(point.y-SOURCE_GRID[index].y)<1e-9)){
+    x.drawImage(source,0,0);return output; // An untouched grid is an identity map; copy pixels instead of resampling 800 triangles.
+  }
 
   /*
     Important correction from V4:
@@ -118,7 +122,7 @@ async function refreshAssets(){
   const generation=++R.assetGeneration; // The latest selection alone may install downloaded images.
   const species=E.species.value,gender=E.gender.value,garmentId=E.garment.value,region=fitRegion();
   const sourceSpecies=E.sourceSpecies.value,sourceGender=E.sourceGender.value; // Source dimensions and garment raster are independent of the target avatar.
-  R.body=null;R.sourceBody=null;R.sourceTorso=null;R.targetTorso=null;R.cloth=null;R.headReference=null;R.headReferenceBack=null;R.backplaneReference=null;R.headbandRearCanvas=null;R.headbandRearKey=null;R.authoredTargetCloth=null;
+  R.body=null;R.sourceBody=null;R.sourceTorso=null;R.targetTorso=null;R.cloth=null;R.headReference=null;R.headReferenceBack=null;R.backplaneReference=null;R.headbandRearCanvas=null;R.headbandRearKey=null;R.authoredTargetCloth=null;R.authoredTargetIsBase=false;
   R.contourSourceCache=null;R.contourMask=null;R.contourMaskKey=null;R.contourMaskOverlay=null;
   R.headbandGridCache=new WeakMap();R.headbandWarpStats=null; // Do not reuse a previous garment/source species' spline base raster. // Selection changes invalidate all pixel masks and contour rasters held in memory.
   E.clothPng.disabled=true;E.compositePng.disabled=true; // Never allow exporting a stale garment during a source/target change.
@@ -150,6 +154,7 @@ async function refreshAssets(){
     const torsos=region==='body'?await Promise.all([buildTorsoCanvas(sourceSpecies,sourceGender,sourceBody.width,sourceBody.height),buildTorsoCanvas(species,gender,body.width,body.height)]):[null,null]; // Missing torso layers disable contour fitting without affecting ordinary garment fitting.
     if(generation!==R.assetGeneration)return; // Switching modes/species while images load cannot reinstall stale art.
     R.body=body;R.sourceBody=sourceBody;R.sourceTorso=torsos[0];R.targetTorso=torsos[1];R.headReference=headReference;R.cloth=cloth;R.authoredTargetCloth=authored;
+    R.authoredTargetIsBase=!!authored&&!R.garments?.find(g=>g.id===garmentId)?.cfg?.speciesVariants?.[`${species}_${gender}`]; // Headwear falls back to the cosmetic's base parts; that art was not authored for this species and must not be traced as its fitted target.
     const layerCount=cloth?._layers?.length||0; // Distinct authored source rasters, including explicit alternate behind-view images.
     E.clothPng.disabled=!cloth;E.compositePng.disabled=!cloth;
     E.clothPng.textContent=layerCount>1?`Export ${layerCount} fitted layers ZIP`:(region==='headwear'?'Export fitted headwear PNG':'Export fitted clothing PNG');
@@ -159,7 +164,9 @@ async function refreshAssets(){
     E.exportHeadwearFront.disabled=region!=='headwear'||!cloth?._front;
     E.exportHeadwearBack.disabled=region!=='headwear'||!(cloth?._behindView||cloth?._back);
     E.authoredStatus.textContent=authored
-      ?`Authored ${species}_${gender} variant available.`
+      ?(R.authoredTargetIsBase
+        ?`No ${species}_${gender} variant is authored; the overlay shows this item's base art.`
+        :`Authored ${species}_${gender} variant available.`)
       :'No authored target variant for this garment/species/gender.';
     sizeStage(); // Use the new native dimensions before tracing and loading rear artwork.
     ensureTargetData(species,gender);
@@ -182,6 +189,7 @@ async function refreshAssets(){
 function sizeStage(){
   if(!R.body)return;
   E.stage.width=R.body.width;E.stage.height=R.body.height;C.imageSmoothingEnabled=false;
+  E.stage.style.setProperty('--stage-ar',String(R.body.width/Math.max(1,R.body.height))); // Pinned preview scales the canvas at this exact aspect.
 }
 function drawGrid(ctx,points,color,active){
   const px=toDisplayPixels(points,E.stage.width,E.stage.height);
@@ -225,6 +233,8 @@ function cachedHeadbandGridWarp(source,grid,width,height){
 }
 function applyHeadbandSplineWarp(garment,state,width,height){
   if(!state?.enabled||!window.ClothingHeadbandSpline.valid(state.source)||!window.ClothingHeadbandSpline.valid(state.target))return garment;
+  if(state.source.every((point,index)=>Math.abs(point.x-state.target[index].x)<1e-6&&Math.abs(point.y-state.target[index].y)<1e-6))
+    return garment; // An unshaped curve is an identity map; skip the resample so the 6×6 fit exports untouched pixels.
   const ctx=garment.getContext('2d',{alpha:true});
   const rgba=ctx.getImageData(0,0,width,height);
   const warped=window.ClothingHeadbandSpline.warp(rgba.data,width,height,state.source,state.target);
@@ -233,13 +243,127 @@ function applyHeadbandSplineWarp(garment,state,width,height){
   image.data.set(warped);targetCtx.putImageData(image,0,0);
   return result; // PNG alpha and black outlines remain authored pixels, not regenerated outlines.
 }
-function warpClothing(source,grid,width,height,fitContourState=null){
+// ---- Hood-opening (hole) deformation: detection via the beard/hood cutout tool ----
+function currentHoleRecord(){
+  const key=ensureTargetData(E.species.value,E.gender.value);
+  A.holeDeforms ||= {};
+  const saved=A.holeDeforms[key];
+  if(saved&&Array.isArray(saved.corners))return saved;
+  return A.holeDeforms[key]={enabled:false,rate:window.ClothingHoodHoleDeform?.DEFAULT_RATE??1.5,trimFollow:1,corners:[{x:0,y:0},{x:0,y:0},{x:0,y:0},{x:0,y:0}]};
+}
+function holePortraitRect(width,height){
+  // Same preset-B placement the game uses for every wearable layer, so the
+  // beard tool's 200px detection windows land on the real face opening.
+  const preset=window.getPortraitXformPreset?.('B')||{ax:-.0983,ay:-.0809,sx:2.49,sy:2.49};
+  return portraitLayerRect(width,height,{ax:preset.ax,ay:preset.ay,sx:preset.sx??preset.scaleX,sy:preset.sy??preset.scaleY},200,200);
+}
+function detectHoodOpening(canvas){
+  const Cut=window.PortraitBeardHoodCutout,Hole=window.ClothingHoodHoleDeform;
+  if(!Cut||!Hole||!canvas)return null;
+  const width=canvas.width,height=canvas.height,rect=holePortraitRect(width,height);
+  const portrait=Object.assign(document.createElement('canvas'),{width:200,height:200});
+  const pctx=portrait.getContext('2d',{alpha:true});pctx.imageSmoothingEnabled=false;
+  pctx.drawImage(canvas,rect.x,rect.y,rect.w,rect.h);
+  const rgba200=pctx.getImageData(0,0,200,200).data;
+  const lower=Cut.lowerHoodOpeningSegment(rgba200),upper=Cut.upperHoodOpeningSegment(rgba200);
+  const ring=Hole.ringFromPortrait(lower,upper,rect,width,height);
+  if(!ring)return null;
+  const rgba=canvas.getContext('2d').getImageData(0,0,width,height).data;
+  const profile=Hole.buildProfile(rgba,width,height,ring.points,ring.seed);
+  if(profile){profile.ringPoints=ring.points;profile.clockwiseComplete=!!lower.clockwiseComplete}
+  return profile;
+}
+function holeProfileForGrid(grid,width,height){
+  const front=R.cloth?._front||R.cloth;
+  if(!front)return null;
+  const key=`${R.assetGeneration}|${width}x${height}|`+grid.map(p=>p.x.toFixed(5)+','+p.y.toFixed(5)).join(';');
+  if(R.holeProfileCache?.key===key&&R.holeProfileCache.front===front)return R.holeProfileCache.profile;
+  const profile=detectHoodOpening(warpGarment(front,grid,width,height)); // Detect on the 6×6-fitted front composite, before any hole edit.
+  R.holeProfileCache={key,front,profile};
+  return profile;
+}
+// Pinned outline: parts of an item's silhouette the author marked as
+// immovable. Stored per item (same key as its contour record) in source
+// sprite pixels; applied after the grid and hood-hole deforms.
+function currentPinRecord(){
+  A.silhouettePins ||= {};
+  const key=contourSelectionKey();
+  const saved=A.silhouettePins[key];
+  if(saved&&Array.isArray(saved.points))return saved;
+  return A.silhouettePins[key]={points:[],rearPoints:[],sigma:window.ClothingSilhouettePins?.DEFAULT_SIGMA??8};
+}
+// Where the fit (6×6 cage, then the hood-hole deform for base cloth) moves a source pixel.
+function forwardFitPoint(p,grid,width,height,hole){
+  const N=GRID_SIZE-1,u=Math.max(0,Math.min(1,p.x/width)),v=Math.max(0,Math.min(1,p.y/height));
+  const col=Math.min(N-1,Math.floor(u*N)),row=Math.min(N-1,Math.floor(v*N));
+  const tl=row*GRID_SIZE+col,tr=tl+1,bl=tl+GRID_SIZE,br=bl+1;
+  const q=bilerpPoint(grid[tl],grid[tr],grid[bl],grid[br],u*N-col,v*N-row);
+  let x=q.x*width,y=q.y*height;
+  const Hole=window.ClothingHoodHoleDeform;
+  if(Hole&&hole?.enabled&&!Hole.isIdentity(hole.corners)){
+    const profile=holeProfileForGrid(grid,width,height);
+    if(profile){const d=Hole.displacementAt(profile,Hole.normalizeCorners(hole.corners),Hole.normalizeRate(hole.rate),x,y,0);x+=d.x;y+=d.y}
+  }
+  return{x,y};
+}
+function applySilhouettePins(canvas,grid,width,height,pins,hole){
+  const Pins=window.ClothingSilhouettePins;
+  if(!Pins||!canvas||!pins?.points?.length)return canvas;
+  const list=pins.points.map(p=>{const f=forwardFitPoint(p,grid,width,height,hole);return{x:f.x,y:f.y,ex:p.x-f.x,ey:p.y-f.y}});
+  const ctx=canvas.getContext('2d',{alpha:true}),image=ctx.getImageData(0,0,width,height);
+  const warped=Pins.warp(image.data,width,height,list,pins.sigma);
+  if(warped===image.data)return canvas;
+  const result=Object.assign(document.createElement('canvas'),{width,height});
+  const rctx=result.getContext('2d',{alpha:true}),out=rctx.createImageData(width,height);
+  out.data.set(warped);rctx.putImageData(out,0,0);
+  return result;
+}
+// How closely a layer rides along with the opening: trim follows it (so the
+// base can show where the trim moved away), every other material uses the
+// cloth falloff. Older saved records have no trimFollow and follow fully.
+function holeFollowForRole(hole,role){
+  if(String(role||'')!=='trim')return 0;
+  const value=Number(hole?.trimFollow);
+  return Number.isFinite(value)?Math.max(0,Math.min(1,value)):1;
+}
+function applyHoleDeform(canvas,grid,width,height,hole,role=''){
+  const Hole=window.ClothingHoodHoleDeform;
+  if(!Hole||!hole?.enabled||Hole.isIdentity(hole.corners))return canvas;
+  const profile=holeProfileForGrid(grid,width,height);
+  if(!profile)return canvas;
+  // Forward mesh warp: the region inside the (smoothed) hood outline is
+  // erased and redrawn through displaced polar triangles, the same affine
+  // triangle drawing the 6×6 grid uses. Every layer goes through the same
+  // mesh, so base, trim and any other material move together, and growing or
+  // shrinking the opening stretches the cloth instead of tearing it.
+  const mesh=Hole.mesh(profile,hole.corners,hole.rate,{follow:holeFollowForRole(hole,role)});
+  if(!mesh)return canvas;
+  const result=Object.assign(document.createElement('canvas'),{width,height});
+  const rctx=result.getContext('2d',{alpha:true});rctx.imageSmoothingEnabled=false;
+  rctx.drawImage(canvas,0,0);
+  const edge=mesh.rings[mesh.rings.length-1]; // Pad ring: d === s, outside every moving pixel.
+  rctx.save();rctx.globalCompositeOperation='destination-out';rctx.beginPath();
+  edge.forEach((v,i)=>i?rctx.lineTo(v.s.x,v.s.y):rctx.moveTo(v.s.x,v.s.y));
+  rctx.closePath();rctx.fill();rctx.restore();
+  Hole.forEachTriangle(mesh,(s0,s1,s2,d0,d1,d2)=>drawTriangleWarp(rctx,canvas,s0,s1,s2,d0,d1,d2));
+  return result;
+}
+function warpClothing(source,grid,width,height,fitContourState=null,options={}){
   const isHeadwear=fitRegion()==='headwear';
   const state=fitContourState||(isHeadwear?currentHeadbandRecord():currentContourRecord());
   const garment=isHeadwear&&state?.enabled
     ?cachedHeadbandGridWarp(source,grid,width,height)
     :warpGarment(source,grid,width,height);
-  if(isHeadwear)return applyHeadbandSplineWarp(garment,state,width,height);
+  if(isHeadwear){
+    const splined=applyHeadbandSplineWarp(garment,state,width,height);
+    if(options.view==='behind'){ // Rear-view art has no face opening; only its own pinned outline applies.
+      const pins=options.pins!==undefined?options.pins:currentPinRecord();
+      return applySilhouettePins(splined,grid,width,height,pins?.rearPoints?.length?{points:pins.rearPoints,sigma:pins.sigma}:null,null);
+    }
+    const hole=options.hole!==undefined?options.hole:currentHoleRecord();
+    const holed=applyHoleDeform(splined,grid,width,height,hole,options.role);
+    return applySilhouettePins(holed,grid,width,height,options.pins!==undefined?options.pins:currentPinRecord(),hole); // Pinned outline returns to its source position last.
+  }
   if(routedPatchIsBody()||!R.sourceTorso||!R.targetTorso)return garment;
   if(!state?.enabled)return garment;
   const mask=fitContourState?.maskPixels||currentContourMask();

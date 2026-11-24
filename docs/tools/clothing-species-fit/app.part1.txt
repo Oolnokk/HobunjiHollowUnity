@@ -20,7 +20,7 @@ const E={
   headbandWholeSection:$('headbandWholeSection'),headbandWholeStatus:$('headbandWholeStatus'),headbandWholeDrag:$('headbandWholeDrag'),headbandWholeReset:$('headbandWholeReset'),headbandWholeBake:$('headbandWholeBake'), // Whole-curve transform UI for whichever plane and source/target mapping is selected.
   headbandWholeX:$('headbandWholeX'),headbandWholeXNumber:$('headbandWholeXNumber'),headbandWholeY:$('headbandWholeY'),headbandWholeYNumber:$('headbandWholeYNumber'),headbandWholeScaleX:$('headbandWholeScaleX'),headbandWholeScaleXNumber:$('headbandWholeScaleXNumber'),headbandWholeScaleY:$('headbandWholeScaleY'),headbandWholeScaleYNumber:$('headbandWholeScaleYNumber'),headbandWholeRotation:$('headbandWholeRotation'),headbandWholeRotationNumber:$('headbandWholeRotationNumber'), // Sliders and exact numeric inputs synchronize with one saved per-curve transform.
   headbandView:$('headbandView'),headbandFlipH:$('headbandFlipH'),headbandFlipV:$('headbandFlipV'),headbandRearSection:$('headbandRearSection'),headbandRearImport:$('headbandRearImport'),headbandRearExport:$('headbandRearExport'),headbandRearEdit:$('headbandRearEdit'),headbandRearFromFront:$('headbandRearFromFront'),headbandRearFromExisting:$('headbandRearFromExisting'),headbandRearBlank:$('headbandRearBlank'),headbandRearRemove:$('headbandRearRemove'),headbandRearDraw:$('headbandRearDraw'),headbandRearErase:$('headbandRearErase'),headbandRearSample:$('headbandRearSample'),headbandRearColor:$('headbandRearColor'),headbandRearBrush:$('headbandRearBrush'),headbandRearFullPlane:$('headbandRearFullPlane'),headbandRearStatus:$('headbandRearStatus'), // Rear-facing sprite authoring and editable spline orientation. // Seven-point source mapping and fitted-target controls.
-  help:$('help'),showBody:$('showBody'),showGarment:$('showGarment'),showMeshes:$('showMeshes'),match3D:$('match3D'),match3DStatus:$('match3DStatus'),opacity:$('opacity'),
+  help:$('help'),showBody:$('showBody'),showGarment:$('showGarment'),showMeshes:$('showMeshes'),match3D:$('match3D'),showHair:$('showHair'),match3DStatus:$('match3DStatus'),opacity:$('opacity'),
   showAuthored:$('showAuthored'),authoredOpacity:$('authoredOpacity'),authoredStatus:$('authoredStatus'),
   extTorsoFile:$('extTorsoFile'),extTorsoClothingFile:$('extTorsoClothingFile'),extOverwearFile:$('extOverwearFile'),
   showExtended3D:$('showExtended3D'),clearExtended:$('clearExtended'),downloadExtended:$('downloadExtended'),extendedStatus:$('extendedStatus'),
@@ -32,6 +32,8 @@ const E={
   scaleXNumber:$('scaleXNumber'),scaleYNumber:$('scaleYNumber'),translateXNumber:$('translateXNumber'),translateYNumber:$('translateYNumber'),resetTransform:$('resetTransform'),
   reset:$('reset'),undo:$('undo'),redo:$('redo'),bodyPng:$('bodyPng'),clothPng:$('clothPng'),compositePng:$('compositePng'),overlayPng:$('overlayPng'),exportHeadwearFront:$('exportHeadwearFront'),exportHeadwearBack:$('exportHeadwearBack'),
   exportJson:$('exportJson'),importJson:$('importJson'),file:$('file'),diagnosticsInput:$('diagnosticsInput'),importDiagnostics:$('importDiagnostics'),copyDebug:$('copyDebug'),debug:$('debug'),
+  holeEnabled:$('holeEnabled'),holeRate:$('holeRate'),holeRateNumber:$('holeRateNumber'),holeReset:$('holeReset'),holeStatus:$('holeStatus'),holeSection:$('hoodHoleSection'),holeLayerColors:$('holeLayerColors'),pinSection:$('pinSection'),pinBrush:$('pinBrush'),pinBrushNumber:$('pinBrushNumber'),pinSigma:$('pinSigma'),pinSigmaNumber:$('pinSigmaNumber'),pinErase:$('pinErase'),pinClear:$('pinClear'),pinCopyRear:$('pinCopyRear'),pinStatus:$('pinStatus'),holeLegend:$('holeLegend'),holeTrimFollow:$('holeTrimFollow'),holeTrimFollowNumber:$('holeTrimFollowNumber'),holeTrimField:$('holeTrimField'),
+  recipeSelect:$('recipeSelect'),recipeInfo:$('recipeInfo'),recipeApply:$('recipeApply'),recipeUseSpecies:$('recipeUseSpecies'),recipeName:$('recipeName'),recipeDescription:$('recipeDescription'),recipeSave:$('recipeSave'),recipeDownload:$('recipeDownload'),recipeImport:$('recipeImport'),recipeFile:$('recipeFile'),recipeDelete:$('recipeDelete'),recipeGarments:$('recipeGarments'),recipeBatch:$('recipeBatch'),recipeStatus:$('recipeStatus'),
   label:$('label'),stage:$('stage'),modeBtns:[...document.querySelectorAll('[data-mode]')]
 };
 const C=E.stage.getContext('2d',{alpha:true}); // Paints the interactive reference canvas.
@@ -39,7 +41,7 @@ C.imageSmoothingEnabled=false;
 
 const R={
   speciesIndex:[],speciesCfg:new Map(),garments:[],images:new Map(),bodyCanvases:new Map(),garmentCanvases:new Map(),
-  body:null,sourceBody:null,sourceTorso:null,targetTorso:null,headReference:null,cloth:null,authoredTargetCloth:null,warped:null,
+  body:null,sourceBody:null,sourceTorso:null,targetTorso:null,headReference:null,cloth:null,authoredTargetCloth:null,authoredTargetIsBase:false,warped:null,
   contourMask:null,contourMaskKey:null,contourMaskOverlay:null,contourSourceCache:null,contourLastFit:null,
   headbandGridCache:new WeakMap(),headbandWarpStats:null,headbandWholeWarning:'', // Whole-curve edge/fold constraints appear in mobile editor status.
   headbandRearCanvas:null,headbandRearKey:null,headReferenceBack:null,backplaneReference:null, // Native target-space rear pixels, isolated game rear head and full rear body guide. // Caches the unchanged 6x6 raster during curve-only drag edits.
@@ -78,7 +80,7 @@ function defaultMaskTransform(){return{scaleX:1,scaleY:1,translateY:0}}
 function zeroOffsets(){return SOURCE_GRID.map(()=>({x:0,y:0}))}
 function fresh(){
   return{
-    version:4,gridSize:GRID_SIZE,baseTransforms:{},localOffsets:{},maskPreviewTransforms:{},contourFits:{},headbandSplines:{},
+    version:4,gridSize:GRID_SIZE,baseTransforms:{},localOffsets:{},maskPreviewTransforms:{},contourFits:{},headbandSplines:{},recipes:{},holeDeforms:{},silhouettePins:{},
     settings:{mode:'transform',region:'body',gender:'male',species:'mao-ao',sourceSpecies:'mao-ao',sourceGender:'male',garment:'',headGarment:'',repo:E.repo.value}
   };
 }
@@ -100,7 +102,7 @@ function loadState(){
   try{
     const v=JSON.parse(localStorage.getItem(STORE)||'null');
     if(v&&(v.version===2||v.version===3||v.version===4)&&v.gridSize===GRID_SIZE){
-      return{version:4,gridSize:GRID_SIZE,baseTransforms:v.baseTransforms||{},localOffsets:v.localOffsets||{},maskPreviewTransforms:v.maskPreviewTransforms||{},contourFits:v.contourFits||{},headbandSplines:v.headbandSplines||{},settings:v.settings||{}};
+      return{version:4,gridSize:GRID_SIZE,baseTransforms:v.baseTransforms||{},localOffsets:v.localOffsets||{},maskPreviewTransforms:v.maskPreviewTransforms||{},contourFits:v.contourFits||{},headbandSplines:v.headbandSplines||{},recipes:v.recipes||{},holeDeforms:v.holeDeforms||{},silhouettePins:v.silhouettePins||{},settings:v.settings||{}};
     }
     return migrateLegacyV1()||fresh();
   }catch{return migrateLegacyV1()||fresh()}
@@ -118,10 +120,10 @@ function saveState(){
   localStorage.setItem(STORE,JSON.stringify(A));
 }
 function fitRegion(){return E.fitRegion.value==='headwear'?'headwear':'body'} // Controls which selection, overlay, and calibration key are active.
-function snapshot(){return JSON.stringify({baseTransforms:A.baseTransforms,localOffsets:A.localOffsets,maskPreviewTransforms:A.maskPreviewTransforms,contourFits:A.contourFits,headbandSplines:A.headbandSplines})}
+function snapshot(){return JSON.stringify({baseTransforms:A.baseTransforms,localOffsets:A.localOffsets,maskPreviewTransforms:A.maskPreviewTransforms,contourFits:A.contourFits,headbandSplines:A.headbandSplines,holeDeforms:A.holeDeforms,silhouettePins:A.silhouettePins})}
 function pushUndo(){undoStack.push(snapshot());if(undoStack.length>50)undoStack.shift();redoStack=[];syncHistory()}
 function restore(raw){
-  const v=JSON.parse(raw);A.baseTransforms=v.baseTransforms||{};A.localOffsets=v.localOffsets||{};A.maskPreviewTransforms=v.maskPreviewTransforms||{};A.contourFits=v.contourFits||{};A.headbandSplines=v.headbandSplines||{};
+  const v=JSON.parse(raw);A.baseTransforms=v.baseTransforms||{};A.localOffsets=v.localOffsets||{};A.maskPreviewTransforms=v.maskPreviewTransforms||{};A.contourFits=v.contourFits||{};A.headbandSplines=v.headbandSplines||{};A.holeDeforms=v.holeDeforms||{};A.silhouettePins=v.silhouettePins||{};
   R.contourMask=null;R.contourMaskKey=null;R.contourMaskOverlay=null;R.contourSourceCache=null;R.headbandGridCache=new WeakMap();R.headbandRearCanvas=null;R.headbandRearKey=null; // Undo restores stored masks rather than reusing an orphaned painting buffer.
   saveState();syncTransformControls();syncMaskTransformControls();syncContourControls();syncHeadbandControls();hydrateHeadbandRearArt().then(()=>{syncHeadbandControls();render()}).catch(error=>log('Rear art restore: '+error.message));render();
 }

@@ -121,6 +121,7 @@ async function loadRepositoryData(){
     if(!active())return;
     addGarments(priorityResults);
     rebuildSelectors();
+    if(typeof loadRecipeLibrary==='function')void loadRecipeLibrary(); // Library recipes load beside the catalog; the editor never waits for them.
     status('Loading source art for first available garment…');
     await refreshAssets();
     if(!active())return;
@@ -199,6 +200,7 @@ function rebuildGarmentSelector(){
     ?`${E.garment.options.length} ${region==='headwear'?'headwear':'clothing'} items with ${E.sourceSpecies.value} ${E.sourceGender.value} artwork.`
     :`No ${region==='headwear'?'headwear':'clothing'} sprites authored for ${E.sourceSpecies.value} ${E.sourceGender.value}. Choose a different starting species/gender.`;
   E.showBody.parentElement.lastChild.textContent=region==='headwear'?' head':' body';
+  if(typeof rebuildRecipeGarmentList==='function'&&E.recipeGarments)rebuildRecipeGarmentList(); // Batch checklist mirrors the items available for this starting sprite.
 }
 function bodyLayers(species,gender){
   return(R.speciesCfg.get(species)?.[gender]?.portraitBodyLayers||[]).map(x=>({id:x.id,path:x.url,url:assetUrl(x.url)})).filter(x=>x.path);
@@ -261,6 +263,30 @@ async function buildHeadReferenceCanvas(species,gender,width,height){
   ctx.drawImage(image,(headRect.x-bodyRect.x)*scaleX,(headRect.y-bodyRect.y)*scaleY,headRect.w*scaleX,headRect.h*scaleY);
   canvas._paths=[url];return canvas; // Inverse of canonical portrait draw positions, so head and headwear share the raw clothing-stage coordinate space.
 }
+function validLayerFrame(frame,iw,ih){
+  if(!frame||typeof frame!=='object')return null;
+  const x=Number(frame.x),y=Number(frame.y),w=Number(frame.width),h=Number(frame.height);
+  if(![x,y,w,h].every(Number.isFinite)||w<=0||h<=0||x<0||y<0||x+w>iw+.5||y+h>ih+.5)return null;
+  return{x,y,width:w,height:h};
+} // Same rule as portrait-utils _validLayerFrame.
+function drawPortraitRaster(ctx,image,width,height,frame=null){
+  const iw=image.naturalWidth||image.width,ih=image.naturalHeight||image.height;
+  const f=validLayerFrame(frame,iw,ih);
+  if(f){
+    // Padded big-hat PNG: its frame is the standard layer canvas. The fit
+    // stage works in that canvas, so the padding beyond it is cropped here.
+    const kx=width/f.width,ky=height/f.height;
+    ctx.drawImage(image,-f.x*kx,-f.y*ky,iw*kx,ih*ky);return;
+  }
+  if(iw===width&&ih===height){ctx.drawImage(image,0,0);return}
+  // The game sizes every portrait layer by HEIGHT and centers it horizontally
+  // (portraitLayerRect), so a headwear PNG authored on a larger canvas, e.g.
+  // the 540×484 citywatch helmet, must be normalized the same way here
+  // instead of being pasted unscaled at the origin (which cropped it away).
+  const dh=height,dw=iw/Math.max(1,ih)*height;
+  ctx.save();ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='high';
+  ctx.drawImage(image,(width-dw)/2,0,dw,dh);ctx.restore();
+}
 async function buildVariantGarmentCanvas(id,species,gender,width,height){
   const key=`${id}::${species}::${gender}::${width}x${height}::${fitRegion()}`;
   if(R.garmentCanvases.has(key))return R.garmentCanvases.get(key);
@@ -274,34 +300,45 @@ async function buildVariantGarmentCanvas(id,species,gender,width,height){
       const behindView=Object.assign(document.createElement('canvas'),{width,height});
       let hasFront=false,hasBack=false,hasBehindOverride=false; // Avoid wasting headwear warps and exports on unused orientations.
       const exportedLayers=[]; // Keeps headwear materials/front-back source identities separate for the fitted ZIP.
+      const rearDraws=[]; // Rear-view composite, drawn after the loop in the game's rear order.
       for(const record of records){
         try{
           const image=await loadImage(assetUrl(record.path));
           const target=record.isBack?back:front;
           const ctx=target.getContext('2d',{alpha:true});ctx.imageSmoothingEnabled=false;
-          ctx.drawImage(image,0,0); // All authored headwear layers retain their source-pixel alignment.
+          const frame=record.layer.image?.frame||null;
+          drawPortraitRaster(ctx,image,width,height,frame); // All authored headwear layers retain their source-pixel alignment.
           const layerCanvas=Object.assign(document.createElement('canvas'),{width,height});
-          layerCanvas.getContext('2d',{alpha:true}).drawImage(image,0,0);
+          drawPortraitRaster(layerCanvas.getContext('2d',{alpha:true}),image,width,height,frame);
           const layerPath=['parts','head','layers',record.name]; // Matches the same config leaf used by the behind-patch author.
           exportedLayers.push({name:`head.layers.${record.name}`,path:layerPath,url:record.path,role:record.layer.layerRole||'',view:record.isBack?'under':'front',canvas:layerCanvas});
           if(record.isBack)hasBack=true;
           else{
             hasFront=true;
-            let rearImage=image;
+            let rearImage=image,rearFrame=record.layer.behindImage?.frame||(record.behindPath===record.path?record.layer.image?.frame:null)||null;
+            if(!record.behindPath)rearFrame=record.layer.image?.frame||null;
             if(record.behindPath&&record.behindPath!==record.path){
               try{
                 rearImage=await loadImage(assetUrl(record.behindPath));
                 const rearCanvas=Object.assign(document.createElement('canvas'),{width,height}); // Independent rear-view override, never substituted for the front layer.
-                rearCanvas.getContext('2d',{alpha:true}).drawImage(rearImage,0,0);
+                drawPortraitRaster(rearCanvas.getContext('2d',{alpha:true}),rearImage,width,height,rearFrame);
                 exportedLayers.push({name:`head.layers.${record.name}.behindImage`,path:[...layerPath,'behindImage'],url:record.behindPath,role:record.layer.layerRole||'',view:'behind',canvas:rearCanvas});
-              }catch(error){log(`Missing rear ${garment.label} layer ${record.behindPath}; falling back to front art: ${error.message}`)}
+              }catch(error){rearFrame=record.layer.image?.frame||null;log(`Missing rear ${garment.label} layer ${record.behindPath}; falling back to front art: ${error.message}`)}
             }
-            const rearCtx=behindView.getContext('2d',{alpha:true});rearCtx.imageSmoothingEnabled=false;
-            rearCtx.drawImage(rearImage,0,0); // Compose cap then metal band in the same author-specified layer order.
+            rearDraws.push({image:rearImage,frame:rearFrame,trim:String(record.layer.layerRole||'')==='trim'});
             if(record.behindPath)hasBehindOverride=true;
           }
         }catch(error){log(`Missing ${garment.label} layer ${record.path}: ${error.message}`)}
       }
+      // Seen from behind, a hood's trim sits under the rear shell (the game's
+      // fur-lined and fur hood rear order); everything else keeps the authored
+      // order (e.g. a hat's cap, then its metal band).
+      const rearCtx=behindView.getContext('2d',{alpha:true});rearCtx.imageSmoothingEnabled=false;
+      for(const draw of [...rearDraws.filter(d=>d.trim),...rearDraws.filter(d=>!d.trim)])drawPortraitRaster(rearCtx,draw.image,width,height,draw.frame);
+      // The game draws the rear trim behind the head and the shell over it, so
+      // the stage needs the two halves separately to put the head between them.
+      const rearPart=list=>{if(!list.length)return null;const c=Object.assign(document.createElement('canvas'),{width,height}),cx=c.getContext('2d',{alpha:true});cx.imageSmoothingEnabled=false;for(const d of list)drawPortraitRaster(cx,d.image,width,height,d.frame);return c};
+      behindView._trim=rearPart(rearDraws.filter(d=>d.trim));behindView._shell=behindView._trim?rearPart(rearDraws.filter(d=>!d.trim)):null;
       const canvas=Object.assign(document.createElement('canvas'),{width,height});
       const x=canvas.getContext('2d',{alpha:true});x.imageSmoothingEnabled=false;
       x.drawImage(back,0,0);x.drawImage(front,0,0);

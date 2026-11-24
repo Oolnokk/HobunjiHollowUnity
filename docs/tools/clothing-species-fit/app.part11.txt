@@ -82,6 +82,9 @@ async function importGrids(file){
   pushUndo();
   if(v.version===4||v.version===3||v.version===2){
     A.baseTransforms=v.baseTransforms||{};A.localOffsets=v.localOffsets||{};A.maskPreviewTransforms=v.maskPreviewTransforms||{};A.contourFits=v.contourFits||{};A.headbandSplines=v.headbandSplines||{};
+    if(v.holeDeforms)A.holeDeforms=v.holeDeforms; // Older exports have no hood-hole edits; keep the current ones rather than wiping them.
+    if(v.silhouettePins)A.silhouettePins=v.silhouettePins; // Same for pinned outlines.
+    if(v.recipes)A.recipes={...(A.recipes||{}),...v.recipes};
   }else if(v.version===1&&v.targetGrids){
     A.baseTransforms={};A.localOffsets={};A.maskPreviewTransforms={};A.contourFits={};A.headbandSplines={};
     for(const [key,grid] of Object.entries(v.targetGrids)){
@@ -93,7 +96,8 @@ async function importGrids(file){
   }else throw new Error('Unsupported grid export version.');
   R.contourMask=null;R.contourMaskKey=null;R.contourMaskOverlay=null;R.contourSourceCache=null;R.headbandGridCache=new WeakMap();R.headbandRearCanvas=null;R.headbandRearKey=null; // Reload imported rear PNG instead of continuing with the previous in-memory painting buffer. // A newly imported mask must replace the previous in-memory brush buffer.
   if(v.repoBase)E.repo.value=v.repoBase;
-  saveState();syncTransformControls();syncMaskTransformControls();await refreshAssets();log('Imported '+file.name);
+  R.holeProfileCache=null;
+  saveState();syncTransformControls();syncMaskTransformControls();if(typeof rebuildRecipeSelector==='function')rebuildRecipeSelector();await refreshAssets();log('Imported '+file.name);
 }
 
 async function importExtendedRole(role,file){

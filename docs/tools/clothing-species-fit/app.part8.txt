@@ -48,9 +48,19 @@ function flipCanvasX(source){
 function canonicalPreviewSlot(slot){
   return({hood:'hood',hat:'hat',torso:'torsoCosmetic',overwear:'armCosmetic',pauldron:'pauldron'})[slot]||null;
 }
+function exposedPortraitUrls(garment,variantKey){
+  // Exposed/exposedSkin layers are the wearer's own anatomy (ears, tusks, trunk)
+  // drawn over the hood. The fit editor never warps them, but the game's parsed
+  // option keeps them in its layer list (as ./assets/-relative URLs).
+  const cfg=garment?.cfg,parts=cfg?.speciesVariants?.[variantKey]?.parts||cfg?.parts;
+  return new Set(Object.values(parts?.head?.layers||{})
+    .filter(layer=>['exposed','exposedSkin'].includes(String(layer?.layerRole||''))&&layer?.image?.url)
+    .map(layer=>String(layer.image.url).replace(/^\.\/assets\//,'')));
+}
 function canonicalPreviewSourceLayers(garment,source,options){
   const variant=`${E.sourceSpecies.value}_${E.sourceGender.value}`;
-  const metadata=options.variantLayers?.[variant]||options.layers||[];
+  const exposed=exposedPortraitUrls(garment,options.variantLayers?.[variant]?variant:null);
+  const metadata=(options.variantLayers?.[variant]||options.layers||[]).filter(layer=>!exposed.has(layer.url)); // Compare wearable materials only.
   const sprites=(source?._layers||[]).filter(layer=>!layer.path?.includes('behindImage'));
   if(metadata.length!==sprites.length)throw new Error(`Game portrait metadata mismatch: ${garment.id} has ${metadata.length} source materials but the fit editor loaded ${sprites.length}. Cannot promise runtime parity.`);
   return sprites.map((sprite,i)=>({sprite,meta:metadata[i]})); // The source catalog and portrait extractor iterate the same authored parts in insertion order.
@@ -58,14 +68,16 @@ function canonicalPreviewSourceLayers(garment,source,options){
 function canonicalPreviewGarmentOption(garment,source,options,overrides,opacity,previewTag){
   const sourceLayers=canonicalPreviewSourceLayers(garment,source,options);
   const variant=`${E.species.value}_${E.gender.value}`;
-  const targetMetadata=options.variantLayers?.[variant]||sourceLayers.map(pair=>pair.meta); // New species variants use donor metadata until their exported config is installed.
+  const targetAll=options.variantLayers?.[variant]||null;
+  const targetExposed=targetAll?exposedPortraitUrls(garment,variant):new Set();
+  const targetMetadata=targetAll?targetAll.filter(layer=>!targetExposed.has(layer.url)):sourceLayers.map(pair=>pair.meta); // New species variants use donor metadata until their exported config is installed.
   if(targetMetadata.length!==sourceLayers.length)throw new Error(`Game portrait has ${targetMetadata.length} target layers but ${sourceLayers.length} donor layers for ${garment.id}.`);
   const layers=sourceLayers.map(({sprite,meta},i)=>{
     const target=targetMetadata[i];
     if(target.pos!==meta.pos||target.paletteColorKey!==meta.paletteColorKey)
       throw new Error(`Cannot align ${garment.id} material ${i} with the game's target layer order/role.`);
     const key=`${target.url}#fit-${previewTag}-${i}`; // Keep exact original URL text for the game's hood/hat rear replacement rules.
-    const warped=warpClothing(fittedSourceCanvasForLayer(sprite),warpGridForMode(),R.body.width,R.body.height);
+    const warped=warpClothing(fittedSourceCanvasForLayer(sprite),warpGridForMode(),R.body.width,R.body.height,null,{role:sprite.role});
     const canvas=document.createElement('canvas');canvas.width=warped.width;canvas.height=warped.height;
     const ctx=canvas.getContext('2d',{alpha:true});ctx.globalAlpha=opacity;ctx.drawImage(warped,0,0);
     canvas.naturalWidth=canvas.width;canvas.naturalHeight=canvas.height; // The portrait renderer reads natural dimensions from image sources.
@@ -76,7 +88,7 @@ function canonicalPreviewGarmentOption(garment,source,options,overrides,opacity,
       ?headwearWarpForView('back') : null; // Custom rear art takes priority over existing behindImage only for the selected front headband layer.
     if(behindSprite||authoredRear){
       const behindKey=`${target.behindUrl||meta.behindUrl||target.url}#fit-behind-${previewTag}-${i}`;
-      const rear=authoredRear||warpClothing(behindSprite.canvas,warpGridForMode(),R.body.width,R.body.height);
+      const rear=authoredRear||warpClothing(behindSprite.canvas,warpGridForMode(),R.body.width,R.body.height,null,{view:'behind'});
       const rearCanvas=document.createElement('canvas');rearCanvas.width=rear.width;rearCanvas.height=rear.height;
       const rearCtx=rearCanvas.getContext('2d',{alpha:true});rearCtx.globalAlpha=opacity;rearCtx.drawImage(rear,0,0);
       rearCanvas.naturalWidth=rearCanvas.width;rearCanvas.naturalHeight=rearCanvas.height;
@@ -85,7 +97,9 @@ function canonicalPreviewGarmentOption(garment,source,options,overrides,opacity,
     }
     return result;
   });
-  return layers;
+  if(!targetAll||!targetExposed.size)return layers;
+  let material=0; // Re-insert the target species' own exposed anatomy at its authored position between the fitted materials.
+  return targetAll.map(layer=>targetExposed.has(layer.url)?layer:layers[material++]);
 }
 async function canonicalFittedGarmentPortrait(runtime){
   const garment=garmentRecord(),slot=canonicalPreviewSlot(garment?.slot);
@@ -143,7 +157,7 @@ async function composeRuntimePortrait(){
       const back=cloth._back?(warp?currentWarp(cloth._back):cloth._back):null;
       const front=cloth._front?(warp?currentWarp(cloth._front):cloth._front):null;
       const customRear=warp&&R.headbandRearCanvas?headwearWarpForView('back'):null;
-      const behindView=customRear||(cloth._behindView?(warp?currentWarp(cloth._behindView):cloth._behindView):null); // The authored behindImage replaces fallback mirrored front art.
+      const behindView=customRear||(cloth._behindView?(warp?currentWarp(cloth._behindView,'behind'):cloth._behindView):null); // The authored behindImage replaces fallback mirrored front art.
       if(back){
         const rearLayer=await rawGarmentToRuntimeLayer(back,opacity);
         if(rearLayer){

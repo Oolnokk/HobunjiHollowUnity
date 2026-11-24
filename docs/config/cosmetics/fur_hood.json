@@ -24,7 +24,9 @@
     },
     "layers": {
       "base": "A",
-      "trim": "B"
+      "trim": "B",
+      "exposed": "NONE",
+      "exposedSkin": "BODY"
     }
   },
   "speciesVariants": {
@@ -93,7 +95,7 @@
             "front": {
               "layerRole": "base",
               "image": {
-                "url": "./assets/cosmetics/clothes/hood/furhood-base_mashtz_m.png",
+                "url": "./assets/cosmetics/clothes/hood/furhood-base_mashtz_mashtzarr_m.png",
                 "colors": [
                   "A"
                 ]
@@ -112,13 +114,33 @@
                 }
               },
               "behindImage": {
-                "url": "./assets/cosmetics/clothes/hood/furhood-behind_mashtz_m.png"
+                "url": "./assets/cosmetics/clothes/hood/furhood-behind_mashtz_mashtzarr_m.png"
+              }
+            },
+            "front_exposed_ear": {
+              "layerRole": "exposedSkin",
+              "image": {
+                "exposedPart": "ear",
+                "url": "./assets/fightersprites/mashtzarr-m/exposed_ear.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
               }
             },
             "front_trim": {
               "layerRole": "trim",
               "image": {
-                "url": "./assets/cosmetics/clothes/hood/furhood-trim_mashtz_m.png",
+                "url": "./assets/cosmetics/clothes/hood/furhood-trim_mashtz_mashtzarr_m.png",
                 "colors": [
                   "B"
                 ]
@@ -137,7 +159,165 @@
                 }
               },
               "behindImage": {
-                "url": "./assets/cosmetics/clothes/hood/furhood-trim_mashtz_m.png"
+                "url": "./assets/cosmetics/clothes/hood/furhood-trim_mashtz_mashtzarr_m.png"
+              }
+            },
+            "front_exposed_tusk": {
+              "layerRole": "exposed",
+              "image": {
+                "exposedPart": "tusk",
+                "url": "./assets/fightersprites/mashtzarr-m/exposed_tusk.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              }
+            },
+            "front_exposed_trunk": {
+              "layerRole": "exposedSkin",
+              "image": {
+                "exposedPart": "trunk",
+                "url": "./assets/fightersprites/mashtzarr-m/exposed_trunk.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "mashtzarr_female": {
+      "parts": {
+        "head": {
+          "layers": {
+            "front": {
+              "layerRole": "base",
+              "image": {
+                "url": "./assets/cosmetics/clothes/hood/furhood-base_mashtz_mashtzarr_m.png",
+                "colors": [
+                  "A"
+                ]
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              },
+              "behindImage": {
+                "url": "./assets/cosmetics/clothes/hood/furhood-behind_mashtz_mashtzarr_m.png"
+              }
+            },
+            "front_exposed_ear": {
+              "layerRole": "exposedSkin",
+              "image": {
+                "exposedPart": "ear",
+                "url": "./assets/fightersprites/mashtzarr-f/exposed_ear.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              }
+            },
+            "front_trim": {
+              "layerRole": "trim",
+              "image": {
+                "url": "./assets/cosmetics/clothes/hood/furhood-trim_mashtz_mashtzarr_m.png",
+                "colors": [
+                  "B"
+                ]
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              },
+              "behindImage": {
+                "url": "./assets/cosmetics/clothes/hood/furhood-trim_mashtz_mashtzarr_m.png"
+              }
+            },
+            "front_exposed_tusk": {
+              "layerRole": "exposed",
+              "image": {
+                "exposedPart": "tusk",
+                "url": "./assets/fightersprites/mashtzarr-f/exposed_tusk.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              }
+            },
+            "front_exposed_trunk": {
+              "layerRole": "exposedSkin",
+              "image": {
+                "exposedPart": "trunk",
+                "url": "./assets/fightersprites/mashtzarr-f/exposed_trunk.png"
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
               }
             }
           }

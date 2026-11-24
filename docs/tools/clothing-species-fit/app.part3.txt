@@ -88,7 +88,9 @@ function captureFitState(){
     outputWidth:R.body?.width||Math.max(1,E.stage.width||234),
     outputHeight:R.body?.height||Math.max(1,E.stage.height||173),
     contour:captureContourState(), // Snapshots painted collar mask pixels, separate from spline headwear.
-    headband:captureHeadbandState() // Seven target/source nodes travel with final PNG and behind-sprite export snapshots.
+    headband:captureHeadbandState(), // Seven target/source nodes travel with final PNG and behind-sprite export snapshots.
+    hole:fitRegion()==='headwear'?JSON.parse(JSON.stringify(currentHoleRecord())):null, // Hood-opening quad + falloff, pinned for exports.
+    pins:fitRegion()==='headwear'?JSON.parse(JSON.stringify(currentPinRecord())):null // Pinned outline pixels of this item.
   }; // Used by PNG/ZIP exports so the complete fitted state cannot change between authoring and baking.
 }
 function targetGridFromFitState(fitState){
@@ -197,6 +199,7 @@ function autoHeadbandSourceNodes(view='front'){
   return traceHeadbandCanvas(view==='back'?art:cachedHeadbandGridWarp(art,targetGrid(),R.body.width,R.body.height));
 }
 function autoHeadbandTargetNodes(view='front'){
+  if(R.authoredTargetIsBase)return null; // Base fallback art belongs to another head; the target curve starts as an identity copy of the source curve instead.
   if(view==='back'){
     const art=R.authoredTargetCloth?._behindView||R.authoredTargetCloth?._front;
     return art?traceHeadbandCanvas(flipCanvasX(art)):null; // Original PNG orientation differs from visible backplane.
