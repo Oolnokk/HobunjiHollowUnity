@@ -1341,7 +1341,7 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
     if (!THREE || !referenceChair || !scene) return;
     const bounds = new THREE.Box3().setFromObject(referenceChair);
     if (bounds.isEmpty()) return;
-    const chairBackHeight = bounds.max.y - Math.min(0, bounds.min.y); // Authored chairSimple back top from real JSON geometry.
+    const chairBackHeight = bounds.max.y; // chairSimple's authored top measured strictly from game floor Y=0.
     if (!(chairBackHeight > 0)) return;
     sixFootHeight = chairBackHeight * (6 / 3); // A standard ~3 ft full chair height is the game's physical ruler; 6 ft = two chair backs.
     const line = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({
@@ -1361,6 +1361,7 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
     const edgeTop = new THREE.Vector3(); // Clip-space top extent for constant pixel-thickness.
     const edgeBottom = new THREE.Vector3(); // Clip-space bottom extent for constant pixel-thickness.
     const fallbackTarget = new THREE.Vector3(); // Used when the backdrop has no OrbitControls target.
+    const canvas = document.getElementById('view3d'); // Capture once, read its live height when the renderer draws.
     line.onBeforeRender = (_renderer, _scene, camera) => {
       if ((!active && !building) || !camera || !previewRoot) return;
       camera.getWorldDirection(forward); // Orbit controls can rotate freely; stay behind the characters along viewing direction.
@@ -1370,7 +1371,7 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
       const target = window.HobunjiGameplayBackdrop?.getCameraControls?.()?.target || fallbackTarget;
       line.position.set(target.x + forward.x * sixFootGuideDepth, sixFootHeight, target.z + forward.z * sixFootGuideDepth);
       projected.copy(line.position).project(camera);
-      if (![projected.x, projected.y, projected.z].every(Number.isFinite)) return;
+      if (!Number.isFinite(projected.x) || !Number.isFinite(projected.y) || !Number.isFinite(projected.z)) return; // No transient array allocations in render hook.
       center.set(0, projected.y, projected.z).unproject(camera);
       line.position.x += center.x - line.position.x; // Fix the horizontal shift from the orthographic author sidebar.
       line.position.z += center.z - line.position.z; // Still level at precisely six feet, even when orbiting.
@@ -1380,7 +1381,7 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
       edgeBottom.set(0, -1, projected.z).unproject(camera);
       const viewWidth = edgeL.distanceTo(edgeR);
       const viewHeight = edgeTop.distanceTo(edgeBottom);
-      const pixels = Math.max(1, document.getElementById('view3d')?.clientHeight || 450);
+      const pixels = Math.max(1, canvas?.clientHeight || 450);
       camera.getWorldQuaternion(rotation);
       line.quaternion.copy(rotation);
       line.scale.set(viewWidth * 1.04, viewHeight / pixels * 1.5, 1); // Width tracks zoom; line remains ~1.5 pixels thick on mobile.
