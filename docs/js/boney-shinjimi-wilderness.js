@@ -170,6 +170,8 @@
   }
   function releaseWalker() {
     generation++;
+    // Invalidated cutscenes cannot finish against the old encounter. Return to the last valid phase and release only their own lock.
+    if(sceneRunning){sceneRunning=false;if(state.phase==='scene')state.phase=state.reward?'leaving':'home';}
     if(walker) {
       const old=walker;walker=null;
       if(!deps?.despawnNpcWalker?.(old)) old.root?.parent?.remove?.(old.root);
