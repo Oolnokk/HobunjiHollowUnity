@@ -754,8 +754,14 @@
     const cachedFlails=window.HobunjiWeaponSpriteAssemblies?.debugSnapshot?.().filter(entry=>entry.connector); // Only flails matter for detached rope/head ownership; omit ordinary weapons.
     if(cachedFlails?.length) lines.push(`Flail retained roots: ${JSON.stringify(cachedFlails.slice(0,6).map(entry=>({
       itemKey:entry.itemKey,attached:entry.attached,loaded:entry.loaded,cachedPlayerOwned:entry.cachedPlayerOwned,
-      detachedForMs:entry.detachedForMs,connector:entry.connector,poseLength:entry.scale?.poseLength ?? 1, // Mobile Debug tab shows the actual sampled connector multiplier (0.6 = 40% shorter).
+      detachedForMs:entry.detachedForMs,connector:entry.connector,performance:entry.performance,poseLength:entry.scale?.poseLength ?? 1, // Mobile Debug tab shows the actual sampled connector multiplier (0.6 = 40% shorter).
     })))}`);
+    const portraitCpu=window.__portraitPixelCacheDebug?.()?.beardHood; // On-demand CPU-readback counters.
+    if(portraitCpu) lines.push(`Beard/hood CPU cache: ${JSON.stringify(portraitCpu)}`);
+    const lodCpu=window.GeometryAutoLOD?.snapshot?.();
+    if(lodCpu) lines.push(`Geometry AutoLOD CPU: ${JSON.stringify({visits:lodCpu.candidateVisits,hiddenSkips:lodCpu.hiddenAncestorSkips,geometryChecks:lodCpu.renderGeometryChecks})}`);
+    const keyHudCpu=window.__keyHudWriteDebug?.();
+    if(keyHudCpu) lines.push(`Key HUD writes: ${JSON.stringify(keyHudCpu)}`);
     const erroring = entries.filter(entry => entry.errorCount > 0);
     if (erroring.length) {
       lines.push(`>>> Frame scheduler subscriber errors: ${erroring.map(entry => `${entry.id}(${entry.owner}) x${entry.errorCount}: ${String(entry.lastError || '').split('\n')[0]}`).join(' | ')}`);

@@ -393,13 +393,15 @@
           : kind === 'walkable-floor' ? 'interior-floor' : null;
   }
 
-  function isTintCover(object, kind = surfaceKindForObject(object)) {
+  function isTintCover(object, kind = undefined) {
+    if (kind === undefined) kind = surfaceComposer?.classifyCover ? surfaceComposer.classifyCover(object) : surfaceKindForObject(object);
     return surfaceComposer?.isTintableCover
       ? surfaceComposer.isTintableCover(kind)
       : kind === 'water' || kind === 'slush';
   }
 
-  function isProtectedCover(object, kind = surfaceKindForObject(object)) {
+  function isProtectedCover(object, kind = undefined) {
+    if (kind === undefined) kind = surfaceComposer?.classifyCover ? surfaceComposer.classifyCover(object) : surfaceKindForObject(object);
     return surfaceComposer?.isProtectedCover
       ? surfaceComposer.isProtectedCover(kind)
       : kind === 'water' || kind === 'slush' || kind === 'snow' || kind === 'billboard-grass';
@@ -2351,6 +2353,9 @@
     } : null; // No candidate recording for elevation-only held replays.
     lastReplayInstancedCulled = 0; lastReplayInstancedKept = 0; lastReplayInertCount = 0;
     scene.traverseVisible((object) => {
+      // Groups/lights still have their descendants visited by Three, but
+      // cannot be culled or enter any drawable snapshot themselves.
+      if (object.isObject3D && !object.isMesh && !object.isSprite && !object.isLine && !object.isPoints && !object.isImmediateRenderObject) return;
       if (keep.has(object) || hasAlternateReplayPose(object)) { if (remember) remember(object); return; }
       if (isDepthReplayInert(object, allowFarOnly)) { culled.push(object); lastReplayInertCount++; return; }
       const instanceSphere = instancedReplaySphere(object); // Reused for the intersection test below.
