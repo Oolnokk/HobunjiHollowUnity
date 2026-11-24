@@ -307,6 +307,10 @@ async function main() {
   assert(core.includes('function paddedHeadwearOutput('), 'Fitter pads headwear exports that spill past the layer canvas');
   assert(/exportLayers\.length<=1&&!exportLayers\.some\(layer=>layer\.frame\)/.test(core), 'A framed single-layer hat still exports as a ZIP with its config');
   assert(core.includes('function drawPortraitRaster(ctx,image,width,height,frame=null)'), 'Framed source PNGs load at their standard-canvas position');
+  assert(core.includes("if(String(role||'')!=='trim')return 0;"), 'Only trim layers follow the hood opening');
+  assert(core.includes('{view:layer.view,hole:fitState.hole,role:layer.role}'), 'Exported layers deform by their own role');
+  assert(core.includes('{view:layer.view,role:layer.role}') && core.includes('{role:sprite.role}'), 'Hood hole and runtime previews deform each layer by its role');
+  assert(core.includes('Hole.mesh(profile,hole.corners,hole.rate,{follow:holeFollowForRole(hole,role)})'), 'Hood hole deform draws through the forward mesh');
 
   archiveGarment = cosmetics[2];
   selection = {sourceSpecies:'mao-ao',sourceGender:'male',targetSpecies:'engh-sho',targetGender:'female'};

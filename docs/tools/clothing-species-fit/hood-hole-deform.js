@@ -209,26 +209,38 @@
     const edgeR = rimR + edgeBandAt(profile, rimR, outR);
     const ux = Math.cos(angle), uy = Math.sin(angle);
     const edge = holeDelta(profile, corners, profile.seed.x + ux * rimR, profile.seed.y + uy * rimR);
+    const free = {x:edge.x, y:edge.y}; // Unlimited rim motion, for layers that ride along rigidly (trim).
     const radial = edge.x * ux + edge.y * uy, limit = 0.9 * (outR - edgeR) / falloffMaxSlope(rate);
     if (radial > limit) { edge.x -= (radial - limit) * ux; edge.y -= (radial - limit) * uy; }
-    return {edge, rimR, outR, edgeR};
+    return {edge, free, rimR, outR, edgeR};
   }
 
   // Forward displacement of a source pixel position.
-  function displacementAt(profile, corners, rate, x, y) {
+  // follow (0..1): how closely this layer rides along with the opening. 0 is
+  // the cloth falloff (base layers); 1 moves the whole layer with the rim on
+  // each bearing, keeping its own width, so a trim follows the hole and can
+  // uncover the base underneath it.
+  function displacementAt(profile, corners, rate, x, y, follow = 0) {
     const dx = x - profile.seed.x, dy = y - profile.seed.y, r = Math.hypot(dx, dy);
     const angle = Math.atan2(dy, dx);
-    const {edge, rimR, outR, edgeR} = rimDisplacement(profile, corners, rate, angle);
+    const {edge: limited, free, rimR, outR, edgeR} = rimDisplacement(profile, corners, rate, angle);
+    const f = Math.max(0, Math.min(1, Number(follow) || 0));
+    const edge = f ? {x:limited.x + (free.x - limited.x) * f, y:limited.y + (free.y - limited.y) * f} : limited;
     if (r <= rimR) {
       // Inside the opening: the quad, blended toward the (possibly limited)
       // rim displacement so the opening edge and the cloth stay continuous.
       const inner = holeDelta(profile, corners, x, y), s = rimR > 1e-6 ? r / rimR : 0;
       return {x:inner.x + (edge.x - inner.x) * s * s, y:inner.y + (edge.y - inner.y) * s * s};
     }
-    if (r >= outR) return {x:0, y:0};
-    if (r <= edgeR) return {x:edge.x, y:edge.y}; // The opening's ink edge travels intact.
-    const w = falloffWeight((r - edgeR) / Math.max(1e-6, outR - edgeR), rate);
-    return {x:edge.x * w, y:edge.y * w};
+    let base;
+    if (r >= outR) base = {x:0, y:0};
+    else if (r <= edgeR) base = {x:limited.x, y:limited.y}; // The opening's ink edge travels intact.
+    else {
+      const w = falloffWeight((r - edgeR) / Math.max(1e-6, outR - edgeR), rate);
+      base = {x:limited.x * w, y:limited.y * w};
+    }
+    if (!f) return base;
+    return {x:base.x + (free.x - base.x) * f, y:base.y + (free.y - base.y) * f};
   }
 
   // Warps RGBA pixels. Each output pixel inverts the forward field with a few
@@ -262,6 +274,7 @@
   function mesh(profile, cornersInput, rateInput, options = {}) {
     const corners = normalizeCorners(cornersInput), rate = normalizeRate(rateInput);
     if (!profile) return null;
+    const follow = Math.max(0, Math.min(1, Number(options.follow) || 0));
     const angles = Math.max(16, Math.round(options.angles || 96));
     const bandRings = Math.max(2, Math.round(options.bandRings || 8));
     const pad = Number.isFinite(options.pad) ? options.pad : 3;
@@ -269,7 +282,7 @@
     const rimBand = Number.isFinite(options.rimBand) ? options.rimBand : 8; // Px just inside the rim that move rigidly with it.
     const point = (x, y, still, lockTo) => {
       if (still) return { s: { x, y }, d: { x, y } };
-      const v = displacementAt(profile, corners, rate, lockTo ? lockTo.x : x, lockTo ? lockTo.y : y);
+      const v = displacementAt(profile, corners, rate, lockTo ? lockTo.x : x, lockTo ? lockTo.y : y, follow);
       return { s: { x, y }, d: { x: x + v.x, y: y + v.y } };
     };
     const seed = profile.seed;
@@ -286,7 +299,9 @@
         const t = k / bandRings;
         list.push({ r: edgeR + (outR - edgeR) * t });
       }
-      list.push({ r: outR, still: true }, { r: outR + pad, still: true });
+      // A following layer keeps moving past the outline (nothing of it is left
+      // behind to tear from); a falloff layer is pinned there.
+      list.push({ r: outR, still: !follow }, { r: outR + pad, still: !follow });
       return list;
     };
     const perAngle = [];

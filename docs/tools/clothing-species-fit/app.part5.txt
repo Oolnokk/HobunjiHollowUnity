@@ -23,8 +23,19 @@ function headwearWarpForView(view,finalFit=false,fitState=null){
   }
   const source=view==='back'?(R.cloth._behindView||R.cloth._back||R.cloth._front):view==='under'?R.cloth._back:R.cloth._front;
   if(!source)return null;
-  return warpClothing(source,finalFit?targetGridFromFitState(fitState||captureFitState()):warpGridForMode(),R.body.width,R.body.height,fitState?.headband||null,
-    {view:view==='back'?'behind':view,...(fitState?{hole:fitState.hole}:{})});
+  const grid=finalFit?targetGridFromFitState(fitState||captureFitState()):warpGridForMode();
+  const options={view:view==='back'?'behind':view,...(fitState?{hole:fitState.hole}:{})};
+  const hole=options.hole!==undefined?options.hole:currentHoleRecord();
+  const layers=(R.cloth._layers||[]).filter(layer=>layer.view===view&&layer.canvas);
+  if(view!=='back'&&hole?.enabled&&layers.some(layer=>holeFollowForRole(hole,layer.role)>0)){
+    // A trim rides along with the opening differently from its base, so the
+    // composite is rebuilt from individually warped materials, in order.
+    const out=Object.assign(document.createElement('canvas'),{width:R.body.width,height:R.body.height});
+    const ctx=out.getContext('2d',{alpha:true});ctx.imageSmoothingEnabled=false;
+    for(const layer of layers)ctx.drawImage(warpClothing(fittedSourceCanvasForLayer(layer),grid,R.body.width,R.body.height,fitState?.headband||null,{...options,role:layer.role}),0,0);
+    return out;
+  }
+  return warpClothing(source,grid,R.body.width,R.body.height,fitState?.headband||null,options);
 } // Back and front sprites use the same saved 6×6 fit, but remain separate for compositing and exports.
 function clothOut(fitState=captureFitState()){
   const source=mainClothSource();
@@ -68,7 +79,7 @@ function fittedLayerOutputs(fitState=captureFitState()){
   const layers=(R.cloth._layers||[]).map(layer=>{
     const isPatched=layerMatchesRoutedClothingPatch(layer);
     const source=fittedSourceCanvasForLayer(layer);
-    const canvas=warpClothing(source,targetNorm,R.body.width,R.body.height,fitRegion()==='headwear'?fitState.headband:fitState.contour,{view:layer.view,hole:fitState.hole});
+    const canvas=warpClothing(source,targetNorm,R.body.width,R.body.height,fitRegion()==='headwear'?fitState.headband:fitState.contour,{view:layer.view,hole:fitState.hole,role:layer.role});
     const padded=paddedHeadwearOutput(source,targetNorm,R.body.width,R.body.height,fitState,layer.view);
     return padded?{...layer,patched:!!isPatched,canvas:padded.canvas,frame:padded.frame}:{...layer,patched:!!isPatched,canvas,frame:null};
   });

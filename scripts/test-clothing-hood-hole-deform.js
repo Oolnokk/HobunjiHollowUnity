@@ -89,4 +89,17 @@ const offSeed = Hole.buildProfile(rgba, W, H, ringPoints, {x: cx - 9, y: cy - 8}
 assert(Math.hypot(offSeed.seed.x - cx, offSeed.seed.y - cy) < 1, 'seed re-centred on the opening: ' + JSON.stringify(offSeed.seed));
 const rimSpread = Math.max(...offSeed.rim) - Math.min(...offSeed.rim);
 assert(rimSpread < 2, 'rim measured from the centred seed is round: spread ' + rimSpread.toFixed(2));
-console.log('Hood-hole deform OK: opening quad, outline lock, falloff, fold limit, forward mesh and re-centring.');
+// Trim follow: a trim layer rides along with the opening (keeping its own
+// width), while follow 0 is the base cloth falloff pinned at the outline.
+const followCorners = [0, 1, 2, 3].map(() => ({x: 6, y: 0}));
+const rimMove = Hole.displacementAt(profile, followCorners, 1.5, cx + 12.5, cy, 1).x;
+const farTrim = Hole.displacementAt(profile, followCorners, 1.5, cx + 26, cy, 1).x;
+const farBase = Hole.displacementAt(profile, followCorners, 1.5, cx + 26, cy, 0).x;
+assert(Math.abs(farTrim - rimMove) < 1e-9, 'fully following trim moves with the rim everywhere: ' + farTrim);
+assert(farBase < farTrim - 1, 'base falls off toward the outline: ' + farBase);
+assert.equal(Hole.displacementAt(profile, followCorners, 1.5, cx + 31, cy, 0).x, 0, 'base stays pinned at the outline');
+const half = Hole.displacementAt(profile, followCorners, 1.5, cx + 26, cy, 0.5).x;
+assert(Math.abs(half - (farBase + farTrim) / 2) < 1e-9, 'follow blends linearly');
+const trimMesh = Hole.mesh(profile, followCorners, 1.5, {angles: 32, follow: 1});
+assert(trimMesh.rings[trimMesh.rings.length - 1].some(v => v.d.x !== v.s.x), 'a following layer is not pinned at the pad ring');
+console.log('Hood-hole deform OK: opening quad, outline lock, falloff, fold limit, forward mesh, re-centring and trim follow.');

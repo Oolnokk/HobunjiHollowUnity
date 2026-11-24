@@ -248,7 +248,7 @@ function currentHoleRecord(){
   A.holeDeforms ||= {};
   const saved=A.holeDeforms[key];
   if(saved&&Array.isArray(saved.corners))return saved;
-  return A.holeDeforms[key]={enabled:false,rate:window.ClothingHoodHoleDeform?.DEFAULT_RATE??1.5,corners:[{x:0,y:0},{x:0,y:0},{x:0,y:0},{x:0,y:0}]};
+  return A.holeDeforms[key]={enabled:false,rate:window.ClothingHoodHoleDeform?.DEFAULT_RATE??1.5,trimFollow:1,corners:[{x:0,y:0},{x:0,y:0},{x:0,y:0},{x:0,y:0}]};
 }
 function holePortraitRect(width,height){
   // Same preset-B placement the game uses for every wearable layer, so the
@@ -281,7 +281,15 @@ function holeProfileForGrid(grid,width,height){
   R.holeProfileCache={key,front,profile};
   return profile;
 }
-function applyHoleDeform(canvas,grid,width,height,hole){
+// How closely a layer rides along with the opening: trim follows it (so the
+// base can show where the trim moved away), every other material uses the
+// cloth falloff. Older saved records have no trimFollow and follow fully.
+function holeFollowForRole(hole,role){
+  if(String(role||'')!=='trim')return 0;
+  const value=Number(hole?.trimFollow);
+  return Number.isFinite(value)?Math.max(0,Math.min(1,value)):1;
+}
+function applyHoleDeform(canvas,grid,width,height,hole,role=''){
   const Hole=window.ClothingHoodHoleDeform;
   if(!Hole||!hole?.enabled||Hole.isIdentity(hole.corners))return canvas;
   const profile=holeProfileForGrid(grid,width,height);
@@ -291,7 +299,7 @@ function applyHoleDeform(canvas,grid,width,height,hole){
   // triangle drawing the 6×6 grid uses. Every layer goes through the same
   // mesh, so base, trim and any other material move together, and growing or
   // shrinking the opening stretches the cloth instead of tearing it.
-  const mesh=Hole.mesh(profile,hole.corners,hole.rate);
+  const mesh=Hole.mesh(profile,hole.corners,hole.rate,{follow:holeFollowForRole(hole,role)});
   if(!mesh)return canvas;
   const result=Object.assign(document.createElement('canvas'),{width,height});
   const rctx=result.getContext('2d',{alpha:true});rctx.imageSmoothingEnabled=false;
@@ -313,7 +321,7 @@ function warpClothing(source,grid,width,height,fitContourState=null,options={}){
     const splined=applyHeadbandSplineWarp(garment,state,width,height);
     if(options.view==='behind')return splined; // Rear-view art has no face opening; the hole edit never touches it.
     const hole=options.hole!==undefined?options.hole:currentHoleRecord();
-    return applyHoleDeform(splined,grid,width,height,hole);
+    return applyHoleDeform(splined,grid,width,height,hole,options.role);
   }
   if(routedPatchIsBody()||!R.sourceTorso||!R.targetTorso)return garment;
   if(!state?.enabled)return garment;

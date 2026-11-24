@@ -77,7 +77,7 @@ function canonicalPreviewGarmentOption(garment,source,options,overrides,opacity,
     if(target.pos!==meta.pos||target.paletteColorKey!==meta.paletteColorKey)
       throw new Error(`Cannot align ${garment.id} material ${i} with the game's target layer order/role.`);
     const key=`${target.url}#fit-${previewTag}-${i}`; // Keep exact original URL text for the game's hood/hat rear replacement rules.
-    const warped=warpClothing(fittedSourceCanvasForLayer(sprite),warpGridForMode(),R.body.width,R.body.height);
+    const warped=warpClothing(fittedSourceCanvasForLayer(sprite),warpGridForMode(),R.body.width,R.body.height,null,{role:sprite.role});
     const canvas=document.createElement('canvas');canvas.width=warped.width;canvas.height=warped.height;
     const ctx=canvas.getContext('2d',{alpha:true});ctx.globalAlpha=opacity;ctx.drawImage(warped,0,0);
     canvas.naturalWidth=canvas.width;canvas.naturalHeight=canvas.height; // The portrait renderer reads natural dimensions from image sources.

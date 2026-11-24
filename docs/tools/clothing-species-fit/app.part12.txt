@@ -504,7 +504,7 @@ function drawHoleLayerView(C){
   const layers=holeLayerEntries(),grid=warpGridForMode(),W=R.body.width,H=R.body.height;
   const drawLayer=layer=>{
     const index=layers.indexOf(layer),color=HOLE_LAYER_COLORS[index%HOLE_LAYER_COLORS.length];
-    const warped=warpClothing(fittedSourceCanvasForLayer(layer),grid,W,H,null,{view:layer.view});
+    const warped=warpClothing(fittedSourceCanvasForLayer(layer),grid,W,H,null,{view:layer.view,role:layer.role});
     const tinted=Object.assign(document.createElement('canvas'),{width:W,height:H});
     const t=tinted.getContext('2d');t.imageSmoothingEnabled=false;t.drawImage(warped,0,0);
     t.globalCompositeOperation='color';t.fillStyle=color;t.fillRect(0,0,W,H); // Hue from the layer colour, light and dark (ink) from the art.
@@ -575,6 +575,11 @@ function syncHoleControls(){
   if(!E.holeEnabled||fitRegion()!=='headwear'||!R.body)return;
   const hole=currentHoleRecord(),rate=window.ClothingHoodHoleDeform?.normalizeRate(hole.rate)??1.5;
   E.holeEnabled.checked=!!hole.enabled;E.holeRate.value=String(rate);E.holeRateNumber.value=String(rate);
+  if(E.holeTrimFollow){
+    const follow=holeFollowForRole(hole,'trim');
+    E.holeTrimFollow.value=String(follow);E.holeTrimFollowNumber.value=String(follow);
+    E.holeTrimField.hidden=!(R.cloth?._layers||[]).some(layer=>layer.role==='trim'); // Only hoods with a trim material.
+  }
 }
 function holePointerDown(e){
   const profile=currentHoleProfile();if(!profile)return false;
@@ -606,6 +611,12 @@ function setHoleRate(value){
 if(E.holeEnabled){
   E.holeEnabled.onchange=()=>{pushUndo();currentHoleRecord().enabled=E.holeEnabled.checked;saveState();render()};
   if(E.holeLayerColors)E.holeLayerColors.onchange=()=>{syncHoleLegend();render()};
+  if(E.holeTrimFollow){
+    const setFollow=value=>{const hole=currentHoleRecord(),n=Number(value);hole.trimFollow=Number.isFinite(n)?Math.max(0,Math.min(1,n)):1;saveState();syncHoleControls();render()};
+    E.holeTrimFollow.addEventListener('pointerdown',()=>pushUndo(),{passive:true});
+    E.holeTrimFollow.oninput=()=>setFollow(E.holeTrimFollow.value);
+    E.holeTrimFollowNumber.onchange=()=>{pushUndo();setFollow(E.holeTrimFollowNumber.value)};
+  }
   E.holeRate.addEventListener('pointerdown',()=>pushUndo(),{passive:true});
   E.holeRate.oninput=()=>setHoleRate(E.holeRate.value);
   E.holeRateNumber.onchange=()=>{pushUndo();setHoleRate(E.holeRateNumber.value)};
