@@ -38,7 +38,7 @@ function refreshDebug(){
     `main workflow body tint slot: ${routedPatchIsBody()?routedBodyTintSlot(R.patchWorkflow.descriptor):'(n/a)'}`,
     `main workflow body overlay target: ${routedPatchIsBody()?(targetBodyLayerRecord(R.patchWorkflow.descriptor)?.url||'(unresolved)'):'(n/a)'}`,
     `main workflow patch: ${R.patchWorkflow.active?(R.patchWorkflow.patchName||'(unnamed)'):'(none)'}`,
-    `authored target available: ${!!R.authoredTargetCloth}`,
+    `authored target available: ${!!R.authoredTargetCloth}${R.authoredTargetIsBase?' (base art fallback, not species-specific)':''}`,
     `authored target sources: ${(R.authoredTargetCloth?._paths||[]).join(' | ')}`,
     `extended imports: ${importedExtendedLayers().map(x=>x.name).join(' | ')||'(none)'}`,
     `extended source: ${R.extendedSource?`${R.extendedSource.width}x${R.extendedSource.height}`:'(none)'}`,
@@ -273,7 +273,7 @@ E.headbandRearFromFront.onclick=()=>{
 E.headbandRearFromExisting.onclick=()=>{
   const existing=R.cloth?._behindView||R.cloth?._back||R.cloth?._front;
   if(!existing||!R.body)return;
-  const raw=warpClothing(existing,warpGridForMode(),R.body.width,R.body.height);
+  const raw=warpClothing(existing,warpGridForMode(),R.body.width,R.body.height,null,{view:'behind'});
   installRearCanvas(flipCanvasX(raw),'Copied existing cosmetic rear image into editable backplane art.');
 };
 E.headbandRearBlank.onclick=()=>{
@@ -374,6 +374,9 @@ E.stage.addEventListener('pointerdown',e=>{
     pushUndo();contourStroke=null;contourPaintAt(pointer(e));
     E.stage.setPointerCapture(e.pointerId);e.preventDefault();return;
   }
+  if(mode==='quad'){if(quadPointerDown(e))e.preventDefault();return}
+  if(mode==='hole'){if(holePointerDown(e))e.preventDefault();return}
+  if(mode==='pin'){if(pinPointerDown(e))e.preventDefault();return}
   if(mode==='transform'){
     const p=pointer(e),tr=currentTransform();
     pushUndo();transformDrag={x:p.x,y:p.y,translateX:tr.translateX,translateY:tr.translateY};
@@ -413,6 +416,9 @@ E.stage.addEventListener('pointermove',e=>{
   if(mode==='protect'&&contourStroke){
     contourPaintAt(pointer(e));e.preventDefault();return;
   }
+  if(mode==='quad'){if(quadPointerMove(e))e.preventDefault();return}
+  if(mode==='hole'){if(holePointerMove(e))e.preventDefault();return}
+  if(mode==='pin'){if(pinPointerMove(e))e.preventDefault();return}
   if(mode==='transform'&&transformDrag){
     const p=pointer(e),tr=currentTransform();
     tr.translateX=transformDrag.translateX+(p.x-transformDrag.x);
@@ -446,6 +452,7 @@ function endDrag(e){
     contourStroke=null;
     log('Protected pixels saved for '+contourSelectionKey()+'.');
   }
+  quadPointerUp();holePointerUp();pinPointerUp();
   dragIndex=null;dragSnapshotTaken=false;transformDrag=null;
   if(e?.pointerId!=null&&E.stage.hasPointerCapture?.(e.pointerId))E.stage.releasePointerCapture(e.pointerId);
 }
@@ -495,7 +502,7 @@ function wireMaskPair(slider,number,field){
 }
 
 function exportGrids(){
-  const payload={version:4,gridSize:GRID_SIZE,exportedAt:new Date().toISOString(),repoBase:base(),baseTransforms:A.baseTransforms,localOffsets:A.localOffsets,maskPreviewTransforms:A.maskPreviewTransforms,contourFits:A.contourFits,headbandSplines:A.headbandSplines};
+  const payload={version:4,gridSize:GRID_SIZE,exportedAt:new Date().toISOString(),repoBase:base(),baseTransforms:A.baseTransforms,localOffsets:A.localOffsets,maskPreviewTransforms:A.maskPreviewTransforms,contourFits:A.contourFits,headbandSplines:A.headbandSplines,holeDeforms:A.holeDeforms||{},silhouettePins:A.silhouettePins||{},recipes:A.recipes||{}}; // Hood-hole edits and saved recipes travel with the grid export.
   const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');
   a.href=url;a.download='hobunji_6x6_species_clothing_headwear_transforms.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
 }

@@ -1,0 +1,6 @@
+{
+  "id": "clothing-fit-recipes",
+  "label": "Clothing fit recipes",
+  "comment": "Reusable clothing-species-fit recipes (base transform + 6x6 local offsets, format hobunji-clothing-fit-recipe-v1). The clothing fitter loads every entry into its Fit recipes library.",
+  "entries": []
+}

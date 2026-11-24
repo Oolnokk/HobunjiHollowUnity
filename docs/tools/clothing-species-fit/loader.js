@@ -42,6 +42,12 @@
     (0,eval)(spline);
     const contour=await fetchPart('contour-fit.js'); // Pure pixel fitter loads before the editor, independently of the optional 3D renderer.
     (0,eval)(contour);
+    const beardHood=await fetchPart('../../js/beard-hood-cutout.js'); // The beard mask tool's hood-opening rim tracing, reused for hood-hole detection.
+    (0,eval)(beardHood);
+    const hoodHole=await fetchPart('hood-hole-deform.js'); // Pure hood-opening quad warp with distance falloff.
+    (0,eval)(hoodHole);
+    const silhouettePins=await fetchPart('silhouette-pins.js'); // Pure pinned-outline correction applied after the fit and hood-hole deform.
+    (0,eval)(silhouettePins);
     const core=await fetchParts('app.part',12,'clothing fit editor');
     (0,eval)(core); // The 2D tool initializes immediately, independently of Three.js and patch author.
     const behind=await fetchParts('behind.part',5,'behind-sprite extension');

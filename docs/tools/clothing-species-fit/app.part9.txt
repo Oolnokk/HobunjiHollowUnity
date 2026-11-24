@@ -184,15 +184,24 @@ function render(scheduleRig=true){
           ?'Game-matched: front portrait shared; imported extended sprite planes appear in 3D only.'
           :'Game-matched: both views share the same front portrait artwork, inverse-projected for the 2D fit grid. 3D adds neck, hands, feet and perspective.')
         :'Rendering game-matched '+(rearView?'backplane':'front')+' portrait; showing raw art until the rig is ready…';
-  if(matched){
+  if(mode==='pin'&&fitRegion()==='headwear'&&R.cloth&&R.body){
+    drawPinSourceView(C,rearView); // Original art at its source position: that is where pins hold.
+    R.warped=null;
+  }else if(mode==='hole'&&fitRegion()==='headwear'&&!rearView&&E.holeLayerColors?.checked&&R.cloth&&R.body){
+    drawHoleLayerView(C); // Each hood material in its own colour, so it is visible that all of them follow the opening.
+    R.warped=null;
+  }else if(matched){
     C.drawImage(matched,0,0); // Display pixels only: neither grids nor fitted PNG exports are rewritten.
     R.warped=null;
   }else if(fitRegion()==='headwear'){
     if(rearView){
       const reference=E.headbandRearFullPlane?.checked?R.backplaneReference:R.headReferenceBack;
+      const split=mode!=='rear-paint'&&mode!=='body'&&R.cloth?._behindView?._trim&&!(currentHeadbandRecord()?.rearCanvas||R.headbandRearCanvas)?R.cloth._behindView:null; // Hood: trim behind the head, shell over it (game rear order).
+      const rearWarp=part=>flipCanvasX(warpClothing(part,warpGridForMode(),R.body.width,R.body.height,null,{view:'behind'}));
+      if(split&&E.showGarment.checked){C.save();C.globalAlpha=+E.opacity.value;C.drawImage(rearWarp(split._trim),0,0);C.restore()}
       if(E.showBody.checked&&reference)C.drawImage(reference,0,0); // Actual game rear head; never mirror front artwork.
-      const rear=mode==='rear-paint'?R.headbandRearCanvas:(mode!=='body'?headwearWarpForView('back'):null);
-      const display=mode==='rear-paint'?rear:rear?flipCanvasX(rear):null;
+      const rear=split?(split._shell||null):mode==='rear-paint'?R.headbandRearCanvas:(mode!=='body'?headwearWarpForView('back'):null);
+      const display=split?(rear?rearWarp(rear):null):mode==='rear-paint'?rear:rear?flipCanvasX(rear):null;
       if(display&&E.showGarment.checked){C.save();C.globalAlpha=+E.opacity.value;C.drawImage(display,0,0);C.restore()}
       if(mode!=='body'&&E.showAuthored.checked&&R.authoredTargetCloth){
         const existing=R.authoredTargetCloth._behindView||R.authoredTargetCloth._front;
@@ -231,12 +240,16 @@ function render(scheduleRig=true){
 
   if(fitRegion()==='body'&&(mode==='protect'||(R.cloth&&R.sourceTorso&&R.targetTorso&&currentContourRecord().enabled)))paintContourOverlay(C);
   if(mode==='headband'&&fitRegion()==='headwear')drawHeadbandOverlay(C);
-  if(E.showMeshes.checked&&mode!=='protect'&&mode!=='headband'&&mode!=='rear-paint'){
+  if(E.showMeshes.checked&&['transform','body','fit'].includes(mode)){ // The grid only shows while it is being edited.
     drawGrid(C,SOURCE_GRID,'#ffb84a',false); // Fixed normalized starting-species source.
     drawGrid(C,transformedSourceGrid(),'#65d48a',mode==='transform'); // Recorded scale + translation.
-    if(mode!=='transform')drawGrid(C,targetGrid(),'#45c3ff',mode!=='preview'); // Base transform plus local fit.
+    if(mode!=='transform')drawGrid(C,targetGrid(),'#45c3ff',mode!=='preview'&&mode!=='quad'); // Base transform plus local fit.
   }
 
+  if(mode==='quad')drawQuadHandles(C); // Just the quad: a plain outline with four square corner handles, no grid.
+  if(mode==='hole'&&fitRegion()==='headwear')drawHoleOverlay(C);
+  if(fitRegion()==='headwear'&&R.cloth)drawPinOverlay(C,rearView); // Pinned outline in every headwear mode, front or rear.
+  else if(E.holeLegend?.innerHTML)syncHoleLegend([]); // Legend only belongs to Hood hole mode. // Detected opening rim, outer outline and the opening's quad handles (independent of the grid toggle).
   E.label.textContent=(fitRegion()==='headwear'?'HEADWEAR • ':'BODY • ')+
     (mode==='transform'
       ?`Base Transform • ${garmentRecord()?.label||''} • ${E.species.options[E.species.selectedIndex]?.text||E.species.value} ${E.gender.value}`
@@ -248,6 +261,12 @@ function render(scheduleRig=true){
           ?`Paint rear sprite • ${garmentRecord()?.label||''} • ${E.species.value} ${E.gender.value}`
         :mode==='protect'
           ?`Paint protected pixels • ${garmentRecord()?.label||''} • ${E.species.value} ${E.gender.value}`
+        :mode==='hole'
+          ?`Hood hole • ${garmentRecord()?.label||''} • ${E.species.value} ${E.gender.value}`
+        :mode==='pin'
+          ?`Pin outline • ${garmentRecord()?.label||''} • original ${E.sourceSpecies.value} ${E.sourceGender.value} art`
+        :mode==='quad'
+          ?`Quad corners • ${garmentRecord()?.label||''} • ${E.sourceSpecies.value} ${E.sourceGender.value} → ${E.species.value} ${E.gender.value}`
         :mode==='fit'
           ?`Species Fit • ${garmentRecord()?.label||''} • ${E.sourceSpecies.value} ${E.sourceGender.value} → ${E.species.options[E.species.selectedIndex]?.text||E.species.value} ${E.gender.value}`
           :`Preview • recorded base transform + local 6×6 deformation applied to ${garmentRecord()?.label||''}`);
@@ -266,6 +285,12 @@ function refreshHelp(){
           ?'Draw or erase rear sprite pixels against the actual game backplane. The exported PNG is automatically mirrored for the game.'
         :mode==='protect'
           ?'Use your finger or mouse to paint the magenta protected pixels; transparent collar holes are included. Painted pixels remain stationary during automatic torso contour fit. Brush controls are in the left panel.'
+        :mode==='hole'
+          ?'The face opening is detected with the beard mask tool\'s rim tracing (cyan) and the hood outline (magenta). Drag the four YELLOW opening corners: the opening follows the quad, and cloth between the rim and the outline follows with your falloff, so the outer silhouette stays put.'
+        :mode==='pin'
+          ?'The item is shown as originally drawn. Paint along outline parts that must stay put; the brush snaps to the silhouette pixels under it (red). Tick “erase pins” to remove them. Every other mode shows the pins where they will be held.'
+        :mode==='quad'
+          ?'Drag the four YELLOW corners to skew, taper or stretch the whole sprite as one quad. Each corner pulls the 6×6 grid with bilinear falloff and stacks on top of any blue-node edits.'
         :mode==='fit'
           ?'Now drag BLUE points for local shape corrections on top of the recorded global transform.'
           :'Switch garments to verify the same saved global transform and local corrections are reused.');

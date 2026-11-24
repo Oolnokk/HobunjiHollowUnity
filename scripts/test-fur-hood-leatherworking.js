@@ -19,12 +19,21 @@
     assert(manifest.species['gar-wolf'].parts[variant].back, variant + ' other animals must retain their rear artwork');
   }
   assert(index.entries.some(entry => entry.id === 'fur_hood'), 'new wearable cosmetic is published in portrait registry');
-  assert.deepEqual(Object.keys(cosmetic.speciesVariants).sort(), ['mashtzarr_male','tletingan_male']);
+  assert.deepEqual(Object.keys(cosmetic.speciesVariants).sort(), ['mashtzarr_female','mashtzarr_male','tletingan_male']);
+  // Mashtzarr females reuse the male fur art (as they did through fallback) but carry their own exposed ear/tusk/trunk.
+  const mashF = cosmetic.speciesVariants.mashtzarr_female.parts.head.layers;
+  for (const role of ['base','trim'])
+    assert.equal(Object.values(mashF).find(part => part.layerRole === role)?.image?.url,
+      Object.values(cosmetic.speciesVariants.mashtzarr_male.parts.head.layers).find(part => part.layerRole === role)?.image?.url);
+  for (const part of ['ear','tusk','trunk'])
+    assert(mashF['front_exposed_' + part]?.image?.url?.includes('/mashtzarr-f/exposed_' + part + '.png'), 'female fur hood shows female ' + part);
   for (const [key, suffix] of Object.entries({ tletingan_male:'tl_m', mashtzarr_male:'mashtz_m' })) {
     const parts = Object.values(cosmetic.speciesVariants[key].parts.head.layers); // Uses real wearer-specific sprites rather than a fine-hood stand-in.
     for (const role of ['base','trim']) {
       const image = parts.find(part => part.layerRole === role)?.image?.url;
-      assert(image?.includes('furhood-' + role + '_' + suffix + '.png'), key + ' must use its uploaded fur artwork');
+      // The uploaded sprite, or a clothing-fitter refit of it (furhood-base_mashtz_mashtzarr_m.png).
+      const fitted = suffix.replace(/_(m|f)$/, '_' + key.split('_')[0] + '_$1');
+      assert(image?.endsWith('furhood-' + role + '_' + suffix + '.png') || image?.endsWith('furhood-' + role + '_' + fitted + '.png'), key + ' must use its uploaded fur artwork: ' + image);
       assert(fs.existsSync(path.join(root, 'docs', image.replace(/^\.\//, ''))), 'missing garment PNG: ' + image);
     }
   }
@@ -93,11 +102,34 @@
     const shuffled=['animalFront','trim','animalBack','base'].map(role=>({role})); // The shared renderer must ignore incoming layer enumeration order.
     assert.deepEqual([...window.FurHoodLeatherworking.orderLayersForView(shuffled,'front')].map(entry=>entry.role),['animalBack','base','animalFront','trim'],'front plane puts animal-back behind hood and animal-front above it');
     assert.deepEqual([...window.FurHoodLeatherworking.orderLayersForView(shuffled,'behind')].map(entry=>entry.role),['trim','animalFront','base','animalBack'],'rear plane puts species-back in front of furhood-behind');
+    const portraitSource=fs.readFileSync(path.join(root,'docs/js/portrait-utils.js'),'utf8');
+    const roleSource=portraitSource.slice(portraitSource.indexOf('function furHoodStackRole('),portraitSource.indexOf('function furHoodProfileLayers('));
+    const furHoodStackRole=new Function(roleSource+'\nreturn furHoodStackRole;')();
+    const mashHoodLayers=[{paletteColorKey:'A',layerRole:'base'},{paletteColorKey:'BODY',layerRole:'exposedSkin'},{paletteColorKey:'B',layerRole:'trim'},{paletteColorKey:'NONE',layerRole:'exposed'},{paletteColorKey:'BODY',layerRole:'exposedSkin'}];
+    assert.deepEqual(mashHoodLayers.map((layer,index)=>furHoodStackRole(layer,index,mashHoodLayers)),['base','exposedUnderTrim','trim','exposed','exposed'],'crafted fur hoods keep the authored ear/tusk/trunk placement');
+    const anatomySource=portraitSource.slice(portraitSource.indexOf('const _BORROWED_ANATOMY_CACHE'),portraitSource.indexOf('function resolveBeardHoodAuthoring('));
+    const withoutBorrowedAnatomy=new Function('_normalizeSpeciesKey','_speciesParentChain',anatomySource+'\nreturn _withoutBorrowedAnatomy;')(
+      id=>String(id||'').toLowerCase(),id=>({mammakhbuur:['mashtzarr'],rakakoan:['kenkari']})[id]||[]);
+    const mashLayers=[{layerRole:'base'},{layerRole:'exposedSkin'},{layerRole:'trim'},{layerRole:'exposed'}];
+    assert.equal(withoutBorrowedAnatomy(mashLayers,'mashtzarr_male',{speciesId:'mashtzarr'}),mashLayers,'own variant keeps its anatomy');
+    assert.equal(withoutBorrowedAnatomy(mashLayers,'mashtzarr_male',{speciesId:'mammakhbuur'}),mashLayers,'child species keeps parent anatomy');
+    const borrowed=withoutBorrowedAnatomy(mashLayers,'mashtzarr_male',{speciesId:'kenkari'});
+    assert.deepEqual(borrowed.map(layer=>layer.layerRole),['base','trim'],'a fallback-group neighbour never inherits another species\' trunk/ear/tusk');
+    assert.equal(withoutBorrowedAnatomy(mashLayers,'mashtzarr_male',{speciesId:'rakakoan'}),borrowed,'filtered layers are cached, not reallocated per render');
+    const withAnatomy=['exposed','animalFront','trim','exposedUnderTrim','animalBack','base'].map(role=>({role}));
+    assert.deepEqual([...window.FurHoodLeatherworking.orderLayersForView(withAnatomy,'front')].map(entry=>entry.role),['animalBack','base','animalFront','exposedUnderTrim','trim','exposed'],'wearer ear sits under the trim, tusk/trunk over every fur piece');
+    assert.deepEqual([...window.FurHoodLeatherworking.orderLayersForView(withAnatomy,'behind')].map(entry=>entry.role),['exposed','exposedUnderTrim','trim','animalFront','base','animalBack'],'wearer face anatomy is hidden behind the hood from the rear');
+    const rearSource=read('docs/js/portrait-utils.js');
+    assert(rearSource.includes("entry.role === 'trim' || entry.layer?.layerRole === 'trim'")&&/DEFAULT_BEHIND_LAYER_ORDER = \[\s*'hoodTrim'/.test(rearSource)&&rearSource.includes("hoodTrim:      () => drawRearHoodTrim()"),'every hood trim is drawn first in the rear view, behind the whole body');
+    assert(read('docs/js/portrait-utils.js').includes("if(furData||isFurHood){"),'a plain (uncrafted) Fur Hood uses the crafted stack order, so its trim sits under the rear shell');
     const hoodConfig=JSON.parse(read('docs/config/cosmetics/fur_hood.json'));
     for(const [key,suffix] of [['tletingan_male','tl_m'],['mashtzarr_male','mashtz_m']]){
       const layers=hoodConfig.speciesVariants[key].parts.head.layers;
-      assert(layers.front.behindImage.url.endsWith('furhood-behind_'+suffix+'.png'),'backplane replaces base with dedicated rear art');
-      assert(layers.front_trim.behindImage.url.endsWith('furhood-trim_'+suffix+'.png'),'rear plane retains furhood-trim sprite');
+      // Uploaded art, or its clothing-fitter refit (e.g. furhood-behind_mashtz_mashtzarr_m.png).
+      const fitted=suffix.replace(/_(m|f)$/,'_'+key.split('_')[0]+'_$1');
+      const isArt=(url,stem)=>url.endsWith(stem+'_'+suffix+'.png')||url.endsWith(stem+'_'+fitted+'.png');
+      assert(isArt(layers.front.behindImage.url,'furhood-behind'),'backplane replaces base with dedicated rear art: '+layers.front.behindImage.url);
+      assert(isArt(layers.front_trim.behindImage.url,'furhood-trim'),'rear plane retains furhood-trim sprite: '+layers.front_trim.behindImage.url);
       assert(fs.existsSync(path.join(root,'docs',layers.front.behindImage.url)),'rear hood art must be bundled in the feature branch');
     }
     assert.equal(window.FurHoodLeatherworking.isPendingAsset(expectedNelkBack),false,'newly imported Nelk rear image is no longer pending');

@@ -53,6 +53,8 @@
       note: 'One factory builds every held tool/weapon plane. Mastery effects and metal plating come from the holder (player gear, enemy loadout), never implicitly from the player.' },
     { id: 'held-xray', owner: 'held-object-render-order.js', covers: [KINDS.PLAYER],
       gap: 'Held weapons, hands and feet x-ray through grass and nearby ground for the player and short species (porakaneki) only. Other NPCs and enemies draw their hands with ordinary depth, feet only within 6 tiles of the camera, and (by default, a user decision on 20 Nov 2026 after a GTX 1060 benchmark: ~11 ms a frame near a camp) their weapons and tools in the base pass with their bearer, fogged by mist like them. Settings → Render optimizations → "NPC and enemy weapons in the base pass" off gives every weapon x-ray again.' },
+    { id: 'hat-overflow-plane', owner: 'hat-overflow-plane.js', covers: HUMANOIDS,
+      note: 'Hat pixels past the portrait square ride the head bone on a bounds-free plane. Players/NPCs via the avatar builder, split bandit planes via attachToPlanes, compound riders via attach on the rider root.' },
     { id: 'held-bag-item-plane', owner: 'game.js (updateHeldItemHolder)', covers: [KINDS.PLAYER],
       gap: 'NPCs hold tools/weapons through npc-held-equipment-v4.js but never bag items (food, flasks, seeds).' },
     { id: 'procedural-hands', owner: 'procedural-hand-frame-driver.js', covers: HUMANOIDS,
