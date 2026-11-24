@@ -13,6 +13,7 @@
   const runtime=window.WildernessEncounterRuntime; // Shared terrain, scheduling, reward and portrait helpers.
   let deps = null; // Narrow game-owned adapters; no independent AI, combat or save loop.
   let active = null; // The one live locale, from bait through reward; each has its own async generation identity.
+  let lastZone=null; // Reset partial decision time on direct exterior transitions too.
   const clock=runtime.createInterval(CHECK_SECONDS); // Throttles only this encounter's own decisions.
   const journal=runtime.createJournal({getStamp:stamp,validReward:reward=>ZONES.has(reward?.zone)&&Number.isInteger(reward.site?.c)&&Number.isInteger(reward.site?.r)&&
     Number.isFinite(reward.height)&&reward.height>0&&reward.armament?.origin==='Fey'&&typeof reward.armament?.key==='string'});
@@ -268,6 +269,7 @@
   function tick(dt) {
     const zone=area();
     if(!deps)return;
+    if(lastZone!==zone){lastZone=zone;clock.reset();}
     if(!active&&!ZONES.has(zone)){clock.reset();return;}
     if(active&&!ownsScene(active))reset('left or rebuilt encounter scene');
     if(!ZONES.has(zone)){clock.reset();return;}
