@@ -49,7 +49,7 @@
     male: Object.freeze({ x: .81675, y: 1.089, handScale: 1.1, footScale: 1.3125 }),
     female: Object.freeze({ x: .895, y: .94, handScale: 1, footScale: 1.28125 }),
   });
-  const MAOAO_MALE_APPROVED = Object.freeze({ x: .85, y: 1.29, handScale: 1.2, footScale: 1.05 }); // The ONLY user-edited anchor from the uploaded Full Character Scale export.
+  const MAOAO_MALE_APPROVED = Object.freeze({ x: .85, y: 1.29, handScale: 1.2, footScale: 1.05 }); // Exact user-edited male anchor from the uploaded Full Character Scale export; female changes are separate.
   const MAOAO_MALE_SHIFT = Object.freeze(Object.fromEntries(['x', 'y', 'handScale', 'footScale'].map(field => [
     field, MAOAO_MALE_APPROVED[field] / MAOAO_SOURCE_MAIN.male[field],
   ]))); // One exact proportional shift relative to main, applied to ALL characters regardless of gender.
@@ -78,7 +78,7 @@
     'nuhongan::male': [.95,.95], 'nuhongan::female': [.925,1.025],
     'longoran::male': [.95,.95], 'longoran::female': [.925,1.025],
     'engh-sho::male': [1.45,1.25], 'engh-sho::female': [1.3,1.17],
-    'mao-ao::male': [1.2,1.05], 'mao-ao::female': [1,1.28125], // Female baseline is MAIN, not the accidental unrelated changes in the uploaded export.
+    'mao-ao::male': [1.2,1.05], 'mao-ao::female': [1,1.28125], // These part values are MAIN baselines; approved female hand/foot shifts are applied separately below.
     'mashtzarr::male': [1,1.175], 'mashtzarr::female': [.95,1],
     'mammakhbuur::male': [1,1.175], 'mammakhbuur::female': [.95,1],
     'boney-shinjimi-skeleton::male': [1.2,1.05],
