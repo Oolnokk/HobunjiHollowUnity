@@ -7,7 +7,7 @@ const vm = require('node:vm'); // Executes browser-owned modules inside isolated
 const spyglassScript = fs.readFileSync('docs/js/utility-spyglass.js', 'utf8'); // The feature and input-claim owner.
 const focusScript = fs.readFileSync('docs/js/combat/ranged-camera-focus.js', 'utf8'); // Existing shared camera FOV owner.
 const arcScript = fs.readFileSync('docs/js/action-arc-ui.js', 'utf8'); // Utility-wheel integration point.
-const perceptionScript = fs.readFileSync('docs/js/perception-mode.js', 'utf8'); // Shared perception and enemy-name list owner.
+const perceptionScript = fs.readFileSync('docs/js/perception-info-lists.js', 'utf8'); // Shared enemy-name list presentation owner.
 const css = fs.readFileSync('docs/utility-spyglass.css', 'utf8'); // Ensures the old standalone footer is gone.
 const indexHtml = fs.readFileSync('docs/index.html', 'utf8'); // Verifies load order and cache-busted assets.
 

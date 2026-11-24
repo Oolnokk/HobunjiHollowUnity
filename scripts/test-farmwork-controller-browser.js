@@ -162,6 +162,8 @@ const source = name => fs.readFileSync(path.join(root, 'docs/js', name), 'utf8')
     // Real r128 geometry and the production shared glow renderer, including cleanup on mode changes.
     if (process.env.FARMWORK_THREE_PATH) await page.addScriptTag({ content: fs.readFileSync(process.env.FARMWORK_THREE_PATH, 'utf8') });
     else await page.addScriptTag({ url: 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js' });
+    await page.addScriptTag({ content: source('perception-mask-renderer.js') });
+    await page.addScriptTag({ content: source('perception-info-lists.js') });
     await page.addScriptTag({ content: source('perception-mode.js') });
     const visuals = await page.evaluate(() => {
       const T = window.THREE, scene = new T.Scene();
@@ -201,8 +203,52 @@ const source = name => fs.readFileSync(path.join(root, 'docs/js', name), 'utf8')
       const categories = window.PerceptionMode.debugSnapshot().byCategory;
       window.PerceptionMode.setActive(true);
       const cleaned = !scene.getObjectByName('farmwork-ground-planning') && !window.FarmworkUI.isOpen();
+      // Actual GPU culling: compare the pair with only the normally visible
+      // card, from both sides. A DoubleSide regression reveals a second,
+      // horizontally mirrored copy of this deliberately asymmetric texture.
+      const animalScene = new T.Scene(); // Separate from the Farmwork test geometry.
+      const animal = new T.Group(); // Both cards remain live during the turn.
+      animalScene.add(animal);
+      const sprite = document.createElement('canvas'); // Asymmetric opaque region of an otherwise transparent PNG-equivalent.
+      sprite.width = sprite.height = 32;
+      const paint = sprite.getContext('2d');
+      paint.fillStyle = '#ffffff';
+      paint.fillRect(2, 5, 9, 22);
+      const texture = new T.CanvasTexture(sprite);
+      const card = (face, yaw) => {
+        const m = new T.Mesh(new T.PlaneGeometry(2, 2), new T.MeshBasicMaterial({ map: texture, side: T.FrontSide, alphaTest: .35 }));
+        m.rotation.y = yaw;
+        m.userData.hobunjiPlaneFace = face;
+        animal.add(m);
+        return m;
+      };
+      const front = card('front', 0), back = card('back', Math.PI); // Same opposing winding convention as the animal avatar.
+      const blocker = new T.Mesh(new T.BoxGeometry(3, 3, .1), new T.MeshBasicMaterial()); // Ordinary world geometry must not occlude the mask.
+      blocker.position.z = 1;
+      animalScene.add(blocker);
+      const animalCamera = new T.OrthographicCamera(-2, 2, 2, -2, .1, 20);
+      window.PerceptionMode.init({ THREE: T, getActiveScene: () => animalScene, getPlayerTile: () => ({ x:0,z:0 }), getSources: () => ({ creatures: [{ root: animal, health: 10, def: { hostile: false } }] }) });
+      window.PerceptionMode.update(2000);
+      const coverage = () => {
+        window.PerceptionMode.renderOverlay(renderer, animalScene, animalCamera);
+        const result = window.PerceptionMode.debugMaskCoverage();
+        return { covered: result.covered, bbox: result.bbox };
+      };
+      const facingCoverage = (z, visible, hidden) => {
+        animalCamera.position.set(0, 0, z);
+        animalCamera.lookAt(0, 0, 0);
+        animalCamera.updateMatrixWorld(true);
+        visible.visible = true;
+        hidden.visible = false;
+        const single = coverage();
+        hidden.visible = true;
+        const pair = coverage();
+        return { single, pair };
+      };
+      const facingFront = facingCoverage(5, front, back), facingBack = facingCoverage(-5, back, front);
+      window.PerceptionMode.setActive(false);
       renderer.dispose();
-      return { perceptionOff, hasGrid, reused, grounded, categories, covered: mask.covered, colors: Object.keys(mask.byColor).length, cleaned };
+      return { perceptionOff, hasGrid, reused, grounded, categories, covered: mask.covered, colors: Object.keys(mask.byColor).length, cleaned, facingFront, facingBack };
     });
     assert.equal(visuals.perceptionOff, true, 'entering Farmwork disables Perception');
     assert.equal(visuals.hasGrid, true, 'world grid uses a white core and soft halo');
@@ -211,6 +257,10 @@ const source = name => fs.readFileSync(path.join(root, 'docs/js', name), 'utf8')
     assert.deepEqual(visuals.categories, { farmSelected: 1, farmAssignable: 1 }, 'selected footprint and family-assignable vat use farmwork categories');
     assert(visuals.covered > 0 && visuals.colors >= 2, 'actual shared glow mask covers both colored targets');
     assert.equal(visuals.cleaned, true, 'Perception transition removes Farmwork meshes');
+    for (const facing of [visuals.facingFront, visuals.facingBack]) {
+      assert(facing.single.covered > 0, 'visible animal card has real GPU silhouette coverage');
+      assert.deepEqual(facing.pair, facing.single, 'opposed animal cards reveal only the camera-facing silhouette');
+    }
     assert.deepEqual(errors, [], 'real browser must report no uncaught errors');
     console.log('Farmwork controller browser regression passed');
   } finally { await browser.close(); }
