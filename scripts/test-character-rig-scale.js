@@ -403,8 +403,8 @@ assert.doesNotMatch(scaleBootstrapSource, /character-scale-comparison-camera\.js
   'obsolete private-state camera/picking wrapper must not load with the isolated comparison');
 assert.match(scaleBootstrapSource, /character-scale-comparison\.js\?v=[A-Za-z0-9_.-]+/,
   'bootstrap must cache-bust the isolated Full Character Scale comparison');
-// Eight independent dimensions use the same responsive range+exact-number row.
-for (const axis of ['X', 'PortraitHeight', 'LegLength', 'Hand', 'Foot', 'Head', 'OffsetY', 'Age']) {
+// Height and Beltline Height replace separate portrait/leg sliders while preserving the old runtime anatomy fields.
+for (const axis of ['X', 'Height', 'Beltline', 'Hand', 'Foot', 'Head', 'OffsetY', 'Age']) {
   assert.match(scaleComparisonSource, new RegExp(`scaleRow\\('${axis}'`),
     `the comparison tab must expose a ${axis} slider row`);
 }
