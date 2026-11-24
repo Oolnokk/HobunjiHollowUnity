@@ -27,6 +27,7 @@
   let walker = null; // The one materialized NPC in the active exterior zone.
   const walkerBuild=runtime.createBuildSlot(); // Prevents asynchronous duplicate walker construction.
   let houseMesh = null; // Loaded Highland piece; renderer visibility is separate from collisions.
+  let encounterScene = null; // Active scene identity, including same-area rebuilds.
   let houseScene = null; // Tracks the scene that owns the piece when zones are streamed/recreated.
   const houseBuild=runtime.createBuildSlot(); // Prevents repeated fetches during an in-flight build.
   let houseUnregister = null; // Shared hard-wall collision registration, active even when invisible.
@@ -51,6 +52,7 @@
   function rnd() { return window.GameRandom?.random?.() ?? Math.random(); }
   function finite(value, fallback=0) { const n=Number(value); return Number.isFinite(n) ? n : fallback; }
   function clamp(n,a,b) { return Math.max(a,Math.min(b,n)); }
+  function activeScene() { return window.GridTileAccessors?.getActiveScene?.() || null; }
   function area() { return String(deps?.getCurrentArea?.() || ''); }
   function tileSize() { return Math.max(1, finite(deps?.TILE,64)); }
   function layout() { return state.zone ? deps?.getZoneLayout?.(state.zone) : null; }
@@ -196,7 +198,7 @@
     return {...piece,base:{...piece.base,faces:newFaces}}; // Authoring JSON stays unchanged.
   }
   async function ensureHouse() {
-    const scene=window.GridTileAccessors?.getActiveScene?.();
+    const scene=activeScene();
     if(!state.home||area()!==state.zone||!scene||houseBuild.busy)return;
     if(houseMesh&&scene===houseScene)return;
     if(houseMesh?.parent)houseMesh.parent.remove(houseMesh);
@@ -208,7 +210,7 @@
       const response=await fetch(HOUSE_FILE);
       if(!response.ok)throw new Error('HTTP '+response.status+' for Highland house piece');
       const piece=await response.json();
-      if(serial!==generation||area()!==state.zone||!state.home||scene!==window.GridTileAccessors?.getActiveScene?.())return; // Do not construct stale house geometry or dereference a removed home.
+      if(serial!==generation||area()!==state.zone||!state.home||scene!==activeScene()||!houseBuild.owns(buildToken))return; // Do not construct stale house geometry or dereference a removed home.
       const base=piece.currentPiece||piece;
       if(!Array.isArray(base.footprint?.cells)||base.footprint.cells.length!==9)
         throw new Error('Highland 3x3 footprint no longer matches its authored asset');
@@ -267,13 +269,14 @@
     return true;
   }
   async function ensureWalker() {
-    if(walker||walkerBuild.busy||!deps?.makeNpcWalker||!state.home||area()!==state.zone)return;
+    const scene=activeScene(); // The constructor may finish after a same-zone scene swap.
+    if(walker||walkerBuild.busy||!deps?.makeNpcWalker||!state.home||area()!==state.zone||!scene)return;
     const buildToken=walkerBuild.begin(); // A superseded builder cannot unlock a newer asynchronous walker request.
     const serial=generation,spot=state.target||{c:state.home.c+1,r:state.home.r+3};
     try {
       const w=await deps.makeNpcWalker(record(),{area:state.zone,c:spot.c,r:spot.r});
       if(!w)return;
-      if(serial!==generation||area()!==state.zone||!state.home||state.phase==='complete'||state.phase==='waiting') {
+      if(serial!==generation||area()!==state.zone||scene!==activeScene()||!walkerBuild.owns(buildToken)||!state.home||state.phase==='complete'||state.phase==='waiting') {
         deps?.despawnNpcWalker?.(w);return;
       }
       walker=w;
@@ -617,7 +620,14 @@
   }
   function syncZone() {
     const active=area()===state.zone;
-    if(!active) {
+    const scene=active?activeScene():null; // Both pending and materialized objects belong to this scene.
+    if(encounterScene!==scene){
+      if(houseMesh||houseBuild.busy)clearHouse();
+      if(walker||walkerBuild.busy)releaseWalker();
+      encounterScene=scene;feyApproachClock.reset();
+      ensureCollision();
+    }
+    if(!active||!scene) {
       if(houseMesh||houseBuild.busy){clearHouse();ensureCollision();}
       if(walker||walkerBuild.busy)releaseWalker(); // Pending builders must be invalidated even before their first mesh is attached.
       feyApproachClock.reset();
@@ -725,7 +735,7 @@
       reward:state.reward,hatTaken:state.hatTaken,milksGiven:state.milksGiven};
   }
   function restore(raw) {
-    clearHouse();releaseWalker();
+    clearHouse();releaseWalker();encounterScene=null;
     feyApproachClock.reset();sceneRunning=false;
     Object.assign(state,initialState());
     if(raw?.version!==SAVE_VERSION)return;
