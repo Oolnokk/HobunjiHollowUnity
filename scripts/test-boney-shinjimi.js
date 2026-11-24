@@ -186,7 +186,7 @@ async function testRealEncounterFlow() {
     area:'map_western_slope',rec:{id:'boney_shinjimi'},resetRouteState(){},update(){}};
   const spawned=[],despawned=[];
   const sceneGroups=[]; // Tracks the real encounter's one authored Highland house in a fake active zone scene.
-  const scene={add(group){group.parent=this;sceneGroups.push(group);},remove(group){group.parent=null;}};
+  let scene={add(group){group.parent=this;sceneGroups.push(group);},remove(group){group.parent=null;}};
   let generatedPiece=null; // Captures post-cut source geometry so the door can be verified against actual authored wall vertices.
   const authoredPiece=JSON.parse(read('docs/config/pieces/house-section-3x3.json'));
   moonWindow.GridTileAccessors={getActiveScene:()=>scene};
@@ -426,6 +426,28 @@ async function testRealEncounterFlow() {
   assert.equal(C.debugSnapshot().reward,null,'next encounter begins without an old reward');
   assert.equal(C.serialize().hatTaken,false,'kasa resets for subsequent moons');
   assert.equal(C.serialize().milksGiven,0,'the next full moon resets Boney’s per-visit milk limit');
+  C.restore(prior);where='map_western_slope';visible=false;
+  let finishOld;const oldWalker={...npc,root:{...npc.root}};
+  game.makeNpcWalker=()=>new Promise(resolve=>{finishOld=()=>resolve(oldWalker);});
+  C.update(.05);
+  const oldScene=scene;
+  scene={add(group){group.parent=this;sceneGroups.push(group);},remove(group){group.parent=null;}};
+  const freshWalker={...npc,root:{...npc.root}};
+  game.makeNpcWalker=async()=>freshWalker;
+  C.update(.05);finishOld();
+  for(let i=0;i<16;i++)await Promise.resolve();
+  C.update(.05);
+  assert(game.npcWalkers.includes(freshWalker),'same-zone rebuild adopts new walker');
+  assert(!game.npcWalkers.includes(oldWalker)&&despawned.includes(oldWalker),'late old-scene walker retired');
+  assert(!sceneGroups.some(group=>group.parent===oldScene),'no house attached to old scene');
+  assert.equal(sceneGroups.filter(group=>group.parent===scene).length,1,'only current house attached');
+  const secondScene=scene;
+  scene={add(group){group.parent=this;sceneGroups.push(group);},remove(group){group.parent=null;}};
+  C.update(.05);
+  for(let i=0;i<16;i++)await Promise.resolve();
+  C.update(.05);
+  assert(!sceneGroups.some(group=>group.parent===secondScene),'materialized house detached on same-area replacement');
+  assert.equal(sceneGroups.filter(group=>group.parent===scene).length,1,'replacement house belongs to current scene');
 }
 testRealEncounterFlow().then(()=>console.log('Boney chase, scene, reward-idempotence and next-moon integration passed.'))
   .catch(error=>{console.error(error);process.exitCode=1;});
