@@ -129,6 +129,8 @@
     const normalizedGenotype = window.CharacterStudioAnimalAppearance?.normalizeGenotype
       ? window.CharacterStudioAnimalAppearance.normalizeGenotype(kind, appearance.creatureGenotype || {})
       : clone(appearance.creatureGenotype || {}); // Returning to presets also returns any custom allele color to the breeding-valid set.
+    const presetColor = window.CharacterStudioAnimalAppearance?.nearestPresetColor?.(kind, layerId, normalizedGenotype[layerId]?.color); // Reset just the selected shared locus; preserve the other exact color.
+    if (presetColor && normalizedGenotype[layerId]) normalizedGenotype[layerId].color = presetColor;
     const next = { ...appearance, creatureColorOverrides: overrides, creatureGenotype: normalizedGenotype };
     next.creatureGenotype = genotypeWithOverrides(next);
     writeAppearance(next, `${layerId} returned to breeding preset`);

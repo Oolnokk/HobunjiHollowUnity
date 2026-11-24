@@ -182,7 +182,7 @@
       const replacement = spec.patterns.some(id => {
         if (id === defaultPattern.id || !id.startsWith(defaultPattern.family)) return false;
         const allele = genotype?.[id]; // A carrier or unexpressed beard must not hide the ordinary beard.
-        return allele?.enabled !== false && allele?.copies > 0 && !!(genotype?.secondary?.color || allele?.color);
+        return allele?.enabled !== false && allele?.copies > 0 && !!(genotype?.secondary?.color || allele?.color || genotype?.base?.color);
       });
       return !replacement;
     });

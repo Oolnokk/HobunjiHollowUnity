@@ -51,6 +51,9 @@ function fakeThree() {
   assert.equal(S.appearanceColors('#123456', { tailfeathers: { color: '#abcdef', enabled: true, copies: 1 } }).tailColor, '#abcdef', 'an expressed tail allele uses body color two');
   assert.equal(S.appearanceColors('#123456', { tailfeathers: { color: '#abcdef', enabled: false, copies: 2 } }).tailColor, '#123456', 'disabled tail allele shows the default primary tint');
   assert.equal(S.appearanceColors('#123456', { spectacles: { color: '#fedcba', enabled: true, copies: 1 } }).spectaclesColor, '#fedcba');
+  const shared = S.appearanceColors('#123456', {secondary:{color:'#abcdef'},tailfeathers:{enabled:true,copies:1},spectacles:{enabled:true,copies:1}});
+  assert.equal(shared.tailColor,'#abcdef','tail expression needs no independent color');
+  assert.equal(shared.spectaclesColor,'#abcdef','spectacles read the same shared B');
   for (let step = 0; step < 12; step++) {
     const frames = [0, 1, 2].map(member => S.memberFrame(member, step));
     assert.equal(new Set(frames).size >= 2, true, 'the three thirds are never all on the same frame');

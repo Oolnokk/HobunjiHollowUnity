@@ -352,8 +352,9 @@
     if (kind === 'skeeri' && genotype?.skeeriPattern) return genotype.skeeriPattern;
     const ids = LIVESTOCK_PATTERN_DEFS[kind] || []; // Stable authored order, independent of expression.
     const first = ids[0];
+    if (genotype?.[first]?.color) return genotype[first].color;
     const fallback = ids.find(id => !_patternUsesBaseCoatColor(kind, id) && genotype?.[id]?.color); // Sparse authored data may omit its first pattern.
-    return genotype?.[first]?.color || genotype?.[fallback]?.color || genotype?.base?.color || null;
+    return genotype?.[fallback]?.color || genotype?.base?.color || null;
   }
   function patternColor(kind, id, genotype) {
     kind = GENOTYPE_SPECIES_ALIAS[kind] || kind;
@@ -480,7 +481,7 @@
         const enabled = !!layer.enabled && copies > 0; // Separates visible traits from hidden carriers.
         const carrier = !enabled && (layer.carrier || (inheritance === 'recessive' && copies === 1)); // Surfaces hidden recessive traits.
         if (!enabled && !carrier) continue;
-        const displayedColor = _patternUsesBaseCoatColor(kind, id) ? genotype.base.color : (layer.color || genotype.base.color); // Farm/Stable chips reflect the rendered beard rather than an obsolete saved pigment.
+        const displayedColor = patternColor(kind, id, genotype) || genotype.base.color; // Farm/Stable chips reflect the rendered beard rather than an obsolete saved pigment.
         patterns.push({
           id,
           label: _traitLabel(id),
@@ -505,15 +506,14 @@
       return _pickWeightedFurEntry(entries.filter(entry => (Number(entry.weight) || 1) === minWeight))?.hex;
     };
     if (genotype.base && palette.length) genotype.base.color = rareColor(palette);
-    if (rank >= 2 && genotype.secondary) genotype.secondary.color = rareColor(_patternPalette(kind, 'secondary'));
     const chances = window.SCRATCHBONES_CONFIG?.game?.creatureGenetics?.patternChances?.[kind] || {}; // Prefer the rarest optional authored masks when fewer patterns are earned.
     const patterns = (LIVESTOCK_PATTERN_DEFS[kind] || []).filter(id => !_patternAlwaysPresent(kind, id))
       .sort((a, b) => (Number(chances[a]) || 1 / 3) - (Number(chances[b]) || 1 / 3)); // Rank controls the count, including guaranteed expressed rare patterns.
+    if (rank >= 2 || patterns.length) genotype.secondary.color = rareColor(_patternPalette(kind, 'secondary')); // One rare B roll for the entire animal.
     for (const [index, id] of patterns.entries()) {
       genotype[id].enabled = index < rank;
       genotype[id].copies = index < rank ? 2 : 0;
       genotype[id].carrier = false;
-      if (index === 0 && index < rank) genotype.secondary.color = rareColor(_patternPalette(kind, 'secondary'));
     }
     if (rank >= 3 && !deps.CREATURE_DB[kind]?.fixedSizeClass) genotype.sizeClass = mutateSizeClassStep(genotype.sizeClass); // Top ordinary animal rewards also have an unusual inherited size.
     return synchronizeBodyColors(kind, genotype);
@@ -546,9 +546,8 @@
   // Fresh (non-bred) livestock gets two independently random fur colors —
   // mirrors the HTML tool's randomizeSpecimen(). Uumkao'ii's fur+plates
   // are both permanent (copies:2, dominant). Pattern-bearing species get
-  // one base fur color plus optional inherited pattern layers; most share
-  // one pattern color, while authored color rules can constrain a specific
-  // layer (Grehlr coloredstripe) to a subset of the same fur palette.
+  // two shared body colors plus independent pattern-expression loci. Grehlr's
+  // existing bright-stripe restriction applies to the shared B palette.
   // The exact same odds are used for wild-den pack genotypes (see
   // spawnPackAtDen/pickDenGenotype), so a farm-bought crate and a wild
   // pack member are statistically the same roll. Palette selection is
@@ -610,7 +609,7 @@
       return { amount: LIVESTOCK_SELL_RULES.baseValue, tier: 'Common', contrastScore: 0, comparison: baseColor ? `Plain ${_furPaletteName(baseColor)} coat` : 'Plain specimen' };
     }
     const contrastPatternId = enabledIds.find(id => !_patternUsesBaseCoatColor(kind, id)); // Base-colored beards still add pattern rarity but must not hide the contrast of another expressed marking.
-    const patternColor = contrastPatternId ? (genotype[contrastPatternId]?.color || baseColor) : baseColor; // Purely base-colored overlays contribute no false color contrast.
+    const patternColor = contrastPatternId ? (secondaryColor(kind, genotype) || baseColor) : baseColor; // Purely base-colored overlays contribute no false color contrast.
     const contrast = _furColorContrastScore(baseColor, patternColor);
     const contrastBonus = Math.round(contrast.score * (0.9 + 0.45 * enabledIds.length));
     const patternBonus = LIVESTOCK_PATTERN_BONUSES[Math.min(enabledIds.length, LIVESTOCK_PATTERN_BONUSES.length - 1)];

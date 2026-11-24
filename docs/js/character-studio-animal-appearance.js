@@ -824,7 +824,7 @@
     for (const patternId of patternIds) {
       const layer = genotype?.[patternId]; // Authored allele determines whether and how this pattern is drawn.
       if (!layer?.color || Number(layer.copies) <= 0 || layer.enabled === false) continue;
-      const renderColor = patternUsesBaseCoatColor(kind, patternId) ? baseColor : genotype.secondary?.color; // Mirrors Drenkirra's intentional inverted stripe colors.
+      const renderColor = patternUsesBaseCoatColor(kind, patternId) ? baseColor : genotype.secondary?.color; // Uses the same A/B assignment as runtime.
       try {
         const layerCanvas = await recoloredSource(patternUrl(kind, patternId), renderColor, null); // Recolors the exact existing breeding pattern PNG.
         ctx.drawImage(layerCanvas, 0, 0, width, height);
@@ -990,6 +990,7 @@
     patternIdsFor,
     defaultAnimalGenotype,
     normalizeGenotype,
+    nearestPresetColor: (kind, layerId, color) => normalizedPaletteColor(color, paletteFor(kind, layerId)), // Shared by custom-hex reset.
     renderStudioAnimal,
     refreshSurfacePatternStatuses,
     noteCanonicalRender,
