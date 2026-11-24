@@ -434,8 +434,8 @@
   // Nonvisual alleles live alongside coat genes, but are never read by the texture compositor.
   const PRACTICAL_TRAITS = Object.freeze({
     speedy: { label: 'Speedy', description: '+20% riding and combat movement speed', chance: 0.12 },
-    fierce: { label: 'Fierce', description: '+15% attack damage', chance: 0.10 },
-    enduring: { label: 'Enduring', description: '25% faster mount acceleration-charge recovery', chance: 0.10 },
+    fierce: { label: 'Fierce', description: '+15% animal and mounted attack damage', chance: 0.10 },
+    enduring: { label: 'Enduring', description: '+25% maximum Health and Stamina; 25% faster mount acceleration-charge recovery', chance: 0.10 },
     fertile: { label: 'Fertile', description: '+30% breeding progress per parent', chance: 0.12 },
     productive: { label: 'Productive', description: 'One day faster multi-day goods regeneration (minimum one day)', chance: 0.14 },
     bountiful: { label: 'Bountiful', description: 'One additional good per harvest', chance: 0.10 },
@@ -496,7 +496,30 @@
     // The independent cooldown path preserves ordinary wool/venom/eggs.
     return { itemKey: product.itemKey, cooldownDays: product.id === 'milk' ? 1 : 2, verb: product.verb, interactive: false };
   }
+  // Permanent genetic capacities are part of the animal's actual base pools, not temporary stat modifiers.
+  const enduringCapacityApplied = new WeakMap(); // Runtime-only per entity/channel tracking, independent of saved genotype.
+  function applyPracticalCapacities(entity, genotype = entity?.genotype) {
+    if (!entity || practicalMultiplier(genotype, 'enduring') === 1) return false;
+    if (entity === window.Combat?.deps?.player) return false; // Never grant an animal allele to the rider.
+    const multiplier = practicalMultiplier(genotype, 'enduring');
+    let applied = enduringCapacityApplied.get(entity) || 0; // Bit flags allow a late-initialized resource to be handled independently.
+    for (const [maxKey, currentKey, flag] of [['maxHealth', 'health', 1], ['maxStamina', 'stamina', 2]]) {
+      if (applied & flag) continue;
+      const base = entity[maxKey];
+      if (!Number.isFinite(base) || base <= 0) continue;
+      const current = entity[currentKey];
+      const next = base * multiplier; // Shared combat rings, thresholds and spending all use this new base maximum.
+      entity[maxKey] = next;
+      if (Number.isFinite(current) && current > 0 && current >= base && !(currentKey === 'stamina' && entity.exhaustion?.active)) {
+        entity[currentKey] = next; // Newly spawned/full animals remain full; injured, downed or exhausted animals are not healed.
+      }
+      applied |= flag;
+    }
+    enduringCapacityApplied.set(entity, applied);
+    return applied === 3;
+  }
   function applyWildPracticalTraits(entity, genotype) {
+    applyPracticalCapacities(entity, genotype || entity?.genotype); // Also handles wild factories that assign genes after ResourceSystem initialization.
     if (!entity || entity.isCompanion || !entity.def || entity._practicalWildSpeedApplied) return entity;
     const genes = genotype || entity.genotype; // One authoritative genome for the wild entity.
     const multiplier = practicalMultiplier(genes, 'speedy');
@@ -877,6 +900,7 @@
     genotypeTraits,
     practicalCopies,
     practicalMultiplier,
+    applyPracticalCapacities,
     practicalResource,
     practicalTraitList,
     applyWildPracticalTraits,
