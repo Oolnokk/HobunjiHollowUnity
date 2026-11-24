@@ -29,15 +29,15 @@
       try { supplied = provider() || []; }
       catch (error) { window.__farmLog?.(`[buff-bar] ${sourceId} provider failed: ${error.message}`, 'error'); }
       for (const raw of supplied) {
-        if (!raw || !(Number(raw.remainingS) > 0)) continue;
+        if (!raw || (raw.persistent !== true && !(Number(raw.remainingS) > 0))) continue;
         const key = String(raw.key || raw.id || 'effect'); // Used to namespace duplicate potion/food effect ids.
         entries.push({
           ...raw,
           sourceId,
           domId: `${sourceId}:${key}`,
           kind: raw.kind === 'bane' ? 'bane' : 'boon',
-          durationS: Math.max(0.001, Number(raw.durationS) || Number(raw.remainingS) || 1),
-          remainingS: Math.max(0, Number(raw.remainingS) || 0),
+          durationS: raw.persistent === true ? null : Math.max(0.001, Number(raw.durationS) || Number(raw.remainingS) || 1),
+          remainingS: raw.persistent === true ? null : Math.max(0, Number(raw.remainingS) || 0),
           stacks: Math.max(1, Math.floor(Number(raw.stacks) || 1)),
         });
       }
@@ -85,7 +85,7 @@
     for (const entry of entries) {
       const nodes = iconNodes.get(entry.domId); // Cached until the icon markup changes; includes both countdown and fraction-label nodes.
       if (!nodes) continue;
-      const percentage = Math.round(Math.max(0, Math.min(100, entry.remainingS / entry.durationS * 100)) * 10) / 10; // Tenths of a percent avoid subpixel style churn for long buffs.
+      const percentage = entry.persistent === true ? 100 : Math.round(Math.max(0, Math.min(100, entry.remainingS / entry.durationS * 100)) * 10) / 10; // Tenths of a percent avoid subpixel style churn for long buffs.
       const width = `${percentage}%`; // Used as the stable CSS width for unchanged active durations.
       if (nodes.fill) {
         if (nodes.fill.style.width !== width) { nodes.fill.style.width = width; styleDebug.appliedWrites++; }
