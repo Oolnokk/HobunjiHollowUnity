@@ -215,6 +215,7 @@ async function testRealEncounterFlow() {
   const milkDialogues=[]; // Captures each actual authored milk conversation, including its three distinct greetings.
   const snapshotsAtGrant=[]; // The real relic owner saves synchronously while granting; confirm milk and count are already updated at that point.
   let failNextMilkGrant=false; // Simulates a failed relic award to verify rollback, without consuming the single-night allowance.
+  let deferNextChoice=false,continueDelayedChoice=null; // Exercise the first dialogue's restore race separately from milk.
   let deferNextMilk=false; // Keeps a milk cutscene open while the world restores, exposing stale callback races.
   let continueDelayedMilk=null; // Test-only callback that releases the paused cutscene after a restore.
   let savedDuringGrant=null;
@@ -238,6 +239,7 @@ async function testRealEncounterFlow() {
       handlers.onDialogueContinue({id:'milk_reward'}); // A repeated Continue must not award or consume another milk.
       return;
     }
+    if(deferNextChoice){deferNextChoice=false;await new Promise(resolve=>{continueDelayedChoice=()=>{handlers.onDialogueContinue({id:'useful_grant'});resolve();};});return;}
     const demand=scene.stages.find(stage=>stage.id==='demand');
     assert.equal(demand.options.length,4);
     assert.deepEqual(Array.from(demand.options,x=>x.text),
@@ -309,6 +311,13 @@ async function testRealEncounterFlow() {
   assert.equal(C.debugSnapshot().phase,'home','Boney reaches his hiding place');
   game.player.x=(center.c+1.5)*64; // Walk through the south opening into the house after Boney gets home.
   game.player.y=(center.r+1.5)*64;
+  deferNextChoice=true;C.update(.1);
+  assert.equal(typeof continueDelayedChoice,'function','first reward dialogue can be paused before its grant');
+  C.restore(C.serialize());continueDelayedChoice();
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(rewards.length,0,'stale first dialogue cannot grant into the restored encounter');
+  assert.equal(feyStacks,4,'stale first dialogue cannot clear persistent Fey-sight');
+  C.update(.1);await new Promise(resolve=>setImmediate(resolve));
   C.update(.1);
   await new Promise(resolve=>setImmediate(resolve)); // Flush the sandboxed cutscene's Promise jobs before testing post-confrontation actions.
   assert.equal(C.debugSnapshot().phase,'leaving','the confrontation must finish before gifting becomes available');
