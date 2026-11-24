@@ -399,13 +399,14 @@
           authored: state.authoredScale, age: state.ageFraction });
     }
     const count = eligible.length;
+    let cursor = 0; // Each tracked actor is revisited once after the existing PNG scan, not shifted through an O(n²) queue.
     const applyChunk = () => {
-      for (let n = 0; n < 24 && eligible.length; n++) {
-        const item = eligible.shift();
+      for (let n = 0; n < 24 && cursor < eligible.length; n++) {
+        const item = eligible[cursor++];
         if (item.parent.userData?.hobunjiCharacterRigScaleState)
           applyToParent(item.parent, item.species, item.gender, item.authored, item.age);
       }
-      if (eligible.length) setTimeout(applyChunk, 0); // One-time 24-actor batches, not a per-frame watcher.
+      if (cursor < eligible.length) setTimeout(applyChunk, 0); // One-time 24-actor batches, not a per-frame watcher.
     };
     applyChunk();
     return count;
@@ -508,7 +509,7 @@
     };
     parent.updateMatrix?.();
     parent.updateMatrixWorld?.(true);
-    applyHeadCompensation(parent, species, gender, corrected, ageFraction); // The neck compensates effective Y; 65%-raw head size stays independent of body height.
+    applyHeadCompensation(parent, species, gender, { ...corrected, y: next.y }, ageFraction); // Compensate the ACTUAL clamped parent Y at all UI extremes.
     if (previousLegRatio == null || Math.abs(previousLegRatio - nextLegRatio) > EPSILON)
       window.ProceduralLegAnimation?.syncScaleForParent?.(parent, nextLegRatio); // Leg IK changes only when its actual leg/portrait ratio changes, never on unrelated head/age redraws.
     trackScaledParent(parent); // WeakRef only; repeated character edits add no new registry entries.
