@@ -34,6 +34,7 @@
   let sixFootHeight = null; // World-space reference computed once from the authored chair back height.
   let sixFootGuideDepth = 2; // Fallback background depth if no completed lineup bounds exist.
   let sixFootLineupBounds = null; // Four X/Z extents cached at layout time; camera orbit tests only four scalars per frame.
+  let unsubscribePixelHeights = null; // One listener per open lineup; later bare-PNG measurements trigger ONE calibrated rerender, never per-frame rescans.
   let THREE = null;
   let persistTimer = 0;
   let handScaleTimer = 0; // Debounces hand-GLB rebuilds during touch drags; numeric profile changes still save immediately.
@@ -1594,9 +1595,33 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
     if (!manualViewInteraction) frame(); // Initial auto-fit only after all previews arrive, and never after edits, gestures or explicit focus.
     retryLateAgeLimbs(); // Give async hand/foot GLBs a bounded chance to receive the active stage's shared scale.
     status(`All ${entries.length}/${expected} species/gender previews ready. Use Frame lineup to see everyone.`);
+    // Do not compete with buildPortrait's shared renderer while the lineup loads.
+    // The existing CharacterDimensions module measures only bare source art, once per
+    // session. Afterward the shared gameplay rig scaler corrects each target height.
+    const dimensions = window.HobunjiCharacterDimensions;
+    if (dimensions?.subscribe && dimensions?.measureAll) {
+      unsubscribePixelHeights?.();
+      unsubscribePixelHeights = dimensions.subscribe(() => {
+        if (buildId !== generation || (!active && !building) || !entries.length) return;
+        for (const entry of entries) {
+          applyPreviewProportions(entry); // The cached pixel solver now knows real source head/body bounds.
+          syncLegPortraitAlignment(entry); // Keep the actual leg hip joined to its newly calibrated portrait.
+        }
+        window.ProceduralHandFrameDriver?.syncNow?.();
+        layout(); // One Box3 pass after measurement; no new renderer or per-frame work.
+        const calibrated = window.HobunjiCharacterRigScale?.pixelHeightCalibrationSnapshot?.() || {};
+        const count = Object.keys(calibrated).length;
+        status(`Measured ${count} head/body profiles against the source PNGs. Feet-and-inches targets now use painted crown heights where source art was available; unmeasured species remain nominal.`);
+      });
+      dimensions.measureAll().catch(error => {
+        if (buildId === generation && (active || building)) status(`PNG crown measurement unavailable: ${error?.message || error}. Displayed height targets remain nominal.`);
+      });
+    }
   }
 
   function disposePreview() {
+    unsubscribePixelHeights?.();
+    unsubscribePixelHeights = null; // An asynchronous portrait measurement cannot mutate a disposed lineup.
     if (selectedLayoutFrame && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(selectedLayoutFrame);
     selectedLayoutFrame = 0; // Avoid a late relayout referencing disposed actors.
     stopLongoranWalk();
@@ -1765,6 +1790,8 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
         sixFootReference: { visible: !!sixFootGuide?.parent, worldHeight: sixFootHeight, feet: 6, chairReferenceFeet: 3, behindDepth: sixFootGuideDepth, lineupBoundsCached: !!sixFootLineupBounds }, // Persistent mobile diagnostics without console access.
         maoaoRelativeDefaults: window.HOBUNJI_ATTACHMENT_RIG_PROFILE_STATUS?.maoaoScaleParity || null, // Mobile reports exactly how many profiles adopted the 65% raw-head baseline.
         worldHeightCalibration: { ...(window.HobunjiCharacterRigScaleDefaults?.worldHeightCalibration || {}), activeMultiplier: window.HobunjiCharacterRigScale?.worldVisualScale?.() || 1 }, // Compares canonical Mao'ao 6'3" calibration against the actual loaded game/editor transform on mobile.
+        pixelCrownCalibration: { measurementStatus: window.HobunjiCharacterDimensions?.status || 'unavailable',
+          profiles: window.HobunjiCharacterRigScale?.pixelHeightCalibrationSnapshot?.() || {} }, // Actual PNG top-of-head calibration replaces guessed portrait-canvas height in mobile diagnostics.
         exiting: !!exitingPromise, // Visible mobile diagnostic while an actor import is running.
         requestedTab: pendingExitMode, // Last native mode requested by the user.
         currentTabMode: document.body.dataset.animationAuthorMode,
