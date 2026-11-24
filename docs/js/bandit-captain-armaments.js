@@ -239,7 +239,7 @@
     entity._captainEnchantmentFx?.update(dt);
   }
 
-  function grantCorpseWeapon(entity) {
+  function grantCorpseWeapon(entity, options = {}) {
     const record = entity?._banditCaptainArmament, inventory = gear();
     if (!record || !inventory || !deps?.TOOL_ITEM_DEFS || !window.EnchantmentSystem?.cleanWeaponState) return null;
     if (!registerDefinition(record.key, record)) return null;
@@ -253,6 +253,7 @@
       inventory.weaponEnchantments[record.key] = window.EnchantmentSystem.cleanWeaponState(record.enchantments);
       if (record.visual) inventory.weaponEnchantmentVisuals[record.key] = { ...record.visual };
     }
+    if(options.deferSave===true) return deps.TOOL_ITEM_DEFS[record.key]?.label || 'Fey weapon'; // Caller owns the atomic gear/member transaction; retain the unlooted record until commit.
     unlooted.delete(record.key); // Player gear is the enchantment authority from this point forward.
     entity._captainEnchantmentFx?.dispose?.();
     entity._captainEnchantmentFx = null;
