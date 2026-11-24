@@ -1217,6 +1217,10 @@
     const sightWork = window.EnemySearchAI?.debugSnapshot?.(); // Copyable hostile-perception cadence and query counts.
     const hitboxWork = window.__rangedDebug?.hitboxWork; // Counts reticle/AI reuse against the same game frame.
     if (sightWork || hitboxWork) lines.push(`Combat CPU work: sight=${JSON.stringify(sightWork || null)} hitboxes=${JSON.stringify(hitboxWork || null)}`);
+    const projectilePool = window.__rangedDebug?.projectilePool; // Inspect resource reuse without devtools.
+    const propBatches = window.ZonePropRenderBatches?.snapshot?.(); // Inspect draw savings and alpha-proof backlog.
+    if (projectilePool) lines.push(`Projectile pools: ${JSON.stringify(projectilePool)}`);
+    if (propBatches) lines.push(`Wilderness prop batches: ${JSON.stringify(propBatches)}`);
 
     const waterFootLines = _pixelProbeWaterFootContactLines(activeScene, currentArea, playerMesh); // Used to distinguish real foot/water intersection from camera-perspective illusions on mobile.
     if (waterFootLines) lines.push(...waterFootLines);
