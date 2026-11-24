@@ -46,6 +46,7 @@
           <button data-mode="body">Grid only</button>
           <button data-mode="fit">Species fit</button>
           <button data-mode="quad">Quad corners</button>
+          <button data-mode="hole">Hood hole</button>
           <button data-mode="preview">Preview</button>
           <button data-mode="protect">Protect pixels</button>
           <button data-mode="headband">Band spline</button>
@@ -81,6 +82,15 @@
         <div class="field"><label for="translateY">Translate Y (px)</label><div class="row"><input id="translateY" type="range" min="-120" max="120" step="0.25" value="0"><input id="translateYNumber" type="number" min="-120" max="120" step="0.25" value="0" aria-label="Translate Y pixels"></div></div>
         <div class="row"><button id="resetTransform">Reset base transform</button></div>
         <div class="small">Saved separately for body and headwear per species+gender. In Base Transform mode, drag the canvas to reposition the selected art.</div>
+      </section>
+
+      <section id="hoodHoleSection" hidden>
+        <h2>Hood opening deform</h2>
+        <div class="small">Uses the beard mask tool's hood-opening detection. In <b>Hood hole</b> mode, drag the yellow opening corners. The opening follows the quad; cloth between the opening rim (cyan) and the hood outline (magenta) follows with the falloff below, so the outline never moves.</div>
+        <div class="row"><label class="small"><input id="holeEnabled" type="checkbox"> apply hood-opening deform</label></div>
+        <div class="field"><label for="holeRate">Falloff rate with distance from the opening (0 = even spread to the outline, higher = concentrated around the hole)</label><div class="row"><input id="holeRate" type="range" min="0" max="12" step="0.05" value="1.5"><input id="holeRateNumber" type="number" min="0" max="12" step="0.05" value="1.5" aria-label="Falloff rate"></div></div>
+        <div class="row"><button type="button" id="holeReset">Reset opening corners</button></div>
+        <div id="holeStatus" class="small" aria-live="polite"></div>
       </section>
 
       <section id="recipeSection">

@@ -242,13 +242,69 @@ function applyHeadbandSplineWarp(garment,state,width,height){
   image.data.set(warped);targetCtx.putImageData(image,0,0);
   return result; // PNG alpha and black outlines remain authored pixels, not regenerated outlines.
 }
-function warpClothing(source,grid,width,height,fitContourState=null){
+// ---- Hood-opening (hole) deformation: detection via the beard/hood cutout tool ----
+function currentHoleRecord(){
+  const key=ensureTargetData(E.species.value,E.gender.value);
+  A.holeDeforms ||= {};
+  const saved=A.holeDeforms[key];
+  if(saved&&Array.isArray(saved.corners))return saved;
+  return A.holeDeforms[key]={enabled:false,rate:window.ClothingHoodHoleDeform?.DEFAULT_RATE??1.5,corners:[{x:0,y:0},{x:0,y:0},{x:0,y:0},{x:0,y:0}]};
+}
+function holePortraitRect(width,height){
+  // Same preset-B placement the game uses for every wearable layer, so the
+  // beard tool's 200px detection windows land on the real face opening.
+  const preset=window.getPortraitXformPreset?.('B')||{ax:-.0983,ay:-.0809,sx:2.49,sy:2.49};
+  return portraitLayerRect(width,height,{ax:preset.ax,ay:preset.ay,sx:preset.sx??preset.scaleX,sy:preset.sy??preset.scaleY},200,200);
+}
+function detectHoodOpening(canvas){
+  const Cut=window.PortraitBeardHoodCutout,Hole=window.ClothingHoodHoleDeform;
+  if(!Cut||!Hole||!canvas)return null;
+  const width=canvas.width,height=canvas.height,rect=holePortraitRect(width,height);
+  const portrait=Object.assign(document.createElement('canvas'),{width:200,height:200});
+  const pctx=portrait.getContext('2d',{alpha:true});pctx.imageSmoothingEnabled=false;
+  pctx.drawImage(canvas,rect.x,rect.y,rect.w,rect.h);
+  const rgba200=pctx.getImageData(0,0,200,200).data;
+  const lower=Cut.lowerHoodOpeningSegment(rgba200),upper=Cut.upperHoodOpeningSegment(rgba200);
+  const ring=Hole.ringFromPortrait(lower,upper,rect,width,height);
+  if(!ring)return null;
+  const rgba=canvas.getContext('2d').getImageData(0,0,width,height).data;
+  const profile=Hole.buildProfile(rgba,width,height,ring.points,ring.seed);
+  if(profile){profile.ringPoints=ring.points;profile.clockwiseComplete=!!lower.clockwiseComplete}
+  return profile;
+}
+function holeProfileForGrid(grid,width,height){
+  const front=R.cloth?._front||R.cloth;
+  if(!front)return null;
+  const key=`${R.assetGeneration}|${width}x${height}|`+grid.map(p=>p.x.toFixed(5)+','+p.y.toFixed(5)).join(';');
+  if(R.holeProfileCache?.key===key&&R.holeProfileCache.front===front)return R.holeProfileCache.profile;
+  const profile=detectHoodOpening(warpGarment(front,grid,width,height)); // Detect on the 6×6-fitted front composite, before any hole edit.
+  R.holeProfileCache={key,front,profile};
+  return profile;
+}
+function applyHoleDeform(canvas,grid,width,height,hole){
+  const Hole=window.ClothingHoodHoleDeform;
+  if(!Hole||!hole?.enabled||Hole.isIdentity(hole.corners))return canvas;
+  const profile=holeProfileForGrid(grid,width,height);
+  if(!profile)return canvas;
+  const ctx=canvas.getContext('2d',{alpha:true}),image=ctx.getImageData(0,0,width,height);
+  const warped=Hole.warp(image.data,width,height,profile,hole.corners,hole.rate);
+  const result=Object.assign(document.createElement('canvas'),{width,height});
+  const rctx=result.getContext('2d',{alpha:true}),out=rctx.createImageData(width,height);
+  out.data.set(warped);rctx.putImageData(out,0,0);
+  return result;
+}
+function warpClothing(source,grid,width,height,fitContourState=null,options={}){
   const isHeadwear=fitRegion()==='headwear';
   const state=fitContourState||(isHeadwear?currentHeadbandRecord():currentContourRecord());
   const garment=isHeadwear&&state?.enabled
     ?cachedHeadbandGridWarp(source,grid,width,height)
     :warpGarment(source,grid,width,height);
-  if(isHeadwear)return applyHeadbandSplineWarp(garment,state,width,height);
+  if(isHeadwear){
+    const splined=applyHeadbandSplineWarp(garment,state,width,height);
+    if(options.view==='behind')return splined; // Rear-view art has no face opening; the hole edit never touches it.
+    const hole=options.hole!==undefined?options.hole:currentHoleRecord();
+    return applyHoleDeform(splined,grid,width,height,hole);
+  }
   if(routedPatchIsBody()||!R.sourceTorso||!R.targetTorso)return garment;
   if(!state?.enabled)return garment;
   const mask=fitContourState?.maskPixels||currentContourMask();

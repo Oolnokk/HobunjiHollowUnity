@@ -238,6 +238,7 @@ function render(scheduleRig=true){
     if(mode==='quad')drawQuadHandles(C); // Four draggable corners of the fitted grid.
   }
 
+  if(mode==='hole'&&fitRegion()==='headwear')drawHoleOverlay(C); // Detected opening rim, outer outline and the opening's quad handles (independent of the grid toggle).
   E.label.textContent=(fitRegion()==='headwear'?'HEADWEAR • ':'BODY • ')+
     (mode==='transform'
       ?`Base Transform • ${garmentRecord()?.label||''} • ${E.species.options[E.species.selectedIndex]?.text||E.species.value} ${E.gender.value}`
@@ -249,6 +250,8 @@ function render(scheduleRig=true){
           ?`Paint rear sprite • ${garmentRecord()?.label||''} • ${E.species.value} ${E.gender.value}`
         :mode==='protect'
           ?`Paint protected pixels • ${garmentRecord()?.label||''} • ${E.species.value} ${E.gender.value}`
+        :mode==='hole'
+          ?`Hood hole • ${garmentRecord()?.label||''} • ${E.species.value} ${E.gender.value}`
         :mode==='quad'
           ?`Quad corners • ${garmentRecord()?.label||''} • ${E.sourceSpecies.value} ${E.sourceGender.value} → ${E.species.value} ${E.gender.value}`
         :mode==='fit'
@@ -269,6 +272,8 @@ function refreshHelp(){
           ?'Draw or erase rear sprite pixels against the actual game backplane. The exported PNG is automatically mirrored for the game.'
         :mode==='protect'
           ?'Use your finger or mouse to paint the magenta protected pixels; transparent collar holes are included. Painted pixels remain stationary during automatic torso contour fit. Brush controls are in the left panel.'
+        :mode==='hole'
+          ?'The face opening is detected with the beard mask tool\'s rim tracing (cyan) and the hood outline (magenta). Drag the four YELLOW opening corners: the opening follows the quad, and cloth between the rim and the outline follows with your falloff, so the outer silhouette stays put.'
         :mode==='quad'
           ?'Drag the four YELLOW corners to skew, taper or stretch the whole sprite as one quad. Each corner pulls the 6×6 grid with bilinear falloff and stacks on top of any blue-node edits.'
         :mode==='fit'

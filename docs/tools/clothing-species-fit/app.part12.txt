@@ -55,7 +55,7 @@ async function loadBehindPatchSource(id){
 function warpBehindPatchCanvas(sourceCanvas,fitState=null,bodyPatch=false){
   if(!sourceCanvas||!R.body)throw new Error('The clothing species-fit editor is not ready to deform a behind sprite yet.');
   if(bodyPatch)return warpGarment(sourceCanvas,fitState?targetGridFromFitState(fitState):targetGrid(),R.body.width,R.body.height); // Corrective body pixels intentionally skip garment contour fitting.
-  return warpClothing(sourceCanvas,fitState?targetGridFromFitState(fitState):targetGrid(),R.body.width,R.body.height,fitState?(fitRegion()==='headwear'?fitState.headband:fitState.contour):null); // Export callers can pin the exact base transform + 6×6 fit active when the job was authored.
+  return warpClothing(sourceCanvas,fitState?targetGridFromFitState(fitState):targetGrid(),R.body.width,R.body.height,fitState?(fitRegion()==='headwear'?fitState.headband:fitState.contour):null,{view:'behind'}); // Export callers can pin the exact base transform + 6×6 fit active when the job was authored.
 }
 function setMainWorkflowPatch(sourceCanvas,meta={}){
   if(!sourceCanvas)throw new Error('Cannot route an empty patch source into the main workflow.');
@@ -101,16 +101,18 @@ window.ClothingSpeciesFitTool=Object.freeze({
   logMessage:message=>log(String(message||''))
 }); // Narrow bridge for the behind.part1-5.txt patch author; repository loading and deformation math remain owned by the core editor.
 
-E.modeBtns.forEach(b=>b.onclick=()=>{if((b.dataset.mode==='protect'&&fitRegion()==='headwear')||(['headband','rear-paint'].includes(b.dataset.mode)&&fitRegion()!=='headwear'))return;mode=b.dataset.mode;if(mode==='rear-paint')E.headbandView.value='back';saveState();syncHeadbandControls();render()});
+E.modeBtns.forEach(b=>b.onclick=()=>{if((b.dataset.mode==='protect'&&fitRegion()==='headwear')||(['headband','rear-paint','hole'].includes(b.dataset.mode)&&fitRegion()!=='headwear'))return;mode=b.dataset.mode;if(mode==='rear-paint')E.headbandView.value='back';saveState();syncHeadbandControls();render()});
 E.reload.onclick=loadRepositoryData;
 E.fitRegion.onchange=()=>{
   ++R.garmentSelectionEpoch; // Region switches invalidate any deferred catalog auto-restoration.
   // Keep the last item selection for each region and never reuse body transforms for headwear.
   R.three.portraitCache.clear();
   R.assetGeneration++;
-  if(mode==='protect'&&fitRegion()==='headwear'||['headband','rear-paint'].includes(mode)&&fitRegion()!=='headwear')mode='fit'; // Painting is body/poncho-only, never a hidden headwear edit.
+  if(mode==='protect'&&fitRegion()==='headwear'||['headband','rear-paint','hole'].includes(mode)&&fitRegion()!=='headwear')mode='fit'; // Painting is body/poncho-only, never a hidden headwear edit.
   rebuildGarmentSelector();
   document.getElementById('headbandSplineSection').hidden=fitRegion()!=='headwear';
+  if(E.holeSection)E.holeSection.hidden=fitRegion()!=='headwear';
+  E.modeBtns.find(btn=>btn.dataset.mode==='hole').disabled=fitRegion()!=='headwear';
   E.modeBtns.find(btn=>btn.dataset.mode==='headband').disabled=fitRegion()!=='headwear';
   E.modeBtns.find(btn=>btn.dataset.mode==='rear-paint').disabled=fitRegion()!=='headwear';
   document.getElementById('contourFitSection').hidden=fitRegion()==='headwear';
@@ -286,7 +288,9 @@ function recipeFromCurrentFit(name,description=''){
     format:RECIPE_FORMAT,id:safeName(name).toLowerCase()||'recipe-'+Date.now(),name,description,region:fitRegion(),
     source:{species:E.sourceSpecies.value,gender:E.sourceGender.value},
     target:{species:E.species.value,gender:E.gender.value},
-    transform:fit.transform,offsets:fit.offsets,createdAt:new Date().toISOString()
+    transform:fit.transform,offsets:fit.offsets,
+    ...(fit.hole&&fit.hole.enabled?{hole:{rate:fit.hole.rate,corners:fit.hole.corners}}:{}), // Optional hood-opening quad, in sprite pixels relative to each item's detected opening.
+    createdAt:new Date().toISOString()
   };
 }
 function applyRecipeToCurrentFit(recipe){
@@ -295,6 +299,11 @@ function applyRecipeToCurrentFit(recipe){
   const tr=recipe.transform;
   A.baseTransforms[key]={scaleX:+tr.scaleX,scaleY:+tr.scaleY,translateX:+tr.translateX,translateY:+tr.translateY};
   A.localOffsets[key]=recipe.offsets.map(point=>({x:+point.x,y:+point.y}));
+  if(recipe.hole&&Array.isArray(recipe.hole.corners)){
+    A.holeDeforms ||= {};
+    A.holeDeforms[key]={enabled:true,rate:Number.isFinite(+recipe.hole.rate)?+recipe.hole.rate:1.5,
+      corners:[0,1,2,3].map(i=>({x:+recipe.hole.corners[i]?.x||0,y:+recipe.hole.corners[i]?.y||0}))};
+  }
   return key;
 }
 function allRecipes(){
@@ -441,15 +450,97 @@ E.recipeFile.onchange=async()=>{
   }catch(error){E.recipeStatus.textContent='Import failed: '+error.message}
   E.recipeFile.value='';
 };
+// ---------------------------------------------------------------------------
+// Hood hole: drag the detected face opening's quad corners. The warp itself
+// lives in hood-hole-deform.js and is applied inside warpClothing().
+// ---------------------------------------------------------------------------
+let holeDrag=null;
+function currentHoleProfile(){
+  if(fitRegion()!=='headwear'||!R.body||!R.cloth)return null;
+  return holeProfileForGrid(targetGrid(),R.body.width,R.body.height);
+}
+function holeHandlePoints(profile,hole){
+  return profile.quad.map((corner,i)=>({x:corner.x+hole.corners[i].x,y:corner.y+hole.corners[i].y}));
+}
+function drawHoleOverlay(ctx){
+  const profile=currentHoleProfile();
+  if(!profile){syncHoleStatus(null);return}
+  const hole=currentHoleRecord();
+  ctx.save();
+  ctx.fillStyle='#22d3ee';
+  for(const p of profile.ringPoints||[])ctx.fillRect(p.x-.5,p.y-.5,1,1);
+  ctx.strokeStyle='#f472b6';ctx.lineWidth=1;ctx.beginPath();
+  for(let b=0;b<=profile.outline.length;b++){
+    const i=b%profile.outline.length,angle=(i/profile.outline.length)*2*Math.PI-Math.PI,r=profile.outline[i];
+    const x=profile.seed.x+Math.cos(angle)*r,y=profile.seed.y+Math.sin(angle)*r;
+    b?ctx.lineTo(x,y):ctx.moveTo(x,y);
+  }
+  ctx.stroke();
+  const handles=holeHandlePoints(profile,hole);
+  ctx.strokeStyle='#ffe066';ctx.fillStyle='#ffe066';ctx.lineWidth=1.4;ctx.beginPath();
+  [0,1,3,2,0].forEach((c,i)=>{const q=handles[c];i?ctx.lineTo(q.x,q.y):ctx.moveTo(q.x,q.y)});ctx.stroke();
+  for(const q of handles){ctx.beginPath();ctx.arc(q.x,q.y,HANDLE_RADIUS,0,Math.PI*2);ctx.fill()}
+  ctx.restore();
+  syncHoleStatus(profile);
+}
+function syncHoleStatus(profile){
+  if(!E.holeStatus)return;
+  const hole=fitRegion()==='headwear'&&R.body?currentHoleRecord():null;
+  E.holeStatus.textContent=!window.PortraitBeardHoodCutout?'Beard/hood rim tracer not loaded.'
+    :!profile?'No face opening detected in this item (needs a transparent opening around the face).'
+    :`Opening ${Math.round(profile.box.x1-profile.box.x0)}×${Math.round(profile.box.y1-profile.box.y0)} px${profile.clockwiseComplete?'':' (partial rim)'} • ${hole?.enabled?'deform ON':'deform off'} • falloff ${(+hole?.rate||0).toFixed(2)}`;
+}
+function syncHoleControls(){
+  if(!E.holeEnabled||fitRegion()!=='headwear'||!R.body)return;
+  const hole=currentHoleRecord(),rate=window.ClothingHoodHoleDeform?.normalizeRate(hole.rate)??1.5;
+  E.holeEnabled.checked=!!hole.enabled;E.holeRate.value=String(rate);E.holeRateNumber.value=String(rate);
+}
+function holePointerDown(e){
+  const profile=currentHoleProfile();if(!profile)return false;
+  const p=pointer(e),hole=currentHoleRecord(),handles=holeHandlePoints(profile,hole);
+  let corner=-1,best=Infinity;
+  handles.forEach((q,i)=>{const d=Math.hypot(q.x-p.x,q.y-p.y);if(d<best){best=d;corner=i}});
+  if(corner<0||best>HIT_RADIUS*2)return false;
+  pushUndo();
+  holeDrag={corner,start:p,from:{...hole.corners[corner]}};
+  E.stage.setPointerCapture(e.pointerId);
+  return true;
+}
+function holePointerMove(e){
+  if(!holeDrag)return false;
+  const p=pointer(e),hole=currentHoleRecord();
+  hole.corners[holeDrag.corner]={x:holeDrag.from.x+p.x-holeDrag.start.x,y:holeDrag.from.y+p.y-holeDrag.start.y};
+  hole.enabled=true;saveState();syncHoleControls();render();
+  return true;
+}
+function holePointerUp(){
+  if(!holeDrag)return;
+  holeDrag=null;saveState();log('Saved hood-hole quad for '+targetKey(E.species.value,E.gender.value)+'.');
+}
+function setHoleRate(value){
+  const hole=currentHoleRecord();
+  hole.rate=window.ClothingHoodHoleDeform?.normalizeRate(value)??+value;
+  saveState();syncHoleControls();render();
+}
+if(E.holeEnabled){
+  E.holeEnabled.onchange=()=>{pushUndo();currentHoleRecord().enabled=E.holeEnabled.checked;saveState();render()};
+  E.holeRate.addEventListener('pointerdown',()=>pushUndo(),{passive:true});
+  E.holeRate.oninput=()=>setHoleRate(E.holeRate.value);
+  E.holeRateNumber.onchange=()=>{pushUndo();setHoleRate(E.holeRateNumber.value)};
+  E.holeReset.onclick=()=>{pushUndo();const hole=currentHoleRecord();hole.corners=window.ClothingHoodHoleDeform.zeroCorners();saveState();syncHoleControls();render()};
+  window.addEventListener('hobunji-clothing-fit-assets-refreshed',()=>{R.holeProfileCache=null;syncHoleControls()});
+}
 if(A.settings?.region==='headwear')E.fitRegion.value='headwear';
 document.getElementById('headbandSplineSection').hidden=fitRegion()!=='headwear';
+if(E.holeSection)E.holeSection.hidden=fitRegion()!=='headwear';
+E.modeBtns.find(btn=>btn.dataset.mode==='hole').disabled=fitRegion()!=='headwear';
 E.modeBtns.find(btn=>btn.dataset.mode==='headband').disabled=fitRegion()!=='headwear';
 E.modeBtns.find(btn=>btn.dataset.mode==='rear-paint').disabled=fitRegion()!=='headwear';
 document.getElementById('contourFitSection').hidden=fitRegion()==='headwear';
 E.modeBtns.find(btn=>btn.dataset.mode==='protect').disabled=fitRegion()==='headwear';
 document.getElementById('bodyMaskSection').hidden=fitRegion()==='headwear';
 document.getElementById('bodyExtendedSection').hidden=fitRegion()==='headwear';
-if(!['transform','body','fit','quad','preview','protect','headband','rear-paint'].includes(mode)||mode==='protect'&&fitRegion()==='headwear'||['headband','rear-paint'].includes(mode)&&fitRegion()!=='headwear')mode='transform';
+if(!['transform','body','fit','quad','hole','preview','protect','headband','rear-paint'].includes(mode)||mode==='protect'&&fitRegion()==='headwear'||['headband','rear-paint'].includes(mode)&&fitRegion()!=='headwear')mode='transform';
 window.addEventListener('hobunji-clothing-fit-three-ready',()=>{
   if(startOptionalThreePreview()&&R.body)scheduleThreePreview(0);
 }); // The CDN can load after the 2D editor has already initialized.
