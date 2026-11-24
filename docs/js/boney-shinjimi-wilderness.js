@@ -558,6 +558,7 @@
               bumpEvent('Milk offer unavailable; item and exchange count restored');
               return;
             }
+            window.CookingSystem?.consumeFeySight?.(); // A successful milk dialogue reward is also a Fey encounter reward.
             giftingDeps.clampInventoryStack?.(milkKey);
             giftingDeps.refreshItemScroll?.();
             giftingDeps.buildInventoryGrid?.();
@@ -634,7 +635,7 @@
     if (feyApproachTimer < 20) return;
     feyApproachTimer = 0;
     const player = playerTile(), current = position(); // Only move a distant, unobserved wanderer, never interrupt a chase.
-    if (!player || !current || dist(current, player) < SIGHT_TILES * 2 || visiblePlayer()) return;
+    if (!player || !current || dist(current, player) < SIGHT_TILES * 2) return; // Already outside mutual sight; avoid a redundant LOS query.
     const chance = window.CookingSystem?.feyEncounterChance?.(0.005) ?? 0.005; // Tunable baseline: one half-percent per eligible interval.
     if (rnd() >= chance) return;
     const h = homeCenter();
@@ -642,6 +643,7 @@
       const angle = rnd() * Math.PI * 2, radius = 7 + rnd() * 2;
       const c = Math.floor(player.x + Math.cos(angle) * radius), r = Math.floor(player.z + Math.sin(angle) * radius);
       if (!validTile(c, r) || !h || dist({x:c+.5,z:r+.5},h) < 4) continue;
+      if (window.NpcPathfinding?.isNpcPositionWalkable?.(state.zone,c+.5,r+.5) === false) continue; // Reject narrow prop and furniture collisions too.
       if (!window.NpcPathfinding?.findNpcPath?.(state.zone,c+.5,r+.5,state.home.c+1,state.home.r+3)
         && !window.NpcPathfinding?.canNpcBeeline?.(state.zone,c+.5,r+.5,state.home.c+1,state.home.r+3)) continue;
       releaseWalker(); // The existing async walker constructor places the new avatar on a validated surface.
