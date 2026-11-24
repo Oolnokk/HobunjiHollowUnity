@@ -387,7 +387,7 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
         ${scaleRow('Age', 'Age (hunch)', 0, 100, 1, 0, 'Per-NPC age hunch, lowers the head further')}
         <label class="maaToggleLine" style="margin:8px 0"><input id="maaFullScaleShowSpine" type="checkbox" checked> Show live spine and neck attachment</label>
         <div class="maaSmall maaMuted" style="margin-bottom:8px">Spine: green pelvis → orange vertebrae → violet shoulder/neck base; cyan marks the scaled head attachment. The selected avatar is highlighted, and hunch edits update the bones without changing the portrait art.</div>
-        <div class="scaleActions"><button id="maaFullScaleExport" type="button" class="good">Export scale JSON</button><button id="maaFullScaleFrame" type="button" class="secondary">Frame lineup</button><button id="maaFullScaleFocus" type="button" class="secondary" disabled>Focus selected</button><button id="maaFullScaleMatchMainAdults" type="button" class="secondary" title="Apply approved Mao’ao-relative body, hands, feet and raw Head 65% to all 26 character profiles; preserves child age stages and NPC hunch">Apply Mao’ao 65% defaults</button><button id="maaFullScaleReset" type="button" class="secondary">Reset all to repo defaults</button></div>
+        <div class="scaleActions"><button id="maaFullScaleExport" type="button" class="good">Export scale JSON</button><button id="maaFullScaleFrame" type="button" class="secondary">Frame lineup</button><button id="maaFullScaleFocus" type="button" class="secondary" disabled>Focus selected</button><button id="maaFullScaleMatchMainAdults" type="button" class="secondary" title="Apply eight calibrated adult height targets, humanlike female heights, Mao’ao-relative widths/limbs and raw Head 65% to all 26 profiles; preserves child age stages and NPC hunch">Apply calibrated heights + 65% heads</button><button id="maaFullScaleReset" type="button" class="secondary">Reset all to repo defaults</button></div>
         <div id="maaFullScaleStatus" class="scaleStatus">Height controls total floor-to-head stature. Beltline height (%) is the hip/posterior junction measured upward from the feet, as a percent of that total. The legs and portrait are derived together, preserving planted feet and existing saved proportions.</div>`;
       workspace.appendChild(panel);
       panel.querySelector('#maaFullScaleMatchMainAdults').addEventListener('click', matchMainAdultScales); // Existing saved adult overrides can explicitly adopt the new 26-profile Mao'ao-relative defaults without erasing NPC age/Longoran posture.
@@ -1050,7 +1050,7 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
     persistProfiles(); // Retain the same authored Rig export and autosave path as all other scale changes.
     layout();
     frame(); // Explicit button action reframes the adult-sized lineup rather than silently shifting the camera on slider edits.
-    status(`Applied ${count}/${profiles.length} Mao’ao-relative adult profiles, including 65% raw-PNG heads and the approved hands/feet. Child modifiers and NPC hunches remain unchanged.`);
+    status(`Applied ${count}/${profiles.length} adult profiles: eight calibrated male heights, female stature at 93% of male, 65% raw-PNG heads, and approved Mao’ao-relative widths/hands/feet. Child modifiers and NPC hunches remain unchanged.`);
   }
 
   // Discards every author override — in-memory, both localStorage persistence keys,
