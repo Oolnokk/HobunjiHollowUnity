@@ -31,7 +31,10 @@ vm.runInNewContext(fog,{window:win,performance:{now:()=>2000},console});
 const draws=[]; // All light-mask paints are recorded for assertions and mobile-neutral regression coverage.
 const context={
   canvas:{width:500,height:500},globalCompositeOperation:'source-over',globalAlpha:1,
-  save(){},restore(){},beginPath(){},rect(){},moveTo(){},lineTo(){},closePath(){},clip(rule){if(rule==='evenodd')draws.push({kind:'platform-clip',mode:this.globalCompositeOperation});},arc(){},fill(){draws.push({kind:'fill',mode:this.globalCompositeOperation});},
+  save(){},restore(){},beginPath(){this.pathPoints=[];},rect(){},
+  moveTo(x,y){this.pathPoints.push({x,y});},lineTo(x,y){this.pathPoints.push({x,y});},closePath(){},
+  clip(rule){if(rule==='evenodd')draws.push({kind:'platform-clip',mode:this.globalCompositeOperation,points:this.pathPoints.map(p=>({...p}))});},
+  arc(){},fill(){draws.push({kind:'fill',mode:this.globalCompositeOperation});},
   transform(...args){draws.push({kind:'transform',args});},
   createPattern(img,mode){draws.push({kind:'pattern',mode,img});return {img,mode};},
   fillRect(...args){draws.push({kind:'tiles',mode:this.globalCompositeOperation,args});},
@@ -88,7 +91,7 @@ assert(Math.abs(transform[4]-110)<1e-6&&Math.abs(transform[5]-110)<1e-6,
 // Its non-BoxGeometry tests the real TileSpan case, which replaces the source slab geometry.
 const platform={name:'jump-f0-2-stone',visible:true,isMesh:true,userData:{ruinShaftPlatform:true},
   geometry:{boundingBox:{min:new Vec(.5,.3,1),max:new Vec(1.6,.7,2)}},
-  matrixWorld:{},updateWorldMatrix(){}};
+  matrixWorld:{},updateWorldMatrix(){this.updateCount=(this.updateCount||0)+1;}};
 const platformScene={traverse(callback){callback(mesh);callback(platform);}};
 mesh.parent=platformScene;platform.parent=platformScene;
 draws.length=0;
@@ -126,6 +129,26 @@ platform.geometry.boundingBox.min.x=4;platform.geometry.boundingBox.max.x=5;
 draws.length=0;
 assert.equal(win.__probeGlyphMasks(platformScene,deps,7500).drawn,1,'vertical wall stays visible when the slab is physically behind it');
 assert(!draws.some(d=>d.kind==='platform-clip'),'a slab on the far side of the wall plane cannot cut out the visible foreground glyph');
+// A solid platform can straddle a wall plane: only its camera-facing half should hide the wall.
+// Record the real Canvas clip path, not just a clip() invocation, to catch overhanging false silhouettes.
+platform.geometry.boundingBox.min.x=0;platform.geometry.boundingBox.max.x=2;
+deps.worldToOverlay=(x,y,z)=>({x:100+z*10+x*7,y:100+y*10});
+draws.length=0;
+assert.equal(win.__probeGlyphMasks(platformScene,deps,7550).drawn,1,'straddling slab keeps the visible part of a vertical wall engraving');
+const crossingClip=draws.find(d=>d.kind==='platform-clip');
+assert(crossingClip&&crossingClip.points.length>=3,'a physically intersecting slab generates a real convex silhouette');
+assert(Math.max(...crossingClip.points.map(p=>p.x))<=127.001,
+  'the slab is clipped at wall plane x=1; its portion behind that plane must not erase wall glyph pixels');
+platform.material={visible:true,transparent:true,opacity:.1};
+draws.length=0;
+assert.equal(win.__probeGlyphMasks(platformScene,deps,7570).drawn,1,'faded platform leaves wall rune visible');
+assert(!draws.some(d=>d.kind==='platform-clip'),'a visually faded slab cannot hide the wall rune');
+delete platform.material;
+const updatesBeforeOffscreen=platform.updateCount;
+deps.worldToOverlay=(x,y,z)=>({x:100000+z*10+x*7,y:100000+y*10});
+assert.equal(win.__probeGlyphMasks(platformScene,deps,7590).drawn,0,'offscreen glyph is culled');
+assert.equal(platform.updateCount,updatesBeforeOffscreen,
+  'offscreen wall glyphs must not project every shaft slab, conserving mobile CPU');
 positions.array.set([1,1,1,3,1,1,1,1,3]);geometry.boundingSphere.center=priorSphereCenter;
 deps.worldToOverlay=regularProjection;
 mesh.parent=scene;
