@@ -550,6 +550,12 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
     }
   }
 
+  function beltlineGeometryFor(entry) {
+    const modelHeight = Number(entry?.model?.userData?.portraitModelHeight) || 1; // Same unscaled floor-to-top model height used when creating this character's leg IK.
+    const contact = Number(entry?.feet?.standingFootContactY) / modelHeight; // Dynamic sole center follows resized GLB foot contacts without a new scan.
+    return { hip: entry?.beltlineBaseFraction ?? .5, contact: Number.isFinite(contact) && contact > 0 ? contact : 0 }; // Keeps authored hip fixed while foot sizes change.
+  }
+
   function select(entry) {
     if (!entry) return;
     if (selected !== entry) stopLongoranWalk();
@@ -564,7 +570,7 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
     for (const [axis, field] of [['X', 'x'], ['Head', 'head']]) {
       setSliderValue(axis, clampPercent((scale[field] || 1) * 100));
     }
-    const dimensions = window.HobunjiCharacterRigScale?.heightBeltlineFor?.(scale, entry.beltlineBaseFraction);
+    const dimensions = window.HobunjiCharacterRigScale?.heightBeltlineFor?.(scale, beltlineGeometryFor(entry));
     setSliderValue('Height', clampPercent((dimensions?.height || scale.y || 1) * 100));
     setSliderValue('Beltline', Math.max(.1, Math.min(99.9, (dimensions?.beltline || entry.beltlineBaseFraction || .5) * 100))); // Display the actual floor-to-hip percentage after migration from legacy Y/legLength.
     setSliderValue('Hand', clampPercent(partScaleFor(entry, 'hand') * 100));
@@ -1072,10 +1078,12 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
       const scale = window.HobunjiCharacterRigScale?.scaleFor?.(descriptor.species, descriptor.gender, profile) || { x: 1, y: 1, head: 1, offsetY: 0 };
       data[descriptor.species] ||= {};
       const preview = entries.find(entry => entry.key === descriptor.key); // Loaded preview supplies the real unscaled hip; absent previews use a neutral diagnostic fallback.
-      const dimensions = window.HobunjiCharacterRigScale?.heightBeltlineFor?.(scale, preview?.beltlineBaseFraction ?? .5) || { height: scale.y, beltline: .5 };
+      const dimensions = preview ? window.HobunjiCharacterRigScale?.heightBeltlineFor?.(scale, beltlineGeometryFor(preview)) : null; // Never invent a beltline percentage for missing/unrendered preview anatomy.
       data[descriptor.species][descriptor.gender] = {
-        height: Math.round(dimensions.height * 10000) / 10000,
-        beltlineHeightPercent: Math.round(dimensions.beltline * 1000000) / 10000, // Percent from floor to hip, not a leg/torso factor.
+        ...(dimensions ? {
+          height: Math.round(dimensions.height * 10000) / 10000,
+          beltlineHeightPercent: Math.round(dimensions.beltline * 1000000) / 10000, // Actual floor-to-hip %, including sole-contact height.
+        } : {}),
         x: Math.round(scale.x * 10000) / 10000,
         y: Math.round(scale.y * 10000) / 10000, // Legacy field: same value as portraitHeight, for older consumers.
         portraitHeight: Math.round(scale.y * 10000) / 10000,
@@ -1644,8 +1652,8 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
       exportJson,
       get active() { return active; },
       get selectedKey() { return selected?.key || null; },
-      get selectedBeltlineBaseFraction() { return selected?.beltlineBaseFraction ?? .5; }, // Actual unscaled leg hip/rest-top ratio used by the same pure math as the gameplay rig.
-      get selectedDimensions() { return selected ? window.HobunjiCharacterRigScale?.heightBeltlineFor?.(window.HobunjiCharacterRigScale?.scaleFor?.(selected.species, selected.gender, selected.profile), selected.beltlineBaseFraction) : null; },
+      get selectedBeltlineGeometry() { return beltlineGeometryFor(selected); }, // Unscaled hip PLUS live sole contact; one math source for editor and gameplay.
+      get selectedDimensions() { return selected ? window.HobunjiCharacterRigScale?.heightBeltlineFor?.(window.HobunjiCharacterRigScale?.scaleFor?.(selected.species, selected.gender, selected.profile), beltlineGeometryFor(selected)) : null; },
       get focusKey() { return focusedEntryKey; }, // Independent of selectedKey: choosing a different editor target must never move the camera.
       get previewCount() { return entries.length; },
       get ageMode() { return ageMode; }, // Exposes stage and modifiers to mobile UI diagnostics and the raw-head presentation bridge.
