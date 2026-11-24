@@ -16,15 +16,25 @@ class Vec {
   applyMatrix4(){return this;} // The identity world matrix makes texture-to-screen expectations exact.
   setFromMatrixColumn(){return this.set(1,0,0);}
   sub(v){return this.set(this.x-v.x,this.y-v.y,this.z-v.z);}
+  length(){return Math.hypot(this.x,this.y,this.z);}
+  multiplyScalar(scale){return this.set(this.x*scale,this.y*scale,this.z*scale);}
   dot(v){return this.x*v.x+this.y*v.y+this.z*v.z;}
 }
 let tradition='kanthic'; // Switches between the new precise Kanthic rule and the unchanged Hronal rule.
-const win={THREE:{Vector3:Vec,RepeatWrapping:1000},WeatherFX:{init(){}},DevRandomRuinLichThemes:{activeTheme:()=>tradition}};
+let blockedByStone=false; // The fake Three.js raycaster exercises the real glyph-occlusion path without a GPU.
+class Raycaster {
+  set(){}
+  intersectObjects(casters,recursive,hits){if(blockedByStone&&casters.length)hits.push({distance:1,object:casters[0]});return hits;}
+}
+const win={THREE:{Vector3:Vec,Raycaster,RepeatWrapping:1000},WeatherFX:{init(){}},DevRandomRuinLichThemes:{activeTheme:()=>tradition}};
 vm.runInNewContext(fog,{window:win,performance:{now:()=>2000},console});
 const draws=[]; // All light-mask paints are recorded for assertions and mobile-neutral regression coverage.
 const context={
   canvas:{width:500,height:500},globalCompositeOperation:'source-over',globalAlpha:1,
-  save(){},restore(){},beginPath(){},moveTo(){},lineTo(){},closePath(){},clip(){},arc(){},fill(){draws.push({kind:'fill',mode:this.globalCompositeOperation});},
+  save(){},restore(){},beginPath(){this.pathPoints=[];},rect(){},
+  moveTo(x,y){this.pathPoints.push({x,y});},lineTo(x,y){this.pathPoints.push({x,y});},closePath(){},
+  clip(rule){if(rule==='evenodd')draws.push({kind:'platform-clip',mode:this.globalCompositeOperation,points:this.pathPoints.map(p=>({...p}))});},
+  arc(){},fill(){draws.push({kind:'fill',mode:this.globalCompositeOperation});},
   transform(...args){draws.push({kind:'transform',args});},
   createPattern(img,mode){draws.push({kind:'pattern',mode,img});return {img,mode};},
   fillRect(...args){draws.push({kind:'tiles',mode:this.globalCompositeOperation,args});},
@@ -55,11 +65,118 @@ assert.equal(draws.filter(d=>d.kind==='image').length,1,'texture alpha is the so
 assert.equal(draws.find(d=>d.kind==='image').mode,'destination-out','atlas alpha clears only the engraved pixels');
 assert.equal(draws.find(d=>d.kind==='image').alpha,.8,'authored emissive intensity controls the exemption strength');
 assert(!draws.some(d=>d.kind==='gradient'||d.kind==='fill'),'Kanthic glyphs create no radial reveal or colored light halo');
+const wall={name:'shaft-hub-feature-wall',isMesh:true,geometry:{},visible:true,userData:{cameraObstacle:true},material:{visible:true,opacity:1}};
+const blockedScene={traverse(callback){callback(mesh);callback(wall);}};mesh.parent=blockedScene;wall.parent=blockedScene;
+blockedByStone=true;
+draws.length=0;
+const hidden=win.__probeGlyphMasks(blockedScene,deps,4000);
+assert.equal(hidden.drawn,0,'physically occluded glyphs cannot punch through the darkness overlay');
+assert.equal(hidden.triangles,0,'a wall-hidden engraving submits no texture triangles');
+assert.equal(draws.length,0,'no 2D light mask is painted for the wall-hidden glyph');
+const projectedOnscreen=deps.worldToOverlay; // Restore the authored camera mapping after testing offscreen occlusion cost.
+deps.worldToOverlay=(x,y,z)=>({x:100000+x*10,y:100000+z*10});
+const offscreen=win.__probeGlyphMasks(blockedScene,deps,6000);
+assert.equal(offscreen.drawn,0,'offscreen runes never clear the darkness');
+assert.equal(win.CloudForestFog.getDebugState().ruinEngravingGlowMasks.occlusionChecks,0,
+  'offscreen runes are culled before any expensive 3D stone occlusion rays');
+deps.worldToOverlay=projectedOnscreen;
+blockedByStone=false;mesh.parent=scene;
+assert.equal(draw().drawn,1,'the real glyph reappears once its physical surface is unobstructed');
 const transform=draws.find(d=>d.kind==='transform').args;
 assert(Math.abs(transform[0]-1.25)<1e-6&&Math.abs(transform[3]-1.25)<1e-6,
   'UV atlas scales to the actual triangle in screen pixels');
 assert(Math.abs(transform[4]-110)<1e-6&&Math.abs(transform[5]-110)<1e-6,
   'cutout is positioned on the wall glyph, not around its center');
+// A raised walkable shaft slab hides only the overlapping pixels of a much larger wall rune.
+// Its non-BoxGeometry tests the real TileSpan case, which replaces the source slab geometry.
+const platform={name:'jump-f0-2-stone',visible:true,isMesh:true,userData:{ruinShaftPlatform:true},
+  geometry:{boundingBox:{min:new Vec(.5,.3,1),max:new Vec(1.6,.7,2)}},
+  matrixWorld:{},updateWorldMatrix(){this.updateCount=(this.updateCount||0)+1;}};
+const platformScene={traverse(callback){callback(mesh);callback(platform);}};
+mesh.parent=platformScene;platform.parent=platformScene;
+draws.length=0;
+const partial=win.__probeGlyphMasks(platformScene,deps,7000);
+assert.equal(partial.drawn,1,'the visible part of an engraved wall survives an overlapping platform');
+assert.equal(partial.triangles,1,'partial platform coverage does not discard the entire wall triangle');
+assert.equal(win.CloudForestFog.getDebugState().ruinEngravingGlowMasks.platformCandidates,1,
+  'the compositor discovers real shaft slabs even after TileSpan replaces their BoxGeometry');
+assert.equal(win.CloudForestFog.getDebugState().ruinEngravingGlowMasks.platformClips,1,
+  'a projected slab silhouette subtracts only the obscured part of a wall glyph');
+assert(draws.some(d=>d.kind==='platform-clip'&&d.mode==='destination-out'),
+  'partial occlusion is applied to the destination-out glyph ink, not the entire scene lighting');
+// A platform can be on screen but far away from the rune. Its screen-space bounds must
+// reject it before inverse clipping, even when it sits between the camera and the wall plane.
+platform.geometry.boundingBox.min.x=30;platform.geometry.boundingBox.max.x=31;
+draws.length=0;
+assert.equal(win.__probeGlyphMasks(platformScene,deps,7050).drawn,1,'the distant slab cannot hide an unrelated on-screen wall engraving');
+assert(!draws.some(d=>d.kind==='platform-clip'),'nonoverlapping platform is culled by actual projected screen bounds');
+assert.equal(win.CloudForestFog.getDebugState().ruinEngravingGlowMasks.platformClips,0,
+  'mobile diagnostics count zero clip operations for distant on-screen slabs');
+platform.geometry.boundingBox.min.x=70;platform.geometry.boundingBox.max.x=71;
+draws.length=0;
+assert.equal(win.__probeGlyphMasks(platformScene,deps,7060).drawn,1,'offscreen platform cannot erase an onscreen wall rune');
+assert(!draws.some(d=>d.kind==='platform-clip'),
+  'a slab moved entirely outside the viewport must clear its previous clipping state');
+platform.geometry.boundingBox.min.x=.5;platform.geometry.boundingBox.max.x=1.6;
+platform.visible=false;draws.length=0;
+assert.equal(win.__probeGlyphMasks(platformScene,deps,7100).drawn,1,'a hidden platform does not erase the visible wall glyph');
+assert(!draws.some(d=>d.kind==='platform-clip'),'a hidden upper story never generates a platform cutout');
+platform.visible=true;
+platform.geometry.boundingBox.min.x=4;platform.geometry.boundingBox.max.x=5;
+const regularProjection=deps.worldToOverlay;
+deps.worldToOverlay=(x,y,z)=>({x:100+z*10+x*.1,y:100+y*10}); // Preserve a nonzero projected radius while comparing depth-aligned overlapping silhouettes.
+draws.length=0;
+assert.equal(win.__probeGlyphMasks(platformScene,deps,7200).drawn,1,'a slab farther away than the wall leaves the wall glyph visible');
+assert(!draws.some(d=>d.kind==='platform-clip'),'slabs behind the wall must not be treated as foreground cover');
+deps.worldToOverlay=regularProjection;
+// Unlike the edge-on fallback above, a genuine vertical engraved wall must use its physical
+// plane to decide if an overlapping slab is in front, rather than comparing distant bounding centers.
+positions.array.set([1,0,1,1,2,1,1,0,3]);
+const priorSphereCenter=geometry.boundingSphere.center;
+geometry.boundingSphere.center=new Vec(1,1,2);
+deps.worldToOverlay=(x,y,z)=>({x:100+y*10+x*.1,y:100+z*10}); // Screen coordinates of a camera aimed horizontally along X.
+platform.geometry.boundingBox.min.set(-1,.2,1);platform.geometry.boundingBox.max.set(0,1.6,2);
+draws.length=0;
+assert.equal(win.__probeGlyphMasks(platformScene,deps,7400).drawn,1,'visible vertical-wall glyph remains projected behind a foreground slab');
+assert(draws.some(d=>d.kind==='platform-clip'),'a slab on the camera side of the real wall plane clips the overlapping glyph');
+platform.geometry.boundingBox.min.x=4;platform.geometry.boundingBox.max.x=5;
+draws.length=0;
+assert.equal(win.__probeGlyphMasks(platformScene,deps,7500).drawn,1,'vertical wall stays visible when the slab is physically behind it');
+assert(!draws.some(d=>d.kind==='platform-clip'),'a slab on the far side of the wall plane cannot cut out the visible foreground glyph');
+// A solid platform can straddle a wall plane: only its camera-facing half should hide the wall.
+// Record the real Canvas clip path, not just a clip() invocation, to catch overhanging false silhouettes.
+platform.geometry.boundingBox.min.x=0;platform.geometry.boundingBox.max.x=2;
+deps.worldToOverlay=(x,y,z)=>({x:100+z*10+x*7,y:100+y*10});
+draws.length=0;
+assert.equal(win.__probeGlyphMasks(platformScene,deps,7550).drawn,1,'straddling slab keeps the visible part of a vertical wall engraving');
+const crossingClip=draws.find(d=>d.kind==='platform-clip');
+assert(crossingClip&&crossingClip.points.length>=3,'a physically intersecting slab generates a real convex silhouette');
+assert(Math.max(...crossingClip.points.map(p=>p.x))<=127.001,
+  'the slab is clipped at wall plane x=1; its portion behind that plane must not erase wall glyph pixels');
+platform.material={visible:true,transparent:true,opacity:.1};
+draws.length=0;
+assert.equal(win.__probeGlyphMasks(platformScene,deps,7570).drawn,1,'faded platform leaves wall rune visible');
+assert(!draws.some(d=>d.kind==='platform-clip'),'a visually faded slab cannot hide the wall rune');
+delete platform.material;
+const updatesBeforeOffscreen=platform.updateCount;
+deps.worldToOverlay=(x,y,z)=>({x:100000+z*10+x*7,y:100000+y*10});
+assert.equal(win.__probeGlyphMasks(platformScene,deps,7590).drawn,0,'offscreen glyph is culled');
+assert.equal(platform.updateCount,updatesBeforeOffscreen,
+  'offscreen wall glyphs must not project every shaft slab, conserving mobile CPU');
+// During an extreme camera move, a slab can cross the near plane. Its in-front
+// portion must still occlude a distant wall, rather than vanishing completely.
+platform.geometry.boundingBox.min.x=-20.05;platform.geometry.boundingBox.max.x=-19.7;
+deps.worldToOverlay=(x,y,z)=>({x:250+(z-1.5)*10/(x+20+.15),y:250+(y-1)*10/(x+20+.15)});
+draws.length=0;
+assert.equal(win.__probeGlyphMasks(platformScene,deps,7600).drawn,1,'distant rune still projects behind a near-plane-crossing slab');
+const nearClip=draws.find(d=>d.kind==='platform-clip');
+assert(nearClip&&nearClip.points.length>=3,'a slab crossing the camera near plane still makes a nonempty visible silhouette');
+assert(nearClip.points.every(p=>Number.isFinite(p.x)&&Number.isFinite(p.y)),
+  'near-plane-clipped slab silhouette remains finite instead of spraying the screen with huge polygon coordinates');
+platform.geometry.boundingBox.min.x=0;platform.geometry.boundingBox.max.x=2;
+positions.array.set([1,1,1,3,1,1,1,1,3]);geometry.boundingSphere.center=priorSphereCenter;
+deps.worldToOverlay=regularProjection;
+mesh.parent=scene;
 mesh.visible=false;
 assert.equal(draw().drawn,0,'hidden wall sections must not cut through darkness');
 mesh.visible=true;
@@ -110,4 +227,6 @@ tradition='hronal'; // Non-Kanthic traditions preserve their existing soft atmos
 assert.equal(draw().drawn,1,'other traditions still display wall patterns');
 assert(draws.some(d=>d.kind==='gradient'),'Hronal retains the prior soft engraved-glow treatment');
 assert(!draws.some(d=>d.kind==='image'),'the Kanthic-only correction does not change Hronal engraving rendering');
-console.log('Kanthic glyph-only darkness, repeat-wrapped ladder runes, no wall wash, UV projection, hidden surfaces, near plane, and other ruins: PASS');
+assert(original.includes('const mistActive = active;'),'the Kanthic room must use actual Cloud Forest mist geometry');
+assert(original.includes("ruinTradition === 'kanthic' ? 0.32 : 1"),'the player lantern is less than one tile in Kanthic');
+console.log('Kanthic depth-occluded glyph masks, real fog, tiny player lantern, repeat-wrapped runes and other ruins: PASS');

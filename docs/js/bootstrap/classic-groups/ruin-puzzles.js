@@ -15,7 +15,7 @@
     "js/ruin-shaft-connector.js?v=20261122hdc72cb7",
     "js/ruin-v50-vestibule.js?v=20261122hbaa8809",
     "js/ruin-wall-coffins.js?v=20261122h1d3c3ab",
-    "js/ruin-multifloor-v50-style.js?v=20261117coffinRecess1",
+    "js/ruin-multifloor-v50-style.js?v=20261123kanthicTinyTorch1",
     "js/ruin-checkpoint-travel.js?v=20261122hbbb0141"
 ]; // Versioned modules evaluated before gameplay boot.
   if (document.readyState !== 'loading') throw new Error('Classic script group must run during parsing');

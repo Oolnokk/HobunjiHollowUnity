@@ -90,9 +90,9 @@ assert.equal(actorLocation({x:TILE,y:TILE,branchSurfaceY:0},{nest:{y:20}}).y,0,'
 assert.equal(actorLocation({x:TILE,y:TILE,branchSurfaceY:null},{nest:{y:20}}).y,20,'null flight height uses nest fallback');
 const fog=read('docs/js/cloud-forest-fog.js');
 const rooms=read('docs/js/ruin-room-system.js');
-assert(fog.includes("const mistActive = active && currentArea !== 'map_i_dev_random_ruin'"),'Kanthic no longer draws 3D mist tubes');
+assert(fog.includes('const mistActive = active;'),'Kanthic uses real Cloud Forest mist instead of suppressing its 3D layers');
 assert(fog.includes('syncUndergroundFog(underground && mistActive ? activeScene : null)'),
-  'Kanthic keeps no moving depth fog after cylinders are suppressed');
+  'restored Kanthic mist also uses the existing underground depth-fog path');
 assert(rooms.includes('withLightRegion(_ctx,_project,draw)')&&rooms.includes('roomIsolated:!!active'),
   'all ruin traditions isolate light sources by room without any projected screen-space frames');
 console.log('ruin-forced-movement-collision: wall borders, upper stories, swept lunges, Skeeri and shaft slabs OK');
