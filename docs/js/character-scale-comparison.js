@@ -615,7 +615,13 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
       }
     }
     syncSpineGuides(); // Selected species' actual spine becomes visible without moving the camera or modifying its rig.
-    status(`Selected ${prettySpecies(entry.species)} ${entry.gender} · ${entry.npc?.name || entry.npc?.id || 'repository NPC'}. Use Focus selected to center this character without altering the lineup until requested.`);
+    const measured = ageMode === 'adult' ? window.HobunjiCharacterRigScale?.pixelHeightCalibrationSnapshot?.()?.[entry.key] : null; // Adult source-art height only; never mislabel a child-stage height as the adult target.
+    const chair = window.HobunjiCharacterRigScaleDefaults?.worldHeightCalibration;
+    const gameUnitsPerFoot = Number(chair?.chairBackWorldHeight) / Number(chair?.chairHeightFeet); // Same scale as the six-foot ruler, no new guessing.
+    const measuredText = measured && gameUnitsPerFoot > 0
+      ? ` · painted crown ${(measured.measuredWorldHeight / gameUnitsPerFoot).toFixed(2)} ft (target ${(measured.targetWorldHeight / gameUnitsPerFoot).toFixed(2)} ft)`
+      : (ageMode === 'adult' && window.HobunjiCharacterRigScaleDefaults?.maleHeightFeet?.[entry.species] ? ' · PNG crown not measured yet (nominal height only)' : '');
+    status(`Selected ${prettySpecies(entry.species)} ${entry.gender}${measuredText} · ${entry.npc?.name || entry.npc?.id || 'repository NPC'}. Use Focus selected to center without changing the lineup.`);
     // Selection changes the edited character, never camera position, angle, projection, or zoom.
   }
 
