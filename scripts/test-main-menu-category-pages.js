@@ -3,7 +3,8 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const listeners = new Map(); // Native focus/keyboard events exercise the shipped navigator, without a browser dependency.
-const observers = []; // Delivers actual subtree-rebuild notifications to the production observer callbacks.
+const observers = []; // Delivers mutations only to observers registered for their target and type.
+let pageClassWrites = 0; // Counts page presentation writes, not ordinary focus classes.
 let document; // Assigned after constructing the fake body/panels used by focus().
 class Element {
   constructor(tag = 'div', attrs = {}, children = [], x = 0, y = 0) {
@@ -12,7 +13,7 @@ class Element {
     this.style = {}; this.tabIndex = tag === 'button' ? 0 : -1; this.clicks = 0; this.events = new Map();
     this.x = x; this.y = y; this.textContent = attrs.id || tag;
     this.classes = new Set((attrs.class || '').split(' ').filter(Boolean));
-    this.classList = { contains: value => this.classes.has(value), add: value => this.classes.add(value), remove: value => this.classes.delete(value), toggle: (value, enabled) => enabled ? this.classes.add(value) : this.classes.delete(value) };
+    this.classList = { contains: value => this.classes.has(value), add: value => { if (value.startsWith('ctrl-nav-subtab')) pageClassWrites++; this.classes.add(value); }, remove: value => { if (value.startsWith('ctrl-nav-subtab')) pageClassWrites++; this.classes.delete(value); }, toggle: (value, enabled) => enabled ? this.classes.add(value) : this.classes.delete(value) };
     children.forEach(child => this.append(child));
   }
   get id() { return this.attrs.id || ''; }
@@ -77,7 +78,9 @@ const storageBox = section('storage-box', 'Storage Box', [button('storage-action
 const storage = section('farmSectionStorage', 'Storage', [bag, storageBox]);
 const adults = section('livestockNurseryAdults', 'Adult Livestock', [button('adult-action')], '');
 adults.setAttribute('data-ctrl-subtab', '');
-const nursery = section('livestockNurserySection', 'Nursery Babies', [button('nursery-action')], '');
+const nurseryToggle = new Element('button', { id: 'nursery-toggle', 'data-ctrl-group-open': '', 'aria-expanded': 'false' }); // Emulates an authored collapsible roster.
+nurseryToggle.onclick = () => nurseryToggle.setAttribute('aria-expanded', String(nurseryToggle.getAttribute('aria-expanded') === 'false'));
+const nursery = section('livestockNurserySection', 'Nursery Babies', [nurseryToggle, button('nursery-action')], '');
 nursery.setAttribute('data-ctrl-subtab', '');
 const roster = new Element('div', { id: 'farmLivestockList', 'data-ctrl-group': '' }, [nursery, adults]);
 const livestock = section('farmSectionLivestock', 'Livestock', [button('pair-action'), roster]);
@@ -105,7 +108,13 @@ const context = {
   document, console, getComputedStyle: el => ({ display: el.hidden ? 'none' : el.style.display || 'block', visibility: 'visible', opacity: '1', overflowY: el.style.overflowY || 'visible' }),
   window: { innerWidth: 600, innerHeight: 400, addEventListener(type, callback) { listeners.set(type, [...(listeners.get(type) || []), callback]); }, dispatchEvent() {},
     ControllerInput: { PRIORITY: { menuNav: 10 }, subscribe() {} } },
-  MutationObserver: class { constructor(callback) { observers.push(callback); } observe() {} },
+  MutationObserver: class {
+    constructor(callback) { this.callback = callback; this.registrations = new Map(); observers.push(this); }
+    observe(target, options) { this.registrations.set(target, options); }
+    notify(record) {
+      if ([...this.registrations].some(([target, options]) => (target === record.target || (options.subtree && target.contains(record.target))) && (record.type === 'attributes' ? options.attributes && (!options.attributeFilter || options.attributeFilter.includes(record.attributeName)) : options.childList))) this.callback([record]);
+    }
+  },
   queueMicrotask, setTimeout: () => 1, clearTimeout() {}, KeyboardEvent: class {
     constructor(type, options = {}) { this.type = type; Object.assign(this, options); }
     preventDefault() {} stopPropagation() {}
@@ -116,7 +125,8 @@ vm.runInNewContext(fs.readFileSync('docs/js/controller-menu-dismissal.js', 'utf8
 vm.runInNewContext(fs.readFileSync('docs/js/controller-ui-nav.js', 'utf8'), context);
 const ui = context.window.ControllerUI; // Production controller and page selection authority.
 const flush = async (target, extras = {}) => {
-  for (const observer of observers) observer([{ target, addedNodes: [], removedNodes: [], ...extras }]);
+  const record = { type: 'childList', target, addedNodes: [], removedNodes: [], ...extras }; // Match real MutationRecord routing instead of invoking unrelated attribute observers.
+  for (const observer of observers) observer.notify(record);
   await Promise.resolve();
   await Promise.resolve();
 }; // Reconcile through the production observers, including class-driven major tab changes.
@@ -140,7 +150,7 @@ async function switchPane(from, to) {
   await flush(from, { type: 'attributes', attributeName: 'class', oldValue });
 }
 async function main() {
-  menu.hidden = false; await flush(menu);
+  menu.hidden = false; await flush(menu, { type: 'attributes', attributeName: 'hidden' });
   assert.ok(bar() && !bar().hidden, 'category bar is present without a connected controller');
   assert.equal(menu.children.indexOf(bar()), menu.children.indexOf(menuBody) - 1, 'category bar reserves space above the pane body');
   assert.equal(choices(0).map(control => control.textContent).join('|'), 'Layout|Livestock|Storage', 'authored priority is shared across inputs');
@@ -150,17 +160,35 @@ async function main() {
   assert.equal(bar().children.length, 2);
   click(1, 'Storage Box');
   assert.ok(hidden(bag) && !hidden(storageBox), 'nested pointer choice selects exactly one page');
+  click(0, 'Storage');
+  assert.ok(hidden(bag) && !hidden(storageBox), 'reselecting the active parent preserves its nested page');
   for (const handler of listeners.get('pointerdown') || []) handler({ target: storageBox.children[0] });
   assert.ok(hidden(bag) && hidden(layout), 'ordinary pointer input does not undo page presentation');
   assert.equal(key('F6'), true, 'keyboard can focus the category bar without a gamepad');
   assert.equal(document.activeElement.textContent, 'Storage');
+  assert.equal(key('F6'), true);
+  assert.equal(document.activeElement.textContent, 'Storage Box', 'F6 advances to the nested row');
+  const ordinary = button('ordinary-update'); storageBox.append(ordinary);
+  const writesBefore = pageClassWrites;
+  await flush(storageBox, { addedNodes: [ordinary] });
+  assert.equal(pageClassWrites, writesBefore, 'ordinary row insertion does not reapply page visibility');
+  assert.equal(document.activeElement.textContent, 'Storage Box', 'ordinary mutations do not steal keyboard category focus');
+  assert.equal(key('F6'), true);
+  assert.ok(!bar().contains(document.activeElement), 'F6 exits the category bar into content');
+  assert.equal(key('F6'), true);
   assert.equal(key('ArrowLeft'), true);
   assert.equal(document.activeElement.textContent, 'Livestock');
   assert.ok(hidden(storage) && !hidden(livestock));
   assert.equal(choices(1).map(control => control.textContent).join('|'), 'Nursery Babies|Adult Livestock', 'nested roster categories are exposed through the structural Farm group');
   assert.ok(hidden(nursery) && !hidden(adults), 'livestock starts on the normal adult page');
+  assert.equal(nurseryToggle.clicks, 0, 'passive page discovery does not open a disclosure');
   click(1, 'Nursery Babies');
   assert.ok(hidden(adults) && !hidden(nursery));
+  assert.equal(nurseryToggle.clicks, 1, 'deliberately selecting a collapsed page opens its disclosure');
+  nurseryToggle.click();
+  const newNurseryAction = button('baby-new'); nursery.append(newNurseryAction);
+  await flush(nursery, { addedNodes: [newNurseryAction] });
+  assert.equal(nurseryToggle.getAttribute('aria-expanded'), 'false', 'passive refresh does not reopen a deliberately collapsed page');
   ui.press('tabNext');
   assert.ok(!hidden(adults) && hidden(nursery), 'controller bumpers share pointer-selected nested page state');
   ui.press('cancel');
@@ -173,8 +201,14 @@ async function main() {
   click(0, 'Rumors');
   const replacement = section('tasksSectionRumors', 'Rumors', [button('rumor-new')], 'menu-section');
   rumors.remove(); tasks.append(replacement);
-  await flush(tasks);
+  await flush(tasks, { addedNodes: [replacement], removedNodes: [rumors] });
   assert.ok(hidden(questLog) && !hidden(replacement), 'replaced page keeps the selected ID');
+  questLog.hidden = true;
+  await flush(questLog, { type: 'attributes', attributeName: 'hidden' });
+  assert.ok(bar().hidden && !hidden(replacement), 'permission-hidden categories disappear without a DOM rebuild');
+  questLog.hidden = false;
+  await flush(questLog, { type: 'attributes', attributeName: 'hidden' });
+  assert.ok(!bar().hidden && hidden(questLog), 'permission restoration remembers the surviving selected page');
   await switchPane(tasks, inventory);
   assert.ok(!hidden(inventoryGrid) && hidden(keyItems), 'Pack pages appear on their actual pane');
   click(0, 'Key Items');
@@ -190,9 +224,9 @@ async function main() {
   assert.ok(!bar().hidden && hidden(inventoryGrid) && !hidden(keyItems), 'returning to Pack remembers its page');
   await switchPane(inventory, farm);
   assert.ok(!hidden(livestock) && hidden(storage), 'each major pane remembers its own selected page');
-  menu.hidden = true; await flush(menu);
+  menu.hidden = true; await flush(menu, { type: 'attributes', attributeName: 'hidden' });
   assert.ok(bar().hidden && !hidden(storage) && !hidden(layout), 'closing releases classes from inactive DOM');
-  menu.hidden = false; await flush(menu);
+  menu.hidden = false; await flush(menu, { type: 'attributes', attributeName: 'hidden' });
   assert.ok(!bar().hidden && hidden(storage) && !hidden(livestock), 'reopening restores selection, not a stacked layout');
   console.log('Persistent main-menu pages: pointer, keyboard, controller, nested Farm, tab/mode changes, rebuild and reopen passed.');
 }
