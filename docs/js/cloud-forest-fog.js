@@ -1079,7 +1079,7 @@
         if(!visible)continue;
         mask.ready=ruinGlowConvexHull(points,mask.hull); // Convex silhouette includes the slab's solid top and sides.
       }
-      if(!mask.ready||maxX<0||maxY<0||minX>width||minY>height)continue;
+      if(!mask.ready||maxX<0||maxY<0||minX>width||minY>height){mask.ready=false;continue;} // Moving offscreen must invalidate last frame's cached stencil, not reuse stale bounds.
       mask.minX=minX;mask.maxX=maxX;mask.minY=minY;mask.maxY=maxY; // Broad-phase screen bounds keep offscreen slabs from clipping unrelated runes.
       mask.minDepth=minDepth;mask.maxDepth=maxDepth;
       mask.worldX=worldX/8;mask.worldY=worldY/8;mask.worldZ=worldZ/8;
