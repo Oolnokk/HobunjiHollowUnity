@@ -24,7 +24,7 @@
   const rand = () => deps?.rnd?.() ?? Math.random();
   const clamp = (n,a,b) => Math.max(a,Math.min(b,n));
   function log(msg) { lastEvent=msg; window.__farmLog?.('[rootledoot] '+msg,'info'); }
-  function init(injected) { deps=injected; }
+  function init(injected) { if(deps)reset('reinitialized'); deps=injected; checkTime=0; }
   function area() { return deps?.getArea?.(); }
   function stamp() { return String(deps?.worldId?.() || '')+':'+String(deps?.cycle?.() ?? 0); }
   function chunkSize() { return Math.max(4,Math.floor(Number(deps?.chunkSize?.())||16)); }
@@ -147,21 +147,35 @@
   function tryActivate() {
     const zone=area(),p=playerTile(),chunk=chunkOf(p.c,p.r),key=keyFor(zone,chunk.c,chunk.r);
     const day=Math.floor(Number(deps.day?.())||0),previous=ledger.get(key);
-    if(previous?.cleared||previous?.day===day||npcInChunk(zone,chunk))return;
+    if(previous?.cleared||npcInChunk(zone,chunk))return;
+    if(previous?.day===day){
+      if(previous.ready){const site=siteInChunk(zone,chunk);if(site)activate(zone,chunk,site,key);}
+      return;
+    }
     // Each eligible chunk rolls once per day, not every frame or every boundary crossing.
     ledger.set(key,{day,cleared:false});
     const chance=window.CookingSystem?.feyEncounterChance?.(BASE_CHANCE)??BASE_CHANCE;
     if(rand()>=chance)return;
-    const site=siteInChunk(zone,chunk);if(site)activate(zone,chunk,site,key);
+    const site=siteInChunk(zone,chunk);if(site){ledger.set(key,{day,cleared:false,ready:true});activate(zone,chunk,site,key);}
   }
   function spawnPoint(rec,used) {
     const p=playerTile(),n=chunkSize();
+    const origin=sameChunk(p.c,p.r,rec.chunk)?p:rec.site; // If the player retreats across the chunk edge, reinforcements still emerge from the locale.
     for(let attempt=0;attempt<40;attempt++){
       const a=rand()*Math.PI*2,d=2+rand()*3;
-      const c=Math.floor(p.c+.5+Math.cos(a)*d),r=Math.floor(p.r+.5+Math.sin(a)*d);
+      const c=Math.floor(origin.c+.5+Math.cos(a)*d),r=Math.floor(origin.r+.5+Math.sin(a)*d);
       const k=c+','+r;if(used.has(k)||!tileEligible(c,r))continue;
       if(c<rec.chunk.c*n||r<rec.chunk.r*n||c>=(rec.chunk.c+1)*n||r>=(rec.chunk.r+1)*n)continue;
-      if(Math.abs((Number(tileAt(c,r)?.elevTier)||0)-(Number(tileAt(p.c,p.r)?.elevTier)||0))>0)continue;
+      if(Math.abs((Number(tileAt(c,r)?.elevTier)||0)-(Number(tileAt(origin.c,origin.r)?.elevTier)||0))>0)continue;
+      if(Math.hypot(c-p.c,r-p.r)<2)continue;
+      used.add(k);return {c,r};
+    }
+    // Deterministic fallback avoids failing an entire wave on an unlucky random sample.
+    for(let radius=2;radius<=n;radius++)for(let dr=-radius;dr<=radius;dr++)for(let dc=-radius;dc<=radius;dc++){
+      if(Math.max(Math.abs(dc),Math.abs(dr))!==radius)continue;
+      const c=origin.c+dc,r=origin.r+dr,k=c+','+r;
+      if(!sameChunk(c,r,rec.chunk)||used.has(k)||!tileEligible(c,r)||Math.hypot(c-p.c,r-p.r)<2)continue;
+      if((Number(tileAt(c,r)?.elevTier)||0)!==(Number(tileAt(origin.c,origin.r)?.elevTier)||0))continue;
       used.add(k);return {c,r};
     }
     return null;
@@ -177,7 +191,7 @@
       const tier=window.EnemyTierProgression?.clampTier?.(Math.floor(distance/(Number(cfg.difficultyTiers?.tierDistanceTiles)||12)))??0;
       for(const rank of WAVES[rec.wave]){
         if(active!==rec||area()!==rec.zone)return;
-        const point=spawnPoint(rec,used);if(!point)continue;
+        const point=spawnPoint(rec,used);if(!point)throw Error('no valid spawn for '+rank);
         const big=rank==='captain',name=big?'Big Rootledoot':'Rootledoot';
         const x=(point.c+.5)*deps.TILE,y=(point.r+.5)*deps.TILE;
         const roster={name,appearance:{speciesId:'mao-ao',gender:'male',cosmetics:{},bodyColors:Object.fromEntries(['A','B','C'].map(k=>[k,{hex:ROOT_COLOR}]))},equippedCosmetics:[],cosmeticSlots:{},appliedDyes:{},rootledoot:true};
@@ -185,7 +199,7 @@
         const c=await window.BanditCombat.makeEntity(cfg,rank,tier,x,y,{zoneId:rec.zone,enemyClass:'rootledoot',rosterOverride:roster,preserveRoster:true,
           avatarRigScale:{x:scale,y:scale,head:1,offsetY:0},defOverride:{label:name},
           extra:{rootledoot:true,rootledootBig:big,homeX:x,homeY:y,state:'chase'}});
-        if(!c)continue;
+        if(!c)throw Error('bandit avatar construction failed for '+rank);
         if(active!==rec||area()!==rec.zone){disposeActor(c);return;}
         if(big&&!c._banditCaptainArmament){disposeActor(c);throw Error('Fey weapon construction failed');}
         rec.actors.add(c);deps.hostiles.add(c);count++;
@@ -225,6 +239,7 @@
     const rec=active;
     if(rec.phase==='bait'){
       if(npcInChunk(rec.zone,rec.chunk)){reset('bait suppressed by nearby NPC');return false;}
+      ledger.set(rec.key,{day:Math.floor(Number(deps.day?.())||0),cleared:false,ready:false}); // A triggered ambush is not rerolled again today after defeat or escape.
       removeRoot(rec);rec.phase='combat';rec.delay=0;void spawnWave(rec);return true;
     }
     if(!rec.boss||!deps.canReceiveRoot?.()){deps.toast?.('No room for Fey Heftroot.',false);return false;}
@@ -257,7 +272,7 @@
   }
   function tick(dt) {
     const zone=area();
-    if(!active&&!ZONES.has(zone))return;
+    if(!deps||(!active&&!ZONES.has(zone)))return;
     syncWorld();
     if(active&&active.zone!==zone)reset('left encounter zone');
     if(!ZONES.has(zone))return;
@@ -265,7 +280,7 @@
     if(checkTime<CHECK_SECONDS)return;
     const elapsed=checkTime;checkTime=0;
     const rec=active;
-    if(!rec){if(!window.PlayerDowned?.isDowned?.())tryActivate();return;}
+    if(!rec){if(!window.PlayerDowned?.isDowned?.()&&deps.player.health>0)tryActivate();return;}
     if(rec.phase==='combat'&&!window.PlayerDowned?.isDowned?.()&&Math.hypot(deps.player.x/deps.TILE-rec.site.c-.5,deps.player.y/deps.TILE-rec.site.r-.5)>chunkSize()*2){reset('player escaped locale');return;}
     if(rec.phase==='bait'){
       if(!sameChunk(deps.player.x/deps.TILE,deps.player.y/deps.TILE,rec.chunk)||npcInChunk(zone,rec.chunk))reset('bait dormant');
