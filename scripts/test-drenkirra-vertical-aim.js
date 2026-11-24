@@ -26,7 +26,22 @@ assert.match(followup, /const hasHeadRig = typeof creature\.avatarRef\?\.updateH
 assert.match(followup, /if \(!hasHeadRig\) \{[\s\S]{0,220}rotation\.x/, 'legacy whole-plane pitch is skipped when the head rig is active');
 assert.match(game, /getActorWorldY: \(actor\) =>[\s\S]{0,300}playerMesh\.position\.y/, 'combat receives the player render height');
 assert.match(game, /worldSurfaceY: \(x, y\) => activeSurfaceYAtWorld\(x \/ TILE, y \/ TILE\)/, 'combat receives terrain height for pitched projectile grounding');
-assert.match(game, /if \(!isBanditCompanion[\s\S]{0,40}!c\.treasureCue[\s\S]{0,160}animalAttacks\?\.isBusy\(c\)/, 'companion head restoration waits until a named attack is no longer active');
+// Match the guard of the actual ambient head update rather than a fixed
+// character distance between two conditions. Exercise every blocking state.
+const horizonGuard = game.match(/^\s*if\s*\((!isBanditCompanion(?:[^\n]*\n\s*&&)*[^\n]*?)\)\s*_tickCompanionHorizonScan\(c, master, dt\);/m)?.[1];
+assert.ok(horizonGuard, 'companion ambient head update has an explicit guard');
+const canScan = new Function('isBanditCompanion', 'target', 'rescueActive', 'c', 'window', 'return (' + horizonGuard + ');');
+const scanAllowed = ({ bandit = false, target = null, rescue = false, treasure = null, named = false, telegraph = false } = {}) =>
+  canScan(bandit, target, rescue, { treasureCue: treasure }, { Combat: { animalAttacks: { isBusy: () => named }, telegraph: { isBusy: () => telegraph } } });
+assert.equal(scanAllowed(), true, 'idle companion retains ambient head motion');
+for (const [label, state] of Object.entries({
+  'enemy-owned pet': { bandit: true },
+  'active combat target': { target: {} },
+  'active rescue': { rescue: true },
+  'treasure cue': { treasure: {} },
+  'named attack': { named: true },
+  'bite telegraph': { telegraph: true },
+})) assert.equal(scanAllowed(state), false, label + ' owns the pose instead of ambient head movement');
 assert.match(loader, /combat-drenkirra-pellet\.js\?v=[A-Za-z0-9_-]+/, 'pellet module is loaded with a cache key');
 assert.match(loader, /combat-grehlr-drenkirra-followup\.js\?v=[A-Za-z0-9_.-]+/, 'follow-up module cache key is bumped');
 

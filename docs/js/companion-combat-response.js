@@ -9,10 +9,41 @@
   const APPROACH_RESTART_RATIO = 1.05; // Leave backup early once the target has escaped beyond ordinary reach.
   const DESCENT_ESCAPE_GRACE_MS = 2000; // After landing, keep following the fleeing owner long enough to leave nearby enemies behind.
 
+  function validFocus(enemy, areaId) {
+    return !!enemy && Number(enemy.health) > 0 && !enemy._downed && !enemy._deathTransitionStarted && !enemy._denHidden &&
+      Number.isFinite(enemy.x) && Number.isFinite(enemy.y) && (!areaId || enemy.areaId == null || enemy.areaId === areaId); // Players may not carry an areaId; ordinary enemy selection below is stricter.
+  }
+
   function validEnemy(enemy, areaId) {
-    return !!enemy && Number(enemy.health) > 0 && !enemy._downed &&
-      !enemy._deathTransitionStarted && !enemy._denHidden && enemy.def?.hostile !== false &&
-      (!areaId || enemy.areaId === areaId); // Match game.js's original area check: unknown-zone enemies cannot be targeted through transitions.
+    return validFocus(enemy, areaId) && enemy.def?.hostile !== false && (!areaId || enemy.areaId === areaId);
+  }
+
+  const attackSight = new WeakMap(); // Per-actor short geometry lease; full LOS is queried only at attack readiness, never during cooldown.
+  const sightStats = { checks: 0, reuses: 0 }; // Mobile-readable operation counts.
+  function canAttackThroughTerrain(companion, target) {
+    if (!window.RangedWeapons?.hasLineOfSight) return true;
+    const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    const cached = attackSight.get(companion);
+    if (cached && cached.target === target && cached.area === companion.areaId && now < cached.until) {
+      sightStats.reuses++; return cached.clear;
+    }
+    const clear = window.RangedWeapons.hasLineOfSight(companion, target, true);
+    attackSight.set(companion, { target, area: companion.areaId, until: now + 100, clear });
+    sightStats.checks++;
+    return clear;
+  }
+
+  function syncEffectiveTarget(companion, target) {
+    const previous = companion._companionEffectiveTarget || null; // Tracks the final focus, including explicit orders rather than just the ordinary scoring cache.
+    if (previous === (target || null)) return;
+    companion._companionEffectiveTarget = target || null;
+    attackSight.delete(companion);
+    companion._stage = null; // Never inherit a backup beat from a different opponent; leave actual attack cooldown intact.
+    if (!companion._cliffClimb && !companion._cliffRouteTravel) {
+      companion._travelPath = null; companion._travelPathTarget = null;
+      companion._travelPathFailure = null; companion._travelStuckT = 0;
+    }
+    window.__farmLog?.('[companion-response] ' + (companion.id || companion.creatureKey || 'pet') + ' effective focus ' + (target?.id || target?.creatureKey || 'none'), 'combat');
   }
 
   function score(companion, master, enemy) {
@@ -21,8 +52,9 @@
     const targetingOwner = enemy.targetPlayer === master || enemy.targetCreature === master ||
       enemy._banditTarget === master; // Prioritizes observed, actively aggressive hostiles.
     const targetingPet = enemy.targetCreature === companion || enemy.targetPlayer === companion; // React to direct attacks even away from owner.
+    const marked = (window.ResourceSystem?.getAffliction?.(enemy, 'scentMarkedHealth') || 0) > 0; // Marked enemies are more attractive without overriding the existing leash or explicit Sicced orders.
     return (distanceToMaster * MASTER_WEIGHT + distanceToCompanion * (1 - MASTER_WEIGHT)) *
-      (targetingPet ? 0.32 : targetingOwner ? ACTIVE_THREAT_MULTIPLIER : 1);
+      (targetingPet ? 0.32 : targetingOwner ? ACTIVE_THREAT_MULTIPLIER : 1) * (marked ? 0.35 : 1);
   }
 
   // A follower stranded above its owner must descend before defending a cliff-top fight.
@@ -87,7 +119,7 @@
     const current = companion._companionCombatTarget; // Current committed enemy is retained unless it becomes invalid or an urgent threat supersedes it.
     for (const enemy of enemies || []) {
       if (enemy === current) currentSeen = true;
-      if (!validEnemy(enemy, areaId)) continue;
+      if (enemy === companion || enemy === master || !validEnemy(enemy, areaId)) continue;
       const ownerDistance = Math.hypot(enemy.x - master.x, enemy.y - master.y); // Owner alert range normally anchors companion fights.
       const petDistance = Math.hypot(enemy.x - companion.x, enemy.y - companion.y); // A pet must still defend itself from nearby attacks outside that range.
       const attackingPet = enemy.targetCreature === companion || enemy.targetPlayer === companion;
@@ -141,6 +173,8 @@
 
   function debugSnapshot(companion) {
     return { target: companion?._companionCombatTarget?.id || companion?._companionCombatTarget?.creatureKey || null,
+      effectiveTarget: companion?._companionEffectiveTarget?.id || companion?._companionEffectiveTarget?.creatureKey || null,
+      scentMarked: !!companion?._companionEffectiveTarget && (window.ResourceSystem?.getAffliction?.(companion._companionEffectiveTarget, 'scentMarkedHealth') || 0) > 0, // Shows the actual order rather than just the proximity candidate.
       priority: companion?._companionCombatPriority ?? null,
       rescuing: companion?._honeyfuzzleRescueTarget?.id ||
         (companion?._honeyfuzzleRescueTarget === window.Combat?.deps?.player ? 'player' :
@@ -156,10 +190,12 @@
       followingDownCliff: !!companion?._followOwnerDownCliff, // Explains immediate combat disengagement on mobile.
       escapeGraceRemainingMs: Math.max(0, (companion?._companionRetreatUntilMs || 0) -
         (typeof performance !== 'undefined' ? performance.now() : Date.now())), // Mobile-readable post-landing combat suppression.
-      cooldown: companion?.attackCooldownT ?? null };
+      cooldown: companion?.attackCooldownT ?? null,
+      attackSight: attackSight.get(companion)?.clear ?? null,
+      sightChecks: sightStats.checks, sightReuses: sightStats.reuses };
   }
 
-  window.CompanionCombatResponse = Object.freeze({ chooseTarget, shouldReevaluate, validEnemy, shouldRestartApproach,
+  window.CompanionCombatResponse = Object.freeze({ chooseTarget, shouldReevaluate, validEnemy, validFocus, syncEffectiveTarget, canAttackThroughTerrain, shouldRestartApproach,
     debugSnapshot, shouldFollowOwnerDownCliff, isRescuing, prioritizeOwnerRetreat,
     tuning: Object.freeze({ SWITCH_RATIO, MASTER_WEIGHT, ACTIVE_THREAT_MULTIPLIER, APPROACH_RESTART_RATIO }) });
 })();
