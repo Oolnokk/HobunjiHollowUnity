@@ -277,7 +277,7 @@
       const w=await deps.makeNpcWalker(record(),{area:state.zone,c:spot.c,r:spot.r});
       if(!w)return;
       if(serial!==generation||area()!==state.zone||scene!==activeScene()||!walkerBuild.owns(buildToken)||!state.home||state.phase==='complete'||state.phase==='waiting') {
-        deps?.despawnNpcWalker?.(w);return;
+        deps?.despawnNpcWalker?.(w,true);return; // This constructor owns the unadopted result; the canonical visitor disposer may retire it.
       }
       walker=w;
       if(!deps.npcWalkers?.includes(w))deps.npcWalkers?.push(w);
