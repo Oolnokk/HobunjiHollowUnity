@@ -30,7 +30,7 @@ const plain = v => ({ x: v.x, y: v.y, head: v.head, offsetY: v.offsetY });
 // Hand-authored via Full Character Scale itself (an exported
 // hobunji_full_character_scales.json), each axis genuinely independent now —
 // no longer x === y === head per species/gender.
-const authoredDefaults = Object.fromEntries( // Current canonical main-equivalent adult values are verified numerically by test-full-character-main-adult-parity.js.
+const authoredDefaults = Object.fromEntries( // Current approved Maoao-male-relative adult values are verified against pinned main by test-full-character-main-adult-parity.js.
   ['tletingan::male','tletingan::female','engh-sho::male','engh-sho::female',
     'mao-ao::male','mao-ao::female','kenkari::male','kenkari::female',
     'mashtzarr::male','mashtzarr::female']
@@ -48,20 +48,20 @@ assert.deepStrictEqual(plain(context.HobunjiCharacterRigScaleDefaults.scaleFor('
   'Rakakoan must inherit Kenkari female transform scale');
 
 const api = context.HobunjiCharacterRigScale;
-const worldFactor = api.worldVisualScale(); // Only the assembled visual parent gains this calibration; authored fields remain main-equivalent.
+const worldFactor = api.worldVisualScale(); // Only the assembled visual parent gains the chair calibration; raw authored dimensions use the corrected male Maoao shifts.
 const scaled = (...values) => values.map(value => value * worldFactor); // Used in runtime parent-scaling expectations below.
 assert(api, 'whole-rig scale API must install');
-assert.strictEqual(profile.anatomy.rigScaleX, 0.81675, 'live shared rig profiles must receive the authored x default when no override exists');
-assert.strictEqual(profile.anatomy.rigScaleY, 1.089, 'live shared rig profiles must receive the authored y default when no override exists');
-assert.strictEqual(profile.anatomy.headScale, 0.726, 'live shared rig profiles must receive the authored head default when no override exists');
+assert.strictEqual(profile.anatomy.rigScaleX, 0.85, 'live shared rig profiles must receive the authored x default when no override exists');
+assert.strictEqual(profile.anatomy.rigScaleY, 1.29, 'live shared rig profiles must receive the authored y default when no override exists');
+assert.strictEqual(profile.anatomy.headScale, 0.65, 'live shared rig profiles must receive the authored head default when no override exists');
 assert.strictEqual(profile.anatomy.headOffsetY, 0, 'live shared rig profiles must receive the authored offsetY default when no override exists');
 assert.deepStrictEqual(plain(api.scaleFor('mao-ao', 'male')), authoredDefaults['mao-ao::male']);
-assert.strictEqual(api.scaleFor('mao-ao', 'male').portraitHeight, 1.089, 'the legacy Height slider migrates to explicit portrait height');
-assert.strictEqual(api.scaleFor('mao-ao', 'male').legLength, 1.089, 'the old Height value also initializes leg length, preserving older saved silhouettes');
+assert.strictEqual(api.scaleFor('mao-ao', 'male').portraitHeight, 1.29, 'the legacy Height slider migrates to explicit portrait height');
+assert.strictEqual(api.scaleFor('mao-ao', 'male').legLength, 1.29, 'the old Height value also initializes leg length, preserving older saved silhouettes');
 profile.anatomy.legLengthScale = 1.45; // Independent leg length is stored on the real shared species/gender anatomy profile.
 assert.strictEqual(api.scaleFor('mao-ao', 'male').legLength, 1.45, 'new leg length can diverge from portrait height');
-assert.strictEqual(api.scaleFor('mao-ao', 'male').y, 1.089, 'leg edits must not modify the original portrait height');
-assert(Math.abs(api.legLengthRatioFor('mao-ao', 'male') - 1.45 / 1.089) < 1e-9,
+assert.strictEqual(api.scaleFor('mao-ao', 'male').y, 1.29, 'leg edits must not modify the original portrait height');
+assert(Math.abs(api.legLengthRatioFor('mao-ao', 'male') - 1.45 / 1.29) < 1e-9,
   'the leg solver receives hip-to-foot reach divided by portrait height, without double-applying global Y scale');
 delete profile.anatomy.legLengthScale; // Restore default profile before existing game-wide scale regression fixtures.
 
@@ -87,7 +87,7 @@ function makeParent(neckJoint = null, modelHeight = null) {
 
 const parent = makeParent();
 api.applyToParent(parent, 'mao-ao', 'male');
-assert.deepStrictEqual([parent.scale.x, parent.scale.y, parent.scale.z], scaled(0.81675, 1.089, 0.81675));
+assert.deepStrictEqual([parent.scale.x, parent.scale.y, parent.scale.z], scaled(0.85, 1.29, 0.85));
 
 // Changing an explicit authored/imported legacy value must override the default without
 // multiplying the previous result cumulatively, and still resolves uniformly on every axis.
@@ -288,7 +288,7 @@ const runtimeParent = {
   traverse(visit) { visit(this); },
 };
 hands.attach(null, runtimeParent, { speciesId: 'engh-sho', gender: 'male' });
-assert.deepStrictEqual([runtimeParent.scale.x, runtimeParent.scale.y, runtimeParent.scale.z], scaled(0.8, 0.845, 0.8));
+assert.deepStrictEqual([runtimeParent.scale.x, runtimeParent.scale.y, runtimeParent.scale.z], scaled(context.HobunjiCharacterRigScaleDefaults.values['engh-sho::male'].x, context.HobunjiCharacterRigScaleDefaults.values['engh-sho::male'].y, context.HobunjiCharacterRigScaleDefaults.values['engh-sho::male'].x));
 assert.strictEqual(runtimeParent.userData.hobunjiCharacterRigScaleState.coordinateSpace, 'character-floor-parent');
 
 assert.match(source, /coordinateSpace: 'character-floor-parent'/);
