@@ -335,6 +335,10 @@ async function buildVariantGarmentCanvas(id,species,gender,width,height){
       // order (e.g. a hat's cap, then its metal band).
       const rearCtx=behindView.getContext('2d',{alpha:true});rearCtx.imageSmoothingEnabled=false;
       for(const draw of [...rearDraws.filter(d=>d.trim),...rearDraws.filter(d=>!d.trim)])drawPortraitRaster(rearCtx,draw.image,width,height,draw.frame);
+      // The game draws the rear trim behind the head and the shell over it, so
+      // the stage needs the two halves separately to put the head between them.
+      const rearPart=list=>{if(!list.length)return null;const c=Object.assign(document.createElement('canvas'),{width,height}),cx=c.getContext('2d',{alpha:true});cx.imageSmoothingEnabled=false;for(const d of list)drawPortraitRaster(cx,d.image,width,height,d.frame);return c};
+      behindView._trim=rearPart(rearDraws.filter(d=>d.trim));behindView._shell=behindView._trim?rearPart(rearDraws.filter(d=>!d.trim)):null;
       const canvas=Object.assign(document.createElement('canvas'),{width,height});
       const x=canvas.getContext('2d',{alpha:true});x.imageSmoothingEnabled=false;
       x.drawImage(back,0,0);x.drawImage(front,0,0);

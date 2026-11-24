@@ -2049,6 +2049,25 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   }
 
   if (renderBehindView) {
+    // Rear view: every hood's trim goes behind the head (and so behind the
+    // shell). Trim is any hood layer with the 'trim' role (fur-hood stacks also
+    // tag their entries); the Fur-lined Hood's reused front trim keeps its crop.
+    const furLinedRearTrim = _isFurLinedHood(hood) && hoodLayers[0]?.layer?.paletteColorKey === 'B' ? hoodLayers[0] : null;
+    const rearHoodTrim = hoodLayers.filter(entry => entry === furLinedRearTrim || entry.role === 'trim' || entry.layer?.layerRole === 'trim');
+    const drawRearHoodTrim = () => {
+      for (const entry of rearHoodTrim) {
+        if (entry !== furLinedRearTrim) { drawBreathingLayers([entry]); continue; }
+        const xf = resolveXform(entry.layer); // Match the rear trim's transformed source rectangle.
+        const height = PORTRAIT_L * xf.sy; // Crop the unrelated topmost 20% of the reused front trim without touching its fringe.
+        const cropTop = PORTRAIT_CH / 2 - xf.ax * PORTRAIT_L - height * 0.30; // Source pixels at y=35/173 and below remain visible.
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(0, cropTop, PORTRAIT_CW, PORTRAIT_CH);
+        ctx.clip();
+        drawBreathingLayers([entry]);
+        ctx.restore();
+      }
+    };
     const _behindDraw = {
       sideLeft:      () => drawEmoteLayers(sideLeftLayers),
       rightSideHair: () => drawEmoteLayers(rightSideHairLayers),
@@ -2059,6 +2078,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
       // -- otherwise the head is the one thing still mirrored relative to the
       // front while hair/hood/cosmetics and the arms/torso are not.
       head:          () => {
+        drawRearHoodTrim(); // Seen from behind, a hood's trim (the fur around the face opening) is behind the skull.
         drawEmoteLayers(maskLayers); // The far-side face mask must remain behind the rear skull.
         if (headUrl && !skipHeadSprite) {
           const img = imgMap.get(headUrl);
@@ -2079,18 +2099,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
       hatUnder:      () => drawEmoteLayers(hatUnderLayers),
       hood:          () => {
         drawBreathingLayers(hoodBackLayers);
-        const rearTrim = _isFurLinedHood(hood) && hoodLayers[0]?.layer?.paletteColorKey === 'B' ? hoodLayers[0] : null; // Only the Fur-lined Hood uses its front trim as rear fur fringe.
-        if (!rearTrim) { drawBreathingLayers(hoodLayers); return; }
-        const xf = resolveXform(rearTrim.layer); // Match the rear trim's transformed source rectangle.
-        const height = PORTRAIT_L * xf.sy; // Crop the unrelated topmost 20% of the reused front trim without touching its fringe.
-        const cropTop = PORTRAIT_CH / 2 - xf.ax * PORTRAIT_L - height * 0.30; // Source pixels at y=35/173 and below remain visible.
-        ctx.save();
-        ctx.beginPath();
-        ctx.rect(0, cropTop, PORTRAIT_CW, PORTRAIT_CH);
-        ctx.clip();
-        drawBreathingLayers([rearTrim]);
-        ctx.restore();
-        drawBreathingLayers(hoodLayers.slice(1)); // The existing finehood-back shell covers the fur, preserving the intended edge.
+        drawBreathingLayers(hoodLayers.filter(entry => !rearHoodTrim.includes(entry))); // The trim was already drawn behind the head.
       },
       pauldron:      () => drawEmoteLayers(pauldronLayers),
       hatOver:       () => drawEmoteLayers(hatOverLayers),

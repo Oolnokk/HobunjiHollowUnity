@@ -196,9 +196,12 @@ function render(scheduleRig=true){
   }else if(fitRegion()==='headwear'){
     if(rearView){
       const reference=E.headbandRearFullPlane?.checked?R.backplaneReference:R.headReferenceBack;
+      const split=mode!=='rear-paint'&&mode!=='body'&&R.cloth?._behindView?._trim&&!(currentHeadbandRecord()?.rearCanvas||R.headbandRearCanvas)?R.cloth._behindView:null; // Hood: trim behind the head, shell over it (game rear order).
+      const rearWarp=part=>flipCanvasX(warpClothing(part,warpGridForMode(),R.body.width,R.body.height,null,{view:'behind'}));
+      if(split&&E.showGarment.checked){C.save();C.globalAlpha=+E.opacity.value;C.drawImage(rearWarp(split._trim),0,0);C.restore()}
       if(E.showBody.checked&&reference)C.drawImage(reference,0,0); // Actual game rear head; never mirror front artwork.
-      const rear=mode==='rear-paint'?R.headbandRearCanvas:(mode!=='body'?headwearWarpForView('back'):null);
-      const display=mode==='rear-paint'?rear:rear?flipCanvasX(rear):null;
+      const rear=split?(split._shell||null):mode==='rear-paint'?R.headbandRearCanvas:(mode!=='body'?headwearWarpForView('back'):null);
+      const display=split?(rear?rearWarp(rear):null):mode==='rear-paint'?rear:rear?flipCanvasX(rear):null;
       if(display&&E.showGarment.checked){C.save();C.globalAlpha=+E.opacity.value;C.drawImage(display,0,0);C.restore()}
       if(mode!=='body'&&E.showAuthored.checked&&R.authoredTargetCloth){
         const existing=R.authoredTargetCloth._behindView||R.authoredTargetCloth._front;
