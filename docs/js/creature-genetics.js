@@ -441,6 +441,13 @@
     bountiful: { label: 'Bountiful', description: 'One additional good per harvest', chance: 0.10 },
     fineProducer: { label: 'Fine Producer', description: '+1 harvest quality star', chance: 0.10 },
   }); // Central balancing table shared by inheritance, diagnostics and runtime.
+  // An animal has two independent genetic budgets, regardless of its current housing or equipped role.
+  const PRACTICAL_TRAIT_GROUPS = Object.freeze({
+    stable: Object.freeze(['speedy', 'fierce', 'enduring']),
+    livestock: Object.freeze(['fertile', 'productive', 'bountiful', 'fineProducer', 'milk', 'egg']),
+  }); // Canonical order also resolves over-cap genomes from older experimental builds.
+  const PRACTICAL_TRAIT_LIMITS = Object.freeze({ stable: 2, livestock: 2 });
+  const PRACTICAL_GROUP_BY_ID = Object.freeze(Object.fromEntries(Object.entries(PRACTICAL_TRAIT_GROUPS).flatMap(([group, ids]) => ids.map(id => [id, group])))); // O(1) runtime category lookup.
   const PRODUCT_GENES = Object.freeze({
     grehlr: { id: 'milk', itemKey: 'grehlrMilk', verb: 'Milk' },
     nelk: { id: 'milk', itemKey: 'nelkMilk', verb: 'Milk' },
@@ -459,9 +466,34 @@
       chance: 0.18,
     } };
   }
-  function practicalCopies(genotype, id) {
-    const count = Number(genotype?.practical?.[id]); // Legacy or malformed saves read as zero alleles.
+  function rawPracticalCopies(genes, id) {
+    const count = Number(genes?.[id]); // Legacy or malformed saves read as zero alleles.
     return Number.isFinite(count) ? Math.max(0, Math.min(2, Math.floor(count))) : 0;
+  }
+  function practicalCopies(genotype, id) {
+    const genes = genotype?.practical;
+    const copies = rawPracticalCopies(genes, id);
+    const group = PRACTICAL_GROUP_BY_ID[id]; // Unknown IDs never activate a runtime effect.
+    if (!copies || !group) return 0;
+    // Old experimental genomes may exceed a cap. Resolve them deterministically on every read,
+    // without changing saved DNA or rerolling on load. New genomes are capped at creation.
+    let prior = 0;
+    for (const candidate of PRACTICAL_TRAIT_GROUPS[group]) {
+      if (candidate === id) return prior < PRACTICAL_TRAIT_LIMITS[group] ? copies : 0;
+      if (rawPracticalCopies(genes, candidate) && ++prior >= PRACTICAL_TRAIT_LIMITS[group]) return 0;
+    }
+    return 0;
+  }
+  function limitPracticalGenes(genes) {
+    for (const [group, ids] of Object.entries(PRACTICAL_TRAIT_GROUPS)) {
+      const present = ids.filter(id => rawPracticalCopies(genes, id)); // Only generation/breeding allocates; combat reads stay allocation-free.
+      // Sample uniformly without replacement, preserving the allele count of every retained gene.
+      while (present.length > PRACTICAL_TRAIT_LIMITS[group]) {
+        const index = Math.min(present.length - 1, Math.floor(Math.random() * present.length));
+        delete genes[present.splice(index, 1)[0]];
+      }
+    }
+    return genes;
   }
   function rollPracticalGenes(kind) {
     const result = {}; // Sparse dominant allele counts; appearance data remains unchanged.
@@ -469,7 +501,7 @@
       const copies = Number(Math.random() < def.chance / 2) + Number(Math.random() < def.chance / 2);
       if (copies) result[id] = copies;
     }
-    return result;
+    return limitPracticalGenes(result);
   }
   function crossPracticalGenes(kind, a, b, mutationChance) {
     const result = {}; // Each parent contributes at most one allele, independent of coat and Size.
@@ -478,12 +510,12 @@
       if (!copies && Math.random() < Math.max(0, Math.min(1, Number(mutationChance) || 0)) * 0.25) copies = 1;
       if (copies) result[id] = copies;
     }
-    return result;
+    return limitPracticalGenes(result);
   }
   function practicalTraitList(kind, genotype) {
     return Object.entries(practicalDefinitions(kind)).flatMap(([id, def]) => {
       const copies = practicalCopies(genotype, id);
-      return copies ? [{ id, label: def.label, description: def.description, copies, inheritance: 'dominant', enabled: true }] : [];
+      return copies ? [{ id, group: PRACTICAL_GROUP_BY_ID[id], label: def.label, description: def.description, copies, inheritance: 'dominant', enabled: true }] : [];
     });
   }
   function practicalMultiplier(genotype, id) {
@@ -908,6 +940,7 @@
     rollPracticalGenes,
     crossPracticalGenes,
     PRODUCT_GENES,
+    PRACTICAL_TRAIT_LIMITS,
     normalizeLegacyGenotype,
     paletteName: _furPaletteName,
     PATTERN_DEFS: LIVESTOCK_PATTERN_DEFS,
