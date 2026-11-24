@@ -348,11 +348,12 @@
   // compatibility mirrors, never independently inherited.
   function secondaryColor(kind, genotype) {
     kind = GENOTYPE_SPECIES_ALIAS[kind] || kind;
+    if (genotype?.secondary?.color) return genotype.secondary.color; // Fast path for new genotypes; no pattern scanning.
+    if (kind === 'skeeri' && genotype?.skeeriPattern) return genotype.skeeriPattern;
     const ids = LIVESTOCK_PATTERN_DEFS[kind] || []; // Stable authored order, independent of expression.
     const first = ids[0];
     const fallback = ids.find(id => !_patternUsesBaseCoatColor(kind, id) && genotype?.[id]?.color); // Sparse authored data may omit its first pattern.
-    return genotype?.secondary?.color || (kind === 'skeeri' ? genotype?.skeeriPattern : null)
-      || genotype?.[first]?.color || genotype?.[fallback]?.color || genotype?.base?.color || null;
+    return genotype?.[first]?.color || genotype?.[fallback]?.color || genotype?.base?.color || null;
   }
   function patternColor(kind, id, genotype) {
     kind = GENOTYPE_SPECIES_ALIAS[kind] || kind;
@@ -365,7 +366,7 @@
     let out = genotype.secondary?.color ? genotype : { ...genotype, secondary: { color: secondary, copies: 2, inheritance: 'dominant' } };
     for (const id of LIVESTOCK_PATTERN_DEFS[kind]) {
       const layer = out[id];
-      const color = patternColor(kind, id, out);
+      const color = _patternUsesBaseCoatColor(kind, id) ? out.base?.color : secondary;
       if (!layer || layer.color === color) continue;
       if (out === genotype) out = { ...genotype };
       out[id] = { ...layer, color };

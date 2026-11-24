@@ -168,7 +168,7 @@ const child = windowStub.CreatureGenetics.crossOffspring(parentA, parentB, 'moot
 assert.equal(parentA.sizeClass, 'large');
 assert.equal(child.sizeClass !== undefined, true);
 assert(/^#[a-f0-9]{6}$/i.test(child.base.color));
-assert.deepEqual(Object.keys(child).sort(), ['base', 'mitts', 'overcoat', 'sizeClass'], 'Both authored patterns inherit their own alleles');
+assert.deepEqual(Object.keys(child).sort(), ['base', 'mitts', 'overcoat', 'secondary', 'sizeClass'], 'Both authored patterns inherit their own alleles');
 for (const pattern of coatPatterns) {
   assert(/^#[a-f0-9]{6}$/i.test(parentA[pattern].color), `${pattern} receives a valid coat color`);
   assert.equal(typeof child[pattern].enabled, 'boolean', `${pattern} has an independent expressed state`);
@@ -189,7 +189,7 @@ const legacyChild = windowStub.CreatureGenetics.crossOffspring(legacyMoot, legac
 assert.equal(legacyChild.overcoat.copies, 2, 'Offspring inherits a migrated overcoat from both parents');
 assert.equal(legacyChild.overcoat.enabled, true, 'Legacy coat remains visibly expressed after breeding');
 const modernWins = windowStub.CreatureGenetics.normalizeLegacyGenotype('moot', { ...legacyMoot, overcoat: parentA.overcoat }); // New allele always takes precedence.
-assert.equal(modernWins.overcoat, parentA.overcoat);
+assert.equal(modernWins.overcoat.color, parentA.overcoat.color);
 assert(!('coloredneck' in modernWins));
 const traitNames = windowStub.CreatureGenetics.genotypeTraits('moot', migrated).patterns.map(pattern => pattern.label); // Reuses Farm/Stable trait-chip formatting.
 assert(traitNames.includes('Overcoat'), 'Migrated overcoat appears in the genotype UI');

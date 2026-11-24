@@ -122,7 +122,7 @@
     const first = ids[0];
     const primary = id => (kind === 'grehlr' && id === 'beard') || (kind === 'drenkirra' && id === 'bodystripes');
     const fallback = ids.find(id => !primary(id) && genotype[id]?.color);
-    const color = normalizeHex(overrides.secondary) || (!primary(first) && normalizeHex(overrides[first])) || genotype.secondary?.color || (first && genotype[first]?.color && !primary(first) && genotype[first].color) || genotype[fallback]?.color || genotype.base?.color;
+    const color = normalizeHex(overrides.secondary) || genotype.secondary?.color || normalizeHex(overrides[first]) || genotype[first]?.color || genotype[fallback]?.color || genotype.base?.color;
     if (color) genotype.secondary = { ...(genotype.secondary || {}), color };
     for (const id of ids) if (genotype[id]?.color) genotype[id].color = primary(id) ? genotype.base?.color : color;
     return window.CreatureGenetics?.normalizeLegacyGenotype?.(kind, genotype) || genotype;

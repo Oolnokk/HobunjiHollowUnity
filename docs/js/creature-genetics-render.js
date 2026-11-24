@@ -157,7 +157,6 @@
   }
 
   function effectiveGenotype(kind, genotype) {
-    if (window.CreatureGenetics?.normalizeLegacyGenotype) return window.CreatureGenetics.normalizeLegacyGenotype(kind, genotype);
     if (kind === 'moot' && genotype?.coloredneck) {
       const { coloredneck, ...rest } = genotype; // Renderer-only compatibility for older Moot saves and standalone authoring tools.
       genotype = rest.overcoat ? rest : { ...rest, overcoat: { ...coloredneck } }; // Old colored neck renders as the new overcoat; never draw both.
@@ -507,8 +506,10 @@
   function patternTintColor(kind, patternId, genotype) {
     if (SPECIES[kind]?.baseColorPatterns?.includes(patternId) || SPECIES[kind]?.primaryColorPatterns?.includes(patternId)) return genotype?.base?.color || null;
     if (genotype?.secondary?.color) return genotype.secondary.color;
+    if (window.CreatureGenetics?.secondaryColor) return window.CreatureGenetics.secondaryColor(kind, genotype);
     const ids = SPECIES[kind]?.patterns || []; // Standalone tools use the same first-pattern B fallback.
     const first = ids[0];
+    if (genotype?.[first]?.color) return genotype[first].color;
     const fallback = ids.find(id => !SPECIES[kind]?.baseColorPatterns?.includes(id) && !SPECIES[kind]?.primaryColorPatterns?.includes(id) && genotype?.[id]?.color);
     return genotype?.[first]?.color || genotype?.[fallback]?.color || genotype?.base?.color || null;
   }

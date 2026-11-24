@@ -195,7 +195,7 @@
       const permanent = (kind === 'uumkaoii' && patternId === 'shell') || ((kind === 'puktuk' || kind === 'voorg-ass') && patternId === 'belly'); // No UI/import can remove this anatomical region.
       const enabled = permanent || (layer.enabled !== false && Number(layer.copies) > 0); // Breeding renderer treats copies>0 plus non-false enabled as expressed.
       layer.color = patternUsesBaseCoatColor(kind, patternId) ? genotype.base.color : genotype.secondary.color; // Old/imported Grehlr beard colors are ignored without losing the allele.
-      genotype[patternId] = { ...layer, copies: permanent ? 2 : (enabled ? Math.max(1, Number(layer.copies) || 1) : 0), inheritance: layer.inheritance || 'dominant', enabled };
+      genotype[patternId] = { ...layer, copies: permanent ? 2 : Math.max(enabled ? 1 : 0, Math.min(2, Number(layer.copies) || 0)), inheritance: layer.inheritance || 'dominant', enabled };
     }
     return genotype;
   }

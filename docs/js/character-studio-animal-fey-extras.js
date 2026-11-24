@@ -77,7 +77,7 @@
 
   function baseColoredPattern(kind, patternId) {
     const rules = window.CreatureGeneticsRender?.SPECIES?.[kind]?.baseColorPatterns; // Prefer live compositor rules; retain the same Grehlr fallback while modules load.
-    return Array.isArray(rules) ? rules.includes(patternId) : kind === 'grehlr' && patternId === 'beard';
+    return (kind === 'drenkirra' && patternId === 'bodystripes') || (Array.isArray(rules) ? rules.includes(patternId) : kind === 'grehlr' && patternId === 'beard');
   }
   function colorLayersFor(kind) {
     return ['base', 'secondary']; // Base-colored Grehlr beard has only presence, never an independent hex override.
@@ -114,8 +114,9 @@
     if (layerId === 'secondary') for (const id of patternIdsFor(kind)) delete overrides[id]; // A single B override supersedes old per-mask fields.
     const genotype = clone(appearance.creatureGenotype || {});
     genotype[layerId] = { ...(genotype[layerId] || {}), color: normalized };
-    if (kind === 'grehlr' && layerId === 'base' && genotype.beard) genotype.beard.color = normalized; // Exact-hex base coat overrides recolor the beard simultaneously.
-    writeAppearance({ ...appearance, creatureColorOverrides: overrides, creatureGenotype: genotype }, `${layerId} custom hex → ${normalized}`);
+    const next = { ...appearance, creatureColorOverrides: overrides, creatureGenotype: genotype }; // Store the derived pattern mirrors along with the shared locus.
+    next.creatureGenotype = genotypeWithOverrides(next);
+    writeAppearance(next, `${layerId} custom hex → ${normalized}`);
   }
 
   function clearCustomColor(layerId) {
@@ -128,7 +129,9 @@
     const normalizedGenotype = window.CharacterStudioAnimalAppearance?.normalizeGenotype
       ? window.CharacterStudioAnimalAppearance.normalizeGenotype(kind, appearance.creatureGenotype || {})
       : clone(appearance.creatureGenotype || {}); // Returning to presets also returns any custom allele color to the breeding-valid set.
-    writeAppearance({ ...appearance, creatureColorOverrides: overrides, creatureGenotype: normalizedGenotype }, `${layerId} returned to breeding preset`);
+    const next = { ...appearance, creatureColorOverrides: overrides, creatureGenotype: normalizedGenotype };
+    next.creatureGenotype = genotypeWithOverrides(next);
+    writeAppearance(next, `${layerId} returned to breeding preset`);
   }
 
   async function ensureHatOptions() {
