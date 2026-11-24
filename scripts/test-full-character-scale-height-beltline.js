@@ -40,9 +40,33 @@ for(const base of [.2,.43,.7]) for(const height of [.1,.5,1,2,4]){
   assert(changed.y>=.1 && changed.y<=4 && changed.legLength>=.1 && changed.legLength<=4,
     'beltline is constrained by the existing runtime scale envelope');
 }
+for(const hip of [.19,.43,.77]) for(const contact of [.01,.035,hip*.4])
+  for(const y of [.1,.7,1.8,4]) for(const leg of [.1,.8,2.2,4]){
+    const baseline={hip,contact}; // A real procedural foot's sole-contact center is above the floor.
+    const old={x:1,y,legLength:leg,head:.8,offsetY:0};
+    const physical=math.heightBeltlineFor(old,baseline);
+    const reach=hip-contact, torso=1-hip+contact;
+    close(physical.height,torso*y+reach*leg,'floor-to-head includes foot contact');
+    close(physical.beltline,(contact*y+reach*leg)/physical.height,'physical hip height includes sole');
+    const back=math.scaleForHeightBeltline(old,physical.height,physical.beltline,baseline);
+    close(back.y,y,'contact-aware portrait legacy migration');
+    close(back.legLength,leg,'contact-aware leg legacy migration');
+  }
+const contactGeometry={hip:.38,contact:.07};
+const initialContact={y:1.6,legLength:.8,x:1,head:1};
+const initialPhysical=math.heightBeltlineFor(initialContact,contactGeometry);
+const raiseHip=math.scaleForHeightBeltline(initialContact,initialPhysical.height,.65,contactGeometry);
+const raised=math.heightBeltlineFor(raiseHip,contactGeometry);
+close(raised.height,initialPhysical.height,'contact-aware hip edit preserves overall stature');
+close(raised.beltline,.65,'contact-aware hip edit reaches exact requested floor-to-hip %');
+const grow=math.scaleForHeightBeltline(initialContact,initialPhysical.height*1.4,initialPhysical.beltline,contactGeometry);
+close(math.heightBeltlineFor(grow,contactGeometry).height,initialPhysical.height*1.4,'contact-aware total Height edit');
+close(math.heightBeltlineFor(grow,contactGeometry).beltline,initialPhysical.beltline,'contact-aware Height edit preserves beltline');
 assert.match(rig,/heightBeltlineFor,\s+scaleForHeightBeltline,/,'pure math exported in shared scale API');
 assert.match(editor,/beltlineBaseFraction: Number\.isFinite\(measuredBeltline\)/,'unscaled hip is measured using actual leg solver');
-assert.match(editor,/get selectedBeltlineBaseFraction\(\)/,'guard uses selected species geometry');
+assert.match(editor,/get selectedBeltlineGeometry\(\)/,'guard uses original species hip plus live foot contact');
+assert.match(editor,/standingFootContactY/,'contact height follows actual foot mesh sizing');
+assert.match(guard,/selectedBeltlineGeometry/,'input guard passes the same measured geometry to the runtime converter');
 assert.match(editor,/scaleRow\('Height', 'Height'/,'Height slider present');
 assert.match(editor,/scaleRow\('Beltline', 'Beltline height'/,'Beltline slider present');
 assert.doesNotMatch(editor,/scaleRow\('PortraitHeight'|scaleRow\('LegLength'/,'separate legacy controls removed');
@@ -72,4 +96,4 @@ const age=.41; // Stage body scaling multiplies both saved dimensions equally.
 const baby=math.heightBeltlineFor({y:old.y*age,legLength:old.legLength*age},.38);
 close(baby.beltline,original.beltline,'baby/toddler/child stage keeps hip proportion');
 close(baby.height,original.height*age,'age uniformly scales height');
-console.log('PASS height/beltline: 210 legacy pair roundtrips, floor-to-hip math, extreme bounds, limb preservation and age parity');
+console.log('PASS height/beltline: 210 baseline + 144 nonzero-contact migration roundtrips, floor-to-hip math, extreme bounds, limb preservation and age parity');
