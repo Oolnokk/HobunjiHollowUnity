@@ -14037,9 +14037,9 @@
         return walker;
       }
 
-      function despawnNpcVisitor(walker) {
+      function despawnNpcVisitor(walker, allowUnregistered = false) {
         const index = npcWalkers.indexOf(walker); // Used to remove exactly this completed departure without touching another NPC.
-        if (index < 0) return false;
+        if (!walker || (index < 0 && allowUnregistered !== true)) return false; // Async encounter builders may return an owned rig before roster adoption.
         window.FamilyBabyFollow?.clearWalker?.(walker); // Retire crawl ownership before disposing the live rig.
         window.BedLiePose?.releaseNpc?.(walker);
         walker.root?.parent?.remove?.(walker.root);
@@ -14056,7 +14056,7 @@
           const materials = Array.isArray(object.material) ? object.material : object.material ? [object.material] : []; // Used to release this visitor avatar's per-spawn GPU materials.
           materials.forEach(material => { material.map?.dispose?.(); material.dispose?.(); });
         });
-        npcWalkers.splice(index, 1);
+        if (index >= 0) npcWalkers.splice(index, 1); // Never splice the last live walker when retiring an unadopted rig.
         window.__farmLog?.(`[schedule] ${walker.rec?.id || 'visitor'} despawned at ${walker.currentScheduleTarget?.label || 'visitor exit'}`, 'info');
         return true;
       }
@@ -33024,6 +33024,7 @@
       // Slagothim trade caravans (road travel, trading, notices, compass)
       // live in js/slagothim-traders.js.
       window.SlagothimTraders?.init({
+        TILE, player, hostileObjects, // Shinjimi shares this adapter: live player LOS/contact, tile conversion and humanoid avoidance.
         calendar,
         inventory,
         ITEM_DEFS,
@@ -33033,7 +33034,7 @@
         metalBarItemKey,
         npcWalkers,
         makeNpcWalker,
-        despawnNpcWalker: despawnNpcVisitor,
+        despawnNpcWalker: walker => despawnNpcVisitor(walker, true), // Encounter builders own unadopted results until adoption or cancellation.
         npcSurfaceY,
         getZoneLayout: zoneId => _zoneLayouts.get(zoneId),
         getTownGrid: () => townGrid,
