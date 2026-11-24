@@ -338,6 +338,41 @@ assert.throws(() => PM.renderOverlay(renderer, scene, camera), /mask failure/);
 assert.deepStrictEqual(renderer.passes, [], 'no composite of an incomplete mask');
 assertRestored('failed mask pass');
 
+// Material preparation can throw after an earlier mesh has already been swapped.
+renderer.failMask = false;
+Object.defineProperty(reverseMaterial, 'map', { configurable: true, get() { throw new Error('texture preparation failure'); } });
+assert.throws(() => PM.renderOverlay(renderer, scene, camera), /texture preparation failure/);
+delete reverseMaterial.map;
+assert.deepStrictEqual(renderer.passes, [], 'preparation failure does not draw or composite');
+assertRestored('failed preparation');
+PM.renderOverlay(renderer, scene, camera);
+assertRestored('successful retry');
+renderer.passes.length = 0;
+
+// Overlapping roots can expose the same child. Its source and layer mask must
+// be restored exactly once, and an invisible slot must not become a silhouette.
+{
+  const isolated = sandbox.window.PerceptionMaskRenderer.create(() => THREE, PM.COLORS);
+  const mixed = mesh(wolf.avatarRef.group); // Exercise multi-material filtering and duplicate membership.
+  const hidden = { visible: false }; // A hidden material group must stay out of the mask.
+  const slots = [originalMaterial, hidden, null];
+  mixed.material = slots;
+  const originalLayers = (1 << 25) | 1;
+  mixed.layers.mask = originalLayers;
+  const local = { ...renderer, passes: [], render(renderScene) {
+    if (renderScene === scene) {
+      assert.strictEqual(mixed.material[0].args[0].color, PM.COLORS.hostile, 'first target owns overlapping mesh');
+      assert.strictEqual(mixed.material[1], null, 'hidden material is excluded');
+      assert.strictEqual(mixed.material[2], null, 'missing material slot is safe');
+    }
+  } };
+  assert.strictEqual(isolated.renderOverlay(local, scene, camera, [{ category: 'hostile', meshes: [mixed] }, { category: 'friendly', meshes: [mixed] }]), 1);
+  assert.strictEqual(mixed.material, slots);
+  assert.strictEqual(mixed.layers.mask, originalLayers);
+  wolf.avatarRef.group.children.pop();
+  mixed.parent = null;
+}
+
 // Farmwork uses the exact same mask/composite while keeping Perception speed/info semantics off.
 PM.setActive(false);
 let farmworkOpen = true, visualUpdates = 0;

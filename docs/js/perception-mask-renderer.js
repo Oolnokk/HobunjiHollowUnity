@@ -54,6 +54,13 @@
       return mat;
     }
 
+    function maskSlot(source, category, skinned, color, pairedAnimalFace) {
+      // A cached mesh may have become invisible or acquired non-rendering slots.
+      // Use null for excluded slots; Three skips missing group materials.
+      if (!source || source.visible === false || source.colorWrite === false || (source.transparent && source.opacity < 0.05)) return null;
+      return maskMaterialFor(source, category, skinned, color, pairedAnimalFace);
+    }
+
     // ── Rendering ────────────────────────────────────────────────────────
     function ensurePost() {
       if (postScene) return;
@@ -95,6 +102,7 @@
 
     const _size = { v: null };
     const _clear = { color: null };
+    const seen = new Set(); // Reused per overlay pass; cleared even when preparation or rendering fails.
     // Called by game.js's renderWorldPasses once the frame is on the canvas
     // (after the outline/painterly composite, or after the direct render with
     // outlines off), so post-processing never smears the highlight.
@@ -111,28 +119,7 @@
       postMaterial.uniforms.uTexel.value.set(1 / w, 1 / h);
       postMaterial.uniforms.uTime.value = performance.now() / 1000;
 
-      const swapped = [];
-      for (const target of targets) {
-        for (const mesh of target.meshes || []) {
-          if (!mesh.parent) continue;
-          const original = mesh.material;
-          const skinned = !!mesh.isSkinnedMesh;
-          const face = mesh.userData?.hobunjiPlaneFace; // Existing marker survives weighted animal head-rig replacement.
-          const pairedAnimalFace = face === 'front' || face === 'back'; // Match ordinary animal renderer GPU culling every frame.
-          mesh.material = Array.isArray(original)
-            ? original.map(m => maskMaterialFor(m, target.category, skinned, target.color, pairedAnimalFace))
-            : maskMaterialFor(original, target.category, skinned, target.color, pairedAnimalFace);
-          const hadLayer = (mesh.layers.mask & (1 << LAYER)) !== 0; // r128 Layers has no isEnabled().
-          mesh.layers.enable(LAYER);
-          // Hidden only because a render-scope batch draws it this frame (e.g. an
-          // instanced wilderness tree): still the source of its own glow mask.
-          const proxyHidden = mesh.visible === false && mesh.userData?.hobunjiDrawProxyHidden === true;
-          if (proxyHidden) mesh.visible = true;
-          swapped.push({ mesh, original, hadLayer, proxyHidden });
-        }
-      }
-      if (!swapped.length) return 0;
-
+      const swapped = []; // One original state record per mesh, restored before compositing.
       const previousTarget = renderer.getRenderTarget();
       const previousAutoClear = renderer.autoClear;
       renderer.getClearColor(_clear.color);
@@ -142,8 +129,32 @@
       const previousOverride = scene.overrideMaterial;
       const shadowMap = renderer.shadowMap;
       const previousShadowAuto = !!shadowMap?.autoUpdate;
-      let maskRendered = false; // The composite pass runs only after a complete mask.
+      let maskStarted = false; // Renderer state is only mutated after mesh preparation succeeds.
+      let maskRendered = false; // Composite only a complete mask.
       try {
+        for (const target of targets) {
+          for (const mesh of target.meshes || []) {
+            if (!mesh.parent || seen.has(mesh)) continue;
+            seen.add(mesh); // The first collected target owns the shared mesh's category.
+            const original = mesh.material;
+            if (!original) continue;
+            const skinned = !!mesh.isSkinnedMesh;
+            const face = mesh.userData?.hobunjiPlaneFace; // Survives weighted animal head-rig replacement.
+            const pairedAnimalFace = face === 'front' || face === 'back';
+            const replacement = Array.isArray(original)
+              ? original.map(m => maskSlot(m, target.category, skinned, target.color, pairedAnimalFace))
+              : maskSlot(original, target.category, skinned, target.color, pairedAnimalFace);
+            if (!replacement || (Array.isArray(replacement) && !replacement.some(Boolean))) continue;
+            const originalLayers = mesh.layers.mask; // Restore all layer bits exactly, including preexisting perception membership.
+            const originalVisible = mesh.visible; // Distinguish authored-hidden and temporary batch-hidden meshes.
+            swapped.push({ mesh, original, originalLayers, originalVisible });
+            mesh.material = replacement;
+            mesh.layers.enable(LAYER);
+            if (originalVisible === false && mesh.userData?.hobunjiDrawProxyHidden === true) mesh.visible = true;
+          }
+        }
+        if (!swapped.length) return 0;
+        maskStarted = true;
         scene.background = null;
         scene.overrideMaterial = null;
         if (shadowMap?.enabled) shadowMap.autoUpdate = false;
@@ -155,28 +166,30 @@
         renderer.render(scene, camera);
         maskRendered = true;
       } finally {
-        // Scene/material state is restored before the composite; renderer state
-        // (target, autoClear, shadows) is restored below even if the mask pass
-        // threw, so a failure can never leave the main canvas drawing into maskRT.
-        camera.layers.mask = previousMask;
+        // Protect preparation as well as drawing: a material/texture failure
+        // halfway through the swaps must not corrupt the normal world render.
         for (const entry of swapped) {
           entry.mesh.material = entry.original;
-          if (!entry.hadLayer) entry.mesh.layers.disable(LAYER);
-          if (entry.proxyHidden) entry.mesh.visible = false;
+          entry.mesh.layers.mask = entry.originalLayers;
+          entry.mesh.visible = entry.originalVisible;
         }
-        scene.background = previousBackground;
-        scene.overrideMaterial = previousOverride;
-        renderer.setClearColor(_clear.color, previousClearAlpha);
-        try {
-          renderer.setRenderTarget(previousTarget);
-          if (maskRendered) {
-            postMaterial.uniforms.tMask.value = maskRT.texture;
-            renderer.render(postScene, postCamera);
+        seen.clear();
+        if (maskStarted) {
+          camera.layers.mask = previousMask;
+          scene.background = previousBackground;
+          scene.overrideMaterial = previousOverride;
+          try {
+            renderer.setClearColor(_clear.color, previousClearAlpha);
+            renderer.setRenderTarget(previousTarget);
+            if (maskRendered) {
+              postMaterial.uniforms.tMask.value = maskRT.texture;
+              renderer.render(postScene, postCamera);
+            }
+          } finally {
+            renderer.autoClear = previousAutoClear;
+            if (shadowMap) shadowMap.autoUpdate = previousShadowAuto;
+            renderer.setRenderTarget(previousTarget);
           }
-        } finally {
-          renderer.autoClear = previousAutoClear;
-          if (shadowMap?.enabled) shadowMap.autoUpdate = previousShadowAuto;
-          renderer.setRenderTarget(previousTarget);
         }
       }
       return swapped.length;
