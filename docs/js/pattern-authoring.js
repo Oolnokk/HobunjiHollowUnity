@@ -59,6 +59,7 @@
     frameY: 0,
     frameRotationDeg: 0,
     frameScale: 1,
+    frameRandomBaseScale: null, // Retained only for randomized instance frames; a new library load or manual resize resets it.
     // meshScale/meshRotationDeg are a SEPARATE control from the frame
     // above: once the cell is cropped, these zoom/rotate the whole
     // repeating mesh of tiled cells as one unit on the actual garment —
@@ -382,6 +383,7 @@
         else el.textContent = `${cfg[field]}°`;
       });
     }
+    syncInputsFromCfg(); // Initial full-circle rotation must also appear correctly in the signed slider.
     updateValLabels();
 
     function hasMotifInk() {
@@ -405,6 +407,7 @@
         frameY: Number(cfg.frameY) || 0,
         frameRotationDeg: Number(cfg.frameRotationDeg) || 0,
         frameScale: Number(cfg.frameScale) || 1,
+        ...(Number(cfg.frameRandomBaseScale) > 0 && Number.isFinite(Number(cfg.frameRandomBaseScale)) ? {frameRandomBaseScale:Number(cfg.frameRandomBaseScale)} : {}), // Preserve the pre-roll scale through the full author/save round trip.
         meshScale: clamp(Number(cfg.meshScale) || 1, PATTERN_SCALE_MIN, PATTERN_SCALE_MAX),
         meshRotationDeg: Number(cfg.meshRotationDeg) || 0,
         usageOffsetX: clamp(Number(cfg.usageOffsetX) || 0, -4096, 4096), // Keep saved instance placement when reopening the full author.
@@ -615,6 +618,7 @@
         const pointerAngle = Math.atan2(vec.y, vec.x);
         cfg.frameRotationDeg = Math.round(((pointerAngle - baseAngle) * 180) / Math.PI);
         cfg.frameScale = clamp(Math.hypot(vec.x, vec.y) / baseLen, 0.1, 6);
+        cfg.frameRandomBaseScale = null; // Explicitly resizing establishes a fresh authored baseline.
       }
       syncInputsFromCfg();
       updateValLabels();
@@ -792,6 +796,7 @@
       overlay.querySelectorAll('.pa-in[data-field]').forEach(input => {
         const field = input.dataset.field;
         if (input.type === 'checkbox') input.checked = cfg[field];
+        else if (field === 'frameRotationDeg') input.value = ((Number(cfg[field]) + 180) % 360 + 360) % 360 - 180; // Display the equivalent signed angle for saved full-circle rolls.
         else input.value = cfg[field];
       });
       overlay.querySelectorAll('.pa-shapeToggle').forEach(btn => btn.classList.toggle('active', btn.dataset.shape === cfg.frameShape));
@@ -841,6 +846,7 @@
         if (input.type === 'checkbox') cfg[field] = input.checked;
         else if (input.tagName === 'SELECT') cfg[field] = input.value;
         else cfg[field] = Number(input.value);
+        if (field === 'frameScale') cfg.frameRandomBaseScale = null; // Manual scale changes supersede prior randomization.
         loadedLibraryId = null;
         updateValLabels();
         drawFrameCanvas();
@@ -884,6 +890,7 @@
       cfg.frameY = PATTERN_DEFAULTS.frameY;
       cfg.frameRotationDeg = PATTERN_DEFAULTS.frameRotationDeg;
       cfg.frameScale = PATTERN_DEFAULTS.frameScale;
+      cfg.frameRandomBaseScale = null; // Auto-fit restores an authored scale instead of a previous motif's baseline.
       loadedLibraryId = null;
       syncInputsFromCfg();
       updateValLabels();
@@ -891,16 +898,10 @@
       schedulePreview();
     });
 
-    const rerollFrame = createFrameReroller(); // Keeps successive rolls relative to the authored frame.
     overlay.querySelector('[data-act="randomFrame"]').addEventListener('click', () => {
-      const next = rerollFrame(cfg);
-      Object.assign(cfg, next);
-      // The renderer accepts a full turn; present the equivalent angle within the editor's slider range.
-      if (cfg.frameRotationDeg > 180) {
-        // Keep the stored angle unchanged so the reroll remembers its baseline.
-        syncInputsFromCfg();
-        overlay.querySelector('[data-field="frameRotationDeg"]').value = cfg.frameRotationDeg - 360;
-      } else syncInputsFromCfg();
+      // Manual resizing and motif loads explicitly reset the persisted baseline.
+      Object.assign(cfg, randomizeFrame(cfg));
+      syncInputsFromCfg();
       loadedLibraryId = null;
       updateValLabels();
       drawFrameCanvas();
@@ -916,6 +917,7 @@
         frameY: PATTERN_DEFAULTS.frameY,
         frameRotationDeg: PATTERN_DEFAULTS.frameRotationDeg,
         frameScale: PATTERN_DEFAULTS.frameScale,
+        frameRandomBaseScale: null, // Reset placement must also forget the previous randomization baseline.
       });
       loadedLibraryId = null;
       syncInputsFromCfg();

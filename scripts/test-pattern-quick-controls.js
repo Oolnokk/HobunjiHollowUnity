@@ -109,6 +109,17 @@ assert.equal(next.meshScale, 1.3);
 assert.equal(authored.frameScale, 2);
 const reopened = window.PatternQuickControls.createFrameReroller()(JSON.parse(JSON.stringify(rolled)), () => .5);
 assert.equal(reopened.frameScale, 1.4, 'serialized rerolls keep the original framing baseline across menu reopen');
+const authorSource = fs.readFileSync('docs/js/pattern-authoring.js','utf8');
+const authorStart = authorSource.indexOf('function currentPatternData()');
+const authorEnd = authorSource.indexOf('let previewTimer',authorStart);
+const serializeAuthor = vm.runInNewContext(authorSource.slice(authorStart,authorEnd) + '\ncurrentPatternData', {
+  cfg: {...rolled, motifScale:1, meshScale:1, overpassClearanceMultiplier:3}, hasMotifInk:()=>true,
+  sketchCanvas:{toDataURL:()=>rolled.motifDataUrl}, options:{}, FRAME_SHAPES:{square:{}}, clamp:(v,lo,hi)=>Math.min(hi,Math.max(lo,v)),
+  PATTERN_SCALE_MIN:.4,PATTERN_SCALE_MAX:3.2,OVERPASS_CLEARANCE_MIN:1,OVERPASS_CLEARANCE_MAX:6
+});
+const authorSaved = serializeAuthor();
+assert.equal(authorSaved.frameRandomBaseScale, 2, 'the actual full author serializer retains the baseline');
+assert.equal(window.PatternQuickControls.randomizeFrame(authorSaved,()=>.5).frameScale,1.4,'author save and subsequent simple reroll do not compound shrinkage');
 const oldPattern = Object.freeze({ motifDataUrl: 'data:legacy', repeatMode: 'grid', patternScale: 2, translateX: 7, translateY: -9 });
 const migratedRoll = window.PatternQuickControls.createFrameReroller()(oldPattern, () => .5);
 assert.equal(migratedRoll.frameX, 7, 'legacy frame offsets survive reroll');
