@@ -6,6 +6,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 
 const root = path.resolve(__dirname, '..');
+const wetRequests = []; // Verify explicit native echo ownership and delayed-start cancellation.
 const played = []; // Records native voices while a mobile browser's play() promise remains pending.
 let clockMs = 1000; // Same-tick launch deliberately exercises the paused-but-reserved native pool race.
 class FakeAudio {
@@ -30,6 +31,11 @@ class FakeAudio {
 const math = Object.create(Math);
 math.random = () => 0;
 const W = {
+  EnvironmentalReverb: { playWetUrl(url, opts) {
+    const request = { url, opts, stopped: false };
+    wetRequests.push(request);
+    return { stop() { request.stopped = true; } };
+  } },
   AnimalVocalizations: { creatureSizeClass: () => 'large', sizePitchDifferenceFromLarge: () => 0 },
   SCRATCHBONES_CONFIG: { game: { audio: { enabled: true, sfxVolume: 1,
     footsteps: { enabled: true, volume: 1, surfaces: {} }, combatSfx: {}, objectSfx: {} } } },
@@ -50,6 +56,7 @@ W.AudioSystem.init({
 });
 const audio = W.AudioSystem;
 const bird = id => ({ id, areaId: 'forest', creatureKey: 'skeeri-large', health: 10, x: 32, y: 0 });
+(async () => {
 const birds = Array.from({ length: 6 }, (_, i) => bird('pending-' + i));
 for (const flyer of birds) assert.equal(audio.playWingflapSfx(flyer), true);
 assert.equal(played.length, 6, 'all six outstanding mobile play requests get a voice');
@@ -57,6 +64,22 @@ assert.equal(new Set(played).size, 6, 'each pending native play reserves a disti
 assert(played.every(voice => voice.paused), 'test never relies on media play promises resolving');
 assert(played.every(voice => voice.pauseCount === 0), 'no outstanding request was stolen or cancelled');
 assert.equal(audio.wingflapSfxDebugSnapshot().active, 6);
+assert(played.every(voice => voice.dataset.environmentalReverb === 'off'), 'generic HTML media reverb cannot duplicate owned wing echoes');
+await Promise.resolve();
+assert.equal(wetRequests.length, 0, 'pending playback cannot start an echo before actual media starts');
+const sounding = played[1]; // A different bird successfully starts while other voices remain pending.
+sounding.paused = false;
+sounding.currentTime = 0.12;
+sounding.emit('playing');
+await Promise.resolve();
+assert.equal(wetRequests.length, 1);
+const wet = wetRequests[0];
+assert.equal(wet.opts.area, 'forest');
+assert.equal(wet.opts.playbackRate, 1);
+assert(wet.opts.extraWet > 0.026);
+assert.equal(wet.opts.getOffsetS(), 0.12, 'native wet layer synchronizes with current sample position');
+wet.opts.onStarted({ wet: 0.1, profile: { preset: 'forest' } });
+assert.equal(wet.stopped, false);
 clockMs += 110;
 assert.equal(audio.playWingflapSfx(bird('seventh')), false, 'seventh bird cannot steal a pending native voice');
 
@@ -71,7 +94,16 @@ assert.equal(first.listeners.ended.length, 1, 'repeat wingbeats share a single n
 assert.equal(audio.stopWingflapSfx(birds[0]), true, 'gliding can stop an unresolved native playback request');
 assert.equal(first.pauseCount, 1);
 assert(played.slice(1, 6).every(voice => voice.pauseCount === 0), 'glide never stops a different bird');
+assert.equal(wet.stopped, false, 'another bird retains its echo');
+first.paused = false;
+first.emit('playing');
+await Promise.resolve();
+assert.equal(wetRequests.length, 1, 'late playing notification after glide cannot start a phantom echo');
+assert.equal(audio.stopWingflapSfx(birds[1]), true);
+assert.equal(wet.stopped, true, 'glide stops the owned wet input');
+assert.equal(wet.opts.getOffsetS(), null, 'late wet decode cannot inject a new flap after glide');
 
 for (const flyer of birds) audio.stopWingflapSfx(flyer);
 assert.equal(audio.wingflapSfxDebugSnapshot().active, 0);
-console.log('Wingflap pending native playback: six unique reserved voices, no stealing, safe end/glide cleanup PASS');
+console.log('Wingflap pending native playback: six unique reserved voices, no stealing, owned native echo and safe end/glide cleanup PASS');
+})().catch(error => { console.error(error); process.exitCode = 1; });

@@ -40,11 +40,12 @@ const window = {
     combatSfx: {}, objectSfx: {},
   } } },
 };
+let clockMs = 1000; // Advances the flock burst window for the independent overhead-flight assertions.
 const context = {
   Audio: FakeAudio,
   window,
   Math: deterministicMath,
-  performance: { now: () => 1000 },
+  performance: { now: () => clockMs },
   document: { addEventListener() {} },
   setTimeout,
   clearTimeout,
@@ -119,7 +120,7 @@ assert.equal(audio.playWingflapSfx(large), false, 'footstep mute also applies to
 window.SCRATCHBONES_CONFIG.game.audio.footsteps.enabled = true;
 assert.equal(audio.playWingflapSfx(make('far', 'tzatzul', 'small')), true);
 assert.equal(audio.playWingflapSfx({ ...large, id: 'another-map', areaId: 'mine' }), false, 'inactive areas cannot be audible');
-assert.equal(audio.playWingflapSfx({ ...large, id: 'distant', x: 64 * 20 }), false, 'farther than earshot cannot be audible');
+assert.equal(audio.playWingflapSfx({ ...large, id: 'distant', x: 64 * 25 }), false, 'farther than earshot cannot be audible');
 assert.equal(audio.playWingflapSfx({ ...large, id: 'dead', health: 0 }), false);
 assert.equal(sounds.length, requests + 1, 'muted, distant, dead and other-area birds produce no media playback');
 const shot = audio.footstepSfxDebugSnapshot();
@@ -127,4 +128,23 @@ assert.equal(shot.wingflap.last.size, 'small');
 assert(shot.wingflap.requests >= 4);
 assert.equal(shot.playbackFailures, 0);
 
+// An adult Tzatzul above the listener should not disappear at the ground-footstep radius.
+audio.stopWingflapSfx(medium);
+clockMs += 100;
+const overhead = { ...large, id: 'overhead-tzatzul', x: 0, worldY: 14 };
+assert.equal(audio.playWingflapSfx(overhead), true, 'large Tzatzul audible fourteen tiles overhead');
+const overheadShot = audio.wingflapSfxDebugSnapshot();
+assert.equal(overheadShot.last.distanceTiles, 14);
+assert.equal(overheadShot.last.earshotTiles, 24);
+assert(overheadShot.last.volume > 0.05, 'overhead adult remains meaningfully audible');
+assert.equal(audio.stopWingflapSfx(overhead), true);
+assert.equal(audio.playWingflapSfx({ ...small, id: 'small-overhead', x: 0, worldY: 14 }), false,
+  'small wings retain their short earshot');
+assert.equal(audio.playWingflapSfx({ ...large, id: 'very-far', x: 0, worldY: 25 }), false,
+  'even a large bird has a finite 3D earshot');
+const rejected = audio.wingflapSfxDebugSnapshot();
+assert.equal(rejected.lastRejection.actor, 'very-far');
+assert.equal(rejected.lastRejection.distanceTiles, 25);
+assert.equal(rejected.lastRejection.earshotTiles, 24);
+assert(rejected.attempts > rejected.requests, 'mobile diagnostics expose rejected cues as well as playback');
 console.log('Native wingflap footsteps: size pitch, pool reuse, per-actor stop and 3D gating PASS');

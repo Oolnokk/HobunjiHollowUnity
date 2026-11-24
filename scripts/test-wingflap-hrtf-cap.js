@@ -31,12 +31,18 @@ class FakeAudio {
   pause() { this.paused = true; }
 }
 
-const node = () => ({ connect() {}, disconnect() {} }); // Minimal valid graph node for source, gain, filter and spatial routing.
+const nodes = []; // Retain the real graph topology so the test can verify the shared echo bus.
+const node = (kind = 'generic') => {
+  const value = { kind, links: [], disconnects: 0, connect(target) { this.links.push(target); return target; }, disconnect() { this.disconnects++; this.links.length = 0; } };
+  nodes.push(value);
+  return value;
+};
 class FakeAudioContext {
   constructor() {
     this.state = 'running';
     this.currentTime = 0;
-    this.destination = node();
+    this.destination = node('destination');
+    this.sampleRate = 32; // Small real impulse buffers keep this graph regression inexpensive.
   }
   decodeAudioData() {
     return Promise.resolve({
@@ -47,7 +53,7 @@ class FakeAudioContext {
   }
   createBufferSource() {
     const src = {
-      ...node(),
+      ...node('source'),
       playbackRate: { value: 1 },
       stopped: false,
       start() { sources.push(this); },
@@ -59,8 +65,11 @@ class FakeAudioContext {
     };
     return src;
   }
-  createGain() { return { ...node(), gain: { value: 1 } }; }
-  createBiquadFilter() { return { ...node(), frequency: { value: 0 } }; }
+  createGain() { const value = node('gain'); value.gain = { value: 1 }; return value; }
+  createBiquadFilter() { const value = node('filter'); value.frequency = { value: 0 }; return value; }
+  createDelay() { const value = node('delay'); value.delayTime = { value: 0 }; return value; }
+  createConvolver() { return node('convolver'); }
+  createBuffer(channels, length) { const data = Array.from({ length: channels }, () => new Float32Array(length)); return { getChannelData: channel => data[channel] }; }
   createPanner() {
     return { ...node(), positionX: { value: 0 }, positionY: { value: 0 }, positionZ: { value: 0 } };
   }
@@ -87,6 +96,8 @@ const context = {
 };
 vm.runInNewContext(fs.readFileSync(path.join(root, 'docs/js/audio-system.js'), 'utf8'), context,
   { filename: 'audio-system.js' });
+vm.runInNewContext(fs.readFileSync(path.join(root, 'docs/js/environmental-reverb.js'), 'utf8'), context,
+  { filename: 'environmental-reverb.js' }); // Exercise the actual area-aware reverb implementation, not a stub.
 W.AudioSystem.init({
   TILE: 32, player: { x: 0, y: 0 }, MAX_WATER: 8, TileType: {},
   clamp: (v, lo, hi) => Math.min(hi, Math.max(lo, v)),
@@ -115,6 +126,17 @@ const bird = id => ({ id, creatureKey: 'skeeri-large', areaId: 'forest', x: 32, 
   }
   assert.equal(sources.length, 6, 'all six wingbeats use decoded positional Web Audio, not the native fallback');
   assert.equal(audio.wingflapSfxDebugSnapshot().active, 6);
+  const echo = audio.wingflapSfxDebugSnapshot().last;
+  assert.equal(echo.wetRoute, 'decoded-wet');
+  assert.equal(echo.wetPreset, 'forest');
+  assert( echo.wetGain > W.EnvironmentalReverb.profileForArea('forest').wet, 'wingbeat adds animal and distance wetness');
+  const convolvers = nodes.filter(value => value.kind === 'convolver');
+  assert.equal(convolvers.length, 1, 'six birds share a single convolution bus');
+  const convolver = convolvers[0];
+  const originalImpulse = convolver.buffer;
+  assert(originalImpulse, 'real forest impulse response is populated');
+  const sourceGain = sources[0].links[0]; // Source splits into a dry directional branch and a wet branch.
+  assert(sourceGain.links.some(value => value.kind === 'gain' && value.links.length > 0), 'decoded wing source connects to its wet send');
 
   clockMs += 110;
   const seventh = bird('seventh');
@@ -132,6 +154,8 @@ const bird = id => ({ id, creatureKey: 'skeeri-large', areaId: 'forest', x: 32, 
   assert.equal(audio.stopWingflapSfx(birds[0]), true);
   assert.equal(sources[0].stopped, true, 'glide stops its exact Web Audio source immediately');
   assert.equal(sources[2].stopped, false, 'glide does not stop another flying bird');
+  assert.equal(convolver.disconnects, 0, 'glide disconnects only the source, not the reverb bus');
+  assert.equal(convolver.buffer, originalImpulse, 'already injected echo decays naturally in the shared impulse response');
   assert.equal(audio.wingflapSfxDebugSnapshot().active, 5);
 
   clockMs += 110;
@@ -145,5 +169,19 @@ const bird = id => ({ id, creatureKey: 'skeeri-large', areaId: 'forest', x: 32, 
   for (const flyer of [...birds, seventh]) audio.stopWingflapSfx(flyer);
   assert.equal(audio.wingflapSfxDebugSnapshot().active, 0,
     'all decoded sources and actor references are released after landing');
-  console.log('Wingflap decoded HRTF: strict voice cap, natural-end cleanup, glide stop and mute PASS');
+  // The actual area preset follows the source, including cavern/ruin reverb.
+  clockMs += 110;
+  W.SCRATCHBONES_CONFIG.game.audio.environmentalReverb = { byArea: { forest: { preset: 'cavern' } } };
+  const distant = { ...bird('distant'), x: 32 * 12 };
+  assert.equal(audio.playWingflapSfx(distant), true);
+  const cavernEcho = audio.wingflapSfxDebugSnapshot().last;
+  assert.equal(cavernEcho.wetPreset, 'cavern');
+  assert(cavernEcho.wetGain > echo.wetGain, 'distant cavern wingflaps have more reflected sound');
+  assert.equal(nodes.filter(value => value.kind === 'convolver').length, 1, 'area changes reuse the bus');
+  audio.stopWingflapSfx(distant);
+  W.SCRATCHBONES_CONFIG.game.audio.environmentalReverb.enabled = false;
+  clockMs += 110;
+  assert.equal(audio.playWingflapSfx(bird('dry')), true, 'reverb disabled must not silence dry wingbeats');
+  assert.equal(audio.wingflapSfxDebugSnapshot().last.wetRoute, 'none');
+  console.log('Wingflap decoded HRTF: strict voice cap, real environmental reverb, natural echo tail, glide stop and mute PASS');
 })().catch(error => { console.error(error); process.exitCode = 1; });

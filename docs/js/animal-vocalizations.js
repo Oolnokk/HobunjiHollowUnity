@@ -93,7 +93,7 @@
     ? document.currentScript.src
     : null;
   const REVERB_MODULE_SRC = MODULE_BASE_SRC
-    ? new URL('environmental-reverb.js?v=20261114posobj1754', MODULE_BASE_SRC).href
+    ? new URL('environmental-reverb.js?v=20261124wingflapEcho2', MODULE_BASE_SRC).href
     : null;
   const PLAYBACK_MODULE_SRC = MODULE_BASE_SRC
     ? new URL('animal-voice-independent-playback.js?v=20261119nativeYawnPitch1', MODULE_BASE_SRC).href

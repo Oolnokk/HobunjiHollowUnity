@@ -18,6 +18,8 @@ assert.match(reverbSource, /\/music\\\/|\\\/bgm\\\//, 'score is excluded from wo
 assert.match(reverbSource, /ANIMAL_EXTRA_WET/, 'environmental reverb retains its animal-tail tuning');
 assert.match(playbackSource, /EnvironmentalReverb\?\.connectWetNode/, 'fixed Web Audio animal playback sends directly into the map reverb bus');
 
+let resolveWetFetch; // Delays the real wet-only decoder until native playback has moved or ended.
+const wetFetch = () => new Promise(resolve => { resolveWetFetch = resolve; });
 const window = {
   SCRATCHBONES_CONFIG: { game: { audio: { environmentalReverb: {} } } },
 };
@@ -34,7 +36,7 @@ vm.runInNewContext(reverbSource, {
   Set,
   Promise,
   URL,
-  fetch: undefined,
+  fetch: wetFetch,
   setTimeout,
   clearTimeout,
 }, { filename: 'environmental-reverb.js' });
@@ -70,4 +72,55 @@ const authoredTown = R.profileForArea('map_hobunji_town');
 assert.equal(authoredTown.wet, 0.1, 'exact per-map authoring overrides built-in wet amount');
 assert.equal(authoredTown.decayS, 1.1, 'exact per-map authoring overrides decay');
 
-console.log('environmental reverb checks passed');
+// Exercise the real wet-only asynchronous API used by the native wingflap fallback.
+const graphNodes = []; // Retains the shared reverb bus and source lifetimes for assertions.
+const makeNode = kind => {
+  const node = { kind, connected: [], disconnects: 0,
+    connect(target) { this.connected.push(target); return target; },
+    disconnect() { this.disconnects++; this.connected.length = 0; } };
+  graphNodes.push(node);
+  return node;
+};
+const starts = [];
+const ctx = {
+  state: 'running', currentTime: 0, sampleRate: 32, destination: makeNode('destination'),
+  decodeAudioData: () => Promise.resolve({ duration: 1 }),
+  createGain() { return Object.assign(makeNode('gain'), { gain: { value: 1 } }); },
+  createDelay() { return Object.assign(makeNode('delay'), { delayTime: { value: 0 } }); },
+  createBiquadFilter() { return Object.assign(makeNode('filter'), { frequency: { value: 0 } }); },
+  createConvolver() { return makeNode('convolver'); },
+  createBuffer(channels, length) { return { getChannelData: () => new Float32Array(length) }; },
+  createBufferSource() { return Object.assign(makeNode('source'), { playbackRate: { value: 1 },
+    start(at, offset) { starts.push({ source: this, at, offset }); }, stop() { this.stopped = true; } }); },
+};
+const flush = async () => { for (let i = 0; i < 16; i++) await Promise.resolve(); };
+(async () => {
+  let offset = 0.1; // Native playback advances while its reflected buffer is decoding.
+  const cancelled = R.playWetUrl('wing.mp3', { context: ctx, area: 'cavern', getOffsetS: () => null });
+  let observedSend = null; // Assert outside the optional callback, whose errors must not interrupt sound.
+  const live = R.playWetUrl('wing.mp3', { context: ctx, area: 'cavern', playbackRate: 1.25,
+    extraWet: 0.05, volume: 0.5, getOffsetS: () => offset,
+    onStarted(send) { observedSend = send; } });
+  offset = 0.4;
+  resolveWetFetch({ ok: true, arrayBuffer: () => Promise.resolve(new ArrayBuffer(16)) });
+  await flush();
+  assert.equal(observedSend?.profile.preset, 'cavern');
+  assert(observedSend.wet > 0.235, 'native reflection applies the authored distance wet boost');
+  assert.equal(starts.length, 1, 'a stale native wingbeat must not start when its delayed wet decode resolves');
+  assert.equal(starts[0].offset, 0.4, 'live wet source uses current rather than requested native offset');
+  assert.equal(starts[0].source.playbackRate.value, 1.25, 'reflected audio retains the dry size pitch');
+  assert.equal(R.debugSnapshot().activeWetSources, 1, 'stale wet handle releases itself');
+  const bus = graphNodes.find(node => node.kind === 'convolver');
+  assert(bus?.buffer, 'the shared cavern impulse exists');
+  live.stop();
+  cancelled.stop(); // Repeated cancellation is harmless.
+  assert.equal(starts[0].source.stopped, true);
+  assert.equal(R.debugSnapshot().activeWetSources, 0);
+  assert.equal(bus.disconnects, 0, 'stopping wet input cannot cut the shared convolver tail');
+  // Even a fully decoded clip must not start if the native voice already passed its end.
+  R.playWetUrl('wing.mp3', { context: ctx, getOffsetS: () => 1 });
+  await flush();
+  assert.equal(starts.length, 1);
+  assert.equal(R.debugSnapshot().activeWetSources, 0);
+  console.log('environmental reverb checks passed, including delayed native wingflap ownership');
+})().catch(error => { console.error(error); process.exitCode = 1; });
