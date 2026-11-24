@@ -63,8 +63,9 @@
     for (const patternId of spec.patterns || []) {
       if (spec.baseColorPatterns?.includes(patternId)) continue; // Grehlr beard shares the base coat dye and motif; never offer an independent paintable beard region.
       const layer = genotype[patternId];
-      if (!layer?.color || layer.enabled === false || !(Number(layer.copies) > 0)) continue;
-      regions.push({ id: patternId, label: title(patternId), color: layer.color });
+      if (!layer || layer.enabled === false || !(Number(layer.copies) > 0)) continue;
+      const tint = window.CreatureGeneticsRender?.patternTintColor?.(kind, patternId, genotype) || (genotype.secondary?.color ? (spec.primaryColorPatterns?.includes(patternId) ? genotype.base?.color : genotype.secondary.color) : layer.color); // Same inherited pigment as the rendered pattern, not its compatibility mirror.
+      if (tint) regions.push({ id: patternId, label: title(patternId), color: tint });
     }
     return regions;
   }

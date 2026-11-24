@@ -67,7 +67,7 @@ assert.equal(W.MootRegistration.ensureRendererSpecies(), true);
     base: { color: '#A57348', copies: 2 },
     overcoat: { color: '#3366B9', copies: 2, enabled: true },
     mitts: { color: '#D4A640', copies: 1, enabled: true },
-  }; // Distinct colors make stacking errors apparent.
+  }; // The first pattern supplies B; obsolete mitt pigment must be ignored.
   const first = await W.CreatureGeneticsRender.composeFrame('moot', 'idle', genotype);
   const rgb = (canvas, x) => Array.from(canvas.pixels.subarray(4 * x, 4 * x + 3));
   assert(rgb(first, 0)[2] > rgb(first, 0)[0], 'overcoat mint pigment must take its blue allele');
@@ -75,7 +75,10 @@ assert.equal(W.MootRegistration.ensureRendererSpecies(), true);
   assert.deepEqual(rgb(first, 2), HOOF, 'grey hoof in overcoat source must stay grey');
   assert.deepEqual(rgb(first, 3), INK, 'near-black artist outline in overcoat source must stay intact');
   assert.equal(first.pixels[5 * 4 + 3], 0, 'black overcoat pixels outside the animal silhouette must remain transparent');
-  assert(rgb(first, 4)[0] > rgb(first, 4)[2], 'mitt takes its own warm color over the base coat');
+  assert(rgb(first, 4)[2] > rgb(first, 4)[0], 'mitt shares the blue B pigment from overcoat, ignoring obsolete warm pigment');
+  const explicit = await W.CreatureGeneticsRender.composeFrame('moot', 'idle', { ...genotype, secondary: { color: '#D4A640' } });
+  assert(rgb(explicit, 0)[0] > rgb(explicit, 0)[2], 'explicit B recolors the overcoat');
+  assert(rgb(explicit, 4)[0] > rgb(explicit, 4)[2], 'explicit B recolors the mitts too');
   const firstPixels = Array.from(first.pixels); // Used to prove cached repeated compositions return identical pixels.
   const second = await W.CreatureGeneticsRender.composeFrame('moot', 'idle', genotype);
   assert.deepEqual(Array.from(second.pixels), firstPixels, 'repeat rendering is pixel-stable');
@@ -83,5 +86,5 @@ assert.equal(W.MootRegistration.ensureRendererSpecies(), true);
     'assets/creaturesprites/patterns/moot_overcoat_run2.png');
   assert.equal(W.CreatureGeneticsRender.patternUrl('moot', 'mitts', 'run1'),
     'assets/creaturesprites/patterns/moot_mitts_run1.png');
-  console.log('PASS Moot overcoat selective tint, silhouette clipping, and independently colored mitts');
+  console.log('PASS Moot overcoat selective tint, silhouette clipping, and shared secondary pigment');
 })().catch(err => { console.error(err); process.exitCode = 1; });

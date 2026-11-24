@@ -212,15 +212,17 @@
   // stay in the shared atlas, including the always-visible tail under the
   // bird. Unexpressed tail genes use the primary body color, never vanish.
   const BODY_LUMINANCE = 0.62;
-  function expressed(layer) {
-    return !!layer?.color && layer.enabled !== false && (layer.copies == null || Number(layer.copies) > 0);
+  function expressed(layer, tint) {
+    return !!layer && !!tint && layer.enabled !== false && (layer.copies == null || Number(layer.copies) > 0);
   }
   function appearanceColors(color, genotype) {
     const base = color || genotype?.base?.color || null;
     const tail = genotype?.tailfeathers || genotype?.tailfeather; // Accept legacy/singular authoring data without multiplying genetic slots.
-    const tailColor = expressed(tail) ? tail.color : base;
-    const spectaclesColor = expressed(genotype?.spectacles) ? genotype.spectacles.color : null;
-    return { base, tailColor, spectaclesColor, distinctTail: expressed(tail) };
+    const secondary = genotype?.secondary?.color || tail?.color || genotype?.spectacles?.color || base; // First pattern supplies B for old swarm data.
+    const distinctTail = expressed(tail, secondary); // Pattern presence no longer depends on a redundant color mirror.
+    const tailColor = distinctTail ? secondary : base;
+    const spectaclesColor = expressed(genotype?.spectacles, secondary) ? secondary : null;
+    return { base, tailColor, spectaclesColor, distinctTail };
   }
 
   const MAP_FRAGMENT = `

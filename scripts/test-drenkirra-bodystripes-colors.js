@@ -86,6 +86,7 @@ vm.runInNewContext(fs.readFileSync('docs/js/creature-genetics-render.js', 'utf8'
 (async () => {
   const genotype = { // Uses distinct colors so each combined-pattern role can be identified independently.
     base: { color: '#112233' },
+    secondary: { color: '#aabbcc' },
     bodystripes: { color: '#aabbcc', copies: 1, enabled: true },
     spectacles: { color: '#ff5500', copies: 1, enabled: true },
   };
@@ -93,9 +94,9 @@ vm.runInNewContext(fs.readFileSync('docs/js/creature-genetics-render.js', 'utf8'
   const rgbAt = x => Array.from(canvas.pixels.slice(x * 4, x * 4 + 3)); // Reads one isolated output region.
 
   assert.deepEqual(rgbAt(0), [0x11, 0x22, 0x33], 'bodystripes use the stored base color');
-  assert.deepEqual(rgbAt(1), [0xff, 0x55, 0x00], 'other combined patterns retain their normal pattern color');
-  assert.deepEqual(rgbAt(2), expectedAnchoredBase([0xaa, 0xbb, 0xcc]),
-    'unstriped body uses the bodystripes pattern color through the authored #68D127 base-coat anchor');
+  assert.deepEqual(rgbAt(1), [0xaa, 0xbb, 0xcc], 'spectacles use shared body color B');
+  assert.deepEqual(rgbAt(2), expectedAnchoredBase([0x11, 0x22, 0x33]),
+    'base retains body color A through the authored #68D127 base-coat anchor');
   assert.equal(genotype.base.color, '#112233', 'rendering does not mutate inherited base color');
   assert.equal(genotype.bodystripes.color, '#aabbcc', 'rendering does not mutate inherited pattern color');
 

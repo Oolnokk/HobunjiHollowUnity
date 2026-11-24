@@ -117,7 +117,15 @@
     if (creatureKindForProfile(profile, options) === 'grehlr' && genotype.beard && genotype.base?.color) {
       genotype.beard.color = genotype.base.color; // Named NPC custom hex overrides cannot create a beard hue different from its base coat.
     }
-    return genotype;
+    const kind = creatureKindForProfile(profile, options); // Resolve shared colors after authored overrides.
+    const ids = window.CreatureGenetics?.PATTERN_DEFS?.[kind] || window.CreatureGeneticsRender?.SPECIES?.[kind]?.patterns || Object.keys(genotype).filter(id => id !== 'base' && id !== 'secondary' && genotype[id]?.color); // Standalone tools may not load breeding.
+    const first = ids[0];
+    const primary = id => (kind === 'grehlr' && id === 'beard') || (kind === 'drenkirra' && id === 'bodystripes');
+    const fallback = ids.find(id => !primary(id) && genotype[id]?.color);
+    const color = normalizeHex(overrides.secondary) || genotype.secondary?.color || normalizeHex(overrides[first]) || genotype[first]?.color || genotype[fallback]?.color || genotype.base?.color;
+    if (color) genotype.secondary = { ...(genotype.secondary || {}), color };
+    for (const id of ids) if (genotype[id]?.color) genotype[id].color = primary(id) ? genotype.base?.color : color;
+    return window.CreatureGenetics?.normalizeLegacyGenotype?.(kind, genotype) || genotype;
   }
 
   function makeCreatureProfile(npcExport, kind) {
