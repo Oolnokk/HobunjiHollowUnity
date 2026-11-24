@@ -334,6 +334,14 @@ async function testRealEncounterFlow() {
   game.player.y=(center.r+1.5)*64;
   deferNextChoice=true;C.update(.1);
   assert.equal(typeof continueDelayedChoice,'function','first reward dialogue can be paused before its grant');
+  // Replace the scene before the scheduler can see it: a late callback must not grant.
+  scene={add(group){group.parent=this;sceneGroups.push(group);},remove(group){group.parent=null;}};
+  continueDelayedChoice();await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(rewards.length,0,'old-scene choice cannot grant before syncZone runs');
+  assert.equal(feyStacks,4,'old-scene choice preserves Fey-sight');
+  C.restore(C.serialize());C.update(.1);await new Promise(resolve=>setImmediate(resolve));
+  deferNextChoice=true;C.update(.1);
+  assert.equal(C.debugSnapshot().phase,'scene','choice remains retriable after scene replacement');
   C.restore(C.serialize());continueDelayedChoice();
   await new Promise(resolve=>setImmediate(resolve));
   assert.equal(rewards.length,0,'stale first dialogue cannot grant into the restored encounter');
@@ -386,6 +394,14 @@ async function testRealEncounterFlow() {
   deferNextMilk=true;
   assert.equal(gifting.offerGift(npc),true,'paused milk cutscene starts before reload');
   assert.equal(typeof continueDelayedMilk,'function','a pending dialogue Continue is available for race testing');
+  scene={add(group){group.parent=this;sceneGroups.push(group);},remove(group){group.parent=null;}};
+  continueDelayedMilk();await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(milkInventory.puktukMilk,2,'old-scene callback cannot consume milk before syncZone');
+  assert.equal(C.serialize().milksGiven,0,'old-scene callback cannot change gift count');
+  assert.equal(feyStacks,7,'old-scene callback cannot clear Fey-sight');
+  assert.equal(gifting.offerGift(npc),false,'stale walker cannot start another gift before syncZone');
+  C.restore(C.serialize());C.update(.1);await new Promise(resolve=>setImmediate(resolve));
+  deferNextMilk=true;assert.equal(gifting.offerGift(npc),true,'milk remains retriable after scene replacement');
   C.restore(C.serialize()); // Same room and milk count; only encounter generation distinguishes the stale cutscene.
   continueDelayedMilk();
   await new Promise(resolve=>setImmediate(resolve));
