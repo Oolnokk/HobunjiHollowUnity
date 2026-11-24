@@ -38,6 +38,7 @@ const orphanHand = hand(node('loose_group', scene)); // No resolvable owner: kee
 
 const window = { PlayerBodyTransformComposer: { getPlayerMesh: () => player, getVisualRoots: () => [playerFootRig], getPlayerLegHandle: () => null } };
 const api = new Function('window', 'performance', code + `
+  let lastSceneScan = new WeakMap(); // Standalone ownership harness supplies the scene-discovery cache.
   const syncShoulderPetLayering = () => {}; // This test exercises the replay partition only.
   replayCameraPosition = { x: 0, y: 0, z: 0 };
   const repaired = []; // Nonparticipant weapon-hand invariants are maintained in the same split loop.
@@ -161,6 +162,13 @@ for (const [group, expected] of [
   assert.deepEqual(ordinary, expected, group + ' alone uses ordinary depth');
   assert.equal(api.setActorXrayEnabled(group, true), true);
 }
+for (const group of ['player', 'animals', 'enemies']) api.setActorXrayEnabled(group, false);
+const allDisabledOrdinary = [];
+assert.deepEqual(api.split(replaySet, scene, allDisabledOrdinary, false, true), [],
+  'all-off skips even ownerless held parts and legacy all-participants mode');
+assert.deepEqual(allDisabledOrdinary, replaySet, 'all-off retains every mesh in ordinary rendering');
+assert.deepEqual(api.split(replaySet, scene, [], true), [], 'all-off also excludes every foot');
+for (const group of ['player', 'animals', 'enemies']) api.setActorXrayEnabled(group, true);
 assert.equal(api.setActorXrayEnabled('unrecognized', false), null);
 assert.deepEqual(api.split(replaySet, scene, [], false, true), replaySet, 'turning the settings back on restores the existing replay policy');
 
