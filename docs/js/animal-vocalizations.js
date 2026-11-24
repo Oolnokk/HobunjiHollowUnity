@@ -259,6 +259,12 @@
     return finite(profile?.sizePitchSemitones?.[creatureSizeClass(c)], 0);
   }
 
+  function sizePitchDifferenceFromLarge(c) {
+    const pitch = profileFor(c).sizePitchSemitones; // Shared authored voice size steps also tune the same species' wingflap recording.
+    const baseline = finite(pitch.large, DEFAULT_SIZE_PITCH.large); // Large birds preserve the source recording's original pitch.
+    return Math.max(0, sizePitchOffsetSemitones(c, { sizePitchSemitones: pitch }) - baseline);
+  }
+
   function authoredAllowedClips(cfg, opts) {
     if (Array.isArray(opts?.allowedClips)) return [...opts.allowedClips];
     if (Array.isArray(cfg?.allowedClips)) return [...cfg.allowedClips];
@@ -501,5 +507,6 @@
     setAuthoredProfiles,
     profileForDebug: profileFor,
     creatureSizeClass,
+    sizePitchDifferenceFromLarge, // Reuse authored relative Small/Medium/Large intervals for flying footsteps.
   };
 })();
