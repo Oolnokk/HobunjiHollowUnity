@@ -194,6 +194,11 @@
     activeWetSources.add(handle);
     decodeUrl(resolved, context).then(buffer => {
       if (stopped) return;
+      // Owned native fallback sounds may have finished while the wet clip decoded.
+      const liveOffset = typeof opts.getOffsetS === 'function' ? opts.getOffsetS() : opts.offsetS;
+      if (typeof opts.getOffsetS === 'function' && (liveOffset == null || !Number.isFinite(liveOffset) || liveOffset >= buffer.duration)) {
+        handle.stop(); return; // Do not inject a stale reflection into the shared room bus.
+      }
       source = context.createBufferSource();
       source.buffer = buffer;
       source.playbackRate.value = clamp(finite(opts.playbackRate, 1), 0.25, 4);
@@ -204,9 +209,10 @@
         setTimeout(() => handle.stop(), tailMs);
       };
       const startAt = context.currentTime + Math.max(0.004, finite(opts.startDelayS, 0.006));
-      const offsetS = clamp(finite(opts.offsetS, 0), 0, Math.max(0, buffer.duration - 0.001));
+      const offsetS = clamp(finite(liveOffset, 0), 0, Math.max(0, buffer.duration - 0.001));
       source.start(startAt, offsetS);
       wetPlayCount++;
+      try { opts.onStarted?.(send); } catch (_) {} // Optional owner diagnostics cannot break an already-started wet-only source.
     }).catch(error => {
       lastError = error;
       handle.stop();
