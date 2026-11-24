@@ -28,8 +28,8 @@ const values = windowObject.HobunjiCharacterRigScaleDefaults.values; // Every sp
 assert.strictEqual(footScale['mao-ao'].male, 1.05, 'approved male Mao-ao foot size from source export');
 assert(Math.abs(footScale['mao-ao'].female - 1.025) < 1e-12, 'female Mao-ao inherits male foot multiplier from her 1.28125 main value');
 assert.strictEqual(footScale['engh-sho'].male, 1.0, 'Engh-sho male feet also inherit the 0.8x male shift');
-assert.strictEqual(footScale['engh-sho'].female, .936, 'Engh-sho female feet ALSO inherit the same male 0.8x shift');
-assert.strictEqual(windowObject.HobunjiCharacterRigScaleDefaults.maoaoRelativeShift.female.footScale, .8,
+assert(Math.abs(footScale['engh-sho'].female - .936) < 1e-12, 'Engh-sho female feet ALSO inherit the same male 0.8x shift');
+assert(Math.abs(windowObject.HobunjiCharacterRigScaleDefaults.maoaoRelativeShift.female.footScale - .8) < 1e-12,
   'both genders have the same single male Mao-ao foot shift');
 for(const [key, value] of Object.entries(values)) {
   const [species, gender] = key.split('::');
