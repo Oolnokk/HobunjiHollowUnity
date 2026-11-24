@@ -646,6 +646,7 @@
         && !window.NpcPathfinding?.canNpcBeeline?.(state.zone,c+.5,r+.5,state.home.c+1,state.home.r+3)) continue;
       releaseWalker(); // The existing async walker constructor places the new avatar on a validated surface.
       state.target={c,r}; state.activity='wander'; state.resourceTarget=null; state.workLeft=0;
+      planTimer=0; scanTimer=SCAN_SECONDS; // Give the newly arrived walker its ordinary chase check before choosing a new chore.
       void ensureWalker();
       bumpEvent('Fey encounter: Boney materialized near the player');
       return;
