@@ -582,6 +582,7 @@
   let lightingDeps = null;
   const LIGHTING_OVERLAY_MIN_INTERVAL_MS = 1000 / 60; // Camera rotation and moving lights need frame-rate projection, not 10 Hz screen-space steps.
   let lastUnifiedLightingDraw = 0;
+  let unifiedLightingPaintRevision=0; // GPU upload follows actual canvas paints, including forced same-timestamp room refreshes.
   let lastUnifiedLightingArea = null; // Forces a new darkness frame as soon as the player area changes.
   let lastUnifiedLightingScene = null; // Detects activation of a farmhouse scene even if its area identifier has not switched yet.
   let lastInteriorDarknessDraw = null; // Mobile diagnostics of the shared compositor's actual enclosed base fill.
@@ -978,342 +979,243 @@
 
 
 
-  const ruinGlowProjection = new window.THREE.Vector3(); // Reused center of each engraved surface for room/floor/viewport culling.
-  const ruinGlowVertex = new window.THREE.Vector3(); // Reused to project each actual glyph triangle without per-frame Vector3 allocation.
-  const ruinGlowCameraPosition = new window.THREE.Vector3(); // Camera near-plane rejection keeps rear-facing mesh vertices from stretching across the mask.
-  const ruinGlowCameraDirection = new window.THREE.Vector3(); // Used with the camera position for the same near-plane test.
-  const ruinGlowSource={x:0,y:0,z:0}; // One scratch source for routing engraving masks through room-local clipping.
-  const ruinGlowStats = { found:0,drawn:0,triangles:0,examined:0,scans:0 }; // Mobile Pixel Probe shows submitted glyph triangles and the total examined work budget.
-  const MAX_RUIN_GLOW_TRIANGLES = 960; // Bounds examined glyph triangles as well as submitted Canvas2D draws per lighting refresh.
-  let ruinGlowScene = null,ruinGlowNextScan = 0,ruinGlowMeshes = []; // Cache the active scene's glow meshes; lazy atlases can complete after initial scan.
-  let ruinGlowOccluders=[]; // Wall/door meshes are ray-tested for full-panel occlusion; platform slabs are clipped by their real projected silhouettes.
-  let ruinGlowPlatforms=[]; // Cached box slabs, gathered in the normal scene scan; only their eight corners are projected per lighting frame.
-  const MAX_RUIN_GLOW_PLATFORMS=96; // Upper bound on moving-platform stencil preparation in a large multi-story ruin.
-  const ruinGlowPlatformVertex=new window.THREE.Vector3(); // Reused local-to-world corner and camera-depth scratch for slab silhouettes.
-  const ruinGlowWallPlaneA=new window.THREE.Vector3(),ruinGlowWallPlaneB=new window.THREE.Vector3(),ruinGlowWallPlaneC=new window.THREE.Vector3(); // Three reused transformed glyph vertices define the wall plane for front/behind slab classification.
-  const ruinGlowBoxEdges=[[0,1],[0,2],[0,4],[1,3],[1,5],[2,3],[2,6],[3,7],[4,5],[4,6],[5,7],[6,7]]; // The exact 12 edges of a box for slabs that cross the glyph's wall plane.
-  const ruinGlowClipPointPool=Array.from({length:20},()=>({x:0,y:0})); // Reused projected points; no per-frame allocations for intersecting platforms.
-  const ruinGlowClipPoints=[],ruinGlowClipHull=[]; // Bounded scratch arrays hold only the camera-facing portion of a straddling box.
-  const ruinGlowCross=(a,b,c)=>(b.x-a.x)*(c.y-a.y)-(b.y-a.y)*(c.x-a.x);
-  function ruinGlowConvexHull(points,hull){
-    points.sort((a,b)=>a.x-b.x||a.y-b.y);hull.length=0;
-    for(const point of points){while(hull.length>=2&&ruinGlowCross(hull[hull.length-2],hull[hull.length-1],point)<=0)hull.pop();hull.push(point);}
-    const lowerLength=hull.length;
-    for(let i=points.length-2;i>=0;i--){const point=points[i];while(hull.length>lowerLength&&ruinGlowCross(hull[hull.length-2],hull[hull.length-1],point)<=0)hull.pop();hull.push(point);}
-    hull.pop();return hull.length>=3;
+  // Kanthic's former Canvas2D UV projection could not see WebGL depth.
+  // Draw the already-authored emissive meshes against the world's restored depth
+  // after applying the ordinary darkness canvas as a textured fullscreen quad.
+  // The normal engraved stone is untouched. No projected glyphs, rays or slab clips.
+  const KANTHIC_GLYPH_LAYER=globalThis.HobunjiRenderLayers?.KANTHIC_GLYPH_DEPTH??7; // Auxiliary pass, not a main-world X-ray replay.
+  const ruinGlowProjection = new window.THREE.Vector3(); // Scratch world center for room ownership and legacy non-Kanthic glows.
+  const KANTHIC_LIGHT_UPLOAD_PIXELS=524288; // Bound mobile canvas-to-GPU transfers to 2 MiB of RGBA per new lighting paint.
+  const kanthicClipPlanes=[]; // World-space clipping planes for the occupied region, rebuilt only on transition.
+  const kanthicMaterialStates=new Map(); // Restore borrowed materials' clipping state after the auxiliary draw.
+  const ruinGlowSource={x:0,y:0,z:0}; // Legacy Hronal/Tothal radial light source.
+  const ruinGlowStats={found:0,drawn:0,triangles:0,examined:0,scans:0,region:null,roomCandidates:0,depthPasses:0,textureUploads:0,uploadPixels:0,lastError:null};
+  let ruinGlowScene=null,ruinGlowNextScan=0,ruinGlowMeshes=[]; // Shared scene cache for late-loading atlas meshes.
+  let kanthicRecords=[],kanthicActiveRecords=[],kanthicRegion=null,kanthicRegionBounds=null,kanthicFrame=false; // Room-local GPU candidates, rebuilt only on region change or discovery.
+  let kanthicProxyScene=null,kanthicQuadScene=null,kanthicQuadCamera=null,kanthicTexture=null; // Borrowed geometry/materials and one reusable darkness quad.
+  let kanthicCanvas=null,kanthicCanvasVisibility='',kanthicUploadAt=-Infinity,kanthicWidth=0,kanthicHeight=0,kanthicUploadCanvas=null; // Restore the DOM darkness canvas on exit and upload only new paints.
+  const kanthicProxyCache=new WeakMap(); // Reuse proxy meshes across room transitions without retaining removed sources.
+
+  function isKanthicGlyphArea(){
+    return lightingDeps?.getCurrentArea?.()==='map_i_dev_random_ruin'&&activeRuinTradition()==='kanthic';
   }
-  function ruinGlowFrontHalfHull(mask,nx,ny,nz,ax,ay,az,cameraSide,near){
-    const corners=mask.corners;ruinGlowClipPoints.length=0;
-    const positive=cameraSide>0?1:-1,depths=mask.planeDistances; // Classified in the camera-side half-space of the engraved wall.
-    let count=0;
-    const project=(x,y,z)=>{
-      if((x-ruinGlowCameraPosition.x)*ruinGlowCameraDirection.x
-        +(y-ruinGlowCameraPosition.y)*ruinGlowCameraDirection.y
-        +(z-ruinGlowCameraPosition.z)*ruinGlowCameraDirection.z<=near)return;
-      const projected=lightingDeps.worldToOverlay(x,y,z);
-      if(!Number.isFinite(projected.x)||!Number.isFinite(projected.y))return;
-      const p=ruinGlowClipPointPool[count++];p.x=projected.x;p.y=projected.y;ruinGlowClipPoints.push(p);
-    };
-    for(let i=0;i<8;i++){
-      const corner=corners[i],distance=((corner.x-ax)*nx+(corner.y-ay)*ny+(corner.z-az)*nz)*positive;
-      depths[i]=distance;
-      if(distance>=0)project(corner.x,corner.y,corner.z);
-    }
-    for(const [i,j] of ruinGlowBoxEdges){
-      const a=depths[i],b=depths[j];if((a<0&&b<=0)||(a>=0&&b>=0))continue;
-      const fraction=a/(a-b),start=corners[i],end=corners[j];
-      project(start.x+(end.x-start.x)*fraction,start.y+(end.y-start.y)*fraction,start.z+(end.z-start.z)*fraction);
-    }
-    return ruinGlowClipPoints.length>=3&&ruinGlowConvexHull(ruinGlowClipPoints,ruinGlowClipHull)?ruinGlowClipHull:null;
+  function glyphCenter(mesh){
+    mesh.updateWorldMatrix?.(true,false);
+    if(!mesh.geometry?.boundingSphere)mesh.geometry?.computeBoundingSphere?.();
+    const sphere=mesh.geometry?.boundingSphere;
+    if(sphere)ruinGlowProjection.copy(sphere.center).applyMatrix4(mesh.matrixWorld);
+    else mesh.getWorldPosition?.(ruinGlowProjection);
+    return Number.isFinite(ruinGlowProjection.x)&&Number.isFinite(ruinGlowProjection.y)&&Number.isFinite(ruinGlowProjection.z);
   }
-  let ruinGlowPlatformClipCount=0; // Pixel Probe reports how often a platform actually subtracts from a projected rune panel.
-  function updateRuinPlatformMasks() {
-    const near=Math.max(.001,Number(lightingDeps.camera?.near)||.001);
-    const rect=lightingDeps.getThreeRect?.()||{};
-    const width=Number(rect.width)||lightingDeps.lctx.canvas?.width||Infinity,height=Number(rect.height)||lightingDeps.lctx.canvas?.height||Infinity;
-    for(const mask of ruinGlowPlatforms){
-      mask.ready=false;
-      let node=mask.node,visible=true;
-      for(let parent=node;parent;parent=parent.parent)if(parent.visible===false){visible=false;break;}
-      const material=Array.isArray(node.material)?node.material[0]:node.material;
-      if(!visible||material?.visible===false||(material?.transparent===true&&Number(material.opacity)<.5))continue; // An invisible/faded slab cannot block a visible glyph.
-      node.updateWorldMatrix?.(true,false);
-      if(!node.geometry?.boundingBox)node.geometry?.computeBoundingBox?.(); // TileSpan may replace the source geometry after scene discovery.
-      const bounds=node.geometry?.boundingBox;
-      if(!bounds)continue;
-      let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity,minDepth=Infinity,maxDepth=-Infinity;
-      let worldX=0,worldY=0,worldZ=0; // Mean of world corners follows the actual moving slab.
-      const corners=mask.corners,points=mask.points; // Per-slab storage survives every lighting refresh.
-      for(let i=0;i<8;i++){
-        ruinGlowPlatformVertex.set(i&1?bounds.max.x:bounds.min.x,i&2?bounds.max.y:bounds.min.y,i&4?bounds.max.z:bounds.min.z).applyMatrix4(node.matrixWorld);
-        const corner=corners[i];corner.x=ruinGlowPlatformVertex.x;corner.y=ruinGlowPlatformVertex.y;corner.z=ruinGlowPlatformVertex.z;
-        worldX+=corner.x;worldY+=corner.y;worldZ+=corner.z;
-        const depth=(corner.x-ruinGlowCameraPosition.x)*ruinGlowCameraDirection.x
-          +(corner.y-ruinGlowCameraPosition.y)*ruinGlowCameraDirection.y
-          +(corner.z-ruinGlowCameraPosition.z)*ruinGlowCameraDirection.z;
-        minDepth=Math.min(minDepth,depth);maxDepth=Math.max(maxDepth,depth);
-      }
-      if(maxDepth<=near+.012)continue; // Entire slab is behind the camera's near plane.
-      if(minDepth<=near+.012){
-        // Slab crossing the near plane: retain the camera-facing part of its real box,
-        // rather than dropping the entire platform and revealing wall runes through it.
-        const margin=near+.012,cam=ruinGlowCameraPosition,dir=ruinGlowCameraDirection;
-        const visibleHull=ruinGlowFrontHalfHull(mask,dir.x,dir.y,dir.z,
-          cam.x+dir.x*margin,cam.y+dir.y*margin,cam.z+dir.z*margin,1,near);
-        if(!visibleHull)continue;
-        mask.hull.length=0;
-        for(let i=0;i<visibleHull.length;i++){
-          const point=visibleHull[i],owned=mask.hullPoints[i];owned.x=point.x;owned.y=point.y;mask.hull.push(owned);
-          minX=Math.min(minX,point.x);maxX=Math.max(maxX,point.x);
-          minY=Math.min(minY,point.y);maxY=Math.max(maxY,point.y);
+  function glyphBounds(mesh){
+    mesh.updateWorldMatrix?.(true,false);
+    if(!mesh.geometry?.boundingBox)mesh.geometry?.computeBoundingBox?.();
+    if(!mesh.geometry?.boundingBox)return null;
+    return new window.THREE.Box3().copy(mesh.geometry.boundingBox).applyMatrix4(mesh.matrixWorld); // Discovery only, not every frame.
+  }
+  function glyphIntersectsRegion(box,bounds){
+    return !!box&&!!bounds&&box.max.x>=bounds.minX&&box.min.x<=bounds.maxX
+      &&box.max.z>=bounds.minZ&&box.min.z<=bounds.maxZ&&box.max.y>=bounds.minY&&box.min.y<=bounds.maxY;
+  }
+  function setKanthicClipBounds(bounds){
+    kanthicClipPlanes.length=0;
+    if(!bounds)return;
+    const THREE=window.THREE;
+    for(const [x,y,z,c] of [[1,0,0,-bounds.minX],[-1,0,0,bounds.maxX],[0,0,1,-bounds.minZ],[0,0,-1,bounds.maxZ],[0,1,0,-bounds.minY],[0,-1,0,bounds.maxY]]){
+      if(Number.isFinite(c))kanthicClipPlanes.push(new THREE.Plane(new THREE.Vector3(x,y,z),c));
+    }
+  }
+  function glyphAttachedAndVisible(mesh,scene){
+    if(mesh.visible===false)return false;
+    let parent=mesh.parent;
+    for(;parent&&parent!==scene;parent=parent.parent)if(parent.visible===false)return false;
+    return parent===scene;
+  }
+  function scanRuinGlowMeshes(scene,now,force=false){
+    if(!scene?.traverse)return false;
+    if(!force&&ruinGlowScene===scene&&now<ruinGlowNextScan)return false;
+    ruinGlowScene=scene;ruinGlowNextScan=now+1600;ruinGlowMeshes=[];
+    scene.traverse(node=>{
+      if(node.isMesh&&(node.name==='engraving-glyph-glow'||node.userData?.ruinLadderRuneGlow))ruinGlowMeshes.push(node);
+    });
+    ruinGlowStats.found=ruinGlowMeshes.length;ruinGlowStats.scans++;
+    return true;
+  }
+  function restoreKanthicCanvas(){
+    if(kanthicCanvas){
+      if(kanthicCanvas.style)kanthicCanvas.style.visibility=kanthicCanvasVisibility;
+      kanthicCanvas=null;
+    }
+  }
+  function resetKanthicGlyphCache(){
+    restoreKanthicCanvas();
+    kanthicRecords=[];kanthicActiveRecords=[];kanthicRegion=null;kanthicRegionBounds=null;
+    setKanthicClipBounds(null);
+    kanthicTexture?.dispose?.();kanthicTexture=null;kanthicUploadCanvas=null;kanthicUploadAt=-Infinity;kanthicWidth=kanthicHeight=0;
+    if(kanthicQuadScene)kanthicQuadScene.children[0].material.uniforms.tLighting.value=null;
+    ruinGlowStats.uploadPixels=0;
+    if(kanthicProxyScene)for(let i=kanthicProxyScene.children.length-1;i>=0;i--)kanthicProxyScene.remove(kanthicProxyScene.children[i]);
+    ruinGlowScene=null;ruinGlowMeshes=[];ruinGlowNextScan=0;
+    ruinGlowStats.found=ruinGlowStats.drawn=ruinGlowStats.roomCandidates=0;ruinGlowStats.region=null;
+  }
+  function prepareKanthicGlyphFrame(scene,now){
+    if(!isKanthicGlyphArea()||!scene?.traverse){
+      if(kanthicRecords.length||kanthicCanvas||kanthicRegion!==null)resetKanthicGlyphCache();
+      return false;
+    }
+    const system=window.RuinRoomSystem;
+    const region=system?.activeGlyphRegion?.()||null; // One occupied chamber or the shared vertical shaft, never all unassigned corridors.
+    const bounds=region?system?.glyphRegionBounds?.(region):null;
+    const changed=region!==kanthicRegion||bounds!==kanthicRegionBounds;
+    const scanned=scanRuinGlowMeshes(scene,now);
+    if(scanned){
+      kanthicRecords=ruinGlowMeshes.map(mesh=>({mesh,bounds:glyphBounds(mesh),hidden:false,proxy:null}));
+    }
+    if(scanned||changed){
+      kanthicRegion=region;kanthicRegionBounds=bounds;setKanthicClipBounds(bounds);
+      kanthicActiveRecords=bounds?kanthicRecords.filter(record=>glyphIntersectsRegion(record.bounds,bounds)):[];
+      if(!kanthicProxyScene){kanthicProxyScene=new window.THREE.Scene();kanthicProxyScene.name='kanthic_room_glyph_depth';}
+      for(let i=kanthicProxyScene.children.length-1;i>=0;i--)kanthicProxyScene.remove(kanthicProxyScene.children[i]);
+      for(const record of kanthicActiveRecords){
+        const mesh=record.mesh;
+        let proxy=kanthicProxyCache.get(mesh);
+        if(!proxy){
+          proxy=new window.THREE.Mesh(mesh.geometry,mesh.material);
+          proxy.matrixAutoUpdate=false;proxy.frustumCulled=true;proxy.layers.set(KANTHIC_GLYPH_LAYER);
+          proxy.onBeforeRender=(...args)=>mesh.onBeforeRender?.call(mesh,...args); // Preserve authored pulse and palette.
+          kanthicProxyCache.set(mesh,proxy);
         }
-        mask.ready=true;
-      }else{
-        for(let i=0;i<8;i++){
-          const corner=corners[i],point=lightingDeps.worldToOverlay(corner.x,corner.y,corner.z);
-          if(!Number.isFinite(point.x)||!Number.isFinite(point.y)){visible=false;break;}
-          points[i].x=point.x;points[i].y=point.y;
-          minX=Math.min(minX,point.x);maxX=Math.max(maxX,point.x);
-          minY=Math.min(minY,point.y);maxY=Math.max(maxY,point.y);
-        }
-        if(!visible)continue;
-        mask.ready=ruinGlowConvexHull(points,mask.hull); // Convex silhouette includes the slab's solid top and sides.
+        record.proxy=proxy;kanthicProxyScene.add(proxy);
       }
-      if(!mask.ready||maxX<0||maxY<0||minX>width||minY>height){mask.ready=false;continue;} // Moving offscreen must invalidate last frame's cached stencil, not reuse stale bounds.
-      mask.minX=minX;mask.maxX=maxX;mask.minY=minY;mask.maxY=maxY; // Broad-phase screen bounds keep offscreen slabs from clipping unrelated runes.
-      mask.minDepth=minDepth;mask.maxDepth=maxDepth;
-      mask.worldX=worldX/8;mask.worldY=worldY/8;mask.worldZ=worldZ/8;
     }
+    ruinGlowStats.region=region;ruinGlowStats.roomCandidates=kanthicActiveRecords.length;
+    ruinGlowStats.drawn=0;ruinGlowStats.examined=0;ruinGlowStats.triangles=0;
+    kanthicFrame=true; // endKanthicGlyphFrame restores the actual scene's visibility even if rendering fails.
+    for(const record of kanthicActiveRecords){
+      const mesh=record.mesh,proxy=record.proxy;
+      proxy.visible=glyphAttachedAndVisible(mesh,scene)&&!!mesh.material?.map&&mesh.material.visible!==false;
+      if(proxy.visible)mesh.updateWorldMatrix?.(true,false); // Moving slabs keep current transforms; tall shaft panels are not rejected by center height.
+      if(!proxy.visible)continue;
+      proxy.geometry=mesh.geometry;proxy.material=mesh.material;proxy.renderOrder=mesh.renderOrder;
+      proxy.matrix.copy(mesh.matrixWorld);proxy.matrixWorldNeedsUpdate=true;
+      ruinGlowStats.drawn++;
+    }
+    for(const record of kanthicRecords){
+      record.hidden=record.mesh.visible!==false;
+      if(record.hidden)record.mesh.visible=false; // No base-pass emissive draw, including every off-room glyph.
+    }
+    if(kanthicProxyScene)kanthicProxyScene.fog=scene.fog;
+    if(!ruinGlowStats.drawn||Number(lightingDeps.getSceneTransAlpha?.())>0)restoreKanthicCanvas();
+    return true;
   }
-  function withRuinPlatformGlyphClip(ctx,mesh,meshRadius,meshCenter,draw){
-    if(!ruinGlowPlatforms.length||!ctx.rect||!ctx.clip)return draw();
-    const rect=lightingDeps.getThreeRect?.()||{};
-    const width=Number(rect.width)||ctx.canvas?.width||1,height=Number(rect.height)||ctx.canvas?.height||1;
-    const depth=(meshCenter.x-ruinGlowCameraPosition.x)*ruinGlowCameraDirection.x
-      +(meshCenter.y-ruinGlowCameraPosition.y)*ruinGlowCameraDirection.y
-      +(meshCenter.z-ruinGlowCameraPosition.z)*ruinGlowCameraDirection.z;
-    const position=mesh.geometry?.getAttribute?.('position'),indices=mesh.geometry?.index?.array;
-    let planeValid=false,nx=0,ny=0,nz=0,cameraSide=0; // For a planar engraving, the plane separates physically foreground slabs from background slabs.
-    if(position?.array&&position.count>=3){
-      const vertices=position.array,i0=indices?indices[0]:0,i1=indices?indices[1]:1,i2=indices?indices[2]:2;
-      ruinGlowWallPlaneA.set(vertices[i0*3],vertices[i0*3+1],vertices[i0*3+2]).applyMatrix4(mesh.matrixWorld);
-      ruinGlowWallPlaneB.set(vertices[i1*3],vertices[i1*3+1],vertices[i1*3+2]).applyMatrix4(mesh.matrixWorld);
-      ruinGlowWallPlaneC.set(vertices[i2*3],vertices[i2*3+1],vertices[i2*3+2]).applyMatrix4(mesh.matrixWorld);
-      const bx=ruinGlowWallPlaneB.x-ruinGlowWallPlaneA.x,by=ruinGlowWallPlaneB.y-ruinGlowWallPlaneA.y,bz=ruinGlowWallPlaneB.z-ruinGlowWallPlaneA.z;
-      const cx=ruinGlowWallPlaneC.x-ruinGlowWallPlaneA.x,cy=ruinGlowWallPlaneC.y-ruinGlowWallPlaneA.y,cz=ruinGlowWallPlaneC.z-ruinGlowWallPlaneA.z;
-      nx=by*cz-bz*cy;ny=bz*cx-bx*cz;nz=bx*cy-by*cx;
-      cameraSide=(ruinGlowCameraPosition.x-ruinGlowWallPlaneA.x)*nx
-        +(ruinGlowCameraPosition.y-ruinGlowWallPlaneA.y)*ny
-        +(ruinGlowCameraPosition.z-ruinGlowWallPlaneA.z)*nz;
-      planeValid=nx*nx+ny*ny+nz*nz>1e-8
-        &&Math.abs(nx*ruinGlowCameraDirection.x+ny*ruinGlowCameraDirection.y+nz*ruinGlowCameraDirection.z)>1e-6
-        &&Math.abs(cameraSide)>1e-6;
-    }
-    const projected=lightingDeps.worldToOverlay(meshCenter.x,meshCenter.y,meshCenter.z);
-    const radius=lightScreenRadius(meshCenter.x,meshCenter.z,meshCenter.y,meshRadius);
-    let saved=false;
+  function endKanthicGlyphFrame(){
+    if(!kanthicFrame)return;
+    for(const record of kanthicRecords)if(record.hidden){record.mesh.visible=true;record.hidden=false;}
+    kanthicFrame=false;
+  }
+  function boundedKanthicTextureSource(canvas){
+    const pixels=canvas.width*canvas.height;
+    if(pixels<=KANTHIC_LIGHT_UPLOAD_PIXELS||typeof document==='undefined')return canvas;
+    if(!kanthicUploadCanvas)kanthicUploadCanvas=document.createElement('canvas');
+    const scale=Math.sqrt(KANTHIC_LIGHT_UPLOAD_PIXELS/pixels);
+    const w=Math.max(1,Math.floor(canvas.width*scale)),h=Math.max(1,Math.floor(canvas.height*scale));
+    if(kanthicUploadCanvas.width!==w)kanthicUploadCanvas.width=w;
+    if(kanthicUploadCanvas.height!==h)kanthicUploadCanvas.height=h;
+    return kanthicUploadCanvas;
+  }
+  function renderKanthicGlyphFrame(renderer,camera,scene,direct=false){
+    if(!kanthicFrame||!ruinGlowStats.drawn||Number(lightingDeps.getSceneTransAlpha?.())>0)return false;
+    const canvas=lightingDeps.lctx?.canvas;
+    if(!canvas?.style||!canvas.width||!canvas.height){restoreKanthicCanvas();return false;}
+    const THREE=window.THREE;
+    const oldAutoClear=renderer.autoClear,oldMask=camera.layers.mask,oldClipping=renderer.localClippingEnabled; // Existing target and depth buffer stay bound for both draws.
+    let painted=false;
     try{
-      for(const mask of ruinGlowPlatforms){
-        if(!mask.ready||mask.maxX<projected.x-radius||mask.minX>projected.x+radius
-          ||mask.maxY<projected.y-radius||mask.minY>projected.y+radius)continue;
-        let hull=mask.hull;
-        if(planeValid){
-          let front=0,back=0;const sign=cameraSide>0?1:-1;
-          for(const corner of mask.corners){
-            const side=((corner.x-ruinGlowWallPlaneA.x)*nx+(corner.y-ruinGlowWallPlaneA.y)*ny+(corner.z-ruinGlowWallPlaneA.z)*nz)*sign;
-            if(side>1e-5)front++;else if(side< -1e-5)back++;
-          }
-          if(!front)continue; // Entire slab is physically behind the wall.
-          if(back){
-            hull=ruinGlowFrontHalfHull(mask,nx,ny,nz,ruinGlowWallPlaneA.x,ruinGlowWallPlaneA.y,ruinGlowWallPlaneA.z,cameraSide,Math.max(.001,Number(lightingDeps.camera?.near)||.001));
-            if(!hull)continue; // Only the camera-facing portion of a slab crossing the wall plane can erase glyph ink.
-          }
-        }else if(mask.minDepth>=depth-.035)continue; // Degenerate or edge-on glyphs retain the conservative camera-depth fallback.
-        if(!saved){ctx.save();saved=true;}
-        ctx.beginPath();ctx.rect(-2,-2,width+4,height+4);
-        ctx.moveTo(hull[0].x,hull[0].y);
-        for(let i=1;i<hull.length;i++)ctx.lineTo(hull[i].x,hull[i].y);
-        ctx.closePath();ctx.clip('evenodd'); // Intersect inverse silhouettes: overlap between slabs can never uncover a rune again.
-        ruinGlowPlatformClipCount++;
+      if(kanthicWidth!==canvas.width||kanthicHeight!==canvas.height){
+        kanthicWidth=canvas.width;kanthicHeight=canvas.height;lastUnifiedLightingDraw=-Infinity;kanthicUploadAt=-Infinity;
       }
-      return draw();
-    }finally{if(saved)ctx.restore();}
-  }
-  const ruinGlowRaycaster=window.THREE.Raycaster?new window.THREE.Raycaster():null; // Reused to establish 3D visibility before clearing 2D darkness.
-  const ruinGlowRayDirection=new window.THREE.Vector3(); // Shared camera-to-surface ray scratch vector.
-  const ruinGlowRayHits=[]; // Reused output buffer for all depth checks.
-  let ruinGlowOcclusionChecks=0,ruinGlowOccluded=0; // Exposed through Pixel Probe to diagnose remaining wall-through-glyph cases.
-  function ruinGlyphOccluded(center) {
-    if(!ruinGlowRaycaster||!ruinGlowOccluders.length)return false;
-    ruinGlowRayDirection.copy(center).sub(ruinGlowCameraPosition);
-    const distance=ruinGlowRayDirection.length();
-    if(!(distance>.12))return false;
-    ruinGlowRayDirection.multiplyScalar(1/distance);
-    ruinGlowRaycaster.set(ruinGlowCameraPosition,ruinGlowRayDirection);
-    ruinGlowRaycaster.far=distance-.085; // Coplanar stone and glyph are the same surface; reject only geometry distinctly nearer.
-    ruinGlowRaycaster.near=0;
-    ruinGlowRayHits.length=0;
-    ruinGlowRaycaster.intersectObjects(ruinGlowOccluders,false,ruinGlowRayHits);
-    ruinGlowOcclusionChecks++;
-    for(const hit of ruinGlowRayHits){
-      let visible=true;
-      for(let node=hit.object;node;node=node.parent)if(node.visible===false){visible=false;break;}
-      if(visible) {ruinGlowOccluded++;return true;} // An overhead wing hidden by story-culling is not a physical occluder.
-    }
-    return false;
-  }
-  let ruinGlowVertexScreen = new Float32Array(0); // Shared projected vertex buffer, resized only for the largest encountered engraving mesh.
-  const ruinGlowPatternCache = new WeakMap(); // One repeated-rune CanvasPattern per loaded image, reused across darkness refreshes.
-  const ruinGlowDrawResult={drawn:0,examined:0}; // Shared result avoids allocating a record for every wall on each lighting refresh.
-
-  function drawRuinGlyphSilhouette(ctx,mesh,remainingTriangles,result) {
-    result.drawn=0;result.examined=0; // Invalid textures and unready meshes must not consume a triangle budget.
-    const geometry=mesh.geometry,position=geometry?.getAttribute?.('position'),uv=geometry?.getAttribute?.('uv');
-    const image=mesh.material?.map?.image,iw=image?.naturalWidth||image?.width,ih=image?.naturalHeight||image?.height;
-    if(!position?.array||!uv?.array||!(iw>0&&ih>0)||!remainingTriangles
-      ||!ctx.save||!ctx.restore||!ctx.clip||!ctx.transform||!ctx.drawImage)return;
-    const count=Math.min(position.count||position.array.length/3,uv.count||uv.array.length/2);
-    if(count<3)return;
-    const indices=geometry.index?.array||null,uvs=uv.array;
-    const total=Math.min(remainingTriangles,Math.floor((indices?.length||count)/3));
-    if(!total)return;
-    result.examined=total; // Charge every triangle considered, including triangles culled from the viewport.
-    let projectCount=Math.min(count,total*3);
-    if(indices){projectCount=0;for(let i=0;i<total*3;i++)projectCount=Math.max(projectCount,Math.min(count,indices[i]+1));}
-    if(ruinGlowVertexScreen.length<projectCount*2)ruinGlowVertexScreen=new Float32Array(projectCount*2); // No per-refresh allocations after reaching the largest active wall.
-    const screen=ruinGlowVertexScreen,xyz=position.array;
-    const near=Math.max(0.001,Number(lightingDeps.camera?.near)||0.001);
-    for(let i=0;i<projectCount;i++){
-      ruinGlowVertex.set(xyz[i*3],xyz[i*3+1],xyz[i*3+2]).applyMatrix4(mesh.matrixWorld);
-      const dx=ruinGlowVertex.x-ruinGlowCameraPosition.x,dy=ruinGlowVertex.y-ruinGlowCameraPosition.y,dz=ruinGlowVertex.z-ruinGlowCameraPosition.z;
-      if(dx*ruinGlowCameraDirection.x+dy*ruinGlowCameraDirection.y+dz*ruinGlowCameraDirection.z<=near){
-        screen[i*2]=NaN;screen[i*2+1]=NaN;continue;
+      drawUnifiedLightingOverlay(); // Reuse the normal throttled light paint, including lanterns, checkpoints and fog tint.
+      const uploadSource=boundedKanthicTextureSource(canvas);
+      if(!kanthicTexture||kanthicTexture.image!==uploadSource){
+        kanthicTexture?.dispose?.();
+        kanthicTexture=new THREE.CanvasTexture(uploadSource);
+        kanthicTexture.minFilter=THREE.LinearFilter;kanthicTexture.magFilter=THREE.LinearFilter;
+        kanthicTexture.generateMipmaps=false;kanthicUploadAt=-Infinity;
+        if(!kanthicQuadScene){
+          kanthicQuadScene=new THREE.Scene();kanthicQuadScene.name='kanthic_lighting_quad';kanthicQuadCamera=new THREE.Camera();kanthicQuadCamera.layers.set(KANTHIC_GLYPH_LAYER);
+          const material=new THREE.ShaderMaterial({
+            uniforms:{tLighting:{value:kanthicTexture}},
+            vertexShader:'varying vec2 vUv; void main(){vUv=uv; gl_Position=vec4(position.xy,0.0,1.0);}',
+            fragmentShader:'uniform sampler2D tLighting; varying vec2 vUv; void main(){gl_FragColor=texture2D(tLighting,vUv);}',
+            transparent:true,depthTest:false,depthWrite:false,toneMapped:false,
+          });
+          const quad=new THREE.Mesh(new THREE.PlaneGeometry(2,2),material);
+          quad.frustumCulled=false;quad.layers.set(KANTHIC_GLYPH_LAYER);kanthicQuadScene.add(quad);
+        }else kanthicQuadScene.children[0].material.uniforms.tLighting.value=kanthicTexture;
       }
-      const point=lightingDeps.worldToOverlay(ruinGlowVertex.x,ruinGlowVertex.y,ruinGlowVertex.z);
-      screen[i*2]=point.x;screen[i*2+1]=point.y;
-    }
-    const rect=lightingDeps.getThreeRect?.();
-    const width=Number(rect?.width||ctx.canvas?.clientWidth||ctx.canvas?.width)||Infinity;
-    const height=Number(rect?.height||ctx.canvas?.clientHeight||ctx.canvas?.height)||Infinity;
-    const texture=mesh.material.map;
-    const upsideDown=texture.flipY!==false; // CanvasTexture and repeating rune PNGs use GL's bottom-up UV convention.
-    const repeat=texture.wrapS===window.THREE?.RepeatWrapping&&texture.wrapT===window.THREE?.RepeatWrapping;
-    let pattern=null; // A repeat-wrapped climbing rune must keep its full strip, not only its first texture tile.
-    if(repeat){
-      if(!ctx.createPattern)return;
-      pattern=ruinGlowPatternCache.get(image);
-      if(!pattern){pattern=ctx.createPattern(image,'repeat');if(!pattern)return;ruinGlowPatternCache.set(image,pattern);}
-    }
-    let drawn=0;
-    const previousAlpha=ctx.globalAlpha; // Preserve the caller's compositing state across mesh draws.
-    ctx.globalAlpha=previousAlpha*Math.min(1,Math.max(0,Number(mesh.material.opacity)||0)); // The engraving's authored pulse also controls its darkness exemption.
-    for(let t=0;t<total;t++){
-      const i0=indices?indices[t*3]:t*3,i1=indices?indices[t*3+1]:t*3+1,i2=indices?indices[t*3+2]:t*3+2;
-      if(i0>=count||i1>=count||i2>=count)continue;
-      const x0=screen[i0*2],y0=screen[i0*2+1],x1=screen[i1*2],y1=screen[i1*2+1],x2=screen[i2*2],y2=screen[i2*2+1];
-      if(!Number.isFinite(x0)||!Number.isFinite(y0)||!Number.isFinite(x1)||!Number.isFinite(y1)||!Number.isFinite(x2)||!Number.isFinite(y2)
-        ||Math.max(x0,x1,x2)<0||Math.max(y0,y1,y2)<0||Math.min(x0,x1,x2)>width||Math.min(y0,y1,y2)>height)continue;
-      const u0=uvs[i0*2]*iw,v0=(upsideDown?1-uvs[i0*2+1]:uvs[i0*2+1])*ih;
-      const u1=uvs[i1*2]*iw,v1=(upsideDown?1-uvs[i1*2+1]:uvs[i1*2+1])*ih;
-      const u2=uvs[i2*2]*iw,v2=(upsideDown?1-uvs[i2*2+1]:uvs[i2*2+1])*ih;
-      const du1=u1-u0,dv1=v1-v0,du2=u2-u0,dv2=v2-v0,det=du1*dv2-du2*dv1;
-      if(Math.abs(det)<1e-5)continue; // Degenerate UVs do not define a visible carved surface.
-      const dx1=x1-x0,dy1=y1-y0,dx2=x2-x0,dy2=y2-y0;
-      const a=(dx1*dv2-dx2*dv1)/det,b=(dy1*dv2-dy2*dv1)/det;
-      const c=(du1*dx2-du2*dx1)/det,d=(du1*dy2-du2*dy1)/det;
-      ctx.save();
-      try{
-        ctx.beginPath();ctx.moveTo(x0,y0);ctx.lineTo(x1,y1);ctx.lineTo(x2,y2);ctx.closePath();ctx.clip();
-        ctx.transform(a,b,c,d,x0-a*u0-c*v0,y0-b*u0-d*v0);
-        if(pattern){
-          ctx.fillStyle=pattern;
-          ctx.fillRect(Math.min(u0,u1,u2)-1,Math.min(v0,v1,v2)-1,
-            Math.max(u0,u1,u2)-Math.min(u0,u1,u2)+2,Math.max(v0,v1,v2)-Math.min(v0,v1,v2)+2);
-        }else ctx.drawImage(image,0,0,iw,ih); // Only textured alpha clears darkness; adjacent stone remains black.
-      }finally{ctx.restore();}
-      drawn++;
-    }
-    ctx.globalAlpha=previousAlpha;
-    result.drawn=drawn;
-  }
-
-  function drawRuinPatternGlowMasks(scene, now) {
-    if (!scene?.traverse) return;
-    if (ruinGlowScene !== scene || now >= ruinGlowNextScan) {
-      ruinGlowScene = scene;ruinGlowNextScan = now + 1600;
-      ruinGlowMeshes=[];ruinGlowOccluders=[];ruinGlowPlatforms=[]; // Cache glyphs, heavy stone casters and solid slab silhouettes separately.
-      scene.traverse(node => {
-        if(!node.isMesh)return;
-        if(node.name === 'engraving-glyph-glow' || node.userData?.ruinLadderRuneGlow){ruinGlowMeshes.push(node);return;}
-        if(!node.geometry||node.userData?.devRuinFootprintIgnore||node.userData?.furniturePattern)return;
-        const name=String(node.name||'');
-        if(node.userData?.ruinShaftPlatform===true){ // TileSpan may replace BoxGeometry with BufferGeometry; the authored slab flag survives.
-          if(ruinGlowPlatforms.length<MAX_RUIN_GLOW_PLATFORMS){
-            node.geometry.computeBoundingBox?.();
-            ruinGlowPlatforms.push({node,points:Array.from({length:8},()=>({x:0,y:0})),corners:Array.from({length:8},()=>({x:0,y:0,z:0})),planeDistances:new Float32Array(8),hullPoints:Array.from({length:20},()=>({x:0,y:0})),hull:[],ready:false});
-          }
-          return; // The box silhouette must clip partially obscured wall glyphs instead of hiding their entire atlas.
+      if(kanthicUploadAt!==unifiedLightingPaintRevision){
+        if(uploadSource!==canvas){
+          const ctx=uploadSource.getContext('2d');
+          ctx.globalCompositeOperation='copy';ctx.drawImage(canvas,0,0,uploadSource.width,uploadSource.height);
         }
-        if(ruinGlowOccluders.length>=240)return;
-        if(!node.userData?.cameraObstacle&&!node.userData?.ruinInteriorWall&&!node.userData?.transitDoor
-          &&!/wall|pillar|column|slab|stone.door|coffin.lid|stone$/i.test(name))return;
-        const material=Array.isArray(node.material)?node.material[0]:node.material;
-        if(material?.visible===false||(material?.transparent===true&&Number(material.opacity)<.5))return;
-        ruinGlowOccluders.push(node);
-      });
-      ruinGlowStats.scans++;ruinGlowStats.found=ruinGlowMeshes.length;
-    }
-    const ctx = lightingDeps.lctx, playerY = Number(lightingDeps.getPlayerWorldY?.());
-    const kanthic=activeRuinTradition()==='kanthic'; // Other ruin traditions keep their existing atmospheric glow radius.
-    ruinGlowStats.drawn = 0;ruinGlowStats.triangles=0;ruinGlowStats.examined=0;ruinGlowOcclusionChecks=0;ruinGlowOccluded=0;ruinGlowPlatformClipCount=0;
-    let platformMasksPrepared=false; // A scene may contain dozens of shaft slabs but no glyph in view; defer 3D corner projection until one actually needs it.
-    if(kanthic){lightingDeps.camera?.getWorldPosition?.(ruinGlowCameraPosition);lightingDeps.camera?.getWorldDirection?.(ruinGlowCameraDirection);}
-    ctx.globalCompositeOperation = 'destination-out';
-    for (const mesh of ruinGlowMeshes) {
-      if (ruinGlowStats.drawn >= 80 || kanthic && ruinGlowStats.examined>=MAX_RUIN_GLOW_TRIANGLES
-        || !mesh.material?.visible || !(mesh.material.opacity > .001)) continue;
-      let visible=true; // Hidden upper wings and removed scene groups must not punch unexplained holes in darkness.
-      for (let parent=mesh;parent && parent!==scene;parent=parent.parent) {
-        if (parent.visible === false) {visible=false;break;}
+        kanthicTexture.needsUpdate=true;kanthicUploadAt=unifiedLightingPaintRevision;ruinGlowStats.textureUploads++;
+        ruinGlowStats.uploadPixels=uploadSource.width*uploadSource.height;
       }
-      if (!visible) continue;
-      mesh.updateWorldMatrix?.(true,false);
-      if (!mesh.geometry?.boundingSphere) mesh.geometry?.computeBoundingSphere?.();
-      const sphere=mesh.geometry?.boundingSphere;
-      if (sphere) ruinGlowProjection.copy(sphere.center).applyMatrix4(mesh.matrixWorld);
-      else mesh.getWorldPosition?.(ruinGlowProjection);
-      if (!Number.isFinite(ruinGlowProjection.x) || !Number.isFinite(ruinGlowProjection.y) || !Number.isFinite(ruinGlowProjection.z)
-        || Number.isFinite(playerY) && Math.abs(ruinGlowProjection.y - playerY) > 11) continue;
-      ruinGlowSource.x=ruinGlowProjection.x;ruinGlowSource.y=ruinGlowProjection.y;ruinGlowSource.z=ruinGlowProjection.z;
+      renderer.autoClear=false; // Never clear world depth or stencil.
+      if(direct)window.PngPlaneOutlineOccluder?.renderDepth?.(scene); // The outlines-off path also respects alpha-cutout actors/props.
+      renderer.render(kanthicQuadScene,kanthicQuadCamera);
+      painted=true;
+      camera.layers.set(KANTHIC_GLYPH_LAYER); // No base-world replay on auxiliary glyphs.
+      renderer.localClippingEnabled=true;
+      for(const record of kanthicActiveRecords){
+        const material=record.proxy?.material;
+        if(!record.proxy?.visible||!material||kanthicMaterialStates.has(material))continue;
+        kanthicMaterialStates.set(material,{planes:material.clippingPlanes,intersection:material.clipIntersection});
+        material.clippingPlanes=kanthicClipPlanes;material.clipIntersection=false;
+      }
+      renderer.render(kanthicProxyScene,camera); // Ordinary material depthTest rejects every foreground solid/alpha-tested pixel.
+      ruinGlowStats.depthPasses++;ruinGlowStats.lastError=null;
+      return true;
+    }catch(error){
+      ruinGlowStats.lastError=String(error?.message||error);
+      return false;
+    }finally{
+      for(const [material,state] of kanthicMaterialStates){material.clippingPlanes=state.planes;material.clipIntersection=state.intersection;}
+      kanthicMaterialStates.clear();renderer.localClippingEnabled=oldClipping;
+      renderer.autoClear=oldAutoClear;camera.layers.mask=oldMask;
+      if(painted){
+        if(kanthicCanvas!==canvas){restoreKanthicCanvas();kanthicCanvas=canvas;kanthicCanvasVisibility=canvas.style.visibility||'';}
+        if(canvas.style.visibility!=='hidden')canvas.style.visibility='hidden'; // The GPU already composited this exact canvas; never double-darken.
+      }else restoreKanthicCanvas();
+    }
+  }
+
+  function drawRuinPatternGlowMasks(scene,now){
+    // Only Hronal/Tothal retain their original small radial ambient masks.
+    // Kanthic's depth-tested emissive pass never modifies this 2D canvas.
+    if(isKanthicGlyphArea())return;
+    scanRuinGlowMeshes(scene,now);
+    const ctx=lightingDeps.lctx,playerY=Number(lightingDeps.getPlayerWorldY?.());
+    ruinGlowStats.drawn=0;
+    ctx.globalCompositeOperation='destination-out';
+    for(const mesh of ruinGlowMeshes){
+      if(ruinGlowStats.drawn>=80||!mesh.material?.visible||!(mesh.material.opacity>.001)
+        ||!glyphAttachedAndVisible(mesh,scene)||!glyphCenter(mesh))continue;
+      const {x,y,z}=ruinGlowProjection;
+      if(Number.isFinite(playerY)&&Math.abs(y-playerY)>11)continue;
+      ruinGlowSource.x=x;ruinGlowSource.y=y;ruinGlowSource.z=z;
       if(!ruinRoomLightAllowed(ruinGlowSource))continue;
-      const scale=mesh.matrixWorld?.getMaxScaleOnAxis?.() || 1;
-      const surfaceRadius=Math.max(.8,(sphere?.radius||1)*scale); // Actual geometry extent, used only to cull glyphs that are completely offscreen.
-      const radiusTiles=kanthic?surfaceRadius:Math.min(5,surfaceRadius); // Kanthic must not lose the visible end of a long wall; other themes keep legacy glow radius.
-      const center=lightingDeps.worldToOverlay(ruinGlowProjection.x,ruinGlowProjection.y,ruinGlowProjection.z);
-      const radius=lightScreenRadius(ruinGlowProjection.x,ruinGlowProjection.z,ruinGlowProjection.y,radiusTiles);
-      if (!(radius > 0) || !lightMaskIntersectsViewport(center,radius,ctx,ruinGlowProjection.x,ruinGlowProjection.y,ruinGlowProjection.z,radiusTiles)) continue;
-      if(kanthic&&ruinGlyphOccluded(ruinGlowProjection))continue; // Skip expensive 3D depth rays for offscreen engravings; nearby solid masonry still blocks them.
-      if(kanthic){
-        if(!platformMasksPrepared){updateRuinPlatformMasks();platformMasksPrepared=true;}
-        ruinGlowDrawResult.drawn=0;ruinGlowDrawResult.examined=0; // A sealed-room clip may decline the draw callback entirely.
-        withRuinRoomLightClip(ctx,ruinGlowSource,()=>withRuinPlatformGlyphClip(ctx,mesh,surfaceRadius,ruinGlowProjection,()=>{
-          drawRuinGlyphSilhouette(ctx,mesh,MAX_RUIN_GLOW_TRIANGLES-ruinGlowStats.examined,ruinGlowDrawResult);
-        })); // Real platform silhouettes subtract only the hidden glyph pixels, never their visible wall neighbor.
-        ruinGlowStats.examined+=ruinGlowDrawResult.examined;
-        ruinGlowStats.triangles+=ruinGlowDrawResult.drawn;
-        if(ruinGlowDrawResult.drawn)ruinGlowStats.drawn++;
-      } else {
-        const gradient=ctx.createRadialGradient(center.x,center.y,0,center.x,center.y,radius);
-        gradient.addColorStop(0,'rgba(0,0,0,.98)');
-        gradient.addColorStop(.58,'rgba(0,0,0,.96)');
-        gradient.addColorStop(.83,'rgba(0,0,0,.70)');
-        gradient.addColorStop(1,'rgba(0,0,0,0)');
-        ctx.fillStyle=gradient;
-        withRuinRoomLightClip(ctx,ruinGlowSource,()=>{ctx.beginPath();ctx.arc(center.x,center.y,radius,0,Math.PI*2);ctx.fill();});
-        ruinGlowStats.drawn++;
-      }
+      const radiusTiles=Math.min(5,Math.max(.8,(mesh.geometry?.boundingSphere?.radius||1)*(mesh.matrixWorld?.getMaxScaleOnAxis?.()||1)));
+      const center=lightingDeps.worldToOverlay(x,y,z),radius=lightScreenRadius(x,z,y,radiusTiles);
+      if(!(radius>0)||!lightMaskIntersectsViewport(center,radius,ctx,x,y,z,radiusTiles))continue;
+      const gradient=ctx.createRadialGradient(center.x,center.y,0,center.x,center.y,radius);
+      gradient.addColorStop(0,'rgba(0,0,0,.98)');gradient.addColorStop(.58,'rgba(0,0,0,.96)');
+      gradient.addColorStop(.83,'rgba(0,0,0,.70)');gradient.addColorStop(1,'rgba(0,0,0,0)');
+      ctx.fillStyle=gradient;
+      withRuinRoomLightClip(ctx,ruinGlowSource,()=>{ctx.beginPath();ctx.arc(center.x,center.y,radius,0,Math.PI*2);ctx.fill();});
+      ruinGlowStats.drawn++;
     }
-    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalCompositeOperation='source-over';
   }
 
   function ordinaryBuildingInterior(area) {
@@ -1488,6 +1390,7 @@
     const lightningAlpha = lightingDeps.getLightningAlpha();
     const sceneTransAlpha = lightingDeps.getSceneTransAlpha();
     const currentArea = lightingDeps.getCurrentArea(); // Selects room darkness and detects transitions that must bypass the normal redraw throttle.
+    if(!isKanthicGlyphArea())restoreKanthicCanvas(); // Exiting a ruin restores the ordinary DOM lighting owner even before the next world frame.
     const activeScene = lightingDeps.getActiveScene?.() || window.GridTileAccessors?.getActiveScene?.() || null; // The rendered scene is authoritative if the area-id update trails a transition.
     const farmhouseSceneActive = activeScene?.userData?.hobunjiPlayerFarmhouseInterior === true; // Keeps the farmhouse dark even during a temporarily stale outdoor area id.
     if (now - lastUnifiedLightingDraw < LIGHTING_OVERLAY_MIN_INTERVAL_MS && lightningAlpha <= 0 && sceneTransAlpha <= 0
@@ -1500,7 +1403,7 @@
     ctx.globalAlpha = 1; // The darkness fill must not inherit opacity changes from another canvas consumer.
     const surface = window.WeatherFX?.ensurePresentationSurface?.({ reason: 'unified-lighting-draw' }); // Keeps the authoritative replacement lighting pass on the same repaired CSS/backing dimensions as WebGL.
     const rect = surface?.rect || lightingDeps.getThreeRect();
-    ctx.clearRect(0, 0, rect.width, rect.height);
+    ctx.clearRect(0, 0, rect.width, rect.height);unifiedLightingPaintRevision++;
     outdoorLightStats.considered = outdoorLightStats.drawn = outdoorLightStats.fading = outdoorLightStats.culled = 0; // Count only lights in the latest frame for mobile debugging.
     ruinFireMaskStats.sources=ruinFireMaskStats.lit=ruinFireMaskStats.projected=ruinFireMaskStats.drawn=0; // Reset once per frame so mobile diagnostics include every light owner.
     const enclosed = farmhouseSceneActive || currentArea === 'interior'
@@ -1607,6 +1510,8 @@
     init,
     update,
     renderOutlineMist,
+    prepareKanthicGlyphFrame,renderKanthicGlyphFrame,endKanthicGlyphFrame,
+    invalidateKanthicGlyphs:()=>{ruinGlowNextScan=0;},
     setLayerRadius,
     setLayerOpacity,
     getKanthicLanternRadiusTiles:()=>tuning.lantern.radiusTiles*0.32, // Reports the same effective tiny radius used by the shared compositor.
@@ -1648,7 +1553,7 @@
         latestChange: 'All ruin traditions keep room-local light sources and steady viewport ambience without projected tunnel frames.',
         kanthicMistMode: debugArea === 'map_i_dev_random_ruin' && activeRuinTradition() === 'kanthic' ? (group?.visible ? 'cloud-forest-mist-and-underground-depth-fog' : 'mist-disabled-in-settings') : null, // Mobile Pixel Probe identifies the actual fog geometry policy.
         ruinLightOcclusion: window.RuinLightOcclusion?.debugSnapshot?.() || null, // Mobile debug readout counts scanned casters, firelight evaluations and clipped shadow projections.
-        ruinEngravingGlowMasks: { ...ruinGlowStats, occlusionCandidates:ruinGlowOccluders.length, platformCandidates:ruinGlowPlatforms.length, platformClips:ruinGlowPlatformClipCount, occlusionChecks:ruinGlowOcclusionChecks, occluded:ruinGlowOccluded }, // Mobile-visible proof that glowing wall patterns survive the darkness overlay.
+        ruinEngravingGlowMasks: { ...ruinGlowStats, mode:isKanthicGlyphArea()?'room-local-world-depth':'legacy-radial',occlusionChecks:0,platformClips:0 }, // Mobile Pixel Probe exposes active region, candidates, GPU passes and texture uploads.
         kanthicFirelight: { ...ruinFireMaskStats, ...(window.RuinMultifloorV50Style?.lightDebug?.()||{}) }, // Both emitted/visible mask counts and actual ignited brazier counts are readable without devtools.
         interiorLightRadiusMultiplier: INTERIOR_LIGHT_RADIUS_MULTIPLIER,
         interiorLightFalloff: 'ease-out',

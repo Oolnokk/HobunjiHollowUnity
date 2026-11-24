@@ -349,3 +349,11 @@ the held colour overlay. If its material writes no depth and no stencil it is
 skipped in the colourless depth submissions (`hideColorOnlyHeldVfx`). Keep VFX
 that way (`depthWrite: false`, no stencil) unless it must occlude. Every
 separate sprite is a draw call in each colour pass that includes it.
+
+### Kanthic engraving presentation
+
+Kanthic only: after the main scene and (when enabled) mist/shell depth restores, `CloudForestFog` applies the existing lighting canvas as a fullscreen texture without clearing depth, then renders the occupied room/shaft's original additive glyph geometry against the same depth buffer. The DOM lighting canvas is hidden only when already applied on the GPU and restored outside the effect. Other traditions retain their existing Canvas2D radial illumination. The original scene's glow visibility is restored in the world frame's finally block. No scene-wide depth raycasts, CPU atlas triangle projection or platform silhouette clipping are used for Kanthic.
+
+The two auxiliary draws use the named `KANTHIC_GLYPH_DEPTH` camera layer, so neither is classified as a main world draw by the held-object X-ray replay. The camera layer mask and renderer clear flag are restored even when a depth draw throws.
+
+The Kanthic redraw selects meshes by cached world-space bounds, then clips their fragments against the occupied region's world-space planes. A wide wall may span multiple rooms; a tall shaft panel is not rejected on its center height. Source material clipping state and renderer flags are restored transactionally. Lighting uploads are bounded to 524,288 pixels with a reusable downsample canvas and tracked by paint revision rather than timestamp. The GPU darkness pass sits below the DOM gameplay overlay; during unowned corridors or transition fades the existing DOM darkness path is retained.
