@@ -77,11 +77,14 @@ for (const recipeId of expandedRecipeIds) {
   assert(recipe.slots.length > 0 && recipe.slots.every(slot => slot.accepts.length > 0), `${recipeId} remains category-constrained`);
   assert(cookingData.identityNameRules[recipeId], `${recipeId} has an ingredient-led naming rule`);
 }
-// Every recipe that previously relied on another hearth output must also allow an uncooked ingredient.
+// Noodle dishes require the reusable hearth base; other cooked-food shortcuts stay unchanged.
 for (const recipeId of ['spicyNoodles', 'cheesyNoodles', 'fishNoodles', 'meatNoodles']) {
-  const recipe = cookingData.recipes.find(candidate => candidate.id === recipeId); // Ensures terminal noodle dishes are still craftable from milled flour.
-  assert(recipe.slots.find(slot => slot.id === 'noodles')?.accepts.includes('flour'), recipeId + ' can be cooked without reusing a cooked noodle dish');
+  const recipe = cookingData.recipes.find(candidate => candidate.id === recipeId); // Guards against restoring the raw-flour shortcut.
+  const slot = recipe.slots.find(candidate => candidate.id === 'noodles'); // Used to check the actual required base.
+  assert.deepEqual(Array.from(slot.accepts), ['noodleBase'], recipeId + ' requires basic noodles, not flour');
+  assert.equal(slot.required, true);
 }
+assert.deepEqual(Array.from(cookingData.recipes.find(recipe => recipe.id === 'basicNoodles').slots.map(slot => slot.id)), ['flour', 'egg'], 'basic noodles still start with flour and egg');
 for (const recipeId of ['eggToast', 'cheeseToast', 'savorySandwich', 'sweetBreadPudding', 'hearthFlatbread']) {
   const recipe = cookingData.recipes.find(candidate => candidate.id === recipeId); // Keeps toast/bread recipes reachable with uncooked flour.
   assert(recipe.slots.find(slot => slot.id === 'bread')?.accepts.includes('flour'), recipeId + ' can be cooked without recooking hearth bread');
@@ -265,5 +268,31 @@ const fishOnlyRecipe = { id: 'terminal-test', slots: [{ id: 'fish', required: tr
 assert.equal(cookingTerminal.bestAvailableSelection(fishOnlyRecipe).fish.key, 'rawRiverFish', 'cooked fish cannot feed its own cooking buff into another meal');
 terminalInventory.rawRiverFish = 0;
 assert.equal(cookingTerminal.bestAvailableSelection(fishOnlyRecipe).fish, undefined, 'only finished dishes in stock leaves a recipe unfillable');
+
+// Verify actual slot selection with generated and restored noodle definitions.
+const noodleKey = 'food_basicNoodles_test'; // Used to exercise the legacy recipe-id recovery path.
+cookingTerminal.registerCookedDefinition(noodleKey, {
+  label: 'Needlegrain Noodles', tags: ['Cooked Food', 'Noodles'],
+  foodEffects: { cooking: 4 }, cookingDefaultStars: 3,
+});
+terminalInventory.needlegrainFlour = 2;
+terminalInventory[noodleKey] = 1;
+cookingTerminal.registerCookedDefinition('food_spicyNoodles_test', {
+  label: 'Finished Spicy Noodles', cookingCategories: ['noodleBase', 'processedCrop'],
+  foodEffects: { cooking: 50 }, cookingDefaultStars: 5,
+});
+terminalInventory.food_spicyNoodles_test = 1;
+assert(cookingTerminal.listIngredientDefinitions('noodleBase').some(entry => entry.key === noodleKey));
+assert(!cookingTerminal.listIngredientDefinitions('processedCrop').some(entry => entry.key === noodleKey), 'noodle bases do not bypass other slot categories');
+for (const recipeId of ['spicyNoodles', 'cheesyNoodles', 'fishNoodles', 'meatNoodles']) {
+  const recipe = terminalContext.window.HobunjiCookingData.recipes.find(candidate => candidate.id === recipeId); // Uses live recipe data.
+  assert.equal(cookingTerminal.bestAvailableSelection(recipe).noodles.key, noodleKey);
+  assert.equal(cookingTerminal.bestAvailableSelection(recipe, { noodles: 'needlegrainFlour' }).noodles, undefined, 'old saved flour combinations cannot bypass the base requirement');
+  terminalInventory[noodleKey] = 0;
+  assert.equal(cookingTerminal.bestAvailableSelection(recipe).noodles, undefined, 'flour and finished noodle dishes cannot substitute for the base');
+  terminalInventory[noodleKey] = 1;
+}
+assert.equal(cookingTerminal.bestAvailableSelection({ slots: [{ id: 'crop', accepts: ['processedCrop'] }] }).crop?.key === noodleKey, false, 'basic noodles are restricted to noodle slots');
+assert.equal(itemProcessor.getProcessingOutputs('squeezing', noodleKey), null, 'noodle exception does not extend to other processors');
 
 console.log('skill and hearth cooking tests passed');
