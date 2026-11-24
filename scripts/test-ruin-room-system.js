@@ -226,11 +226,11 @@ assert.equal(kanthicSession.lightAllowed({x:34,y:1,z:14}),true,'Kanthic retains 
 assert.deepEqual(kanthicSession.snapshot().localLightBoundary,
   {mode:'unclipped-kanthic-screen-overlay',active:false,roomIsolated:true,canvasPasses:0,illumination:0});
 kanthicSession.dispose();
-assert.match(fogSource,/const mistActive = active && currentArea !== 'map_i_dev_random_ruin'/,
-  'Kanthic must not render a moving 3D mist cylinder');
+assert.match(fogSource,/const mistActive = active;/,
+  'Kanthic restores the Cloud Forest mist cylinders instead of suppressing them');
 assert.match(fogSource,/group\.visible = mistActive && \(!westernSlope \|\| slopeOpacityScale > 0\.002\);/,
-  'Kanthic hides all mist layers while clear Western Slope weather also skips fog');
+  'Kanthic retains the existing mist layers while clear Western Slope weather still skips them');
 assert.match(fogSource,/if \(!group\.visible\) return;/,
-  'Kanthic and calm Western Slope skip world-space mist updates');
+  'Only invisible mist groups skip per-frame updates, including calm Western Slope snow haze');
 assert.doesNotMatch(fogSource,/ruinMistFade|inRuinShaft/,'old shaft-centered mist animation must not return');
-console.log('ruin-room-system: enclosure, stable Kanthic overlay, physical walls and enemy resets OK');
+console.log('ruin-room-system: enclosure, real Kanthic mist, stable overlay, physical walls and enemy resets OK');
