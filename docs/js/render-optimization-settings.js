@@ -87,7 +87,7 @@
       available: () => typeof window.GrassBillboardRenderChunks?.setEnabled === 'function',
       read: () => window.GrassBillboardRenderChunks.enabled, write: on => window.GrassBillboardRenderChunks.setEnabled(on) },
     { group: 'Batching (fewer draw calls)', id: 'treeInstancing', name: 'Instance wilderness trees', on: false, ownsPersistence: true,
-      desc: 'Procedural trees and bushes drawn as one instanced mesh per shared part. Off by default: it measured slower on a GTX 1060 (corridor-wide batches defeat culling).',
+      desc: 'Procedural trees and bushes instanced within 8×8-tile cells so camera and X-ray culling can skip distant batches. Experimental; off by default until device testing confirms a gain.',
       available: () => typeof window.WildernessTreeInstancer?.setEnabled === 'function',
       read: () => window.WildernessTreeInstancer.enabled?.(), write: on => window.WildernessTreeInstancer.setEnabled(on, { persist: true }) },
 
