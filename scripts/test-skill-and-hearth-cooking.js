@@ -295,4 +295,71 @@ for (const recipeId of ['spicyNoodles', 'cheesyNoodles', 'fishNoodles', 'meatNoo
 assert.equal(cookingTerminal.bestAvailableSelection({ slots: [{ id: 'crop', accepts: ['processedCrop'] }] }).crop?.key === noodleKey, false, 'basic noodles are restricted to noodle slots');
 assert.equal(itemProcessor.getProcessingOutputs('squeezing', noodleKey), null, 'noodle exception does not extend to other processors');
 
+// Exercise the real Cook button and deferred consumption, rather than only auto-fill.
+let noodleCookClick, pendingNoodleBatch; // Captures the production click handler and timer without waiting in real time.
+const noodleCookButton = { addEventListener(event, callback) { if (event === 'click') noodleCookClick = callback; } };
+const noodleDetail = {
+  innerHTML: '',
+  querySelectorAll: () => [],
+  querySelector: selector => selector === '[data-cook-now]' ? noodleCookButton : null,
+}; // Minimal rendered recipe detail with the actual Cook event binding.
+const noodleLayer = {
+  classList: { add() {}, contains: () => true },
+  setAttribute() {},
+  querySelector: () => null,
+}; // Represents an already-mounted hearth modal.
+const noodleContext = {
+  console,
+  document: {
+    getElementById: () => noodleLayer,
+    querySelector: selector => selector === '[data-recipe-detail]' ? noodleDetail : null,
+  },
+  window: { InventoryStacks: { MAX_TOTAL: 999 } },
+  setTimeout(callback) { pendingNoodleBatch = callback; return 1; },
+  clearTimeout() { pendingNoodleBatch = null; },
+}; // Runs the same standalone cooking code as the game.
+for (const path of ['docs/js/cooking-data.js', 'docs/js/cooking-system.js']) {
+  vm.runInNewContext(fs.readFileSync(path, 'utf8'), noodleContext);
+}
+const noodleSystem = noodleContext.window.CookingSystem; // Uses the public hearth and save APIs.
+const noodleDefs = {};
+const noodleInventory = { needlegrainFlour: 2, nelkEggs: 1, uumkaoiiCheese: 1 }; // Enough for exactly one base and one finished dish.
+const noopNoodle = () => {}; // Supplies required host UI and inventory callbacks.
+noodleSystem.init({
+  ITEM_DEFS: noodleDefs, inventory: noodleInventory, inventoryItems: [],
+  random: () => 0.5, clampInventoryStack: noopNoodle,
+  refreshItemScroll: noopNoodle, buildInventoryGrid: noopNoodle, refreshActionBar: noopNoodle,
+  saveMemberWorldData: noopNoodle, showToast: noopNoodle,
+});
+noodleSystem.restore({ favoriteRecipes: [
+  { recipeId: 'basicNoodles', ingredients: { flour: 'needlegrainFlour', egg: 'nelkEggs' } },
+] });
+assert(noodleSystem.loadFavorite(noodleSystem.favoriteRecipes[0].id));
+assert(noodleSystem.openAtHearth().ok);
+assert.match(noodleDetail.innerHTML, /data-cook-now >/, 'basic noodles can actually be cooked');
+noodleCookClick();
+assert.equal(typeof pendingNoodleBatch, 'function');
+pendingNoodleBatch();
+assert.equal(noodleInventory.needlegrainFlour, 1);
+assert.equal(noodleInventory.nelkEggs, 0);
+const generatedNoodle = noodleSystem.listCookedInventory().find(entry => entry.definition.recipeId === 'basicNoodles'); // Captures the real generated key, not a fixture key.
+assert.equal(generatedNoodle.count, 1);
+const noodleSnapshot = JSON.parse(JSON.stringify(noodleSystem.serialize())); // Round-trip the generated base through the actual save format.
+noodleSnapshot.favoriteRecipes.push({ recipeId: 'cheesyNoodles', ingredients: { noodles: generatedNoodle.key, cheese: 'uumkaoiiCheese' } });
+noodleSystem.restore(noodleSnapshot);
+assert(noodleSystem.loadFavorite(noodleSystem.favoriteRecipes.find(entry => entry.recipeId === 'cheesyNoodles').id));
+assert(noodleSystem.openAtHearth().ok);
+assert.match(noodleDetail.innerHTML, /data-cook-now >/, 'restored basic noodles enable cooking the finished dish');
+noodleCookClick();
+assert.equal(typeof pendingNoodleBatch, 'function');
+pendingNoodleBatch();
+assert.equal(noodleInventory[generatedNoodle.key], 0, 'finished dish consumes the noodle base');
+assert.equal(noodleInventory.needlegrainFlour, 1, 'finished dish never consumes the remaining flour');
+assert.equal(noodleInventory.uumkaoiiCheese, 0);
+const generatedDish = noodleSystem.listCookedInventory().find(entry => entry.definition.recipeId === 'cheesyNoodles'); // Confirms the final item was registered.
+assert.equal(generatedDish.count, 1);
+assert.deepEqual(Array.from(generatedDish.definition.ingredientKeys), [generatedNoodle.key, 'uumkaoiiCheese']);
+assert(!noodleSystem.listIngredientDefinitions('noodleBase').some(entry => entry.key === generatedDish.key), 'the actually cooked dish cannot become another noodle base');
+assert.match(noodleDetail.innerHTML, /data-cook-now disabled/, 'the spent saved combination cannot be cooked again');
+
 console.log('skill and hearth cooking tests passed');
