@@ -64,7 +64,21 @@ async function main() {
   w.GearMemberTransaction.init({inventory:bag,getGearInventory:()=>gear,captureMemberWorldData:()=>({}),showToast(){}});
   load('rootledoot-encounter.js',w,canvasDoc,Img);
   const root=w.Rootledoots;
-  root.init({player,TILE:64,rnd:rand,hostiles,worldId:()=>'test',cycle:()=>1,day:()=>day,getArea:()=>zone,getGrid:()=>grid,walkable:(c,r)=>!!grid[r]?.[c],isBareGround:()=>true,getNpcWalkers:()=>walkers,isInCombat:()=>inCombat,canActivate:()=>canActivate,surfaceY:()=>0,getScene:()=>scene,despawn:c=>c.avatarRef.group.parent=null,canReceiveRoot:()=>true,giveRoot:()=>bag.feyHeftroot=(bag.feyHeftroot||0)+1});
+  root.init({player,TILE:64,rnd:rand,hostiles,worldId:()=>'test',cycle:()=>1,day:()=>day,getArea:()=>zone,getGrid:()=>grid,walkable:(c,r)=>!!grid[r]?.[c]&&!grid[r][c].blocked,isBareGround:()=>true,getNpcWalkers:()=>walkers,isInCombat:()=>inCombat,canActivate:()=>canActivate,surfaceY:()=>0,getScene:()=>scene,despawn:c=>c.avatarRef.group.parent=null,canReceiveRoot:()=>true,giveRoot:()=>bag.feyHeftroot=(bag.feyHeftroot||0)+1});
+  // Every suitable chunk owns one 3x3 footprint, and a wall separates even same-tier spawn tiles.
+  for(let r=0;r<3;r++)for(let c=0;c<3;c++){
+    const site=root.__test.siteInChunk(zone,{c,r});
+    assert.ok(site,'flat chunk has a locale');
+    assert.equal(Math.floor((site.c-1)/16),c);
+    assert.equal(Math.floor((site.c+1)/16),c);
+    assert.equal(Math.floor((site.r-1)/16),r);
+    assert.equal(Math.floor((site.r+1)/16),r);
+  }
+  for(let r=0;r<16;r++)grid[r][8].blocked=true;
+  const connected=root.__test.connectedSpawnTiles({chunk:{c:0,r:0},site:{c:7,r:7}});
+  assert.ok(connected.near.length>0,'reachable emergence positions exist');
+  assert.ok([...connected.near,...connected.far].every(p=>p.c<8),'individually walkable cells behind a solid wall are not valid emergence points');
+  for(let r=0;r<16;r++)delete grid[r][8].blocked;
   cooking.registerFeyEncounterMultiplier('force',()=>1000);
   const flush=async()=>{for(let i=0;i<40;i++)await Promise.resolve();};
   const aim=()=>{const s=root.debugSnapshot().active.site;player.x=(s.c+.5)*64;player.y=(s.r+.5)*64;return s;};
