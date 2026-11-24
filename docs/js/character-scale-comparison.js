@@ -32,7 +32,8 @@
   let chair = null;
   let sixFootGuide = null; // One camera-facing 6 ft reference behind the lineup, independent of camera-fit bounds.
   let sixFootHeight = null; // World-space reference computed once from the authored chair back height.
-  let sixFootGuideDepth = 2; // Cached depth needed to remain behind all chair/character geometry; updated only during lineup layout.
+  let sixFootGuideDepth = 2; // Fallback background depth if no completed lineup bounds exist.
+  let sixFootLineupBounds = null; // Four X/Z extents cached at layout time; camera orbit tests only four scalars per frame.
   let THREE = null;
   let persistTimer = 0;
   let handScaleTimer = 0; // Debounces hand-GLB rebuilds during touch drags; numeric profile changes still save immediately.
@@ -1369,7 +1370,12 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
       if (forward.lengthSq() < 1e-8) forward.set(0, 0, -1);
       else forward.normalize();
       const target = window.HobunjiGameplayBackdrop?.getCameraControls?.()?.target || fallbackTarget;
-      line.position.set(target.x + forward.x * sixFootGuideDepth, sixFootHeight, target.z + forward.z * sixFootGuideDepth);
+      const bounds = sixFootLineupBounds;
+      const backX = forward.x >= 0 ? bounds?.maxX : bounds?.minX;
+      const backZ = forward.z >= 0 ? bounds?.maxZ : bounds?.minZ;
+      const projectedBack = bounds ? (backX - target.x) * forward.x + (backZ - target.z) * forward.z : 0; // Four precomputed bounds handle end-on views of the wide lineup without a character scan.
+      const depth = Math.max(sixFootGuideDepth, projectedBack + 1); // Always behind the furthest character/chair for any horizontal orbit angle.
+      line.position.set(target.x + forward.x * depth, sixFootHeight, target.z + forward.z * depth);
       projected.copy(line.position).project(camera);
       if (!Number.isFinite(projected.x) || !Number.isFinite(projected.y) || !Number.isFinite(projected.z)) return; // No transient array allocations in render hook.
       center.set(0, projected.y, projected.z).unproject(camera);
@@ -1421,6 +1427,7 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
     }
     if (Number.isFinite(minDepth) && Number.isFinite(maxDepth)) sixFootGuideDepth = Math.max(1.5, Math.abs(minDepth), Math.abs(maxDepth)) + 1; // Conservative back-plane distance for all orbit directions.
     const shift = cursor / 2;
+    sixFootLineupBounds = { minX: -shift, maxX: cursor - shift, minZ: minDepth, maxZ: maxDepth }; // Exact centered X extents and cached geometry Z, measured once per layout.
     for (const entry of entries) entry.group.position.x = entry._lineX - shift;
     if (chair) chair.position.x -= shift;
     previewRoot.updateMatrixWorld(true);
@@ -1608,6 +1615,7 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
       sixFootGuide = null;
       sixFootHeight = null;
       sixFootGuideDepth = 2;
+      sixFootLineupBounds = null; // Release the stale layout bounds before any subsequent preview session.
     }
     if (chair) {
       try { chair.parent?.remove?.(chair); } catch (_) {}
@@ -1739,7 +1747,7 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
         active,
         building,
         isolation: { ...isolationDebug, nativeWorkspaceHidden: !!nativeWorkspaceVisibility }, // Mobile-visible: zero project imports and balanced scene isolation.
-        sixFootReference: { visible: !!sixFootGuide?.parent, worldHeight: sixFootHeight, feet: 6, chairReferenceFeet: 3, behindDepth: sixFootGuideDepth }, // Persistent mobile diagnostics without console access.
+        sixFootReference: { visible: !!sixFootGuide?.parent, worldHeight: sixFootHeight, feet: 6, chairReferenceFeet: 3, behindDepth: sixFootGuideDepth, lineupBoundsCached: !!sixFootLineupBounds }, // Persistent mobile diagnostics without console access.
         exiting: !!exitingPromise, // Visible mobile diagnostic while an actor import is running.
         requestedTab: pendingExitMode, // Last native mode requested by the user.
         currentTabMode: document.body.dataset.animationAuthorMode,
