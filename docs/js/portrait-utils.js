@@ -859,8 +859,13 @@ const _BEARD_HOOD_SOURCE_CACHE = new PortraitPixelCache(4 * 1024 * 1024, 24); //
 const _BEARD_HOOD_IMAGE_IDS = new WeakMap(); // Identifies decoded canonical images without keeping them alive.
 let _beardHoodNextImageId = 0;
 const _beardHoodPerf = { hits:0, misses:0, beardReadHits:0, beardReads:0, hoodReadHits:0, bypasses:0 };
-function beardHoodLayerKey(layers, imgMap, resolveXform) {
-  const parts = []; // Include the actual resolved art and transform, not merely a cosmetic name.
+function beardHoodIdentity(value) {
+  let id = _BEARD_HOOD_IMAGE_IDS.get(value);
+  if (!id) { id = ++_beardHoodNextImageId; _BEARD_HOOD_IMAGE_IDS.set(value,id); }
+  return id;
+}
+function beardHoodLayerKey(layers, imgMap, resolveXform, prepared) {
+  const parts = [PORTRAIT_CW,PORTRAIT_CH,PORTRAIT_L]; // Authoring can change logical dimensions and layer size.
   for (const entry of layers) {
     const layer = entry.layer;
     const image = imgMap.get(layer.url);
@@ -868,16 +873,15 @@ function beardHoodLayerKey(layers, imgMap, resolveXform) {
     const tint = entry.tint || entry.filter;
     const options = tint?.mode === 'shadeFill' || tint?.mode === 'hueSatFill' ? (tint.options || getPortraitTintingConfig()) : null;
     if (options && !options.cacheEnabled) return null; // Authoring tools may deliberately request a fresh tint.
-    // Include the actual tinted canvas identity as well: if a tint cache
-    // is evicted or regenerated, even a rounded tint-key collision cannot
-    // cause an old negotiated result to survive the new pixels.
+    const xform = resolveXform(layer);
+    if (![xform.ax,xform.ay,xform.sx,xform.sy].every(Number.isFinite)) return null;
+    // Resolve each immutable tint once and draw that exact object. Even a
+    // tint-cache eviction during another layer's preparation cannot make
+    // the key describe different pixels than the actual source draw.
     const tinted = _imageForTint(image,layer.url,tint);
-    const identity = value => {
-      let id = _BEARD_HOOD_IMAGE_IDS.get(value);
-      if (!id) { id = ++_beardHoodNextImageId; _BEARD_HOOD_IMAGE_IDS.set(value,id); }
-      return id;
-    };
-    parts.push([identity(image),identity(tinted),image.currentSrc||image.src,image.naturalWidth,image.naturalHeight,layer.url,resolveXform(layer),tint,options]);
+    prepared.set(entry,{image:tinted,xform});
+    parts.push([beardHoodIdentity(image),beardHoodIdentity(tinted),image.currentSrc||image.src,
+      image.naturalWidth,image.naturalHeight,layer.url,xform]);
   }
   return JSON.stringify(parts);
 }
@@ -1919,7 +1923,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   const emoteNeutralPts  = emoteDeformedPts ? _buildNeutralGrid(4, 6) : null;
 
   // Draws a single image with emote deformation if active, else plain.
-  const drawLayerWithEmote = (img, xform, tint, alpha = 1, sourceKey, destination = ctx) => {
+  const drawLayerWithEmote = (img, xform, tint, alpha = 1, sourceKey, destination = ctx, tintResolver = imageForTint) => {
     const numericAlpha = Number(alpha);
     const opacity = Number.isFinite(numericAlpha) ? Math.max(0, Math.min(1, numericAlpha)) : 1;
     if (opacity <= 0) return;
@@ -1932,7 +1936,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
       // See drawPortraitLayer's identical pre-flip via _getFlippedImage.
       destination.save();
       destination.globalAlpha = opacity;
-      let drawImg = imageForTint(img, sourceKey, tint);
+      let drawImg = tintResolver(img, sourceKey, tint);
       if (sx < 0) drawImg = _getFlippedImage(drawImg);
       destination.filter = 'none';
       _drawPortraitLayerWarped(destination, drawImg, cx - w / 2, cy - h / 2, w, h, emoteNeutralPts, emoteDeformedPts, 4, 6);
@@ -1940,10 +1944,10 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
     } else if (opacity < 1) {
       destination.save();
       destination.globalAlpha = opacity;
-      drawPortraitLayer(destination, img, xform, tint, sourceKey, imageForTint);
+      drawPortraitLayer(destination, img, xform, tint, sourceKey, tintResolver);
       destination.restore();
     } else {
-      drawPortraitLayer(destination, img, xform, tint, sourceKey, imageForTint);
+      drawPortraitLayer(destination, img, xform, tint, sourceKey, tintResolver);
     }
   };
 
@@ -1996,19 +2000,24 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   };
 
   // Draws a list of layers with emote deformation applied to each (head, hair, eyes, hat, etc.).
-  const drawEmoteLayers = (layerList, destination = ctx) => {
+  const drawEmoteLayers = (layerList, destination = ctx, prepared = null) => {
     for (const entry of layerList) withPixelDyeLayer(entry, (img, tint, sourceKey) => {
-      drawLayerWithEmote(img, resolveXform(entry.layer), tint, 1, sourceKey, destination);
+      const ready = prepared?.get(entry);
+      drawLayerWithEmote(img, ready?.xform || resolveXform(entry.layer), tint, 1, sourceKey, destination,
+        ready ? () => ready.image : imageForTint);
     }, destination);
   };
 
   // Draws body/cosmetic/hood layers with full breathing + emote deformation.
-  const drawBreathingLayers = (layerList, destination = ctx, preparedBreathing = null) => {
+  const drawBreathingLayers = (layerList, destination = ctx, preparedBreathing = null, prepared = null) => {
     for (const entry of layerList) withPixelDyeLayer(entry, (img, tint, sourceKey) => {
+      const ready = prepared?.get(entry);
+      const xform = ready?.xform || resolveXform(entry.layer);
+      const tintResolver = ready ? () => ready.image : imageForTint;
       if (breathingComposer || staticDeform) {
-        drawPortraitLayerWarped(destination, img, resolveXform(entry.layer), tint, breathingComposer, speciesId, gender, nowMs, breathingPhaseOffset, seatId, staticDeform, sourceKey, imageForTint, preparedBreathing);
+        drawPortraitLayerWarped(destination, img, xform, tint, breathingComposer, speciesId, gender, nowMs, breathingPhaseOffset, seatId, staticDeform, sourceKey, tintResolver, preparedBreathing);
       } else {
-        drawPortraitLayer(destination, img, resolveXform(entry.layer), tint, sourceKey, imageForTint);
+        drawPortraitLayer(destination, img, xform, tint, sourceKey, tintResolver);
       }
     }, destination);
   };
@@ -2111,21 +2120,22 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
       && (paintedBeardMask?.runs?.length || whiskerMask?.runs?.length
         || beardAuthoring.requestMode==='silhouette')) {
     const hoodPolicy = resolveHoodBeardPolicy(hood, resolvedFighter);
-    const canonicalArt = imageForTint === _imageForTint && !layerImageOverrides;
+    const canonicalArt = imageForTint === _imageForTint && !layerImageOverrides
+      && PORTRAIT_CW === cutoutApi.SIZE && PORTRAIT_CH === cutoutApi.SIZE;
     // Custom preview composers may be stateful: never skip or resample their draws.
     const canonicalBreathing = !breathingComposer || breathingComposer === window.portraitBreathingComposer;
     const preparedBreathing = canonicalArt && canonicalBreathing ? (() => {
       const points = breathingComposer?.getInterpolatedPoints(speciesId,gender,nowMs,breathingPhaseOffset,seatId) || null;
       return {points,anim:points ? breathingComposer.getAnimData(speciesId,gender) : null};
     })() : null;
-    const beardKey = canonicalArt && !emoteDeformedPts
-      ? beardHoodLayerKey(facialHairLayers,imgMap,resolveXform) : null;
-    const hoodKey = beardKey && preparedBreathing && !preparedBreathing.points
-      ? beardHoodLayerKey(hoodLayers,imgMap,resolveXform) : null;
+    const preparedBeard = canonicalArt && !emoteDeformedPts ? new Map() : null;
+    const beardKey = preparedBeard ? beardHoodLayerKey(facialHairLayers,imgMap,resolveXform,preparedBeard) : null;
+    const preparedHood = beardKey && preparedBreathing && !preparedBreathing.points ? new Map() : null;
+    const hoodKey = preparedHood ? beardHoodLayerKey(hoodLayers,imgMap,resolveXform,preparedHood) : null;
     // Static deformation and every authoring permission value participate.
     // Animated hoods always negotiate their current pixels; the unwarped
     // beard can still reuse its pristine readback independently.
-    const resultKey = hoodKey ? JSON.stringify([beardKey,hoodKey,staticDeform,
+    const resultKey = hoodKey ? JSON.stringify([beardHoodIdentity(cutoutApi),beardKey,hoodKey,staticDeform,
       paintedBeardMask,whiskerMask,tuftRoots,beardAuthoring.requestMode,
       beardAuthoring.maxStretch,beardAuthoring.subdivision,beardAuthoring.aboveInfluence,
       beardAuthoring.belowInfluence,hoodPolicy]) : null;
@@ -2151,8 +2161,8 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
         canvas.hobunjiBeardHoodBeardCanvas = beardScratch;
         canvas.hobunjiBeardHoodTempCanvas = hoodScratch;
       }
-      drawEmoteLayers(facialHairLayers, beardCtx);
-      drawBreathingLayers(hoodLayers, hoodCtx, preparedBreathing);
+      drawEmoteLayers(facialHairLayers, beardCtx, beardKey ? preparedBeard : null);
+      drawBreathingLayers(hoodLayers, hoodCtx, preparedBreathing, hoodKey ? preparedHood : null);
       let beardImageData = beardKey ? _BEARD_HOOD_SOURCE_CACHE.get(beardKey) : null;
       if (beardImageData) _beardHoodPerf.beardReadHits++;
       else if (beardKey) {

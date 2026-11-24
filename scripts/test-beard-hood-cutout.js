@@ -203,10 +203,11 @@ assert.equal(alpha(ringHood,100,94),0,'central face opening remains transparent'
 assert.equal(alpha(ringHood,100,35),ringBefore[at(100,35)*4+3],
   'pixels far from both tuft corners retain original cloth');
 const noMove=new Canvas();noMove.pixels.set(ringBefore);
-const inside=Cut.stretchHoodToRoots(noMove,[{x:115,y:94}],{maxStretch:36});
+const inside=Cut.stretchHoodToRoots(noMove,[{x:115,y:94}],{maxStretch:36,retainUnchangedImageData:true});
 assert.equal(inside.insideRing,1,'tuft already inside the ring does not stretch the hood');
 assert.equal(inside.stretched,0,'no active deformation for interior tuft');
 assert.deepEqual(Array.from(noMove.pixels),Array.from(ringBefore),'inside ring leaves hood exactly unchanged');
+assert.deepEqual(inside.unchangedImageData.data,ringBefore,'no-op stretch transfers exact readback');
 // Previously the cap acted as a hard gate: e.g. 17px -> no deformation,
  // 18px -> full deformation. It must now move smoothly, even below 1px.
 const partialRoot={x:140.5,y:94.5};
@@ -215,7 +216,8 @@ const needed=originalPlan.moves[0].requestedLength;
 assert(needed>4,'test has a substantial original tuft-to-ring distance');
 function stretchedCopy(limit){
   const copy=new Canvas();copy.pixels.set(ringBefore);
-  const result=Cut.stretchHoodToRoots(copy,[partialRoot],{maxStretch:limit});
+  const result=Cut.stretchHoodToRoots(copy,[partialRoot],{maxStretch:limit,retainUnchangedImageData:true});
+  if(result.moves.length) assert.equal(result.unchangedImageData,undefined,'real warp must reread the canvas');
   return {copy,result};
 }
 const none=stretchedCopy(0);
@@ -579,6 +581,18 @@ assert.deepEqual(cachedNegotiation,approved);
 assert.deepEqual(cachedBeardCanvas.pixels,sampleBeard.pixels);
 assert.deepEqual(cachedHoodCanvas.pixels,sampleHood.pixels);
 assert.deepEqual(pristine.data,originalBeard,'cached input survives rejected pixels and outlines unchanged');
+// Readback transferred from an unchanged hood: parity even with refused edges.
+const transferredBeard=new Canvas(),transferredHood=new Canvas();
+transferredBeard.pixels.set(originalBeard);transferredHood.pixels.set(originalHood);
+const hoodRead=transferredHood.getContext().getImageData();
+const hoodContext=transferredHood.getContext.bind(transferredHood);
+let hoodReads=0;
+transferredHood.getContext=()=>{const ctx=hoodContext();ctx.getImageData=()=>{hoodReads++;throw Error('unexpected hood read');};return ctx;};
+const transferred=Cut.negotiateBeardHood(transferredBeard,transferredHood,requestMask,permission,{includeMasks:true,beardImageData:pristine,unchangedHoodImageData:hoodRead});
+assert.equal(hoodReads,0);
+assert.deepEqual(transferred,approved);
+assert.deepEqual(transferredHood.pixels,sampleHood.pixels);
+assert.deepEqual(transferredBeard.pixels,sampleBeard.pixels);
 assert.equal(approved.requested,6,'only beard pixels under actual opaque hood need arbitration');
 assert.equal(approved.approvedPixels,3,'hood author allows three removal pixels');
 assert.equal(approved.refusedPixels,3,'hood author protects three conflict pixels');
@@ -816,7 +830,7 @@ assert(portrait.includes('variantBeardCutoutAllowedMasks')&&portrait.includes('r
   'gameplay resolves automatic, painted and permissive hood policy from cosmetic JSON');
 assert(portrait.includes('hoodWhiskerMask')&&portrait.includes('variantHoodWhiskerMasks')
   && portrait.includes('whiskerMask,')
-  && portrait.includes('requestMode:beardAuthoring.requestMode,beardImageData});'),
+  && portrait.includes('requestMode:beardAuthoring.requestMode,beardImageData,unchangedHoodImageData:stretch.unchangedImageData});'),
   'gameplay resolves priority whiskers and artwork-based requests independently');
 assert(portrait.includes('const exactSharedArt=key===keys[0]')
   && portrait.includes('option.variantHoodCutoutMasks'),
