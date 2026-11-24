@@ -374,8 +374,8 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
           <p class="armLengthHint">Arm length offset (%) is in Rig Coordinates → Species proportions. It adjusts the free-hanging hands, not the whole-body scale.</p>
         </section>
         ${scaleRow('X', 'Width', 10, 400, 0.5, 100, 'Body width scale')}
-        ${scaleRow('PortraitHeight', 'Portrait height', 10, 400, 0.5, 100, 'Portrait artwork height, independent of the procedural legs')}
-        ${scaleRow('LegLength', 'Leg length', 10, 400, 0.5, 100, 'Hip-to-foot reach without stretching the foot meshes')}
+        ${scaleRow('Height', 'Height', 10, 400, 0.5, 100, 'Total stature relative to the unscaled avatar; beltline changes do not change overall height')}
+        ${scaleRow('Beltline', 'Beltline height', 5, 95, 0.5, 50, 'Beltline height as a percent of floor-to-head stature; higher values give longer legs and a shorter torso')}
         ${scaleRow('Hand', 'Hand scale', 10, 400, 0.5, 100, 'Independent size of both procedural hands')}
         ${scaleRow('Foot', 'Foot scale', 10, 400, 0.5, 100, 'Independent size of both procedural feet')}
         ${scaleRow('Head', 'Head', 10, 400, 0.5, 100, 'Head scale')}
@@ -384,7 +384,7 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
         <label class="maaToggleLine" style="margin:8px 0"><input id="maaFullScaleShowSpine" type="checkbox" checked> Show live spine and neck attachment</label>
         <div class="maaSmall maaMuted" style="margin-bottom:8px">Spine: green pelvis → orange vertebrae → violet shoulder/neck base; cyan marks the scaled head attachment. The selected avatar is highlighted, and hunch edits update the bones without changing the portrait art.</div>
         <div class="scaleActions"><button id="maaFullScaleExport" type="button" class="good">Export scale JSON</button><button id="maaFullScaleFrame" type="button" class="secondary">Frame lineup</button><button id="maaFullScaleFocus" type="button" class="secondary" disabled>Focus selected</button><button id="maaFullScaleMatchMainAdults" type="button" class="secondary" title="Apply current main adult proportions to all species/genders; keeps authored hands, feet, NPC hunch and child age modifiers">Match main adult scales</button><button id="maaFullScaleReset" type="button" class="secondary">Reset all to repo defaults</button></div>
-        <div id="maaFullScaleStatus" class="scaleStatus">Portrait height scales the painted upper body; Leg length adjusts the real hip-to-foot IK chain while keeping feet on the floor. Hand and Foot scale change their own GLBs independently. Existing Height saves initialize both height sliders, and all settings export per species/gender.</div>`;
+        <div id="maaFullScaleStatus" class="scaleStatus">Height controls total floor-to-head stature. Beltline height (%) is the hip/posterior junction measured upward from the feet, as a percent of that total. The legs and portrait are derived together, preserving planted feet and existing saved proportions.</div>`;
       workspace.appendChild(panel);
       panel.querySelector('#maaFullScaleMatchMainAdults').addEventListener('click', matchMainAdultScales); // Existing saved adult overrides need an explicit, non-destructive rebase to the updated main baseline.
       panel.querySelector('#maaFullScaleReset').addEventListener('click', resetAllToRepoDefaults);
@@ -561,9 +561,12 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
     const scale = window.HobunjiCharacterRigScale?.scaleFor?.(entry.species, entry.gender, entry.profile) || { x: 1, y: 1, head: 1, offsetY: 0 };
     document.getElementById('maaFullScaleSelected').textContent = `${prettySpecies(entry.species)} · ${entry.gender}`;
     document.getElementById('maaFullScaleNpc').textContent = entry.npc?.name || entry.npc?.id || 'Repository NPC';
-    for (const [axis, field] of [['X', 'x'], ['PortraitHeight', 'y'], ['LegLength', 'legLength'], ['Head', 'head']]) {
+    for (const [axis, field] of [['X', 'x'], ['Head', 'head']]) {
       setSliderValue(axis, clampPercent((scale[field] || 1) * 100));
     }
+    const dimensions = window.HobunjiCharacterRigScale?.heightBeltlineFor?.(scale, entry.beltlineBaseFraction);
+    setSliderValue('Height', clampPercent((dimensions?.height || scale.y || 1) * 100));
+    setSliderValue('Beltline', Math.max(5, Math.min(95, (dimensions?.beltline || entry.beltlineBaseFraction || .5) * 100))); // Display the actual floor-to-hip percentage after migration from legacy Y/legLength.
     setSliderValue('Hand', clampPercent(partScaleFor(entry, 'hand') * 100));
     setSliderValue('Foot', clampPercent(partScaleFor(entry, 'foot') * 100));
     setSliderValue('OffsetY', clampOffsetPercent(scale.offsetY * 100));
@@ -956,7 +959,7 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
       selected.feet?.setFootScaleMultiplier?.(foot); // Resize real feet now, not just after leaving this workspace.
     }
     applyPreviewProportions(selected, scale); // Use the exact persisted slider scale without discarding the global age mode.
-    if (['x', 'y', 'legLength', 'footScale'].includes(changedField))
+    if (['x', 'y', 'legLength', 'height', 'beltline', 'footScale'].includes(changedField))
       selected.feet?.update?.(0, 0, false, null); // Recheck planted soles only when geometry changes; Head and Hand edits need no gait work.
     syncLegPortraitAlignment(selected); // Hip and painted torso stay attached under separate Leg length and Portrait height edits.
     if (changedField === 'handScale') scheduleHandResize(selected); // Debounced cached GLB replacement keeps mobile slider movement responsive.
@@ -1068,7 +1071,11 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
       const profile = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters?.[descriptor.key];
       const scale = window.HobunjiCharacterRigScale?.scaleFor?.(descriptor.species, descriptor.gender, profile) || { x: 1, y: 1, head: 1, offsetY: 0 };
       data[descriptor.species] ||= {};
+      const preview = entries.find(entry => entry.key === descriptor.key); // Loaded preview supplies the real unscaled hip; absent previews use a neutral diagnostic fallback.
+      const dimensions = window.HobunjiCharacterRigScale?.heightBeltlineFor?.(scale, preview?.beltlineBaseFraction ?? .5) || { height: scale.y, beltline: .5 };
       data[descriptor.species][descriptor.gender] = {
+        height: Math.round(dimensions.height * 10000) / 10000,
+        beltlineHeightPercent: Math.round(dimensions.beltline * 1000000) / 10000, // Percent from floor to hip, not a leg/torso factor.
         x: Math.round(scale.x * 10000) / 10000,
         y: Math.round(scale.y * 10000) / 10000, // Legacy field: same value as portraitHeight, for older consumers.
         portraitHeight: Math.round(scale.y * 10000) / 10000,
@@ -1088,7 +1095,7 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
     a.click();
     a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 0);
-    status('Exported width, portrait height, independent leg length, hand/foot size, head size and offset per species/gender.');
+    status('Exported Height and Beltline height (%), with backward-compatible portrait/leg factors for gameplay and Rig imports.');
   }
 
   function rememberPartRuntimeDefaults(species, gender) {
@@ -1290,8 +1297,10 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
     }) || null; // Same orientation as gameplay: the portrait front, toes and spine hunch all face +Z (toward the lineup camera).
 
     previewRoot.add(group);
+    const measuredBeltline = Number(feet?.restPosteriorY) / modelHeight; // Shared model/leg floor-local coordinates: the unscaled hip divided by the unscaled top.
     entry = { ...rep, group, model, feet, spineGuide: null, profile: rigProfile, avatarProfile: avatar.profile, frontCanvas: avatar.front,
-      basePortraitY: model.position.y }; // Shared entry for late age-limb imports, the spine guide and pants.
+      basePortraitY: model.position.y,
+      beltlineBaseFraction: Number.isFinite(measuredBeltline) && measuredBeltline > .05 && measuredBeltline < .95 ? measuredBeltline : .5 }; // Never invent a modified hip ratio from authored portrait or leg scales. // Shared entry for late age-limb imports, the spine guide and pants.
     applyPreviewProportions(entry); // Preserve both age stage and independent portrait/leg authored scale at spawn.
     window.ProceduralHandFrameDriver?.syncNow?.();
     attachPreviewPants(entry, avatar.front); // Gameplay covers the hip-to-foot span with the NPC's leg garment.
@@ -1635,6 +1644,8 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
       exportJson,
       get active() { return active; },
       get selectedKey() { return selected?.key || null; },
+      get selectedBeltlineBaseFraction() { return selected?.beltlineBaseFraction ?? .5; }, // Actual unscaled leg hip/rest-top ratio used by the same pure math as the gameplay rig.
+      get selectedDimensions() { return selected ? window.HobunjiCharacterRigScale?.heightBeltlineFor?.(window.HobunjiCharacterRigScale?.scaleFor?.(selected.species, selected.gender, selected.profile), selected.beltlineBaseFraction) : null; },
       get focusKey() { return focusedEntryKey; }, // Independent of selectedKey: choosing a different editor target must never move the camera.
       get previewCount() { return entries.length; },
       get ageMode() { return ageMode; }, // Exposes stage and modifiers to mobile UI diagnostics and the raw-head presentation bridge.
@@ -1644,7 +1655,7 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
         applyPreviewProportions(selected);
         scheduleSelectedLayout(); // One layout per display frame even if numeric body/head inputs fire dozens of events.
       }, // Preserve age scaling during raw-PNG head edits and prevent wider avatars overlapping neighboring lineup slots.
-      refreshFromScaleChange, // Input guard uses one field at a time, preserving raw-PNG head size and all four new dimensions.
+      refreshFromScaleChange, // Input guard maps Height/Beltline to legacy runtime portrait/leg scalars while preserving the raw-PNG Head and independent limb dimensions.
       debugSnapshot: () => ({
         active,
         building,
