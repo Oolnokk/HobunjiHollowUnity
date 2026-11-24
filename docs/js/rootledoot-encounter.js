@@ -267,7 +267,8 @@
   }
   function tick(dt) {
     const zone=area();
-    if(!deps||(!active&&!ZONES.has(zone)))return;
+    if(!deps)return;
+    if(!active&&!ZONES.has(zone)){clock.reset();return;}
     if(active&&!ownsScene(active))reset('left or rebuilt encounter scene');
     if(!ZONES.has(zone)){clock.reset();return;}
     const elapsed=clock.advance(dt);if(!elapsed)return;
