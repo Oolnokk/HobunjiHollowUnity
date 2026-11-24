@@ -27,7 +27,7 @@ const window = {
   EnchantmentSystem: { DEFINITIONS: definitions, cleanWeaponState: raw => JSON.parse(JSON.stringify(raw)) },
   CombatAttackEvents: { hit: (_base, patch) => { eventLog.push(patch); return patch; } },
   Combat: { poses: { SWEEP_POSE: { id: 'real-sweep' } } },
-  WeaponEnchantmentVFX: { ALIGNMENTS: Object.fromEntries(['Tothal', 'Hronal', 'Kanthic', 'Ohthic'].map(id => [id, { dyeIds: ['dye'], effects: [{ id: 'orb' }] }])),
+  WeaponEnchantmentVFX: { ALIGNMENTS: Object.fromEntries(['Tothal', 'Hronal', 'Kanthic', 'Ohthic', 'Fey'].map(id => [id, { dyeIds: ['dye'], effects: [{ id: 'orb' }] }])),
     createFixedEmitter: () => ({ update() {}, dispose() {} }) },
 };
 const context = vm.createContext({ window, console, performance: { now: () => 1000 } });
@@ -238,5 +238,37 @@ for (const [tier, expected] of [[4,2],[5,3],[6,4],[7,5]]) {
   const combatSource = fs.readFileSync('docs/js/combat/combat-bandit.js', 'utf8');
   for (const slot of ['tap1','tap2','hold1','hold2']) assert(combatSource.includes("enchantmentSlot: '"+slot+"'"), 'all captain attack families publish their real slot: ' + slot);
   assert(combatSource.includes('BanditCaptainArmaments?.tick?.'), 'enemy blade VFX are updated by the live hostile weapon loop');
+  // Rootledoots use the actual modular catalog even below the normal captain's minimum tier.
+  for(let tier=0;tier<=7;tier++){
+    const boss=entity();boss.rootledootBig=true;boss.enemyClass='rootledoot';
+    cap.equip(boss,{},'captain',tier,{},deps);
+    const record=boss._banditCaptainArmament;
+    assert(record,'every Big Rootledoot tier gets an enchanted weapon');
+    assert.equal(record.origin,'Fey');
+    assert.equal(record.visual.alignment,'Fey');
+    const ids=[...record.enchantments.base,...Object.values(record.enchantments.flourishes)];
+    assert(ids.length>0&&ids.every(id=>definitions[id].alignment==='Fey'));
+    assert.equal(boss.def.weaponKey,record.key);
+    const saveCount=savedGearCount;
+    if(tier===0){
+      assert.match(cap.grantCorpseWeapon(boss,{deferSave:true}),/Fey-touched/);
+      assert.equal(savedGearCount,saveCount,'atomic owner performs the save, not the weapon helper');
+      assert(cap.unlootedEnchantmentState(record.key),'the record remains available until transaction completion');
+      cap.discard(boss);
+      assert(toolDefs[record.key],'owned weapon survives encounter cleanup');
+      assert.equal(cap.unlootedEnchantmentState(record.key),null);
+      delete toolDefs[record.key];
+      cap.restore();
+      assert.match(toolDefs[record.key].label,/Fey-touched/,'restoration preserves the Fey name and origin');
+    }else{
+      let disposed=0;
+      window.CharacterHeldTools={toolTextures:{[record.key]:{dispose(){disposed++;}}},modularToolGeometries:new Map([[record.key,{dispose(){disposed++;}}]])};
+      cap.discard(boss);
+      assert.equal(disposed,2,'abandoned unique weapon releases its texture and geometry');
+      assert.equal(toolDefs[record.key],undefined);
+      assert.equal(cap.unlootedEnchantmentState(record.key),null);
+      assert.equal(gear.tools[record.key],undefined);
+    }
+  }
   console.log('Bandit captain modular/enchantment/loot/hand-pose regression checks passed.');
 })().catch(error => { console.error(error); process.exitCode = 1; });
