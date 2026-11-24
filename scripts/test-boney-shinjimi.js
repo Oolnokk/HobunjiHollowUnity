@@ -36,7 +36,8 @@ assert(html.indexOf('boney-shinjimi-wilderness.js')>0&&html.indexOf('boney-shinj
 const gameSource=read('docs/game.js'); // Live game injection must not diverge from the encounter fixture.
 const injection=gameSource.slice(gameSource.indexOf('window.SlagothimTraders?.init({'),gameSource.indexOf('window.DyeSystem?.init({',gameSource.indexOf('window.SlagothimTraders?.init({')));
 assert.match(injection,/\bTILE, player, hostileObjects,/,'live Shinjimi receives player, tile scale and hostiles');
-assert.match(injection,/despawnNpcWalker: walker => despawnNpcVisitor\(walker, true\)/,'encounter adapter owns cancelled unregistered walkers');
+assert.match(injection,/despawnNpcWalker: despawnNpcVisitor,/,'encounter adapter uses the canonical visitor disposer');
+assert.match(read('docs/js/boney-shinjimi-wilderness.js'),/despawnNpcWalker\?\.\(w,true\)/,'only stale constructor results opt into unregistered disposal');
 const disposeStart=gameSource.indexOf('function despawnNpcVisitor('),disposeEnd=gameSource.indexOf('let visitorArrivalCheckT',disposeStart);
 assert(disposeStart>=0&&disposeEnd>disposeStart,'production disposal seam found');
 const disposeSource=gameSource.slice(disposeStart,disposeEnd);
@@ -48,6 +49,7 @@ const rejectedRig={parent:{remove(){}}}; // Unique construction output not yet a
 const unadopted={avatarGroup:rejectedRig,root:{parent:{remove(){}},_npcScene:{remove(){}},traverse(){}}};
 assert.equal(disposeVisitor(unadopted),false,'ordinary visitor exit still requires registry membership');
 assert.equal(disposeVisitor(unadopted,true),true,'explicit encounter cancellation retires an unadopted avatar');
+assert.equal(disposeVisitor(unadopted,true),false,'an unadopted result cannot be disposed twice');
 assert.deepEqual(retired,[rejectedRig]);
 assert.deepEqual(roster,[activeWalker],'unregistered cleanup must not remove a different live NPC');
 const travellers=read('docs/js/slagothim-traders.js');
@@ -226,7 +228,7 @@ async function testRealEncounterFlow() {
   game.npcWalkers=[];
   game.getCurrentArea=()=>where;
   game.makeNpcWalker=async rec=>{npc.rec=rec;spawned.push(rec.id);return npc;}; // Same asynchronous construction contract as the real trader walker.
-  game.despawnNpcWalker=w=>{despawned.push(w); const at=game.npcWalkers.indexOf(w);if(at>=0)game.npcWalkers.splice(at,1);return true;};
+  game.despawnNpcWalker=(w,allowUnregistered=false)=>{const at=game.npcWalkers.indexOf(w);if(at<0&&allowUnregistered!==true)return false;despawned.push(w);if(at>=0)game.npcWalkers.splice(at,1);return true;}; // Mirror the live membership guard.
   moonWindow.RangedWeapons={hasLineOfSight:()=>visible,actorHitbox:()=>({center:{x:npc.root.position.x,y:0.6,z:npc.root.position.z}})};
   const rewards=[];
   let feyStacks=4; // Simulates persistent player stacks with the same CookingSystem contract.
