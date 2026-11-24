@@ -61,6 +61,11 @@ async function main(){
   assert.equal(api.colorForRole(sample,'base'),'#4488bb');
   assert.equal(api.colorForRole(sample,'trim'),'#aa4422','first expressed pattern colors trim without a drawn motif');
   assert.equal(api.colorForRole(none,'trim'),'#4488bb','plain hides retain base-colored trim');
+  const plainShared = {...none, genotype: {...none.genotype, secondary: {color:'#eecc00', copies:2}}};
+  assert.equal(api.colorForRole(plainShared,'trim'),'#4488bb','unexpressed B is not a pattern on plain hides');
+  assert(!api.expressedGenes(plainShared).some(g=>g.geneId==='secondary'));
+  const shared = {...sample, genotype: {...sample.genotype, secondary:{color:'#eecc00', copies:2}}};
+  assert.equal(api.colorForRole(shared,'trim'),'#eecc00','expressed markings read B rather than obsolete layer color');
   assert.equal(api.colorForRole(active,'trim'),'#bb33cc','Grehlr prefers coloredstripe for trim when present');
   assert.equal(api.markingsFor(active,'base').length,0,'automatic trim/part tint does not require a painted motif');
   assert.equal(api.markingsFor(active,'trim').length,0,'natural trim tint does not generate a geometric motif');

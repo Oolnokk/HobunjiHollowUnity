@@ -1231,6 +1231,8 @@
     if (treeBatches) lines.push(`Wilderness tree instances: ${JSON.stringify(treeBatches)}`);
     const brickLod = window.InstancedBrickLod?.snapshot?.(); // Far brick meshes drawn with the octant hull and triangles avoided.
     if (brickLod?.frames) lines.push(`Brick LOD: ${JSON.stringify(brickLod)}`);
+    const wallBatches = window.DenseForestWallBatches?.snapshot?.(); // Cloud Forest wall merge + distance LOD split (far/near trees, triangles avoided).
+    if (wallBatches?.frames) lines.push(`Dense wall batches: ${JSON.stringify({ ...wallBatches, liteTwins: window.FoliageGenerator?.liteTreeStats?.() || null })}`);
 
     const waterFootLines = _pixelProbeWaterFootContactLines(activeScene, currentArea, playerMesh); // Used to distinguish real foot/water intersection from camera-perspective illusions on mobile.
     if (waterFootLines) lines.push(...waterFootLines);

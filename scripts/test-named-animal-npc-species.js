@@ -94,7 +94,7 @@ assert.match(nativeAppearance, /humanCard\.style\.display = animal \? 'none' : '
 assert.match(nativeAppearance, /creatureGenotype/, 'native editor must persist breeding-compatible genotype data');
 assert.match(nativeAppearance, /class=\"colorSwatch animalNpcColor/, 'native editor must retain its original coat/pattern swatches');
 assert.match(nativeAppearance, /animalNpcPatternToggle/, 'native editor must retain per-pattern expression toggles');
-assert.match(nativeAppearance, /Fur color follows the base coat; only beard presence is inherited\./, 'Character Studio labels the Grehlr beard as base-colored rather than offering a dead swatch');
+assert.match(nativeAppearance, /Uses body color/, 'Character Studio labels the Grehlr beard as base-colored rather than offering a dead swatch');
 assert.match(nativeAppearance, /animalNpcRepoPatternScale/, 'native animal editor must expose normalized surface-pattern scale per painted region');
 assert.match(nativeAppearance, /min="7" max="14"/, 'animal pattern scale cannot drop below the 7× minimum and leaves headroom beyond 10×');
 assert.match(nativeAppearance, /patternScale/, 'normalized animal pattern scale must persist in colorPoolPaint data rather than mutating the reusable repo pattern');
@@ -120,7 +120,7 @@ assert.ok(repoPicker.indexOf("color-fill.js") < repoPicker.indexOf("sprite-recol
 assert.match(feyExtras, /class=\"animalNpcCustomHex\"/, 'native extension must retain independent #RRGGBB fields for animal layers');
 assert.match(feyExtras, /id=\"animalNpcScaleMultiplier\"/, 'Fey/custom appearance controls must expose the named-animal in-game size multiplier next to the other non-genetic overrides');
 assert.match(feyExtras, /creatureScaleMultiplier/, 'Fey/custom appearance must persist the generic scale multiplier on the appearance record');
-assert.match(feyExtras, /Each editable coat or marking can have an independent #RRGGBB override; base-colored traits like Grehlr's beard always follow the base coat/, 'Fey/custom colors must not pretend the Grehlr beard has an independently selectable pigment');
+assert.match(feyExtras, /Body colors A and B each accept an exact #RRGGBB override/, 'Fey/custom colors must not pretend the Grehlr beard has an independently selectable pigment');
 assert.match(feyExtras, /id=\"animalNpcOpacity\" type=\"range\"/, 'native extension must retain animal opacity control');
 assert.match(feyExtras, /id=\"animalNpcHatSelect\"/, 'native extension must retain animal hat selection');
 assert.match(feyExtras, /controlsSignature/, 'native extension must avoid rebuilding focused hex/select controls during polling');
@@ -164,16 +164,16 @@ assert.equal(oldEditorGrehlr.beard.color, oldEditorGrehlr.base.color,
   'Character Studio normalizes a stale or independently imported Grehlr beard to its base coat');
 const customEditorGrehlr = animalFey.genotypeWithOverrides({
   creatureKind: 'grehlr', creatureGenotype: oldEditorGrehlr,
-  creatureColorOverrides: { base: '#223344', beard: '#FFFFFF', spectacles: '#554433' },
+  creatureColorOverrides: { base: '#223344', beard: '#FFFFFF', secondary: '#554433' },
 });
 assert.equal(customEditorGrehlr.base.color, '#223344');
 assert.equal(customEditorGrehlr.beard.color, customEditorGrehlr.base.color,
   'Fey exact-hex override on the base coat must also recolor the beard, ignoring old beard-only hex overrides');
 assert.equal(customEditorGrehlr.spectacles.color, '#554433',
-  'Other inherited markings continue supporting independent hex overrides');
-assert.match(feyExtras, /patternIdsFor\(kind\)\.filter\(id => !baseColoredPattern\(kind, id\)\)/,
+  'All secondary markings share the exact B override');
+assert.match(feyExtras, /return \['base', 'secondary'\]/,
   'Character Studio Fey hex controls exclude the Grehlr beard');
-assert.match(nativeAppearance, /if \(patternUsesBaseCoatColor\(kind, id\)\) continue/,
+assert.match(nativeAppearance, /if \(patternUsesBaseCoatColor\(kind, id\) && kind !== 'drenkirra'\) continue/,
   'Character Studio Color Pools UI excludes redundant Grehlr beard paint regions');
 
 const bridgeSandbox = { // Exercises the actual named-NPC effective-genotype renderer bridge without scheduling browser polling.
@@ -190,11 +190,11 @@ const bridgeInput = { base: { color: '#445566' },
   spectacles: { copies: 1, enabled: true, color: '#222222' } }; // Old named-NPC beard pigment must be ignored after custom color overrides.
 const bridgeOutput = bridgeSandbox.NamedAnimalNpc.effectiveGenotype({ creatureKind: 'grehlr', appearance: {
   creatureKind: 'grehlr', creatureGenotype: bridgeInput,
-  creatureColorOverrides: { base: '#AABBCC', beard: '#FFFFFF', spectacles: '#00FF00' },
+  creatureColorOverrides: { base: '#AABBCC', beard: '#FFFFFF', secondary: '#00FF00' },
 } });
 assert.equal(bridgeOutput.beard.color, bridgeOutput.base.color,
   'Named Grehlr NPC effective genetics use their exact-hex base override for the beard as well');
-assert.equal(bridgeOutput.spectacles.color, '#00FF00', 'Other named-animal custom markings retain their own color');
+assert.equal(bridgeOutput.spectacles.color, '#00FF00', 'Other named-animal custom markings share B');
 assert.equal(bridgeInput.beard.color, '#111111', 'Runtime overrides never mutate the underlying authored NPC record');
 
 const storage = new Map();

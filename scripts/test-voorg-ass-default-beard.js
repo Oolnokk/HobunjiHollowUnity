@@ -160,19 +160,23 @@ assert.equal(render.patternUrl('voorg-ass', 'beard1', 'run2'), 'assets/creatures
 
   // Simulate a future authored, inheritable beard: only the replacement is drawn.
   spec.patterns.push('beard2'); // A future beard must be explicitly registered as a drawable genetic pattern.
-  const unusual = { ...genotype, beard2: { enabled: true, copies: 1, color: '#cc5522' } };
+  const unusual = { ...genotype, secondary: { color: '#cc5522' }, beard2: { enabled: true, copies: 1 } }; // Expressed replacement uses shared B without needing its own color.
   frameReads.length = 0;
   const replaced = await render.composeFrame('voorg-ass', 'idle', unusual);
   const tintedBeard = framePixels(replaced);
-  assert(tintedBeard[0] > tintedBeard[2], 'inherited beard2 replaces default blue beard1 with its own red tint');
+  assert(tintedBeard[0] > tintedBeard[2], 'inherited beard2 replaces default blue beard1 with shared red B tint');
   assert(!frameReads.some(url => url.includes('_beard1_')), 'default beard1 was not layered over inherited beard2');
   assert(frameReads.some(url => url.includes('_beard2_')), 'expressed beard2 was rendered');
 
   // Texture cache may already have both images; inspect actual output rather than network-read counts.
-  for (const disabled of [{ enabled: false, copies: 2, color: '#cc5522' }, { enabled: true, copies: 0, color: '#cc5522' }, { enabled: true, copies: 1 }]) {
+  const firstPatternFallback = { ...genotype, beard2: { enabled: true, copies: 1, color: '#2357bb' } }; // No explicit B: belly supplies B even when the replacement has a conflicting mirror.
+  const fallbackPixel = framePixels(await render.composeFrame('voorg-ass', 'idle', firstPatternFallback));
+  assert(fallbackPixel[0] > fallbackPixel[2], 'first pattern supplies shared B to replacement beard');
+  assert.equal(render.genotypeSignature('voorg-ass', firstPatternFallback), render.genotypeSignature('voorg-ass', { ...firstPatternFallback, beard2: {enabled:true,copies:1} }), 'obsolete or missing mirror does not alter the visible replacement cache key');
+  for (const disabled of [{ enabled: false, copies: 2, color: '#cc5522' }, { enabled: true, copies: 0, color: '#cc5522' }, { enabled: false, copies: 1, inheritance: 'recessive' }]) {
     frameReads.length = 0;
-    const beardPixel = framePixels(await render.composeFrame('voorg-ass', 'idle', { ...genotype, beard2: disabled }));
-    assert(beardPixel[2] > beardPixel[0], 'unexpressed/carrier/missing-color alternate retains the default blue beard');
+    const beardPixel = framePixels(await render.composeFrame('voorg-ass', 'idle', { ...unusual, beard2: disabled }));
+    assert(beardPixel[2] > beardPixel[0], 'unexpressed/carrier alternate retains the default blue beard even with explicit B');
     assert(beardPixel[3] > 0, 'fallback beard is opaque even when a non-visible variant gene exists');
   }
   console.log('Voorg-Ass default beard: all frames, coat tint, no genotype, and replacement semantics passed.');

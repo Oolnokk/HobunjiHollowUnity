@@ -31,6 +31,9 @@
 //   denseWallBatchesOff
 //                   the Cloud Forest dense wall drawn as one instanced mesh per
 //                   chunk part again (dense-forest-wall-batches.js)
+//   denseWallLodOff
+//                   far Cloud Forest wall chunks drawn with full-detail bark
+//                   and vines again (dense-forest-wall-batches.js distance LOD)
 //   denCollisionEveryTile
 //                   creature pathfinding looks up every den's collision shape
 //                   for every tile again, instead of once per game-loop tick
@@ -345,6 +348,9 @@
     const wallBatches = window.DenseForestWallBatches;
     if (typeof wallBatches?.setEnabled === 'function' && wallBatches.snapshot?.().enabled === true && wallBatches.snapshot().batches > 0) {
       variants.push({ id: 'denseWallBatchesOff', apply: () => wallBatches.setEnabled(false), undo: () => wallBatches.setEnabled(true) });
+      if (wallBatches.snapshot().lodEnabled === true && wallBatches.snapshot().lodFarTrees > 0) {
+        variants.push({ id: 'denseWallLodOff', apply: () => wallBatches.setLodEnabled(false), undo: () => wallBatches.setLodEnabled(true) });
+      }
     }
     const tiles = window.GridTileAccessors;
     if (typeof tiles?.setDenStateMemoEnabled === 'function' && tiles.denStateMemoEnabled?.() === true) {

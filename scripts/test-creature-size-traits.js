@@ -56,7 +56,7 @@ const houndTraits = context.CreatureGenetics.genotypeTraits('dabinggi-hound', { 
 assert.equal(houndTraits.size.label, 'Large');
 assert.equal(houndTraits.size.roleLabel, 'Mount');
 assert.equal(houndTraits.size.isNonDefault, true);
-assert.equal(houndTraits.colors[0].label, 'Base coat');
+assert.deepEqual(Array.from(houndTraits.colors, trait => trait.label), ['Primary body color', 'Secondary body color']);
 assert.deepEqual(Array.from(houndTraits.patterns, trait => [trait.label, trait.enabled, trait.carrier]), [
   ['Mitts', true, false],
   ['Spectacles', false, true],
@@ -67,7 +67,7 @@ const uumTraits = context.CreatureGenetics.genotypeTraits('uumkaoii', { // Exerc
   fur: { color: '#7a6a58', copies: 2, inheritance: 'dominant' },
   plates: { color: '#c2a56e', copies: 2, inheritance: 'dominant' },
 });
-assert.deepEqual(Array.from(uumTraits.colors, trait => trait.label), ['Base coat']);
+assert.deepEqual(Array.from(uumTraits.colors, trait => trait.label), ['Primary body color', 'Secondary body color']);
 assert.deepEqual(Array.from(uumTraits.patterns, trait => [trait.label, trait.enabled]), [['Shell', true]]);
 
 const originalRandom = context.Math.random; // Restored after forcing one endpoint mutation through public breeding.

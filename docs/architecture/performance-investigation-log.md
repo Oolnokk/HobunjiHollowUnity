@@ -2320,6 +2320,64 @@ Additional cache audit: logical portrait dimensions and layer size are mutable v
 
 Final targeted audit: isolated executions of the real AutoLOD, Gear cadence, flail depth/facing, HUD dedup and beard matte/readback fixtures passed. Added an actual renderer-block cache integration fixture for separate portrait targets, exact still hits, dynamic bypass, immutable retained pixels, policy and dimension changes, tint changes, editor and pixel-dye bypass, context policy, and bounded eviction. Gear self-removal markers now last only through the next observer delivery and no filtering array is built unless such a release actually occurred. Mutable mask overrides and invalid/unserializable static deformation or policy values use the original uncached path.
 
+## 24 Nov 2026: Cloud Forest dense wall distance LOD (triangles, not draws)
+
+**Where the frame goes (headless, SwiftShader).** A CPU profile of town and the Southern Cloud
+Forest put only 12–20% of frame time in JS; ~80% was native `(program)` time. Wrapping every
+WebGL call showed tiny call overhead (no `readPixels`/`getError` stalls), so the cost is
+rasterising and vertex work. The Cloud Forest main pass drew ~0.9–1.24 M triangles at 360×240,
+and a per-mesh census put ~87% of the in-view triangles in the dense shadewood wall
+(`AuthoredCloudForestDenseChunk_*`). Hiding the wall raised headless fps 5.07 → 7.13 (+40%). This
+was the "dense-wall triangles / tree LOD" lead left open in the 20 Nov entry. (Town's equivalent
+is `Roughbrick1.glb` instancing, ~570 k triangles, and HousePieceGen "Surface roots", ~200 k:
+hiding them gave +23% / +30%. Not addressed here.)
+
+**What a wall tree is.** A procedural shadewood is 4,218 triangles: bark (trunk + 9 roots + 15
+canopy branches merged) 2,592, vines 1,500, climb branch 96, leaf cards 30. The baked
+`shadewood_0N_lod-decimate-90.glb` LODs (661 triangles) are not used, because tree assets default
+to procedural mode and their materials and shapes differ from the procedural trees.
+
+**Change.**
+- `FoliageGenerator.liteTreeGeometry(fullPartGeometry)` (foliage-generator.js) builds, once per
+  shared variant, a far twin from the same seed and random sequence. The spines, branch tips,
+  roots, vine wraps and leaf-card positions are therefore identical. Only tube emission changes:
+  the trunk is unchanged; roots, canopy branches and the climb branch keep every other ring (5/4
+  sides); vines keep their sides and every other ring, lifted by 1/cos(half the chord angle) so
+  straight segments do not cut into the trunk. Full bark 2,592 → 864, vines 1,500 → 750, so a far
+  tree is ~1,670 triangles. Bounds match within ~0.07 units. Leaf cards are reused as they are.
+- `dense-forest-wall-batches.js` (the existing render-only scope) classifies each wall tree by
+  its own base distance from the camera (default 12 tiles, 1.5-tile hysteresis). Near and far
+  trees of a part go to separate batches, so far trees use the twin with the chunk's own instance
+  matrices, live material and layers (shell outline). Fading chunks' transparent parts are never
+  merged: an all-far part swaps its geometry in place for the render (no extra draw), and a
+  straddling one splits into its own near/far batches. Chunk meshes keep full geometry for
+  gameplay.
+- `border-terrain.js` instanced every mesh of each wall tree, including the climb branch that
+  the tree's own roll had hidden, and every level of a baked tree's `THREE.LOD`. It now
+  instances only drawn meshes (level 0 of a LOD). It also builds the twins at zone build time.
+
+**Visual checks (1280×720, same camera, LOD off vs 8 vs 12 tiles).**
+- The first twin dropped roots and vines and used 3-sided vines. At 8 tiles that visibly removed
+  root flares and the green vines.
+- Coarse vines then showed as black zigzags: chords buried the green tube under the trunk's
+  noisy surface, leaving only its shell outline. A 6-sided trunk did the same, because its noise
+  is sampled at different angles.
+- Both fixed (trunk unchanged, vines lifted). At 12 tiles, off and LOD frames are
+  indistinguishable by eye; pixel differences (6.3–8.0% > 24 levels) are within the off-vs-off
+  animation/rain noise (7.2–9.2%). 8 tiles still showed small differences, so 12 is the default.
+
+**Measured (headless, same spawn view, 360×240, alternating 12 s windows):** main-pass triangles
+895 k → 601 k (−33%; −40% from another spawn, 1.24 M → 748 k); all passes 1.09 M → 0.80 M; fps
+6.72 → 7.30 average over three pairs (+8.6%; noisy); draws +12 to +18 (near/far splits); 0 batch
+rebuilds while standing still. Walking the same 12 s route (south then back): frames 74/70 →
+76/79; batch rebuilds ~0.4 → ~3 per frame (small matrix copies as trees cross the boundary);
+instance-buffer allocations 23 → 35–45, mostly new per-chunk batches for corridor-edge fading
+chunks. Tried and removed: keeping emptied LOD batches hidden for 30 frames and 1.5× capacity
+headroom (allocations 35–49 with them, no measurable change). **Not yet measured on a device.** A/B: Settings → Render
+optimizations → "Lighter far Cloud Forest wall trees", benchmark variant `denseWallLodOff`,
+`DenseForestWallBatches.setLodEnabled(false)` / `setLodDistance(n)`; `snapshot()` reports
+far/near trees, triangles avoided, in-place swaps and buffer allocations.
+
 ## 24 Nov 2026: surface-growth root/vine tubes drop redundant rings
 
 **Found while profiling the Cloud Forest wall LOD.** A per-mesh triangle census of town put
