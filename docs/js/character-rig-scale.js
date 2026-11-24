@@ -134,6 +134,34 @@
     };
   }
 
+  // The adult editor's Height and Beltline % are two coordinates for the SAME legacy
+  // portrait-height/leg-length geometry. The saved fields stay unchanged for gameplay.
+  const beltlineFraction = value => { // Used by both conversions; a nonpositive hip or malformed profile gets a stable midpoint.
+    const n = Number(value);
+    return Number.isFinite(n) && n > 0 && n < 1 ? Math.max(.05, Math.min(.95, n)) : .5;
+  };
+  function heightBeltlineFor(scale, unscaledHipFraction = .5) {
+    const base = beltlineFraction(unscaledHipFraction); // Floor-to-hip / floor-to-top before ANY authored scaling.
+    const portrait = clampScale(scale?.portraitHeight ?? scale?.y ?? 1);
+    const leg = clampScale(scale?.legLength ?? scale?.y ?? 1);
+    const height = (1 - base) * portrait + base * leg; // Old portrait offset raises the whole upper half by (leg - portrait) * hip.
+    return { height, beltline: base * leg / height }; // One true floor-to-hip fraction, not an arbitrary leg/portrait ratio.
+  }
+  function scaleForHeightBeltline(scale, height, beltline, unscaledHipFraction = .5) {
+    const base = beltlineFraction(unscaledHipFraction);
+    const target = clampScale(height); // Overall stature relative to the unscaled preview's original top.
+    let fraction = Number(beltline);
+    if (!Number.isFinite(fraction)) fraction = heightBeltlineFor(scale, base).beltline;
+    // Prevent either derived field leaving the runtime's 10-400% scale envelope.
+    // This clamps the beltline instead of independently clamping both pieces, which would unexpectedly change total height.
+    const lower = Math.max(.05, MIN_SCALE * base / target, 1 - MAX_SCALE * (1 - base) / target);
+    const upper = Math.min(.95, MAX_SCALE * base / target, 1 - MIN_SCALE * (1 - base) / target);
+    const resolvedFraction = Math.max(lower, Math.min(upper, Math.min(.95, Math.max(.05, fraction))));
+    const portrait = clampScale(target * (1 - resolvedFraction) / (1 - base));
+    const legLength = clampScale(target * resolvedFraction / base);
+    return { ...scale, y: portrait, portraitHeight: portrait, legLength }; // Keep head, width, hand/foot and authored head-Y unchanged.
+  }
+
   function installProfileDefaults() {
     const characters = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters; // Live shared rig library consumed by game hands/feet and the Animation Author comparison.
     if (!characters) return false;
@@ -491,6 +519,8 @@
     defaultScaleFor,
     profileFor,
     scaleFor,
+    heightBeltlineFor,
+    scaleForHeightBeltline,
     legLengthRatioFor: (species, gender, profile = null) => { const resolved = scaleFor(species, gender, profile); return resolved.legLength / resolved.y; }, // Real game and lineup feet read the same post-migration ratio.
     applyToParent,
     applyHeadCompensation,
