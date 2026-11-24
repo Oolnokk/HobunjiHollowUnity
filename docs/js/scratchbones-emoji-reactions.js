@@ -182,6 +182,7 @@
       : { height: height * .77, offsetX: Math.max(height * .32, size * .9) }; // Humanoid reactions sit alongside the head.
     const accepted = popup.showIconEffect(root, {
       kind: POPUP_KIND,
+      immutableCanvases: true, // maskFor caches completed, never-repainted tinted artwork.
       duration: TYPES[type].duration,
       height: anchor.height,
       offsetX: anchor.offsetX,
@@ -223,6 +224,7 @@
   }
   function debugSnapshot() {
     return { ...stats, active: window.WorldPopupText?.countIconEffects?.(POPUP_KIND) || 0, loadedMasks: masks.size,
+      renderResources: window.WorldPopupText?.iconResourceSnapshot?.() || null,
       latestChange: 'NPC emojis mirror with portraits; animal emojis follow the real head side of each species crop, including right-headed Skeeri, and turn with the card.' };
   }
   function debugControls() {
@@ -250,6 +252,22 @@
         });
         panel.appendChild(button);
       }
+      const statsButton = document.createElement('button'); // On-demand pool counters; no timer or render-loop DOM writes.
+      statsButton.textContent = 'Pool stats';
+      statsButton.style.cssText = 'margin:3px;padding:5px;color:#fff;background:#38465c;border:1px solid #9aa9bf;border-radius:5px';
+      statsButton.addEventListener('pointerdown', e => e.stopPropagation());
+      statsButton.addEventListener('click', e => {
+        e.stopPropagation();
+        const pool = window.WorldPopupText?.iconResourceSnapshot?.();
+        label.textContent = pool
+          ? 'Materials reused/created: ' + pool.materialReused + '/' + pool.materialCreated
+            + ' · Quads: ' + pool.geometryReused + '/' + pool.geometryCreated
+            + ' · Textures: ' + pool.textureReused + '/' + pool.textureCreated
+            + ' · Cached: ' + pool.cachedTextures + '/' + pool.limits.textures
+            + ' · Live art: ' + pool.liveCachedTextures
+          : 'No emoji resources created yet';
+      });
+      panel.appendChild(statsButton);
       document.body.appendChild(panel);
     };
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mount, { once: true });

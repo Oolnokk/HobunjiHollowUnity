@@ -30,7 +30,7 @@ class Group {
     this.quaternion = { copy(source) { this.source = source; } };
   }
   add(child) { child.parent = this; this.children.push(child); }
-  remove(child) { this.children.splice(this.children.indexOf(child), 1); child.parent = null; }
+  remove(child) { const index = this.children.indexOf(child); if (index >= 0) { this.children.splice(index, 1); child.parent = null; } }
   getWorldPosition(target) { return target.set(this.position.x, this.position.y, this.position.z); }
   getWorldScale(target) { return target.set(1, 1, 1); }
 }
@@ -169,10 +169,33 @@ function projectedChatheadEdge(actorRoot, frame, width, axisProjection, side) {
   const expectedScale = expectedSize * api.sample('love', now / 1650).scale; // Original curves still drive the billboard scale.
   assert.ok(Math.abs(icon.scale.x - expectedScale) < 1e-9, 'animal emoji width doubles');
   assert.ok(Math.abs(icon.scale.y - expectedScale) < 1e-9, 'animal emoji height doubles');
+  const loveTexture = icon.material.map, loveGeometry = icon.geometry, loveMaterial = icon.material;
   now = 1651;
   step();
   assert.equal(billboard(), undefined, 'ended reaction removed');
-  assert.ok(icon.geometry.disposed && icon.material.disposed && icon.material.map.disposed);
+  assert.equal(loveTexture.disposed, undefined, 'immutable cached artwork survives expiry');
+  assert.equal(loveGeometry.disposed, undefined, 'bounded geometry pool retains one retired quad');
+  assert.equal(loveMaterial.map, null, 'retired material detaches its texture');
+  const beforeReuse = popup.iconResourceSnapshot();
+  const secondAnimal = actor();
+  assert.equal(api.trigger(secondAnimal, 'love', { ...animalOptions, force: true }), true);
+  await settle();
+  const secondIcon = billboard().children[0];
+  assert.equal(secondIcon.material.map, loveTexture, 'separate reactions share one immutable GPU texture');
+  assert.equal(secondIcon.geometry, loveGeometry);
+  assert.equal(secondIcon.material, loveMaterial);
+  assert.equal(secondIcon.material.opacity, 0, 'leased material starts hidden');
+  assert.equal(popup.iconResourceSnapshot().textureReused, beforeReuse.textureReused + 1);
+  const concurrent = actor();
+  assert.equal(api.trigger(concurrent, 'love', { ...animalOptions, force: true }), true);
+  await settle();
+  const concurrentIcon = scene.children.filter(group => !group.name)[1].children[0];
+  assert.equal(concurrentIcon.material.map, loveTexture);
+  assert.notEqual(concurrentIcon.material, secondIcon.material, 'live reactions never share mutable opacity');
+  assert.notEqual(concurrentIcon.geometry, secondIcon.geometry, 'each live event owns its geometry lease');
+  assert.equal(popup.releaseScene(scene), 2);
+  assert.equal(loveTexture.disposed, undefined, 'evicting a scene does not destroy session-owned cached art');
+  assert.equal(popup.iconResourceSnapshot().liveCachedTextures, 0);
 
   const rightHeadAnimal = actor(); // An off-center head on the opposite half of a sprite catches incorrect absolute-value shortcuts.
   const walker = actor(); // Named animal dialogue anchors to its card group even when triggered on the walker root.
@@ -261,5 +284,74 @@ function projectedChatheadEdge(actorRoot, frame, width, axisProjection, side) {
   await settle();
   popup.clear();
   assert.equal(billboard(), undefined);
+  // Generic icon consumers are mutable unless they explicitly opt in.
+  const generic = actor();
+  const mutable = canvas();
+  function showGeneric(canvasSource, immutableCanvases = false) {
+    return popup.showIconEffect(generic, { kind: 'generic-test', duration: 100, height: 1, size: 1,
+      immutableCanvases, loadParts: async () => [{ canvas: canvasSource, name: 'generic', widthScale: 1, heightScale: 1 }],
+      sample: () => ({ alpha: 1, x: 0, y: 0, scale: 1, rotation: 0 }) });
+  }
+  assert.equal(showGeneric(mutable), true);
+  await settle();
+  const mutableTexture = billboard().children[0].material.map;
+  popup.releaseScene(scene);
+  assert.equal(mutableTexture.disposed, true, 'unique mutable texture is released normally');
+  for (let i = 0; i < 36; i++) {
+    assert.equal(showGeneric(canvas(), true), true);
+    await settle();
+    popup.releaseScene(scene);
+  }
+  // Scene-specific release cannot invalidate another scene's live texture lease.
+  const sceneB = Object.assign(new Group(), { isScene: true });
+  const other = Object.assign(new Group(), { name: 'other-scene-actor' });
+  sceneB.add(other);
+  const sharedCanvas = canvas();
+  const genericOpts = { kind: 'generic-test', duration: 100, height: 1, size: 1,
+    immutableCanvases: true, loadParts: async () => [{ canvas: sharedCanvas, name: 'shared', widthScale: 1, heightScale: 1 }],
+    sample: () => ({ alpha: 1, x: 0, y: 0, scale: 1, rotation: 0 }) };
+  assert.equal(popup.showIconEffect(generic, genericOpts), true);
+  assert.equal(popup.showIconEffect(other, genericOpts), true);
+  await settle();
+  const liveOther = sceneB.children.find(group => !group.name).children[0];
+  const sharedMap = liveOther.material.map;
+  assert.equal(billboard().children[0].material.map, sharedMap);
+  assert.equal(popup.releaseScene(scene), 1);
+  assert.equal(liveOther.material.map, sharedMap);
+  assert.equal(sharedMap.disposed, undefined);
+  // Fill the cache while this texture is still leased; LRU must skip it.
+  for (let i = 0; i < 36; i++) {
+    assert.equal(showGeneric(canvas(), true), true);
+    await settle();
+    popup.releaseScene(scene);
+  }
+  assert.equal(liveOther.material.map, sharedMap);
+  assert.equal(sharedMap.disposed, undefined, 'active artwork cannot be evicted');
+  assert.equal(popup.releaseScene(sceneB), 1);
+  // Throw during a partial build, after the first part is attached.
+  let disposeCalls = 0;
+  const originalAdd = Group.prototype.add;
+  Group.prototype.add = function(child) {
+    if (child.name === 'throw-on-add') throw new Error('synthetic render hook failure');
+    return originalAdd.call(this, child);
+  };
+  assert.equal(popup.showIconEffect(generic, { ...genericOpts, immutableCanvases: false,
+    loadParts: async () => [{ canvas: canvas(), name: 'first' }, { canvas: canvas(), name: 'throw-on-add' }],
+    onDispose: () => { disposeCalls++; } }), true);
+  await settle();
+  Group.prototype.add = originalAdd;
+  assert.equal(disposeCalls, 1, 'partial build cleans up exactly once');
+  assert.equal(billboard(), undefined);
+  assert.equal(popup.countIconEffects('generic-test'), 0);
+  assert.equal(popup.iconResourceSnapshot().liveCachedTextures, 0);
+  const bounded = popup.iconResourceSnapshot();
+  assert.ok(bounded.cachedTextures <= bounded.limits.textures);
+  assert.ok(bounded.pooledGeometries <= bounded.limits.geometries);
+  assert.ok(bounded.pooledMaterials <= bounded.limits.materials);
+  assert.ok(bounded.textureDisposed >= 1, 'retired cache entries are evicted at the cap');
+  let cameraUpdates = 0;
+  camera.updateMatrixWorld = () => cameraUpdates++;
+  step();
+  assert.equal(cameraUpdates, 0, 'idle popup tick skips camera matrix updates');
   console.log('Scratchbones emoji reactions: PASS');
 })().catch(error => { console.error(error); process.exitCode = 1; });
