@@ -27,7 +27,7 @@ jobs:
     needs: impact
     if: ${{ !cancelled() && (needs.impact.result != 'success' || needs.impact.outputs.relevant == 'true') }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -47,3 +47,9 @@ jobs:
         run: node scripts/test-shaft-hub.js
       - name: Check established shared overlay behavior
         run: node scripts/test-overlay-only-lighting.js
+      - name: Install Three.js and Chromium for pixel regression
+        run: |
+          npm install --no-save --package-lock=false playwright@1.55.1 three@0.128.0
+          npx playwright install --with-deps chromium
+      - name: Verify actual depth-tested rune pixels and room clipping
+        run: node scripts/check-kanthic-glyph-webgl.js
