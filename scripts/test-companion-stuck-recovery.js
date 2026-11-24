@@ -37,6 +37,7 @@ const windowMock = {
     findPath: (_sc, _sr, _tc, _tr, walkable) => {
       routedChecks++;
       if (state.pathProbe && !walkable(state.pathProbe.col, state.pathProbe.row)) return null;
+      if (state.pathGate && !state.pathGate(_sc, _sr)) return null;
       return state.pathExists ? [{ col: 18, row: 18 }] : null;
     },
   },
@@ -162,6 +163,20 @@ assert.equal(simulate(retryPet, 1), false);
 assert.equal(routedChecks, checksAfter, 'busy-state transitions do not rearm the expensive search');
 state.pathExists = true;
 assert.equal(simulate(retryPet, 10), true, 'retry can succeed after the obstruction clears');
+// The next retry must advance past four rejected same-floor path starts.
+const visited = new Set();
+state.pathGate = (col, row) => {
+  visited.add(col + ',' + row);
+  return visited.size >= 5;
+};
+const laterCandidate = makePet(1.5*TILE);
+const beforeBatch = routedChecks;
+assert.equal(simulate(laterCandidate, 1), false, 'first four distinct route starts exhaust the budget');
+assert.equal(routedChecks - beforeBatch, 4, 'exactly four A* probes in the first batch');
+assert.equal(visited.size, 4);
+assert.equal(simulate(laterCandidate, 16), true, 'second retry reaches a fifth distinct viable landing');
+assert(visited.size >= 5, 'candidate cursor prevents repeating the same four failures');
+state.pathGate = null;
 owner.x = 18.5 * TILE;
 delete owner.angle;
 

@@ -7,6 +7,7 @@
   const HARD_FAR_TILES = 18; // Excessive separation bypasses the stall timer for player-owned animals.
   const HARD_COOLDOWN_SECONDS = 3; // Fast travel can open another large gap before the normal recovery cooldown expires.
   const STALL_SECONDS = 8; // A blocked follower gets a real pathfinding/catch-up opportunity first.
+  const RUIN_PATH_BUDGET = 4; // Per-retry A* budget; resume at the next candidate when exhausted.
   const RETRY_SECONDS = 1.5; // Failed off-screen searches do not run every animation frame.
   const COOLDOWN_SECONDS = 18; // A successful recovery cannot repeat on another frame or nearby obstacle.
   const PROGRESS_TILES = 0.7; // Substantial gap reduction proves the animal is still making progress.
@@ -115,7 +116,7 @@
     return null;
   }
 
-  function recoveryCandidate(c, master, camera, currentArea, tile, ownerFloor, planes) {
+  function recoveryCandidate(c, master, camera, currentArea, tile, ownerFloor, planes, state) {
     const grid = activeGrid(c), ruin = currentArea === 'map_i_dev_random_ruin';
     if (!grid || !Number.isFinite(tile) || tile <= 0) return null;
     const masterTile = tileAt(grid, master.x, master.y, tile);
@@ -132,8 +133,19 @@
       ? window.CliffRouteNetwork?.forArea?.(currentArea) : null; // Cached exterior graph, never a new path search.
     const ownerComponent = network && window.CliffRouteNetwork?.componentAt?.(network,
       Math.floor(master.x / tile), Math.floor(master.y / tile)); // Avoid disconnected equal-height cliff shelves.
+    const radii = baby ? RADII : REAR_RADII; // Candidate ordering remains near-to-far.
+    const angleCount = baby ? ANGLES : REAR_OFFSETS.length; // Fixed candidate fan size.
+    const total = radii.length * angleCount; // Maximum probes in one full pass.
+    const goalCol = Math.floor(master.x / tile), goalRow = Math.floor(master.y / tile); // Same-floor path destination.
+    const searchKey = ruin ? `${goalCol},${goalRow},${Math.round(ownerSurface / Y_TOLERANCE)},${Math.round(rear * ANGLES / (Math.PI * 2))}` : null; // Restart near-first when the owner changes tile, floor or heading.
+    const start = ruin && state.searchKey === searchKey ? state.searchCursor || 0 : 0; // Resume only an unchanged search.
+    state.searchKey = searchKey; state.searchCursor = 0;
     let pathAttempts = 0; // Caps expensive ruin path validations to a few hidden candidates per retry.
-    for (const radius of baby ? RADII : REAR_RADII) for (let i = 0; i < (baby ? ANGLES : REAR_OFFSETS.length); i++) {
+    const walkability = ruin ? new Map() : null; // Share collision results across the synchronous A* probes, never across frames.
+    const triedTiles = ruin ? new Set() : null; // Multiple sampled offsets in one tile need only one A* proof.
+    for (let step = 0; step < total; step++) {
+      const index = (start + step) % total; // A failed bounded batch resumes at the next point on the next retry.
+      const radius = radii[Math.floor(index / angleCount)], i = index % angleCount;
       const angle = baby ? (i + (Math.floor(radius) % 2) * 0.5) * Math.PI * 2 / ANGLES
         : rear + REAR_OFFSETS[i] * Math.PI * 2 / ANGLES;
       const px = master.x + Math.cos(angle) * radius * tile;
@@ -163,10 +175,26 @@
       if (ruin) {
         const navigator = window.TilePathfinding; // Existing tile navigator proves a floor-matched path back to the owner.
         if (!navigator?.findPath || !navigator?.boxAround) continue; // Never teleport into an isolated locked chamber.
-        if (++pathAttempts > 4) return null; // Avoid dozens of dungeon-wide A* probes on an already slow frame.
-        const startCol = Math.floor(px / tile), startRow = Math.floor(py / tile);
-        const goalCol = Math.floor(master.x / tile), goalRow = Math.floor(master.y / tile);
+        const startCol = Math.floor(px / tile), startRow = Math.floor(py / tile); // Validated continuous landing, then its tile route.
+        const tileKey = startCol + ',' + startRow; // Deduplicate same-tile path probes within this attempt.
+        if (triedTiles.has(tileKey)) continue;
+        triedTiles.add(tileKey);
+        pathAttempts++;
         const path = navigator.findPath(startCol, startRow, goalCol, goalRow, (col, row) => {
+          const key = col + ',' + row; // Reuse the same tile result even across distinct start points.
+          if (walkability.has(key)) return walkability.get(key);
+          const allowed = pathTileWalkable(col, row);
+          walkability.set(key, allowed);
+          return allowed;
+        }, { bounds: navigator.boxAround(startCol, startRow, goalCol, goalRow, 3), maxNodes: 550, cacheWalkability: true });
+        if (!path) {
+          if (pathAttempts >= RUIN_PATH_BUDGET) {
+            state.searchCursor = (index + 1) % total; // No starvation on a fifth or later viable landing.
+            return null;
+          }
+          continue;
+        }
+        function pathTileWalkable(col, row) {
           const tx = (col + 0.5) * tile, ty = (row + 0.5) * tile;
           const cell = tileAt(grid, tx, ty, tile); // A tile occupancy wall is impassable even if an underlying floor surface remains.
           if (!cell || cell.incline || UNSAFE_TYPES.has(String(cell.type).toLowerCase()) ||
@@ -175,20 +203,19 @@
           const surface = DS?.sampleSupport?.(tx / tile, ty / tile, {
             minY: ownerSurface - Y_TOLERANCE, maxY: ownerSurface + Y_TOLERANCE, pad: 0,
           }); // A path on a different overlapping shaft story does not count.
-          return !!surface && !DS?.pointInPit?.(tx / tile, ty / tile, 0.12) &&
+          return !!surface && Math.abs(surface.y - ownerSurface) <= Y_TOLERANCE && !DS?.pointInPit?.(tx / tile, ty / tile, 0.12) &&
             !DS?.blockerAt?.(tx / tile, ty / tile, { radius: 0.2, actorHeight: 1.25, worldY: surface.y, y: surface.y }) &&
             !window.DevRandomRuin?.shaftBodyBlocksAtFeet?.(tx / tile, ty / tile, 0.2, ownerSurface) &&
             window.DevRandomRuin?.shaftCreatureCanEnter?.(probe, tx, ty, true) !== false &&
             !!deps.creatureCanEnter?.(c.def, tx, ty, NaN, NaN, probe, true);
-        }, { bounds: navigator.boxAround(startCol, startRow, goalCol, goalRow, 3), maxNodes: 550, cacheWalkability: true });
-        if (!path) continue;
+        }
       }
       return { x: px, y: py, supportY: landingY };
     }
     return null;
   }
 
-  function tryRecover(c, master, currentArea, reason) {
+  function tryRecover(c, master, currentArea, reason, state) {
     const camera = deps.getCamera?.(); // Uses the active real game camera, including zoom and camera rotation.
     if (!camera) { debug.lastFailure = 'no camera'; return false; }
     const planes = recoveryPlanes(camera); // The last rendered camera's world clip volume, computed only on recovery attempts.
@@ -212,7 +239,7 @@
           groupPos.y - (c.groundLift ?? c.halfHeight ?? 0), c, planes))) {
       debug.lastFailure = 'companion currently visible'; return false;
     }
-    const candidate = recoveryCandidate(c, master, camera, currentArea, tile, ownerFloor, planes);
+    const candidate = recoveryCandidate(c, master, camera, currentArea, tile, ownerFloor, planes, state);
     if (!candidate) { debug.lastFailure = 'no unseen safe landing on owner floor'; return false; }
     if (!c._familyBabyFollower) { // Infant navigation is private; it has no combat actor to cancel.
       window.Combat?.animalAttacks?.cancel?.(c); // Clear all movement-owning attack and route state before relocating.
@@ -262,7 +289,7 @@
     }); // Actor-local progress tracks the real companion across frames; no global scan.
     if (state.area !== currentArea || state.owner !== master) {
       state.area = currentArea; state.owner = master; state.stalled = 0; state.retry = 0;
-      state.cooldown = 0; state.bestDistance = Infinity;
+      state.cooldown = 0; state.bestDistance = Infinity; state.searchCursor = 0; state.searchKey = null;
     }
     const elapsed = Math.min(0.1, Math.max(0, Number(dt) || 0)); // Pause/hitches cannot instantly trigger recovery.
     state.cooldown = Math.max(0, state.cooldown - elapsed);
@@ -298,8 +325,8 @@
     if ((!hardFar && state.stalled < STALL_SECONDS) || state.cooldown > cooldownLimit) return false;
     if (state.retry > 0.000001) return false;
     state.retry = RETRY_SECONDS;
-    if (!tryRecover(c, master, currentArea, hardFar ? 'distance-limit' : 'stalled')) return false;
-    state.stalled = 0; state.retry = 0; state.cooldown = COOLDOWN_SECONDS;
+    if (!tryRecover(c, master, currentArea, hardFar ? 'distance-limit' : 'stalled', state)) return false;
+    state.stalled = 0; state.retry = 0; state.cooldown = COOLDOWN_SECONDS; state.searchCursor = 0; state.searchKey = null;
     state.bestDistance = Infinity;
     return true;
   }
