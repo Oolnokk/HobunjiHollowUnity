@@ -24,6 +24,7 @@
   let heldQuality = null; // Explicit Pack Hold selection; automatic consumption uses this tier while available.
   let qualityBuckets = {}; // Used to persist actual 1–5-star quantities without changing the game's stack inventory shape.
   let cookedDefinitions = {}; // Used to restore procedurally named food item definitions on reload.
+  const feyEncounterMultipliers = new Map(); // Future equipment, prayer and other providers can register independent chance multipliers.
   let feySightStacks = 0; // Persistent member-world stacks; only a successful fey reward consumes them.
   let activeFoodEffects = []; // Used as an independent timed effect source beside alchemy.
   const externalFoodProviders = new Map(); // Independent festival meals augment cooked-food stats without refreshing or replacing real meal timers.
@@ -627,9 +628,22 @@
     return consumed;
   }
 
+  function registerFeyEncounterMultiplier(id, provider) {
+    if (!id) return false;
+    if (typeof provider === 'function') feyEncounterMultipliers.set(String(id), provider);
+    else feyEncounterMultipliers.delete(String(id));
+    return true;
+  }
+
   function feyEncounterChance(baseChance) {
-    const chance = Number(baseChance); // Encounter owners supply a probability in [0,1].
-    return Number.isFinite(chance) ? Math.min(1, Math.max(0, chance) * (1 + feySightStacks)) : 0;
+    const base = Number(baseChance); // Encounter owners supply a probability in [0,1].
+    if (!Number.isFinite(base) || base <= 0) return 0;
+    let chance = base * (1 + feySightStacks);
+    for (const provider of feyEncounterMultipliers.values()) {
+      try { const mul=Number(provider()); if(Number.isFinite(mul)&&mul>=0)chance=mul===0?0:chance*mul; }
+      catch(error) { window.__farmLog?.('[fey] chance provider failed: '+error.message,'warn'); }
+    }
+    return Math.min(1, chance);
   }
 
   function feySightEntries() {
@@ -941,7 +955,7 @@
     registerCookedDefinition, recordItemQuality, getFoodEffectStacks, getSpeedMultiplier, getStaminaRegenMultiplier, registerIngredientItems, availableQualityEntries,
     setHeldQuality, consumeQuality, consumeLowestQuality, consumeQualityByPolicy, peekLowestQuality, valueMultiplierForStars, cookedSellPrice,
     registerExternalFoodProvider, canonicalFoodEffectKey, normalizeFoodEffects,
-    grantFeySight, consumeFeySight, feyEncounterChance,
+    grantFeySight, consumeFeySight, feyEncounterChance, registerFeyEncounterMultiplier,
     unlockRecipe, isRecipeUnlocked, listIngredientDefinitions, listCookedInventory, consumeCookedInventoryItem, effectLabel,
     FOOD_DURATION_HOURS, FOOD_EFFECT_STRENGTH_TIERS, effectStrengthLabel, formatEffectStrength, ingredientEffectTotals, ingredientBuffText,
     bestAvailableSelection, get favoriteRecipes() { return favoriteRecipes.map(entry => ({ ...entry, ingredients: { ...entry.ingredients } })); }, loadFavorite,
