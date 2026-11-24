@@ -15,13 +15,17 @@ class Vec3 {
   copy(v) { return this.set(v.x,v.y,v.z); }
   lengthSq() { return this.x*this.x+this.y*this.y+this.z*this.z; }
   normalize() { const n=Math.sqrt(this.lengthSq()); this.x/=n; this.y/=n; this.z/=n; return this; }
-  project(camera) { // Synthetic orthographic viewport with sidebar-induced horizontal projection offset.
-    return this.set((this.x-camera.centerX)*2/camera.width+camera.screenShift,
-      (this.y-camera.centerY)*2/camera.height, (this.z-camera.centerZ)/camera.depth);
+  project(camera) { // Orthographic projection with actual camera yaw plus sidebar-induced horizontal shift.
+    const d=camera.direction, length=Math.hypot(d.x,d.z), fx=d.x/length, fz=d.z/length;
+    const rightX=-fz, rightZ=fx, dx=this.x-camera.centerX, dz=this.z-camera.centerZ;
+    return this.set((dx*rightX+dz*rightZ)*2/camera.width+camera.screenShift,
+      (this.y-camera.centerY)*2/camera.height, (dx*fx+dz*fz)/camera.depth);
   }
   unproject(camera) {
-    return this.set((this.x-camera.screenShift)*camera.width/2+camera.centerX,
-      this.y*camera.height/2+camera.centerY,this.z*camera.depth+camera.centerZ);
+    const d=camera.direction, length=Math.hypot(d.x,d.z), fx=d.x/length, fz=d.z/length;
+    const rightX=-fz, rightZ=fx, across=(this.x-camera.screenShift)*camera.width/2, back=this.z*camera.depth;
+    return this.set(camera.centerX+rightX*across+fx*back,
+      this.y*camera.height/2+camera.centerY,camera.centerZ+rightZ*across+fz*back);
   }
   distanceTo(v) { return Math.hypot(v.x-this.x,v.y-this.y,v.z-this.z); }
 }
@@ -45,9 +49,10 @@ const start=author.indexOf('  function installSixFootGuide('),end=author.indexOf
 assert(start>=0 && end>start,'production scene guide function remains findable');
 const setup=author.slice(start,end);
 const context={THREE,window,document,active:true,building:false,previewRoot:{children:[]},
-  sixFootHeight:null,sixFootGuide:null,sixFootGuideDepth:2};
+  sixFootHeight:null,sixFootGuide:null,sixFootGuideDepth:2,
+  sixFootLineupBounds:{minX:-25,maxX:25,minZ:-.4,maxZ:.4}}; // Wide multi-species lineup, inspected only via cached bounds.
 const sandbox={env:context,console}; // Persist the isolated VM global so its exported test API is accessible.
-vm.runInNewContext('let { THREE, window, document, active, building, previewRoot, sixFootHeight, sixFootGuide, sixFootGuideDepth } = env;\n'
+vm.runInNewContext('let { THREE, window, document, active, building, previewRoot, sixFootHeight, sixFootGuide, sixFootGuideDepth, sixFootLineupBounds } = env;\n'
   + setup + '\nthis.fixture={ installSixFootGuide, getGuide:()=>sixFootGuide, getHeight:()=>sixFootHeight };',
   sandbox);
 const api=sandbox.fixture; // Fixture directly calls the production function, without adding test hooks to the game.
@@ -85,9 +90,13 @@ camera.centerX=5;camera.centerZ=-4;camera.screenShift=-.25;camera.width=5;camera
 check('pan/zoom');
 assert(line.matrixUpdates>first,'render hook updates the existing mesh rather than generating more geometry');
 assert.equal(scene.children.length,1,'orbit/zoom creates no additional reference objects');
-camera.direction.set(.8,-.4,-.6); // Camera orbits around lineup.
+camera.direction.set(.8,-.4,-.6); // Camera orbits around the wide character lineup end-on.
 controls.target.set(-3,1,4);camera.centerX=-5;camera.centerZ=3;
 check('orbit');
+const d=Math.hypot(camera.direction.x,camera.direction.z),fx=camera.direction.x/d,fz=camera.direction.z/d;
+const rulerDepth=line.position.x*fx+line.position.z*fz;
+const farthestActor=25*Math.abs(fx)+.4*Math.abs(fz); // Bounding corners furthest along the actual camera direction.
+assert(rulerDepth>farthestActor+.8,'even an end-on orbit leaves the entire lineup in FRONT of the guide');
 assert(line.position.z !== 0,'line responds to orbit depth change');
 assert.match(author,/sixFootGuide\.geometry\.dispose\(\);[\s\S]*sixFootGuide\.material\.dispose\(\)/,'editor exit disposes both GPU resources');
 assert.match(author,/sixFootReference: \{ visible:/,'mobile debug snapshot exposes ruler state and calibrated height');
