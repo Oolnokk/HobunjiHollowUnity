@@ -4,7 +4,7 @@
   const scriptUrls = [
     "js/mount-system.js?v=20261119h71a8989",
     "js/companion-movement-speed.js?v=20261118liveAlchemy1",
-    "js/audio-system.js?v=20261123wingflapAudit2",
+    "js/audio-system.js?v=20261124wingflapRange1",
     "js/honeyfuzzle-audio.js?v=20261114queenPerf1",
     "js/scratchbones-emoji-reactions.js?v=20261121emojiHeadCrop2",
     "js/animal-vocalizations.js?v=20261123wingflapSizePitch1",
