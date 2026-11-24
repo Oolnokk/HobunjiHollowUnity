@@ -108,7 +108,7 @@ vm.runInContext(source.replace('  install();\n})();', `  window.testLineup = { r
   assert.match(source, /reps\.filter\(item => item\.species === 'longoran'\)/, 'Longoran should become available before the remaining slow species previews'); // Prioritize authoring without dropping any other species.
   assert.match(source, /buildPreviewEntry\(rep, buildId\)/, 'progressive builds must carry the cancellation generation');
   assert.match(source, /if \(buildId !== generation \|\| !previewRoot\) return null;/, 'an exited editor must not attach a stale avatar after image loading');
-  assert.match(source, /active = true; \/\/ The first Longoran becomes tweakable/, 'the author must unlock before the entire lineup finishes');
+  assert.match(source, /active = true; \/\/ The first Kenkari is editable/, 'the first Kenkari is editable without loading the whole lineup');
   assert.match(source, /portraitLoading: window\.__portraitPixelCacheDebug/, 'mobile preview must expose real image-load diagnostics');
   console.log('Full Character Scale Longoran, Nuhongan and Mashtzarr lineup checks passed.');
 })().catch(error => { console.error(error); process.exitCode = 1; });
