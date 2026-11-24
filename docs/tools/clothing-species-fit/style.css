@@ -44,3 +44,17 @@ button[aria-pressed="true"]{outline:2px solid var(--blue);background:#163247}
 .hole-legend:empty{display:none}
 .hole-legend span{display:inline-flex;align-items:center;gap:6px;padding:3px 9px 3px 5px;border-radius:999px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);font-size:12px}
 .hole-legend i{width:12px;height:12px;border-radius:50%;box-shadow:0 0 0 2px rgba(0,0,0,.35)}
+
+/* Side-by-side layout: the previews stay pinned in view while the left panel
+   scrolls, so changes to settings further down are visible immediately. The
+   2D and 3D previews share the window height; the notes under them scroll
+   inside the pinned panel. Single-column (narrow) layouts are unchanged. */
+@media (min-width:821px){
+  main.previews{position:sticky;top:8px;align-self:start;height:calc(100vh - 16px);box-sizing:border-box;display:flex;flex-direction:column;overflow-y:auto;overscroll-behavior:contain}
+  main.previews>*{flex:0 0 auto}
+  main.previews>.shell{flex:1.1 1 0;min-height:200px}
+  main.previews>.shell{container-type:size}
+  /* Fill the pinned preview at the canvas's own aspect (--stage-ar, set by the editor), so pointer mapping stays exact. */
+  main.previews>.shell canvas#stage{width:min(100cqw,calc(100cqh * var(--stage-ar,1.35)));height:auto;max-width:none;max-height:none}
+  main.previews>.threeHost{flex:1 1 0;min-height:170px}
+}

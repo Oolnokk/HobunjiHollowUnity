@@ -189,6 +189,7 @@ async function refreshAssets(){
 function sizeStage(){
   if(!R.body)return;
   E.stage.width=R.body.width;E.stage.height=R.body.height;C.imageSmoothingEnabled=false;
+  E.stage.style.setProperty('--stage-ar',String(R.body.width/Math.max(1,R.body.height))); // Pinned preview scales the canvas at this exact aspect.
 }
 function drawGrid(ctx,points,color,active){
   const px=toDisplayPixels(points,E.stage.width,E.stage.height);
