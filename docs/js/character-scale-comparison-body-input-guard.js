@@ -74,15 +74,19 @@
   }
 
   function portraitScaleFor(identity) {
-    const authored = Number(profileFor(identity)?.anatomy?.portraitScale); // Same species/gender portrait-plane multiplier used by the preview/runtime.
-    if (Number.isFinite(authored) && authored > 0) return authored;
+    // The actual displayed avatar is authoritative: a donor or later species config override may
+    // differ from the profile's portraitScale field, but model.userData records what was rendered.
+    const compare = comparisonApi();
+    const rendered = Number(compare?.selectedKey === identity?.key ? compare?.selectedPortraitScaleMultiplier : null);
+    if (Number.isFinite(rendered) && rendered > 0) return rendered;
     try {
-      return finitePositive(window.PNGPlaneAvatar?.avatarScaleMultiplierFor?.({
+      const effective = Number(window.PNGPlaneAvatar?.avatarScaleMultiplierFor?.({
         appearance: { speciesId: identity?.species, gender: identity?.gender },
-      }), 1);
-    } catch (_) {
-      return 1;
-    }
+      }));
+      if (Number.isFinite(effective) && effective > 0) return effective;
+    } catch (_) { /* Profile data is a last resort before the avatar renderer is ready. */ }
+    const authored = Number(profileFor(identity)?.anatomy?.portraitScale);
+    return Number.isFinite(authored) && authored > 0 ? authored : 1;
   }
 
   function boundsFor(identity, spec) {
@@ -110,7 +114,8 @@
     }
     if (field === 'x' || field === 'y' || field === 'legLength' || field === 'handScale' || field === 'footScale') next[field] = Number(percent) / 100;
     else if (field === 'offsetY') next.offsetY = Number(percent) / 100;
-    else if (field === 'head') next.head = clamp((Number(percent) / 100) / finitePositive(portraitScale, 1), MIN_RUNTIME_HEAD, MAX_RUNTIME_HEAD);
+    else if (field === 'head') next.head = window.HobunjiCharacterRigScale?.runtimeHeadScaleForRaw?.(Number(percent) / 100, portraitScale)
+      ?? clamp((Number(percent) / 100) / finitePositive(portraitScale, 1), MIN_RUNTIME_HEAD, MAX_RUNTIME_HEAD); // Head=100% cancels the actual portrait-plane multiplier, regardless of body height/width.
     return next;
   }
 
@@ -178,7 +183,8 @@
   }
 
   function displayedPercentFor(identity, field, scale) {
-    if (field === 'head') return scale.head * portraitScaleFor(identity) * 100;
+    if (field === 'head') return (window.HobunjiCharacterRigScale?.rawPngHeadScaleFor?.(scale.head, portraitScaleFor(identity))
+      ?? (scale.head * portraitScaleFor(identity))) * 100; // Always show raw-PNG-relative head size; never expose internal runtime head factor.
     if (field === 'offsetY') return scale.offsetY * 100;
     if (field === 'height' || field === 'beltline') {
       const dimensions = window.HobunjiCharacterRigScale?.heightBeltlineFor?.(scale, comparisonApi()?.selectedBeltlineGeometry ?? .5);
