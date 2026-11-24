@@ -290,7 +290,7 @@ function currentPinRecord(){
   const key=contourSelectionKey();
   const saved=A.silhouettePins[key];
   if(saved&&Array.isArray(saved.points))return saved;
-  return A.silhouettePins[key]={points:[],sigma:window.ClothingSilhouettePins?.DEFAULT_SIGMA??8};
+  return A.silhouettePins[key]={points:[],rearPoints:[],sigma:window.ClothingSilhouettePins?.DEFAULT_SIGMA??8};
 }
 // Where the fit (6×6 cage, then the hood-hole deform for base cloth) moves a source pixel.
 function forwardFitPoint(p,grid,width,height,hole){
@@ -356,7 +356,10 @@ function warpClothing(source,grid,width,height,fitContourState=null,options={}){
     :warpGarment(source,grid,width,height);
   if(isHeadwear){
     const splined=applyHeadbandSplineWarp(garment,state,width,height);
-    if(options.view==='behind')return splined; // Rear-view art has no face opening; the hole edit never touches it.
+    if(options.view==='behind'){ // Rear-view art has no face opening; only its own pinned outline applies.
+      const pins=options.pins!==undefined?options.pins:currentPinRecord();
+      return applySilhouettePins(splined,grid,width,height,pins?.rearPoints?.length?{points:pins.rearPoints,sigma:pins.sigma}:null,null);
+    }
     const hole=options.hole!==undefined?options.hole:currentHoleRecord();
     const holed=applyHoleDeform(splined,grid,width,height,hole,options.role);
     return applySilhouettePins(holed,grid,width,height,options.pins!==undefined?options.pins:currentPinRecord(),hole); // Pinned outline returns to its source position last.

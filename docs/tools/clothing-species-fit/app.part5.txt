@@ -53,6 +53,7 @@ function paddedHeadwearOutput(source,targetNorm,width,height,fitState,view){
   const Hole=window.ClothingHoodHoleDeform;
   if(view!=='behind'&&fitState?.hole?.enabled&&Hole&&!Hole.isIdentity(fitState.hole.corners))return null;
   if(view!=='behind'&&fitState?.pins?.points?.length)return null; // Pinned outlines work in the fixed canvas too.
+  if(view==='behind'&&fitState?.pins?.rearPoints?.length)return null;
   const px=Math.round(width/2),py=Math.round(height/2),W=width+2*px,H=height+2*py;
   const grid=targetNorm.map(point=>({x:(px+point.x*width)/W,y:(py+point.y*height)/H}));
   const big=warpGarment(source,grid,W,H);

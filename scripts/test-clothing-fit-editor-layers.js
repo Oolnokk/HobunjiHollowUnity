@@ -310,6 +310,8 @@ async function main() {
   assert(core.includes("if(String(role||'')!=='trim')return 0;"), 'Only trim layers follow the hood opening');
   assert(core.includes('{view:layer.view,hole:fitState.hole,pins:fitState.pins,role:layer.role}'), 'Exported layers deform by their own role and carry the pinned outline');
   assert(core.includes('return applySilhouettePins(holed,grid,width,height,options.pins!==undefined?options.pins:currentPinRecord(),hole);'), 'Pinned outline applies after the hood-hole deform');
+  assert(core.includes('return applySilhouettePins(splined,grid,width,height,pins?.rearPoints?.length?{points:pins.rearPoints,sigma:pins.sigma}:null,null);'), 'Rear-view art applies its own pinned outline (no hood-hole deform)');
+  assert(core.includes('function copyFrontPinsToRear(') && core.includes("C.drawImage(rear?flipCanvasX(art):art,0,0)"), 'Rear pins are painted on mirrored rear art and can be snapped from the front pins');
   for (const store of ['silhouettePins:A.silhouettePins||{}', 'if(v.silhouettePins)A.silhouettePins=v.silhouettePins', 'silhouettePins:v.silhouettePins||{}', 'A.silhouettePins=v.silhouettePins||{}'])
     assert(core.includes(store), 'Pinned outlines persist through save/export/import/undo: ' + store);
   assert(core.includes('{view:layer.view,role:layer.role}') && core.includes('{role:sprite.role}'), 'Hood hole and runtime previews deform each layer by its role');
