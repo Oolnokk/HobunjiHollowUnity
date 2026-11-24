@@ -41,6 +41,7 @@
     ]
   },
   "utteranceModulation": {
+    "agePitchSemitones": { "baby": 9, "toddler": 6, "child": 3 },
     "default": {
       "male": {
         "pitchSemitones": 0,

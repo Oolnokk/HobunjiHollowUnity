@@ -152,7 +152,7 @@ vm.runInContext(voiceOwnerSource, context, { filename: 'character-voice-owner.js
 vm.runInContext(source, context, { filename: 'combat-vocalizations.js' });
 
 assert(context.window.CombatVocalizations, 'runtime API should install');
-assert.equal(context.window.CombatVocalizations.version, 5);
+assert.ok(Number(context.window.CombatVocalizations.version) >= 5, 'shared combat voice runtime must satisfy the existing v5 API contract across additive version bumps');
 assert.equal(typeof scheduledBreath, 'function', 'breath loop should use shared scheduler');
 
 const chargePlan = context.window.CombatVocalizations.chargeRatePlan(1.2, 4, 1.25);

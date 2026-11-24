@@ -3,10 +3,11 @@
 (() => {
   'use strict';
 
-  const VERSION = 5;
+  const VERSION = 6;
   const CONFIG_URL = 'config/combat/combat-vocalizations.json';
   const LOCAL_OVERRIDE_KEY = 'hobunji_combat_vocalizations_override_v1';
   const SCHEDULER_ID = 'combat-vocalizations-breath';
+  const AGE_PITCH_DEFAULTS = Object.freeze({ baby: 9, toddler: 6, child: 3 }); // Fallback age offsets used if an older imported voice config omits the new values.
   const SKELETON_VOICE_SPECIES = new Set(['harlyao-skeleton', 'mao-ao-skeleton']); // Ordinary NPC skeletons shriek when alerted or attacking, never for being struck or breathing.
   const SKELETON_SHRIEK_URL = 'assets/audio/sfx/utterances/sfx_skeletonshriek_1.ogg'; // One authored recording shared by skeleton alarms and offensive voices.
   const SKELETON_SHRIEK_TEMPO = 1; // Alerts and finishers retain the recorded tempo; ordinary combo hits use authored strike-duration compression instead.
@@ -54,6 +55,7 @@
           ]
       },
       "utteranceModulation": {
+          "agePitchSemitones": { "baby": 9, "toddler": 6, "child": 3 },
           "default": {
               "male": {
                   "pitchSemitones": 0,
@@ -365,12 +367,32 @@
     };
   }
 
+  function voiceAgePhase(entity, speakerId = null) {
+    const rec = entity?.rosterRecord || entity?.rec || entity?.npcRecord || entity?.profile?.npcRecord || entity || {}; // Real NPC record takes precedence over display-only appearance.
+    const id = String(speakerId || rec.id || entity?.npcId || entity?.id || ''); // Family ID resolves the authoritative saved growth stage without copying its full snapshot.
+    const familyPhase = id ? window.RomanceFamily?.voiceAgePhase?.(id) : null;
+    if (familyPhase === 'baby' || familyPhase === 'toddler' || familyPhase === 'child') return familyPhase;
+    const authored = String(rec.voiceAgePhase || rec.ageBand || rec.ageStage || rec.lifeStage || entity?.ageBand || '').toLowerCase();
+    if (['baby', 'newborn', 'infant', 'basket'].includes(authored)) return 'baby';
+    if (authored === 'toddler' || authored === 'child') return authored;
+    return rec.isChild === true || rec.role === 'child' ? 'child' : 'adult'; // Legacy child NPCs still receive a child voice without inventing a birth date.
+  }
+
+  function agePitchOffsetForStage(stage) {
+    if (!Object.hasOwn(AGE_PITCH_DEFAULTS, stage)) return 0; // Adult and unknown ages always remain neutral, even when a malformed import adds extra keys.
+    const authored = config.utteranceModulation?.agePitchSemitones?.[stage]; // Missing, null, or malformed values must inherit the safe per-age default.
+    const configured = authored == null || authored === '' ? NaN : Number(authored);
+    return Number.isFinite(configured) ? clamp(configured, -24, 24) : (AGE_PITCH_DEFAULTS[stage] || 0);
+  }
+
   function voicePlaybackPlan(randomSemitones = 0, entity = player()) {
     const mod = voiceModulation(entity);
+    const ageStage = voiceAgePhase(entity); // Resolve only when an utterance is requested, not in the animation or NPC frame scheduler.
+    const agePitchSemitones = agePitchOffsetForStage(ageStage); // Added to species/gender and variation without changing tempo.
     return {
-      modulation: mod,
+      modulation: { ...mod, ageStage, agePitchSemitones },
       tempo: clamp(mod.tempo, 0.35, 3),
-      pitchSemitones: clamp(mod.pitchSemitones + randomSemitones, -24, 24),
+      pitchSemitones: clamp(mod.pitchSemitones + agePitchSemitones + randomSemitones, -24, 24),
     };
   }
 
@@ -1437,7 +1459,7 @@ function beginCharge(options = {}) {
     } catch (_) {}
 
     const request = typeof fetch === 'function'
-      ? fetch(`${CONFIG_URL}?v=20261023breathPitch1`).then(response => response.ok ? response.json() : null)
+      ? fetch(`${CONFIG_URL}?v=20261123youngVoices1`).then(response => response.ok ? response.json() : null)
       : Promise.resolve(null);
 
     return request.then(authored => {
@@ -1498,6 +1520,8 @@ function beginCharge(options = {}) {
     liveChargeTargetDurationS,
     getConfig: () => clone(config),
     getVoiceModulation: entity => ({ ...voiceModulation(entity || player()) }),
+    getVoiceAgeStage: (entity, speakerId = null) => voiceAgePhase(entity, speakerId),
+    getAgePitchOffset: (entity, speakerId = null) => agePitchOffsetForStage(voiceAgePhase(entity, speakerId)),
     getVoicePriority: kind => voicePriority(kind),
     debugSnapshot: () => ({
       version: VERSION,
@@ -1530,7 +1554,8 @@ function beginCharge(options = {}) {
         cancelled: token.cancelled,
       })),
       liveChargeAbilities: [...liveChargesByAbility.keys()],
-      modulation: voiceModulation(),
+      modulation: { ...voiceModulation(), ageStage: voiceAgePhase(player()), agePitchSemitones: agePitchOffsetForStage(voiceAgePhase(player())) },
+      agePitchSettings: { ...config.utteranceModulation?.agePitchSemitones }, // Mobile Pixel Probe shows the applied global age offsets.
       lastBreath: debug.lastBreath ? {
         ...debug.lastBreath,
         independentPitch: lastBreathPlaybackHandle?.independentPitch ?? debug.lastBreath.independentPitch, // Reflects native fallback even if the decode failed after playBreath returned.
