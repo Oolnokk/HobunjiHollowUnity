@@ -29,6 +29,7 @@
   <!-- Bag stack sizing (999 per box, overflow spills into another box).
        Must load before every module that grants inventory items. -->
   <script src="js/inventory-stacks.js?v=20261105-stack999"></script>
+  <script src="js/shop-quantity.js?v=20261124bulkAudit3"></script>
   <script src="js/scene-ready-poller.js?v=20260920startup4"></script>
   <!-- Dev Companion bridge (window.DevCompanion): session-tied channel to the
        docs/tools/dev-companion window. Loaded before every config-fetching
@@ -53,7 +54,7 @@
   <!-- Small formatting/math helpers (esc/clamp/roundRect/formatClock/etc.)
        extracted out of game.js; must load before game.js and before every
        other module whose init(deps) is handed window.FormatUtils.clamp/esc. -->
-  <script src="js/format-utils.js?v=20261123babyPortraitUtils1"></script>
+  <script src="js/format-utils.js?v=20261124bulkAudit3"></script>
   <!-- Default building entry tile (buildingSpawnFromExit) extracted out of
        game.js; uses window.FormatUtils.clamp and must load before game.js. -->
   <script src="js/building-entry-spawn.js?v=20261026hfbed948"></script>
@@ -167,7 +168,7 @@
   <script src="js/metal-armor-system.js?v=20261124patternNestAudit2"></script>
   <script src="config/colors/config.js?v=20261026h7f369c3"></script>
   <script src="config/attachment-rig-profiles.js?v=20261123h19fa06a"></script>
-  <link rel="stylesheet" href="style.css?v=20261124menuCategoryPages1">
+  <link rel="stylesheet" href="style.css?v=20261124bulkRebase4">
   <link rel="stylesheet" href="cooking-ui.css?v=20261109craftHours1">
   <link rel="stylesheet" href="ui-element-editor.css?v=20260814a">
   <!-- Shared gameplay presentation: mirrors the outlined text + light translucent containers used by character/save select. -->
@@ -434,7 +435,7 @@
        global by then), so load order relative to the other systems above
        doesn't matter; must load before game.js, which calls
        window.FarmAnimals.init(...) during its own setup. -->
-  <script src="js/farm-production.js?v=20261115farmStarterGrantSafe1"></script>
+  <script src="js/farm-production.js?v=20261124bulk1"></script>
   <script src="js/honeyfuzzle-house.js?v=20261114queenPerf1"></script> <!-- Honeyfuzzle House: 1x1 queen/swarm slot on a FarmProduction entry; hooked by farm-production.js, initialized by game.js. -->
   <script src="js/farm-layout-editor.js?v=20261016a"></script>
   <script src="js/world-meta-store.js?v=20261122cancelAnimal2"></script>
@@ -480,7 +481,7 @@
        call time (already global by then), so load order relative to the
        other systems above doesn't matter; must load before game.js, which
        calls window.JubmirShop.init(...) during its own setup. -->
-  <script src="js/jubmir-shop.js?v=20261008h176df45"></script>
+  <script src="js/jubmir-shop.js?v=20261124bulkAudit3"></script>
   <!-- Bound Harlyao relic weapons + Garanki Gabu's unbinding/enchanting panel. -->
   <script src="js/artifact-collection.js?v=20261116knotwork1"></script>
   <script src="js/menu-panel-renderers.js?v=20261116decouple1"></script> <!-- One tab renderer per panel; no duplicate menu dispatch in game.js. -->
@@ -498,7 +499,7 @@
   <script src="js/scratchbones-name-generator.js?v=20261108harlyao2"></script>
   <script src="js/boney-shinjimi-rewards.js?v=20261116milk1"></script> <!-- Existing museum/relic/trinket reward adapters. -->
   <script src="js/boney-shinjimi-wilderness.js?v=20261118houseSpoilers1"></script> <!-- Full-moon hermit, house and chase; shares traveller scheduler/save seam. -->
-  <script src="js/slagothim-traders.js?v=20261116boneyKasaTraders1"></script>
+  <script src="js/slagothim-traders.js?v=20261124bulkAudit3"></script>
   <!-- Khymeryyan civil calendar (day/week/month/year derivations + regional
        seasons) and the Calendar tab UI (window.CalendarSystem) —
        self-contained aside from deps injected via init(), so load order
@@ -608,14 +609,14 @@
        load order relative to the other systems above doesn't matter; must
        load before game.js, which calls window.GeneralStore.init(...)
        during its own setup. -->
-  <script src="js/general-store.js?v=20261114potionStacks2"></script>
+  <script src="js/general-store.js?v=20261124bulkAudit3"></script>
   <!-- Carpenter's shop: barn plans + furniture blueprints
        (window.CarpenterShop) — self-contained aside from deps injected via
        init(), and reads window.ConditionRegistry at render time (already
        global by then), so load order relative to the other systems above
        doesn't matter; must load before game.js, which calls
        window.CarpenterShop.init(...) during its own setup. -->
-  <script src="js/carpenter-shop.js?v=20261027blueprintRead1"></script>
+  <script src="js/carpenter-shop.js?v=20261124bulkAudit3"></script>
   <!-- Off-save storage for a per-item "Custom" pattern's motif PNG
        (window.MotifStore) — see the file's own header comment. No deps
        injection and everything on it fails soft, so load order doesn't
