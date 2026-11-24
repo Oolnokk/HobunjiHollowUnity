@@ -35,6 +35,19 @@
     return { base, flourishes: result };
   }
 
+  function rollFeyEnchantments(stars, rng = random) {
+    const defs = Object.values(window.EnchantmentSystem?.DEFINITIONS || {}).filter(d=>d.alignment==='Fey');
+    const bases = defs.filter(d=>d.type==='Base').map(d=>d.id); // NPC hit bridge supports the same real Fey effects as player weapons.
+    const flourishes = defs.filter(d=>d.type==='Flourish').map(d=>d.id);
+    const base=[], result={};
+    const take = list => list.splice(Math.min(list.length-1,Math.floor(rng()*list.length)),1)[0];
+    const count = Math.max(1, enchantmentCount(stars));
+    while(base.length<Math.min(count,2)&&bases.length)base.push(take(bases));
+    const slots=FLOURISH_SLOTS.slice();
+    for(let i=base.length;i<count&&flourishes.length&&slots.length;i++)result[take(slots)]=take(flourishes);
+    return base.length||Object.keys(result).length?{base,flourishes:result}:null;
+  }
+
   function eligiblePairs(sources, catalog = window.ModularWeapons) {
     const config = catalog?.getConfig?.();
     const allowed = new Set(sources || []); // This encounter's *whole-weapon* donor pool, not the player's Foundry unlock list.
@@ -71,7 +84,7 @@
     if (!source?.modular || !source.slots?.includes('weapon')) return false;
     if (!deps.TOOL_ITEM_DEFS[key]) deps.TOOL_ITEM_DEFS[key] = {
       ...source, itemKey: key, sprite: source.sprite || baseKey,
-      label: 'Captain\'s ' + String(source.label || 'Modular Weapon'),
+      label: (record.origin === 'Fey' ? 'Fey-touched ' : 'Captain\'s ') + String(source.label || 'Modular Weapon'),
       captainModular: true, // Looted special gear must never be confused with a newly discovered full weapon donor.
     };
     deps.ensureToolTexture?.(key);
@@ -153,7 +166,7 @@
 
   function visualFor(state, rng = random) {
     const es = window.EnchantmentSystem;
-    const counts = { Tothal: 0, Hronal: 0, Kanthic: 0, Ohthic: 0 };
+    const counts = { Tothal: 0, Hronal: 0, Kanthic: 0, Ohthic: 0, Fey: 0 };
     for (const id of [...state.base, ...Object.values(state.flourishes)]) {
       const alignment = es?.DEFINITIONS?.[id]?.alignment;
       if (Object.hasOwn(counts, alignment)) counts[alignment]++;
@@ -165,9 +178,10 @@
   }
 
   function equip(entity, cfg, rank, tier, opts = {}, d = deps) {
-    if (!entity || entity._banditCaptainArmament || rank !== 'captain' || capStars(tier) < MIN_STARS
+    const fey = entity?.rootledootBig === true; // A Big Rootledoot gets a Fey armament at every bandit difficulty tier.
+    if (!entity || entity._banditCaptainArmament || rank !== 'captain' || (!fey && (capStars(tier) < MIN_STARS
       || entity.enemyClass !== 'bandit' || entity.isMinion || cfg?._preserveMineEnemyTiers || opts?.extra?.isMineGhoul
-      || opts?.defOverride?.weaponKey || window.EnemyLoadoutRules?.ruleFor?.(entity.enemyLoadoutKind)?.weapons) return entity;
+      || opts?.defOverride?.weaponKey || window.EnemyLoadoutRules?.ruleFor?.(entity.enemyLoadoutKind)?.weapons))) return entity;
     const metal = metalOf(entity, d);
     if (!metal || !window.ModularWeapons || !d?.TOOL_ITEM_DEFS) return entity;
     const donors = permittedDonors(entity).filter(shape => !Array.isArray(cfg?.weaponShapePool) || !cfg.weaponShapePool.length || cfg.weaponShapePool.includes(shape)); // A caller's narrower complete-weapon pool also narrows both donor pieces.
@@ -175,11 +189,11 @@
     const mixed = all.filter(pair => pair.donors[0] !== pair.donors[1]); // A true mixed found weapon when two legal donors are available.
     const choice = choose(mixed.length ? mixed : all, d.rnd || random);
     if (!choice) return entity;
-    const state = rollEnchantments(capStars(tier), d.rnd || random);
+    const state = fey ? rollFeyEnchantments(capStars(tier), d.rnd || random) : rollEnchantments(capStars(tier), d.rnd || random);
     if (!state) return entity;
     const uid = Date.now().toString(36) + '-' + (++serial).toString(36) + '-' + Math.floor((d.rnd || random)() * 0x10000).toString(36);
     const key = PREFIX + [choice.shaft, choice.head, metal, uid].join(':');
-    const record = { ...choice, metal, uid, stars: capStars(tier), enchantments: state };
+    const record = { ...choice, metal, uid, stars: capStars(tier), enchantments: state, ...(fey ? {origin:'Fey'} : {}) };
     if (!registerDefinition(key, record)) return entity;
     if (!replaceHolder(entity, key, d)) { delete d.TOOL_ITEM_DEFS[key]; return entity; }
     applyWeaponStats(entity, key, metal, d);
@@ -232,7 +246,7 @@
     inventory.weaponEnchantments ||= {}; inventory.weaponEnchantmentVisuals ||= {};
     const newlyOwned = !inventory.tools[record.key]; // The corpse can be searched once but repeated calls must not repeat writes.
     if (newlyOwned) {
-      inventory.captainModularWeapons[record.key] = { shaft: record.shaft, head: record.head, metal: record.metal, uid: record.uid, stars: record.stars, donors: record.donors };
+      inventory.captainModularWeapons[record.key] = { shaft: record.shaft, head: record.head, metal: record.metal, uid: record.uid, stars: record.stars, donors: record.donors, ...(record.origin ? {origin:record.origin} : {}) };
       inventory.tools[record.key] = true;
       inventory.toolMastery[record.key] = { xp: 0 };
       inventory.weaponEnchantments[record.key] = window.EnchantmentSystem.cleanWeaponState(record.enchantments);
@@ -246,6 +260,14 @@
       deps.buildEquipmentSlots?.(); // Refresh only after a real equipment change; repeated corpse interactions stay cheap.
     }
     return deps.TOOL_ITEM_DEFS[record.key]?.label || 'Captain\'s modular weapon';
+  }
+
+  function discard(entity) {
+    const record=entity?._banditCaptainArmament; // Release unclaimed unique weapon state when a Rootledoot encounter resets.
+    if(!record)return;
+    unlooted.delete(record.key);
+    entity._captainEnchantmentFx?.dispose?.();entity._captainEnchantmentFx=null;
+    if(!gear()?.tools?.[record.key]&&deps?.TOOL_ITEM_DEFS)delete deps.TOOL_ITEM_DEFS[record.key];
   }
 
   function patchBanditCombat() {
@@ -272,7 +294,7 @@
 
   window.BanditCaptainArmaments = Object.freeze({
     PREFIX, MIN_STARS, capStars, enchantmentCount, rollEnchantments, eligiblePairs, permittedDonors,
-    init, restore, registerDefinition, equip, grantCorpseWeapon, unlootedEnchantmentState, emitHit, tick,
+    init, restore, registerDefinition, equip, grantCorpseWeapon, unlootedEnchantmentState, emitHit, tick, discard, rollFeyEnchantments,
     debugSnapshot: entity => ({ key: entity?._banditCaptainArmament?.key || null, stars: entity?._banditCaptainArmament?.stars || 0,
       donors: entity?._banditCaptainArmament?.donors || [], enchantments: entity?._banditCaptainArmament?.enchantments || null,
       registeredUnlooted: unlooted.size }), // Mobile-visible enemy inspection through the existing dev snapshot.
