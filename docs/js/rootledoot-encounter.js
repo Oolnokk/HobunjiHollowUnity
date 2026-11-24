@@ -119,11 +119,12 @@
     deps.getScene().add(root);rec.mesh=root;return true;
   }
   function disposeActor(c) {
+    const live = deps.hostiles.has(c) || deps.corpses?.has(c) || c.avatarRef?.group?.parent; // World teardown may already have disposed this actor.
     deps.hostiles.delete(c);deps.corpses?.delete(c);deps.companions?.delete(c);
     window.Combat?.cancelStagedForAttacker?.(c);window.Combat?.telegraph?.cancel?.(c);
     window.RangedWeapons?.cancelBanditAction?.(c);window.BanditCombat?.cancelLunge?.(c);
     window.BanditCaptainArmaments?.discard?.(c);
-    deps.despawn(c);
+    if(live)deps.despawn(c);
   }
   function reset(reason='reset') {
     const rec=active;active=null;overkill=0;downedByRoot=false;
@@ -202,6 +203,8 @@
     if(c.rootledootBig) {
       // Retain only the weapon record; the real combat avatar is removed immediately.
       rec.boss={_banditCaptainArmament:c._banditCaptainArmament};
+      const col=Math.floor(c.x/deps.TILE),row=Math.floor(c.y/deps.TILE); // The Big Rootledoot becomes the root where it actually fell.
+      if(tileEligible(col,row))rec.site={c:col,r:row};
       rec.bossRootHeight=Math.max(.8,Number(c.avatarRef?.modelHeight||.9)*(Number(c.visualScaleY)||1));
       c._banditCaptainArmament=null;c._captainEnchantmentFx?.dispose?.();c._captainEnchantmentFx=null;
     }
