@@ -75,12 +75,21 @@
     const leash = Math.max(0, Number(creature.def?.leashRangePx) || 0);
     if (!radius || !leash || Math.hypot(creature.x - creature.homeX, creature.y - creature.homeY) > leash) return null;
     if (!engaged && Math.hypot(creature.x - creature.homeX, creature.y - creature.homeY) > leash * leashReenterFraction) return null; // Match existing wildlife leash-reentry hysteresis; scent cannot force new combat just inside the outer leash.
-    const opposingCompanions = [...(companions || [])].filter(p => p.isCompanion && !p.banditCompanion); // Enemy-owned pets are allies, never scent targets.
-    const opponents = [...(players || []), ...opposingCompanions];
-    if (creature.targetCreature && !opponents.includes(creature.targetCreature)) opponents.push(creature.targetCreature); // Preserve ecological skirmish opponents, never recruit arbitrary neighboring wildlife.
-    const marked = previousFocus && scent(previousFocus) > 0 &&
-      viable(creature, previousFocus, areaId, radius, leash) && (!canSee || canSee(previousFocus))
-      ? previousFocus : nearestScented(creature, opponents, areaId, radius, leash, canSee);
+    // No roster copies or filters in the wild-animal hot path. Existing focus
+    // only needs one cheap check; when none is marked there are no LOS calls.
+    let marked = previousFocus && creature._scentTarget === previousFocus && scent(previousFocus) > 0 &&
+      viable(creature, previousFocus, areaId, radius, leash) && (!canSee || canSee(previousFocus)) ? previousFocus : null;
+    if (!marked) {
+      let distanceSq = Infinity; // Only closer marked candidates need a geometry check.
+      const consider = candidate => {
+        if (!candidate || !(scent(candidate) > 0) || !viable(creature, candidate, areaId, radius, leash)) return;
+        const dx = candidate.x - creature.x, dy = candidate.y - creature.y, d = dx * dx + dy * dy;
+        if (d < distanceSq && (!canSee || canSee(candidate))) { distanceSq = d; marked = candidate; }
+      };
+      for (const person of players || []) consider(person);
+      for (const pet of companions || []) if (pet.isCompanion && !pet.banditCompanion && (!pet.stableRole || pet.stableRole === 'companion')) consider(pet);
+      if (creature.targetCreature && !creature.targetCreature.isCompanion) consider(creature.targetCreature);
+    }
     if (!marked) { releaseWild(creature); return null; }
     if (window.Combat?.animalAttacks?.isBusy?.(creature) || window.Combat?.telegraph?.isBusy?.(creature)) return creature._scentTarget || null;
     if (!creature._scentTarget) {
@@ -95,20 +104,33 @@
     } else {
       creature.state = 'patrol-chase'; creature.targetCreature = marked; creature.targetPlayer = null;
     }
-    stats.wildChoices++;
-    stats.last = { kind: 'wild', actor: creature.id || creature.creatureKey, target: marked.id || marked.creatureKey || 'player' };
+    if (previousFocus !== marked) {
+      stats.wildChoices++;
+      stats.last = { kind: 'wild', actor: creature.id || creature.creatureKey, target: marked.id || marked.creatureKey || 'player' };
+    } // Count decisions/changes rather than allocate a diagnostic record every frame.
     return marked;
   }
 
   function prioritizeEnemyCompanion(creature, master, player, companions, areaId, alertRange, fallback) {
     if (!creature?.banditCompanion || !master || !(alertRange > 0)) return fallback;
-    const candidates = [player, ...(companions || [])].filter(target => target && target !== creature &&
-      (target === player || target.isCompanion && !target.banditCompanion) &&
-      Math.hypot(target.x - master.x, target.y - master.y) <= alertRange);
-    const selected = nearestScented(creature, candidates, areaId, alertRange, null);
+    let selected = null, bestSq = Infinity; // Compare only marked, live opponents without copying the companion roster.
+    const consider = target => {
+      if (!target || !(scent(target) > 0) || !viable(creature, target, areaId, alertRange, null)) return;
+      const mx = target.x - master.x, my = target.y - master.y;
+      if (mx * mx + my * my > alertRange * alertRange) return;
+      const dx = target.x - creature.x, dy = target.y - creature.y, d = dx * dx + dy * dy;
+      if (d < bestSq) { selected = target; bestSq = d; }
+    };
+    consider(player);
+    for (const pet of companions || []) if (pet.isCompanion && !pet.banditCompanion && (!pet.stableRole || pet.stableRole === 'companion') && (!pet.master || pet.master === player)) consider(pet);
+    if (selected !== creature._hostileScentFocus) {
+      creature._hostileScentFocus = selected;
+      if (selected) {
+        stats.hostilePetChoices++;
+        stats.last = { kind: 'enemyCompanion', actor: creature.id || creature.creatureKey, target: selected.id || selected.creatureKey || 'player' };
+      }
+    }
     if (!selected) return fallback;
-    stats.hostilePetChoices++;
-    stats.last = { kind: 'enemyCompanion', actor: creature.id || creature.creatureKey, target: selected.id || selected.creatureKey || 'player' };
     return selected;
   }
 

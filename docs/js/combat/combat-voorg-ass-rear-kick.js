@@ -155,7 +155,7 @@
       detect: (source, victim, lunge) => {
         const aim = window.Combat?.meleeAimSolution?.(source, victim, lunge.lungeAngle, 0);
         return window.Combat?.meleeHit
-          ? window.Combat.meleeHit(source, victim, { rangePx: reach, halfConeRad: KICK_HALF_CONE_RAD, yaw: lunge.lungeAngle, pitch: aim?.pitch || 0 })
+          ? window.Combat.meleeHit(source, victim, { rangePx: reach, halfConeRad: KICK_HALF_CONE_RAD, yaw: lunge.lungeAngle, pitch: aim?.pitch || 0, debug: false })
           : Math.hypot(victim.x - source.x, victim.y - source.y) <= reach
             && Math.abs(Math.atan2(Math.sin(Math.atan2(victim.y - source.y, victim.x - source.x) - lunge.lungeAngle), Math.cos(Math.atan2(victim.y - source.y, victim.x - source.x) - lunge.lungeAngle))) <= KICK_HALF_CONE_RAD;
       },
@@ -281,7 +281,7 @@
     state.struck = true;
     emitKickParticles(creature, state, deps); // A miss still kicks up dirt; the dust proves contact with the ground rather than with the victim.
     const target = state.target;
-    if (!target || target.health <= 0 || (target.areaId != null && target.areaId !== creature.areaId)) return; // The player has no guaranteed areaId field; creatures do.
+    if (!target || target.health <= 0 || target._downed || target._denHidden || target._deathTransitionStarted || (target.areaId != null && target.areaId !== creature.areaId)) return; // The player has no guaranteed areaId field; creatures do.
     const reach = Math.max(Number(creature.def?.attackRangePx) || 0, deps.TILE * 1.18);
     const yaw = state.angleToward; // Hit collider aims behind the animal; the actual visible facing stays reversed.
     const aim = window.Combat?.meleeAimSolution?.(creature, target, yaw, 0);

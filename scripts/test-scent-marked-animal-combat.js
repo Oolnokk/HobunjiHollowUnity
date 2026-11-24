@@ -35,13 +35,25 @@ rs.addAffliction(victim, 'scentMarkedHealth', 12);
 rs.applyDamage(victim, 5, { attacker: wildSource, attackPower: 10, afflictionBonuses: { bleedingHealth: 0.4 } }); // Explicit Attack Power proves scent does not secretly amplify the new independent status stat.
 approximately(victim.health, 90, 'wild strike cashes out up to its own damage');
 approximately(rs.getAffliction(victim, 'scentMarkedHealth'), 7, 'wild strike spends mark');
-approximately(rs.getAffliction(victim, 'bleedingHealth'), 2, 'scent cannot multiply original buildup');
+approximately(rs.getAffliction(victim, 'bleedingHealth'), 4, 'scent neither increases nor reduces independent Attack Power buildup');
 
 victim = actor();
 rs.addAffliction(victim, 'scentMarkedHealth', 8);
 rs.applyDamage(victim, 6, { attacker: petSource });
 approximately(victim.health, 88, 'animal companion spends scent');
 approximately(rs.getAffliction(victim, 'scentMarkedHealth'), 2, 'companion uses limited budget');
+
+// Exercise the real companion hit adapter together with scent consumption and Attack Power.
+load('docs/js/combat/companion-offense.js');
+const unregister = ctx.CompanionOffense.registerProvider('test-sicced', () => ({ damage: 2, affliction: 2 }));
+victim = actor();
+rs.addAffliction(victim, 'scentMarkedHealth', 8);
+ctx.CompanionOffense.damageCreature((target, amount, x, y, kb, opts) => rs.applyDamage(target, amount, opts),
+  petSource, victim, 5, 0, 0, 0, { attackPower: 10, afflictionBonuses: { bleedingHealth: 0.4 } });
+approximately(victim.health, 82, 'empowered animal hit also cashes out existing scent');
+approximately(rs.getAffliction(victim, 'scentMarkedHealth'), 0, 'empowered animal spends the existing mark');
+approximately(rs.getAffliction(victim, 'bleedingHealth'), 8, 'companion empowerment remains independent of bonus Health damage');
+unregister();
 
 // Wildlife-on-wildlife bites are skirmishes, not lethal enemy attacks. Scent
 // must never use the leftover mark to punch through WildlifeSpawn's 12% floor.
@@ -149,4 +161,8 @@ assert.match(read('docs/game.js'), /targetPlayer = c\.targetPlayer; \/\/ The cho
 assert.match(read('docs/js/wildlife-spawn.js'), /wildlifeSkirmishFloor: floor/,
   'wildlife skirmish bites carry their nonlethal Health floor into the central payout path');
 assert.match(require('./classic-script-group-index.js').expandClassicScriptGroups(), /js\/combat\/animal-scent-targeting\.js/);
+// Shoulder passengers and mounts do not become separate scent targets.
+const shoulder = actor({ isCompanion: true, stableRole: 'shoulderPet', x: 1 });
+rs.addAffliction(shoulder, 'scentMarkedHealth', 20);
+assert.notEqual(targeting.prioritizeEnemyCompanion(enemyPet, master, player, [shoulder], 'forest', 100, player), shoulder);
 console.log('scent-marked animal combat tests passed');

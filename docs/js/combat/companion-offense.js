@@ -65,9 +65,14 @@
       const scaled = {};
       for (const [id, value] of Object.entries(next.afflictionBonuses)) {
         const n = Number(value);
-        if (Number.isFinite(n)) scaled[id] = n * mods.affliction / (mods.damage || 1); // ResourceSystem multiplies these coefficients by hit damage; keep buildup independent of Health boosts.
+        if (Number.isFinite(n)) scaled[id] = n * mods.affliction; // ResourceSystem now multiplies these coefficients by independent Attack Power, not Health damage.
       }
       next.afflictionBonuses = scaled;
+    }
+    if (next.fixedAfflictionBuildup) {
+      const scaled = {}; // Preserve independent flat status amounts as well as Attack Power coefficients.
+      for (const [id, value] of Object.entries(next.fixedAfflictionBuildup)) if (Number.isFinite(Number(value))) scaled[id] = Number(value) * mods.affliction;
+      next.fixedAfflictionBuildup = scaled;
     }
     const baseFooting = Number.isFinite(Number(next.footingDamageMultiplier)) ? Math.max(0, Number(next.footingDamageMultiplier)) : 1;
     next.footingDamageMultiplier = baseFooting * mods.footing / (mods.damage || 1); // hitResourceDamage derives Footing from amount, so divide out the Health multiplier to keep channels independent.
@@ -81,7 +86,7 @@
     if (typeof damageFn !== 'function') return undefined;
     const scaled = scaleHit(companion, target, amount, opts);
     const hitOpts = { ...(scaled.opts || {}), fromCompanion: companion, attacker: companion }; // Every companion strike identifies its animal source for scent consumption and defensive attribution. // Lets kill-credit systems (Second Wind) know a companion landed the hit.
-    return damageFn(target, scaled.amount, fromX, fromY, knockbackPxS * scaled.modifiers.knockback, hitOpts);
+    return damageFn(target, scaled.amount, fromX, fromY, (Number(knockbackPxS) || 0) * scaled.modifiers.knockback, hitOpts);
   }
 
   window.CompanionOffense = Object.freeze({

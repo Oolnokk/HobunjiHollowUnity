@@ -174,6 +174,7 @@
     c._cliffClimb = null; c._cliffRouteTravel = null; c._cliffEntryPath = null;
     c._travelPath = null; c._travelPathTarget = null; c._travelStuckT = 0;
     c._companionCombatTarget = null; c._companionCombatPriority = null;
+    c._companionEffectiveTarget = null; c._companionBiteTarget = null; c._companionDecisionNextAt = 0; c._travelPathFailure = null;
     c._honeyfuzzleRescueTarget = null;
     c.x = candidate.x; c.y = candidate.y; c.vx = 0; c.vy = 0;
     c.knockbackT = 0; c.knockbackVX = 0; c.knockbackVY = 0;
@@ -219,7 +220,7 @@
     const unable = c.prone || c._knockbackLedgeFall || c._cliffClimb || c._cliffRouteTravel ||
       c.knockbackT > 0 || c._animalAttack ||
       (!c._familyBabyFollower && window.Combat?.telegraph?.isBusy?.(c)) || c._honeyfuzzleRescueTarget ||
-      c._companionCombatTarget || c.treasureCue || master.climbing || master._freeJump;
+      c._companionEffectiveTarget || c._companionCombatTarget || c.treasureCue || master.climbing || master._freeJump;
     if ((!far && !differentFloor) || unable) {
       state.stalled = 0; state.retry = 0; state.bestDistance = Infinity; return false;
     }

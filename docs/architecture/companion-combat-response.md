@@ -28,3 +28,9 @@
 - `scripts/test-companion-combat-lunge.js`: existing lunge commitment/collision plus duplicate-start prevention and insufficient extra-cost fallback.
 - `scripts/test-furious-companion-quick-sfx.js`: Furious cooldown restore, legacy master fallback, and interruption.
 - `scripts/test-companion-tactics.js`: real weighted tactical action and payment integration.
+
+## Effective orders and scent (November 23 audit)
+- Friendly pets score scent-marked enemies higher within the existing alert/leash rules. Sicced remains an explicit order, but hidden, downed, dead and wrong-area marks cannot hijack combat.
+- The final effective target, not just the proximity cache, resets stale backup/path state without granting free attacks. Fallback bites keep their committed victim during telegraph windup.
+- Combat pursuit reuses delayed ground detour navigation. An unaffordable extended-range special can fall back to an actual Guard Charge instead of an out-of-range bite.
+- Companion status multipliers and scent cash-out preserve the independent Attack Power channel; Sicced also empowers knockback so defensive charges benefit. The debug snapshot includes effective target and scent status.
