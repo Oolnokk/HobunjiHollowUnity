@@ -14,8 +14,9 @@ async function main(){
   assert.equal(R.sceneMatches({zone:'a',scene},'a',{}),false);
   const a=R.createBuildSlot(),b=R.createBuildSlot(),old=a.begin();assert.equal(a.begin(),null);
   assert.ok(b.begin());a.cancel();const fresh=a.begin();a.finish(old);assert.equal(a.owns(fresh),true);a.finish(fresh);assert.equal(a.busy,false);assert.equal(b.busy,true);
-  const clock=R.createInterval(.5);assert.equal(clock.advance(.25),0);assert.equal(clock.advance(.25),.5);clock.advance(.2);clock.reset();assert.equal(clock.advance(.3),0);
+  const clock=R.createInterval(.5);assert.equal(clock.advance(.25),0);assert.equal(clock.advance(.25),.5);clock.advance(Infinity);assert.equal(clock.advance(.1),0);clock.advance(.2);clock.reset();assert.equal(clock.advance(.3),0);
   const walkers=[{area:'a',root:{position:{x:1,z:2}}},{area:'a',animalKind:'pet',root:{position:{x:3,z:4}}},{area:'a',avatarGroup:{userData:{namedAnimalNpc:true}},root:{position:{x:5,z:6}}}];
+  assert.equal(R.isHumanoidActor({isNpc:true,creatureKey:'wolf'}),false);assert.equal(R.isHumanoidActor({isNpc:true,isAnimal:true}),false);
   const hostile={areaId:'a',health:1,isBandit:true,x:128,y:64},dead={...hostile,health:0};
   assert.deepEqual([...R.peopleInArea({zone:'a',walkers,actors:[[hostile,dead]],exclude:()=>false})].map(p=>[p.x,p.z]),[[1,2],[2,1]]);
   const tile=(c,r)=>c>=0&&c<8&&r>=0&&r<8?{elevTier:c>=4?1:0}:null;
@@ -50,6 +51,7 @@ async function main(){
   await Promise.resolve();owns=false;resolve({});assert.equal(await pending,false);assert.equal(adopted,0);assert.equal(disposed,1);assert.equal(rec.building,false);
   owns=true;assert.equal(await R.runWave(rec,{...config(),canBegin:()=>false}),false);assert.equal(suppressed,1);assert.equal(created,0);
   assert.equal(await R.runWave(rec,config()),true);assert.equal(adopted,1);assert.equal(rec.wave,1);
+  assert.equal(await R.runWave(rec,{...config(),onAdopted:()=>{owns=false;}}),false);assert.equal(rec.wave,1);owns=true;
   const art=R.createSpriteSource('mock');let rejected=false;try{await art();}catch{rejected=true;}assert.equal(rejected,true);
   const [first,second]=await Promise.all([art(),art()]);assert.equal(first,second);assert.equal(loads,2);assert.equal(first.crop.width,2);assert.equal(first.crop.height,3);
   assert.equal(R.paintPortrait({...doc.createElement(),width:8,height:8},first.crop),1);
