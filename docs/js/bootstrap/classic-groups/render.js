@@ -18,12 +18,12 @@
     "js/wilderness-distance-cull.js?v=20261119h89ca824", // Loaded before game.js; scope begins after static prop batching.
     "js/zone-tree-fade.js?v=20261120h87c4a16",
     "js/zone-vegetation-cull.js?v=20261120he8225fb", // Wilderness vegetation corridor cull; game.js calls init() and tick(dt).
-    "js/wilderness-tree-instancer.js?v=20261120h2375ea0", // Render scope: drawn, non-fading procedural trees as InstancedMeshes (world-render-pipeline.js).
+    "js/wilderness-tree-instancer.js?v=20261124spatialTrees2", // Render scope: drawn, non-fading procedural trees as InstancedMeshes (world-render-pipeline.js).
     "js/dense-forest-wall-batches.js?v=20261123denseWall1", // Render scope: Cloud Forest dense wall chunk parts merged across chunks (world-render-pipeline.js).
     "js/shoulder-pet-attachment-runtime.js?v=20261122shoulderHeadOnly1", // Shared pin solver, before game.js starts.
     "js/stowed-torch-fire.js?v=20261122stowSplit1", // Shared layer-effects adapter owns stowed PNG, tint, wick and particles.
     "js/adventuring-torch-belt.js?v=20261122stowSplit1", // Stowed belt sprite and 30-second live torch timeout before game.js starts.
-    "js/render-optimization-settings.js?v=20261123pr2110rebase1" // Settings → Render optimizations: a persisted toggle per render switch; last, after every owner.
+    "js/render-optimization-settings.js?v=20261124spatialTrees1" // Settings → Render optimizations: a persisted toggle per render switch; last, after every owner.
 ]; // Versioned game modules owned by this group.
   if (document.readyState !== 'loading') throw new Error('Classic script group must run during parsing');
   // A single write guarantees blocking, ordered execution before the next source index.html tag.

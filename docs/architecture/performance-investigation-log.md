@@ -508,6 +508,16 @@ x-ray shell replays alone), and the per-frame regroup costs CPU. `WildernessTree
 now off by default under a new opt-in key (benchmark windows had persisted the old key as on);
 chunk-local batches with tight bounds are the version to try next (`treeInstancingOn`).
 
+**24 Nov follow-up — spatial instancing experiment:** the optional tree scope now groups
+by 8×8 world cells as well as variant/render state. Existing instance bounds give each
+cell a separate camera/replay cull decision. Weakly cached grouping keys eliminate repeated
+string construction for unchanged parts; inactive buffers release source references,
+expire after 30 render frames, and are capped at 64. Negative transforms and child-bearing
+source meshes stay unbatched. Pixel Probe exposes cells, grouping-key hits, uploads and
+retired buffers. Real Three.js fixtures exercise actual view culling and source restoration.
+Still off by default until a device A/B proves it faster; no new FPS claim.
+Audit: all five initial CI workflows passed. Refresh drawn tree world transforms before the first render after streaming; fail open for custom shader/uncullable/group-order members; guard duplicate discoveries and restore originals on partial setup failure. Rebased after the popup optimization merge, retaining both log entries.
+
 ## 20 Nov 2026: procedural wilderness trees drawn instanced
 
 Tree tiles are clones of a few cached FoliageGenerator variants, so every trunk/vine/leaf/climb
