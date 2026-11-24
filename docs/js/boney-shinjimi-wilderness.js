@@ -22,15 +22,16 @@
   const SCAN_SECONDS = 0.24; // Throttles bidirectional sight tests and population scans.
   const SAVE_VERSION = 1; // Compatible additive field inside SlagothimTraders' existing saved record.
   const MAX_MILK_GIFTS = 3; // Secret encounter limit, independent of ordinary daily gift eligibility.
+  const runtime=window.WildernessEncounterRuntime; // Uses the same encounter lifecycle/eligibility helpers as Rootledoots.
   let deps = null; // SlagothimTraders' existing injected, game-owned NPC, calendar, inventory and map adapters.
   let walker = null; // The one materialized NPC in the active exterior zone.
-  let walkerBuilding = false; // Prevents asynchronous duplicate walker construction.
+  const walkerBuild=runtime.createBuildSlot(); // Prevents asynchronous duplicate walker construction.
   let houseMesh = null; // Loaded Highland piece; renderer visibility is separate from collisions.
   let houseScene = null; // Tracks the scene that owns the piece when zones are streamed/recreated.
-  let houseBuilding = false; // Prevents repeated fetches during an in-flight build.
+  const houseBuild=runtime.createBuildSlot(); // Prevents repeated fetches during an in-flight build.
   let houseUnregister = null; // Shared hard-wall collision registration, active even when invisible.
   let generation = 0; // Invalidates pending asynchronous builders after map/world/encounter changes.
-  let feyApproachTimer = 0; // Rare nearby-arrival rolls run at most once every 20 active-zone seconds.
+  const feyApproachClock=runtime.createInterval(20); // Rare nearby-arrival rolls run at most once every 20 active-zone seconds.
   let scanTimer = 0; // LOS and NPC scans are not repeated every animation frame.
   let planTimer = 0; // Chore route choices are throttled separately from body updates.
   let debugTimer = 0; // Mobile in-page diagnostics repaint at most twice per second.
@@ -165,7 +166,7 @@
   function clearHouse() {
     generation++;
     if(houseMesh?.parent)houseMesh.parent.remove(houseMesh);
-    houseMesh=null;houseScene=null;houseBuilding=false;
+    houseMesh=null;houseScene=null;houseBuild.cancel();
     houseUnregister?.();houseUnregister=null;
   }
   function releaseWalker() {
@@ -176,7 +177,7 @@
       const old=walker;walker=null;
       if(!deps?.despawnNpcWalker?.(old)) old.root?.parent?.remove?.(old.root);
     }
-    walkerBuilding=false;
+    walkerBuild.cancel();
   }
   function cutSouthDoorway(piece) {
     const faces=piece?.base?.faces;
@@ -196,12 +197,12 @@
   }
   async function ensureHouse() {
     const scene=window.GridTileAccessors?.getActiveScene?.();
-    if(!state.home||area()!==state.zone||!scene||houseBuilding)return;
+    if(!state.home||area()!==state.zone||!scene||houseBuild.busy)return;
     if(houseMesh&&scene===houseScene)return;
     if(houseMesh?.parent)houseMesh.parent.remove(houseMesh);
     houseMesh=null;houseScene=null;
     if(!window.HousePieceGen?.buildGroupFromPiece||!window.THREE)return;
-    const buildToken={};houseBuilding=buildToken; // Only this async request owns its loading flag.
+    const buildToken=houseBuild.begin(); // Only this async request owns its loading flag.
     const serial=generation;
     try {
       const response=await fetch(HOUSE_FILE);
@@ -226,7 +227,7 @@
       bumpEvent('Authored Highland house geometry loaded');
     } catch(err) {
       if(serial===generation)bumpEvent('House geometry unavailable: '+(err?.message||err)); // Mobile diagnostics: no silent cube substitute.
-    } finally {if(houseBuilding===buildToken)houseBuilding=false;}
+    } finally {houseBuild.finish(buildToken);}
   }
   function updateHouseVisibility() {
     if(!houseMesh)return;
@@ -266,8 +267,8 @@
     return true;
   }
   async function ensureWalker() {
-    if(walker||walkerBuilding||!deps?.makeNpcWalker||!state.home||area()!==state.zone)return;
-    const buildToken={};walkerBuilding=buildToken; // A superseded builder cannot unlock a newer asynchronous walker request.
+    if(walker||walkerBuild.busy||!deps?.makeNpcWalker||!state.home||area()!==state.zone)return;
+    const buildToken=walkerBuild.begin(); // A superseded builder cannot unlock a newer asynchronous walker request.
     const serial=generation,spot=state.target||{c:state.home.c+1,r:state.home.r+3};
     try {
       const w=await deps.makeNpcWalker(record(),{area:state.zone,c:spot.c,r:spot.r});
@@ -286,7 +287,7 @@
       }
       bumpEvent('Boney entered '+state.zone);
     }catch(err){if(serial===generation)bumpEvent('NPC build failed: '+(err?.message||err));}
-    finally{if(walkerBuilding===buildToken)walkerBuilding=false;}
+    finally{walkerBuild.finish(buildToken);}
   }
   function sightProxy(w) {
     let proxy=sightProxies.get(w); // Stable actor identity lets RangedWeapons reuse its existing 80 ms LOS and one-frame portrait-hitbox caches.
@@ -314,22 +315,11 @@
   }
   function nearbyOtherNpc() {
     if(!walker)return null;
-    let closest=null,range=8; // Scanned on the existing 240 ms perception tick, never in the render loop.
-    const here={x:walker.root.position.x,z:walker.root.position.z};
-    for(const other of (deps?.npcWalkers||[])) {
-      if(!other?.root||other===walker||other.area!==state.zone||other.animalKind
-        ||other.rec?.kind==='animal'||other.rec?.appearance?.avatarType==='animal')continue;
-      const point={x:other.root.position.x,z:other.root.position.z}; // Normalized tile-space escape reference for any ordinary NPC.
+    let closest=null,range=8; // The existing perception clock owns this scan.
+    const here=walker.root.position;
+    for(const point of runtime.peopleInArea({zone:state.zone,walkers:deps?.npcWalkers,actors:[deps?.hostileObjects],tileSize:tileSize(),exclude:actor=>actor===walker})){
       const d=dist(here,point);
-      if(d<range){closest=point;range=d;}
-    }
-    for(const other of (deps?.hostileObjects||[])) {
-      if(!other||other.areaId!==state.zone||!(other.health>0)||other.creatureKey)continue;
-      if(!(other.isBandit===true||other.isTribeHunter===true||other.isBarbarian===true
-        ||(other.rosterRecord?.appearance?.speciesId&&other.avatarRef?.group)))continue;
-      const point={x:finite(other.x)/tileSize(),z:finite(other.y)/tileSize()}; // Hostile humanoids are world-pixel X/Y, not NPC walker tile X/Z.
-      const d=dist(here,point);
-      if(d<range){closest=point;range=d;}
+      if(d<range){closest={x:point.x,z:point.z};range=d;}
     }
     return closest;
   }
@@ -530,17 +520,13 @@
       ],
     };
   }
-  function grantFeyReward(kind, rewardDeps) {
+  function grantFeyReward(kind,rewardDeps) {
     const cooking=window.CookingSystem;
-    const stacks=cooking?.consumeFeySight?.()||0; // Reward owners may persist internally; their first save must already see Fey-sight consumed.
-    let accepted=false;
-    try {
-      const prize=window.BoneyShinjimiRewards?.grant?.(kind,rewardDeps);
-      accepted=!!prize&&(kind!=='milk'||(prize.kind==='boundRelic'&&prize.origin==='Fey'));
-      return accepted?prize:null;
-    } finally {
-      if(!accepted&&stacks>0)cooking?.grantFeySight?.(stacks); // Failed or unavailable rewards retain every existing stack.
-    }
+    return runtime.withConditionalReward({
+      consume:()=>cooking?.consumeFeySight?.()||0,restore:stacks=>cooking?.grantFeySight?.(stacks),
+      grant:()=>window.BoneyShinjimiRewards?.grant?.(kind,rewardDeps),
+      accept:prize=>!!prize&&(kind!=='milk'||(prize.kind==='boundRelic'&&prize.origin==='Fey')),
+    });
   }
   function offerMilk(held, giftingDeps) {
     if (!canAcceptMilkGift(held, giftingDeps)) return false;
@@ -632,40 +618,35 @@
   function syncZone() {
     const active=area()===state.zone;
     if(!active) {
-      if(houseMesh||houseBuilding){clearHouse();ensureCollision();}
-      if(walker||walkerBuilding)releaseWalker(); // Pending builders must be invalidated even before their first mesh is attached.
-      feyApproachTimer=0;
+      if(houseMesh||houseBuild.busy){clearHouse();ensureCollision();}
+      if(walker||walkerBuild.busy)releaseWalker(); // Pending builders must be invalidated even before their first mesh is attached.
+      feyApproachClock.reset();
       return;
     }
     if(!state.home)return;
     ensureCollision();
-    if(!houseMesh&&!houseBuilding)void ensureHouse();
-    if(!walker&&!walkerBuilding)void ensureWalker();
+    if(!houseMesh&&!houseBuild.busy)void ensureHouse();
+    if(!walker&&!walkerBuild.busy)void ensureWalker();
     updateHouseVisibility();
   }
   function tryFeyApproach(dt) {
-    if (state.phase !== 'roam' || !walker || area() !== state.zone || !(deps.player?.health>0) || window.PlayerDowned?.isDowned?.()) { feyApproachTimer = 0; return; }
-    feyApproachTimer += dt;
-    if (feyApproachTimer < 20) return;
-    feyApproachTimer = 0;
+    if (state.phase !== 'roam' || !walker || area() !== state.zone || !(deps.player?.health>0) || window.PlayerDowned?.isDowned?.()) { feyApproachClock.reset(); return; }
+    if(!feyApproachClock.advance(dt))return;
     const player = playerTile(), current = position(); // Only move a distant, unobserved wanderer, never interrupt a chase.
     if (!player || !current || dist(current, player) < SIGHT_TILES * 2) return; // Already outside mutual sight; avoid a redundant LOS query.
     const chance = window.CookingSystem?.feyEncounterChance?.(0.005) ?? 0.005; // Tunable baseline: one half-percent per eligible interval.
     if (rnd() >= chance) return;
     const h = homeCenter();
-    const candidates=new Set(); // Duplicate sampled cells must not repeat expensive route checks.
-    let pathSearches=0; // At most four A* attempts per rare approach roll; cheap direct paths are tried first.
+    const routes=runtime.createRouteBudget(4); // Shared duplicate rejection and A* ceiling per approach roll.
     for (let attempt = 0; attempt < 16; attempt++) {
       const angle = rnd() * Math.PI * 2, radius = 7 + rnd() * 2;
       const c = Math.floor(player.x + Math.cos(angle) * radius), r = Math.floor(player.z + Math.sin(angle) * radius);
-      const key=c+','+r;if(candidates.has(key))continue;candidates.add(key);
+      if(!routes.visit(c,r))continue;
       if (!validTile(c, r) || !h || dist({x:c+.5,z:r+.5},h) < 4) continue;
       if (window.NpcPathfinding?.isNpcPositionWalkable?.(state.zone,c+.5,r+.5) === false) continue; // Reject narrow prop and furniture collisions too.
-      if (!window.NpcPathfinding?.canNpcBeeline?.(state.zone,c+.5,r+.5,state.home.c+1,state.home.r+3)) {
-        if(pathSearches>=4)continue;
-        pathSearches++;
-        if(!window.NpcPathfinding?.findNpcPath?.(state.zone,c+.5,r+.5,state.home.c+1,state.home.r+3))continue;
-      }
+      if(!routes.reachable(
+        ()=>window.NpcPathfinding?.canNpcBeeline?.(state.zone,c+.5,r+.5,state.home.c+1,state.home.r+3),
+        ()=>window.NpcPathfinding?.findNpcPath?.(state.zone,c+.5,r+.5,state.home.c+1,state.home.r+3)))continue;
       releaseWalker(); // The existing async walker constructor places the new avatar on a validated surface.
       state.target={c,r}; state.activity='wander'; state.resourceTarget=null; state.workLeft=0;
       planTimer=0; scanTimer=SCAN_SECONDS; // Give the newly arrived walker its ordinary chase check before choosing a new chore.
@@ -745,7 +726,7 @@
   }
   function restore(raw) {
     clearHouse();releaseWalker();
-    feyApproachTimer=0;sceneRunning=false;
+    feyApproachClock.reset();sceneRunning=false;
     Object.assign(state,initialState());
     if(raw?.version!==SAVE_VERSION)return;
     state.cycle=Number.isInteger(raw.cycle)?raw.cycle:-1;
