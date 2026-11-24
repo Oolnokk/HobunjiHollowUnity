@@ -95,12 +95,27 @@ for(const axis of ['x','y','z'])close(reapplied[axis],legacyPose.billboardAnchor
   const w4={localStorage:{getItem:k=>legacyV3.get(k)||null,
     setItem:(k,v)=>legacyV3.set(k,v),removeItem:k=>legacyV3.delete(k)}};
   vm.runInNewContext(files.profile,{window:w4,console});
-  close(w4.FamilyBabyCarryPose.snapshot().held.rotation.y,D.held.rotation.y,'old untouched yaw migrates to upward');
+  close(w4.FamilyBabyCarryPose.snapshot().held.rotation.y,D.held.rotation.y,'old untouched yaw migrates to the midpoint');
   close(w4.FamilyBabyCarryPose.snapshot().back.posteriorOffset.x,D.back.posteriorOffset.x,'old shoulder offset migrates to center');
   close(w4.FamilyBabyCarryPose.snapshot().grips.left.offset.x,.05,'stored custom hand grip survives migration');
   assert.equal(w4.FamilyBabyCarryPose.storageStatus().migratedStored,true,'migration visible in mobile diagnostics');
   assert.equal(JSON.parse(legacyV3.get('hobunji.familyBabyCarryPose.v3')).held.rotation.y,D.held.rotation.y,
     'revised pose is persisted once rather than re-migrated on each load');
+  // Devices that loaded the intermediate face-up release must migrate too.
+  const faceUpV3={...profile.defaultProfile,held:{...profile.defaultProfile.held,
+    rotation:{...profile.defaultProfile.held.rotation,y:-90}}}; // Last release's stored default.
+  const faceUpStore=new Map([['hobunji.familyBabyCarryPose.v3',JSON.stringify(faceUpV3)]]); // Simulated device storage.
+  const faceUpWindow=()=>({localStorage:{getItem:k=>faceUpStore.get(k)||null,
+    setItem:(k,v)=>faceUpStore.set(k,v),removeItem:k=>faceUpStore.delete(k)}}); // Fresh page load.
+  const wFaceUp=faceUpWindow(); // First load after the midpoint update.
+  vm.runInNewContext(files.profile,{window:wFaceUp,console});
+  close(wFaceUp.FamilyBabyCarryPose.snapshot().held.rotation.y,-50.46,'face-up default migrates to the midpoint');
+  close(wFaceUp.FamilyBabyCarryPose.snapshot().back.posteriorOffset.x,-.025,'centered stow is unchanged');
+  assert.equal(wFaceUp.FamilyBabyCarryPose.storageStatus().migratedStored,true);
+  const wReload=faceUpWindow(); // Reload verifies persisted migration is idempotent.
+  vm.runInNewContext(files.profile,{window:wReload,console});
+  close(wReload.FamilyBabyCarryPose.snapshot().held.rotation.y,-50.46,'midpoint remains after reload');
+  assert.equal(wReload.FamilyBabyCarryPose.storageStatus().migratedStored,false);
   const customV3={...previousDefaults,
     held:{...previousDefaults.held,rotation:{...previousDefaults.held.rotation,y:-50}},
     back:{...previousDefaults.back,posteriorOffset:{...previousDefaults.back.posteriorOffset,x:.01}}}; // User-authored deviations from both old defaults.
@@ -131,12 +146,14 @@ for(const axis of ['x','y','z'])close(reapplied[axis],legacyPose.billboardAnchor
 }
 close(sized.backCarry.rotation.z,D.back.rotation.z,'back stow pose retains authored orientation');
 // Shattercasks inverts the XYZ anchor rotation. Its transformed +Z face normal must point
-// primarily skyward in arms, while the newborn's visible body remains cradled across the torso.
+// diagonally upward and forward in arms, while the body remains cradled across the torso.
 const radians = axis => D.held.rotation[axis]*Math.PI/180; // The live solver consumes these degrees.
 const faceUpY = Math.sin(radians('z'))*Math.sin(radians('y'))*Math.cos(radians('x'))
   + Math.cos(radians('z'))*Math.sin(radians('x')); // Y of inverse XYZ rotation applied to +Z.
 const faceForwardZ = Math.cos(radians('y'))*Math.cos(radians('x')); // Z of the same transformed face normal.
-assert(faceUpY>.9&&Math.abs(faceForwardZ)<.1,'default held infant looks upward, not forward');
+close(D.held.rotation.y,(-10.92-90)/2,'held yaw is halfway between both previous defaults');
+assert(faceUpY>.65&&faceUpY<.8&&faceForwardZ>.55&&faceForwardZ<.75,
+  'default held infant looks diagonally upward and forward');
 assert(D.back.posteriorOffset.x<0&&D.back.posteriorOffset.x>-.04,
   'default back-stowed infant has a small spine-centering offset, not the old shoulder offset');
 assert.equal(sized.elbows.left,null,'legacy shoulder fallback remains when elbow is not explicitly authored');
