@@ -158,6 +158,17 @@ deps.worldToOverlay=(x,y,z)=>({x:100000+z*10+x*7,y:100000+y*10});
 assert.equal(win.__probeGlyphMasks(platformScene,deps,7590).drawn,0,'offscreen glyph is culled');
 assert.equal(platform.updateCount,updatesBeforeOffscreen,
   'offscreen wall glyphs must not project every shaft slab, conserving mobile CPU');
+// During an extreme camera move, a slab can cross the near plane. Its in-front
+// portion must still occlude a distant wall, rather than vanishing completely.
+platform.geometry.boundingBox.min.x=-20.05;platform.geometry.boundingBox.max.x=-19.7;
+deps.worldToOverlay=(x,y,z)=>({x:250+(z-1.5)*10/(x+20+.15),y:250+(y-1)*10/(x+20+.15)});
+draws.length=0;
+assert.equal(win.__probeGlyphMasks(platformScene,deps,7600).drawn,1,'distant rune still projects behind a near-plane-crossing slab');
+const nearClip=draws.find(d=>d.kind==='platform-clip');
+assert(nearClip&&nearClip.points.length>=3,'a slab crossing the camera near plane still makes a nonempty visible silhouette');
+assert(nearClip.points.every(p=>Number.isFinite(p.x)&&Number.isFinite(p.y)),
+  'near-plane-clipped slab silhouette remains finite instead of spraying the screen with huge polygon coordinates');
+platform.geometry.boundingBox.min.x=0;platform.geometry.boundingBox.max.x=2;
 positions.array.set([1,1,1,3,1,1,1,1,3]);geometry.boundingSphere.center=priorSphereCenter;
 deps.worldToOverlay=regularProjection;
 mesh.parent=scene;
