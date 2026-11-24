@@ -14,7 +14,7 @@
 (() => {
   'use strict';
 
-  const VERSION = 30; // 2026-11-24: every character inherits the same-gender Mao'ao relative changes from main; all raw PNG heads target 65%.
+  const VERSION = 31; // 2026-11-24: only Mao'ao male is the edited anchor; both genders inherit HIS relative shifts; every raw PNG head targets 65%.
   const NUHONGAN_PART_SCALE_AXES = Object.freeze({ x: 31 / 24, y: 31 / 24, z: 31 / 24 }); // Mean of prior inverse 0.8/0.75 adjustments: keep donor-sized extremities without stretching one axis.
   const NUHONGAN_HAND_SCALE_AXES = Object.freeze({ x: 31 / 24 * 0.88, y: 31 / 24 * 0.88, z: 31 / 24 * 0.88 }); // Nov 22: Nuhongan hands a little smaller (88%) than the shared extremity size; feet keep NUHONGAN_PART_SCALE_AXES.
   // Longoran extremities are thinner, never shorter (lanky look). Axes are in the
@@ -49,15 +49,17 @@
     male: Object.freeze({ x: .81675, y: 1.089, handScale: 1.1, footScale: 1.3125 }),
     female: Object.freeze({ x: .895, y: .94, handScale: 1, footScale: 1.28125 }),
   });
-  const MAOAO_SOURCE_APPROVED = Object.freeze({ // Uploaded hobunji_full_character_scales (2).json; leave these Mao'ao proportions unchanged.
-    male: Object.freeze({ x: .85, y: 1.29, handScale: 1.2, footScale: 1.05 }),
-    female: Object.freeze({ x: .895, y: .94, handScale: 1.15, footScale: 1.025 }),
+  const MAOAO_MALE_APPROVED = Object.freeze({ x: .85, y: 1.29, handScale: 1.2, footScale: 1.05 }); // The ONLY user-edited anchor from the uploaded Full Character Scale export.
+  const MAOAO_MALE_SHIFT = Object.freeze(Object.fromEntries(['x', 'y', 'handScale', 'footScale'].map(field => [
+    field, MAOAO_MALE_APPROVED[field] / MAOAO_SOURCE_MAIN.male[field],
+  ]))); // One exact proportional shift relative to main, applied to ALL characters regardless of gender.
+  const MAOAO_SOURCE_APPROVED = Object.freeze({
+    male: MAOAO_MALE_APPROVED,
+    female: Object.freeze(Object.fromEntries(Object.entries(MAOAO_SOURCE_MAIN.female).map(([field, baseline]) => [
+      field, baseline * MAOAO_MALE_SHIFT[field],
+    ]))), // Female Mao'ao was NOT independently edited: derive every dimension from main female × MALE Mao'ao shift.
   });
-  const MAOAO_RELATIVE_SHIFT = Object.freeze(Object.fromEntries(['male', 'female'].map(gender => [
-    gender, Object.freeze(Object.fromEntries(['x', 'y', 'handScale', 'footScale'].map(field => [
-      field, MAOAO_SOURCE_APPROVED[gender][field] / MAOAO_SOURCE_MAIN[gender][field],
-    ]))),
-  ]))); // Same-sex proportional deltas applied once to every non-Mao'ao profile; an absolute head-size target supersedes head deltas.
+  const MAOAO_RELATIVE_SHIFT = Object.freeze({ male: MAOAO_MALE_SHIFT, female: MAOAO_MALE_SHIFT }); // Identical axes for both genders; genders retain their distinct main sizes.
 
   const ADDITIONAL_MAIN_VALUES = Object.freeze({ // Source export includes these non-canonical skeleton/bipedal profiles in addition to the 18 core pairs.
     'boney-shinjimi-skeleton::male': Object.freeze({x:1, y:1, legLength:1, offsetY:0}),
@@ -69,13 +71,13 @@
     'omgurku::male': Object.freeze({x:1, y:1, legLength:1, offsetY:0}),
     'porakaneki::male': Object.freeze({x:1, y:1, legLength:1, offsetY:0}),
   });
-  const SOURCE_PART_SCALES = Object.freeze({ // Complete upload's existing limb sizes: preserve its other authored deviations rather than resetting them to main.
+  const SOURCE_PART_SCALES = Object.freeze({ // Other uploaded species' main-equivalent limb baselines remain their independent starting proportions.
     'kenkari::male': [1,1], 'kenkari::female': [.93,1],
     'tletingan::male': [.95,.95], 'tletingan::female': [.925,1.025],
     'nuhongan::male': [.95,.95], 'nuhongan::female': [.925,1.025],
     'longoran::male': [.95,.95], 'longoran::female': [.925,1.025],
     'engh-sho::male': [1.45,1.25], 'engh-sho::female': [1.3,1.17],
-    'mao-ao::male': [1.2,1.05], 'mao-ao::female': [1.15,1.025],
+    'mao-ao::male': [1.2,1.05], 'mao-ao::female': [1,1.28125], // Female baseline is MAIN, not the accidental unrelated changes in the uploaded export.
     'mashtzarr::male': [1,1.175], 'mashtzarr::female': [.95,1],
     'mammakhbuur::male': [1,1.175], 'mammakhbuur::female': [.95,1],
     'boney-shinjimi-skeleton::male': [1.2,1.05],
@@ -94,7 +96,7 @@
     : PORTRAIT_SCALE_BY_SPECIES[species] || 1; // The editor still measures the actual rendered plane when displaying/saving Head edits.
   const VALUES = Object.freeze(Object.fromEntries(Object.entries({...MAIN_VALUES, ...ADDITIONAL_MAIN_VALUES}).map(([key, base]) => {
     const [species, gender] = key.split('::');
-    const delta = MAOAO_RELATIVE_SHIFT[gender]; // Male and female Mao'ao changes are independent; do not transfer male height to females.
+    const delta = MAOAO_RELATIVE_SHIFT[gender]; // Male Mao'ao is the only authored shift; each other identity (including females) inherits it.
     const part = SOURCE_PART_SCALES[key] || [1,1]; // Defaults are the uploaded hand/foot values for every included identity.
     const isMaoao = species === 'mao-ao';
     const reference = MAOAO_SOURCE_APPROVED[gender];
@@ -174,7 +176,7 @@
     values: VALUES,
     mainReferenceValues: MAIN_VALUES, // Explicit pinned baseline for verifying relative rather than destructive edits.
     rawHeadScale: RAW_HEAD_SCALE, // Raw PNG target shared by UI, game defaults and the uploaded 26-profile export.
-    maoaoRelativeShift: MAOAO_RELATIVE_SHIFT, // Public diagnostics explain exactly what was inherited by male/female species.
+    maoaoRelativeShift: MAOAO_RELATIVE_SHIFT, // Both genders have exactly the Mao'ao MALE ratios, without an independent female anchor.
     applyApprovedScaleDefaultsToProfiles, // Called after all species modules have completed their own rig profile registration.
     worldHeightCalibration: WORLD_HEIGHT_CALIBRATION, // Consumed by the gameplay/editor shared parent scaler; numeric authored values remain unchanged for save compatibility.
     nuhonganPartScaleAxes: NUHONGAN_PART_SCALE_AXES,
