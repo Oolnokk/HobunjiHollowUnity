@@ -172,6 +172,7 @@
     version: VERSION,
     coordinateSpace: 'character-floor-parent',
     values: VALUES,
+    mainReferenceValues: MAIN_VALUES, // Explicit pinned baseline for verifying relative rather than destructive edits.
     rawHeadScale: RAW_HEAD_SCALE, // Raw PNG target shared by UI, game defaults and the uploaded 26-profile export.
     maoaoRelativeShift: MAOAO_RELATIVE_SHIFT, // Public diagnostics explain exactly what was inherited by male/female species.
     applyApprovedScaleDefaultsToProfiles, // Called after all species modules have completed their own rig profile registration.
