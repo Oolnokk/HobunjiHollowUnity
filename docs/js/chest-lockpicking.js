@@ -60,19 +60,25 @@
   function progressKey(scope, id) { return JSON.stringify([scope.characterId, scope.worldId, id]); } // Shared identity for browser-fallback records and reopening the same lock.
   function readProgress(id, tier, stages) {
     const scope = profileScope();
-    if (!scope || typeof localStorage === 'undefined') return null;
+    if (!scope) return null;
+    const fallback = deferredProgress.get(progressKey(scope,id)); // Session-only progress survives even when browser reads throw.
+    let meta = null; // Normal browser baseline, or a minimal character for reading pending mutations when storage is inaccessible.
     try {
-      const meta = JSON.parse(localStorage.getItem(window.CharacterMetaSave?.META_KEY || 'hobunjiSaveMeta') || 'null');
+      if (typeof localStorage !== 'undefined') meta = JSON.parse(localStorage.getItem(window.CharacterMetaSave?.META_KEY || 'hobunjiSaveMeta') || 'null');
+    } catch (error) { describeError(error); }
+    try {
+      if (!meta?.characters?.some(character => character.id === scope.characterId)) {
+        meta = {characters:[{id:scope.characterId}]};
+      }
       window.CharacterMetaSave?.capturePending?.(meta); // Includes unflushed mutations without rewriting browser storage.
-      const saved = deferredProgress.get(progressKey(scope,id))
-        || meta?.characters?.find(character => character.id === scope.characterId)?.[PROGRESS_FIELD]?.[scope.worldId]?.[id];
+      const saved = fallback || meta.characters.find(character => character.id === scope.characterId)?.[PROGRESS_FIELD]?.[scope.worldId]?.[id];
       if (!saved || saved.version !== PROGRESS_VERSION || saved.tier !== tier) return null;
       return {
-        stage:safeInt(saved.stage, stages - 1), misses:safeInt(saved.misses, 9999),
+        stage:safeInt(saved.stage, stages), misses:safeInt(saved.misses, 9999),
         streak:safeInt(saved.streak, stages * PRESETS[tier].rings), streakScore:clamp(Number(saved.streakScore)||0,0,100),
         bestStreak:safeInt(saved.bestStreak, stages * PRESETS[tier].rings), bestScore:clamp(Number(saved.bestScore)||0,0,100),
-        persistedSignature:JSON.stringify(saved),
-        failedStage:Number.isInteger(saved.failedStage) && saved.failedStage === safeInt(saved.stage, stages - 1),
+        persistedSignature:fallback ? null : JSON.stringify(saved),
+        failedStage:Number.isInteger(saved.failedStage) && saved.failedStage === safeInt(saved.stage, stages),
       };
     } catch (error) { describeError(error); return null; }
   }
@@ -90,6 +96,12 @@
   function scopeMatches(scope) {
     const current = profileScope(); // A character switch must never write another character's lock progress.
     return scope?.characterId === current?.characterId && scope?.worldId === current?.worldId;
+  }
+
+  function validSession(state) {
+    if (!scopeMatches(state.scope)) return false;
+    try { return typeof state.valid !== 'function' || state.valid() !== false; }
+    catch (error) { describeError(error); return false; }
   }
 
   function saveProgress(state, reason) {
@@ -214,7 +226,7 @@
 
   function setProgress() {
     if (!session || !progress) return;
-    progress.textContent = `Set ${session.stage + 1} of ${session.cfg.stages} · ${session.misses} misses · Best clean streak ${session.bestStreak} · +${bonusDrops(session)} bonus drops`;
+    progress.textContent = `Set ${Math.min(session.stage + 1, session.cfg.stages)} of ${session.cfg.stages} · ${session.misses} misses · Best clean streak ${session.bestStreak} · +${bonusDrops(session)} bonus drops`;
   }
 
   function makeRings() {
@@ -273,7 +285,7 @@
   function catchRing(i, source='unknown') {
     const active = session;
     if (!active || active.phase!=='playing') return false;
-    if (!scopeMatches(active.scope)) { close('invalid'); return false; }
+    if (!validSession(active)) { close('invalid'); return false; }
     const ring = active.rings[i];
     if (!ring || ring.frozen) return false;
     active.lastInput = `${source}: ${ring.name}`;
@@ -323,12 +335,8 @@
   function tick(dt) {
     const active=session;
     if(!active) return;
-    if(!scopeMatches(active.scope)){close('invalid');return;}
-    if(typeof active.valid==='function') {
-      let okay=false;
-      try {okay=active.valid()!==false;} catch(error){describeError(error);}
-      if(!okay){close('invalid');return;}
-    }
+    if(!validSession(active)){close('invalid');return;}
+    if(active.phase==='reward-ready'){advanceSecuredStage(active);return;} // Resume a saved final set without another scoring opportunity.
     if(active.phase==='transition'){
       active.transitionMs-=dt;
       if(active.transitionMs<=0){active.phase='playing';makeRings();announce('Catch every moving notch before the rings slip.');}
@@ -407,15 +415,14 @@
     const finished=session;
     if(!finished)return false;
     if (!scopeMatches(finished.scope)) outcome = 'invalid';
-    if (outcome === 'success' && typeof finished.valid === 'function') {
-      try {
-        if (finished.valid() === false) outcome = 'invalid'; // The chest must still exist at the reward boundary, not just on the last animation frame.
-      } catch (error) { describeError(error); outcome = 'invalid'; }
-    }
+    if (outcome === 'success' && (finished.stage < finished.cfg.stages || !validSession(finished))) outcome = 'invalid'; // Never pay an incomplete or stale lock.
     if (outcome === 'cancelled' && finished.phase === 'playing' && finished.rings.some(ring => ring.frozen)) {
       recordFailure(finished, 'Abandoned an in-progress set'); // Cancelling a nearly slipped set cannot preserve a flawless streak.
     }
     if (outcome === 'success') saveProgress(finished, 'lock opened');
+    else if (outcome === 'cancelled' && deferredProgress.has(finished.scope ? progressKey(finished.scope, finished.id) : '')) {
+      saveProgress(finished, 'retry queued progress'); // Recover a previously unavailable queue without another scored attempt.
+    }
     // The reward consumer owns the normal loot save; never wait for disk inside the minigame.
     session=null; // Prevents reentrancy and grants loot once even if callback opens another chest.
     const award = {tier:finished.tier,misses:finished.misses,bestStreak:finished.bestStreak,bestScore:finished.bestScore,bonusDrops:bonusDrops(finished)};
@@ -454,13 +461,14 @@
     const scope = profileScope(); // Scope all progress and validate character switches.
     const saved = readProgress(id, tier, cfg.stages); // Re-entry uses canonical character/world lock state instead of a fresh run.
     session={id,tier,cfg,scope,valid:options.valid,onSuccess:options.onSuccess,onCancel:options.onCancel,
-      phase:'playing',stage:saved?.stage||0,misses:saved?.misses||0,elapsed:0,rings:[],firstCatch:-1,transitionMs:0,lastInput:'',
+      phase:saved?.stage===cfg.stages?'reward-ready':'playing',stage:saved?.stage||0,misses:saved?.misses||0,elapsed:0,rings:[],firstCatch:-1,transitionMs:0,lastInput:'',
       streak:saved?.streak||0,streakScore:saved?.streakScore||0,bestStreak:saved?.bestStreak||0,bestScore:saved?.bestScore||0,
       failedStage:saved?.failedStage||false,persistedSignature:saved?.persistedSignature||null,
       stutters:0,graceUntil:0,lastStallMs:0};
+    if (scope && deferredProgress.has(progressKey(scope,id))) saveProgress(session, 'retry queued progress');
     root.querySelector('#chestLockTitle').textContent=String(options.title||'Chest Lock');
     root.setAttribute('aria-hidden','false');
-    makeRings();announce(saved?.stage ? 'Previously secured sets remain complete. Catch the next set.' : 'Catch every rotating notch before the first ring slips.');
+    makeRings();announce(session.phase==='reward-ready' ? 'Lock already picked. Opening…' : saved?.stage ? 'Previously secured sets remain complete. Catch the next set.' : 'Catch every rotating notch before the first ring slips.');
     priorOwner=window.ControllerInput?.owner||'gameplay';
     window.ControllerInput?.setOwner?.(OWNER);
     actionLock=window.CharacterActionLocks?.acquire?.({owner:OWNER,participants:[{id:'player',channels:['movement','actions','tools']}],reason:'Picking a chest lock'})||null;

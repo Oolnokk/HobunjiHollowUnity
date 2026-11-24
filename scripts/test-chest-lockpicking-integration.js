@@ -142,9 +142,9 @@ function makeElement() {
 
   // Use the real character save queue, including capture and quota failure behavior.
   const storedMeta = {characters:[{id:'char_a'},{id:'char_b'}],worlds:[{id:'world_a'},{id:'world_b'}]};
-  let saveWrites=0, quotaFull=false, folderWrites=0; // Detect any lock-triggered storage or folder I/O.
+  let saveWrites=0, quotaFull=false, readBlocked=false, folderWrites=0; // Detect any lock-triggered storage or folder I/O.
   context.localStorage={
-    getItem(key){return key==='hobunjiSaveMeta'?JSON.stringify(storedMeta):null;},
+    getItem(key){if(readBlocked)throw Error('read unavailable');return key==='hobunjiSaveMeta'?JSON.stringify(storedMeta):null;},
     setItem(key,value){assert.equal(key,'hobunjiSaveMeta');if(quotaFull)throw Error('quota');saveWrites++;Object.assign(storedMeta,JSON.parse(value));}
   };
   window.__hobunjiPlayerProfile={characterId:'char_a',worldId:'world_a'};
@@ -267,6 +267,63 @@ function makeElement() {
   assert.equal(lock.acquired,lock.released);
   assert.equal(folderWrites,0);
   assert.equal(saveWrites,1);
+
+  // A completed lock whose consumer could not open must keep its final stage and exact score.
+  let retryAward=null; // Simulates a valid chest whose original reward handoff was rejected by its own save guard.
+  assert(api.open({id:'flawless',tier:1,valid:()=>true,onSuccess:a=>{retryAward=a;}}));
+  assert.equal(api.snapshot().phase,'reward-ready');
+  assert.equal(api.snapshot().stage,2);
+  assert.equal(retryAward,null,'reward retry remains asynchronous relative to the world action');
+  nextFrameTick();
+  assert.equal(retryAward.bestStreak,awards[0].bestStreak);
+  assert.equal(retryAward.bestScore,awards[0].bestScore);
+  assert.equal(retryAward.bonusDrops,awards[0].bonusDrops);
+  assert.equal(api.isActive(),false);
+  assert.equal(capturedRecord('flawless').stage,2);
+  flushMicrotasks();
+
+  // A target can disappear between RAF and either a successful catch or a miss.
+  let liveTarget=true;
+  api.open({id:'invalid-mid-set',tier:1,valid:()=>liveTarget,onSuccess(){throw Error('stale reward');}});
+  press('Button4');liveTarget=false;press('Button5');
+  assert.equal(api.snapshot().lastOutcome.outcome,'invalid');
+  assert.equal(capturedRecord('invalid-mid-set'),undefined);
+  flushMicrotasks();
+
+  // Pending progress remains readable even when browser storage reads fail.
+  api.open({id:'read-blocked',tier:1,onSuccess(){}});
+  press('Button4');press('Button5');advance();missOuter();press('Button1');flushMicrotasks();
+  readBlocked=true;
+  api.open({id:'read-blocked',tier:1,onSuccess(){}});
+  assert.equal(api.snapshot().stage,1);
+  assert.equal(api.snapshot().misses,1);
+  press('Button1');flushMicrotasks();
+  // If the queue itself is unavailable, keep an emergency in-memory record and restage on reentry.
+  delete window.CharacterMetaSave;
+  api.open({id:'queue-blocked',tier:1,onSuccess(){}});
+  missOuter();press('Button1');flushMicrotasks();
+  api.open({id:'queue-blocked',tier:1,onSuccess(){}});
+  assert.equal(api.snapshot().misses,1);
+  press('Button1');flushMicrotasks();
+  window.CharacterMetaSave=metaApi;
+  readBlocked=false;
+  api.open({id:'queue-blocked',tier:1,onSuccess(){}});
+  assert.equal(capturedRecord('queue-blocked').misses,1);
+  press('Button1');flushMicrotasks();
+
+  // Verify the longer slip timer in live ticks, not just preset values.
+  api.open({id:'slip',tier:1,onSuccess(){}});
+  press('Button4');
+  for(let i=0;i<90;i++)nextFrameTick(); // Past the former 4.2 s limit.
+  assert.equal(api.snapshot().misses,0);
+  assert.equal(api.snapshot().rings[0].frozen,true);
+  for(let i=0;i<45;i++)nextFrameTick();
+  assert.equal(api.snapshot().misses,1);
+  assert.equal(api.snapshot().phase,'playing');
+  press('Button1');flushMicrotasks();
+  assert.equal(saveWrites,1,'none of the retries, slips or invalidations forces storage');
+  assert.equal(folderWrites,0);
+  assert.equal(lock.acquired,lock.released);
 
   // Buried chest exercises the actual world action and existing async reward
   // callback, rather than testing the UI without granting real inventory.
