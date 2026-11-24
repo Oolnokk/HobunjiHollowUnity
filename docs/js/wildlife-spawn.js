@@ -1011,6 +1011,7 @@
       };
       const genotypeFamily = denGenotypeFamily(survivor.creatureKey); // Used to guarantee displaced residents retain a drawable family genotype.
       if (!survivor.genotype && genotypeFamily) survivor.genotype = getOrMakeDenGenotype(cavernMapId, genotypeFamily);
+      window.CreatureGenetics?.applyWildPracticalTraits?.(survivor); // Displaced survivors can receive their first family genome here.
       survivor.denTurnoverOriginKey = denKey;
       survivor.denKey = null;
       survivor.denEntranceX = null;

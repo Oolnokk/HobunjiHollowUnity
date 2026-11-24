@@ -67,7 +67,8 @@
       {x:to.x*unit(),y:to.z*unit(),worldY:to.y});
     if(!line||!window.PerchSupport.attach(actor,line,0))return false;
     const distance=Math.hypot(to.x-from.x,to.z-from.z,to.y-from.y);
-    state.leg={from,to,elapsed:0,duration:Math.max(.28,distance/speed)};
+    const geneSpeed=window.CreatureGenetics?.practicalMultiplier?.(actor.genotype,'speedy')||1; // Flight legs bypass the ground speed definition.
+    state.leg={from,to,elapsed:0,duration:Math.max(.28,distance/(speed*geneSpeed))};
     state.phase=phase;state.struck=false;actor.pingdortFlightPose='flap';
     actor.pingdortDivePitchRad=Math.atan2(to.y-from.y,Math.hypot(to.x-from.x,to.z-from.z))*.7;
     return true;
@@ -273,6 +274,7 @@
       pingdortFlockId:nest.id,
     });
     if(!actor)return null;
+    window.CreatureGenetics?.applyWildPracticalTraits?.(actor,genotype); // Same inherited boosts as other wildlife.
     actor.areaId=session.area;actor.isWildPingdort=true;actor.pingdortFlightPose='perched';
     actor.def=Object.assign(Object.create(actor.def||null),{hostile:false,attacks:[]}); // Wild birds never choose the player/large prey in generic AI.
     const home={x:pos.x,z:pos.z,y:nest.worldY}; // The shelf is the actual perch surface; native groundLift determines each bird's foot height, not an extra invisible air gap.

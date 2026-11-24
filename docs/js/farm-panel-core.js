@@ -1927,7 +1927,7 @@
       return `<div class="farm-trait-chip pattern${trait.carrier ? ' carrier' : ''}"><i style="background:${color}"></i><span><strong>${deps.esc(heading)}</strong><small>${deps.esc(trait.colorName)} · ${deps.esc(copyText)}</small></span></div>`;
     }).join(''); // Shows every expressed pattern and every hidden carrier.
     const practical = traits.practical || []; // Same capped genes used by combat, harvesting and inheritance.
-    const limits = window.CreatureGenetics.PRACTICAL_TRAIT_LIMITS;
+    const limits = window.CreatureGenetics?.PRACTICAL_TRAIT_LIMITS;
     const practicalHtml = limits ? [['stable', 'Companion / mount'], ['livestock', 'Livestock / breeding']].map(([group, label]) => {
       const genes = practical.filter(trait => trait.group === group);
       const chips = genes.map(trait => `<div class="farm-trait-chip"><span><strong>${deps.esc(trait.label)}</strong><small>${deps.esc(trait.description)} · ${trait.copies} cop${trait.copies === 1 ? 'y' : 'ies'}</small></span></div>`).join('');

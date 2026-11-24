@@ -531,11 +531,11 @@
   // Permanent genetic capacities are part of the animal's actual base pools, not temporary stat modifiers.
   const enduringCapacityApplied = new WeakMap(); // Runtime-only per entity/channel tracking, independent of saved genotype.
   function applyPracticalCapacities(entity, genotype = entity?.genotype) {
-    if (!entity || practicalMultiplier(genotype, 'enduring') === 1) return false;
-    if (entity === window.Combat?.deps?.player) return false; // Never grant an animal allele to the rider.
-    const multiplier = practicalMultiplier(genotype, 'enduring');
+    if (!entity || !genotype?.practical?.enduring || entity === window.Combat?.deps?.player) return false;
     let applied = enduringCapacityApplied.get(entity) || 0; // Bit flags allow a late-initialized resource to be handled independently.
-    if (applied === 3) return true; // No allocations or writes during ordinary resource ticks after initialization.
+    if (applied === 3) return true; // No genotype scanning, allocations or writes after initialization.
+    const multiplier = practicalMultiplier(genotype, 'enduring');
+    if (multiplier === 1) return false;
     for (const [maxKey, currentKey, flag] of [['maxHealth', 'health', 1], ['maxStamina', 'stamina', 2]]) {
       if (applied & flag) continue;
       const base = entity[maxKey];

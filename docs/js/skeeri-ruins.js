@@ -287,7 +287,8 @@
     const spatial=Math.hypot(to.x-start.x,to.z-start.z,to.y-start.y); // 3D distance determines consistent travel speed for multi-story drops.
     const line=window.PerchSupport?.line?.(state.id+':flight:'+state.serial++,point(session,start),point(session,to));
     if(!line || !window.PerchSupport.attach(actor,line,0))return false;
-    state.segment={from:start,to,elapsed:0,duration:Math.max(.36,spatial/Math.max(1,speed))};
+    const geneSpeed=window.CreatureGenetics?.practicalMultiplier?.(actor.genotype,'speedy')||1; // Aerial travel has its own authored speed.
+    state.segment={from:start,to,elapsed:0,duration:Math.max(.36,spatial/Math.max(1,speed*geneSpeed))};
     state.phase=phase;state.struck=false;
     actor.skeeriFlightPose='flap';
     actor.skeeriDivePitchRad=Math.atan2(to.y-start.y,Math.hypot(to.x-start.x,to.z-start.z))*.7;
@@ -312,7 +313,8 @@
     const half={x:halfWidth,y:Math.max(.25,halfWidth*.8),z:halfWidth};
     if(sweep(start,end,half,target)===null)return;
     state.struck=true;
-    const damage=Math.max(1,Math.round(state.spec.damage*(1+.12*state.tier)));
+    const geneDamage=window.CreatureGenetics?.practicalMultiplier?.(state.actor.genotype,'fierce')||1; // Tier-based swoops do not use def.attackDamage.
+    const damage=Math.max(1,Math.round(state.spec.damage*(1+.12*state.tier)*geneDamage));
     const combat=window.Combat?.deps;
     if(typeof combat?.damagePlayer==='function'){
       combat.damagePlayer(damage,state.actor.x,state.actor.y,75,{attacker:state.actor,tag:'sharp',aerialSwoop:true,impactCollider:'body'});
@@ -360,7 +362,13 @@
       actor.avatarRef?.dispose?.();snapshot.failedSpawns++;return null;
     }
     const scaledHealth=Math.max(1,Math.round(spec.health*(1+.16*tier))); // Difficulty scales durability without changing authored species defaults.
-    actor.maxHealth=scaledHealth;actor.health=scaledHealth;
+    // Keep the ruin palette authoritative; attach practical genes without replacing its visual genome.
+    if (!actor.genotype?.practical && window.CreatureGenetics?.rollPracticalGenes) {
+      actor.genotype={ ...actor.genotype, practical:window.CreatureGenetics.rollPracticalGenes('skeeri') };
+    }
+    window.CreatureGenetics?.applyWildPracticalTraits?.(actor);
+    const capacity=window.CreatureGenetics?.practicalMultiplier?.(actor.genotype,'enduring')||1; // Explicit tier max replaces factory max, so include the trait once.
+    actor.maxHealth=scaledHealth*capacity;actor.health=actor.maxHealth;
     deps.hostileObjects.add(actor);
     const state={id:'skeeri:'+session.seed+':'+index,actor,spec,size,tier,
       phase:'rest',home:{x,z,y},serial:0,segment:null,cooldown:1+index*.4,

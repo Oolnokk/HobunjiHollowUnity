@@ -104,4 +104,17 @@ const rsSource = fs.readFileSync('docs/js/combat/resource-system.js', 'utf8');
 const mountSource = fs.readFileSync('docs/js/mount-system.js', 'utf8');
 assert.ok(rsSource.includes('window.CreatureGenetics?.applyPracticalCapacities?.(entity)'));
 assert.ok(mountSource.includes("practicalMultiplier?.(mountRideEntity.genotype, 'fierce')"));
+// Exercise the actual ResourceSystem initializer, including ordinary actors and repeated initialization.
+vm.runInContext(rsSource, ctx);
+const actual = { genotype: enduringGenome, maxHealth: 80, health: 80, maxStamina: 40, stamina: 40 };
+ctx.ResourceSystem.initEntity(actual);
+ctx.ResourceSystem.initEntity(actual);
+assert.equal(actual.maxHealth, 100);
+assert.equal(actual.maxStamina, 50);
+assert.equal(ctx.ResourceSystem.getEffectiveMax(actual, 'health'), 100);
+assert.equal(ctx.ResourceSystem.getEffectiveMax(actual, 'stamina'), 50);
+const legacy = { maxHealth: 80, health: 80, maxStamina: 40, stamina: 40 };
+ctx.ResourceSystem.initEntity(legacy);
+assert.equal(ctx.ResourceSystem.getEffectiveMax(legacy, 'health'), 80);
+assert.equal(ctx.ResourceSystem.getEffectiveMax(legacy, 'stamina'), 40);
 console.log('Practical animal genetics passed');

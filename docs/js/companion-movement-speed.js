@@ -308,12 +308,20 @@
         if (!(speed > 0)) return originalValue;
         const ratio = ownerSpeedRatio(companion);
         const catchup = property === 'chaseSpeed' ? followCatchupMultiplier(companion) : 1;
-        const owner = companion.master || deps?.player; // Sicced and downed-focus orders can precede the regular target field.
-        const areaId = deps?.getCurrentArea?.();
-        const sicced = owner === deps?.player && companion.stableRole === 'companion' ? window.EnchantmentSystem?.getCurrentSiccedTarget?.() : null;
-        const focus = owner === deps?.player && companion.stableRole === 'companion' ? window.PlayerDowned?.getFocusTarget?.() : null;
-        const combatActive = !!(companion._companionCombatTarget || companion._animalAttack || companion._furiousSpecial || (sicced?.health > 0 && (!areaId || sicced.areaId === areaId)) || (focus?.health > 0 && !focus._downed && (!areaId || focus.areaId === areaId))); // Ordinary following retains owner pace.
-        const practical = combatActive ? (window.CreatureGenetics?.practicalMultiplier?.(companion.genotype, 'speedy') || 1) : 1;
+        let practical = 1; // Normal followers and animals without Speedy never inspect combat orders.
+        if (companion.genotype?.practical?.speedy) {
+          const gene = window.CreatureGenetics?.practicalMultiplier?.(companion.genotype, 'speedy') || 1;
+          if (gene !== 1) {
+            let combatActive = !!(companion._companionCombatTarget || companion._animalAttack || companion._furiousSpecial);
+            if (!combatActive && (companion.master || deps?.player) === deps?.player && companion.stableRole === 'companion') {
+              const areaId = deps?.getCurrentArea?.(); // Only unresolved Speedy combat orders need global target lookups.
+              const sicced = window.EnchantmentSystem?.getCurrentSiccedTarget?.();
+              const focus = window.PlayerDowned?.getFocusTarget?.();
+              combatActive = !!((sicced?.health > 0 && (!areaId || sicced.areaId === areaId)) || (focus?.health > 0 && !focus._downed && (!areaId || focus.areaId === areaId)));
+            }
+            if (combatActive) practical = gene;
+          }
+        }
         const desiredWorldSpeed = speed * ratio * catchup * practical; // World-space pace after any temporary follow recovery.
         const global = devGlobalMovementMultiplier();
         const commandSpeed = compensateGlobalCreatureMovement(companion) && global > 0
