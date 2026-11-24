@@ -447,6 +447,10 @@
   // instanced meshes are hidden.
   registerRenderScope({ id: 'grass-chunks', owner: 'grass-billboard-render-chunks.js', order: 400,
     suspend: ctx => window.GrassBillboardRenderChunks?.suspendForRender?.(ctx.scene) });
+  // Whole far brick meshes (house walls, path chunks) draw a 12-triangle
+  // octant hull of the default brick instead of its 70 triangles.
+  registerRenderScope({ id: 'instanced-brick-lod', owner: 'instanced-brick-lod.js', order: 450,
+    suspend: ctx => window.InstancedBrickLod?.suspendForRender?.(ctx.scene, ctx.camera) });
   registerRenderScope({ id: 'instanced-view-cull', owner: 'instanced-mesh-view-cull.js', order: 500,
     suspend: ctx => window.InstancedMeshViewCull?.suspendForRender?.(ctx.scene, ctx.camera) });
   // Static wilderness objects outside the vegetation corridor can stay

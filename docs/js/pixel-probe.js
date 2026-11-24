@@ -1229,6 +1229,8 @@
     if (propBatches) lines.push(`Wilderness prop batches: ${JSON.stringify(propBatches)}`);
     const treeBatches = window.WildernessTreeInstancer?.snapshot?.(); // On-demand mobile A/B: spatial cells, key hits, uploads and retired buffers.
     if (treeBatches) lines.push(`Wilderness tree instances: ${JSON.stringify(treeBatches)}`);
+    const brickLod = window.InstancedBrickLod?.snapshot?.(); // Far brick meshes drawn with the octant hull and triangles avoided.
+    if (brickLod?.frames) lines.push(`Brick LOD: ${JSON.stringify(brickLod)}`);
 
     const waterFootLines = _pixelProbeWaterFootContactLines(activeScene, currentArea, playerMesh); // Used to distinguish real foot/water intersection from camera-perspective illusions on mobile.
     if (waterFootLines) lines.push(...waterFootLines);
