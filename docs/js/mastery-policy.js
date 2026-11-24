@@ -242,6 +242,7 @@
     const after = round2(before + delta);
     withPermit(() => { record.xp = after; });
     if (metadata.combatFamily && metadata.baseFamilyXp > 0) awardFamilyProficiency(gear, metadata.combatFamily, metadata.baseFamilyXp); // Both progressions save atomically.
+    window.RomanceFamily?.awardObservationXp?.({ amount: Math.max(0, masteryXp(record) - before) }); // Policy-approved mastery awards share the infant observation path.
     window.MetalArmorSystem?.awardExperience?.(delta, 'tool/weapon Mastery XP', { save: false }); // "All experience" includes tool/weapon Mastery (same contract as tool-mastery.js); the save below persists both.
     try {
       if ((reason === 'melee kill' || reason === 'ranged kill') && combatDeps?.scheduleCombatGearSave) combatDeps.scheduleCombatGearSave();

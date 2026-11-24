@@ -86,7 +86,7 @@
     const ownerSurface = ruin ? ownerFloor : deps.surfaceYForTile?.(masterTile, currentArea);
     if (!Number.isFinite(ownerSurface)) return null;
     const probe = { x: master.x, y: master.y, areaId: currentArea, areaGrid: grid,
-      def: c.def, shaftSupportY: ownerSurface }; // Test creature volume against the owner's story, not the pet's abandoned floor.
+      def: c.def, _familyBabyFollower: c._familyBabyFollower, shaftSupportY: ownerSurface }; // Test creature volume against the owner's story, not the pet's abandoned floor.
     const DS = window.DynamicSurfaces; // Reuses the actual generated ruin floors, pitfalls and blockers.
     let pathAttempts = 0; // Caps expensive ruin path validations to a few hidden candidates per retry.
     for (const radius of RADII) for (let i = 0; i < ANGLES; i++) {
@@ -164,9 +164,11 @@
     }
     const candidate = recoveryCandidate(c, master, camera, currentArea, tile, ownerFloor);
     if (!candidate) { debug.lastFailure = 'no unseen safe landing on owner floor'; return false; }
-    window.Combat?.animalAttacks?.cancel?.(c); // Clear all movement-owning attack and route state before relocating.
-    window.Combat?.telegraph?.cancel?.(c);
-    window.Combat?.cancelStagedForAttacker?.(c);
+    if (!c._familyBabyFollower) { // Infant navigation is private; it has no combat actor to cancel.
+      window.Combat?.animalAttacks?.cancel?.(c); // Clear all movement-owning attack and route state before relocating.
+      window.Combat?.telegraph?.cancel?.(c);
+      window.Combat?.cancelStagedForAttacker?.(c);
+    }
     c._animalAttack = null;
     c._stage = null;
     c._cliffClimb = null; c._cliffRouteTravel = null; c._cliffEntryPath = null;
@@ -212,11 +214,11 @@
     const petFloor = ruin ? (rawPetFloor != null && Number.isFinite(Number(rawPetFloor))
       ? Number(rawPetFloor) : modelPos && Number.isFinite(modelPos.y)
         ? modelPos.y - (c.groundLift ?? c.halfHeight ?? 0) : null) : null;
-    const differentFloor = ruin && Number.isFinite(playerFloor) && Number.isFinite(petFloor) &&
-      Math.abs(playerFloor - petFloor) > 0.75;
+    const differentFloor = (ruin && Number.isFinite(playerFloor) && Number.isFinite(petFloor) &&
+      Math.abs(playerFloor - petFloor) > 0.75) || (c._familyBabyFollower && followGoal?.routeRequired === true);
     const unable = c.prone || c._knockbackLedgeFall || c._cliffClimb || c._cliffRouteTravel ||
       c.knockbackT > 0 || c._animalAttack ||
-      window.Combat?.telegraph?.isBusy?.(c) || c._honeyfuzzleRescueTarget ||
+      (!c._familyBabyFollower && window.Combat?.telegraph?.isBusy?.(c)) || c._honeyfuzzleRescueTarget ||
       c._companionCombatTarget || c.treasureCue || master.climbing || master._freeJump;
     if ((!far && !differentFloor) || unable) {
       state.stalled = 0; state.retry = 0; state.bestDistance = Infinity; return false;
