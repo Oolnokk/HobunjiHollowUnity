@@ -88,6 +88,7 @@
     kenkari: .75, tletingan: .85, nuhongan: .85, longoran: .85,
     'engh-sho': .95, harlyao: .95, 'harlyao-skeleton': .95,
     'mao-ao': 1, 'mao-ao-skeleton': 1, mashtzarr: 1.18, mammakhbuur: 1.18,
+    omgurku: .95, porakaneki: .75, // Their humanoid upper sprites inherit Engh-sho and Kenkari source-plane scales respectively.
   });
   const portraitScaleFor = (species, gender) => species === 'mao-ao' && gender === 'female' ? .8
     : PORTRAIT_SCALE_BY_SPECIES[species] || 1; // The editor still measures the actual rendered plane when displaying/saving Head edits.
