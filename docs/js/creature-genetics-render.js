@@ -177,12 +177,12 @@
   // These are renderer-only anatomical defaults, not extra allele slots. A later
   // authored beard2/beard3 (registered in spec.patterns and inherited genetics)
   // suppresses beard1 only when its allele is actually expressed and drawable.
-  function visibleDefaultCoatPatterns(spec, genotype) {
+  function visibleDefaultCoatPatterns(kind, spec, genotype) {
     return (spec.defaultCoatPatterns || []).filter(defaultPattern => {
       const replacement = spec.patterns.some(id => {
         if (id === defaultPattern.id || !id.startsWith(defaultPattern.family)) return false;
         const allele = genotype?.[id]; // A carrier or unexpressed beard must not hide the ordinary beard.
-        return allele?.enabled !== false && allele?.copies > 0 && !!(genotype?.secondary?.color || allele?.color || genotype?.base?.color);
+        return allele?.enabled !== false && allele?.copies > 0 && !!patternTintColor(kind, id, genotype);
       });
       return !replacement;
     });
@@ -199,7 +199,7 @@
     genotype = effectiveGenotype(kind, genotype); // Legacy fur/plates saved genes select the same artwork as composition.
     const urls = new Set([spec.base[frame] || spec.base.idle]); // One sprite per active frame; no eager run1/run2 downloads.
     for (const id of spec.underlayPatterns || []) urls.add(patternUrl(kind, id, frame, genotype)); // Permanently visible anatomical tails.
-    for (const entry of visibleDefaultCoatPatterns(spec, genotype)) urls.add(patternUrl(kind, entry.id, frame, genotype)); // Default beards survive beneath genetic patterns.
+    for (const entry of visibleDefaultCoatPatterns(kind, spec, genotype)) urls.add(patternUrl(kind, entry.id, frame, genotype)); // Default beards survive beneath genetic patterns.
     for (const id of spec.patterns || []) {
       if (spec.underlayPatterns?.includes(id)) continue;
       const layer = genotype?.[id]; // Unexpressed or disabled inherited overlays have no art to fetch.
@@ -791,7 +791,7 @@
       }
     }
     const defaultCoatOverlays = []; // Anatomical (non-genetic) coat additions are prepared now so a single Color Pools motif spans body and beard.
-    for (const defaultPattern of visibleDefaultCoatPatterns(spec, genotype)) {
+    for (const defaultPattern of visibleDefaultCoatPatterns(kind, spec, genotype)) {
       const url = patternUrl(kind, defaultPattern.id, frame, genotype);
       try {
         const coatColor = baseColor || spec.baseShadeReferenceHex || '#99BF99';
@@ -975,8 +975,8 @@
     const parts = [genotype?.base?.color || ''];
     for (const id of spec.patterns) {
       const l = genotype?.[id];
-      const tintColor = patternTintColor(kind, id, genotype); // Cache tracks Grehlr beard from base hue, never obsolete independently stored beard pigments.
-      parts.push((l?.enabled !== false && l?.copies > 0 && tintColor) ? `${id}:${tintColor}` : '');
+      const tintColor = l?.enabled !== false && l?.copies > 0 ? patternTintColor(kind, id, genotype) : null; // Resolve only visible patterns; cache tracks shared pigments, not inactive or obsolete mirrors.
+      parts.push(tintColor ? `${id}:${tintColor}` : '');
     }
     const paintSig = colorPoolPaintSignature(genotype);
     if (paintSig) parts.push(`paint:${paintSig}`);
