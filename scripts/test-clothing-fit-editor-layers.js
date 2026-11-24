@@ -60,7 +60,7 @@ async function main() {
   const harness = [
     sourceBetween('function headwearLayerRecords(', 'async function buildHeadReferenceCanvas'),
     sourceBetween('function sourceHasGarmentArt(', 'function rebuildGarmentSelector'),
-    sourceBetween('function drawPortraitRaster(', 'async function buildGarmentCanvas'),
+    sourceBetween('function validLayerFrame(', 'async function buildGarmentCanvas'),
     sourceBetween('function collectPatchImageNodes(', 'function behindPatchCatalog'),
     sourceBetween('function targetKey(', 'function ensureTargetData')
   ].join('\n');
@@ -286,6 +286,27 @@ async function main() {
   const newHatLayers = plan.config.speciesVariants.tletingan_female.parts.head.layers;
   assert.equal(newHatLayers.front.image.url, './assets/cosmetics/clothes/hat/bighat-front_tletingan_f.png');
   assert.equal(newHatLayers.front.behindImage, undefined, 'No behindImage is created for a hat that has none');
+  assert.equal(newHatLayers.front.image.frame, undefined, 'An unpadded fit writes no frame');
+
+  // A fit that spills past the standard layer canvas exports a padded PNG and
+  // records where the standard canvas sits inside it; a later unpadded export
+  // of the same layer removes the stale frame again.
+  const framedLayers = bigHat._layers.map(layer => layer.name === 'head.layers.front'
+    ? {...layer, frame: {x: 12, y: 0, width: 128, height: 128}} : layer);
+  plan = archiveApi.buildFittedLayerArchivePlan(framedLayers,
+    {sourceSpecies:'mao-ao',sourceGender:'male',targetSpecies:'tletingan',targetGender:'female'});
+  const framedFront = plan.config.speciesVariants.tletingan_female.parts.head.layers.front;
+  assert.deepEqual(framedFront.image.frame, {x: 12, y: 0, width: 128, height: 128}, 'Padded PNG frame is written beside its URL');
+  assert.deepEqual(plan.files.find(file => file.outputName.endsWith('bighat-front_tletingan_f.png')).frame,
+    {x: 12, y: 0, width: 128, height: 128}, 'Manifest records the frame');
+  archiveGarment = {...cosmetics[3], cfg: plan.config};
+  plan = archiveApi.buildFittedLayerArchivePlan(bigHat._layers,
+    {sourceSpecies:'mao-ao',sourceGender:'male',targetSpecies:'tletingan',targetGender:'female'});
+  assert(plan.config, 'Dropping a stale frame is a config change');
+  assert.equal(plan.config.speciesVariants.tletingan_female.parts.head.layers.front.image.frame, undefined, 'Stale frame removed');
+  assert(core.includes('function paddedHeadwearOutput('), 'Fitter pads headwear exports that spill past the layer canvas');
+  assert(/exportLayers\.length<=1&&!exportLayers\.some\(layer=>layer\.frame\)/.test(core), 'A framed single-layer hat still exports as a ZIP with its config');
+  assert(core.includes('function drawPortraitRaster(ctx,image,width,height,frame=null)'), 'Framed source PNGs load at their standard-canvas position');
 
   archiveGarment = cosmetics[2];
   selection = {sourceSpecies:'mao-ao',sourceGender:'male',targetSpecies:'engh-sho',targetGender:'female'};

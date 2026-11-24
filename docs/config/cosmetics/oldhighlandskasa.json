@@ -545,7 +545,13 @@
             },
             "front": {
               "image": {
-                "url": "./assets/cosmetics/clothes/hat/oldhighlandskasa-front_mashtzarr_m.png"
+                "url": "./assets/cosmetics/clothes/hat/oldhighlandskasa-front_mashtzarr_m.png",
+                "frame": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 234,
+                  "height": 173
+                }
               },
               "spriteStyle": {
                 "base": {

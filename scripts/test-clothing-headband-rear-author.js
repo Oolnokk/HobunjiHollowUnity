@@ -48,14 +48,14 @@ function extract(first,last){
   return core.slice(a,b);
 }
 const fitted=new Function('R','targetGridFromFitState','layerMatchesRoutedClothingPatch',
-  'fittedSourceCanvasForLayer','warpClothing','fitRegion','headbandRearDisplay','flipCanvasX',
+  'fittedSourceCanvasForLayer','warpClothing','fitRegion','headbandRearDisplay','flipCanvasX','paddedHeadwearOutput',
   extract('function fittedLayerOutputs(', 'function archiveAssetPath(')+'\nreturn fittedLayerOutputs;')(
   {body:{width:234,height:173},cloth:{_layers:[{
     path:['parts','head','layers','front'],name:'head.layers.front',view:'front',
     url:'./assets/cosmetics/clothes/hat/headband.png',role:'base',canvas:{id:'front'}
   }]}},
   ()=>[],()=>false,layer=>layer.canvas,source=>({id:'fitted '+source.id}),()=> 'headwear',
-  state=>state.rearCanvas,art=>({id:'game-flipped '+art.id})
+  state=>state.rearCanvas,art=>({id:'game-flipped '+art.id}),()=>null // No fit spills past the layer canvas here.
 );
 const fit={headband:{rearCanvas:{id:'painted rear'}}};
 const layers=fitted(fit);

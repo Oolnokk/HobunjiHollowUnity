@@ -120,7 +120,11 @@
       baseOffsetX: texture.offset.x,
       flipped: false,
     }; // Preserves each authored texture's original UV transform when the setting is turned back off.
-    texture.wrapS = THREE.RepeatWrapping;
+    // The flip (repeat.x = -1, offset.x = 1) keeps UVs inside [0, 1], so clamping
+    // is enough -- and RepeatWrapping made linear filtering at one plane edge
+    // sample the opposite edge, showing a 1px sliver of any hat/hood that
+    // touches the far side of the portrait square.
+    texture.wrapS = THREE.ClampToEdgeWrapping;
     trackedPortraitTextures.add(texture);
     texture.addEventListener?.('dispose', () => trackedPortraitTextures.delete(texture));
     applyPortraitTextureFlip(texture);
@@ -1949,8 +1953,16 @@
     root.userData.frontTexture = textures.frontOriginal;
     root.userData.backTexture = textures.backForOriginal;
     root.userData.backTextureUsesSilhouette = !(options.backCanvas || options.backImage);
+    root.userData.portraitAssembly = assembly; // Rigid-assembly parent for js/hat-overflow-plane.js.
     portraitThreeByRoot.set(root, THREE);
     syncPortraitGlow(THREE, root, sourceCanvas);
+    // Hat pixels past the portrait square go on a separate, bounds-free plane
+    // (js/hat-overflow-plane.js); the portrait and its metadata stay unchanged.
+    if (options.profile && options.hatOverflow !== false && window.HatOverflowPlane?.hasHat?.(options.profile)) {
+      root.userData.hatOverflowReady = window.HatOverflowPlane.attach(THREE, root, {
+        profile: options.profile, backCanvas: options.backCanvas || options.backImage || null,
+      });
+    }
     return root;
   }
 
@@ -1978,6 +1990,7 @@
 
   function disposeAvatarModel(root) {
     if (!root) return;
+    if (root.userData) root.userData.portraitDisposed = true; // A pending hat-overflow bake must not attach to a disposed avatar.
     portraitGlowModels.delete(root);
     for (const glowLight of root.userData?.portraitGlowLights || []) { glowLight.parent?.remove(glowLight); glowLight.dispose?.(); }
     if (root.userData) { root.userData.portraitGlowLights = []; root.userData.portraitGlowLight = null; }
@@ -2010,6 +2023,8 @@
     backMapFor,
     enableSharedFaceMirror,
     makeVariantCanvas,
+    makePortraitTexture: (THREE, canvas, name, face) => trackPortraitTexture(THREE, makeTextureFromCanvas(THREE, canvas, name), face), // Follows the portrait flip setting like the body planes.
+    makeSpriteMaterial,
     refreshSinglePlaneAvatarModel,
     buildAnimalPlaneAvatarModel,
     animalSourceTextureSnapshot: () => {

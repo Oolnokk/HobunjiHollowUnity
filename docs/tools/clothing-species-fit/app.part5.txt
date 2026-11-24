@@ -31,6 +31,33 @@ function clothOut(fitState=captureFitState()){
   if(!source||!R.body)return null;
   return warpClothing(source,targetGridFromFitState(fitState),R.body.width,R.body.height,fitRegion()==='headwear'?fitState.headband:fitState.contour,{hole:fitState.hole}); // Final fitted-clothing PNG uses an immutable base-transform + local-fit snapshot.
 }
+// Headwear whose fit pushes pixels past the standard layer canvas (a kasa
+// brim scaled up for a bigger head) would be clipped at the PNG edge. Re-warp
+// it into a canvas padded by half the layer size per side and, if anything
+// lands outside the standard canvas, return the crop of everything plus the
+// frame locating the standard canvas inside it. Only the plain grid warp can
+// be padded: headband splines and hood-hole deforms work in the fixed canvas.
+function paddedHeadwearOutput(source,targetNorm,width,height,fitState,view){
+  if(fitRegion()!=='headwear'||!source||fitState?.headband?.enabled)return null;
+  const Hole=window.ClothingHoodHoleDeform;
+  if(view!=='behind'&&fitState?.hole?.enabled&&Hole&&!Hole.isIdentity(fitState.hole.corners))return null;
+  const px=Math.round(width/2),py=Math.round(height/2),W=width+2*px,H=height+2*py;
+  const grid=targetNorm.map(point=>({x:(px+point.x*width)/W,y:(py+point.y*height)/H}));
+  const big=warpGarment(source,grid,W,H);
+  const data=big.getContext('2d').getImageData(0,0,W,H).data;
+  let x0=px,y0=py,x1=px+width,y1=py+height,spill=false;
+  for(let y=0;y<H;y++)for(let x=0;x<W;x++){
+    if(data[(y*W+x)*4+3]<8)continue;
+    if(x<px||y<py||x>=px+width||y>=py+height){
+      spill=true;x0=Math.min(x0,x);y0=Math.min(y0,y);x1=Math.max(x1,x+1);y1=Math.max(y1,y+1);
+    }
+  }
+  if(!spill)return null;
+  const canvas=Object.assign(document.createElement('canvas'),{width:x1-x0,height:y1-y0});
+  const ctx=canvas.getContext('2d',{alpha:true});ctx.imageSmoothingEnabled=false;
+  ctx.drawImage(big,-x0,-y0);
+  return{canvas,frame:{x:px-x0,y:py-y0,width,height}};
+}
 function fittedClothingFilename(){
   if(R.patchWorkflow.active&&R.patchWorkflow.filename)return R.patchWorkflow.filename;
   return `${safeName(E.garment.value)}_${safeName(E.species.value)}_${E.gender.value}.png`;
@@ -41,7 +68,9 @@ function fittedLayerOutputs(fitState=captureFitState()){
   const layers=(R.cloth._layers||[]).map(layer=>{
     const isPatched=layerMatchesRoutedClothingPatch(layer);
     const source=fittedSourceCanvasForLayer(layer);
-    return {...layer,patched:!!isPatched,canvas:warpClothing(source,targetNorm,R.body.width,R.body.height,fitRegion()==='headwear'?fitState.headband:fitState.contour,{view:layer.view,hole:fitState.hole})};
+    const canvas=warpClothing(source,targetNorm,R.body.width,R.body.height,fitRegion()==='headwear'?fitState.headband:fitState.contour,{view:layer.view,hole:fitState.hole});
+    const padded=paddedHeadwearOutput(source,targetNorm,R.body.width,R.body.height,fitState,layer.view);
+    return padded?{...layer,patched:!!isPatched,canvas:padded.canvas,frame:padded.frame}:{...layer,patched:!!isPatched,canvas,frame:null};
   });
   const rear=fitRegion()==='headwear'&&fitState.headband?.rearCanvas?headbandRearDisplay(fitState.headband):null;
   if(!rear)return layers;
@@ -186,11 +215,20 @@ function buildFittedLayerArchivePlan(layers,selection){
       installed.leaf.behindImage.url='./'+outputName;
       modified=true;
     }
+    // Big hats: a padded PNG records where the standard layer canvas sits in it (portrait-utils _portraitLayerDrawRect).
+    const imageNode=behind?installed.leaf:(installed.leaf.image ||= {});
+    const nextFrame=layer.frame?{...layer.frame}:null;
+    if(JSON.stringify(imageNode.frame||null)!==JSON.stringify(nextFrame)){
+      if(nextFrame)imageNode.frame=nextFrame;else delete imageNode.frame;
+      modified=true;
+    }
+    if(!behind&&nextFrame&&installed.leaf.behindImage?.url==='./'+outputName&&!layers.some(other=>other.path.at(-1)==='behindImage'&&
+        JSON.stringify(other.path.slice(0,-1))===JSON.stringify(layer.path)))installed.leaf.behindImage.frame={...nextFrame}; // Shared front/rear PNG shares its frame.
     files.push({
       outputName,originalLayerName:layer.name,sourceConfigPath:layer.path,sourceUrl:layer.url,
       targetUrl:'./'+outputName,existingTargetFilename:!!existing&&!changedUrl,
       sharedTargetAssetAvoided:!!shared,
-      layerRole:layer.role,view:layer.view,patched:layer.patched
+      layerRole:layer.role,view:layer.view,patched:layer.patched,...(layer.frame?{frame:layer.frame}:{})
     });
   }
   return{files,configPath:modified?garment.configPath:null,originalConfigPath:garment.configPath,
@@ -201,7 +239,7 @@ async function exportFittedGarment(){
   const fit=captureFitState();
   if(!R.cloth)return;
   const exportLayers=fittedLayerOutputs(fit); // A newly painted behindImage converts a one-layer headband into a two-layer ZIP.
-  if(exportLayers.length<=1||routedPatchIsBody()){
+  if((exportLayers.length<=1&&!exportLayers.some(layer=>layer.frame))||routedPatchIsBody()){ // A padded big-hat PNG needs its config frame, so it always ships as a ZIP.
     const output=clothOut(fit); // Don't spend another 800-triangle warp on a single-layer PNG.
     if(output){downloadCanvas(output,fittedClothingFilename());log(`Exported single fitted PNG (${fit.key}).`)}
     return;

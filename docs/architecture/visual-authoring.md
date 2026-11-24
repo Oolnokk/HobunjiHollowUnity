@@ -56,6 +56,8 @@ A low-poly **faceted** rock/wall and a genuinely **rounded** stone are different
 
 **Across the entire game, a PNG billboard/portrait/sprite/plane uses its authored alpha and black-ink pixels.** It must **not** participate in a generated visible outline shell, depth-edge stroke, or other extra outline pass. That includes character portrait/pants planes, foliage cards, prop sprites, placed decorative PNGs, held-item sprites, torch sprites, and any new billboard.
 
+**Big hats.** A hat may extend past the 200×200 portrait square and past its own standard layer canvas. Never grow the portrait canvas for it: hitboxes, hand/foot anchors, grounding and head detection are all measured from the portrait. Instead (a) a hat PNG may be padded beyond its standard canvas, with `image.frame` / `behindImage.frame` `{x, y, width, height}` giving where the standard canvas sits inside it (the clothing fitter writes this when a fit spills over), and (b) `docs/js/hat-overflow-plane.js` puts the hat pixels that fall outside the square on a separate front/back plane pair on the head bone — no outline, empty bounds, no raycast. Portrait textures clamp (`ClampToEdgeWrapping`), so art touching one edge never bleeds onto the other.
+
 Prefer `window.HobunjiSpritePngSurface` in `docs/js/portrait-utils.js` for PNG material/alpha behavior (see AGENTS.md). Transparent pixels are not 3D curved edges. Preserve legitimate depth-test/x-ray **occlusion** and camera-layer behavior, but never use an occlusion replay as an excuse to add a visible outline around already inked PNG art.
 
 ## 5. One source of truth for ALL fire VFX
