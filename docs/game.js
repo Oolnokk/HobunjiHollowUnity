@@ -6402,7 +6402,7 @@
       }
 
       function tickCreatureFootsteps(c, distPx) {
-        if (c.areaId !== currentArea) return; // not in the player's current area; inaudible
+        if (c._familyBabyFollower || c.areaId !== currentArea) return; // Infants crawl rather than play animal footfalls.
         if (!Number.isFinite(c.x) || !Number.isFinite(c.y)) return; // belt-and-suspenders: see moveCreatureToward/creatureCanEnterTile's own NaN guards
         if (!window.AudioSystem?.footstepAdvance(c, distPx)) return;
         const spatial = window.AudioSystem?.combatAudioSpatial(c, { earshotTiles: 9 }); // Footstep falloff includes real cliff/branch height, not just flat map distance.
@@ -6440,6 +6440,11 @@
         if (wx < 0 || wy < 0 || wx >= aC * TILE || wy >= aR * TILE) return false;
         if (window.DevRandomRuin?.shaftCreatureCanEnter?.(actor, wx, wy, walkingPath) === false) return false;
         const col = Math.floor(wx / TILE), row = Math.floor(wy / TILE);
+        if (actor?._familyBabyFollower) {
+          const tile = window.GridTileAccessors.getActiveGrid()?.[row]?.[col]; // Crawlers cannot swim or pass solid walls, even where wildlife may.
+          if (!tile || tile.incline || isSolid(tile.type) || WATERWAY_TYPES.has(tile.type) || (Number(tile.water) || 0) >= 0.003) return false;
+          if (!window.NpcPathfinding.isNpcPositionWalkable(currentArea, wx / TILE, wy / TILE, 0.12)) return false; // Check actual infant footprint, not just the tile center.
+        }
         if (currentArea === 'farm' && (worldObjects.has(col + ',' + row) || window.GridTileAccessors.isHouseFootprint(col, row))) return false;
         if (currentArea === 'town' && window.GridTileAccessors.isTownBuildingCollisionTile(col, row)) return false;
         if (_isZoneArea(currentArea) && window.GridTileAccessors.isTownBuildingCollisionTile(col, row, currentArea)) return false;
@@ -6528,7 +6533,7 @@
           enemyPursuitSpeedDebug.lastResolvedPxS = chasePace;
         }
         const baseSpeed = chasePace * devGlobalSpeedMul * heavyMoveMul * stickySpeedMul; // One world pace for both ordinary and cliff-route travel.
-        if (window.CreatureCliffClimb?.navigate?.(c, tx, ty, baseSpeed, dt)) return true;
+        if (!c._familyBabyFollower && window.CreatureCliffClimb?.navigate?.(c, tx, ty, baseSpeed, dt)) return true; // Crawling babies use ground routes and the same unseen recovery rather than cliff leaps.
         const dx = tx - c.x, dy = ty - c.y;
         const dist = Math.hypot(dx, dy);
         if (dist < 1) { c.vx = 0; c.vy = 0; return false; }
@@ -8041,7 +8046,12 @@
         surfaceYForTile: tileSurfaceYInArea, creatureCanEnter: creatureCanEnterTile,
         getCamera: () => camera,
       });
-
+      window.FamilyBabyFollow?.init?.({
+        TILE, player, getCurrentArea: () => currentArea, getActiveGrid: window.GridTileAccessors.getActiveGrid,
+        isWilderness: area => Object.hasOwn(EXTERIOR_ZONES, area),
+        isAreaSettled: () => sceneTransDir === 0 && !_layoutSwapInProgress,
+        travelCreatureToward, canEnter: creatureCanEnterTile, surfaceY: npcSurfaceY, scheduleMemberSave: () => scheduleLootMemberSave(),
+      }); // Uses the exact companion movement executor; no new wildlife combat object or second frame loop.
 
       // Shared ground truth for where a mount saddle, shoulder-pet grip,
       // character posterior (seat), and character shoulder-perch actually sit
@@ -13557,6 +13567,7 @@
           update(dt) {
             window.RigTransformLayers?.clear(root, 'npc-move-bob'); // Remove last frame's visual bounce before any movement mode or early return.
             this._lastUpdateDt = dt; // Animal-facing deadzone/smoothing consumes the same real dt as updateCreatureMesh.
+            if (this._familyBabyFollowing && window.FamilyBabyFollow?.updateWalker?.(this, dt)) return;
             if (window.NpcPathfinding?.updateCliffClimb?.(this, dt)) return; // A selected cliff crossing owns all three world coordinates during its hops.
             // Scheduled NPCs don't carry creature Health; a Nazgraku bite provokes
             // a visible nonlethal flight instead of a fake resource-system death.
@@ -13962,6 +13973,7 @@
       function despawnNpcVisitor(walker) {
         const index = npcWalkers.indexOf(walker); // Used to remove exactly this completed departure without touching another NPC.
         if (index < 0) return false;
+        window.FamilyBabyFollow?.clearWalker?.(walker); // Retire crawl ownership before disposing the live rig.
         window.BedLiePose?.releaseNpc?.(walker);
         walker.root?.parent?.remove?.(walker.root);
         walker.root?._npcScene?.remove?.(walker.root);
@@ -14113,7 +14125,7 @@
               const oldHeadArea = w.area; // Area transfers must never be mistaken for extreme one-frame movement.
               w.update(dt);
               if (npcWalkers[i] === w) {
-                window.BedLiePose?.syncNpc?.(w, w.currentScheduleTarget, dt, w._bedLieSurface); // Every humanoid NPC uses real schedule-driven lie/stand poses, not just the player.
+                if (!w._familyBabyFollowing) window.BedLiePose?.syncNpc?.(w, w.currentScheduleTarget, dt, w._bedLieSurface); // Every humanoid NPC uses real schedule-driven lie/stand poses, not just the player.
                 npcMovementHeadLookOptions.currentArea = currentArea;
                 npcMovementHeadLookOptions.hasScriptedGaze = cutscenePreviewActive
                   || npcDialogueStaging?.walker === w || _dialogueWalker === w || oldHeadArea !== w.area;
@@ -31536,7 +31548,7 @@
           if (walker && !npcWalkers.some(w => w.rec?.id === rec.id)) npcWalkers.push(walker);
           return walker;
         },
-        saveMemberWorldData,
+        saveMemberWorldData, scheduleMemberSave: () => scheduleLootMemberSave(),
       });
       window.NpcSeatRequest?.init?.({ // "Ask for seat" on the More wheel: the module owns the request; these are the game's narrow adapters.
         getArea: () => currentArea,

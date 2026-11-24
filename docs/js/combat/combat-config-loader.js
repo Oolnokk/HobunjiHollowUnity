@@ -92,7 +92,7 @@
     ['js/heftroot-billboard-bridge.js?v=20261119hb241677', () => !!window.HobunjiHeftrootBillboardBridge],
     ['js/crop-billboard-presentation.js?v=20261119he999a5e', () => !!window.HobunjiCropBillboardPresentation],
     ['js/crop-ready-presentation.js?v=20261119h72d3ebf', () => !!window.HobunjiCropReadyPresentation],
-    ['js/mastery-policy.js?v=20261112h0880222', () => !!window.HobunjiMasteryPolicy],
+    ['js/mastery-policy.js?v=20261124babyFollowRebase1', () => !!window.HobunjiMasteryPolicy],
     ['js/inventory-action-metadata-bridge.js?v=20261114foreignSeedLifecycle2', () => !!window.HobunjiInventoryActionMetadataBridge],
     ['js/inventory-held-override.js?v=20261122heldGiftMerge1', () => !!window.InventoryHeldOverride],
     ['js/clothing-weaving-system.js?v=20261118fusedAnimal1', () => Number(window.ClothingWeavingSystem?.version) >= 1],
