@@ -193,7 +193,7 @@
       if (!Number.isFinite(percent)) continue;
       const range = document.getElementById(`maaFullScaleRange${axis}`);
       const number = document.getElementById(`maaFullScaleNum${axis}`);
-      if (range) range.value = String(Math.round(percent * 2) / 2); // Half-percent control precision.
+      if (range) range.value = String(Math.round(percent * 10) / 10); // Match the visible Beltline slider's 0.1% precision.
       if (number) number.value = String(Math.round(percent * 10) / 10);
     }
   }
