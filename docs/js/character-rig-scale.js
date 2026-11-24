@@ -375,6 +375,42 @@
   }
 
   const _pixelHeightFactors = new Map(); // One solved correction per source-art measurement and species/gender, not per NPC or render frame.
+  const _scaledParents = new Set(); // Only weak references to live character parents; one batched reapplication when bare-PNG measurement finishes.
+  const _knownParents = typeof WeakMap === 'function' ? new WeakMap() : null; // Deduplicates repeated actor updates without retaining their meshes.
+  function trackScaledParent(parent) {
+    if (!_knownParents || typeof WeakRef !== 'function' || _knownParents.has(parent)) return;
+    const reference = new WeakRef(parent); // Does not prevent off-screen/NPC/despawned actors from being garbage collected.
+    _knownParents.set(parent, reference);
+    _scaledParents.add(reference);
+  }
+  function refreshMeasuredHeights() {
+    // CharacterDimensions finishes its once-per-session bare-PNG pass after some actors already exist.
+    // Reapply *only* those active targets; complete the batch in short chunks to avoid a CPU spike in town.
+    if (!_scaledParents.size || !window.HobunjiCharacterDimensions) return 0;
+    const eligible = [];
+    for (const weak of _scaledParents) {
+      const parent = weak.deref();
+      if (!parent) { _scaledParents.delete(weak); continue; }
+      const state = parent.userData?.hobunjiCharacterRigScaleState;
+      const sourceSpecies = state?.sourceSpecies;
+      if (sourceSpecies && window.HobunjiCharacterRigScaleDefaults?.maleHeightFeet?.[sourceSpecies]
+        && window.HobunjiCharacterDimensions.measurementFor?.(sourceSpecies, state.gender))
+        eligible.push({ parent, species: sourceSpecies, gender: state.gender,
+          authored: state.authoredScale, age: state.ageFraction });
+    }
+    const count = eligible.length;
+    const applyChunk = () => {
+      for (let n = 0; n < 24 && eligible.length; n++) {
+        const item = eligible.shift();
+        if (item.parent.userData?.hobunjiCharacterRigScaleState)
+          applyToParent(item.parent, item.species, item.gender, item.authored, item.age);
+      }
+      if (eligible.length) setTimeout(applyChunk, 0); // One-time 24-actor batches, not a per-frame watcher.
+    };
+    applyChunk();
+    return count;
+  }
+
   function pixelHeightCorrectionFor(species, gender) {
     const defaults = window.HobunjiCharacterRigScaleDefaults; // Eight requested physical-height goals; other species retain their authored relative shifts.
     const normalizedSpecies = normalizeKey(species); // Keep explicit Mammakhbuur/other subspecies goals; transformation aliases may borrow a donor portrait but NOT the donor's height target.
@@ -457,6 +493,9 @@
     const nextLegRatio = legLength / next.y; // A 1:1 ratio leaves the old whole-body Y behavior unchanged.
     parent.scale.set(output.x, output.y, output.z);
     parent.userData.hobunjiCharacterRigScaleState = {
+      sourceSpecies: normalizeKey(species), // Preserve separate source-species targets even when an avatar borrows a donor portrait.
+      authoredScale: resolved, // Reapply exactly the same saved edit after late pixel measurement without writing to localStorage.
+      ageFraction, // Retain the same staged hunch and head transition on one-time recalibration.
       factor: next,
       worldVisualScale: worldMultiplier, // Kept separate so repeated updates and clearFromParent can restore the exact pre-calibration scale.
       legLength, // Procedural legs use this independently authored reach.
@@ -472,6 +511,7 @@
     applyHeadCompensation(parent, species, gender, corrected, ageFraction); // The neck compensates effective Y; 65%-raw head size stays independent of body height.
     if (previousLegRatio == null || Math.abs(previousLegRatio - nextLegRatio) > EPSILON)
       window.ProceduralLegAnimation?.syncScaleForParent?.(parent, nextLegRatio); // Leg IK changes only when its actual leg/portrait ratio changes, never on unrelated head/age redraws.
+    trackScaledParent(parent); // WeakRef only; repeated character edits add no new registry entries.
     return true;
   }
 
@@ -614,6 +654,7 @@
     worldVisualScale, // Shared chair-world factor; new pixel correction refines only body Y.
     pixelHeightCorrectionFor,
     pixelHeightCalibrationSnapshot, // Exposes actual measured crown-to-height accuracy on mobile.
+    refreshMeasuredHeights, // Called once when CharacterDimensions completes its existing bare-PNG scan.
     heightBeltlineFor,
     scaleForHeightBeltline,
     legLengthRatioFor: (species, gender, profile = null) => { const resolved = scaleFor(species, gender, profile); return resolved.legLength / resolved.y; }, // Real game and lineup feet read the same post-migration ratio.
