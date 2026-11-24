@@ -1012,6 +1012,7 @@
   let menuCategoryBar = null; // Fixed header-level bar, independent of optional gamepad hints.
   let syncingMenuPages = false; // Prevents reentry from authored auto-open actions.
   let menuPagesDirty = true; // Only section-boundary changes invalidate persistent page discovery.
+  const emptyMenuSections = new Set(); // Authored empty boundaries may acquire content without being replaced.
 
   function releaseGroupSubtabs(group) {
     if (!menuPageOwners.includes(group)) restoreSubtabs(group);
@@ -1022,6 +1023,7 @@
     menuPageOwners = [];
     menuPageRoot = menuPageLeaf = null;
     menuPagesDirty = true;
+    emptyMenuSections.clear();
     if (menuCategoryBar) menuCategoryBar.hidden = true;
   }
 
@@ -1111,6 +1113,12 @@
       }
       for (const previous of previousOwners.reverse()) if (!owners.includes(previous)) restoreSubtabs(previous);
       menuPageOwners = owners;
+      if (refresh) {
+        emptyMenuSections.clear();
+        for (const section of root.querySelectorAll(SUBTAB_SELECTOR)) {
+          if (!section.textContent?.trim() && !section.querySelector(NAV_SELECTOR) && !section.querySelector('canvas, img')) emptyMenuSections.add(section);
+        }
+      }
       renderMenuCategoryBar(panel);
     } finally {
       syncingMenuPages = false;
@@ -1499,12 +1507,11 @@
     if (panel?.id === 'menuPanel') {
       const sectionBoundary = node => node?.nodeType === 1 && (node.matches?.(SUBTAB_SELECTOR) || node.querySelector?.(SUBTAB_SELECTOR));
       // An initially empty authored section can acquire its first real control without replacing its wrapper.
-      const knownSections = new Set(menuPageOwners.flatMap(owner => subtabsByGroup.get(owner)?.sections || []));
       const fillsUndiscoveredSection = record => {
+        if (!emptyMenuSections.size || !record.addedNodes.length) return false;
         const target = record.target.nodeType === 1 ? record.target : record.target.parentElement;
         const section = target?.closest?.(SUBTAB_SELECTOR);
-        if (!section || knownSections.has(section) || section === menuPageLeaf || section.closest('.ctrl-nav-subtab-hidden')) return false;
-        return record.addedNodes.length > 0 && !nodeHidesSubtree(section); // Hidden permission-gated wrappers refresh through attribute observers.
+        return emptyMenuSections.has(section); // Previously populated sections do not invalidate discovery on ordinary row changes.
       };
       // Do not unhide every page and force layout for ordinary inventory rows, labels, or detail updates.
       if (records.some(record => panel.contains(record.target) && !menuCategoryBar?.contains(record.target) && (Array.from(record.addedNodes || []).some(sectionBoundary) || Array.from(record.removedNodes || []).some(sectionBoundary) || fillsUndiscoveredSection(record) || (!menuPageRoot && record.target.closest?.('.mp-pane'))))) menuPagesDirty = true;
