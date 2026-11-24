@@ -46,6 +46,10 @@ assert.deepEqual(Array.from(clothing.result.equippedCosmetics),['current-poncho'
 assert.equal(clothing.result.appliedDyes.torso,'blue');
 
 assert.notEqual(clothing.result.id, 'player', 'cinematic NPC record must not use the live-player rig name');
+assert.notEqual(clothing.result.id.trim().toLowerCase(), 'player', 'all name-based player rig wrappers must ignore the stand-in');
+assert.match(game, /name: rec\?\.id \|\| rec\?\.name \|\| 'npc', isLivePlayer: false/, 'real NPC walker forwards the non-player role into the leg attachment chain');
+assert.match(game, /name: 'player', isLivePlayer: true/, 'real player avatar explicitly opts into the compositor');
+
 assert.equal(game.includes('payload.widePlayerShots && entity?.isPlayerStandIn'), true, 'wide player framing uses the authored role, not the runtime id');
 // Exercise the actual registration and disposal owner with live and temporary rigs.
 const composerSource = read('docs/js/player-body-transform-composer.js'); // Production registration wrapper, not a second implementation.
