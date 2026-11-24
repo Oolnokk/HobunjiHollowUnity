@@ -117,4 +117,51 @@ const legacy = { maxHealth: 80, health: 80, maxStamina: 40, stamina: 40 };
 ctx.ResourceSystem.initEntity(legacy);
 assert.equal(ctx.ResourceSystem.getEffectiveMax(legacy, 'health'), 80);
 assert.equal(ctx.ResourceSystem.getEffectiveMax(legacy, 'stamina'), 40);
+// Drive the actual daily resource scheduler and harvest implementation in an isolated farm fixture.
+ctx.CreatureTextureCache = { create: () => ({}) };
+ctx.InventoryStacks = { MAX_TOTAL: 999 };
+const farmSource = fs.readFileSync('docs/js/farm-animals.js', 'utf8').replace('window.FarmAnimals = {', 'window.FarmAnimals = { collectResource, breedingGeneMultiplier,');
+vm.runInContext(farmSource, ctx);
+const livestock = [
+  { id: 'milk', kind: 'puktuk', barnId: 'barn', genotype: { practical: { milk: 2, bountiful: 1 } }, heartLevel: 2.5, resourceReady: true },
+  { id: 'oil', kind: 'grehlr', barnId: 'barn', genotype: { practical: { productive: 1, fineProducer: 1 } }, heartLevel: 2.5, resourceReady: false, daysUntilResource: 3 },
+  { id: 'stasis', kind: 'puktuk', genotype: { practical: { milk: 1 } }, resourceReady: false },
+  { id: 'plain', kind: 'puktuk', barnId: 'barn', genotype: {}, resourceReady: false, daysUntilResource: 2 },
+]; // Cover genetic secondary products, cooldown, quality, stasis and unchanged legacy behavior.
+const inventory = { puktukMilk: 998 };
+const itemDefs = { puktukWool: {label:'Puktuk Wool'}, grehlrStinkOil: {label:'Stink Oil'} };
+const quality = [];
+let saves = 0;
+ctx.FarmAnimals.init({
+  ITEM_DEFS: itemDefs, inventory,
+  LIVESTOCK_RESOURCE_DEFS: { puktuk: {itemKey:'puktukWool', cooldownDays:2}, grehlr: {itemKey:'grehlrStinkOil', cooldownDays:3} },
+  loadWorldLivestock: () => livestock, saveWorldLivestock: () => { saves++; },
+  rollItemStars: () => 4, recordItemQuality: (...args) => quality.push(args),
+});
+assert.ok(itemDefs.puktukMilk);
+assert.ok(itemDefs.dabinggiHoundEggs);
+ctx.FarmAnimals.tickResources();
+assert.equal(livestock[0].additionalResources.puktukMilk.ready, true);
+assert.equal(livestock[0].resourceReady, true);
+assert.equal(livestock[1].daysUntilResource, 1);
+assert.equal(livestock[2].additionalResources, undefined);
+assert.equal(livestock[3].daysUntilResource, 1);
+assert.equal(ctx.FarmAnimals.collectResource('milk','puktukMilk').ok, true);
+assert.equal(inventory.puktukMilk, 999);
+assert.equal(quality[0][2], 1);
+assert.equal(livestock[0].resourceReady, true);
+assert.equal(livestock[0].additionalResources.puktukMilk.ready, false);
+assert.equal(ctx.FarmAnimals.collectResource('milk','puktukWool').ok, true);
+assert.equal(inventory.puktukWool, 2);
+assert.equal(quality[1][2], 2);
+assert.equal(ctx.FarmAnimals.collectResource('milk','dabinggiHoundEggs').ok, false);
+ctx.FarmAnimals.tickResources();
+assert.equal(livestock[0].additionalResources.puktukMilk.ready, true);
+assert.equal(ctx.FarmAnimals.collectResource('milk','puktukMilk').ok, false);
+assert.equal(livestock[0].additionalResources.puktukMilk.ready, true);
+assert.equal(ctx.FarmAnimals.collectResource('oil').ok, true);
+assert.equal(quality[2][1], 5);
+assert.ok(saves > 0);
+assert.ok(Math.abs(ctx.FarmAnimals.breedingGeneMultiplier({genotype: genome}, {})-1.15) < 1e-10);
+assert.equal(ctx.FarmAnimals.breedingGeneMultiplier({genotype: genome}, {genotype: genome}), 1.3);
 console.log('Practical animal genetics passed');
