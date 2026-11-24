@@ -354,20 +354,28 @@
     return true;
   }
 
+  function worldVisualScale() {
+    const authored = Number(window.HobunjiCharacterRigScaleDefaults?.worldHeightCalibration?.uniformScale); // Shared canonical chair-based calibration; no local save mutation.
+    return Number.isFinite(authored) && authored > 0 ? authored : 1; // Safe during early bootstrap before the defaults script finishes loading.
+  }
+
   function applyToParent(parent, species, gender, explicitScale = null, ageFraction = 0) {
     if (!parent?.isObject3D || !parent.scale) return false;
     const resolved = normalizeExplicitScale(explicitScale, scaleFor(species, gender));
-    const next = { x: clampScale(resolved.x), y: clampScale(resolved.y) }; // Y denotes portrait height, with leg length separately tracked.
+    const next = { x: clampScale(resolved.x), y: clampScale(resolved.y) }; // Authored portrait/beltline dimensions remain unchanged in exports and local saves.
+    const worldMultiplier = worldVisualScale(); // Common outer transform scales portrait, hands, feet, head, and offsets together without resetting species ratios.
     parent.userData ||= {};
     const previous = parent.userData.hobunjiCharacterRigScaleState || null;
     const current = { x: Number(parent.scale.x), y: Number(parent.scale.y), z: Number(parent.scale.z) };
     let base = current;
     if (previous && vectorNear(current, previous.output)) {
-      const divisorX = clampScale(previous.factor?.x ?? previous.factor);
-      const divisorY = clampScale(previous.factor?.y ?? previous.factor);
+      const priorWorld = Number(previous.worldVisualScale) > 0 ? Number(previous.worldVisualScale) : 1; // Older scale state had no shared height calibration.
+      const divisorX = clampScale(previous.factor?.x ?? previous.factor) * priorWorld;
+      const divisorY = clampScale(previous.factor?.y ?? previous.factor) * priorWorld;
       base = { x: current.x / divisorX, y: current.y / divisorY, z: current.z / divisorX };
     }
-    const output = { x: base.x * next.x, y: base.y * next.y, z: base.z * next.x }; // Depth (z) tracks width — these are camera-facing planes with no independently authored depth.
+    const output = { x: base.x * next.x * worldMultiplier, y: base.y * next.y * worldMultiplier,
+      z: base.z * next.x * worldMultiplier }; // One uniform outer size factor; depth and head must grow with the body, not remain fixed.
     const legLength = clampScale(resolved.legLength || next.y); // Independently authored hip-to-foot reach in the same canonical scale units as portrait Y.
     const previousLegRatio = previous
       ? (Number(previous.legLength) || clampScale(previous.factor?.y ?? previous.factor)) / clampScale(previous.factor?.y ?? previous.factor)
@@ -376,6 +384,7 @@
     parent.scale.set(output.x, output.y, output.z);
     parent.userData.hobunjiCharacterRigScaleState = {
       factor: next,
+      worldVisualScale: worldMultiplier, // Kept separate so repeated updates and clearFromParent can restore the exact pre-calibration scale.
       legLength, // Procedural legs use this independently authored reach.
       base,
       output,
@@ -526,6 +535,7 @@
     defaultScaleFor,
     profileFor,
     scaleFor,
+    worldVisualScale, // Mobile diagnostics and comparison UI can verify the shared 6'3" Mao'ao reference without devtools.
     heightBeltlineFor,
     scaleForHeightBeltline,
     legLengthRatioFor: (species, gender, profile = null) => { const resolved = scaleFor(species, gender, profile); return resolved.legLength / resolved.y; }, // Real game and lineup feet read the same post-migration ratio.
