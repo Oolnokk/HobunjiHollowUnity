@@ -281,6 +281,13 @@
     if (age < Math.max(basketDays() + toddlingDays(), num(cfg().independentAfterDays, 168))) return 'toddler';
     return 'child';
   }
+  function voiceAgePhase(npcId) {
+    if (!H?.rawDay) return null; // Saved family ages are unavailable until the family system has initialized.
+    const child = fam.children.find(entry => entry.id === npcId); // Only a recognized family child can override a generic NPC's authored age band.
+    if (!child) return null;
+    const phase = phaseOf(child); // Share the existing day-accurate basket/toddler/child transition.
+    return phase === 'basket' ? 'baby' : phase;
+  }
   function isBasketBaby(npcId) {
     const child = fam.children.find(entry => entry.id === npcId); // Saved family age is authoritative for follower commands.
     return !!child && phaseOf(child) === 'basket';
@@ -916,7 +923,7 @@
 
   const api = {
     init, tick, serialize, restore, snapshot,
-    spouseTargetOverride, commandOptionsFor, spouseHoldingEgg, isBasketBaby, babyAmbientSound,
+    spouseTargetOverride, commandOptionsFor, spouseHoldingEgg, isBasketBaby, babyAmbientSound, voiceAgePhase,
     careContext: () => ({ family: fam, helpers: H, romance: R, phaseOf, walkerFor, basketObject, persist: () => H.persist() }), // One source of family state for childcare.
     usefulnessInfo, awardWork, rollWorkQuality,
     isAssignedToVat: id => fam.children.some(child => child.id === id && phaseOf(child) !== 'basket' && !!child.vatId), // Only non-infant children can reserve vats and interrupt family plot claims.
