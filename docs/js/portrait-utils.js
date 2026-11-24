@@ -300,6 +300,7 @@ const portraitImageLoadDebug = { failures: 0, retries: 0, recoveries: 0,
   latestChange: 'Head-only rendering skips all non-head PNGs; static portraits skip blink assets. Cold image-load timings are tracked.' }; // Included in existing mobile pixel-cache diagnostics.
 
 const DEFAULT_BEHIND_LAYER_ORDER = [
+  'hoodTrim', // A hood's trim lines the face opening: from behind it sits under the whole body (facial hair is not drawn from behind).
   'sideLeft', 'rightSideHair',
   'baseLeftArm', 'baseTorso', 'baseRightArm',
   'head', 'frontHair',
@@ -2049,8 +2050,8 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   }
 
   if (renderBehindView) {
-    // Rear view: every hood's trim goes behind the head (and so behind the
-    // shell). Trim is any hood layer with the 'trim' role (fur-hood stacks also
+    // Rear view: every hood's trim goes behind the whole body (first in the
+    // rear order), so the head, torso and the hood shell all cover it. Trim is any hood layer with the 'trim' role (fur-hood stacks also
     // tag their entries); the Fur-lined Hood's reused front trim keeps its crop.
     const furLinedRearTrim = _isFurLinedHood(hood) && hoodLayers[0]?.layer?.paletteColorKey === 'B' ? hoodLayers[0] : null;
     const rearHoodTrim = hoodLayers.filter(entry => entry === furLinedRearTrim || entry.role === 'trim' || entry.layer?.layerRole === 'trim');
@@ -2069,6 +2070,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
       }
     };
     const _behindDraw = {
+      hoodTrim:      () => drawRearHoodTrim(),
       sideLeft:      () => drawEmoteLayers(sideLeftLayers),
       rightSideHair: () => drawEmoteLayers(rightSideHairLayers),
       baseLeftArm:   () => drawBreathingLayers(baseLeftArmLayers),
@@ -2078,7 +2080,6 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
       // -- otherwise the head is the one thing still mirrored relative to the
       // front while hair/hood/cosmetics and the arms/torso are not.
       head:          () => {
-        drawRearHoodTrim(); // Seen from behind, a hood's trim (the fur around the face opening) is behind the skull.
         drawEmoteLayers(maskLayers); // The far-side face mask must remain behind the rear skull.
         if (headUrl && !skipHeadSprite) {
           const img = imgMap.get(headUrl);
@@ -2099,7 +2100,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
       hatUnder:      () => drawEmoteLayers(hatUnderLayers),
       hood:          () => {
         drawBreathingLayers(hoodBackLayers);
-        drawBreathingLayers(hoodLayers.filter(entry => !rearHoodTrim.includes(entry))); // The trim was already drawn behind the head.
+        drawBreathingLayers(hoodLayers.filter(entry => !rearHoodTrim.includes(entry))); // The trim was already drawn first, behind the body.
       },
       pauldron:      () => drawEmoteLayers(pauldronLayers),
       hatOver:       () => drawEmoteLayers(hatOverLayers),
