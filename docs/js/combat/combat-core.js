@@ -1340,6 +1340,10 @@
       const stars = Math.max(1, Math.min(5, Math.round(Number(serving?.stars) || 3)));
       const healthAmount = profile.health * (HEALTH_QUALITY_MULTIPLIERS[stars] || 1);
       const result = RS.addDrunkenness(player, profile.footing, healthAmount, { source: key, label: def?.label || key, stars });
+      if (def?.cookingPrimaryEffect === 'feySight' && (!serving || serving.bottleFinished)) { // One bottle's processed buff, not four full buffs from its four swigs.
+        const stacks=window.CookingSystem?.ingredientEffectTotals?.(def,stars)?.feySight;
+        if(stacks>0)window.CookingSystem?.grantFeySight?.(stacks);
+      }
       lastDrink = {
         key, label: def?.label || key,
         footingAdded: result.footingAdded,
