@@ -205,6 +205,7 @@
       send = connectWetNode(context, source, opts);
       if (!send) { handle.stop(); return; }
       source.onended = () => {
+        if (stopped) return; // Cancelled wingbeats need no delayed cleanup timer; the shared bus already owns their tail.
         const tailMs = Math.ceil((send.profile.decayS + send.profile.preDelayMs / 1000 + 0.08) * 1000);
         setTimeout(() => handle.stop(), tailMs);
       };
