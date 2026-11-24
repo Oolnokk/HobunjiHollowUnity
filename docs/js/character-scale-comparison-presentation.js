@@ -164,7 +164,7 @@ body[data-animation-author-mode="${MODE}"] #${HEAD_NUMBER_ID}{min-width:0;width:
     const portrait = portraitScaleFor(identity); // Previously hidden plane scale included in the user-facing value.
     const runtime = runtimeHead ?? runtimeScaleFor(identity).head;
     const raw = rawHeadPercentFromRuntime(runtime, portrait);
-    basis.textContent = `Raw PNG head ${round1(raw)}% = portrait plane ${round1(portrait * 100)}% × runtime head factor ${round1(runtime * 100)}%.`;
+    basis.textContent = `Raw PNG head ${round1(raw)}% = portrait plane ${round1(portrait * 100)}% × runtime head factor ${round1(runtime * 100)}%. At 100%, head sizes preserve their relative unscaled source-PNG pixel dimensions.`;
   }
 
   function syncHeadUi(force = false) {
@@ -211,17 +211,23 @@ body[data-animation-author-mode="${MODE}"] #${HEAD_NUMBER_ID}{min-width:0;width:
     const clampedRaw = clamp(Number(rawPercent), bounds.min, bounds.max);
     const runtimeHead = clamp(runtimeHeadPercentFromRaw(clampedRaw, portrait) / 100, MIN_RUNTIME_HEAD, MAX_RUNTIME_HEAD);
     const shared = window.HobunjiFullScaleBodyInputGuard; // Same host persistence and active-preview update as every other Full Character Scale slider.
-    const committed = shared?.applyScaleField?.('head', clampedRaw);
-    if (!committed) {
-      profile.anatomy ||= {};
-      profile.anatomy.headScale = runtimeHead; // Compatibility fallback for older Animation Author bootstraps without the input guard.
+    const appliedByGuard = shared?.applyScaleField?.('head', clampedRaw);
+    if (!appliedByGuard) {
+      const host = window.HobunjiAnimationAuthorScaleHost || window.HobunjiAnimationAuthorHost; // Older author bootstraps may load the presentation before its input guard.
+      const current = runtimeScaleFor(identity);
+      const inherited = host?.rigScaleFor?.(identity.species, identity.gender) || {}; // Keep custom hand/foot sizes and independent leg length in saved imports.
+      const next = { ...inherited, ...current, head: runtimeHead };
+      if (!host?.setRigScale?.(identity.species, identity.gender, next)) {
+        profile.anatomy ||= {};
+        profile.anatomy.headScale = runtimeHead; // Last-resort profile mutation; ordinary saves use the host map above.
+      }
     }
 
     const scale = runtimeScaleFor(identity); // Uses current authored body X/Y so the head remains aspect-correct under non-uniform body scale.
     const joint = headScaleJointFor(previewGroupFor(identity));
-    if (!committed && comparisonApi()?.refreshSelectedPreview) {
+    if (!appliedByGuard && comparisonApi()?.refreshSelectedPreview) {
       comparisonApi().refreshSelectedPreview(); // Guard already updates the preview; fallback must preserve the selected age stage.
-    } else if (!committed && joint?.scale?.set) {
+    } else if (!appliedByGuard && joint?.scale?.set) {
       joint.scale.set(scale.head / scale.x, scale.head / scale.y, 1);
       joint.updateMatrix?.();
       joint.updateMatrixWorld?.(true);
