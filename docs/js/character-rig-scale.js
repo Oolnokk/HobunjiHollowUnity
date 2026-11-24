@@ -134,6 +134,21 @@
     };
   }
 
+  // Author-facing Head is a multiplier of the undecorated source PNG pixels:
+  // Head=1 leaves the source head's size unchanged relative to every other source head.
+  // The skinned plane itself was already scaled by portraitScaleBySpecies, so store
+  // runtimeHead = rawHead / actualPortraitScale. This preserves legacy save fields.
+  function rawPngHeadScaleFor(runtimeHead, renderedPortraitScale = 1) {
+    const portrait = Number(renderedPortraitScale); // Real PNGPlaneAvatar model multiplier, not the character's overall Height setting.
+    const actualPortrait = Number.isFinite(portrait) && portrait > 0 ? portrait : 1;
+    return clampScale(runtimeHead) * actualPortrait;
+  }
+  function runtimeHeadScaleForRaw(rawHead, renderedPortraitScale = 1) {
+    const portrait = Number(renderedPortraitScale); // Inverts the exact original model transform before the rig neck bone compensates body X/Y.
+    const actualPortrait = Number.isFinite(portrait) && portrait > 0 ? portrait : 1;
+    return clampScale(Number(rawHead) / actualPortrait);
+  }
+
   // The adult editor's Height and Beltline % are two coordinates for the SAME legacy
   // portrait-height/leg-length geometry. The saved fields stay unchanged for gameplay.
   const beltlineGeometry = value => { // Shared by editor conversion and game scale: the leg's true sole-contact point matters.
@@ -535,6 +550,8 @@
     defaultScaleFor,
     profileFor,
     scaleFor,
+    rawPngHeadScaleFor, // Head=100% means source-PNG pixel proportions across all species/genders.
+    runtimeHeadScaleForRaw, // Existing rig saves keep runtime head factors; Full Character Scale inverts the portrait multiplier.
     worldVisualScale, // Mobile diagnostics and comparison UI can verify the shared 6'3" Mao'ao reference without devtools.
     heightBeltlineFor,
     scaleForHeightBeltline,
