@@ -2271,3 +2271,25 @@ material changes and attribute replacement. Retired projectile texture
 callbacks cannot mutate dead shots; trail buffers/materials are leased to
 fresh mesh wrappers so scene-specific object metadata is never recycled.
 Pixel Probe exposes resource-pool and prop-batch statistics on mobile.
+
+## 24 Nov 2026: world popup and emoji allocation churn
+
+The remaining icon-effect path created and disposed a separate shader material
+for every coin/ray and a fresh GPU texture per completed reaction, although
+Scratchbones already cached its immutable tinted canvases. WorldPopupText now
+owns a per-Three-namespace, bounded LRU of 32 immutable artwork textures with
+one live reference per event, plus 32 retired icon materials and eight retired
+quad geometries. The PNG factory and cutoff remain canonical; mutable canvas
+consumers opt out by default. Scene eviction cancels pending loads and returns
+leases without destroying resources still used by other scenes. No new frame
+loop; no active material or geometry is shared across events. Popup updates
+skip the camera entirely when idle and sort each active row list once per
+root/list kind until a removal invalidates it. Counters are exposed in the
+existing WorldPopupText and emoji debug snapshots.
+
+The earlier headless lunge-stamp result (15 Nov) found no meaningful frame
+cost from ring geometry allocation. That optimization is not pursued here;
+the large game.js owner also exceeds the connected file retrieval limit.
+No measured FPS or shader-rebuild reduction is claimed until a device A/B.
+
+Follow-up: lazy row-layout allocation leaves emoji-only and damage-only frames untouched; partial icon construction failures release already acquired leases. Added overlapping scene/cache eviction and row compaction coverage, and an on-demand pool-stat button in the existing emoji debug UI. Rebased onto latest main, preserving intervening changes.
