@@ -100,4 +100,46 @@ assert.match(comparison,/setSliderValue\('Head', rawHead \* 100\)/,'first-select
 assert.match(comparison,/headScaleParity: selected \?/,'mobile diagnostics expose effective relative raw Head scale');
 assert.match(presentation,/HobunjiFullScaleBodyInputGuard/,'presentation fallback uses same saved profile path as capture-phase guard');
 assert.match(rigSource,/rawPngHeadScaleFor,/,'runtime exposes exact unscaled raw-head conversion');
+// Presentation's alternate input path must never bypass the same durable host scale map.
+const pStart=presentation.indexOf('  function applyRawHeadPercent(');
+const pEnd=presentation.indexOf('  function persistProfiles(',pStart);
+assert(pStart>0 && pEnd>pStart,'real presentation apply function is accessible');
+const profile={anatomy:{portraitScale:1.37,headScale:.6,handScale:1.25,footScale:.9}};
+const calls=[]; // Captures host commits and age-sensitive preview refreshes.
+const presentationEnv={
+  window:{HobunjiFullScaleBodyInputGuard:{
+    applyScaleField(field,percent) { calls.push({kind:'guard',field,percent}); profile.anatomy.headScale=percent/80; return {head:percent/80}; },
+  },HobunjiAnimationAuthorScaleHost:{
+    rigScaleFor(){return {handScale:1.25,footScale:.9,legLength:1.4};},
+    setRigScale(species,gender,scale){calls.push({kind:'host',species,gender,scale});profile.anatomy.headScale=scale.head;return scale;},
+  }},
+  selectedIdentity:()=>({key:'kenkari::male',species:'kenkari',gender:'male'}),
+  profileFor:()=>profile,
+  portraitScaleFor:()=>.8,
+  rawHeadBounds:()=>({min:8,max:320}),
+  clamp:(v,a,b)=>Math.max(a,Math.min(b,v)),
+  runtimeHeadPercentFromRaw:(raw,portrait)=>raw/portrait,
+  MIN_RUNTIME_HEAD:.1,MAX_RUNTIME_HEAD:4,
+  comparisonApi:()=>({refreshSelectedPreview(){calls.push({kind:'refresh'});}}),
+  runtimeScaleFor:()=>({x:1.5,y:.7,legLength:1.4,head:profile.anatomy.headScale,offsetY:0}),
+  headScaleJointFor:()=>null,previewGroupFor:()=>null,
+  updateHeadBasis() {},lastHeadSignature:'',
+};
+vm.runInNewContext(presentation.slice(pStart,pEnd)+'\nthis.commitRawHead=applyRawHeadPercent;',presentationEnv);
+const fromGuard=presentationEnv.commitRawHead(100);
+eq(fromGuard.runtimeHead,1.25,'raw 100% maps to 1/.8 at the authoritative guard');
+assert.equal(calls.filter(x=>x.kind==='guard').length,1,'the presentation delegates once to the guarded host path');
+assert.equal(calls.filter(x=>x.kind==='refresh').length,0,'guard-owned preview refresh is not duplicated');
+assert.equal(calls.filter(x=>x.kind==='host').length,0,'presentation must not double-persist a guard commit');
+calls.length=0;
+presentationEnv.window.HobunjiFullScaleBodyInputGuard=null; // Older editors can still load a valid host before the guard.
+const fromHost=presentationEnv.commitRawHead(100);
+eq(fromHost.runtimeHead,1.25,'host fallback preserves the same raw-PNG interpretation');
+const saved=calls.find(x=>x.kind==='host');
+assert(saved,'fallback persists through the host instead of mutating an unsaved preview only');
+eq(saved.scale.head,1.25,'saved internal head value cancels the actual portrait size');
+eq(saved.scale.handScale,1.25,'fallback retains unrelated hand authoring');
+eq(saved.scale.footScale,.9,'fallback retains unrelated foot authoring');
+assert.equal(calls.filter(x=>x.kind==='refresh').length,1,'fallback invokes exactly one editor preview refresh');
+
 console.log('PASS 18-profile raw-PNG head parity: width/height/aspect, different body and portrait scales, actual renderer basis, UI save conversion and diagnostics');
