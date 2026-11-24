@@ -335,6 +335,7 @@
                   <p class="pa-hint">Motif scale zooms the source ink inside the frame's fixed crop. Above 1× shows a larger portion of the ink but anything outside the frame is clipped; below 1× leaves more empty space inside the same cell. It never changes frame size or lattice spacing.</p>
                   <div class="pa-row">
                     <button type="button" class="pa-btn secondary" data-act="autoDetect">Auto-detect fit</button>
+                    <button type="button" class="pa-btn secondary" data-act="randomFrame">Randomize framing</button>
                     <button type="button" class="pa-btn secondary" data-act="resetPlacement">Reset placement</button>
                   </div>
                   <p class="pa-hint">Auto-detect rotates the motif to whatever angle makes its own tight bounding box smallest, then resets the frame to a centered, ungapped crop at that angle — a quick starting point to drag from, not a final answer.</p>
@@ -890,6 +891,22 @@
       schedulePreview();
     });
 
+    const rerollFrame = createFrameReroller(); // Keeps successive rolls relative to the authored frame.
+    overlay.querySelector('[data-act="randomFrame"]').addEventListener('click', () => {
+      const next = rerollFrame(cfg);
+      Object.assign(cfg, next);
+      // The renderer accepts a full turn; present the equivalent angle within the editor's slider range.
+      if (cfg.frameRotationDeg > 180) {
+        // Keep the stored angle unchanged so the reroll remembers its baseline.
+        syncInputsFromCfg();
+        overlay.querySelector('[data-field="frameRotationDeg"]').value = cfg.frameRotationDeg - 360;
+      } else syncInputsFromCfg();
+      loadedLibraryId = null;
+      updateValLabels();
+      drawFrameCanvas();
+      schedulePreview();
+    });
+
     overlay.querySelector('[data-act="resetPlacement"]').addEventListener('click', () => {
       Object.assign(cfg, {
         motifScale: PATTERN_DEFAULTS.motifScale,
@@ -991,6 +1008,36 @@
     return String(str).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
   }
 
+  // Same shrink-only frame scale and full-circle rotation used by BanditRankWardrobe.
+  // A reroll uses the last manually/authored scale rather than shrinking indefinitely.
+  function randomizeFrame(pattern, rnd = Math.random, baseScale = pattern?.frameRandomBaseScale ?? pattern?.frameScale ?? pattern?.patternScale) {
+    if (!pattern) return null;
+    const migrated = legacyFrameFields(pattern); // Preserve legacy offsets when introducing the modern frame shape.
+    const baseline = Math.max(0.05, Number(baseScale) || 1); // Saved on the instance so reopening a menu cannot cause cumulative shrinkage.
+    return { ...migrated,
+      frameRandomBaseScale: baseline,
+      frameScale: Number(Math.max(.05, baseline * (0.4 + 0.6 * rnd())).toFixed(4)),
+      frameRotationDeg: Math.round(rnd() * 3600) / 10,
+    };
+  }
+
+  function createFrameReroller() {
+    let previous = null, baseline = 1; // The last roll and its authored scale, used only during this menu's lifetime.
+    return (pattern, rnd = Math.random) => {
+      if (!pattern) return null;
+      const migrated = legacyFrameFields(pattern); // Compare the same representation used by rendering.
+      const identity = [migrated.repoPatternId, migrated.customMotifId, migrated.motifUrl, migrated.motifDataUrl, migrated.frameShape, migrated.frameX, migrated.frameY];
+      const sameSource = previous && identity.every((value, index) => value === previous.identity[index]);
+      if (!sameSource) baseline = pattern.frameRandomBaseScale ?? migrated.frameScale ?? 1;
+      else if (migrated.frameScale !== previous.scale || migrated.frameRotationDeg !== previous.rotation) {
+        baseline = migrated.frameScale ?? 1; // A manual frame edit establishes a new baseline.
+      }
+      const next = randomizeFrame(pattern, rnd, baseline);
+      previous = { identity, scale: next.frameScale, rotation: next.frameRotationDeg };
+      return next;
+    };
+  }
+
   // Instance-only pattern placement tweaks. Crafting menus keep the motif/library source intact.
   const QUICK_TRANSFORMS = Object.freeze([
     { key: 'meshScale', label: 'Pattern scale', min: .4, max: 3.2, step: .05, fallback: 1, unit: '×' },
@@ -1032,13 +1079,27 @@
   function mountQuickControls(host, options = {}) {
     if (!host || typeof options.getPattern !== 'function' || typeof options.onChange !== 'function') return null;
     const details = document.createElement('details'); // Visible outside Author Pattern; expandable without losing controller focus.
-    details.open = true;
+    details.open = false; // Advanced manual placement is opt-in; the simple reroll is always outside this disclosure.
     details.className = 'pattern-quick-controls';
     details.style.cssText = 'margin:7px 0;padding:7px;border:1px solid #627d78;border-radius:8px;color:inherit;';
     const summary = document.createElement('summary'); // A normal focusable disclosure for compact/mobile menus.
-    summary.textContent = options.title || 'Pattern placement';
+    summary.textContent = 'Advanced: ' + (options.title || 'Pattern placement');
     summary.style.cssText = 'cursor:pointer;font-weight:650;margin-bottom:6px;';
     details.appendChild(summary);
+    let reroll = createFrameReroller(); // Independent per pattern role; reset when this assignment is cleared.
+    const randomButton = document.createElement('button');
+    randomButton.type = 'button';
+    randomButton.className = 'pattern-random-frame';
+    const roleName = String(options.title || '').replace(/\s+placement$/i, ''); // Distinguishes primary, overpass and fused motifs without requiring the advanced controls.
+    randomButton.textContent = options.randomLabel || (roleName ? 'Randomize framing — ' + roleName : 'Randomize framing');
+    randomButton.style.cssText = 'min-height:30px;padding:4px 8px;margin-bottom:4px;border:1px solid #78908b;border-radius:6px;background:#22302f;color:#fff;cursor:pointer;';
+    randomButton.addEventListener('click', () => {
+      const updated = reroll(options.getPattern());
+      if (!updated) return;
+      options.onChange(updated);
+      refresh();
+    });
+    (options.randomHost || host).appendChild(randomButton); // Native standalone action, never inside Author Pattern or the manual placement disclosure.
     const inputs = new Map(); // Keyed controls are refreshed after a source pattern is selected or an editor save completes.
     for (const spec of QUICK_TRANSFORMS) {
       const row = document.createElement('div'); // Every quick setting is individually keyboard/controller accessible.
@@ -1077,6 +1138,10 @@
     function refresh() {
       const pattern = options.getPattern();
       details.hidden = !pattern;
+      randomButton.disabled = !pattern;
+      randomButton.hidden = !pattern;
+      randomButton.style.display = pattern ? '' : 'none';
+      if (!pattern) reroll = createFrameReroller();
       for (const spec of QUICK_TRANSFORMS) {
         const input = inputs.get(spec.key);
         input.disabled = !pattern;
@@ -1084,10 +1149,10 @@
       }
     }
     refresh();
-    return { element: details, refresh };
+    return { element: details, randomButton, refresh };
   }
 
-  window.PatternQuickControls = Object.freeze({ mount: mountQuickControls, addArrowButtons });
+  window.PatternQuickControls = Object.freeze({ mount: mountQuickControls, addArrowButtons, randomizeFrame, createFrameReroller });
 
   window.PatternAuthoring = { openEditor };
 })();

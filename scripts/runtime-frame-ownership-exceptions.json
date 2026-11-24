@@ -321,7 +321,7 @@
     "function": "scheduleMenuReadability",
     "reason": "Guarded single RAF re-enforces menu text readability (font floor/color) after a click/input/mutation; does not reschedule itself.",
     "migrationStage": "not-planned",
-    "line": 213
+    "line": 299
   },
   {
     "file": "docs/js/inventory-ui.js",
@@ -330,7 +330,7 @@
     "function": "scheduleDecorate",
     "reason": "Separate guarded single RAF that redecorates inventory mode tabs/pack slots after a change; independent debounce flow from scheduleMenuReadability, also not a loop.",
     "migrationStage": "not-planned",
-    "line": 298
+    "line": 436
   },
   {
     "file": "docs/js/item-arch-category-colors.js",
