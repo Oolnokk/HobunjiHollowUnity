@@ -13,6 +13,7 @@
   const TAB_ID = 'maaFullScaleTab';
   const PANEL_ID = 'maaFullScalePanel';
   const RIG_SAVE_KEY = 'hobunjiAttachmentRigProfiles.v2';
+  const MAIN_SILHOUETTE_RESTORE_KEY = 'hobunjiFullCharacterMainSilhouettes.4cfb39c.v1'; // One-time migration for local scale overrides authored after the original main silhouette phase.
   const selfUrl = document.currentScript?.src ? new URL(document.currentScript.src, location.href) : null;
   const docsBase = selfUrl ? new URL('../', selfUrl) : new URL('../../', location.href);
   const npcDbUrl = new URL('config/npcs/hobunji-starter-npc-database.json', docsBase).href;
@@ -1077,6 +1078,24 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
     layout();
     frame();
     status(`Restored ${count}/${items.length} adult silhouettes to main (4cfb39c). Baby/toddler/child modifiers and per-NPC hunches remain unchanged.`);
+    return count; // Bootstrap migration records success only after every adult scale was persisted.
+  }
+
+  function migratePersistedMainSilhouettesOnce() {
+    // Previously opened Raw Githack builds share localStorage. Without a one-time
+    // migration their 65%-Head/height-target rigScale overrides supersede the
+    // restored repository defaults even though every new character is correct.
+    let saved = false; // Do not write default overrides for a fresh browser with no older authored scale data.
+    try {
+      if (localStorage.getItem(MAIN_SILHOUETTE_RESTORE_KEY)) return false; // Never repeat after a later deliberate author edit.
+      saved = ['hobunjiFullCharacterRigScales.v2', 'hobunjiFullCharacterRigScales.v1', RIG_SAVE_KEY]
+        .some(key => !!localStorage.getItem(key)); // Only already-persisted local rigs require corrective migration.
+    } catch (_) { return false; } // Storage may be disabled on mobile private browsing.
+    if (!saved) return false;
+    const restored = matchMainAdultScales(); // All 26 adult scale values, but no per-NPC hunch or age-stage reset.
+    if (!(restored > 0)) return false;
+    try { localStorage.setItem(MAIN_SILHOUETTE_RESTORE_KEY, 'restored'); } catch (_) {}
+    return true;
   }
 
   // Discards every author override — in-memory, both localStorage persistence keys,
@@ -1717,7 +1736,8 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
       building = false;
       active = true;
       chrome();
-      status('Use the always-open character dropdown for per-species edits; Baby/Toddler/Child modes show and adjust the entire lineup.');
+      const migrated = migratePersistedMainSilhouettesOnce(); // Makes the first new build match the requested historical silhouette even with an old phone autosave.
+      if (!migrated) status('Use the always-open character dropdown for per-species edits; Baby/Toddler/Child modes show and adjust the entire lineup.');
     } catch (error) {
       if (buildId !== generation) return; // The already-requested exit owns restoration and error reporting.
       console.warn('[full-character-scale]', error);
