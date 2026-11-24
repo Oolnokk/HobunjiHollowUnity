@@ -13,6 +13,7 @@
   let deps = null; // Narrow game-owned adapters; no independent AI, combat or save loop.
   let active = null; // The one live locale, from bait through reward; each has its own async generation identity.
   let checkTime = 0; // Accumulated only in eligible zones or with an active locale.
+  const rewardRetryAt = new Map(); // Failed visual reconstruction retries at most once per 10 real seconds per saved reward.
   const pendingRewards = new Map(); // Unclaimed boss harvests survive chunk unloads, area changes and save/load without retaining rigs.
   let ledger = new Map(); // Chunk-keyed last attempt day and cleared status, persisted with the member.
   let worldStamp = null; // World and Tothal cycle identity; regenerated wilderness resets locale positions.
@@ -142,7 +143,7 @@
   function syncWorld() {
     const next=stamp();
     if(next===worldStamp)return;
-    reset('world/shift changed');ledger.clear();pendingRewards.clear();worldStamp=next;
+    reset('world/shift changed');ledger.clear();pendingRewards.clear();rewardRetryAt.clear();worldStamp=next;
   }
   function activate(zone,chunk,site,key) {
     const rec={zone,chunk,site,key,phase:'bait',actors:new Set(),wave:0,delay:0,mesh:null,boss:null,building:false};
@@ -172,16 +173,28 @@
   function resumeReward(zone,chunk) {
     if(!pendingRewards.size||deps.canActivate?.()===false)return false;
     for(const [key,saved] of pendingRewards) {
-      if(saved.zone!==zone||!sameChunk(saved.site.c,saved.site.r,chunk))continue;
+      if(saved.zone!==zone||!sameChunk(saved.site.c,saved.site.r,chunk)||(rewardRetryAt.get(key)||0)>performance.now())continue;
       if(!tileEligible(saved.site.c,saved.site.r))continue; // Keep the reward data if the scene is not yet available.
       const rec={zone,chunk,site:{...saved.site},key,phase:'reward',actors:new Set(),wave:WAVES.length,delay:0,mesh:null,
         boss:{_banditCaptainArmament:saved.armament},bossRootHeight:saved.height,building:false};
       active=rec;
-      void showRoot(rec,true).then(ok=>{if(!ok&&active===rec)reset('reward unavailable');}).catch(error=>{if(active===rec)reset('reward failed: '+error.message);});
+      revealReward(rec);
       log('unclaimed boss harvest restored');
       return true;
     }
     return false;
+  }
+  function revealReward(rec) {
+    const fail=reason=>{if(active===rec){rewardRetryAt.set(rec.key,performance.now()+10000);reset(reason);}};
+    void showRoot(rec,true).then(ok=>{if(!ok)fail('reward unavailable');else rewardRetryAt.delete(rec.key);}).catch(error=>fail('reward failed: '+error.message));
+  }
+  function settleVictory(rec) {
+    if(active!==rec||rec.phase!=='combat'||rec.actors.size||!rec.boss||rec.building||rec.wave<WAVES.length||window.PlayerDowned?.isDowned?.())return false;
+    rec.phase='reward';
+    pendingRewards.set(rec.key,{zone:rec.zone,site:{...rec.site},height:rec.bossRootHeight,armament:rec.boss._banditCaptainArmament});
+    deps.save?.(); // Victory is a meaningful checkpoint; no per-tick save.
+    revealReward(rec);
+    return true;
   }
   function spawnPoint(rec,used) {
     const p=playerTile(),n=chunkSize();
@@ -247,7 +260,9 @@
       rec.bossRootHeight=Math.max(.1,Number(c.avatarRef?.modelHeight||.9)*(Number(c.avatarRef?.frontCanvas?.rootledootOpaqueHeightFraction)||1));
       c._banditCaptainArmament=null;c._captainEnchantmentFx?.dispose?.();c._captainEnchantmentFx=null;
     }
-    disposeActor(c);return true;
+    disposeActor(c);
+    if(c.rootledootBig)settleVictory(rec); // Record an earned harvest before any immediate zone departure or save capture.
+    return true;
   }
   function eligibleTarget(c,r) {
     const rec=active;if(!rec?.mesh||area()!==rec.zone||!['bait','reward'].includes(rec.phase))return false;
@@ -284,6 +299,7 @@
       cooking?.consumeFeySight?.();if(stacks>0)cooking?.grantFeySight?.(stacks);
       deps.toast?.('Could not save the Fey reward. Try again.',false);return false;
     }
+    rewardRetryAt.delete(rec.key);
     reset('Fey Heftroot and weapon collected'); // Clears the unlooted enchantment state only after the durable transaction.
     deps.refreshRewards?.();window.FeyArmamentQuest?.maybeStart?.();deps.toast?.('Fey Heftroot and '+transaction.weapon+' collected!',true);return true;
   }
@@ -335,10 +351,7 @@
     if(rec.actors.size)return;
     if(rec.wave>=WAVES.length){
       if(!rec.boss){reset('missing boss reward');return;}
-      rec.phase='reward';
-      pendingRewards.set(rec.key,{zone:rec.zone,site:{...rec.site},height:rec.bossRootHeight,armament:rec.boss._banditCaptainArmament});
-      deps.save?.(); // Boss victory is a meaningful checkpoint, not a per-tick save.
-      void showRoot(rec,true).then(ok=>{if(!ok&&active===rec)reset('reward unavailable');}).catch(error=>{if(active===rec)reset('reward failed: '+error.message);});return;
+      settleVictory(rec);return;
     }
     rec.delay+=elapsed;
     if(rec.delay>=WAVE_DELAY){rec.delay=0;void spawnWave(rec);}
@@ -351,7 +364,7 @@
     reset('restore');
     worldStamp=typeof raw?.stamp==='string'?raw.stamp:stamp();
     ledger=new Map(Array.isArray(raw?.ledger)?raw.ledger.filter(e=>Array.isArray(e)&&typeof e[0]==='string'&&Number.isFinite(e[1]?.day)):[]);
-    pendingRewards.clear();
+    pendingRewards.clear();rewardRetryAt.clear();
     for(const entry of Array.isArray(raw?.pendingRewards)?raw.pendingRewards:[]){
       if(!Array.isArray(entry)||typeof entry[0]!=='string')continue;
       const [key,reward]=entry;
