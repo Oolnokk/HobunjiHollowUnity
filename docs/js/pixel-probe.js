@@ -1253,6 +1253,11 @@
     if (actionCoins) lines.push(`Combat coins: builds=${actionCoins.coinBuilds ?? 0} reuses=${actionCoins.coinReuses ?? 0}`);
     const brickLod = window.InstancedBrickLod?.snapshot?.(); // Far brick meshes drawn with the octant hull and triangles avoided.
     if (brickLod?.frames) lines.push(`Brick LOD: ${JSON.stringify(brickLod)}`);
+    const staticWall = window.DenseForestWallBatches?.staticMatrixSnapshot?.(); // Lifetime skipped native branch/leaf calls; not milliseconds.
+    if (staticWall?.enrolled) {
+      const audit = window.DenseForestWallBatches.auditStaticMatrixBranches?.(activeScene); // On-demand only; retire any missed invalidation.
+      lines.push(`Static wall matrix subtrees: ${JSON.stringify({ ...window.DenseForestWallBatches.staticMatrixSnapshot(), audit })}`);
+    }
     const wallBatches = window.DenseForestWallBatches?.snapshot?.(); // Cloud Forest wall merge + distance LOD split (far/near trees, triangles avoided).
     if (wallBatches?.frames) lines.push(`Dense wall batches: ${JSON.stringify({ ...wallBatches, liteTwins: window.FoliageGenerator?.liteTreeStats?.() || null })}`);
 
