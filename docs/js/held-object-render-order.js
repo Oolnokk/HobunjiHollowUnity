@@ -62,6 +62,9 @@
   const DEFAULT_LAYER_MASK = (1 << DEFAULT_LAYER) >>> 0;
   const MASK_ALL = 0xFFFFFFFF >>> 0;
   const FALLBACK_SCAN_INTERVAL_MS = 750;
+  const CLASSIFICATION_PILOT_INTERVAL_MS = 3000; // Retain periodic repair for unregistered late writers.
+  let slowClassificationFallbackEnabled = false; // Independent opt-in, until late semantic writers are audited.
+  let classificationFullScans = 0, classificationForcedScans = 0, classificationExplicitInvalidations = 0; // Window deltas distinguish the discovery paths.
 
   // Registered meshes bucketed by the scene they were last found in. Ground
   // registries accumulate every floor mesh of every cached zone/interior
@@ -1454,11 +1457,16 @@
     const previous = lastSceneScan.get(scene);
     // With every actor category off, seed an existing scene once and rely on the add hooks
     // and explicit registrations instead of repeatedly walking static terrain for x-ray casters.
-    if (!force && previous !== undefined && (allActorXrayDisabled || now - previous < FALLBACK_SCAN_INTERVAL_MS)) return;
+    const interval = slowClassificationFallbackEnabled ? CLASSIFICATION_PILOT_INTERVAL_MS : FALLBACK_SCAN_INTERVAL_MS;
+    if (!force && previous !== undefined && (allActorXrayDisabled || now - previous < interval)) return;
     lastSceneScan.set(scene, now);
+    classificationFullScans++;
+    if (force) classificationForcedScans++;
     const perf = window.PerfProfiler?.begin('held-overlay: fallback classification');
+    const world = window.RenderHooks?.currentWorldFrame?.();
+    const detail = world ? window.PerfProfiler?.begin(scene === world.scene ? 'held classification: active world' : 'held classification: auxiliary scene') : null;
     try { classifyTree(scene); }
-    finally { window.PerfProfiler?.end(perf); }
+    finally { window.PerfProfiler?.end(detail); window.PerfProfiler?.end(perf); }
   }
 
   // One upward walk finds both the owning root and whether any ancestor
@@ -4789,6 +4797,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
       waterOnlyBranchPruneEnabled, waterOnlyPrunedFrames, waterOnlyPrunedBranches, waterOnlyPruneFallbacks,
       mixedWaterBranchPruneEnabled, mixedWaterPrunedFrames, mixedWaterPrunedBranches, mixedWaterPruneFallbacks, mixedWaterVisited,
       replayRegistryMemoEnabled, registryAncestorReads, registryAncestorHits, frontRegistryReuses,
+      slowClassificationFallbackEnabled, classificationFullScans, classificationForcedScans, classificationExplicitInvalidations,
       mode: 'selective-depth-replay',
       legacyHeldRenderOrder: LEGACY_HELD_RENDER_ORDER,
       heldOverlayLayer: HELD_OVERLAY_LAYER,
@@ -4935,11 +4944,20 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
     SHOULDER_PET_RENDER_ORDERS,
     setShoulderPetLayering,
     scanScene,
+    // Existing add hooks cover topology; semantic writers can request a targeted
+    // reclassification after in-place changes to tags, layers or materials.
+    invalidateClassification(root) {
+      if (!root || retiredScenes.has(root)) return false;
+      classificationExplicitInvalidations++;
+      queueClassification([root]);
+      return true;
+    },
     snapshot,
     performanceCounters: () => ({ // No classification flush; safe for capture start/end.
       waterOnlyBranchPruneEnabled, waterOnlyPrunedFrames, waterOnlyPrunedBranches, waterOnlyPruneFallbacks,
       mixedWaterBranchPruneEnabled, mixedWaterPrunedFrames, mixedWaterPrunedBranches, mixedWaterPruneFallbacks, mixedWaterVisited,
       replayRegistryMemoEnabled, registryAncestorReads, registryAncestorHits, frontRegistryReuses,
+      slowClassificationFallbackEnabled, classificationFullScans, classificationForcedScans, classificationExplicitInvalidations,
       baseWorldRenderCount, selectiveOverlayCount, nonGroundDepthReplayCount, groundDepthRestoreCount,
       waterReplayCount, nearReplaySnapshots, nearReplayFallbacks, floorPunches, floorPunchFallbacks,
       ordinaryDepthSceneWalksAvoided, emptyOrdinaryDepthPassesAvoided, emptyHeldReplayTransactionsAvoided,
@@ -4957,6 +4975,12 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
     setWaterOnlyBranchPruneEnabled: value => { waterOnlyBranchPruneEnabled = value !== false; return waterOnlyBranchPruneEnabled; },
     setMixedWaterBranchPruneEnabled: value => { mixedWaterBranchPruneEnabled = value === true; return mixedWaterBranchPruneEnabled; },
     setReplayRegistryMemoEnabled: value => { replayRegistryMemoEnabled = value === true; return replayRegistryMemoEnabled; },
+    setSlowClassificationFallbackEnabled(value) {
+      const next = value === true; // Reseed on changes so switching back restores immediate discovery.
+      if (next !== slowClassificationFallbackEnabled) lastSceneScan = new WeakMap();
+      slowClassificationFallbackEnabled = next;
+      return next;
+    },
     setLocalReplayRingEnabled: value => { localReplayRingEnabled = value !== false; return localReplayRingEnabled; },
     setReplayParticipants: value => { replayParticipantPolicy = value === 'all' ? 'all' : 'rule'; return replayParticipantPolicy; },
     setShortXraySpecies: list => { shortXraySpecies.clear(); for (const id of list || []) shortXraySpecies.add(String(id).toLowerCase()); return [...shortXraySpecies]; },
