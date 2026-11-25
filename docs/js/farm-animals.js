@@ -1972,7 +1972,15 @@
     let animal = findAnimal(item => item._vatWorkPose?.vatId === vatId);
     let rec = animal?._vatWorkRecord;
     if (!animal) {
-      rec = deps.loadWorldLivestock().find(item => item.assignedVatId === vatId);
+      const livestock = deps.loadWorldLivestock(); // Reuse the existing worker lookup; family and livestock share precedence.
+      const worker = window.DewVats?.assignedWorkerForVat?.(vatId, livestock);
+      if (worker?.external) {
+        if (worker.familyWorker) return window.RomanceFamily?.setVatWorkerPose?.(vatId, targetMatrix, worker) || null;
+        window.RomanceFamily?.clearVatWorkerPose?.(vatId);
+        return null;
+      }
+      window.RomanceFamily?.clearVatWorkerPose?.(vatId);
+      rec = worker || livestock.find(item => item.assignedVatId === vatId);
       animal = rec && findAnimal(item => item.livestockId === rec.id);
     }
     if (!rec || !animal) return null;
@@ -2012,6 +2020,7 @@
   }
 
   function clearVatWorkerPose(vatId) {
+    window.RomanceFamily?.clearVatWorkerPose?.(vatId); // The processor's existing completion/reset paths release either worker type.
     for (const animal of deps.animalObjects) {
       if (animal._vatWorkPose?.vatId !== vatId) continue;
       const group = animal.avatarRef.group; // Used to restore ordinary farm-animal transform updates after a vat batch ends.

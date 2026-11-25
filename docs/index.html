@@ -416,7 +416,7 @@
        relative to the other systems above doesn't matter; must load
        before game.js, which calls window.DewVats.init(...) during its own
        setup. -->
-  <script src="js/dew-vats.js?v=20261114posobj1754"></script>
+  <script src="js/dew-vats.js?v=20261125childVatStomp3"></script>
   <!-- Wild berry bushes (window.WildBerries) — self-contained aside from
        deps injected via init(), so load order relative to the other
        systems above doesn't matter; must load before game.js, which
@@ -440,7 +440,7 @@
   <script src="js/honeyfuzzle-house.js?v=20261114queenPerf1"></script> <!-- Honeyfuzzle House: 1x1 queen/swarm slot on a FarmProduction entry; hooked by farm-production.js, initialized by game.js. -->
   <script src="js/farm-layout-editor.js?v=20261016a"></script>
   <script src="js/world-meta-store.js?v=20261122cancelAnimal2"></script>
-  <script src="js/farm-animals.js?v=20261123animalAppearancePriority1"></script>
+  <script src="js/farm-animals.js?v=20261125childVatStomp1"></script>
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="farm-buildings"></script> <!-- Farm construction, barn troughs and modular house. -->
   <!-- Death ragdoll → lootable corpse (window.CreatureDeath) —
        self-contained aside from deps injected via init(), so load order
@@ -755,7 +755,7 @@
        so load order relative to the other systems above doesn't matter;
        must load before game.js, which calls window.FarmPanel.init(...)
        during its own setup. -->
-  <script src="js/farm-panel.js?v=20261122cancelAnimal2"></script>
+  <script src="js/farm-panel.js?v=20261125childVatStomp3"></script>
   <!-- Tasks tab (window.TasksPanel), Supplies tab (window.SupplyPage),
        whistle-equip row (window.WhistleEquip), and the Wildlife/genotype
        debug panel (window.WildlifeDebugPanel) — all read
@@ -2966,7 +2966,7 @@
   <script src="js/family-baby-ambient-voice.js?v=20261122decoupledVoice1"></script> <!-- Voice adapter; physical baby carry code unchanged. -->
   <script src="js/family-baby-follow.js?v=20261124babyFollowRebase1"></script> <!-- Uses shared companion navigation and downed crawl curves. -->
   <script src="js/family-baby-care.js?v=20261124babyFollowRebase1"></script>
-  <script src="js/romance-family.js?v=20261124babyFollowRebase1"></script>
+  <script src="js/romance-family.js?v=20261125childVatTeleport2"></script>
   <script src="js/romance-wedding.js?v=20261027hbreath8"></script>
   <script src="js/npc-following.js?v=20261122babyFollow1"></script>
   <!-- Shared spouse kiss motion/height solver. Loads before RomanceSystem.init but after the player render/leg APIs. -->
