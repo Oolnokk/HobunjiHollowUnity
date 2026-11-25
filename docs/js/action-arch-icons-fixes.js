@@ -124,7 +124,7 @@
   function hideLegacyHost(button) {
     const host = actionIconHost(button);
     if (!host || isDedicatedHost(host)) return;
-    host.style.visibility = 'hidden'; // MutationObservers run before paint, preventing one-frame legacy glyph flashes.
+    if (host.style.visibility !== 'hidden') host.style.visibility = 'hidden'; // Avoid style writes on unchanged observer notifications.
   }
 
   function suppressFreshLegacyGlyphs() {
@@ -133,7 +133,7 @@
       const host = actionIconHost(button);
       if (!host) return;
       if (dedicatedActions.has(button.dataset.action)) hideLegacyHost(button);
-      else host.style.visibility = ''; // World-context actions must immediately reclaim their own icon host.
+      else if (!isDedicatedHost(host) && host.style.visibility !== '') host.style.visibility = ''; // Do not clear a dedicated icon's visible state and set it again next refresh.
     });
   }
 
@@ -286,10 +286,13 @@
     const button = actionButton('potion_select');
     if (!button) return;
     const host = actionIconHost(button);
-    const image = plainIcon('potion_select.png', button.querySelector('.abt-label')?.textContent || 'Potion select');
-    if (!host || !image) return;
-    if (!host.querySelector('img[data-action-arch-fix-icon="potion_select.png"]')) host.replaceChildren(image);
-    host.style.visibility = 'visible';
+    if (!host) return;
+    if (!host.querySelector('img[data-action-arch-fix-icon="potion_select.png"]')) {
+      const image = plainIcon('potion_select.png', button.querySelector('.abt-label')?.textContent || 'Potion select');
+      if (!image) return;
+      host.replaceChildren(image);
+    }
+    if (host.style.visibility !== 'visible') host.style.visibility = 'visible';
   }
 
   function fixRangedAmmoShortcut() {
@@ -305,7 +308,7 @@
       host.replaceChildren(image);
       host.dataset.quiverCountSignature = signature;
     }
-    host.style.visibility = 'visible';
+    if (host.style.visibility !== 'visible') host.style.visibility = 'visible';
   }
 
   function refresh() {
