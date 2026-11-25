@@ -2963,3 +2963,46 @@ Validation: complete source-executing recording-renderer pipeline fixture passed
 in isolated V8 adapter (one-shot, hidden descendants, per-pass reuse, scope
 restoration, native render failure and capture cleanup). Changed JS parsed.
 Native Node checkout, cache checker, full CI and device timings unverified.
+
+### Static dense Cloud Forest wall branch pilot (25 Nov 2026)
+
+The diagnostic-only head 288b3d5b passed all five reported stacked-PR
+workflows. No new device census/trace was supplied. Chose the narrow
+dense-wall producer for the first true subtree-elimination experiment, not
+because it has been measured as the largest current branch. The historical
+layout is ~63 chunk groups x ~12 flat InstancedMesh parts. Their placement
+is entirely in instance buffers; quarter-density, fading, culling, outline
+and LOD paths change counts/buffers, visibility, materials, layers or geometry,
+not object-local transforms. Ordinary procedural trees and actor rigs are
+not enrolled.
+
+BorderTerrain explicitly enrolls its newly attached flat dense-wall groups.
+A per-instance root updater warms via native r128 recursion and verifies
+identity local/world transforms and native leaf methods. The render hook
+temporarily marks the actual active scene's native matrix walk with a scene
+instance method, restored on success/error. On a cached identity root under
+an identity scene, skip ALL descendant matrix calls, with no leaf scan.
+Hidden and visible branches follow the same rule. Parent/root changes,
+explicit root updates outside the native scene walk, toggle-off, nonnative
+methods and unsupported runtimes fall back. The existing structure epoch
+observer retires edited roots/leaves; removal/reparent retires enrollment.
+The owner must call invalidateStaticMatrixBranch before adding any leaf
+TRS/manual-matrix/update-method writer (arbitrary raw edits are not observable
+without scanning). Explicit Pixel Probe audit detects a missed invalidation
+and retires the branch; this is a static-owner contract, not a generic
+invisible-node freeze. Shared weak state retains no scene or member objects.
+No native render pass, visual policy, raycast, instance placement or
+gameplay change; no Three matrix prototype override.
+
+Independent Settings toggle "Cache static Cloud Forest wall matrix subtrees"
+defaults OFF; Render A/B benchmark uses staticWallMatricesOn/Off. Pixel
+Probe reports enrollments, actual skipped branch/leaf calls, refreshes,
+retirements and audit violations. A synthetic 63 x 12 scene using real
+Three r128, actual RenderHooks and structure observer skipped 756 leaf
+updates on its steady cached draw; counts are not measured FPS. Complete
+new static-wall and existing dense-wall batching regression fixtures ran
+against actual upstream r128 in an isolated V8 adapter; changed JavaScript
+parsed. Native full Node and browser CI, repository cache checker and
+device A/B remain unverified. Updated known gameplay cache chains; authoring
+preview does not load the matrix owner and stays native. Keep default off
+until device reports confirm worthwhile reduction and no audit violations.
