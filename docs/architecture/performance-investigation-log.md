@@ -2427,3 +2427,37 @@ slightly more evenly (fewer facets), visible only at 2× zoom. Default 14. **Not
 device.** A/B: Settings → Render optimizations → "Lighter far brick walls and paths", benchmark
 variant `brickLodOff`, `InstancedBrickLod.setEnabled(false)` / `setDistance(n)`; Pixel Probe shows
 far meshes, instances and triangles avoided.
+
+
+## 24 Nov 2026: 18:55 trace — redundant CPU-side render and clock work
+
+The uploaded trace sampled `isDepthReplayInert` (~88 ms self), registry visibility
+collection (~74 ms self), `classifyObject` (~57 ms self), and repeated prop-owner
+and batch validation. Calendar report generation also appeared under relationship,
+rest/buff, movement and camp AI callers. These are sample totals, not a measured
+speedup from the changes below.
+
+- Ordinary actor-only transparency sorting uses the original comparator and
+  live rank maps directly; manual layer and shoulder-pet sorting retain their
+  existing caches. Before/after comparison of 6,400 pairs was identical.
+- Full root-scene classification places known members directly in their scene
+  registries in traversal order, skipping redundant pending/root walks. Dynamic
+  registrations still use pending discovery. The replay-inert predicate rejects
+  ordinary single-material depth writers early, while preserving explicitly
+  pinned far-plane candidates, custom hooks and cutouts. 15,360 synthetic
+  predicate combinations matched the previous implementation; scene
+  classification and retirement fixture also passed.
+- Prop batching shares nearest-owner lookups only within one collection and
+  combines effective visibility and attachment checks. Tagged crop producers
+  register new PNG anchors before drawing; initial adoption scans and legacy
+  fallback remain available, with counters in the crop diagnostics.
+- CalendarSystem exposes raw day/fraction accessors and a minimal clock
+  snapshot. Romance/family, rest blessings, camp AI, cooking and relationship
+  queries use them rather than constructing date/UI debug reports. Civil
+  midnight still uses the existing bridge; rest and cooking timer origins are
+  unchanged. Targeted startup, rollover and rapport tests passed; a full
+  regression run and real-device A/B remain necessary.
+- No new frame loop, geometry reduction, pass-order change or actor-update
+  cadence reduction. Static world-matrix freezing and cross-native-render
+  visibility sharing remain unproven: render hooks may change transforms or
+  visibility, and relying on stale state can break occlusion.
