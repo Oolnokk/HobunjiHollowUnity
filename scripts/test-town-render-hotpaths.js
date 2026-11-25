@@ -882,7 +882,7 @@ assert.match(terrainTileMaterials, /matKey === deps\.TileType\.GRASS[\s\S]{0,180
   'the live game tags the native base grass material');
 assert.match(terrainTileMaterials, /mat\.userData\.terrainKey = matKey[\s\S]{0,220}matKey === deps\.TileType\.GRASS[\s\S]{0,220}hobunjiBaseGrassTerrainMaterial = true/,
   'authored PNG terrain keeps both its exact bucket identity and native grass depth tag');
-assert.match(heldRender, /if \(isTopFacesGroundSurface\(object\)\) markTopFaceGroundMesh\(object\)/,
+assert.match(heldRender, /if \(isTopFacesGroundSurface\(object\)\) markTopFaceGroundMesh\(object(?:,\s*knownScene)?\)/,
   'the cave shell participates in selective floor-face depth replay without hiding wall triangles');
 assert.match(heldRender, /const groundMeshes = \[\.\.\.ground, \.\.\.topFaceGround\]/,
   'cave shell floors stay in the depth buffer so elevation decides which top faces may be x-rayed');
