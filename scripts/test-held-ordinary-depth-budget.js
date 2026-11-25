@@ -6,7 +6,7 @@ const source = fs.readFileSync('docs/js/held-object-render-order.js', 'utf8'); /
 const begin = source.indexOf('  let ordinaryDepthLeavesSkipped ='); // Includes the supplement helper and complete held replay.
 const end = source.indexOf('  function isShellOutlinePass(', begin);
 
-function fixture({ bounded = false, ordinary = true, fail = false, colorLock = true, tint = false, nested = false, airborne = false, wildernessGround = false, groundShaderSupported = true, staleStencil = false, emptyDepth = false, emptyScissor = false } = {}) {
+function fixture({ bounded = false, ordinary = true, fail = false, colorLock = true, tint = false, nested = false, airborne = false, wildernessGround = false, groundShaderSupported = true, staleStencil = false, emptyDepth = false, emptyScissor = false, waterOnly = false, prune = true, customWaterHook = false } = {}) {
   const groundMaterial = wildernessGround ? { depthWrite: false,
     userData: { hobunjiXrayElevationShader: { supported: groundShaderSupported } } } : null; // Reproduces wilderness ground, including unsupported/cold elevation shaders.
   const opaque = { isMesh: true, visible: true, children: [], material: groundMaterial }; // Base world terrain whose held-only depth flag is tested below.
@@ -21,6 +21,12 @@ function fixture({ bounded = false, ordinary = true, fail = false, colorLock = t
   const scene = { background: 'sky', autoUpdate: true,
     traverseVisible(fn) { for (const node of [sky, opaque, ...(!emptyDepth ? [cover] : []), weapon, ...(!nested ? [hand] : []), ...(!emptyDepth ? [parent, hooked] : [])]) { if (node.visible) { fn(node); for (const child of node.children) if (child.visible) fn(child); } } },
   };
+  if (waterOnly) {
+    cover.layers = {mask:8};
+    cutout.layers = {mask:1};
+    scene.children = [sky, opaque, cover, weapon, hand, parent, hooked]; // Live tree used by the production pruning helper.
+    if (customWaterHook) cover.onBeforeRender = () => {};
+  }
   const draws = []; // Captures submitted passes and visible world leaves.
   let clears = 0; // Counts destructive depth clears, not stencil clears.
   const camera = { layers: { mask: 1 } }; // Main camera restored after every replay.
@@ -67,10 +73,23 @@ function fixture({ bounded = false, ordinary = true, fail = false, colorLock = t
     restoreMaterialStates(states) { for (const [material, state] of states) material.depthWrite = state.depthWrite; },
     prepareGroundDepthMaterials: () => new Map(),
     prepareSubmergedOverlayStencilMaterials: () => new Map(), prepareOverlayCoverTintMaterials: () => new Map(), prepareTintCoverDepthMaterials: () => new Map(),
-    waterReplayCount: 0, WATER_REPLAY_MASK: 8, HELD_OVERLAY_MASK: 2, GROUND_REPLAY_MASK: 4,
+    waterReplayCount: 0, WATER_REPLAY_MASK: 8, HELD_OVERLAY_MASK: 2, GROUND_REPLAY_MASK: 4, PORTRAIT_WATER_MASK: 16,
+    waterOnlyBranchPruneEnabled: prune, waterOnlyPrunedFrames:0, waterOnlyPrunedBranches:0, waterOnlyPruneFallbacks:0,
+    stampSubmergedPortraits(renderer, scene, camera, portraits) {
+      const mask = camera.layers.mask;
+      const old = portraits.map(node => node.layers.mask);
+      try {
+        portraits.forEach(node => { node.layers.mask |= 16; });
+        camera.layers.mask = 16;
+        scope.rawRender.call(renderer,scene,camera);
+      } finally {
+        portraits.forEach((node,i) => {node.layers.mask = old[i];});
+        camera.layers.mask = mask;
+      }
+    },
     rawRender: function(_scene, _camera) {
       const nodes = []; _scene.traverseVisible(node => { if ((node.layers?.mask ?? 1) & _camera.layers.mask) nodes.push(node); });
-      draws.push({ mask: _camera.layers.mask, nodes, groundDepthWrite: groundMaterial?.depthWrite }); // Confirm the true flag at submission, not merely after the helper runs.
+      draws.push({ mask: _camera.layers.mask, nodes, groundDepthWrite: groundMaterial?.depthWrite, opaqueVisible:opaque.visible, parentVisible:parent.visible }); // Confirm the true flag at submission, not merely after the helper runs.
       if (staleStencil && _camera.layers.mask === 2) {
         stencilMask = 1; // The current frame stamps only its submerged gear pixel.
         stencil[1] |= 1;
@@ -88,13 +107,16 @@ function fixture({ bounded = false, ordinary = true, fail = false, colorLock = t
   scope.MASK_ALL = 0xffffffff;
   vm.createContext(scope);
   vm.runInContext(source.slice(layerStart, layerEnd), scope);
+  vm.runInContext(source.slice(source.indexOf('  function pruneWaterOnlyBranches('), source.indexOf('  function stampSubmergedPortraits(')), scope);
   vm.runInContext(source.slice(begin, end), scope);
   const before = { ...renderer }; // Verify all ordinary renderer flags restore after success or exceptions.
   const participants = [...(ordinary ? [weapon] : []), ...(bounded ? [hand] : [])]; // Only active sources are hidden by this render.
-  const run = () => scope.replaySelectiveHeldOverlay(renderer, scene, camera, participants, [], [opaque], [], [cover], 1);
+  const bodyTint = waterOnly ? {portraits:[cutout],touchingCovers:new Set([cover]),scopes:[]} : null;
+  const run = () => scope.replaySelectiveHeldOverlay(renderer, scene, camera, participants, [], [opaque], [], [cover], 1, bodyTint);
   if (fail) assert.throws(run, /render failure/); else run();
   assert.equal(opaque.visible, true); assert.equal(cutout.visible, true); assert.equal(cover.visible, true); assert.equal(sky.visible, true);
   assert.equal(weapon.visible, true); assert.equal(hand.visible, true);
+  assert.equal(parent.visible,true); assert.equal(hooked.visible,true);
   assert.equal(weapon.layers.mask, 3); assert.equal(hand.layers.mask, 3);
   assert.equal(camera.layers.mask, 1); assert.equal(scene.background, 'sky'); assert.equal(scene.autoUpdate, true);
   assert.equal(renderer.autoClear, before.autoClear); assert.equal(renderer.shadowMap.autoUpdate, true);
@@ -129,6 +151,18 @@ assert.equal(fixture({ colorLock: false }).clears, 1, 'unsupported renderer uses
 const submerged = fixture({ tint: true }); // Unchanged base ground depth must precede both water tint and cover depth restore.
 assert.deepEqual(submerged.draws.map(draw => draw.mask), [1, 2, 8, 8]);
 assert.equal(submerged.clears, 0);
+const privateWater = fixture({ordinary:false,tint:true,waterOnly:true});
+const legacyWater = fixture({ordinary:false,tint:true,waterOnly:true,prune:false});
+assert.deepEqual(privateWater.draws.map(d=>d.mask),[16,8,8],'portrait stamp, water tint and depth restoration are preserved');
+assert.deepEqual(privateWater.draws.map(d=>d.nodes.length),legacyWater.draws.map(d=>d.nodes.length),'no private-layer draw is removed');
+assert(privateWater.draws.every(d=>!d.opaqueVisible && d.parentVisible),'irrelevant terrain is hidden, selected portrait ancestry remains visible');
+assert(legacyWater.draws.every(d=>d.opaqueVisible));
+assert.equal(privateWater.scope.waterOnlyPrunedFrames,1);
+assert(privateWater.scope.waterOnlyPrunedBranches>0);
+const customWater = fixture({ordinary:false,tint:true,waterOnly:true,customWaterHook:true});
+assert.equal(customWater.scope.waterOnlyPruneFallbacks,1,'custom draw hook retains complete scene');
+assert(customWater.draws.every(d=>d.opaqueVisible));
+fixture({ordinary:false,tint:true,waterOnly:true,fail:true}); // Every state restored even if the stamp throws.
 const staleTint = fixture({ tint: true, staleStencil: true });
 assert.deepEqual(staleTint.draws.find(draw => draw.tintedPixels).tintedPixels, [0, 1],
   'water tints current submerged gear only, even if a previous frame marked the dry portrait pixel');
