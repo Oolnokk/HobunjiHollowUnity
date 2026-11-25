@@ -268,3 +268,41 @@ const SCOPE_ORDER = ['farm-tile-batches', 'zone-prop-batches', 'npc-view-cull', 
 }
 
 console.log('PASS world render pipeline: pass order, scopes, frame hooks, failure restore, capture, tagging, layers');
+
+
+// Compare all three generated outline modes without changing the master composite.
+{
+  const h = createWorldRenderPipelineHarness().init();
+  const p = h.pipeline, u = p.materials.composite.uniforms;
+  p.resize(640,360);
+  assert.equal(p.getGeneratedOutlineMode(),'shell');
+  assert.equal(p.setGeneratedOutlineMode('invalid'),'shell');
+  p.setGeneratedOutlineMode('screen');
+  const screen = h.renders(h.frame());
+  const mask = screen.find(r => r.layers === 1 << 1);
+  assert.ok(mask && mask.override !== p.materials.shell);
+  assert.equal(mask.override.side,h.THREE.FrontSide);
+  assert.notEqual(mask.target,p.targets.main);
+  assert.deepEqual([mask.target.width,mask.target.height],[640,360]);
+  assert.equal(u.tShellMaskDepth.value,mask.target.depthTexture);
+  assert.equal(u.uDepthOutlinesOn.value,1);
+  assert.equal(screen.at(-1).target,'canvas');
+  assert.equal(h.activeScene.overrideMaterial,null);
+  assert.equal(h.camera.layers.mask >>> 0,0xffffffff);
+  p.resize(320,180);
+  assert.deepEqual([mask.target.width,mask.target.height],[320,180]);
+  h.throwOn = (scene,camera) => scene === h.activeScene && camera.layers.mask === 1 << 1;
+  assert.throws(()=>h.frame(),/synthetic native render failure/);
+  assert.equal(h.renderer.getRenderTarget(),p.targets.main);
+  assert.equal(h.activeScene.overrideMaterial,null);
+  assert.equal(h.camera.layers.mask >>> 0,0xffffffff);
+  h.throwOn=null;
+  p.setGeneratedOutlineMode('none');
+  assert.equal(mask.target.disposed,true);
+  const none=h.renders(h.frame());
+  assert.equal(none.length,screen.length-1);
+  assert.equal(u.uDepthOutlinesOn.value,0);
+  assert.equal(none.at(-1).target,'canvas');
+  p.setGeneratedOutlineMode('shell');
+  assert.ok(h.renders(h.frame()).some(r=>r.override===p.materials.shell));
+}
