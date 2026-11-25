@@ -43,9 +43,27 @@ const api = new Function('window', 'performance', code + `
   replayCameraPosition = { x: 0, y: 0, z: 0 };
   const repaired = []; // Nonparticipant weapon-hand invariants are maintained in the same split loop.
   const enforceHeldMesh = mesh => repaired.push(mesh);
-  return { actorXrayDefaults, setActorXrayEnabled, refreshActorXrayRoots, split: (m, s, o, foot, repair = false) => splitReplayParticipants(m, s, o, foot, repair), repaired, setPolicy: v => { replayParticipantPolicy = v; }, skips: () => nonParticipantReplaySkips,
+  return { ringDefault: localReplayRingEnabled, setRing: v => { localReplayRingEnabled = v; }, ringSkips: () => localReplayRingSkips, actorXrayDefaults, setActorXrayEnabled, refreshActorXrayRoots, split: (m, s, o, foot, repair = false) => splitReplayParticipants(m, s, o, foot, repair), repaired, setPolicy: v => { replayParticipantPolicy = v; }, skips: () => nonParticipantReplaySkips,
     actorOf: (m, s) => actorRootForXrayMesh(m, s), setOwnerLink: v => { heldOwnerLinkEnabled = v; participantCache = new WeakMap(); }, setLimit: n => { otherWeaponXrayLimit = n; },
     budgetSkips: () => otherWeaponXrayBudgetSkips, ownerLinkDefault: heldOwnerLinkEnabled, limitDefault: otherWeaponXrayLimit };`)(window, { now: () => 0 });
+
+// The shipped local gate keeps whole actors together, independent of the camera.
+assert.equal(api.ringDefault, true);
+at(player, -0.2, -0.2);
+at(shorty, -1.2, 0.8);
+const nearClub = shortClub;
+const farShort = at(node('far_short', scene, { hobunjiXrayActorRoot:true, speciesId:'porakaneki' }), 1.2, -0.2);
+const farClub = node('far_club', farShort);
+const farOrphan = at(node('orphan', scene), 12, 12);
+const ringOthers = [];
+assert.deepEqual(api.split([playerBlade, nearClub, farClub, farOrphan], scene, ringOthers, false, true), [playerBlade, nearClub]);
+assert.deepEqual(ringOthers, [farClub, farOrphan]);
+assert.equal(api.ringSkips(),2);
+at(player, 1.5, -0.2);
+assert.deepEqual(api.split([nearClub, farClub], scene, [], false, true), [farClub], 'crossing tiles changes membership immediately');
+at(player, 0, 0); at(shorty, 0, 0);
+api.repaired.length = 0;
+api.setRing(false); // The remaining legacy A/B fixtures deliberately exercise the old distance policy.
 
 // Shipped defaults: owners resolved, other characters' weapons in the base pass (budget 0).
 assert.equal(api.ownerLinkDefault, true, 'owner link on by default');
