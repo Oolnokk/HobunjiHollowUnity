@@ -107,11 +107,12 @@ same([...ES.stateFor('sword').base], ['burning', 'frostbitten'], '3. rejection l
 assert.equal(ES.equipBase('sword', 2, 'mirrored'), false, '3. no hidden third Base index');
 assert.equal(ES.addBase('sword', 'burning'), false, 'the same Base enchantment cannot occupy both slots');
 assert.equal(ES.setFlourish('sword', 'tap1', 'sicced'), true);
-assert.equal(ES.setFlourish('sword', 'hold1', 'fury'), true);
+assert.equal(ES.setFlourish('sword', 'hold1', 'fury'), false);
+assert.equal(ES.setFlourish('sword', 'tap2', 'fury'), true);
 assert.equal(ES.setFlourish('sword', 'tap1', 'burning'), false, 'Base enchantments cannot be Flourishes');
 assert.equal(ES.flourishForSlot('tap1', 'sword'), 'sicced');
-assert.equal(ES.flourishForSlot('hold1', 'sword'), 'fury', '3. each slot holds its own Flourish');
-assert.equal(ES.flourishForSlot('tap2', 'sword'), null);
+assert.equal(ES.flourishForSlot('tap2', 'sword'), 'fury', '3. each slot holds its own Flourish');
+assert.equal(ES.flourishForSlot('hold1', 'sword'), null);
 ES.setFlourish('sword', 'tap1', 'moralized');
 assert.equal(ES.flourishForSlot('tap1', 'sword'), 'moralized', 'one Flourish per slot: setting replaces');
 assert.ok(saves > 0, 'enchantment edits persist through saveGearInventory');
@@ -129,8 +130,8 @@ function immFor(state) { gear = { weaponEnchantments: { w: state } }; return ES.
 // Planes: sicced=Tothal fury=Hronal moralized=Kanthic resolve=Ohthic frostbitten=Tothal burning=Hronal mirrored=Kanthic livingGust=Ohthic livingFlame=Hronal
 assert.equal(immFor({ base: ['frostbitten'], flourishes: {} }), 1, 'Tothal 1 → 1');
 assert.equal(immFor({ base: ['frostbitten', 'burning'], flourishes: {} }), 0, '9. Tothal + Hronal cancel');
-assert.equal(immFor({ base: ['frostbitten'], flourishes: { tap1: 'sicced', hold1: 'fury' } }), 1, 'Tothal 2, Hronal 1 → 1');
-assert.equal(immFor({ base: ['frostbitten', 'burning'], flourishes: { tap1: 'sicced', hold1: 'fury' } }), 0, '11. Tothal 2, Hronal 2 → 0 (one-for-one, not Cartesian)');
+assert.equal(immFor({ base: ['frostbitten'], flourishes: { tap1: 'sicced', tap2: 'fury' } }), 1, 'Tothal 2, Hronal 1 → 1');
+assert.equal(immFor({ base: ['frostbitten', 'burning'], flourishes: { tap1: 'sicced', tap2: 'fury' } }), 0, '11. Tothal 2, Hronal 2 → 0 (one-for-one, not Cartesian)');
 assert.equal(immFor({ base: ['mirrored', 'livingGust'], flourishes: {} }), 0, '10. Kanthic + Ohthic cancel');
 assert.equal(immFor({ base: ['frostbitten', 'mirrored'], flourishes: { tap1: 'sicced' } }), 3, 'Tothal 2, Kanthic 1 → 3');
 assert.equal(ES.getEnchantmentPowerMultiplier('w'), 1.3, '12. +10% enchantment power per Immundanity');
@@ -286,7 +287,7 @@ RS.addEnhancedResource(p3, 'furiousStamina', 6);
 RS.addEnhancedResource(p3, 'moralizedStamina', 10);
 const charge = RS.spendStamina(p3, 12, 'charge', { actionKind: 'offensiveHeldCharge' });
 assert.equal(charge.consumed[0].id, 'furiousStamina', 'Furious outranks Moralized only for an action it benefits (priority mechanism, not a one-off check)');
-assert.ok(Math.abs(charge.tempoMultiplier - (6 * 3 + 6 * 1) / 12) < 1e-9, '14. only the 6 Furious-funded points run at 3×');
+assert.ok(Math.abs(charge.tempoMultiplier - 1.12) < 1e-9, '14. pre-payment 6 Furious points give +12% tempo');
 const walk = makeEntity();
 RS.addEnhancedResource(walk, 'furiousStamina', 6);
 RS.addEnhancedResource(walk, 'moralizedStamina', 10);
@@ -1035,7 +1036,6 @@ console.log('Fey Immundanity, real Stamina illusions, proc, scaled echo, migrati
     ['stormwake', 'Tothal', 'undertowStamina', 6.6],
     ['stonebind', 'Hronal', 'calcifiedFooting', 5.5],
     ['soulweight', 'Kanthic', 'soulweightedHealth', 6.6],
-    ['ancestralSight', 'Ohthic', 'veilmarkedHealth', 5.5],
   ]; // One equipped planar enchantment gives +10% Immundanity.
   for (const [id, alignment, status, expected] of newBases) {
     equip([id]);
@@ -1065,9 +1065,9 @@ console.log('Fey Immundanity, real Stamina illusions, proc, scaled echo, migrati
   assert.equal(ES.getWeaponImmundanity(key), 0);
   hit();
   close(amount(target, 'soulweightedHealth'), 6);
-  close(amount(target, 'veilmarkedHealth'), 5);
+  close(amount(attacker, 'weightlessStamina'), 5);
   clear(target, 'soulweightedHealth');
-  clear(target, 'veilmarkedHealth');
+  clear(attacker, 'weightlessStamina');
 
   // Undertow: recovery, not expenditure; black Stamina recovery is independent.
   target.stamina = 30;
@@ -1132,7 +1132,6 @@ console.log('Fey Immundanity, real Stamina illusions, proc, scaled echo, migrati
     ['stormRenewal', 'currentStamina', 8.8, 2.2],
     ['bedrock', 'hearthstoneFooting', 11, 2.8],
     ['blackBargain', 'pactHealth', 8.8, 2.2],
-    ['ancestralMercy', 'guardianHealth', 8.8, 2.2],
   ];
   for (const [id, status, full, quarter] of flourishes) {
     assert(RS.ENHANCED_RESOURCE_DEFS[status]);
@@ -1193,6 +1192,53 @@ console.log('Fey Immundanity, real Stamina illusions, proc, scaled echo, migrati
   close(RS.applyHealthAfflictionDamage(attacker, 10), 0);
   close(amount(attacker, 'guardianHealth'), 3);
   close(RS.applyHealthAfflictionDamage(attacker, 8), 2);
+
+  // Ohth's Base grants the wielder rather than the victim.
+  equip(['ancestralSight']);
+  clear(attacker, 'weightlessStamina');
+  hit({ comboFinisher: false });
+  close(amount(attacker, 'weightlessStamina'), 5.5);
+  close(amount(target, 'weightlessStamina'), 0);
+  clear(attacker, 'weightlessStamina');
+  RS.addAffliction(attacker, 'weightlessStamina', 100);
+  close(RS.timedDebuffModifier(attacker, 'moveSpeed'), 3);
+  close(RS.timedDebuffModifier(attacker, 'dodgeLungeDistance'), 3);
+  close(RS.timedDebuffModifier(attacker, 'attackSpeed'), 1);
+  clear(attacker, 'weightlessStamina');
+  attacker.stamina = 100;
+  RS.addAffliction(attacker, 'weightlessStamina', 20);
+  RS.addAffliction(attacker, 'woundedStamina', 10);
+  close(RS.getSegmentBox(attacker, 'stamina', 'woundedStamina').leftPoints, 20);
+  RS.spendStamina(attacker, 70, 'ordinary');
+  close(amount(attacker, 'weightlessStamina'), 20);
+  RS.spendStamina(attacker, 10, 'ordinary');
+  close(amount(attacker, 'woundedStamina'), 0);
+  close(amount(attacker, 'weightlessStamina'), 20);
+  RS.spendStamina(attacker, 5, 'ordinary');
+  close(amount(attacker, 'weightlessStamina'), 15);
+  RS.tick(attacker, 2, { staminaRegenPerSec: 0, healthRegenPerSec: 0, footingRegenPerSec: 0 });
+  assert(amount(attacker, 'weightlessStamina') < 15, 'Weightless fades on the affliction tick');
+  clear(attacker, 'weightlessStamina');
+  equip([], { tap2: 'ancestralMercy', hold1: 'ancestralMercy' });
+  hit({ slotId: 'tap2', attackCategory: 'quickAttack', quickBonusEffectProc: true });
+  close(amount(attacker, 'unshackledStamina'), 9.6);
+  clear(attacker, 'unshackledStamina');
+  hit({ slotId: 'hold1', attackCategory: 'offensiveHold', isFlurry: true });
+  close(amount(attacker, 'unshackledStamina'), 2.4);
+  clear(attacker, 'unshackledStamina');
+  RS.addEnhancedResource(attacker, 'unshackledStamina', 100);
+  close(RS.attackTempoMultiplier(attacker, 'combatCombo'), 3);
+  close(RS.attackTempoMultiplier(attacker, 'combatQuickAttack'), 1);
+  const combo = RS.spendStamina(attacker, 12, 'combo', { actionKind: 'combatCombo' });
+  close(combo.tempoMultiplier, 3);
+  close(amount(attacker, 'unshackledStamina'), 88);
+  close(RS.attackTempoMultiplier(attacker, 'combatCombo'), 2.76);
+  assert(!ES.allowsFlourishSlot('fury', 'hold1'));
+  assert(!ES.allowsFlourishSlot('ancestralMercy', 'tap1'));
+  assert(ES.allowsFlourishSlot('ancestralMercy', 'hold2'));
+  assert(!ES.setFlourish(key, 'tap1', 'ancestralMercy'));
+  assert(context.HOBUNJI_CONFIG.resourceRings.afflictionColors.weightlessStamina);
+  assert(context.HOBUNJI_CONFIG.resourceRings.afflictionColors.unshackledStamina);
 
   const savedState = { base: ['stormwake', 'ancestralSight'], flourishes: { tap1: 'blackBargain', hold2: 'ancestralMercy' } };
   equip(savedState.base, savedState.flourishes);
