@@ -172,4 +172,44 @@ assert.equal(artApi.getDebug().clusterPlantScale, 0.25, 'world crop cluster diag
 assert.equal(artApi.getDebug().discoveryScanIntervalMs, 250, 'crop diagnostics report the time-based discovery interval');
 assert.equal(artApi.getDebug().discoveryScanCount, 4, 'crop diagnostics include the extra hybrid-cultivar scene scan');
 assert.match(artApi.getDebug().lastChange, /time-throttled per scene/, 'crop diagnostics summarize the latest performance correction');
+// Modern game sources register newly planted anchors without rescanning
+// the scene; mixed-version/standalone pages retain the original fallback.
+sandboxWindow.VegetationCropRendering = { registersCropSpritePlaceholders: true };
+sandboxWindow.NpcFarmPlots = { registersCropSpritePlaceholders: true };
+let modernTraversals = 0;
+const modernScene = { traverse() { modernTraversals++; } };
+renderer.render(modernScene, camera);
+fakeNowMs += 1000;
+renderer.render(modernScene, camera);
+assert.equal(modernTraversals, 1, 'modern scenes have one adoption scan, not periodic scans');
+assert.equal(artApi.getDebug().periodicDiscovery, false);
+function newCrop() {
+  const mesh = new FakeMesh({ type:'BoxGeometry', parameters:{width:1,height:1,depth:1}, dispose() {} },
+    new FakeLambertMaterial({color:0xb6a0c9}));
+  mesh.parent = modernScene;
+  mesh.userData.hobunjiCropBaseKey = 'garlink';
+  mesh.userData.hobunjiCropVarietyColor = 0xb6a0c9;
+  return mesh;
+}
+const planted = newCrop();
+const harvested = newCrop();
+assert.equal(artApi.registerPlaceholder(planted), true);
+artApi.registerPlaceholder(planted); // The producer and its attach hook may both notify.
+artApi.registerPlaceholder(harvested);
+harvested.parent = null;
+renderer.render(modernScene, camera);
+assert.equal(planted.children.length, 3, 'new modern plant converts without a discovery scan');
+assert.equal(harvested.children.length, 0, 'harvest before render cancels pending conversion');
+assert.equal(modernTraversals, 1);
+assert.equal(artApi.getDebug().registeredCropCount, 2, 'duplicate notifications are coalesced');
+assert.equal(artApi.getDebug().pendingRegisteredCrops, 0);
+sandboxWindow.NpcFarmPlots.registersCropSpritePlaceholders = false;
+renderer.render(modernScene, camera);
+assert.equal(modernTraversals, 2, 'mixed-version sources automatically restore legacy discovery');
+sandboxWindow.NpcFarmPlots.registersCropSpritePlaceholders = true;
+artApi.setLegacyDiscoveryEnabled(true);
+fakeNowMs += 250;
+renderer.render(modernScene, camera);
+assert.equal(modernTraversals, 3, 'debug override restores periodic compatibility scans');
+artApi.setLegacyDiscoveryEnabled(false);
 console.log('authored crop sprite art tests passed');
