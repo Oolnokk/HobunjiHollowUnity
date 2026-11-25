@@ -143,7 +143,7 @@
     // Generated dual-role item definitions are patched into RangedWeapons.config.
     // Calling the existing patcher here makes the capability check resilient to
     // script timing and means this bridge never needs a second Kylie/B'shuakauitl list.
-    global.HobunjiRangedWeaponArchetypes?.patchGeneratedDefinitions?.();
+    global.HobunjiRangedWeaponArchetypes?.patchGeneratedDefinitions?.({ npcOnly: true });
     for (const shapeKey of culturalShapesForSpecies(speciesId)) {
       if (!metalKey) continue;
       const itemKey = banditDeps?.craftedToolItemKey?.(shapeKey, metalKey) || `${shapeKey}_${metalKey}`;
