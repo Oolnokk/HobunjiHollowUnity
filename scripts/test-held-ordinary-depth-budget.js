@@ -157,6 +157,22 @@ assert.equal(fixture({ colorLock: false }).clears, 1, 'unsupported renderer uses
 const submerged = fixture({ tint: true }); // Unchanged base ground depth must precede both water tint and cover depth restore.
 assert.deepEqual(submerged.draws.map(draw => draw.mask), [1, 2, 8, 8]);
 assert.equal(submerged.clears, 0);
+// Only the actual portrait parity owner may advertise a local-only pair.
+{
+  const parity = fs.readFileSync('docs/js/portrait-plane-outline-parity.js','utf8');
+  const start=parity.indexOf('  function installMeshHook(');
+  const end=parity.indexOf('  const PNG_PLANE_OUTLINE_OCCLUDER_MASK',start);
+  const objectProto={onBeforeRender(){},onAfterRender(){}};
+  const THREE={Object3D:{prototype:objectProto},Matrix4:class{}};
+  const install=new Function('THREE',parity.slice(start,end)+'\nreturn installMeshHook;')(THREE);
+  const mesh=()=>({isMesh:true,userData:{},...objectProto});
+  const clean=mesh(); assert(install(clean));
+  assert.equal(clean.__hobunjiXrayBoundParity.localRestoreHook,clean.onAfterRender);
+  const customBefore=mesh(); customBefore.onBeforeRender=()=>{}; install(customBefore);
+  assert.equal(customBefore.__hobunjiXrayBoundParity,undefined);
+  const customAfter=mesh(); customAfter.onAfterRender=()=>{}; install(customAfter);
+  assert.equal(customAfter.__hobunjiXrayBoundParity.localRestoreHook,undefined);
+}
 const privateWater = fixture({ordinary:false,tint:true,waterOnly:true});
 const legacyWater = fixture({ordinary:false,tint:true,waterOnly:true,prune:false});
 assert.deepEqual(privateWater.draws.map(d=>d.mask),[16,8,8],'portrait stamp, water tint and depth restoration are preserved');
