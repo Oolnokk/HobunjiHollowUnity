@@ -1850,6 +1850,7 @@
         nameOverride: title,
         mountSpecies: hunter.mountSpecies || null, // Avengers ride a Nazgraku (compound rider + mount avatar).
         bodyColorsOverride: tribe.bodyColorsForSeed?.(hunter.id) || null,
+        combatBuildSeed: hunter.id + ':' + (hunter.combatGeneration || 0), // Detailed rig retirement preserves the resident's combat build.
         defOverride: {
           label: title,
           weaponKey: weapon.weaponKey,
@@ -2049,7 +2050,7 @@
     for (const hunter of camp.hunters) {
       if (!hunter.slain || gameDay() - num(hunter.slainDay, 0) < days) continue;
       const spawn = randomCampPoint(camp);
-      Object.assign(hunter, { slain: false, slainDay: null, activity: 'camp', target: null, x: spawn.col, y: spawn.row, decisionT: 0, lastHealth: null });
+      Object.assign(hunter, { slain: false, slainDay: null, activity: 'camp', target: null, x: spawn.col, y: spawn.row, decisionT: 0, lastHealth: null, combatGeneration: (hunter.combatGeneration || 0) + 1 }); // A genuinely new resident gets a new build seed.
     }
   }
   function updateCampHunters(camp, dt, coarseDt) {
