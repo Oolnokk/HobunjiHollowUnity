@@ -163,8 +163,10 @@ const abstractStart=rangedSource.indexOf('  function abstractBanditVolley('),abs
 const chargeStart=rangedSource.indexOf('  function chargeStaminaCostForPose('),chargeEnd=rangedSource.indexOf('\n  function ',chargeStart+4);
 check(abstractStart>=0&&abstractEnd>abstractStart&&chargeStart>=0&&chargeEnd>chargeStart,'Production abstract ranged and charge functions located');
 const abstractHits=[];
+window.Combat.chargedBreakerData={chargeCostForPose:(pose,mul)=>10*pose*mul}; // Representative live charge curve; verify the abstract path requests full charge.
+const chargeCost=new Function('window',rangedSource.slice(chargeStart,chargeEnd)+'\nreturn chargeStaminaCostForPose;')(window);
 const abstractDeps={damageCreature(target,amount,x,y,kb,opts){abstractHits.push(opts);}};
-const abstractThrow=new Function('window','deps','chargeStaminaCostForPose','isLoaded','setLoaded','spendRangedLoadStamina',rangedSource.slice(abstractStart,abstractEnd)+'\nreturn abstractBanditVolley;')(window,abstractDeps,()=>10,()=>true,()=>{},()=>{});
+const abstractThrow=new Function('window','deps','chargeStaminaCostForPose','isLoaded','setLoaded','spendRangedLoadStamina',rangedSource.slice(abstractStart,abstractEnd)+'\nreturn abstractBanditVolley;')(window,abstractDeps,chargeCost,()=>true,()=>{},()=>{});
 payer.x=0;payer.y=0;payer.stamina=100;payer._rangedCooldownT=0;
 abstractThrow(payer,{x:100,y:0},'spear',{rangedType:'thrown',chargeWindupS:1,fireDurationS:1,damage:10}, {rollAbstractHit:()=>true});
 close(payer.stamina,100-Math.round(10*discount*10)/10,'Hidden throw pays the perk-discounted charge');
