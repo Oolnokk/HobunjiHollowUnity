@@ -60,6 +60,23 @@ assert.equal(stateFor('npc_test').rapport, 0, 'Rapport is cleared immediately on
 assert.equal(stateFor('npc_test').favor, 4, '37 Rapport converts with Math.round(37 × 10%) at midnight');
 assert.equal(stateFor('npc_test').rapportDay, 6, 'relationship metadata advances at civil midnight rather than raw 06:00 rollover');
 
+// Real gameplay now reads live scalar fields, preserving the old debug
+// fallback for test/standalone pages. Prove the modern route needs no report.
+Object.assign(windowStub.CalendarSystem,{
+  isInitialized:()=>true, getRawDay:()=>rawDay, getRawTime01:()=>time01,
+  civilDayForRawDay:()=>civilDay,
+  timeDebugSnapshot:()=>{throw new Error('gameplay should not build calendar debug reports');},
+});
+assert.equal(rapport.currentGameDay(),6);
+rapport.adjust('npc_test',21,'live_clock');
+wrappedHour=6; time01=0; rawDay=6;
+rapport.flushRollover();
+assert.equal(rapport.currentGameDay(),6,'morning rollover does not settle twice');
+assert.equal(stateFor('npc_test').rapport,21);
+wrappedHour=0.01; time01=.751; civilDay=7;
+rapport.flushRollover();
+assert.equal(stateFor('npc_test').rapport,0);
+assert.equal(stateFor('npc_test').favor,6,'same conversion at the following midnight');
 const boney={rec:{id:'boney_shinjimi',name:'Boney Shinjimi'}}; // One-night milk exchanges bypass regular per-day gifting.
 const resident={rec:{id:'npc_test',name:'Resident'}}; // Ordinary NPCs must retain the daily limit.
 assert.equal(gifting.offerGift(boney),true);
