@@ -206,8 +206,8 @@
     }
   }
 
-  function writeRecord(key, record) {
-    const raw = JSON.stringify(record); // Cache exactly the bytes committed; failed writes must not make a newer record appear durable.
+  function writeRecord(key, record, committedRaw = null) {
+    const raw = committedRaw ?? JSON.stringify(record); // Cache exactly the bytes committed; failed writes must not make a newer record appear durable.
     localStorage.setItem(key, raw);
     browserRecordCache.set(key, { raw, record });
   }
@@ -219,17 +219,17 @@
     return !emergencyRecoveryImportActive && folderRecoveryAvailable() ? folderOnlyRecords.get(slot) || null : null;
   }
 
-  function writeSlot(slot, record) {
+  function writeSlot(slot, record, committedRaw = null) {
     const key = SLOT_KEYS[slot];
     if (!key) throw new Error(`Unknown checkpoint slot: ${String(slot)}`);
-    writeRecord(key, record);
+    writeRecord(key, record, committedRaw);
     folderOnlyRecords.delete(slot);
     return record;
   }
 
-  function mirrorFolderRecord(slot, record) {
+  function mirrorFolderRecord(slot, record, committedRaw = null) {
     try {
-      writeSlot(slot, record);
+      writeSlot(slot, record, committedRaw);
       folderOnlyRecords.set(slot, record); // Retain readable disk history even if a later mirror evicts this browser copy.
       return record;
     } catch (error) {
@@ -242,9 +242,18 @@
     }
   }
 
+  let committedRecoveryMirrors = 0; // Counts mirrors using disk JSON without a second serialization.
   async function persistFolderRecord(slot, record) {
-    if (!await writeFolderSlot(slot, record)) throw new Error('The recovery folder is unavailable.');
-    return mirrorFolderRecord(slot, record);
+    const written = await writeFolderSlot(slot, record);
+    if (!written) throw new Error('The recovery folder is unavailable.');
+    if (typeof written === 'string') {
+      // Parse the committed bytes, not the potentially mutated input. The
+      // cached browser record and quota fallback must describe the disk copy.
+      const committed = JSON.parse(written);
+      committedRecoveryMirrors++;
+      return mirrorFolderRecord(slot, committed, written);
+    }
+    return mirrorFolderRecord(slot, record); // Older save adapters return only the record.
   }
 
   function removeSlot(slot) {
@@ -410,9 +419,9 @@
     if (!folderIsPrimary()) return false;
     const localSave = folderApi();
     if (typeof localSave?.writeRecoveryCheckpoint !== 'function') return false;
-    await localSave.writeRecoveryCheckpoint(slot, record);
+    const written = await localSave.writeRecoveryCheckpoint(slot, record, { returnSerialized: true });
     folderRecoveryWrites++;
-    return true;
+    return typeof written === 'string' ? written : true;
   }
 
   async function promoteAutosave(snapshot, { reason = 'folder-sync', savedAt = Date.now(), writeFolder = false, fingerprint = null, browserStats = null } = {}) {
@@ -1370,6 +1379,7 @@
       browserMirrorsSkipped,
       browserCheckpointParses,
       checkpointStatsBuilds,
+      committedRecoveryMirrors,
       cachedBrowserCheckpoints: browserRecordCache.size,
       lastBrowserMirrorWarning: lastBrowserMirrorWarning || null,
       latestChange: 'Routine folder saves skip the full recovery scan. Opening Recovery still checks disk for newer checkpoints.',
