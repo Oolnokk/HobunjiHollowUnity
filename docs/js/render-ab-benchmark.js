@@ -378,6 +378,10 @@
       if (before !== 'off') variants.push({ id: 'portraitWaterTintOff', apply: () => waterHierarchy.set('portrait.waterTint','off'), undo: () => waterHierarchy.set('portrait.waterTint',before) });
     }
     const heldOrder = window.HeldObjectRenderOrder;
+    if (typeof heldOrder?.setWaterOnlyBranchPruneEnabled === 'function') {
+      const before = heldOrder.snapshot().waterOnlyBranchPruneEnabled;
+      variants.push({ id: before ? 'waterOnlyPruneOff' : 'waterOnlyPruneOn', apply: () => heldOrder.setWaterOnlyBranchPruneEnabled(!before), undo: () => heldOrder.setWaterOnlyBranchPruneEnabled(before) });
+    }
     if (typeof heldOrder?.setLocalReplayRingEnabled === 'function') {
       const localBefore = heldOrder.snapshot?.().localReplayRingEnabled !== false; // Restore the user's exact policy after each sample window.
       variants.push({ id: localBefore ? 'fullXrayRange' : 'localXrayRing', apply: () => heldOrder.setLocalReplayRingEnabled(!localBefore), undo: () => heldOrder.setLocalReplayRingEnabled(localBefore) });
