@@ -404,7 +404,7 @@
       periodicDiscovery: legacyDiscoveryForced || !hasRegisteredSources(),
       lastDiscoveryObjectCount,
       lastDiscoveryScanAt: Math.round(lastDiscoveryScanAt),
-      lastChange: 'Modern farm and NPC crop builders register new anchors; legacy scenes retain time-throttled discovery.',
+      lastChange: 'Modern farm and NPC crop builders register new anchors; legacy discovery stays time-throttled per scene.',
     }),
   };
 })();
