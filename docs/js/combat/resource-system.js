@@ -948,6 +948,8 @@
       if (attacking) amount *= statModifier(entity, 'attackStaminaCost') * (heavy ? statModifier(entity, 'heavyAttackStaminaCost') : 1);
       amount *= window.AlchemySystem?.getStaminaSpendMultiplier?.() || 1;
       amount *= 1 - Math.min(0.6, (window.PerkSystem?.rank('combat', 'reduceStaminaUse') || 0) * 0.08);
+    } else if (actionKind !== 'combatNpcMelee') {
+      amount *= entity?.def?.combatPerkModifiers?.staminaCost ?? 1; // Melee's definition already includes this discount; dodge/throws and other actions do not.
     }
     // Panicked Stamina is a reserved affliction, not an ordinary enhanced
     // resource. Other Stamina pays for ordinary actions first. A dodge draws
@@ -1052,6 +1054,24 @@
     return Number.isFinite(raw) ? Math.max(0, Math.min(500, raw)) : DEFAULT_ATTACK_POWER; // Only gameplay's authored Attack Power affects on-hit buildup, not post-defense Health damage.
   }
 
+  function applyAttackAfflictions(entity, opts = {}) {
+    if (opts.afflictionBonuses) {
+      const buildupAttackPower = attackPowerForAttack(opts); // One shared attack-power basis for all live hit adapters.
+      const FAMILY_PERK = { damage: 'empowerDamageEffects', control: 'empowerControlEffects', offensiveDebuff: 'empowerOffensiveDebuffs', defensiveDebuff: 'empowerDefensiveDebuffs' }; // Shared affliction family vocabulary for player and NPC attackers.
+      for (const [id, mul] of Object.entries(opts.afflictionBonuses)) {
+        const definition = AFFLICTIONS[id]; // Ranged weapon archetypes may register a 40× buildup alias for B'shuakauitl darts.
+        if (!definition || !(mul > 0)) continue;
+        const actualId = definition.rangedAliasFor && AFFLICTIONS[definition.rangedAliasFor] ? definition.rangedAliasFor : id; // Never store an internal alias as a separate, unspendable status.
+        const aliasScale = actualId !== id ? Math.max(1, Number(definition.rangedScale) || 1) : 1; // Converts authored alias into the real affliction exactly once.
+        const perkId = FAMILY_PERK[AFFLICTIONS[actualId].family];
+        const player = window.Combat?.deps?.player; // Legacy anonymous player hits on creatures retain their old behavior; known NPCs use their own ranks.
+        const attackerRank = opts.attacker ? (opts.attacker === player ? window.PerkSystem?.rank('combat', perkId) : opts.attacker.def?.combatPerks?.[perkId]) : (!Object.hasOwn(opts, 'attacker') && entity !== player ? window.PerkSystem?.rank('combat', perkId) : 0); // Explicit null/undefined sources are not attributed to the player.
+        const familyMul = perkId ? 1 + (attackerRank || 0) * 0.12 : 1;
+        window.ResourceSystem.addAffliction(entity, actualId, buildupAttackPower * mul * aliasScale * familyMul); // Status buildup follows Attack Power, not the dart/club's Health damage.
+      }
+    }
+  }
+
   function applyDamage(entity, amount, opts = {}) {
     if (window.RomanceFamily?.isBasketBaby?.(entity?.rec?.id || entity?.id)) return 0; // Preserve the saved family member through every shared NPC damage path.
     if (!(amount > 0)) return 0;
@@ -1066,7 +1086,6 @@
       }
     }
 
-    const buildupAttackPower = attackPowerForAttack(opts); // One shared source for ordinary and Drunken Health damage adapters.
     finalDamage *= statModifier(entity, 'incomingHealthDamage'); // Player trade-offs apply to actual direct Health damage (including heavy Bruised consumption), not raw affliction chances.
     const enhanced = resolveEnhancedResourceTransaction(entity, "health", finalDamage, { kind: "damage", reason: opts.reason || "damage" }); // Resolute/Mirrored Health absorb before ordinary Health through the shared enhanced transaction.
     const before = entity.health;
@@ -1076,20 +1095,7 @@
     // currently-active bleed/poison buildup that may have come from an older hit.
     if (before > 0 && entity.health <= 0) entity._lethalDamageCause = String(opts.tag || opts.damageType || opts.reason || 'impact').toLowerCase();
 
-    if (opts.afflictionBonuses) {
-      const FAMILY_PERK = { damage: 'empowerDamageEffects', control: 'empowerControlEffects', offensiveDebuff: 'empowerOffensiveDebuffs', defensiveDebuff: 'empowerDefensiveDebuffs' }; // Shared affliction family vocabulary for player and NPC attackers.
-      for (const [id, mul] of Object.entries(opts.afflictionBonuses)) {
-        const definition = AFFLICTIONS[id]; // Ranged weapon archetypes may register a 40× buildup alias for B'shuakauitl darts.
-        if (!definition || !(mul > 0)) continue;
-        const actualId = definition.rangedAliasFor && AFFLICTIONS[definition.rangedAliasFor] ? definition.rangedAliasFor : id; // Never store an internal alias as a separate, unspendable status.
-        const aliasScale = actualId !== id ? Math.max(1, Number(definition.rangedScale) || 1) : 1; // Converts authored alias into the real affliction exactly once.
-        const perkId = FAMILY_PERK[AFFLICTIONS[actualId].family];
-        const player = window.Combat?.deps?.player; // Legacy anonymous player hits on creatures retain their old behavior; known NPCs use their own ranks.
-        const attackerRank = opts.attacker ? (opts.attacker === player ? window.PerkSystem?.rank('combat', perkId) : opts.attacker.def?.combatPerks?.[perkId]) : (!Object.hasOwn(opts, 'attacker') && entity !== player ? window.PerkSystem?.rank('combat', perkId) : 0); // Explicit null/undefined sources are not attributed to the player.
-        const familyMul = perkId ? 1 + (attackerRank || 0) * 0.12 : 1;
-        addAffliction(entity, actualId, buildupAttackPower * mul * aliasScale * familyMul); // Status buildup follows Attack Power, not the dart/club's Health damage.
-      }
-    }
+    applyAttackAfflictions(entity, opts);
     if (opts.fixedAfflictionBuildup) {
       // On-hit flat buildup belongs inside the authoritative damage transaction: invulnerability,
       // blocked attacks and intercepted damage never call applyDamage. Unlike percentage-based
@@ -1325,6 +1331,7 @@
     spendStamina,
     spendFooting,
     applyDamage,
+    applyAttackAfflictions, // Shared with the Drunken Health live damage adapter.
     attackPowerForAttack, // Shared by the Drunken Health adapter and mobile combat diagnostics.
     tick,
     getRestInfo,
