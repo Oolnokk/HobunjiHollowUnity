@@ -432,8 +432,8 @@
       else writeSlot('autoPrevious', current);
     }
 
-    const record = createRecord('autosave', snapshot, reason, savedAt, writeFolder ? null : browserStats);
-    if (writeFolder) await persistFolderRecord('auto', record);
+    let record = createRecord('autosave', snapshot, reason, savedAt, writeFolder ? null : browserStats);
+    if (writeFolder) record = await persistFolderRecord('auto', record);
     else writeSlot('auto', record);
     lastAutosaveFingerprint = fingerprint ?? (snapshotApi()?.fingerprint?.(snapshot) || ''); // Browser fallback already computed this fingerprint before its unchanged-save check.
     autosavesWritten++;
@@ -447,22 +447,19 @@
   async function onFolderSnapshotWritten(snapshot, { automatic = false, savedAt = Date.now(), recoveryKind = 'auto', reason = null } = {}) {
     if (!folderIsPrimary() || recoveryKind === 'restore') return;
     if (recoveryKind === 'mapChange') {
-      const record = createRecord('map-change', snapshot, reason || 'Map changed', savedAt); // Canonical write succeeded before advancing the independent travel slot.
-      await persistFolderRecord('mapChange', record);
+      const record = await persistFolderRecord('mapChange', createRecord('map-change', snapshot, reason || 'Map changed', savedAt)); // Canonical write succeeded before advancing the independent travel slot.
       lastAction = 'map-change-saved';
       return record;
     }
     if (recoveryKind === 'manual') {
-      const record = createRecord('manual', snapshot, 'manual-folder-save', savedAt);
-      await persistFolderRecord('manual', record); // Disk recovery succeeds before its optional browser mirror.
+      const record = await persistFolderRecord('manual', createRecord('manual', snapshot, 'manual-folder-save', savedAt)); // Disk recovery succeeds before its optional browser mirror.
       manualSavesWritten++;
       lastAction = 'manual-saved-folder';
       lastError = '';
       return record;
     }
     if (recoveryKind === 'campfire') {
-      const record = createRecord('campfire', snapshot, 'campfire-folder-save', savedAt);
-      await persistFolderRecord('campfire', record); // Campfire saves advance only their own recovery point.
+      const record = await persistFolderRecord('campfire', createRecord('campfire', snapshot, 'campfire-folder-save', savedAt)); // Campfire saves advance only their own recovery point.
       campfireSavesWritten++;
       lastAction = 'campfire-saved-folder';
       lastError = '';
