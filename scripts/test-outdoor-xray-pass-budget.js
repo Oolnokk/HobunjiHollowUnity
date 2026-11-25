@@ -87,8 +87,8 @@ assert.deepEqual(rectCalls, [{ x: 100, y: 20, z: 40, w: 60 }, rect],
 const held = block('  function replaySelectiveHeldOverlay(', '  function isShellOutlinePass(');
 const shell = block('  function replayShellOutlineXray(', '  function wrappedRender(');
 const hiddenAt = held.indexOf('suppressedOverlay = suppressDraws('); // Runtime must first hide hands/tools/feet before collecting the ordinary depth blockers.
-const cutoutAt = held.indexOf('const cutoutDepthMeshes = groups.length && canLockColorMask ? collectVisible(pngDepthRegistry, scene)');
-const coverAt = held.indexOf('const protectedDepthMeshes = groups.length && canLockColorMask ? collectVisible(protectedCoverRegistry, scene)');
+const cutoutAt = held.indexOf('const cutoutDepthMeshes = groups.length && canLockColorMask ? collectVisible(pngDepthRegistry, scene');
+const coverAt = held.indexOf('const protectedDepthMeshes = groups.length && canLockColorMask ? collectVisible(protectedCoverRegistry, scene');
 const groupAt = held.indexOf('for (const group of groups)');
 assert(hiddenAt >= 0 && hiddenAt < cutoutAt && cutoutAt < coverAt && coverAt < groupAt,
   'visible depth registries are resolved once, after hiding replay participants and before elevation-group iteration');
@@ -176,7 +176,8 @@ const disabled = new Function('assert', [
     const tintCoverRegistry = {all:new Set()};
     let time=0, wet=false, classificationScheduled=false;
     let lastSceneScan = new WeakMap();
-    const FALLBACK_SCAN_INTERVAL_MS=750, retiredScenes=new WeakSet(), internalReplay=false;
+    const FALLBACK_SCAN_INTERVAL_MS=750, CLASSIFICATION_PILOT_INTERVAL_MS=3000, retiredScenes=new WeakSet(), internalReplay=false;
+    let slowClassificationFallbackEnabled=false, classificationFullScans=0, classificationForcedScans=0;
     const actorXrayEnabled={animals:false,enemies:false,player:false}, actorXrayRoots=new Map();
     let actorXrayScene=null, allActorXrayDisabled=true, hasDisabledActorXray=true;
     let actorXrayBypassFrames=0,actorXrayWaterOnlyFrames=0;

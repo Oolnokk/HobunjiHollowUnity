@@ -788,6 +788,10 @@
       group.userData.skipOcclusionFade = true;
       group.userData.cullSphere = { x: cx, z: cz, radius: xzRadius, xzRadius };
       scene.add?.(group);
+      // All placement is in instance buffers. Owner contract: before adding
+      // any leaf TRS/manual-matrix/update-hook writer, invalidate its branch.
+      // Density, layer, fade, visibility and instance-buffer edits do not move it.
+      window.DenseForestWallBatches?.enrollStaticMatrixBranch?.(group);
       if (Array.isArray(scene.items) && !scene.items.includes(group)) scene.items.push(group);
       chunkCount++;
     }

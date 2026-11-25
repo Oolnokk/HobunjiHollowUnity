@@ -21,7 +21,7 @@
        prototype render() base every presentation hook runs through.
        See docs/architecture/visual-render-pipeline.md. -->
   <script src="js/render-layers.js?v=20261124kanthicAudit3"></script>
-  <script src="js/render-hooks.js?v=20261123babyKick1"></script>
+  <script src="js/render-hooks.js?v=20261125probeReplay1"></script>
   <script src="js/substance-cover-shell.js?v=20261102coverShell4"></script> <!-- Shared static-mesh surface covering; must load after THREE and before gameplay modules. -->
   <script src="js/audio-mix.js?v=20261025qol2"></script> <!-- Master/Music/Effects volume; must load before any audio code creates an AudioContext or <audio>. -->
   <script src="js/sprite-raycast-guard.js?v=20261024a"></script> <!-- Skips Sprite hit tests for camera-less world rays (r128 otherwise logs + throws per ray). -->
@@ -54,7 +54,7 @@
   <!-- Small formatting/math helpers (esc/clamp/roundRect/formatClock/etc.)
        extracted out of game.js; must load before game.js and before every
        other module whose init(deps) is handed window.FormatUtils.clamp/esc. -->
-  <script src="js/format-utils.js?v=20261125hourlyDanger3"></script>
+  <script src="js/format-utils.js?v=20261125probeStalls1"></script>
   <!-- Default building entry tile (buildingSpawnFromExit) extracted out of
        game.js; uses window.FormatUtils.clamp and must load before game.js. -->
   <script src="js/building-entry-spawn.js?v=20261026hfbed948"></script>
@@ -63,7 +63,7 @@
   <script src="js/virtual-joystick.js?v=20260902mod1"></script>
   <!-- Shared radial-deadzone and active-pad helpers used by both gameplay
        and menu controller polling. Must load before game.js. -->
-  <script src="js/controller-input.js?v=20261117deepAuditMainMerge1"></script>
+  <script src="js/controller-input.js?v=20261125probeWindow2"></script>
   <!-- Input-binding load/save/label helpers extracted out of game.js; must
        load before game.js, which calls window.InputBindings.init(...) and
        window.InputBindings.loadInputBindings() during its own setup. -->
@@ -156,14 +156,14 @@
   <script src="js/inventory-wheel-list.js?v=20261125deepHotpaths1"></script> <!-- Item wheel list + cross-frame cache; game.js delegates getInventoryStackItems() here. -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <script src="debug.js?v=20261122h1fd4c9f"></script>
+  <script src="debug.js?v=20261125probeWindow1"></script>
   <!-- Global gameplay/UI config must load before CSS so config-backed custom properties are available on first paint. -->
   <script src="config/config.js?v=20261117feyColors3"></script>
   <script src="config/scratchbones-config.js?v=20261122h5cf4b6d"></script>
   <!-- Canonical source-art color fill math shared by portraits, creatures, weaving, tools, terrain, and item sprites. -->
   <script src="js/color-fill.js?v=20261117h93b0e83"></script>
   <!-- Shared frame-budget yield for long async pixel jobs (clothing weaving, creature genetics). -->
-  <script src="js/pixel-work-yield.js?v=20261010pwy1"></script>
+  <script src="js/pixel-work-yield.js?v=20261125pixelWorker1"></script>
   <script src="js/tool-metal-recolor.js?v=20261109profile1"></script>
   <script src="js/metal-armor-system.js?v=20261124patternNestAudit2"></script>
   <script src="config/colors/config.js?v=20261026h7f369c3"></script>
@@ -811,7 +811,7 @@
        window.*?.init(...) calls near the bottom of game.js run), and later
        calls window.BorderTerrain.buildTownBorderTerrain() when the town
        scene is built. -->
-  <script src="js/border-terrain.js?v=20261124h721276d"></script>
+  <script src="js/border-terrain.js?v=20261125staticWallBranch1"></script>
   <!-- Farm-only road paving and border reshaping. These must be explicit
        parser-time dependencies after BorderTerrain: loading them indirectly
        from house-pieces.js ran the cliff adapter before BorderTerrain existed,

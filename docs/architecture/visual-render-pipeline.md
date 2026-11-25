@@ -138,6 +138,7 @@ Registered hooks, in order (lower runs first, its restore runs last):
 | 950 | `family-baby-limbs` | frame | family-baby-limbs.js | carried baby's cloned 3D hands/feet wave and kick; rest pose restored |
 | 1000 | `npc-social-inhibition` | frame | npc-social-inhibition-runtime.js | NPC social facing / dance sway |
 | 5000 | `geometry-auto-lod` | render | geometry-auto-lod.js | Opt-in geometry substitutions, restored after every draw |
+| 900000000 | `dense-wall-static-matrices` | render | dense-forest-wall-batches.js | opt-in r128 owner-specific static branch matrix reuse; installs/restores only the active scene instance method during native rendering |
 
 **`frame` scope** = applied once, on the first render of the world scene in a
 frame, undone once at `endWorldFrame`. Every pass (main, PNG depth, shell,
@@ -164,6 +165,16 @@ height wrapper never installs (the town bridge marks the renderer first). Note: 
 replay render (`unwrapRendererRender`) stops at the onboarding wrapper (no
 marker), so replays go through the full lower chain, hooks included. Migrate
 these into `RenderHooks` when you next touch them for another reason.
+
+The static dense-wall matrix experiment is an explicit producer contract, not a
+visibility rule. BorderTerrain enrolls only flat wall groups after attaching
+them to the scene. Their placements live in instance buffers; before any new
+leaf local-transform, manual-matrix or custom-update writer, call
+`DenseForestWallBatches.invalidateStaticMatrixBranch(leafOrRoot)` to retire it permanently. The existing
+attachment observer retires modified hierarchies. Explicit subtree matrix
+updates outside native scene recursion retain normal behavior. Pixel Probe
+audits cached branches on demand; no continuous child scan. Keep this off by
+default until a device comparison shows a gain.
 
 Every hook module keeps a small legacy prototype wrapper used **only** when
 `js/render-hooks.js` is absent (isolated tool pages and unit-test VMs).
@@ -282,7 +293,9 @@ Rules:
 
 ```js
 WorldRenderPipeline.captureFrame();          // next frame: every native render
-WorldRenderPipeline.lastCapture().passes     // [{ pass, layers:[names], override, target, draws, triangles, ms }]
+WorldRenderPipeline.lastCapture().passes     // [{ pass, worldScene, sceneAutoUpdate, layers:[names], override, target, draws, triangles, ms }]
+WorldRenderPipeline.lastCapture().mainMatrixCensus // Draw-state graph after scopes/hooks, including hidden descendants.
+WorldRenderPipeline.lastCapture().scopeTimings // One-shot scope preparation elapsed ms.
 WorldRenderPipeline.snapshot()               // last frame: native renders, scopes, errors
 WorldRenderPipeline.setScopeEnabled('zone-prop-batches', false) // A/B one scope
 RenderHooks.getDebug()                       // hooks in order: calls/applies/skips/errors
@@ -324,6 +337,15 @@ RenderHooks.setEnabled('crop-sprite-art', false) // A/B one hook
 HobunjiRenderLayers.describe(mask)           // bits → names
 PerfProfiler.setEnabled(true)                // 'render: main scene', 'render: shell outline', …
 ```
+
+Pixel Probe arms the existing one-shot world frame capture and copies it alongside
+the logical outside-scope census. The capture marks failed world frames incomplete
+and rejects old captures from before arming or another area. Each native pass records
+the r128 scene.autoUpdate flag before native rendering, not a measured matrix time.
+The draw-state census runs once before the first main-camera submission, excluded
+from the pass timer; its counts describe candidates, not actual visited nodes under
+custom matrix updaters. Scope timing covers preparation only. Ordinary frames never
+run these diagnostic walks or timing calls.
 
 If a visual is wrong only in one pass (e.g. its outline is offset from the
 sprite), capture a frame and compare which passes draw it and with which layers
@@ -393,3 +415,33 @@ appearance. The default remains shell until device and visual validation.
 Recording-renderer fixtures exercise all three modes, resize, disposal,
 error restoration and persistence; real WebGL visual parity and FPS are not
 yet established.
+
+
+## Pixel Probe bounded gameplay timing
+
+Arm Pixel Probe, allow 10–20 seconds of normal gameplay, then tap and copy
+its report. The bounded session ends automatically at 20 seconds or 1,200
+sampled frames; the tap ends it before diagnostic rerenders. A temporary
+late RenderHooks hook times outer native submissions and, where enabled,
+the actual scene-instance matrix walk (preserving the static-wall hook
+and original property descriptor in reverse-order cleanup). It records
+pass/layer/stage and matrix-walk versus matrix-reuse separately. The
+one-shot main-frame static-wall audit now runs after native rendering
+inside the live scopes, not after Pixel Probe rerenders. Render timings
+are inclusive CPU wall time, not GPU timing, and nested native submissions
+are not separately attributed. Explicit between-frame timing brackets
+are reported separately. No continuous scene census is introduced.
+
+
+### Gameplay window v2: stalls
+
+Pixel Probe also records bounded worst scheduler frames and RAF
+intervals, their preceding callback duration and actual gap between
+callbacks, and the terminal interval if expiration occurs at the next
+scheduler boundary. Browser long-task and long-animation-frame entries
+are observed only during the window where supported. The worst entries
+include bounded script attribution and forced layout time; page focus
+and visibility transitions help distinguish background throttling.
+Observer reports cover completed entries wholly inside the capture,
+not necessarily every browser task. They are overlapping evidence,
+not an exclusive CPU breakdown or GPU timer.

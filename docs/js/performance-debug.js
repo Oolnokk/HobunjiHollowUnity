@@ -1455,21 +1455,45 @@
     };
   }
 
+  // Reuse existing timing sites during a short, headless Pixel Probe window.
+  // The ordinary profiler flag remains independent: no live overlay, stack
+  // unwinding, geometry scan, persisted preference or forced GPU sync is
+  // enabled by arming a probe.
+  function beginTiming(name) {
+    const capture = root.ProbePerformanceCapture;
+    if (!profilerEnabled && !capture?.active) return null;
+    const key = String(name || 'unnamed');
+    const probeFrame = capture?.beginTiming?.(key) || null;
+    if (!profilerEnabled && !probeFrame) return null;
+    return { name: key, t: performance.now(), probeFrame, profiler: profilerEnabled };
+  }
+
+  function endTiming(token) {
+    if (!token) return 0;
+    const ms = performance.now() - token.t;
+    if (token.probeFrame) root.ProbePerformanceCapture?.recordTiming?.(token.probeFrame, token.name, ms);
+    if (token.profiler) recordSubsystem(token.name, ms);
+    return ms;
+  }
+
   root.PerfProfiler = Object.freeze({
     get traceLivestockCallers() { return profilerEnabled && traceLivestockCallers; },
     isEnabled: () => profilerEnabled,
     setEnabled: setProfilerEnabled,
     setFpsEnabled,
     getLiveGpuInfo,
-    begin(name) { return profilerEnabled ? { name: String(name || 'unnamed'), t: performance.now() } : null; },
-    end(token) { return token ? recordSubsystem(token.name, performance.now() - token.t) : 0; },
+    begin: beginTiming,
+    end: endTiming,
     measure(name, fn) {
-      if (!profilerEnabled) return fn();
-      const start = performance.now();
+      const token = beginTiming(name);
+      if (!token) return fn();
       try { return fn(); }
-      finally { recordSubsystem(name, performance.now() - start); }
+      finally { endTiming(token); }
     },
-    record: recordSubsystem,
+    record(name, elapsed) {
+      root.ProbePerformanceCapture?.recordDirect?.(String(name || 'unnamed'), elapsed);
+      return recordSubsystem(name, elapsed);
+    },
     snapshot() {
       return {
         fps: perfState.fps,

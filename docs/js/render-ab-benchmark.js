@@ -356,6 +356,11 @@
       variants.push({ id: 'brickLodOff', apply: () => brickLod.setEnabled(false), undo: () => brickLod.setEnabled(true) });
     }
     const wallBatches = window.DenseForestWallBatches;
+    if (typeof wallBatches?.setStaticMatrixEnabled === 'function' && wallBatches.staticMatrixSnapshot().enrolled > 0
+        && activeScene?.getObjectByName?.('AuthoredCloudForestDenseChunk_0')) {
+      const before = wallBatches.staticMatrixSnapshot().enabled; // Restore actual user preference, independent of batching.
+      variants.push({ id: before ? 'staticWallMatricesOff' : 'staticWallMatricesOn', apply: () => wallBatches.setStaticMatrixEnabled(!before), undo: () => wallBatches.setStaticMatrixEnabled(before) });
+    }
     if (typeof wallBatches?.setEnabled === 'function' && wallBatches.snapshot?.().enabled === true && wallBatches.snapshot().batches > 0) {
       variants.push({ id: 'denseWallBatchesOff', apply: () => wallBatches.setEnabled(false), undo: () => wallBatches.setEnabled(true) });
       if (wallBatches.snapshot().lodEnabled === true && wallBatches.snapshot().lodFarTrees > 0) {
@@ -391,6 +396,18 @@
     if (typeof heldOrder?.setWaterOnlyBranchPruneEnabled === 'function') {
       const before = heldOrder.snapshot().waterOnlyBranchPruneEnabled;
       variants.push({ id: before ? 'waterOnlyPruneOff' : 'waterOnlyPruneOn', apply: () => heldOrder.setWaterOnlyBranchPruneEnabled(!before), undo: () => heldOrder.setWaterOnlyBranchPruneEnabled(before) });
+    }
+    if (typeof heldOrder?.setMixedWaterBranchPruneEnabled === 'function') {
+      const before = heldOrder.snapshot().mixedWaterBranchPruneEnabled;
+      variants.push({ id: before ? 'mixedWaterPruneOff' : 'mixedWaterPruneOn', apply: () => heldOrder.setMixedWaterBranchPruneEnabled(!before), undo: () => heldOrder.setMixedWaterBranchPruneEnabled(before) });
+    }
+    if (typeof heldOrder?.setReplayRegistryMemoEnabled === 'function') {
+      const before = heldOrder.snapshot().replayRegistryMemoEnabled;
+      variants.push({ id: before ? 'replayRegistryMemoOff' : 'replayRegistryMemoOn', apply: () => heldOrder.setReplayRegistryMemoEnabled(!before), undo: () => heldOrder.setReplayRegistryMemoEnabled(before) });
+    }
+    if (typeof heldOrder?.setSlowClassificationFallbackEnabled === 'function') {
+      const before = heldOrder.snapshot().slowClassificationFallbackEnabled;
+      variants.push({ id: before ? 'slowClassificationFallbackOff' : 'slowClassificationFallbackOn', apply: () => heldOrder.setSlowClassificationFallbackEnabled(!before), undo: () => heldOrder.setSlowClassificationFallbackEnabled(before) });
     }
     if (typeof heldOrder?.setLocalReplayRingEnabled === 'function') {
       const localBefore = heldOrder.snapshot?.().localReplayRingEnabled !== false; // Restore the user's exact policy after each sample window.
