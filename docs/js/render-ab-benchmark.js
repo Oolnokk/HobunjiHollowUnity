@@ -405,6 +405,10 @@
       const before = heldOrder.snapshot().replayRegistryMemoEnabled;
       variants.push({ id: before ? 'replayRegistryMemoOff' : 'replayRegistryMemoOn', apply: () => heldOrder.setReplayRegistryMemoEnabled(!before), undo: () => heldOrder.setReplayRegistryMemoEnabled(before) });
     }
+    if (typeof heldOrder?.setSlowClassificationFallbackEnabled === 'function') {
+      const before = heldOrder.snapshot().slowClassificationFallbackEnabled;
+      variants.push({ id: before ? 'slowClassificationFallbackOff' : 'slowClassificationFallbackOn', apply: () => heldOrder.setSlowClassificationFallbackEnabled(!before), undo: () => heldOrder.setSlowClassificationFallbackEnabled(before) });
+    }
     if (typeof heldOrder?.setLocalReplayRingEnabled === 'function') {
       const localBefore = heldOrder.snapshot?.().localReplayRingEnabled !== false; // Restore the user's exact policy after each sample window.
       variants.push({ id: localBefore ? 'fullXrayRange' : 'localXrayRing', apply: () => heldOrder.setLocalReplayRingEnabled(!localBefore), undo: () => heldOrder.setLocalReplayRingEnabled(localBefore) });
