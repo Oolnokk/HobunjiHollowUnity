@@ -998,6 +998,7 @@
     if (!(amount > 0) || !Number.isFinite(entity.footing)) return 0;
     amount *= timedDebuffModifier(entity, "footingDamageTaken") * statModifier(entity, 'incomingFootingDamage'); // Double-edged balance trinkets adjust only received Footing damage, before existing resistance and enhanced Footing.
     if (entity === window.Combat?.deps?.player) amount *= 1 - Math.min(0.6, (window.PerkSystem?.rank('combat', 'increaseFootingResistance') || 0) * 0.08); // Increase Footing Resistance perk.
+    else amount *= entity?.def?.combatPerkModifiers?.footingResistance ?? 1; // Enemy's own purchased resistance, not the player's.
     const enhanced = resolveEnhancedResourceTransaction(entity, "footing", amount, { kind: "loss", reason }); // Resolute Footing absorbs at its authored 3:1 effective value.
     const ordinaryLoss = enhanced.ordinaryRemaining;
     const before = entity.footing;
@@ -1076,14 +1077,16 @@
     if (before > 0 && entity.health <= 0) entity._lethalDamageCause = String(opts.tag || opts.damageType || opts.reason || 'impact').toLowerCase();
 
     if (opts.afflictionBonuses) {
-      const FAMILY_PERK = { damage: 'empowerDamageEffects', control: 'empowerControlEffects', offensiveDebuff: 'empowerOffensiveDebuffs', defensiveDebuff: 'empowerDefensiveDebuffs' }; // Only the player currently inflicts afflictionBonuses (see damageCreature) — safe to apply these perks unconditionally.
+      const FAMILY_PERK = { damage: 'empowerDamageEffects', control: 'empowerControlEffects', offensiveDebuff: 'empowerOffensiveDebuffs', defensiveDebuff: 'empowerDefensiveDebuffs' }; // Shared affliction family vocabulary for player and NPC attackers.
       for (const [id, mul] of Object.entries(opts.afflictionBonuses)) {
         const definition = AFFLICTIONS[id]; // Ranged weapon archetypes may register a 40× buildup alias for B'shuakauitl darts.
         if (!definition || !(mul > 0)) continue;
         const actualId = definition.rangedAliasFor && AFFLICTIONS[definition.rangedAliasFor] ? definition.rangedAliasFor : id; // Never store an internal alias as a separate, unspendable status.
         const aliasScale = actualId !== id ? Math.max(1, Number(definition.rangedScale) || 1) : 1; // Converts authored alias into the real affliction exactly once.
         const perkId = FAMILY_PERK[AFFLICTIONS[actualId].family];
-        const familyMul = perkId ? 1 + (window.PerkSystem?.rank('combat', perkId) || 0) * 0.12 : 1;
+        const player = window.Combat?.deps?.player; // Legacy anonymous player hits on creatures retain their old behavior; known NPCs use their own ranks.
+        const attackerRank = opts.attacker ? (opts.attacker === player ? window.PerkSystem?.rank('combat', perkId) : opts.attacker.def?.combatPerks?.[perkId]) : (entity !== player ? window.PerkSystem?.rank('combat', perkId) : 0);
+        const familyMul = perkId ? 1 + (attackerRank || 0) * 0.12 : 1;
         addAffliction(entity, actualId, buildupAttackPower * mul * aliasScale * familyMul); // Status buildup follows Attack Power, not the dart/club's Health damage.
       }
     }
