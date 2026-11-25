@@ -246,7 +246,7 @@
     if (!owner?.setGeneratedOutlineMode || !['shell','screen','none'].includes(mode)) return null;
     const actual = owner.setGeneratedOutlineMode(mode);
     const stored = loadStored();
-    if (actual === 'shell') delete stored.generatedOutlineMode; else stored.generatedOutlineMode = actual;
+    if (actual === (owner.defaultGeneratedOutlineMode || 'screen')) delete stored.generatedOutlineMode; else stored.generatedOutlineMode = actual;
     saveStored(stored);
     refreshInputs();
     return actual;
@@ -264,7 +264,7 @@
   }
 
   function reset() {
-    window.WorldRenderPipeline?.setGeneratedOutlineMode?.('shell');
+    window.WorldRenderPipeline?.setGeneratedOutlineMode?.(window.WorldRenderPipeline.defaultGeneratedOutlineMode || 'screen');
     for (const toggle of settingsToggles) if (toggle.available() && get(toggle.id) !== toggle.on) set(toggle.id, toggle.on);
     saveStored({});
     refreshInputs();
@@ -313,11 +313,11 @@
     if (window.WorldRenderPipeline?.setGeneratedOutlineMode) {
       const row = el('label', 'settings-row');
       const label = el('div', 'settings-label');
-      label.append(el('div','settings-name','Generated outlines (experiment)'), el('div','settings-desc','Keep master Outlines on. Screen-space uses visible curved-object depth; None keeps the composite and painterly without generated shell ink.'));
+      label.append(el('div','settings-name','Generated outlines'), el('div','settings-desc','Keep master Outlines on. Screen-space uses visible curved-object depth; None keeps the composite and painterly without generated shell ink.'));
       const select = el('select');
       select.id = 'settingRenderOpt_generatedOutlineMode';
       select.style.cssText = 'max-width:45%;background:rgba(255,255,255,.06);border:1px solid var(--border-bright);color:var(--text);align-self:center';
-      for (const [value, name] of [['shell','Shell (original)'],['screen','Screen-space depth'],['none','None']]) {
+      for (const [value, name] of [['shell','Shell (original)'],['screen','Screen-space depth (default)'],['none','None']]) {
         const option = el('option',null,name); option.value = value; select.appendChild(option);
       }
       select.value = window.WorldRenderPipeline.getGeneratedOutlineMode();
