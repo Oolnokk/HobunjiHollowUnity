@@ -728,6 +728,13 @@
       const players = window.ActorRegistry.getPlayers();
       window.ActorRegistry.registerPlayer(player, { local: true });
       window.ActorRegistry.setLocalAreaResolver(() => currentArea); // player.areaId is not always rewritten on a map swap.
+      // Co-op time rules (beds, Wait/Sleep, blackouts) live in js/time-consensus.js; a knocked-out local avatar cannot act until revived or the skip lands.
+      let _timeKnockoutLock = null;
+      window.TimeConsensus.init({
+        tilePx: TILE,
+        onKnockoutStart: p => { if (p === player && !_timeKnockoutLock) _timeKnockoutLock = window.CharacterActionLocks?.acquire?.({ owner: 'time-consensus-knockout', reason: 'knocked out', participants: ['player'], channels: ['movement', 'tools', 'actions'] }) || null; },
+        onKnockoutEnd: p => { if (p === player) { _timeKnockoutLock?.release?.(); _timeKnockoutLock = null; } },
+      });
 
       // Nearest live player to (x, y) — see updateHostiles' targetPlayer.
       // Pass { areaId } to prefer players in the creature's own area.
@@ -27215,6 +27222,33 @@
       // clock itself and restoring the player, which advanceDay() doesn't
       // need to do since it only ever fires from a real elapsed-time wrap.
       function sleepInBed() {
+        // Co-op: sleeping advances time only when every player is resting (js/time-consensus.js).
+        const gate = bedSleepGate();
+        if (gate?.state === 'waiting') return { ok: true, waiting: true, message: '💤 Waiting for the others to sleep…' };
+        if (gate?.state === 'resolved') return { ok: true, message: gate.message, hours: gate.hours };
+        return performSleepToMorning();
+      }
+
+      // In-game minutes until the next 06:00 (ranks a bed sleep against other queued skips).
+      function minutesUntilMorning() {
+        const playable = (NIGHT_HOUR - MORNING_HOUR) * 60;
+        return Math.max(0, 1 - calendar.time01) * playable + (24 * 60 - playable);
+      }
+      // null = single player (original immediate path). Otherwise the local player's rest state.
+      function bedSleepGate() {
+        const tc = window.TimeConsensus;
+        if (!tc?.shouldGate()) return null;
+        let done = tc.consumeResolution(player);
+        if (!done && tc.stateOf(player) === 'none') {
+          const r = tc.requestRest(player, { kind: 'sleep', source: 'bed', minutes: minutesUntilMorning(), run: () => { performSleepToMorning(); } });
+          if (r.state === 'resolved') done = tc.consumeResolution(player);
+        }
+        if (!done) return { state: 'waiting' };
+        return { state: 'resolved', hours: done.winner.minutes / 60, message: `😴 Everyone slept. Day ${calendar.day} begins: ${calendar.weather}.` };
+      }
+      function cancelBedSleep() { window.TimeConsensus?.cancelRest(player); }
+
+      function performSleepToMorning() {
         // Whatever fraction of today's waking hours hadn't been played
         // through yet (and so never got an hourly breeding tick from
         // updateCalendar) gets credited here in one lump, so a pair
@@ -27246,7 +27280,7 @@
 
       window.BedLiePose?.init?.({
         THREE, tileSize: () => TILE, player: () => player, playerRoot: () => playerMesh,
-        playerLegs: () => playerLegs, area: () => currentArea, sleep: sleepInBed,
+        playerLegs: () => playerLegs, area: () => currentArea, sleep: sleepInBed, sleepGate: bedSleepGate, sleepCancel: cancelBedSleep,
         showToast, isPaused: () => paused, getNpcWalkers: () => npcWalkers,
       }); // Existing sleepInBed remains the sole authoritative day rollover; module owns presentation only.
 

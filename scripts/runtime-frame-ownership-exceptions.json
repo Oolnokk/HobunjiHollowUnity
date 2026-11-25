@@ -15,7 +15,7 @@
     "function": "loadBuildingScene",
     "reason": "Defers loading-label rendering to the next paints before worker-backed den carving, mine generation or their synchronous fallbacks; each deferral runs once per scene-load request.",
     "migrationStage": "not-planned",
-    "line": 14798
+    "line": 14823
   },
   {
     "file": "docs/game.js",
@@ -24,7 +24,7 @@
     "function": "runMove",
     "reason": "Steps a previewed cutscene actor toward its move target every frame and stops rescheduling once advanceActorToward reports arrival or the preview's running flag clears.",
     "migrationStage": "not-planned",
-    "line": 34761
+    "line": 34830
   },
   {
     "file": "docs/game.js",

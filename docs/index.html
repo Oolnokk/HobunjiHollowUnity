@@ -334,6 +334,7 @@
   <script src="js/sim-clock.js?v=20261124mp1"></script> <!-- Shared gameplay clock; must precede resource-system and combat timers. -->
   <script src="js/actor-registry.js?v=20261124mp1"></script> <!-- Stable actor ids + the players list; must precede game.js. -->
   <script src="js/damage-authority.js?v=20261124mp1"></script> <!-- Target-aware damage routing; initialised by game.js. -->
+  <script src="js/time-consensus.js?v=20261125mp2"></script> <!-- Co-op rules for who may advance time (sleep consensus, knock-out revive window, longest skip wins). Initialised by game.js. -->
   <script src="js/remote-player-state.js?v=20261124mp1"></script> <!-- Health/downed/bleed-out/respawn for non-local players; registers as DamageAuthority's remote handler. -->
   <script src="js/dev-dummy-player.js?v=20261124mp1"></script> <!-- Dev-only second-player stand-in (window.DevDummyPlayer). -->
   <script src="js/combat/resource-system.js?v=20261124h27ea2d2"></script>
@@ -513,7 +514,7 @@
        relative to the other systems above doesn't matter; must load before
        game.js, which calls window.CalendarSystem.init(...) during its own
        setup. -->
-  <script src="js/calendar-system.js?v=20261124traceClock4"></script>
+  <script src="js/calendar-system.js?v=20261125h4a50f83"></script>
   <!-- Resolves a map/interior's active alternate `layouts` entry (see
        docs/config/maps/map_i_temple.json's spirit_communion layout) against
        the current calendar time — window.MapLayoutSystem. Pure/stateless, no
@@ -2988,7 +2989,7 @@
        See architecture/classic-script-groups.md. -->
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups2" data-classic-group="qol"></script>
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups2" data-classic-group="guild"></script>
-  <script src="js/bed-lie-pose.js?v=20261117kissBedPoseLock2"></script> <!-- Player sleep presentation; before game.js. -->
+  <script src="js/bed-lie-pose.js?v=20261125h1082b9e"></script> <!-- Player sleep presentation; before game.js. -->
   <script src="js/lunge-targeting.js?v=20261121lungeAoeAudit2"></script>
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups2" data-classic-group="render"></script>
   <script src="js/held-gift-policy.js?v=20261122heldGiftPolicy1"></script> <!-- Shared gifting policy and clothing visual preparation; game.js owns equipment state. -->

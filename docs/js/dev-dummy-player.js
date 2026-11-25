@@ -37,6 +37,10 @@
     }
   }
 
+  function timeSkip(kind, minutes) {
+    return { kind, source: 'dummy', minutes, run: () => { void window.CalendarSystem?.devAdvanceHours?.(Math.max(1, Math.round(minutes / 60))); } };
+  }
+
   function spawn(opts = {}) {
     if (dummy) return dummy;
     const reg = window.ActorRegistry;
@@ -73,6 +77,12 @@
     walkTo(x, y) { goal = { x, y }; following = false; },
     follow(on = true) { following = on === true; if (!following) goal = null; },
     setArea(areaId) { if (dummy) dummy.areaId = areaId; },
+    // Time rules (js/time-consensus.js), driven from the console. A winning skip advances the clock via the dev hour-advance.
+    sleep(minutes = 600) { return dummy && window.TimeConsensus?.requestRest(dummy, timeSkip('sleep', minutes)); },
+    knockOut(minutes = 120) { return dummy && window.TimeConsensus?.knockOut(dummy, timeSkip('blackout', minutes)); },
+    reviveDummy() { const lp = window.ActorRegistry?.getLocalPlayer(); return !!dummy && window.TimeConsensus?.revive(dummy, lp); }, // The local player revives the dummy.
+    reviveLocal() { const lp = window.ActorRegistry?.getLocalPlayer(); return !!dummy && window.TimeConsensus?.revive(lp, dummy); }, // The dummy revives the local player.
+    wake() { return !!dummy && window.TimeConsensus?.cancelRest(dummy); },
     setPosition(x, y) { if (dummy) { dummy.x = x; dummy.y = y; } },
   };
 })();

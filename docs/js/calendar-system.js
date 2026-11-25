@@ -620,7 +620,33 @@
     _passageRunning = false;
   }
 
+  // Co-op: Wait/Sleep only advances time once every player is resting (js/time-consensus.js).
+  // Confirming registers this player's vote and closes the menu; the passage runs when the vote
+  // completes (as the winning skip) or is superseded by a longer skip from another player.
   async function confirmTimePassage() {
+    const tc = window.TimeConsensus;
+    const me = window.PlayerSocialPoses?.getPlayerEntity?.();
+    if (tc?.shouldGate() && me && _timePassageKind && _timePassageUi && !_passageRunning) {
+      const kind = _timePassageKind, hours = _selectedPassageHours;
+      const result = tc.requestRest(me, { kind, source: 'menu', minutes: hours * 60, run: () => { void runQueuedTimePassage(kind, hours); } });
+      if (result.state === 'waiting') (window.Combat?.deps?.showToast || window.showToast)?.(`💤 ${kind === 'sleep' ? 'Sleeping' : 'Resting'} — waiting for the others…`, true);
+      if (!_passageRunning) closeTimePassageMenu(); // A winning vote already started the passage; do not cancel it.
+      return;
+    }
+    return runTimePassage();
+  }
+
+  // The consensus decided this player's passage is the one that happens. The menu may have been closed while waiting.
+  async function runQueuedTimePassage(kind, hours) {
+    if (_passageRunning) return;
+    if (_timePassageKind !== kind || !_timePassageUi?.backdrop?.classList?.contains('open')) {
+      if (!openTimePassage(kind)) return;
+    }
+    setSelectedPassageHours(hours);
+    return runTimePassage();
+  }
+
+  async function runTimePassage() {
     if (!beginTimePassageRun()) return;
     const kind = _timePassageKind; // Captured because the shared modal state is cleared after transition completion.
     const hours = _selectedPassageHours; // Captured so the selected duration cannot change during the iris transition.

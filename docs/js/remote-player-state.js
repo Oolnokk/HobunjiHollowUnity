@@ -121,6 +121,22 @@
     ticking = true;
   }
 
+  // Time rules (js/time-consensus.js) for non-local players: a knocked-out remote player is down
+  // (so hostiles/targeting skip them) until revived or the skip lands; sleepers wake rested.
+  function remotePlayerFor(id) { const reg = window.ActorRegistry; const p = id ? reg?.getById(id) : null; return p && reg.isPlayer(p) && !reg.isLocalPlayer(p) ? p : null; }
+  window.TimeConsensus?.onEvent?.(ev => {
+    if (ev.type === 'knockout') { const p = remotePlayerFor(ev.id); if (p) { p._downed = true; p.vx = 0; p.vy = 0; } }
+    else if (ev.type === 'revive') { const p = remotePlayerFor(ev.id); if (p && !isDowned(p)) p._downed = false; }
+    else if (ev.type === 'resolved') {
+      for (const part of ev.resolution.participants) {
+        const p = remotePlayerFor(part.id); if (!p) continue;
+        if (!isDowned(p)) p._downed = false;
+        if (part.type === 'rest') { p.health = p.maxHealth || p.health; p.stamina = p.maxStamina || p.stamina; } // Slept: restored, like sleepInBed.
+        else if (Number(p.health) > 0 && Number(p.health) < 1) p.health = 1;
+      }
+    }
+  });
+
   window.RemotePlayerState = {
     attach, detach, applyHit, noteKillBy, revive, update, isDowned, remainingBleedOutS, onEvent, setRespawnPoint,
     debugSnapshot: () => Array.from(tracked).map(p => ({ id: window.ActorRegistry?.idOf(p), health: p.health, downed: isDowned(p), remainingS: remainingBleedOutS(p) })),

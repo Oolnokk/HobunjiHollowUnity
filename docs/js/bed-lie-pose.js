@@ -104,6 +104,7 @@
       const size = Number(deps?.tileSize?.());
       if (root && size > 0) { root.position.x = prior.startX / size; root.position.z = prior.startY / size; }
     }
+    if (reason !== 'slept') deps?.sleepCancel?.(); // Getting up (or leaving the area) withdraws this player's vote to sleep.
     active = null;
     diagnostics.last = { ...diagnostics.last, reason }; // Last reported state stays available after the animation ends.
   }
@@ -166,12 +167,18 @@
     if (flatten > 0.35) applyFrontXray();
     diagnostics.last = { key: active.furniture.key, surfaceY: active.surfaceY, slot: active.surface.slot, elapsed, phase: elapsed < LIE_DURATION ? 'flattening' : 'lying-flat', flatten, xrayMeshes: xray.length };
     if (elapsed >= LIE_DURATION + HOLD_DURATION) {
+      // Co-op: stay lying until every player is resting (js/time-consensus.js). Null = single player, original path.
+      const gate = deps.sleepGate?.() || null;
+      if (gate?.state === 'waiting') {
+        if (!active.waitingToastShown) { active.waitingToastShown = true; deps.showToast?.('💤 Waiting for the others to sleep…', true); }
+        return;
+      }
       clear('slept');
       diagnostics.completed++;
       const beforeSleepHour = window.CalendarSystem?.getAbsoluteGameHour?.(); // Captures actual represented sleep duration before the legacy bed jumps to the next 06:00.
-      const result = deps.sleep(); // Existing day-rollover, crops, health/stamina and save behavior stay authoritative.
+      const result = gate ? { ok: true, message: gate.message } : deps.sleep(); // A resolved consensus already applied the skip; never sleep twice.
       const afterSleepHour = window.CalendarSystem?.getAbsoluteGameHour?.(); // The continuous 24h clock measures elapsed hours across midnight.
-      const sleepHours = Number(afterSleepHour) - Number(beforeSleepHour); // Used to distinguish short sleep from eight-hour Well Rested sleep.
+      const sleepHours = gate ? Number(gate.hours) : Number(afterSleepHour) - Number(beforeSleepHour); // Used to distinguish short sleep from eight-hour Well Rested sleep.
       if (result?.ok && Number.isFinite(sleepHours) && sleepHours > 0) {
         window.dispatchEvent?.(new CustomEvent('hobunji-time-passage', {
           detail: { kind: 'sleep', hours: sleepHours, source: 'legacy-bed' },
