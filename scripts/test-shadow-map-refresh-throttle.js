@@ -43,6 +43,15 @@ window.ShadowMapRefreshThrottle.setEnabled(false);
 assert.equal(shadowMap.autoUpdate, true, 'disabling restores per-frame updates');
 window.ShadowMapRefreshThrottle.setShadowRenderingEnabled(false); window.ShadowMapRefreshThrottle.setEnabled(true);
 assert.equal(frame(2000), false, 'no shadow map, nothing to do');
+const replacement = {enabled:true, autoUpdate:true, needsUpdate:true};
+window.__hobunjiGameRenderer = {shadowMap:replacement};
+callback({timestamp:2010});
+assert.equal(replacement.enabled,false,'new renderer also uses the disabled policy');
+assert.equal(replacement.needsUpdate,false);
+window.ShadowMapRefreshThrottle.setShadowRenderingEnabled(true);
+assert.equal(replacement.enabled,true);
+assert.equal(replacement.autoUpdate,false);
+assert.equal(replacement.needsUpdate,true,'restoring shadows requests a fresh map immediately');
 
 const { expandClassicScriptGroups } = require('./classic-script-group-index.js');
 const page = expandClassicScriptGroups();
