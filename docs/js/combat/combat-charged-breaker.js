@@ -384,6 +384,7 @@
             const healthBefore = Math.max(0, Number(c.health) || 0); // Used by Mirrored Health for post-mitigation damage only.
             const impactDamage = mounted ? Math.round(damage * (window.Mounts?.mountedMeleeDamageMultiplier?.() || 1)) : damage; // Impact resolves from actual collision-tested speed, not charge pose alone.
             deps.damageCreature(c, impactDamage, deps.player.x, deps.player.y, knockbackPxS, {
+              attacker: deps.player, // Explicit source for Attack Power and Tempered Footing.
               abilityId: 'chargedBreaker', // Identifies the committed hit for authored training objectives.
               tag: deps.currentWeaponDamageType(),
               heavy: true,
