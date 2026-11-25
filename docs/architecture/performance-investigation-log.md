@@ -2894,3 +2894,72 @@ the later pristine-cloth and pre-merge audit revisions must pass the
 full native regression and browser workflows independently. Actual
 device FPS and live save/recovery/visual smoke still unmeasured. Do not
 merge on the strength of an older green commit alone.
+
+## 25 Nov 2026: continuous hierarchy investigation — capture draw-state graph
+
+Starting from unmerged PR #2167 head 4da6e02c (main f2eb854b at recovery),
+stacked on perf/water-save-and-hand-hotpaths rather than duplicating changes.
+Initial CI: six workflows passed, one running, four queued. Prior rainy Cloud
+Forest trace attributed ~5.92 ms/frame to native main matrix walk; historical
+attribution, not a current device measurement.
+
+Verified upstream Three.js r128 Object3D.updateMatrixWorld and WebGLRenderer:
+scene.autoUpdate === true calls updateMatrixWorld before render-list projection.
+Auto-updated local matrices mark matrixWorldNeedsUpdate; a dirty/forced ancestor
+forces every descendant. Neither visible, layers nor frustum tests prevent matrix
+recursion. projectObject separately returns on visible=false, but layer mismatch
+and frustum rejection do not prune children. Disabling matrixAutoUpdate alone
+is not a subtree optimization. Existing identity tree-leaf updater avoids
+arithmetic, not visits. Explicit updateWorldMatrix is a separate path. Do not
+freeze arbitrary hidden objects or actors; SkinnedMesh, weapon stance and late
+hand/portrait writers can do work inside traversal.
+
+Source audit:
+- WorldRenderPipeline prepares nine ordered scopes before frame hooks and actor
+  occlusion. Frame writers apply on first draw; secondary render-list traversal
+  still occurs even where OutlineRenderPerformance reuses base matrices. PNG
+  depth updates only participants then disables scene.autoUpdate. Water-only
+  branch pruning already exists.
+- WildernessDistanceCull caches candidates by residency/prop revision with a
+  fallback scan; every frame still checks ancestry, bounds and distances.
+  Vegetation corridor hides whole trees and dense-wall chunks; prop/forest
+  batches hide originals. All remain in the native matrix graph.
+- DenseForestWallBatches visits visible chunk parts, frustum-tests, classifies
+  instances with hysteresis and walks signatures/far flags before reusing
+  buffers. If scope timing is significant, investigate classification reuse with
+  exact camera, transform, buffer versions and hysteresis. ~63 groups x ~12 mesh
+  parts is a narrow scenery owner, not proof of dominant active hierarchy cost.
+  Tree instancing remains off by default after earlier device regression.
+- Hand socket lookup is already optimized; weapon-holder updateMatrixWorld
+  wrappers and late onBeforeRender writers remain. Do not deduplicate by frame
+  ID without exact pose-input/ownership and first-draw proof.
+
+Extended existing one-shot WorldRenderPipeline capture, armed from Pixel Probe:
+time enabled scope preparation, sample per-native-pass sceneAutoUpdate and
+world-scene identity, count actual draw-state graph once before first main-camera
+native submission after scopes and frame presentation hooks. Keep logical census
+separate. Fix numeric branch name aggregation and honor wilderness chunk tag.
+Census excluded from its pass timer, failed frames marked incomplete, stale
+arm/area capture rejected. Diagnostic only: no new frame loop, freeze, render
+wrapper, geometry, visibility or pass-order change, no continuous census.
+Elapsed scope/pass timing can include stalls; sampled autoUpdate is traversal
+intent, not measured visits under custom updaters. Known direct loaders are
+fresh classic manifests; no extra versioned editor consumers found by search.
+
+Next measurement: same rainy Cloud Forest save/camera, streaming settled, arm
+Pixel Probe, allow one gameplay frame, tap and copy report. Repeat with all actor
+X-ray categories and generated outlines off, otherwise same settings/weather.
+If possible provide fresh steady 10–20 second Chrome trace without active probe.
+Rank large hidden/static branches by main census and current matrix-stack samples,
+compare scope timings and native matrix-update requests. Trace most expensive
+producer's transform/attachment/disposal writers. Static-owner prototype needs
+explicit membership and transform invalidation, parent-world equality (not force
+alone), native mutation fallback, first draw/reparent/load/unload correctness,
+no raycast/gameplay effect, independent A/B. If projectObject rather than matrix
+work dominates, use selective pass registries/pruning instead. Inventory revision
+and materialization remain secondary until sustained render cost is attributed.
+
+Validation: complete source-executing recording-renderer pipeline fixture passed
+in isolated V8 adapter (one-shot, hidden descendants, per-pass reuse, scope
+restoration, native render failure and capture cleanup). Changed JS parsed.
+Native Node checkout, cache checker, full CI and device timings unverified.
