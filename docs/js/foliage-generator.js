@@ -1858,8 +1858,12 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
   // untouched; install this only on the generator's own direct mesh leaves.
   let identityTreeMatrixFastPath = true; // A/B switch for the generated part world-matrix shortcut.
   const treeMatrixStats = { enrolled: 0, copies: 0, fallbacks: 0 }; // Mobile counters; no scene scans.
-  const nativeTreeWorldUpdate = THREE.Object3D?.prototype?.updateMatrixWorld;
-  const nativeTreeLocalUpdate = THREE.Object3D?.prototype?.updateMatrix;
+  // The factory is runtime-scoped: editors can inject newer Three builds,
+  // and headless metadata consumers may have no Object3D at all. Only the
+  // game's r128 matrix contract is verified for this arithmetic shortcut.
+  const treeMatrixPrototype = String(T?.REVISION) === '128' ? T.Object3D?.prototype : null;
+  const nativeTreeWorldUpdate = treeMatrixPrototype?.updateMatrixWorld;
+  const nativeTreeLocalUpdate = treeMatrixPrototype?.updateMatrix;
   function hasIdentityTreeTRS(node) {
     const p=node.position,q=node.quaternion,s=node.scale;
     return p?.x===0 && p.y===0 && p.z===0
