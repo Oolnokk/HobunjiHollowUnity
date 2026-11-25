@@ -1017,10 +1017,10 @@ assert.equal(companionPanels.get('relic-grants').onAction('grant').ok, true);
 console.log('Fey Immundanity, real Stamina illusions, proc, scaled echo, migrations and bound relics passed');
 
  
-// Planar lore additions: exercise the actual hit/defense bus, not an isolated effect stub.
+// Planar lore: real event bus and resource transactions, no mastery statuses.
 {
   reset();
-  const key = 'realm-test-blade'; // All tests use a private weapon and fresh actors.
+  const key = 'realm-test-blade'; // Private weapon and fresh NPC actors isolate resource arithmetic.
   const attacker = makeEntity({ name: 'Realm wielder' });
   const target = makeEntity({ name: 'Realm target' });
   const hit = (patch = {}) => CAE.hit(null, {
@@ -1029,97 +1029,180 @@ console.log('Fey Immundanity, real Stamina illusions, proc, scaled echo, migrati
   });
   const equip = (base = [], flourishes = {}) => ES.load({ [key]: { base, flourishes } });
   const close = (value, expected) => assert(Math.abs(value - expected) < 0.0001, `${value} != ${expected}`);
+  const amount = (actor, id) => RS.getAffliction(actor, id);
+  const clear = (actor, id) => RS.removeAffliction(actor, id, 1000);
   const newBases = [
-    ['stormwake', 'Tothal', 'reeling', 'knockbackTaken', 1.165],
-    ['stonebind', 'Hronal', 'heavy', 'moveSpeed', 0.9175],
-    ['soulweight', 'Kanthic', 'taxed', 'staminaCost', 1.0825],
-    ['ancestralSight', 'Ohthic', 'exposed', 'incomingDamage', 1.0825],
-  ]; // Expected one-stack multipliers at +10% Immundanity.
-  for (const [id, alignment, status, modifier, value] of newBases) {
+    ['stormwake', 'Tothal', 'undertowStamina', 6.6],
+    ['stonebind', 'Hronal', 'calcifiedFooting', 5.5],
+    ['soulweight', 'Kanthic', 'soulweightedHealth', 6.6],
+    ['ancestralSight', 'Ohthic', 'veilmarkedHealth', 5.5],
+  ]; // One equipped planar enchantment gives +10% Immundanity.
+  for (const [id, alignment, status, expected] of newBases) {
     equip([id]);
     assert.equal(ES.DEFINITIONS[id].alignment, alignment);
     assert.equal(ES.DEFINITIONS[id].type, 'Base');
-    assert.equal(ES.getWeaponImmundanity(key), 1);
+    assert(RS.AFFLICTIONS[status]);
     CAE.prepare({ attacker, target, weaponKey: key });
-    assert.equal(RS.hasTimedDebuff(target, status), false, 'preparation alone cannot apply a Base debuff');
+    assert.equal(amount(target, status), 0, 'preparation alone never inflicts a Base');
     hit({ comboFinisher: false });
-    close(RS.timedDebuffModifier(target, modifier), value);
-    for (let i = 0; i < 8; i++) hit();
-    const entry = RS.getTimedDebuffs(target).find(item => item.id === status);
-    assert.equal(entry.stacks, 5, 'new Base uses existing timed-status cap');
-    assert.equal(entry.source, id);
-    testNowMs += 4001;
-    assert.equal(RS.hasTimedDebuff(target, status), false, 'normal resource clock expires the enchantment');
+    close(amount(target, status), expected);
+    assert.equal(RS.getTimedDebuffs(target).length, 0, 'realm effects never reuse mastery debuffs');
+    const dead = makeEntity({ health: 0 });
+    hit({ target: dead });
+    assert.equal(amount(dead, status), 0, 'no buildup on corpses');
+    for (let i = 0; i < 30; i++) hit();
+    close(amount(target, status), 100); // Canonical maximum-resource cap.
+    clear(target, status);
   }
   equip(['stormwake', 'stonebind']);
-  assert.equal(ES.getWeaponImmundanity(key), 0, 'Tothal and Hronal cancel normally');
+  assert.equal(ES.getWeaponImmundanity(key), 0);
   hit();
-  close(RS.timedDebuffModifier(target, 'knockbackTaken'), 1.15);
-  RS.clearTimedDebuff(target, 'reeling');
-  RS.clearTimedDebuff(target, 'heavy');
+  close(amount(target, 'undertowStamina'), 6);
+  close(amount(target, 'calcifiedFooting'), 5);
+  clear(target, 'undertowStamina');
+  clear(target, 'calcifiedFooting');
   equip(['soulweight', 'ancestralSight']);
-  assert.equal(ES.getWeaponImmundanity(key), 0, 'Kanthic and Ohthic cancel normally');
+  assert.equal(ES.getWeaponImmundanity(key), 0);
   hit();
-  close(RS.timedDebuffModifier(target, 'staminaCost'), 1.075);
-  RS.clearTimedDebuff(target, 'taxed');
-  RS.clearTimedDebuff(target, 'exposed');
-  hit({ target: makeEntity({ health: 0 }) }); // Killing/dead targets do not acquire new timed statuses.
+  close(amount(target, 'soulweightedHealth'), 6);
+  close(amount(target, 'veilmarkedHealth'), 5);
+  clear(target, 'soulweightedHealth');
+  clear(target, 'veilmarkedHealth');
 
-  equip([], { tap1: 'stormRenewal' });
-  attacker.stamina = 20;
-  hit({ comboFinisher: false });
-  assert.equal(attacker.stamina, 20, 'ordinary combo hit does not trigger a Flourish');
-  hit();
-  close(attacker.stamina, 33.2);
-  attacker.stamina = 20;
-  hit({ attackCategory: 'offensiveHold', isFlurry: true, comboFinisher: false });
-  close(attacker.stamina, 23.3); // 12 × 1.1 × 0.25; no random proc for numeric Flourishes.
-  attacker.exhaustion.active = true;
-  attacker.exhaustion.blackStamina = 12;
-  hit();
-  assert.equal(attacker.exhaustion.active, true);
-  assert.equal(attacker.exhaustion.blackStamina, 12, 'Storm Renewal does not bypass exhausted recovery');
-  attacker.exhaustion.active = false;
+  // Undertow: recovery, not expenditure; black Stamina recovery is independent.
+  target.stamina = 30;
+  RS.addAffliction(target, 'undertowStamina', 10);
+  RS.restoreStamina(target, 4);
+  close(target.stamina, 30);
+  close(amount(target, 'undertowStamina'), 6);
+  RS.restoreStamina(target, 10);
+  close(target.stamina, 34);
+  close(amount(target, 'undertowStamina'), 0);
+  RS.addAffliction(target, 'undertowStamina', 10);
+  RS.tick(target, 0.5, { staminaRegenPerSec: 4, healthRegenPerSec: 0, footingRegenPerSec: 0 });
+  assert(amount(target, 'undertowStamina') < 10, 'natural recovery pays the same reserve');
+  close(target.stamina, 34);
+  target.exhaustion.active = true; target.exhaustion.blackStamina = 30;
+  const debt = amount(target, 'undertowStamina');
+  RS.restoreStamina(target, 10, { exhaustionAmount: 5 });
+  close(target.exhaustion.blackStamina, 35);
+  close(amount(target, 'undertowStamina'), debt);
+  target.exhaustion.active = false;
+  clear(target, 'undertowStamina');
 
-  equip([], { hold2: 'bedrock' });
-  CAE.defensive({ attacker, weaponKey: key, slotId: 'hold2', defensiveResult: 'block' });
-  close(RS.getAffliction(attacker, 'resoluteFooting'), 9.9);
-  RS.removeAffliction(attacker, 'resoluteFooting', 100);
-  equip([], { tap1: 'bedrock' });
-  hit({ attackCategory: 'offensiveHold', isFlurry: true, comboFinisher: false });
-  close(RS.getAffliction(attacker, 'resoluteFooting'), 2.5);
+  // Calcified: finite follow-up loss, not a timed multiplier.
+  target.footing = 50;
+  RS.addAffliction(target, 'calcifiedFooting', 8);
+  RS.addEnhancedResource(target, 'resoluteFooting', 2);
+  close(RS.spendFooting(target, 6), 0);
+  close(amount(target, 'calcifiedFooting'), 8);
+  close(RS.spendFooting(target, 5), 10);
+  close(target.footing, 40);
+  close(amount(target, 'calcifiedFooting'), 3);
+  close(RS.spendFooting(target, 5), 8);
+  close(amount(target, 'calcifiedFooting'), 0);
+  target.footing = 3;
+  RS.addAffliction(target, 'calcifiedFooting', 8);
+  close(RS.spendFooting(target, 3), 3);
+  close(amount(target, 'calcifiedFooting'), 8);
+  clear(target, 'calcifiedFooting');
 
-  equip([], { tap1: 'blackBargain', hold2: 'blackBargain' });
-  assert.equal(ES.getWeaponImmundanity(key), 2);
-  hit();
-  close(RS.getAffliction(target, 'congealedHealth'), 9.6);
-  close(RS.getAffliction(attacker, 'congealedHealth'), 3.6);
-  close(RS.getEffectiveMax(target, 'health'), 90.4);
-  CAE.defensive({ attacker, weaponKey: key, slotId: 'hold2', defensiveResult: 'dodge' });
-  hit({ target: attacker });
-  assert.equal(RS.getAffliction(attacker, 'congealedHealth'), 3.6, 'missing/self targets cannot exact a bargain');
-  RS.removeAffliction(attacker, 'congealedHealth', 100);
+  // Soulweight: ordinary direct Health loss drains ordinary Stamina, no debt.
+  target.health = 100; target.stamina = 3;
+  RS.addAffliction(target, 'soulweightedHealth', 8);
+  RS.addEnhancedResource(target, 'mirroredHealth', 5);
+  close(RS.applyDamage(target, 5), 0);
+  close(target.stamina, 3);
+  close(RS.applyDamage(target, 5), 5);
+  close(target.stamina, 0);
+  close(amount(target, 'soulweightedHealth'), 5);
+  assert.equal(target.exhaustion.active, false);
+  clear(target, 'soulweightedHealth');
 
-  equip([], { hold2: 'ancestralMercy' });
-  RS.addAffliction(attacker, 'bleedingHealth', 20);
-  RS.addAffliction(attacker, 'woundedStamina', 20);
-  RS.addAffliction(attacker, 'rentHealth', 5);
-  attacker.health = 50;
-  CAE.defensive({ attacker, weaponKey: key, slotId: 'hold2', defensiveResult: 'dodge' });
-  close(RS.getAffliction(attacker, 'bleedingHealth'), 11.2);
-  close(RS.getAffliction(attacker, 'woundedStamina'), 11.2);
-  assert.equal(RS.getAffliction(attacker, 'rentHealth'), 5);
-  assert.equal(attacker.health, 50, 'cleansing buildup never restores already lost Health');
+  // Veilmark bypasses only a finite portion, without inflating incoming damage.
+  target.health = 100;
+  RS.addEnhancedResource(target, 'mirroredHealth', 20);
+  RS.addAffliction(target, 'veilmarkedHealth', 6);
+  close(RS.applyDamage(target, 10), 6);
+  close(amount(target, 'mirroredHealth'), 16);
+  close(amount(target, 'veilmarkedHealth'), 0);
+  clear(target, 'mirroredHealth');
+
+  const flourishes = [
+    ['stormRenewal', 'currentStamina', 8.8, 2.2],
+    ['bedrock', 'hearthstoneFooting', 11, 2.8],
+    ['blackBargain', 'pactHealth', 8.8, 2.2],
+    ['ancestralMercy', 'guardianHealth', 8.8, 2.2],
+  ];
+  for (const [id, status, full, quarter] of flourishes) {
+    assert(RS.ENHANCED_RESOURCE_DEFS[status]);
+    equip([], { tap1: id });
+    hit({ comboFinisher: false });
+    close(amount(attacker, status), 0);
+    hit();
+    close(amount(attacker, status), full);
+    clear(attacker, status);
+    hit({ attackCategory: 'offensiveHold', isFlurry: true, comboFinisher: false });
+    close(amount(attacker, status), quarter);
+    clear(attacker, status);
+    equip([], { hold2: id });
+    CAE.defensive({ attacker, weaponKey: key, slotId: 'hold2', defensiveResult: 'block' });
+    close(amount(attacker, status), full);
+    clear(attacker, status);
+  }
+
+  attacker.stamina = 40;
+  RS.addEnhancedResource(attacker, 'currentStamina', 8);
+  RS.spendStamina(attacker, 4, 'attack', { actionKind: 'combatCombo' });
+  close(attacker.stamina, 36);
+  close(amount(attacker, 'currentStamina'), 8);
+  RS.spendStamina(attacker, 6, 'roll dodge');
+  close(attacker.stamina, 36);
+  close(amount(attacker, 'currentStamina'), 5);
+  RS.spendStamina(attacker, 4, 'evade', { actionKind: 'combatDodge' });
+  close(amount(attacker, 'currentStamina'), 3);
+  clear(attacker, 'currentStamina');
+
+  attacker.footing = 50; attacker.stamina = 20;
+  RS.addEnhancedResource(attacker, 'hearthstoneFooting', 10);
+  close(RS.spendFooting(attacker, 6), 0);
+  close(attacker.stamina, 26);
+  close(amount(attacker, 'hearthstoneFooting'), 4);
+  RS.spendFooting(attacker, 8);
+  close(attacker.footing, 46);
+  close(attacker.stamina, 30);
+
+  attacker.health = 100; attacker.stamina = 50;
+  RS.addEnhancedResource(attacker, 'pactHealth', 8);
+  close(RS.applyDamage(attacker, 10), 0);
+  close(amount(attacker, 'pactHealth'), 3);
+  close(amount(attacker, 'soulweightedHealth'), 5);
+  close(attacker.stamina, 50);
+  close(RS.applyHealthAfflictionDamage(attacker, 4), 4);
+  close(amount(attacker, 'pactHealth'), 3);
+  close(amount(attacker, 'soulweightedHealth'), 5);
+  close(RS.applyDamage(attacker, 8), 2);
+  close(attacker.stamina, 48);
+  close(amount(attacker, 'pactHealth'), 0);
+  close(amount(attacker, 'soulweightedHealth'), 6);
+
+  clear(attacker, 'soulweightedHealth');
+  RS.addEnhancedResource(attacker, 'guardianHealth', 8);
+  close(RS.applyDamage(attacker, 4), 4);
+  close(amount(attacker, 'guardianHealth'), 8);
+  close(RS.applyHealthAfflictionDamage(attacker, 10), 0);
+  close(amount(attacker, 'guardianHealth'), 3);
+  close(RS.applyHealthAfflictionDamage(attacker, 8), 2);
 
   const savedState = { base: ['stormwake', 'ancestralSight'], flourishes: { tap1: 'blackBargain', hold2: 'ancestralMercy' } };
   equip(savedState.base, savedState.flourishes);
-  const serialized = ES.serialize(); // The new IDs must survive ordinary save/load and bound-weapon encoding.
-  ES.load(serialized);
+  ES.load(ES.serialize());
   same(ES.stateFor(key), savedState);
   const relic = { shape: 'longsword', uid: 'realmtest123', enchantments: savedState };
   const decoded = HR.decodeBoundKey(HR.encodeBoundKey(relic));
-  assert(decoded, 'new IDs can be recovered from a normal bound relic');
+  assert(decoded);
   same(decoded.enchantments, savedState);
-  assert(newBases.every(([id]) => ES.DEFINITIONS[id].hitDebuff));
+  for (const [, , id] of newBases) assert(context.HOBUNJI_CONFIG.resourceRings.afflictionColors[id]);
+  for (const [, id] of flourishes) assert(context.HOBUNJI_CONFIG.resourceRings.afflictionColors[id]);
 }
-console.log('Planar lore enchantments: hit, stacking, expiry, defense, flurry, exhaustion, cleansing and persistence passed');
+console.log('Planar enchantments: unique buildup, transactions, defensive/flurry triggers and persistence passed');
