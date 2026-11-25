@@ -122,7 +122,7 @@ async function main() {
   vm.createContext(context);
   vm.runInContext(source, context, { filename: 'den-locale-runtime.js' });
 
-  assert.equal(context.DenLocaleRuntime.version, 4, 'reviewed runtime version is installed');
+  assert.equal(context.DenLocaleRuntime.version, 5, 'reviewed runtime version is installed');
   const wildlifeDescriptor = Object.getOwnPropertyDescriptor(context, 'WildlifeSpawn');
   assert.equal(typeof wildlifeDescriptor?.set, 'function', 'runtime traps the later WildlifeSpawn assignment when loaded first');
 
@@ -196,6 +196,19 @@ async function main() {
   approx(motherGroup.scale.x, 2 * 1.20, 'Den-Mother X scale multiplies original avatar scale');
   approx(motherGroup.scale.y, 3 * 0.80, 'Den-Mother Y scale multiplies original avatar scale');
   approx(motherGroup.scale.z, 4 * 1.10, 'Den-Mother Z scale multiplies original avatar scale');
+
+  // Movement, rotation and physics must survive repeated interaction frames.
+  const moved = { x: mother.x + 128, y: mother.y - 96, groupRot: 0.7, pngRot: 0.8, targetRot: 0.9, groundLift: 0.65 }; // Simulated live AI/physics state.
+  Object.assign(mother, moved);
+  motherGroup.rotation.set(0.2, 0.7, 0.3);
+  for (let i = 0; i < 5; i++) {
+    assert.equal(context.DenNestSystem.updateNestInteraction(1 / 60), 'nest-update');
+    for (const [key, value] of Object.entries(moved)) approx(mother[key], value, 'live mother retains ' + key);
+    approx(motherGroup.rotation.y, 0.7, 'live avatar keeps gameplay facing');
+    approx(mother.homeX, (centerX + 0.25) * 32, 'authored home X remains fixed');
+    approx(mother.homeY, (centerZ - 0.50) * 32, 'authored home Y remains fixed');
+    approx(motherGroup.scale.x, 2 * 1.20, 'authored scale is not compounded');
+  }
 
   // Root keeps its original 0.30 floor lift while authored Y adds on top.
   approx(cavernRoot.position.x, centerX - 0.30, 'cavern clutch X uses authored slot');
@@ -276,6 +289,23 @@ async function main() {
   const debug = context.DenLocaleRuntime.debugSnapshot();
   assert.equal(debug.wildlifeInstalled, true, 'debug confirms WildlifeSpawn bridge installed');
   assert.equal(debug.lastMotherApplied.areaId, 'map_i_test_den', 'debug records actual transformed Den-Mother');
+
+  currentArea = 'map_i_test_den';
+  assert.equal(context.DenLocaleRuntime.syncCurrentDen(), true, 'returning to a cached den succeeds');
+  approx(mother.x, moved.x, 'revisiting does not reset the existing guardian');
+  approx(mother.y, moved.y, 'revisiting does not reset the existing guardian');
+
+  mother.health = -1;
+  const replacementGroup = group('replacement_mother'); // Fresh avatar for a new guardian.
+  const replacement = { ...mother, health: 100, x: 0, y: 0, groundLift: 0.4, avatarRef: { group: replacementGroup } }; // Distinct spawn identity.
+  wildlifeDeps.hostileObjects.add(replacement);
+  assert.equal(context.DenLocaleRuntime.syncCurrentDen(), true);
+  approx(replacement.x, (centerX + 0.25) * 32, 'replacement receives authored spawn');
+  approx(replacement.y, (centerZ - 0.50) * 32, 'replacement receives authored spawn');
+  approx(mother.x, moved.x, 'dead guardian is not moved');
+  replacement.x += 32;
+  context.DenNestSystem.updateNestInteraction(1 / 60);
+  approx(replacement.x, (centerX + 1.25) * 32, 'replacement is also free to move');
 
   let resolveNestLoad; // Releases an old in-flight authored fetch after the direct furniture owner has repaired the scene.
   const pendingNestLoad = new Promise(resolve => { resolveNestLoad = resolve; }); // Models a slow cold-cache nest asset request.
