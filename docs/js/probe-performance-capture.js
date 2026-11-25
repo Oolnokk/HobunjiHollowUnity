@@ -43,6 +43,35 @@
         sceneMatrixMsPerFrame: round(x.matrixMs/frames), sceneMatrixCalls: x.matrixCalls } : {}),
     }));
   }
+  function counters() {
+    // Explicit start/end only. Never flush classification or perform a scene scan.
+    const result = {};
+    for (const [name, read] of [
+      ['heldReplay', () => window.HeldObjectRenderOrder?.performanceCounters?.()],
+      ['staticWall', () => window.DenseForestWallBatches?.staticMatrixSnapshot?.()],
+      ['staticTree', () => window.FoliageGenerator?.identityTreeMatrixStats?.()],
+      ['propBatches', () => window.ZonePropRenderBatches?.snapshot?.()],
+      ['instanceRegistry', () => window.InstancedMeshBounds?.snapshot?.()],
+    ]) {
+      try {
+        const data = read();
+        if (data) result[name] = Object.fromEntries(Object.entries(data).filter(([,v])=>typeof v==='boolean'||Number.isFinite(v)));
+      } catch (_) {} // A missing diagnostic owner must not prevent a capture.
+    }
+    return result;
+  }
+  function counterChanges(before,after) {
+    const result = {};
+    for (const [group, values] of Object.entries(after)) {
+      const changes = {};
+      for (const [name, value] of Object.entries(values)) {
+        const prior = before[group]?.[name];
+        if (typeof value==='number' && typeof prior==='number') changes[name] = value-prior;
+      }
+      result[group] = changes;
+    }
+    return result;
+  }
   function finish(reason = 'tap') {
     const s = session;
     if (!s) return lastReport;
@@ -51,6 +80,7 @@
     s.schedulerOff?.();
     const frames = s.loops.length, denominator = Math.max(1, frames);
     const gaps = distribution(s.gaps);
+    const endCounters = counters(); // Includes warmup and any interrupted frame; separate from exact timed-frame buckets.
     lastReport = {
       version: 1, reason, areaAtArm: s.area, areas: [...s.areas], elapsedMs: round(clock()-s.started), finishedAtMs:round(clock()),
       completeFrames: frames, discardedWarmupFrames: s.warmed ? 1 : 0, interruptedFrames: s.interrupted + (s.frame ? 1 : 0), skippedNonWorldFrames: s.nonWorld,
@@ -59,6 +89,7 @@
       gameLoop: distribution(s.loops), schedulerFrame: distribution(s.schedulerFrames), nativeHookAvailable: s.hookAvailable,
       subsystems: rows(s.buckets, denominator), nativePasses: rows(s.passes, denominator, true),
       nativeMatrixWrapFailures: s.matrixFailures,
+      countersAtStart:s.startCounters, countersAtEnd:endCounters, counterDeltas:counterChanges(s.startCounters,endCounters),
       notes: 'Wall-clock CPU submission timings, not GPU execution or stack samples. Inclusive subsystem buckets overlap; scheduler pre-render is inside the driver. Frame intervals include browser scheduling/wait. First completed frame excluded (one-shot census/warmup). Frames without world rendering or failed drivers excluded. Native counts are renderer.info at submission end; nested submissions are not separately timed. Mixed areas are not a controlled comparison.',
     };
     return lastReport;
@@ -72,7 +103,7 @@
     cancel();
     const s = session = { area, started: clock(), frame: null, warmed: false, interrupted: 0,
       areas: new Set(), loops: [], gaps: [], schedulerFrames: [], previousStart: null, buckets: new Map(), passes: new Map(),
-      off: null, schedulerOff: null, hookAvailable: false, matrixFailures: 0, nonWorld: 0 };
+      off: null, schedulerOff: null, hookAvailable: false, matrixFailures: 0, nonWorld: 0, startCounters:counters() };
     s.schedulerOff = window.RuntimeFrameScheduler?.registerTimingObserver?.({
       beginFrame(timestamp) { if (session === s) openFrame(s,timestamp); },
       subscriber(id,phase,ms) {
