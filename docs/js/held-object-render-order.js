@@ -150,6 +150,8 @@
   let waterMeshCount = 0; // Exposed in debugState so mobile diagnostics can confirm water surfaces are eligible for translucent replay.
   let waterOccludedMeshCount = 0; // Used by mobile diagnostics to confirm feet and pants registered for water occlusion.
   let pantsXrayRegistrations = 0; // Counts once per pants mesh; surfaced to mobile diagnostics without extra per-frame scanning.
+  let waterOnlyBranchPruneEnabled = true; // Private water-only passes, never a normal world/depth replay.
+  let waterOnlyPrunedFrames = 0, waterOnlyPrunedBranches = 0, waterOnlyPruneFallbacks = 0; // Mobile counters.
   let waterReplayCount = 0; // Counts depth-correct translucent water/slush tint passes over foot pixels.
   let lastNearbyTintCovers = 0; // Number of water/slush meshes eligible near any visible held/foot owner this frame.
   let lastDistantTintCovers = 0; // Distant water meshes rejected before they can tint character pixels.
@@ -1828,6 +1830,43 @@
       });
     }
     return states;
+  }
+
+  // Three r128 traverses descendants even when a parent's layers do not
+  // match. One live walk finds maximal irrelevant branches for all three
+  // private water-only passes. Never cache this across world renders.
+  function pruneWaterOnlyBranches(scene, portraits) {
+    if (!waterOnlyBranchPruneEnabled || !scene?.children?.length) return null;
+    const hasHook = object => (object.onBeforeRender && object.onBeforeRender !== objectProto.onBeforeRender)
+      || (object.onAfterRender && object.onAfterRender !== objectProto.onAfterRender);
+    if (hasHook(scene)) { waterOnlyPruneFallbacks++; return null; }
+    const selected = new Set(portraits); // Stamp assigns its private bit later.
+    const mask = WATER_REPLAY_MASK | PORTRAIT_WATER_MASK;
+    const excluded = []; // Maximal disjoint branches, rather than every leaf.
+    let unsafe = false;
+    function visit(object) {
+      if (object.visible === false) return false;
+      if (object.isLOD) { unsafe = true; return true; } // Native LOD may change visibility.
+      const drawable = object.isMesh || object.isSprite || object.isLine || object.isPoints || object.isImmediateRenderObject;
+      const matching = selected.has(object) || !!(Number(object.layers?.mask) & mask);
+      const known = drawable || object.isGroup || object.isLight || object.isCamera || object.type === 'Object3D';
+      if (!known || (matching && hasHook(object))) { unsafe = true; return true; }
+      const start = excluded.length;
+      let keep = !!(object.isLight || object.isCamera || (drawable && matching));
+      for (const child of object.children || []) if (visit(child)) keep = true;
+      if (!keep) {
+        excluded.length = start;
+        excluded.push(object);
+      }
+      return keep;
+    }
+    for (const child of scene.children) visit(child);
+    if (unsafe) { waterOnlyPruneFallbacks++; return null; }
+    if (!excluded.length) return null;
+    const hidden = hideObjects(excluded);
+    waterOnlyPrunedFrames++;
+    waterOnlyPrunedBranches += excluded.length;
+    return hidden;
   }
 
   function stampSubmergedPortraits(renderer, scene, camera, portraits) {
@@ -4141,27 +4180,34 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
       }
 
       if (tintOverlay) {
-        if (bodyTint?.portraits.length) stampSubmergedPortraits(renderer, scene, camera, bodyTint.portraits);
-        // Distant meshes remain hidden from ALL replay stages, and the merged
-        // shader rejects distant fragments of any nearby mesh as well.
-        const tintStates = prepareOverlayCoverTintMaterials(nearbyTintCovers);
+        // Only water-only replay has no other depth consumers inside this block.
+        const waterOnlyHidden = !overlayMeshes.length && bodyTint?.portraits.length && scene.children?.length
+          ? pruneWaterOnlyBranches(scene, bodyTint.portraits) : null;
         try {
-          camera.layers.mask = WATER_REPLAY_MASK;
-          const tintPerf = window.PerfProfiler?.begin('held-overlay: submerged gear tint');
-          rawRender.call(renderer, scene, camera);
-          window.PerfProfiler?.end(tintPerf);
-          waterReplayCount++;
+          if (bodyTint?.portraits.length) stampSubmergedPortraits(renderer, scene, camera, bodyTint.portraits);
+          // Distant meshes remain hidden from ALL replay stages, and the merged
+          // shader rejects distant fragments of any nearby mesh as well.
+          const tintStates = prepareOverlayCoverTintMaterials(nearbyTintCovers);
+          try {
+            camera.layers.mask = WATER_REPLAY_MASK;
+            const tintPerf = window.PerfProfiler?.begin('held-overlay: submerged gear tint');
+            rawRender.call(renderer, scene, camera);
+            window.PerfProfiler?.end(tintPerf);
+            waterReplayCount++;
+          } finally {
+            restoreMaterialStates(tintStates);
+          }
+          const coverDepthStates = prepareTintCoverDepthMaterials(nearbyTintCovers);
+          try {
+            camera.layers.mask = WATER_REPLAY_MASK;
+            const depthPerf = window.PerfProfiler?.begin('held-overlay: translucent cover depth');
+            rawRender.call(renderer, scene, camera);
+            window.PerfProfiler?.end(depthPerf);
+          } finally {
+            restoreMaterialStates(coverDepthStates);
+          }
         } finally {
-          restoreMaterialStates(tintStates);
-        }
-        const coverDepthStates = prepareTintCoverDepthMaterials(nearbyTintCovers);
-        try {
-          camera.layers.mask = WATER_REPLAY_MASK;
-          const depthPerf = window.PerfProfiler?.begin('held-overlay: translucent cover depth');
-          rawRender.call(renderer, scene, camera);
-          window.PerfProfiler?.end(depthPerf);
-        } finally {
-          restoreMaterialStates(coverDepthStates);
+          if (waterOnlyHidden) restoreVisibility(waterOnlyHidden);
         }
       }
 
@@ -4682,6 +4728,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
       enabled,
       actorXrayEnabled: { ...actorXrayEnabled }, // Included in the existing x-ray diagnostics.
       allActorXrayDisabled, actorXrayBypassFrames, actorXrayWaterOnlyFrames, // All-off fast-path counters for mobile diagnostics.
+      waterOnlyBranchPruneEnabled, waterOnlyPrunedFrames, waterOnlyPrunedBranches, waterOnlyPruneFallbacks,
       mode: 'selective-depth-replay',
       legacyHeldRenderOrder: LEGACY_HELD_RENDER_ORDER,
       heldOverlayLayer: HELD_OVERLAY_LAYER,
@@ -4839,6 +4886,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
     actorXrayDefaults,
     getActorXrayEnabled: group => Object.hasOwn(actorXrayEnabled, group) ? actorXrayEnabled[group] : null,
     setActorXrayEnabled,
+    setWaterOnlyBranchPruneEnabled: value => { waterOnlyBranchPruneEnabled = value !== false; return waterOnlyBranchPruneEnabled; },
     setLocalReplayRingEnabled: value => { localReplayRingEnabled = value !== false; return localReplayRingEnabled; },
     setReplayParticipants: value => { replayParticipantPolicy = value === 'all' ? 'all' : 'rule'; return replayParticipantPolicy; },
     setShortXraySpecies: list => { shortXraySpecies.clear(); for (const id of list || []) shortXraySpecies.add(String(id).toLowerCase()); return [...shortXraySpecies]; },
