@@ -855,6 +855,8 @@
     return order <= -10000 ? -1 : order >= 900 ? 1 : 0;
   }
 
+  let ordinaryPortraitSortDraws = 0; // Mobile diagnostics: draws that bypass the manual/pet-specific sort caches.
+
   function withVisualSort(renderer, portraitOrder, draw) {
     const manual = xrayRule('layers.manualOrder') === 'on' && !!window.XrayHierarchy?.layerRank;
     const babyForegroundItem = item =>
@@ -863,6 +865,18 @@
       && window.XrayHierarchy?.get?.('baby.carrierForeground') !== 'off'; // Shared with both rank paths; stowed/dropped babies and opt-outs retain normal depth.
     if (!manual && !portraitOrder && !previouslyPresentedPet?.avatarRef) return draw();
     if (!renderer.setTransparentSort) return draw();
+    // The usual actor-only draw has neither manual categories nor shoulder
+    // faces. Its rank and render order already live on the render item and
+    // the portrait maps. Avoid four per-draw Maps and their per-comparison
+    // lookups, without changing the actor depth or original tie-break rules.
+    if (!manual && portraitOrder && !previouslyPresentedPet?.avatarRef) {
+      const effectiveOrder = item => Number(item.renderOrder) || 0; // Same normalization as the full compositor.
+      renderer.setTransparentSort((a, b) => comparePortraitDraws(
+        a, b, portraitOrder.ranks, portraitOrder.extras, effectiveOrder));
+      ordinaryPortraitSortDraws++;
+      try { return draw(); }
+      finally { renderer.setTransparentSort(null); }
+    }
     const rankCache = new Map(); // One classification per render item, not per sort comparison.
     const pairCache = new Map(); // Per-draw pet/owner face identity; no repeated ancestor scans inside sort comparisons.
     const orderCache = new Map(); // Whole-list effective render orders for pet/owner stages AND unrelated items.
@@ -4646,6 +4660,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
       distantTintCoversSkipped: lastDistantTintCovers,
       waterClipScopes: lastWaterClipScopes,
       rankedPortraitActors: lastRankedPortraitActors,
+      ordinaryPortraitSortDraws,
       handsBehindFrontPlane: lastHandsBehindFrontPlane,
       airborneDepthRebuilds,
       backgroundDepthMeshesExcluded,
