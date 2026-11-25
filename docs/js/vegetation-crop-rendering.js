@@ -1175,6 +1175,7 @@
     mesh.userData.hobunjiCropRootKey = family;
     mesh.userData.hobunjiCropVarietyColor = pigment ?? null;
     mesh.scale.setScalar(size);
+    window.HobunjiCropSpriteArt?.registerPlaceholder?.(mesh); // Also covers standalone callers outside NPC plot drawing.
     return { mesh, lift: size / 2 + 0.02 };
   }
 
