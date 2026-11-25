@@ -151,7 +151,7 @@
     const cached = reachCache; // Last range calculation, reused only for 50ms between equipment changes.
     if (cached && cached.attackId === attackId && cached.weaponKey === weaponKey
       && cached.tile === tile && cached.pitch === pitch && cached.mounted === mounted && nowMs >= cached.atMs && nowMs - cached.atMs < REACH_REFRESH_INTERVAL_MS) return cached.profile;
-    const profile = window.Combat.quickAttackData?.getReachProfile?.(deps, attackId) || null; // Actual attack geometry, not a second formula.
+    const profile = window.Combat.quickAttackData?.getReachProfile?.(deps, attackId, null, null, null, { aimPitch: pitch }) || null; // Actual attack geometry, not a second formula.
     reachCache = { attackId, weaponKey, tile, pitch, mounted, atMs: nowMs, profile }; // Keeps per-frame condition and facing checks independent of this cache.
     return profile;
   }
