@@ -201,6 +201,7 @@
     for (let index = 0; index < CLUSTER_OFFSETS.length; index++) {
       mesh.add(makeClusterPlant(cropKey, aspect, texture, index, pigment, painted));
     }
+    watchPlaceholderAttachment(mesh); // Also adopt legacy anchors so reattachment restores their facing updates.
     activeBillboards.add(mesh);
   }
 
@@ -281,15 +282,29 @@
     meshes.add(mesh);
   }
 
-  function onPlaceholderAdded() { registerPlaceholder(this); } // Object3D event catches standalone crops attached after their builder returns.
+  // Attached standalone crops and temporarily detached farm anchors may
+  // return after the scene's one adoption scan. Keep their own lifecycle
+  // callbacks on the anchor, not a global strong-reference registry.
+  function onPlaceholderAdded() {
+    if (this.userData?.hobunjiCropSpriteKey) activeBillboards.add(this);
+    else registerPlaceholder(this);
+  }
+
+  function onPlaceholderRemoved() {
+    registeredPlaceholders.delete(this);
+    activeBillboards.delete(this);
+  }
+
+  function watchPlaceholderAttachment(mesh) {
+    mesh.addEventListener?.('added', onPlaceholderAdded);
+    mesh.addEventListener?.('removed', onPlaceholderRemoved);
+  }
 
   function registerPlaceholder(mesh) {
     const cropKey = mesh?.userData?.hobunjiCropBaseKey; // Authoritative species identity from the farm/NPC crop builder.
     if (!mesh?.isMesh || mesh.userData.hobunjiCropSpriteKey || CROP_WORLD_ART[cropKey]?.worldMode !== 'billboard') return false;
-    if (!mesh.parent && mesh.addEventListener) {
-      mesh.addEventListener('added', onPlaceholderAdded);
-      return true;
-    }
+    watchPlaceholderAttachment(mesh);
+    if (!mesh.parent && mesh.addEventListener) return true;
     if (!registeredPlaceholders.has(mesh)) registeredCropCount++;
     registeredPlaceholders.add(mesh);
     return true;
@@ -302,7 +317,9 @@
       // before this frame hook. A harvested or replaced crop must not convert.
       if (!mesh.parent || mesh.userData.hobunjiCropSpriteKey) continue;
       const cropKey = mesh.userData.hobunjiCropBaseKey;
-      if (CROP_WORLD_ART[cropKey]?.worldMode === 'billboard') queueBillboard(mesh, cropKey);
+      // Explicit registration is not permission to replace arbitrary tagged
+      // geometry. The producer has set its position and scale by this point.
+      if (isUnitCropCube(mesh) && CROP_WORLD_ART[cropKey]?.worldMode === 'billboard') queueBillboard(mesh, cropKey);
     }
   }
 
