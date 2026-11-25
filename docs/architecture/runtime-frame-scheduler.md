@@ -103,3 +103,16 @@ When modifying a subscriber, read:
 3. The feature's focused regression test.
 
 No search through `game.js` should be required merely to discover who drives its browser-frame update.
+
+
+### Bounded timing observers
+
+`registerTimingObserver(observer)` registers one optional diagnostics
+observer and returns its removal function (or null when occupied). Its
+callbacks are `beginFrame(timestamp, frameId)`,
+`subscriber(id, phase, ms)`, `driver(ms, completed)` and `endFrame()`.
+Exceptions are isolated; no observer changes scheduler order, starts a
+new RAF, or enables the existing overlay profiler. Pixel Probe uses this
+only while armed, excluding non-world/failed frames and the warmup frame
+from its aggregate. Pre-render subscriber time is part of driver time;
+do not sum overlapping timing categories.
