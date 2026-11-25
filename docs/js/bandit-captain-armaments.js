@@ -228,7 +228,7 @@
   function tick(entity, toolDefs = deps?.TOOL_ITEM_DEFS) {
     const armament = entity?._banditCaptainArmament;
     if (!armament?.visual) return;
-    if (!entity.avatarRef?.group?.parent || Number(entity.health) <= 0) {
+    if (!entity.avatarRef?.group?.parent || Number(entity.health) <= 0 || window.Combat?.shouldPresentCombatVfx?.(entity, entity.scene) === false) {
       entity._captainEnchantmentFx?.dispose?.();
       entity._captainEnchantmentFx = null;
       return;
