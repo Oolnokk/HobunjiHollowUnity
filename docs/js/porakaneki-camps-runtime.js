@@ -1835,8 +1835,8 @@
     try {
       const base = await loadGangConfig();
       if (!base || generation !== buildGeneration || currentArea() !== camp.zoneId) return null;
-      window.HobunjiRangedWeaponArchetypes?.patchGeneratedDefinitions?.(); // Register dual-role spear/hatchet/dagger definitions before creating the held ranged mesh.
       const weapon = weaponDef(hunter.weaponShape);
+      window.HobunjiRangedWeaponArchetypes?.patchGeneratedDefinitions?.({ npcOnly: true, keys: [weapon.rangedWeaponKey] }); // Ensure only this hunter's ranged definition.
       const avenger = isAvenger(hunter);
       const title = `${LABEL} ${avenger ? 'Avenger' : 'Hunter'}`;
       const entity = await window.BanditCombat.makeEntity({
