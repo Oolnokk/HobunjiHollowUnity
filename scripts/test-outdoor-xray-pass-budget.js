@@ -176,7 +176,8 @@ const disabled = new Function('assert', [
     const tintCoverRegistry = {all:new Set()};
     let time=0, wet=false, classificationScheduled=false;
     let lastSceneScan = new WeakMap();
-    const FALLBACK_SCAN_INTERVAL_MS=750, retiredScenes=new WeakSet(), internalReplay=false;
+    const FALLBACK_SCAN_INTERVAL_MS=750, CLASSIFICATION_PILOT_INTERVAL_MS=3000, retiredScenes=new WeakSet(), internalReplay=false;
+    let slowClassificationFallbackEnabled=false, classificationFullScans=0, classificationForcedScans=0;
     const actorXrayEnabled={animals:false,enemies:false,player:false}, actorXrayRoots=new Map();
     let actorXrayScene=null, allActorXrayDisabled=true, hasDisabledActorXray=true;
     let actorXrayBypassFrames=0,actorXrayWaterOnlyFrames=0;
