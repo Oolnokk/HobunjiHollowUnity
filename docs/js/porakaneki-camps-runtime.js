@@ -394,6 +394,12 @@
     lastReason: 'boot', // Copyable mobile diagnostic lifecycle note.
     stamps: 0, // Successful visible + reserved camp stamps this session.
     materializations: 0, // Generated residents promoted from abstract agents into real humanoid entities.
+    materializationAttempts: 0, // Factory request lifecycle counters for Pixel Probe and tribe diagnostics.
+    materializationCancelledBeforeBuild: 0,
+    materializationCancelledAfterBuild: 0,
+    materializationFailures: 0,
+    dormantEntityReleases: 0,
+    dormantEntityReuses: 0,
     coarseTicks: 0, // Low-frequency abstract simulation ticks.
     greetings: 0, // Friendly Porakaneki greetings shown this session.
     kills: 0, // Player-attributed Porakaneki deaths charged to tribe Favor.
@@ -1792,7 +1798,10 @@
     if (!hunter?.entity) return;
     hideEntity(hunter);
     if (hunter.dormantSinceMs == null) hunter.dormantSinceMs = nowMs();
-    else if (nowMs() - hunter.dormantSinceMs >= DORMANT_ENTITY_RELEASE_S * 1000) teardownEntity(hunter);
+    else if (nowMs() - hunter.dormantSinceMs >= DORMANT_ENTITY_RELEASE_S * 1000) {
+      state.dormantEntityReleases++;
+      teardownEntity(hunter);
+    }
   }
   function placeEntity(hunter) {
     const entity = hunter?.entity, camp = hunter?.camp;
@@ -1828,13 +1837,23 @@
     }
     return gangCfgLoading;
   }
+  function hunterCanMaterialize(hunter, generation) {
+    // Both asynchronous boundaries may cross a map transition, radius exit,
+    // resident death or camp replacement. Never build/publish a stale resident.
+    const camp = hunter?.camp;
+    return !!camp && !hunter.slain && !hunter.entity && generation === buildGeneration
+      && currentArea() === camp.zoneId && camp.hunters.includes(hunter) && sharesPlayerChunk(hunter);
+  }
+
   async function materializeHunter(hunter, generation) {
     const camp = hunter?.camp;
-    if (!hunter || !camp || hunter.entity || hunter.building || currentArea() !== camp.zoneId) return hunter?.entity || null;
+    if (!hunter || !camp || hunter.building || !hunterCanMaterialize(hunter, generation)) return hunter?.entity || null;
     hunter.building = true;
+    state.materializationAttempts++;
     try {
       const base = await loadGangConfig();
-      if (!base || generation !== buildGeneration || currentArea() !== camp.zoneId) return null;
+      if (!base) { state.materializationFailures++; return null; }
+      if (!hunterCanMaterialize(hunter, generation)) { state.materializationCancelledBeforeBuild++; return null; }
       const weapon = weaponDef(hunter.weaponShape);
       window.HobunjiRangedWeaponArchetypes?.patchGeneratedDefinitions?.({ npcOnly: true, keys: [weapon.rangedWeaponKey] }); // Ensure only this hunter's ranged definition.
       const avenger = isAvenger(hunter);
@@ -1870,8 +1889,10 @@
           isTribeAvenger: avenger,
         },
       });
-      if (!entity || generation !== buildGeneration || currentArea() !== camp.zoneId || !sharesPlayerChunk(hunter)) {
-        window.BanditCombat.discardEntity?.(entity); // Drop a completed build whose data-only owner moved outside the activation bubble.
+      if (!entity) { state.materializationFailures++; return null; }
+      if (!hunterCanMaterialize(hunter, generation)) {
+        state.materializationCancelledAfterBuild++;
+        window.BanditCombat.discardEntity?.(entity); // Drop a completed build whose data-only owner is no longer eligible.
         return null;
       }
       hunter.entity = entity;
@@ -1886,6 +1907,9 @@
       combatDeps.hostileObjects.add(entity);
       state.materializations += 1;
       return entity;
+    } catch (error) {
+      state.materializationFailures++;
+      throw error;
     } finally { hunter.building = false; }
   }
 
@@ -2016,7 +2040,7 @@
   }
   function placeEntityIfDormant(hunter) {
     const entity = hunter.entity;
-    if (entity && (entity.areaId !== hunter.camp.zoneId || !entity.avatarRef?.group?.visible)) placeEntity(hunter);
+    if (entity && (entity.areaId !== hunter.camp.zoneId || !entity.avatarRef?.group?.visible) && placeEntity(hunter)) state.dormantEntityReuses++;
   }
 
   function updateCampHunterTick(hunter, dt, coarseDt, sleeping, generation) {
@@ -2354,6 +2378,12 @@
       zones,
       stamps: state.stamps,
       materializations: state.materializations,
+      materializationAttempts: state.materializationAttempts,
+      materializationCancelledBeforeBuild: state.materializationCancelledBeforeBuild,
+      materializationCancelledAfterBuild: state.materializationCancelledAfterBuild,
+      materializationFailures: state.materializationFailures,
+      dormantEntityReleases: state.dormantEntityReleases,
+      dormantEntityReuses: state.dormantEntityReuses,
       coarseTicks: state.coarseTicks,
       greetings: state.greetings,
       kills: state.kills,
@@ -2394,7 +2424,7 @@
     formatDebug: () => {
       const d = debugSnapshot();
       const zoneBits = Object.entries(d.zones).map(([zoneId, z]) => `${zoneId}:${z.smallCampCount}${z.chiefActive ? '+CHIEF' : ''}`).join(' ');
-      return `${LABEL} camps: v8 ticks=${d.updateTicks} owner=${d.tickOwner} season=${d.season} chief=${d.chiefZoneId || '-'} area=${d.currentArea || '-'} small=${d.totalSmallCamps} active=${d.totalActiveCamps} residents=${d.totalGeneratedResidents} favor=${d.favor ?? '-'} rapport=${d.rapport} AOS=${d.attackOnSight} lod=${d.fullSimulationRadiusTiles}/${d.fullSimulationReleaseRadiusTiles} player=${d.playerTile ? `${d.playerTile.col},${d.playerTile.row}` : '-'} ecology=${d.ecology.chunk || '-'}:${d.ecology[KEY] ?? 0}/${d.ecology.bandits}/${d.ecology.predators}/${d.ecology.prey} targets=${d.ecology.humanoidTargets}/${d.ecology.predatorTargets} mats=${d.materializations} coarse=${d.coarseTicks} greet=${d.greetings} kills=${d.kills} avengers=${d.avengerKills}k/${d.avengerLosses}l/${d.avengerEscapes}e/${d.avengerWithdrawals}w zones=[${zoneBits}] reason=${d.lastReason}`;
+      return `${LABEL} camps: v8 ticks=${d.updateTicks} owner=${d.tickOwner} season=${d.season} chief=${d.chiefZoneId || '-'} area=${d.currentArea || '-'} small=${d.totalSmallCamps} active=${d.totalActiveCamps} residents=${d.totalGeneratedResidents} favor=${d.favor ?? '-'} rapport=${d.rapport} AOS=${d.attackOnSight} lod=${d.fullSimulationRadiusTiles}/${d.fullSimulationReleaseRadiusTiles} player=${d.playerTile ? `${d.playerTile.col},${d.playerTile.row}` : '-'} ecology=${d.ecology.chunk || '-'}:${d.ecology[KEY] ?? 0}/${d.ecology.bandits}/${d.ecology.predators}/${d.ecology.prey} targets=${d.ecology.humanoidTargets}/${d.ecology.predatorTargets} mats=${d.materializations}/${d.materializationAttempts} cancelled=${d.materializationCancelledBeforeBuild}/${d.materializationCancelledAfterBuild} failed=${d.materializationFailures} dormant(release/reuse)=${d.dormantEntityReleases}/${d.dormantEntityReuses} coarse=${d.coarseTicks} greet=${d.greetings} kills=${d.kills} avengers=${d.avengerKills}k/${d.avengerLosses}l/${d.avengerEscapes}e/${d.avengerWithdrawals}w zones=[${zoneBits}] reason=${d.lastReason}`;
     },
     __test: Object.freeze({ updateAvengerBand, resolveAvengerCatch, MIN_HUNTING_CAMPS_PER_ZONE, speakerHunterFor, friendlyGreetingAllowed, maybeChiefGreeting, isSleepingHour, chunkOf, streamChunkSizeTiles, streamChunkKeysForSite, streamChunkOfTile, ecologyRole, nearestEcologyTarget, activePlayerChunkEcology, updateChunkEcology, fullSimulationRadiusTiles, fullSimulationReleaseRadiusTiles, simulationDistanceToPlayer, weaponRoll, currentSeasonName, desiredChiefZone, smallCampCountForZone, huntingCampPreferredPoint, smallResidentCount, historicalHuntingPartyCountForZone, historicalHuntingCohortsForZone, denExteriorPoint, chooseNextPartyDen, ensureHuntingParties, updateHuntingParty, speakOverheadFromHunter, speakOverheadFromWalker, markOutline, buildZoneView, tentWallsBlockBox }),
   });
