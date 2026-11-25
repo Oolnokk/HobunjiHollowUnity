@@ -3006,3 +3006,9 @@ parsed. Native full Node and browser CI, repository cache checker and
 device A/B remain unverified. Updated known gameplay cache chains; authoring
 preview does not load the matrix owner and stays native. Keep default off
 until device reports confirm worthwhile reduction and no audit violations.
+
+Follow-up audit: explicit leaf-writer invalidation permanently retires the
+immutable branch even when its first edit is identity. Late Group prototype
+matrix hooks remain native. Added real producer enrollment and direct leaf
+composition count checks, plus settings persistence/reset and A/B restoration
+fixtures. The opt-in remains off.
