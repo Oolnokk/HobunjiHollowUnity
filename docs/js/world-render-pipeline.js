@@ -84,7 +84,8 @@
 
   // Created by init(). Names kept from game.js so its old comments still match.
   let shellOutlineMat = null;
-  let generatedOutlineMode = 'shell'; // Experimental generated-outline selector; master Outlines still controls the composite.
+  const DEFAULT_GENERATED_OUTLINE_MODE = 'screen'; // User-selected shipped default and settings reset authority.
+  let generatedOutlineMode = DEFAULT_GENERATED_OUTLINE_MODE; // Experimental generated-outline selector; master Outlines still controls the composite.
   let shellMaskMaterial = null; // Unexpanded, front-facing geometry for the selective screen-space mode.
   let shellMaskRT = null; // Allocated only in screen-space mode, reused between frames.
   let targetOutlineGreenMat = null;
@@ -816,6 +817,7 @@
     get materials() { return { shell: shellOutlineMat, targetAllowed: targetOutlineGreenMat, targetBlocked: targetOutlineRedMat, seamId: _furnitureIdMat, composite: _postMat }; },
     get targets() { return { main: _mainRT, seamId: _edgeIdRT }; },
     get camera() { return deps?.camera || null; }, // The gameplay camera every world pass uses (diagnostics).
+    defaultGeneratedOutlineMode: DEFAULT_GENERATED_OUTLINE_MODE,
     getGeneratedOutlineMode: () => generatedOutlineMode,
     setGeneratedOutlineMode,
     getOutlineRenderingConfig: () => JSON.parse(JSON.stringify(outlineRenderingConfig)),
