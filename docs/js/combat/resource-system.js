@@ -164,7 +164,17 @@
     furiousStamina: {
       name: "Furious Stamina", resource: "stamina", extend: "currentBack", priority: 36, recovers: false, enhanced: true,
       family: "enhanced", tags: ["enhanced", "fury"],
-      desc: "Enhanced Stamina. When it pays for an offensive Held attack, the portion it funds progresses at three times normal speed."
+      desc: "Offensive Held attacks snapshot Furious Stamina before spending; +2% speed per point, up to +200%. Pays Held attack costs one for one."
+    },
+    unshackledStamina: {
+      name: "Unshackled Stamina", resource: "stamina", extend: "currentBack", priority: 37, recovers: false, enhanced: true,
+      family: "enhanced", tags: ["enhanced", "ohthic", "tempo"],
+      desc: "Combo attacks snapshot Unshackled Stamina before spending; +2% speed per point, up to +200%. Pays Combo attack costs one for one."
+    },
+    weightlessStamina: {
+      name: "Weightless Stamina", resource: "stamina", extend: "zero", priority: 32, recovers: true, enhanced: true,
+      family: "enhanced", tags: ["enhanced", "ohthic"],
+      desc: "Each point grants +2% movement and dodge speed and attack lunge distance, up to +200%. Occupies the last Stamina spent and naturally fades."
     },
     moralizedStamina: {
       name: "Moralized Stamina", resource: "stamina", extend: "currentBack", priority: 35, recovers: false, enhanced: true,
@@ -245,8 +255,12 @@
 
   const ENHANCED_RESOURCE_DEFS = Object.freeze({
     furiousStamina: Object.freeze({
-      resource: "stamina", conversionRate: 1, normalPriority: 5, beneficialPriority: 100, tempoMultiplier: 3,
-      benefitsTransaction: tx => tx?.actionKind === "offensiveHeldCharge" || tx?.actionKind === "offensiveHeldFlurry",
+      resource: "stamina", conversionRate: 1, normalPriority: 5, beneficialPriority: 130, tempoMultiplier: 3,
+      requiresBeneficialTransaction: true, benefitsTransaction: tx => tx?.actionKind === "offensiveHeldCharge" || tx?.actionKind === "offensiveHeldFlurry",
+    }),
+    unshackledStamina: Object.freeze({
+      resource: "stamina", conversionRate: 1, normalPriority: 5, beneficialPriority: 130, tempoMultiplier: 3,
+      requiresBeneficialTransaction: true, benefitsTransaction: tx => tx?.actionKind === "combatCombo",
     }),
     moralizedStamina: Object.freeze({ resource: "stamina", conversionRate: 3, normalPriority: 50 }),
     hypedStamina: Object.freeze({
@@ -442,12 +456,23 @@
     return entity._temporaryKnockdownProne === true ? 1.75 : 2.5; // Footing-break prone stays stronger while Footing refills.
   }
 
+  function planarAmountMultiplier(entity, id) {
+    return 1 + Math.min(100, Math.max(0, getAffliction(entity, id))) * 0.02; // Shared linear scaling; 100 points gives 3×.
+  }
+
+  function attackTempoMultiplier(entity, actionKind) {
+    if (actionKind === "combatCombo") return planarAmountMultiplier(entity, "unshackledStamina");
+    if (actionKind === "offensiveHeldCharge" || actionKind === "offensiveHeldFlurry") return planarAmountMultiplier(entity, "furiousStamina");
+    return 1;
+  }
+
   function timedDebuffModifier(entity, key) {
+    const weightless = key === "moveSpeed" || key === "dodgeLungeDistance" ? planarAmountMultiplier(entity, "weightlessStamina") : 1; // Same movement seam used by Heavy, including NPC dodges and lunges.
     const store = timedDebuffStore(entity); // Fast no-status path used by per-frame movement/combat loops.
-    if (!store) return 1;
+    if (!store) return weightless;
     const liveStore = cleanupTimedDebuffs(entity); // Expiration cleanup stays allocation-free and only scans actors that actually have timed statuses.
-    if (!liveStore) return 1;
-    let multiplier = 1; // Combined named-debuff multiplier returned to the shared stat choke point.
+    if (!liveStore) return weightless;
+    let multiplier = weightless; // Combined named-debuff multiplier returned to the shared stat choke point.
     for (const id in liveStore) {
       const entry = liveStore[id]; // Existing materialized modifier avoids rebuilding percentage math in hot loops.
       const value = Number(entry?.modifiers?.[key]); // Only the requested stat key participates in this lookup.
@@ -944,7 +969,7 @@
     const requested = Math.max(0, Number(amount) || 0); // Effective ordinary-resource points the transaction wants to pay/absorb.
     let remaining = requested; // Effective amount left after each enhanced pool contributes through its conversion rate.
     const consumed = []; // Detailed raw/effective contributions used by debug and offensive-Held tempo calculations.
-    let weightedTempo = 0; // Effective points multiplied by their own action tempo; ordinary remainder contributes at 1× below.
+    const tempoSnapshot = resourceKey === "stamina" ? attackTempoMultiplier(entity, transaction.actionKind) : 1; // Read before any payment mutates the reserve.
 
     for (const entry of getEnhancedResources(entity, resourceKey, transaction)) {
       if (!(remaining > 0)) break;
@@ -957,7 +982,7 @@
       const removed = removeAffliction(entity, entry.id, rawConsumed);
       const actualEffectivePaid = Math.min(remaining, removed * rate);
       if (!(actualEffectivePaid > 0)) continue;
-      const tempo = entry.benefitsTransaction ? Math.max(1, Number(entry.def.tempoMultiplier) || 1) : 1;
+      const tempo = entry.benefitsTransaction && entry.def.tempoMultiplier ? tempoSnapshot : 1;
       consumed.push({
         id: entry.id,
         rawConsumed: removed,
@@ -967,7 +992,7 @@
         benefitsTransaction: entry.benefitsTransaction,
       });
       remaining = Math.max(0, remaining - actualEffectivePaid);
-      weightedTempo += actualEffectivePaid * tempo;
+
 
       if (entry.id === "pactHealth") {
         addAffliction(entity, "soulweightedHealth", removed); // The borrowed shield's debt is charged only when it is actually consumed.
@@ -981,9 +1006,8 @@
       }
     }
 
-    weightedTempo += remaining;
     const enhancedPaid = round1(requested - remaining);
-    const tempoMultiplier = requested > 0 ? Math.max(1, weightedTempo / requested) : 1;
+    const tempoMultiplier = tempoSnapshot;
     return {
       resourceKey,
       requested: round1(requested),
@@ -1090,11 +1114,13 @@
 
     const frostbittenOverlap = consumeZeroBasedSpend(entity, "frostbittenStamina", spendEnd, spendStart); // Frostbitten Stamina converts only the spent overlap into equal Footing damage.
     if (frostbittenOverlap > 0) spendFooting(entity, frostbittenOverlap, "spent Frostbitten Stamina");
+    consumeZeroBasedSpend(entity, "weightlessStamina", spendEnd, spendStart); // Last ordinary Stamina band, after all expenditure punishments.
   }
 
   function consumeZeroBasedSpend(entity, id, spendEnd, spendStart) {
     const amount = getAffliction(entity, id);
-    const overlap = getRangeOverlap(spendEnd, spendStart, 0, amount);
+    const offset = id === "weightlessStamina" ? 0 : getAffliction(entity, "weightlessStamina"); // Punishing zero-based bands sit immediately above Weightless.
+    const overlap = getRangeOverlap(spendEnd, spendStart, offset, offset + amount);
     if (overlap <= 0) return 0;
     removeAffliction(entity, id, overlap);
     return round1(overlap);
@@ -1355,6 +1381,9 @@
     if (def.extend === "maxBack") {
       leftPoints = clamp((max || 0) - amount, 0, max || 0); // Footing reservations occupy the unavailable end of the ring.
       widthPoints = clamp(amount, 0, max || 0);
+    } else if (resourceKey === "stamina" && ["woundedStamina", "infectedStamina", "shatteredStamina", "frostbittenStamina"].includes(id)) {
+      leftPoints = clamp(getAffliction(entity, "weightlessStamina"), 0, max || 0);
+      widthPoints = clamp(amount, 0, Math.max(0, max - leftPoints));
     } else if (def.extend === "currentBack") {
       const right = clamp(current, 0, max || 0);
       leftPoints = clamp(right - amount, 0, max || 0);
@@ -1374,6 +1403,8 @@
     clearTimedDebuff,
     getProneAttackMultiplier,
     timedDebuffModifier,
+    attackTempoMultiplier,
+    planarAmountMultiplier,
     registerStatModifierProvider,
     statModifier,
     afflictionBonusesForTag,
