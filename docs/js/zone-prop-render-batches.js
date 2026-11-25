@@ -73,19 +73,26 @@
   function reject(reason) { const key = currentKind ? currentKind + ':' + reason : reason; rejectReasons[key] = (rejectReasons[key] || 0) + 1; return false; }
   function noRaycast() {}
 
-  function ownerOf(mesh) {
-    for (let o = mesh; o && !o.isScene; o = o.parent) {
-      const data = o.userData;
-      if (data) for (const [tag, kind] of OWNER_TAGS) if (data[tag] !== undefined && data[tag] !== null && data[tag] !== false) return { root: o, kind };
-      const name = o.name;
-      if (name) for (const [prefix, kind] of OWNER_NAME_PREFIXES) if (name.startsWith(prefix)) return { root: o, kind };
-    }
-    return null;
+  // Memoize nearest ownership for this collection only. Shared parents
+  // (furniture and vegetation assemblies) no longer repeat tag/name scans
+  // for every member. The next collection observes any reparent or tag edit.
+  function ownerOf(mesh, owners) {
+    if (!mesh || mesh.isScene) return null;
+    if (owners.has(mesh)) return owners.get(mesh);
+    const kind = ownerKindOf(mesh); // Nearest tagged ancestor still wins.
+    const owner = kind ? { root: mesh, kind } : ownerOf(mesh.parent, owners);
+    owners.set(mesh, owner);
+    return owner;
   }
 
-  function effectivelyVisible(object) {
-    for (let o = object; o; o = o.parent) if (o.visible === false) return false;
-    return true;
+  // Combine the attachment and effective-visibility checks in a single
+  // ancestor walk. This is called for every settled batch member each frame.
+  function visibleInScene(object, scene) {
+    for (let o = object; o; o = o.parent) {
+      if (o.visible === false) return false;
+      if (!o.parent) return o === scene;
+    }
+    return false;
   }
 
   // The one material a mesh draws with: itself, or the single material an array repeats over groups that tile the whole
@@ -478,22 +485,17 @@
     return roots;
   }
 
-  function attachedTo(object, scene) {
-    let o = object;
-    while (o.parent) o = o.parent;
-    return o === scene;
-  }
-
   function collect(scene, record, t, groups) {
     if (!record.roots || t - record.scannedAt >= RESCAN_MS) { record.roots = scanOwnerRoots(scene); record.scannedAt = t; }
     let sources = 0;
+    const owners = new Map(); // Shared nearest-owner lookups during this collection.
     const stack = [];
-    for (const root of record.roots) if (effectivelyVisible(root) && attachedTo(root, scene)) stack.push(root);
+    for (const root of record.roots) if (visibleInScene(root, scene)) stack.push(root);
     while (stack.length) {
       const object = stack.pop();
       if (object.visible === false) continue; // A hidden subtree draws nothing.
       if (object.isMesh) {
-        const owner = ownerOf(object);
+        const owner = ownerOf(object, owners);
         if (owner) currentKind = owner.kind;
         if (owner && eligible(object)) {
           if (!isStill(object, t)) { stats.moving++; }
@@ -540,7 +542,7 @@
       const drawn = batch.mesh;
       if (!drawn || batch.members.length < 2) return null;
       for (const member of batch.members) {
-        if (!attachedTo(member, scene) || !effectivelyVisible(member)
+        if (!visibleInScene(member, scene)
           || !member.isMesh || member.isInstancedMesh || member.isSkinnedMesh
           || member.onBeforeRender !== defaultBeforeRender
           || (batch.furnitureState ? !furnitureStateMatches(member, batch.furnitureState)
