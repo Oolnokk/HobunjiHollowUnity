@@ -268,6 +268,7 @@
   function eligible(mesh) {
     if (!mesh.isMesh || mesh.isInstancedMesh || mesh.isSkinnedMesh) return false;
     if (mesh.userData?.hobunjiZonePropBatch) return false;
+    if (mesh.children?.length) return reject('children'); // Hiding a source must not hide its independently drawn descendants.
     if (mesh.onBeforeRender !== defaultBeforeRender) return reject('hook');
     const material = drawnMaterial(mesh);
     if (!(currentKind === 'furniture' && furnitureMaterialKey(mesh, material)) && !materialEligible(material)) return false;
@@ -537,7 +538,7 @@
   function settledMemberMatches(member, batch, scene, t) {
     const drawn = batch.mesh; // Fast comparison against the existing proxy's state.
     return visibleInScene(member, scene)
-      && member.isMesh && !member.isInstancedMesh && !member.isSkinnedMesh
+      && member.isMesh && !member.isInstancedMesh && !member.isSkinnedMesh && !member.children?.length
       && member.onBeforeRender === defaultBeforeRender
       && (batch.furnitureState ? furnitureStateMatches(member, batch.furnitureState)
         : (Array.isArray(member.material) ? drawnMaterial(member) : member.material) === drawn.material)
