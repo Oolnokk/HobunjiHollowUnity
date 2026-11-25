@@ -505,7 +505,9 @@
     if (!livingActor(event.attacker) || !(power > 0)) return false;
     const effect = def.grantAffliction; // Authored enhanced reserve; Flurry's numerical scale is already included in power.
     if (!effect) return false;
-    const added = applyEnhanced(event.attacker, effect.id, effect.amount * power, def.displayName);
+    const added = effect.id === 'weightlessStamina'
+      ? (window.ResourceSystem?.addAffliction?.(event.attacker, effect.id, effect.amount * power) || 0) // Bottom-anchored reserve is ordinary Stamina, not an upfront enhanced payment pool.
+      : applyEnhanced(event.attacker, effect.id, effect.amount * power, def.displayName);
     if (!(added > 0)) return false;
     logEvent(`${def.displayName}: +${added} ${window.ResourceSystem.AFFLICTIONS[effect.id].name}`);
     return true;
@@ -859,10 +861,10 @@
     render: () => {
       const key = weaponKey(); // Captures which weapon these selectors edit, including while another weapon is equipped.
       const state = stateFor(key); // Reads canonical enchantments for the companion dropdowns.
-      const options = type => [{ value: '', label: '— None —' }, ...definitionOptions(type).map(def => ({ value: def.id, label: `${def.displayName} · ${def.alignment}` }))]; // Shares the same authored options as the former player-menu editors.
+      const options = (type, slot) => [{ value: '', label: '— None —' }, ...definitionOptions(type).filter(def => !slot || allowsFlourishSlot(def.id, slot)).map(def => ({ value: def.id, label: `${def.displayName} · ${def.alignment}` }))]; // Shares the same authored options as the former player-menu editors.
       return { summary: key, actions: [
         ...Array.from({ length: BASE_LIMIT }, (_, index) => ({ id: 'base', label: `Base ${index + 1}`, args: { key, index }, value: state.base[index] || '', options: options('Base') })),
-        ...(window.Combat?.loadout?.SLOT_IDS || ['tap1','tap2','hold1','hold2']).map(slot => ({ id: 'flourish', label: `${slot.toUpperCase()} Flourish`, args: { key, slot }, value: state.flourishes?.[slot] || '', options: options('Flourish') })),
+        ...(window.Combat?.loadout?.SLOT_IDS || ['tap1','tap2','hold1','hold2']).map(slot => ({ id: 'flourish', label: `${slot.toUpperCase()} Flourish`, args: { key, slot }, value: state.flourishes?.[slot] || '', options: options('Flourish', slot) })),
       ] };
     },
     onAction: (action, args) => {
