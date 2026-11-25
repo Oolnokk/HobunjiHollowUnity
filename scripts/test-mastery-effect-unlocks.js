@@ -204,10 +204,10 @@ async function main() {
     return Object.keys(drops);
   }
   const knockdownTablet = api.itemKey('blunt', 1, 'debuff_durationS_1_id_knockdown', 'tablet');
-  assert.deepEqual(catacombRoll('caveSkeletonBody', { entity: catacombBody }, [0.21, 0.14, 0, 0.75, 0.99]), [knockdownTablet], 'a sharp-wielding catacomb corpse can yield blunt Knockdown after a regional miss');
-  assert.deepEqual(catacombRoll('caveSkeletonBody', { entity: catacombBody }, [0.21, 0.14, 0, 0.25, 0]), [api.itemKey('sharp', 1, 'aff_poisonedHealth_0p378', 'tablet')], 'sharp ghoul tablets remain possible');
+  assert.deepEqual(catacombRoll('caveSkeletonBody', { entity: catacombBody }, [0.31, 0.39, 0, 0.75, 0.99]), [knockdownTablet], 'a sharp-wielding catacomb corpse can yield blunt Knockdown after a regional miss');
+  assert.deepEqual(catacombRoll('caveSkeletonBody', { entity: catacombBody }, [0.31, 0.39, 0, 0.25, 0]), [api.itemKey('sharp', 1, 'aff_poisonedHealth_0p378', 'tablet')], 'sharp ghoul tablets remain possible');
   assert.deepEqual(catacombRoll('caveSkeletonBody', { entity: catacombBody }, [0, 0, 0]), [api.itemKey('sharp', 1, pools.mastery_cave_map_eastern_mire.mastery.effects[1].sharp[0], 'tablet')], 'successful regional loot does not roll or add a second tablet');
-  assert.deepEqual(catacombRoll('caveSkeletonBody', { entity: catacombBody }, [0.2, 0.15]), [], 'both optional rolls can fail at their configured boundaries');
+  assert.deepEqual(catacombRoll('caveSkeletonBody', { entity: catacombBody }, [0.3, 0.4]), [], 'both optional rolls can fail at their configured boundaries');
   assert.deepEqual(catacombRoll('dungeonChest_tier2', { masterySource: 'caveCache', zoneId: 'map_eastern_mire' }, [0.21]), [], 'ordinary cave caches do not gain the ghoul fallback');
   assert.deepEqual(catacombRoll('bandit_grunt', { entity: skeleton }, [0.999]), [], 'other skeleton corpses retain their normal mastery pool');
 
