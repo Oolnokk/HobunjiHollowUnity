@@ -1246,7 +1246,11 @@
     const projectilePool = window.__rangedDebug?.projectilePool; // Inspect resource reuse without devtools.
     const matrixCensus = window.WorldRenderPipeline?.sceneMatrixCensus?.(activeScene); // Explicit user capture only; no diagnostic traversal during gameplay.
     if (matrixCensus) lines.push(`Scene matrix census (outside render scopes): ${JSON.stringify(matrixCensus)}`);
-    if (performanceWindow) lines.push(`Gameplay performance window (before probe renders): ${JSON.stringify(performanceWindow)}`);
+    if (performanceWindow) {
+      const p = performanceWindow; // Human-readable summary plus machine-readable timing buckets.
+      lines.push(`Performance window: ${p.completeFrames} frames, ${p.fps ?? '-'} FPS, driver mean/p90 ${p.gameLoop?.meanMs ?? '-'}/${p.gameLoop?.p90Ms ?? '-'}ms, frame interval mean/p90 ${p.frameIntervals?.meanMs ?? '-'}/${p.frameIntervals?.p90Ms ?? '-'}ms, ${p.reason}`);
+      lines.push(`Gameplay performance window (before probe renders): ${JSON.stringify(p)}`);
+    }
     else lines.push('Gameplay performance window: unavailable; re-arm after the performance runtime loads.');
     if (worldCaptureAtClick) lines.push(`World frame capture (one-shot, before probe renders): ${JSON.stringify(worldCaptureAtClick)}`);
     else lines.push('World frame capture: unavailable for this arm/area; allow a gameplay frame after arming Pixel Probe before tapping.');
