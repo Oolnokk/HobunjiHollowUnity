@@ -201,10 +201,10 @@
       family: "control", tags: ["tothal", "water"],
       desc: "Ordinary Stamina recovery clears Undertow point for point before restoring Stamina. Black-Stamina recovery is unaffected."
     },
-    calcifiedFooting: {
-      name: "Calcified Footing", resource: "footing", extend: "currentBack", priority: 83, recovers: true,
+    leadboundStamina: {
+      name: "Leadbound Stamina", resource: "stamina", extend: "currentBack", priority: 96, recovers: true,
       family: "control", tags: ["hronal", "earth"],
-      desc: "Ordinary Footing loss consumes up to the same amount of Calcified Footing and inflicts equal additional Footing loss, limited to remaining Footing."
+      desc: "Each point reduces movement speed, dodge speed and lunge distance by 0.75%, up to 75%. Ordinary Stamina expenditure clears it first; it also naturally recovers."
     },
     soulweightedHealth: {
       name: "Soulweighted Health", resource: "health", extend: "currentBack", priority: 84, recovers: true,
@@ -221,10 +221,10 @@
       family: "enhanced", tags: ["enhanced", "tothal"],
       desc: "A reserve only dodges may spend. Each point pays for two ordinary Stamina."
     },
-    hearthstoneFooting: {
-      name: "Hearthstone Footing", resource: "footing", extend: "currentBack", priority: 38, recovers: false, enhanced: true,
+    temperedFooting: {
+      name: "Tempered Footing", resource: "footing", extend: "currentBack", priority: 38, recovers: false, enhanced: true,
       family: "enhanced", tags: ["enhanced", "hronal"],
-      desc: "Absorbs Footing loss one for one; each point consumed restores one ordinary Stamina."
+      desc: "Each point grants +2% Attack Power (affliction buildup), up to +200%. Absorbs Footing loss one for one and does not naturally decay."
     },
     pactHealth: {
       name: "Pact Health", resource: "health", extend: "currentBack", priority: 38, recovers: false, enhanced: true,
@@ -276,7 +276,7 @@
       resource: "stamina", conversionRate: 2, normalPriority: 5, beneficialPriority: 120,
       requiresBeneficialTransaction: true, benefitsTransaction: tx => tx?.actionKind === "combatDodge" || /\bdodge\b/i.test(String(tx?.reason || '')),
     }),
-    hearthstoneFooting: Object.freeze({ resource: "footing", conversionRate: 1, normalPriority: 60 }),
+    temperedFooting: Object.freeze({ resource: "footing", conversionRate: 1, normalPriority: 60 }),
     pactHealth: Object.freeze({
       resource: "health", conversionRate: 2, normalPriority: 5, beneficialPriority: 90,
       requiresBeneficialTransaction: true, benefitsTransaction: tx => tx?.source === "directDamage",
@@ -467,12 +467,14 @@
   }
 
   function timedDebuffModifier(entity, key) {
-    const weightless = key === "moveSpeed" || key === "dodgeLungeDistance" ? planarAmountMultiplier(entity, "weightlessStamina") : 1; // Same movement seam used by Heavy, including NPC dodges and lunges.
+    const mobility = key === "moveSpeed" || key === "dodgeLungeDistance"
+      ? planarAmountMultiplier(entity, "weightlessStamina") * (1 - Math.min(100, Math.max(0, getAffliction(entity, "leadboundStamina"))) * 0.0075)
+      : 1; // Opposed resource bands compose with Heavy in the shared player/NPC motion seam.
     const store = timedDebuffStore(entity); // Fast no-status path used by per-frame movement/combat loops.
-    if (!store) return weightless;
+    if (!store) return mobility;
     const liveStore = cleanupTimedDebuffs(entity); // Expiration cleanup stays allocation-free and only scans actors that actually have timed statuses.
-    if (!liveStore) return weightless;
-    let multiplier = weightless; // Combined named-debuff multiplier returned to the shared stat choke point.
+    if (!liveStore) return mobility;
+    let multiplier = mobility; // Combined named-debuff multiplier returned to the shared stat choke point.
     for (const id in liveStore) {
       const entry = liveStore[id]; // Existing materialized modifier avoids rebuilding percentage math in hot loops.
       const value = Number(entry?.modifiers?.[key]); // Only the requested stat key participates in this lookup.
@@ -592,6 +594,7 @@
   }
 
   function maxAfflictionAmount(entity, def) {
+    if (def === AFFLICTIONS.leadboundStamina) return Math.max(0, Math.min(entity?.maxStamina || 0, Number(entity?.stamina) || 0)); // Current-anchored burden never hides beyond the spendable ordinary pool.
     if (def?.resource === "health") return entity?.maxHealth || 0; // Health afflictions clamp against Health.
     if (def?.resource === "footing") return entity?.maxFooting || 0; // Footing afflictions clamp against Footing.
     return entity?.maxStamina || 0; // Existing non-Health afflictions default to Stamina.
@@ -838,6 +841,7 @@
     entity.stamina = entity.exhaustion.active
       ? 0
       : round1(clamp(entity.stamina, 0, getEffectiveMax(entity, "stamina"))); // While Exhausted, black Stamina is the only live stamina pool.
+    if (getAffliction(entity, "leadboundStamina") > entity.stamina) setAffliction(entity, "leadboundStamina", entity.stamina); // Direct drains and capacity changes cannot leave an invisible burden.
     entity.exhaustion.blackStamina = round1(clamp(entity.exhaustion.blackStamina, 0, 100));
     if (Number.isFinite(entity.footing)) entity.footing = round1(clamp(entity.footing, 0, getEffectiveMax(entity, "footing")));
   }
@@ -996,8 +1000,6 @@
 
       if (entry.id === "pactHealth") {
         addAffliction(entity, "soulweightedHealth", removed); // The borrowed shield's debt is charged only when it is actually consumed.
-      } else if (entry.id === "hearthstoneFooting") {
-        restoreStamina(entity, removed); // Ordinary restoration obeys Undertow and Exhaustion.
       }
       if (entry.id === "moralizedStamina") {
         window.EnchantmentSystem?.logEvent?.(`${removed} Moralized Stamina paid ${round1(actualEffectivePaid)} Stamina`);
@@ -1067,6 +1069,7 @@
       const consumedPanic = Math.max(0, normalSpent - Math.max(0, before - panicReserved)); // Remaining portion after non-panic Stamina paid.
       if (consumedPanic > 0) removeAffliction(entity, "panickedStamina", consumedPanic);
     }
+    if (normalSpent > 0) removeAffliction(entity, "leadboundStamina", normalSpent); // Enhanced payments leave the ordinary current-anchored burden intact.
     entity.stamina = after;
     if (normalSpent > 0) resolveSpentAfflictions(entity, after, before);
     if (excess > 0) enterExhausted(entity, excess, reason);
@@ -1091,11 +1094,6 @@
     const ordinaryLoss = enhanced.ordinaryRemaining;
     const before = entity.footing;
     entity.footing = round1(clamp(before - ordinaryLoss, 0, getEffectiveMax(entity, "footing")));
-    const ordinarySpent = round1(Math.max(0, before - entity.footing)); // Only loss past enhanced Footing can fracture calcification.
-    if (ordinarySpent > 0 && getAffliction(entity, "calcifiedFooting") > 0) {
-      const extra = removeAffliction(entity, "calcifiedFooting", Math.min(ordinarySpent, entity.footing));
-      entity.footing = round1(Math.max(0, entity.footing - extra));
-    }
     return round1(before - entity.footing);
   }
 
@@ -1144,7 +1142,8 @@
   // the actual Health lost.
   function attackPowerForAttack(opts = {}) {
     const raw = Number(opts.attackPower ?? opts.attacker?.def?.attackPower ?? opts.attacker?.def?.weaponShapeStats?.attackPower ?? (opts.attacker === window.Combat?.deps?.player ? window.WeaponShapeStats?.current?.().attackPower : null) ?? DEFAULT_ATTACK_POWER); // Player shape, NPC shape, or ranged weapon declares offensive status strength.
-    return Number.isFinite(raw) ? Math.max(0, Math.min(500, raw)) : DEFAULT_ATTACK_POWER; // Only gameplay's authored Attack Power affects on-hit buildup, not post-defense Health damage.
+    const basePower = Number.isFinite(raw) ? Math.max(0, Math.min(500, raw)) : DEFAULT_ATTACK_POWER; // Retain the authored base limit, then apply the enhanced reserve.
+    return basePower * planarAmountMultiplier(opts.attacker, "temperedFooting"); // Buildup only: never changes direct Health or Footing damage.
   }
 
   // Both the core damage path and the Drunken Health compatibility adapter use this single owner.
