@@ -812,7 +812,7 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
   function exportAgeModifiers() {
     const values = ageModifiers; // Distinct age-wide schema; species/gender rig-scale export remains backwards-compatible.
     const data = { schema: 'hobunji.character-age-rig-modifiers.v1',
-      phaseScales: { basket: clone(values.baby), toddler: clone(values.toddler) },
+      phaseScales: { basket: { ...clone(values.baby), body: values.baby.height }, toddler: { ...clone(values.toddler), body: values.toddler.height } }, // Height remains the legacy body alias for older game code consuming exported JSON.
       pngPlaneAvatar: { childScaleMultiplier: values.child.height, childWidthScaleMultiplier: values.child.width, childHeadScaleMultiplier: values.child.head }, // Vertical height retains legacy child body alias.
       childLimbModifiers: { hand: values.child.hand, foot: values.child.foot },
       note: 'Baby/toddler width/height/head map to HobunjiRomanceConfig.family.phaseScales; child width/height/head map to PNGPlaneAvatar childWidthScaleMultiplier/childScaleMultiplier/childHeadScaleMultiplier. Legacy body loads as both axes.' };
@@ -1655,7 +1655,7 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
         layout(); // One Box3 pass after measurement; no new renderer or per-frame work.
         const calibrated = window.HobunjiCharacterRigScale?.pixelHeightCalibrationSnapshot?.() || {};
         const count = Object.keys(calibrated).length;
-        status(`Measured ${count} head/body profiles against the source PNGs. Feet-and-inches targets now use painted crown heights where source art was available; unmeasured species remain nominal.`);
+        status(`Measured ${count} source PNG head/body profiles. Uploaded adult values remain authoritative; growth stages use independently authored Width and Height.`);
       });
       dimensions.measureAll().catch(error => {
         if (buildId === generation && (active || building)) status(`PNG crown measurement unavailable: ${error?.message || error}. Displayed height targets remain nominal.`);
