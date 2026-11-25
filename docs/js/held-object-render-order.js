@@ -855,8 +855,6 @@
     return order <= -10000 ? -1 : order >= 900 ? 1 : 0;
   }
 
-  let ordinaryPortraitSortDraws = 0; // Mobile diagnostics: draws that bypass the manual/pet-specific sort caches.
-
   function withVisualSort(renderer, portraitOrder, draw) {
     const manual = xrayRule('layers.manualOrder') === 'on' && !!window.XrayHierarchy?.layerRank;
     const babyForegroundItem = item =>
@@ -873,7 +871,7 @@
       const effectiveOrder = item => Number(item.renderOrder) || 0; // Same normalization as the full compositor.
       renderer.setTransparentSort((a, b) => comparePortraitDraws(
         a, b, portraitOrder.ranks, portraitOrder.extras, effectiveOrder));
-      ordinaryPortraitSortDraws++;
+      withVisualSort.ordinaryDraws = (withVisualSort.ordinaryDraws || 0) + 1; // Mobile diagnostics: lightweight actor sorts.
       try { return draw(); }
       finally { renderer.setTransparentSort(null); }
     }
@@ -4660,7 +4658,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
       distantTintCoversSkipped: lastDistantTintCovers,
       waterClipScopes: lastWaterClipScopes,
       rankedPortraitActors: lastRankedPortraitActors,
-      ordinaryPortraitSortDraws,
+      ordinaryPortraitSortDraws: withVisualSort.ordinaryDraws || 0,
       handsBehindFrontPlane: lastHandsBehindFrontPlane,
       airborneDepthRebuilds,
       backgroundDepthMeshesExcluded,
