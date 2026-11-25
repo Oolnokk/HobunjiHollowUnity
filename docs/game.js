@@ -6575,7 +6575,7 @@
         // collision in updateMovement). A genuinely pinned chasing enemy then
         // gets one short lateral/backoff escape attempt below.
         const prevX = c.x, prevY = c.y;
-        const motion = window.ResourceSystem?.composeMovement?.(c, nx * step, ny * step, { mode: 'walk', scalarApplied: true, reference: effectiveSpeed * dt, dt, voluntary: dist >= 1, wind: windActive }); // AI steering and wind share the existing ground collision request.
+        const motion = (windActive || window.FeyIllusions?.movementRotationRad?.(c)) ? window.ResourceSystem?.composeMovement?.(c, nx * step, ny * step, { mode: 'walk', scalarApplied: true, reference: effectiveSpeed * dt, dt, voluntary: dist >= 1, wind: windActive }) : null; // AI steering and wind share the existing ground collision request.
         const desiredX = c.x + (motion?.x ?? nx * step), desiredY = c.y + (motion?.y ?? ny * step);
         const canMoveX = creatureCanEnterTile(c.def, desiredX, c.y, prevX, prevY, c); // Used both to apply the normal X slide and to identify the blocking axis for escape diagnostics.
         if (canMoveX) c.x = desiredX;
@@ -6584,10 +6584,10 @@
         const blockedX = Math.abs(desiredX - prevX) > 0.001 && !canMoveX; // Used below to detect a real collision rather than a zero-length axis request.
         const blockedY = Math.abs(desiredY - prevY) > 0.001 && !canMoveY; // Used with blockedX to distinguish collision stalls from ordinary target arrival.
         let moved = Math.hypot(c.x - prevX, c.y - prevY); // Used as the movement already achieved before deciding whether a collision escape is necessary.
-        let motionNX = nx, motionNY = ny; // Used for the reported velocity; replaced by the escape vector only when repositioning actually succeeds.
+        let motionNX = motion && step > 0 ? motion.x / step : nx, motionNY = motion && step > 0 ? motion.y / step : ny; // Used for the reported velocity; replaced by the escape vector only when repositioning actually succeeds.
         if (!motion?.wind && (blockedX || blockedY) && moved < step * window.EnemyCollisionReposition.MIN_MOVE_FRAC) {
           const remainingStep = Math.max(0, step - moved); // Used to keep axis-slide plus escape movement within the original per-frame travel budget.
-          const reposition = window.EnemyCollisionReposition.tryReposition(c, nx, ny, remainingStep, blockedX, blockedY); // Used only for active combat chases; companions/passive travel keep their existing movement behavior.
+          const reposition = window.EnemyCollisionReposition.tryReposition(c, motionNX, motionNY, remainingStep, blockedX, blockedY); // Used only for active combat chases; companions/passive travel keep their existing movement behavior.
           if (reposition) {
             moved = Math.hypot(c.x - prevX, c.y - prevY);
             motionNX = reposition.nx;
@@ -8019,7 +8019,7 @@
           // interpolation target instead of being immediately smoothed back
           // to rest by that block's own unconditional _restoreCompanionHead.
           window.HobunjiGrehlrForaging?.applyForagingPose?.(c, entityDt);
-          if (!moving && driftIdleCreature(c, entityDt, windStartX, windStartY)) moving = true;
+          if (driftIdleCreature(c, entityDt, windStartX, windStartY)) moving = true;
           if (c.onBranch) window.ClimbSystem?.constrainEntityToBranch?.(c);
           c.x = window.FormatUtils.clamp(c.x, 0, (c.areaCols || COLS) * TILE);
           c.y = window.FormatUtils.clamp(c.y, 0, (c.areaRows || ROWS) * TILE);
@@ -9306,7 +9306,7 @@
             moving = _companionFollowWanderTick(c, dt, master);
             if (moving) aimAngle = Math.atan2(c.vy, c.vx);
           }
-          if (!moving && driftIdleCreature(c, dt, windStartX, windStartY)) moving = true;
+          if (driftIdleCreature(c, dt, windStartX, windStartY)) moving = true;
           c.facing = aimAngle;
           c.x = window.FormatUtils.clamp(c.x, 0, (c.areaCols || COLS) * TILE);
           c.y = window.FormatUtils.clamp(c.y, 0, (c.areaRows || ROWS) * TILE);
@@ -19500,7 +19500,7 @@
           const minY = PLAYER_RADIUS, maxY = window.GridTileAccessors.getActiveRows() * TILE - PLAYER_RADIUS;
           const heavyDistanceMul = window.ResourceSystem?.timedDebuffModifier?.(player, 'dodgeLungeDistance') ?? 1; // Heavy reduces dodge travel over the unchanged dodge duration/iframe window.
           const dodgeSpeedPx = DODGE_SPEED_PX * heavyDistanceMul;
-          const dodgeMotion = window.ResourceSystem?.composeMovement?.(player, player.dodgeDirX * dodgeSpeedPx * dt, player.dodgeDirY * dodgeSpeedPx * dt, { mode: 'dodge', scalarApplied: true, rotationApplied: true, reference: DODGE_SPEED_PX * dt, dt }); // Input direction was already resolved by the compositor.
+          const dodgeMotion = window.ResourceSystem?.composeMovement?.(player, player.dodgeDirX * dodgeSpeedPx * dt, player.dodgeDirY * dodgeSpeedPx * dt, { mode: 'dodge', scalarApplied: true, rotationApplied: true, reference: dodgeSpeedPx * dt, dt }); // Input direction was already resolved by the compositor.
           const dodgeDx = dodgeMotion?.x ?? player.dodgeDirX * dodgeSpeedPx * dt, dodgeDy = dodgeMotion?.y ?? player.dodgeDirY * dodgeSpeedPx * dt;
           const desiredX = window.FormatUtils.clamp(player.x + dodgeDx, minX, maxX);
           const desiredY = window.FormatUtils.clamp(player.y + dodgeDy, minY, maxY);
@@ -19812,7 +19812,7 @@
         const maxX = window.GridTileAccessors.getActiveCols() * TILE - PLAYER_RADIUS;
         const minY = PLAYER_RADIUS;
         const maxY = window.GridTileAccessors.getActiveRows() * TILE - PLAYER_RADIUS;
-        const walkMotion = !crawlMotion ? window.ResourceSystem?.composeMovement?.(player, player.vx * dt, player.vy * dt, { mode: 'walk', scalarApplied: true, rotationApplied: true, reference: MOVE_SPEED * speedMul * devGlobalSpeedMul * dt, dt, voluntary: inputStrength > 0.001 }) : null; // Wind is external velocity; do not store it in the acceleration integrator.
+        const walkMotion = !crawlMotion ? window.ResourceSystem?.composeMovement?.(player, player.vx * dt, player.vy * dt, { mode: 'walk', scalarApplied: true, rotationApplied: true, reference: targetSpeed / Math.max(.001, analogEase) * dt, dt, voluntary: inputStrength > 0.001 }) : null; // Wind is external velocity; do not store it in the acceleration integrator.
         const desiredX = player.x + (walkMotion?.x ?? player.vx * dt);
         const desiredY = player.y + (walkMotion?.y ?? player.vy * dt);
         const nextX = window.FormatUtils.clamp(desiredX, minX, maxX);
