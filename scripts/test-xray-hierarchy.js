@@ -308,7 +308,7 @@ assert.ok(/const supplementDepth = !group\.regions\.length && canLockColorMask &
   'airborne ordinary gear cannot reuse a sky-masked base depth buffer');
 assert.ok(/backgroundHidden = backgroundMeshes\.length && !supplementDepth \? hideObjects\(backgroundMeshes\)/.test(render),
   'only the selective depth rebuild excludes backdrops, not the original scene or final depth restore');
-assert.ok(/isPresentationBackdrop\(object\).*backgroundDepthRegistry\.add\(object\)/.test(render),
+assert.ok(/isPresentationBackdrop\(object\).*backgroundDepthRegistry\.add\(object(?:,\s*knownScene)?\)/.test(render),
   'sky and horizon meshes are registered without a new scene traversal per gear draw');
 assert.ok(/backgroundDepthMeshesExcluded/.test(render) && /airborneDepthRebuilds/.test(render),
   'mobile Dev Companion diagnostics expose both airborne fixes');
