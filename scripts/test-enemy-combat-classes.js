@@ -3,10 +3,11 @@ const fs=require('node:fs');
 const sources=["docs/js/combat/resource-system.js","docs/js/perk-system.js","docs/js/combat/combat-bandit.js"].map(path=>fs.readFileSync(path,'utf8'));
 
 const player = {health:100,maxHealth:100,stamina:100,maxStamina:100,footing:100,maxFooting:100}; // Isolate the live player's resources and ranks from enemy builds.
+const document = {getElementById:()=>null}; // Perk restore renders the existing UI if present.
 const window = {SkillSystem:{MAX_LEVEL:20},Combat:{deps:{player}},dispatchEvent(){}};
 const performance = {now:()=>1000};
 class CustomEvent {}
-for (const code of sources) new Function('window','performance','CustomEvent',code)(window,performance,CustomEvent);
+for (const code of sources) new Function('window','performance','CustomEvent','document',code)(window,performance,CustomEvent,document);
 const P=window.PerkSystem,R=window.ResourceSystem,B=window.BanditCombat;
 function check(condition,message){if(!condition)throw Error(message);}
 function close(actual,expected,message){check(Math.abs(actual-expected)<1e-8,message+': '+actual+' != '+expected);}
@@ -69,4 +70,49 @@ R.applyDamage(player,1,{attacker:actor,attackPower:10,afflictionBonuses:{bleedin
 close(R.getAffliction(player,'bleedingHealth'),10*(1+(build.combatPerks.empowerDamageEffects||0)*0.12),'Enemy own affliction ranks');
 check(P.purchasedRank('combat','empowerRawDamage')===0,'NPC builds never write player perks');
 
+
+const rehydratedA=baseDef(),rehydratedB=baseDef();
+B.init({rnd:()=>0.02});
+B.applyEnemyCombatBuild(rehydratedA,'captain',7,false,{combatBuildSeed:'marcher-42'});
+B.init({rnd:()=>0.99});
+B.applyEnemyCombatBuild(rehydratedB,'captain',7,false,{combatBuildSeed:'marcher-42'});
+check(JSON.stringify(rehydratedA)===JSON.stringify(rehydratedB),'Same abstract identity must rebuild the same profile despite unrelated RNG changes');
+const identities=new Set();
+for(let i=0;i<100;i++){
+  const d=baseDef();
+  B.applyEnemyCombatBuild(d,'captain',7,false,{combatBuildSeed:'marcher-'+i});
+  identities.add(d.combatClass);
+}
+check(identities.size===5,'Stable identity seed still distributes all five classes');
+B.init({rnd:()=>0.05});
+const switched=baseDef();
+B.applyEnemyCombatBuild(switched,'captain',7,false);
+const switchedActor={def:switched,health:switched.maxHealth/2,maxHealth:switched.maxHealth,stamina:switched.maxStamina/2,maxStamina:switched.maxStamina,footing:100,maxFooting:100};
+R.initEntity(switchedActor);
+check(switched.combatPerks.empowerDamageEffects>0,'Sharp bruiser buys damage affliction perk');
+switched.attackTag='blunt';
+B.refreshEnemyCombatBuild(switchedActor);
+check(switched.combatPerks.empowerOffensiveDebuffs>0&&!switched.combatPerks.empowerDamageEffects,'Final blunt weapon replaces incompatible affliction ranks');
+close(switchedActor.health/switchedActor.maxHealth,0.5,'Weapon refresh preserves missing health fraction');
+close(switchedActor.stamina/switchedActor.maxStamina,0.5,'Weapon refresh preserves missing stamina fraction');
+const afterRefresh=JSON.stringify(switched);
+B.refreshEnemyCombatBuild(switchedActor);
+check(JSON.stringify(switched)===afterRefresh,'Repeated reconciliation is idempotent');
+switched.attackTag='sharp';
+B.refreshEnemyCombatBuild(switchedActor);
+const original=baseDef(); B.applyEnemyCombatBuild(original,'captain',7,false);
+check(switched.maxHealth===original.maxHealth&&switched.maxStamina===original.maxStamina,'Changing back to original weapon does not accumulate resource multipliers');
+close(switched.attackStaminaCost,original.attackStaminaCost,'Repeated refresh does not compound stamina cost');
+window.RangedWeapons={config:{dart:{afflictionBonuses:{poisonedHealth:1}}}};
+const rangedBuild=P.buildEnemyCombatProfile('assassin',20,{tap1:'swingCombo',tap2:'backstabFlick'},'blunt','dart');
+check(rangedBuild.combatPerks.empowerDamageEffects>0,'Equipped ranged weapon makes its actual affliction family eligible');
+const titan=baseDef();B.applyEnemyCombatBuild(titan,'captain',7,false,{extra:{isMaskboundTitan:true}});
+check(!titan.combatClass,'Scripted Titan preserves original tuning');
+P.restore({perkRanks:{combat:{empowerDamageEffects:5}}});
+const neutral={health:100,maxHealth:100,stamina:100,maxStamina:100,footing:100,maxFooting:100};R.initEntity(neutral);
+R.applyDamage(neutral,1,{attacker:null,attackPower:10,afflictionBonuses:{bleedingHealth:1}});
+close(R.getAffliction(neutral,'bleedingHealth'),10,'Explicit anonymous NPC attack must not borrow player ranks');
+R.applyDamage(neutral,1,{attacker:player,attackPower:10,afflictionBonuses:{bleedingHealth:1}});
+close(R.getAffliction(neutral,'bleedingHealth'),26,'Explicit player attack still uses player affliction perks');
+close(P.scaleEnemyCombatHit(actor,10,null).amount,10*build.combatPerkModifiers.comboDamage,'Null hit options remain safe');
 console.log('Enemy combat class progression passed: '+cases+' allocation combinations plus spawn, hit, and resource tests.');
