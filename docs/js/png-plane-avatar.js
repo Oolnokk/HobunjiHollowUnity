@@ -221,9 +221,10 @@
     if (!isChildAvatar(options)) return null;
     const record = options.npcRecord || options.profile?.npcRecord || {};
     const positive = value => { const n = Number(value); return Number.isFinite(n) && n > 0 ? n : null; };
-    const body = positive(record.childBodyScale) ?? positive(options.childBodyScale) ?? positive(cfg().childScaleMultiplier) ?? 1;
-    const head = positive(record.childHeadScale) ?? positive(options.childHeadScale) ?? positive(cfg().childHeadScaleMultiplier) ?? body;
-    return { body, head, headFactor: head / body };
+    const height = positive(record.childBodyHeightScale) ?? positive(options.childBodyHeightScale) ?? positive(record.childBodyScale) ?? positive(options.childBodyScale) ?? positive(cfg().childScaleMultiplier) ?? 1;
+    const width = positive(record.childBodyWidthScale) ?? positive(options.childBodyWidthScale) ?? positive(cfg().childWidthScaleMultiplier) ?? height; // Existing saves without a width keep the historical uniform body size.
+    const head = positive(record.childHeadScale) ?? positive(options.childHeadScale) ?? positive(cfg().childHeadScaleMultiplier) ?? height;
+    return { body: height, height, width, head, headFactor: head / height, headFactorX: head / width }; // Head remains an independent final size in both axes.
   }
 
   function avatarScaleMultiplierFor(options = {}) {
@@ -1849,7 +1850,8 @@
     const scaleMultiplier = avatarScaleMultiplierFor(options);
     const baseModelWidth = options.modelWidth ?? cfg().modelWidth ?? 1;
     const baseModelHeight = options.modelHeight ?? baseModelWidth * aspectHeight;
-    const modelWidth = baseModelWidth * scaleMultiplier;
+    const childDimensions = childScaleFor(options); // A vertical height factor still owns the original shared portrait scale.
+    const modelWidth = baseModelWidth * scaleMultiplier * (childDimensions ? childDimensions.width / childDimensions.height : 1); // Independently widen/narrow children without changing floor-to-head height.
     const modelHeight = baseModelHeight * scaleMultiplier;
     const legacyConfiguredArmLength = Number(options.armLength ?? options.profile?.fighter?.armLength); // Retained only as a fallback for old profiles that predate attachment-rig anatomy.
     const legacyArmLength = Number.isFinite(legacyConfiguredArmLength) && legacyConfiguredArmLength > 0 ? legacyConfiguredArmLength : null;
@@ -1921,6 +1923,7 @@
       : { available: false };
     root.userData.portraitVerticalPlacementRatio = placementRatio;
     root.userData.portraitScaleMultiplier = scaleMultiplier;
+    root.userData.childBodyAxes = childDimensions ? { width: childDimensions.width, height: childDimensions.height } : null; // Readable mobile diagnostic, not another frame update.
     root.userData.portraitModelWidth = modelWidth;
     root.userData.portraitModelHeight = modelHeight;
     root.userData.speciesId = speciesId;
