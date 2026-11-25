@@ -42,7 +42,8 @@ const runtime = new Function('THREE','window','rawRender','registeredFronts',[
   'const PNG_OCCLUDER_LAYER=4, FRONT_PORTRAIT_STENCIL_MASK=0xFC, FRONT_PORTRAIT_MAX_OWNERS=63, FRONT_PORTRAIT_MASK=1<<24;',
   'const surfaceComposer=null;',
   'const withPortraitDrawOrder=(_r,_order,draw)=>draw();',
-  'const frontPortraitRegistry={}; const collectVisible=()=>registeredFronts;',
+  'let frontRegistryReuses=0, frontCollections=0;',
+  'const frontPortraitRegistry={}; const collectVisible=()=>{frontCollections++;return registeredFronts;};',
   'const suppressDraws=(objects,mask)=>{const prior=new Map(); for(const mesh of objects){prior.set(mesh,mesh.layers.mask);mesh.layers.mask &= ~mask;} return prior;};',
   'const restoreDraws=(prior)=>{for(const [mesh,mask] of prior)mesh.layers.mask=mask;};',
   'const hasLayer=(o,layer)=>!!(o.layers.mask & (1<<layer));',
@@ -51,7 +52,7 @@ const runtime = new Function('THREE','window','rawRender','registeredFronts',[
   'return {isFrontPortraitMesh,isPortraitMaskedGear,portraitStencilOwner,actorRootForXrayMesh,assignPortraitStencilOwners,',
   'prepareFrontPortraitStencilMaterials,stampFrontPortraitStencil,stampFrontPortraitDepthFallback,preparePortraitGearStencilMaterials,',
   'prepareSubmergedOverlayStencilMaterials,restoreMaterialStates, getCount:()=>frontPortraitMaskPassCount,',
-  'getDepthFallbackCount:()=>frontPortraitDepthFallbackPasses,',
+  'getDepthFallbackCount:()=>frontPortraitDepthFallbackPasses, getFrontCounts:()=>({frontRegistryReuses,frontCollections}),',
   'setPetForeground(meshes) { petForegroundStencilParts.clear(); for (const mesh of meshes) petForegroundStencilParts.add(mesh); }};',
 ].join('\n'))(THREE,windowObject,function(_scene,camera){
   observations.push({mask:camera.layers.mask,playerRef:playerFront.stencilRef,npcRef:npcFront.stencilRef,
@@ -146,6 +147,10 @@ assert.equal(observations[0].rearDraw,false,'back material is excluded during ma
 assert.equal(observations[0].playerAlpha,0.35,'no faint alpha fringe stamped');
 assert.equal(camera.layers.mask,1,'camera layer mask is restored');
 assert.equal(runtime.getCount(),1,'one mask pass for three different actors');
+const beforeReuse=runtime.getFrontCounts();
+runtime.stampFrontPortraitStencil({},scene,camera,assigned.portraits,assigned.ownerIds,null,registeredFronts);
+assert.deepEqual(observations[1],observations[0],'reusing the synchronous front list produces identical stencil and draw state');
+assert.deepEqual(runtime.getFrontCounts(),{frontRegistryReuses:beforeReuse.frontRegistryReuses+1,frontCollections:beforeReuse.frontCollections},'one registry collection avoided');
 failRender=true;
 assert.throws(()=>runtime.stampFrontPortraitStencil({},scene,camera,assigned.portraits,assigned.ownerIds),/simulated draw failure/);
 assert.equal(camera.layers.mask,1,'camera restored on exception');
