@@ -71,6 +71,7 @@ const document = {
 let skinnedScissor = true; const skinnedScissorHistory = [];
 let hideFadedOut = true; const hideFadedOutHistory = [];
 let treeInstancing = true; const treeInstancingHistory = [];
+let staticWallMatrices = false; const staticWallHistory = []; // Separate from dense-wall draw batching.
 const npcWeaponHistory = []; const gearParticleHistory = []; const propBatchHistory = []; const dualSyncHistory = []; const wheelListHistory = []; const denMemoHistory = [];
 const window = {
   RenderHooks: hooks, WorldRenderPipeline: pipeline, devicePixelRatio: 2,
@@ -84,6 +85,7 @@ const window = {
     setSkinnedScissorEnabled(value) { skinnedScissor = value !== false; skinnedScissorHistory.push(skinnedScissor); return skinnedScissor; } },
   InventoryWheelList: { crossFrameEnabled: () => true, setCrossFrameEnabled(v) { wheelListHistory.push(v); return v; } },
   HobunjiDualWieldWeaponVisuals: { leanSyncEnabled: () => true, setLeanSyncEnabled(v) { dualSyncHistory.push(v); return v; } },
+  DenseForestWallBatches: { staticMatrixSnapshot:()=>({enabled:staticWallMatrices,enrolled:63}), setStaticMatrixEnabled:v=>{staticWallMatrices=v===true;staticWallHistory.push(staticWallMatrices);return staticWallMatrices;} },
   ZonePropRenderBatches: { snapshot: () => ({ enabled: true, batches: 12 }), setEnabled(v) { propBatchHistory.push(v); return v; } },
   WildernessTreeInstancer: { enabled: () => treeInstancing, setEnabled(value) { treeInstancing = value !== false; treeInstancingHistory.push(treeInstancing); return treeInstancing; } },
   ZoneVegetationCull: { snapshot: () => ({ hideFadedOut, lastCullables: 600 }),
@@ -126,7 +128,7 @@ nativeRender = function (passName, draws, sceneName) {
   rainSeenDuringRender.push(rainGroup.visible);
   return originalNative(passName, draws, sceneName);
 };
-const done = window.RenderABBenchmark.run({ rounds: 2, framesPerWindow: 20, variants: ['frameScopeOff', 'outlinesOff', 'painterlyOff', 'nearForest', 'fadedTreesDrawn', 'treeInstancingOff', 'propBatchesOff', 'denCollisionEveryTile', 'wheelListEveryFrame', 'dualWieldFullSync', 'gearParticlesEveryPass', 'npcWeaponsXray', 'skinnedScissorOff', 'rainOff'] });
+const done = window.RenderABBenchmark.run({ rounds: 2, framesPerWindow: 20, variants: ['frameScopeOff', 'outlinesOff', 'painterlyOff', 'nearForest', 'fadedTreesDrawn', 'treeInstancingOff', 'propBatchesOff', 'staticWallMatricesOn', 'denCollisionEveryTile', 'wheelListEveryFrame', 'dualWieldFullSync', 'gearParticlesEveryPass', 'npcWeaponsXray', 'skinnedScissorOff', 'rainOff'] });
 (async function pump() {
   // Each animation frame: the game renders once, then the frame's callbacks run.
   await new Promise(resolve => setImmediate(resolve));
@@ -143,11 +145,13 @@ const done = window.RenderABBenchmark.run({ rounds: 2, framesPerWindow: 20, vari
   assert.deepEqual(outlineHistory.filter(v => v === false).length, 2, 'outlines are turned off once per round');
   assert.equal(window.__hobunjiFurnitureDebug.outlinesSetting, true, 'outlines restored');
   assert.equal(pipeline.renderFrame, originalRenderFrame, 'the timing wrapper is removed');
-  assert.deepEqual(Object.keys(report.variants), ['default', 'frameScopeOff', 'outlinesOff', 'painterlyOff', 'nearForest', 'fadedTreesDrawn', 'treeInstancingOff', 'propBatchesOff', 'denCollisionEveryTile', 'wheelListEveryFrame', 'dualWieldFullSync', 'gearParticlesEveryPass', 'npcWeaponsXray', 'skinnedScissorOff', 'rainOff']);
+  assert.deepEqual(Object.keys(report.variants), ['default', 'frameScopeOff', 'outlinesOff', 'painterlyOff', 'nearForest', 'fadedTreesDrawn', 'treeInstancingOff', 'propBatchesOff', 'staticWallMatricesOn', 'denCollisionEveryTile', 'wheelListEveryFrame', 'dualWieldFullSync', 'gearParticlesEveryPass', 'npcWeaponsXray', 'skinnedScissorOff', 'rainOff']);
   assert.equal(denMemoHistory.join(' '), 'false true false true', 'denCollisionEveryTile restores the per-task memo after each window');
   assert.equal(wheelListHistory.join(' '), 'false true false true', 'wheelListEveryFrame restores the cross-frame list after each window');
   assert.equal(dualSyncHistory.join(' '), 'false true false true', 'dualWieldFullSync restores lean sync after each window');
   assert.equal(propBatchHistory.join(' '), 'false true false true', 'propBatchesOff restores prop batching after each window');
+  assert.equal(staticWallHistory.join(' '),'true false true false','static wall A/B restores independently each window');
+  assert.equal(staticWallMatrices,false);
   assert.equal(gearParticleHistory.join(' '), 'false true false true', 'gearParticlesEveryPass restores drawn-once particles after each window');
   assert.equal(npcWeaponHistory.join(' '), 'link:false limit:Infinity link:true limit:0 link:false limit:Infinity link:true limit:0', 'npcWeaponsXray restores every weapon\'s x-ray per window and puts the base-pass default back');
   assert.equal(treeInstancingHistory.join(' '), 'false true false true', 'treeInstancingOff restores instancing after each window');
