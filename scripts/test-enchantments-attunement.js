@@ -1206,3 +1206,36 @@ console.log('Fey Immundanity, real Stamina illusions, proc, scaled echo, migrati
   for (const [, id] of flourishes) assert(context.HOBUNJI_CONFIG.resourceRings.afflictionColors[id]);
 }
 console.log('Planar enchantments: unique buildup, transactions, defensive/flurry triggers and persistence passed');
+
+// The live game's Drunken Health compatibility adapter replaces applyDamage.
+// Exercise its actual script (the preceding core animation IIFE is unrelated to this test).
+{
+  const source = fs.readFileSync('docs/js/combat/combat-core.js', 'utf8');
+  const start = source.indexOf('(() => {\n  "use strict";\n\n  const RS = window.ResourceSystem;');
+  assert(start >= 0, 'live damage adapter must be present');
+  vm.runInContext(source.slice(start), context, { filename: 'combat-core.js (Drunken Health adapter)' });
+  assert(RS.__drunkenAfflictionsInstalled);
+  const actor = makeEntity();
+  RS.addEnhancedResource(actor, 'pactHealth', 8);
+  assert.equal(RS.applyDamage(actor, 10), 0);
+  assert.equal(RS.getAffliction(actor, 'soulweightedHealth'), 5);
+  RS.addAffliction(actor, 'veilmarkedHealth', 4);
+  assert.equal(RS.applyDamage(actor, 8), 4);
+  assert.equal(actor.stamina, 96);
+  assert.equal(RS.getAffliction(actor, 'pactHealth'), 1);
+  assert.equal(RS.getAffliction(actor, 'soulweightedHealth'), 3, 'only old pact debt discharges');
+  RS.addEnhancedResource(actor, 'guardianHealth', 5);
+  RS.addAffliction(actor, 'woundedStamina', 10);
+  actor.stamina = 10;
+  RS.spendStamina(actor, 5, 'attack');
+  assert.equal(actor.health, 96, 'Guardian absorbs Wounded expenditure damage');
+  assert.equal(RS.getAffliction(actor, 'guardianHealth'), 2.5);
+  assert.equal(RS.getAffliction(actor, 'pactHealth'), 1, 'Pact is reserved for direct damage');
+  const drunk = makeEntity();
+  RS.addAffliction(drunk, 'drunkenHealth', 6);
+  RS.addAffliction(drunk, 'veilmarkedHealth', 5);
+  assert.equal(RS.applyDamage(drunk, 10), 4);
+  assert.equal(RS.getAffliction(drunk, 'bleedingHealth'), 6, 'Drunken conversion still precedes planar protection');
+  assert.equal(RS.getAffliction(drunk, 'veilmarkedHealth'), 1);
+}
+console.log('Planar enchantments through live Drunken Health adapter passed');
