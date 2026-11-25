@@ -65,12 +65,14 @@ function tick(t){now=t;const fn=queued;queued=null;assert.equal(typeof fn,'funct
 P.start('forest');
 assert.equal(F.isEnabled(),false,'capture never enables overlay or expensive wrapper profiling');
 tick(0); // Warmup/census frame excluded.
+F.measure('deferred classification',()=>{now+=3;});
 tick(100);tick(200);
 fail=true;tick(300);fail=false;
 noWorld=true;tick(400);noWorld=false;
 tick(500);tick(600);
 const report=P.finish();
 assert.equal(report.completeFrames,4);
+assert.deepEqual(JSON.parse(JSON.stringify(report.outsideFrameSubsystems)),[{name:'deferred classification',calls:1,totalMs:3,maxCallMs:3}]);
 assert.equal(report.interruptedFrames,1);
 assert.equal(report.skippedNonWorldFrames,1);
 assert.equal(report.discardedWarmupFrames,1);
