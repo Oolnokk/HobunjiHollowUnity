@@ -20,7 +20,7 @@ for(const cls of Object.keys(P.ENEMY_COMBAT_CLASSES)){
         const profile=P.buildEnemyCombatProfile(cls,level,loadout,tag);
         check(profile.combatPerkPointsSpent===P.pointEntitlementAtLevel('combat',level),'Spend full budget');
         check(!profile.combatPerks.increaseLootQuality,'Skip loot-only perks');
-        if(!held)check(!profile.combatPerks.empowerHeavyAttacks,'Skip unavailable heavy ability');
+        // Swing/poke both end in a player-authored Heavy finisher, even without a held slot.
         if(held<2)check(!profile.combatPerks.empowerDefensiveAttacks,'Skip unavailable counter ability');
         for(const [id,rank] of Object.entries(profile.combatPerks)){
           const perk=P.TREES.combat.find(p=>p.id===id);
@@ -115,4 +115,47 @@ close(R.getAffliction(neutral,'bleedingHealth'),10,'Explicit anonymous NPC attac
 R.applyDamage(neutral,1,{attacker:player,attackPower:10,afflictionBonuses:{bleedingHealth:1}});
 close(R.getAffliction(neutral,'bleedingHealth'),26,'Explicit player attack still uses player affliction perks');
 close(P.scaleEnemyCombatHit(actor,10,null).amount,10*build.combatPerkModifiers.comboDamage,'Null hit options remain safe');
+
+const heavyBuild=P.buildEnemyCombatProfile('bruiser',20,{tap1:'swingCombo',tap2:'exhaustCutter'},'sharp');
+check(heavyBuild.combatPerks.empowerHeavyAttacks>0,'Heavy combo finishers are available without a charged held slot');
+const heavyActor={def:heavyBuild};
+close(P.scaleEnemyCombatHit(heavyActor,10,{enchantmentSlot:'tap1',perkHeavy:true}).amount,10*heavyBuild.combatPerkModifiers.heavyDamage,'Heavy combo finisher uses the heavy damage channel');
+const combined=P.scaleEnemyCombatHit(heavyActor,10,{enchantmentSlot:'tap2',heavy:true});
+close(combined.amount,10*heavyBuild.combatPerkModifiers.quickDamage*heavyBuild.combatPerkModifiers.heavyDamage/heavyBuild.combatPerkModifiers.comboDamage,'Heavy and quick modifiers compose as in player tree');
+const customNoHeavy=P.buildEnemyCombatProfile('bruiser',20,{tap1:'customCombo'},'sharp');
+check(!customNoHeavy.combatPerks.empowerHeavyAttacks,'No heavy perk when no heavy action exists');
+check(!customNoHeavy.combatPerks.empowerQuickAttacks,'No quick perk without a valid quick ability');
+const payer={health:100,maxHealth:100,stamina:100,maxStamina:100,footing:100,maxFooting:100,def:build};
+R.initEntity(payer);
+const discount=build.combatPerkModifiers.staminaCost;
+check(discount<1,'Assassin fixture must have a stamina discount');
+const payment=R.spendStamina(payer,10,'enemy dodge');
+close(payment.spent,Math.round(10*discount*10)/10,'NPC dodge benefits from Reduce Stamina Use');
+payer.stamina=100;
+const prepaid=R.spendStamina(payer,10*discount,'bandit attack',{actionKind:'combatNpcMelee'});
+close(prepaid.spent,Math.round(10*discount*10)/10,'Pre-discounted melee does not receive the same perk twice');
+payer.stamina=100;
+close(R.spendStamina(payer,10,'thrown charge',{actionKind:'offensiveHeldCharge',abilityId:'thrownWeapon'}).spent,Math.round(10*discount*10)/10,'Thrown charge benefits from Reduce Stamina Use');
+// Exercise the actual ranged reload calculation and resource debit, preserving the authored Exhaust Cutter threshold.
+const rangedSource=fs.readFileSync('docs/js/combat/ranged-weapons.js','utf8');
+const loadStart=rangedSource.indexOf('  function rangedLoadStaminaCost('),loadEnd=rangedSource.indexOf('  function spendRangedLoadStamina(',loadStart);
+check(loadStart>=0&&loadEnd>loadStart,'Production ranged cost function located');
+const reloadCost=new Function('window','deps','DEFAULT_RANGED_LOAD_STAMINA_FRACTION',rangedSource.slice(loadStart,loadEnd)+'\nreturn rangedLoadStaminaCost;')(window,{player},0.5);
+payer.stamina=100;
+const actualReload=R.spendStamina(payer,reloadCost(payer,{loadStaminaFraction:0.5}), 'reload',{actionKind:'rangedWeaponLoad'});
+close(actualReload.spent,50,'NPC reload retains the fixed resource-threshold rule rather than double-discounting');
+// The live game installs the alcohol adapter over ResourceSystem; run its real implementation, not a mock that bypasses it.
+const coreSource=fs.readFileSync('docs/js/combat/combat-core.js','utf8');
+const alcoholStart=coreSource.indexOf('// Alcohol / drunken-affliction integration'),alcoholEnd=coreSource.indexOf('  RS.spendStamina = function drunkenAwareSpendStamina',alcoholStart);
+check(alcoholStart>=0&&alcoholEnd>alcoholStart,'Production alcohol adapter found');
+new Function('window','performance','CustomEvent',coreSource.slice(alcoholStart,alcoholEnd)+'\n})();')(window,performance,CustomEvent);
+const liveTarget={health:100,maxHealth:100,stamina:100,maxStamina:100,footing:100,maxFooting:100};
+R.initEntity(liveTarget);
+R.applyDamage(liveTarget,1,{attacker:actor,attackPower:10,afflictionBonuses:{bleedingHealth:1}});
+close(R.getAffliction(liveTarget,'bleedingHealth'),10*(1+(build.combatPerks.empowerDamageEffects||0)*0.12),'Live alcohol wrapper applies attacker-specific affliction rank exactly once');
+R.addAffliction(liveTarget,'drunkenHealth',10);
+const healthBefore=liveTarget.health;
+R.applyDamage(liveTarget,5,{attacker:actor,attackPower:10,afflictionBonuses:{poisonedHealth:1}});
+close(liveTarget.health,healthBefore,'Existing Drunken Health conversion remains functional');
+close(R.getAffliction(liveTarget,'poisonedHealth'),10*(1+(build.combatPerks.empowerDamageEffects||0)*0.12),'Affliction perks survive Drunken Health absorption');
 console.log('Enemy combat class progression passed: '+cases+' allocation combinations plus spawn, hit, and resource tests.');
