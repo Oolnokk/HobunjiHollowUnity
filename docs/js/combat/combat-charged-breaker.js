@@ -464,7 +464,7 @@
         window.Mounts?.setMountedCombatWindupBoost?.(MOUNT_CHARGE_BOOST_OWNER, (2.4 + poseCharge * 0.8) * masteryScale * gustScale, funded);
         debugState.mountedBoostPaidFraction = funded;
       }
-      const hasEnhancedStamina = (window.ResourceSystem?.getEnhancedResources?.(deps.player, 'stamina', { actionKind: 'offensiveHeldCharge' }) || []).length > 0;
+      const hasEnhancedStamina = (window.ResourceSystem?.getEnhancedResources?.(deps.player, 'stamina', { actionKind: 'offensiveHeldCharge' }) || []).some(entry => !entry.def?.requiresBeneficialTransaction || entry.benefitsTransaction);
       if (deps.player.stamina <= 0 && !hasEnhancedStamina) releaseNow(heldSeconds, true);
     }
 
