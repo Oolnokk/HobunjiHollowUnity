@@ -431,3 +431,17 @@ inside the live scopes, not after Pixel Probe rerenders. Render timings
 are inclusive CPU wall time, not GPU timing, and nested native submissions
 are not separately attributed. Explicit between-frame timing brackets
 are reported separately. No continuous scene census is introduced.
+
+
+### Gameplay window v2: stalls
+
+Pixel Probe also records bounded worst scheduler frames and RAF
+intervals, their preceding callback duration and actual gap between
+callbacks, and the terminal interval if expiration occurs at the next
+scheduler boundary. Browser long-task and long-animation-frame entries
+are observed only during the window where supported. The worst entries
+include bounded script attribution and forced layout time; page focus
+and visibility transitions help distinguish background throttling.
+Observer reports cover completed entries wholly inside the capture,
+not necessarily every browser task. They are overlapping evidence,
+not an exclusive CPU breakdown or GPU timer.
