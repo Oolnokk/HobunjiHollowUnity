@@ -1010,8 +1010,8 @@ console.log(`PASS cave-site-system: ${workspace.animalDens.length} anchors -> ${
   await new Promise(resolve => setImmediate(resolve));
   assert(riser.risen, 'the restless body rises after its delay');
   assert(hostiles.has(riser.entity) && riser.entity.state === 'chase', 'it comes up fighting');
-  assert.equal(riser.entity.x,(riser.body.exitCol+.5)*deps.TILE,'emerges beyond the solid coffin');
-  assert.equal(riser.entity.y,(riser.body.exitRow+.5)*deps.TILE);
+  assert(riser.body.exits.some(p=>riser.entity.x===(p.col+.5)*deps.TILE&&riser.entity.y===(p.row+.5)*deps.TILE),'emerges beyond the solid coffin');
+  if(riser.body.exits.length>1)assert.notEqual(riser.entity.x+','+riser.entity.y,deps.player.x+','+deps.player.y,'uses the alternate exit instead of spawning on the player');
   assert(Cave.__test.coffinBlocksBox({col:0,row:0,rotY:90,id:'test'}, {},.5,.5,.1,null),'coffin center is solid');
   assert(!Cave.__test.coffinBlocksBox({col:0,row:0,rotY:90,id:'test'}, {},1.5,.5,.1,null),'exit side stays clear');
   assert(Cave.__test.coffinBlocksBox({col:0,row:0,rotY:90,id:'test'}, {openedCoffins:['test']},-.5,.5,.1,null),'open lid is also solid');
