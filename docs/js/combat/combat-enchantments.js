@@ -760,6 +760,7 @@
       `Mastery effects: ×${getMasteryPowerMultiplier(key).toFixed(2)}`,
       `Sicced target: ${getCurrentSiccedTarget() ? targetName(getCurrentSiccedTarget()) : 'none'}`,
       ...attunement,
+      `Movement compositor: ${JSON.stringify(window.ResourceSystem?.movementDebug?.(window.Combat?.deps?.player) || {})}`,
       '',
       'Recent events:',
       ...recentEvents.slice(-14).map(item => `• ${item.message}`),
