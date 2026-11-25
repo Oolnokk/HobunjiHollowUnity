@@ -112,6 +112,10 @@
       available: () => typeof window.ZoneVegetationCull?.setHideFadedOut === 'function',
       read: () => window.ZoneVegetationCull.snapshot?.().hideFadedOut, write: on => window.ZoneVegetationCull.setHideFadedOut(on) },
 
+    { group: 'Held items and x-ray replays', id: 'waterOnlyBranchPrune', name: 'Skip unrelated branches in water-only replays', on: true,
+      desc: 'Reduces scene traversal during portrait-only water tint. Keeps all water depth passes; complex custom render hooks fall back automatically.',
+      available: () => typeof held()?.setWaterOnlyBranchPruneEnabled === 'function',
+      read: () => heldSnap().waterOnlyBranchPruneEnabled, write: on => held().setWaterOnlyBranchPruneEnabled(on) },
     { group: 'Held items and x-ray replays', id: 'portraitWaterTint', name: 'Submerged portrait tint', on: true,
       desc: 'Off skips the separate water-color replay for submerged portraits; normal water and held-gear tint remain. Uses the existing X-ray hierarchy rule.', ownsPersistence: true,
       available: () => typeof window.XrayHierarchy?.set === 'function',
