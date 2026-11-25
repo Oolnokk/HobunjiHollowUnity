@@ -2864,3 +2864,33 @@ must validate the integration. Remaining priorities: on-device scene
 matrix census and A/B timing, broader appearance churn, hand solve
 deduplication and event-driven inventory. Do not bypass fresh animated
 pixels or global scene transforms.
+
+
+### Pre-merge audit (PR #2167)
+
+Reviewed the cumulative PR diff from main, focusing on private render
+passes, scene-index lifetimes, async NPC creation, r128 identity-leaf
+matrices, portrait cache ownership, save durability and loader versions.
+Two additional edge cases corrected: offscreen Avenger death now bumps
+the same resident lifetime revision as ordinary slayHunter, so a pending
+factory cannot publish a deceased resident after replacement; global
+weak-ref iteration now defers compaction until the outermost callback
+iteration completes, preventing a nested visitor or threshold sweep from
+seeing partially compacted array positions. Collected entries still
+compact after an exceptional exit, with no second pass if all visited
+references are live. Added tests for the actual Avenger loss branch and
+nested weak-registry visits; updated gameplay and editor version tokens.
+
+Re-executed the two complete source-executing regression fixtures,
+the pixel/canvas and actual portrait-cache sections, water replay draw
+parity/fallback/exception assertions, direct hand socket replacement and
+nested fallback, and the extracted real folder writer/manager mirror
+fixture (one stringify, mutation isolation, exact committed bytes,
+failed close, quota fallback, legacy result). An additional 120 seeded
+randomized painted/silhouette mask comparisons against main matched every
+bit and diagnostic count. These checks use isolated connector fixtures,
+not native browser execution. The earlier aa146ad revision was green;
+the later pristine-cloth and pre-merge audit revisions must pass the
+full native regression and browser workflows independently. Actual
+device FPS and live save/recovery/visual smoke still unmeasured. Do not
+merge on the strength of an older green commit alone.
