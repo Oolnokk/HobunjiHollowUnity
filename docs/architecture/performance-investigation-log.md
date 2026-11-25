@@ -2685,3 +2685,40 @@ work: capture Cloud Forest scene matrix census to identify high-value
 immutable subtrees; optimize full folder checkpoint serialization and
 appearance readbacks; prove hand-solve deduplication and inventory revision
 ownership before changing them.
+
+
+### Registry failure audit and sparse portrait masks
+
+The earlier 82113f7 revision passed all nine PR workflows. The later
+0f1b1b5 revision passed 1425/1426 fast regression tests; the failure was
+the instanced-view-cull exception fixture still injecting an exception into
+the old global iterator rather than the newly used scene iterator.
+The corrected test now exercises both scene-aware and legacy iterator
+exceptions and verifies restoration of both instanced and distant scenery
+visibility. The audit also exposed a real exception-safety hole in global
+weak-ref compaction: a throwing visitor after a collected entry could leave
+a duplicate reference and stale array length. Compaction now preserves the
+unread tail and finalizes length even on throw. A deterministic fake WeakRef
+fixture reproduces the old failure and verifies the fix.
+
+Continued the appearance hotpath in the existing beard/hood compositor:
+painted requests use the disjoint union of the normalized RLE request and
+whisker ranges instead of decoding an additional request bitmap and scanning
+all 40,000 portrait pixels. Missing whisker/top-cover bitmaps need no
+allocation; explicit empty hood permission still means protect-all.
+Silhouette mode retains the full source-alpha inspection, including the
+242-alpha threshold. If no hood pixel is approved, the erasure scan is
+also skipped. No change to tuft warp, canvas readback, permission precedence,
+beard outline, front/rear draw ordering or editor behavior. This reduces CPU
+work in sparse painted-mask negotiation, not every portrait's texture
+generation or the Canvas readback itself.
+
+Executed scene-registry fixture and instanced cull fixture through the
+actual exception/grass/replay sections, the full beard/hood pixel and canvas
+unit section, and 240 deterministic comparison cases against main's exact
+old partition implementation (every output bit and diagnostic count equal).
+Updated known transitive cache references for gameplay and shared authoring
+pages. Whole-repository CI and actual device performance on the newest
+revision remain to be confirmed. Still need the real scene census to
+justify any static subtree freeze; no global matrix update override or
+unsafe save/hand cadence shortcuts.
