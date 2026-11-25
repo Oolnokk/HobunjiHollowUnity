@@ -720,3 +720,18 @@ The default `background.gearDepth=ignore` and
 `airborneDepthRebuilds`, `backgroundDepthMeshesExcluded` and
 `registeredBackgroundDepthMeshes` for mobile diagnostics.
 
+
+
+## Local participant distance policy
+
+Gameplay selects X-ray participants by their owner's tile relative to the
+player. `XRAY_TILE_RADIUS` is the single tile-reach constant for this
+square ring and for the existing holder-centered floor circle
+(`XRAY_CIRCLE_RADIUS = XRAY_TILE_RADIUS + 0.5`). These are distinct
+operations: participant eligibility is player-relative; the depth shader
+still exempts only same-height ground around the eligible holder.
+Feet and pants no longer also apply the six-unit 3D camera sphere when the
+local filter is active. That camera check remains available for legacy
+range A/B and scenes without a valid player. Existing category and species
+gates and ordinary weapon budget are unchanged. Frustum rejection and
+screen-space replay scissoring remain independent conservative bounds.
