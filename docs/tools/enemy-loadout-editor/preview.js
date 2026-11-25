@@ -57,6 +57,7 @@ const files = [
   'js/combat/attack-pose-templates.js?v=20261115h01bf772',
   'js/combat/melee-pose-spacing.js?v=20261028a',
   'js/combat/resource-system.js?v=20261125enemyClassAudit2',
+  'js/perk-system.js?v=20261125enemyClassAudit2', // Preview builds must use the same combat class allocation as the game.
   'js/trinket-system.js?v=20261122enemyTrinketAdd1', // Enemy Workshop spawns use the same equipment definitions and additive stat provider as gameplay.
   'js/combat/weapon-shape-stats.js?v=20261122hShapeFootingOnce',
   'js/combat/combat-combo.js?v=20261107combo1501a',
