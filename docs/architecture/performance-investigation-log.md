@@ -2493,3 +2493,19 @@ Ordinary lighting and authored shadow art remain.
 - Real ownership/partition fixtures and shadow toggle/renderer-replacement
   fixtures passed in an isolated JavaScript harness. Full CI and same-save
   device measurements remain required; no FPS improvement is claimed yet.
+
+
+### Consolidation: one tile-distance authority
+
+The local participant gate and the holder-centered floor circle now derive
+their reach from the same `XRAY_TILE_RADIUS` constant. In a gameplay scene
+with a valid player position, feet and pants use the player ring instead of
+also being rejected by the legacy six-unit 3D camera sphere. The camera
+distance setting is retained only for legacy range A/B and playerless
+previews; explicit all-participants mode still bypasses both distance
+restrictions. Species/category/weapon budgets, actual floor occlusion,
+elevation, scissor and water ordering remain unchanged. The expanded
+runtime fixture passes with a camera twenty units above the player and
+checks that the old camera rejection returns when local mode is disabled.
+No new frame loop or extra scene traversal is introduced. FPS remains
+unmeasured on-device.
