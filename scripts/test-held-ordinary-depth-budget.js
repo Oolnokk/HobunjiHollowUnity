@@ -6,7 +6,7 @@ const source = fs.readFileSync('docs/js/held-object-render-order.js', 'utf8'); /
 const begin = source.indexOf('  let ordinaryDepthLeavesSkipped ='); // Includes the supplement helper and complete held replay.
 const end = source.indexOf('  function isShellOutlinePass(', begin);
 
-function fixture({ bounded = false, ordinary = true, fail = false, colorLock = true, tint = false, nested = false, airborne = false, wildernessGround = false, groundShaderSupported = true, staleStencil = false, emptyDepth = false, emptyScissor = false, waterOnly = false, prune = true, customWaterHook = false } = {}) {
+function fixture({ bounded = false, ordinary = true, fail = false, colorLock = true, tint = false, nested = false, airborne = false, wildernessGround = false, groundShaderSupported = true, staleStencil = false, emptyDepth = false, emptyScissor = false, waterOnly = false, prune = true, customWaterHook = false, portraitParity = false, replacedAfterHook = false, lod = false } = {}) {
   const groundMaterial = wildernessGround ? { depthWrite: false,
     userData: { hobunjiXrayElevationShader: { supported: groundShaderSupported } } } : null; // Reproduces wilderness ground, including unsupported/cold elevation shaders.
   const opaque = { isMesh: true, visible: true, children: [], material: groundMaterial }; // Base world terrain whose held-only depth flag is tested below.
@@ -26,6 +26,12 @@ function fixture({ bounded = false, ordinary = true, fail = false, colorLock = t
     cutout.layers = {mask:1};
     scene.children = [sky, opaque, cover, weapon, hand, parent, hooked]; // Live tree used by the production pruning helper.
     if (customWaterHook) cover.onBeforeRender = () => {};
+    if (portraitParity) {
+      cutout.onBeforeRender=()=>{}; cutout.onAfterRender=()=>{};
+      cutout.__hobunjiXrayBoundParity={hook:cutout.onBeforeRender,localRestoreHook:cutout.onAfterRender};
+      if (replacedAfterHook) cutout.onAfterRender=()=>{};
+    }
+    if (lod) parent.isLOD=true;
   }
   const draws = []; // Captures submitted passes and visible world leaves.
   let clears = 0; // Counts destructive depth clears, not stencil clears.
@@ -154,7 +160,7 @@ assert.equal(submerged.clears, 0);
 const privateWater = fixture({ordinary:false,tint:true,waterOnly:true});
 const legacyWater = fixture({ordinary:false,tint:true,waterOnly:true,prune:false});
 assert.deepEqual(privateWater.draws.map(d=>d.mask),[16,8,8],'portrait stamp, water tint and depth restoration are preserved');
-assert.deepEqual(privateWater.draws.map(d=>d.nodes.length),legacyWater.draws.map(d=>d.nodes.length),'no private-layer draw is removed');
+assert.deepEqual(privateWater.draws.map(d=>d.nodes.map(n=>n===privateWater.cutout?'portrait':n===privateWater.cover?'water':'other')),legacyWater.draws.map(d=>d.nodes.map(n=>n===legacyWater.cutout?'portrait':n===legacyWater.cover?'water':'other')),'same private-layer draw identity and order');
 assert(privateWater.draws.every(d=>!d.opaqueVisible && d.parentVisible),'irrelevant terrain is hidden, selected portrait ancestry remains visible');
 assert(legacyWater.draws.every(d=>d.opaqueVisible));
 assert.equal(privateWater.scope.waterOnlyPrunedFrames,1);
@@ -162,6 +168,10 @@ assert(privateWater.scope.waterOnlyPrunedBranches>0);
 const customWater = fixture({ordinary:false,tint:true,waterOnly:true,customWaterHook:true});
 assert.equal(customWater.scope.waterOnlyPruneFallbacks,1,'custom draw hook retains complete scene');
 assert(customWater.draws.every(d=>d.opaqueVisible));
+const localParity=fixture({ordinary:false,tint:true,waterOnly:true,portraitParity:true});
+assert.equal(localParity.scope.waterOnlyPrunedFrames,1,'known local portrait matrix hook does not disable pruning');
+assert.equal(fixture({ordinary:false,tint:true,waterOnly:true,portraitParity:true,replacedAfterHook:true}).scope.waterOnlyPruneFallbacks,1);
+assert.equal(fixture({ordinary:false,tint:true,waterOnly:true,lod:true}).scope.waterOnlyPruneFallbacks,1);
 fixture({ordinary:false,tint:true,waterOnly:true,fail:true}); // Every state restored even if the stamp throws.
 const staleTint = fixture({ tint: true, staleStencil: true });
 assert.deepEqual(staleTint.draws.find(draw => draw.tintedPixels).tintedPixels, [0, 1],
