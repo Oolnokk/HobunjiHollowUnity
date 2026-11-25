@@ -41,6 +41,7 @@
   const CLUSTER_PLANT_SCALE = 0.25; // Used to make each garlink/ongyums plant half the size of the former 0.5-scale single billboard.
   const textureRecords = new Map(); // Used to load each authored crop PNG once and share it across every planted tile.
   const pendingMeshes = new Map(); // Used to retain placeholder meshes while their shared crop texture is loading.
+  const pendingTextureByMesh = new WeakMap(); // Reverse lookup used to cancel a detached crop's pending texture conversion in constant time.
   const activeBillboards = new Set(); // Used to re-face converted crop cluster anchors toward the current camera every render.
   const CROP_DISCOVERY_SCAN_INTERVAL_MS = 250; // Used to discover newly planted placeholders promptly without tying full-scene traversal frequency to frame rate or extra render passes.
   const registeredPlaceholders = new Set(); // Newly created modern crop anchors, consumed before the next world draw.
@@ -209,11 +210,26 @@
     return cropKey + ':' + (pigment == null ? 'native' : pigment.toString(16).padStart(6, '0'));
   }
 
+  function cancelPendingMesh(mesh) {
+    const key = pendingTextureByMesh.get(mesh);
+    if (key === undefined) return;
+    pendingTextureByMesh.delete(mesh);
+    const meshes = pendingMeshes.get(key);
+    meshes?.delete(mesh);
+    if (!meshes?.size) pendingMeshes.delete(key);
+  }
+
+  function takePendingTexture(textureKey) {
+    const meshes = pendingMeshes.get(textureKey);
+    pendingMeshes.delete(textureKey);
+    for (const mesh of meshes || []) pendingTextureByMesh.delete(mesh);
+    return meshes;
+  }
+
   function flushPending(textureKey, cropKey, pigment, texture, painted) {
-    const meshes = pendingMeshes.get(textureKey); // Used to upgrade all crops sharing exactly this source image and inherited color.
+    const meshes = takePendingTexture(textureKey); // Only still-registered crops receive this shared texture.
     if (!meshes) return;
     for (const mesh of meshes) convertMeshToBillboard(mesh, cropKey, texture, pigment, painted);
-    pendingMeshes.delete(textureKey);
   }
 
   function ensureTexture(cropKey, pigment) {
@@ -239,7 +255,7 @@
         })
         .catch(error => {
           record.failed = true; // No silent green base art that misrepresents a cultivar's inherited pigment.
-          pendingMeshes.delete(textureKey);
+          takePendingTexture(textureKey);
           window.__farmLog?.(`[crop-art] recolor failed ${textureKey}: ${error?.message || error}`, 'warn');
         });
       return record;
@@ -257,7 +273,7 @@
       undefined,
       error => {
         record.failed = true;
-        pendingMeshes.delete(textureKey);
+        takePendingTexture(textureKey);
         window.__farmLog?.(`[crop-art] failed to load ${art.spriteIcon}: ${error?.message || error || 'unknown error'}`, 'warn');
       },
     );
@@ -268,6 +284,10 @@
     const art = CROP_WORLD_ART[cropKey]; // Base species selects the actual PNG; genotype only changes its color.
     const rawColor = mesh.userData?.hobunjiCropVarietyColor ?? art?.worldTint ?? null; // Native berries need their own fruit color too.
     const pigment = rawColor != null && Number.isFinite(Number(rawColor)) ? (Number(rawColor) & 0xffffff) : null;
+    watchPlaceholderAttachment(mesh); // Pending conversions must also observe removal, not just converted anchors.
+    const key = textureKeyFor(cropKey, pigment);
+    if (pendingTextureByMesh.get(mesh) === key) return;
+    cancelPendingMesh(mesh); // A reattached or edited anchor must not receive an earlier cultivar texture.
     const record = ensureTexture(cropKey, pigment);
     if (!record || record.failed) return;
     if (record.loaded && record.texture?.image) {
@@ -280,6 +300,7 @@
       pendingMeshes.set(record.textureKey, meshes);
     }
     meshes.add(mesh);
+    pendingTextureByMesh.set(mesh, record.textureKey);
   }
 
   // Attached standalone crops and temporarily detached farm anchors may
@@ -293,6 +314,7 @@
   function onPlaceholderRemoved() {
     registeredPlaceholders.delete(this);
     activeBillboards.delete(this);
+    cancelPendingMesh(this);
   }
 
   function watchPlaceholderAttachment(mesh) {
@@ -301,7 +323,7 @@
   }
 
   function registerPlaceholder(mesh) {
-    const cropKey = mesh?.userData?.hobunjiCropBaseKey; // Authoritative species identity from the farm/NPC crop builder.
+    const cropKey = mesh?.userData?.hobunjiCropBaseKey || mesh?.userData?.hobunjiCropRootKey; // Modern species identity or previously adopted legacy anchor.
     if (!mesh?.isMesh || mesh.userData.hobunjiCropSpriteKey || CROP_WORLD_ART[cropKey]?.worldMode !== 'billboard') return false;
     watchPlaceholderAttachment(mesh);
     if (!mesh.parent && mesh.addEventListener) return true;
@@ -316,7 +338,7 @@
       // The producer queues on creation/attachment, and finishes its transform
       // before this frame hook. A harvested or replaced crop must not convert.
       if (!mesh.parent || mesh.userData.hobunjiCropSpriteKey) continue;
-      const cropKey = mesh.userData.hobunjiCropBaseKey;
+      const cropKey = mesh.userData.hobunjiCropBaseKey || mesh.userData.hobunjiCropRootKey;
       // Explicit registration is not permission to replace arbitrary tagged
       // geometry. The producer has set its position and scale by this point.
       if (isUnitCropCube(mesh) && CROP_WORLD_ART[cropKey]?.worldMode === 'billboard') queueBillboard(mesh, cropKey);
