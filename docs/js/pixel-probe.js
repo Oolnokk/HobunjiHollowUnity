@@ -1235,6 +1235,10 @@
     if (propBatches) lines.push(`Wilderness prop batches: ${JSON.stringify(propBatches)}`);
     const treeBatches = window.WildernessTreeInstancer?.snapshot?.(); // On-demand mobile A/B: spatial cells, key hits, uploads and retired buffers.
     if (treeBatches) lines.push(`Wilderness tree instances: ${JSON.stringify(treeBatches)}`);
+    const instanceRegistry = window.InstancedMeshBounds?.snapshot?.(); // On-demand stats for active-map index and fallback behavior.
+    if (instanceRegistry) lines.push(`Instanced scene registry: ${JSON.stringify(instanceRegistry)}`);
+    const actionCoins = window.ActionArchIcons?.debugSnapshot?.(); // Only explicit diagnostic capture reads the combat UI.
+    if (actionCoins) lines.push(`Combat coins: builds=${actionCoins.coinBuilds ?? 0} reuses=${actionCoins.coinReuses ?? 0}`);
     const brickLod = window.InstancedBrickLod?.snapshot?.(); // Far brick meshes drawn with the octant hull and triangles avoided.
     if (brickLod?.frames) lines.push(`Brick LOD: ${JSON.stringify(brickLod)}`);
     const wallBatches = window.DenseForestWallBatches?.snapshot?.(); // Cloud Forest wall merge + distance LOD split (far/near trees, triangles avoided).
