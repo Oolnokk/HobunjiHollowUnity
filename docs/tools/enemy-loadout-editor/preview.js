@@ -60,13 +60,13 @@ const files = [
   'js/trinket-system.js?v=20261122enemyTrinketAdd1', // Enemy Workshop spawns use the same equipment definitions and additive stat provider as gameplay.
   'js/combat/weapon-shape-stats.js?v=20261122hShapeFootingOnce',
   'js/combat/combat-combo.js?v=20261107combo1501a',
-  'js/combat/combat-quickattacks.js?v=20261028a',
+  'js/combat/combat-quickattacks.js?v=20261125deepHotpaths1',
   'js/combat/combat-charged-breaker.js?v=20261028a',
   'js/combat/combat-counter-shield.js?v=20261028a',
-  'js/combat/ranged-weapons.js?v=20261124rootledoot3',
+  'js/combat/ranged-weapons.js?v=20261125deepHotpaths1',
   'js/alchemy-system.js?v=20261122mushrooms1',
   'js/combat/enemy-loadout-rules.js?v=20261101playerhead3',
-  'js/combat/combat-bandit.js?v=20261124rootledoot2',
+  'js/combat/combat-bandit.js?v=20261125deepHotpaths1',
   'js/weapon-tool-stances.js?v=20261118torchThrowScaled2',
   'js/combat/enemy-weapon-stances.js?v=20261122heldPreviewAudit1',
   'js/combat/combat-minion.js?v=20261103harlyaoDemolitionist1',
@@ -85,8 +85,8 @@ const files = [
   'js/drunk-locomotion.js?v=20261117hRigDrunk1',
   'js/drunk-prone-composition-bridge.js?v=20261119h8e395a6',
   'config/weapon-trust-visits.js?v=20261109hpahugift1',
-  'js/weapon-trust-bandit-loadouts.js?v=20261118captainWeapon1',
-  'js/combat/ranged-weapon-archetypes.js?v=20261113inputrouter1',
+  'js/weapon-trust-bandit-loadouts.js?v=20261125deepHotpaths1',
+  'js/combat/ranged-weapon-archetypes.js?v=20261125deepHotpaths1',
   'tools/enemy-loadout-editor/source-data.js?v=20261122hSourceHealth1',
 ];
 const copy = (value) => JSON.parse(JSON.stringify(value));
