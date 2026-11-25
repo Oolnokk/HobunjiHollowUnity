@@ -27,7 +27,7 @@
   const scriptUrls = [
     "js/terrain-geometry.js?v=20261114waterBrick1",
     "js/vegetation-crop-rendering.js?v=20261124traceHotpaths2",
-    "js/grid-tile-accessors.js?v=20261121h742daef"
+    "js/grid-tile-accessors.js?v=20261125hourlyDanger2"
   ]; // Versioned game modules owned by this group.
   if (document.readyState !== 'loading') throw new Error('Classic script group must run during parsing');
   // A single write guarantees blocking, ordered execution before the next source index.html tag.

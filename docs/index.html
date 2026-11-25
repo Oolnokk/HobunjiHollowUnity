@@ -54,7 +54,7 @@
   <!-- Small formatting/math helpers (esc/clamp/roundRect/formatClock/etc.)
        extracted out of game.js; must load before game.js and before every
        other module whose init(deps) is handed window.FormatUtils.clamp/esc. -->
-  <script src="js/format-utils.js?v=20261124bulkAudit3"></script>
+  <script src="js/format-utils.js?v=20261125hourlyDanger3"></script>
   <!-- Default building entry tile (buildingSpawnFromExit) extracted out of
        game.js; uses window.FormatUtils.clamp and must load before game.js. -->
   <script src="js/building-entry-spawn.js?v=20261026hfbed948"></script>
@@ -508,7 +508,7 @@
        relative to the other systems above doesn't matter; must load before
        game.js, which calls window.CalendarSystem.init(...) during its own
        setup. -->
-  <script src="js/calendar-system.js?v=20261124traceClock4"></script>
+  <script src="js/calendar-system.js?v=20261125hourlyDanger3"></script>
   <!-- Resolves a map/interior's active alternate `layouts` entry (see
        docs/config/maps/map_i_temple.json's spirit_communion layout) against
        the current calendar time — window.MapLayoutSystem. Pure/stateless, no
