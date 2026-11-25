@@ -193,6 +193,40 @@ assert.equal(C.debugSnapshot().home.c,active.home.c);
 assert.equal(C.__test.lunarDay(14),14);
 assert.equal(C.__test.lunarDay(28),28);
 assert(saved>=2,'moon spawn and stable site save through existing world save adapter');
+
+// Missed-day recovery uses the real calendar, saved encounter, and spoiler panel.
+C.restore(undefined);
+game.getZoneLayout=()=>null; // Terrain may still be loading after an older save opens.
+liveDay.day=13;C.update(.016);
+assert.equal(C.debugSnapshot().zone,null,'no encounter before the first full moon');
+liveDay.day=15;C.update(.016);
+assert.equal(C.debugSnapshot().phase,'planned','skipping the 14th still selects a zone');
+assert.equal(C.debugSnapshot().cycle,0);
+assert.equal(spoilerPanel.render().rows.find(row=>row[0]==='Zone')[1],'Western Slope');
+assert.equal(spoilerPanel.render().rows.find(row=>row[0]==='Lunar day')[1],15);
+const missedMoon=C.serialize(); // Planned house survives reload before the zone terrain exists.
+liveDay.day=43;C.update(.016);
+assert.equal(C.debugSnapshot().cycle,0,'an unfinished encounter survives later full moons');
+C.restore(missedMoon);
+game.getZoneLayout=zone=>zone==='map_western_slope'?map:null;
+C.update(.016);
+assert.equal(C.debugSnapshot().phase,'roam','late terrain completes placement');
+C.restore({version:persisted.version,phase:'complete',cycle:0,completedCycle:0});
+liveDay.day=41;C.update(.016);
+assert.equal(C.debugSnapshot().zone,null,'a claimed moon cannot repeat before the next 14th');
+liveDay.day=43;C.update(.016);
+assert.equal(C.debugSnapshot().cycle,1,'the next missed full moon is eligible');
+C.restore(undefined);
+liveDay.day=29;C.update(.016);
+assert.equal(C.debugSnapshot().cycle,0,'early next month still catches up the previous full moon');
+C.restore(undefined);
+liveDay.day=100;C.update(.016);
+assert.equal(C.debugSnapshot().cycle,3,'old saves select only the latest elapsed moon');
+C.restore({version:persisted.version,phase:'complete',cycle:3,completedCycle:3});
+liveDay.day=42;C.update(.016);
+assert.equal(C.debugSnapshot().zone,null,'rewinding time cannot replay a claimed cycle');
+liveDay.day=14;C.restore(persisted); // Restore the original fixture for the full encounter flow.
+
 console.log('Boney Shinjimi assets, moon spawn, home collision, reward branches, work/regrowth and persistence passed.');
 
 
