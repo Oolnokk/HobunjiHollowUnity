@@ -50,10 +50,14 @@ document.activeElement.isConnected = true;
 
 let gameHour = 100; // Simulates the authoritative game clock independently of real time.
 let area = 'farm'; // Current world area for danger and chunk tests.
+let reviewing = false; // Simulates the midnight review's independent modal ownership.
+let naturalRate = 0.1; // Simulates sleep/wait clock ownership and pause.
 let dangerScans = 0; // Counts live world reads to prove blocked retries are hourly, not per poll.
 const hostiles = new Set(); // Live combat registry, with positions in world pixels.
 const window = {
-  CalendarSystem: { getAbsoluteGameHour: () => gameHour, getNaturalGameHoursPerSecond: () => 0.1 },
+  CalendarSystem: { getAbsoluteGameHour: () => gameHour, getNaturalGameHoursPerSecond: () => naturalRate },
+  DayProgressReview: { isBlocking: () => reviewing },
+  GridTileAccessors: { isZoneArea: id => id === 'map_generated_test', getBuildingWallStyle: id => id === 'map_i_unusual' ? 'cavern' : null },
   Combat: { deps: { getCurrentArea: () => { dangerScans++; return area; }, TILE: 64, player: { x: 10, y: 10 }, hostileObjects: hostiles } },
   WildernessChunks: { constants: { CHUNK_TILES: 16 } },
   CavernGenerator: { isLocaleCavernMapId: id => id === 'map_i_custom_puzzle' },
@@ -230,6 +234,44 @@ async function testAsyncPortraitOwnership() {
   gameHour = 104;
   flush(250);
   assert.equal(feature.debugSnapshot().active.id, 'second_baby', 'pending name resumes in FIFO order');
+  close();
+  area = 'map_i_unusual';
+  pending('authored_cave');
+  flush(0);
+  assert.equal(feature.debugSnapshot().deferredReason, 'dangerous-interior', 'authored cavern wall style blocks even without a recognizable map ID');
+  area = 'map_generated_test';
+  const generatedFoe = { areaId: area, x: 10, y: 10, health: 10, def: { hostile: false }, _territorialBehavior: { phase: 'warning' } }; // Neutral species becomes dangerous while warning.
+  hostiles.add(generatedFoe);
+  gameHour = 105;
+  flush(250);
+  assert.equal(feature.debugSnapshot().deferredReason, 'hostile-in-chunk', 'registry-classified zone and territorial warning are detected');
+  area = 'map_wilderness_lab';
+  generatedFoe.areaId = area;
+  gameHour = 106;
+  flush(250);
+  assert.equal(feature.debugSnapshot().deferredReason, 'hostile-in-chunk', 'actual wilderness lab ID is covered');
+  generatedFoe.health = 0;
+  area = 'farm';
+  gameHour = 110;
+  naturalRate = 0;
+  flush(250);
+  assert(root.hidden, 'a time skip does not open a naming dialog during sleep/wait');
+  naturalRate = 0.1;
+  reviewing = true;
+  flush(250);
+  assert(root.hidden, 'a midnight review retains modal ownership');
+  reviewing = false;
+  flush(250);
+  assert.equal(feature.debugSnapshot().active.id, 'authored_cave', 'multiple skipped hours resume a single queued dialog after time passage and review');
+  close();
+
+  area = null;
+  pending('initializing_world');
+  flush(0);
+  assert.equal(feature.debugSnapshot().deferredReason, 'world-not-ready');
+  area = 'farm';
+  flush(250);
+  assert.equal(feature.debugSnapshot().active.id, 'initializing_world', 'initialization does not consume a whole game hour');
   close();
   assert.equal(timers.filter(task => !task.cancelled).length, 0, 'empty queue leaves no polling timer');
   assert.equal(lockState.acquired, lockState.released, 'all danger cases release action locks');

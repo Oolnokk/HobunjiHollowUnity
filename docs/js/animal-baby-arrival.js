@@ -12,7 +12,7 @@
   const syllables = ['ba', 'be', 'bi', 'bo', 'bu', 'da', 'de', 'di', 'do', 'du', 'fa', 'fe', 'fi', 'fo', 'fu', 'ga', 'ge', 'gi', 'go', 'gu', 'ka', 'ke', 'ki', 'ko', 'ku', 'la', 'le', 'li', 'lo', 'lu', 'ma', 'me', 'mi', 'mo', 'mu', 'na', 'ne', 'ni', 'no', 'nu', 'pa', 'pe', 'pi', 'po', 'pu', 'sa', 'se', 'si', 'so', 'su', 'ta', 'te', 'ti', 'to', 'tu', 'wa', 'we', 'wi', 'wo', 'chi', 'chu', 'sha', 'shi', 'shu']; // Simple spoken syllables for either position in a baby's name.
   const finalConsonants = ['n', 'm', 't', 'k', 'b', 'g', 'p']; // Optional single-letter codas; b, g and p broaden the existing clipped-name sound.
   const speciesEmoji = { grehlr: '🐺', 'gar-wolf': '🐺', nelk: '🦎', puktuk: '🐇', nazgraku: '🐐', drenkirra: '🐾', uumkaoii: '🦆', 'voorg-ass': '🐴', voorgass: '🐴', honeyfuzzle: '🐝', moot: '🐂' }; // Hatch visuals use species hints where there is no portrait available.
-  const CHANGE = 'Animal arrival screens wait for a safe area; blocked arrivals retry once per in-game hour.'; // Mobile debug snapshot change log.
+  const CHANGE = 'Animal arrivals use live cave/zone classification, hourly danger retries and time-passage/review guards.'; // Mobile debug snapshot change log.
   let active = null; // Modal currently borrowing input focus, if any.
   let root = null; // Lazily created overlay so feature loading never touches the opening screen.
   let expiry = null; // The automatic end timer for an incubation reveal.
@@ -206,13 +206,14 @@
 
   function dangerReason() {
     const deps = window.Combat?.deps; // Live combat entities and player coordinates, not a scene traversal.
-    const area = deps?.getCurrentArea?.() || window.GridTileAccessors?.getCurrentArea?.(); // Current player area.
+    const grid = window.GridTileAccessors; // Canonical map registry, independent of whether the current scene has rendered.
+    const area = grid?.getCurrentArea?.() || deps?.getCurrentArea?.(); // Current player area.
     if (!area) return 'world-not-ready';
     if (/^map_i_(?:den_|town_mine_|.*(?:cave|cavern|ruin))/.test(area)
       || window.WildlifeSpawn?.denCavernZoneOf?.(area)
-      || window.CavernGenerator?.isLocaleCavernMapId?.(area)) return 'dangerous-interior';
-    const wilderness = /^map_(?:northern_cliffs|western_slope|eastern_mire|cloud_forest|dev_wilderness_chunk_lab)$/.test(area)
-      || !!window.GridTileAccessors?.getZoneSceneInfo?.(area); // The live zone registry also covers generated exterior zones.
+      || window.CavernGenerator?.isLocaleCavernMapId?.(area)
+      || ['cavern', 'mine'].includes(grid?.getBuildingWallStyle?.(area))) return 'dangerous-interior';
+    const wilderness = grid?.isZoneArea?.(area) || /^map_(?:northern_cliffs|western_slope|eastern_mire|cloud_forest|wilderness_lab)$/.test(area); // Includes streamed zones before scene creation.
     if (!wilderness) return null;
     const player = deps?.player; // Positions are in world pixels on both axes.
     const chunkSize = Number(deps?.TILE) * Number(window.WildernessChunks?.constants?.CHUNK_TILES); // Use the streamer's actual chunk dimensions.
@@ -240,15 +241,16 @@
     const clock = window.CalendarSystem; // Authoritative monotonic game time, including midnight and time skips.
     const absoluteHour = clock?.getAbsoluteGameHour?.(); // Used solely to gate deferred danger checks.
     const hour = Number.isFinite(absoluteHour) ? Math.floor(absoluteHour) : null; // Integer game-hour bucket.
-    if (hour === null || clock?.getNaturalGameHoursPerSecond?.() === 0) {
-      deferredReason = 'clock-not-ready-or-time-passage';
+    if (hour === null || clock?.getNaturalGameHoursPerSecond?.() === 0 || window.DayProgressReview?.isBlocking?.()) {
+      deferredReason = 'clock-not-ready-or-time-passage-or-review';
       scheduleWake(CLOCK_POLL_MS);
       return;
     }
     if (deferredHour === hour) { scheduleWake(CLOCK_POLL_MS); return; }
     const reason = dangerReason(); // Initial arrivals are checked immediately; retries only after the clock advances.
     if (reason) {
-      deferredHour = hour;
+      // An uninitialized world is not a danger result: retry readiness without consuming the next hourly scan.
+      deferredHour = reason === 'world-not-ready' ? null : hour;
       deferredReason = reason;
       lastEvent = { type: 'deferred', id: queue[0].id, reason, hour };
       scheduleWake(CLOCK_POLL_MS);
