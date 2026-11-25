@@ -116,3 +116,19 @@ new RAF, or enables the existing overlay profiler. Pixel Probe uses this
 only while armed, excluding non-world/failed frames and the warmup frame
 from its aggregate. Pre-render subscriber time is part of driver time;
 do not sum overlapping timing categories.
+
+## Cadence and perception gating (opt-in)
+
+Subscribers run every browser frame by default. Work that no player can perceive every frame should declare
+that instead of doing its own early-out:
+
+```js
+RuntimeFrameScheduler.register('example', ({ sinceLastRunMs }) => { /* integrate with sinceLastRunMs */ }, {
+  everyMs: 100,                         // At most once per 100 ms; sinceLastRunMs is the accumulated time.
+  when: () => somePlayerCanPerceive(),  // Return false to skip this frame; a throwing when() fails open.
+});
+```
+
+Skips are counted per subscriber (`getDebug().entries[].skippedCalls`) so Pixel Probe and tests can show how
+much work was avoided. Gating changes only when your callback is called; ordering between phases is unchanged.
+For multiplayer, `when` should mean "no player can see or hear this", not "off screen for the local player".

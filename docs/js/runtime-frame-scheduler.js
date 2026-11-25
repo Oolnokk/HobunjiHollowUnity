@@ -26,7 +26,7 @@
 
   const subscribers = new Map(); // Used to retain one stable, inspectable record per registered runtime.
   const pendingRegistrationUpdates = new Map(); // Existing subscriber changes during a frame apply only after its ordered dispatch finishes.
-  const frameContext = { timestamp: 0, deltaMs: 0, frameId: 0 }; // Reused for every dispatch so the scheduler itself allocates no per-frame context object.
+  const frameContext = { timestamp: 0, deltaMs: 0, frameId: 0, sinceLastRunMs: 0 }; // Reused for every dispatch so the scheduler itself allocates no per-frame context object.
   let rafHandle = 0; // Used to guarantee that all subscribers share exactly one scheduled browser callback.
   let browserFrameId = 0; // Used by browser-frame-lifetime caches and mobile diagnostics.
   let previousTimestamp = null; // Used to derive an informational browser-frame delta without changing subscriber cadence.
@@ -74,6 +74,16 @@
 
   function dispatchOne(record, timestamp) {
     if (!record.enabled || browserFrameId < record.firstFrameId || record.lastFrameId === browserFrameId) return;
+    // Perception/cadence gating (opt-in): a subscriber that declares everyMs and/or when() is skipped
+    // without being called. A throwing when() fails open so a broken gate can never silence a runtime.
+    if (record.everyMs > 0 && record.lastRunAt !== null && timestamp - record.lastRunAt < record.everyMs) { record.skippedCalls++; return; }
+    if (record.when) {
+      let run = true;
+      try { run = !!record.when(frameContext); } catch (error) { reportError(record, error, timestamp); }
+      if (!run) { record.skippedCalls++; return; }
+    }
+    frameContext.sinceLastRunMs = record.lastRunAt === null ? frameContext.deltaMs : timestamp - record.lastRunAt; // Accumulated time, so a throttled subscriber can integrate correctly.
+    record.lastRunAt = timestamp;
     const observer = frameTimingObserver; // Fixed for this browser frame, even if registration changes inside a callback.
     const profile = profilingEnabled; // Preserve matching start/end even when the callback toggles the overlay.
     const startedAt = profile || observer ? performance.now() : 0;
@@ -174,6 +184,8 @@
         phase: options.phase || prior.phase,
         owner: options.owner || prior.owner,
         description: options.description || prior.description,
+        everyMs: options.everyMs ?? prior.everyMs,
+        when: options.when === undefined ? prior.when : options.when,
       };
       if (dispatching) pendingRegistrationUpdates.set(id, { record: existing, patch });
       else Object.assign(existing, patch);
@@ -185,6 +197,10 @@
         phase: options.phase || 'post-game', // Most existing subscribers are HUD/presentation work with no ordering dependency on gameplay simulation.
         owner: options.owner || id,
         description: options.description || '',
+        everyMs: Number(options.everyMs) > 0 ? Number(options.everyMs) : 0, // Minimum milliseconds between calls; 0 = every browser frame (default).
+        when: typeof options.when === 'function' ? options.when : null, // Optional predicate: return false when nothing a player can perceive depends on this callback this frame.
+        lastRunAt: null,
+        skippedCalls: 0,
         firstFrameId: browserFrameId + 1, // Prevents registration during dispatch from extending the active frame's participant set.
         callCount: 0,
         errorCount: 0,
@@ -263,6 +279,8 @@
       description: record.description,
       enabled: record.enabled,
       callCount: record.callCount,
+      skippedCalls: record.skippedCalls,
+      everyMs: record.everyMs,
       errorCount: record.errorCount,
       lastFrameId: record.lastFrameId,
       lastDurationMs: record.lastDurationMs,
