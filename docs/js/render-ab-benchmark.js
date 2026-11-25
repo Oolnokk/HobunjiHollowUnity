@@ -366,7 +366,7 @@
     }
     // Compare all three generated-outline modes while keeping the offscreen
     // composite, painterly, X-ray color and target highlights unchanged.
-    if (debug?.outlinesSetting !== false && typeof pipeline?.setGeneratedOutlineMode === 'function') {
+    if (outlinesBefore === true && typeof pipeline?.setGeneratedOutlineMode === 'function') {
       const outlineBefore = pipeline.getGeneratedOutlineMode();
       for (const [id, mode] of [['shellOutlines','shell'],['screenDepthOutlines','screen'],['generatedOutlinesOff','none']]) {
         variants.push({ id, apply: () => pipeline.setGeneratedOutlineMode(mode), undo: () => pipeline.setGeneratedOutlineMode(outlineBefore) });
