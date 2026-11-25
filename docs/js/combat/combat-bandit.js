@@ -1151,8 +1151,8 @@
 
   function installEnemyCombatProfile(def, combatClass, level) {
     const previous = def.combatPerkModifiers; // Equipment wrappers may rebuild a profile; remove its old multipliers before installing the new ones.
-    const baseHealth = Math.round(def.maxHealth / (previous?.health ?? 1));
-    const baseStamina = Math.round(def.maxStamina / (previous?.stamina ?? 1));
+    const baseHealth = def.combatPerkBaseHealth ??= def.maxHealth; // Retain exact unscaled capacities across weapon swaps.
+    const baseStamina = def.combatPerkBaseStamina ??= def.maxStamina;
     const baseCost = def.attackStaminaCost / (previous?.staminaCost ?? 1);
     const profile = window.PerkSystem.buildEnemyCombatProfile(combatClass, level, def.banditAbilityLoadout, def.attackTag, def.rangedWeaponKey);
     Object.assign(def, profile);
@@ -1664,7 +1664,7 @@
         if (landed && staged) {
           if (!comboStepHit) c._banditComboLandCount = (c._banditComboLandCount || 0) + 1; // A Hyped second hit is still the same combo step, not a phantom extra chain point.
           comboStepHit = true;
-          damageBanditCombatTarget(c, targetPlayer, damage, c.x, c.y, knockbackPxS, { tag: def.attackTag, stagedDuel: true, enchantmentSlot: 'tap1', comboFinisher: isFinalStep });
+          damageBanditCombatTarget(c, targetPlayer, damage, c.x, c.y, knockbackPxS, { tag: def.attackTag, stagedDuel: true, enchantmentSlot: 'tap1', comboFinisher: isFinalStep, perkHeavy: !!step.heavy });
           window.AudioSystem?.playWeaponHitSfx(def.attackTag, c.x, c.y, c.areaId, sfxPitch, ['small', 'medium', 'large'][comboStep]);
         } else if (landed) {
           if (!comboStepHit) c._banditComboLandCount = (c._banditComboLandCount || 0) + 1; // A Hyped second hit is still the same combo step, not a phantom extra chain point.
@@ -1675,7 +1675,7 @@
           // player's own combat-combo.js fix, which no longer tags a
           // swing by combo family (sweep=blunt/thrust=sharp) regardless
           // of the equipped weapon's real material.
-          damageBanditCombatTarget(c, targetPlayer, damage, c.x, c.y, knockbackPxS, { tag: def.attackTag, enchantmentSlot: 'tap1', comboFinisher: isFinalStep, afflictionBonuses: window.CombatAttackEvents?.scaleAfflictions?.(window.ResourceSystem?.afflictionBonusesForTag(def.attackTag), 1) || window.ResourceSystem?.afflictionBonusesForTag(def.attackTag) });
+          damageBanditCombatTarget(c, targetPlayer, damage, c.x, c.y, knockbackPxS, { tag: def.attackTag, enchantmentSlot: 'tap1', comboFinisher: isFinalStep, perkHeavy: !!step.heavy, afflictionBonuses: window.CombatAttackEvents?.scaleAfflictions?.(window.ResourceSystem?.afflictionBonusesForTag(def.attackTag), 1) || window.ResourceSystem?.afflictionBonusesForTag(def.attackTag) });
           window.AudioSystem?.playWeaponHitSfx(def.attackTag, c.x, c.y, c.areaId, sfxPitch, ['small', 'medium', 'large'][comboStep]);
         }
       },
@@ -1832,7 +1832,7 @@
     return true;
   }
 
-  // Captain-only, hold2. Not a held button either -- a periodic timed
+  // Counter Shield, hold2. Not a held button either -- a periodic timed
   // window instead: while `_banditGuardUntil` is in the future, an
   // incoming hit (see damageCreature's isBandit branch) is reduced and
   // answered with a real Counter Shield riposte using the exact damage/
