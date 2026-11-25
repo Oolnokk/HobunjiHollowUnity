@@ -106,7 +106,7 @@
     candidates.push({ x: dx / length, y: dy / length, sign: 0 }); // Backward escape is the fallback when both lateral lanes are obstructed.
     let best = null; // Furthest collision-safe candidate wins, favoring a full lateral dodge when available.
     for (const candidate of candidates) {
-      const motion = window.ResourceSystem?.composeMovement?.(entity, candidate.x * travelPx, candidate.y * travelPx, { mode: 'dodge', scalarApplied: true, rotationApplied: true, reference: tuning.speedPxS * tuning.durationS * efficacy }); // Pure preview: no Footing or coordinate writes.
+      const motion = window.ResourceSystem?.composeMovement?.(entity, candidate.x * travelPx, candidate.y * travelPx, { mode: 'dodge', scalarApplied: true, rotationApplied: true, reference: travelPx }); // Pure preview: no Footing or coordinate writes.
       const swept = deps.sweptMove(
         entity.x, entity.y,
         entity.x + (motion?.x ?? candidate.x * travelPx),
@@ -171,7 +171,7 @@
     entity.dodgeT = state.remainingS;
     const heavyDistanceMul = window.ResourceSystem?.timedDebuffModifier?.(entity, 'dodgeLungeDistance') ?? 1; // Same Heavy distance percentage used when this dodge direction was chosen.
     const dodgeSpeedPxS = tuning.speedPxS * heavyDistanceMul; // Reduced speed over the unchanged dodge duration produces the intended shorter total dodge.
-    const motion = window.ResourceSystem?.composeMovement?.(entity, entity.dodgeDirX * dodgeSpeedPxS * dt, entity.dodgeDirY * dodgeSpeedPxS * dt, { mode: 'dodge', scalarApplied: true, rotationApplied: true, reference: tuning.speedPxS * dt, dt });
+    const motion = window.ResourceSystem?.composeMovement?.(entity, entity.dodgeDirX * dodgeSpeedPxS * dt, entity.dodgeDirY * dodgeSpeedPxS * dt, { mode: 'dodge', scalarApplied: true, rotationApplied: true, reference: dodgeSpeedPxS * dt, dt });
     const dx = motion?.x ?? entity.dodgeDirX * dodgeSpeedPxS * dt, dy = motion?.y ?? entity.dodgeDirY * dodgeSpeedPxS * dt;
     const desiredX = entity.x + dx, desiredY = entity.y + dy;
     const swept = deps.sweptMove(entity.x, entity.y, desiredX, desiredY, (x, y) => deps.canOccupyAt(x, y, deps.TILE * 0.32));
