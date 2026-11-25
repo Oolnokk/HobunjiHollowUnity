@@ -170,7 +170,7 @@ const SCOPE_ORDER = ['farm-tile-batches', 'zone-prop-batches', 'npc-view-cull', 
   assert.ok(h.log.some(e => e.id === 'endFrame'), 'actor occlusion is released');
   assert.equal(undone, 1, 'frame hooks are undone');
   assert.equal(h.hooks.isWorldFrameOpen(), false, 'no world frame left open');
-  assert.equal(h.activeScene.overrideMaterial, h.pipeline.materials.shell, '(the failing pass left its override; the next frame resets it)');
+  assert.equal(h.activeScene.overrideMaterial, null, 'shell override is restored even when the draw throws');
   h.throwOn = null;
   h.frame();
   assert.equal(h.activeScene.overrideMaterial, null, 'a normal frame recovers');
