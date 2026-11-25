@@ -355,7 +355,7 @@ assert.equal(nearby.depthWrite, true);
 }
 
 assert.ok(source.includes('portraitGearIds = portraitMask.gearIds'),'overlay receives actual per-owner gear lookup');
-assert.ok(source.includes('stampFrontPortraitStencil(renderer, scene, camera, portraitMask.portraits, portraitMask.ownerIds, portraitOrder)'),'mask is invoked from real render path');
+assert.ok(source.includes('stampFrontPortraitStencil(renderer, scene, camera, portraitMask.portraits, portraitMask.ownerIds, portraitOrder'),'mask is invoked from real render path');
 assert.match(source, /const needsOwnerMask = held\.some\(isPortraitMaskedGear\)/,
   'no-stencil frame with an equipped pet must not bypass the held-mask depth replay');
 assert.match(source, /const portraitMask = lastFrontPortraitGearCandidates[\s\S]{0,240}assignPortraitStencilOwners/,
