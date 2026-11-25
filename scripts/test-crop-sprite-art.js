@@ -249,4 +249,33 @@ artApi.registerPlaceholder(invalid);
 renderer.render(modernScene,camera);
 assert.equal(invalid.children.length,0,'a tag alone cannot convert non-placeholder geometry');
 assert.equal(modernTraversals,3,'these lifecycle operations never require another discovery walk');
+// Delayed native texture completion must not convert a removed mesh using
+// a stale pigment after that same anchor is reused for another cultivar.
+const delayedLoads = [];
+sandboxWindow.THREE.TextureLoader = class {
+  load(path, ready) {
+    const texture = {image:{width:24,height:32}};
+    delayedLoads.push(()=>ready(texture));
+    return texture;
+  }
+};
+const pending = newCrop();
+pending.userData.hobunjiCropVarietyColor = 0x123456;
+artApi.registerPlaceholder(pending);
+renderer.render(modernScene,camera);
+assert.equal(delayedLoads.length,1,'first pigment waits on the delayed image');
+assert.equal(pending.children.length,0);
+pending.parent = null;
+pending.dispatchEvent({type:'removed'});
+pending.userData.hobunjiCropVarietyColor = 0x654321;
+pending.parent = modernScene;
+pending.dispatchEvent({type:'added'});
+renderer.render(modernScene,camera);
+assert.equal(delayedLoads.length,2,'reattached cultivar requests its new pigment');
+delayedLoads[0]();
+assert.equal(pending.children.length,0,'stale image completion cannot convert the reattached crop');
+delayedLoads[1]();
+assert.equal(pending.children.length,3);
+for (const plant of pending.children) assert.equal(plant.material.color.getHex(),0x654321);
+assert.equal(modernTraversals,3,'async lifecycle does not resume scene discovery');
 console.log('authored crop sprite art tests passed');
