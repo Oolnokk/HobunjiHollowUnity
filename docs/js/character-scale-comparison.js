@@ -13,7 +13,7 @@
   const TAB_ID = 'maaFullScaleTab';
   const PANEL_ID = 'maaFullScalePanel';
   const RIG_SAVE_KEY = 'hobunjiAttachmentRigProfiles.v2';
-  const MAIN_SILHOUETTE_RESTORE_KEY = 'hobunjiFullCharacterMainSilhouettes.4cfb39c.v1'; // One-time migration for local scale overrides authored after the original main silhouette phase.
+  const UPLOADED_SCALE_MIGRATION_KEY = 'hobunjiFullCharacterApprovedScales.upload3.v1'; // Import uploaded 26-profile scale baseline on devices that retain an older local save.
   const selfUrl = document.currentScript?.src ? new URL(document.currentScript.src, location.href) : null;
   const docsBase = selfUrl ? new URL('../', selfUrl) : new URL('../../', location.href);
   const npcDbUrl = new URL('config/npcs/hobunji-starter-npc-database.json', docsBase).href;
@@ -391,7 +391,7 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
         ${scaleRow('Age', 'Age (hunch)', 0, 100, 1, 0, 'Per-NPC age hunch, lowers the head further')}
         <label class="maaToggleLine" style="margin:8px 0"><input id="maaFullScaleShowSpine" type="checkbox" checked> Show live spine and neck attachment</label>
         <div class="maaSmall maaMuted" style="margin-bottom:8px">Spine: green pelvis → orange vertebrae → violet shoulder/neck base; cyan marks the scaled head attachment. The selected avatar is highlighted, and hunch edits update the bones without changing the portrait art.</div>
-        <div class="scaleActions"><button id="maaFullScaleExport" type="button" class="good">Export scale JSON</button><button id="maaFullScaleFrame" type="button" class="secondary">Frame lineup</button><button id="maaFullScaleFocus" type="button" class="secondary" disabled>Focus selected</button><button id="maaFullScaleMatchMainAdults" type="button" class="secondary" title="Restore the exact original main adult silhouettes (width, Height, Leg/Beltline, Head, offsets, hands and feet) without changing child age stages or NPC hunch">Restore main silhouettes</button><button id="maaFullScaleReset" type="button" class="secondary">Reset all to repo defaults</button></div>
+        <div class="scaleActions"><button id="maaFullScaleExport" type="button" class="good">Export scale JSON</button><button id="maaFullScaleFrame" type="button" class="secondary">Frame lineup</button><button id="maaFullScaleFocus" type="button" class="secondary" disabled>Focus selected</button><button id="maaFullScaleMatchMainAdults" type="button" class="secondary" title="Restore the exact original main adult silhouettes (width, Height, Leg/Beltline, Head, offsets, hands and feet) without changing child age stages or NPC hunch">Apply uploaded character scales</button><button id="maaFullScaleReset" type="button" class="secondary">Reset all to repo defaults</button></div>
         <div id="maaFullScaleStatus" class="scaleStatus">Height controls total floor-to-head stature. Beltline height (%) is the hip/posterior junction measured upward from the feet, as a percent of that total. The legs and portrait are derived together, preserving planted feet and existing saved proportions.</div>`;
       workspace.appendChild(panel);
       panel.querySelector('#maaFullScaleMatchMainAdults').addEventListener('click', matchMainAdultScales); // Existing saved adult overrides can explicitly adopt the new 26-profile Mao'ao-relative defaults without erasing NPC age/Longoran posture.
@@ -1031,12 +1031,12 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
   // Restore the EXACT main adult silhouettes from the 4cfb39c reference, not the later
   // 65% Head, Mao'ao-relative dimensions or nominal foot-height estimates. A saved local
   // rig can outlive default-file changes, so make this available as an explicit adult-only action.
-  function matchMainAdultScales() {
+  function applyUploadedAdultScales() {
     if (!active) return;
-    const baseline = window.HobunjiCharacterRigScaleDefaults?.mainSilhouetteRestoreValues; // All 18 main plus 8 auxiliary identities; their original parts are included.
+    const baseline = window.HobunjiCharacterRigScaleDefaults?.uploadedScaleRestoreValues; // All 18 canonical plus 8 auxiliary identities; each adult part comes from the approved upload.
     const bridge = host();
     if (!baseline || typeof bridge?.setRigScale !== 'function') {
-      status('Cannot restore silhouettes: main reference or Rig persistence is unavailable.');
+      status('Cannot apply uploaded scales: imported reference or Rig persistence is unavailable.');
       return;
     }
     const items = Object.entries(baseline); // Stable per-profile order; only the final write persists the completed map.
@@ -1049,7 +1049,7 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
         x: original.x, y: original.y, legLength: original.legLength ?? original.y,
         head: original.head, offsetY: original.offsetY,
         handScale: original.handScale, footScale: original.footScale,
-      }; // All authored adult dimensions revert together; no 65%-head residue or stale independent reach.
+      }; // Apply the complete uploaded adult silhouette, retaining independent age-wide controls.
       if (bridge.setRigScale(species, gender, next, { persist: i === items.length - 1 }) != null) count++;
     }
     const pngFeet = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.proceduralFeet?.footScale; // Keep newly spawned gameplay feet consistent with restored author scales.
@@ -1079,24 +1079,23 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
     persistProfiles(); // Native Rig export and local backup get the same restored adult values.
     layout();
     frame();
-    status(`Restored ${count}/${items.length} adult silhouettes to main (4cfb39c). Baby/toddler/child modifiers and per-NPC hunches remain unchanged.`);
+    status(`Applied ${count}/${items.length} adult profiles from uploaded Full Character Scale (3). Baby/toddler/child modifiers and per-NPC hunches remain unchanged.`);
     return count; // Bootstrap migration records success only after every adult scale was persisted.
   }
 
-  function migratePersistedMainSilhouettesOnce() {
-    // Previously opened Raw Githack builds share localStorage. Without a one-time
-    // migration their 65%-Head/height-target rigScale overrides supersede the
-    // restored repository defaults even though every new character is correct.
+  function migratePersistedUploadedScalesOnce() {
+    // Previously opened Raw Githack builds share localStorage. Import user-approved values
+    // once for stale local rigs, but never overwrite new edits on subsequent visits.
     let saved = false; // Do not write default overrides for a fresh browser with no older authored scale data.
     try {
-      if (localStorage.getItem(MAIN_SILHOUETTE_RESTORE_KEY)) return false; // Never repeat after a later deliberate author edit.
+      if (localStorage.getItem(UPLOADED_SCALE_MIGRATION_KEY)) return false; // Never repeat after a later deliberate author edit.
       saved = ['hobunjiFullCharacterRigScales.v2', 'hobunjiFullCharacterRigScales.v1', RIG_SAVE_KEY]
         .some(key => !!localStorage.getItem(key)); // Only already-persisted local rigs require corrective migration.
     } catch (_) { return false; } // Storage may be disabled on mobile private browsing.
     if (!saved) return false;
-    const restored = matchMainAdultScales(); // All 26 adult scale values, but no per-NPC hunch or age-stage reset.
+    const restored = applyUploadedAdultScales(); // All 26 approved profiles, without touching age-stage drafts or NPC hunch.
     if (!(restored > 0)) return false;
-    try { localStorage.setItem(MAIN_SILHOUETTE_RESTORE_KEY, 'restored'); } catch (_) {}
+    try { localStorage.setItem(UPLOADED_SCALE_MIGRATION_KEY, 'uploaded-v3'); } catch (_) {}
     return true;
   }
 
@@ -1738,7 +1737,7 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
       building = false;
       active = true;
       chrome();
-      const migrated = migratePersistedMainSilhouettesOnce(); // Makes the first new build match the requested historical silhouette even with an old phone autosave.
+      const migrated = migratePersistedUploadedScalesOnce(); // Brings old on-device scale overrides into parity with the new uploaded adult source.
       if (!migrated) status('Use the always-open character dropdown for per-species edits; Baby/Toddler/Child modes show and adjust the entire lineup.');
     } catch (error) {
       if (buildId !== generation) return; // The already-requested exit owns restoration and error reporting.
