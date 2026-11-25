@@ -88,9 +88,10 @@
       fps: gaps?.meanMs > 0 ? round(1000/gaps.meanMs) : null, frameIntervals: gaps,
       gameLoop: distribution(s.loops), schedulerFrame: distribution(s.schedulerFrames), nativeHookAvailable: s.hookAvailable,
       subsystems: rows(s.buckets, denominator), nativePasses: rows(s.passes, denominator, true),
+      outsideFrameSubsystems: [...s.outside.buckets].sort((a,b)=>b[1].totalMs-a[1].totalMs).map(([name,x])=>({name,calls:x.calls,totalMs:round(x.totalMs),maxCallMs:round(x.maxMs)})),
       nativeMatrixWrapFailures: s.matrixFailures,
       countersAtStart:s.startCounters, countersAtEnd:endCounters, counterDeltas:counterChanges(s.startCounters,endCounters),
-      notes: 'Wall-clock CPU submission timings, not GPU execution or stack samples. Inclusive subsystem buckets overlap; scheduler pre-render is inside the driver. Frame intervals include browser scheduling/wait. First completed frame excluded (one-shot census/warmup). Frames without world rendering or failed drivers excluded. Native counts are renderer.info at submission end; nested submissions are not separately timed. Mixed areas are not a controlled comparison.',
+      notes: 'Wall-clock CPU submission timings, not GPU execution or stack samples. Inclusive subsystem buckets overlap; scheduler pre-render is inside the driver. Frame intervals include browser scheduling/wait. First completed frame excluded (one-shot census/warmup). Frames without world rendering or failed drivers excluded. Native counts are renderer.info at submission end; nested submissions are not separately timed. Outside-frame brackets are reported separately for the whole recording, including warmup; they do not attribute uninstrumented browser work. Mixed areas are not a controlled comparison.',
     };
     return lastReport;
   }
@@ -103,6 +104,7 @@
     cancel();
     const s = session = { area, started: clock(), frame: null, warmed: false, interrupted: 0,
       areas: new Set(), loops: [], gaps: [], schedulerFrames: [], previousStart: null, buckets: new Map(), passes: new Map(),
+      outside: { buckets: new Map() }, // Explicit timing brackets in microtasks and other callbacks between scheduler frames.
       off: null, schedulerOff: null, hookAvailable: false, matrixFailures: 0, nonWorld: 0, startCounters:counters() };
     s.schedulerOff = window.RuntimeFrameScheduler?.registerTimingObserver?.({
       beginFrame(timestamp) { if (session === s) openFrame(s,timestamp); },
@@ -193,18 +195,20 @@
     if (!s) return null;
     // Older isolated hosts can still use the existing gameLoop bracket.
     if (!s.schedulerOff && name === 'gameLoop total') openFrame(s,clock());
-    return session === s ? s.frame : null;
+    return session === s && clock()-s.started < MAX_MS ? (s.frame || s.outside) : null;
   }
   function recordTiming(frame,name,elapsed) {
     const s = session;
-    if (!s || !frame || s.frame !== frame || !Number.isFinite(elapsed) || elapsed < 0) return;
+    if (!s || !frame || !Number.isFinite(elapsed) || elapsed < 0) return;
+    if (frame === s.outside) { add(frame.buckets,name,elapsed); return; }
+    if (s.frame !== frame) return;
     add(frame.buckets,name,elapsed);
     if (!s.schedulerOff && name === 'gameLoop total') closeFrame(s,elapsed,true);
   }
   window.ProbePerformanceCapture = Object.freeze({
     start, finish, cancel, beginTiming, recordTiming,
     markArea(area) { if (session?.frame) session.frame.area = area; },
-    recordDirect(name,ms) { if (session?.frame && name !== 'gameLoop total') recordTiming(session.frame,name,ms); },
+    recordDirect(name,ms) { if (session && name !== 'gameLoop total') recordTiming(session.frame || session.outside,name,ms); },
     get active() { return !!session; },
   });
 })();
