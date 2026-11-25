@@ -278,4 +278,55 @@ restoreFurniture?.();
 assert.strictEqual(furnitureHolder().children.length, 0);
 assert(parts.every(m => m.material.transparent), 'render-proxy disposal never changes source material');
 
+// Independent dirty groups: the untouched cell must preserve its exact proxy
+// and geometry, and a dirty source must never leave a stale merged copy visible.
+const isolated = new THREE.Scene();
+const isolatedMat = new THREE.MeshLambertMaterial({color:0x778855});
+function isolatedGroup(x) {
+  const root = new THREE.Group();
+  root.userData.projectileCoverKind='tent';
+  root.position.x=x;
+  for(let i=0;i<3;i++) {
+    const part=new THREE.Mesh(new THREE.BoxGeometry(.2,.2,.2),isolatedMat);
+    part.position.x=i*.3; root.add(part);
+  }
+  isolated.add(root); return root;
+}
+const left=isolatedGroup(1), right=isolatedGroup(24);
+const step=()=>{isolated.updateMatrixWorld(true);return Batches.suspendForRender(isolated,{isZone:true});};
+assert.strictEqual(step(),null);
+const emptyStart=Batches.snapshot();
+clock+=100;
+assert.strictEqual(step(),null);
+assert.equal(Batches.snapshot().fullCollects,emptyStart.fullCollects,'empty unsettled scene does not rescan on every frame');
+assert.equal(Batches.snapshot().emptyReuseFrames,emptyStart.emptyReuseFrames+1);
+clock+=1000;
+step()();
+const proxies=isolated.children.find(m=>m.userData.hobunjiZonePropBatchHolder);
+const rightProxy=proxies.children.find(m=>m.geometry.boundingSphere.center.x>16);
+assert(rightProxy);
+const rightGeometry=rightProxy.geometry;
+const beforeRepair=Batches.snapshot();
+clock+=100;
+left.children[0].position.y+=1;
+const undo=step();
+assert(undo);
+assert(left.children[0].visible && left.children.slice(1).every(m=>!m.visible),'only moved source leaves its cell batch');
+assert(right.children.every(m=>!m.visible),'unrelated cell stays batched');
+assert(proxies.children.includes(rightProxy) && rightProxy.geometry===rightGeometry,'unrelated proxy and buffers are not rebuilt');
+assert.equal(Batches.snapshot().fullCollects,beforeRepair.fullCollects,'dirty group did not force full collection');
+assert.equal(Batches.snapshot().partialRepairFrames,beforeRepair.partialRepairFrames+1);
+assert.equal(Batches.snapshot().repairedGroups,beforeRepair.repairedGroups+1);
+undo();
+assert([...left.children,...right.children].every(m=>m.visible) && !proxies.visible,'gameplay visibility restored');
+clock+=50;
+left.children[1].geometry.attributes.position.needsUpdate=true;
+step()();
+assert.equal(proxies.children.length,1,'a group that shrinks to one member is removed');
+assert.strictEqual(proxies.children[0],rightProxy);
+clock+=1100;
+step()();
+assert.equal(proxies.children.length,2,'settled sources rediscovered after the usual interval');
+assert(proxies.children.includes(rightProxy),'timed discovery also reuses unaffected geometry');
+
 console.log(`ok zone prop render batches (${JSON.stringify(Batches.snapshot())})`);
