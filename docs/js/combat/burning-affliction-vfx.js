@@ -108,13 +108,14 @@
       record.detachedAt = 0;
       return true;
     }
+    if (window.Combat?.shouldPresentCombatVfx?.(entity) === false) return false; // No off-range emitter allocation; syncEntity retries when nearby.
     if (fireTemplate) return !!createRecord(entity, group);
     if (pendingGroupByEntity.get(entity) !== group) {
       pendingGroupByEntity.set(entity, group);
       ensureFireTemplate().then(template => {
         if (pendingGroupByEntity.get(entity) !== group) return;
         pendingGroupByEntity.delete(entity);
-        if (!template || !(resourceAmount(entity) > 0) || recordByEntity.has(entity)) return;
+        if (!template || !(resourceAmount(entity) > 0) || recordByEntity.has(entity) || window.Combat?.shouldPresentCombatVfx?.(entity) === false) return;
         createRecord(entity, group);
       });
     }
@@ -141,6 +142,10 @@
         continue;
       }
       record.detachedAt = 0;
+      if (window.Combat?.shouldPresentCombatVfx?.(record.entity) === false) {
+        disposeRecord(record, 'out-of-range'); // Only the visual is released; damage and affliction state remain intact.
+        continue;
+      }
       record.visual?.update?.(step, true); // Presentation only; Burning Health damage remains exclusively in ResourceSystem.
     }
   }
