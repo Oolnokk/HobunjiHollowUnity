@@ -200,6 +200,19 @@ const SCOPE_ORDER = ['farm-tile-batches', 'zone-prop-batches', 'npc-view-cull', 
   root.add(new h.THREE.Mesh());
   h.activeScene.add(root);
   h.activeScene.autoUpdate = true;
+  let audits=0;
+  h.window.DenseForestWallBatches = {
+    auditStaticMatrixBranches(scene) {
+      audits++;
+      assert.equal(scene,h.activeScene);
+      assert.equal(root.visible,false,'audit occurs inside main draw scopes');
+      assert.equal(h.log.at(-1).kind,'render','audit occurs after native submission');
+      assert.equal(h.log.at(-1).scene,'active');
+      assert.equal(h.log.at(-1).layers,0xFFFFFFFF);
+      return {ready:63,violations:0};
+    },
+    staticMatrixSnapshot:()=>({enabled:true}),
+  };
   h.pipeline.registerRenderScope({id:'test-capture-hidden-root', order:10000, suspend:() => {
     root.visible = false;
     return () => {root.visible = true;};
@@ -215,6 +228,8 @@ const SCOPE_ORDER = ['farm-tile-batches', 'zone-prop-batches', 'npc-view-cull', 
   const capture = h.pipeline.lastCapture();
   assert.ok(capture && capture.outlines === true);
   assert.equal(capture.completed,true);
+  assert.equal(audits,1);
+  assert.deepEqual(plain(capture.mainStaticWallAudit),{enabled:true,audit:{ready:63,violations:0}});
   assert.equal(capture.mainMatrixCensus.nodes,2);
   assert.equal(capture.mainMatrixCensus.hiddenNodes,2,'census sees temporary hidden root and child');
   assert.equal(capture.mainMatrixCensus.largestBranches[0].category,'Tree','numbered names aggregate');
