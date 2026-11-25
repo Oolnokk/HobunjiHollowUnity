@@ -2541,3 +2541,20 @@ appearance. The default remains shell until device and visual validation.
 Recording-renderer fixtures exercise all three modes, resize, disposal,
 error restoration and persistence; real WebGL visual parity and FPS are not
 yet established.
+
+
+## 25 Nov 2026: deep hotpath follow-up and depth outlines as default
+
+Related investigation: draft PR #2164, branch perf/deep-trace-investigation-20261124, records trace 20261124T210514 on revision 6777fc8 and its corrected attribution. This implementation starts from current main rather than that older branch.
+
+- Default generated-outline mode is now screen-space; reset and persistence share the pipeline's default. Inward stroke sample offset is 3 render-target texels instead of 1, with correspondingly scaled smooth-slope rejection thresholds. No additional neighbor reads. Shell/none remain available and master Outlines still owns compositing.
+- Ranged archetypes: NPC registration requests only the required hunter/bandit key (cultural loadout path ensures registered definitions); unchanged definition/config pairs skip construction. Registration no longer calls player setLoaded; missing player state defaults according to weapon type, with existing player action state preserved. Explicit authored rebuilds still rebuild and sanitize loadouts. NPC calls never refresh player HUD. Runtime diagnostics count reused registrations. Test repeated NPC registration and replacement of a definition.
+- Inventory wheel cache hit validates ownership and definitions in place instead of allocating a key array; direct same-frame inventory mutations and periodic eligibility refresh remain correct. Action-arch mutation fixes avoid identical visibility writes, throwaway potion icon creation and DOM rebuilding when only hold CSS changes.
+- Expose existing portrait.waterTint rule in Render optimizations and as a benchmark variant; preserves ordinary water and gear tint. The three-stage water depth transaction itself is not removed: later depth consumers still require review.
+- Terrain spatial bucket children have identity local matrices under the original source mesh. Disable their redundant local composition while retaining parent/world transform propagation. This is deliberately not global hidden-node freezing.
+- User observed distant barbarian particles through cliffs. Shared combat VFX range is 24 tiles for non-player melee trails, death sprays and burning visuals (active area/scene required when known); normal depth testing and fog apply to swipes and sprays. Burning visual records outside the budget are released, gameplay afflictions and damage unchanged. Exact observed effect not identified; additional effect sources may need audit.
+- Quick attack bonus cue and melee HUD now use the same reach profile, including actual horizontal lunge projection via meleeLungeProfile and pitched cone length; mounted stance excludes the normal player lunge. The preview remains a forward half-disc opportunity bound, not a terrain obstruction, swept collision or exact reticle prediction. Aim pitch and mounted state invalidate the short cue cache.
+
+Validation: existing world pipeline recording-renderer fixtures, composite wiring, settings persistence and inventory wheel list fixtures passed in isolated JS harnesses. Extracted runtime fixtures passed for NPC definition identity reuse/replacement with zero player refresh/load writes, flat/pitched/mounted reach, and non-player VFX distance/area/scene bounds. New regression assertions are in the existing ranged and pipeline tests. Live WebGL/visual and FPS validation and full CI are not established at this point.
+
+Remaining investigation: broader invisible scene hierarchy/matrix dirty-state lifecycle, actual scene census, per-group prop batch invalidation, water replay reduction (not merely A/B), scene-scoped brick registry, checkpoint serialization reuse, character creation/cache churn, hand solve deduplication, full inventory mutation revisions and event-driven action bar. Do not treat those items as implemented or use unsafe global visibility/matrix skipping or disable save safeguards.
