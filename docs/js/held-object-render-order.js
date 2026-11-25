@@ -71,7 +71,7 @@
   // re-queued whenever they are (re)added anywhere, which is how a held tool
   // that moves with the player into another scene gets re-bucketed.
   const retiredScenes = new WeakSet(); // A discarded scene may still render briefly while its replacement is generated.
-  let registryKnownSceneReuses = 0; // Mobile diagnostics: already-bucketed meshes retained during a full scene classification.
+  let registryDirectScenePlacements = 0; // Mobile diagnostics: registrations that skip a second root walk during full scene classification.
   class SceneRegistry {
     constructor() {
       this.all = new Set();
@@ -82,12 +82,12 @@
     add(object, knownScene = null) {
       this.all.add(object);
       if (knownScene) {
-        // A full root-scene walk has already established ancestry. Keep the
-        // existing bucket and insertion order rather than unplacing/requeuing
-        // every registered mesh and walking all of its parents again later.
+        // A full root-scene walk has already established ancestry. Place in
+        // traversal order, just as the old pending flush did, without another
+        // pending insertion or ancestor walk. Preserve ordering for tied draws.
         this.pending.delete(object);
-        if (this.sceneOf.get(object) === knownScene) registryKnownSceneReuses++;
-        else this.place(object, knownScene);
+        this.place(object, knownScene);
+        registryDirectScenePlacements++;
         return this;
       }
       this.unplace(object);
@@ -4671,7 +4671,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
       nearbyTintCovers: lastNearbyTintCovers,
       distantTintCoversSkipped: lastDistantTintCovers,
       waterClipScopes: lastWaterClipScopes,
-      registryKnownSceneReuses,
+      registryDirectScenePlacements,
       rankedPortraitActors: lastRankedPortraitActors,
       ordinaryPortraitSortDraws: withVisualSort.ordinaryDraws || 0,
       handsBehindFrontPlane: lastHandsBehindFrontPlane,
