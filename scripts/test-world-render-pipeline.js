@@ -306,3 +306,11 @@ console.log('PASS world render pipeline: pass order, scopes, frame hooks, failur
   p.setGeneratedOutlineMode('shell');
   assert.ok(h.renders(h.frame()).some(r=>r.override===p.materials.shell));
 }
+
+{
+  const h = createWorldRenderPipelineHarness({outlineMode:'default'}).init();
+  assert.equal(h.pipeline.defaultGeneratedOutlineMode,'screen');
+  assert.equal(h.pipeline.getGeneratedOutlineMode(),'screen');
+  assert.equal(h.pipeline.setGeneratedOutlineMode('invalid'),'screen');
+  assert.ok(!h.renders(h.frame()).some(r=>r.override===h.pipeline.materials.shell));
+}
