@@ -759,6 +759,10 @@
     })))}`);
     const portraitCpu=window.__portraitPixelCacheDebug?.()?.beardHood; // On-demand CPU-readback counters.
     if(portraitCpu) lines.push(`Beard/hood CPU cache: ${JSON.stringify(portraitCpu)}`);
+    const pixelJobs=window.PixelWorkYield?.getDebug?.();
+    if(pixelJobs) lines.push(`Pixel asset jobs: ${JSON.stringify(pixelJobs)}`);
+    const fishProfiles=window.FishCatalog?.getPixelDebug?.();
+    if(fishProfiles) lines.push(`Fish pixel profiles (local): ${JSON.stringify(fishProfiles)}`);
     const lodCpu=window.GeometryAutoLOD?.snapshot?.();
     if(lodCpu) lines.push(`Geometry AutoLOD CPU: ${JSON.stringify({visits:lodCpu.candidateVisits,hiddenSkips:lodCpu.hiddenAncestorSkips,geometryChecks:lodCpu.renderGeometryChecks})}`);
     const keyHudCpu=window.__keyHudWriteDebug?.();
