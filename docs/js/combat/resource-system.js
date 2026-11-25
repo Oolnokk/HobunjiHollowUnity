@@ -196,10 +196,10 @@
       family: "enhanced", tags: ["enhanced", "mirror"],
       desc: "Enhanced Health generated from actual damage dealt; it absorbs incoming Health loss before ordinary Health."
     },
-    undertowStamina: {
-      name: "Undertow Stamina", resource: "stamina", extend: "zero", priority: 91, recovers: false,
-      family: "control", tags: ["tothal", "water"],
-      desc: "Ordinary Stamina recovery clears Undertow point for point before restoring Stamina. Black-Stamina recovery is unaffected."
+    windblownStamina: {
+      name: "Windblown Stamina", resource: "stamina", extend: "currentBack", priority: 91, recovers: true,
+      family: "control", tags: ["tothal", "wind"],
+      desc: "Each application changes the world-space wind direction. Additive movement reaches 50% of authored speed at 100 points; voluntary movement with the wind costs Footing. Naturally fades."
     },
     leadboundStamina: {
       name: "Leadbound Stamina", resource: "stamina", extend: "currentBack", priority: 96, recovers: true,
@@ -476,6 +476,65 @@
     return weightless * leadbound * timedStatusMultiplier(entity, key);
   }
 
+  // Directional and scalar movement effects share this owner. Callers supply
+  // an authored displacement/velocity and let their original collision owner
+  // resolve the composed vector; no status writes actor coordinates itself.
+  const windMotionFrames = new WeakSet(); // Used to suppress an idle drift pass when a native movement path already handled wind.
+  const windFootingRemainders = new WeakMap(); // Sub-tenth Footing costs accumulate across frames, never round up every frame.
+  const windDirections = new WeakMap(); // Runtime direction; loaded afflictions receive one seeded direction on first use.
+
+  function movementIntent(entity, x, y, alreadyRotated = false) {
+    const yaw = alreadyRotated ? 0 : (Number(window.FeyIllusions?.movementRotationRad?.(entity)) || 0); // Shoulder-camera input has already inherited Demented yaw.
+    if (!yaw) return { x, y };
+    const cos = Math.cos(yaw), sin = Math.sin(yaw);
+    return { x: x * cos - y * sin, y: x * sin + y * cos };
+  }
+
+  function windblownDirection(entity) {
+    if (!windDirections.has(entity)) {
+      const angle = (window.GameRandom?.random?.() ?? Math.random()) * Math.PI * 2;
+      windDirections.set(entity, { x: Math.cos(angle), y: Math.sin(angle), angle });
+    }
+    return windDirections.get(entity);
+  }
+
+  function hasWindblown(entity) { return getAffliction(entity, "windblownStamina") > 0; }
+
+  function composeMovement(entity, x, y, options = {}) {
+    const mode = options.mode || "walk"; // Used to select the existing scalar mobility budget.
+    const scalar = options.scalarApplied ? 1 : movementMultiplier(entity, mode);
+    const intended = movementIntent(entity, Number(x) || 0, Number(y) || 0, options.rotationApplied === true);
+    const baseX = intended.x * scalar, baseY = intended.y * scalar;
+    const amount = Math.min(100, Math.max(0, getAffliction(entity, "windblownStamina")));
+    if (!amount || !entity || options.wind === false) return { x: baseX, y: baseY, footingCost: 0, wind: false };
+    const direction = windblownDirection(entity); // Shared world-space wind, never camera-relative.
+    const reference = Math.max(0, Number(options.reference) || Math.hypot(baseX, baseY)); // In the same units as the caller's vector (velocity or displacement).
+    const strength = reference * amount * .005;
+    const voluntary = options.voluntary === false ? 0 : Math.hypot(baseX, baseY);
+    const dot = voluntary > 1e-8 ? (baseX * direction.x + baseY * direction.y) / voluntary : 0;
+    const alignment = Math.max(0, Math.min(1, dot));
+    const duration = Math.max(0, Number(options.dt) || 0);
+    return { x: baseX + direction.x * strength, y: baseY + direction.y * strength,
+      footingCost: amount * .1 * alignment * duration, wind: true, windX: direction.x, windY: direction.y };
+  }
+
+  function beginMovementFrame(entity) { if (entity) windMotionFrames.delete(entity); }
+  function windMovementHandled(entity) { return !!entity && windMotionFrames.has(entity); }
+
+  function commitMovement(entity, motion, fraction = 1, onDepleted) {
+    if (!entity || !motion?.wind) return;
+    windMotionFrames.add(entity);
+    const cost = Math.max(0, Number(motion.footingCost) || 0) * Math.max(0, Math.min(1, Number(fraction) || 0));
+    if (!cost || entity.prone) return;
+    const total = (windFootingRemainders.get(entity) || 0) + cost;
+    const spend = Math.floor((total + 1e-9) * 10) / 10;
+    windFootingRemainders.set(entity, Math.max(0, total - spend));
+    if (spend > 0) {
+      spendFooting(entity, spend, "Windblown movement");
+      if (entity.footing <= 0 && !entity.prone) onDepleted?.(entity, motion.windX, motion.windY);
+    }
+  }
+
   function timedDebuffModifier(entity, key) {
     // Preserve the established game.js, NPC and diagnostics callers without
     // allowing a second formula or a second application of the resource effects.
@@ -670,6 +729,10 @@
     const before = getAffliction(entity, id);
     setAffliction(entity, id, before + amount);
     const added = round1(getAffliction(entity, id) - before);
+    if (id === "windblownStamina" && getAffliction(entity, id) > 0) { // Even a capped successful reapplication changes direction.
+      windDirections.delete(entity);
+      windblownDirection(entity);
+    }
 
     if (id === "burningHealth" && added > 0 && getAffliction(entity, "kindlingHealth") > 0) {
       convertKindlingToBurning(entity, "ordinary Burning applied");
@@ -687,7 +750,9 @@
     if (id === 'rentHealth' && !window.HobunjiSacredGround?.contains?.(entity)) return 0; // Generic cleanses and passive recovery cannot remove a sacred-only wound.
     const before = getAffliction(entity, id);
     setAffliction(entity, id, before - amount);
-    return round1(before - getAffliction(entity, id));
+    const remaining = getAffliction(entity, id);
+    if (id === "windblownStamina" && remaining <= 0) { windDirections.delete(entity); windFootingRemainders.delete(entity); } // No leftover wind debt across independent applications.
+    return round1(before - remaining);
   }
 
   function bleedOut(entity, amount, options = {}) {
@@ -912,13 +977,6 @@
   // restored while not Exhausted. Effects that explicitly heal black-Stamina
   // debt pass exhaustionAmount; if that reaches 100, Exhausted clears with
   // ordinary Stamina still at exactly 0. No same-call spillover is allowed.
-  // Both ordinary recovery paths pay Undertow first. No per-frame work beyond the active reserve check.
-  function staminaAfterUndertow(entity, amount) {
-    if (!(amount > 0) || !(getAffliction(entity, "undertowStamina") > 0)) return amount;
-    const payable = Math.min(getAffliction(entity, "undertowStamina"), Math.max(0, round1(amount))); // Match the ordinary Stamina pool's tenth-point precision.
-    return Math.max(0, amount - removeAffliction(entity, "undertowStamina", payable));
-  }
-
   function restoreStamina(entity, amount, options = {}) {
     if (!entity) return { stamina: 0, blackStamina: 0, exhaustionCleared: false };
     const normalAmount = Math.max(0, Number(amount) || 0);
@@ -940,7 +998,7 @@
     }
 
     const beforeStamina = clamp(Number(entity.stamina) || 0, 0, getEffectiveMax(entity, "stamina"));
-    entity.stamina = round1(clamp(beforeStamina + staminaAfterUndertow(entity, normalAmount), 0, getEffectiveMax(entity, "stamina")));
+    entity.stamina = round1(clamp(beforeStamina + normalAmount), 0, getEffectiveMax(entity, "stamina"));
     restoredStamina = round1(entity.stamina - beforeStamina);
     enforceCaps(entity);
     return { stamina: restoredStamina, blackStamina: 0, exhaustionCleared: false };
@@ -1268,7 +1326,7 @@
       }
       clearExhaustedIfFull(entity);
     } else if (!staminaRegenBlocked) {
-      entity.stamina = round1(clamp(entity.stamina + staminaAfterUndertow(entity, staminaRate * mul * dt), 0, getEffectiveMax(entity, "stamina")));
+      entity.stamina = round1(clamp(entity.stamina + staminaRate * mul * dt), 0, getEffectiveMax(entity, "stamina"));
     }
 
     if (entity.health > 0) applyHealthRecovery(entity, healthRate * mul * dt);
@@ -1418,6 +1476,12 @@
     getProneAttackMultiplier,
     timedDebuffModifier,
     movementMultiplier,
+    movementIntent,
+    composeMovement,
+    commitMovement,
+    beginMovementFrame,
+    windMovementHandled,
+    hasWindblown,
     attackTempoMultiplier,
     planarAmountMultiplier,
     registerStatModifierProvider,
