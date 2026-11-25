@@ -11,7 +11,7 @@ document.write('<script src="js/folder-save-primary.js?v=20261117desktopPickerPr
 document.write('<script src="js/folder-save-empty-bootstrap.js?v=20260914a"><\/script>');
 document.write('<script src="js/folder-save-device-provenance.js?v=20261115provenance2"><\/script>');
 document.write('<script src="js/folder-save-runtime-flush.js?v=20261119h4abbbe7"><\/script>');
-document.write('<script src="js/save-checkpoint-manager.js?v=20261119h51f8a0a"><\/script>');
+document.write('<script src="js/save-checkpoint-manager.js?v=20261125waterSaveHand1"><\/script>');
 document.write('<script src="js/folder-save-quit-guard.js?v=20261118hf0115e7"><\/script>');
 document.write('<script src="js/folder-save-debug-ui.js?v=20261115diskFarmCompare2"><\/script>');
 document.write('<script src="js/netlify-cloud-save.js?v=20261121androidDriveNative1"><\/script>');
