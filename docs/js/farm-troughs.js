@@ -398,7 +398,7 @@
   'use strict';
   if (window.LivestockNursery) return;
   const nurserySrc = 'js/livestock-nursery.js?v=20261122cancelAnimal2';
-  const bridgeSrc = 'js/livestock-nursery-install-bridge.js?v=20261124bulkAudit3';
+  const bridgeSrc = 'js/livestock-nursery-install-bridge.js?v=20261125probeStalls1';
 
   if (document.readyState === 'loading') {
     document.write(`<script src="${nurserySrc}"><\/script>`);
