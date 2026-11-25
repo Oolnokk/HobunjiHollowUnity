@@ -367,6 +367,7 @@
   omgurkuLowerRig.sizeScales = { large: { x: 1, y: 1 }, medium: { x: 1, y: 1 }, small: { x: 1, y: 1 } }; // Fixed size regardless of animal preview class.
   omgurkuLowerRig.sizeScalePercentages = { large: { x: 100, y: 100 }, medium: { x: 100, y: 100 }, small: { x: 100, y: 100 } }; // Mirrors fixed scales in exports.
   omgurkuLowerRig.anchors = { saddle: identityAnchor([0, 0, 0]), shoulderGrip: identityAnchor([0, 0, 0]) }; // The hybrid join remains owned by hybridPlacement.
+  omgurkuLowerRig.shoulderGripRule.source = 'animation-author-export-2026-09-15'; // Preserve the independent hybrid socket's existing provenance.
   masterCreatures['omgurku-lower'] = omgurkuLowerRig;
 
 
@@ -621,10 +622,14 @@
       const drenkirraOldPosition = kind === 'drenkirra' && normalizeStalePositions(staleCreatureShoulderGrips.drenkirra)
         .some(position => samePosition(oldGrip?.position, position)); // Detects a known obsolete socket XYZ independently from any hand-authored rotation.
       merged.anchors.shoulderGrip = reconcileAnchor(oldGrip, canonical.anchors.shoulderGrip, staleCreatureShoulderGrips[kind]);
-      if (kind === 'voorg-ass' && oldGrip && validPosition(oldGrip.position) && !samePosition(oldGrip.position, merged.anchors.shoulderGrip.position)) {
-        // Only the retired stock position changed; keep independently authored rotation and scale.
-        if (oldGrip.rotationDeg) merged.anchors.shoulderGrip.rotationDeg = clone(oldGrip.rotationDeg);
-        if (oldGrip.scale) merged.anchors.shoulderGrip.scale = clone(oldGrip.scale);
+      if (kind === 'voorg-ass' && normalizeStalePositions(staleCreatureShoulderGrips[kind]).some(position => samePosition(oldGrip?.position, position))) {
+        // Only an exact retired stock position migrates; keep valid independent rotation and scale.
+        if (oldGrip.rotationDeg) for (const axis of ['x', 'y', 'z']) {
+          if (Number.isFinite(oldGrip.rotationDeg[axis])) merged.anchors.shoulderGrip.rotationDeg[axis] = oldGrip.rotationDeg[axis];
+        }
+        if (oldGrip.scale && ['x', 'y', 'z'].every(axis => Number.isFinite(oldGrip.scale[axis]) && oldGrip.scale[axis] > 0)) {
+          merged.anchors.shoulderGrip.scale = clone(oldGrip.scale);
+        }
       }
       if (drenkirraOldPosition && oldGrip?.rotationDeg) {
         const canonicalRotation = canonical.anchors.shoulderGrip.rotationDeg; // Keeps unchanged components while correcting the known obsolete stock Y.
