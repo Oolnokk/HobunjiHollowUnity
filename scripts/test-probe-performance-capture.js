@@ -79,7 +79,7 @@ fail=true;tick(300);fail=false;
 noWorld=true;tick(400);noWorld=false;
 tick(500);tick(600);
 observers[0].pending.push({name:'self',startTime:30,duration:60}, {name:'outside',startTime:-10,duration:55});
-observers[1].pending.push({startTime:100,duration:80,blockingDuration:30,styleAndLayoutStart:170,scripts:[{sourceURL:'https://example.com/docs/js/animals.js?v=secret',sourceFunctionName:'update',duration:70,forcedStyleAndLayoutDuration:2}]});
+observers[1].pending.push({startTime:100,duration:80,blockingDuration:30,styleAndLayoutStart:170,scripts:[{sourceURL:'https://example.com/docs/js/animals.js?query=secret',sourceFunctionName:'update',duration:70,forcedStyleAndLayoutDuration:2}]});
 const report=P.finish();
 assert.equal(report.version,3);
 assert.equal(report.rafTimestampIntervals.meanMs,100);

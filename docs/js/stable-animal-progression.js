@@ -72,8 +72,26 @@
     return currentDeps()?.getStable?.() || [];
   }
 
+  // The scheduler's synchronous XP batch used to run a full-character save on the frame that
+  // earned XP (measured ~64 ms each). Those saves are now coalesced into one trailing save;
+  // any other full save cancels the pending one because it already writes the same state.
+  const DEFERRED_XP_SAVE_MS = 5000;
+  let deferredXpSave = null;
+  function cancelDeferredXpSave() {
+    if (deferredXpSave === null) return;
+    clearTimeout(deferredXpSave);
+    deferredXpSave = null;
+  }
   function saveStable() {
+    cancelDeferredXpSave();
     currentDeps()?.saveStable?.();
+  }
+  function deferXpSave() {
+    if (deferredXpSave !== null) return;
+    deferredXpSave = setTimeout(() => { deferredXpSave = null; saveStable(); }, DEFERRED_XP_SAVE_MS);
+  }
+  function flushDeferredXpSave() {
+    if (deferredXpSave !== null) saveStable();
   }
 
   function roleForEntry(entry) {
@@ -485,9 +503,7 @@
       finally { profiler?.end(alerts); }
     } finally {
       if (dirty) {
-        const persistence = profiler?.begin('stable animals: XP save');
-        try { saveStable(); }
-        finally { profiler?.end(persistence); }
+        deferXpSave(); // Trailing coalesced save; flushed on page hide (see ensureAlertFrame).
       }
     }
   }
@@ -495,6 +511,8 @@
   function ensureAlertFrame() {
     if (alertFrameStarted || !window.RuntimeFrameScheduler?.register) return;
     alertFrameStarted = true;
+    window.addEventListener?.('pagehide', flushDeferredXpSave);
+    window.addEventListener?.('visibilitychange', () => { if (document.visibilityState === 'hidden') flushDeferredXpSave(); });
     window.RuntimeFrameScheduler.register('stable-animal-progression-alert', frameContext => {
       alertFrame(Number(frameContext?.timestamp) || performance.now());
     }, {
@@ -911,6 +929,7 @@
     stableEntries, // Shared live Stable collection; Color Pools edits the existing genotype objects rather than introducing a parallel save.
     findStableEntry,
     saveStable,
+    flushDeferredXpSave, // Writes any pending coalesced XP save now (page hide, tests).
     roleForEntry,
     normalizeEntry,
     xpToNext,

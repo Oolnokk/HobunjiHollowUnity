@@ -29,7 +29,7 @@ function buildFixture(three = null) {
   };
   const canvasContext = { clearRect(){},beginPath(){},arc(){},stroke(){},moveTo(){},lineTo(){} };
   const document = { createElement: () => ({ style: {}, appendChild(){}, addEventListener(){},getContext:()=>canvasContext }), getElementById: () => null };
-  const context = { window: windowObject, document, console, performance: { now: () => 1000 } };
+  const context = { window: windowObject, document, console, performance: { now: () => 1000 }, setTimeout: () => 1, clearTimeout() {} };
   context.window = windowObject;
   if (three) context.THREE = three;
   vm.createContext(context);
@@ -82,12 +82,13 @@ function buildFixture(three = null) {
   saves=0;run(5000);assert.equal(conditions,0,'no warning perks means no enemy condition work');
   entries[2].animalPerks={heavyWindupAlert:1,quickOpportunityAlert:1};
   run(10000);
-  assert.equal(saves,1,'three service awards and two alert awards persist together');
+  assert.equal(saves,0,'scheduler XP save is deferred, not run inside the frame');api.flushDeferredXpSave();assert.equal(saves,1,'three service awards and two alert awards persist together once flushed');
   assert.deepEqual(entries.map(e=>e.stableXp),[2,2,8]);
   assert.equal(scene.children.length,2);assert.equal(anchors,1,'both warnings share the centroid');assert.equal(warnings,2);
-  run(10001);assert.equal(saves,1,'existing auras do not award again');assert.equal(anchors,2);
+  run(10001);api.flushDeferredXpSave();assert.equal(saves,1,'existing auras do not award again, and nothing pending means no extra save');assert.equal(anchors,2);
   entries[2].animalPerks={};run(10002);assert.equal(scene.children.length,0,'removing perks clears existing warnings immediately');
   api.awardXp(entries[0],3,'public');assert.equal(saves,2,'public XP remains immediately persisted');
+  run(10003);api.awardXp(entries[0],1,'public');api.flushDeferredXpSave();assert.equal(saves,3,'a full save cancels any pending deferred save instead of writing twice');
 }
 
 console.log('stable animal progression scheduler migration and batched XP passed');

@@ -3189,3 +3189,30 @@ fixtures passed in isolated JS adapter. Native full suite, cache
 checker, actual worker startup/transfer and browser visual/device
 performance verification remain pending. Known gameplay and editor
 loader tokens refreshed.
+
+
+### 25 Nov — automated real-browser verification of the pixel worker (no manual probe needed)
+
+`node scripts/perf-pixel-jobs-browser.js` (needs Chromium; not part of the CI suite) serves the baseline
+(`02ac68705`, the build with the 8 s stall) and the working tree side by side, loads only
+`pixel-work-yield.js` + `fish-catalog.js`, and recolours all 24 authored fish from their real sprite
+sheets (up to 1857x1851) at once while recording `longtask`, `long-animation-frame` and RAF gaps. Hashes of
+the finished canvases are taken after the measured window so the verification readback is not counted.
+It exits non-zero if the worker is not `ready`, output differs from baseline, or any task is >= 250 ms.
+
+Measured in headless Chromium (real Worker, software rendering irrelevant: no WebGL on the bench page),
+3 runs: baseline longest task **8,035 ms** (the field probe saw 8,026 ms; 5 long tasks, 10.7 s to finish),
+working tree longest task **60-72 ms** (1 long task, worst RAF gap 87 ms, 1.5 s to finish), `workerJobs` 32,
+`fallbackJobs` 0, `workerFailures` 0, output identical to baseline for all 24 fish. Booting the real
+`index.html?skipIntro=1` also reached `workerState: 'ready'` with 4 worker sprite jobs, 0 fallbacks and no
+page errors. **Not measured:** a physical device, or the CPU cost of canvas readback/PNG encode in the live
+game with a GPU renderer; the bench shows the algorithmic stall is gone, not that no 60 ms task remains.
+
+Stable-animal XP persistence (the two ~64 ms saves in the same probe): the scheduler's XP batch now defers
+`saveStable()` into one trailing 5 s save, flushed on `pagehide`/`visibilitychange:hidden`, and cancelled
+by any other full save. Public `awardXp` still saves immediately. Trade-off: up to 5 s of passive service/alert
+XP can be lost on a hard crash; no gameplay state other than that XP is deferred.
+
+Also fixed on the branch: six tests that failed against `origin/main` only on the perf branch (stale
+frame-ownership manifest line for `presentationLoop`, an exact `?v=` pin in test data, the pre-game-diagnostics
+module list, and three source-text assertions that did not allow the new replay-memo arguments).
