@@ -1953,12 +1953,18 @@
       return { aimAngle, moving: false, handled: true };
     }
     if (def.rangedType !== 'thrown') setLoaded(itemKey, false, c);
-    const chargeS = def.rangedType === 'thrown' ? Number(def.chargeWindupS) || 0 : 0;
+    const chargeS = def.rangedType === 'thrown' ? Math.max(0, Number(def.chargeWindupS) || 0) : 0;
+    if (chargeS > 0) {
+      // Hidden throws commit the same full pose cost as visible throws; ResourceSystem applies the actor's own perk once.
+      window.ResourceSystem?.spendStamina?.(c, chargeStaminaCostForPose(1), `${def.label} charge`, {
+        actionKind: 'offensiveHeldCharge', abilityId: 'thrownWeapon',
+      });
+    }
     c._rangedCooldownT = chargeS + Math.max(0.01, Number(def.fireDurationS) || 0.01) + 0.55; // Same cadence as a visible fire action plus its 0.55 s recovery.
     if (staging.rollAbstractHit(target)) {
       const count = Math.max(1, Math.round(def.projectileCount || 1));
       deps.damageCreature(target, Math.max(1, def.damage * count), c.x, c.y, def.knockbackPxS, {
-        tag: 'sharp', ranged: true, rangedItemKey: itemKey, friendlyFire: true, attacker: c, stagedDuel: true, attackPower: Number(def.attackPower) || 12,
+        tag: 'sharp', ranged: true, rangedItemKey: itemKey, friendlyFire: true, attacker: c, stagedDuel: true, attackPower: Number(def.attackPower) || 12, footingDamageMultiplier: 0, // Ordinary NPC projectiles have zero Footing damage in the visible path too.
       });
     }
     return { aimAngle, moving: false, handled: true };
