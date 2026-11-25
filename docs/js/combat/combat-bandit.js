@@ -1281,13 +1281,6 @@
   function damageBanditCombatTarget(c, target, amount, fromX, fromY, knockbackPxS, opts = {}) {
     const echo = window.FeyHypedAttacks?.npcDamagePayload?.(c, target, amount, knockbackPxS, opts); // Real hit owner, including NPC→player and offscreen NPC→NPC, scales one independently tested second contact.
     if (echo) { amount = echo.damage; knockbackPxS = echo.knockback; opts = echo.opts; }
-    const mods = c?.def?.combatPerkModifiers; // Cached once at spawn; no tree scans during attacks.
-    if (mods) {
-      const damageMul = opts.enchantmentSlot === 'tap2' ? mods.quickDamage : opts.enchantmentSlot === 'hold2' ? mods.defensiveDamage : opts.heavy ? mods.heavyDamage : mods.comboDamage;
-      const priorFooting = Number(opts.footingDamageMultiplier);
-      amount *= damageMul;
-      opts = { ...opts, footingDamageMultiplier: (Number.isFinite(priorFooting) ? priorFooting : 1) * mods.footingDamage }; // Raw damage follows existing Health/Footing calculation; extra Footing perk applies independently.
-    }
     const trinketHit = window.TrinketSystem?.scaleEnemyHit?.(c, amount, opts); // Shared trinket authority keeps Health and Footing separate for NPC→player and NPC→NPC hits.
     if (trinketHit) { amount = trinketHit.amount; opts = trinketHit.options; }
     const actorTarget = target && (
