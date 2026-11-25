@@ -426,9 +426,6 @@
     const shapeKey = shapeKeyFor(itemKey, def);
     const type = rangedTypeFor(itemKey, def);
     if (!def || !type || (type !== THROWN_TYPE && type !== BLOWGUN_TYPE)) return false;
-    addSlot(def, 'ranged');
-    def.rangedType = type;
-    def.animStyle = def.animStyle || 'ranged';
     const ranged = window.RangedWeapons;
     if (!ranged?.config) return false;
     const previous = registeredDefinitions.get(itemKey);
@@ -436,6 +433,9 @@
       reusedNpcRegistrations++;
       return false;
     }
+    addSlot(def, 'ranged');
+    def.rangedType = type;
+    if (!def.animStyle) def.animStyle = 'ranged'; // Do not invoke the slot-aware setter on an already registered melee style.
     const config = type === THROWN_TYPE ? thrownConfig(itemKey, def) : blowgunConfig(def);
     ranged.config[itemKey] = config;
     registeredDefinitions.set(itemKey, { def, config, type });
