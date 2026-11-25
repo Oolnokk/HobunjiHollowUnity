@@ -60,7 +60,8 @@
       id: 'fury', displayName: 'Fury', type: 'Flourish', alignment: 'Hronal',
       icon: '🔥', flurryBehavior: 'proc',
       scalable: Object.freeze({ amount: true }),
-      description: 'Grants Furious Stamina. Offensive Held attack progress funded by it consumes/progresses at 3× tempo.',
+      allowedSlots: Object.freeze(['tap1', 'tap2']),
+      description: 'Combo finishers and qualifying Quick Attacks grant Furious Stamina. Offensive Held attacks snapshot +2% speed per point (up to +200%) before spending it.',
     }),
     moralized: Object.freeze({
       id: 'moralized', displayName: 'Moralized', type: 'Flourish', alignment: 'Kanthic',
@@ -118,10 +119,10 @@
       description: 'Each hit adds 6 Soulweighted Health. Subsequent direct Health loss discharges Soulweight into equal ordinary Stamina loss, without creating Exhaustion. Values scale with Immundanity.',
     }),
     ancestralSight: Object.freeze({
-      id: 'ancestralSight', displayName: 'Ancestral Sight', type: 'Base', alignment: 'Ohthic',
+      id: 'ancestralSight', displayName: 'Weightless', type: 'Base', alignment: 'Ohthic',
       icon: '◈', scalable: Object.freeze({ amount: true }),
-      hitAffliction: Object.freeze({ id: 'veilmarkedHealth', amount: 5 }),
-      description: 'Each hit adds 5 Veilmarked Health. Subsequent direct damage consumes the mark to bypass enhanced Health protection for that portion of the hit. Values scale with Immundanity.',
+      grantAffliction: Object.freeze({ id: 'weightlessStamina', amount: 5 }),
+      description: 'Each successful hit grants the wielder 5 Weightless Stamina. Movement, dodge speed and lunge distance gain +2% per point, up to +200%. It naturally fades and is spent last.'
     }),
     stormRenewal: Object.freeze({
       id: 'stormRenewal', displayName: 'Storm Renewal', type: 'Flourish', alignment: 'Tothal',
@@ -142,10 +143,11 @@
       description: 'Grants 8 Pact Health, which absorbs two direct Health damage per point. Every point spent adds one Soulweighted Health to the wielder. Values scale with Immundanity; Flurry hits grant one quarter.',
     }),
     ancestralMercy: Object.freeze({
-      id: 'ancestralMercy', displayName: 'Ancestral Mercy', type: 'Flourish', alignment: 'Ohthic',
+      id: 'ancestralMercy', displayName: 'Unshackled', type: 'Flourish', alignment: 'Ohthic',
       icon: '✧', flurryBehavior: 'numeric', scalable: Object.freeze({ amount: true }),
-      grantAffliction: Object.freeze({ id: 'guardianHealth', amount: 8 }),
-      description: 'Grants 8 Guardian Health, which absorbs two Health-affliction damage per point but cannot absorb direct weapon damage. Values scale with Immundanity; Flurry hits grant one quarter.',
+      allowedSlots: Object.freeze(['tap2', 'hold1', 'hold2']),
+      grantAffliction: Object.freeze({ id: 'unshackledStamina', amount: 8 }),
+      description: 'Quick and Held Flourishes grant 8 Unshackled Stamina. Combo attacks snapshot +2% speed per point (up to +200%) before spending it. Flurry grants one quarter.'
     }),
     feyDementedStamina: Object.freeze({
       id: 'feyDementedStamina', displayName: 'Demented Stamina', type: 'Base', alignment: 'Fey',
@@ -201,6 +203,11 @@
 
   function weaponKey() {
     return window.Combat?.deps?.currentWeaponKey?.() || 'none';
+  }
+
+  function allowsFlourishSlot(id, slotId) {
+    const def = DEFINITIONS[id]; // Fixed slot families correspond to Combo, Quick and Held abilities.
+    return def?.type === 'Flourish' && (!def.allowedSlots || def.allowedSlots.includes(slotId));
   }
 
   function cleanWeaponState(raw) {
@@ -352,7 +359,7 @@
   function setFlourish(key, slotId, enchantmentId, options = {}) {
     if (!(window.Combat?.loadout?.SLOT_IDS || ['tap1','tap2','hold1','hold2']).includes(slotId)) return false;
     const def = DEFINITIONS[enchantmentId];
-    if (enchantmentId && def?.type !== 'Flourish') return false;
+    if (enchantmentId && !allowsFlourishSlot(enchantmentId, slotId)) return false;
     const state = stateFor(key, true);
     if (enchantmentId) state.flourishes[slotId] = enchantmentId;
     else delete state.flourishes[slotId];
@@ -363,7 +370,7 @@
 
   function activeDefinitions(key = weaponKey()) {
     const state = stateFor(key);
-    const ids = [...state.base, ...Object.values(state.flourishes)].filter(Boolean);
+    const ids = [...state.base, ...Object.entries(state.flourishes).filter(([slot, id]) => allowsFlourishSlot(id, slot)).map(([, id]) => id)].filter(Boolean);
     return ids.map(id => DEFINITIONS[id]).filter(Boolean);
   }
 
@@ -511,7 +518,9 @@
   function applyFlourish(event) {
     const id = flourishForSlot(event.slotId, event.weaponKey);
     const def = DEFINITIONS[id];
-    if (!def || def.type !== 'Flourish' || !flourishQualifies(event)) return false;
+    if (!allowsFlourishSlot(id, event.slotId) || !flourishQualifies(event)) return false;
+    if (id === 'fury' && !['combo', 'quickAttack'].includes(event.attackCategory)) return false;
+    if (id === 'ancestralMercy' && !['quickAttack', 'offensiveHold'].includes(event.attackCategory)) return false;
 
     if (event.isFlurry) {
       if (def.flurryBehavior === 'numeric') {
@@ -579,6 +588,7 @@
     for (const id of baseIds) {
       const def = DEFINITIONS[id];
       if (def?.hitAffliction) applyRealmHitAffliction(event, def, power);
+      if (def?.grantAffliction) applyRealmFlourish(event, def, power); // Weightless is a self-grant on every Base hit.
     }
 
     if (baseIds.includes('burning')) {
@@ -607,7 +617,7 @@
   function onDefensive(event) {
     const id = flourishForSlot(event.slotId, event.weaponKey);
     const def = DEFINITIONS[id];
-    if (!def || def.type !== 'Flourish' || def.alignment === 'Fey') return false; // Illusory strikes require a real offensive hit; Fey cannot claim a defensive effect it never applied.
+    if (!def || def.type !== 'Flourish' || def.alignment === 'Fey' || !allowsFlourishSlot(id, event.slotId) || id === 'fury') return false; // Illusory strikes require a real offensive hit; Fey cannot claim a defensive effect it never applied.
     const handler = FLOURISH_HANDLERS[id];
     if (typeof handler !== 'function') return false;
     const power = getEnchantmentPowerMultiplier(event.weaponKey);
@@ -885,6 +895,7 @@
     equipBase,
     addBase,
     setFlourish,
+    allowsFlourishSlot,
     activeDefinitions,
     hasBase,
     flourishForSlot,
