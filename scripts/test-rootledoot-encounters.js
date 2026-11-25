@@ -145,6 +145,20 @@ async function main() {
   assert.equal(root.serialize().pendingRewards.length,0,'successful claim removes pending reward from the save');
   const ledger=JSON.parse(JSON.stringify(root.serialize()));root.restore(ledger);day++;root.tick(.5);assert.equal(root.debugSnapshot().active,null,'cleared locale survives reload');
   zone='map_western_slope';root.tick(10);assert.equal(root.debugSnapshot().active,null,'excluded zone');
+  // Co-op: the encounter belongs to every participant in its zone, not to the local avatar alone.
+  load('actor-registry.js',w,doc);
+  const reg=w.ActorRegistry;reg.registerPlayer(player,{local:true});reg.setLocalAreaResolver(()=>zone);
+  const guest={x:0,y:0,health:100,maxHealth:100,areaId:'map_northern_cliffs'};reg.registerPlayer(guest,{playerId:'guest-1'});
+  const activateAtChunk11=async()=>{zone='map_northern_cliffs';guest.areaId=zone;guest.x=guest.y=2*64;player.x=player.y=24*64;day++;root.tick(.5);await flush();return root.debugSnapshot().active;};
+  let act=await activateAtChunk11();assert.equal(act?.phase,'bait','bait activates for the local player with a guest registered elsewhere');
+  const site=act.site;guest.x=(site.c+.5)*64;guest.y=(site.r+.5)*64; // Guest arrives at the locale.
+  player.x=player.y=2*64;root.tick(.5);await flush();
+  assert.equal(root.debugSnapshot().active?.phase,'bait','a guest at the locale keeps it alive after the local player leaves');
+  guest.x=guest.y=2*64;root.tick(.5);assert.equal(root.debugSnapshot().active,null,'bait goes dormant when every participant has left');
+  act=await activateAtChunk11();assert.equal(act?.phase,'bait');
+  guest.areaId='cave';guest.x=(act.site.c+.5)*64;guest.y=(act.site.r+.5)*64; // Same coordinates, different zone.
+  player.x=player.y=2*64;root.tick(.5);assert.equal(root.debugSnapshot().active,null,'a player in another zone does not hold the locale open');
+  reg.unregisterPlayer(guest);reg.unregisterPlayer(player);
   console.log('Rootledoot encounter, food, persistence and rollback regressions passed');
 }
 module.exports=main;

@@ -39,6 +39,12 @@ hostile target acquisition is area-aware (non-strict).
 Try it in the console: `DevDummyPlayer.spawn(); DevDummyPlayer.follow(true);
 DamageAuthority.hit(DevDummyPlayer.get(), 40, 0, 0, 100, {}); RemotePlayerState.debugSnapshot()`.
 
+The Rootledoot encounter is participant-aware (`rootledoot-encounter.js`): activation, bait/reward dormancy,
+"player escaped locale", ambush start, spawn anchoring and victory use every player in the zone
+(local always counts; a remote one only when `ActorRegistry.areaOf` says it is there), and a local defeat only resets
+the fight when no other participant is still standing. Picking the root (`action`/`pick`) stays the local client's own
+interaction.
+
 Simulation LOD is player-set aware: bandit sleep/wake (`wilderness-simulation-lod.js`)
 and Porakaneki ecology/aggro radii use `ActorRegistry.distanceToNearestPlayer` /
 nearest-player tile position, so a camp beside a guest stays awake on the host and a
@@ -52,7 +58,7 @@ keyed to the *local* player/camera on purpose — each client renders for itself
 - The dummy has no avatar: register remote players with `CharacterVisuals` (held items, portrait, shadow) and add their shoulder pet / companion via `ownerOf`.
 - Other `performance.now()` gameplay timers (`invulnUntil` on the local player, `combat-input.js`, stamina windows set from `game.js`) are still wall-clock.
 - `nearestPlayer` callers should switch to `strict: true` once hostiles in other zones are simulated.
-- Rootledoot encounter, `WildernessChunks` residency, sleep/time advance and cutscenes assume one player.
+- `WildernessChunks` residency, sleep/time advance and cutscenes assume one player.
 
 Rule for new code: **never assume the local player is the only player.** Take a
 target/actor, ask the registry for players, and read time from `SimClock`.
