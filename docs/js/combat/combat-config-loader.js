@@ -88,7 +88,7 @@
     ['js/animal-subtle-elevation-bridge.js?v=20261119h29ed7d1', () => !!window.HobunjiAnimalSubtleElevation],
     ['js/porch-surface-material.js?v=20261028entrancewood1', () => !!window.HobunjiPorchSurfaceMaterial],
     ['js/drunk-locomotion.js?v=20261117hRigDrunk1', () => !!window.HobunjiDrunkWalk],
-    ['js/crop-sprite-art.js?v=20261124traceHotpaths2', () => !!window.HobunjiCropSpriteArt],
+    ['js/crop-sprite-art.js?v=20261124traceHotpaths6', () => !!window.HobunjiCropSpriteArt],
     ['js/heftroot-billboard-bridge.js?v=20261119hb241677', () => !!window.HobunjiHeftrootBillboardBridge],
     ['js/crop-billboard-presentation.js?v=20261119he999a5e', () => !!window.HobunjiCropBillboardPresentation],
     ['js/crop-ready-presentation.js?v=20261119h72d3ebf', () => !!window.HobunjiCropReadyPresentation],
