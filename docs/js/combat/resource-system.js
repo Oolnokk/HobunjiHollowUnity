@@ -466,15 +466,30 @@
     return 1;
   }
 
+  // Single scalar movement compositor for all resource-driven mobility effects.
+  // Existing locomotion and swept collision owners apply this once to their
+  // native speed/distance budgets; attack timing and forced knockback stay separate.
+  function movementMultiplier(entity, mode = "walk") {
+    const key = mode === "walk" ? "moveSpeed" : "dodgeLungeDistance"; // Walking versus committed dodge/lunge travel.
+    const weightless = planarAmountMultiplier(entity, "weightlessStamina"); // Ohthic positive mobility.
+    const leadbound = 1 - Math.min(100, Math.max(0, getAffliction(entity, "leadboundStamina"))) * 0.0075; // Hronal opposing mobility.
+    return weightless * leadbound * timedStatusMultiplier(entity, key);
+  }
+
   function timedDebuffModifier(entity, key) {
-    const mobility = key === "moveSpeed" || key === "dodgeLungeDistance"
-      ? planarAmountMultiplier(entity, "weightlessStamina") * (1 - Math.min(100, Math.max(0, getAffliction(entity, "leadboundStamina"))) * 0.0075)
-      : 1; // Opposed resource bands compose with Heavy in the shared player/NPC motion seam.
+    // Preserve the established game.js, NPC and diagnostics callers without
+    // allowing a second formula or a second application of the resource effects.
+    if (key === "moveSpeed") return movementMultiplier(entity, "walk");
+    if (key === "dodgeLungeDistance") return movementMultiplier(entity, "dodge");
+    return timedStatusMultiplier(entity, key);
+  }
+
+  function timedStatusMultiplier(entity, key) {
     const store = timedDebuffStore(entity); // Fast no-status path used by per-frame movement/combat loops.
-    if (!store) return mobility;
+    if (!store) return 1;
     const liveStore = cleanupTimedDebuffs(entity); // Expiration cleanup stays allocation-free and only scans actors that actually have timed statuses.
-    if (!liveStore) return mobility;
-    let multiplier = mobility; // Combined named-debuff multiplier returned to the shared stat choke point.
+    if (!liveStore) return 1;
+    let multiplier = 1; // Combined named-debuff multiplier returned to the shared stat choke point.
     for (const id in liveStore) {
       const entry = liveStore[id]; // Existing materialized modifier avoids rebuilding percentage math in hot loops.
       const value = Number(entry?.modifiers?.[key]); // Only the requested stat key participates in this lookup.
@@ -1069,9 +1084,9 @@
       const consumedPanic = Math.max(0, normalSpent - Math.max(0, before - panicReserved)); // Remaining portion after non-panic Stamina paid.
       if (consumedPanic > 0) removeAffliction(entity, "panickedStamina", consumedPanic);
     }
-    if (normalSpent > 0) removeAffliction(entity, "leadboundStamina", normalSpent); // Enhanced payments leave the ordinary current-anchored burden intact.
+    const leadboundSpent = normalSpent > 0 ? removeAffliction(entity, "leadboundStamina", normalSpent) : 0; // Current-anchored burden is paid before overlapping lower bands, never by enhanced reserves.
     entity.stamina = after;
-    if (normalSpent > 0) resolveSpentAfflictions(entity, after, before);
+    if (normalSpent > leadboundSpent) resolveSpentAfflictions(entity, after, before - leadboundSpent);
     if (excess > 0) enterExhausted(entity, excess, reason);
     enforceCaps(entity);
     return finish({ spent: normalSpent, excess, enhancedPaid: enhanced.enhancedPaid, consumed: enhanced.consumed, tempoMultiplier: enhanced.tempoMultiplier });
@@ -1402,6 +1417,7 @@
     clearTimedDebuff,
     getProneAttackMultiplier,
     timedDebuffModifier,
+    movementMultiplier,
     attackTempoMultiplier,
     planarAmountMultiplier,
     registerStatModifierProvider,
