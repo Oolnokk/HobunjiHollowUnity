@@ -240,6 +240,14 @@
       if (restoreMatrix) this.matrixWorld.copy(restoreMatrix);
     };
 
+    // This pair only changes this mesh's matrix and restores it afterwards.
+    // Advertise the exact pair, never a custom wrapper or an unknown prior
+    // after-hook, so private water passes may safely prune unrelated branches.
+    const parity = mesh.__hobunjiXrayBoundParity;
+    if (parity?.hook === mesh.onBeforeRender &&
+        (!previousAfter || previousAfter === THREE.Object3D?.prototype?.onAfterRender)) {
+      parity.localRestoreHook = mesh.onAfterRender;
+    }
     mesh.userData.__hobunjiPortraitOutlineParity = true;
     return true;
   }

@@ -1154,7 +1154,7 @@
     const isAging = deps.AGING_METHODS.has(def.method);
     const job = obj.getJob ? obj.getJob() : null;
     const list = livestock || (def.method === 'squeezing' ? deps._loadWorldLivestock() : null);
-    const worker = def.method === 'squeezing' && list ? list.find(l => l.assignedVatId === obj.id && window.DewVats.vatCanAccept(l.kind, l.genotype)) : null;
+    const worker = def.method === 'squeezing' && list ? window.DewVats.assignedWorkerForVat(obj.id, list) : null;
     if (job) {
       const currentHour = window.ItemProcessing?.gameHour?.(); // Used to report the same in-game deadline as the processor object.
       const baseHours = window.ItemProcessing?.baseProcessHours?.(def.method) || 1;
@@ -1190,7 +1190,7 @@
       tile.style.borderLeftColor = FARM_PROCESSOR_STATUS_COLORS[status];
       tile.innerHTML = `
         <div class="fp-top"><span class="fp-icon">${def.icon}</span><span class="fp-name">${def.name}</span></div>
-        <div class="fp-status" style="color:${FARM_PROCESSOR_STATUS_COLORS[status]}">${label}</div>
+        <div class="fp-status" style="color:${FARM_PROCESSOR_STATUS_COLORS[status]}">${deps.esc(label)}</div>
         <div class="fp-loc">at (${obj.col}, ${obj.row})</div>
       `;
       if (status === 'ready' && deps.hasFarmPermission('alterFarm')) {
@@ -1204,7 +1204,7 @@
         });
         tile.appendChild(btn);
       }
-      if (worker && deps.hasFarmPermission('livestock')) {
+      if (worker && !worker.external && deps.hasFarmPermission('livestock')) { // Family work is cancelled through the child's existing command wheel, not a livestock API.
         const btn = document.createElement('button');
         btn.className = 'settings-small-btn';
         btn.textContent = 'Unassign';
@@ -1219,7 +1219,7 @@
     });
     if (summary) {
       summary.textContent = processors.length
-        ? `${counts.working} working · ${counts.ready} ready to collect · ${counts.livestock} livestock-worked · ${counts.idle} idle`
+        ? `${counts.working} working · ${counts.ready} ready to collect · ${counts.livestock} worker-assigned · ${counts.idle} idle`
         : '';
     }
   }
@@ -1409,11 +1409,12 @@
           noneOpt.value = ''; noneOpt.textContent = '🚫 No vat (drops a pile)';
           vatSelect.appendChild(noneOpt);
           vats.forEach(v => {
-            const takenBy = livestock.find(l => l.assignedVatId === v.id && window.DewVats.vatCanAccept(l.kind, l.genotype));
+            const takenBy = window.DewVats.assignedWorkerForVat(v.id, livestock); // Children occupy the same exclusive worker slot as livestock.
             const opt = document.createElement('option');
             opt.value = v.id;
-            opt.textContent = v.label + (takenBy && takenBy.id !== entry.id ? ` (worked by ${takenBy.name})` : '');
-            opt.disabled = !!(takenBy && takenBy.id !== entry.id);
+            const occupied = !!(takenBy && (takenBy.external || takenBy.id !== entry.id)); // External workers never share the animal's assignment slot.
+            opt.textContent = v.label + (occupied ? ` (worked by ${takenBy.name})` : '');
+            opt.disabled = occupied;
             vatSelect.appendChild(opt);
           });
           vatSelect.value = entry.assignedVatId || '';

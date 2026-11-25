@@ -206,8 +206,8 @@
     }
   }
 
-  function writeRecord(key, record) {
-    const raw = JSON.stringify(record); // Cache exactly the bytes committed; failed writes must not make a newer record appear durable.
+  function writeRecord(key, record, committedRaw = null) {
+    const raw = committedRaw ?? JSON.stringify(record); // Cache exactly the bytes committed; failed writes must not make a newer record appear durable.
     localStorage.setItem(key, raw);
     browserRecordCache.set(key, { raw, record });
   }
@@ -219,17 +219,17 @@
     return !emergencyRecoveryImportActive && folderRecoveryAvailable() ? folderOnlyRecords.get(slot) || null : null;
   }
 
-  function writeSlot(slot, record) {
+  function writeSlot(slot, record, committedRaw = null) {
     const key = SLOT_KEYS[slot];
     if (!key) throw new Error(`Unknown checkpoint slot: ${String(slot)}`);
-    writeRecord(key, record);
+    writeRecord(key, record, committedRaw);
     folderOnlyRecords.delete(slot);
     return record;
   }
 
-  function mirrorFolderRecord(slot, record) {
+  function mirrorFolderRecord(slot, record, committedRaw = null) {
     try {
-      writeSlot(slot, record);
+      writeSlot(slot, record, committedRaw);
       folderOnlyRecords.set(slot, record); // Retain readable disk history even if a later mirror evicts this browser copy.
       return record;
     } catch (error) {
@@ -242,9 +242,18 @@
     }
   }
 
+  let committedRecoveryMirrors = 0; // Counts mirrors using disk JSON without a second serialization.
   async function persistFolderRecord(slot, record) {
-    if (!await writeFolderSlot(slot, record)) throw new Error('The recovery folder is unavailable.');
-    return mirrorFolderRecord(slot, record);
+    const written = await writeFolderSlot(slot, record);
+    if (!written) throw new Error('The recovery folder is unavailable.');
+    if (typeof written === 'string') {
+      // Parse the committed bytes, not the potentially mutated input. The
+      // cached browser record and quota fallback must describe the disk copy.
+      const committed = JSON.parse(written);
+      committedRecoveryMirrors++;
+      return mirrorFolderRecord(slot, committed, written);
+    }
+    return mirrorFolderRecord(slot, record); // Older save adapters return only the record.
   }
 
   function removeSlot(slot) {
@@ -279,7 +288,9 @@
     return serialized.length;
   }
 
+  let checkpointStatsBuilds = 0; // Diagnostic: number of full checkpoint statistics serializations.
   function checkpointStats(snapshot) {
+    checkpointStatsBuilds++;
     const meta = snapshot?.meta || {};
     const ids = activeIds();
     const character = (meta.characters || []).find(entry => String(entry?.id || '') === ids.characterId) || null;
@@ -302,13 +313,13 @@
     };
   }
 
-  function integrityRisk(previousRecord, nextSnapshot) {
+  function integrityRisk(previousRecord, nextSnapshot, nextStats = null) {
     if (!previousRecord?.snapshot) return '';
     const previousStats = previousRecord.stats || checkpointStats(previousRecord.snapshot); // Legacy checkpoint records may carry byte counts inflated by accidentally serialized treasure meshes.
     const before = previousStats.canonicalBytes === true
       ? previousStats
       : { ...previousStats, bytes: checkpointPayloadBytes(previousRecord.snapshot) }; // Only legacy stats are recomputed; re-serializing the whole baseline on every 30s autosave/folder write was a main-thread hitch.
-    const after = checkpointStats(nextSnapshot);
+    const after = nextStats || checkpointStats(nextSnapshot);
     const nextActive = activeIds(); // Current farmer/world prevents unrelated save slots from sharing farm-specific reset heuristics.
     const previousActive = previousRecord.active || {};
     const sameActiveSave = previousActive.characterId === nextActive.characterId && previousActive.worldId === nextActive.worldId;
@@ -369,7 +380,7 @@
     return snapshotApi()?.capture?.({ strict: true });
   }
 
-  function createRecord(kind, snapshot, reason, savedAt = Date.now()) {
+  function createRecord(kind, snapshot, reason, savedAt = Date.now(), stats = null) {
     return {
       checkpointVersion: CHECKPOINT_VERSION,
       kind,
@@ -377,7 +388,7 @@
       reason,
       active: activeIds(),
       summary: snapshotApi().summary(snapshot),
-      stats: checkpointStats(snapshot),
+      stats: stats || checkpointStats(snapshot),
       snapshot,
     };
   }
@@ -408,12 +419,12 @@
     if (!folderIsPrimary()) return false;
     const localSave = folderApi();
     if (typeof localSave?.writeRecoveryCheckpoint !== 'function') return false;
-    await localSave.writeRecoveryCheckpoint(slot, record);
+    const written = await localSave.writeRecoveryCheckpoint(slot, record, { returnSerialized: true });
     folderRecoveryWrites++;
-    return true;
+    return typeof written === 'string' ? written : true;
   }
 
-  async function promoteAutosave(snapshot, { reason = 'folder-sync', savedAt = Date.now(), writeFolder = false, fingerprint = null } = {}) {
+  async function promoteAutosave(snapshot, { reason = 'folder-sync', savedAt = Date.now(), writeFolder = false, fingerprint = null, browserStats = null } = {}) {
     const current = writeFolder ? safeValidateRecord(await folderApi().readRecoveryCheckpoint('auto')) : readSlot('auto'); // Disk remains authoritative when quota eviction removed a successful browser mirror.
     const previous = writeFolder ? safeValidateRecord(await folderApi().readRecoveryCheckpoint('autoPrevious')) : readSlot('autoPrevious'); // Rotation must preserve the folder history too.
     if (current && (!previous || current.savedAt - previous.savedAt >= AUTO_PREVIOUS_MIN_AGE_MS)) {
@@ -421,8 +432,8 @@
       else writeSlot('autoPrevious', current);
     }
 
-    const record = createRecord('autosave', snapshot, reason, savedAt);
-    if (writeFolder) await persistFolderRecord('auto', record);
+    let record = createRecord('autosave', snapshot, reason, savedAt, writeFolder ? null : browserStats);
+    if (writeFolder) record = await persistFolderRecord('auto', record);
     else writeSlot('auto', record);
     lastAutosaveFingerprint = fingerprint ?? (snapshotApi()?.fingerprint?.(snapshot) || ''); // Browser fallback already computed this fingerprint before its unchanged-save check.
     autosavesWritten++;
@@ -436,22 +447,19 @@
   async function onFolderSnapshotWritten(snapshot, { automatic = false, savedAt = Date.now(), recoveryKind = 'auto', reason = null } = {}) {
     if (!folderIsPrimary() || recoveryKind === 'restore') return;
     if (recoveryKind === 'mapChange') {
-      const record = createRecord('map-change', snapshot, reason || 'Map changed', savedAt); // Canonical write succeeded before advancing the independent travel slot.
-      await persistFolderRecord('mapChange', record);
+      const record = await persistFolderRecord('mapChange', createRecord('map-change', snapshot, reason || 'Map changed', savedAt)); // Canonical write succeeded before advancing the independent travel slot.
       lastAction = 'map-change-saved';
       return record;
     }
     if (recoveryKind === 'manual') {
-      const record = createRecord('manual', snapshot, 'manual-folder-save', savedAt);
-      await persistFolderRecord('manual', record); // Disk recovery succeeds before its optional browser mirror.
+      const record = await persistFolderRecord('manual', createRecord('manual', snapshot, 'manual-folder-save', savedAt)); // Disk recovery succeeds before its optional browser mirror.
       manualSavesWritten++;
       lastAction = 'manual-saved-folder';
       lastError = '';
       return record;
     }
     if (recoveryKind === 'campfire') {
-      const record = createRecord('campfire', snapshot, 'campfire-folder-save', savedAt);
-      await persistFolderRecord('campfire', record); // Campfire saves advance only their own recovery point.
+      const record = await persistFolderRecord('campfire', createRecord('campfire', snapshot, 'campfire-folder-save', savedAt)); // Campfire saves advance only their own recovery point.
       campfireSavesWritten++;
       lastAction = 'campfire-saved-folder';
       lastError = '';
@@ -563,7 +571,11 @@
       const snapshot = captureLiveSnapshot('manual-checkpoint', useFolder);
       if (!snapshot) throw new Error('Save snapshot system is unavailable.');
 
-      const risk = force ? '' : integrityRisk(baselineRecord(), snapshot);
+      // Browser-only writes are synchronous after capture. Reuse the exact
+      // same stats for the guard and record; folder writes keep their own
+      // fresh integrity checks across asynchronous I/O and provenance edits.
+      const browserStats = useFolder ? null : checkpointStats(snapshot);
+      const risk = force ? '' : integrityRisk(baselineRecord(), snapshot, browserStats);
       if (risk) {
         lastIntegrityWarning = risk;
         lastAction = 'manual-save-blocked-integrity';
@@ -589,7 +601,7 @@
         return { ok: true, record, folder: true, warning: status?.lastError || status?.browserMirrorWarning || null };
       }
 
-      const record = createRecord('manual', snapshot, reason);
+      const record = createRecord('manual', snapshot, reason, Date.now(), browserStats);
       writeSlot('manual', record);
       manualSavesWritten++;
       lastAction = 'manual-saved-browser';
@@ -612,7 +624,11 @@
       const snapshot = captureLiveSnapshot('campfire-checkpoint', useFolder);
       if (!snapshot) throw new Error('Save snapshot system is unavailable.');
 
-      const risk = force ? '' : integrityRisk(baselineRecord(), snapshot);
+      // Browser-only writes are synchronous after capture. Reuse the exact
+      // same stats for the guard and record; folder writes keep their own
+      // fresh integrity checks across asynchronous I/O and provenance edits.
+      const browserStats = useFolder ? null : checkpointStats(snapshot);
+      const risk = force ? '' : integrityRisk(baselineRecord(), snapshot, browserStats);
       if (risk) {
         lastIntegrityWarning = risk;
         lastAction = 'campfire-save-blocked-integrity';
@@ -638,7 +654,7 @@
         return { ok: true, record, folder: true, warning: status?.lastError || status?.browserMirrorWarning || null };
       }
 
-      const record = createRecord('campfire', snapshot, reason);
+      const record = createRecord('campfire', snapshot, reason, Date.now(), browserStats);
       writeSlot('campfire', record);
       campfireSavesWritten++;
       lastAction = 'campfire-saved-browser';
@@ -732,7 +748,8 @@
         return { ok: true, skipped: true, reason: 'unchanged' };
       }
 
-      const risk = integrityRisk(baselineRecord(), snapshot);
+      const browserStats = useFolder ? null : checkpointStats(snapshot); // Same synchronous capture used for the recovery record below.
+      const risk = integrityRisk(baselineRecord(), snapshot, browserStats);
       if (risk) {
         lastIntegrityWarning = risk;
         autosavesSkipped++;
@@ -752,8 +769,8 @@
         return { ok: true, record: readSlot(mapChange ? 'mapChange' : 'auto'), folder: true, warning: status?.lastError || status?.browserMirrorWarning || null };
       }
 
-      const record = mapChange ? createRecord('map-change', snapshot, reason)
-        : await promoteAutosave(snapshot, { reason, savedAt: Date.now(), writeFolder: false, fingerprint }); // Reuse the unchanged-save fingerprint rather than reserializing the world.
+      const record = mapChange ? createRecord('map-change', snapshot, reason, Date.now(), browserStats)
+        : await promoteAutosave(snapshot, { reason, savedAt: Date.now(), writeFolder: false, fingerprint, browserStats }); // Reuse the unchanged-save fingerprint rather than reserializing the world.
       if (mapChange) { writeSlot('mapChange', record); lastAction = 'map-change-saved'; }
       return { ok: true, record, folder: false };
     } catch (error) {
@@ -1358,6 +1375,8 @@
       folderRecoveryWrites,
       browserMirrorsSkipped,
       browserCheckpointParses,
+      checkpointStatsBuilds,
+      committedRecoveryMirrors,
       cachedBrowserCheckpoints: browserRecordCache.size,
       lastBrowserMirrorWarning: lastBrowserMirrorWarning || null,
       latestChange: 'Routine folder saves skip the full recovery scan. Opening Recovery still checks disk for newer checkpoints.',

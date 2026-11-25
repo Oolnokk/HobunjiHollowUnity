@@ -24,6 +24,7 @@
   const iconLoadState = new Map(); // filename -> preload record used to avoid ever attaching a broken <img>.
   const comboState = new Map(); // combo ability id -> { nextStep, lastTriggeredAt } for the next-tap HUD indicator.
   const comboRasterCache = new Map(); // next-step number -> composed white draw-melee/numeral data URL.
+  let comboRasterRevision = 0; // Invalidates existing coin art when the combo raster is regenerated.
   let refreshQueued = false; // Coalesces DOM/input/loadout changes into one HUD refresh frame.
   let observer = null; // Stored for debug status and duplicate-install protection.
   let combatWrapped = false; // Prevents wrapping Combat.beginStagedAction more than once.
@@ -173,7 +174,7 @@
     record.image = image;
     image.onload = () => {
       record.state = 'loaded';
-      if (file === 'draw_melee.png') comboRasterCache.clear();
+      if (file === 'draw_melee.png') { comboRasterCache.clear(); comboRasterRevision++; }
       queueRefresh();
     };
     image.onerror = () => {
@@ -327,7 +328,7 @@
   function ensureFontThenRefresh() {
     if (!document.fonts?.ready) return;
     document.fonts.ready.then(() => {
-      comboRasterCache.clear();
+      comboRasterCache.clear(); comboRasterRevision++;
       queueRefresh();
     }).catch(() => {});
   }
@@ -394,6 +395,9 @@
     return url;
   }
 
+  // Resolve the visual signature without allocating any DOM nodes. Most
+  // refreshes merely confirm the already-rendered tap/hold coin.
+  const coinPerf = { builds: 0, reuses: 0 }; // Mobile ActionArchIcons diagnostics.
   function mainSymbolFor(slotId) {
     const combat = window.Combat;
     const abilityId = combat?.loadout?.getSlot?.(slotId) || null;
@@ -403,33 +407,38 @@
     if (type === 'combo') {
       const step = comboNextStep(abilityId);
       const url = comboRaster(step);
-      if (!url) return { node: createX(), key: `combo:${abilityId}:${step}:pending`, label: def?.label || 'Combo' };
-      const img = document.createElement('img');
-      img.src = url;
-      img.alt = `${def?.label || 'Combo'} — next attack ${step}`;
-      img.draggable = false;
-      img.className = 'combat-combo-raster';
-      return { node: img, key: `combo:${abilityId}:${step}`, label: img.alt };
+      if (!url) return { key: `combo:${abilityId}:${step}:pending`, label: def?.label || 'Combo' };
+      return { url, key: `combo:${abilityId}:${step}:${comboRasterRevision}`, label: `${def?.label || 'Combo'} — next attack ${step}` };
     }
 
     const file = iconForAttackType(type);
-    const image = file ? createDedicatedImage(file, def?.label || abilityId || '') : null;
-    if (image) return { node: image, key: `${type}:${abilityId}:${file}`, label: def?.label || abilityId || type };
-    return { node: createX(), key: `x:${slotId}:${abilityId || 'empty'}:${type || 'unknown'}`, label: abilityId ? `${def?.label || abilityId} icon unavailable` : 'No ability slotted' };
+    if (file && loadedIcon(file)) return { file, alt: def?.label || abilityId || '', key: `${type}:${abilityId}:${file}`, label: def?.label || abilityId || type };
+    return { key: `x:${slotId}:${abilityId || 'empty'}:${type || 'unknown'}`, label: abilityId ? `${def?.label || abilityId} icon unavailable` : 'No ability slotted' };
+  }
+
+  function buildSymbolNode(symbol) {
+    if (symbol.file) return createDedicatedImage(symbol.file, symbol.alt) || createX();
+    if (!symbol.url) return createX();
+    const img = document.createElement('img');
+    img.src = symbol.url;
+    img.alt = symbol.label;
+    img.draggable = false;
+    img.className = 'combat-combo-raster';
+    return img;
   }
 
   function actionButtons() {
     return ACTION_BUTTON_IDS.map(id => document.getElementById(id)).filter(Boolean);
   }
 
-  function combatButtonForSlot(slotIndex) {
+  function combatButtonForSlot(slotIndex, buttons = actionButtons()) {
     const action = COMBAT_ACTION_BY_SLOT[slotIndex];
     if (!action || !window.Combat?.loadout) return null;
-    return actionButtons().find(button => !button.classList.contains('abt-hidden') && String(button.dataset.action || '').toLowerCase() === action) || null;
+    return buttons.find(button => !button.classList.contains('abt-hidden') && String(button.dataset.action || '').toLowerCase() === action) || null;
   }
 
-  function clearStaleCombatOwnership(activeButtons) {
-    actionButtons().forEach(button => {
+  function clearStaleCombatOwnership(activeButtons, buttons = actionButtons()) {
+    buttons.forEach(button => {
       if (activeButtons.has(button)) return;
       // Unlike classList.toggle() (which no-ops cleanly when the requested state
       // already holds), .remove()/.add() only skip their attribute write in the
@@ -444,8 +453,8 @@
       if (button.classList.contains('combat-dual-input') || button.classList.contains('combat-hold-flipped')) {
         button.classList.remove('combat-dual-input', 'combat-hold-flipped');
       }
-      button.removeAttribute('data-combat-icon-signature');
-      button.removeAttribute('data-combat-slot');
+      if (button.hasAttribute('data-combat-icon-signature')) button.removeAttribute('data-combat-icon-signature');
+      if (button.hasAttribute('data-combat-slot')) button.removeAttribute('data-combat-slot');
       const contextLabel = button.querySelector('.abt-label')?.textContent?.trim(); // Restores the world action's accessible name after combat previously owned this physical button.
       // This runs on every refresh() for every button combat doesn't currently own --
       // i.e. constantly outside combat. Writing the SAME aria-label on every pass used
@@ -475,7 +484,7 @@
     const tap = mainSymbolFor(`tap${slotIndex}`);
     const hold = mainSymbolFor(`hold${slotIndex}`);
     const holding = Boolean(window.Combat?.input?.getState?.(slotIndex)?.holding);
-    const signature = `${button.dataset.action || ''}|${tap.key}|${hold.key}`; // Holding only flips CSS; it never requires rebuilding the coin DOM.
+    const signature = `${button.dataset.action || ''}|${tap.key}|${hold.key}|${tap.label.length}:${tap.label}|${hold.label.length}:${hold.label}`; // Holding only flips CSS; it never requires rebuilding the coin DOM.
 
     // classList.add() only skips its attribute write in the narrow case of "this
     // element has never had a class attribute set and still wouldn't after this
@@ -496,8 +505,10 @@
     if (button.dataset.combatSlot !== combatSlot) button.dataset.combatSlot = combatSlot;
     const accessibleLabel = `${tap.label}; hold: ${hold.label}`;
     if (button.getAttribute('aria-label') !== accessibleLabel) button.setAttribute('aria-label', accessibleLabel);
-    if (button.dataset.combatIconSignature === signature && host.querySelector('.combat-coin')) return;
+    if (button.dataset.combatIconSignature === signature && host.querySelector('.combat-coin')) { coinPerf.reuses++; return; }
     button.dataset.combatIconSignature = signature;
+    coinPerf.builds++;
+    const tapNode = buildSymbolNode(tap), holdNode = buildSymbolNode(hold); // Create only for a changed or missing coin.
 
     const coin = document.createElement('span');
     coin.className = 'combat-coin';
@@ -509,17 +520,17 @@
     front.className = 'combat-coin-face combat-coin-front';
     const frontMain = document.createElement('span');
     frontMain.className = 'combat-main-symbol';
-    frontMain.appendChild(tap.node);
+    frontMain.appendChild(tapNode);
     const exponent = document.createElement('span');
     exponent.className = 'combat-hold-exponent';
-    exponent.appendChild(hold.node.cloneNode(true));
+    exponent.appendChild(holdNode.cloneNode(true));
     front.append(frontMain, exponent);
 
     const back = document.createElement('span');
     back.className = 'combat-coin-face combat-coin-back';
     const backMain = document.createElement('span');
     backMain.className = 'combat-main-symbol';
-    backMain.appendChild(hold.node);
+    backMain.appendChild(holdNode);
     back.appendChild(backMain);
 
     inner.append(front, back);
@@ -530,12 +541,13 @@
 
   function refreshCombatButtons() {
     installCombatActionTracker();
+    const buttons = actionButtons(); // One DOM lookup per physical button for the entire combat refresh.
     const assignments = new Map(); // slot -> current physical button after world-context ordering.
     [1, 2].forEach(slotIndex => {
-      const button = combatButtonForSlot(slotIndex);
+      const button = combatButtonForSlot(slotIndex, buttons);
       if (button) assignments.set(slotIndex, button);
     });
-    clearStaleCombatOwnership(new Set(assignments.values()));
+    clearStaleCombatOwnership(new Set(assignments.values()), buttons);
     assignments.forEach((button, slotIndex) => renderCombatButton(slotIndex, button));
   }
 
@@ -577,6 +589,7 @@
       iconBase: ICON_BASE,
       icons: Object.fromEntries(ICON_FILES.map(file => [file, iconLoadState.get(file)?.state || 'not-requested'])),
       combatActive: Boolean(assignments.slot1 || assignments.slot2),
+      coinBuilds: coinPerf.builds, coinReuses: coinPerf.reuses,
       assignments,
       actions: Object.fromEntries(actionButtons().map(button => [button.id, button.dataset.action || null])),
       loadout: combat?.loadout?.get?.() || null,

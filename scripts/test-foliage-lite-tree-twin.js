@@ -18,7 +18,8 @@ catch (error) {
 }
 THREE.TextureLoader.prototype.load = () => new THREE.Texture(); // Leaf PNGs need a DOM; geometry does not.
 global.window = { THREE, __farmLog() {} };
-global.THREE = THREE;
+// The generator must use window.THREE (its injected runtime), not a bare global.
+delete global.THREE;
 require('../docs/js/foliage-generator.js');
 const generator = window.FoliageGenerator;
 assert.equal(typeof generator.liteTreeGeometry, 'function');
@@ -74,6 +75,59 @@ const shade = generator.buildShadewoodMesh(4, 9);
 const before = triangles(shade.children.find(o => o.userData.treePartRole === 'wood').geometry);
 assert.equal(before, 2592, 'full shadewood bark keeps its authored tessellation');
 
+// Compare the exact native r128 world matrices with the optimized ones,
+// including hidden leaves, parent movement, manual matrices and late edits.
+{
+  const root = new THREE.Group();
+  const tree = generator.buildShadewoodMesh(4,9,{forceClimbBranch:true});
+  root.add(tree);
+  root.position.set(13,2,-4); root.rotation.y=0.7; root.scale.set(1.2,0.9,1.4);
+  tree.position.set(5,1,9);
+  const part=tree.children.find(o=>o.isMesh && o.updateMatrixWorld!==THREE.Object3D.prototype.updateMatrixWorld);
+  assert.ok(part,'generated identity-local leaf is enrolled');
+  const parity = (label) => {
+    generator.setIdentityTreeMatrixFastPath(false); root.updateMatrixWorld(true);
+    const expected=part.matrixWorld.elements.slice(), local=part.matrix.elements.slice();
+    generator.setIdentityTreeMatrixFastPath(true); root.updateMatrixWorld(true);
+    for(let i=0;i<16;i++){
+      assert.ok(Math.abs(part.matrixWorld.elements[i]-expected[i])<1e-10,label+' world '+i);
+      assert.ok(Math.abs(part.matrix.elements[i]-local[i])<1e-10,label+' local '+i);
+    }
+    assert.equal(part.matrixWorldNeedsUpdate,false);
+  };
+  let copies=generator.identityTreeMatrixStats().copies;
+  parity('identity leaf');
+  assert.ok(generator.identityTreeMatrixStats().copies>copies);
+  part.visible=false; root.position.x+=10; parity('hidden leaf with moving ancestor');
+  part.matrix.makeTranslation(100,0,0); part.updateMatrixWorld(false);
+  assert.equal(part.matrix.elements[12],0,'auto update overwrites manual local matrix');
+  part.position.x=0.4; parity('late part translation');
+  part.position.x=0; part.rotation.y=0.3; parity('late part rotation');
+  part.rotation.y=0; part.scale.y=1.4; parity('late part scale');
+  part.scale.y=1; part.matrixAutoUpdate=false;
+  part.matrix.makeTranslation(3,4,5); part.matrixWorldNeedsUpdate=true; parity('manual local matrix');
+  part.matrixAutoUpdate=true; parity('reenabled auto update');
+  const attachment=new THREE.Object3D(); attachment.position.set(1,2,3); part.add(attachment);
+  parity('late attachment'); assert.ok(attachment.matrixWorld.equals(new THREE.Matrix4().multiplyMatrices(part.matrixWorld,attachment.matrix)));
+  part.remove(attachment);
+  const newParent=new THREE.Group(); newParent.position.set(-7,0,1); root.add(newParent); newParent.add(part);
+  parity('reparented leaf');
+  part.updateWorldMatrix(true,false); parity('direct updateWorldMatrix remains native');
+  const previous=part.updateMatrix; let customCalls=0;
+  part.updateMatrix=function(){customCalls++;return previous.call(this);};
+  parity('custom local update'); assert.equal(customCalls,2);
+  assert.ok(generator.identityTreeMatrixStats().fallbacks>0);
+  generator.setIdentityTreeMatrixFastPath(true);
+}
+
+// A different injected runtime must keep its native matrix update contract.
+{
+  const alternate = generator.forThree({...THREE,REVISION:'999'});
+  const tree = alternate.buildShadewoodMesh(4,9);
+  assert.equal(alternate.identityTreeMatrixStats().enrolled,0);
+  assert(tree.children.filter(o=>o.isMesh).every(o=>o.updateMatrixWorld===THREE.Object3D.prototype.updateMatrixWorld));
+  assert.notEqual(alternate,generator);
+}
 // border-terrain.js: a dense-wall tree contributes only the meshes it draws.
 const src = fs.readFileSync(path.resolve(__dirname, '..', 'docs/js/border-terrain.js'), 'utf8');
 const start = src.indexOf('function forEachDrawnTreeMesh(');
