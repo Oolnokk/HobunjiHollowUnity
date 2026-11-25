@@ -222,11 +222,14 @@
       ? Math.max(0, 1 + (gustScale - 1) * gustPower) : 1; // Do not invoke the Footing-spending attack prepare hook.
     const lungePx = baseLungePx * lungeMultiplier; // Authored lunge vector before pitch projection.
     const mounted = window.Mounts?.rideState === 'mounted'; // Mounted quick attacks accelerate the mount instead of lunging.
-    const pitch = options.includeEnchantments === false ? 0 : Number(deps.getPlayerMeleeAimPitch?.()) || 0; // Preview only; the committed attack already uses the camera lunge authority.
-    const projection = window.Combat.meleeLungeProfile?.(lungePx, pitch, 0, 1, pitch >= 0 ? 1 : 0, pitch >= 0 ? 1 : 0, pitch >= 0); // Same pitch-distance profile as camera-aligned lunges.
+    const pitch = options.includeEnchantments === false ? 0 : Math.max(-Math.PI / 2, Math.min(Math.PI / 2, Number(options.aimPitch ?? deps.getPlayerMeleeAimPitch?.()) || 0)); // Preview only; the committed attack uses the camera lunge authority.
+    const projection = options.includeEnchantments === false ? null : window.Combat.meleeLungeProfile?.(lungePx, pitch, 0, 1, pitch >= 0 ? 1 : 0, pitch >= 0 ? 1 : 0, pitch >= 0); // Same pitch-distance profile as camera-aligned lunges.
     const horizontalLungePx = mounted ? 0 : Math.max(0, projection?.distancePx ?? lungePx);
-    const horizontalRangePx = rangePx * Math.max(0, Math.cos(projection?.pitch ?? pitch)); // Matches meleeColliderVolume.horizontalRangeWorld.
-    return { rangePx, halfConeRad, baseLungePx, lungePx, horizontalLungePx, horizontalRangePx, reachPx: horizontalLungePx + horizontalRangePx, effects }; // Share mastery effects with the indicator's affliction tint pass.
+    const pitchCos = Math.max(0, Math.cos(projection?.pitch ?? pitch)); // Matches meleeColliderVolume.horizontalRangeWorld.
+    const horizontalRangePx = rangePx * pitchCos;
+    const reachPx = horizontalLungePx + horizontalRangePx;
+    const previewColliderRangePx = pitchCos > 1e-6 ? rangePx + horizontalLungePx / pitchCos : rangePx; // meleeHit projects its own range; never pass the already-projected radius as a 3D length.
+    return { rangePx, halfConeRad, baseLungePx, lungePx, horizontalLungePx, horizontalRangePx, reachPx, previewColliderRangePx, effects }; // Share mastery effects with the indicator's affliction tint pass.
   }
 
   function registerQuickAttack(id, def) {
