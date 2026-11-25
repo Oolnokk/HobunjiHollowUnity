@@ -197,6 +197,7 @@
       ranged,
     };
     entity._weaponTrustCulturalLoadout = lastRoll;
+    global.BanditCombat?.refreshEnemyCombatBuild?.(entity); // Final melee/ranged equipment may enable a different affliction family.
 
     const finalMeleeCultural = culturalShapeKeys.has(melee.finalShape);
     const finalRangedCultural = !!ranged.finalKey && !['crossbow', 'scatterbow'].includes(ranged.finalKey);
