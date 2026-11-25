@@ -3131,3 +3131,61 @@ known loader cache chains bumped. Next: record matching dry forest
 baseline, then independently enable the classification pilot, and
 compare actual slow-frame sources and save timing before more rendering
 architecture changes.
+
+
+### 25 Nov — browser long-task attribution and shared sprite pixel worker
+
+The next dry Southern Cloud Forest probe (02ac6870) directly attributed
+an 8,026.4 ms browser event listener to fish-catalog.js. Other long
+animation frame scripts included fish-catalog.js (490.3 and 376 ms) and
+sprite-recolor.js (568.7, 297.2, 255.1 ms). The page remained focused and
+visible. This attributes browser execution to the listener and its
+continuations; it does not isolate the exact image or inner function.
+The 18 measured scheduler frames averaged 90.37 ms; the RAF timestamps
+reported more elapsed interval time than the actual window. v3 uses
+actual callback-entry wall-clock intervals for FPS and retains raw RAF
+timestamp intervals separately. Two remaining stable XP saves cost
+63.0/64.8 ms, accounting for virtually all of the 7.139 ms/frame
+stable callback. Persistence remains a separate next target.
+
+Fish profile work no longer allocates an array entry per eligible
+pixel and repeatedly filters it. Streaming bin accumulation preserves
+pixel order, thresholds and tie-breaking. One bounded color memo per
+job avoids repeated RGB/HSV/chroma/ignore computations; final profile
+cache is bounded to 32 immutable source/species entries, shared across
+variants. Pattern HSV fills use a 256-value palette. No source-art
+resampling or change to dimensions/alpha/color rules.
+
+PixelWorkYield now owns a serial canvas job queue (acquired before
+readback), a single lazy classic worker and one in-flight transferred
+private buffer. Fish and SpriteRecolor use their same source math in
+the worker and main-thread fallback. The worker imports the existing
+owners with explicit versions, bypassing gameplay hooks; it has no
+DOM, canvas or scheduler loop. The caller retains its original RGBA
+buffer until a valid reply so worker startup/CSP/message/timeout failure
+can safely fall back. Failure disables the worker for this page session;
+fallback slices at 4,096 pixels and uses the existing shared yield
+budget. Generic direct fallback computes the exact global shade
+reference before chunked application; synchronous public recolor APIs
+and tools without PixelWorkYield retain their previous behavior.
+Concurrent identical canvas requests still share promises; failures
+remain retryable. Existing sixfin layer ordering and scroll/sheen
+compositing remain intact. Worker queue may delay uncached art rather
+than block gameplay. Browser canvas draw/readback/upload, consumer
+PNG encoding, and unrelated pixel jobs remain potential main-thread
+costs; this does not guarantee a hard 6 ms task deadline or zero stalls.
+
+Pixel Probe v3 includes pixel queue, worker success/failure/timing,
+fallback/yield counters and local/worker fish profile stats. Worker and
+fallback elapsed job durations are not exclusive main-thread CPU times.
+No real-device speedup claimed. Differential execution against the
+unmodified 02ac6870 fish algorithm matched exact RGBA for all 16
+non-patterned variants on 1, 19 and 20,000 pixel fixtures. New regression
+fixture covers those legacy hashes, pattern alpha, worker dispatch
+using real worker source in a mock transport, generic color modes,
+failure and retry fallback, low-luminance normalization and serial
+queue recovery. Existing scroll/sheen, fish presentation and probe
+fixtures passed in isolated JS adapter. Native full suite, cache
+checker, actual worker startup/transfer and browser visual/device
+performance verification remain pending. Known gameplay and editor
+loader tokens refreshed.
