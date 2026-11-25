@@ -2752,3 +2752,44 @@ serialization work, but is not a measured wall-time or FPS improvement.
 Static hierarchy freeze remains deferred pending an actual scene census;
 the save capture/integrity-size and canonical file serialization passes
 are not eliminated.
+
+
+### Static procedural tree matrix arithmetic
+
+The rainy Cloud Forest trace's ~5.92 ms/frame native main-render matrix
+walk remains the motivating evidence. The generator's shared tree variants
+bake wood, vine, canopy and climb-branch coordinates into local geometry.
+Fresh per-tree clones normally have identity-local direct mesh leaves.
+Instead of disabling transforms on arbitrary static-looking or invisible
+scene nodes, install a per-instance world-update fast path only on these
+generator-owned leaves when their update methods are the native ones.
+For auto-updated identity TRS, reset the local matrix to identity and copy
+the current parent's world matrix (or identity when detached), clearing
+matrixWorldNeedsUpdate exactly as native leaf traversal would do. This
+avoids quaternion composition and general 4x4 multiplication; it does
+not skip the scene traversal or assume any ancestor remains stationary.
+
+A moved/rotated/scaled leaf, manual matrix, added descendant, changed
+local-update hook or disabled A/B switch delegates to the original native
+world updater. Root transforms, explicit updateMatrix/updateWorldMatrix,
+visibility, fade, layers, culling, raycasts and reparenting remain live.
+No Object3D prototype changes. Only freshly generated procedural leaves
+are enrolled; baked GLB trees and other scenery are not implicitly opted
+in. The persisted Fast static tree matrices setting and
+identityTreeMatricesOff/On benchmark permit direct comparison. Pixel
+Probe exposes enrollments, actual copy executions and fallback counts.
+This is a narrower arithmetic reduction, not a cached whole-subtree
+traversal or a guarantee of FPS improvement.
+
+Executed the production enrollment/updater functions with a source-based
+matrix fixture (moving parents, hidden leaves, manual transforms, late
+attachments and reparenting); all parity checks passed. Added tests using
+the real Three.js dependency in the existing foliage-lite-tree-twin
+regression, including rotations, custom local hooks and A/B parity.
+The native Three.js suite is not available in the isolated connector
+environment; full CI and actual Cloud Forest A/B timing remain required.
+All known versioned foliage generator authoring/gameplay loaders and the
+new diagnostics/settings loaders were refreshed. The previous folder
+recovery revision had ten of eleven workflows green, with the full
+regression suite in progress. Larger static subtree invalidation still
+requires the on-device scene matrix census.
