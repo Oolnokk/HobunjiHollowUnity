@@ -324,6 +324,18 @@
     };
   }
 
+  // All explicit NPC-origin direct hits (including arrows and faction fights)
+  // enter the same gameplay hit adapters. Only the attacker's own build applies.
+  function scaleEnemyCombatHit(attacker, amount, options = {}) {
+    const mods = attacker?.def?.combatPerkModifiers; // Cached spawn profile, absent for ordinary animals and authored bosses.
+    if (!mods || attacker === window.Combat?.deps?.player) return null;
+    const damageMul = options.enchantmentSlot === 'tap2' || options.category === 'quickAttack' ? mods.quickDamage
+      : options.enchantmentSlot === 'hold2' || options.category === 'defensiveHold' ? mods.defensiveDamage
+      : options.heavy ? mods.heavyDamage : mods.comboDamage;
+    const priorFooting = Number(options.footingDamageMultiplier); // Preserve zero for arrows and other explicitly footing-free attacks.
+    return { amount: amount * damageMul, options: { ...options, footingDamageMultiplier: (Number.isFinite(priorFooting) ? priorFooting : 1) * mods.footingDamage } };
+  }
+
   // ── Save/load — perks are character-scoped, same as skill levels/XP ──
   function persist() { deps?.savePerkProgress?.(serialize()); }
 
@@ -408,7 +420,7 @@
     pointsEarned, pointsSpent, pointsAvailable,
     increase, decrease, resetTree,
     combatDamageMultiplier,
-    ENEMY_COMBAT_CLASSES, enemyCombatLevel, rollEnemyCombatClass, enemyQuickAttack, buildEnemyCombatProfile,
+    ENEMY_COMBAT_CLASSES, enemyCombatLevel, rollEnemyCombatClass, enemyQuickAttack, buildEnemyCombatProfile, scaleEnemyCombatHit,
     render,
   };
 })();
