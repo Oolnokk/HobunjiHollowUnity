@@ -117,7 +117,13 @@ class FakeMesh { // World crop cube and subsequently converted PNG planes share 
     this.scale = { x: .7, y: .7, z: .7, setScalar(v) { this.x = v; this.y = v; this.z = v; } };
     this.quaternion = { identity() {}, copy() {} };
   }
-  add(child) { child.parent = this; this.children.push(child); }
+  add(child) { child.parent = this; this.children.push(child); child.dispatchEvent?.({type:'added'}); }
+  addEventListener(type, fn) { // Three.js deduplicates identical listeners.
+    this.listeners ??= new Map();
+    if (!this.listeners.has(type)) this.listeners.set(type,new Set());
+    this.listeners.get(type).add(fn);
+  }
+  dispatchEvent(event) { for (const fn of this.listeners?.get(event.type) || []) fn.call(this,event); }
 }
 sandboxWindow.THREE = {
   WebGLRenderer: FakeWebGlRenderer, Mesh: FakeMesh, MeshLambertMaterial: FakeLambertMaterial, MeshBasicMaterial: FakeMaterial,
@@ -212,4 +218,35 @@ fakeNowMs += 250;
 renderer.render(modernScene, camera);
 assert.equal(modernTraversals, 3, 'debug override restores periodic compatibility scans');
 artApi.setLegacyDiscoveryEnabled(false);
+
+// Standalone producers register before their caller attaches the mesh.
+// Moving an existing billboard out and back must resume camera-facing
+// updates even in a scene that has finished its one adoption scan.
+const standalone = newCrop();
+standalone.parent = null;
+const countBefore = artApi.getDebug().registeredCropCount;
+assert.equal(artApi.registerPlaceholder(standalone),true);
+assert.equal(artApi.getDebug().registeredCropCount,countBefore,'detached registration waits for attachment');
+standalone.parent = modernScene;
+standalone.dispatchEvent({type:'added'});
+renderer.render(modernScene,camera);
+assert.equal(standalone.children.length,3,'standalone crop converts after its first attachment');
+const activeBefore = artApi.getDebug().activeBillboards;
+standalone.parent = null;
+standalone.dispatchEvent({type:'removed'});
+assert.equal(artApi.getDebug().activeBillboards,activeBefore-1,'detached crop leaves the live update list immediately');
+standalone.parent = modernScene;
+standalone.dispatchEvent({type:'added'});
+assert.equal(artApi.getDebug().activeBillboards,activeBefore,'reattached crop rejoins the live update list');
+let facingUpdates = 0;
+standalone.children[0].quaternion.copy = () => facingUpdates++;
+renderer.render(modernScene,camera);
+assert.equal(facingUpdates,1,'reattached crop faces the active camera again');
+assert.equal(standalone.children.length,3,'reattachment never duplicates plant planes');
+const invalid = newCrop();
+invalid.geometry.type = 'SphereGeometry';
+artApi.registerPlaceholder(invalid);
+renderer.render(modernScene,camera);
+assert.equal(invalid.children.length,0,'a tag alone cannot convert non-placeholder geometry');
+assert.equal(modernTraversals,3,'these lifecycle operations never require another discovery walk');
 console.log('authored crop sprite art tests passed');
