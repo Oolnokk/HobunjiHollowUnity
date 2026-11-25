@@ -192,6 +192,25 @@ async function main() {
   assert.equal(loot.masteryPoolForLoot('bandit_lieutenant', { entity: { isHarlyaoLich: true, lichType: 'tothal' } }), 'mastery_lich_tothal');
   assert.equal(loot.masteryPoolForLoot('caveSkeletonBody', { entity: { ...skeleton, areaId: 'cavern' } }), 'mastery_cave_map_eastern_mire');
   assert.equal(loot.masteryPoolForLoot('dungeonChest_tier2', { masterySource: 'caveCache', zoneId: 'map_eastern_mire' }), 'mastery_cave_map_eastern_mire');
+  // Catacomb bodies retain their regional lesson, with one fallback ghoul roll only on a miss.
+  const catacombBody = { ...skeleton, areaId: 'cavern', rosterRecord: { appearance: { speciesId: 'mao-ao-skeleton' } }, def: { weaponKey: 'sword', lootPool: 'caveSkeletonBody' } };
+  function catacombRoll(poolId, context, values) {
+    const rolls = values.slice(); // Fail if any unexpected additional mastery RNG draw occurs.
+    const drops = loot.rollLootPool(poolId, { ...context, random: () => {
+      assert.ok(rolls.length, 'unexpected mastery RNG draw');
+      return rolls.shift();
+    } });
+    assert.equal(rolls.length, 0, 'all expected mastery RNG draws consumed');
+    return Object.keys(drops);
+  }
+  const knockdownTablet = api.itemKey('blunt', 1, 'debuff_durationS_1_id_knockdown', 'tablet');
+  assert.deepEqual(catacombRoll('caveSkeletonBody', { entity: catacombBody }, [0.21, 0.14, 0, 0.75, 0.99]), [knockdownTablet], 'a sharp-wielding catacomb corpse can yield blunt Knockdown after a regional miss');
+  assert.deepEqual(catacombRoll('caveSkeletonBody', { entity: catacombBody }, [0.21, 0.14, 0, 0.25, 0]), [api.itemKey('sharp', 1, 'aff_poisonedHealth_0p378', 'tablet')], 'sharp ghoul tablets remain possible');
+  assert.deepEqual(catacombRoll('caveSkeletonBody', { entity: catacombBody }, [0, 0, 0]), [api.itemKey('sharp', 1, pools.mastery_cave_map_eastern_mire.mastery.effects[1].sharp[0], 'tablet')], 'successful regional loot does not roll or add a second tablet');
+  assert.deepEqual(catacombRoll('caveSkeletonBody', { entity: catacombBody }, [0.2, 0.15]), [], 'both optional rolls can fail at their configured boundaries');
+  assert.deepEqual(catacombRoll('dungeonChest_tier2', { masterySource: 'caveCache', zoneId: 'map_eastern_mire' }, [0.21]), [], 'ordinary cave caches do not gain the ghoul fallback');
+  assert.deepEqual(catacombRoll('bandit_grunt', { entity: skeleton }, [0.999]), [], 'other skeleton corpses retain their normal mastery pool');
+
   assert.equal(loot.masteryPoolForLoot(null, { entity: { isDenMother: true, areaId: 'cavern' } }), 'mastery_den_map_eastern_mire');
   assert.equal(loot.masteryPoolForLoot('dungeonChest_tier1'), 'mastery_ruin_kanthic');
   assert.equal(loot.masteryPoolForLoot('dungeonChest_tier4', { boss: true, theme: 'hronal' }), 'mastery_final_hronal');

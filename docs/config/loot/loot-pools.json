@@ -302,7 +302,7 @@
     },
     "caveSkeletonBody": {
       "label": "Cave Catacomb Skeleton (Body)",
-      "note": "Grave goods on the Mao'ao skeleton bodies lying in cave catacombs (docs/js/cave-site-system.js); worn rags are added by the bandit corpse loot path.",
+      "note": "Grave goods on the Mao'ao skeleton bodies lying in cave catacombs (docs/js/cave-site-system.js); worn rags are added by the bandit corpse loot path. If the regional mastery roll fails, these bodies also roll the ghoul mastery tablet pool; the buried lesson is not tied to the corpse weapon.",
       "entries": [
         {
           "id": "gold",

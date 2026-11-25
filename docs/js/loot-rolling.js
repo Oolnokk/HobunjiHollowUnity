@@ -221,7 +221,16 @@
       }
       if (qty > 0) gained[entry.itemKey] = (gained[entry.itemKey] || 0) + qty;
     }
-    if (masteryPool) Object.assign(gained, rollMasteryPool(masteryPool, { ...context, sourcePoolId: poolId })); // Lieutenants retain bandit-exclusive effects while using their own guaranteed chance.
+    if (masteryPool) {
+      const masteryContext = { ...context, sourcePoolId: poolId }; // Preserve source-specific chances and fortune for both mastery rolls.
+      let masteryDrops = rollMasteryPool(masteryPool, masteryContext);
+      if (poolId === 'caveSkeletonBody' && !Object.keys(masteryDrops).length) {
+        // Only Mao'ao catacomb grave goods get a second chance at the existing ghoul lessons.
+        // The buried lesson need not match the corpse's weapon; both sharp and blunt tablets are possible.
+        masteryDrops = rollMasteryPool('mastery_ghoul', { ...masteryContext, entity: null });
+      }
+      Object.assign(gained, masteryDrops); // At most one mastery item; ordinary grave goods and other sources remain unchanged.
+    }
     return gained;
   }
 
