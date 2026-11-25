@@ -161,4 +161,30 @@ burning.set(enemy, 0);
 schedulerRecord.callback({ timestamp: 2516, deltaMs: 16 });
 assert.equal(schedulerEnabled, false);
 
+// Range gating never changes affliction state and permits visual recreation.
+const combatCore = fs.readFileSync('docs/js/combat/combat-core.js','utf8');
+const rangeStart = combatCore.indexOf('  const COMBAT_VFX_RANGE_TILES');
+const rangeEnd = combatCore.indexOf('  function spawnMeleeTrail(',rangeStart);
+assert.ok(rangeStart>=0 && rangeEnd>rangeStart);
+const player={x:0,y:0}, scene={};
+const deps={TILE:64,player,getCurrentArea:()=> 'forest',getActiveScene:()=>scene};
+windowStub.Combat.shouldPresentCombatVfx=vm.runInNewContext('(function(deps){'+combatCore.slice(rangeStart,rangeEnd)+';return shouldPresentCombatVfx;})',{})(deps);
+Object.assign(enemy,{x:24*64+1,y:0,areaId:'forest'});
+burning.set(enemy,8);
+assert.equal(api.syncEntity(enemy,enemyGroup),false,'far enemies never allocate a burning emitter');
+assert.equal(burning.get(enemy),8);
+enemy.x=24*64;
+assert.equal(api.syncEntity(enemy,enemyGroup),true,'nearby enemies resume burning visuals');
+enemy.x+=1;
+schedulerRecord.callback({timestamp:2532,deltaMs:16});
+assert.equal(api.debugSnapshot().activeEntities,0,'leaving the range releases the emitter');
+assert.equal(burning.get(enemy),8,'presentation range does not clear damage state');
+enemy.x=0;
+assert.equal(api.syncEntity(enemy,enemyGroup),true);
+assert.equal(windowStub.Combat.shouldPresentCombatVfx(enemy,{}),false,'inactive scene rejected');
+enemy.areaId='other';
+assert.equal(windowStub.Combat.shouldPresentCombatVfx(enemy),false,'inactive area rejected');
+assert.equal(windowStub.Combat.shouldPresentCombatVfx(player),true,'player presentation never culled');
+api.disposeEntity(enemy);
+
 console.log('Burning Health authored fire-emitter regression passed');

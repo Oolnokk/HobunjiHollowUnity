@@ -112,6 +112,11 @@
       available: () => typeof window.ZoneVegetationCull?.setHideFadedOut === 'function',
       read: () => window.ZoneVegetationCull.snapshot?.().hideFadedOut, write: on => window.ZoneVegetationCull.setHideFadedOut(on) },
 
+    { group: 'Held items and x-ray replays', id: 'portraitWaterTint', name: 'Submerged portrait tint', on: true,
+      desc: 'Off skips the separate water-color replay for submerged portraits; normal water and held-gear tint remain. Uses the existing X-ray hierarchy rule.', ownsPersistence: true,
+      available: () => typeof window.XrayHierarchy?.set === 'function',
+      read: () => window.XrayHierarchy.get('portrait.waterTint') !== 'off',
+      write: on => window.XrayHierarchy.set('portrait.waterTint', on ? 'wet-tile' : 'off') },
     { group: 'Held items and x-ray replays', id: 'localReplayRing', name: 'X-ray only around the player', on: true,
       desc: 'Only actors on your tile or its eight neighbors receive selective X-ray and water tint replays. Off restores the old range.',
       available: () => typeof held()?.setLocalReplayRingEnabled === 'function',
@@ -246,7 +251,7 @@
     if (!owner?.setGeneratedOutlineMode || !['shell','screen','none'].includes(mode)) return null;
     const actual = owner.setGeneratedOutlineMode(mode);
     const stored = loadStored();
-    if (actual === 'shell') delete stored.generatedOutlineMode; else stored.generatedOutlineMode = actual;
+    if (actual === (owner.defaultGeneratedOutlineMode || 'screen')) delete stored.generatedOutlineMode; else stored.generatedOutlineMode = actual;
     saveStored(stored);
     refreshInputs();
     return actual;
@@ -264,7 +269,7 @@
   }
 
   function reset() {
-    window.WorldRenderPipeline?.setGeneratedOutlineMode?.('shell');
+    window.WorldRenderPipeline?.setGeneratedOutlineMode?.(window.WorldRenderPipeline.defaultGeneratedOutlineMode || 'screen');
     for (const toggle of settingsToggles) if (toggle.available() && get(toggle.id) !== toggle.on) set(toggle.id, toggle.on);
     saveStored({});
     refreshInputs();
@@ -313,11 +318,11 @@
     if (window.WorldRenderPipeline?.setGeneratedOutlineMode) {
       const row = el('label', 'settings-row');
       const label = el('div', 'settings-label');
-      label.append(el('div','settings-name','Generated outlines (experiment)'), el('div','settings-desc','Keep master Outlines on. Screen-space uses visible curved-object depth; None keeps the composite and painterly without generated shell ink.'));
+      label.append(el('div','settings-name','Generated outlines'), el('div','settings-desc','Keep master Outlines on. Screen-space uses visible curved-object depth; None keeps the composite and painterly without generated shell ink.'));
       const select = el('select');
       select.id = 'settingRenderOpt_generatedOutlineMode';
       select.style.cssText = 'max-width:45%;background:rgba(255,255,255,.06);border:1px solid var(--border-bright);color:var(--text);align-self:center';
-      for (const [value, name] of [['shell','Shell (original)'],['screen','Screen-space depth'],['none','None']]) {
+      for (const [value, name] of [['shell','Shell (original)'],['screen','Screen-space depth (default)'],['none','None']]) {
         const option = el('option',null,name); option.value = value; select.appendChild(option);
       }
       select.value = window.WorldRenderPipeline.getGeneratedOutlineMode();

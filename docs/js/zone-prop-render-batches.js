@@ -35,7 +35,7 @@
 // ore rocks (faceted-rocks.js) are built with world-space vertices under an
 // identity transform, so their origins all sit at 0,0.
 // A batch is rebuilt only when its member set, a member's world matrix or its
-// geometry/attribute versions change. ZonePropRenderBatches.setEnabled(false)
+// geometry/attribute versions change. Dirty groups repair independently between timed discoveries. ZonePropRenderBatches.setEnabled(false)
 // is the A/B switch; snapshot() reports counts and per-reason rejections.
 (() => {
   'use strict';
@@ -62,8 +62,8 @@
 
   let enabled = true;
   const records = new WeakMap(); // scene -> { holder, batches: Map<key, batch> }
-  const motion = new WeakMap(); // mesh -> { sig: Float64Array, stillSince }
-  const stats = { frames: 0, sources: 0, batches: 0, rebuilds: 0, moving: 0, drawsSaved: 0, fastReuseFrames: 0, fullCollects: 0 };
+  const motion = new WeakMap(); // mesh -> last matrix, geometry/attribute references, versions and stillSince.
+  const stats = { frames: 0, sources: 0, batches: 0, rebuilds: 0, moving: 0, drawsSaved: 0, fastReuseFrames: 0, fullCollects: 0, partialRepairFrames: 0, repairedGroups: 0, emptyReuseFrames: 0 };
   const rejectReasons = {};
   const defaultBeforeRender = window.THREE?.Object3D?.prototype?.onBeforeRender;
   const defaultAfterRender = window.THREE?.Object3D?.prototype?.onAfterRender;
@@ -268,45 +268,49 @@
   function eligible(mesh) {
     if (!mesh.isMesh || mesh.isInstancedMesh || mesh.isSkinnedMesh) return false;
     if (mesh.userData?.hobunjiZonePropBatch) return false;
+    if (mesh.children?.length) return reject('children'); // Hiding a source must not hide its independently drawn descendants.
     if (mesh.onBeforeRender !== defaultBeforeRender) return reject('hook');
     const material = drawnMaterial(mesh);
     if (!(currentKind === 'furniture' && furnitureMaterialKey(mesh, material)) && !materialEligible(material)) return false;
     return geometryEligible(mesh.geometry, !isCustomShader(material));
   }
 
-  // Per-mesh motion signature: world matrix + geometry identity/versions. Any change restarts the still timer.
-  const SIG = 27;
-  const attributeIds = new WeakMap(); // Detect attribute replacement even when both versions are zero.
-  let nextAttributeId = 0;
-  function attributeId(attribute) {
-    if (!attribute) return 0;
-    let id = attributeIds.get(attribute);
-    if (!id) { id = ++nextAttributeId; attributeIds.set(attribute, id); }
-    return id;
+  // Compare live references/versions and matrices directly. The old path
+  // wrote 27 scratch slots and resolved five WeakMap attribute IDs on every
+  // settled member, only to discover that none of those values changed.
+  function sameMotion(entry, mesh) {
+    const g = mesh.geometry, a = g.attributes;
+    if (entry.geometry !== g || entry.position !== a.position || entry.normal !== a.normal
+      || entry.uv !== a.uv || entry.color !== a.color || entry.index !== g.index
+      || entry.positionVersion !== a.position.version || entry.normalVersion !== a.normal?.version
+      || entry.uvVersion !== a.uv?.version || entry.colorVersion !== a.color?.version
+      || entry.indexVersion !== g.index?.version) return false;
+    const e = mesh.matrixWorld.elements, previous = entry.matrix;
+    for (let i = 0; i < 16; i++) if (previous[i] !== e[i]) return false;
+    return true;
   }
-  function writeSignature(out, mesh) {
-    const e = mesh.matrixWorld.elements, g = mesh.geometry, a = g.attributes;
-    for (let i = 0; i < 16; i++) out[i] = e[i];
-    out[16] = g.id;
-    out[17] = a.position.version;
-    out[18] = a.normal ? a.normal.version : -1;
-    out[19] = a.uv ? a.uv.version : -1;
-    out[20] = a.color ? a.color.version : -1;
-    out[21] = g.index ? g.index.version : -1;
-    out[22] = attributeId(a.position);
-    out[23] = attributeId(a.normal);
-    out[24] = attributeId(a.uv);
-    out[25] = attributeId(a.color);
-    out[26] = attributeId(g.index);
+
+  function captureMotion(entry, mesh, t) {
+    const g = mesh.geometry, a = g.attributes;
+    entry.geometry = g;
+    entry.position = a.position; entry.positionVersion = a.position.version;
+    entry.normal = a.normal; entry.normalVersion = a.normal?.version;
+    entry.uv = a.uv; entry.uvVersion = a.uv?.version;
+    entry.color = a.color; entry.colorVersion = a.color?.version;
+    entry.index = g.index; entry.indexVersion = g.index?.version;
+    entry.matrix.set(mesh.matrixWorld.elements);
+    entry.stillSince = t;
   }
-  const scratchSig = new Float64Array(SIG);
+
   function isStill(mesh, t) {
-    writeSignature(scratchSig, mesh);
     let entry = motion.get(mesh);
-    if (!entry) { entry = { sig: new Float64Array(SIG), stillSince: t }; entry.sig.set(scratchSig); motion.set(mesh, entry); return false; } // First sight: a fresh spawn's world matrix may not be computed yet, so it waits out STILL_MS like a moving prop.
-    let changed = false;
-    for (let i = 0; i < SIG; i++) if (entry.sig[i] !== scratchSig[i]) { changed = true; break; }
-    if (changed) { entry.sig.set(scratchSig); entry.stillSince = t; }
+    if (!entry) {
+      entry = { matrix: new Float64Array(16), stillSince: t }; // Used only by this source's motion/geometry invalidation.
+      motion.set(mesh, entry);
+      captureMotion(entry, mesh, t);
+      return false;
+    }
+    if (!sameMotion(entry, mesh)) captureMotion(entry, mesh, t);
     return t - entry.stillSince >= STILL_MS;
   }
 
@@ -531,34 +535,80 @@
     return true;
   }
 
-  // A stable frame reuses known groups without rescanning every prop owner or
-  // rebuilding grouping keys. The authoritative matrix/geometry signatures
-  // are STILL compared each frame; a moving/edited batch member falls through
-  // to the full collector immediately, not at the next timed rescan.
-  function reuseSettledBatches(scene, record, t) {
-    if (!record.batches.size || t - record.collectedAt >= STABLE_COLLECT_MS) return null;
-    const hidden = []; // Collected without mutation; invalid fast paths leave every mesh visible.
-    for (const batch of record.batches.values()) {
-      const drawn = batch.mesh;
-      if (!drawn || batch.members.length < 2) return null;
-      for (const member of batch.members) {
-        if (!visibleInScene(member, scene)
-          || !member.isMesh || member.isInstancedMesh || member.isSkinnedMesh
-          || member.onBeforeRender !== defaultBeforeRender
-          || (batch.furnitureState ? !furnitureStateMatches(member, batch.furnitureState)
-            : (Array.isArray(member.material) ? drawnMaterial(member) : member.material) !== drawn.material)
-          || member.layers.mask !== drawn.layers.mask
-          || member.castShadow !== drawn.castShadow || member.receiveShadow !== drawn.receiveShadow
-          || member.renderOrder !== drawn.renderOrder || !settledMemberEligible(member, drawn.material)
-          || !isStill(member, t)) return null;
-        hidden.push(member);
-      }
+  function settledMemberMatches(member, batch, scene, t) {
+    const drawn = batch.mesh; // Fast comparison against the existing proxy's state.
+    return visibleInScene(member, scene)
+      && member.isMesh && !member.isInstancedMesh && !member.isSkinnedMesh && !member.children?.length
+      && member.onBeforeRender === defaultBeforeRender
+      && (batch.furnitureState ? furnitureStateMatches(member, batch.furnitureState)
+        : (Array.isArray(member.material) ? drawnMaterial(member) : member.material) === drawn.material)
+      && member.layers.mask === drawn.layers.mask
+      && member.castShadow === drawn.castShadow && member.receiveShadow === drawn.receiveShadow
+      && member.renderOrder === drawn.renderOrder && settledMemberEligible(member, drawn.material)
+      && isStill(member, t);
+  }
+
+  // A dirty cell/material group can be repaired from its own original members.
+  // New members and migrations into other groups wait for normal discovery,
+  // drawing as originals until then. Unrelated groups never need recollection.
+  function repairSettledBatch(scene, record, key, batch, t) {
+    const owners = new Map(); // Nearest-owner cache scoped to this dirty group.
+    const members = []; // Only still-eligible members with the original group key.
+    let owner = null;
+    for (const member of batch.members) {
+      if (!visibleInScene(member, scene)) continue;
+      const candidateOwner = ownerOf(member, owners);
+      if (!candidateOwner) continue;
+      currentKind = candidateOwner.kind;
+      if (!eligible(member)) continue;
+      if (!isStill(member, t)) { stats.moving++; continue; }
+      if (groupKey(member, candidateOwner) !== key) continue;
+      owner ||= candidateOwner;
+      members.push(member);
     }
+    record.holder.remove(batch.mesh);
+    disposeBatch(batch);
+    record.batches.delete(key);
+    markBatchMembershipChanged(scene);
+    stats.repairedGroups++;
+    if (members.length < 2) return null;
+    const replacement = { mesh: null, members: [], builtAt: 0 }; // Fresh clone for any changed furniture state.
+    buildBatch(window.THREE, record, replacement, members, owner, t);
+    record.batches.set(key, replacement);
+    return replacement;
+  }
+
+  // undefined requests a full timed collection; null means no draw swap.
+  // Empty collections also observe the discovery cadence, avoiding repeated
+  // traversal in scenes that currently have no eligible settled groups.
+  function reuseSettledBatches(scene, record, t) {
+    if (t - record.collectedAt >= STABLE_COLLECT_MS) return undefined;
+    if (!record.batches.size) { stats.emptyReuseFrames++; return null; }
+    const hidden = []; // Validate/repair every group before hiding any originals.
+    let repaired = false;
+    // Snapshot only the keys requiring repair: replacing a Map entry during
+    // iteration would otherwise revisit the replacement in the same frame.
+    const dirty = [];
+    for (const [key, batch] of record.batches) {
+      let valid = !!batch.mesh && batch.members.length >= 2;
+      if (valid) for (const member of batch.members) {
+        if (!settledMemberMatches(member, batch, scene, t)) { valid = false; break; }
+      }
+      if (!valid) dirty.push([key, batch]);
+      else for (const member of batch.members) hidden.push(member);
+    }
+    for (const [key, batch] of dirty) {
+      repaired = true;
+      const replacement = repairSettledBatch(scene, record, key, batch, t);
+      if (replacement) for (const member of replacement.members) hidden.push(member);
+    }
+    if (repaired) stats.partialRepairFrames++;
+    else stats.fastReuseFrames++;
+    if (!hidden.length) return null;
     for (const member of hidden) member.visible = false;
     record.holder.visible = true;
     stats.sources = hidden.length; stats.batches = record.batches.size;
     stats.drawsSaved = hidden.length - record.batches.size;
-    stats.fastReuseFrames++;
     return function restoreStableBatches() {
       for (const member of hidden) member.visible = true;
       record.holder.visible = false;
@@ -582,7 +632,7 @@
     // at its previous pose, then its changed matrix drops it out of the batch until it settles again.
     const record = recordFor(scene);
     const fastRestore = reuseSettledBatches(scene, record, t); // Skips per-frame owner scans and grouping when unchanged.
-    if (fastRestore) return fastRestore;
+    if (fastRestore !== undefined) return fastRestore;
     record.collectedAt = t;
     stats.fullCollects++;
     const groups = new Map();
@@ -608,9 +658,10 @@
       if (!batch) { batch = { mesh: null, members: [], builtAt: 0 }; record.batches.set(key, batch); }
       if (!isCurrent(batch, members)) buildBatch(THREE, record, batch, members, group.owner, t);
       batch.mesh.visible = true;
-      for (const member of members) { member.visible = false; hidden.push(member); }
+      for (const member of members) hidden.push(member);
     }
     if (!hidden.length) return null;
+    for (const member of hidden) member.visible = false; // Commit visibility only after every proxy build succeeds.
     record.holder.visible = true;
     stats.sources = hidden.length;
     stats.batches = record.batches.size;

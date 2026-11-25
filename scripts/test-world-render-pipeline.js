@@ -306,3 +306,39 @@ console.log('PASS world render pipeline: pass order, scopes, frame hooks, failur
   p.setGeneratedOutlineMode('shell');
   assert.ok(h.renders(h.frame()).some(r=>r.override===p.materials.shell));
 }
+
+{
+  const h = createWorldRenderPipelineHarness({outlineMode:'default'}).init();
+  assert.equal(h.pipeline.defaultGeneratedOutlineMode,'screen');
+  assert.equal(h.pipeline.getGeneratedOutlineMode(),'screen');
+  assert.equal(h.pipeline.setGeneratedOutlineMode('invalid'),'screen');
+  assert.ok(!h.renders(h.frame()).some(r=>r.override===h.pipeline.materials.shell));
+}
+
+
+// The census includes hidden descendants, not just nodes the color pass draws.
+// It is strictly diagnostic and never changes transforms or visibility.
+{
+  const h=createWorldRenderPipelineHarness().init(), p=h.pipeline;
+  const scene={isScene:true,visible:true,children:[
+    {name:'WildernessChunk_0_2',visible:false,children:[
+      {isMesh:true,visible:true,matrixAutoUpdate:true,children:[]},
+      {isMesh:true,visible:true,matrixAutoUpdate:false,children:[]}
+    ]},
+    {userData:{hobunjiZonePropBatchHolder:true},visible:false,matrixAutoUpdate:false,children:[
+      {isMesh:true,visible:true,matrixAutoUpdate:false,children:[]}
+    ]},
+    {isMesh:true,name:'actor',visible:true,children:[]}
+  ]};
+  const census=p.sceneMatrixCensus(scene);
+  assert.equal(census.nodes,6);
+  assert.equal(census.meshes,4);
+  assert.equal(census.hiddenNodes,5);
+  assert.equal(census.hiddenMeshes,3);
+  assert.equal(census.autoLocalMatrices,3);
+  assert.equal(census.hiddenAutoLocalMatrices,2);
+  assert.equal(census.renderProxyNodes,2);
+  assert.equal(census.largestBranches[0].category,'wilderness chunk');
+  assert.equal(scene.children[0].children[0].visible,true);
+  assert.equal(p.sceneMatrixCensus({}),null);
+}

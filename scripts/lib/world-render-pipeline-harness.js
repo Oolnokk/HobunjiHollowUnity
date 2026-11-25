@@ -148,6 +148,8 @@ function createWorldRenderPipelineHarness(overrides = {}) {
           cloudForestFog: () => harness.settings.cloudForestFog,
         },
       });
+      // Existing pass-order fixtures explicitly exercise the legacy shell path.
+      if (overrides.outlineMode !== 'default') harness.pipeline.setGeneratedOutlineMode('shell');
       return harness;
     },
     frame(now = 1000) { log.length = 0; harness.pipeline.renderFrame(now); return log.slice(); },

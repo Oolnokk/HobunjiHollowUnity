@@ -57,6 +57,7 @@
     const THREE = window.THREE;
     const grp = c.avatarRef?.group;
     if (!color || !THREE?.Points || !grp?.parent?.add || !THREE.BufferGeometry) return;
+    if (window.Combat?.shouldPresentCombatVfx?.(c) === false) return; // Cosmetic spray only; corpse logic still runs.
     const positions = new Float32Array(DEATH_BLOOD_PARTICLES * 3); // Local emitter positions animated in _updateSprays each frame.
     const velocities = new Float32Array(DEATH_BLOOD_PARTICLES * 3); // Single-use initial radial velocities for the same emitter.
     const away = Number(c.deathAwayAngle) || 0;
@@ -75,7 +76,7 @@
     geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
     const material = new THREE.PointsMaterial({
       color, size: 0.065, sizeAttenuation: true, transparent: true,
-      depthWrite: false, opacity: 0.98,
+      depthWrite: false, depthTest: true, fog: true, opacity: 0.98,
     });
     const points = new THREE.Points(geometry, material);
     points.position.copy(grp.position);

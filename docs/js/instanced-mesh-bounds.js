@@ -16,6 +16,9 @@
   const box = new THREE.Box3(), instBox = new THREE.Box3(), matrix = new THREE.Matrix4();
   const cache = new WeakMap(); // InstancedMesh -> { key, sphere } in mesh-local space.
   const tracked = []; // WeakRef<InstancedMesh> for the camera-pass cull; pruned while iterating.
+  const trackedSet = new WeakSet(); // Deduplicate retagging when a batch refreshes its bounds.
+  const bricks = []; // Brick-only iteration; grass and forest instances never enter this list.
+  const brickSet = new WeakSet(); // Deduplicate brick enrollment without retaining disposed meshes.
 
   // Mesh-local sphere around every instance, or null when nothing finite.
   function localSphere(mesh) {
@@ -54,22 +57,31 @@
   // for meshes Three already culls by authored bounds (only the replay cull
   // needs the tag) or whose instances are scattered too widely to help.
   function tag(mesh, { track = true } = {}) {
-    if (!mesh?.isInstancedMesh || mesh.userData.hobunjiInstanceBounds === true) return mesh;
+    if (!mesh?.isInstancedMesh) return mesh;
+    const alreadyTagged = mesh.userData.hobunjiInstanceBounds === true; // Preserve the original replay-only enrollment contract.
     mesh.userData.hobunjiInstanceBounds = true;
-    if (track && typeof WeakRef === 'function') tracked.push(new WeakRef(mesh));
+    if (track && typeof WeakRef === 'function') {
+      if (!alreadyTagged && !trackedSet.has(mesh)) { trackedSet.add(mesh); tracked.push(new WeakRef(mesh)); }
+      if (trackedSet.has(mesh) && mesh.userData.hobunjiBrickLod === true && !brickSet.has(mesh)) {
+        brickSet.add(mesh); bricks.push(new WeakRef(mesh));
+      }
+    }
     return mesh;
   }
 
-  function forEachTracked(callback) {
+  function visitTracked(list, callback) {
     let kept = 0;
-    for (let i = 0; i < tracked.length; i++) {
-      const ref = tracked[i], mesh = ref.deref();
+    for (let i = 0; i < list.length; i++) {
+      const ref = list[i], mesh = ref.deref();
       if (!mesh) continue;
-      tracked[kept++] = ref;
+      list[kept++] = ref;
       callback(mesh);
     }
-    tracked.length = kept;
+    list.length = kept;
   }
 
-  root.InstancedMeshBounds = Object.freeze({ localSphere, worldSphere, tag, forEachTracked, PAD });
+  function forEachTracked(callback) { visitTracked(tracked, callback); }
+  function forEachTrackedBrick(callback) { visitTracked(bricks, callback); }
+
+  root.InstancedMeshBounds = Object.freeze({ localSphere, worldSphere, tag, forEachTracked, forEachTrackedBrick, PAD });
 })(typeof window !== 'undefined' ? window : globalThis);

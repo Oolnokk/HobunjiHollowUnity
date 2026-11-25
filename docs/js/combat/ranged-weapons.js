@@ -418,7 +418,7 @@
   }
   function isLoaded(itemKey, owner = null) {
     if (owner) return owner._rangedLoaded !== false;
-    if (!playerLoaded.has(itemKey)) playerLoaded.set(itemKey, true);
+    if (!playerLoaded.has(itemKey)) return defFor(itemKey)?.rangedType !== 'thrown'; // Registration defaults are lazy; explicit gameplay state always wins.
     return playerLoaded.get(itemKey);
   }
 

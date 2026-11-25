@@ -84,7 +84,8 @@
 
   // Created by init(). Names kept from game.js so its old comments still match.
   let shellOutlineMat = null;
-  let generatedOutlineMode = 'shell'; // Experimental generated-outline selector; master Outlines still controls the composite.
+  const DEFAULT_GENERATED_OUTLINE_MODE = 'screen'; // User-selected shipped default and settings reset authority.
+  let generatedOutlineMode = DEFAULT_GENERATED_OUTLINE_MODE; // Experimental generated-outline selector; master Outlines still controls the composite.
   let shellMaskMaterial = null; // Unexpanded, front-facing geometry for the selective screen-space mode.
   let shellMaskRT = null; // Allocated only in screen-space mode, reused between frames.
   let targetOutlineGreenMat = null;
@@ -792,9 +793,57 @@
     return api;
   }
 
+  // On-demand matrix-work census for Pixel Probe, never called by renderFrame.
+  // Three r128's native updateMatrixWorld visits hidden descendants too; this
+  // measures their count, not their CPU time or whether any particular node is safe to freeze.
+  function sceneMatrixCensus(scene = deps?.getActiveScene?.()) {
+    if (!scene?.isScene) return null;
+    const totals = { nodes: 0, meshes: 0, hiddenNodes: 0, hiddenMeshes: 0, autoLocalMatrices: 0, hiddenAutoLocalMatrices: 0, renderProxyNodes: 0 };
+    const groups = new Map(); // Aggregates top-level scene branches by their existing runtime category.
+    function count(node, inheritedHidden, inheritedProxy, bucket) {
+      const hidden = inheritedHidden || node.visible === false;
+      const data = node.userData || {};
+      const proxy = inheritedProxy || data.hobunjiRenderProxy === true || data.hobunjiZonePropBatchHolder === true;
+      for (const target of [totals, bucket]) {
+        target.nodes++;
+        if (node.isMesh) target.meshes++;
+        if (hidden) {
+          target.hiddenNodes++;
+          if (node.isMesh) target.hiddenMeshes++;
+        }
+        if (node.matrixAutoUpdate !== false) {
+          target.autoLocalMatrices++;
+          if (hidden) target.hiddenAutoLocalMatrices++;
+        }
+        if (proxy) target.renderProxyNodes++;
+      }
+      for (const child of node.children || []) count(child, hidden, proxy, bucket);
+    }
+    for (const root of scene.children || []) {
+      const data = root.userData || {};
+      const category = data.hobunjiZonePropBatchHolder ? 'prop batch holder'
+        : data.denseForestWall ? 'dense forest wall'
+        : data.terrainRenderChunkSource ? 'terrain chunk source'
+        : data.hobunjiStaticBatchGroup ? 'static batch group'
+        : data.backgroundScenery ? 'background scenery'
+        : /^WildernessChunk_/i.test(root.name || '') ? 'wilderness chunk'
+        : String(root.name || root.type || 'unnamed').replace(/[_-]\\d+(?:[_-]\\d+)*$/,'');
+      let bucket = groups.get(category);
+      if (!bucket) {
+        bucket = { category, roots: 0, nodes: 0, meshes: 0, hiddenNodes: 0, hiddenMeshes: 0, autoLocalMatrices: 0, hiddenAutoLocalMatrices: 0, renderProxyNodes: 0 };
+        groups.set(category,bucket);
+      }
+      bucket.roots++;
+      count(root,scene.visible === false,false,bucket);
+    }
+    return { ...totals, rootCount: scene.children?.length || 0,
+      largestBranches: [...groups.values()].sort((a,b)=>b.nodes-a.nodes).slice(0,12) };
+  }
+
   const api = {
     init,
     renderFrame,
+    sceneMatrixCensus,
     resize,
     // Tagging
     markShellOutline,
@@ -816,6 +865,7 @@
     get materials() { return { shell: shellOutlineMat, targetAllowed: targetOutlineGreenMat, targetBlocked: targetOutlineRedMat, seamId: _furnitureIdMat, composite: _postMat }; },
     get targets() { return { main: _mainRT, seamId: _edgeIdRT }; },
     get camera() { return deps?.camera || null; }, // The gameplay camera every world pass uses (diagnostics).
+    defaultGeneratedOutlineMode: DEFAULT_GENERATED_OUTLINE_MODE,
     getGeneratedOutlineMode: () => generatedOutlineMode,
     setGeneratedOutlineMode,
     getOutlineRenderingConfig: () => JSON.parse(JSON.stringify(outlineRenderingConfig)),

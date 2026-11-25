@@ -133,7 +133,7 @@
   function tick(entity, toolDefs) {
     const enchanted = entity?.rosterRecord?.enchantedWeapon;
     if (!enchanted?.visual) return;
-    if (!entity.avatarRef?.group?.parent) { entity._enchantFx?.dispose?.(); entity._enchantFx = null; return; }
+    if (!entity.avatarRef?.group?.parent || window.Combat?.shouldPresentCombatVfx?.(entity, entity.scene) === false) { entity._enchantFx?.dispose?.(); entity._enchantFx = null; return; }
     const now = performance.now();
     const dt = Math.min(0.05, Math.max(0, (now - (entity._enchantFxAt || now)) / 1000));
     entity._enchantFxAt = now;

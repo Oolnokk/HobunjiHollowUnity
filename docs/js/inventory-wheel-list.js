@@ -28,26 +28,34 @@
 
   function init(injected) {
     deps = injected;
+    cache.frame = -1; cache.builtAt = -Infinity; cache.eligible = null; // Reinitialization cannot inherit another world's wheel list.
     return window.InventoryWheelList;
   }
 
-  function sameInputs(keys, eligible, held) {
-    const { ITEM_DEFS, inventoryItems } = deps;
-    if (cache.eligible !== eligible || cache.held !== held || keys.length !== cache.keys.length || inventoryItems.length !== cache.catalog.length) return false;
-    for (let i = 0; i < keys.length; i++) if (keys[i] !== cache.keys[i] || ITEM_DEFS[keys[i]] !== cache.defs[i]) return false;
-    for (let i = 0; i < inventoryItems.length; i++) if (inventoryItems[i] !== cache.catalog[i]) return false;
+  function sameInputs(eligible, held) {
+    const { inventory, ITEM_DEFS, inventoryItems } = deps;
+    if (cache.eligible !== eligible || cache.held !== held || inventoryItems.length !== cache.catalog.length) return false;
+    // Validate membership without allocating/filtering a new key array on every
+    // hot read. Direct inventory mutations remain visible in the same frame.
+    let i = 0;
+    for (const key in inventory) {
+      if (!Object.prototype.hasOwnProperty.call(inventory, key) || key === 'gold' || !ITEM_DEFS[key] || !(inventory[key] > 0)) continue;
+      if (key !== cache.keys[i] || ITEM_DEFS[key] !== cache.defs[i]) return false;
+      i++;
+    }
+    if (i !== cache.keys.length) return false;
+    for (let j = 0; j < inventoryItems.length; j++) if (inventoryItems[j] !== cache.catalog[j]) return false;
     return true;
   }
 
   function getStackItems() {
     const { inventory, ITEM_DEFS, inventoryItems } = deps;
-    const keys = Object.keys(inventory).filter(key => key !== 'gold' && ITEM_DEFS[key] && (inventory[key] || 0) > 0); // Checks ownership changes immediately, even between two actions in one frame.
     const eligible = window.ItemProcessing.isWheelEligible; // A replacement eligibility provider also invalidates the list.
     const held = deps.getManualHeldItem();
     const frame = deps.getFrameSerial();
     cache.reads++;
     const fresh = cache.frame === frame || (crossFrame && now() - cache.builtAt < REFRESH_MS);
-    if (fresh && sameInputs(keys, eligible, held)) {
+    if (fresh && sameInputs(eligible, held)) {
       if (cache.frame !== frame) { cache.crossFrameReuses++; cache.frame = frame; }
       return cache.stacks;
     }
@@ -63,6 +71,7 @@
     });
     cache.frame = frame;
     cache.builtAt = now();
+    const keys = Object.keys(inventory).filter(key => key !== 'gold' && ITEM_DEFS[key] && (inventory[key] || 0) > 0); // Allocate only on cache rebuild.
     cache.keys = keys;
     cache.defs = keys.map(key => ITEM_DEFS[key]);
     cache.catalog = inventoryItems.slice();

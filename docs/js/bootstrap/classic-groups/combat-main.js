@@ -5,7 +5,7 @@
   const scriptUrls = [
     "js/input-hold-timing.js?v=20261116tapHoldAudit2",
     "js/combat/weapon-shape-stats.js?v=20261122hShapeFootingOnce",
-    "js/combat/combat-core.js?v=20261124rootledoot1",
+    "js/combat/combat-core.js?v=20261125deepHotpaths1",
     "js/combat/enemy-search-ai.js?v=20261110h608e181",
     "js/combat/impact-blend-library.js?v=20260828b",
     "js/combat/impact-ragdoll-playback.js?v=20261123proneQuatNorm3",
@@ -23,7 +23,7 @@
     "js/combat/combat-input.js?v=20261123autoTargetDisabled1",
     "js/combat/attack-pose-templates.js?v=20261115h01bf772",
     "js/combat/combat-combo.js?v=20261117hypedCombo3",
-    "js/combat/combat-quickattacks.js?v=20261117hypedQuick3",
+    "js/combat/combat-quickattacks.js?v=20261125deepAudit1",
     "js/combat/combat-mounted.js?v=20261116mountedCombat1",
     "js/combat/combat-counter-shield.js?v=20261106trinkets20",
     "js/combat/combat-blink-dodge.js?v=20261118ghostOptIn1",

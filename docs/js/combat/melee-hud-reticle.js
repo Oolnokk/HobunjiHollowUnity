@@ -163,6 +163,7 @@
     let lungePx = 0;
     let halfConeRad = Math.PI / 8;
     let kind = attackId || 'empty';
+    let sharedQuickProfile = null; // Both HUD and opportunity cue consume the actual quick attack profile.
 
     if (slotId === 'tap1') {
       const steps = comboData[attackId];
@@ -175,6 +176,7 @@
     } else if (slotId === 'tap2') {
       const tech = quickData.TECHNIQUES?.[attackId];
       if (tech) {
+        sharedQuickProfile = quickData.getReachProfile?.(deps, attackId, effects) || null;
         rangePx = base.rangePx * (tech.rangeMul ?? 1) * (quickData.RANGE_SCALE ?? 0.6) * (1 + (stats.rangeMul || 0));
         lungePx = deps.TILE * (quickData.LUNGE_TILE_MUL ?? 0) * (1 + (stats.lungeMul || 0));
         halfConeRad = THREE.MathUtils.degToRad(tech.halfConeDeg ?? 18);
@@ -197,8 +199,13 @@
     }
 
     halfConeRad = Math.min(Math.PI, halfConeRad * (1 + (stats.coneWidthMul || 0))); // Readiness uses the same AoE width perk as the live strike; reach remains unchanged.
+    if (sharedQuickProfile) {
+      rangePx = sharedQuickProfile.rangePx;
+      lungePx = sharedQuickProfile.horizontalLungePx ?? sharedQuickProfile.lungePx;
+      halfConeRad = sharedQuickProfile.halfConeRad;
+    }
     const attackRangePx = Math.max(0, rangePx);
-    const reachPx = Math.max(attackRangePx, lungePx);
+    const reachPx = sharedQuickProfile?.reachPx ?? Math.max(attackRangePx, lungePx);
     return {
       slotId,
       slotLabel: SLOT_LABELS[SLOT_IDS.indexOf(slotId)],
@@ -207,6 +214,7 @@
       attackRangePx,
       lungePx: Math.max(0, lungePx),
       reachPx,
+      previewColliderRangePx: sharedQuickProfile?.previewColliderRangePx ?? reachPx, // The hitbox probe projects the vector length itself.
       halfConeRad,
       label: window.Combat.abilities?.get?.(attackId)?.label || attackId || 'Empty',
     };
@@ -226,7 +234,8 @@
       deps.player.avatarRef?.group?.position?.y || 0.55,
       deps.player.y / deps.TILE,
     );
-    const aim = new THREE.Vector3(Number(direction.x) || 1, Number(direction.y) || 0, Number(direction.z) || 0).normalize();
+    const ax = Number(direction.x) || 0, ay = Number(direction.y) || 0, az = Number(direction.z) || 0; // Zero X is a valid north/south aim.
+    const aim = new THREE.Vector3(ax * ax + ay * ay + az * az < 1e-8 ? 1 : ax, ay, az).normalize();
     let maxReachPx = 0;
     for (const profile of slotProfiles) if (profile.attackId && profile.reachPx > maxReachPx) maxReachPx = profile.reachPx;
     const maxReachWorld = maxReachPx / deps.TILE + OUT_OF_REACH_MARGIN_WORLD;
@@ -282,7 +291,7 @@
         if (outOfReach || !profile.attackId || profile.reachPx <= 0) return false;
         try {
           const result = window.Combat?.meleeHit?.(deps.player, target, {
-            rangePx: profile.reachPx,
+            rangePx: profile.previewColliderRangePx ?? profile.reachPx,
             halfConeRad: profile.halfConeRad,
             direction: aim,
             debug: false,

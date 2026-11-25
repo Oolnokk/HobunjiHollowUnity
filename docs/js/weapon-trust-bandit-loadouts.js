@@ -140,13 +140,12 @@
       ?? weights.scatterbow
       ?? 1);
 
-    // Generated dual-role item definitions are patched into RangedWeapons.config.
-    // Calling the existing patcher here makes the capability check resilient to
-    // script timing and means this bridge never needs a second Kylie/B'shuakauitl list.
-    global.HobunjiRangedWeaponArchetypes?.patchGeneratedDefinitions?.();
-    for (const shapeKey of culturalShapesForSpecies(speciesId)) {
-      if (!metalKey) continue;
-      const itemKey = banditDeps?.craftedToolItemKey?.(shapeKey, metalKey) || `${shapeKey}_${metalKey}`;
+    // Only this species/material's cultural candidates need registration.
+    // The shared archetype owner still decides which shapes support ranged use.
+    const keys = metalKey ? culturalShapesForSpecies(speciesId).map(shapeKey =>
+      banditDeps?.craftedToolItemKey?.(shapeKey, metalKey) || `${shapeKey}_${metalKey}`) : [];
+    if (keys.length) global.HobunjiRangedWeaponArchetypes?.patchGeneratedDefinitions?.({ npcOnly: true, keys });
+    for (const itemKey of keys) {
       if (!global.RangedWeapons?.config?.[itemKey]) continue;
       weights[itemKey] = Math.max(0, Number.isFinite(baseCulturalWeight) ? baseCulturalWeight : 1);
     }
