@@ -302,7 +302,7 @@
     },
     "caveSkeletonBody": {
       "label": "Cave Catacomb Skeleton (Body)",
-      "note": "Grave goods on the Mao'ao skeleton bodies lying in cave catacombs (docs/js/cave-site-system.js); worn rags are added by the bandit corpse loot path.",
+      "note": "Grave goods inside Mao'ao catacomb coffins. A 30% regional mastery roll is followed on a miss by a 40% ghoul tablet roll; the latter may teach either damage type. Other sources retain their existing chances.",
       "entries": [
         {
           "id": "gold",
@@ -907,6 +907,9 @@
               "stat_walkSpeedMul_0p1"
             ]
           }
+        },
+        "chanceBySource": {
+          "caveSkeletonBody": 0.3
         }
       }
     },
@@ -1003,6 +1006,9 @@
               "stat_zipCostMul_p0p15"
             ]
           }
+        },
+        "chanceBySource": {
+          "caveSkeletonBody": 0.3
         }
       }
     },
@@ -1097,6 +1103,9 @@
               "stat_zipDistanceMul_0p18"
             ]
           }
+        },
+        "chanceBySource": {
+          "caveSkeletonBody": 0.3
         }
       }
     },
@@ -1193,6 +1202,9 @@
               "stat_staminaCostMul_p0p15"
             ]
           }
+        },
+        "chanceBySource": {
+          "caveSkeletonBody": 0.3
         }
       }
     },
@@ -1871,6 +1883,9 @@
               "stat_zipDistanceMul_0p2"
             ]
           }
+        },
+        "chanceBySource": {
+          "caveSkeletonBody": 0.4
         }
       }
     },

@@ -338,7 +338,10 @@ assert(mineMap.oreRocks.length >= 7, 'ore-rich cave reuses oreRock mechanic at r
 const catMap = decorate(profile('map_i_test_catacomb', 'catacomb'));
 assert(catMap.caveProps.filter(item => item.key === 'ruinSanctumCoffin').length >= 3, 'catacomb places authored coffin props');
 assert(!catMap.furniture.some(item => /^ruin/.test(item.itemKey)), 'authored ruin pieces stay out of FURNITURE_DEFS-keyed mapData.furniture');
-assert(catMap.caveBodies.length >= 8, "catacomb has a whole lot of Mao'ao skeleton bodies lying around");
+assert(catMap.caveBodies.length >= 2 && catMap.caveBodies.length <= 10, 'compact catacomb has fewer, contained bodies');
+const coffinProps=catMap.caveProps.filter(item=>item.key==='ruinSanctumCoffin');
+assert(catMap.caveBodies.every(body=>coffinProps.some(coffin=>coffin.id===body.coffinId&&coffin.col===body.col&&coffin.row===body.row)), 'every skeleton belongs inside its own authored coffin');
+assert.equal(new Set(catMap.caveBodies.map(body=>body.coffinId)).size,catMap.caveBodies.length,'no two bodies share a coffin');
 assert(!catMap.caveGhoulSpawns, 'ghouls are deep-mine morlocks, not catacomb guardians');
 assert.equal(catMap.creatureSpawns.length, 0, 'cave without an animal den keeps no den creature spawns');
 
@@ -542,6 +545,7 @@ function assertSpaced(map) {
   const features = [...map.oreRocks, ...(map.caveProps || []).filter(prop => !prop.embedded), ...(map.caveBodies || []), ...(map.caveMushrooms || []), ...(map.caveBanditSpawns || []), ...(map.caveTraps || [])]; // All feature centres used to check cross-layer spacing.
   for (let i = 0; i < features.length; i++) for (let j = i + 1; j < features.length; j++) {
     if (features[i].caveSeparator && features[j].caveSeparator) continue; // Five mineable wall strata deliberately touch each other.
+    if([features[i],features[j]].some((body,k)=>body.coffinId===[features[j],features[i]][k].id&&[features[j],features[i]][k].key==='ruinSanctumCoffin'))continue; // Only a body and its own coffin may intentionally share a tile.
     assert(Math.hypot(features[i].col - features[j].col, features[i].row - features[j].row) >= 1.4, `${map.id}: ${JSON.stringify(features[i])} too close to ${JSON.stringify(features[j])}`);
   }
 }
@@ -970,12 +974,26 @@ console.log(`PASS cave-site-system: ${workspace.animalDens.length} anchors -> ${
   await Cave.__test.bodySpawnPromises.get('map_i_test_catacomb');
   const records = Cave.__test.bodiesByMapId.get('map_i_test_catacomb');
   assert.equal(records.length, bodiesPlan.length, 'every planned body is laid out');
-  assert(records.every(r => r.entity.state === 'corpse' && corpseObjects.has(r.entity)), 'bodies are settled, lootable corpses');
+  assert(records.every(r => r.entity.state === 'corpse' && !corpseObjects.has(r.entity) && r.entity._caveCoffinSealed), 'closed bodies are settled but cannot be targeted for loot');
   assert(records.every(r => r.entity.speciesId === 'mao-ao-skeleton' && r.entity.lootHoldSeconds === 2 && r.entity.keepCorpseAfterLoot), "Mao'ao skeleton bodies need a 2s hold and stay where they lie once searched");
   assert(records.every(r => r.entity.def.lootPool === 'caveSkeletonBody'), 'bodies roll the grave-goods loot pool');
   assert.equal(hostiles.size, 0, 'bodies are not live enemies until one rises');
 
-  // Search one body: the looted state is persisted by id.
+  // Open one coffin and wait for the authored transition before search becomes available.
+  for(const record of records)record.riser=false;
+  const firstBody=records[0].body;
+  deps.player.x=(firstBody.exitCol+.5)*deps.TILE;deps.player.y=(firstBody.exitRow+.5)*deps.TILE;
+  const coffinAction=Cave.objectAt('map_i_test_catacomb',firstBody.col,firstBody.row);
+  assert.equal(coffinAction.getButtons()[0].action,'obj_open_cave_coffin');
+  assert(coffinAction.onAction('obj_open_cave_coffin').ok);
+  assert(!coffinAction.onAction('obj_open_cave_coffin').ok,'stale presses cannot restart opening');
+  assert(!corpseObjects.has(records[0].entity),'animation must finish before search');
+  Cave.updateCurrentCaveRuntime(1);
+  assert(corpseObjects.has(records[0].entity)&&!records[0].entity._caveCoffinSealed,'open body becomes searchable');
+  assert(Cave.canSearchBody(records[0].entity),'current open corpse can be searched');
+  deps.getCurrentArea=()=> 'map_other';
+  assert(!Cave.canSearchBody(records[0].entity),'stale interaction cannot loot from another map');
+  deps.getCurrentArea=()=> 'map_i_test_catacomb';
   records[0].entity.corpseLooted = true;
   Cave.updateCurrentCaveRuntime(1);
   assert(Cave.debugSnapshot().currentState.lootedBodies.includes(records[0].body.id), 'searched bodies are remembered');
@@ -984,18 +1002,34 @@ console.log(`PASS cave-site-system: ${workspace.animalDens.length} anchors -> ${
   for (const r of records) { r.riser = false; r.armedAt = null; } // An earlier update may already have armed a randomly chosen riser; start its timer fresh.
   const riser = records[1];
   riser.riser = true;
-  deps.player.x = (riser.body.col + 0.5) * deps.TILE; deps.player.y = (riser.body.row + 0.5) * deps.TILE;
+  deps.player.x = (riser.body.exitCol + 0.5) * deps.TILE; deps.player.y = (riser.body.exitRow + 0.5) * deps.TILE;
   Cave.updateCurrentCaveRuntime(1);
   assert(riser.armedAt != null && riser.delay >= 3 && riser.delay <= 12, 'walking close arms a 3-12s delay');
   const oldCorpse = riser.entity;
   Cave.updateCurrentCaveRuntime(riser.delay - 0.5);
   assert(!riser.risen && !riser.rising, 'nothing happens before the delay runs out');
   Cave.updateCurrentCaveRuntime(1);
+  assert(!riser.risen && !riser.rising,'restless corpse first opens its own coffin');
+  const exits=riser.body.exits;
+  const blockers=exits.map(p=>({areaId:'map_i_test_catacomb',health:1,x:(p.col+.5)*deps.TILE,y:(p.row+.5)*deps.TILE}));
+  for(const actor of blockers)hostiles.add(actor);
+  Cave.updateCurrentCaveRuntime(1);
+  assert(!riser.risen&&!riser.rising,'no emergence into occupied exits');
+  for(const actor of blockers)hostiles.delete(actor);
+  deps.player.x=(riser.body.col+.5)*deps.TILE;deps.player.y=(riser.body.row+.5)*deps.TILE; // Fixture frees every reserved exit.
+  Cave.updateCurrentCaveRuntime(1);
   await new Promise(resolve => setImmediate(resolve));
   await new Promise(resolve => setImmediate(resolve));
-  assert(riser.risen, 'the restless body rises after its delay');
+  assert(riser.risen, 'the restless body rises after a safe exit is free');
   assert(hostiles.has(riser.entity) && riser.entity.state === 'chase', 'it comes up fighting');
+  assert(riser.body.exits.some(p=>riser.entity.x===(p.col+.5)*deps.TILE&&riser.entity.y===(p.row+.5)*deps.TILE),'emerges beyond the solid coffin');
+  if(riser.body.exits.length>1)assert.notEqual(riser.entity.x+','+riser.entity.y,deps.player.x+','+deps.player.y,'uses the alternate exit instead of spawning on the player');
+  assert(Cave.__test.coffinBlocksBox({col:0,row:0,rotY:90,id:'test'}, {},.5,.5,.1,null),'coffin center is solid');
+  assert(!Cave.__test.coffinBlocksBox({col:0,row:0,rotY:90,id:'test'}, {},1.5,.5,.1,null),'exit side stays clear');
+  assert(Cave.__test.coffinBlocksBox({col:0,row:0,rotY:90,id:'test'}, {openedCoffins:['test']},-.5,.5,.1,null),'open lid is also solid');
   assert(!corpseObjects.has(oldCorpse) && despawned.includes(oldCorpse), 'the corpse is replaced where it lay');
+  assert(!Cave.canSearchBody(oldCorpse),'replaced corpse cannot be searched');
+  assert(!Cave.canSearchBody({...records[0].entity,corpseLooted:false}),'copied record cannot bypass spent state');
   assert.deepEqual(riser.entity.rosterRecord.equippedCosmetics, ['rugged_poncho'], 'an unsearched body rises in its own rags');
   console.log(`PASS cave catacomb bodies: ${records.length} bodies, riser up after ${riser.delay.toFixed(1)}s`);
 })().catch(error => { console.error(error); process.exitCode = 1; });
