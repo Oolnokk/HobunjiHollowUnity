@@ -914,6 +914,7 @@
             deps.scene.add(mesh);
             mesh.layers.enable(1);
             cropMeshes[i] = mesh;
+            window.HobunjiCropSpriteArt?.registerPlaceholder?.(mesh); // Deferred until the frame hook, after growth/position are set below.
           }
 
           const mesh = cropMeshes[i];
@@ -1178,6 +1179,7 @@
   }
 
   window.VegetationCropRendering = {
+    registersCropSpritePlaceholders: true, // Lets the crop-art bridge stop periodic full-scene scans when both producers are updated.
     buildStandaloneCropMesh,
     init(injectedDeps) {
       init(injectedDeps);
