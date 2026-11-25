@@ -60,7 +60,7 @@ const files = [
   'js/trinket-system.js?v=20261122enemyTrinketAdd1', // Enemy Workshop spawns use the same equipment definitions and additive stat provider as gameplay.
   'js/combat/weapon-shape-stats.js?v=20261122hShapeFootingOnce',
   'js/combat/combat-combo.js?v=20261107combo1501a',
-  'js/combat/combat-quickattacks.js?v=20261125deepHotpaths1',
+  'js/combat/combat-quickattacks.js?v=20261125deepAudit1',
   'js/combat/combat-charged-breaker.js?v=20261028a',
   'js/combat/combat-counter-shield.js?v=20261028a',
   'js/combat/ranged-weapons.js?v=20261125deepHotpaths1',
@@ -85,8 +85,8 @@ const files = [
   'js/drunk-locomotion.js?v=20261117hRigDrunk1',
   'js/drunk-prone-composition-bridge.js?v=20261119h8e395a6',
   'config/weapon-trust-visits.js?v=20261109hpahugift1',
-  'js/weapon-trust-bandit-loadouts.js?v=20261125deepHotpaths1',
-  'js/combat/ranged-weapon-archetypes.js?v=20261125deepHotpaths1',
+  'js/weapon-trust-bandit-loadouts.js?v=20261125deepAudit1',
+  'js/combat/ranged-weapon-archetypes.js?v=20261125deepAudit1',
   'tools/enemy-loadout-editor/source-data.js?v=20261122hSourceHealth1',
 ];
 const copy = (value) => JSON.parse(JSON.stringify(value));
