@@ -51,7 +51,13 @@
     })[character]);
   }
 
+  let lastPolledRefreshAt = -Infinity; // Per-frame callers poll refresh(false); countdown fills only change by tenths of a percent, so 10 Hz is visually identical.
   function refresh(forceRebuild = false) {
+    if (!forceRebuild && typeof performance !== 'undefined') {
+      const t = performance.now();
+      if (t - lastPolledRefreshAt < 100) return; // Was an element lookup, an entries array and a renderKey string on every frame, even with no effects.
+      lastPolledRefreshAt = t;
+    }
     const bar = document.getElementById('buffBar'); // Used as the existing top-right effect container.
     if (!bar) return;
     styleDebug.refreshes++;
