@@ -880,10 +880,16 @@
 
   function openCoffin(mapId,coffin,state) {
     if(!coffin||Number.isFinite(coffin.openStartedAt)||(state.openedCoffins||[]).includes(coffin.id))return false;
-    const player=wildlifeDeps?.player,tile=Number(wildlifeDeps?.TILE)||32;
-    // Do not introduce a solid moving lid around the player's existing footprint.
-    if(player&&coffinBlocksBox(coffin,{openedCoffins:[coffin.id]},player.x/tile,player.y/tile,.3,null)&&
-      !coffinBlocksBox(coffin,state,player.x/tile,player.y/tile,.3,null))return false;
+    const tile=Number(wildlifeDeps?.TILE)||32;
+    const opened={openedCoffins:[coffin.id]}; // Test the full lid sweep before making it solid.
+    function wouldTrap(actor,half){
+      return actor&&Number.isFinite(actor.x)&&Number.isFinite(actor.y)&&
+        coffinBlocksBox(coffin,opened,actor.x/tile,actor.y/tile,half,null)&&
+        !coffinBlocksBox(coffin,state,actor.x/tile,actor.y/tile,half,null);
+    }
+    if(wouldTrap(wildlifeDeps?.player,.3))return false;
+    for(const set of [wildlifeDeps?.hostileObjects,wildlifeDeps?.companionObjects])
+      for(const actor of set||[])if(actor.areaId===mapId&&actor.health>0&&wouldTrap(actor,.32))return false; // Do not trap another cave inhabitant under a moving lid.
     coffin.openStartedAt=caveClock;
     state.openedCoffins||=[];
     state.openedCoffins.push(coffin.id);
@@ -898,7 +904,11 @@
     window.AreaFootprintBlockers?.remove?.(id);
     if(!plan?.coffins?.length)return;
     window.AreaFootprintBlockers?.register?.(id,{area:mapId,
-      blocksBox:(x,z,half,worldY)=>plan.coffins.some(coffin=>coffinBlocksBox(coffin,state,x,z,half,worldY)),
+      enabled:()=>plansByMapId.get(mapId)===plan, // Reject a stale scene's provider after plan replacement.
+      blocksBox:(x,z,half,worldY)=>{
+        const current=runtimeStateBySignature.get(plan.profile.signature)||state; // Save restore can replace a state object without rebuilding its scene.
+        return plan.coffins.some(coffin=>coffinBlocksBox(coffin,current,x,z,half,worldY));
+      },
     }); // Cached footprint data; no scene traversal.
   }
 
@@ -1933,8 +1943,8 @@
     const tileSize = Number(wildlifeDeps?.TILE) || 32;
     restoreCoffinState(plan,state);
     const looted = new Set(state.lootedBodies || []);
+    const records=[]; // Kept outside the async body so a rejected portrait build can dispose already-created occupants.
     const promise = (async () => {
-      const records = [];
       for (const body of plan.bodies) {
         const x = (body.col + 0.5) * tileSize, y = (body.row + 0.5) * tileSize;
         const entity = await makeSkeleton(mapId, x, y, { state: 'idle', caveBodyId: body.id });
@@ -1948,27 +1958,43 @@
       if(plansByMapId.get(mapId)===plan&&wildlifeDeps?.getCurrentArea?.()===mapId)bodiesByMapId.set(mapId,records);
       else for(const record of records){devSpawnerDeps?.corpseObjects?.delete?.(record.entity);devSpawnerDeps?.despawnCreature?.(record.entity);} // Leaving mid-load cannot cache a partial population.
       window.__farmLog?.(`[cave-sites] laid out ${records.length} skeleton bodies in ${mapId} (${records.filter(r => r.riser).length} restless).`, 'world');
-    })().catch(error => window.__farmLog?.(`[cave-sites] body spawn failed for ${mapId}: ${error.message}`, 'warn'))
+    })().catch(error => {
+      for(const record of records){devSpawnerDeps?.corpseObjects?.delete?.(record.entity);devSpawnerDeps?.despawnCreature?.(record.entity);}
+      window.__farmLog?.(`[cave-sites] body spawn failed for ${mapId}: ${error.message}`, 'warn');
+    })
       .finally(() => { if (bodySpawnPromises.get(mapId) === promise) bodySpawnPromises.delete(mapId); });
     bodySpawnPromises.set(mapId, promise);
   }
 
   // A restless body gets up the same way the sanctum lich raises its dead: a
   // fresh skeleton from the same roster replaces the corpse where it lies.
+  function clearEmergenceExit(mapId,record,preferred=null){
+    const tile=Number(wildlifeDeps?.TILE)||32; // Convert reserved tile centers to native actor positions.
+    const exits=preferred?[preferred]:(record.body.exits||[{col:record.body.exitCol,row:record.body.exitRow}]);
+    return exits.find(p=>{
+      const x=(p.col+.5)*tile,y=(p.row+.5)*tile;
+      if(window.AreaFootprintBlockers?.blocksBox?.(mapId,x/tile,y/tile,.32,null))return false;
+      const near=actor=>actor&&Math.hypot(x-actor.x,y-actor.y)<tile*.7;
+      if(near(wildlifeDeps?.player))return false;
+      for(const set of [wildlifeDeps?.hostileObjects,wildlifeDeps?.companionObjects])
+        for(const actor of set||[])if(actor.areaId===mapId&&actor.health>0&&near(actor))return false;
+      return true;
+    })||null;
+  }
+
   async function raiseBody(mapId, record) {
+    const exit=clearEmergenceExit(mapId,record); // No fallback to a tile occupied by the player or another living actor.
+    if(!exit)return;
     record.rising = true;
     const corpse = record.entity;
     corpse._caveBodyRising=true; // Reject stale search actions while replacing the corpse.
     const base = corpse.rosterRecord || null;
     const roster = base ? (corpse.corpseLooted ? { ...base, equippedCosmetics: [], cosmeticSlots: {}, appliedDyes: {} } : base) : null; // Searched bodies rise without the rags the player took.
     const tileSize=Number(wildlifeDeps?.TILE)||32;
-    const player=wildlifeDeps?.player;
-    const exits=record.body.exits||[{col:record.body.exitCol,row:record.body.exitRow}];
-    const exit=exits.find(p=>!player||Math.hypot((p.col+.5)*tileSize-player.x,(p.row+.5)*tileSize-player.y)>=tileSize*.7)||exits[0];
     let minion;
     try{minion=await makeSkeleton(mapId,(exit.col+.5)*tileSize,(exit.row+.5)*tileSize,{state:'chase',caveBodyId:record.body.id},roster);}
     catch(error){window.__farmLog?.('[cave-sites] skeleton emergence failed: '+error.message,'warn');}
-    if(!minion||wildlifeDeps?.getCurrentArea?.()!==mapId||!bodiesByMapId.get(mapId)?.includes(record)){if(minion)devSpawnerDeps?.despawnCreature?.(minion);record.rising=false;corpse._caveBodyRising=false;return;}
+    if(!minion||wildlifeDeps?.getCurrentArea?.()!==mapId||!bodiesByMapId.get(mapId)?.includes(record)||!clearEmergenceExit(mapId,record,exit)){if(minion)devSpawnerDeps?.despawnCreature?.(minion);record.rising=false;corpse._caveBodyRising=false;return;} // The player can move into the exit while the replacement portrait loads.
     if (corpse.corpseLooted) minion.corpseLooted = true; // Killing it again yields nothing new.
     devSpawnerDeps?.corpseObjects?.delete?.(corpse);
     devSpawnerDeps?.despawnCreature?.(corpse);
@@ -2004,11 +2030,21 @@
       }
       if(caveClock-record.armedAt>=record.delay&&distance<=BODY_RISE_MAX_DISTANCE_TILES){
         if(coffinProgress(coffin,state)<1){openCoffin(profile.mapId,coffin,state);continue;}
+        if(!clearEmergenceExit(profile.mapId,record))continue; // Wait instead of interrupting a search for a rise that cannot happen safely.
         if(window.CorpseHoldLoot?.debugSnapshot?.()?.holdId==='corpse_'+record.entity.id)window.CorpseHoldLoot.interrupt();
         raiseBody(profile.mapId,record);
       }
     }
     if (lootedChanged) persistState();
+  }
+
+  function canSearchBody(entity){
+    if(!entity?.caveBodyId||entity.state!=='corpse'||entity.corpseLooted||entity._caveBodyRising||entity._caveCoffinSealed)return false;
+    const mapId=entity.caveSiteMapId,player=wildlifeDeps?.player,tile=Number(wildlifeDeps?.TILE)||32;
+    if(wildlifeDeps?.getCurrentArea?.()!==mapId||!player||Math.hypot(player.x-entity.x,player.y-entity.y)>tile*2.25)return false;
+    const profile=sitesByMapId.get(mapId);
+    return !!profile&&!!bodiesByMapId.get(mapId)?.some(record=>record.entity===entity)&&
+      !(stateFor(profile).lootedBodies||[]).includes(entity.caveBodyId); // Validate the exact live record, not merely its reusable body ID.
   }
 
   function recordBodyLooted(entity){
@@ -2251,6 +2287,7 @@
     buildInteriorProps,
     senseTargets,
     objectAt,
+    canSearchBody,
     recordBodyLooted,
     resetCave,
     isZoneOccupied,
@@ -2290,6 +2327,7 @@
       bodySpawnPromises,
       coffinBlocksBox,
       coffinProgress,
+      clearEmergenceExit,
     }),
   });
 
