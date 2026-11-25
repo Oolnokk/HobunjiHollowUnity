@@ -53,11 +53,12 @@
       const resolved = scaleApi.scaleFor(identity.speciesId, identity.gender); // Canonical authored tuple; body x/y are used to counter-compensate the head before the parent scale lands later.
       const child = window.PNGPlaneAvatar?.childScaleFor?.(options) || null; // Child body is already applied to the whole portrait; the head shrinks less.
       const childHeadFactor = child ? child.headFactor : 1;
+      const childHeadFactorX = child ? child.headFactorX : 1; // Head width cancels the separate child portrait-width modifier.
       const applied = scaleApi.applyHeadCompensation(
         root,
         identity.speciesId,
         identity.gender,
-        child ? { ...resolved, childHeadFactor } : resolved,
+        child ? { ...resolved, childHeadFactor, childHeadFactorX } : resolved,
         identity.age,
       );
 
@@ -76,6 +77,9 @@
         headOffsetY: resolved.offsetY,
         age: identity.age, // Read back by HobunjiCharacterRigScale.ageFor when hands later reapply head compensation.
         childHeadFactor, // Read back by HobunjiCharacterRigScale.applyHeadCompensation on later reapplication.
+        childHeadFactorX, // Preserve head aspect ratio on subsequent hand/portrait rig rescaling.
+        childBodyWidthScale: child?.width ?? null,
+        childBodyHeightScale: child?.height ?? null,
         childBodyScale: child ? child.body : null,
         bodyScaleX: resolved.x,
         bodyScaleY: resolved.y,
