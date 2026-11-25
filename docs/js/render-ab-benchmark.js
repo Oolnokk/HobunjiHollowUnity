@@ -341,6 +341,11 @@
     if (typeof propBatches?.setEnabled === 'function' && propBatches.snapshot?.().enabled === true && propBatches.snapshot().batches > 0) {
       variants.push({ id: 'propBatchesOff', apply: () => propBatches.setEnabled(false), undo: () => propBatches.setEnabled(true) });
     }
+    const instanceBounds = window.InstancedMeshBounds;
+    if (typeof instanceBounds?.setSceneScopedEnabled === 'function') {
+      const before = instanceBounds.snapshot().sceneScopedEnabled;
+      variants.push({ id: before ? 'globalInstanceRegistry' : 'sceneInstanceRegistry', apply: () => instanceBounds.setSceneScopedEnabled(!before), undo: () => instanceBounds.setSceneScopedEnabled(before) });
+    }
     const brickLod = window.InstancedBrickLod;
     if (typeof brickLod?.setEnabled === 'function' && brickLod.enabled() && brickLod.snapshot().farMeshes > 0) {
       variants.push({ id: 'brickLodOff', apply: () => brickLod.setEnabled(false), undo: () => brickLod.setEnabled(true) });
