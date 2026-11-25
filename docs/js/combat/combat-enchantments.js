@@ -107,10 +107,10 @@
       description: 'Each hit adds 6 Undertow Stamina. Ordinary Stamina recovery must clear Undertow point for point before restoring Stamina; Black-Stamina recovery is unaffected. Values scale with Immundanity.',
     }),
     stonebind: Object.freeze({
-      id: 'stonebind', displayName: 'Stonebind', type: 'Base', alignment: 'Hronal',
+      id: 'stonebind', displayName: 'Leadbound', type: 'Base', alignment: 'Hronal',
       icon: '⛰', scalable: Object.freeze({ amount: true }),
-      hitAffliction: Object.freeze({ id: 'calcifiedFooting', amount: 5 }),
-      description: 'Each hit adds 5 Calcified Footing. When ordinary Footing is lost, calcification is consumed to inflict equal additional loss, limited to remaining Footing. Values scale with Immundanity.',
+      hitAffliction: Object.freeze({ id: 'leadboundStamina', amount: 5 }),
+      description: 'Each hit adds 5 Leadbound Stamina. Movement speed, dodge speed and lunge distance fall by 0.75% per point, up to 75%. Ordinary Stamina expenditure removes it first; it also naturally recovers. Values scale with Immundanity.',
     }),
     soulweight: Object.freeze({
       id: 'soulweight', displayName: 'Soulweight', type: 'Base', alignment: 'Kanthic',
@@ -131,10 +131,10 @@
       description: 'Grants 8 Current Stamina, usable exclusively for dodge costs at two ordinary Stamina per point. Values scale with Immundanity; Flurry hits grant one quarter.',
     }),
     bedrock: Object.freeze({
-      id: 'bedrock', displayName: 'Bedrock', type: 'Flourish', alignment: 'Hronal',
+      id: 'bedrock', displayName: 'Tempered', type: 'Flourish', alignment: 'Hronal',
       icon: '◆', flurryBehavior: 'numeric', scalable: Object.freeze({ amount: true }),
-      grantAffliction: Object.freeze({ id: 'hearthstoneFooting', amount: 10 }),
-      description: 'Grants 10 Hearthstone Footing. Each point absorbs one Footing damage and restores one ordinary Stamina when consumed. Values scale with Immundanity; Flurry hits grant one quarter.',
+      grantAffliction: Object.freeze({ id: 'temperedFooting', amount: 10 }),
+      description: 'Grants 10 Tempered Footing. Each point increases Attack Power (affliction buildup) by 2%, up to +200%. Each point absorbs one Footing damage; it does not naturally decay. Values scale with Immundanity; Flurry hits grant one quarter.',
     }),
     blackBargain: Object.freeze({
       id: 'blackBargain', displayName: 'Black Bargain', type: 'Flourish', alignment: 'Kanthic',
