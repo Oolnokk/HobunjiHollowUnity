@@ -356,6 +356,11 @@
       variants.push({ id: 'brickLodOff', apply: () => brickLod.setEnabled(false), undo: () => brickLod.setEnabled(true) });
     }
     const wallBatches = window.DenseForestWallBatches;
+    if (typeof wallBatches?.setStaticMatrixEnabled === 'function' && wallBatches.staticMatrixSnapshot().enrolled > 0
+        && activeScene?.getObjectByName?.('AuthoredCloudForestDenseChunk_0')) {
+      const before = wallBatches.staticMatrixSnapshot().enabled; // Restore actual user preference, independent of batching.
+      variants.push({ id: before ? 'staticWallMatricesOff' : 'staticWallMatricesOn', apply: () => wallBatches.setStaticMatrixEnabled(!before), undo: () => wallBatches.setStaticMatrixEnabled(before) });
+    }
     if (typeof wallBatches?.setEnabled === 'function' && wallBatches.snapshot?.().enabled === true && wallBatches.snapshot().batches > 0) {
       variants.push({ id: 'denseWallBatchesOff', apply: () => wallBatches.setEnabled(false), undo: () => wallBatches.setEnabled(true) });
       if (wallBatches.snapshot().lodEnabled === true && wallBatches.snapshot().lodFarTrees > 0) {
