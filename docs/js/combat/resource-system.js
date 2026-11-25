@@ -531,7 +531,7 @@
     windFootingRemainders.set(entity, Math.max(0, total - spend));
     if (spend > 0) {
       spendFooting(entity, spend, "Windblown movement");
-      if (entity.footing <= 0 && !entity.prone) onDepleted?.(entity, motion.windX, motion.windY);
+      if (entity.footing <= 0 && !entity.prone) (onDepleted || window.Combat?.deps?.movementFootingDepleted)?.(entity, motion.windX, motion.windY);
     }
   }
 
@@ -640,6 +640,7 @@
   }
 
   function initEntity(entity) {
+    windDirections.delete(entity); windFootingRemainders.delete(entity); windMotionFrames.delete(entity); // Reused player/spawn objects cannot carry a prior member's motion runtime.
     entity.afflictions = { ...defaultAfflictions(), ...(entity.afflictions || {}) };
     // Old sensory-only Fey segments are not carried over into the new exertion-based afflictions.
     for (const obsolete of ["phantomWoundsHealth", "phantomBloodHealth", "phantomPainFooting", "undertowStamina", "calcifiedFooting", "hearthstoneFooting"]) delete entity.afflictions[obsolete];
@@ -1482,6 +1483,12 @@
     beginMovementFrame,
     windMovementHandled,
     hasWindblown,
+    movementDebug: entity => ({ // Mobile diagnostics; no per-frame DOM work.
+      walk: movementMultiplier(entity, 'walk'), dodgeLunge: movementMultiplier(entity, 'dodge'),
+      windblown: getAffliction(entity, 'windblownStamina'),
+      windYawDeg: hasWindblown(entity) ? windblownDirection(entity).angle * 180 / Math.PI : null,
+      dementedYawDeg: (Number(window.FeyIllusions?.movementRotationRad?.(entity)) || 0) * 180 / Math.PI,
+    }),
     attackTempoMultiplier,
     planarAmountMultiplier,
     registerStatModifierProvider,
