@@ -89,13 +89,14 @@
 
   function normalizeEntry(entry) {
     if (!entry) return entry;
-    entry.level = clampInt(entry.level, 0, maxLevelForEntry(entry));
-    entry.stableXp = entry.level >= maxLevelForEntry(entry) ? 0 : clampInt(entry.stableXp, 0, Number.MAX_SAFE_INTEGER);
+    const role = roleForEntry(entry); // Resolve once; later modules can extend the live perk tree.
+    const cap = role === 'companion' ? MAX_LEVEL : OTHER_ROLE_MAX_LEVEL;
+    entry.level = clampInt(entry.level, 0, cap);
+    entry.stableXp = entry.level >= cap ? 0 : clampInt(entry.stableXp, 0, Number.MAX_SAFE_INTEGER);
     if (!entry.animalPerks || typeof entry.animalPerks !== 'object' || Array.isArray(entry.animalPerks)) entry.animalPerks = {};
-    const role = roleForEntry(entry);
-    const allowed = new Map((TREES[role] || []).map(def => [def.id, def]));
+    const allowed = TREES[role] || []; // Inspect the current definitions, not a stale map of mutable trees.
     for (const [perkId, rawRank] of Object.entries(entry.animalPerks)) {
-      const def = allowed.get(perkId);
+      const def = allowed.find(item => item.id === perkId);
       if (!def) { delete entry.animalPerks[perkId]; continue; }
       entry.animalPerks[perkId] = clampInt(rawRank, 0, def.maxRank);
     }
@@ -196,6 +197,12 @@
   }
 
   function awardXp(entryOrId, rawAmount, source = 'service') {
+    return applyXp(entryOrId, rawAmount, source, saveStable);
+  }
+
+  // Only the scheduler's synchronous XP batch uses a different persistence callback.
+  // Public awards still persist immediately, including combat and training events.
+  function applyXp(entryOrId, rawAmount, source, persist) {
     const entry = typeof entryOrId === 'string' ? findStableEntry(entryOrId) : entryOrId;
     if (!entry) return { ok: false, levels: 0, amount: 0 };
     normalizeEntry(entry);
@@ -212,7 +219,7 @@
       levels++;
     }
     if (entry.level >= maxLevelForEntry(entry)) entry.stableXp = 0;
-    saveStable();
+    persist();
     if (levels) {
       currentDeps()?.showToast?.(`🐾 ${entry.name || entry.kind || 'Animal'} reached level ${entry.level}! +${levels} training point${levels === 1 ? '' : 's'}.`, true);
       window.__farmLog?.(`[stable-level] ${entry.id} +${levels} level(s) from ${source}; now ${entry.level}.`, 'farm');
@@ -244,13 +251,13 @@
     return 1 + perkRank(entry, 'keenSenses') * 0.10;
   }
 
-  function serviceXpTick(now) {
+  function serviceXpTick(now, award) {
     if (now - lastServiceXpAt < SERVICE_TICK_MS) return;
     lastServiceXpAt = now;
     for (const role of ['companion', 'mount', 'shoulderPet']) {
       const entry = activeEntryForRole(role);
-      if (!entry || !roleIsPresent(role)) continue;
-      awardXp(entry, SERVICE_XP, `${role}-active`);
+      if (!entry || !liveRoleActor(role)) continue; // The entry was already resolved above.
+      award(entry, SERVICE_XP, `${role}-active`);
     }
   }
 
@@ -292,12 +299,23 @@
     return !!(enemy?._rangedMode && enemy?.def?.rangedWeaponKey);
   }
 
+  function alertPerks(entry) {
+    normalizeEntry(entry);
+    const perks = entry?.animalPerks;
+    return {
+      heavyWindup: !!perks?.[ALERTS.heavyWindup.perk],
+      quickOpportunity: !!perks?.[ALERTS.quickOpportunity.perk],
+      rangedFocus: !!perks?.[ALERTS.rangedFocus.perk],
+    };
+  }
+
   function alertKindsForTarget(enemy, shoulderEntry = activeEntryForRole('shoulderPet')) {
     if (!enemy || !shoulderEntry) return [];
+    const perks = alertPerks(shoulderEntry);
     const out = [];
-    if (perkRank(shoulderEntry, ALERTS.heavyWindup.perk) && heavyWindupActive(enemy)) out.push('heavyWindup');
-    if (perkRank(shoulderEntry, ALERTS.quickOpportunity.perk) && quickOpportunityActive(enemy)) out.push('quickOpportunity');
-    if (perkRank(shoulderEntry, ALERTS.rangedFocus.perk) && rangedFocusActive(enemy)) out.push('rangedFocus');
+    if (perks.heavyWindup && heavyWindupActive(enemy)) out.push('heavyWindup');
+    if (perks.quickOpportunity && quickOpportunityActive(enemy)) out.push('quickOpportunity');
+    if (perks.rangedFocus && rangedFocusActive(enemy)) out.push('rangedFocus');
     return out;
   }
 
@@ -385,25 +403,22 @@
     vocals.warning(pet, cfg.reason, opts);
   }
 
-  function syncAlertAura(enemy, kind, active, now) {
-    const map = auraMapFor(enemy);
-    let bundle = map.get(kind) || null;
+  function syncAlertAura(enemy, kind, active, now, scene, anchor, pet, petEntry, award) {
+    const existing = alertAuras.get(enemy); // Do not allocate a map for an inactive warning.
+    let bundle = existing?.get(kind) || null;
     if (!active) {
-      if (bundle) { disposeAura(bundle); map.delete(kind); }
-      if (!map.size) alertAuras.delete(enemy);
+      if (bundle) { disposeAura(bundle); existing.delete(kind); }
+      if (existing && !existing.size) alertAuras.delete(enemy);
       return false;
     }
-    const root = targetRoot(enemy);
-    const scene = root && targetScene(root);
-    const anchor = root && window.WorldPopupText?.avatarCentroidWorld?.(root);
-    if (!root || !scene || !anchor) return false;
+    if (!scene || !anchor) return false;
     if (!bundle) {
       bundle = makeAura(enemy, kind);
       if (!bundle) return false;
-      map.set(kind, bundle);
+      auraMapFor(enemy).set(kind, bundle);
       scene.add(bundle.sprite);
-      alertVocalization(liveRoleActor('shoulderPet'), kind);
-      awardXp(activeEntryForRole('shoulderPet'), 3, `alert:${kind}`);
+      alertVocalization(pet, kind);
+      award(petEntry, 3, `alert:${kind}`);
     } else if (bundle.sprite.parent !== scene) {
       bundle.sprite.parent?.remove?.(bundle.sprite);
       scene.add(bundle.sprite);
@@ -417,12 +432,14 @@
     return true;
   }
 
-  function updateShoulderAlerts(now) {
+  function updateShoulderAlerts(now, award) {
     const combat = window.Combat;
     const deps = combat?.deps;
     const petEntry = activeEntryForRole('shoulderPet');
     const pet = liveRoleActor('shoulderPet');
     if (!deps?.player || !petEntry || !pet) { clearAllAuras(); return; }
+    const perks = alertPerks(petEntry); // One live normalization per callback, not three per enemy.
+    if (!perks.heavyWindup && !perks.quickOpportunity && !perks.rangedFocus) { clearAllAuras(); return; }
     const tile = Math.max(1, Number(deps.TILE) || 64);
     const maxRange = tile * ALERT_RANGE_TILES;
     const area = deps.getCurrentArea?.();
@@ -432,8 +449,20 @@
       if (area && enemy.areaId && enemy.areaId !== area) continue;
       if (Math.hypot(enemy.x - deps.player.x, enemy.y - deps.player.y) > maxRange) continue;
       liveEnemies.add(enemy);
-      const kinds = new Set(alertKindsForTarget(enemy, petEntry));
-      for (const kind of Object.keys(ALERTS)) syncAlertAura(enemy, kind, kinds.has(kind), now);
+      const heavy = perks.heavyWindup && heavyWindupActive(enemy);
+      const quick = perks.quickOpportunity && quickOpportunityActive(enemy);
+      const ranged = perks.rangedFocus && rangedFocusActive(enemy);
+      if (!heavy && !quick && !ranged && !alertAuras.has(enemy)) continue;
+      const root = heavy || quick || ranged ? targetRoot(enemy) : null;
+      const scene = root && targetScene(root);
+      // All three warnings use the same actor centroid; resolve it once, only when needed.
+      const anchorPerf = window.PerfProfiler?.begin('stable animals: warning anchor');
+      let anchor;
+      try { anchor = scene && window.WorldPopupText?.avatarCentroidWorld?.(root); }
+      finally { window.PerfProfiler?.end(anchorPerf); }
+      syncAlertAura(enemy, 'heavyWindup', heavy, now, scene, anchor, pet, petEntry, award);
+      syncAlertAura(enemy, 'quickOpportunity', quick, now, scene, anchor, pet, petEntry, award);
+      syncAlertAura(enemy, 'rangedFocus', ranged, now, scene, anchor, pet, petEntry, award);
     }
     for (const enemy of [...alertAuras.keys()]) {
       if (liveEnemies.has(enemy)) continue;
@@ -444,8 +473,23 @@
   }
 
   function alertFrame(now) {
-    serviceXpTick(now);
-    updateShoulderAlerts(now);
+    let dirty = false; // All service/alert XP from this synchronous callback shares one save.
+    const award = (entry, amount, source) => applyXp(entry, amount, source, () => { dirty = true; });
+    const profiler = window.PerfProfiler;
+    try {
+      const service = profiler?.begin('stable animals: service XP');
+      try { serviceXpTick(now, award); }
+      finally { profiler?.end(service); }
+      const alerts = profiler?.begin('stable animals: shoulder alerts');
+      try { updateShoulderAlerts(now, award); }
+      finally { profiler?.end(alerts); }
+    } finally {
+      if (dirty) {
+        const persistence = profiler?.begin('stable animals: XP save');
+        try { saveStable(); }
+        finally { profiler?.end(persistence); }
+      }
+    }
   }
 
   function ensureAlertFrame() {
