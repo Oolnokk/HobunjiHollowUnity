@@ -234,9 +234,8 @@
       deps.player.avatarRef?.group?.position?.y || 0.55,
       deps.player.y / deps.TILE,
     );
-    const aim = new THREE.Vector3(Number(direction.x) || 0, Number(direction.y) || 0, Number(direction.z) || 0);
-    if (aim.lengthSq() < 1e-8) aim.set(1, 0, 0); // A valid zero X component must not rotate a north/south aim.
-    aim.normalize();
+    const ax = Number(direction.x) || 0, ay = Number(direction.y) || 0, az = Number(direction.z) || 0; // Zero X is a valid north/south aim.
+    const aim = new THREE.Vector3(ax * ax + ay * ay + az * az < 1e-8 ? 1 : ax, ay, az).normalize();
     let maxReachPx = 0;
     for (const profile of slotProfiles) if (profile.attackId && profile.reachPx > maxReachPx) maxReachPx = profile.reachPx;
     const maxReachWorld = maxReachPx / deps.TILE + OUT_OF_REACH_MARGIN_WORLD;
@@ -292,7 +291,7 @@
         if (outOfReach || !profile.attackId || profile.reachPx <= 0) return false;
         try {
           const result = window.Combat?.meleeHit?.(deps.player, target, {
-            rangePx: profile.previewColliderRangePx,
+            rangePx: profile.previewColliderRangePx ?? profile.reachPx,
             halfConeRad: profile.halfConeRad,
             direction: aim,
             debug: false,
