@@ -119,7 +119,9 @@
   function invalidateStaticMatrixBranch(node) {
     const state = staticOwners.get(node); // Explicit owner API before any leaf transform/manual matrix or update-hook edit.
     if (!state || state.retired) return false;
-    state.ready = false;
+    // Introducing a writer ends the immutable-leaf contract, even if its
+    // first edit leaves identity intact. Do not silently re-cache later.
+    retireStatic(state);
     staticStats.explicitInvalidations++;
     return true;
   }
@@ -159,9 +161,12 @@
 
   function updateStaticWallWorld(force) {
     const state = staticOwners.get(this); // Root-specific, no scan of inactive scenes.
-    if (!staticMatrixEnabled || walkingScene !== this.parent || !state || state.retired) {
+    if (!staticMatrixEnabled || !walkingScene || walkingScene !== this.parent || !state || state.retired) {
       if (state) state.ready = false; // Explicit calls outside the scene recursion are always native.
-      return nativeWorld.call(this, force);
+      // Preserve a later Group/Object3D prototype update hook instead of
+      // bypassing it through our captured r128 method.
+      const current = T.Group.prototype.updateMatrixWorld; // All enrolled roots are exact THREE.Group instances.
+      return (typeof current === 'function' && current !== updateStaticWallWorld ? current : nativeWorld).call(this, force);
     }
     if (state.ready && validStaticRoot(this, state)) {
       staticStats.skippedBranches++;
@@ -181,7 +186,8 @@
     if (String(T?.REVISION) !== '128' || typeof nativeWorld !== 'function'
       || typeof nativeLocal !== 'function' || !staticHookInstalled
       || window.OutlineRenderPerformance?.staticWallTopologyNotifications !== true
-      || !group?.parent?.isScene || group.parent.parent !== null
+      || !group?.isGroup || Object.getPrototypeOf(group) !== T.Group.prototype
+      || !group.parent?.isScene || group.parent.parent !== null
       || group.userData?.denseForestWall !== true || group.userData?.backgroundScenery !== true
       || group.updateMatrixWorld !== nativeWorld || group.updateMatrix !== nativeLocal
       || !group.children.length || staticOwners.has(group)) return false;
@@ -220,6 +226,7 @@
     appliesTo: ctx => staticMatrixEnabled && ctx.worldScene && ctx.scene?.autoUpdate === true
       && staticScenes.has(ctx.scene) && ctx.scene.updateMatrixWorld === nativeWorld
       && T.Object3D.prototype.updateMatrixWorld === nativeWorld && T.Object3D.prototype.updateMatrix === nativeLocal
+      && T.Group.prototype.updateMatrixWorld === nativeWorld && T.Group.prototype.updateMatrix === nativeLocal
       && T.InstancedMesh.prototype.updateMatrixWorld === nativeWorld && T.InstancedMesh.prototype.updateMatrix === nativeLocal,
     before(ctx) {
       const hadOwn = Object.prototype.hasOwnProperty.call(ctx.scene, 'updateMatrixWorld'); // Restore exact original property shape.
