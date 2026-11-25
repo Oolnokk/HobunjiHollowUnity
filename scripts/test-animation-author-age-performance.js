@@ -84,7 +84,8 @@ assert.equal(rigPassCalls, 3, 'hand-only drags must not recompute body/head tran
 assert.equal(lookups, initialLookups, 'cached hand visual refs prevent repeated recursive scene graph searches');
 assert.equal(entries[2].limbs.get('left_hand_visual').scale.x, 2 * 1.49, 'last slider input wins, without compounding');
 
-for (let i = 50; i <= 80; i++) api.applyAgeModifiers('body', String(i));
+for (let i = 50; i <= 80; i++) api.applyAgeModifiers('width', String(i));
+for (let i = 40; i <= 65; i++) api.applyAgeModifiers('height', String(i));
 for (let i = 100; i <= 130; i++) api.applyAgeModifiers('head', String(i));
 assert.equal(scheduled.size, 1, 'mixed body/head drag events must share one frame');
 flush();
