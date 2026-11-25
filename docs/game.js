@@ -7248,6 +7248,16 @@
         }
       }
 
+      // The wildlife visual LOD is keyed to the LOCAL camera, but its `hidden` result also drops a
+      // creature to the coarse 5 Hz AI tick. A creature streamed out for this client can still be
+      // fighting another player, so that player keeps it on the full-rate simulation (host side of
+      // co-op). Always false in single-player (one registered player, the local one).
+      function simulationKeptAwakeByOtherPlayer(c) {
+        const reg = window.ActorRegistry;
+        if (reg.playerCount() < 2) return false;
+        const other = reg.distanceToNearestPlayer(c.x, c.y, { areaId: c.areaId, strict: true, filter: p => !reg.isLocalPlayer(p) });
+        return other / TILE < window.WildlifeVisualLod.wakeRadius();
+      }
       function updateWildlifeVisualLod(c, distanceTiles) {
         const hidden = window.WildlifeVisualLod.update(c, distanceTiles); // Promotes data-only actors through the same distance owner.
         if (hidden) releaseInactiveCreatureTextures(c);
@@ -7360,7 +7370,7 @@
             if (c.avatarRef?.group) c.avatarRef.group.visible = true;
           }
           const initialDistanceTiles = Math.hypot(player.x - c.x, player.y - c.y) / TILE; // Wakes a far creature immediately when the player crosses the nearer LOD boundary.
-          const initiallyLodSleeping = updateWildlifeVisualLod(c, initialDistanceTiles); // Selects full-rate or accumulated coarse simulation for this frame.
+          const initiallyLodSleeping = updateWildlifeVisualLod(c, initialDistanceTiles) && !simulationKeptAwakeByOtherPlayer(c); // Selects full-rate or accumulated coarse simulation for this frame.
           let entityDt = dt; // Carries accumulated elapsed time through the unchanged AI state machine on coarse far-wildlife ticks.
           if (initiallyLodSleeping) {
             c._farWildlifeAiAccumS = (c._farWildlifeAiAccumS || 0) + dt;
@@ -7424,7 +7434,7 @@
           let dxp = targetPlayer.x - c.x, dyp = targetPlayer.y - c.y; // Refreshed when scent chooses a different player in this same AI tick.
           let distToPlayer = Math.hypot(dxp, dyp);
           const distFromHome = Math.hypot(c.x - c.homeX, c.y - c.homeY);
-          const visuallyLodSleeping = updateWildlifeVisualLod(c, distToPlayer / TILE); // Rechecks after target selection before choosing the resource cadence.
+          const visuallyLodSleeping = updateWildlifeVisualLod(c, distToPlayer / TILE) && !simulationKeptAwakeByOtherPlayer(c); // Rechecks after target selection before choosing the resource cadence.
           if (!tickCreatureResources(c, entityDt, visuallyLodSleeping)) continue;
           // A recently-fled animal gets a grace period at home before it can
           // be re-aggro'd by the player or re-picked as ambush prey (see
