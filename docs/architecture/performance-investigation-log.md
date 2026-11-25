@@ -3023,3 +3023,53 @@ A/B benchmark fixtures passed as well. The authoring preview's
 BorderTerrain URL is now explicitly versioned; the preview remains native
 because it does not load the optimization owner. No real-device speedup
 claimed. Full CI and the repository cache-bust checker remain pending.
+
+
+## 2026-11-25 — Pixel Probe gameplay window and selective replay pilot
+
+The 13:28 dry Cloud Forest trace and accompanying probe (626909d8) showed
+9,895 scene nodes, 6,379 hidden; 4,262 wilderness chunk nodes, 1,305
+bandit avatar nodes, and 804 dense wall nodes. Static wall counters
+confirmed 974,415 skipped leaf updates and 82,845 skipped branches with
+63 refreshes and no retired branches. The post-probe audit showed zero
+ready branches, so audit now runs just after the actual main native
+submission while the scopes are still applied. The report was not a
+controlled FPS comparison. Main draw was 431 calls / 14.8 ms in the
+one-shot census; 16 native submissions included ten world submissions.
+Trace attribution suggested ~10.75 ms render-list construction and
+~16.28 ms held replay per frame. These are inclusive, overlapping costs.
+
+Pixel Probe now starts a bounded 20-second / 1,200-frame gameplay timing
+window when armed. It uses the existing scheduler, PerfProfiler brackets
+and render hooks, not another RAF, forced readback, stack capture or the
+heavy profiler overlay. First completed world frame is excluded (warmup
+and one-shot census); failed or non-world frames are excluded and gaps
+across them are not counted. The tap stops recording before pixel analysis
+or diagnostic draws. Report includes mean/p50/p90/p99/max frame intervals,
+driver and scheduler durations, subsystem/callback/hook/scope times,
+native pass wall-clock times, scene matrix timings, calls/triangles, and
+counter deltas. Explicit between-frame brackets have a separate cumulative
+bucket. Start/end counters include warmup and interrupted work. Native
+times are CPU submission wall time (possibly including waits), not GPU
+execution or exclusive JS samples. Unknown/uninstrumented work still
+requires a trace. Timed hooks exist only during capture; scheduler and
+PerfProfiler take their normal inactive paths otherwise.
+
+Two default-off, independently benchmarkable experiments:
+- Mixed gear/water frames reuse the existing conservative visible branch
+  pruning transaction for the two final water-only draws after portrait
+  stamping and gear/ground depth restoration. One JS branch scan trades
+  against two native render-list walks. No removal of draw passes or water
+  depth restoration. Existing water-only path remains separate.
+- Adjacent held registry reads reuse ancestor root/visibility information
+  within a synchronous batch and reuse the immediately preceding front
+  portrait classification for stencil stamping. Never cache across a
+  render, frame or intervening visibility edit. No broad scissor-cull or
+  full depth reconstruction redesign yet.
+
+Isolated source-executing fixtures passed capture, scheduler ordering,
+held registry ancestry, mixed-water/depth parity, near replay depth,
+outdoor replay budget, front portrait masks, settings persistence/reset,
+A/B restoration and world pipeline capture/audit. Browser visual and
+device performance parity remain unmeasured. Native full suite and
+repository cache-bust checker require a checkout/CI.
