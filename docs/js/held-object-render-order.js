@@ -152,6 +152,10 @@
   let pantsXrayRegistrations = 0; // Counts once per pants mesh; surfaced to mobile diagnostics without extra per-frame scanning.
   let waterOnlyBranchPruneEnabled = true; // Private water-only passes, never a normal world/depth replay.
   let waterOnlyPrunedFrames = 0, waterOnlyPrunedBranches = 0, waterOnlyPruneFallbacks = 0; // Mobile counters.
+  let mixedWaterBranchPruneEnabled = false; // Independent A/B pilot for frames with held gear.
+  let mixedWaterPrunedFrames = 0, mixedWaterPrunedBranches = 0, mixedWaterPruneFallbacks = 0, mixedWaterVisited = 0; // Device work counters.
+  let replayRegistryMemoEnabled = false; // Independent A/B for synchronous visibility/classification reuse.
+  let registryAncestorReads = 0, registryAncestorHits = 0, frontRegistryReuses = 0; // Shared ancestor checks and avoided front-list collections.
   let waterReplayCount = 0; // Counts depth-correct translucent water/slush tint passes over foot pixels.
   let lastNearbyTintCovers = 0; // Number of water/slush meshes eligible near any visible held/foot owner this frame.
   let lastDistantTintCovers = 0; // Distant water meshes rejected before they can tint character pixels.
@@ -1404,10 +1408,13 @@
     if (!pendingClassification.size) return;
     const batch = pendingClassification;
     pendingClassification = new Set();
-    for (const object of batch) {
-      if (batchHasQueuedAncestor(batch, object)) continue;
-      classifyTree(object);
-    }
+    const perf = window.PerfProfiler?.begin('held-overlay: pending classification');
+    try {
+      for (const object of batch) {
+        if (batchHasQueuedAncestor(batch, object)) continue;
+        classifyTree(object);
+      }
+    } finally { window.PerfProfiler?.end(perf); }
   }
 
   function queueClassification(objects) {
@@ -1449,13 +1456,29 @@
     // and explicit registrations instead of repeatedly walking static terrain for x-ray casters.
     if (!force && previous !== undefined && (allActorXrayDisabled || now - previous < FALLBACK_SCAN_INTERVAL_MS)) return;
     lastSceneScan.set(scene, now);
-    classifyTree(scene);
+    const perf = window.PerfProfiler?.begin('held-overlay: fallback classification');
+    try { classifyTree(scene); }
+    finally { window.PerfProfiler?.end(perf); }
   }
 
   // One upward walk finds both the owning root and whether any ancestor
   // (root included) is hidden.
   let walkVisible = true;
-  function walkToRoot(object) {
+  function memoAncestor(node, memo) {
+    let state = memo.get(node); // Cache shared ancestors only, not every registered leaf.
+    if (state) { registryAncestorHits++; return state; }
+    registryAncestorReads++;
+    const parent = node.parent ? memoAncestor(node.parent,memo) : null;
+    state = { root: parent ? parent.root : node, visible: node.visible !== false && (!parent || parent.visible) };
+    memo.set(node,state);
+    return state;
+  }
+  function walkToRoot(object, memo = null) {
+    if (memo && object.parent) {
+      const parent = memoAncestor(object.parent,memo);
+      walkVisible = object.visible !== false && parent.visible; // Leaf state remains live.
+      return parent.root;
+    }
     let node = object;
     walkVisible = true;
     for (;;) {
@@ -1467,33 +1490,36 @@
 
   // `others`, when given, receives the visible held/foot meshes that the
   // replay participant policy leaves to ordinary depth (see isReplayParticipant).
-  function collectVisible(registry, scene, others = null) {
-    const result = others ? collectVisible(registry, scene) : null;
+  function collectVisible(registry, scene, others = null, memo = null) {
+    const result = others ? collectVisible(registry, scene, null, memo) : null;
     if (result) {
       const isFoot = registry === waterOccludedRegistry;
       return splitReplayParticipants(result, scene, others, isFoot, registry === heldRegistry); // Resolve owners once; nonparticipant held meshes still have their invariant repaired.
     }
-    const visible = [];
-    for (const object of registry.pending) {
-      registry.pending.delete(object);
-      if (!object?.isMesh) { registry.delete(object); continue; }
-      const root = walkToRoot(object);
-      // Detached runtime meshes should not be kept alive by our registry.
-      if (!root.isScene) registry.delete(object);
-      else registry.place(object, root);
-    }
-    const bucket = registry.byScene.get(scene);
-    if (!bucket) return visible;
-    for (const object of bucket) {
-      const root = walkToRoot(object);
-      if (root !== scene) {
+    const perf = window.PerfProfiler?.begin('held-overlay: registry visibility');
+    try {
+      const visible = [];
+      for (const object of registry.pending) {
+        registry.pending.delete(object);
+        if (!object?.isMesh) { registry.delete(object); continue; }
+        const root = walkToRoot(object,memo);
+        // Detached runtime meshes should not be kept alive by our registry.
         if (!root.isScene) registry.delete(object);
         else registry.place(object, root);
-        continue;
       }
-      if (walkVisible) visible.push(object);
-    }
-    return visible;
+      const bucket = registry.byScene.get(scene);
+      if (!bucket) return visible;
+      for (const object of bucket) {
+        const root = walkToRoot(object,memo);
+        if (root !== scene) {
+          if (!root.isScene) registry.delete(object);
+          else registry.place(object, root);
+          continue;
+        }
+        if (walkVisible) visible.push(object);
+      }
+      return visible;
+    } finally { window.PerfProfiler?.end(perf); }
   }
 
   // gl.getParameter() is a synchronous GPU round-trip in Chrome: calling it
@@ -1730,12 +1756,13 @@
     return states;
   }
 
-  function stampFrontPortraitStencil(renderer, scene, camera, portraits, ownerIds, portraitOrder) {
+  function stampFrontPortraitStencil(renderer, scene, camera, portraits, ownerIds, portraitOrder, classifiedFronts = null) {
     if (!portraits.length) return false;
     const originalMask = camera.layers.mask; // Restores the caller's world mask even on an interrupted render.
     const selected = new Set(portraits); // The stencil camera layer is present on every registered front, not just current gear owners.
+    if (classifiedFronts) frontRegistryReuses++;
     const unrelatedFronts = suppressDraws(
-      collectVisible(frontPortraitRegistry, scene).filter(mesh => !selected.has(mesh)),
+      (classifiedFronts || collectVisible(frontPortraitRegistry, scene)).filter(mesh => !selected.has(mesh)),
       FRONT_PORTRAIT_MASK,
     ); // Prevent unselected NPC/pet portraits from drawing full COLOR during a private owner-mask stamp.
     const states = prepareFrontPortraitStencilMaterials(portraits, ownerIds, scene);
@@ -1835,8 +1862,12 @@
   // Three r128 traverses descendants even when a parent's layers do not
   // match. One live walk finds maximal irrelevant branches for all three
   // private water-only passes. Never cache this across world renders.
-  function pruneWaterOnlyBranches(scene, portraits, renderer) {
-    if (!waterOnlyBranchPruneEnabled || !scene?.children?.length) return null;
+  // Mixed held+water frames use the same transaction only AFTER portrait
+  // stamping and ground/gear depth restoration, for the two WATER_REPLAY draws.
+  function pruneWaterOnlyBranches(scene, portraits, renderer, mixed = false) {
+    if (!(mixed ? mixedWaterBranchPruneEnabled : waterOnlyBranchPruneEnabled) || !scene?.children?.length) return null;
+    const fallback = () => { if (mixed) mixedWaterPruneFallbacks++; else waterOnlyPruneFallbacks++; return null; };
+    if (mixed && scene.autoUpdate !== false) return fallback(); // Never hide a matrix-walk participant.
     const hasHook = object => {
       const parity = object.__hobunjiXrayBoundParity; // Exact local-only pose lock/restore pair from portrait-plane-outline-parity.
       if (parity?.localRestoreHook && parity.hook === object.onBeforeRender &&
@@ -1846,18 +1877,19 @@
     };
     // A pending manual shadow update can still render casters even with
     // shadowMap.autoUpdate disabled by the replay transaction.
-    if (hasHook(scene) || (renderer?.shadowMap?.enabled && renderer.shadowMap.needsUpdate)) { waterOnlyPruneFallbacks++; return null; }
-    const selected = new Set(portraits); // Stamp assigns its private bit later.
-    const mask = WATER_REPLAY_MASK | PORTRAIT_WATER_MASK;
+    if (hasHook(scene) || (renderer?.shadowMap?.enabled && renderer.shadowMap.needsUpdate)) return fallback();
+    const selected = new Set(portraits); // Stamp assigns its private bit later in the original water-only transaction.
+    const mask = mixed ? WATER_REPLAY_MASK : WATER_REPLAY_MASK | PORTRAIT_WATER_MASK;
     const excluded = []; // Maximal disjoint branches, rather than every leaf.
     let unsafe = false;
     function visit(object) {
+      if (mixed) mixedWaterVisited++;
       if (object.visible === false) return false;
       if (object.isLOD) { unsafe = true; return true; } // Native LOD may change visibility.
       const drawable = object.isMesh || object.isSprite || object.isLine || object.isPoints || object.isImmediateRenderObject;
       const matching = selected.has(object) || !!(Number(object.layers?.mask) & mask);
       const known = drawable || object.isGroup || object.isLight || object.isCamera || object.isBone || object.type === 'Object3D';
-      if (!known || (matching && hasHook(object))) { unsafe = true; return true; }
+      if (!known || (matching && (hasHook(object) || (mixed && object.isImmediateRenderObject)))) { unsafe = true; return true; }
       const start = excluded.length;
       let keep = !!(object.isLight || object.isCamera || (drawable && matching));
       for (const child of object.children || []) {
@@ -1874,11 +1906,11 @@
       visit(child);
       if (unsafe) break;
     }
-    if (unsafe) { waterOnlyPruneFallbacks++; return null; }
+    if (unsafe) return fallback();
     if (!excluded.length) return null;
     const hidden = hideObjects(excluded);
-    waterOnlyPrunedFrames++;
-    waterOnlyPrunedBranches += excluded.length;
+    if (mixed) { mixedWaterPrunedFrames++; mixedWaterPrunedBranches += excluded.length; }
+    else { waterOnlyPrunedFrames++; waterOnlyPrunedBranches += excluded.length; }
     return hidden;
   }
 
@@ -3966,14 +3998,17 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
       // Multiple actor-elevation groups use the same depth-occluder registries.
       // Resolve visible entries once after hiding overlay participants; their
       // visibility is restored between groups, but membership does not change.
-      const cutoutDepthMeshes = groups.length && canLockColorMask ? collectVisible(pngDepthRegistry, scene) : null; // Reused by every grouped depth replay in this render.
-      const protectedDepthMeshes = groups.length && canLockColorMask ? collectVisible(protectedCoverRegistry, scene) : null; // Same occluders, independent of actor elevation.
+      const replayMemo = replayRegistryMemoEnabled ? new Map() : null; // One synchronous read batch; never reused after a draw or visibility edit.
+      const cutoutDepthMeshes = groups.length && canLockColorMask ? collectVisible(pngDepthRegistry, scene, null, replayMemo) : null;
+      const protectedDepthMeshes = groups.length && canLockColorMask ? collectVisible(protectedCoverRegistry, scene, null, replayMemo) : null;
       // Stamp front silhouette against base world depth before clearing any
       // same-level ground. Transparent portrait pixels do not protect weapons.
       lastFrontPortraitGearCandidates = 0;
       for (const mesh of overlayMeshes) if (isPortraitMaskedGear(mesh)) lastFrontPortraitGearCandidates++;
-      const portraitMask = lastFrontPortraitGearCandidates
-        ? assignPortraitStencilOwners(overlayMeshes, collectVisible(frontPortraitRegistry, scene), scene)
+      const classifiedFronts = lastFrontPortraitGearCandidates ? collectVisible(frontPortraitRegistry, scene, null, replayMemo) : null;
+      replayMemo?.clear(); // No ancestor state survives the next native submission.
+      const portraitMask = classifiedFronts
+        ? assignPortraitStencilOwners(overlayMeshes, classifiedFronts, scene)
         : null; // Match the owner even if only physical depth is available.
       lastFrontPortraitMaskCount = portraitMask?.portraits.length || 0;
       lastFrontPortraitMaskedGear = 0;
@@ -3987,7 +4022,8 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
       if (scissored) glState.setScissorTest(true);
       if (lastBaseStencilBits >= 8 && portraitMask?.portraits.length) ordinarySnapshot = null; // A draw hook in the stamp can change visibility; do not reuse pre-stamp candidates.
       if (lastBaseStencilBits >= 8 && portraitMask?.portraits.length
-        && stampFrontPortraitStencil(renderer, scene, camera, portraitMask.portraits, portraitMask.ownerIds, portraitOrder)) {
+        && stampFrontPortraitStencil(renderer, scene, camera, portraitMask.portraits, portraitMask.ownerIds, portraitOrder,
+          replayRegistryMemoEnabled ? classifiedFronts : null)) {
         portraitGearIds = portraitMask.gearIds;
         lastFrontPortraitMaskedGear = portraitGearIds.size; // A rank change is effective only if an owner stencil was stamped.
         lastFrontPortraitMaskReason = portraitGearIds.size === lastFrontPortraitGearCandidates ? 'stamped' : 'partially-stamped';
@@ -4196,8 +4232,14 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
         // Only water-only replay has no other depth consumers inside this block.
         const waterOnlyHidden = !overlayMeshes.length && bodyTint?.portraits.length && scene.children?.length
           ? pruneWaterOnlyBranches(scene, bodyTint.portraits, renderer) : null;
+        let mixedWaterHidden = null; // Restore after both private water submissions, even on a native error.
         try {
           if (bodyTint?.portraits.length) stampSubmergedPortraits(renderer, scene, camera, bodyTint.portraits);
+          if (overlayMeshes.length && mixedWaterBranchPruneEnabled && scene.children?.length) {
+            const prunePerf = window.PerfProfiler?.begin('held-overlay: mixed water traversal prep');
+            try { mixedWaterHidden = pruneWaterOnlyBranches(scene, [], renderer, true); }
+            finally { window.PerfProfiler?.end(prunePerf); }
+          }
           // Distant meshes remain hidden from ALL replay stages, and the merged
           // shader rejects distant fragments of any nearby mesh as well.
           const tintStates = prepareOverlayCoverTintMaterials(nearbyTintCovers);
@@ -4220,6 +4262,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
             restoreMaterialStates(coverDepthStates);
           }
         } finally {
+          if (mixedWaterHidden) restoreVisibility(mixedWaterHidden);
           if (waterOnlyHidden) restoreVisibility(waterOnlyHidden);
         }
       }
@@ -4661,8 +4704,10 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
     lastDryGearWaterSkips = 0;
     if (!held.length && !feet.length && !canTintPortraits) return renderBase();
     // Water-only frames need no floor registries. Ordinary dry frames with no gear already returned.
-    const ground = held.length || feet.length ? collectVisible(groundRegistry, scene) : [];
-    const topFaceGround = held.length || feet.length ? collectVisible(topFaceGroundRegistry, scene) : [];
+    const groundMemo = replayRegistryMemoEnabled && (held.length || feet.length) ? new Map() : null; // Adjacent pure registry reads only.
+    const ground = held.length || feet.length ? collectVisible(groundRegistry, scene, null, groundMemo) : [];
+    const topFaceGround = held.length || feet.length ? collectVisible(topFaceGroundRegistry, scene, null, groundMemo) : [];
+    groundMemo?.clear();
     // Even without nearby grass, floor or water, held gear still needs its owner's front-portrait stencil.
     // The historical early return silently bypassed this on empty/auxiliary maps (especially visible with shoulder pets).
     if (!ground.length && !topFaceGround.length && !tintCovers.length) {
@@ -4742,6 +4787,8 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
       actorXrayEnabled: { ...actorXrayEnabled }, // Included in the existing x-ray diagnostics.
       allActorXrayDisabled, actorXrayBypassFrames, actorXrayWaterOnlyFrames, // All-off fast-path counters for mobile diagnostics.
       waterOnlyBranchPruneEnabled, waterOnlyPrunedFrames, waterOnlyPrunedBranches, waterOnlyPruneFallbacks,
+      mixedWaterBranchPruneEnabled, mixedWaterPrunedFrames, mixedWaterPrunedBranches, mixedWaterPruneFallbacks, mixedWaterVisited,
+      replayRegistryMemoEnabled, registryAncestorReads, registryAncestorHits, frontRegistryReuses,
       mode: 'selective-depth-replay',
       legacyHeldRenderOrder: LEGACY_HELD_RENDER_ORDER,
       heldOverlayLayer: HELD_OVERLAY_LAYER,
@@ -4900,6 +4947,8 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
     getActorXrayEnabled: group => Object.hasOwn(actorXrayEnabled, group) ? actorXrayEnabled[group] : null,
     setActorXrayEnabled,
     setWaterOnlyBranchPruneEnabled: value => { waterOnlyBranchPruneEnabled = value !== false; return waterOnlyBranchPruneEnabled; },
+    setMixedWaterBranchPruneEnabled: value => { mixedWaterBranchPruneEnabled = value === true; return mixedWaterBranchPruneEnabled; },
+    setReplayRegistryMemoEnabled: value => { replayRegistryMemoEnabled = value === true; return replayRegistryMemoEnabled; },
     setLocalReplayRingEnabled: value => { localReplayRingEnabled = value !== false; return localReplayRingEnabled; },
     setReplayParticipants: value => { replayParticipantPolicy = value === 'all' ? 'all' : 'rule'; return replayParticipantPolicy; },
     setShortXraySpecies: list => { shortXraySpecies.clear(); for (const id of list || []) shortXraySpecies.add(String(id).toLowerCase()); return [...shortXraySpecies]; },
