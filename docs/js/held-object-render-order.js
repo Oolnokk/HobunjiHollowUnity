@@ -2700,7 +2700,7 @@
 
   const XRAY_ELEVATION_TOLERANCE = 0.18; // Separates the authored trench/raised offsets and map tiers while allowing small body/terrain sampling drift.
   const XRAY_ELEVATION_GROUP_EPSILON = 0.05; // Actors on effectively the same standing surface share one depth replay.
-  const XRAY_TILE_RADIUS = 1; // The authored radius spans one additional tile on each side of the holder.
+  const XRAY_TILE_RADIUS = 1; // Shared tile reach: player-centered participant ring and holder-centered floor reveal.
   const XRAY_CIRCLE_RADIUS = XRAY_TILE_RADIUS + 0.5; // Same three-tile diameter, now centered continuously on world X/Z.
   const XRAY_MAX_BATCH_TILES = 8; // Fixed shader uniform budget for screen-separated holders.
   const xrayGearRect = new THREE.Vector4(); // Used to compare each holder's gear against projected tile boundaries.
@@ -2762,8 +2762,9 @@
   //     the ground whatever the holder's height);
   //   - hands: the player and short species only (SHORT_XRAY_SPECIES; taller
   //     species never hold their hands that low);
-  //   - feet: the player and short species, and only within
-  //     FEET_XRAY_DISTANCE of the camera, where a sunken foot is noticeable.
+  //   - feet: the player and short species. The local player ring is the
+  //     distance authority; the legacy camera-distance test is used only
+  //     when the local filter is unavailable or explicitly switched off.
   // Parts with no resolvable owner keep the old fail-safe x-ray. Everything
   // else draws with ordinary depth like the rest of its body.
   // HeldObjectRenderOrder.setReplayParticipants('all') restores the old set;
@@ -2788,7 +2789,7 @@
       root.updateWorldMatrix?.(true, false);
       const m = root.matrixWorld?.elements;
       const near = Number.isFinite(m?.[12]) && Number.isFinite(m?.[14])
-        && Math.abs(Math.floor(m[12]) - col) <= 1 && Math.abs(Math.floor(m[14]) - row) <= 1;
+        && Math.abs(Math.floor(m[12]) - col) <= XRAY_TILE_RADIUS && Math.abs(Math.floor(m[14]) - row) <= XRAY_TILE_RADIUS;
       rootEligibility.set(root, near);
       return near;
     };
@@ -2870,7 +2871,7 @@
   let otherWeaponXrayBudgetSkips = 0; // Weapon meshes left to ordinary depth by the budget (snapshot()).
   let lastOtherWeaponXrayActors = 0; // Armed non-player actors seen by the last held collection.
   const shortXraySpecies = new Set(['porakaneki']);
-  let feetXrayDistance = 6; // World units (tiles) from the camera.
+  let feetXrayDistance = 6; // Legacy A/B/preview-only distance from the camera.
   let replayCameraPosition = null; // Set by wrappedRender before it collects participants.
   let nonParticipantReplaySkips = 0; // Meshes left to ordinary depth by the policy (snapshot()).
   let participantCache = new WeakMap(); // mesh -> { at, parent, owner: 'player' | 'short' | 'other' | 'unknown' }
@@ -2902,14 +2903,14 @@
     const dx = e[12] - cam.x, dy = e[13] - cam.y, dz = e[14] - cam.z;
     return dx * dx + dy * dy + dz * dz <= feetXrayDistance * feetXrayDistance;
   }
-  function isReplayParticipant(mesh, scene, isFoot = false) {
+  function isReplayParticipant(mesh, scene, isFoot = false, useLegacyFeetDistance = true) {
     if (replayParticipantPolicy === 'all') return true;
     const isHand = mesh.userData?.hobunjiProceduralHand === true;
     if (!isFoot && !isHand) return true; // Weapons and other held items: every character.
     const owner = participantOwner(mesh, scene);
     if (owner === 'unknown') return true;
     if (owner === 'other') return false;
-    return isFoot ? withinFeetXrayDistance(mesh) : true;
+    return !isFoot || !useLegacyFeetDistance || withinFeetXrayDistance(mesh);
   }
   function splitReplayParticipants(meshes, scene, others, isFoot = false, repairHeld = false) {
     if (allActorXrayDisabled) {
@@ -2922,7 +2923,7 @@
     const nearPlayer = createLocalReplayFilter(scene); // Null in previews and explicit full-replay A/B mode.
     for (const mesh of meshes) {
       const group = hasDisabledActorXray ? actorXrayGroup(mesh, scene) : null; // Resolve categories only when needed.
-      const eligible = actorXrayEnabled[group] !== false && isReplayParticipant(mesh, scene, isFoot);
+      const eligible = actorXrayEnabled[group] !== false && isReplayParticipant(mesh, scene, isFoot, !nearPlayer); // Never stack the camera-distance test on the active player ring.
       const inRing = eligible && (!nearPlayer || nearPlayer(mesh));
       if (inRing) keep.push(mesh);
       else {
@@ -4735,7 +4736,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
       replayScissorEnabled, autoInertReplayEnabled, // Read by the Settings toggles (render-optimization-settings.js).
       lastReplayCulled: lastReplayCulledCount,
       lastReplayKept: lastReplayKeptCount,
-      lastReplayInstancedCulled, lastReplayInstancedKept, lastReplayInert: lastReplayInertCount, autoInertReplaySkips: autoInertReplayCount, colorOnlyDepthSkipEnabled, colorOnlyDepthSkips, skinnedScissorEnabled, skinnedScissorBounds, farOnlyReplaySkips, floorPunch: { enabled: floorPunchEnabled, punches: floorPunches, fallbacks: floorPunchFallbacks, depthResets: floorPunchDepthResets, refillHidden: floorPunchRefillHidden, refillKept: floorPunchRefillKept }, replayParticipants: replayParticipantPolicy, shortXraySpecies: [...shortXraySpecies], feetXrayDistance, localReplayRingEnabled, localReplayRingSkips, nonParticipantReplaySkips, otherWeaponXrayLimit, otherWeaponXrayBudgetSkips, lastOtherWeaponXrayActors, heldOwnerLinkEnabled, gearParticlesOnceEnabled, gearParticleSkips, lastGearParticles,
+      lastReplayInstancedCulled, lastReplayInstancedKept, lastReplayInert: lastReplayInertCount, autoInertReplaySkips: autoInertReplayCount, colorOnlyDepthSkipEnabled, colorOnlyDepthSkips, skinnedScissorEnabled, skinnedScissorBounds, farOnlyReplaySkips, floorPunch: { enabled: floorPunchEnabled, punches: floorPunches, fallbacks: floorPunchFallbacks, depthResets: floorPunchDepthResets, refillHidden: floorPunchRefillHidden, refillKept: floorPunchRefillKept }, replayParticipants: replayParticipantPolicy, shortXraySpecies: [...shortXraySpecies], feetXrayDistance, localReplayRingEnabled, localReplayTileRadius: XRAY_TILE_RADIUS, localReplayRingSkips, nonParticipantReplaySkips, otherWeaponXrayLimit, otherWeaponXrayBudgetSkips, lastOtherWeaponXrayActors, heldOwnerLinkEnabled, gearParticlesOnceEnabled, gearParticleSkips, lastGearParticles,
       instancedReplaySphereReuses, nearReplayBoxTests,
       nearReplayEnabled, nearReplaySnapshots, nearReplayFarCulled, nearReplayFallbacks,
       lastNearReplayFarDepth: Number.isFinite(lastNearReplayFarDepth) ? Number(lastNearReplayFarDepth.toFixed(2)) : null,
