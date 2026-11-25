@@ -75,4 +75,52 @@ assert.equal(windowMock.FoliageGenerator, originalFoliage);
 assert.equal(windowMock.NaturalSurfaceMaterials, originalMaterials);
 assert.equal(originalMaterials.snapshot().cachedMaterials, 2);
 assert.equal(editorMaterials.snapshot().cachedMaterials, 2);
+// Exercise the production shortcut in the fast, dependency-free suite too.
+{
+  const source=fs.readFileSync('docs/js/foliage-generator.js','utf8');
+  const begin=source.indexOf('  let identityTreeMatrixFastPath');
+  const end=source.indexOf('  const _treeVariantCache',begin);
+  assert(begin>=0 && end>begin);
+  const makePolicy=new Function('T',source.slice(begin,end)+'\nreturn {installIdentityTreeParts,stats:()=>({...treeMatrixStats})};');
+  class Matrix {
+    constructor(value=0){this.value=value;}
+    identity(){this.value=0;return this;}
+    copy(other){this.value=other.value;return this;}
+  }
+  class Object3D {
+    constructor(){
+      this.children=[];this.matrixAutoUpdate=true;
+      this.position={x:0,y:0,z:0};this.quaternion={x:0,y:0,z:0,w:1};this.scale={x:1,y:1,z:1};
+      this.matrix=new Matrix();this.matrixWorld=new Matrix();
+    }
+    updateMatrix(){this.matrix.value=this.position.x;this.matrixWorldNeedsUpdate=true;}
+    updateMatrixWorld(){
+      this.updateMatrix();
+      this.matrixWorld.value=(this.parent?.matrixWorld.value||0)+this.matrix.value;
+      this.matrixWorldNeedsUpdate=false;
+    }
+  }
+  const runtime={REVISION:'128',Object3D};
+  const fast=makePolicy(runtime);
+  const parent=new Object3D(), leaf=new Object3D();
+  leaf.isMesh=true;leaf.parent=parent;parent.children.push(leaf);
+  parent.matrixWorld.value=12;
+  fast.installIdentityTreeParts(parent);
+  leaf.updateMatrixWorld();
+  assert.equal(fast.stats().enrolled,1);
+  assert.equal(fast.stats().copies,1);
+  assert.equal(leaf.matrixWorld.value,12);
+  leaf.position.x=3;
+  leaf.updateMatrixWorld();
+  assert.equal(leaf.matrixWorld.value,15);
+  assert.equal(fast.stats().fallbacks,1);
+  // No native method is replaced when the contract is unavailable.
+  for(const other of [{REVISION:'180',Object3D},{},undefined]){
+    const policy=makePolicy(other);
+    const fresh=new Object3D();fresh.isMesh=true;
+    policy.installIdentityTreeParts({children:[fresh]});
+    assert.equal(fresh.updateMatrixWorld,Object3D.prototype.updateMatrixWorld);
+    assert.equal(policy.stats().enrolled,0);
+  }
+}
 console.log('Surface growth runtime constructors, native material callbacks, separate caches, asset paths and game globals passed.');
