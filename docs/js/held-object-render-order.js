@@ -4007,7 +4007,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
       for (const mesh of overlayMeshes) if (isPortraitMaskedGear(mesh)) lastFrontPortraitGearCandidates++;
       const classifiedFronts = lastFrontPortraitGearCandidates ? collectVisible(frontPortraitRegistry, scene, null, replayMemo) : null;
       replayMemo?.clear(); // No ancestor state survives the next native submission.
-      const portraitMask = classifiedFronts
+      const portraitMask = lastFrontPortraitGearCandidates
         ? assignPortraitStencilOwners(overlayMeshes, classifiedFronts, scene)
         : null; // Match the owner even if only physical depth is available.
       lastFrontPortraitMaskCount = portraitMask?.portraits.length || 0;
@@ -4936,6 +4936,14 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
     setShoulderPetLayering,
     scanScene,
     snapshot,
+    performanceCounters: () => ({ // No classification flush; safe for capture start/end.
+      waterOnlyBranchPruneEnabled, waterOnlyPrunedFrames, waterOnlyPrunedBranches, waterOnlyPruneFallbacks,
+      mixedWaterBranchPruneEnabled, mixedWaterPrunedFrames, mixedWaterPrunedBranches, mixedWaterPruneFallbacks, mixedWaterVisited,
+      replayRegistryMemoEnabled, registryAncestorReads, registryAncestorHits, frontRegistryReuses,
+      baseWorldRenderCount, selectiveOverlayCount, nonGroundDepthReplayCount, groundDepthRestoreCount,
+      waterReplayCount, nearReplaySnapshots, nearReplayFallbacks, floorPunches, floorPunchFallbacks,
+      ordinaryDepthSceneWalksAvoided, emptyOrdinaryDepthPassesAvoided, emptyHeldReplayTransactionsAvoided,
+    }),
     debugLogSnapshot,
     setReplayScissorEnabled: value => { replayScissorEnabled = value !== false; return replayScissorEnabled; },
     setReplayCullEnabled: value => { replayCullEnabled = value !== false; return replayCullEnabled; },
