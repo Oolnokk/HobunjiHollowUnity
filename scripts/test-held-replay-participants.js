@@ -61,6 +61,29 @@ assert.deepEqual(ringOthers, [farClub, farOrphan]);
 assert.equal(api.ringSkips(),2);
 at(player, 1.5, -0.2);
 assert.deepEqual(api.split([nearClub, farClub], scene, [], false, true), [farClub], 'crossing tiles changes membership immediately');
+// Foot/pants and hand selection must agree with the same owner tile,
+// including the player's scene-sibling visual rigs and linked weapons.
+at(player, 0.9, 0.9); at(shorty, 1.9, 1.9); at(farShort, 2.0, 0.9);
+const nearFoot = at(node('foot', shorty), 1.9, 1.9);
+const farFoot = at(node('foot', farShort), 2.0, 0.9);
+const nearPants = at(node('pants', shorty, {hobunjiPantsGarment:true}), 1.9, 1.9);
+const farPants = at(node('pants', farShort, {hobunjiPantsGarment:true}), 2.0, 0.9);
+const externalHolder = node('external_tool', scene, {hobunjiHeldPortraitOwner:farShort});
+externalHolder.isObject3D = true; farShort.isObject3D = true;
+const remoteFlail = at(node('flail', externalHolder), 0.5, 0.5);
+assert.deepEqual(api.split([nearFoot, farFoot, nearPants, farPants, playerFootNear], scene, [], true),
+  [nearFoot, nearPants, playerFootNear], 'feet and pants follow the owner ring, not the part position');
+assert.deepEqual(api.split([shortHand, remoteFlail], scene, [], false, true), [shortHand],
+  'scene-sibling weapon remains ordinary when its holder is distant, even if the weapon swings into the ring');
+at(player, 1.0, 0.9);
+assert.deepEqual(api.split([nearFoot,farFoot,nearPants,farPants],scene,[],true),
+  [nearFoot,farFoot,nearPants,farPants], 'diagonal and axial neighbors are admitted immediately across the tile boundary');
+assert.deepEqual(api.split([shortHand,remoteFlail],scene,[],false,true),[shortHand,remoteFlail]);
+const preview = {isScene:true,parent:null};
+assert.deepEqual(api.split([farOrphan],preview,[],false,true),[farOrphan],'unrelated preview scenes retain legacy presentation');
+api.setPolicy('all');
+assert.deepEqual(api.split([farOrphan],scene,[],false,true),[farOrphan],'explicit full replay bypasses the local gate');
+api.setPolicy('rule');
 at(player, 0, 0); at(shorty, 0, 0);
 api.repaired.length = 0;
 api.setRing(false); // The remaining legacy A/B fixtures deliberately exercise the old distance policy.
