@@ -59,16 +59,17 @@
           float otherDepth = linearDepth(texture2D(tSceneDepth, uv).r);
           // Inward silhouette plus strong outward depth discontinuities. Suppress
           // small depth gradients on smooth curved faces.
-          float gap = smoothstep(max(0.035, centerDepth * 0.003), max(0.075, centerDepth * 0.006), otherDepth - centerDepth);
+          float gap = smoothstep(max(0.105, centerDepth * 0.009), max(0.225, centerDepth * 0.018), otherDepth - centerDepth);
           return max(1.0 - visibleCurve(uv, otherDepth), gap);
         }
         vec3 applyScreenOutline(vec3 color) {
           float centerDepth = linearDepth(texture2D(tSceneDepth, vUv).r);
           if (visibleCurve(vUv, centerDepth) < 0.5) return color;
-          float edge = max(max(curveEdge(vUv + vec2(uTexel.x, 0.0), centerDepth),
-                               curveEdge(vUv - vec2(uTexel.x, 0.0), centerDepth)),
-                           max(curveEdge(vUv + vec2(0.0, uTexel.y), centerDepth),
-                               curveEdge(vUv - vec2(0.0, uTexel.y), centerDepth)));
+          vec2 stroke = uTexel * 3.0; // Three times the original one-texel inward stroke; same sample count.
+          float edge = max(max(curveEdge(vUv + vec2(stroke.x, 0.0), centerDepth),
+                               curveEdge(vUv - vec2(stroke.x, 0.0), centerDepth)),
+                           max(curveEdge(vUv + vec2(0.0, stroke.y), centerDepth),
+                               curveEdge(vUv - vec2(0.0, stroke.y), centerDepth)));
           float fog = 0.0;
           if (uDepthFogMode > 1.5) fog = 1.0 - exp(-uDepthFogDensity * uDepthFogDensity * centerDepth * centerDepth);
           else if (uDepthFogMode > 0.5) fog = smoothstep(uDepthFogNear, uDepthFogFar, centerDepth);
