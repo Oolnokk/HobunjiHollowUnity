@@ -1835,7 +1835,7 @@
   // Three r128 traverses descendants even when a parent's layers do not
   // match. One live walk finds maximal irrelevant branches for all three
   // private water-only passes. Never cache this across world renders.
-  function pruneWaterOnlyBranches(scene, portraits) {
+  function pruneWaterOnlyBranches(scene, portraits, renderer) {
     if (!waterOnlyBranchPruneEnabled || !scene?.children?.length) return null;
     const hasHook = object => {
       const parity = object.__hobunjiXrayBoundParity; // Exact local-only pose lock/restore pair from portrait-plane-outline-parity.
@@ -1844,7 +1844,9 @@
       return (object.onBeforeRender && object.onBeforeRender !== objectProto.onBeforeRender)
         || (object.onAfterRender && object.onAfterRender !== objectProto.onAfterRender);
     };
-    if (hasHook(scene)) { waterOnlyPruneFallbacks++; return null; }
+    // A pending manual shadow update can still render casters even with
+    // shadowMap.autoUpdate disabled by the replay transaction.
+    if (hasHook(scene) || (renderer?.shadowMap?.enabled && renderer.shadowMap.needsUpdate)) { waterOnlyPruneFallbacks++; return null; }
     const selected = new Set(portraits); // Stamp assigns its private bit later.
     const mask = WATER_REPLAY_MASK | PORTRAIT_WATER_MASK;
     const excluded = []; // Maximal disjoint branches, rather than every leaf.
@@ -1858,14 +1860,20 @@
       if (!known || (matching && hasHook(object))) { unsafe = true; return true; }
       const start = excluded.length;
       let keep = !!(object.isLight || object.isCamera || (drawable && matching));
-      for (const child of object.children || []) if (visit(child)) keep = true;
+      for (const child of object.children || []) {
+        if (visit(child)) keep = true;
+        if (unsafe) return true; // No visibility has changed; abandon immediately.
+      }
       if (!keep) {
         excluded.length = start;
         excluded.push(object);
       }
       return keep;
     }
-    for (const child of scene.children) visit(child);
+    for (const child of scene.children) {
+      visit(child);
+      if (unsafe) break;
+    }
     if (unsafe) { waterOnlyPruneFallbacks++; return null; }
     if (!excluded.length) return null;
     const hidden = hideObjects(excluded);
@@ -4187,7 +4195,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
       if (tintOverlay) {
         // Only water-only replay has no other depth consumers inside this block.
         const waterOnlyHidden = !overlayMeshes.length && bodyTint?.portraits.length && scene.children?.length
-          ? pruneWaterOnlyBranches(scene, bodyTint.portraits) : null;
+          ? pruneWaterOnlyBranches(scene, bodyTint.portraits, renderer) : null;
         try {
           if (bodyTint?.portraits.length) stampSubmergedPortraits(renderer, scene, camera, bodyTint.portraits);
           // Distant meshes remain hidden from ALL replay stages, and the merged
