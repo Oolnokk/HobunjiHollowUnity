@@ -2722,3 +2722,33 @@ pages. Whole-repository CI and actual device performance on the newest
 revision remain to be confirmed. Still need the real scene census to
 justify any static subtree freeze; no global matrix update override or
 unsafe save/hand cadence shortcuts.
+
+
+### Folder recovery: exact committed-byte mirroring
+
+The canonical file delta scan, disk stamps, external-edit guard, checkpoint
+integrity checks and recovery rotation remain unchanged. Recovery slot
+writing now serializes its record once before asynchronous filesystem
+operations and can return the committed JSON to the checkpoint manager.
+The browser mirror stores that exact string, and its cached record is
+parsed from that string rather than the potentially mutated input. This
+eliminates a second full stringify for each newly written or rotated
+recovery slot, at the cost of one JSON parse and keeping one serialized
+string through the write. The original record-returning public interface
+remains the default; older adapters fall back to the existing mirror path.
+A close failure cannot advance the mirror; quota fallback retains the
+committed disk record. committedRecoveryMirrors counts the new path.
+No change to save cadence or canonical data-loss guards.
+
+The extracted actual writer and manager persistence functions passed
+single-stringify, mutation during async lookup, disk/browser equality,
+failed disk close, quota fallback and legacy-return checks. The broader
+isolated save fixture stopped on its existing asynchronous baseline-seed
+assertion; the full native Node regression run is needed before claiming
+all save tests pass. Added integration assertions for both adapter modes,
+rotation and exact bytes, plus the real writer fixture. Updated the two
+runtime version tokens. Real device timing still needed: this removes
+serialization work, but is not a measured wall-time or FPS improvement.
+Static hierarchy freeze remains deferred pending an actual scene census;
+the save capture/integrity-size and canonical file serialization passes
+are not eliminated.
