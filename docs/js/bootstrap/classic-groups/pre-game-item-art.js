@@ -2,7 +2,7 @@
   'use strict';
   // HUD action icons and item sprites, in their original parser order.
   const scriptUrls = [
-    "js/tool-icon-render.js?v=20261119hce29781",
+    "js/tool-icon-render.js?v=20261125deepHotpaths1",
     "js/sprite-recolor.js?v=20261123companionAudit1",
     "js/object-sprite-catalog.js?v=20261114potionAudit2"
   ]; // Cache versions are owned by this feature area, rather than the shared index page.
