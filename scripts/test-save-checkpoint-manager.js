@@ -63,6 +63,7 @@ const vm = require('node:vm');
   let folderSyncs = 0; // Successful/partially-successful canonical write attempts.
   let failNextFolderSyncAfterWrite = false; // Simulates I/O failure after canonical files already changed.
   let failPrimarySnapshotRead = false; // Simulates a malformed canonical world that recovery must repair instead of requiring a successful primary read.
+  let legacyRecoveryWriter = true, mutateRecoveryInput = false; // Exercise old adapters and asynchronous mutation after serialization.
   let recoverySlotReads = 0; // Counts actual recovery reads requested from the folder adapter.
   let hungRecoverySlot = ''; // Simulates a File System Access read that never settles so the recovery UI timeout path is exercised.
   const folderListeners = []; // Captures LocalSaveFolder status listeners.
@@ -95,9 +96,11 @@ const vm = require('node:vm');
     async readRecoveryCheckpoints() {
       return Object.fromEntries(['manual', 'campfire', 'auto', 'autoPrevious', 'preRestore'].map(slot => [slot, folderRecovery.get(slot) || null]));
     },
-    async writeRecoveryCheckpoint(slot, record) {
-      folderRecovery.set(slot, structuredClone(record));
-      return record;
+    async writeRecoveryCheckpoint(slot, record, { returnSerialized = false } = {}) {
+      const raw = JSON.stringify(record);
+      folderRecovery.set(slot, JSON.parse(raw));
+      if (mutateRecoveryInput) record.reason = 'mutated after disk write';
+      return returnSerialized && !legacyRecoveryWriter ? raw : record;
     },
     async readPrimarySnapshot() {
       if (failPrimarySnapshotRead) throw new Error('Primary Save Folder contains unreadable character/world file(s): worlds/broken.json');
@@ -333,6 +336,8 @@ const vm = require('node:vm');
   assert.deepEqual(folderPrimarySnapshot, beforeFirstBadFolderWrite, 'first bad post-upgrade autosave leaves canonical folder untouched');
 
   // A safe canonical autosave advances latest recovery and rotates the seeded baseline.
+  legacyRecoveryWriter = false; // The earlier baseline already covered legacy adapters.
+  const committedBefore = window.__hobunjiSaveCheckpointDebug.snapshot().committedRecoveryMirrors;
   currentSnapshot = structuredClone(beforeFirstBadFolderWrite);
   currentSnapshot.meta.worlds[0].members.char_a.nonGearInventory.turnip = 7;
   now += 30_000;
@@ -340,6 +345,8 @@ const vm = require('node:vm');
   assert.equal(safeFolderStatus.lastError, null);
   assert.deepEqual(folderRecovery.get('auto').snapshot, currentSnapshot, 'successful canonical autosave advances latest folder recovery');
   assert.ok(folderRecovery.has('autoPrevious'), 'seeded baseline rotates into earlier autosave');
+  assert.equal(store.get('hobunjiSaveCheckpoint.auto.v1'), JSON.stringify(folderRecovery.get('auto')));
+  assert.equal(window.__hobunjiSaveCheckpointDebug.snapshot().committedRecoveryMirrors - committedBefore, 2);
 
   const readsAfterSave = recoverySlotReads; // Recovery rotation already performed the reads needed for this save.
   for (let i = 0; i < 60; i++) {
@@ -357,8 +364,12 @@ const vm = require('node:vm');
   // Create one known-good manual checkpoint in folder-first mode.
   currentSnapshot.meta.worlds[0].members.char_a.nonGearInventory.turnip = 5;
   now += 30_000;
+  mutateRecoveryInput = true;
   manualResult = await api.saveManual();
+  mutateRecoveryInput = false;
   assert.equal(manualResult.ok, true, 'manual save commits through folder-first path');
+  assert.equal(store.get('hobunjiSaveCheckpoint.manual.v1'), JSON.stringify(folderRecovery.get('manual')), 'mirror is exact disk JSON even if input mutates');
+  assert.equal(manualResult.record.reason, folderRecovery.get('manual').reason, 'cached record is the committed disk copy');
   assert.equal(manualResult.folder, true);
   assert.deepEqual(folderRecovery.get('manual').snapshot, folderPrimarySnapshot, 'folder manual checkpoint equals canonical manual snapshot');
   const goodManualFolderRaw = JSON.stringify(folderRecovery.get('manual'));
