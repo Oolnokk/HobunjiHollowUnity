@@ -226,6 +226,19 @@ assert(alpha(ringHood,60,94)>=128,'hood cloth ring stretches exactly to the left
 assert.equal(alpha(ringHood,100,94),0,'central face opening remains transparent');
 assert.equal(alpha(ringHood,100,35),ringBefore[at(100,35)*4+3],
   'pixels far from both tuft corners retain original cloth');
+// An immutable source is reusable for both real warps and no-op stretches.
+const ringSource={width:SIZE,height:SIZE,data:ringBefore.slice()};
+const sharedWarp=new Canvas();sharedWarp.pixels.set(ringBefore);
+const warped=Cut.stretchHoodToRoots(sharedWarp,roots,{maxStretch:36,retainUnchangedImageData:true,pristineHoodImageData:ringSource});
+assert.deepEqual(warped,ringResult);
+assert.deepEqual(sharedWarp.pixels,ringHood.pixels);
+assert.equal(sharedWarp.readbacks||0,0);
+assert.deepEqual(ringSource.data,ringBefore,'warping must not mutate cached cloth');
+assert.equal(warped.unchangedImageData,undefined,'a real warp must still be reread before negotiation');
+const sharedNoMove=new Canvas();sharedNoMove.pixels.set(ringBefore);
+const noMoveResult=Cut.stretchHoodToRoots(sharedNoMove,[{x:115,y:94}],{maxStretch:36,retainUnchangedImageData:true,pristineHoodImageData:ringSource});
+assert.equal(noMoveResult.unchangedImageData,ringSource);
+assert.equal(sharedNoMove.readbacks||0,0);
 const noMove=new Canvas();noMove.pixels.set(ringBefore);
 const inside=Cut.stretchHoodToRoots(noMove,[{x:115,y:94}],{maxStretch:36,retainUnchangedImageData:true});
 assert.equal(inside.insideRing,1,'tuft already inside the ring does not stretch the hood');
