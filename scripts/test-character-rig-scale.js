@@ -143,6 +143,20 @@ assert.strictEqual(headParent.scale.y, 0.7 * worldFactor);
 assert.ok(Math.abs(neckJoint.scale.x - (1.1 / 1.3)) < 1e-9, 'neck bone must cancel body width stretch and land on the authored head scale');
 assert.ok(Math.abs(neckJoint.scale.y - (1.1 / 0.7)) < 1e-9, 'neck bone must cancel body height stretch and land on the authored head scale');
 assert.strictEqual(neckJoint.scale.z, 1);
+// Age controls accept 10–200%; the derived head/body ratio can lie outside adult scale limits.
+for (const [width, height, head] of [[.1, .1, 2], [.1, .4, 1.5], [2, 2, .1], [.29, .38, .55]]) {
+  const ageBone = makeBone(); // Actual head scale bone driven by the shared runtime.
+  const ageParent = makeParent(ageBone, height);
+  const adult = { x: .8168, y: 1.089, head: .726 }; // Representative uploaded Mao'ao transform.
+  const childFactors = { childHeadFactor: head / height, childHeadFactorX: head / width }; // PNG-plane child dimensions are already baked in.
+  api.applyHeadCompensation(ageParent, 'mao-ao', 'male', { ...adult, ...childFactors });
+  assert.ok(Math.abs(ageBone.scale.x * adult.x * width - adult.head * head) < 1e-9, 'child head width must match authored age head factor');
+  assert.ok(Math.abs(ageBone.scale.y * adult.y * height - adult.head * head) < 1e-9, 'child head height must match authored age head factor');
+  ageParent.userData.hobunjiCharacterRigHeadRuntime = childFactors; // Later hand attachment reuses stored compensation.
+  api.applyHeadCompensation(ageParent, 'mao-ao', 'male', adult);
+  assert.ok(Math.abs(ageBone.scale.x * adult.x * width - adult.head * head) < 1e-9, 'reapplication must retain age head width');
+  assert.ok(Math.abs(ageBone.scale.y * adult.y * height - adult.head * head) < 1e-9, 'reapplication must retain age head height');
+}
 // An avatar with no neck rig (most world creatures/NPCs) must be entirely unaffected.
 assert.strictEqual(api.applyHeadCompensation(makeParent(), 'mao-ao', 'male', { x: 1.3, y: 0.7, head: 1.1 }), false,
   'avatars without a neck rig have no head to protect and must be a safe no-op');

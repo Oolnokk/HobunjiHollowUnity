@@ -335,7 +335,7 @@
     const by = clampScale(Number.isFinite(Number(overrides.y)) && Number(overrides.y) > 0 ? overrides.y : resolved.y);
     const headNumber = Number(overrides.head);
     const verticalChildHead = childHeadFactorFor(overrides, found.node);
-    const head = clampScale((Number.isFinite(headNumber) && headNumber > 0 ? headNumber : resolved.head) * verticalChildHead);
+    const head = clampScale(Number.isFinite(headNumber) && headNumber > 0 ? headNumber : resolved.head) * verticalChildHead; // Clamp only the authored adult factor; child compensation is a derived ratio, not an authoring input.
     const relativeHeadY = by > 0 ? head / by : head; // Local head-size factor after removing body height scaling.
     const horizontalChildHead = childHeadFactorXFor(overrides, found.node, verticalChildHead); // Compensate the independently authored portrait width, while leaving final head width equal to final head height.
     target.scale.set(bx > 0 ? head / bx * horizontalChildHead / verticalChildHead : head, relativeHeadY, 1);
