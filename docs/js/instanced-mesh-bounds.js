@@ -90,14 +90,20 @@
   }
 
   function visitTracked(list, callback) {
-    let kept = 0;
-    for (let i = 0; i < list.length; i++) {
-      const ref = list[i], mesh = ref.deref();
-      if (!mesh) continue;
-      list[kept++] = ref;
-      callback(mesh);
+    let kept = 0, i = 0; // Compaction must preserve unread entries if a consumer throws.
+    try {
+      for (; i < list.length; i++) {
+        const ref = list[i], mesh = ref.deref();
+        if (!mesh) continue;
+        list[kept++] = ref;
+        callback(mesh);
+      }
+    } finally {
+      // The throwing entry was already retained; keep every unread ref,
+      // including registrations appended by a consumer during iteration.
+      for (let next = i + 1; next < list.length; next++) list[kept++] = list[next];
+      list.length = kept;
     }
-    list.length = kept;
   }
 
   function forEachTracked(callback) { visitTracked(tracked, callback); }
