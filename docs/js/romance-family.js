@@ -299,7 +299,7 @@
   }
   function phaseScaleFields(phase) {
     const scales = cfg().phaseScales?.[phase];
-    return scales ? { childBodyScale: scales.body, childHeadScale: scales.head } : {};
+    return scales ? { childBodyScale: scales.height ?? scales.body, childBodyHeightScale: scales.height ?? scales.body, childBodyWidthScale: scales.width ?? scales.body, childHeadScale: scales.head } : {}; // Both independent axes travel with family baby/toddler records.
   }
   function childRecord(child) {
     return {
