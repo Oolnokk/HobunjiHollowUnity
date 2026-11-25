@@ -754,3 +754,18 @@ front list with the immediate stencil stamp. No cross-frame or cross-draw
 visibility cache. These switches are independent; the existing
 water-only pruner, ground restoration order, stencil rules and scissor
 policy are unchanged.
+
+
+### Classification repair cadence experiment
+
+The existing add-hook queue remains the immediate registration path.
+Writers introducing a late semantic tag, layer or material may call
+`HeldObjectRenderOrder.invalidateClassification(root)` to queue that
+subtree for the same deduplicated flush before the next render; this is
+additive classification, not an unregister API. Forced scene scans
+remain available. The optional `slowClassificationFallback` switch
+(default off) extends periodic full repairs from 750 ms to 3 seconds,
+with reseeding when toggled. No claim is made that all legacy semantic
+writers publish invalidation yet. Unannounced changes can be delayed,
+so test visually before promoting this experiment. Probe records full
+scans, forced scans, explicit invalidations and active/auxiliary costs.
