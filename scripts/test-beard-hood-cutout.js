@@ -47,6 +47,28 @@ assert(Cut,'the shared cutout module loads with no Three.js dependency');
 const SIZE=Cut.SIZE,at=(x,y)=>y*SIZE+x;
 const alpha=(canvas,x,y)=>canvas.pixels[at(x,y)*4+3];
 function setPixel(canvas,x,y,a){canvas.pixels.set([88,66,44,a],at(x,y)*4);}
+// Sparse requests can overlap, touch or contain malformed authored runs.
+// Every valid requested pixel must still be negotiated exactly once.
+{
+  const pixels=new Uint8ClampedArray(SIZE*SIZE*4);
+  for(const i of [10,11,12,13,14,15,16,17,18,19,20,21])pixels[i*4+3]=255;
+  const mask=runs=>({size:SIZE,runs});
+  const request=mask([[14,4],[10,5],[-2,4],[39999,3],[18,0]]);
+  const whisker=mask([[16,5],[20,2]]);
+  const allowed=mask([[11,2]]);
+  const cover=mask([[17,2]]);
+  const p=Cut.partitionBeardHood(request,allowed,pixels,pixels,whisker,cover,'painted');
+  assert.equal(p.requested,12);
+  assert.equal(p.approvedPixels,6);
+  assert.equal(p.refusedPixels,6);
+  assert.equal(p.whiskerWins,4);
+  assert.equal(p.topCoverWins,2);
+  assert.equal(p.topCoverWhiskers,2);
+  assert.deepEqual(Array.from(p.approved.slice(10,22)),[0,1,1,0,0,0,1,0,0,1,1,1]);
+  assert.equal(Cut.partitionBeardHood(null,null,pixels,pixels,null,null,'painted').requested,0);
+  assert.equal(Cut.partitionBeardHood(null,null,pixels,pixels,null,null,'silhouette').approvedPixels,12);
+  assert.equal(Cut.partitionBeardHood(null,mask([]),pixels,pixels,null,null,'silhouette').refusedPixels,12);
+}
 const beard=new Canvas(),hood=new Canvas();
 for(let y=75;y<=85;y++)for(let x=90;x<=115;x++)setPixel(beard,x,y,255);
 for(let y=70;y<=90;y++)for(let x=82;x<=122;x++)setPixel(hood,x,y,255);
