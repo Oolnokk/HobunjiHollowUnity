@@ -84,7 +84,12 @@
     return () => {s=(s+0x6D2B79F5)>>>0;let t=s;t=Math.imul(t^(t>>>15),t|1);t^=t+Math.imul(t^(t>>>7),t|61);return ((t^(t>>>14))>>>0)/4294967296;};
   }
   function zoneEligible(zone) { return ZONES.includes(zone) && !!deps?.EXTERIOR_ZONES?.[zone]; }
-  function currentDay() { return Math.floor(finite(deps?.calendar?.day,0)); }
+  function currentDay() {
+    const rawDay=Math.floor(finite(deps?.calendar?.day,0)); // World-day counter rolls over at 06:00, not midnight.
+    if(rawDay<1)return 0;
+    const civilDay=window.CalendarSystem?.civilDayForRawDay?.(rawDay,deps.calendar.time01); // Use the shared midnight-aware calendar seam.
+    return Math.floor(finite(civilDay ?? rawDay,rawDay));
+  }
   function worldSeed() { return String(deps?.tothalWorldId?.() || 'new-world'); }
 
   function bumpEvent(message) { state.lastEvent=message;window.__farmLog?.('[boney] '+message,'info'); }
@@ -617,7 +622,7 @@
     state.phase='complete';
     clearHouse();releaseWalker();
     state.home=null;state.target=null;state.zone=null;
-    bumpEvent('Magic house vanished; encounter complete until next full moon');
+    bumpEvent('Magic house vanished; moon '+state.completedCycle+' complete');
     save();
   }
   function syncZone() {
@@ -749,7 +754,9 @@
       sector:SECTORS.some(row=>row.includes(raw.home.sector))?raw.home.sector:null}:null; // Older saves without sector use the loaded layout if available.
     state.target=goodCoord(raw.target)?{c:raw.target.c,r:raw.target.r}:null;
     state.phase=['planned','roam','flee','home','leaving','complete'].includes(raw.phase)?raw.phase:'waiting';
-    if(!state.zone||!state.home&&state.phase!=='planned')state.phase='waiting';
+    if(state.phase==='complete') {
+      state.zone=null;state.home=null;state.target=null; // Completed saves intentionally have no house to restore.
+    } else if(!state.zone||!state.home&&state.phase!=='planned')state.phase='waiting';
     state.activity=['tree','rock','wander','flee','hide'].includes(raw.activity)?raw.activity:'wander';
     state.workLeft=clamp(finite(raw.workLeft),0,30);
     const t=raw.resourceTarget; // A resumed chore must still point at the same authored tree/rock tile.
@@ -771,7 +778,7 @@
   function debugSnapshot() {
     const day=currentDay(); // Calendar diagnostics distinguish a missed moon from pending terrain placement.
     return {phase:state.phase,cycle:state.cycle,completedCycle:state.completedCycle,
-      day,lunarDay:day>=1?lunarDay(day):null,latestFullMoonCycle:latestFullMoonCycle(day),
+      rawDay:deps?.calendar?.day??null,day,lunarDay:day>=1?lunarDay(day):null,latestFullMoonCycle:latestFullMoonCycle(day),
       zone:state.zone,home:state.home,target:state.target,activity:state.activity,
       lastSight:state.lastSight,lastEvent:state.lastEvent,houseVisible:!!houseMesh?.visible,
       collision:!!houseUnregister,walker:!!walker,catches:state.catches,
