@@ -1033,7 +1033,7 @@ console.log('Fey Immundanity, real Stamina illusions, proc, scaled echo, migrati
   const clear = (actor, id) => RS.removeAffliction(actor, id, 1000);
   const newBases = [
     ['stormwake', 'Tothal', 'undertowStamina', 6.6],
-    ['stonebind', 'Hronal', 'calcifiedFooting', 5.5],
+    ['stonebind', 'Hronal', 'leadboundStamina', 5.5],
     ['soulweight', 'Kanthic', 'soulweightedHealth', 6.6],
   ]; // One equipped planar enchantment gives +10% Immundanity.
   for (const [id, alignment, status, expected] of newBases) {
@@ -1057,9 +1057,9 @@ console.log('Fey Immundanity, real Stamina illusions, proc, scaled echo, migrati
   assert.equal(ES.getWeaponImmundanity(key), 0);
   hit();
   close(amount(target, 'undertowStamina'), 6);
-  close(amount(target, 'calcifiedFooting'), 5);
+  close(amount(target, 'leadboundStamina'), 5);
   clear(target, 'undertowStamina');
-  clear(target, 'calcifiedFooting');
+  clear(target, 'leadboundStamina');
   equip(['soulweight', 'ancestralSight']);
   assert.equal(ES.getWeaponImmundanity(key), 0);
   hit();
@@ -1089,22 +1089,38 @@ console.log('Fey Immundanity, real Stamina illusions, proc, scaled echo, migrati
   target.exhaustion.active = false;
   clear(target, 'undertowStamina');
 
-  // Calcified: finite follow-up loss, not a timed multiplier.
-  target.footing = 50;
-  RS.addAffliction(target, 'calcifiedFooting', 8);
-  RS.addEnhancedResource(target, 'resoluteFooting', 2);
-  close(RS.spendFooting(target, 6), 0);
-  close(amount(target, 'calcifiedFooting'), 8);
-  close(RS.spendFooting(target, 5), 10);
-  close(target.footing, 40);
-  close(amount(target, 'calcifiedFooting'), 3);
-  close(RS.spendFooting(target, 5), 8);
-  close(amount(target, 'calcifiedFooting'), 0);
-  target.footing = 3;
-  RS.addAffliction(target, 'calcifiedFooting', 8);
-  close(RS.spendFooting(target, 3), 3);
-  close(amount(target, 'calcifiedFooting'), 8);
-  clear(target, 'calcifiedFooting');
+  // Leadbound occupies current ordinary Stamina and never charges enhanced payments.
+  target.stamina = 100;
+  RS.addAffliction(target, 'leadboundStamina', 50);
+  close(RS.movementMultiplier(target, 'walk'), .625);
+  close(RS.movementMultiplier(target, 'dodge'), .625);
+  close(RS.movementMultiplier(target, 'lunge'), .625);
+  close(RS.getSegmentBox(target, 'stamina', 'leadboundStamina').leftPoints, 50);
+  RS.addAffliction(target, 'weightlessStamina', 25);
+  close(RS.movementMultiplier(target, 'walk'), .9375);
+  close(RS.timedDebuffModifier(target, 'moveSpeed'), .9375);
+  close(RS.timedDebuffModifier(target, 'dodgeLungeDistance'), .9375);
+  close(RS.timedDebuffModifier(target, 'attackSpeed'), 1);
+  RS.addEnhancedResource(target, 'moralizedStamina', 2);
+  RS.spendStamina(target, 6, 'ordinary');
+  close(amount(target, 'leadboundStamina'), 50);
+  RS.spendStamina(target, 10, 'ordinary');
+  close(amount(target, 'leadboundStamina'), 40);
+  close(amount(target, 'weightlessStamina'), 25);
+  RS.tick(target, 2, { staminaRegenPerSec: 0, healthRegenPerSec: 0, footingRegenPerSec: 0 });
+  assert(amount(target, 'leadboundStamina') < 40);
+  clear(target, 'leadboundStamina');
+  clear(target, 'weightlessStamina');
+  target.stamina = 10;
+  RS.addAffliction(target, 'leadboundStamina', 100);
+  close(amount(target, 'leadboundStamina'), 10);
+  RS.addAffliction(target, 'weightlessStamina', 10);
+  RS.spendStamina(target, 5, 'ordinary');
+  close(amount(target, 'leadboundStamina'), 5);
+  close(amount(target, 'weightlessStamina'), 10);
+  clear(target, 'leadboundStamina');
+  clear(target, 'weightlessStamina');
+  close(RS.movementMultiplier(target, 'walk'), 1);
 
   // Soulweight: ordinary direct Health loss drains ordinary Stamina, no debt.
   target.health = 100; target.stamina = 3;
@@ -1129,7 +1145,7 @@ console.log('Fey Immundanity, real Stamina illusions, proc, scaled echo, migrati
 
   const flourishes = [
     ['stormRenewal', 'currentStamina', 8.8, 2.2],
-    ['bedrock', 'hearthstoneFooting', 11, 2.8],
+    ['bedrock', 'temperedFooting', 11, 2.8],
     ['blackBargain', 'pactHealth', 8.8, 2.2],
   ];
   for (const [id, status, full, quarter] of flourishes) {
@@ -1162,13 +1178,18 @@ console.log('Fey Immundanity, real Stamina illusions, proc, scaled echo, migrati
   clear(attacker, 'currentStamina');
 
   attacker.footing = 50; attacker.stamina = 20;
-  RS.addEnhancedResource(attacker, 'hearthstoneFooting', 10);
+  RS.addEnhancedResource(attacker, 'temperedFooting', 50);
+  close(RS.attackPowerForAttack({ attacker, attackPower: 12 }), 24);
+  const victim = makeEntity();
+  close(RS.applyDamage(victim, 4, { attacker, attackPower: 10, afflictionBonuses: { bleedingHealth: .5 } }), 4);
+  close(amount(victim, 'bleedingHealth'), 10);
   close(RS.spendFooting(attacker, 6), 0);
-  close(attacker.stamina, 26);
-  close(amount(attacker, 'hearthstoneFooting'), 4);
-  RS.spendFooting(attacker, 8);
+  close(attacker.stamina, 20);
+  close(amount(attacker, 'temperedFooting'), 44);
+  RS.spendFooting(attacker, 48);
   close(attacker.footing, 46);
-  close(attacker.stamina, 30);
+  close(amount(attacker, 'temperedFooting'), 0);
+  close(RS.attackPowerForAttack({ attacker, attackPower: 12 }), 12);
 
   attacker.health = 100; attacker.stamina = 50;
   RS.addEnhancedResource(attacker, 'pactHealth', 8);
