@@ -30,7 +30,7 @@ const plain = v => ({ x: v.x, y: v.y, head: v.head, offsetY: v.offsetY });
 // Hand-authored via Full Character Scale itself (an exported
 // hobunji_full_character_scales.json), each axis genuinely independent now —
 // no longer x === y === head per species/gender.
-const authoredDefaults = Object.fromEntries( // Main-equivalent adult defaults are pinned to 4cfb39c and checked by test-main-silhouette-reversion.js.
+const authoredDefaults = Object.fromEntries( // User-approved uploaded adult scales are pinned to hobunji_full_character_scales.json and checked by test-uploaded-character-scale-defaults.js.
   ['tletingan::male','tletingan::female','engh-sho::male','engh-sho::female',
     'mao-ao::male','mao-ao::female','kenkari::male','kenkari::female',
     'mashtzarr::male','mashtzarr::female']
@@ -48,10 +48,10 @@ assert.deepStrictEqual(plain(context.HobunjiCharacterRigScaleDefaults.scaleFor('
   'Rakakoan must inherit Kenkari female transform scale');
 
 const api = context.HobunjiCharacterRigScale;
-const worldFactor = api.worldVisualScale(); // The assembled visual parent uses multiplier 1 again; authored dimensions match old main.
+const worldFactor = api.worldVisualScale(); // Approved uploaded adult dimensions use their exact parent scale without an abandoned global height multiplier.
 const scaled = (...values) => values.map(value => value * worldFactor); // Used in runtime parent-scaling expectations below.
 assert(api, 'whole-rig scale API must install');
-assert.strictEqual(profile.anatomy.rigScaleX, 0.81675, 'live shared rig profiles must receive the authored x default when no override exists');
+assert.strictEqual(profile.anatomy.rigScaleX, 0.8168, 'live shared rig profiles must receive the authored x default when no override exists');
 assert.strictEqual(profile.anatomy.rigScaleY, 1.089, 'live shared rig profiles must receive the authored y default when no override exists');
 assert.strictEqual(profile.anatomy.headScale, 0.726, 'live shared rig profiles must receive the authored head default when no override exists');
 assert.strictEqual(profile.anatomy.headOffsetY, 0, 'live shared rig profiles must receive the authored offsetY default when no override exists');
@@ -87,7 +87,7 @@ function makeParent(neckJoint = null, modelHeight = null) {
 
 const parent = makeParent();
 api.applyToParent(parent, 'mao-ao', 'male');
-assert.deepStrictEqual([parent.scale.x, parent.scale.y, parent.scale.z], scaled(0.81675, 1.089, 0.81675));
+assert.deepStrictEqual([parent.scale.x, parent.scale.y, parent.scale.z], scaled(0.8168, 1.089, 0.8168));
 
 // Changing an explicit authored/imported legacy value must override the default without
 // multiplying the previous result cumulatively, and still resolves uniformly on every axis.
