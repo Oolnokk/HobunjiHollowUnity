@@ -397,6 +397,14 @@
       const before = heldOrder.snapshot().waterOnlyBranchPruneEnabled;
       variants.push({ id: before ? 'waterOnlyPruneOff' : 'waterOnlyPruneOn', apply: () => heldOrder.setWaterOnlyBranchPruneEnabled(!before), undo: () => heldOrder.setWaterOnlyBranchPruneEnabled(before) });
     }
+    if (typeof heldOrder?.setMixedWaterBranchPruneEnabled === 'function') {
+      const before = heldOrder.snapshot().mixedWaterBranchPruneEnabled;
+      variants.push({ id: before ? 'mixedWaterPruneOff' : 'mixedWaterPruneOn', apply: () => heldOrder.setMixedWaterBranchPruneEnabled(!before), undo: () => heldOrder.setMixedWaterBranchPruneEnabled(before) });
+    }
+    if (typeof heldOrder?.setReplayRegistryMemoEnabled === 'function') {
+      const before = heldOrder.snapshot().replayRegistryMemoEnabled;
+      variants.push({ id: before ? 'replayRegistryMemoOff' : 'replayRegistryMemoOn', apply: () => heldOrder.setReplayRegistryMemoEnabled(!before), undo: () => heldOrder.setReplayRegistryMemoEnabled(before) });
+    }
     if (typeof heldOrder?.setLocalReplayRingEnabled === 'function') {
       const localBefore = heldOrder.snapshot?.().localReplayRingEnabled !== false; // Restore the user's exact policy after each sample window.
       variants.push({ id: localBefore ? 'fullXrayRange' : 'localXrayRing', apply: () => heldOrder.setLocalReplayRingEnabled(!localBefore), undo: () => heldOrder.setLocalReplayRingEnabled(localBefore) });
