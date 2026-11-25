@@ -735,3 +735,22 @@ local filter is active. That camera check remains available for legacy
 range A/B and scenes without a valid player. Existing category and species
 gates and ordinary weapon budget are unchanged. Frustum rejection and
 screen-space replay scissoring remain independent conservative bounds.
+
+
+### Optional selective traversal / registry sharing pilots
+
+`mixedWaterPrune` (default off) extends existing water-only branch pruning
+to mixed held-gear/water frames, strictly after ground/gear depth
+restoration and portrait stamping, for the two WATER_REPLAY submissions.
+It conservatively keeps the ancestor paths of relevant renderables,
+lights and cameras, and falls back on unknown nodes, LOD, unsafe hooks,
+pending shadow refresh or active scene matrix updates. Visibility is
+restored in finally. It replaces repeated native walks with one JS scan
+plus selective native walks; actual net cost must be measured.
+
+`replayRegistryMemo` (default off) shares ancestor root/visibility reads
+between adjacent pure registry collections, and shares the just-collected
+front list with the immediate stencil stamp. No cross-frame or cross-draw
+visibility cache. These switches are independent; the existing
+water-only pruner, ground restoration order, stencil rules and scissor
+policy are unchanged.
