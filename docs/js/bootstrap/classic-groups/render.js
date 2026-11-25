@@ -13,7 +13,7 @@
     "js/character-held-tools.js?v=20261119charVisuals1", // Held tool/weapon planes for any character; game.js calls init() in its tool section.
     "js/world-render-pipeline.js?v=20261124h4a9124e", // Pass order, outline materials/targets and render scopes; game.js calls init() after its camera exists.
     "js/render-ab-benchmark.js?v=20261124localReplay2", // On-device A/B: frame-scoped render hooks on vs off (Settings → Dev Tools).
-    "js/shadow-map-refresh-throttle.js?v=20261124localReplay1",
+    "js/shadow-map-refresh-throttle.js?v=20261124localReplay3",
     "js/farm-tile-render-batches.js?v=20261123pr2110rebase1",
     "js/zone-prop-render-batches.js?v=20261124traceHotpaths2",
     "js/wilderness-distance-cull.js?v=20261119h89ca824", // Loaded before game.js; scope begins after static prop batching.
