@@ -186,6 +186,46 @@
       family: "enhanced", tags: ["enhanced", "mirror"],
       desc: "Enhanced Health generated from actual damage dealt; it absorbs incoming Health loss before ordinary Health."
     },
+    undertowStamina: {
+      name: "Undertow Stamina", resource: "stamina", extend: "zero", priority: 91, recovers: false,
+      family: "control", tags: ["tothal", "water"],
+      desc: "Ordinary Stamina recovery clears Undertow point for point before restoring Stamina. Black-Stamina recovery is unaffected."
+    },
+    calcifiedFooting: {
+      name: "Calcified Footing", resource: "footing", extend: "currentBack", priority: 83, recovers: true,
+      family: "control", tags: ["hronal", "earth"],
+      desc: "Ordinary Footing loss consumes up to the same amount of Calcified Footing and inflicts equal additional Footing loss, limited to remaining Footing."
+    },
+    soulweightedHealth: {
+      name: "Soulweighted Health", resource: "health", extend: "currentBack", priority: 84, recovers: true,
+      family: "control", tags: ["kanthic", "soul"],
+      desc: "Ordinary direct Health loss discharges up to an equal amount of Soulweight, draining that much ordinary Stamina without triggering Exhaustion."
+    },
+    veilmarkedHealth: {
+      name: "Veilmarked Health", resource: "health", extend: "currentBack", priority: 85, recovers: true,
+      family: "offensiveDebuff", tags: ["ohthic", "spirit"],
+      desc: "Direct damage consumes up to an equal amount of Veilmark and that portion bypasses enhanced Health protection."
+    },
+    currentStamina: {
+      name: "Current Stamina", resource: "stamina", extend: "currentBack", priority: 38, recovers: false, enhanced: true,
+      family: "enhanced", tags: ["enhanced", "tothal"],
+      desc: "A reserve only dodges may spend. Each point pays for two ordinary Stamina."
+    },
+    hearthstoneFooting: {
+      name: "Hearthstone Footing", resource: "footing", extend: "currentBack", priority: 38, recovers: false, enhanced: true,
+      family: "enhanced", tags: ["enhanced", "hronal"],
+      desc: "Absorbs Footing loss one for one; each point consumed restores one ordinary Stamina."
+    },
+    pactHealth: {
+      name: "Pact Health", resource: "health", extend: "currentBack", priority: 38, recovers: false, enhanced: true,
+      family: "enhanced", tags: ["enhanced", "kanthic"],
+      desc: "Absorbs direct Health damage at two for one. Each point consumed adds one Soulweighted Health to its owner; the debt takes effect on subsequent hits."
+    },
+    guardianHealth: {
+      name: "Guardian Health", resource: "health", extend: "currentBack", priority: 39, recovers: false, enhanced: true,
+      family: "enhanced", tags: ["enhanced", "ohthic"],
+      desc: "Absorbs damage dealt through the Health-affliction damage channel at two for one. Direct weapon damage cannot spend it."
+    },
     dementedStamina: {
       name: "Demented Stamina", resource: "stamina", extend: "currentBack", priority: 32, recovers: true,
       family: "control", tags: ["fey", "illusion", "vertigo"],
@@ -218,6 +258,19 @@
     resoluteFooting: Object.freeze({ resource: "footing", conversionRate: 3, normalPriority: 50 }),
     resoluteHealth: Object.freeze({ resource: "health", conversionRate: 3, normalPriority: 50 }),
     mirroredHealth: Object.freeze({ resource: "health", conversionRate: 1, normalPriority: 30 }),
+    currentStamina: Object.freeze({
+      resource: "stamina", conversionRate: 2, normalPriority: 5, beneficialPriority: 120,
+      requiresBeneficialTransaction: true, benefitsTransaction: tx => tx?.actionKind === "combatDodge" || (!tx?.actionKind && /\\bdodge\\b/i.test(String(tx?.reason || ''))),
+    }),
+    hearthstoneFooting: Object.freeze({ resource: "footing", conversionRate: 1, normalPriority: 60 }),
+    pactHealth: Object.freeze({
+      resource: "health", conversionRate: 2, normalPriority: 5, beneficialPriority: 90,
+      requiresBeneficialTransaction: true, benefitsTransaction: tx => tx?.source === "directDamage",
+    }),
+    guardianHealth: Object.freeze({
+      resource: "health", conversionRate: 2, normalPriority: 5, beneficialPriority: 100,
+      requiresBeneficialTransaction: true, benefitsTransaction: tx => tx?.source === "afflictionTick",
+    }),
   });
   // Short-lived combat debuffs are deliberately separate from resource-ring
   // afflictions: they change combat math for a duration without occupying
@@ -815,6 +868,13 @@
   // restored while not Exhausted. Effects that explicitly heal black-Stamina
   // debt pass exhaustionAmount; if that reaches 100, Exhausted clears with
   // ordinary Stamina still at exactly 0. No same-call spillover is allowed.
+  // Both ordinary recovery paths pay Undertow first. No per-frame work beyond the active reserve check.
+  function staminaAfterUndertow(entity, amount) {
+    if (!(amount > 0) || !(getAffliction(entity, "undertowStamina") > 0)) return amount;
+    const payable = Math.min(getAffliction(entity, "undertowStamina"), Math.max(0, round1(amount))); // Match the ordinary Stamina pool's tenth-point precision.
+    return Math.max(0, amount - removeAffliction(entity, "undertowStamina", payable));
+  }
+
   function restoreStamina(entity, amount, options = {}) {
     if (!entity) return { stamina: 0, blackStamina: 0, exhaustionCleared: false };
     const normalAmount = Math.max(0, Number(amount) || 0);
@@ -836,7 +896,7 @@
     }
 
     const beforeStamina = clamp(Number(entity.stamina) || 0, 0, getEffectiveMax(entity, "stamina"));
-    entity.stamina = round1(clamp(beforeStamina + normalAmount, 0, getEffectiveMax(entity, "stamina")));
+    entity.stamina = round1(clamp(beforeStamina + staminaAfterUndertow(entity, normalAmount), 0, getEffectiveMax(entity, "stamina")));
     restoredStamina = round1(entity.stamina - beforeStamina);
     enforceCaps(entity);
     return { stamina: restoredStamina, blackStamina: 0, exhaustionCleared: false };
@@ -909,6 +969,11 @@
       remaining = Math.max(0, remaining - actualEffectivePaid);
       weightedTempo += actualEffectivePaid * tempo;
 
+      if (entry.id === "pactHealth") {
+        addAffliction(entity, "soulweightedHealth", removed); // The borrowed shield's debt is charged only when it is actually consumed.
+      } else if (entry.id === "hearthstoneFooting") {
+        restoreStamina(entity, removed); // Ordinary restoration obeys Undertow and Exhaustion.
+      }
       if (entry.id === "moralizedStamina") {
         window.EnchantmentSystem?.logEvent?.(`${removed} Moralized Stamina paid ${round1(actualEffectivePaid)} Stamina`);
       } else if (entry.id === "furiousStamina" && tempo > 1) {
@@ -1002,6 +1067,11 @@
     const ordinaryLoss = enhanced.ordinaryRemaining;
     const before = entity.footing;
     entity.footing = round1(clamp(before - ordinaryLoss, 0, getEffectiveMax(entity, "footing")));
+    const ordinarySpent = round1(Math.max(0, before - entity.footing)); // Only loss past enhanced Footing can fracture calcification.
+    if (ordinarySpent > 0 && getAffliction(entity, "calcifiedFooting") > 0) {
+      const extra = removeAffliction(entity, "calcifiedFooting", Math.min(ordinarySpent, entity.footing));
+      entity.footing = round1(Math.max(0, entity.footing - extra));
+    }
     return round1(before - entity.footing);
   }
 
@@ -1067,10 +1137,16 @@
 
     const buildupAttackPower = attackPowerForAttack(opts); // One shared source for ordinary and Drunken Health damage adapters.
     finalDamage *= statModifier(entity, 'incomingHealthDamage'); // Player trade-offs apply to actual direct Health damage (including heavy Bruised consumption), not raw affliction chances.
-    const enhanced = resolveEnhancedResourceTransaction(entity, "health", finalDamage, { kind: "damage", reason: opts.reason || "damage" }); // Resolute/Mirrored Health absorb before ordinary Health through the shared enhanced transaction.
+    const soulweightBefore = getAffliction(entity, "soulweightedHealth"); // Snapshot old debt so a Pact consumed by this same hit does not discharge its new debt immediately.
+    const bypass = removeAffliction(entity, "veilmarkedHealth", Math.min(finalDamage, Math.max(0, entity.health), getAffliction(entity, "veilmarkedHealth"))); // Finite mark bypasses shields, never amplifies total incoming damage.
+    const enhanced = resolveEnhancedResourceTransaction(entity, "health", Math.max(0, finalDamage - bypass), { kind: "damage", source: "directDamage", reason: opts.reason || "damage" });
     const before = entity.health;
-    entity.health = round1(clamp(entity.health - enhanced.ordinaryRemaining, 0, getEffectiveMax(entity, "health")));
+    entity.health = round1(clamp(entity.health - enhanced.ordinaryRemaining - bypass, 0, getEffectiveMax(entity, "health")));
     const lost = round1(before - entity.health);
+    if (lost > 0 && soulweightBefore > 0 && !entity.exhaustion?.active && entity.stamina > 0) {
+      const drained = removeAffliction(entity, "soulweightedHealth", Math.min(lost, soulweightBefore, entity.stamina)); // A drain, not a paid action: no action triggers or Black-Stamina debt.
+      entity.stamina = round1(Math.max(0, entity.stamina - drained));
+    }
     // Shared player/NPC damage path: retain the real lethal weapon type, not a
     // currently-active bleed/poison buildup that may have come from an older hit.
     if (before > 0 && entity.health <= 0) entity._lethalDamageCause = String(opts.tag || opts.damageType || opts.reason || 'impact').toLowerCase();
@@ -1138,7 +1214,7 @@
       }
       clearExhaustedIfFull(entity);
     } else if (!staminaRegenBlocked) {
-      entity.stamina = round1(clamp(entity.stamina + staminaRate * mul * dt, 0, getEffectiveMax(entity, "stamina")));
+      entity.stamina = round1(clamp(entity.stamina + staminaAfterUndertow(entity, staminaRate * mul * dt), 0, getEffectiveMax(entity, "stamina")));
     }
 
     if (entity.health > 0) applyHealthRecovery(entity, healthRate * mul * dt);
