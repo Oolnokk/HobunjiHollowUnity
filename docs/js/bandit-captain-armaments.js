@@ -29,7 +29,10 @@
     const available = flourishes.slice(), slots = FLOURISH_SLOTS.slice(), result = {};
     for (let i = 2; i < enchantmentCount(stars); i++) {
       const slot = slots.splice(Math.min(slots.length - 1, Math.floor(rng() * slots.length)), 1)[0];
-      const id = available.splice(Math.min(available.length - 1, Math.floor(rng() * available.length)), 1)[0];
+      const eligible = available.filter(id => window.EnchantmentSystem?.allowsFlourishSlot?.(id, slot) !== false); // No Fury on Held or Unshackled on Combo.
+      if (!eligible.length) return null;
+      const id = choose(eligible, rng);
+      available.splice(available.indexOf(id), 1);
       result[slot] = id;
     }
     return { base, flourishes: result };
