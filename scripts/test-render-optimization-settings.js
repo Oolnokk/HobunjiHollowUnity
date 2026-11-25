@@ -46,6 +46,7 @@ const document = {
 const calls = [];
 const log = (name, v) => { calls.push(name + ':' + v); return v; };
 let denMemo = true, wheelCross = true, leanSync = true, propOn = true, gearOnce = true, ownerLink = true, weaponLimit = 0, frameScope = true, treeOn = false, faceted = true;
+let localRing = true, realTimeShadows = false; // Owner state for the two new performance policies.
 const registered = [];
 const storage = new Map([['hobunjiRenderOptimizations', JSON.stringify({ propBatches: false, gearParticlesOnce: false, rainSheets: false, 'xray-enemies': true, unknownSwitch: false })]]);
 const rain = { name: 'world_rain_planes', visible: true, parent: null };
@@ -54,7 +55,8 @@ rain.parent = scene;
 const win = {
   ZonePropRenderBatches: { snapshot: () => ({ enabled: propOn }), setEnabled: v => { propOn = log('prop', v !== false); return propOn; } },
   HeldObjectRenderOrder: {
-    snapshot: () => ({ gearParticlesOnceEnabled: gearOnce, heldOwnerLinkEnabled: ownerLink, otherWeaponXrayLimit: weaponLimit, replayScissorEnabled: true }),
+    snapshot: () => ({ localReplayRingEnabled: localRing, gearParticlesOnceEnabled: gearOnce, heldOwnerLinkEnabled: ownerLink, otherWeaponXrayLimit: weaponLimit, replayScissorEnabled: true }),
+    setLocalReplayRingEnabled: v => { localRing = log('localRing', v !== false); },
     setGearParticlesOnceEnabled: v => { gearOnce = log('gear', v !== false); return gearOnce; },
     setHeldOwnerLinkEnabled: v => { ownerLink = log('link', v !== false); return ownerLink; },
     setOtherWeaponXrayLimit: n => { weaponLimit = log('limit', n); return weaponLimit; },
@@ -63,6 +65,7 @@ const win = {
     getActorXrayEnabled: group => actorXray[group],
     setActorXrayEnabled: (group, on) => { actorXray[group] = on; },
   },
+  ShadowMapRefreshThrottle: { snapshot: () => ({ shadowRenderingEnabled:realTimeShadows }), setShadowRenderingEnabled: v => { realTimeShadows = log('shadows', v === true); } },
   RenderHooks: {
     register: hook => { registered.push(hook); return () => registered.splice(registered.indexOf(hook), 1); },
     getDebug: () => ({ frameScopeEnabled: frameScope }),
@@ -101,6 +104,14 @@ assert.equal(input('propBatches').checked, false, 'reflects the applied stored v
 assert.equal(input('replayScissor').checked, true);
 assert.equal(input('treeInstancing').checked, false, 'tree instancing is off by default');
 assert.equal(input('npcWeaponsBasePass').checked, true, 'NPC weapons in the base pass by default');
+
+assert.equal(input('localReplayRing').checked,true);
+assert.equal(input('realTimeShadows').checked,false);
+input('localReplayRing').checked = false; input('localReplayRing').dispatch('change');
+input('realTimeShadows').checked = true; input('realTimeShadows').dispatch('change');
+assert.equal(localRing,false); assert.equal(realTimeShadows,true);
+assert.equal(JSON.parse(storage.get('hobunjiRenderOptimizations')).localReplayRing,false);
+assert.equal(JSON.parse(storage.get('hobunjiRenderOptimizations')).realTimeShadows,true);
 
 // Regular Performance controls apply the stored choice and persist independently.
 const animalXray = document.getElementById('settingActorXray-animals');
@@ -158,6 +169,7 @@ assert.equal(input('gearParticlesOnce').checked, true);
 document.getElementById('settingRenderOptResetDefaults').dispatch('click');
 assert.deepEqual([propOn, gearOnce, ownerLink, weaponLimit, frameScope, treeOn, faceted, registered.length, leanSync, wheelCross, denMemo], [true, true, true, 0, true, false, true, 0, true, true, true]);
 assert.equal(storage.has('hobunjiRenderOptimizations'), false);
+assert.equal(localRing,true); assert.equal(realTimeShadows,false);
 assert.deepEqual(actorXray, actorXrayDefaults);
 assert.deepEqual([animalXray.checked, enemyXray.checked, playerXray.checked], [true, false, true]);
 const html = fs.readFileSync(path.join(__dirname, '../docs/index.html'), 'utf8'); // Verify defaults before the settings script starts.
