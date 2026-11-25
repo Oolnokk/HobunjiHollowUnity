@@ -16,6 +16,7 @@ const slice = (startMarker, endMarker) => {
   return source.slice(a, b);
 };
 const code = [
+  slice('  const XRAY_TILE_RADIUS =', '  const XRAY_CIRCLE_RADIUS ='),
   slice('  function isDescendantOf(', '  function worldYOf('),
   slice('  function actorRootForXrayMesh(', '  function actorXrayScope('),
 ].join('\n');
@@ -43,9 +44,59 @@ const api = new Function('window', 'performance', code + `
   replayCameraPosition = { x: 0, y: 0, z: 0 };
   const repaired = []; // Nonparticipant weapon-hand invariants are maintained in the same split loop.
   const enforceHeldMesh = mesh => repaired.push(mesh);
-  return { actorXrayDefaults, setActorXrayEnabled, refreshActorXrayRoots, split: (m, s, o, foot, repair = false) => splitReplayParticipants(m, s, o, foot, repair), repaired, setPolicy: v => { replayParticipantPolicy = v; }, skips: () => nonParticipantReplaySkips,
+  return { setCamera: (x,y,z) => { replayCameraPosition = {x,y,z}; }, ringDefault: localReplayRingEnabled, setRing: v => { localReplayRingEnabled = v; }, ringSkips: () => localReplayRingSkips, actorXrayDefaults, setActorXrayEnabled, refreshActorXrayRoots, split: (m, s, o, foot, repair = false) => splitReplayParticipants(m, s, o, foot, repair), repaired, setPolicy: v => { replayParticipantPolicy = v; }, skips: () => nonParticipantReplaySkips,
     actorOf: (m, s) => actorRootForXrayMesh(m, s), setOwnerLink: v => { heldOwnerLinkEnabled = v; participantCache = new WeakMap(); }, setLimit: n => { otherWeaponXrayLimit = n; },
     budgetSkips: () => otherWeaponXrayBudgetSkips, ownerLinkDefault: heldOwnerLinkEnabled, limitDefault: otherWeaponXrayLimit };`)(window, { now: () => 0 });
+
+// The shipped local gate keeps whole actors together, independent of the camera.
+assert.equal(api.ringDefault, true);
+at(player, -0.2, -0.2);
+at(shorty, -1.2, 0.8);
+const nearClub = shortClub;
+const farShort = at(node('far_short', scene, { hobunjiXrayActorRoot:true, speciesId:'porakaneki' }), 1.2, -0.2);
+const farClub = node('far_club', farShort);
+const farOrphan = at(node('orphan', scene), 12, 12);
+const ringOthers = [];
+assert.deepEqual(api.split([playerBlade, nearClub, farClub, farOrphan], scene, ringOthers, false, true), [playerBlade, nearClub]);
+assert.deepEqual(ringOthers, [farClub, farOrphan]);
+assert.equal(api.ringSkips(),2);
+at(player, 1.5, -0.2);
+assert.deepEqual(api.split([nearClub, farClub], scene, [], false, true), [farClub], 'crossing tiles changes membership immediately');
+// Foot/pants and hand selection must agree with the same owner tile,
+// including the player's scene-sibling visual rigs and linked weapons.
+at(player, 0.9, 0.9); at(shorty, 1.9, 1.9); at(farShort, 2.0, 0.9);
+const nearFoot = at(node('foot', shorty), 1.9, 1.9);
+const farFoot = at(node('foot', farShort), 2.0, 0.9);
+const nearPants = at(node('pants', shorty, {hobunjiPantsGarment:true}), 1.9, 1.9);
+const farPants = at(node('pants', farShort, {hobunjiPantsGarment:true}), 2.0, 0.9);
+const externalHolder = node('external_tool', scene, {hobunjiHeldPortraitOwner:farShort});
+externalHolder.isObject3D = true; farShort.isObject3D = true;
+const remoteFlail = at(node('flail', externalHolder), 0.5, 0.5);
+assert.deepEqual(api.split([nearFoot, farFoot, nearPants, farPants, playerFootNear], scene, [], true),
+  [nearFoot, nearPants, playerFootNear], 'feet and pants follow the owner ring, not the part position');
+assert.deepEqual(api.split([shortHand, remoteFlail], scene, [], false, true), [shortHand],
+  'scene-sibling weapon remains ordinary when its holder is distant, even if the weapon swings into the ring');
+// The active player-ring policy supersedes the old six-unit camera sphere.
+api.setCamera(0, 20, 0);
+assert.deepEqual(api.split([nearFoot,farFoot,nearPants,farPants,playerFootNear],scene,[],true),
+  [nearFoot,nearPants,playerFootNear], 'camera elevation cannot disable local foot and pants X-ray');
+api.setRing(false);
+assert.deepEqual(api.split([nearFoot,nearPants,playerFootNear],scene,[],true), [],
+  'legacy range retains the previous camera-distance test');
+api.setRing(true);
+api.setCamera(0,0,0);
+at(player, 1.0, 0.9);
+assert.deepEqual(api.split([nearFoot,farFoot,nearPants,farPants],scene,[],true),
+  [nearFoot,farFoot,nearPants,farPants], 'diagonal and axial neighbors are admitted immediately across the tile boundary');
+assert.deepEqual(api.split([shortHand,remoteFlail],scene,[],false,true),[shortHand,remoteFlail]);
+const preview = {isScene:true,parent:null};
+assert.deepEqual(api.split([farOrphan],preview,[],false,true),[farOrphan],'unrelated preview scenes retain legacy presentation');
+api.setPolicy('all');
+assert.deepEqual(api.split([farOrphan],scene,[],false,true),[farOrphan],'explicit full replay bypasses the local gate');
+api.setPolicy('rule');
+at(player, 0, 0); at(shorty, 0, 0);
+api.repaired.length = 0;
+api.setRing(false); // The remaining legacy A/B fixtures deliberately exercise the old distance policy.
 
 // Shipped defaults: owners resolved, other characters' weapons in the base pass (budget 0).
 assert.equal(api.ownerLinkDefault, true, 'owner link on by default');
