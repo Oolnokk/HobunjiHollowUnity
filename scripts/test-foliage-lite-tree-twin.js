@@ -18,7 +18,8 @@ catch (error) {
 }
 THREE.TextureLoader.prototype.load = () => new THREE.Texture(); // Leaf PNGs need a DOM; geometry does not.
 global.window = { THREE, __farmLog() {} };
-global.THREE = THREE;
+// The generator must use window.THREE (its injected runtime), not a bare global.
+delete global.THREE;
 require('../docs/js/foliage-generator.js');
 const generator = window.FoliageGenerator;
 assert.equal(typeof generator.liteTreeGeometry, 'function');
@@ -119,6 +120,14 @@ assert.equal(before, 2592, 'full shadewood bark keeps its authored tessellation'
   generator.setIdentityTreeMatrixFastPath(true);
 }
 
+// A different injected runtime must keep its native matrix update contract.
+{
+  const alternate = generator.forThree({...THREE,REVISION:'999'});
+  const tree = alternate.buildShadewoodMesh(4,9);
+  assert.equal(alternate.identityTreeMatrixStats().enrolled,0);
+  assert(tree.children.filter(o=>o.isMesh).every(o=>o.updateMatrixWorld===THREE.Object3D.prototype.updateMatrixWorld));
+  assert.notEqual(alternate,generator);
+}
 // border-terrain.js: a dense-wall tree contributes only the meshes it draws.
 const src = fs.readFileSync(path.resolve(__dirname, '..', 'docs/js/border-terrain.js'), 'utf8');
 const start = src.indexOf('function forEachDrawnTreeMesh(');
