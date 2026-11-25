@@ -138,53 +138,157 @@
   function rgbHsv(r,g,b) { r/=255;g/=255;b/=255; const M=Math.max(r,g,b),m=Math.min(r,g,b),d=M-m; let h=0;if(d){if(M===r)h=((g-b)/d+(g<b?6:0))/6;else if(M===g)h=((b-r)/d+2)/6;else h=((r-g)/d+4)/6;}return[h,M?d/M:0,M]; }
   function hsvRgb(h,s,v) { const i=Math.floor(h*6),f=h*6-i,p=v*(1-s),q=v*(1-f*s),t=v*(1-(1-f)*s);let r,g,b;switch(i%6){case 0:r=v;g=t;b=p;break;case 1:r=q;g=v;b=p;break;case 2:r=p;g=v;b=t;break;case 3:r=p;g=q;b=v;break;case 4:r=t;g=p;b=v;break;default:r=v;g=p;b=q;}return[Math.round(r*255),Math.round(g*255),Math.round(b*255)];}
   const hueDist=(a,b)=>{const d=Math.abs(a-b)%1;return Math.min(d,1-d)};
-  const ignored=(r,g,b,list)=>list.some(e=>{const c=hexRgb(e.hex);return Math.hypot(r-c[0],g-c[1],b-c[2])<=e.sensitivity});
-  const chroma=(r,g,b)=>{const s=r+g+b;return s?[r/s,g/s,b/s]:[1/3,1/3,1/3]};
+  // Profiles depend on immutable loaded source art and the species ignore rules,
+  // not the destination tint. Keep the small resulting profiles, not pixel arrays.
+  const profileCache = new Map();
+  const pixelStats = { profileBuilds:0, profileHits:0, recolors:0, patternFills:0 };
+  const PIXEL_CHUNK_BYTES = 4096*4; // Yield checkpoints, including sparse transparent art.
+  function eligibleColors(f) {
+    const list=ignores(f).map(e=>({c:hexRgb(e.hex),sensitivity:e.sensitivity}));
+    const cache=new Map(); // Bounded per-job RGB classification; alpha never enters the color math.
+    return (r,g,b)=>{
+      const k=(r<<16)|(g<<8)|b;
+      if(cache.has(k))return cache.get(k);
+      let result=null;
+      if(!(r===255&&g===255&&b===255)&&!list.some(e=>Math.hypot(r-e.c[0],g-e.c[1],b-e.c[2])<=e.sensitivity)){
+        const [h,s,v]=rgbHsv(r,g,b);
+        if(v>.08){
+          const sum=r+g+b;
+          result={h,s,v,c:sum?[r/sum,g/sum,b/sum]:[1/3,1/3,1/3]};
+        }
+      }
+      if(cache.size<8192)cache.set(k,result);
+      return result;
+    };
+  }
   const cd=(a,b)=>Math.hypot(a[0]-b[0],a[1]-b[1],a[2]-b[2]);
-
-  function rockProfile(px,list) {
-    const u=[];
-    for(let i=0;i<px.length;i+=4){if(!px[i+3])continue;const r=px[i],g=px[i+1],b=px[i+2];if((r===255&&g===255&&b===255)||ignored(r,g,b,list))continue;const v=rgbHsv(r,g,b)[2];if(v<=.08)continue;u.push({r,g,b,v,c:chroma(r,g,b)});}
-    if(!u.length)return{enabled:false,v:1};
-    const cell=.025,bins=new Map();
-    for(const p of u){const k=`${Math.round(p.c[0]/cell)},${Math.round(p.c[1]/cell)}`;let q=bins.get(k);if(!q){q={n:0,sr:0,sg:0,sb:0,m:0,sv:0};bins.set(k,q)}q.n++;q.sr+=p.c[0];q.sg+=p.c[1];q.sb+=p.c[2];q.sv+=p.v;q.m=Math.max(q.m,p.v)}
-    let best=null;
-    for(const q of bins.values()){if(q.n<Math.max(3,u.length*.01))continue;const score=q.m*3+q.sv/q.n+Math.min(q.n,u.length*.18)/Math.max(1,u.length*.18)*.75;if(!best||score>best.score)best={...q,score}}
-    if(!best)for(const q of bins.values()){const score=q.m*3+q.sv/q.n+Math.min(q.n,u.length*.18)/Math.max(1,u.length*.18)*.75;if(!best||score>best.score)best={...q,score}}
-    if(!best)return{enabled:false,v:1};
-    const c=[best.sr/best.n,best.sg/best.n,best.sb/best.n];let d=.065,f=u.filter(p=>cd(p.c,c)<=d);if(f.length<Math.max(8,u.length*.04)){d=.1;f=u.filter(p=>cd(p.c,c)<=d)}let hi=f[0]||u[0];for(const p of f)if(p.v>hi.v)hi=p;
-    return{enabled:!!f.length,v:hi.v||1,match:(r,g,b)=>cd(chroma(r,g,b),c)<=d};
+  function* profileSteps(px,f,color) {
+    const rock=f.species==='rockscale', bins=new Map(), scores=new Float64Array(36), cell=.025;
+    let count=0, firstV=0, peak=0;
+    for(let i=0;i<px.length;i+=4){
+      if(i&&i%PIXEL_CHUNK_BYTES===0)yield;
+      if(!px[i+3])continue;
+      const p=color(px[i],px[i+1],px[i+2]);if(!p)continue;
+      if(!count)firstV=p.v;
+      count++;peak=Math.max(peak,p.v);
+      if(rock){
+        const k=Math.round(p.c[0]/cell)*64+Math.round(p.c[1]/cell);
+        let q=bins.get(k);if(!q){q={n:0,sr:0,sg:0,sb:0,m:0,sv:0};bins.set(k,q);}
+        // Preserve the original pixel-order sums and tie-breaking.
+        q.n++;q.sr+=p.c[0];q.sg+=p.c[1];q.sb+=p.c[2];q.sv+=p.v;q.m=Math.max(q.m,p.v);
+      }else if(p.s>=.055)scores[Math.min(35,Math.floor(p.h*36))]+=.25+p.s;
+    }
+    if(!count)return {enabled:false,v:1};
+    if(rock){
+      let best=null;
+      const score=q=>q.m*3+q.sv/q.n+Math.min(q.n,count*.18)/Math.max(1,count*.18)*.75;
+      for(const q of bins.values()){if(q.n<Math.max(3,count*.01))continue;const n=score(q);if(!best||n>best.score)best={...q,score:n};}
+      if(!best)for(const q of bins.values()){const n=score(q);if(!best||n>best.score)best={...q,score:n};}
+      if(!best)return{enabled:false,v:1};
+      const c=[best.sr/best.n,best.sg/best.n,best.sb/best.n];
+      let near=0,nearPeak=0,wide=0,widePeak=0;
+      for(let i=0;i<px.length;i+=4){
+        if(i&&i%PIXEL_CHUNK_BYTES===0)yield;
+        if(!px[i+3])continue;
+        const p=color(px[i],px[i+1],px[i+2]);if(!p)continue;
+        const d=cd(p.c,c);
+        if(d<=.1){wide++;widePeak=Math.max(widePeak,p.v);}
+        if(d<=.065){near++;nearPeak=Math.max(nearPeak,p.v);}
+      }
+      const useWide=near<Math.max(8,count*.04);
+      return {enabled:!!(useWide?wide:near),v:(useWide?widePeak:nearPeak)||firstV||1,c,d:useWide?.1:.065};
+    }
+    let bi=-1,bs=0;
+    for(let b=0;b<36;b++){const sc=scores[(b+35)%36]*.35+scores[b]+scores[(b+1)%36]*.35;if(sc>bs){bs=sc;bi=b;}}
+    if(bi<0||!bs)return{enabled:false,v:peak||1};
+    const h=(bi+.5)/36,d=3.25/36;
+    let matched=0,hi=0;
+    for(let i=0;i<px.length;i+=4){
+      if(i&&i%PIXEL_CHUNK_BYTES===0)yield;
+      if(!px[i+3])continue;
+      const p=color(px[i],px[i+1],px[i+2]);if(p&&p.s>=.035&&hueDist(p.h,h)<=d){matched++;hi=Math.max(hi,p.v);}
+    }
+    return{enabled:!!matched,v:hi||firstV||1,h,d};
   }
 
-  function hueProfile(px,list) {
-    const bins=36,scores=new Float64Array(bins),u=[];
-    for(let i=0;i<px.length;i+=4){if(!px[i+3])continue;const r=px[i],g=px[i+1],b=px[i+2];if((r===255&&g===255&&b===255)||ignored(r,g,b,list))continue;const[h,s,v]=rgbHsv(r,g,b);if(v<=.08)continue;u.push({h,s,v});if(s>=.055)scores[Math.min(bins-1,Math.floor(h*bins))]+=.25+s;}
-    if(!u.length)return{enabled:false,v:1};let bi=-1,bs=0;for(let b=0;b<bins;b++){const sc=scores[(b-1+bins)%bins]*.35+scores[b]+scores[(b+1)%bins]*.35;if(sc>bs){bs=sc;bi=b}}
-    if(bi<0||!bs){let hi=u[0];for(const p of u)if(p.v>hi.v)hi=p;return{enabled:false,v:hi.v||1}}
-    const h=(bi+.5)/bins,d=3.25/bins,f=u.filter(p=>p.s>=.035&&hueDist(p.h,h)<=d);let hi=f[0]||u[0];for(const p of f)if(p.v>hi.v)hi=p;
-    return{enabled:!!f.length,v:hi.v||1,match:(H,S)=>S>=.035&&hueDist(H,h)<=d};
+  function* recolorSteps(px,key,sourceKey=null) {
+    const f=byKey.get(key);if(!f)throw Error('Unknown authored fish '+key);
+    const color=eligibleColors(f);
+    // Callers supply a key only for their immutable loaded source image.
+    const cacheKey=sourceKey==null?null:JSON.stringify([sourceKey,f.species,px.length]);
+    let p=cacheKey&&profileCache.get(cacheKey);
+    if(p){pixelStats.profileHits++;}
+    else{
+      p=yield* profileSteps(px,f,color);pixelStats.profileBuilds++;
+      if(cacheKey){if(profileCache.size>=32)profileCache.delete(profileCache.keys().next().value);profileCache.set(cacheKey,p);}
+    }
+    const t=rgbHsv(...hexRgb(f.baseColor)),hi=p.v||1, painted=new Map();
+    for(let i=0;i<px.length;i+=4){
+      if(i&&i%PIXEL_CHUNK_BYTES===0)yield;
+      if(!px[i+3])continue;
+      const r=px[i],g=px[i+1],b=px[i+2],k=(r<<16)|(g<<8)|b;
+      let out=painted.get(k);
+      if(out===undefined){
+        const c=color(r,g,b);
+        const matches=c&&(!p.enabled||(f.species==='rockscale'?cd(c.c,p.c)<=p.d:c.s>=.035&&hueDist(c.h,p.h)<=p.d));
+        if(matches){const [nr,ng,nb]=hsvRgb(t[0],t[1],clamp(t[2]*(c.v/hi)*(1+f.valueBoost)));out=(nr<<16)|(ng<<8)|nb;}
+        else out=k;
+        if(painted.size<8192)painted.set(k,out);
+      }
+      px[i]=out>>16;px[i+1]=(out>>8)&255;px[i+2]=out&255;
+    }
+    pixelStats.recolors++;
   }
-
-  function recolorBase(data,f) {
-    const px=data.data,t=rgbHsv(...hexRgb(f.baseColor)),list=ignores(f),p=f.species==='rockscale'?rockProfile(px,list):hueProfile(px,list);const hi=p.v||1;
-    for(let i=0;i<px.length;i+=4){if(!px[i+3])continue;const r=px[i],g=px[i+1],b=px[i+2];if((r===255&&g===255&&b===255)||ignored(r,g,b,list))continue;const[H,S,V]=rgbHsv(r,g,b);if(V<=.08)continue;if(p.enabled){const ok=p.match.length===3?p.match(r,g,b):p.match(H,S);if(!ok)continue}const[nr,ng,nb]=hsvRgb(t[0],t[1],clamp(t[2]*(V/hi)*(1+f.valueBoost)));px[i]=nr;px[i+1]=ng;px[i+2]=nb;}
+  function* patternSteps(px,color) {
+    const t=rgbHsv(...hexRgb(color)),palette=new Int32Array(256);
+    for(let v=0;v<256;v++){const [r,g,b]=hsvRgb(t[0],t[1],v/255);palette[v]=(r<<16)|(g<<8)|b;}
+    for(let i=0;i<px.length;i+=4){
+      if(i&&i%PIXEL_CHUNK_BYTES===0)yield;
+      if(!px[i+3])continue;
+      const out=palette[Math.max(px[i],px[i+1],px[i+2])];
+      px[i]=out>>16;px[i+1]=(out>>8)&255;px[i+2]=out&255;
+    }
+    pixelStats.patternFills++;
   }
-
+  async function drainPixelSteps(steps) {
+    for(const _ of steps){await window.PixelWorkYield?.maybeYield?.();}
+  }
   function load(path) {
     if(imgCache.has(path))return imgCache.get(path);
     const p=new Promise((res,rej)=>{const i=new Image();i.crossOrigin='anonymous';i.onload=()=>res(i);i.onerror=()=>rej(new Error(`Failed fish sprite ${path}`));i.src=path});
-    imgCache.set(path,p);return p;
+    imgCache.set(path,p);p.catch(()=>{if(imgCache.get(path)===p)imgCache.delete(path);});return p;
   }
-
+  const canvasJob = fn => window.PixelWorkYield?.runCanvasJob ? window.PixelWorkYield.runCanvasJob(fn) : fn();
+  async function processPixels(kind,data,args,steps) {
+    if(window.PixelWorkYield?.processPixels)return window.PixelWorkYield.processPixels(kind,data,args,()=>drainPixelSteps(steps()));
+    return drainPixelSteps(steps());
+  }
   async function layer(path,color) {
-    const i=await load(path),c=document.createElement('canvas');c.width=i.naturalWidth;c.height=i.naturalHeight;const x=c.getContext('2d');x.drawImage(i,0,0);const d=x.getImageData(0,0,c.width,c.height),t=rgbHsv(...hexRgb(color));
-    for(let n=0;n<d.data.length;n+=4){if(!d.data[n+3])continue;const v=rgbHsv(d.data[n],d.data[n+1],d.data[n+2])[2],[r,g,b]=hsvRgb(t[0],t[1],v);d.data[n]=r;d.data[n+1]=g;d.data[n+2]=b}x.putImageData(d,0,0);return c;
+    const i=await load(path);
+    return canvasJob(async()=>{
+      const c=document.createElement('canvas');c.width=i.naturalWidth;c.height=i.naturalHeight;
+      const x=c.getContext('2d');x.drawImage(i,0,0);
+      const d=x.getImageData(0,0,c.width,c.height);
+      await processPixels('fish-pattern',d.data,{color},()=>patternSteps(d.data,color));
+      await window.PixelWorkYield?.maybeYield?.();x.putImageData(d,0,0);return c;
+    });
   }
 
   async function render(path,f) {
-    const i=await load(path),c=document.createElement('canvas');c.width=i.naturalWidth;c.height=i.naturalHeight;const x=c.getContext('2d');x.drawImage(i,0,0);
-    if(f.species==='sixfin'){x.drawImage(await layer('assets/objectsprites/fish_patterns/base.png',f.patterns.base),0,0,c.width,c.height);x.drawImage(await layer('assets/objectsprites/fish_patterns/stripes.png',f.patterns.stripes),0,0,c.width,c.height);}else{const d=x.getImageData(0,0,c.width,c.height);recolorBase(d,f);x.putImageData(d,0,0)}
-    return c;
+    const i=await load(path);
+    if(f.species==='sixfin'){
+      // Layer jobs own their own queue slot; do not hold a slot while awaiting them.
+      const base=await layer('assets/objectsprites/fish_patterns/base.png',f.patterns.base);
+      const stripes=await layer('assets/objectsprites/fish_patterns/stripes.png',f.patterns.stripes);
+      return canvasJob(async()=>{const c=document.createElement('canvas');c.width=i.naturalWidth;c.height=i.naturalHeight;const x=c.getContext('2d');
+        x.drawImage(i,0,0);x.drawImage(base,0,0,c.width,c.height);x.drawImage(stripes,0,0,c.width,c.height);return c;});
+    }
+    return canvasJob(async()=>{
+      const c=document.createElement('canvas');c.width=i.naturalWidth;c.height=i.naturalHeight;
+      const x=c.getContext('2d');x.drawImage(i,0,0);const d=x.getImageData(0,0,c.width,c.height);
+      await processPixels('fish-base',d.data,{key:f.key,sourceKey:path},()=>recolorSteps(d.data,f.key,path));
+      await window.PixelWorkYield?.maybeYield?.();x.putImageData(d,0,0);return c;
+    });
   }
 
   function getRecoloredCanvas(path,key) {
@@ -545,13 +649,13 @@
     buildItemDefs,
     buildBasePrices,
     getRecoloredCanvas,
+    pixelSteps:recolorSteps, patternSteps, // Same pure algorithms in worker and cooperative fallback.
+    getPixelDebug:()=>({...pixelStats,profiles:profileCache.size}),
     getMinigamePresentationScale:minigamePresentationScale,
     hasMinigameSilhouetteCollisionMask,
     minigameSilhouetteContainsLocalPoint,
     getMinigameSilhouetteCollisionDebug:minigameSilhouetteCollisionDebug,
     getPresentationStyleDebug:()=>({ ...presentationStyleStats, running:presentationRunning }), // Mobile-friendly snapshot; no debug DOM reads in the animation loop.
   };
-  configureCatchCamera();
-  hookFishing();
-  hookShippingItemBridge();
+  if(!window.__hobunjiPixelWorker){configureCatchCamera();hookFishing();hookShippingItemBridge();}
 })();
