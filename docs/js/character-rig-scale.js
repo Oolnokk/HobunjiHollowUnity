@@ -308,6 +308,13 @@
     return Number.isFinite(stored) && stored > 0 ? stored : 1;
   }
 
+  function childHeadFactorXFor(overrides, node, yFactor) {
+    const explicit = Number(overrides?.childHeadFactorX); // Horizontal child head compensation survives an editor or hand-driver reapplication.
+    const stored = Number(node?.userData?.hobunjiCharacterRigHeadRuntime?.childHeadFactorX);
+    const value = Number.isFinite(explicit) && explicit > 0 ? explicit : stored;
+    return Number.isFinite(value) && value > 0 ? value : yFactor; // Existing uniform children continue using their historical scalar.
+  }
+
   function scaledNeckAdjustment(rig, relativeHeadScaleY) {
     const headCenterY = Number(rig?.headCentroidLocal?.y); // Actual alpha-weighted base-head center in the same local plane space as the unscaled neck.
     const neckY = Number(rig?.neckLocal?.y); // Rest contact point at the last painted head pixel, before head size is authored.
@@ -327,9 +334,11 @@
     const bx = clampScale(Number.isFinite(Number(overrides.x)) && Number(overrides.x) > 0 ? overrides.x : resolved.x);
     const by = clampScale(Number.isFinite(Number(overrides.y)) && Number(overrides.y) > 0 ? overrides.y : resolved.y);
     const headNumber = Number(overrides.head);
-    const head = clampScale((Number.isFinite(headNumber) && headNumber > 0 ? headNumber : resolved.head) * childHeadFactorFor(overrides, found.node));
+    const verticalChildHead = childHeadFactorFor(overrides, found.node);
+    const head = clampScale((Number.isFinite(headNumber) && headNumber > 0 ? headNumber : resolved.head) * verticalChildHead);
     const relativeHeadY = by > 0 ? head / by : head; // Local head-size factor after removing body height scaling.
-    target.scale.set(bx > 0 ? head / bx : head, relativeHeadY, 1);
+    const horizontalChildHead = childHeadFactorXFor(overrides, found.node, verticalChildHead); // Compensate the independently authored portrait width, while leaving final head width equal to final head height.
+    target.scale.set(bx > 0 ? head / bx * horizontalChildHead / verticalChildHead : head, relativeHeadY, 1);
     target.updateMatrix?.();
     const scaledNeckDeltaY = scaledNeckAdjustment(rig, relativeHeadY); // Recalculate the head-bottom contact after size changes, before the spine/hunch solver runs.
     const offsetNumber = Number(overrides.offsetY);
