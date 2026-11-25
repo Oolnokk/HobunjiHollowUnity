@@ -642,7 +642,7 @@
   function initEntity(entity) {
     entity.afflictions = { ...defaultAfflictions(), ...(entity.afflictions || {}) };
     // Old sensory-only Fey segments are not carried over into the new exertion-based afflictions.
-    for (const obsolete of ["phantomWoundsHealth", "phantomBloodHealth", "phantomPainFooting"]) delete entity.afflictions[obsolete];
+    for (const obsolete of ["phantomWoundsHealth", "phantomBloodHealth", "phantomPainFooting", "undertowStamina", "calcifiedFooting", "hearthstoneFooting"]) delete entity.afflictions[obsolete];
     if (Object.prototype.hasOwnProperty.call(entity, "_timedCombatDebuffs")) delete entity._timedCombatDebuffs; // Timed combat statuses are runtime-only and must never survive a fresh spawn/profile initialization.
     entity.exhaustion = { active: false, blackStamina: 100, ...(entity.exhaustion || {}) };
     if (entity.exhaustion.active) entity.stamina = 0; // Normalize stale saves/spawns before any action can observe regular Stamina during Black-Stamina debt.
@@ -998,7 +998,7 @@
     }
 
     const beforeStamina = clamp(Number(entity.stamina) || 0, 0, getEffectiveMax(entity, "stamina"));
-    entity.stamina = round1(clamp(beforeStamina + normalAmount), 0, getEffectiveMax(entity, "stamina"));
+    entity.stamina = round1(clamp(beforeStamina + normalAmount, 0, getEffectiveMax(entity, "stamina")));
     restoredStamina = round1(entity.stamina - beforeStamina);
     enforceCaps(entity);
     return { stamina: restoredStamina, blackStamina: 0, exhaustionCleared: false };
@@ -1326,7 +1326,7 @@
       }
       clearExhaustedIfFull(entity);
     } else if (!staminaRegenBlocked) {
-      entity.stamina = round1(clamp(entity.stamina + staminaRate * mul * dt), 0, getEffectiveMax(entity, "stamina"));
+      entity.stamina = round1(clamp(entity.stamina + staminaRate * mul * dt, 0, getEffectiveMax(entity, "stamina")));
     }
 
     if (entity.health > 0) applyHealthRecovery(entity, healthRate * mul * dt);
