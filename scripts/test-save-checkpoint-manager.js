@@ -28,6 +28,32 @@ const vm = require('node:vm');
   assert.match(source, /folder-baseline/, 'old folders seed recovery from canonical state before future writes');
   assert.match(source, /rollbackRestore/, 'failed restores attempt a canonical folder rollback');
 
+  // Execute the actual folder writer, including the asynchronous directory
+  // boundary, rather than relying exclusively on the simulated adapter below.
+  {
+    const start = folderCoreSource.indexOf('  async function writeRecoveryCheckpoint(');
+    const end = folderCoreSource.indexOf('  async function readRecoveryCheckpoint(', start);
+    assert.ok(start >= 0 && end > start);
+    const record = { reason: 'before I/O', snapshot: { marker: 1 } };
+    let rawOnDisk = null, stringifyCalls = 0, failClose = false;
+    const writable = { async write(raw) { rawOnDisk = raw; }, async close() { if (failClose) throw Error('close failed'); } };
+    const handle = { async getDirectoryHandle() {
+      record.snapshot.marker = 2;
+      return { async getFileHandle() { return { async createWritable() { return writable; } }; } };
+    } };
+    const json = { stringify(value) { stringifyCalls++; return JSON.stringify(value); } };
+    const write = new Function('_state','_handle','RECOVERY_DIR','recoveryFilename','JSON',
+      folderCoreSource.slice(start,end)+'\nreturn writeRecoveryCheckpoint;')('ready',handle,'recovery',slot=>slot,json);
+    const raw = await write('manual',record,{returnSerialized:true});
+    assert.equal(stringifyCalls,1);
+    assert.equal(raw,rawOnDisk);
+    assert.equal(JSON.parse(raw).snapshot.marker,1,'capture precedes the async directory lookup');
+    assert.equal(record.snapshot.marker,2);
+    assert.equal(await write('manual',record),record,'legacy callers keep their original return type');
+    failClose=true;
+    await assert.rejects(write('manual',record,{returnSerialized:true}),/close failed/,'uncommitted bytes must not be returned');
+  }
+
   const store = new Map(); // In-memory localStorage proves browser fallback remains independent from folder files.
   const localStorage = {
     getItem(key) { return store.has(key) ? store.get(key) : null; },
