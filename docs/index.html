@@ -207,6 +207,7 @@
   <script src="js/character-action-locks.js?v=20261125heaec4ed"></script> <!-- Shared quaternion-safe ownership for procedural rig deformations. -->
   <script src="js/npc-character-state.js?v=20261117kissPoseLock2"></script>
   <script src="js/npc-movement-head-target.js?v=20261117kissHeadLock3"></script> <!-- Shared invisible movement gaze for allied NPC walkers and humanoid hostiles. -->
+  <script src="js/offarea-npc-tick.js?v=20261125offAreaTick1"></script> <!-- Opt-in coarse ticking of off-area NPC walkers; must load before game.js. -->
   <!-- Accepted alcohol handoff + NPC playback; game.js supplies private-state adapters. -->
   <script src="js/npc-drink-interaction.js?v=20261119komaRigIdle5"></script>
   <script src="js/player-yawn-stretch-presentation.js?v=20261119shoulderReach5"></script> <!-- Final-render player yawn stretch; temporarily hides held visuals without unequipping them. -->
@@ -2988,7 +2989,7 @@
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups2" data-classic-group="render"></script>
   <script src="js/held-gift-policy.js?v=20261122heldGiftPolicy1"></script> <!-- Shared gifting policy and clothing visual preparation; game.js owns equipment state. -->
   <script src="js/rootledoot-encounter.js?v=20261124shared2"></script>
-  <script src="game.js?v=20261124encounterAudit3"></script>
+  <script src="game.js?v=20261125offAreaTick1"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261115nativeArena1"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->

@@ -3216,3 +3216,16 @@ XP can be lost on a hard crash; no gameplay state other than that XP is deferred
 Also fixed on the branch: six tests that failed against `origin/main` only on the perf branch (stale
 frame-ownership manifest line for `presentationLoop`, an exact `?v=` pin in test data, the pre-game-diagnostics
 module list, and three source-text assertions that did not allow the new replay-memo arguments).
+
+
+### 25 Nov — opt-in coarse ticking of off-area NPC walkers (not yet playtested)
+
+Design direction: the wilderness should feel alive the way staged-encounter mods do, not through a full
+world simulation. Every NPC walker used to run its complete schedule `update` every frame, including walkers in other
+areas that nobody can see. `docs/js/offarea-npc-tick.js` (`window.OffAreaNpcTick`) runs that same real update at 4 Hz with the
+skipped time accumulated (capped at 0.5 s) for walkers that are in a different area than the player. Walkers that need
+per-frame control keep it: named animals, baby-following, cliff climbs, paused/dialogue/cutscene walkers and wildlife flight.
+Off by default; enable with `?offAreaNpcTick=1`, `localStorage.hobunjiOffAreaNpcTick='1'` or
+`OffAreaNpcTick.setEnabled(true)`, and compare with `OffAreaNpcTick.getDebug()` (skipped vs coarse updates).
+**Not measured / not played:** the effect on frame time, and whether NPC arrivals, area transfers, seats and beds behave
+identically. Unit tests cover the cadence and every exclusion, not the live schedule.
