@@ -38,17 +38,21 @@
   const clamp = (value, lo, hi) => Math.max(lo, Math.min(hi, value));
 
   function rawDay() {
-    const debug = window.CalendarSystem?.timeDebugSnapshot?.();
-    return Math.max(0, Math.floor(num(debug?.rawDay, window.calendar?.day || 0)));
+    const calendar = window.CalendarSystem; // Scalar raw clock read avoids allocating a diagnostic report per relationship.
+    const day = calendar?.getRawDay ? calendar.getRawDay() : calendar?.timeDebugSnapshot?.()?.rawDay;
+    return Math.max(0, Math.floor(num(day, window.calendar?.day || 0)));
   }
   function time01() {
-    const debug = window.CalendarSystem?.timeDebugSnapshot?.();
-    return clamp(num(debug?.time01, window.time01 || 0), 0, 0.999999);
+    const calendar = window.CalendarSystem; // Read the current fraction without formatting or UI work.
+    const fraction = calendar?.getRawTime01 ? calendar.getRawTime01() : calendar?.timeDebugSnapshot?.()?.time01;
+    return clamp(num(fraction, window.time01 || 0), 0, 0.999999);
   }
   function clockHour() { return num(window.CalendarSystem?.getHour?.(), NaN); }
   function socialDay() {
-    const debug = window.CalendarSystem?.timeDebugSnapshot?.(); // Civil bridge snapshot is preferred because the full-day display clock intentionally wraps midnight to 0.
-    const civilDay = Number(debug?.civilDay); // Player-facing day already corrected for the 00:00→05:59 interval by MapLayoutSystem's calendar bridge.
+    const calendar = window.CalendarSystem; // Use the same civil-midnight authority as the full diagnostic snapshot.
+    const civilDay = Number(calendar?.getRawDay && calendar?.civilDayForRawDay
+      ? (calendar.isInitialized?.() === false ? null : calendar.civilDayForRawDay())
+      : calendar?.timeDebugSnapshot?.()?.civilDay); // Player-facing day already corrected for the 00:00→05:59 interval by MapLayoutSystem's calendar bridge.
     if (Number.isFinite(civilDay)) return Math.max(0, Math.floor(civilDay));
     const day = rawDay();
     const hour = clockHour();

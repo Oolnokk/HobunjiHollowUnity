@@ -90,6 +90,10 @@ assert.equal(buff('rested')?.durationS, 3 * 3600, 'Rested occupies a real three-
 assert.equal(buff('well-rested'), undefined);
 assert.equal(rest.movementSpeedMultiplier(), 1, 'Rested does not copy Well Rested speed bonuses');
 assert.equal(JSON.parse(storage.get('hobunjiSaveMeta')).characters[0].templePrayerRestBlessings.rested.expiresAtGameHour, 103);
+// Modern gameplay takes the same clock origin directly. No calendar debug
+// formatting should happen for stat reads, buffs or expiration checks.
+window.CalendarSystem.getRawClock = () => ({rawDay:Math.floor(hour/24),time01:(hour%24)/24});
+window.CalendarSystem.timeDebugSnapshot = () => ({seatedWaitReady:false});
 hour = 102.95;
 assert.equal(rest.isRested(), true);
 hour = 103.01;

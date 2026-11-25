@@ -32,6 +32,26 @@ assert(index.some(e=>e.speciesId===species.speciesId));
 assert.match(read('docs/js/attachment-rig-latest-authored-snapshot.js'),/boney-shinjimi-skeleton-species-runtime\.js/);
 const html=read('docs/index.html');
 assert(html.indexOf('boney-shinjimi-wilderness.js')>0&&html.indexOf('boney-shinjimi-wilderness.js')<html.indexOf('slagothim-traders.js'));
+// Exercise the actual game-owned disposal seam, rather than a permissive mock.
+const gameSource=read('docs/game.js'); // Live game injection must not diverge from the encounter fixture.
+const injection=gameSource.slice(gameSource.indexOf('window.SlagothimTraders?.init({'),gameSource.indexOf('window.DyeSystem?.init({',gameSource.indexOf('window.SlagothimTraders?.init({')));
+assert.match(injection,/\bTILE, player, hostileObjects,/,'live Shinjimi receives player, tile scale and hostiles');
+assert.match(injection,/despawnNpcWalker: despawnNpcVisitor,/,'encounter adapter uses the canonical visitor disposer');
+assert.match(read('docs/js/boney-shinjimi-wilderness.js'),/despawnNpcWalker\?\.\(w,true\)/,'only stale constructor results opt into unregistered disposal');
+const disposeStart=gameSource.indexOf('function despawnNpcVisitor('),disposeEnd=gameSource.indexOf('let visitorArrivalCheckT',disposeStart);
+assert(disposeStart>=0&&disposeEnd>disposeStart,'production disposal seam found');
+const disposeSource=gameSource.slice(disposeStart,disposeEnd);
+const activeWalker={}; // Must never be removed by an unregistered walker's index of -1.
+const roster=[activeWalker];
+const retired=[];
+const disposeVisitor=new Function('npcWalkers','window',disposeSource+'\nreturn despawnNpcVisitor;')(roster,{PNGPlaneAvatar:{disposeAvatarModel:rig=>retired.push(rig)}});
+const rejectedRig={parent:{remove(){}}}; // Unique construction output not yet adopted into the roster.
+const unadopted={avatarGroup:rejectedRig,root:{parent:{remove(){}},_npcScene:{remove(){}},traverse(){}}};
+assert.equal(disposeVisitor(unadopted),false,'ordinary visitor exit still requires registry membership');
+assert.equal(disposeVisitor(unadopted,true),true,'explicit encounter cancellation retires an unadopted avatar');
+assert.equal(disposeVisitor(unadopted,true),false,'an unadopted result cannot be disposed twice');
+assert.deepEqual(retired,[rejectedRig]);
+assert.deepEqual(roster,[activeWalker],'unregistered cleanup must not remove a different live NPC');
 const travellers=read('docs/js/slagothim-traders.js');
 assert.match(travellers,/BoneyShinjimiWilderness\?\.init/);
 assert.match(travellers,/BoneyShinjimiWilderness\?\.update/);
@@ -186,7 +206,7 @@ async function testRealEncounterFlow() {
     area:'map_western_slope',rec:{id:'boney_shinjimi'},resetRouteState(){},update(){}};
   const spawned=[],despawned=[];
   const sceneGroups=[]; // Tracks the real encounter's one authored Highland house in a fake active zone scene.
-  const scene={add(group){group.parent=this;sceneGroups.push(group);},remove(group){group.parent=null;}};
+  let scene={add(group){group.parent=this;sceneGroups.push(group);},remove(group){group.parent=null;}};
   let generatedPiece=null; // Captures post-cut source geometry so the door can be verified against actual authored wall vertices.
   const authoredPiece=JSON.parse(read('docs/config/pieces/house-section-3x3.json'));
   moonWindow.GridTileAccessors={getActiveScene:()=>scene};
@@ -208,7 +228,7 @@ async function testRealEncounterFlow() {
   game.npcWalkers=[];
   game.getCurrentArea=()=>where;
   game.makeNpcWalker=async rec=>{npc.rec=rec;spawned.push(rec.id);return npc;}; // Same asynchronous construction contract as the real trader walker.
-  game.despawnNpcWalker=w=>{despawned.push(w); const at=game.npcWalkers.indexOf(w);if(at>=0)game.npcWalkers.splice(at,1);return true;};
+  game.despawnNpcWalker=(w,allowUnregistered=false)=>{const at=game.npcWalkers.indexOf(w);if(at<0&&allowUnregistered!==true)return false;despawned.push(w);if(at>=0)game.npcWalkers.splice(at,1);return true;}; // Mirror the live membership guard.
   moonWindow.RangedWeapons={hasLineOfSight:()=>visible,actorHitbox:()=>({center:{x:npc.root.position.x,y:0.6,z:npc.root.position.z}})};
   const rewards=[];
   let feyStacks=4; // Simulates persistent player stacks with the same CookingSystem contract.
@@ -314,6 +334,14 @@ async function testRealEncounterFlow() {
   game.player.y=(center.r+1.5)*64;
   deferNextChoice=true;C.update(.1);
   assert.equal(typeof continueDelayedChoice,'function','first reward dialogue can be paused before its grant');
+  // Replace the scene before the scheduler can see it: a late callback must not grant.
+  scene={add(group){group.parent=this;sceneGroups.push(group);},remove(group){group.parent=null;}};
+  continueDelayedChoice();await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(rewards.length,0,'old-scene choice cannot grant before syncZone runs');
+  assert.equal(feyStacks,4,'old-scene choice preserves Fey-sight');
+  C.restore(C.serialize());C.update(.1);await new Promise(resolve=>setImmediate(resolve));
+  deferNextChoice=true;C.update(.1);
+  assert.equal(C.debugSnapshot().phase,'scene','choice remains retriable after scene replacement');
   C.restore(C.serialize());continueDelayedChoice();
   await new Promise(resolve=>setImmediate(resolve));
   assert.equal(rewards.length,0,'stale first dialogue cannot grant into the restored encounter');
@@ -366,6 +394,14 @@ async function testRealEncounterFlow() {
   deferNextMilk=true;
   assert.equal(gifting.offerGift(npc),true,'paused milk cutscene starts before reload');
   assert.equal(typeof continueDelayedMilk,'function','a pending dialogue Continue is available for race testing');
+  scene={add(group){group.parent=this;sceneGroups.push(group);},remove(group){group.parent=null;}};
+  continueDelayedMilk();await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(milkInventory.puktukMilk,2,'old-scene callback cannot consume milk before syncZone');
+  assert.equal(C.serialize().milksGiven,0,'old-scene callback cannot change gift count');
+  assert.equal(feyStacks,7,'old-scene callback cannot clear Fey-sight');
+  assert.equal(gifting.offerGift(npc),false,'stale walker cannot start another gift before syncZone');
+  C.restore(C.serialize());C.update(.1);await new Promise(resolve=>setImmediate(resolve));
+  deferNextMilk=true;assert.equal(gifting.offerGift(npc),true,'milk remains retriable after scene replacement');
   C.restore(C.serialize()); // Same room and milk count; only encounter generation distinguishes the stale cutscene.
   continueDelayedMilk();
   await new Promise(resolve=>setImmediate(resolve));
@@ -426,6 +462,28 @@ async function testRealEncounterFlow() {
   assert.equal(C.debugSnapshot().reward,null,'next encounter begins without an old reward');
   assert.equal(C.serialize().hatTaken,false,'kasa resets for subsequent moons');
   assert.equal(C.serialize().milksGiven,0,'the next full moon resets Boney’s per-visit milk limit');
+  C.restore(prior);where='map_western_slope';visible=false;
+  let finishOld;const oldWalker={...npc,root:{...npc.root}};
+  game.makeNpcWalker=()=>new Promise(resolve=>{finishOld=()=>resolve(oldWalker);});
+  C.update(.05);
+  const oldScene=scene;
+  scene={add(group){group.parent=this;sceneGroups.push(group);},remove(group){group.parent=null;}};
+  const freshWalker={...npc,root:{...npc.root}};
+  game.makeNpcWalker=async()=>freshWalker;
+  C.update(.05);finishOld();
+  for(let i=0;i<16;i++)await Promise.resolve();
+  C.update(.05);
+  assert(game.npcWalkers.includes(freshWalker),'same-zone rebuild adopts new walker');
+  assert(!game.npcWalkers.includes(oldWalker)&&despawned.includes(oldWalker),'late old-scene walker retired');
+  assert(!sceneGroups.some(group=>group.parent===oldScene),'no house attached to old scene');
+  assert.equal(sceneGroups.filter(group=>group.parent===scene).length,1,'only current house attached');
+  const secondScene=scene;
+  scene={add(group){group.parent=this;sceneGroups.push(group);},remove(group){group.parent=null;}};
+  C.update(.05);
+  for(let i=0;i<16;i++)await Promise.resolve();
+  C.update(.05);
+  assert(!sceneGroups.some(group=>group.parent===secondScene),'materialized house detached on same-area replacement');
+  assert.equal(sceneGroups.filter(group=>group.parent===scene).length,1,'replacement house belongs to current scene');
 }
 testRealEncounterFlow().then(()=>console.log('Boney chase, scene, reward-idempotence and next-moon integration passed.'))
   .catch(error=>{console.error(error);process.exitCode=1;});

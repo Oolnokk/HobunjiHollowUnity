@@ -35,6 +35,28 @@ assert.equal(bridgedTimeDebug.initialized, false, 'civil-midnight bridge must pr
 assert.equal(bridgedTimeDebug.representedWeekday, null, 'civil-midnight bridge must not re-enter weekday formatting before init');
 assert.equal(bridgedTimeDebug.representedDate, null, 'civil-midnight bridge must not invent a represented date before init');
 
+// Raw gameplay reads must remain available without invoking date formatting,
+// sleep previews, or action-button lookups, and must never cache clock values.
+const clock = calendar.window.CalendarSystem;
+assert.equal(clock.getRawDay(), null);
+assert.equal(clock.getRawTime01(), null);
+assert.deepEqual({...clock.getRawClock()}, {rawDay:null,time01:null});
+let uiReads = 0;
+calendar.document = {body:null, documentElement:{dataset:{}}, getElementById(){uiReads++;return null;}, addEventListener(){}};
+calendar.window.addEventListener = () => {};
+const live = {day:28,time01:.74};
+clock.init({calendar:live,MORNING_HOUR:6,NIGHT_HOUR:30});
+for (const [day, fraction, civil] of [[28,.74,28],[28,.76,29],[28,.999,29],[29,0,29],[336,.5,336],[337,0,337]]) {
+  live.day = day; live.time01 = fraction;
+  const snapshot = clock.timeDebugSnapshot();
+  const reads = uiReads;
+  assert.equal(clock.getRawDay(), snapshot.rawDay);
+  assert.equal(clock.getRawTime01(), snapshot.time01);
+  assert.deepEqual({...clock.getRawClock()},{rawDay:day,time01:fraction});
+  assert.equal(clock.civilDayForRawDay(),civil);
+  assert.equal(uiReads,reads,'lightweight clock reads never inspect action buttons');
+}
+
 const music = runModule('docs/js/music-system.js', {
   document: { addEventListener() {} },
   window: { addEventListener() {} },

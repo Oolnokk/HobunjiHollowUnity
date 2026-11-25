@@ -914,6 +914,7 @@
             deps.scene.add(mesh);
             mesh.layers.enable(1);
             cropMeshes[i] = mesh;
+            window.HobunjiCropSpriteArt?.registerPlaceholder?.(mesh); // Deferred until the frame hook, after growth/position are set below.
           }
 
           const mesh = cropMeshes[i];
@@ -1174,10 +1175,12 @@
     mesh.userData.hobunjiCropRootKey = family;
     mesh.userData.hobunjiCropVarietyColor = pigment ?? null;
     mesh.scale.setScalar(size);
+    window.HobunjiCropSpriteArt?.registerPlaceholder?.(mesh); // Also covers standalone callers outside NPC plot drawing.
     return { mesh, lift: size / 2 + 0.02 };
   }
 
   window.VegetationCropRendering = {
+    registersCropSpritePlaceholders: true, // Lets the crop-art bridge stop periodic full-scene scans when both producers are updated.
     buildStandaloneCropMesh,
     init(injectedDeps) {
       init(injectedDeps);

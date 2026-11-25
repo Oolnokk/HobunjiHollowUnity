@@ -51,7 +51,7 @@ assert(/_behindFlippedLayer\(\{ \.\.\.layer, url, frame \}\)/.test(portraitUtils
 // ── Hat-only padded render ─────────────────────────────────
 assert(portraitUtils.includes('const hatOverflowPad = Math.max(0, Number(renderOptions?.hatOverflowPad) || 0);'));
 assert(portraitUtils.includes('ctx.translate(hatOverflowPad, hatOverflowPad)'), 'Padding translates; the portrait scale is unchanged');
-assert(/if \(hatOnly\) \{[\s\S]{0,700}for \(const key of order\) drawEmoteLayers\(hatDraw\[key\]\);/.test(portraitUtils),
+assert(/if \(hatOnly\) \{[\s\S]{0,1600}for \(const key of order\) drawEmoteLayers\(hatDraw\[key\]\);/.test(portraitUtils),
   'Hat-only bakes draw nothing but the hat layers');
 assert(portraitUtils.includes('window.getPortraitCanvasLogicalSize'), 'Logical portrait size is exposed for overflow bakes');
 
@@ -97,6 +97,58 @@ assert.equal(Overflow.hasHat(hatProfile), true);
   // A 400px portrait canvas (2x) scales the padding with it.
   const big = await Overflow.renderOverflowCanvas(hatProfile, 'front', 400, 400, async canvas => canvas.paint(1, 1));
   assert.equal(big.width, 400 + 4 * pad, 'Padding follows the portrait canvas scale');
+
+  const image={src:'x.png',naturalWidth:32,naturalHeight:32};
+  let paints=0; // Count actual rasterization after the resolved-layer lookup.
+  ctx.renderPortraitProfile=async(canvas,profile,options)=>{
+    if(options.reuseHatOverflow?.([{image,url:'x.png',xform:{ax:0,sx:1},tint:{mode:'none',hex:profile.hex}}]))return;
+    paints++;if(profile.hex!=='empty')canvas.paint(1,1);
+  };
+  const cacheBake=hex=>Overflow.renderOverflowCanvas({...hatProfile,hex},'front',200,200,undefined,true);
+  const one=await cacheBake('red');
+  assert.equal(await cacheBake('red'),one,'identical resolved layers reuse the bake');
+  assert.notEqual(await cacheBake('blue'),one,'changed dye cannot reuse old pixels');
+  assert.equal(await cacheBake('empty'),null);
+  assert.equal(await cacheBake('empty'),null,'no-overflow result is cached too');
+  assert.equal(paints,3,'repeat requests skipped rasterization and readback');
+  const cyclic={};cyclic.self=cyclic; // Unexpected metadata must fall back to ordinary drawing rather than hiding a hat.
+  const uncacheableProfile={...hatProfile,hex:cyclic};
+  assert(await Overflow.renderOverflowCanvas(uncacheableProfile,'front',200,200,undefined,true));
+  assert.equal(paints,4,'unserializable metadata falls back to the original renderer');
+  image.src='updated.png';
+  await cacheBake('red');assert.equal(paints,5,'changed image source invalidates reuse');
+  for(let i=0;i<40;i++)await cacheBake('color'+i);
+  assert(Overflow.stats().cacheBytes<=4*1024*1024 && Overflow.stats().cacheEntries<=32,'bounded cache');
+
+  // Real module, mocked GPU factories with ownership counters.
+  const disposed={geometry:0,texture:0,material:0};
+  class Group{
+    constructor(){this.children=[];this.userData={};this.position={z:0,copy(){}};this.quaternion={copy(){}};this.scale={copy(){}};}
+    add(x){this.children.push(x);x.parent=this;}
+    remove(x){this.children=this.children.filter(y=>y!==x);x.parent=null;}
+    traverse(fn){fn(this);for(const child of this.children)child.traverse(fn);}
+  }
+  class Mesh extends Group{constructor(geometry,material){super();this.geometry=geometry;this.material=material;this.rotation={};}}
+  const THREE={Group,Mesh,PlaneGeometry:class{dispose(){disposed.geometry++;}},Box3:class{},Sphere:class{},Vector3:class{}};
+  let failMaterial=false;
+  ctx.PNGPlaneAvatar={makeVariantCanvas:c=>c,makePortraitTexture:()=>({dispose(){disposed.texture++;}}),
+    makeSpriteMaterial:(_three,map)=>{if(failMaterial)throw Error('fixture material failure');return {map,dispose(){disposed.material++;}};}};
+  const root={userData:{sourceCanvas:{width:200,height:200},portraitModelWidth:1,portraitModelHeight:1}};
+  const profile={...hatProfile,hex:'red'};
+  assert.equal(await Overflow.attach(THREE,root,{profile}),null,'missing assembly rejects overflow');
+  assert.deepEqual(disposed,{geometry:1,texture:1,material:1},'failed attachment disposes all owned GPU objects');
+  root.userData.portraitAssembly=new Group();
+  assert(await Overflow.attach(THREE,root,{profile}),'valid assembly attaches');
+  await Overflow.attach(THREE,root,{profile:{hat:{id:'none'}}});
+  assert.deepEqual(disposed,{geometry:2,texture:2,material:2},'removing a hat releases the previous overflow');
+  failMaterial=true;
+  assert.equal(await Overflow.attach(THREE,root,{profile}),null);
+  assert.deepEqual(disposed,{geometry:3,texture:3,material:2},'partial material construction releases prior resources');
+  failMaterial=false;
+  const parent=new Group(),target=new Group();parent.add(target);
+  const before={...disposed};
+  const cancelled=await Overflow.attachToPlanes(THREE,{profile,sourceCanvas:{width:200,height:200},modelWidth:1,modelHeight:1,planes:[{mesh:target}],isCancelled:()=>true});
+  assert.equal(cancelled.length,0);assert.deepEqual(disposed,before,'cancelled split-plane bake allocates no GPU resources');
 
   // Mesh hygiene: never measured, picked or outlined.
   for (const needle of ['mesh.userData.noOutline = true', 'mesh.raycast = emptyRaycast', 'mesh.frustumCulled = false',
