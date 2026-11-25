@@ -241,8 +241,20 @@
     return get(id);
   }
 
+  function setGeneratedOutlineMode(mode) {
+    const owner = window.WorldRenderPipeline;
+    if (!owner?.setGeneratedOutlineMode || !['shell','screen','none'].includes(mode)) return null;
+    const actual = owner.setGeneratedOutlineMode(mode);
+    const stored = loadStored();
+    if (actual === 'shell') delete stored.generatedOutlineMode; else stored.generatedOutlineMode = actual;
+    saveStored(stored);
+    refreshInputs();
+    return actual;
+  }
+
   function applyStored() {
     const stored = loadStored();
+    if (['shell','screen','none'].includes(stored.generatedOutlineMode)) window.WorldRenderPipeline?.setGeneratedOutlineMode?.(stored.generatedOutlineMode);
     for (const [id, on] of Object.entries(stored)) {
       const toggle = byId.get(id);
       if (!toggle || toggle.ownsPersistence || typeof on !== 'boolean' || !toggle.available()) continue;
@@ -252,6 +264,7 @@
   }
 
   function reset() {
+    window.WorldRenderPipeline?.setGeneratedOutlineMode?.('shell');
     for (const toggle of settingsToggles) if (toggle.available() && get(toggle.id) !== toggle.on) set(toggle.id, toggle.on);
     saveStored({});
     refreshInputs();
@@ -259,6 +272,9 @@
 
   const inputId = id => byId.get(id)?.input || 'settingRenderOpt_' + id;
   function refreshInputs() {
+    const outlineSelect = document.getElementById('settingRenderOpt_generatedOutlineMode');
+    const outlineMode = window.WorldRenderPipeline?.getGeneratedOutlineMode?.();
+    if (outlineSelect && outlineMode && outlineSelect.value !== outlineMode) outlineSelect.value = outlineMode;
     for (const toggle of settingsToggles) {
       const input = document.getElementById(inputId(toggle.id));
       if (input) input.checked = get(toggle.id) === true;
@@ -294,6 +310,20 @@
     const intro = el('div', 'settings-desc', 'Every render optimisation, switchable for A/B testing on this device. On is how the game ships unless noted; choices are remembered on this device. The Render A/B benchmark (Dev Tools) times the main ones against each other.');
     intro.style.margin = '0 0 6px';
     section.appendChild(intro);
+    if (window.WorldRenderPipeline?.setGeneratedOutlineMode) {
+      const row = el('label', 'settings-row');
+      const label = el('div', 'settings-label');
+      label.append(el('div','settings-name','Generated outlines (experiment)'), el('div','settings-desc','Keep master Outlines on. Screen-space uses visible curved-object depth; None keeps the composite and painterly without generated shell ink.'));
+      const select = el('select');
+      select.id = 'settingRenderOpt_generatedOutlineMode';
+      select.style.cssText = 'max-width:45%;background:rgba(255,255,255,.06);border:1px solid var(--border-bright);color:var(--text);align-self:center';
+      for (const [value, name] of [['shell','Shell (original)'],['screen','Screen-space depth'],['none','None']]) {
+        const option = el('option',null,name); option.value = value; select.appendChild(option);
+      }
+      select.value = window.WorldRenderPipeline.getGeneratedOutlineMode();
+      select.addEventListener('change', () => setGeneratedOutlineMode(select.value));
+      row.append(label,select); section.appendChild(row);
+    }
     let group = null;
     for (const toggle of TOGGLES) {
       if (!toggle.available()) continue;
@@ -353,6 +383,7 @@
     get,
     set,
     reset,
+    setGeneratedOutlineMode,
     applyStored,
     refresh: refreshInputs,
   });
