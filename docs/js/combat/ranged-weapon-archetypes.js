@@ -42,7 +42,9 @@
   const DUAL_ROLE_SHAPES = Object.freeze({ kylie: THROWN_TYPE, dagger: THROWN_TYPE, fishingspear: THROWN_TYPE, hatchet: THROWN_TYPE, bshuakauitl: BLOWGUN_TYPE });
   const END_FLIPPED_THROW_SHAPES = new Set(['dagger', 'fishingspear']); // Uses the shared visible 180° in-plane tip↔handle flip from game/editor; no pose-channel rewrite.
   const NON_RANGED_SHAPES = new Set(['daggerSword']); // Used by rangedTypeFor() to hard-block dagger-swords even if stale or external code tags one with rangedType.
-  const patchedItems = new Set(); // Used by diagnostics and idempotent definition patching.
+  const patchedItems = new Set(); // Registered ranged keys for diagnostics.
+  const registeredDefinitions = new Map(); // NPC ensure calls reuse identical definition/config objects; explicit rebuilds still honor in-place tuning.
+  let reusedNpcRegistrations = 0; // Mobile diagnostic counter for eliminated NPC registration work.
   const scaledAfflictionAliases = new Map(); // Used to carry per-shot buildup scaling through the existing projectile affliction map without changing raw damage.
   let thrownCharge = null; // Used to retain the active hold-release input until its matching release arrives.
   let pendingThrownHold = null; // Used to remember a thrown press that arrived (and is still held) while the previous throw was animating, so Neutral starts the next windup.
@@ -420,7 +422,7 @@
     return true;
   }
 
-  function patchItem(itemKey, def) {
+  function patchItem(itemKey, def, npcOnly = false) {
     const shapeKey = shapeKeyFor(itemKey, def);
     const type = rangedTypeFor(itemKey, def);
     if (!def || !type || (type !== THROWN_TYPE && type !== BLOWGUN_TYPE)) return false;
@@ -429,34 +431,37 @@
     def.animStyle = def.animStyle || 'ranged';
     const ranged = window.RangedWeapons;
     if (!ranged?.config) return false;
-    if (type === THROWN_TYPE) {
-      ranged.config[itemKey] = thrownConfig(itemKey, def);
-      ranged.setLoaded?.(itemKey, false);
-    } else {
-      ranged.config[itemKey] = blowgunConfig(def);
-      // A blowgun begins ready-to-fire like existing crossbows; after firing,
-      // the normal ranged state machine exposes its explicit load stage.
-      ranged.setLoaded?.(itemKey, true);
+    const previous = registeredDefinitions.get(itemKey);
+    if (npcOnly && previous?.def === def && previous.config === ranged.config[itemKey] && previous.type === type) {
+      reusedNpcRegistrations++;
+      return false;
     }
-    sanitizeBasicLoadout(itemKey);
+    const config = type === THROWN_TYPE ? thrownConfig(itemKey, def) : blowgunConfig(def);
+    ranged.config[itemKey] = config;
+    registeredDefinitions.set(itemKey, { def, config, type });
+    // Registration is not a gameplay reload/unload. Never overwrite an existing player's state.
+    if (!npcOnly) sanitizeBasicLoadout(itemKey);
     patchedItems.add(itemKey);
     return !!shapeKey;
   }
 
-  function patchGeneratedDefinitions() {
+  function patchGeneratedDefinitions({ npcOnly = false, keys = null } = {}) {
     const defs = toolDefinitions();
     if (!defs || !window.RangedWeapons?.config) return false;
     installAmmoProfiles();
     syncBlowgunStance();
     let changed = 0;
-    for (const [itemKey, def] of Object.entries(defs)) {
+    for (const [itemKey, def] of keys ? keys.map(key => [key, defs[key]]) : Object.entries(defs)) {
+      if (!def) continue;
       const type = rangedTypeFor(itemKey, def);
       if (!type) continue;
-      if (patchItem(itemKey, def)) changed++;
+      if (patchItem(itemKey, def, npcOnly)) changed++;
     }
     if (!patchedItems.size) return false;
-    window.WeaponToolStances?.refreshDefinitions?.();
-    window.Combat?.deps?.refreshActionBar?.();
+    if (changed && !npcOnly) {
+      window.WeaponToolStances?.refreshDefinitions?.();
+      window.Combat?.deps?.refreshActionBar?.();
+    }
     if (changed) window.__farmLog?.(`[ranged-archetypes] patched ${changed} dual-role generated weapon definition(s).`, 'combat');
     return true;
   }
@@ -704,6 +709,7 @@
     debugSnapshot: () => ({
       version: VERSION,
       patchedItems: [...patchedItems],
+      reusedNpcRegistrations,
       equippedRanged: window.RangedWeapons?.equippedRangedKey?.() || null,
       equippedType: window.RangedWeapons?.config?.[window.RangedWeapons?.equippedRangedKey?.()]?.rangedType || null,
       equippedBasicEffects: basicAmmoEffectsFor().map(effect => effect.id),
