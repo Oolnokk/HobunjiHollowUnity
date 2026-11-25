@@ -163,6 +163,7 @@
     let lungePx = 0;
     let halfConeRad = Math.PI / 8;
     let kind = attackId || 'empty';
+    let sharedQuickProfile = null; // Both HUD and opportunity cue consume the actual quick attack profile.
 
     if (slotId === 'tap1') {
       const steps = comboData[attackId];
@@ -175,6 +176,7 @@
     } else if (slotId === 'tap2') {
       const tech = quickData.TECHNIQUES?.[attackId];
       if (tech) {
+        sharedQuickProfile = quickData.getReachProfile?.(deps, attackId, effects) || null;
         rangePx = base.rangePx * (tech.rangeMul ?? 1) * (quickData.RANGE_SCALE ?? 0.6) * (1 + (stats.rangeMul || 0));
         lungePx = deps.TILE * (quickData.LUNGE_TILE_MUL ?? 0) * (1 + (stats.lungeMul || 0));
         halfConeRad = THREE.MathUtils.degToRad(tech.halfConeDeg ?? 18);
@@ -197,8 +199,13 @@
     }
 
     halfConeRad = Math.min(Math.PI, halfConeRad * (1 + (stats.coneWidthMul || 0))); // Readiness uses the same AoE width perk as the live strike; reach remains unchanged.
+    if (sharedQuickProfile) {
+      rangePx = sharedQuickProfile.rangePx;
+      lungePx = sharedQuickProfile.horizontalLungePx ?? sharedQuickProfile.lungePx;
+      halfConeRad = sharedQuickProfile.halfConeRad;
+    }
     const attackRangePx = Math.max(0, rangePx);
-    const reachPx = Math.max(attackRangePx, lungePx);
+    const reachPx = sharedQuickProfile?.reachPx ?? Math.max(attackRangePx, lungePx);
     return {
       slotId,
       slotLabel: SLOT_LABELS[SLOT_IDS.indexOf(slotId)],
