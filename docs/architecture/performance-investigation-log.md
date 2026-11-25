@@ -3012,3 +3012,14 @@ immutable branch even when its first edit is identity. Late Group prototype
 matrix hooks remain native. Added real producer enrollment and direct leaf
 composition count checks, plus settings persistence/reset and A/B restoration
 fixtures. The opt-in remains off.
+
+Verified the revised committed source at 7eca9165 in the isolated adapter:
+the full static-wall fixture ran against actual upstream Three r128 and
+counted zero leaf matrix compositions on the cached draw versus 756 in
+each native draw; actual BorderTerrain producer enrollment, delayed
+writer retirement and a late Group prototype hook all passed. The
+existing complete dense-wall batch/LOD test and complete settings and
+A/B benchmark fixtures passed as well. The authoring preview's
+BorderTerrain URL is now explicitly versioned; the preview remains native
+because it does not load the optimization owner. No real-device speedup
+claimed. Full CI and the repository cache-bust checker remain pending.
