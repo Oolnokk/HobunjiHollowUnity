@@ -73,4 +73,18 @@ assert(bounds.snapshot().queueOverflows>0,'inactive scene notification backlog i
 const afterOverflow=bounds.tag(new Instance(true));b.add(afterOverflow);
 assert(get(b,true).some(x=>x.mesh===afterOverflow),'overflow reindexes exact membership');
 a.clear();assert.equal(get(a).length,0);
+// Simulate collection of a weak entry before a consumer throws: compaction
+// must retain every unread instance and must never duplicate a live one.
+{
+  const refs=[];
+  class TestWeakRef { constructor(object){this.object=object;refs.push(this);} deref(){return this.object;} }
+  const host={THREE};
+  new Function('window','globalThis','WeakRef',boundsSource)(host,host,TestWeakRef);
+  const api=host.InstancedMeshBounds;
+  const dead=api.tag(new Instance()),first=api.tag(new Instance()),last=api.tag(new Instance());
+  refs.find(ref=>ref.object===dead).object=null;
+  assert.throws(()=>api.forEachTracked(mesh=>{assert.equal(mesh,first);throw Error('consumer failed');}),/consumer failed/);
+  const live=[];api.forEachTracked(mesh=>live.push(mesh));
+  assert.deepEqual(live,[first,last],'failed compaction retains unread entries exactly once');
+}
 console.log('instanced scene registry: active-map visits, attachments, visibility, reparenting, late tags, overflow and A/B PASS');
