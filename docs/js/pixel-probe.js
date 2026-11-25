@@ -1227,6 +1227,8 @@
     const hitboxWork = window.__rangedDebug?.hitboxWork; // Counts reticle/AI reuse against the same game frame.
     if (sightWork || hitboxWork) lines.push(`Combat CPU work: sight=${JSON.stringify(sightWork || null)} hitboxes=${JSON.stringify(hitboxWork || null)}`);
     const projectilePool = window.__rangedDebug?.projectilePool; // Inspect resource reuse without devtools.
+    const matrixCensus = window.WorldRenderPipeline?.sceneMatrixCensus?.(activeScene); // Explicit user capture only; no diagnostic traversal during gameplay.
+    if (matrixCensus) lines.push(`Scene matrix census (outside render scopes): ${JSON.stringify(matrixCensus)}`);
     const propBatches = window.ZonePropRenderBatches?.snapshot?.(); // Inspect draw savings and alpha-proof backlog.
     if (projectilePool) lines.push(`Projectile pools: ${JSON.stringify(projectilePool)}`);
     if (propBatches) lines.push(`Wilderness prop batches: ${JSON.stringify(propBatches)}`);
