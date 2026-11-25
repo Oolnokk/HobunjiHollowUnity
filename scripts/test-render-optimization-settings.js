@@ -46,6 +46,7 @@ const document = {
 const calls = [];
 const log = (name, v) => { calls.push(name + ':' + v); return v; };
 let denMemo = true, wheelCross = true, leanSync = true, propOn = true, gearOnce = true, ownerLink = true, weaponLimit = 0, frameScope = true, treeOn = false, faceted = true;
+let mixedWaterPrune = false, replayRegistryMemo = false; // Independent replay pilots.
 let staticWallMatrices = false; // Independent experimental matrix branch owner.
 let localRing = true, realTimeShadows = false; // Owner state for the two new performance policies.
 const registered = [];
@@ -59,7 +60,9 @@ const win = {
   DenseForestWallBatches: { staticMatrixSnapshot:()=>({enabled:staticWallMatrices}), setStaticMatrixEnabled:v=>{staticWallMatrices=log('staticWallMatrices',v===true);return staticWallMatrices;} },
   ZonePropRenderBatches: { snapshot: () => ({ enabled: propOn }), setEnabled: v => { propOn = log('prop', v !== false); return propOn; } },
   HeldObjectRenderOrder: {
-    snapshot: () => ({ localReplayRingEnabled: localRing, gearParticlesOnceEnabled: gearOnce, heldOwnerLinkEnabled: ownerLink, otherWeaponXrayLimit: weaponLimit, replayScissorEnabled: true }),
+    snapshot: () => ({ mixedWaterBranchPruneEnabled:mixedWaterPrune, replayRegistryMemoEnabled:replayRegistryMemo, localReplayRingEnabled: localRing, gearParticlesOnceEnabled: gearOnce, heldOwnerLinkEnabled: ownerLink, otherWeaponXrayLimit: weaponLimit, replayScissorEnabled: true }),
+    setMixedWaterBranchPruneEnabled:v=>mixedWaterPrune=log('mixedWaterPrune',v===true),
+    setReplayRegistryMemoEnabled:v=>replayRegistryMemo=log('replayRegistryMemo',v===true),
     setLocalReplayRingEnabled: v => { localRing = log('localRing', v !== false); },
     setGearParticlesOnceEnabled: v => { gearOnce = log('gear', v !== false); return gearOnce; },
     setHeldOwnerLinkEnabled: v => { ownerLink = log('link', v !== false); return ownerLink; },
@@ -117,6 +120,8 @@ assert.equal(input('treeInstancing').checked, false, 'tree instancing is off by 
 assert.equal(input('staticWallMatrices').checked,false,'static wall experiment is off by default');
 input('staticWallMatrices').checked=true; input('staticWallMatrices').dispatch('change');
 assert.equal(staticWallMatrices,true);
+for(const id of ['mixedWaterPrune','replayRegistryMemo']) {assert.equal(input(id).checked,false);input(id).checked=true;input(id).dispatch('change');assert.equal(JSON.parse(storage.get('hobunjiRenderOptimizations'))[id],true);}
+assert.equal(mixedWaterPrune,true);assert.equal(replayRegistryMemo,true);
 assert.equal(JSON.parse(storage.get('hobunjiRenderOptimizations')).staticWallMatrices,true);
 assert.equal(input('npcWeaponsBasePass').checked, true, 'NPC weapons in the base pass by default');
 
@@ -188,6 +193,7 @@ assert.equal(outlineMode,'screen');
 assert.equal(outlineSelect.value,'screen');
 assert.equal(localRing,true); assert.equal(realTimeShadows,false);
 assert.equal(staticWallMatrices,false,'reset disables static wall experiment');
+assert.equal(mixedWaterPrune,false);assert.equal(replayRegistryMemo,false);
 assert.deepEqual(actorXray, actorXrayDefaults);
 assert.deepEqual([animalXray.checked, enemyXray.checked, playerXray.checked], [true, false, true]);
 const html = fs.readFileSync(path.join(__dirname, '../docs/index.html'), 'utf8'); // Verify defaults before the settings script starts.
