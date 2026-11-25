@@ -372,6 +372,11 @@
         variants.push({ id, apply: () => pipeline.setGeneratedOutlineMode(mode), undo: () => pipeline.setGeneratedOutlineMode(outlineBefore) });
       }
     }
+    const waterHierarchy = window.XrayHierarchy; // Preserve exact bounds/wet-tile authoring choice after A/B.
+    if (typeof waterHierarchy?.set === 'function') {
+      const before = waterHierarchy.get('portrait.waterTint');
+      if (before !== 'off') variants.push({ id: 'portraitWaterTintOff', apply: () => waterHierarchy.set('portrait.waterTint','off'), undo: () => waterHierarchy.set('portrait.waterTint',before) });
+    }
     const heldOrder = window.HeldObjectRenderOrder;
     if (typeof heldOrder?.setLocalReplayRingEnabled === 'function') {
       const localBefore = heldOrder.snapshot?.().localReplayRingEnabled !== false; // Restore the user's exact policy after each sample window.
