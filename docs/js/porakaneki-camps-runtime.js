@@ -55,7 +55,8 @@
     return Number.isFinite(value) ? ((value % 24) + 24) % 24 : 12;
   }
   function gameDay() {
-    const raw = Number(window.CalendarSystem?.timeDebugSnapshot?.()?.rawDay);
+    const calendar = window.CalendarSystem; // Live raw simulation day for every hunter update.
+    const raw = Number(calendar?.getRawDay ? calendar.getRawDay() : calendar?.timeDebugSnapshot?.()?.rawDay);
     if (Number.isFinite(raw)) return Math.max(0, Math.floor(raw));
     return Math.max(0, Math.floor(Number(combatDeps?.calendar?.day ?? 0) || 0));
   }
