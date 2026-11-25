@@ -122,6 +122,7 @@
       && override.side === THREE.BackSide
       && override.uniforms?.uThickness
     ) return 'shell';
+    if (mask === MASK_SHELL && override?.userData?.hobunjiScreenOutlineMask === true) return 'screenOutlineMask';
 
     if (
       mask === MASK_TARGET
@@ -152,7 +153,7 @@
   }
 
   function isSecondaryOutlinePass(pass) {
-    return pass === 'shell' || pass === 'target' || pass === 'materialId' || pass === 'pngDepth' || pass === 'mist';
+    return pass === 'shell' || pass === 'screenOutlineMask' || pass === 'target' || pass === 'materialId' || pass === 'pngDepth' || pass === 'mist';
   }
 
   function materialForGroup(mesh, group) {
@@ -760,8 +761,8 @@
     if (now - lastLogAt < LOG_INTERVAL_MS) return;
     lastLogAt = now;
 
-    if (windowStats.shell?.renders) {
-      const order = ['base', 'pngDepth', 'shell', 'target', 'mist', 'materialId', 'postOrDirect'];
+    if (windowStats.shell?.renders || windowStats.screenOutlineMask?.renders) {
+      const order = ['base', 'pngDepth', 'shell', 'screenOutlineMask', 'target', 'mist', 'materialId', 'postOrDirect'];
       const parts = order.map(passSummary).filter(Boolean);
       parts.push(`matrix-reuse ${windowReusedSceneMatrixPasses}x`);
       if (windowSkippedShadowAutoUpdates) parts.push(`shadow-reuse ${windowSkippedShadowAutoUpdates}x`);

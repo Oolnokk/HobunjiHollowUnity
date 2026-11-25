@@ -2509,3 +2509,35 @@ runtime fixture passes with a camera twenty units above the player and
 checks that the old camera rejection returns when local mode is disabled.
 No new frame loop or extra scene traversal is introduced. FPS remains
 unmeasured on-device.
+
+
+### Experimental generated outline modes (24 Nov 2026)
+
+Settings → Render optimizations → Generated outlines (experiment) selects
+`shell` (shipped default), `screen` or `none`. The ordinary Outlines
+setting remains the master offscreen/composite switch. The A/B benchmark
+compares `shellOutlines`, `screenDepthOutlines` and
+`generatedOutlinesOff` while preserving painterly and the master setting.
+
+Screen mode replaces the expanded-shell pass and its selective shell X-ray
+replay with one unexpanded front-facing depth draw on the existing
+SHELL_OUTLINE layer. The mask target is allocated only when used, resized
+with the main target, and disposed when leaving screen mode. Existing
+outline pass classification allows base-matrix reuse. The composite accepts
+only pixels whose mask depth matches the world depth, then detects an inward
+one-pixel silhouette or substantial depth discontinuity. Authored PNGs and
+hard-faced textured meshes are excluded by the existing shell-layer policy;
+an unrestricted world-depth Sobel filter would violate that policy. Standard
+scene fog fades the generated ink, and the painterly patch signatures are
+preserved. Reticle highlights, actor probes, PNG occlusion depth, water/color
+X-ray and perception overlays remain independent.
+
+This is deliberately a selective-mask experiment, NOT a zero-geometry-pass
+implementation: sampling the current depth alone cannot identify authorized
+outline surfaces, and the r128 world materials have no common eligibility
+channel. Depthless transparent foreground effects, restored ground depth
+over X-rayed limbs, and custom mist can differ from the original shell
+appearance. The default remains shell until device and visual validation.
+Recording-renderer fixtures exercise all three modes, resize, disposal,
+error restoration and persistence; real WebGL visual parity and FPS are not
+yet established.

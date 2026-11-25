@@ -71,7 +71,7 @@
     // depth writes, so provide a colorless order-889 depth copy before mist 890-892
     // without changing the visible player/pet ordering that relies on depthWrite=false.
     ['CloudForestAvatarDepthOccluder', 'cloud-forest-avatar-depth-occluder.js?v=20261119h8122ac6'],
-    ['OutlineRenderPerformance', 'outline-render-performance.js?v=20261119h960c9b8'],
+    ['OutlineRenderPerformance', 'outline-render-performance.js?v=20261124screenOutline1'],
     // Faceted cliffs and rock geometry use PNG edges; explicitly tagged rounded wilderness stones retain the 3D silhouette shell.
     ['FacetedNaturalSurfaceShellReduction', 'faceted-natural-surface-shell-reduction.js?v=20261119hde95252'],
     ['FarmCliffRockOutline', 'farm-cliff-rock-outline.js?v=20261119h8753fc3'],

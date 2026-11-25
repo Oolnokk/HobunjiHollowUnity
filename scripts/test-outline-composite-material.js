@@ -14,7 +14,7 @@ class ShaderMaterial { constructor(def) { Object.assign(this, def); } }
 const window = {};
 vm.runInContext(read('docs/js/outline-composite-material.js'), vm.createContext({ window }), { filename: 'outline-composite-material.js' });
 
-const THREE = { Vector2, ShaderMaterial };
+const THREE = { Vector2, ShaderMaterial, Color: class Color {} };
 const a = window.OutlineCompositeMaterial.create(THREE);
 const b = window.OutlineCompositeMaterial.create(THREE);
 assert.ok(a instanceof ShaderMaterial && a !== b, 'create() builds a fresh material each call');
@@ -22,6 +22,7 @@ assert.notEqual(a.uniforms.uTexel.value, b.uniforms.uTexel.value, 'uniform vecto
 for (const name of ['tColor', 'tEdgeId', 'tEdgeIdDepth', 'tSceneDepth', 'uTexel', 'uCameraNear', 'uCameraFar', 'uSeamOutlinesOn', 'uSeamColorDistThresh', 'uSeamOcclusionTolerance']) {
   assert.ok(name in a.uniforms, `game.js writes uniform ${name}`);
 }
+assert.equal(a.uniforms.uDepthOutlinesOn.value, 0, 'screen depth strokes are opt-in');
 assert.equal(a.uniforms.uSeamOutlinesOn.value, 0, 'seam outlines start off');
 assert.equal(a.depthTest, false); assert.equal(a.depthWrite, false);
 const frag = a.fragmentShader;

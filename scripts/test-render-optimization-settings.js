@@ -52,7 +52,9 @@ const storage = new Map([['hobunjiRenderOptimizations', JSON.stringify({ propBat
 const rain = { name: 'world_rain_planes', visible: true, parent: null };
 const scene = { isScene: true, getObjectByName: name => (name === 'world_rain_planes' ? rain : null) };
 rain.parent = scene;
+let outlineMode = 'shell'; // Fake pipeline owner for the experimental selector.
 const win = {
+  WorldRenderPipeline:{getGeneratedOutlineMode:()=>outlineMode,setGeneratedOutlineMode:v=>outlineMode=v},
   ZonePropRenderBatches: { snapshot: () => ({ enabled: propOn }), setEnabled: v => { propOn = log('prop', v !== false); return propOn; } },
   HeldObjectRenderOrder: {
     snapshot: () => ({ localReplayRingEnabled: localRing, gearParticlesOnceEnabled: gearOnce, heldOwnerLinkEnabled: ownerLink, otherWeaponXrayLimit: weaponLimit, replayScissorEnabled: true }),
@@ -86,6 +88,13 @@ const context = vm.createContext({
 });
 vm.runInContext(fs.readFileSync(path.join(__dirname, '../docs/js/render-optimization-settings.js'), 'utf8'), context, { filename: 'render-optimization-settings.js' });
 const S = win.RenderOptimizationSettings;
+const outlineSelect = document.getElementById('settingRenderOpt_generatedOutlineMode');
+assert.equal(outlineSelect.value,'shell');
+outlineSelect.value='screen'; outlineSelect.dispatch('change');
+assert.equal(outlineMode,'screen');
+assert.equal(JSON.parse(storage.get('hobunjiRenderOptimizations')).generatedOutlineMode,'screen');
+outlineSelect.value='none'; outlineSelect.dispatch('change');
+assert.equal(outlineMode,'none');
 
 // Stored choices were applied at load (unknown ids ignored).
 assert.equal(propOn, false, 'stored propBatches:false applied');
@@ -169,6 +178,8 @@ assert.equal(input('gearParticlesOnce').checked, true);
 document.getElementById('settingRenderOptResetDefaults').dispatch('click');
 assert.deepEqual([propOn, gearOnce, ownerLink, weaponLimit, frameScope, treeOn, faceted, registered.length, leanSync, wheelCross, denMemo], [true, true, true, 0, true, false, true, 0, true, true, true]);
 assert.equal(storage.has('hobunjiRenderOptimizations'), false);
+assert.equal(outlineMode,'shell');
+assert.equal(outlineSelect.value,'shell');
 assert.equal(localRing,true); assert.equal(realTimeShadows,false);
 assert.deepEqual(actorXray, actorXrayDefaults);
 assert.deepEqual([animalXray.checked, enemyXray.checked, playerXray.checked], [true, false, true]);
