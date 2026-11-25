@@ -2579,3 +2579,55 @@ Continuing PR #2165 from its audited revision 25583ae79de4ec38095499d51290ea84fb
 - Validation: executed the complete zone-prop regression fixture with actual Three.js r128 (from its tagged upstream source), including independent dirty groups, immediate removal, timed rediscovery, material/attribute edits, child attachment and restored visibility. Executed the real bounds/brick LOD modules with Three r128 geometry and 500 unrelated instance meshes: only four tagged bricks visited; hidden, detached/reparented, replay-only and duplicate registrations handled correctly. The real census function counted inherited-hidden nodes without mutating visibility. Full CI on the follow-up revision and on-device frame timing are pending.
 
 Remaining: capture the actual Cloud Forest matrix census before choosing explicit static subtree invalidation; no unsafe global skip of invisible objects. Continue water-only depth-consumer review, immutable save serialization reuse, appearance/materialization churn, redundant hand pose solve and event-driven UI/inventory revisions. No performance number claimed until measured.
+
+
+### Next stage: water-only traversal, checkpoint stats and hand publication
+
+Continues the original rainy Cloud Forest investigation from current main (the
+previous PR #2165, including independent prop-group repair, brick registry
+type partitioning, thicker depth outlines and the on-demand scene matrix
+census, is already merged). No global hidden-node matrix freeze is introduced.
+
+- **Water-only selective replay:** one live postorder walk finds maximal
+  disjoint branches without a drawable on either private water replay layer
+  or the selected portrait stamp. Hide them only during the three existing
+  native submissions (portrait stencil, water color, translucent cover
+  depth), then restore even on exceptions. Lights/cameras and selected
+  descendants' ancestry remain. Visible LODs, unknown object types and
+  arbitrary matching render hooks cause conservative fallback. The portrait
+  parity owner advertises its exact local matrix-lock/restore hook pair only
+  when neither hook chains unknown behavior; replacement hooks invalidate
+  that permission. No cross-frame visibility cache, extra render pass,
+  change to water alpha/depth, or changes to normal gear replay. The setting
+  and A/B variant waterOnlyPruneOff/On permit direct comparison. Pixel Probe
+  reports pruned frames, maximal branches, and fallback counts.
+- **Browser recovery checkpoints:** compute checkpointStats once per
+  synchronous manual, campfire, travel or changed autosave transaction and
+  reuse for both the existing integrity guard and the record. Keep
+  canonical byte exclusion, all risk rules, rotation and fingerprint checks.
+  Do not share stats across asynchronous folder writes (provenance changes,
+  disk verification and mutable snapshot safety still require fresh checks).
+  The new checkpointStatsBuilds counter verifies the reduced work. This is
+  not a fix for every folder autosave cost.
+- **Hand pose publication:** the actual procedural rig owns left/right
+  sockets as direct children. Prefer those to recursive GLB searches;
+  legacy/nested editor rigs retain name-search fallback. No change to pose
+  solving cadence, pre-render/first-draw ownership or animation.
+
+Targeted source-executing isolated fixtures passed for water-only draw
+identity/order, old-mode comparison, local parity hook identity (including
+unknown predecessor/replacement), LOD/custom hook fallback, restoration on
+draw failure, browser manual/travel/autosave stats counts, direct hand socket
+publication and replacement/nested fallback. These are not live WebGL or
+whole-repository tests. Local Git network access was unavailable; updated
+versioned gameplay/editor loader references via the repository connector.
+Full regression and same-save FPS measurement still required.
+
+Remaining roadmap: actual Cloud Forest scene matrix census and explicit
+static-subtree invalidation; appearance-materialization counts/cache churn;
+folder checkpoint serialization across the I/O boundary (retain mutation
+guards); actual scene partitioning for tracked brick instances; full
+inventory revision/event-driven action bar; safe same-frame hand solve
+deduplication only if no late pose writers are lost. The water change
+reduces potential traversal, not the number of native passes. Measure
+fallback rates and actual FPS before treating it as a speedup.
