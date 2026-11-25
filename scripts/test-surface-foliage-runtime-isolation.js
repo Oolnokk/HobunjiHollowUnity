@@ -40,6 +40,8 @@ context.document.currentScript = null; // Module-side calls happen after the cla
 const editorFoliage = originalFoliage.forThree(editorThree), editorMaterials = originalMaterials.forThree(editorThree); // Exercise both real factories, including their caches.
 assert.equal(originalFoliage.forThree(editorThree), editorFoliage);
 assert.equal(originalFoliage.forThree(gameThree), originalFoliage);
+assert.equal(originalFoliage.identityTreeMatrixStats().enrolled,0, 'metadata-only runtime needs no Object3D');
+assert.equal(editorFoliage.identityTreeMatrixStats().enrolled,0, 'editor runtime stays independent');
 assert.equal(originalMaterials.forThree(editorThree), editorMaterials);
 assert.equal(originalMaterials.forThree(gameThree), originalMaterials);
 for (const [runtime, foliage, materials] of [[gameThree, originalFoliage, originalMaterials], [editorThree, editorFoliage, editorMaterials]]) {
