@@ -16,6 +16,7 @@ const slice = (startMarker, endMarker) => {
   return source.slice(a, b);
 };
 const code = [
+  slice('  const XRAY_TILE_RADIUS =', '  const XRAY_CIRCLE_RADIUS ='),
   slice('  function isDescendantOf(', '  function worldYOf('),
   slice('  function actorRootForXrayMesh(', '  function actorXrayScope('),
 ].join('\n');
@@ -43,7 +44,7 @@ const api = new Function('window', 'performance', code + `
   replayCameraPosition = { x: 0, y: 0, z: 0 };
   const repaired = []; // Nonparticipant weapon-hand invariants are maintained in the same split loop.
   const enforceHeldMesh = mesh => repaired.push(mesh);
-  return { ringDefault: localReplayRingEnabled, setRing: v => { localReplayRingEnabled = v; }, ringSkips: () => localReplayRingSkips, actorXrayDefaults, setActorXrayEnabled, refreshActorXrayRoots, split: (m, s, o, foot, repair = false) => splitReplayParticipants(m, s, o, foot, repair), repaired, setPolicy: v => { replayParticipantPolicy = v; }, skips: () => nonParticipantReplaySkips,
+  return { setCamera: (x,y,z) => { replayCameraPosition = {x,y,z}; }, ringDefault: localReplayRingEnabled, setRing: v => { localReplayRingEnabled = v; }, ringSkips: () => localReplayRingSkips, actorXrayDefaults, setActorXrayEnabled, refreshActorXrayRoots, split: (m, s, o, foot, repair = false) => splitReplayParticipants(m, s, o, foot, repair), repaired, setPolicy: v => { replayParticipantPolicy = v; }, skips: () => nonParticipantReplaySkips,
     actorOf: (m, s) => actorRootForXrayMesh(m, s), setOwnerLink: v => { heldOwnerLinkEnabled = v; participantCache = new WeakMap(); }, setLimit: n => { otherWeaponXrayLimit = n; },
     budgetSkips: () => otherWeaponXrayBudgetSkips, ownerLinkDefault: heldOwnerLinkEnabled, limitDefault: otherWeaponXrayLimit };`)(window, { now: () => 0 });
 
@@ -75,6 +76,15 @@ assert.deepEqual(api.split([nearFoot, farFoot, nearPants, farPants, playerFootNe
   [nearFoot, nearPants, playerFootNear], 'feet and pants follow the owner ring, not the part position');
 assert.deepEqual(api.split([shortHand, remoteFlail], scene, [], false, true), [shortHand],
   'scene-sibling weapon remains ordinary when its holder is distant, even if the weapon swings into the ring');
+// The active player-ring policy supersedes the old six-unit camera sphere.
+api.setCamera(0, 20, 0);
+assert.deepEqual(api.split([nearFoot,farFoot,nearPants,farPants,playerFootNear],scene,[],true),
+  [nearFoot,nearPants,playerFootNear], 'camera elevation cannot disable local foot and pants X-ray');
+api.setRing(false);
+assert.deepEqual(api.split([nearFoot,nearPants,playerFootNear],scene,[],true), [],
+  'legacy range retains the previous camera-distance test');
+api.setRing(true);
+api.setCamera(0,0,0);
 at(player, 1.0, 0.9);
 assert.deepEqual(api.split([nearFoot,farFoot,nearPants,farPants],scene,[],true),
   [nearFoot,farFoot,nearPants,farPants], 'diagonal and axial neighbors are admitted immediately across the tile boundary');
