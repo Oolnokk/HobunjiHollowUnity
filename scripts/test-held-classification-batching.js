@@ -77,6 +77,10 @@ assert(api?.installed, 'module installs against the fake THREE');
   assert.equal(wall.layers.mask & (1 << api.GROUND_REPLAY_LAYER), 0, 'untagged instanced walls keep ordinary depth');
   assert.equal(renderCalls, 1);
   assert(held2.layers.mask & (1 << api.HELD_OVERLAY_LAYER), 'first render after add() has enforced the held overlay layer');
+  const directBefore = api.snapshot().registryDirectScenePlacements;
+  api.scanScene(scene, true);
+  assert(api.snapshot().registryDirectScenePlacements > directBefore, 'full root-scene scan directly places classified members');
+  assert(held2.layers.mask & (1 << api.HELD_OVERLAY_LAYER), 'direct placement preserves registered held layers');
   const pendingFloor = makeMesh({ userData: { hobunjiGroundTopFacesOnly: true } }); // Simulates geometry queued just before a generation is discarded.
   scene.add(pendingFloor);
   assert.equal(api.forgetScene(scene), 3, 'retiring the scene drops placed and unplaced replay meshes');
