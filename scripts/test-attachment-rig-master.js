@@ -193,8 +193,8 @@ for (const kind of ['drenkirra', 'grehlr', 'gar-wolf', 'dabinggi-hound', 'uumkao
 }
 
 
-// November 16 export: animal-only updates. Character/NPC anatomy and posterior data from the same export are deliberately excluded.
-const novemberAnimalAuthoring = {"gar-wolf":{"grip":{"x":0.01,"y":-0.14097888312228624,"z":0.07486897921502367},"small":{"x":0.28,"y":0.34}},"dabinggi-hound":{"grip":{"x":-0.16036566987282258,"y":-0.12636677592420467,"z":0.12410100452746164},"small":{"x":0.35,"y":0.35}},"drenkirra":{"grip":{"x":-0.0036970156287619823,"y":-0.11914729549653388,"z":0.09707381568917758},"small":{"x":0.9,"y":0.9}},"puktuk":{"grip":{"x":0,"y":-0.257,"z":0.034273761545456985},"small":{"x":0.28,"y":0.28}},"voorg-ass":{"grip":{"x":0,"y":-0.11122461401165312,"z":0.05961047587703741},"small":{"x":0.34,"y":0.34}},"nelk":{"grip":{"x":0.05838103969211583,"y":-0.06616055534830413,"z":0.05330590874914502},"small":{"x":0.44,"y":0.44}},"nazgraku":{"grip":{"x":-0.010120303229480966,"y":-0.112,"z":0.04704726667943677},"small":{"x":0.5,"y":0.5}},"uumkaoii":{"grip":{"x":0,"y":-0.2057328849409156,"z":-0.004605298975405354},"small":{"x":0.24,"y":0.24}},"moot":{"grip":{"x":0,"y":-0.09985368986154525,"z":0.1},"small":{"x":0.35,"y":0.35},"saddle":{"x":0,"y":0.1892393302917481,"z":0.02},"large":{"x":1,"y":1},"medium":{"x":0.75,"y":0.75}}}; // Exact approved creature shoulders and Small sizes from the supplied rig JSON.
+// November 16 export and November 24 Voorg-ass grip-only update: animal-only updates. Character/NPC anatomy and posterior data from the same export are deliberately excluded.
+const novemberAnimalAuthoring = {"gar-wolf":{"grip":{"x":0.01,"y":-0.14097888312228624,"z":0.07486897921502367},"small":{"x":0.28,"y":0.34}},"dabinggi-hound":{"grip":{"x":-0.16036566987282258,"y":-0.12636677592420467,"z":0.12410100452746164},"small":{"x":0.35,"y":0.35}},"drenkirra":{"grip":{"x":-0.0036970156287619823,"y":-0.11914729549653388,"z":0.09707381568917758},"small":{"x":0.9,"y":0.9}},"puktuk":{"grip":{"x":0,"y":-0.257,"z":0.034273761545456985},"small":{"x":0.28,"y":0.28}},"voorg-ass":{"grip":{"x":0,"y":-0.29318061503235254,"z":0.051543592657975104},"small":{"x":0.34,"y":0.34}},"nelk":{"grip":{"x":0.05838103969211583,"y":-0.06616055534830413,"z":0.05330590874914502},"small":{"x":0.44,"y":0.44}},"nazgraku":{"grip":{"x":-0.010120303229480966,"y":-0.112,"z":0.04704726667943677},"small":{"x":0.5,"y":0.5}},"uumkaoii":{"grip":{"x":0,"y":-0.2057328849409156,"z":-0.004605298975405354},"small":{"x":0.24,"y":0.24}},"moot":{"grip":{"x":0,"y":-0.09985368986154525,"z":0.1},"small":{"x":0.35,"y":0.35},"saddle":{"x":0,"y":0.1892393302917481,"z":0.02},"large":{"x":1,"y":1},"medium":{"x":0.75,"y":0.75}}}; // Exact approved creature shoulders and Small sizes from the supplied rig JSON.
 for (const [kind, expected] of Object.entries(novemberAnimalAuthoring)) {
   const animal = profiles.creatures[kind]; // Checks shared gameplay defaults used by Animation Author, without replacing any character fields.
   assert(animal, kind + ' must be present in canonical runtime rig profiles');
@@ -329,6 +329,19 @@ for (const kind of ['moot', 'skeeri-medium']) {
   customProfile.chatheadFrame = { x: .18, y: .23, width: .22, height: .26, coordinateSpace: 'sprite-normalized-top-left', version: 1 };
   assert.deepStrictEqual(plainAnimalRig(guard.reconcileProfiles({ creatures: { [kind]: customProfile } }).creatures[kind].chatheadFrame), customProfile.chatheadFrame, kind + ' custom chathead survives master import');
 }
+// Export (29): upgrade the immediately previous stock grip without touching other rig fields.
+const previousVoorg = JSON.parse(JSON.stringify(profiles.creatures['voorg-ass']));
+previousVoorg.anchors.shoulderGrip.position = { x: 0, y: -0.11122461401165312, z: 0.05961047587703741 };
+const updatedVoorg = guard.reconcileProfiles({ creatures: { 'voorg-ass': previousVoorg } }).creatures['voorg-ass'];
+assert.deepStrictEqual(plainAnimalRig(updatedVoorg), plainAnimalRig(profiles.creatures['voorg-ass']), 'Voorg-ass previous stock grip migrates without unrelated changes');
+previousVoorg.anchors.shoulderGrip.rotationDeg.y = -42;
+previousVoorg.anchors.shoulderGrip.scale.x = 0.9;
+const editedVoorg = guard.reconcileProfiles({ creatures: { 'voorg-ass': previousVoorg } }).creatures['voorg-ass'];
+assert.equal(editedVoorg.anchors.shoulderGrip.rotationDeg.y, -42, 'custom Voorg-ass yaw survives stock position migration');
+assert.equal(editedVoorg.anchors.shoulderGrip.scale.x, 0.9, 'custom Voorg-ass grip scale survives stock position migration');
+previousVoorg.anchors.shoulderGrip.position.x = 0.02;
+assert.deepStrictEqual(plainAnimalRig(guard.reconcileProfiles({ creatures: { 'voorg-ass': previousVoorg } }).creatures['voorg-ass'].anchors.shoulderGrip), previousVoorg.anchors.shoulderGrip, 'custom Voorg-ass position is not overwritten');
+
 const retiredAnimalGrips = {"gar-wolf":{"x":0.01,"y":-0.26545210788556156,"z":0.07486897921502367},"dabinggi-hound":{"x":0.01,"y":-0.20203700498816118,"z":0.09104867302389968},"drenkirra":{"x":0.01,"y":-0.11914729549653388,"z":-0.001096892109713506},"puktuk":{"x":0.01,"y":-0.29715994741785007,"z":-0.0010889163404909086},"voorg-ass":{"x":0.01,"y":-0.33453636625016553,"z":0.0181046276028018},"nelk":{"x":0.030176488041515424,"y":-0.11264054358274966,"z":0.028253979555520257},"nazgraku":{"x":0.011498553593554665,"y":-0.14241261412989242,"z":0.000946211786312177}}; // Exact pre-November 16 canonical grip fingerprints, not broad bounds or guesses.
 for (const [kind, position] of Object.entries(retiredAnimalGrips)) {
   const imported = JSON.parse(JSON.stringify(profiles)); // Simulates an existing browser autosave still holding the old grip.
