@@ -1,5 +1,15 @@
 # Performance investigation log
 
+## 25 Nov 2026: CPU profile of a 12-bandit arena (headless); `normalizeKey` memoized
+
+Headless, dev arena, 12 grunt bandits, PerfProfiler buckets over ~1,590 frames plus a 120 s CDP CPU profile (500 us sampling). SwiftShader inflates GL time; the JS split carries over, the absolute frame time does not.
+
+- **Where the time is.** 78-79% of sampled time is native `(program)` (software GL). Per-frame buckets: `render: main scene` 9.6 ms, `held-overlay` passes ~10 ms combined (base render 6.1, replay 2.7, depth rebuild 1.0), **`hostiles` 4.6 ms (~0.4 ms per bandit)**, `mesh+visual updates` 1.8, `npc walkers` 1.0. `updateHostiles` itself is only 0.14% self time; its cost is spread over many callees, with no single hot function.
+- **Fixed:** `normalizeKey` (five chained regex replaces, identical copies in `png-plane-avatar.js` and `hand-tool-grips.js`) ran every frame per character on a few repeated strings: ~520 ms of a 120 s profile, now ~50 ms (bounded memo; ~25x cheaper per call in isolation, outputs identical for strings/null/numbers).
+- **Not a bug:** `drawImage` 694 ms from `drawVariantCanvas` <- `refreshSinglePlaneAvatarModel` <- `world-portrait-life.js` is the intended breathing/blinking portrait refresh (already avoids reallocating backing stores). Skipping it when the composed frame is unchanged is the next idea; not attempted.
+- **GL-side:** `texImage2D` under the main render (325 ms) is texture upload during the scene pass; `At`/`ctxAt` under `render-hooks.js` is the three.js render call itself.
+- **Next candidate (unmeasured):** the held-overlay passes cost about as much as the main scene render for 12 armed humanoids; see item 4 under "Real but not fixed".
+
 ## 25 Nov 2026: bandit sight-check broad phase measured, not kept
 
 - **Idea:** `computeBanditLos` builds/looks up a hitbox for every other hostile on each sight check (O(n²) for a camp), so skip hostiles more than ~4 tiles from the sight segment.
