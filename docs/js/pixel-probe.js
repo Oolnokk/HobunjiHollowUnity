@@ -1216,6 +1216,7 @@
     const heldRenderDebug = window.HeldObjectRenderOrder?.snapshot?.(); // Exposes the retained selective-x-ray render mode and pass counters on mobile.
     if (heldRenderDebug) lines.push(`Held x-ray: mode=${heldRenderDebug.mode} ground=${heldRenderDebug.groundMeshes} interiorFloor=${heldRenderDebug.interiorFloorMeshes ?? 0} cavernShell=${heldRenderDebug.topFaceGroundMeshes ?? 0} farmhouseFloor=${heldRenderDebug.farmhouseFloorMeshes ?? 0} held=${heldRenderDebug.heldMeshes} footWater=${heldRenderDebug.waterOccludedMeshes ?? '-'}/${heldRenderDebug.waterReplayMeshes ?? '-'}/${heldRenderDebug.waterReplays ?? '-'} stencil=${heldRenderDebug.stencilBits ?? '-'} skips=${heldRenderDebug.missingStencilFootReplaySkips ?? '-'} passes=${heldRenderDebug.baseWorldRenders}/${heldRenderDebug.selectiveOverlays}/${heldRenderDebug.nonGroundDepthReplays}/${heldRenderDebug.groundDepthRestores} shellXray=${heldRenderDebug.shellXrayPasses ?? 0}/${heldRenderDebug.shellXrayMeshes ?? 0} elevationGroups=${heldRenderDebug.elevationReplayGroups ?? 0} unknownElevation=${heldRenderDebug.unknownElevationMeshes ?? 0} elevationShaders=${heldRenderDebug.elevationShaderMaterials ?? 0}/${heldRenderDebug.elevationShaderFallbacks ?? 0} surfaceComposer=${heldRenderDebug.surfaceOcclusionComposer?.version ?? '-'}:${heldRenderDebug.surfaceOcclusionComposer?.consumers?.join(',') ?? '-'} waterDepthAlpha=${heldRenderDebug.surfaceOcclusionComposer?.waterDepthAlphaThreshold ?? '-'}`);
     if (heldRenderDebug) lines.push(`Actor x-ray: ${heldRenderDebug.allActorXrayDisabled ? 'ALL OFF (fast path)' : 'enabled categories'} | bypass frames=${heldRenderDebug.actorXrayBypassFrames ?? 0} | wet portrait-only frames=${heldRenderDebug.actorXrayWaterOnlyFrames ?? 0}`); // Distinguishes genuine disabled mode from the ordinary presentation work.
+    if (heldRenderDebug) lines.push(`Water-only traversal pruning: ${heldRenderDebug.waterOnlyBranchPruneEnabled ? 'on' : 'off'} | frames=${heldRenderDebug.waterOnlyPrunedFrames ?? 0} | branches=${heldRenderDebug.waterOnlyPrunedBranches ?? 0} | conservative fallbacks=${heldRenderDebug.waterOnlyPruneFallbacks ?? 0}`);
     if (heldRenderDebug) lines.push(`Local X-ray ring: ${heldRenderDebug.localReplayRingEnabled ? `${2 * (heldRenderDebug.localReplayTileRadius ?? 1) + 1}x${2 * (heldRenderDebug.localReplayTileRadius ?? 1) + 1} player tiles` : 'legacy camera range'} | distant parts kept in ordinary depth=${heldRenderDebug.localReplayRingSkips ?? 0}`);
     const shadowPolicy = window.ShadowMapRefreshThrottle?.snapshot?.(); // Mobile report distinguishes requested policy from the actual renderer flag.
     if (shadowPolicy) lines.push(`Real-time shadows: ${shadowPolicy.shadowRenderingEnabled ? 'on' : 'off'} | active map=${shadowPolicy.activeShadowMap} | refreshes=${shadowPolicy.refreshes}`);
@@ -1232,8 +1233,14 @@
     const propBatches = window.ZonePropRenderBatches?.snapshot?.(); // Inspect draw savings and alpha-proof backlog.
     if (projectilePool) lines.push(`Projectile pools: ${JSON.stringify(projectilePool)}`);
     if (propBatches) lines.push(`Wilderness prop batches: ${JSON.stringify(propBatches)}`);
+    const treeMatrices = window.FoliageGenerator?.identityTreeMatrixStats?.(); // Counts actual matrix shortcut executions, not just visible draws.
+    if (treeMatrices) lines.push(`Static tree matrices: ${JSON.stringify(treeMatrices)}`);
     const treeBatches = window.WildernessTreeInstancer?.snapshot?.(); // On-demand mobile A/B: spatial cells, key hits, uploads and retired buffers.
     if (treeBatches) lines.push(`Wilderness tree instances: ${JSON.stringify(treeBatches)}`);
+    const instanceRegistry = window.InstancedMeshBounds?.snapshot?.(); // On-demand stats for active-map index and fallback behavior.
+    if (instanceRegistry) lines.push(`Instanced scene registry: ${JSON.stringify(instanceRegistry)}`);
+    const actionCoins = window.ActionArchIcons?.debugSnapshot?.(); // Only explicit diagnostic capture reads the combat UI.
+    if (actionCoins) lines.push(`Combat coins: builds=${actionCoins.coinBuilds ?? 0} reuses=${actionCoins.coinReuses ?? 0}`);
     const brickLod = window.InstancedBrickLod?.snapshot?.(); // Far brick meshes drawn with the octant hull and triangles avoided.
     if (brickLod?.frames) lines.push(`Brick LOD: ${JSON.stringify(brickLod)}`);
     const wallBatches = window.DenseForestWallBatches?.snapshot?.(); // Cloud Forest wall merge + distance LOD split (far/near trees, triangles avoided).

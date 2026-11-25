@@ -330,6 +330,11 @@
         && vegetationCull.snapshot().lastCullables > 0) {
       variants.push({ id: 'fadedTreesDrawn', apply: () => vegetationCull.setHideFadedOut(false), undo: () => vegetationCull.setHideFadedOut(true) });
     }
+    const foliage = window.FoliageGenerator; // Compare the same scene with native matrix composition.
+    if (typeof foliage?.setIdentityTreeMatrixFastPath === 'function') {
+      const before = foliage.identityTreeMatrixStats().enabled;
+      variants.push({ id: before ? 'identityTreeMatricesOff' : 'identityTreeMatricesOn', apply: () => foliage.setIdentityTreeMatrixFastPath(!before), undo: () => foliage.setIdentityTreeMatrixFastPath(before) });
+    }
     const treeInstancer = window.WildernessTreeInstancer;
     if (typeof treeInstancer?.setEnabled === 'function' && vegetationCull?.snapshot?.().lastCullables > 0) {
       const instancingBefore = treeInstancer.enabled?.() === true; // Toggled per window without persisting.
@@ -340,6 +345,11 @@
     const propBatches = window.ZonePropRenderBatches;
     if (typeof propBatches?.setEnabled === 'function' && propBatches.snapshot?.().enabled === true && propBatches.snapshot().batches > 0) {
       variants.push({ id: 'propBatchesOff', apply: () => propBatches.setEnabled(false), undo: () => propBatches.setEnabled(true) });
+    }
+    const instanceBounds = window.InstancedMeshBounds;
+    if (typeof instanceBounds?.setSceneScopedEnabled === 'function') {
+      const before = instanceBounds.snapshot().sceneScopedEnabled;
+      variants.push({ id: before ? 'globalInstanceRegistry' : 'sceneInstanceRegistry', apply: () => instanceBounds.setSceneScopedEnabled(!before), undo: () => instanceBounds.setSceneScopedEnabled(before) });
     }
     const brickLod = window.InstancedBrickLod;
     if (typeof brickLod?.setEnabled === 'function' && brickLod.enabled() && brickLod.snapshot().farMeshes > 0) {
@@ -378,6 +388,10 @@
       if (before !== 'off') variants.push({ id: 'portraitWaterTintOff', apply: () => waterHierarchy.set('portrait.waterTint','off'), undo: () => waterHierarchy.set('portrait.waterTint',before) });
     }
     const heldOrder = window.HeldObjectRenderOrder;
+    if (typeof heldOrder?.setWaterOnlyBranchPruneEnabled === 'function') {
+      const before = heldOrder.snapshot().waterOnlyBranchPruneEnabled;
+      variants.push({ id: before ? 'waterOnlyPruneOff' : 'waterOnlyPruneOn', apply: () => heldOrder.setWaterOnlyBranchPruneEnabled(!before), undo: () => heldOrder.setWaterOnlyBranchPruneEnabled(before) });
+    }
     if (typeof heldOrder?.setLocalReplayRingEnabled === 'function') {
       const localBefore = heldOrder.snapshot?.().localReplayRingEnabled !== false; // Restore the user's exact policy after each sample window.
       variants.push({ id: localBefore ? 'fullXrayRange' : 'localXrayRing', apply: () => heldOrder.setLocalReplayRingEnabled(!localBefore), undo: () => heldOrder.setLocalReplayRingEnabled(localBefore) });

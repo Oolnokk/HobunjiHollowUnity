@@ -2579,3 +2579,318 @@ Continuing PR #2165 from its audited revision 25583ae79de4ec38095499d51290ea84fb
 - Validation: executed the complete zone-prop regression fixture with actual Three.js r128 (from its tagged upstream source), including independent dirty groups, immediate removal, timed rediscovery, material/attribute edits, child attachment and restored visibility. Executed the real bounds/brick LOD modules with Three r128 geometry and 500 unrelated instance meshes: only four tagged bricks visited; hidden, detached/reparented, replay-only and duplicate registrations handled correctly. The real census function counted inherited-hidden nodes without mutating visibility. Full CI on the follow-up revision and on-device frame timing are pending.
 
 Remaining: capture the actual Cloud Forest matrix census before choosing explicit static subtree invalidation; no unsafe global skip of invisible objects. Continue water-only depth-consumer review, immutable save serialization reuse, appearance/materialization churn, redundant hand pose solve and event-driven UI/inventory revisions. No performance number claimed until measured.
+
+
+### Next stage: water-only traversal, checkpoint stats and hand publication
+
+Continues the original rainy Cloud Forest investigation from current main (the
+previous PR #2165, including independent prop-group repair, brick registry
+type partitioning, thicker depth outlines and the on-demand scene matrix
+census, is already merged). No global hidden-node matrix freeze is introduced.
+
+- **Water-only selective replay:** one live postorder walk finds maximal
+  disjoint branches without a drawable on either private water replay layer
+  or the selected portrait stamp. Hide them only during the three existing
+  native submissions (portrait stencil, water color, translucent cover
+  depth), then restore even on exceptions. Lights/cameras and selected
+  descendants' ancestry remain. Visible LODs, unknown object types and
+  arbitrary matching render hooks cause conservative fallback. The portrait
+  parity owner advertises its exact local matrix-lock/restore hook pair only
+  when neither hook chains unknown behavior; replacement hooks invalidate
+  that permission. No cross-frame visibility cache, extra render pass,
+  change to water alpha/depth, or changes to normal gear replay. The setting
+  and A/B variant waterOnlyPruneOff/On permit direct comparison. Pixel Probe
+  reports pruned frames, maximal branches, and fallback counts.
+- **Browser recovery checkpoints:** compute checkpointStats once per
+  synchronous manual, campfire, travel or changed autosave transaction and
+  reuse for both the existing integrity guard and the record. Keep
+  canonical byte exclusion, all risk rules, rotation and fingerprint checks.
+  Do not share stats across asynchronous folder writes (provenance changes,
+  disk verification and mutable snapshot safety still require fresh checks).
+  The new checkpointStatsBuilds counter verifies the reduced work. This is
+  not a fix for every folder autosave cost.
+- **Hand pose publication:** the actual procedural rig owns left/right
+  sockets as direct children. Prefer those to recursive GLB searches;
+  legacy/nested editor rigs retain name-search fallback. No change to pose
+  solving cadence, pre-render/first-draw ownership or animation.
+
+Targeted source-executing isolated fixtures passed for water-only draw
+identity/order, old-mode comparison, local parity hook identity (including
+unknown predecessor/replacement), LOD/custom hook fallback, restoration on
+draw failure, browser manual/travel/autosave stats counts, direct hand socket
+publication and replacement/nested fallback. These are not live WebGL or
+whole-repository tests. Local Git network access was unavailable; updated
+versioned gameplay/editor loader references via the repository connector.
+Full regression and same-save FPS measurement still required.
+
+Remaining roadmap: actual Cloud Forest scene matrix census and explicit
+static-subtree invalidation; appearance-materialization counts/cache churn;
+folder checkpoint serialization across the I/O boundary (retain mutation
+guards); actual scene partitioning for tracked brick instances; full
+inventory revision/event-driven action bar; safe same-frame hand solve
+deduplication only if no late pose writers are lost. The water change
+reduces potential traversal, not the number of native passes. Measure
+fallback rates and actual FPS before treating it as a speedup.
+
+
+### Audit and next continuation: active-scene instance indexes, spawn cancellation and combat UI
+
+The previous revision 82113f7f14070185a27bc9d43cd06971c4d54f11 passed all
+nine PR workflows (full regression, Android APK and browser smoke included).
+The same PR continues from that verified revision.
+
+- Water-only pruning now abandons unsafe scans immediately and retains the
+  unpruned scene when an enabled shadow map has a pending manual refresh.
+  Three native water operations and the existing material/depth state
+  restoration remain unchanged.
+- InstancedMeshBounds maintains per-root-scene weak membership, seeded once
+  from the existing global registry. The already-installed scene structure
+  hook in OutlineRenderPerformance publishes attachment notifications; no
+  additional Object3D prototype wrapper is introduced. New tracked tags
+  enroll immediately, queued nested attachments coalesce, and live
+  ancestry checks remove moved/detached entries. Culler and brick LOD share
+  the same visibility walk. Replay-only tags are excluded. Inactive-scene
+  queues cap at 256 roots; overflow safely reindexes from the global list.
+  Global weak refs are compacted periodically at registration. Nested
+  preview scenes and older hosts without structure notifications fall back
+  to the original global behavior where required. Settings and benchmark
+  globalInstanceRegistry/sceneInstanceRegistry support A/B; Pixel Probe
+  reports visits, overflow, reindex, stale and fallback counts. The
+  synthetic two-map fixture visits two active instances instead of 502
+  global candidates; this is a count, not a real-frame FPS measurement.
+- Hunter materialization: validate the actual resident, generation, life
+  revision, area and activation range before and after asynchronous config
+  and avatar creation. A stale request cannot start an expensive factory
+  after configuration resolves, nor publish a completed obsolete rig.
+  Existing three-second dormant grace, detailed AI, release radius and
+  faction logic remain intact. Tribe diagnostics count attempts, successful
+  materializations, cancellation before/after factory, failures, dormant
+  releases and reuses. These are diagnostic counters, not a new spawn cap.
+- Combat coin UI resolves the symbol signature before creating DOM nodes.
+  Holding changes CSS only. A changed ability, combo step, label, loaded
+  artwork, regenerated combo raster or removed coin rebuilds normally.
+  Combat slots and stale ownership share one physical-button lookup.
+  Pixel Probe reports actual coin builds/reuses. Existing observers and
+  timer fallback still run; this is not a complete event-driven UI rewrite.
+
+Executed source-based fixtures for the actual scene attachment hook and
+registry (500 inactive instances, late tags, replay-only tags, moves,
+visibility, nested scenes, overflow and A/B), and for the actual coin and
+hunter build functions (30 unchanged refreshes allocate zero DOM elements,
+config-await cancellation, obsolete-life rejection, successful neutral
+publication and retry after failure). Previous regression was green;
+new revision needs full CI and on-device verification. No global matrix
+freezing, save safety changes, or asserted FPS improvement. Remaining major
+work: capture Cloud Forest scene matrix census to identify high-value
+immutable subtrees; optimize full folder checkpoint serialization and
+appearance readbacks; prove hand-solve deduplication and inventory revision
+ownership before changing them.
+
+
+### Registry failure audit and sparse portrait masks
+
+The earlier 82113f7 revision passed all nine PR workflows. The later
+0f1b1b5 revision passed 1425/1426 fast regression tests; the failure was
+the instanced-view-cull exception fixture still injecting an exception into
+the old global iterator rather than the newly used scene iterator.
+The corrected test now exercises both scene-aware and legacy iterator
+exceptions and verifies restoration of both instanced and distant scenery
+visibility. The audit also exposed a real exception-safety hole in global
+weak-ref compaction: a throwing visitor after a collected entry could leave
+a duplicate reference and stale array length. Compaction now preserves the
+unread tail and finalizes length even on throw. A deterministic fake WeakRef
+fixture reproduces the old failure and verifies the fix.
+
+Continued the appearance hotpath in the existing beard/hood compositor:
+painted requests use the disjoint union of the normalized RLE request and
+whisker ranges instead of decoding an additional request bitmap and scanning
+all 40,000 portrait pixels. Missing whisker/top-cover bitmaps need no
+allocation; explicit empty hood permission still means protect-all.
+Silhouette mode retains the full source-alpha inspection, including the
+242-alpha threshold. If no hood pixel is approved, the erasure scan is
+also skipped. No change to tuft warp, canvas readback, permission precedence,
+beard outline, front/rear draw ordering or editor behavior. This reduces CPU
+work in sparse painted-mask negotiation, not every portrait's texture
+generation or the Canvas readback itself.
+
+Executed scene-registry fixture and instanced cull fixture through the
+actual exception/grass/replay sections, the full beard/hood pixel and canvas
+unit section, and 240 deterministic comparison cases against main's exact
+old partition implementation (every output bit and diagnostic count equal).
+Updated known transitive cache references for gameplay and shared authoring
+pages. Whole-repository CI and actual device performance on the newest
+revision remain to be confirmed. Still need the real scene census to
+justify any static subtree freeze; no global matrix update override or
+unsafe save/hand cadence shortcuts.
+
+
+### Folder recovery: exact committed-byte mirroring
+
+The canonical file delta scan, disk stamps, external-edit guard, checkpoint
+integrity checks and recovery rotation remain unchanged. Recovery slot
+writing now serializes its record once before asynchronous filesystem
+operations and can return the committed JSON to the checkpoint manager.
+The browser mirror stores that exact string, and its cached record is
+parsed from that string rather than the potentially mutated input. This
+eliminates a second full stringify for each newly written or rotated
+recovery slot, at the cost of one JSON parse and keeping one serialized
+string through the write. The original record-returning public interface
+remains the default; older adapters fall back to the existing mirror path.
+A close failure cannot advance the mirror; quota fallback retains the
+committed disk record. committedRecoveryMirrors counts the new path.
+No change to save cadence or canonical data-loss guards.
+
+The extracted actual writer and manager persistence functions passed
+single-stringify, mutation during async lookup, disk/browser equality,
+failed disk close, quota fallback and legacy-return checks. The broader
+isolated save fixture stopped on its existing asynchronous baseline-seed
+assertion; the full native Node regression run is needed before claiming
+all save tests pass. Added integration assertions for both adapter modes,
+rotation and exact bytes, plus the real writer fixture. Updated the two
+runtime version tokens. Real device timing still needed: this removes
+serialization work, but is not a measured wall-time or FPS improvement.
+Static hierarchy freeze remains deferred pending an actual scene census;
+the save capture/integrity-size and canonical file serialization passes
+are not eliminated.
+
+
+### Static procedural tree matrix arithmetic
+
+The rainy Cloud Forest trace's ~5.92 ms/frame native main-render matrix
+walk remains the motivating evidence. The generator's shared tree variants
+bake wood, vine, canopy and climb-branch coordinates into local geometry.
+Fresh per-tree clones normally have identity-local direct mesh leaves.
+Instead of disabling transforms on arbitrary static-looking or invisible
+scene nodes, install a per-instance world-update fast path only on these
+generator-owned leaves when their update methods are the native ones.
+For auto-updated identity TRS, reset the local matrix to identity and copy
+the current parent's world matrix (or identity when detached), clearing
+matrixWorldNeedsUpdate exactly as native leaf traversal would do. This
+avoids quaternion composition and general 4x4 multiplication; it does
+not skip the scene traversal or assume any ancestor remains stationary.
+
+A moved/rotated/scaled leaf, manual matrix, added descendant, changed
+local-update hook or disabled A/B switch delegates to the original native
+world updater. Root transforms, explicit updateMatrix/updateWorldMatrix,
+visibility, fade, layers, culling, raycasts and reparenting remain live.
+No Object3D prototype changes. Only freshly generated procedural leaves
+are enrolled; baked GLB trees and other scenery are not implicitly opted
+in. The persisted Fast static tree matrices setting and
+identityTreeMatricesOff/On benchmark permit direct comparison. Pixel
+Probe exposes enrollments, actual copy executions and fallback counts.
+This is a narrower arithmetic reduction, not a cached whole-subtree
+traversal or a guarantee of FPS improvement.
+
+Executed the production enrollment/updater functions with a source-based
+matrix fixture (moving parents, hidden leaves, manual transforms, late
+attachments and reparenting); all parity checks passed. Added tests using
+the real Three.js dependency in the existing foliage-lite-tree-twin
+regression, including rotations, custom local hooks and A/B parity.
+The native Three.js suite is not available in the isolated connector
+environment; full CI and actual Cloud Forest A/B timing remain required.
+All known versioned foliage generator authoring/gameplay loaders and the
+new diagnostics/settings loaders were refreshed. The previous folder
+recovery revision had ten of eleven workflows green, with the full
+regression suite in progress. Larger static subtree invalidation still
+requires the on-device scene matrix census.
+
+
+### Resumed static-tree work: runtime isolation repair
+
+Recovered the interrupted conversation at commit f31364cc. Nine of eleven
+workflows passed; the fast regression suite (four foliage-related tests)
+and semantic surface foliage browser smoke both failed with the same
+ReferenceError at generator initialization. The new matrix shortcut
+looked up bare THREE, even though createFoliageGenerator receives T and
+has legitimate metadata-only and separately injected editor runtimes.
+
+Resolved the native updater pair from T, and deliberately restricted
+enrollment to the verified Three r128 contract. Newer editor runtimes
+keep their own native matrix updates; runtimes with no Object3D simply
+do not enroll any leaves. No changes to geometry, authored visual
+rules, tree placement, scene visibility, or the A/B default. Updated
+all nine known versioned generator consumers. The real-Three fixture now
+initializes without bare global THREE and tests an alternate revision;
+the fast isolation fixture also executes the actual enrollment/updater
+with an injected minimal r128 runtime and verifies conservative fallback.
+
+Targeted connector-based runs passed surface foliage lifecycle,
+instance placement, runtime isolation (including the added fast matrix
+fixture), the actual Five Blossoms metadata-only startup, and extracted
+matrix updater tests for parent movement, manual transforms, hidden
+leaves, late descendants, reparenting and opt-out. The complete Five
+Blossoms fixture could not run in the isolated adapter because it needs
+filesystem methods not provided there. Native Node/Three and browser
+CI remain required; no local clone (network DNS unavailable). No new
+FPS claim; compare Fast static tree matrices on/off and the scene
+matrix census before expanding to additional static subtree owners.
+
+
+### Pristine front-hood readback reuse
+
+The recovered static-tree repair (aa146ad17bf6e9178c010bbaf47723fa9972da36)
+passed all eleven CI workflows, including the full regression suite and
+semantic surface foliage browser smoke.
+
+Continued the original portrait-materialization readback investigation.
+The negotiated result cache already handles exact beard/hood combinations,
+and the pristine beard cache handles changing hood poses. A new bounded
+pristine cloth cache (4 MiB/24 entries, estimated RGBA bytes) now shares
+the unwarped front-hood readback across different beard/policy combinations.
+It is keyed by the existing exact canonical hood image/tint/transform
+identity and static deformation, independent of beard permissions. It is
+only used on the existing static, canonical result-key path; animated
+breathing, custom composer/tint, mutable mask overrides and pixel-dye
+paths retain their previous behavior. Scratch canvas drawing still takes
+place, so cached input does not replace the original unmodified artwork.
+Warping and approved cutout holes copy the immutable cached data before
+writing. Real warps still reread the canvas after putImageData to preserve
+browser premultiplied-alpha rounding; no-op warps transfer the readback.
+No changes to mask policy, outlines or original draw stages. Pixel Probe's
+existing Beard/hood CPU cache report automatically includes clothReads,
+clothReadHits and pristineCloth memory/eviction statistics.
+
+Targeted source-executing tests passed the entire pixel/canvas and actual
+portrait negotiation-cache section, including distinct beard identity,
+permission changes, no-op and real warp pixel parity, animated bypass,
+source replacement, static deformation invalidation, immutable cached
+input and bounded eviction. This is not a native browser pixel test or a
+measured FPS improvement. On cache hits this avoids one full Canvas
+getImageData call; extra retained pixel memory and private copies on
+mutation are the trade-off. Known direct and transitive gameplay/editor
+loader versions updated using the repository connector; local cache-bust
+checker/full Node suite could not be run without a checkout. Latest CI
+must validate the integration. Remaining priorities: on-device scene
+matrix census and A/B timing, broader appearance churn, hand solve
+deduplication and event-driven inventory. Do not bypass fresh animated
+pixels or global scene transforms.
+
+
+### Pre-merge audit (PR #2167)
+
+Reviewed the cumulative PR diff from main, focusing on private render
+passes, scene-index lifetimes, async NPC creation, r128 identity-leaf
+matrices, portrait cache ownership, save durability and loader versions.
+Two additional edge cases corrected: offscreen Avenger death now bumps
+the same resident lifetime revision as ordinary slayHunter, so a pending
+factory cannot publish a deceased resident after replacement; global
+weak-ref iteration now defers compaction until the outermost callback
+iteration completes, preventing a nested visitor or threshold sweep from
+seeing partially compacted array positions. Collected entries still
+compact after an exceptional exit, with no second pass if all visited
+references are live. Added tests for the actual Avenger loss branch and
+nested weak-registry visits; updated gameplay and editor version tokens.
+
+Re-executed the two complete source-executing regression fixtures,
+the pixel/canvas and actual portrait-cache sections, water replay draw
+parity/fallback/exception assertions, direct hand socket replacement and
+nested fallback, and the extracted real folder writer/manager mirror
+fixture (one stringify, mutation isolation, exact committed bytes,
+failed close, quota fallback, legacy result). An additional 120 seeded
+randomized painted/silhouette mask comparisons against main matched every
+bit and diagnostic count. These checks use isolated connector fixtures,
+not native browser execution. The earlier aa146ad revision was green;
+the later pristine-cloth and pre-merge audit revisions must pass the
+full native regression and browser workflows independently. Actual
+device FPS and live save/recovery/visual smoke still unmeasured. Do not
+merge on the strength of an older green commit alone.

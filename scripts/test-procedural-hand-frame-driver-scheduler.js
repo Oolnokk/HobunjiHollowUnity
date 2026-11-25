@@ -194,4 +194,27 @@ function buildFixture({ withScheduler }) {
   assert.equal(debug().fallback.mode, 'idle', 'resumed gait sampling does not read the gap as movement');
 }
 
+// Solved-base publication uses the actual direct sockets, not a recursive
+// search through the GLB every time. Nested/legacy editor rigs still work.
+{
+  const start=source.indexOf('  function publishHandSolvedBases(');
+  const end=source.indexOf('  function updateManagedRigs(',start);
+  const calls=[];
+  const compositor={setSolvedBase:(node,key,value)=>calls.push([node,key,value])};
+  const publish=new Function('global',source.slice(start,end)+'\nreturn publishHandSolvedBases;')({ActorRigCompositor:compositor});
+  const group={children:[],getObjectByName(){throw Error('unnecessary recursive lookup');}};
+  const left={name:'left_hand_socket',parent:group,position:{},quaternion:{}};
+  const right={name:'right_hand_socket',parent:group,position:{},quaternion:{}};
+  group.children=[left,right];
+  publish({rig:{group}});
+  assert.deepEqual(calls.map(c=>[c[0].name,c[1]]),[
+    ['left_hand_socket','position'],['left_hand_socket','quaternion'],
+    ['right_hand_socket','position'],['right_hand_socket','quaternion']]);
+  const newLeft={...left}; group.children[0]=newLeft; calls.length=0;
+  publish({rig:{group}});
+  assert.equal(calls[0][0],newLeft,'replacing a socket is immediately observed');
+  group.children=[]; group.getObjectByName=name=>name===left.name?left:right;
+  calls.length=0; publish({rig:{group}});
+  assert.equal(calls[0][0],left,'legacy nested socket lookup remains supported');
+}
 console.log('procedural hand frame driver attachment/pose-sync split passed');
