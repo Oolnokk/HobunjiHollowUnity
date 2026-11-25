@@ -3229,3 +3229,7 @@ Off by default; enable with `?offAreaNpcTick=1`, `localStorage.hobunjiOffAreaNpc
 `OffAreaNpcTick.setEnabled(true)`, and compare with `OffAreaNpcTick.getDebug()` (skipped vs coarse updates).
 **Not measured / not played:** the effect on frame time, and whether NPC arrivals, area transfers, seats and beds behave
 identically. Unit tests cover the cadence and every exclusion, not the live schedule.
+
+Testing note: a githack commit URL (`1c712d2db`) served `fishing-minigame.js` truncated at ~35 KB (browser: "Unexpected end of input", line 598)
+while the same file from raw.githubusercontent.com was complete and byte-identical to the repo (92,147 bytes). Githack caches per
+commit, so a reload does not recover; pushing any new commit gives a fresh URL. The visible symptom was a hang at 84% loading.
