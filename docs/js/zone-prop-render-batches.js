@@ -35,7 +35,7 @@
 // ore rocks (faceted-rocks.js) are built with world-space vertices under an
 // identity transform, so their origins all sit at 0,0.
 // A batch is rebuilt only when its member set, a member's world matrix or its
-// geometry/attribute versions change. ZonePropRenderBatches.setEnabled(false)
+// geometry/attribute versions change. Dirty groups repair independently between timed discoveries. ZonePropRenderBatches.setEnabled(false)
 // is the A/B switch; snapshot() reports counts and per-reason rejections.
 (() => {
   'use strict';
@@ -63,7 +63,7 @@
   let enabled = true;
   const records = new WeakMap(); // scene -> { holder, batches: Map<key, batch> }
   const motion = new WeakMap(); // mesh -> { sig: Float64Array, stillSince }
-  const stats = { frames: 0, sources: 0, batches: 0, rebuilds: 0, moving: 0, drawsSaved: 0, fastReuseFrames: 0, fullCollects: 0 };
+  const stats = { frames: 0, sources: 0, batches: 0, rebuilds: 0, moving: 0, drawsSaved: 0, fastReuseFrames: 0, fullCollects: 0, partialRepairFrames: 0, repairedGroups: 0, emptyReuseFrames: 0 };
   const rejectReasons = {};
   const defaultBeforeRender = window.THREE?.Object3D?.prototype?.onBeforeRender;
   const defaultAfterRender = window.THREE?.Object3D?.prototype?.onAfterRender;
@@ -531,34 +531,80 @@
     return true;
   }
 
-  // A stable frame reuses known groups without rescanning every prop owner or
-  // rebuilding grouping keys. The authoritative matrix/geometry signatures
-  // are STILL compared each frame; a moving/edited batch member falls through
-  // to the full collector immediately, not at the next timed rescan.
-  function reuseSettledBatches(scene, record, t) {
-    if (!record.batches.size || t - record.collectedAt >= STABLE_COLLECT_MS) return null;
-    const hidden = []; // Collected without mutation; invalid fast paths leave every mesh visible.
-    for (const batch of record.batches.values()) {
-      const drawn = batch.mesh;
-      if (!drawn || batch.members.length < 2) return null;
-      for (const member of batch.members) {
-        if (!visibleInScene(member, scene)
-          || !member.isMesh || member.isInstancedMesh || member.isSkinnedMesh
-          || member.onBeforeRender !== defaultBeforeRender
-          || (batch.furnitureState ? !furnitureStateMatches(member, batch.furnitureState)
-            : (Array.isArray(member.material) ? drawnMaterial(member) : member.material) !== drawn.material)
-          || member.layers.mask !== drawn.layers.mask
-          || member.castShadow !== drawn.castShadow || member.receiveShadow !== drawn.receiveShadow
-          || member.renderOrder !== drawn.renderOrder || !settledMemberEligible(member, drawn.material)
-          || !isStill(member, t)) return null;
-        hidden.push(member);
-      }
+  function settledMemberMatches(member, batch, scene, t) {
+    const drawn = batch.mesh; // Fast comparison against the existing proxy's state.
+    return visibleInScene(member, scene)
+      && member.isMesh && !member.isInstancedMesh && !member.isSkinnedMesh
+      && member.onBeforeRender === defaultBeforeRender
+      && (batch.furnitureState ? furnitureStateMatches(member, batch.furnitureState)
+        : (Array.isArray(member.material) ? drawnMaterial(member) : member.material) === drawn.material)
+      && member.layers.mask === drawn.layers.mask
+      && member.castShadow === drawn.castShadow && member.receiveShadow === drawn.receiveShadow
+      && member.renderOrder === drawn.renderOrder && settledMemberEligible(member, drawn.material)
+      && isStill(member, t);
+  }
+
+  // A dirty cell/material group can be repaired from its own original members.
+  // New members and migrations into other groups wait for normal discovery,
+  // drawing as originals until then. Unrelated groups never need recollection.
+  function repairSettledBatch(scene, record, key, batch, t) {
+    const owners = new Map(); // Nearest-owner cache scoped to this dirty group.
+    const members = []; // Only still-eligible members with the original group key.
+    let owner = null;
+    for (const member of batch.members) {
+      if (!visibleInScene(member, scene)) continue;
+      const candidateOwner = ownerOf(member, owners);
+      if (!candidateOwner) continue;
+      currentKind = candidateOwner.kind;
+      if (!eligible(member)) continue;
+      if (!isStill(member, t)) { stats.moving++; continue; }
+      if (groupKey(member, candidateOwner) !== key) continue;
+      owner ||= candidateOwner;
+      members.push(member);
     }
+    record.holder.remove(batch.mesh);
+    disposeBatch(batch);
+    record.batches.delete(key);
+    markBatchMembershipChanged(scene);
+    stats.repairedGroups++;
+    if (members.length < 2) return null;
+    const replacement = { mesh: null, members: [], builtAt: 0 }; // Fresh clone for any changed furniture state.
+    buildBatch(window.THREE, record, replacement, members, owner, t);
+    record.batches.set(key, replacement);
+    return replacement;
+  }
+
+  // undefined requests a full timed collection; null means no draw swap.
+  // Empty collections also observe the discovery cadence, avoiding repeated
+  // traversal in scenes that currently have no eligible settled groups.
+  function reuseSettledBatches(scene, record, t) {
+    if (t - record.collectedAt >= STABLE_COLLECT_MS) return undefined;
+    if (!record.batches.size) { stats.emptyReuseFrames++; return null; }
+    const hidden = []; // Validate/repair every group before hiding any originals.
+    let repaired = false;
+    // Snapshot only the keys requiring repair: replacing a Map entry during
+    // iteration would otherwise revisit the replacement in the same frame.
+    const dirty = [];
+    for (const [key, batch] of record.batches) {
+      let valid = !!batch.mesh && batch.members.length >= 2;
+      if (valid) for (const member of batch.members) {
+        if (!settledMemberMatches(member, batch, scene, t)) { valid = false; break; }
+      }
+      if (!valid) dirty.push([key, batch]);
+      else for (const member of batch.members) hidden.push(member);
+    }
+    for (const [key, batch] of dirty) {
+      repaired = true;
+      const replacement = repairSettledBatch(scene, record, key, batch, t);
+      if (replacement) for (const member of replacement.members) hidden.push(member);
+    }
+    if (repaired) stats.partialRepairFrames++;
+    else stats.fastReuseFrames++;
+    if (!hidden.length) return null;
     for (const member of hidden) member.visible = false;
     record.holder.visible = true;
     stats.sources = hidden.length; stats.batches = record.batches.size;
     stats.drawsSaved = hidden.length - record.batches.size;
-    stats.fastReuseFrames++;
     return function restoreStableBatches() {
       for (const member of hidden) member.visible = true;
       record.holder.visible = false;
@@ -582,7 +628,7 @@
     // at its previous pose, then its changed matrix drops it out of the batch until it settles again.
     const record = recordFor(scene);
     const fastRestore = reuseSettledBatches(scene, record, t); // Skips per-frame owner scans and grouping when unchanged.
-    if (fastRestore) return fastRestore;
+    if (fastRestore !== undefined) return fastRestore;
     record.collectedAt = t;
     stats.fullCollects++;
     const groups = new Map();
@@ -608,9 +654,10 @@
       if (!batch) { batch = { mesh: null, members: [], builtAt: 0 }; record.batches.set(key, batch); }
       if (!isCurrent(batch, members)) buildBatch(THREE, record, batch, members, group.owner, t);
       batch.mesh.visible = true;
-      for (const member of members) { member.visible = false; hidden.push(member); }
+      for (const member of members) hidden.push(member);
     }
     if (!hidden.length) return null;
+    for (const member of hidden) member.visible = false; // Commit visibility only after every proxy build succeeds.
     record.holder.visible = true;
     stats.sources = hidden.length;
     stats.batches = record.batches.size;
