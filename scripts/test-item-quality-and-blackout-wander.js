@@ -236,6 +236,24 @@ function makeSeededRandom(seed) {
   assert.equal(familyJob.source, 'family', 'family processing is identifiable at completion so player skill cannot reroll its stars');
   assert.equal(familyJob.yieldMultiplier, 2, 'the existing family squeezer quantity multiplier is retained');
   assert.equal(familyQualityRolls, 1, 'a single family job does not reroll usefulness quality multiple times');
+  const competingAnimal = { id: 'l2', name: 'Small animal', barnId: 'barn1', kind: 'testSmall', genotype: {} }; // An eligible animal cannot displace a family worker.
+  livestock.push(competingAnimal);
+  assert.equal(DewVats.assignToVat('l2', 'vat1').ok, false, 'a family worker occupies the exclusive vat assignment');
+  assert.equal(competingAnimal.assignedVatId, undefined);
+  assert.equal(DewVats.assignedWorkerForVat('vat1').id, 'toddler1');
+  competingAnimal.assignedVatId = 'vat1'; // Simulate an older save with conflicting assignment data.
+  assert.equal(DewVats.squeezePileWithExternalWorker('vat1'), false, 'a conflicting legacy family job does not consume dew under another worker');
+  livestock.length = 0;
+  const movedFamilyVats = []; // Verify the shared processor move/remove hook also updates family save state.
+  windowStub.RomanceFamily.retargetVatAssignments = (oldId, newId) => { movedFamilyVats.push([oldId, newId]); return 1; };
+  assert.equal(DewVats.retargetAssignments('vat1', 'new_vat'), 1);
+  assert.equal(DewVats.assignedWorkerForVat('vat1'), null);
+  assert.equal(DewVats.assignedWorkerForVat('new_vat').id, 'toddler1');
+  assert.deepEqual(movedFamilyVats.at(-1), ['vat1', 'new_vat']);
+  assert.equal(DewVats.retargetAssignments('new_vat', null), 1);
+  assert.equal(DewVats.assignedWorkerForVat('new_vat'), null);
+  assert.deepEqual(movedFamilyVats.at(-1), ['new_vat', null]);
+  DewVats.setExternalWorker('vat1', { id: 'toddler1', familyWorker: true });
 
   DewVats.setExternalWorker('vat2', { id: 'otherExternal' });
   DewVats.clearFamilyWorkers();

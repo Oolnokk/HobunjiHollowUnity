@@ -24,6 +24,7 @@
   let H = null; // RomanceSystem.helpers
   let fam = defaultFamily();
   const spawning = new Set(); // child ids whose walker build is in flight
+  const vatWorkerPoses = new Map(); // Active vat ID → live child pose; never serialized.
   let lastRawDay = null;
   let announceTimers = [];
   let doorstepRegistered = false;
@@ -400,6 +401,123 @@
     return child.vatId ? (window.DewVats?.listSqueezingVats?.() || []).find(obj => obj.id === child.vatId) || null : null;
   }
 
+  function vatJobActive(vat) {
+    const job = vat?.getJob?.(); // A pending real batch may start before the ordinary 08:00 shift.
+    if (job?.kind !== 'timed') return false;
+    const now = window.ItemProcessing?.gameHour?.(); // Offscreen processors may retain expired jobs until the farm is rendered again.
+    return job.readyAtGameHour == null || !Number.isFinite(now)
+      || !Number.isFinite(Number(job.readyAtGameHour)) || Number(job.readyAtGameHour) > now;
+  }
+
+  // The furniture timeline already resolves the animated sack surface, bounce,
+  // and placement yaw for livestock. Children have a floor-relative rig root
+  // rather than an animal shoulderGrip: put their feet on that same point.
+  function vatPoseBlocked(child, walker) {
+    const participant = 'npc:' + child.id; // Shared action-lock identity, including paired animations.
+    return walker?.combatTutorialSuspended || window.FestivalWheelDanceRuntime?.isPartner?.(walker)
+      || window.CharacterActionLocks?.isLocked?.(participant, 'pose')
+      || window.HobunjiDrunkGameplayBridge?.isNpcBlackedOut?.(child.id);
+  }
+
+  function canPoseVatWorker(child, walker, vatId) {
+    const target = walker?.currentScheduleTarget; // Only an arrived worker on the matching chore may enter the animation.
+    const root = walker?.root;
+    const hour = H?.clockHour?.();
+    return !!(child && child.vatId === vatId && phaseOf(child) !== 'basket'
+      && deps().getCurrentArea?.() === 'farm'
+      && walker?.area === 'farm' && root?.parent && root.visible !== false && !vatPoseBlocked(child, walker)
+      && target?.area === 'farm' && target.vatId === vatId
+      && Math.hypot(root.position.x - target.c - 0.5, root.position.z - target.r - 0.5) <= 0.35
+      && ((hour >= 8 && hour < 18) || vatJobActive(vatObject(child))));
+  }
+
+  function clearVatWorkerPose(vatId) {
+    const pose = vatWorkerPoses.get(vatId); // Owns the temporary render matrix, not the schedule position.
+    if (!pose) return;
+    vatWorkerPoses.delete(vatId);
+    const root = pose.root; // Release the originally captured rig even if the walker has since rebuilt its root.
+    root.removeEventListener?.('removed', pose.release);
+    root.matrixAutoUpdate = true;
+    root.updateMatrix();
+    root.matrixWorldNeedsUpdate = true;
+    pose.movementLock?.release?.(); // No held movement channel survives the batch or rig removal.
+    pose.walker._npcScheduleDecision = null;
+    if (pose.shadow) pose.shadow.visible = pose.shadowVisible;
+    window.__farmLog?.(`[squeezing-vat] child ${pose.childId} released from ${vatId}`, 'info');
+  }
+
+  function setVatWorkerPose(vatId, targetMatrix, worker) {
+    if (!worker?.familyWorker || !targetMatrix) { clearVatWorkerPose(vatId); return null; }
+    const child = fam.children.find(entry => entry.id === worker.id);
+    let pose = vatWorkerPoses.get(vatId); // Cached matrix/vector scratch for the active worker.
+    const walker = H?.findWalker?.(worker.id);
+    if (!canPoseVatWorker(child, walker, vatId)) {
+      clearVatWorkerPose(vatId); pose = null;
+      // The processor calls this only while a timed batch is running. Unlike
+      // ordinary schedules, a short squeeze must not finish while its worker
+      // is still walking out of the farmhouse or across the farm.
+      if (!child || child.vatId !== vatId || phaseOf(child) === 'basket'
+        || deps().getCurrentArea?.() !== 'farm' || !walker?.root || walker.root.visible === false
+        || walker.root.matrixAutoUpdate === false
+        || vatPoseBlocked(child, walker)) return null;
+      const target = childTarget(child); // Reuse the same validated approach tile and active-shift policy.
+      if (target?.vatId !== vatId || !window.NpcPathfinding?.teleportWalkerToTile?.(walker, 'farm', target)
+        || !canPoseVatWorker(child, walker, vatId)) return null;
+      window.__farmLog?.(`[squeezing-vat] child ${child.id} relocated to ${vatId}`, 'info');
+    }
+    const root = walker.root;
+    if (pose && (pose.walker !== walker || pose.root !== root)) { clearVatWorkerPose(vatId); pose = null; }
+    if (!pose) {
+      if (!root.matrixAutoUpdate) return null; // Never take over another presentation's manual matrix.
+      pose = { childId: child.id, walker, root, matrix: targetMatrix.clone(),
+        position: root.position.clone(), quaternion: root.quaternion.clone(), scale: root.scale.clone(),
+        shadow: walker.groundShadow, shadowVisible: walker.groundShadow?.visible,
+        movementLock: window.CharacterActionLocks?.acquire?.({
+          owner: 'child-vat', participants: ['npc:' + child.id], channels: ['movement'],
+        }), // Keep the logical feet on the safe tile; the shared animation owns the visible hop.
+        release: () => clearVatWorkerPose(vatId) };
+      vatWorkerPoses.set(vatId, pose);
+      root.addEventListener?.('removed', pose.release); // Despawn/area transfer releases the live rig before reparenting.
+      root.matrixAutoUpdate = false;
+      window.__farmLog?.(`[squeezing-vat] child ${child.id} stomping at ${vatId}`, 'info');
+    }
+    root.parent.updateWorldMatrix(true, false);
+    pose.matrix.copy(root.parent.matrixWorld).invert().multiply(targetMatrix);
+    pose.matrix.decompose(pose.position, pose.quaternion, pose.scale);
+    // Use the animated contact position and rotation, but never inherit the
+    // cloth/liquid mesh's squash scale. The child's own authored body scale
+    // lives inside this root and remains intact.
+    root.matrix.copy(pose.matrix.compose(pose.position, pose.quaternion, root.scale));
+    root.matrixWorldNeedsUpdate = true;
+    root.updateWorldMatrix?.(false, false); // Later NPC gaze and targeting systems see the current rendered root, not last frame's contact.
+    if (walker.groundShadow) walker.groundShadow.visible = false;
+    return worker;
+  }
+
+  function pruneVatWorkerPoses() {
+    for (const [vatId, pose] of vatWorkerPoses) {
+      const child = fam.children.find(entry => entry.id === pose.childId); // Only active jobs are examined.
+      if (!canPoseVatWorker(child, pose.walker, vatId)
+        || H.findWalker(pose.childId) !== pose.walker || pose.walker.root !== pose.root
+        || !vatJobActive(vatObject(child))) clearVatWorkerPose(vatId);
+    }
+  }
+
+  function retargetVatAssignments(oldVatId, newVatId) {
+    if (!oldVatId || oldVatId === newVatId) return 0;
+    clearVatWorkerPose(oldVatId);
+    let changed = 0; // Count saved family assignments moved or removed with the physical processor.
+    for (const child of fam.children) {
+      if (child.vatId !== oldVatId) continue;
+      child.vatId = newVatId || null;
+      const walker = H?.findWalker?.(child.id);
+      if (walker) walker._npcScheduleDecision = null; // Do not walk toward the previous tile for the rest of the schedule lease.
+      changed++;
+    }
+    if (changed) H?.persist?.();
+    return changed;
+  }
+
   function childVisitDay(child) {
     const town = cfg().childTown || {}; // Tunable share of days/afternoons spent in town.
     const hour = H.clockHour();
@@ -451,11 +569,19 @@
       const anchor = interiorAnchor();
       return anchor ? { ...anchor, activity: 'napping' } : null;
     }
+    const vat = vatObject(child);
+    // Daily squeezing starts at the 06:00 rollover. A real unfinished batch
+    // takes priority over sleep/free time so the child can actually reach it.
+    // Do not postpone production, alter output, or hold a child at an expired
+    // offscreen job that has not yet been collected by processor VFX.
+    if (vat && ((hour >= 8 && hour < 18) || vatJobActive(vat)) && Number.isFinite(vat.col) && Number.isFinite(vat.row)) {
+      const spot = H.nearestWalkable('farm', vat.col, vat.row + 1, 2);
+      if (spot) return { area: 'farm', c: spot.c, r: spot.r, activity: 'working the squeezing vat', vatId: vat.id };
+    }
     if (hour >= 20 || hour < 7) {
       const anchor = interiorAnchor();
       return anchor ? { ...anchor, activity: 'sleeping' } : null;
     }
-    const vat = vatObject(child);
     if (!child.vatId) {
       const chore = window.NpcFarmPlots?.targetFor?.({ id: child.id }, { familyOnly: true }); // Toddlers may work on the farm, but never visit town.
       if (chore) return chore;
@@ -463,10 +589,6 @@
         const townTarget = childTownTarget(child);
         if (townTarget) return townTarget;
       }
-    }
-    if (vat && hour >= 8 && hour < 18 && Number.isFinite(vat.col) && Number.isFinite(vat.row)) {
-      const spot = H.nearestWalkable('farm', vat.col, vat.row + 1, 2);
-      if (spot) return { area: 'farm', c: spot.c, r: spot.r, activity: 'working the squeezing vat' };
     }
     const door = H.farmhouseDoorAnchor();
     if (door) return { area: 'farm', c: door.c, r: door.r, activity: phase === 'toddler' ? 'toddling on the farm' : 'playing outside', stationId: `child_play_${child.id}`, wanderMode: 'radius', wanderRadiusTiles: phase === 'toddler' ? 3 : 7 };
@@ -477,6 +599,14 @@
     if (!rec?.isChild) return null;
     const child = fam.children.find(entry => entry.id === rec.id);
     return child ? childTarget(child) : null;
+  }
+
+  function activeVatScheduleOverride(rec) {
+    if (!rec?.isChild) return null;
+    const child = fam.children.find(entry => entry.id === rec.id);
+    if (!child?.vatId || phaseOf(child) === 'basket' || !vatJobActive(vatObject(child))) return null;
+    const target = childTarget(child); // Only real unfinished batches outrank follow/wait and other ordinary schedules.
+    return target?.vatId === child.vatId ? target : null;
   }
 
   function updateChild(child) {
@@ -604,6 +734,7 @@
     const infantOptions = window.FamilyBabyCare?.commandOptionsFor?.(walker) || []; // Spouses retain baby handoffs, but never receive vat-work commands.
     if (!child || phaseOf(child) === 'basket') return infantOptions;
     if (child.vatId) return [...infantOptions, { id: 'unvat', icon: '🛑', label: 'Stop Vat Work', run: () => {
+      clearVatWorkerPose(child.vatId);
       window.DewVats?.setExternalWorker?.(child.vatId, null);
       child.vatId = null;
       H.persist(); H.say(walker, 'Okay! Time to play!');
@@ -902,6 +1033,7 @@
     maybeAnnounce();
     if (fam.pendingBaby && !pendingBabyPromptScheduled && !uiOverlay && !deps().isDialogueOpen?.()) promptPendingBaby();
     syncChildFriendships();
+    pruneVatWorkerPoses();
     for (const child of fam.children) updateChild(child);
     window.FamilyBabyCare?.tick?.(); // One lightweight family update, not a new per-frame character behavior.
     syncFrameSubscriber();
@@ -912,6 +1044,7 @@
     H = romanceApi.helpers;
     unsubscribeObservationXp?.();
     unsubscribeObservationXp = window.SkillSystem?.onAward?.(awardObservationXp) || null;
+    window.NpcScheduling?.registerTargetOverride?.('romance-family-vat', activeVatScheduleOverride, 20); // Below festival ceremony priority (100).
     window.NpcScheduling?.registerTargetOverride?.('romance-family', scheduleOverride);
     window.addEventListener('hobunji-time-passage', onTimePassage);
     registerDoorstep();
@@ -928,6 +1061,7 @@
     return saved;
   }
   function restore(saved) {
+    for (const vatId of vatWorkerPoses.keys()) clearVatWorkerPose(vatId);
     closeUi(); // A naming/dream dialog belongs to the former character/world, not the one being loaded.
     window.FamilyBabyBurdens?.clear?.(); // A new world gets its own baby burden handles.
     window.FamilyBabyFollow?.clear?.();
@@ -961,12 +1095,12 @@
       babyFollow: window.FamilyBabyFollow?.snapshot?.() || null,
       babyCare: window.FamilyBabyCare?.snapshot?.() || [], // Mobile debug rows show arms/back/basket and current shift.
       babyBurdens: window.FamilyBabyBurdens?.snapshot?.() || null, // Mobile shows proxy geometry, reverse-art policy and parent scene without devtools.
-      children: fam.children.map(child => ({ id: child.id, name: child.name, speciesId: child.speciesId, gender: child.gender, origin: child.origin, ageDays: ageDays(child), phase: phaseOf(child), carrySpot: child.carrySpot || null, carrying: window.FamilyBabyBurdens?.carrying?.(child.id) || false, toddlingFooting: toddlingFooting(child), vatId: child.vatId, usefulness: usefulnessInfo(child.id) || (phaseOf(child) === 'basket' ? { level: num(child.usefulnessLevel, 1), xp: num(child.usefulnessXp, 0), observationRate: BABY_OBSERVATION_XP_RATE } : null), spawned: !!walkerFor(child) })), 
+      children: fam.children.map(child => ({ id: child.id, name: child.name, speciesId: child.speciesId, gender: child.gender, origin: child.origin, ageDays: ageDays(child), phase: phaseOf(child), carrySpot: child.carrySpot || null, carrying: window.FamilyBabyBurdens?.carrying?.(child.id) || false, toddlingFooting: toddlingFooting(child), vatId: child.vatId, vatStomping: vatWorkerPoses.get(child.vatId)?.childId === child.id, usefulness: usefulnessInfo(child.id) || (phaseOf(child) === 'basket' ? { level: num(child.usefulnessLevel, 1), xp: num(child.usefulnessXp, 0), observationRate: BABY_OBSERVATION_XP_RATE } : null), spawned: !!walkerFor(child) })), 
     };
   }
 
   const api = {
-    init, tick, serialize, restore, snapshot,
+    init, tick, serialize, restore, snapshot, setVatWorkerPose, clearVatWorkerPose, retargetVatAssignments,
     spouseTargetOverride, commandOptionsFor, spouseHoldingEgg, isBasketBaby, babyAmbientSound, voiceAgePhase,
     careContext: () => ({ family: fam, helpers: H, romance: R, phaseOf, walkerFor, basketObject, persist: () => H.persist() }), // One source of family state for childcare.
     usefulnessInfo, awardWork, rollWorkQuality, awardObservationXp,
