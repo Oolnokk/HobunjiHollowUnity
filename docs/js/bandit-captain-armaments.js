@@ -4,8 +4,8 @@
   'use strict';
   const PREFIX = 'banditModular:'; // Unique per-captain keys prevent two drops from sharing enchantments or replacing a forged weapon.
   const MIN_STARS = 5; // Camp tier is zero-based; only five-to-eight-star ordinary captains qualify.
-  const BASE_IDS = Object.freeze(['burning', 'frostbitten', 'mirrored', 'livingFlame']); // Effects supported by the NPC hit event; omit player-only Living Gust.
-  const FLOURISH_IDS = Object.freeze(['fury', 'moralized', 'resolve']); // Never choose Sicced (player companion target lock) or Fey magic.
+  const BASE_IDS = Object.freeze(['burning', 'frostbitten', 'mirrored', 'livingFlame', 'stormwake', 'stonebind', 'soulweight', 'ancestralSight']); // Effects supported by the NPC hit event; omit player-only Living Gust.
+  const FLOURISH_IDS = Object.freeze(['fury', 'moralized', 'resolve', 'stormRenewal', 'bedrock', 'blackBargain', 'ancestralMercy']); // Never choose Sicced (player companion target lock) or Fey magic.
   const FLOURISH_SLOTS = Object.freeze(['tap1', 'tap2', 'hold1']); // These are the NPC's real offensive Combo/Quick/Charged slots.
   const unlooted = new Map(); // Spawned captains' enchantments stay outside player gear until the corpse is searched.
   let deps = null; // HarlyaoRelics.init supplies the ordinary saved-gear, tool definition and texture services.
