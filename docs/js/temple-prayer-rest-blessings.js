@@ -47,7 +47,7 @@
 
   function currentGameHour() {
     if (!window.CalendarSystem || window.CalendarSystem.isInitialized?.() === false) return NaN; // Parser-time loading precedes game.js calendar injection; preserve saved timers until the clock is ready.
-    const snap = window.CalendarSystem?.timeDebugSnapshot?.(); // Uses the calendar's monotonic raw day/time so timers survive month/season boundaries.
+    const snap = window.CalendarSystem.getRawClock?.() ?? window.CalendarSystem.timeDebugSnapshot?.(); // Same raw time origin, without constructing the UI/debug report.
     const rawDay = finite(snap?.rawDay, NaN);
     const rawTime01 = finite(snap?.time01 ?? snap?.rawTime01, NaN);
     if (Number.isFinite(rawDay) && Number.isFinite(rawTime01)) return rawDay * 24 + rawTime01 * 24;
