@@ -475,7 +475,7 @@
     const tap = mainSymbolFor(`tap${slotIndex}`);
     const hold = mainSymbolFor(`hold${slotIndex}`);
     const holding = Boolean(window.Combat?.input?.getState?.(slotIndex)?.holding);
-    const signature = `${button.dataset.action || ''}|${tap.key}|${hold.key}|${holding ? 1 : 0}`;
+    const signature = `${button.dataset.action || ''}|${tap.key}|${hold.key}`; // Holding only flips CSS; it never requires rebuilding the coin DOM.
 
     // classList.add() only skips its attribute write in the narrow case of "this
     // element has never had a class attribute set and still wouldn't after this
