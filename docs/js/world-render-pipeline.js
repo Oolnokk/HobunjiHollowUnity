@@ -499,6 +499,7 @@
   let captureRecords = null;
   let captureMainCensus = null; // One draw-state graph census, after render scopes and presentation hooks.
   let captureMainCensusError = null; // Diagnostic errors must not prevent rendering.
+  let captureStaticWallAudit = null; // Audit after native main matrices, before probe/auxiliary draws invalidate readiness.
   function recordPassStart(ctx) {
     const worldScene = ctx.scene === scopeCtx.scene; // Excludes other scenes and fullscreen composite.
     if (currentPass === 'main' && worldScene && ctx.camera === scopeCtx.camera && !captureMainCensus && !captureMainCensusError) {
@@ -527,6 +528,14 @@
       triangles: renderer.info?.render?.triangles ?? null,
       ms: Number((performance.now() - state.startedAt).toFixed(3)),
     });
+    if (state.pass === 'main' && state.worldScene && state.sceneAutoUpdate &&
+        ctx.camera === scopeCtx.camera && captureStaticWallAudit === null) {
+      try {
+        const owner = window.DenseForestWallBatches;
+        const audit = owner?.auditStaticMatrixBranches?.(scene);
+        if (audit) captureStaticWallAudit = { ...owner.staticMatrixSnapshot(), audit };
+      } catch (error) { captureStaticWallAudit = { error: String(error?.message || error) }; }
+    }
   }
   function captureFrame() { captureArmed = true; return true; }
 
@@ -547,6 +556,7 @@
     const renderPassPerf = PerfProfiler?.begin('render passes');
     const activeScene = deps.getActiveScene();
     const area = deps.getCurrentArea();
+    window.ProbePerformanceCapture?.markArea?.(area);
     const isZone = deps.isZoneArea(area);
     deps.getPlayerTile(playerTile);
     scopeCtx.scene = activeScene; scopeCtx.camera = camera; scopeCtx.isZone = isZone;
@@ -560,6 +570,7 @@
       captureRecords = [];
       captureMainCensus = null;
       captureMainCensusError = null;
+      captureStaticWallAudit = null;
       captureHookOff = window.RenderHooks.register({
         id: 'world-render-pipeline-capture', owner: 'world-render-pipeline.js', order: 1e9,
         before: recordPassStart, afterRender: recordPassEnd,
@@ -592,10 +603,12 @@
       if (captureHookOff) {
         captureHookOff();
         capture = { at: now, area, outlines, completed, passes: captureRecords, scopeTimings: captureTimings,
-          mainMatrixCensus: captureMainCensus, mainMatrixCensusError: captureMainCensusError };
+          mainMatrixCensus: captureMainCensus, mainMatrixCensusError: captureMainCensusError,
+          mainStaticWallAudit: captureStaticWallAudit };
         captureRecords = null;
         captureMainCensus = null;
         captureMainCensusError = null;
+        captureStaticWallAudit = null;
       }
       pass('idle');
       stats.frames++;
