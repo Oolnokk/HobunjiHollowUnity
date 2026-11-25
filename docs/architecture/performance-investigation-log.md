@@ -3073,3 +3073,61 @@ outdoor replay budget, front portrait masks, settings persistence/reset,
 A/B restoration and world pipeline capture/audit. Browser visual and
 device performance parity remain unmeasured. Native full suite and
 repository cache-bust checker require a checkout/CI.
+
+
+### 25 Nov — first gameplay-window report (35aeffc6)
+
+Dry Southern Cloud Forest, 47 complete frames: 2.329 FPS, mean RAF
+interval 429.35 ms, median 133.4 ms, worst 8033.3 ms. Mean driver
+74.696 ms and scheduler 86.387 ms; the difference from RAF intervals
+is **unattributed**, not proof of GPU stalls, GC or storage. Main
+native submission 17.8 ms, of which scene matrix walk 4.153 ms;
+held replay 15.053 ms inclusive, fallback classification 4.102 ms
+(67 calls / 47 frames), registry visibility 0.719 ms. Zone prop batch
+scope 2.966 ms (24 collections in 48 counter frames, no rebuilds).
+Scheduled stable-animal progression 8.449 ms/frame, max call 202.7 ms.
+Both replay pilots were off. Static wall cache enabled: +3,024
+skipped branches/+35,568 skipped leaves, no refreshes, invalidations
+or violations during the window. No controlled speedup claim.
+
+Follow-up changes:
+- Stable XP service and new shoulder warnings share one synchronous
+  save at the end of the scheduled callback (finally, including error
+  paths). Public XP awards remain immediately persisted. No XP amount,
+  level curve, warning cadence, aura art, or perk balance change.
+  Resolve role/alert perks once, avoid temporary empty aura maps,
+  share the actor anchor for simultaneous warnings. Separate timings
+  for service, warning update, anchor calculation and actual XP save.
+  One remaining synchronous save can still stall; inspect its measured
+  cost before changing durability policy.
+- Held classification: optional 3-second repair cadence instead of
+  750 ms. Add-hook queue and explicit targeted reclassification
+  (invalidateClassification(root)) still flush before rendering.
+  Forced scans and toggle reseeding retained. This is an experiment,
+  default off: not a proven complete revision-driven replacement.
+  Unannounced late tag/material changes can take longer to discover.
+  Classifier is still the existing additive registration/repair owner,
+  not an unregister API. Counters and active-world vs auxiliary timing
+  distinguish scan sources.
+- Pixel Probe v2 captures top 12 slow scheduler frames with subsystem
+  and native buckets, top 12 RAF gaps with preceding scheduler and
+  measured between-callback time, plus a terminal gap if the window
+  expires between callbacks. Bounded browser longtask/long-animation-frame
+  observers, script attribution (URL queries stripped), focus and
+  visibility transitions only while armed. Unsupported browsers still
+  collect ordinary timing. Pending entries drained before diagnostic
+  draws; entries straddling boundaries or delivered late may be absent.
+  These browser times overlap one another and scheduler timings. No
+  automatic attribution of idle/GPU wait/GC from an unexplained gap.
+
+Focused source-executing JS adapter tests passed scheduled stable XP
+(single save for three service and two warning awards, immediate public
+save, shared centroid and cleanup), existing stable progression,
+Probe v2 browser observer/bounded gap accounting and cleanup,
+classification batching/retirement/targeted late reclassification,
+settings, A/B and outdoor replay budget. Native Node suite, cache
+checker and live device performance/visual parity not run locally;
+known loader cache chains bumped. Next: record matching dry forest
+baseline, then independently enable the classification pilot, and
+compare actual slow-frame sources and save timing before more rendering
+architecture changes.
