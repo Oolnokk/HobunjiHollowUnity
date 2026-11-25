@@ -1,5 +1,12 @@
 # Performance investigation log
 
+## 25 Nov 2026: bandit sight-check broad phase measured, not kept
+
+- **Idea:** `computeBanditLos` builds/looks up a hitbox for every other hostile on each sight check (O(n²) for a camp), so skip hostiles more than ~4 tiles from the sight segment.
+- **Measured (headless, dev arena, 9-10 grunt bandits, 20 forced `hasLineOfSight(h, player, true)` passes, `window.__rangedDebug.hitboxWork`):** baseline 180 checks, 0.022 ms/check, 2160 hitbox reuses (12/check); with broad phase 200 checks, 0.081 ms/check (single-run noise, 16 ms total), 2299 reuses (11.5/check). The arena's bandits stand within 4 tiles of every sight line, so nothing was rejected, and hitboxes are already cached per frame, so a sight check costs ~0.02 ms here. **No benefit shown; reverted.** A spread-out camp could still gain; re-measure with a real camp before retrying.
+- **Measurement trap:** an in-page `requestAnimationFrame` loop over 20 s never finishes with ~10 bandits in software WebGL (a frame takes tens of seconds); time the function directly inside one `page.evaluate`. `hostileObjects` is a `Set`; the hitbox counters are on `window.__rangedDebug`, not `RangedWeapons`.
+- **Kept (correctness, not a speed claim):** bandit sleep/wake and Porakaneki ecology/aggro radii use the nearest player, so a guest's camp stays awake on the host (`scripts/test-simulation-lod-multiplayer.js`).
+
 ## 23 Nov 2026: prioritized animal colors and patterns for owned pets
 
 **Observed bottleneck in code:** \`CreatureGeneticsRender.composeFrame\` processed every native-resolution

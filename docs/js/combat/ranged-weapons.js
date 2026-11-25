@@ -2026,19 +2026,6 @@
     return hit ? { clear: false, kind: 'geometry', id: hit.object.name || 'opaque-geometry' } : null;
   }
 
-  // Broad phase for sight checks: an actor farther than this many tiles from the
-  // sight segment (in the ground plane) cannot be hit by it, so its hitbox is never built.
-  // Generous on purpose: the largest creature hitboxes are well under 4 tiles across.
-  const SIGHT_BROAD_PHASE_TILES = 4;
-  function actorNearSegmentXZ(other, start, end, tile, marginTiles) {
-    const px = other.x / tile, pz = other.y / tile;
-    const ex = end.x - start.x, ez = end.z - start.z;
-    const len2 = ex * ex + ez * ez;
-    const t = len2 > 1e-9 ? Math.max(0, Math.min(1, ((px - start.x) * ex + (pz - start.z) * ez) / len2)) : 0;
-    const dx = px - (start.x + ex * t), dz = pz - (start.z + ez * t);
-    return dx * dx + dz * dz <= marginTiles * marginTiles;
-  }
-
   function computeBanditLos(c, targetPlayer, def) {
     const segment = banditLosSegment(c, targetPlayer);
     const radiusWorld = projectileAimRadiusWorld(def); // Narrow thrown weapons may see/shoot across a cliff edge that their transparent PNG plane overlaps.
@@ -2055,7 +2042,6 @@
     let ally = null;
     for (const other of (deps.hostileObjects || [])) {
       if (other === c || other === targetPlayer || (c.id != null && other.id === c.id) || other.health <= 0 || (other.areaId && other.areaId !== deps.getCurrentArea())) continue; // The opposing tribe hunter is the intended target, not an allied blocker.
-      if (!actorNearSegmentXZ(other, segment.start, segment.end, deps.TILE, SIGHT_BROAD_PHASE_TILES + radiusWorld)) continue; // Far from the sight line: skip building its hitbox.
       const interval = segmentHitboxInterval(segment.start, segment.end, actorHitbox(other), radiusWorld);
       if (!interval || interval.enter <= 0.02 || interval.enter >= 0.985 || (ally && interval.enter >= ally.interval.enter)) continue;
       ally = { actor: other, interval };
