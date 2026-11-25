@@ -195,10 +195,37 @@ const SCOPE_ORDER = ['farm-tile-batches', 'zone-prop-batches', 'npc-view-cull', 
 // ── Frame capture ──────────────────────────────────────────────────────────
 {
   const h = createWorldRenderPipelineHarness().init();
+  const root = new h.THREE.Group();
+  root.name = 'Tree_12_34';
+  root.add(new h.THREE.Mesh());
+  h.activeScene.add(root);
+  h.activeScene.autoUpdate = true;
+  h.pipeline.registerRenderScope({id:'test-capture-hidden-root', order:10000, suspend:() => {
+    root.visible = false;
+    return () => {root.visible = true;};
+  }});
+  h.pipeline.registerRenderScope({id:'test-disabled-capture-scope', order:10001, suspend:() => {throw Error('disabled scope called');}});
+  h.pipeline.setScopeEnabled('test-disabled-capture-scope',false);
+  h.hooks.register({id:'test-capture-matrix-reuse',order:8000,
+    appliesTo:ctx=>ctx.scene===h.activeScene && ctx.camera.layers.mask===1<<4,
+    before:()=>{h.activeScene.autoUpdate=false;},
+    after:()=>{h.activeScene.autoUpdate=true;}});
   h.pipeline.captureFrame();
   h.frame();
   const capture = h.pipeline.lastCapture();
   assert.ok(capture && capture.outlines === true);
+  assert.equal(capture.completed,true);
+  assert.equal(capture.mainMatrixCensus.nodes,2);
+  assert.equal(capture.mainMatrixCensus.hiddenNodes,2,'census sees temporary hidden root and child');
+  assert.equal(capture.mainMatrixCensus.largestBranches[0].category,'Tree','numbered names aggregate');
+  assert.equal(h.pipeline.sceneMatrixCensus(h.activeScene).hiddenNodes,0,'logical visibility restored');
+  assert.equal(root.visible,true);
+  assert.ok(capture.scopeTimings.some(s=>s.id==='test-capture-hidden-root' && s.failed===false && Number.isFinite(s.ms)));
+  assert.ok(!capture.scopeTimings.some(s=>s.id==='test-disabled-capture-scope'));
+  assert.equal(capture.passes.find(p=>p.pass==='main').worldScene,true);
+  assert.equal(capture.passes.find(p=>p.pass==='main').sceneAutoUpdate,true);
+  assert.equal(capture.passes.find(p=>p.pass==='pngDepth').sceneAutoUpdate,false,'actual pre-native flag');
+  assert.equal(capture.passes.find(p=>p.pass==='composite').worldScene,false);
   const passes = plain(capture.passes.map(p => p.pass));
   assert.deepEqual(passes, ['main', 'pngDepth', 'shell', 'composite'], 'capture labels each native render with its pass');
   assert.deepEqual(plain(capture.passes.find(p => p.pass === 'shell').layers), ['SHELL_OUTLINE']);
@@ -207,6 +234,13 @@ const SCOPE_ORDER = ['farm-tile-batches', 'zone-prop-batches', 'npc-view-cull', 
   assert.ok(!h.hooks.list().includes('world-render-pipeline-capture'), 'the capture hook removes itself');
   h.frame();
   assert.equal(h.pipeline.lastCapture(), capture, 'capture is one-shot');
+  h.throwOn = (scene,camera)=>scene===h.activeScene && camera.layers.mask===1<<4;
+  h.pipeline.captureFrame();
+  assert.throws(()=>h.frame(),/synthetic native render failure/);
+  assert.equal(h.pipeline.lastCapture().completed,false);
+  assert.equal(h.activeScene.autoUpdate,true);
+  assert.equal(root.visible,true);
+  assert.ok(!h.hooks.list().includes('world-render-pipeline-capture'),'failed capture removes its hook');
 }
 
 // ── Tagging helpers ────────────────────────────────────────────────────────
