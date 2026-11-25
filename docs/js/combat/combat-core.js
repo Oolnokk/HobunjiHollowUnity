@@ -1186,12 +1186,7 @@
     if (entity === window.Combat?.deps?.player && opts.attacker?.rootledoot && entity.health <= 0) window.Rootledoots?.noteDown?.(opts.attacker, Math.max(0, enhanced.ordinaryRemaining - before)); // Actual excess after damage conversion/absorption, before Health clamp.
     const lost = round1(before - (Number(entity.health) || 0));
 
-    if (opts.afflictionBonuses) {
-      const attackPower = RS.attackPowerForAttack?.(opts) ?? 12; // Drunken Health conversion cannot make status effects damage-scaled again.
-      for (const [id, mul] of Object.entries(opts.afflictionBonuses)) {
-        if (RS.AFFLICTIONS[id] && mul > 0) RS.addAffliction(entity, id, attackPower * mul);
-      }
-    }
+    RS.applyAttackAfflictions?.(entity, opts); // The live alcohol adapter uses the same attack-power, alias and attacker-specific perk calculation as ordinary damage.
     if (opts.fixedAfflictionBuildup) {
       for (const [id, value] of Object.entries(opts.fixedAfflictionBuildup)) {
         if (RS.AFFLICTIONS[id] && Number.isFinite(value) && value > 0) RS.addAffliction(entity, id, value); // Preserve authored fixed on-hit effects through Drunken Health's specialized damage path.
