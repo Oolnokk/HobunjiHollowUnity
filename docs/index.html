@@ -153,7 +153,7 @@
        further down game.js. Doesn't touch the DOM (see player-vitals.js's
        comment above and the plan notes on that bug class). -->
   <script src="js/item-processing.js?v=20261124rootledoot1"></script>
-  <script src="js/inventory-wheel-list.js?v=20261121wheelList1"></script> <!-- Item wheel list + cross-frame cache; game.js delegates getInventoryStackItems() here. -->
+  <script src="js/inventory-wheel-list.js?v=20261125deepHotpaths1"></script> <!-- Item wheel list + cross-frame cache; game.js delegates getInventoryStackItems() here. -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
   <script src="debug.js?v=20261122h1fd4c9f"></script>
@@ -315,7 +315,7 @@
   <!-- Shared condition-axis schema/evaluators (window.ConditionRegistry) —
        single source of truth for the dialogue system's and the Loot & Shop
        system's condition gating, also loaded by their respective dev tools. -->
-  <script src="js/condition-registry.js?v=20261118captainWeapon1"></script>
+  <script src="js/condition-registry.js?v=20261125deepHotpaths1"></script>
   <!-- Optional local-folder save mirror (window.LocalSaveFolder) — self-contained,
        only reads/writes the same hobunjiSaveMeta localStorage key onboarding.js/
        game.js already use. See docs/js/local-save-folder.js.
@@ -337,7 +337,7 @@
   <!-- Burning creatures and short-lived corpse flames share fire-hazard contact across knockback and adventuring torches. -->
   <script src="js/combat/burning-entity-hazards.js?v=20261117burnActorsAudit2"></script>
   <!-- Burning Health presentation: reuses the authored campfire emitter on living actors and temporarily burning corpses. -->
-  <script src="js/combat/burning-affliction-vfx.js?v=20261117burnActors1"></script>
+  <script src="js/combat/burning-affliction-vfx.js?v=20261125deepHotpaths1"></script>
   <script src="js/combat/resource-rings.js?v=20261122hresarc5"></script>
   <!-- Shared attack-pose math (window.SharedAttackPose): swing interpolation, per-style rest poses, pose / legacy-arc sampling and Light/Heavy stance baking.
        Used by game.js's updateToolMesh AND every BanditCombat humanoid, so it must load before combat-core.js, combat-bandit.js, the lazily loaded
@@ -447,7 +447,7 @@
        relative to the other systems above doesn't matter; must load
        before game.js, which calls window.CreatureDeath.init(...) during
        its own setup. -->
-  <script src="js/creature-death.js?v=20261117burnActors1"></script>
+  <script src="js/creature-death.js?v=20261125deepHotpaths1"></script>
   <!-- Old, un-looted bandit corpses swap their full humanoid rig for a flat marker
        (window.BanditCorpseRetirement); game.js calls init(...) and tick(...). -->
   <!-- Corpse-only, single-pass baking of final skinned pants; live pants are unchanged. -->
@@ -2856,7 +2856,7 @@
        helper at module evaluation time, so it belongs here rather than in the
        earlier combat-definition block. It still loads before game.js and
        registers in RuntimeFrameScheduler's pre-game phase. -->
-  <script src="js/combat/quick-attack-bonus-indicator.js?v=20261110halfmoon2"></script>
+  <script src="js/combat/quick-attack-bonus-indicator.js?v=20261125deepHotpaths1"></script>
   <!-- Lore loading-screen overlay, shown while a wilderness zone or mine
        floor rebuilds from scratch. Content authored via
        tools/loading-screen-editor/index.html. -->
