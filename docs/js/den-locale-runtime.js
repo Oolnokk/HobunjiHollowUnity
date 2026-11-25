@@ -23,7 +23,7 @@
   let lastSyncContext = null;
 
   const rootState = new WeakMap();
-  const motherState = new WeakMap();
+  const appliedMotherSpawns = new WeakSet(); // Entity identities with initialized authored spawn anchors.
   const nestSequences = new WeakMap();
   const cavernFurnitureState = new WeakMap();
 
@@ -218,24 +218,21 @@
     const hostiles = wildlifeDeps?.hostileObjects;
     if (!hostiles) return null;
     for (const creature of hostiles) {
-      if (creature?.isDenMother && creature?.areaId === area && creature?.health !== 0) return creature;
+      if (creature?.isDenMother && creature?.areaId === area && creature?.health > 0) return creature;
     }
     return null;
   }
 
   function applyMotherTransform(mother, nest) {
-    if (!mother || !nest?.denMotherSpawnTransform || !denDeps?.TILE) return false;
+    if (!mother || !nest?.denMotherSpawnTransform || !denDeps?.TILE || appliedMotherSpawns.has(mother)) return false;
     const t = normalizedTransform(nest.denMotherSpawnTransform);
     const center = cavernNestBase(nest);
-    let state = motherState.get(mother);
     const group = mother.avatarRef?.group;
-    if (!state) {
-      state = {
-        groundLift: Number(mother.groundLift ?? mother.halfHeight) || 0,
-        scale: group?.scale?.clone?.() || null,
-      };
-      motherState.set(mother, state);
-    }
+    if (!group) return false; // Wait until the avatar is ready for spawn initialization.
+    const state = {
+      groundLift: Number(mother.groundLift ?? mother.halfHeight) || 0,
+      scale: group.scale?.clone?.() || null,
+    }; // Original dimensions used once by the authored spawn transform.
 
     // Creature simulation positions are pixels; locale authoring is in Three
     // world units. Convert only X/Z here. Vertical lift remains a world unit.
@@ -256,6 +253,9 @@
       if (state.scale) group.scale.set(state.scale.x * t.sx, state.scale.y * t.sy, state.scale.z * t.sz);
       group.updateMatrixWorld?.(true);
     }
+    // The spawn anchor is not a movement constraint; subsequent pose and
+    // position changes belong to the creature simulation.
+    appliedMotherSpawns.add(mother);
     lastMotherApplied = { areaId: mother.areaId || null, x: t.x, y: t.y, z: t.z, ry: t.ry };
     return true;
   }
@@ -544,7 +544,7 @@
       api.updateNestInteraction = function denLocaleUpdate(dt) {
         const result = originalUpdate(dt);
         // DenNestSystem lays out its fallback positions first. Authored locale
-        // transforms then win for the final rendered frame, while old/unconverted
+        // clutch transforms then win for the final rendered frame, while old/unconverted
         // nests continue to use the fallback path unchanged. The den adapter is
         // isolated so an authored-data error cannot stop later frame systems.
         safeSyncCurrentDen('nest-interaction');
@@ -558,7 +558,7 @@
   installDenNestBridge();
 
   window.DenLocaleRuntime = {
-    version: 4,
+    version: 5,
     ready,
     locale: () => locale,
     encounter: () => encounter,
