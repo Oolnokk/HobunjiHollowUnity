@@ -66,6 +66,25 @@ function testCoinReuse() {
   assert.notEqual(button.host.children[0],fallback,'loaded icon replaces pending fallback');
 }
 
+function testAvengerLifetime() {
+  const sourceText=source('porakaneki-camps-runtime.js');
+  const start=sourceText.indexOf('  function resolveAvengerCatch(');
+  const end=sourceText.indexOf('  function ',start+3);
+  assert(start>=0 && end>start);
+  const rider={id:'rider',materializationLifeRevision:2};
+  const camp={id:'camp',avengerBand:{escaped:new Map(),escapes:0,losses:0}};
+  const state={avengerEscapes:0,avengerLosses:0};
+  const discarded=[];
+  const resolve=new Function('avengerCfg','clamp','num','rand','gameClockHours','gameDay','teardownEntity','state','window','KEY',
+    sourceText.slice(start,end)+'\nreturn resolveAvengerCatch;')(
+    ()=>({riderLossChance:1,quarryEscapeChance:0}), (n,a,b)=>Math.max(a,Math.min(b,n)),
+    (n,d)=>n??d,()=>0,()=>1,()=>1,r=>discarded.push(r),state,{},'tribe');
+  assert.equal(resolve(camp,[rider],{id:'quarry'}),'escaped');
+  assert.equal(rider.slain,true);
+  assert.equal(rider.materializationLifeRevision,3,'avenger death invalidates pending builds before replacement');
+  assert.deepEqual(discarded,[rider]);
+}
+
 async function testMaterialization() {
   const text=source('porakaneki-camps-runtime.js');
   const counters={materializationAttempts:0,materializationCancelledBeforeBuild:0,materializationCancelledAfterBuild:0,materializationFailures:0,materializations:0};
@@ -119,4 +138,4 @@ async function testMaterialization() {
   assert.equal(hunter.building,false);
 }
 
-(async()=>{testCoinReuse();await testMaterialization();console.log('performance materialization and combat coin reuse: PASS');})().catch(error=>{console.error(error);process.exitCode=1;});
+(async()=>{testCoinReuse();testAvengerLifetime();await testMaterialization();console.log('performance materialization and combat coin reuse: PASS');})().catch(error=>{console.error(error);process.exitCode=1;});
