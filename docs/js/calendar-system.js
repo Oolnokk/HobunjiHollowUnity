@@ -98,6 +98,12 @@
     return !!deps?.calendar; // Used by parser-time polling bridges to defer calendar reads until game.js injects the live calendar state.
   }
 
+  // Gameplay clock reads must not format dates, build sleep previews or
+  // inspect the HUD. These values match the raw fields of timeDebugSnapshot.
+  function getRawDay() { return deps?.calendar?.day ?? null; }
+  function getRawTime01() { return deps?.calendar?.time01 ?? null; }
+  function getRawClock() { return { rawDay: getRawDay(), time01: getRawTime01() }; }
+
   function civilDayOffset(day = deps?.calendar?.day ?? 1) {
     return (day - 1) + GAME_START_CIVIL_DAY_OFFSET;
   }
@@ -1137,7 +1143,7 @@
   window.CalendarSystem = {
     init,
     isInitialized,
-    getHour, getAbsoluteGameHour,
+    getHour, getAbsoluteGameHour, getRawDay, getRawTime01, getRawClock,
     getNaturalGameHoursPerSecond,
     dayOfYear,
     yearNumber, // Civil year cycle (1-based, rolls on Firstrise 1); drives the AoT era number.

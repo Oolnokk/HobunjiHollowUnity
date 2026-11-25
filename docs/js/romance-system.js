@@ -82,7 +82,11 @@
   }
 
   // ── Time ──────────────────────────────────────────────────────────────
-  function rawDay() { return Math.max(0, Math.floor(num(window.CalendarSystem?.timeDebugSnapshot?.()?.rawDay, 0))); }
+  function rawDay() {
+    const calendar = window.CalendarSystem; // Live scalar read for every kiss/stat/family age query; old preview stubs still work.
+    const day = calendar?.getRawDay ? calendar.getRawDay() : calendar?.timeDebugSnapshot?.()?.rawDay;
+    return Math.max(0, Math.floor(num(day, 0)));
+  }
   function hourOfDay() { return num(window.CalendarSystem?.getHour?.(), 12); }
   function clockHour() { return ((hourOfDay() % 24) + 24) % 24; }
   // Continuous in-game hours since day 0, robust to the represented clock

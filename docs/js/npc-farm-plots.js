@@ -516,7 +516,10 @@
         }
       }
     }
-    for (const object of objects) v.group.add(object);
+    for (const object of objects) {
+      v.group.add(object);
+      window.HobunjiCropSpriteArt?.registerPlaceholder?.(object); // Only authored billboard crop anchors are accepted.
+    }
     v.tiles.set(key, { objects, sig });
   }
 
@@ -555,6 +558,7 @@
   }
 
   const api = {
+    registersCropSpritePlaceholders: true, // Both gameplay crop producers now notify the sprite bridge.
     init, registerMap, registerFarmPlots, isManagedTile, onNewDay, serialize, restore,
     targetFor, tick,
     plots: () => [...plotsById.values()],

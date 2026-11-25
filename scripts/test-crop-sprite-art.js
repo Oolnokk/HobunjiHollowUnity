@@ -117,7 +117,13 @@ class FakeMesh { // World crop cube and subsequently converted PNG planes share 
     this.scale = { x: .7, y: .7, z: .7, setScalar(v) { this.x = v; this.y = v; this.z = v; } };
     this.quaternion = { identity() {}, copy() {} };
   }
-  add(child) { child.parent = this; this.children.push(child); }
+  add(child) { child.parent = this; this.children.push(child); child.dispatchEvent?.({type:'added'}); }
+  addEventListener(type, fn) { // Three.js deduplicates identical listeners.
+    this.listeners ??= new Map();
+    if (!this.listeners.has(type)) this.listeners.set(type,new Set());
+    this.listeners.get(type).add(fn);
+  }
+  dispatchEvent(event) { for (const fn of this.listeners?.get(event.type) || []) fn.call(this,event); }
 }
 sandboxWindow.THREE = {
   WebGLRenderer: FakeWebGlRenderer, Mesh: FakeMesh, MeshLambertMaterial: FakeLambertMaterial, MeshBasicMaterial: FakeMaterial,
@@ -172,4 +178,104 @@ assert.equal(artApi.getDebug().clusterPlantScale, 0.25, 'world crop cluster diag
 assert.equal(artApi.getDebug().discoveryScanIntervalMs, 250, 'crop diagnostics report the time-based discovery interval');
 assert.equal(artApi.getDebug().discoveryScanCount, 4, 'crop diagnostics include the extra hybrid-cultivar scene scan');
 assert.match(artApi.getDebug().lastChange, /time-throttled per scene/, 'crop diagnostics summarize the latest performance correction');
+// Modern game sources register newly planted anchors without rescanning
+// the scene; mixed-version/standalone pages retain the original fallback.
+sandboxWindow.VegetationCropRendering = { registersCropSpritePlaceholders: true };
+sandboxWindow.NpcFarmPlots = { registersCropSpritePlaceholders: true };
+let modernTraversals = 0;
+const modernScene = { traverse() { modernTraversals++; } };
+renderer.render(modernScene, camera);
+fakeNowMs += 1000;
+renderer.render(modernScene, camera);
+assert.equal(modernTraversals, 1, 'modern scenes have one adoption scan, not periodic scans');
+assert.equal(artApi.getDebug().periodicDiscovery, false);
+function newCrop() {
+  const mesh = new FakeMesh({ type:'BoxGeometry', parameters:{width:1,height:1,depth:1}, dispose() {} },
+    new FakeLambertMaterial({color:0xb6a0c9}));
+  mesh.parent = modernScene;
+  mesh.userData.hobunjiCropBaseKey = 'garlink';
+  mesh.userData.hobunjiCropVarietyColor = 0xb6a0c9;
+  return mesh;
+}
+const planted = newCrop();
+const harvested = newCrop();
+assert.equal(artApi.registerPlaceholder(planted), true);
+artApi.registerPlaceholder(planted); // The producer and its attach hook may both notify.
+artApi.registerPlaceholder(harvested);
+harvested.parent = null;
+renderer.render(modernScene, camera);
+assert.equal(planted.children.length, 3, 'new modern plant converts without a discovery scan');
+assert.equal(harvested.children.length, 0, 'harvest before render cancels pending conversion');
+assert.equal(modernTraversals, 1);
+assert.equal(artApi.getDebug().registeredCropCount, 2, 'duplicate notifications are coalesced');
+assert.equal(artApi.getDebug().pendingRegisteredCrops, 0);
+sandboxWindow.NpcFarmPlots.registersCropSpritePlaceholders = false;
+renderer.render(modernScene, camera);
+assert.equal(modernTraversals, 2, 'mixed-version sources automatically restore legacy discovery');
+sandboxWindow.NpcFarmPlots.registersCropSpritePlaceholders = true;
+artApi.setLegacyDiscoveryEnabled(true);
+fakeNowMs += 250;
+renderer.render(modernScene, camera);
+assert.equal(modernTraversals, 3, 'debug override restores periodic compatibility scans');
+artApi.setLegacyDiscoveryEnabled(false);
+
+// Standalone producers register before their caller attaches the mesh.
+// Moving an existing billboard out and back must resume camera-facing
+// updates even in a scene that has finished its one adoption scan.
+const standalone = newCrop();
+standalone.parent = null;
+const countBefore = artApi.getDebug().registeredCropCount;
+assert.equal(artApi.registerPlaceholder(standalone),true);
+assert.equal(artApi.getDebug().registeredCropCount,countBefore,'detached registration waits for attachment');
+standalone.parent = modernScene;
+standalone.dispatchEvent({type:'added'});
+renderer.render(modernScene,camera);
+assert.equal(standalone.children.length,3,'standalone crop converts after its first attachment');
+const activeBefore = artApi.getDebug().activeBillboards;
+standalone.parent = null;
+standalone.dispatchEvent({type:'removed'});
+assert.equal(artApi.getDebug().activeBillboards,activeBefore-1,'detached crop leaves the live update list immediately');
+standalone.parent = modernScene;
+standalone.dispatchEvent({type:'added'});
+assert.equal(artApi.getDebug().activeBillboards,activeBefore,'reattached crop rejoins the live update list');
+let facingUpdates = 0;
+standalone.children[0].quaternion.copy = () => facingUpdates++;
+renderer.render(modernScene,camera);
+assert.equal(facingUpdates,1,'reattached crop faces the active camera again');
+assert.equal(standalone.children.length,3,'reattachment never duplicates plant planes');
+const invalid = newCrop();
+invalid.geometry.type = 'SphereGeometry';
+artApi.registerPlaceholder(invalid);
+renderer.render(modernScene,camera);
+assert.equal(invalid.children.length,0,'a tag alone cannot convert non-placeholder geometry');
+assert.equal(modernTraversals,3,'these lifecycle operations never require another discovery walk');
+// Delayed native texture completion must not convert a removed mesh using
+// a stale pigment after that same anchor is reused for another cultivar.
+const delayedLoads = [];
+sandboxWindow.THREE.TextureLoader = class {
+  load(path, ready) {
+    const texture = {image:{width:24,height:32}};
+    delayedLoads.push(()=>ready(texture));
+    return texture;
+  }
+};
+const pending = newCrop();
+pending.userData.hobunjiCropVarietyColor = 0x123456;
+artApi.registerPlaceholder(pending);
+renderer.render(modernScene,camera);
+assert.equal(delayedLoads.length,1,'first pigment waits on the delayed image');
+assert.equal(pending.children.length,0);
+pending.parent = null;
+pending.dispatchEvent({type:'removed'});
+pending.userData.hobunjiCropVarietyColor = 0x654321;
+pending.parent = modernScene;
+pending.dispatchEvent({type:'added'});
+renderer.render(modernScene,camera);
+assert.equal(delayedLoads.length,2,'reattached cultivar requests its new pigment');
+delayedLoads[0]();
+assert.equal(pending.children.length,0,'stale image completion cannot convert the reattached crop');
+delayedLoads[1]();
+assert.equal(pending.children.length,3);
+for (const plant of pending.children) assert.equal(plant.material.color.getHex(),0x654321);
+assert.equal(modernTraversals,3,'async lifecycle does not resume scene discovery');
 console.log('authored crop sprite art tests passed');

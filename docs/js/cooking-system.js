@@ -56,7 +56,7 @@
   function currentGameHour() {
     const calendar = window.CalendarSystem; // Shared monotonic calendar clock; food timers must pause with the game.
     if (!calendar || calendar.isInitialized?.() === false) return NaN;
-    const snapshot = calendar.timeDebugSnapshot?.(); // rawDay/rawTime01 remain continuous across calendar month and year boundaries.
+    const snapshot = calendar.getRawClock?.() ?? calendar.timeDebugSnapshot?.(); // Preserve the food timer's existing raw-day/display-hour convention.
     const rawDay = Number(snapshot?.rawDay);
     const rawTime01 = Number(snapshot?.time01 ?? snapshot?.rawTime01);
     if (Number.isFinite(rawDay) && Number.isFinite(rawTime01)) {

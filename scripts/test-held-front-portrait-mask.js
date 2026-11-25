@@ -357,7 +357,7 @@ assert.match(source, /const portraitMask = lastFrontPortraitGearCandidates[\s\S]
   'owner/pet silhouette still resolves when the stencil buffer is unavailable');
 assert.match(source, /if \(!portraitGearIds && portraitMask\?\.portraits\.length[\s\S]{0,200}stampFrontPortraitDepthFallback/,
   'the no-stencil owner mask is stamped after rebuilding scene depth, before drawing weapon sprites');
-assert.ok(source.includes('frontPortraitRegistry.add(object)'),'front portraits are registered automatically');
+assert.ok(/frontPortraitRegistry\.add\(object(?:,\s*knownScene)?\)/.test(source),'front portraits are registered automatically');
 assert.match(fs.readFileSync('docs/js/combat/combat-bandit.js','utf8'),/holder\.userData\.hobunjiHeldPortraitOwner = avatarRef\.group/,'all hostile melee/ranged/flask holders receive their owner tag');
 assert.match(fs.readFileSync('docs/js/npc-held-equipment-v4.js','utf8'),/hobunjiHeldPortraitOwner: state\.walker\.root/,'watchman scene-sibling holder receives its owner tag');
 assert.match(fs.readFileSync('docs/js/npc-held-equipment-v4.js','utf8'),/walker\.stationToolMesh\.userData\.hobunjiHeldPortraitOwner = walker\.root/,'station tool receives its own walker owner tag');

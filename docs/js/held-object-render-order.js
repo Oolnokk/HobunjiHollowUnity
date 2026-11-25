@@ -71,6 +71,7 @@
   // re-queued whenever they are (re)added anywhere, which is how a held tool
   // that moves with the player into another scene gets re-bucketed.
   const retiredScenes = new WeakSet(); // A discarded scene may still render briefly while its replacement is generated.
+  let registryDirectScenePlacements = 0; // Mobile diagnostics: registrations that skip a second root walk during full scene classification.
   class SceneRegistry {
     constructor() {
       this.all = new Set();
@@ -78,8 +79,17 @@
       this.byScene = new Map(); // Scene -> Set of members last found under it.
       this.sceneOf = new Map(); // Member -> scene key in byScene.
     }
-    add(object) {
+    add(object, knownScene = null) {
       this.all.add(object);
+      if (knownScene?.isScene && !knownScene.parent) {
+        // A full root-scene walk has already established ancestry. Place in
+        // traversal order, just as the old pending flush did, without another
+        // pending insertion or ancestor walk. Preserve ordering for tied draws.
+        this.pending.delete(object);
+        this.place(object, knownScene);
+        registryDirectScenePlacements++;
+        return this;
+      }
       this.unplace(object);
       this.pending.add(object);
       return this;
@@ -863,6 +873,18 @@
       && window.XrayHierarchy?.get?.('baby.carrierForeground') !== 'off'; // Shared with both rank paths; stowed/dropped babies and opt-outs retain normal depth.
     if (!manual && !portraitOrder && !previouslyPresentedPet?.avatarRef) return draw();
     if (!renderer.setTransparentSort) return draw();
+    // The usual actor-only draw has neither manual categories nor shoulder
+    // faces. Its rank and render order already live on the render item and
+    // the portrait maps. Avoid four per-draw Maps and their per-comparison
+    // lookups, without changing the actor depth or original tie-break rules.
+    if (!manual && portraitOrder && !previouslyPresentedPet?.avatarRef) {
+      const effectiveOrder = item => Number(item.renderOrder) || 0; // Same normalization as the full compositor.
+      renderer.setTransparentSort((a, b) => comparePortraitDraws(
+        a, b, portraitOrder.ranks, portraitOrder.extras, effectiveOrder));
+      withVisualSort.ordinaryDraws = (withVisualSort.ordinaryDraws || 0) + 1; // Mobile diagnostics: lightweight actor sorts.
+      try { return draw(); }
+      finally { renderer.setTransparentSort(null); }
+    }
     const rankCache = new Map(); // One classification per render item, not per sort comparison.
     const pairCache = new Map(); // Per-draw pet/owner face identity; no repeated ancestor scans inside sort comparisons.
     const orderCache = new Map(); // Whole-list effective render orders for pet/owner stages AND unrelated items.
@@ -1235,23 +1257,23 @@
     return repaired;
   }
 
-  function markHeldPlane(mesh) {
+  function markHeldPlane(mesh, knownScene = null) {
     if (!mesh?.isMesh) return false;
     const already = heldMeshes.has(mesh) || mesh.userData?.hobunjiHeldObjectPlane === true;
     heldMeshes.add(mesh);
-    heldRegistry.add(mesh);
+    heldRegistry.add(mesh, knownScene);
     enforceHeldMesh(mesh);
     if (!already) heldCount++;
     return !already;
   }
 
-  function markWaterOccludedMesh(mesh) {
+  function markWaterOccludedMesh(mesh, knownScene = null) {
     if (!mesh?.isMesh) return false;
     mesh.userData = mesh.userData || {};
     const already = waterOccludedMeshes.has(mesh); // A preloaded semantic tag is not registration; count it on the first real compositor adoption.
     mesh.userData.hobunjiWaterOccludedBySurface = true;
     waterOccludedMeshes.add(mesh);
-    waterOccludedRegistry.add(mesh);
+    waterOccludedRegistry.add(mesh, knownScene);
     if (!hasLayer(mesh, FOOT_WATER_MASK_LAYER)) mesh.layers.enable(FOOT_WATER_MASK_LAYER); // Retain compatibility for diagnostic/older foot consumers.
     if (!hasLayer(mesh, HELD_OVERLAY_LAYER)) mesh.layers.enable(HELD_OVERLAY_LAYER); // Feet x-ray through grass/paths, but never through water/snow/props.
     if (!already) {
@@ -1277,11 +1299,11 @@
     return repaired;
   }
 
-  function markGroundMesh(mesh, kind = groundKind(mesh)) {
+  function markGroundMesh(mesh, kind = groundKind(mesh), knownScene = null) {
     if (!mesh?.isMesh || !kind) return false;
     const already = groundMeshes.has(mesh) || mesh.userData?.hobunjiHeldGroundReplay === true;
     groundMeshes.add(mesh);
-    groundRegistry.add(mesh);
+    groundRegistry.add(mesh, knownScene);
     enforceGroundMesh(mesh);
     if (kind === 'interior-floor' && hasAncestorFlag(mesh, 'hobunjiPlayerFarmhouseInterior') && !countedFarmhouseFloors.has(mesh)) {
       countedFarmhouseFloors.add(mesh);
@@ -1297,27 +1319,27 @@
     return !already;
   }
 
-  function classifyObject(object) {
+  function classifyObject(object, knownScene = null) {
     if (!object) return;
     if (object.isLight) prepareLight(object);
     if (!object.isMesh) return;
     // The normal shell pass uses layer membership directly, even for art that never joins held replay.
     if (hasLayer(object, SHELL_LAYER) && isAuthoredInkPlane(object)) object.layers.disable(SHELL_LAYER);
-    if (isPresentationBackdrop(object)) backgroundDepthRegistry.add(object); // Registered once, looked up only in the current scene.
-    if (isLegacyHeldPlane(object)) markHeldPlane(object);
-    if (object.userData?.hobunjiWaterOccludedBySurface === true) markWaterOccludedMesh(object);
-    if (hasLayer(object, PNG_OCCLUDER_LAYER) || materialHasAlphaCutout(object.material)) pngDepthRegistry.add(object);
+    if (isPresentationBackdrop(object)) backgroundDepthRegistry.add(object, knownScene); // Registered once, looked up only in the current scene.
+    if (isLegacyHeldPlane(object)) markHeldPlane(object, knownScene);
+    if (object.userData?.hobunjiWaterOccludedBySurface === true) markWaterOccludedMesh(object, knownScene);
+    if (hasLayer(object, PNG_OCCLUDER_LAYER) || materialHasAlphaCutout(object.material)) pngDepthRegistry.add(object, knownScene);
     if (isFrontPortraitMesh(object)) {
       if (!hasLayer(object, FRONT_PORTRAIT_MASK_LAYER)) object.layers.enable(FRONT_PORTRAIT_MASK_LAYER);
-      frontPortraitRegistry.add(object);
-      waterPortraitRegistry.add(object);
+      frontPortraitRegistry.add(object, knownScene);
+      waterPortraitRegistry.add(object, knownScene);
     } else if (object.name === 'npc_avatar_back_plane' || object.name === 'player_avatar_back_plane') {
-      waterPortraitRegistry.add(object);
+      waterPortraitRegistry.add(object, knownScene);
     }
     const surfaceKind = surfaceKindForObject(object); // Computed once for the three surface predicates below.
-    if (isProtectedCover(object, surfaceKind)) protectedCoverRegistry.add(object);
+    if (isProtectedCover(object, surfaceKind)) protectedCoverRegistry.add(object, knownScene);
     if (isTintCover(object, surfaceKind)) {
-      tintCoverRegistry.add(object);
+      tintCoverRegistry.add(object, knownScene);
       if (!hasLayer(object, WATER_REPLAY_LAYER)) object.layers.enable(WATER_REPLAY_LAYER);
     }
     if (isWaterSurface(object)) {
@@ -1327,13 +1349,13 @@
       }
     }
     const kind = groundKind(object, surfaceKind);
-    if (kind) markGroundMesh(object, kind);
-    if (isTopFacesGroundSurface(object)) markTopFaceGroundMesh(object); // Clip only upward cave-shell floor triangles in the depth rebuild, preserving walls and ceiling as real occluders.
+    if (kind) markGroundMesh(object, kind, knownScene);
+    if (isTopFacesGroundSurface(object)) markTopFaceGroundMesh(object, knownScene); // Clip only upward cave-shell floor triangles in the depth rebuild, preserving walls and ceiling as real occluders.
   }
 
-  function markTopFaceGroundMesh(mesh) {
+  function markTopFaceGroundMesh(mesh, knownScene = null) {
     const fresh = !topFaceGroundRegistry.has(mesh);
-    topFaceGroundRegistry.add(mesh);
+    topFaceGroundRegistry.add(mesh, knownScene);
     if (!fresh) return false;
     // The ground-depth restore pass draws the whole shell colorless. Its
     // walls already wrote identical depth in the rebuild pass, so only the
@@ -1350,9 +1372,10 @@
 
   function classifyTree(root) {
     if (!root) return;
-    classifyObject(root);
+    const knownScene = root.isScene && !root.parent ? root : null; // Only complete root walks prove every visited object's owning scene.
+    classifyObject(root, knownScene);
     root.traverse?.((object) => {
-      if (object !== root) classifyObject(object);
+      if (object !== root) classifyObject(object, knownScene);
     });
   }
 
@@ -2106,6 +2129,9 @@
   // color draw inside a replay can show them either. The material is checked
   // live so a later change to the sky's depth policy keeps it in the replay.
   function isDepthReplayInert(object, allowFarOnly = false) {
+    const directMaterial = object.material; // Ordinary single-material depth writers cannot be inert, except explicitly pinned far-plane depth.
+    if (directMaterial && !Array.isArray(directMaterial) && directMaterial.depthWrite !== false
+        && (!allowFarOnly || !materialPinnedToFarPlane(directMaterial))) return false;
     if (object.isMesh && object.userData?.hobunjiDepthReplayInert === true && !object.children.length) {
       const material = object.material;
       return !!material && !Array.isArray(material) && material.depthWrite === false
@@ -4645,7 +4671,9 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
       nearbyTintCovers: lastNearbyTintCovers,
       distantTintCoversSkipped: lastDistantTintCovers,
       waterClipScopes: lastWaterClipScopes,
+      registryDirectScenePlacements,
       rankedPortraitActors: lastRankedPortraitActors,
+      ordinaryPortraitSortDraws: withVisualSort.ordinaryDraws || 0,
       handsBehindFrontPlane: lastHandsBehindFrontPlane,
       airborneDepthRebuilds,
       backgroundDepthMeshesExcluded,
