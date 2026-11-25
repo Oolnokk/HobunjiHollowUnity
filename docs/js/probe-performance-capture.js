@@ -4,6 +4,7 @@
   'use strict';
   if (window.ProbePerformanceCapture) return;
   const MAX_MS = 20000, MAX_FRAMES = 1200, MAX_KEYS = 192; // Hard session bounds.
+  const MAX_SLOW = 12, MAX_EVENTS = 24; // Bound slow-frame, browser and visibility details.
   let session = null, lastReport = null; // At most one short capture and its finished report.
   const clock = () => performance.now();
   const round = n => Math.round(n * 1000) / 1000;
@@ -43,6 +44,77 @@
         sceneMatrixMsPerFrame: round(x.matrixMs/frames), sceneMatrixCalls: x.matrixCalls } : {}),
     }));
   }
+  function keepLargest(list, item, key) {
+    if (list.length >= MAX_SLOW && item[key] <= list[list.length-1][key]) return;
+    list.push(item);
+    list.sort((a,b)=>b[key]-a[key]);
+    if (list.length > MAX_SLOW) list.pop();
+  }
+  function biggestBuckets(map) {
+    return [...map].sort((a,b)=>b[1].totalMs-a[1].totalMs).slice(0,6)
+      .map(([name,x])=>({name,ms:round(x.totalMs),maxCallMs:round(x.maxMs)}));
+  }
+  function pageState() {
+    return { visibility: typeof document !== 'undefined' ? document.visibilityState || 'unknown' : 'unknown',
+      focused: typeof document !== 'undefined' && typeof document.hasFocus === 'function' ? document.hasFocus() : null };
+  }
+  function shortSource(url) {
+    const clean = String(url || '').split(/[?#]/)[0]; // Do not retain URLs' query strings or fragments.
+    return (clean.includes('/docs/') ? clean.slice(clean.lastIndexOf('/docs/')+6) : clean.split('/').pop() || 'unattributed').slice(0,160);
+  }
+  function observeBrowser(s) {
+    const browser = s.browser;
+    for (const type of ['longtask','long-animation-frame']) {
+      const summary = browser[type]; // One bounded observer summary per supported entry type.
+      function ingest(entries) {
+        for (const entry of entries || []) {
+          const start = Number(entry.startTime), duration = Number(entry.duration);
+          if (!Number.isFinite(start) || !Number.isFinite(duration) || duration < 0 ||
+              start < s.started || start+duration > (s.stoppedAt ?? clock())) continue;
+          summary.count++; summary.totalMs += duration;
+          const detail = { atMs:round(start-s.started), durationMs:round(duration) };
+          if (type === 'long-animation-frame') {
+            const style = Number(entry.styleAndLayoutStart);
+            detail.blockingMs = round(Number(entry.blockingDuration)||0);
+            detail.styleToEndMs = style > 0 && style >= start && style <= start+duration ? round(start+duration-style) : null;
+            detail.scripts = Array.from(entry.scripts || []).sort((a,b)=>(Number(b.duration)||0)-(Number(a.duration)||0)).slice(0,5)
+              .map(script=>({source:shortSource(script.sourceURL),functionName:String(script.sourceFunctionName||'').slice(0,100),
+                invokerType:String(script.invokerType||'').slice(0,80),durationMs:round(Number(script.duration)||0),
+                forcedLayoutMs:round(Number(script.forcedStyleAndLayoutDuration)||0)}));
+          } else {
+            detail.name=String(entry.name||'').slice(0,80);
+            detail.attribution=Array.from(entry.attribution||[]).slice(0,3).map(a=>({name:String(a.name||'').slice(0,80),containerType:String(a.containerType||'').slice(0,80)}));
+          }
+          keepLargest(summary.worst,detail,'durationMs');
+        }
+      }
+      let observer;
+      try {
+        const Observer = window.PerformanceObserver;
+        if (typeof Observer !== 'function' || (Array.isArray(Observer.supportedEntryTypes) && !Observer.supportedEntryTypes.includes(type))) continue;
+        observer = new Observer(list=>{ if(session===s) ingest(list.getEntries()); });
+        observer.observe({type,buffered:false});
+        summary.supported=true;
+        s.browserStops.push(()=>{try{ingest(observer.takeRecords?.());}finally{observer.disconnect();}});
+      } catch (_) { observer?.disconnect?.(); }
+    }
+    const note = event => {
+      if (session!==s || browser.pageEvents.length>=MAX_EVENTS) return;
+      browser.pageEvents.push({atMs:round(clock()-s.started),event:event.type,...pageState()});
+    };
+    if (typeof document !== 'undefined' && document.addEventListener) {
+      document.addEventListener('visibilitychange',note);
+      s.browserStops.push(()=>document.removeEventListener?.('visibilitychange',note));
+    }
+    if (window.addEventListener) {
+      window.addEventListener('blur',note);window.addEventListener('focus',note);
+      s.browserStops.push(()=>{window.removeEventListener?.('blur',note);window.removeEventListener?.('focus',note);});
+    }
+  }
+  function stopBrowser(s) {
+    for (const stop of s.browserStops) { try { stop(); } catch (_) {} }
+    s.browserStops.length=0;
+  }
   function counters() {
     // Explicit start/end only. Never flush classification or perform a scene scan.
     const result = {};
@@ -75,14 +147,19 @@
   function finish(reason = 'tap') {
     const s = session;
     if (!s) return lastReport;
+    s.stoppedAt=clock(); // Drain browser observations before any pixel-probe work.
     session = null;
+    stopBrowser(s);
     s.off?.(); // Only called from a scheduler boundary or UI event, never from a render hook.
     s.schedulerOff?.();
     const frames = s.loops.length, denominator = Math.max(1, frames);
     const gaps = distribution(s.gaps);
     const endCounters = counters(); // Includes warmup and any interrupted frame; separate from exact timed-frame buckets.
     lastReport = {
-      version: 1, reason, areaAtArm: s.area, areas: [...s.areas], elapsedMs: round(clock()-s.started), finishedAtMs:round(clock()),
+      version: 2, reason, areaAtArm: s.area, areas: [...s.areas], elapsedMs: round(s.stoppedAt-s.started), finishedAtMs:round(s.stoppedAt),
+      slowSchedulerFrames:s.slowFrames, slowFrameIntervals:s.slowIntervals,
+      terminalFrameGap:s.terminalGap, browser:{...s.browser,endPage:pageState()},
+      browserNotes:'Long tasks and long animation frames may overlap each other and game timings. Only completed entries wholly inside the window are included; browser delivery can lag. Style-to-end is not pure layout time. Between-callback gaps include idle, browser, GPU waits and unrelated work; they are not CPU attribution.',
       completeFrames: frames, discardedWarmupFrames: s.warmed ? 1 : 0, interruptedFrames: s.interrupted + (s.frame ? 1 : 0), skippedNonWorldFrames: s.nonWorld,
       schedulerBoundaryAvailable: !!s.schedulerOff, sampledIntervalMs: round(s.gaps.reduce((a,b)=>a+b,0)),
       fps: gaps?.meanMs > 0 ? round(1000/gaps.meanMs) : null, frameIntervals: gaps,
@@ -97,6 +174,7 @@
   }
   function cancel() {
     const s = session; session = null; lastReport = null;
+    if (s) { s.stoppedAt=clock(); stopBrowser(s); }
     s?.off?.();
     s?.schedulerOff?.();
   }
@@ -105,7 +183,11 @@
     const s = session = { area, started: clock(), frame: null, warmed: false, interrupted: 0,
       areas: new Set(), loops: [], gaps: [], schedulerFrames: [], previousStart: null, buckets: new Map(), passes: new Map(),
       outside: { buckets: new Map() }, // Explicit timing brackets in microtasks and other callbacks between scheduler frames.
+      previousFrame:null, slowFrames:[], slowIntervals:[], terminalGap:null, browserStops:[],
+      browser:{startPage:pageState(),pageEvents:[],longtask:{supported:false,count:0,totalMs:0,worst:[]},
+        'long-animation-frame':{supported:false,count:0,totalMs:0,worst:[]}},
       off: null, schedulerOff: null, hookAvailable: false, matrixFailures: 0, nonWorld: 0, startCounters:counters() };
+    observeBrowser(s);
     s.schedulerOff = window.RuntimeFrameScheduler?.registerTimingObserver?.({
       beginFrame(timestamp) { if (session === s) openFrame(s,timestamp); },
       subscriber(id,phase,ms) {
@@ -170,8 +252,12 @@
     return true;
   }
   function openFrame(s,timestamp) {
-    if (clock()-s.started >= MAX_MS || s.loops.length >= MAX_FRAMES) { finish('limit'); return; }
-    if (s.frame) { s.interrupted++; s.previousStart = null; }
+    if (clock()-s.started >= MAX_MS || s.loops.length >= MAX_FRAMES) {
+      if (s.previousFrame) s.terminalGap={sinceLastSchedulerEndMs:round(Math.max(0,clock()-s.previousFrame.end)),
+        rafIntervalMs:Number.isFinite(timestamp)?round(timestamp-s.previousFrame.start):null};
+      finish('limit'); return;
+    }
+    if (s.frame) { s.interrupted++; s.previousStart = null; s.previousFrame=null; }
     s.frame = { start: Number.isFinite(timestamp) ? timestamp : clock(), cpuStart: clock(),
       buckets: new Map(), passes: new Map(), area: null, driverMs: 0, driverCompleted: false };
   }
@@ -179,13 +265,27 @@
     const frame = s.frame;
     if (!frame) return;
     s.frame = null;
-    if (!completed || !Number.isFinite(driverMs)) { s.interrupted++; s.previousStart=null; return; }
-    if (frame.area == null) { s.nonWorld++; s.previousStart=null; return; }
-    if (!s.warmed) { s.warmed=true; s.previousStart=frame.start; return; }
-    if (s.previousStart !== null && frame.start > s.previousStart) s.gaps.push(frame.start-s.previousStart);
+    if (!completed || !Number.isFinite(driverMs)) { s.interrupted++; s.previousStart=null; s.previousFrame=null; return; }
+    if (frame.area == null) { s.nonWorld++; s.previousStart=null; s.previousFrame=null; return; }
+    const end = clock(), schedulerMs=Math.max(0,end-frame.cpuStart); // Actual wall time, not RAF timestamps.
+    if (!s.warmed) { s.warmed=true; s.previousStart=frame.start; s.previousFrame={start:frame.start,end,schedulerMs,warmup:true}; return; }
+    if (s.previousStart !== null && frame.start > s.previousStart) {
+      const interval = frame.start-s.previousStart;
+      s.gaps.push(interval);
+      if (interval >= 50 && s.previousFrame) keepLargest(s.slowIntervals,{
+        atMs:round(frame.cpuStart-s.started),intervalMs:round(interval),
+        previousSchedulerMs:round(s.previousFrame.schedulerMs),previousWasWarmup:!!s.previousFrame.warmup,
+        betweenCallbacksMs:round(Math.max(0,frame.cpuStart-s.previousFrame.end))
+      },'intervalMs');
+    }
     s.previousStart=frame.start;
+    s.previousFrame={start:frame.start,end,schedulerMs};
     s.loops.push(driverMs);
-    s.schedulerFrames.push(Math.max(0,clock()-frame.cpuStart));
+    s.schedulerFrames.push(schedulerMs);
+    if (schedulerMs >= 50 && (s.slowFrames.length < MAX_SLOW || schedulerMs > s.slowFrames.at(-1).schedulerMs)) {
+      keepLargest(s.slowFrames,{atMs:round(frame.cpuStart-s.started),schedulerMs:round(schedulerMs),driverMs:round(driverMs),
+        topSubsystems:biggestBuckets(frame.buckets),topNativePasses:biggestBuckets(frame.passes)},'schedulerMs');
+    }
     s.areas.add(frame.area);
     merge(s.buckets,frame.buckets); merge(s.passes,frame.passes);
     if (clock()-s.started >= MAX_MS || s.loops.length >= MAX_FRAMES) finish('limit');
