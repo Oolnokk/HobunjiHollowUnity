@@ -184,12 +184,19 @@
       if (options.length) base.push(pick(options));
     }
     const flourishes = {};
-    for (const slot of slotIds()) if (rnd() < TUNING.FLOURISH_SLOT_FILL_CHANCE && flourishIds.length) flourishes[slot] = pick(flourishIds);
+    const eligibleFlourishes = slot => flourishIds.filter(id => ES()?.allowsFlourishSlot?.(id, slot) !== false); // Loot never rolls an incompatible Flourish.
+    for (const slot of slotIds()) {
+      const eligible = eligibleFlourishes(slot);
+      if (rnd() < TUNING.FLOURISH_SLOT_FILL_CHANCE && eligible.length) flourishes[slot] = pick(eligible);
+    }
     // A relic is only worth unbinding if it teaches something: never roll an
     // empty one. Not every slot is filled, but at least one always is.
     if (!base.length && !Object.keys(flourishes).length) {
       if (rnd() < 0.5 && baseIds.length) base.push(pick(baseIds));
-      else if (flourishIds.length) flourishes[pick(slotIds())] = pick(flourishIds);
+      else if (flourishIds.length) {
+        const slot = pick(slotIds().filter(slot => eligibleFlourishes(slot).length));
+        if (slot) flourishes[slot] = pick(eligibleFlourishes(slot));
+      }
     }
     return { base, flourishes };
   }
@@ -444,7 +451,7 @@
     if (!requireService('flourish')) return { ok: false, reason: 'collection' };
     const es = ES();
     if (!es || !ownedWeaponKeys().includes(weaponKey)) return { ok: false, reason: 'weapon' };
-    if (!slotIds().includes(slotId)) return { ok: false, reason: 'slot' };
+    if (!slotIds().includes(slotId) || es.allowsFlourishSlot?.(id, slotId) === false) return { ok: false, reason: 'slot' };
     if (!es.isFlourishUnlocked(id, slotId)) return { ok: false, reason: 'locked' };
     if (isFeyEnchantment(id) && !requireFeyQuest()) return { ok: false, reason: 'quest' };
     if (es.flourishForSlot(slotId, weaponKey) === id) return { ok: false, reason: 'unchanged' };
@@ -624,7 +631,7 @@
     for (const slotId of slotIds()) {
       const current = state.flourishes?.[slotId] || '';
       const options = [{ value: '', label: '— choose a learned Flourish —' }]
-        .concat(unlocked.flourish.filter(entry => entry.slotId === slotId).map(entry => ({ value: entry.id, label: `${defs[entry.id].icon || ''} ${defs[entry.id].displayName} · ${defs[entry.id].alignment}` })));
+        .concat(unlocked.flourish.filter(entry => entry.slotId === slotId && es?.allowsFlourishSlot?.(entry.id, slotId) !== false).map(entry => ({ value: entry.id, label: `${defs[entry.id].icon || ''} ${defs[entry.id].displayName} · ${defs[entry.id].alignment}` })));
       const pick = select(options, current);
       const any = options.length > 1;
       const apply = button('Apply', () => pick.value && applyFlourish(selectedWeaponKey, slotId, pick.value), !window.ArtifactCollection?.unlocked?.('flourish') || (window.DelversGuild && !window.DelversGuild.canEnchant()) || !any); // Fey Flourishes use the same doubled fee and pretend label as Base magic.
