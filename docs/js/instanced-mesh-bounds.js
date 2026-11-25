@@ -58,10 +58,11 @@
   // needs the tag) or whose instances are scattered too widely to help.
   function tag(mesh, { track = true } = {}) {
     if (!mesh?.isInstancedMesh) return mesh;
-    if (mesh.userData.hobunjiInstanceBounds !== true) mesh.userData.hobunjiInstanceBounds = true;
+    const alreadyTagged = mesh.userData.hobunjiInstanceBounds === true; // Preserve the original replay-only enrollment contract.
+    mesh.userData.hobunjiInstanceBounds = true;
     if (track && typeof WeakRef === 'function') {
-      if (!trackedSet.has(mesh)) { trackedSet.add(mesh); tracked.push(new WeakRef(mesh)); }
-      if (mesh.userData.hobunjiBrickLod === true && !brickSet.has(mesh)) {
+      if (!alreadyTagged && !trackedSet.has(mesh)) { trackedSet.add(mesh); tracked.push(new WeakRef(mesh)); }
+      if (trackedSet.has(mesh) && mesh.userData.hobunjiBrickLod === true && !brickSet.has(mesh)) {
         brickSet.add(mesh); bricks.push(new WeakRef(mesh));
       }
     }
