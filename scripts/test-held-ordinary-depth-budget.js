@@ -6,7 +6,7 @@ const source = fs.readFileSync('docs/js/held-object-render-order.js', 'utf8'); /
 const begin = source.indexOf('  let ordinaryDepthLeavesSkipped ='); // Includes the supplement helper and complete held replay.
 const end = source.indexOf('  function isShellOutlinePass(', begin);
 
-function fixture({ bounded = false, ordinary = true, fail = false, colorLock = true, tint = false, nested = false, airborne = false, wildernessGround = false, groundShaderSupported = true, staleStencil = false, emptyDepth = false, emptyScissor = false, waterOnly = false, prune = true, customWaterHook = false, portraitParity = false, replacedAfterHook = false, lod = false } = {}) {
+function fixture({ bounded = false, ordinary = true, fail = false, colorLock = true, tint = false, nested = false, airborne = false, wildernessGround = false, groundShaderSupported = true, staleStencil = false, emptyDepth = false, emptyScissor = false, waterOnly = false, prune = true, customWaterHook = false, portraitParity = false, replacedAfterHook = false, lod = false, pendingShadow = false } = {}) {
   const groundMaterial = wildernessGround ? { depthWrite: false,
     userData: { hobunjiXrayElevationShader: { supported: groundShaderSupported } } } : null; // Reproduces wilderness ground, including unsupported/cold elevation shaders.
   const opaque = { isMesh: true, visible: true, children: [], material: groundMaterial }; // Base world terrain whose held-only depth flag is tested below.
@@ -39,7 +39,7 @@ function fixture({ bounded = false, ordinary = true, fail = false, colorLock = t
   let stencilMask = staleStencil ? 0 : 0xff; // A previous read-only tint pass can leave all stencil writes disabled.
   let scissorTest = false; // The held replay rectangle covers only the first two simulated pixels.
   const stencil = staleStencil ? [1, 0xfc, 0xff] : [0, 0, 0]; // Dry portrait, current gear, and a pixel outside the replay rectangle.
-  const renderer = { autoClear: true, autoClearColor: true, autoClearDepth: true, autoClearStencil: true, shadowMap: { autoUpdate: true },
+  const renderer = { autoClear: true, autoClearColor: true, autoClearDepth: true, autoClearStencil: true, shadowMap: { autoUpdate: true, enabled:pendingShadow, needsUpdate:pendingShadow },
     state: {
       scissor() {}, setScissorTest(enabled) { scissorTest = enabled; },
       buffers: { color: colorLock ? { setMask() {}, setLocked() {} } : {},
@@ -188,6 +188,9 @@ const localParity=fixture({ordinary:false,tint:true,waterOnly:true,portraitParit
 assert.equal(localParity.scope.waterOnlyPrunedFrames,1,'known local portrait matrix hook does not disable pruning');
 assert.equal(fixture({ordinary:false,tint:true,waterOnly:true,portraitParity:true,replacedAfterHook:true}).scope.waterOnlyPruneFallbacks,1);
 assert.equal(fixture({ordinary:false,tint:true,waterOnly:true,lod:true}).scope.waterOnlyPruneFallbacks,1);
+const pendingShadowWater=fixture({ordinary:false,tint:true,waterOnly:true,pendingShadow:true});
+assert.equal(pendingShadowWater.scope.waterOnlyPruneFallbacks,1,'manual shadow refresh sees all scene casters');
+assert(pendingShadowWater.draws.every(d=>d.opaqueVisible));
 fixture({ordinary:false,tint:true,waterOnly:true,fail:true}); // Every state restored even if the stamp throws.
 const staleTint = fixture({ tint: true, staleStencil: true });
 assert.deepEqual(staleTint.draws.find(draw => draw.tintedPixels).tintedPixels, [0, 1],
