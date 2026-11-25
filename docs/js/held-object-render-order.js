@@ -1837,8 +1837,13 @@
   // private water-only passes. Never cache this across world renders.
   function pruneWaterOnlyBranches(scene, portraits) {
     if (!waterOnlyBranchPruneEnabled || !scene?.children?.length) return null;
-    const hasHook = object => (object.onBeforeRender && object.onBeforeRender !== objectProto.onBeforeRender)
-      || (object.onAfterRender && object.onAfterRender !== objectProto.onAfterRender);
+    const hasHook = object => {
+      const parity = object.__hobunjiXrayBoundParity; // Exact local-only pose lock/restore pair from portrait-plane-outline-parity.
+      if (parity?.localRestoreHook && parity.hook === object.onBeforeRender &&
+          parity.localRestoreHook === object.onAfterRender) return false;
+      return (object.onBeforeRender && object.onBeforeRender !== objectProto.onBeforeRender)
+        || (object.onAfterRender && object.onAfterRender !== objectProto.onAfterRender);
+    };
     if (hasHook(scene)) { waterOnlyPruneFallbacks++; return null; }
     const selected = new Set(portraits); // Stamp assigns its private bit later.
     const mask = WATER_REPLAY_MASK | PORTRAIT_WATER_MASK;
