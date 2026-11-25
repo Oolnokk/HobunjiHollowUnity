@@ -764,7 +764,7 @@
     { // States which opt-in/gated performance features were active for this recording, so a report is self-explaining.
       const off=window.OffAreaNpcTick?.getDebug?.();
       const gated=(window.RuntimeFrameScheduler?.getDebug?.()?.entries||[]).filter(e=>e.everyMs>0||e.skippedCalls>0).map(e=>`${e.id}(every ${e.everyMs||0}ms, skipped ${e.skippedCalls}/${e.callCount+e.skippedCalls})`);
-      lines.push(`Opt-in performance features: offAreaNpcTick=${off?(off.enabled?'ON':'off')+` (coarse updates=${off.coarseUpdates}, skipped=${off.skippedUpdates})`:'module missing'} | gated scheduler subscribers=${gated.length?gated.join(', '):'none'} | enable with ?offAreaNpcTick=1 or OffAreaNpcTick.setEnabled(true)`);
+      if(off||gated.length) lines.push(`Opt-in performance features: offAreaNpcTick=${off?(off.enabled?'ON':'off')+` (coarse updates=${off.coarseUpdates}, skipped=${off.skippedUpdates})`:'module missing'} | gated scheduler subscribers=${gated.length?gated.join(', '):'none'} | enable with ?offAreaNpcTick=1 or OffAreaNpcTick.setEnabled(true)`);
     }
     const fishProfiles=window.FishCatalog?.getPixelDebug?.();
     if(fishProfiles) lines.push(`Fish pixel profiles (local): ${JSON.stringify(fishProfiles)}`);
