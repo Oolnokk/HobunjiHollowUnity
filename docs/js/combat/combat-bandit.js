@@ -1126,12 +1126,13 @@
   function applyEnemyCombatBuild(def, rank, tier, mineEnemy, opts = {}, authoredRule = null) {
     const perks = window.PerkSystem; // Live player tree also powers ordinary humanoid combat progression.
     const extra = opts.extra || {}; // Bespoke boss/caster choreography retains its authored tuning.
-    if (!perks?.buildEnemyCombatProfile || def.combatPerkModifiers || opts.disableCombatClass || extra.combatTutorialTarget || extra.lichType || opts.rosterOverride?.lichType || extra.maskboundTroop === 'headtaker' || extra.mineWyrmWitchType || !def.banditAbilityLoadout?.tap1) return def;
-    const combatClass = perks.rollEnemyCombatClass(deps.rnd); // Separate from enemyClass, which identifies faction/species elsewhere.
+    if (!perks?.buildEnemyCombatProfile || def.combatPerkModifiers || opts.disableCombatClass || extra.combatTutorialTarget || extra.combatTutorialPreview || extra.isMaskboundTitan || extra.isHarlyaoDemolitionist || extra.lichType || opts.rosterOverride?.lichType || extra.maskboundTroop === 'headtaker' || extra.mineWyrmWitchType || !def.banditAbilityLoadout?.tap1) return def;
+    const random = perks.enemyCombatRandom(opts.combatBuildSeed, deps.rnd); // Persistent abstract actors get the same class and loadout when their rig is rebuilt.
+    const combatClass = perks.rollEnemyCombatClass(random); // Separate from enemyClass, which identifies faction/species elsewhere.
     const level = perks.enemyCombatLevel(rank, tier, mineEnemy);
     const loadout = { ...def.banditAbilityLoadout }; // Per-entity copy; never change a shared authored attack object.
     if (loadout.tap2 && !authoredRule?.attacks?.tap2 && !Object.hasOwn(opts.defOverride?.banditAbilityLoadout || {}, 'tap2')) {
-      loadout.tap2 = perks.enemyQuickAttack(combatClass, deps.rnd) || loadout.tap2;
+      loadout.tap2 = perks.enemyQuickAttack(combatClass, random) || loadout.tap2;
     }
     // Keep the rank's held-ability count, but a one-hold fighter can specialize
     // in a counter rather than a charge. Fixed Workshop and caller slots win.
@@ -1139,18 +1140,45 @@
     if (loadout.hold1 === 'chargedBreaker' && !loadout.hold2
         && !authoredRule?.attacks?.hold1 && !authoredRule?.attacks?.hold2
         && !Object.hasOwn(fixedSlots, 'hold1') && !Object.hasOwn(fixedSlots, 'hold2')
-        && perks.enemyHeldAttack(combatClass, deps.rnd) === 'counterShield') {
+        && perks.enemyHeldAttack(combatClass, random) === 'counterShield') {
       loadout.hold1 = null;
       loadout.hold2 = 'counterShield';
     }
     def.banditAbilityLoadout = loadout;
-    const profile = perks.buildEnemyCombatProfile(combatClass, level, loadout, def.attackTag); // Final attack slots determine which perks can actually be used.
+    def.combatPerkMinimumAttacks = mineEnemy ? 1 : 2; // Preserve the factory's original opening stamina budget when equipment changes.
+    return installEnemyCombatProfile(def, combatClass, level);
+  }
+
+  function installEnemyCombatProfile(def, combatClass, level) {
+    const previous = def.combatPerkModifiers; // Equipment wrappers may rebuild a profile; remove its old multipliers before installing the new ones.
+    const baseHealth = Math.round(def.maxHealth / (previous?.health ?? 1));
+    const baseStamina = Math.round(def.maxStamina / (previous?.stamina ?? 1));
+    const baseCost = def.attackStaminaCost / (previous?.staminaCost ?? 1);
+    const profile = window.PerkSystem.buildEnemyCombatProfile(combatClass, level, def.banditAbilityLoadout, def.attackTag, def.rangedWeaponKey);
     Object.assign(def, profile);
-    const mods = profile.combatPerkModifiers; // Existing enemy base values already use their lower rank/tier/resource curves.
-    def.maxHealth = Math.max(1, Math.round(def.maxHealth * mods.health));
-    def.maxStamina = Math.max(1, Math.round(def.maxStamina * mods.stamina));
-    def.attackStaminaCost *= mods.staminaCost; // Modify the gate and actual spend together; never apply this again inside spendStamina.
+    def.combatPerkWeaponSignature = JSON.stringify([def.attackTag, def.rangedWeaponKey || null]); // Used only by spawn-time equipment reconciliation.
+    const mods = profile.combatPerkModifiers; // Use the enemy's own existing lower base resources and stamina cost.
+    def.maxHealth = Math.max(1, Math.round(baseHealth * mods.health));
+    def.maxStamina = Math.max(1, Math.round(baseStamina * mods.stamina), Math.ceil(baseCost * mods.staminaCost * (def.combatPerkMinimumAttacks || 1)));
+    def.attackStaminaCost = baseCost * mods.staminaCost; // AI affordability checks and actual spend share the same value.
     return def;
+  }
+
+  function refreshEnemyCombatBuild(entity) {
+    const def = entity?.def; // Cultural and modular equipment wrappers run after the ordinary factory.
+    if (!def?.combatPerkModifiers || def.combatPerkWeaponSignature === JSON.stringify([def.attackTag, def.rangedWeaponKey || null])) return entity;
+    const resources = window.ResourceSystem;
+    const fraction = key => {
+      const maximum = resources?.getEffectiveMax?.(entity, key) ?? entity[key === 'health' ? 'maxHealth' : 'maxStamina'];
+      return maximum > 0 ? Math.max(0, Math.min(1, entity[key] / maximum)) : 0;
+    }; // Reconciliation is spawn-time, but preserves missing-resource fractions rather than granting a heal.
+    const healthFraction = fraction('health'), staminaFraction = fraction('stamina');
+    installEnemyCombatProfile(def, def.combatClass, def.combatLevel);
+    entity.maxHealth = def.maxHealth;
+    entity.maxStamina = def.maxStamina;
+    entity.health = (resources?.getEffectiveMax?.(entity, 'health') ?? entity.maxHealth) * healthFraction;
+    entity.stamina = (resources?.getEffectiveMax?.(entity, 'stamina') ?? entity.maxStamina) * staminaFraction;
+    return entity;
   }
 
   // ── Bandit ability AI ────────────────────────────────────────────
@@ -3516,12 +3544,12 @@
     }
     if(authoredRule?.ranged || authoredRule?.rangedChance != null)def.rangedWeaponKey=rolledDefinition.rangedWeaponKey;
     def = loadoutRules?.applyDefinition(loadoutKind, def, deps.rnd) || def;
-    applyEnemyCombatBuild(def, rank, tier, mineEnemy, opts, authoredRule); // Apply once, after authored weapons and attacks have settled and before resources initialize.
     if (def.rangedWeaponKey && !window.RangedWeapons?.config?.[def.rangedWeaponKey]) {
       // The Fishing Spear is registered by the existing dual-role projectile archetype, not the base crossbow table.
       // NPCs must have that real thrown definition before they try to fire rather than holding an inert spear.
       window.HobunjiRangedWeaponArchetypes?.patchGeneratedDefinitions?.({ npcOnly: true, keys: [def.rangedWeaponKey] });
     }
+    applyEnemyCombatBuild(def, rank, tier, mineEnemy, opts, authoredRule); // After authored weapon and projectile definitions exist; before resources initialize.
     const targetScene = opts.scene || deps.getActiveScene();
     const targetGrid = opts.grid || deps.getActiveGrid();
     const gridCols = opts.cols || deps.getActiveCols();
@@ -3712,6 +3740,7 @@
     finishAction: finishBanditAction, // Ends a staged action; a completed melee swing hands its hold/return to c._banditToolTail.
     engagementReachPx: banditEngagementReachPx,
     applyEnemyCombatBuild, // Shared spawn and regression-test entry point.
+    refreshEnemyCombatBuild, // Reconcile actual equipment after the existing cultural/modular wrappers.
     RANK_LABEL: BANDIT_RANK_LABEL,
     TINT_SLOT_BY_SLOT: BANDIT_TINT_SLOT_BY_SLOT,
     GUARD_DAMAGE_ABSORB: BANDIT_GUARD_DAMAGE_ABSORB,
