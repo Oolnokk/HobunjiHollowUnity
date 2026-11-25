@@ -86,6 +86,170 @@
       && e[8] === 0 && e[9] === 0 && e[10] === 1 && e[11] === 0 && e[12] === 0 && e[13] === 0 && e[14] === 0 && e[15] === 1;
   }
 
+  // Static matrix branch experiment. Only border-terrain's explicitly enrolled
+  // dense wall groups are eligible: placement lives in instance buffers, never
+  // in moving leaf TRS. This is independent of batching and visibility.
+  // No prototype override, no per-frame child scan in the cached path.
+  let staticMatrixEnabled = false; // Opt in until matched device A/B confirms a benefit.
+  const staticOwners = new WeakMap(); // Root/leaf -> shared state with NO scene or object references.
+  const staticScenes = new WeakSet(); // Scenes containing enrolled owners; does not retain evicted maps.
+  const staticStats = { enrolled: 0, skippedBranches: 0, skippedLeaves: 0, refreshes: 0,
+    retired: 0, explicitInvalidations: 0, auditViolations: 0 }; // Lifetime diagnostics.
+  const T = window.THREE; // Only the verified game r128 matrix contract is supported.
+  const nativeWorld = T?.Object3D?.prototype?.updateMatrixWorld;
+  const nativeLocal = T?.Object3D?.prototype?.updateMatrix;
+  let walkingScene = null; // Non-null only inside the active scene's native matrix recursion.
+
+  function identityLocal(node) {
+    const p = node.position, q = node.quaternion, s = node.scale;
+    return node.matrixAutoUpdate === true && node.updateMatrix === nativeLocal
+      && p.x === 0 && p.y === 0 && p.z === 0
+      && q.x === 0 && q.y === 0 && q.z === 0 && q.w === 1
+      && s.x === 1 && s.y === 1 && s.z === 1
+      && !node.matrixWorldNeedsUpdate && isIdentity(node.matrix.elements);
+  }
+
+  function retireStatic(state) {
+    if (!state || state.retired) return;
+    state.retired = true;
+    state.ready = false;
+    staticStats.retired++;
+  }
+
+  function invalidateStaticMatrixBranch(node) {
+    const state = staticOwners.get(node); // Explicit owner API before any leaf transform/manual matrix or update-hook edit.
+    if (!state || state.retired) return false;
+    state.ready = false;
+    staticStats.explicitInvalidations++;
+    return true;
+  }
+
+  function noteStaticTopologyChange(node) {
+    // Reuse the existing Object3D attachment observer. A changed branch is
+    // no longer the exact producer-owned flat group: permanently fail open.
+    retireStatic(staticOwners.get(node));
+  }
+
+  function retireOnRemoval(event) {
+    // Also covers detach/reparent while another scene is active, and native
+    // removal paths that do not pass through a scene-level structure observer.
+    retireStatic(staticOwners.get(event.target));
+  }
+
+  function validStaticLeaves(root, state) {
+    if (root.children.length !== state.count) return false;
+    for (const leaf of root.children) {
+      if (staticOwners.get(leaf) !== state || leaf.parent !== root
+        || !leaf.isInstancedMesh || leaf.children.length
+        || leaf.updateMatrixWorld !== nativeWorld || !identityLocal(leaf)
+        || !isIdentity(leaf.matrixWorld.elements)) return false;
+    }
+    return true;
+  }
+
+  function validStaticRoot(root, state) {
+    // World-baked wall chunks are identity relative to an identity scene.
+    // A moved/rotated/scaled scene or group keeps native behavior, including
+    // explicit world-matrix requests and first-draw updates.
+    return root.parent?.isScene === true && root.parent.parent === null
+      && root.userData?.denseForestWall === true && root.userData?.backgroundScenery === true
+      && root.children.length === state.count && identityLocal(root)
+      && isIdentity(root.parent.matrixWorld.elements) && isIdentity(root.matrixWorld.elements);
+  }
+
+  function updateStaticWallWorld(force) {
+    const state = staticOwners.get(this); // Root-specific, no scan of inactive scenes.
+    if (!staticMatrixEnabled || walkingScene !== this.parent || !state || state.retired) {
+      if (state) state.ready = false; // Explicit calls outside the scene recursion are always native.
+      return nativeWorld.call(this, force);
+    }
+    if (state.ready && validStaticRoot(this, state)) {
+      staticStats.skippedBranches++;
+      staticStats.skippedLeaves += state.count;
+      return; // Every descendant already has the exact identity world matrix. No recursive calls.
+    }
+    state.ready = false;
+    staticStats.refreshes++;
+    nativeWorld.call(this, force);
+    if (validStaticRoot(this, state) && !state.retired) {
+      if (validStaticLeaves(this, state)) state.ready = true;
+      else retireStatic(state); // Unknown child transforms, nested objects or custom updaters are not a static contract.
+    }
+  }
+
+  function enrollStaticMatrixBranch(group) {
+    if (String(T?.REVISION) !== '128' || typeof nativeWorld !== 'function'
+      || typeof nativeLocal !== 'function' || !staticHookInstalled
+      || window.OutlineRenderPerformance?.staticWallTopologyNotifications !== true
+      || !group?.parent?.isScene || group.parent.parent !== null
+      || group.userData?.denseForestWall !== true || group.userData?.backgroundScenery !== true
+      || group.updateMatrixWorld !== nativeWorld || group.updateMatrix !== nativeLocal
+      || !group.children.length || staticOwners.has(group)) return false;
+    // Check actual producer structure, not a name/visibility guess.
+    for (const leaf of group.children) {
+      if (!leaf.isInstancedMesh || leaf.children.length || leaf.parent !== group
+        || leaf.updateMatrixWorld !== nativeWorld || leaf.updateMatrix !== nativeLocal
+        || leaf.matrixAutoUpdate !== true || staticOwners.has(leaf)) return false;
+    }
+    const state = { count: group.children.length, ready: false, retired: false }; // Shared dirty state; no retained scene graph.
+    staticOwners.set(group, state);
+    for (const leaf of group.children) {
+      staticOwners.set(leaf, state);
+      leaf.addEventListener('removed', retireOnRemoval);
+    }
+    group.addEventListener('removed', retireOnRemoval);
+    staticScenes.add(group.parent);
+    group.updateMatrixWorld = updateStaticWallWorld;
+    staticStats.enrolled++;
+    return true;
+  }
+
+  // Mark just the actual native scene matrix walk. The render hook temporarily
+  // installs an instance method, not a renderer or Object3D prototype wrapper.
+  // Native explicit root/child queries elsewhere, render hooks and authoring
+  // previews retain their normal behavior.
+  function walkStaticScene(force) {
+    const previous = walkingScene; // Supports nested scene updates and exceptions.
+    walkingScene = this;
+    try { return nativeWorld.call(this, force); }
+    finally { walkingScene = previous; }
+  }
+  const staticHookInstalled = typeof window.RenderHooks?.register === 'function' && String(T?.REVISION) === '128'; // Gameplay only.
+  if (staticHookInstalled) window.RenderHooks.register({
+    id: 'dense-wall-static-matrices', owner: 'dense-forest-wall-batches.js', order: 900000000,
+    appliesTo: ctx => staticMatrixEnabled && ctx.worldScene && ctx.scene?.autoUpdate === true
+      && staticScenes.has(ctx.scene) && ctx.scene.updateMatrixWorld === nativeWorld
+      && T.Object3D.prototype.updateMatrixWorld === nativeWorld && T.Object3D.prototype.updateMatrix === nativeLocal
+      && T.InstancedMesh.prototype.updateMatrixWorld === nativeWorld && T.InstancedMesh.prototype.updateMatrix === nativeLocal,
+    before(ctx) {
+      const hadOwn = Object.prototype.hasOwnProperty.call(ctx.scene, 'updateMatrixWorld'); // Restore exact original property shape.
+      ctx.scene.updateMatrixWorld = walkStaticScene;
+      return hadOwn ? 2 : 1;
+    },
+    after(ctx, state) {
+      if (!state || ctx.scene.updateMatrixWorld !== walkStaticScene) return;
+      if (state === 2) ctx.scene.updateMatrixWorld = nativeWorld;
+      else delete ctx.scene.updateMatrixWorld;
+    },
+  });
+
+  function auditStaticMatrixBranches(scene) {
+    // Explicit mobile capture only. Detect a missed owner invalidation or
+    // changed update method, then fail open on the next render. Not a frame scan.
+    let ready = 0, violations = 0;
+    for (const root of scene?.children || []) {
+      const state = staticOwners.get(root);
+      if (!state?.ready || state.retired) continue;
+      ready++;
+      if (root.updateMatrixWorld !== updateStaticWallWorld || !validStaticRoot(root, state) || !validStaticLeaves(root, state)) {
+        violations++;
+        retireStatic(state);
+      }
+    }
+    staticStats.auditViolations += violations;
+    return { ready, violations };
+  }
+
   // 'merge': may share a batch with other chunks' parts. 'own': a fading
   // chunk's part (its transparent per-chunk material clone has its own
   // opacity), never merged, but its far trees can still use the lite twin in
@@ -355,6 +519,12 @@
   window.DenseForestWallBatches = Object.freeze({
     suspendForRender,
     setEnabled,
+    enrollStaticMatrixBranch,
+    invalidateStaticMatrixBranch,
+    noteStaticTopologyChange,
+    auditStaticMatrixBranches,
+    setStaticMatrixEnabled(value) { staticMatrixEnabled = value === true; return staticMatrixEnabled; },
+    staticMatrixSnapshot: () => ({ enabled: staticMatrixEnabled, ...staticStats }),
     setLodEnabled,
     setLodDistance,
     snapshot: () => ({ enabled, lodEnabled, lodDistance, lodHysteresis: LOD_HYSTERESIS, ...stats }),
