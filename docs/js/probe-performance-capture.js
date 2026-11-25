@@ -295,7 +295,8 @@
     if (!s) return null;
     // Older isolated hosts can still use the existing gameLoop bracket.
     if (!s.schedulerOff && name === 'gameLoop total') openFrame(s,clock());
-    return session === s && clock()-s.started < MAX_MS ? (s.frame || s.outside) : null;
+    // A frame admitted before the deadline must keep all of its timing brackets.
+    return session === s ? (s.frame || (clock()-s.started < MAX_MS ? s.outside : null)) : null;
   }
   function recordTiming(frame,name,elapsed) {
     const s = session;
