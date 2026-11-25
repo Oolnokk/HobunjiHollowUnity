@@ -193,9 +193,12 @@ const vm = require('node:vm');
   const api = window.HobunjiSaveCheckpoints; // Public API used by folder core, menu UI, and diagnostics.
   assert.ok(api, 'checkpoint manager exposes its public API');
 
+  const statsBuilds = () => window.__hobunjiSaveCheckpointDebug.snapshot().checkpointStatsBuilds;
+  let beforeStats = statsBuilds();
   let manualResult = await api.saveManual(); // Browser fallback manual save is independent from rolling autosave.
   assert.equal(manualResult.ok, true);
   assert.equal(manualResult.folder, false);
+  assert.equal(statsBuilds()-beforeStats,1,'browser manual record builds checkpoint stats exactly once');
   assert.equal(flushes, 1, 'manual save flushes runtime farm/member data before snapshotting');
   assert.ok(store.has('hobunjiSaveCheckpoint.manual.v1'));
   assert.equal(store.has('hobunjiSaveCheckpoint.auto.v1'), false, 'manual save does not overwrite rolling autosave');
@@ -205,13 +208,17 @@ const vm = require('node:vm');
   assert.equal(autoResult.reason, 'load-grace');
   assert.equal(store.has('hobunjiSaveCheckpoint.auto.v1'), false);
 
+  beforeStats = statsBuilds();
   const earlyTravel = await api.saveMapChange({ fromArea: 'farm', toArea: 'town' }); // Completed travel must work during the ordinary timer grace period.
   assert.equal(earlyTravel.ok, true);
+  assert.equal(statsBuilds()-beforeStats,1,'browser travel guard and record share statistics');
   assert.equal(earlyTravel.skipped, undefined);
   assert.equal(store.has('hobunjiSaveCheckpoint.auto.v1'), false);
 
   now += 46_000;
+  beforeStats = statsBuilds();
   autoResult = await api.saveAuto({ reason: 'test-first-auto' });
+  assert.equal(statsBuilds()-beforeStats,1,'browser autosave guard and promotion share statistics');
   assert.equal(autoResult.ok, true);
   const firstAutoRaw = store.get('hobunjiSaveCheckpoint.auto.v1');
   assert.ok(firstAutoRaw, 'first post-grace browser autosave is written');
