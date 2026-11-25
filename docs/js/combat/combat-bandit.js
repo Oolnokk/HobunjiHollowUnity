@@ -569,6 +569,7 @@
     // Big hats: brim/crown pixels past the portrait square ride each plane's head bone (js/hat-overflow-plane.js).
     window.HatOverflowPlane?.attachToPlanes?.(THREE, {
       profile, sourceCanvas: frontCanvas,
+      isCancelled:()=>!!(portrait.userData?.portraitDisposed||group.userData?.portraitDisposed), // Reject late bakes on retired bandits.
       modelWidth: portraitPlaneW, modelHeight: portraitPlaneH,
       planes: [
         { view: 'front', mesh: renderedFrontMesh, headBone: frontNeckSkin?.headScaleBone || null },

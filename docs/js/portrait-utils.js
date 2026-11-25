@@ -2077,6 +2077,15 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
     const order = renderBehindView
       ? (renderOptions?.behindLayerOrder || DEFAULT_BEHIND_LAYER_ORDER).filter(key => hatDraw[key])
       : ['hairBack', 'hatUnder', 'hatOver'];
+    // Overflow reuse is based on the exact resolved draw sequence, not a cosmetic ID.
+    // Missing images, mutable authoring overrides and pixel-dye effects remain uncached.
+    if (typeof renderOptions.reuseHatOverflow==='function' && !layerImageOverrides && imageForTint===_imageForTint) {
+      const entries=order.flatMap(key=>hatDraw[key]); // Preserve authored front/rear layer order.
+      if(entries.every(({layer,tint})=>layer.url && imgMap.get(layer.url) instanceof Image && !layer.pixelDye && tint?.options?.cacheEnabled!==false)){
+        const layers=entries.map(({layer,tint,filter})=>({image:imgMap.get(layer.url),url:layer.url,xform:resolveXform(layer),tint:tint||filter}));
+        if(renderOptions.reuseHatOverflow(layers)){if(_needsScale)ctx.restore();return;}
+      }
+    }
     for (const key of order) drawEmoteLayers(hatDraw[key]);
     if (_needsScale) ctx.restore();
     return;

@@ -84,6 +84,8 @@ async function main() {
   cooking.registerFeyEncounterMultiplier('force',()=>1000);
   const flush=async()=>{for(let i=0;i<40;i++)await Promise.resolve();};
   const aim=()=>{const s=root.debugSnapshot().active.site;player.x=(s.c+.5)*64;player.y=(s.r+.5)*64;return s;};
+  root.tick(.3);zone='map_western_slope';root.tick(.1);zone='map_northern_cliffs';root.tick(.3);await flush();
+  assert.equal(root.debugSnapshot().active,null,'leaving eligible regions discards partial activation time');
   walkers.push({area:zone,root:{position:{x:7,z:7}}});
   root.tick(.5);assert.equal(root.debugSnapshot().active,null,'humanoid blocks bait');
   walkers[0].avatarGroup={userData:{namedAnimalNpc:true}}; // Real named-animal marker, not an invented test flag.
