@@ -2793,3 +2793,34 @@ new diagnostics/settings loaders were refreshed. The previous folder
 recovery revision had ten of eleven workflows green, with the full
 regression suite in progress. Larger static subtree invalidation still
 requires the on-device scene matrix census.
+
+
+### Resumed static-tree work: runtime isolation repair
+
+Recovered the interrupted conversation at commit f31364cc. Nine of eleven
+workflows passed; the fast regression suite (four foliage-related tests)
+and semantic surface foliage browser smoke both failed with the same
+ReferenceError at generator initialization. The new matrix shortcut
+looked up bare THREE, even though createFoliageGenerator receives T and
+has legitimate metadata-only and separately injected editor runtimes.
+
+Resolved the native updater pair from T, and deliberately restricted
+enrollment to the verified Three r128 contract. Newer editor runtimes
+keep their own native matrix updates; runtimes with no Object3D simply
+do not enroll any leaves. No changes to geometry, authored visual
+rules, tree placement, scene visibility, or the A/B default. Updated
+all nine known versioned generator consumers. The real-Three fixture now
+initializes without bare global THREE and tests an alternate revision;
+the fast isolation fixture also executes the actual enrollment/updater
+with an injected minimal r128 runtime and verifies conservative fallback.
+
+Targeted connector-based runs passed surface foliage lifecycle,
+instance placement, runtime isolation (including the added fast matrix
+fixture), the actual Five Blossoms metadata-only startup, and extracted
+matrix updater tests for parent movement, manual transforms, hidden
+leaves, late descendants, reparenting and opt-out. The complete Five
+Blossoms fixture could not run in the isolated adapter because it needs
+filesystem methods not provided there. Native Node/Three and browser
+CI remain required; no local clone (network DNS unavailable). No new
+FPS claim; compare Fast static tree matrices on/off and the scene
+matrix census before expanding to additional static subtree owners.
