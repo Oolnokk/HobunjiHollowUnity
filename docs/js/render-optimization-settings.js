@@ -112,6 +112,11 @@
       available: () => typeof window.ZoneVegetationCull?.setHideFadedOut === 'function',
       read: () => window.ZoneVegetationCull.snapshot?.().hideFadedOut, write: on => window.ZoneVegetationCull.setHideFadedOut(on) },
 
+    { group: 'Held items and x-ray replays', id: 'portraitWaterTint', name: 'Submerged portrait tint', on: true,
+      desc: 'Off skips the separate water-color replay for submerged portraits; normal water and held-gear tint remain. Uses the existing X-ray hierarchy rule.', ownsPersistence: true,
+      available: () => typeof window.XrayHierarchy?.set === 'function',
+      read: () => window.XrayHierarchy.get('portrait.waterTint') !== 'off',
+      write: on => window.XrayHierarchy.set('portrait.waterTint', on ? 'wet-tile' : 'off') },
     { group: 'Held items and x-ray replays', id: 'localReplayRing', name: 'X-ray only around the player', on: true,
       desc: 'Only actors on your tile or its eight neighbors receive selective X-ray and water tint replays. Off restores the old range.',
       available: () => typeof held()?.setLocalReplayRingEnabled === 'function',
