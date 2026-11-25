@@ -259,7 +259,7 @@
     movementRotationRad, cameraYawDeg,
     isPanickedRolling: entity => !!entity && panicRolls.has(entity), // Allows game.js to skip obstacle classification during entirely ordinary dodges.
     hasRuntime: entity => !!entity && (activeTurns.has(entity) || panicRolls.has(entity)
-      || (entity === player() && Math.abs(finite(perceivedYaw.get(entity))) > 0.00001)), // Used by ResourceSystem.tick to skip unmodified actors.
+      || (Math.abs(finite(perceivedYaw.get(entity))) > 0.00001)), // Used by ResourceSystem.tick to skip unmodified actors.
     debugSnapshot: () => ({
       registered, lastEffect, hype: window.FeyHypedAttacks?.debugSnapshot?.() || null,
       playerTurnRadiansRemaining: activeTurns.get(player())?.remainingRad || 0,
