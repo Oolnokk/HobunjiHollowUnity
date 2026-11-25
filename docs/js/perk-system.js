@@ -273,7 +273,7 @@
   function enemyCombatRandom(seed, fallback = Math.random) {
     if (seed == null) return fallback;
     const seedText = 'enemy-combat:' + String(seed); // Separate from terrain and appearance randomness.
-    const shared = window.WildernessMapGenerator?.makeRng?.(seedText); // Reuse the existing deterministic world RNG.
+    const shared = window.WildernessMapGenerator?.makeRng?.(seedText) || window.EnemyLoadoutRules?.seedRandom?.(seedText); // Reuse the existing deterministic world RNG.
     if (typeof shared === 'function') return shared;
     let state = 2166136261; // Deterministic fallback for standalone tools and tests without the map generator.
     for (const ch of seedText) state = Math.imul(state ^ ch.charCodeAt(0), 16777619) >>> 0;
@@ -313,11 +313,13 @@
       const definition = resources?.AFFLICTIONS?.[id]; // Alias projectiles use the real stored status family.
       return resources?.AFFLICTIONS?.[definition?.rangedAliasFor]?.family || definition?.family;
     }));
+    const combo = window.Combat?.comboData?.[loadout.tap1]; // Player-authored combo finishers can also be Heavy attacks.
+    const hasHeavyCombo = Array.isArray(combo) ? combo.some(step => step.heavy === true) : ['swingCombo', 'pokeCombo'].includes(loadout.tap1);
     const usable = perk => {
       if (perk.id === 'increaseLootQuality') return false;
-      if (perk.id === 'empowerQuickAttacks') return !!loadout.tap2;
+      if (perk.id === 'empowerQuickAttacks') return ['exhaustCutter', 'backstabFlick', 'mercySpike'].includes(loadout.tap2);
       if (perk.id === 'empowerDefensiveAttacks') return loadout.hold2 === 'counterShield';
-      if (perk.id === 'empowerHeavyAttacks') return loadout.hold1 === 'chargedBreaker';
+      if (perk.id === 'empowerHeavyAttacks') return loadout.hold1 === 'chargedBreaker' || hasHeavyCombo;
       const family = {empowerDamageEffects:'damage', empowerControlEffects:'control', empowerOffensiveDebuffs:'offensiveDebuff', empowerDefensiveDebuffs:'defensiveDebuff'}[perk.id];
       return !family || attackFamilies.has(family);
     };
@@ -357,9 +359,9 @@
     const mods = attacker?.def?.combatPerkModifiers; // Cached spawn profile, absent for ordinary animals and authored bosses.
     if (!mods || attacker === window.Combat?.deps?.player) return null;
     options ||= {}; // Some legacy damage callers explicitly pass null instead of omitting options.
-    const damageMul = options.enchantmentSlot === 'tap2' || options.category === 'quickAttack' ? mods.quickDamage
-      : options.enchantmentSlot === 'hold2' || options.category === 'defensiveHold' ? mods.defensiveDamage
-      : options.heavy ? mods.heavyDamage : mods.comboDamage;
+    let damageMul = options.enchantmentSlot === 'tap2' || options.category === 'quickAttack' ? mods.quickDamage
+      : options.enchantmentSlot === 'hold2' || options.category === 'defensiveHold' ? mods.defensiveDamage : mods.comboDamage;
+    if (options.heavy || options.perkHeavy) damageMul *= mods.heavyDamage / mods.comboDamage; // Heavy is an independent perk channel, as in the player's damage helper.
     const priorFooting = Number(options.footingDamageMultiplier); // Preserve zero for arrows and other explicitly footing-free attacks.
     return { amount: amount * damageMul, options: { ...options, footingDamageMultiplier: (Number.isFinite(priorFooting) ? priorFooting : 1) * mods.footingDamage } };
   }
