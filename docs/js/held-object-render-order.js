@@ -1854,7 +1854,7 @@
       if (object.isLOD) { unsafe = true; return true; } // Native LOD may change visibility.
       const drawable = object.isMesh || object.isSprite || object.isLine || object.isPoints || object.isImmediateRenderObject;
       const matching = selected.has(object) || !!(Number(object.layers?.mask) & mask);
-      const known = drawable || object.isGroup || object.isLight || object.isCamera || object.type === 'Object3D';
+      const known = drawable || object.isGroup || object.isLight || object.isCamera || object.isBone || object.type === 'Object3D';
       if (!known || (matching && hasHook(object))) { unsafe = true; return true; }
       const start = excluded.length;
       let keep = !!(object.isLight || object.isCamera || (drawable && matching));
