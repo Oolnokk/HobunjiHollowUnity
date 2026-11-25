@@ -281,9 +281,15 @@
     meshes.add(mesh);
   }
 
+  function onPlaceholderAdded() { registerPlaceholder(this); } // Object3D event catches standalone crops attached after their builder returns.
+
   function registerPlaceholder(mesh) {
     const cropKey = mesh?.userData?.hobunjiCropBaseKey; // Authoritative species identity from the farm/NPC crop builder.
     if (!mesh?.isMesh || mesh.userData.hobunjiCropSpriteKey || CROP_WORLD_ART[cropKey]?.worldMode !== 'billboard') return false;
+    if (!mesh.parent && mesh.addEventListener) {
+      mesh.addEventListener('added', onPlaceholderAdded);
+      return true;
+    }
     if (!registeredPlaceholders.has(mesh)) registeredCropCount++;
     registeredPlaceholders.add(mesh);
     return true;
