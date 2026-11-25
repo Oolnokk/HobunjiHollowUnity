@@ -282,7 +282,9 @@ Rules:
 
 ```js
 WorldRenderPipeline.captureFrame();          // next frame: every native render
-WorldRenderPipeline.lastCapture().passes     // [{ pass, layers:[names], override, target, draws, triangles, ms }]
+WorldRenderPipeline.lastCapture().passes     // [{ pass, worldScene, sceneAutoUpdate, layers:[names], override, target, draws, triangles, ms }]
+WorldRenderPipeline.lastCapture().mainMatrixCensus // Draw-state graph after scopes/hooks, including hidden descendants.
+WorldRenderPipeline.lastCapture().scopeTimings // One-shot scope preparation elapsed ms.
 WorldRenderPipeline.snapshot()               // last frame: native renders, scopes, errors
 WorldRenderPipeline.setScopeEnabled('zone-prop-batches', false) // A/B one scope
 RenderHooks.getDebug()                       // hooks in order: calls/applies/skips/errors
@@ -324,6 +326,15 @@ RenderHooks.setEnabled('crop-sprite-art', false) // A/B one hook
 HobunjiRenderLayers.describe(mask)           // bits → names
 PerfProfiler.setEnabled(true)                // 'render: main scene', 'render: shell outline', …
 ```
+
+Pixel Probe arms the existing one-shot world frame capture and copies it alongside
+the logical outside-scope census. The capture marks failed world frames incomplete
+and rejects old captures from before arming or another area. Each native pass records
+the r128 scene.autoUpdate flag before native rendering, not a measured matrix time.
+The draw-state census runs once before the first main-camera submission, excluded
+from the pass timer; its counts describe candidates, not actual visited nodes under
+custom matrix updaters. Scope timing covers preparation only. Ordinary frames never
+run these diagnostic walks or timing calls.
 
 If a visual is wrong only in one pass (e.g. its outline is offset from the
 sprite), capture a frame and compare which passes draw it and with which layers
