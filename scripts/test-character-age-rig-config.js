@@ -34,21 +34,23 @@ const initial = start();
 assert(initial.api, 'the shared age-rig API must initialize when family and PNG settings are available');
 const plain = value => JSON.parse(JSON.stringify(value));
 assert.deepEqual(plain(initial.api.repositoryDefaults()), {
-  baby: { body: .32, head: .50, hand: 1.2, foot: 1.2 },
-  toddler: { body: .4, head: .66, hand: 1, foot: 1 },
-  child: { body: .5, head: .72, hand: 1, foot: 1 },
+  baby: { width: .32, height: .32, head: .50, hand: 1.2, foot: 1.2 },
+  toddler: { width: .4, height: .4, head: .66, hand: 1, foot: 1 },
+  child: { width: .5, height: .5, head: .72, hand: 1, foot: 1 },
 });
 assert.equal(initial.api.snapshot().applied, false, 'drafts never change the game before explicit Apply');
 const draftKey = 'hobunjiFullCharacterScale.ageModes.v1'; // Editor drafts must not silently become gameplay overrides.
 storage.set(draftKey, 'untouched draft');
 const override = {
-  baby: { body: .36, head: .51, hand: 1.4, foot: 1.25 },
-  toddler: { body: .45, head: .68, hand: 1.1, foot: 1.05 },
-  child: { body: .57, head: .76, hand: 1.15, foot: 1.13 },
+  baby: { width: .36, height: .42, head: .51, hand: 1.4, foot: 1.25 },
+  toddler: { width: .45, height: .47, head: .68, hand: 1.1, foot: 1.05 },
+  child: { width: .57, height: .63, head: .76, hand: 1.15, foot: 1.13 },
 };
 const applied = plain(initial.api.applyOnThisDevice(override));
 assert.deepEqual(applied, override, 'valid global authoring values must be persisted unchanged');
-assert.equal(initial.family.phaseScales.basket.body, .36, 'baby body is consumed by runtime phaseScaleFields');
+assert.equal(initial.family.phaseScales.basket.width, .36, 'baby width reaches the family record');
+assert.equal(initial.family.phaseScales.basket.height, .42, 'baby height is independent of width');
+assert.equal(initial.family.phaseScales.basket.body, .42, 'older family readers receive Height through legacy Body');
 assert.equal(initial.family.phaseScales.toddler.head, .68, 'toddler head is consumed by the same family record fields');
 assert.equal(initial.family.phaseScales.toddler.hand, 1.1, 'toddler hand sizes reach the live family limb controller');
 assert.equal(initial.family.childLimbModifiers.foot, 1.13, 'child foot sizes reach the live family limb controller');
@@ -59,23 +61,28 @@ assert.equal(initial.api.nonFamilyChildLimbsFor({ role: 'child', tags: ['child',
   'family child GLBs must not receive both generic and FamilyBabyLimbs multipliers');
 assert.equal(initial.api.nonFamilyChildLimbsFor({ role: 'villager', tags: [] }), null,
   'adult NPCs must never inherit child limb scaling');
-assert.equal(initial.png.childScaleMultiplier, .57, 'child body size reaches PNGPlaneAvatar childScaleFor');
+assert.equal(initial.png.childScaleMultiplier, .63, 'child Height reaches PNGPlaneAvatar childScaleFor');
+assert.equal(initial.png.childWidthScaleMultiplier, .57, 'child Width reaches PNGPlaneAvatar independently');
 assert.equal(initial.png.childHeadScaleMultiplier, .76, 'child final head size reaches PNGPlaneAvatar childScaleFor');
 assert.equal(storage.get(draftKey), 'untouched draft', 'applying a runtime override must preserve editor drafts and game saves');
 const adult = { x: 1.2, y: 1.5, head: 1.1, offsetY: .05 }; // Distinct axis scales exercise non-uniform body compensation.
 for (const mode of ['baby', 'toddler', 'child']) {
-  const worldBody = mode === 'child' ? initial.png.childScaleMultiplier : initial.family.phaseScales[mode === 'baby' ? 'basket' : 'toddler'].body;
+  const worldWidth = mode === 'child' ? initial.png.childWidthScaleMultiplier : initial.family.phaseScales[mode === 'baby' ? 'basket' : 'toddler'].width;
+  const worldHeight = mode === 'child' ? initial.png.childScaleMultiplier : initial.family.phaseScales[mode === 'baby' ? 'basket' : 'toddler'].height;
   const worldHead = mode === 'child' ? initial.png.childHeadScaleMultiplier : initial.family.phaseScales[mode === 'baby' ? 'basket' : 'toddler'].head;
   const preview = plain(initial.api.composePreviewScale(adult, applied[mode]));
-  assert.equal(preview.x, adult.x * worldBody, mode + ': preview body width must match child modelWidth geometry');
-  assert.equal(preview.y, adult.y * worldBody, mode + ': preview body height must match child modelHeight geometry');
+  assert.equal(preview.x, adult.x * worldWidth, mode + ': preview Width matches child modelWidth geometry');
+  assert.equal(preview.y, adult.y * worldHeight, mode + ': preview Height matches child modelHeight geometry');
   assert.equal(preview.head, adult.head * worldHead, mode + ': preview final head must match adult head × childHeadFactor × child body');
   assert.equal(preview.offsetY, adult.offsetY, mode + ': rig head offset is the same fraction of its pre-scaled model height');
-  assert(Math.abs((worldHead / worldBody) * worldBody - worldHead) < 1e-10, 'runtime childHeadFactor equals preview final head/body relationship');
+  assert(Math.abs((worldHead / worldHeight) * worldHeight - worldHead) < 1e-10, 'head/height ratio preserves vertical head size');
+  assert(Math.abs((worldHead / worldWidth) * worldWidth - worldHead) < 1e-10, 'head/width ratio preserves horizontal head size');
 }
 assert.equal(initial.api.composePreviewScale(adult, null).x, adult.x, 'adult reference must remain unaffected');
 const loadedAgain = start();
-assert.equal(loadedAgain.family.phaseScales.basket.body, .36, 'same-origin game reload must recover the applied age settings');
+assert.equal(loadedAgain.family.phaseScales.basket.width, .36, 'same-origin game reload recovers applied baby width');
+assert.equal(loadedAgain.family.phaseScales.basket.body, .42, 'same-origin game reload recovers applied baby height');
+assert.equal(loadedAgain.png.childWidthScaleMultiplier, .57, 'same-origin game reload recovers independent child width');
 assert.equal(loadedAgain.png.childHeadScaleMultiplier, .76, 'applied child head settings survive a same-site reload');
 assert.equal(loadedAgain.api.snapshot().applied, true);
 loadedAgain.api.restoreRepositoryOnThisDevice();
@@ -94,8 +101,8 @@ assert.equal(start().api.snapshot().applied, false, 'corrupt local storage must 
 
 assert.match(pngSource, /const child = childScaleFor\(options\);[\s\S]{0,45}if \(child\) scale \*= child\.body;/,
   'PNGPlaneAvatar must actually build the child body size into its dimensions');
-assert.match(pngSource, /headFactor: head \/ body/, 'the runtime head bone must compensate by final head divided by body');
-assert.match(familySource, /function phaseScaleFields\(phase\) \{[\s\S]{0,160}childBodyScale: scales\.body, childHeadScale: scales\.head/,
+assert.match(pngSource, /headFactor: head \/ height, headFactorX: head \/ width/, 'runtime head bone must compensate child width and height independently');
+assert.match(familySource, /function phaseScaleFields\(phase\) \{[\s\S]{0,320}childBodyHeightScale: scales\.height[\s\S]{0,120}childBodyWidthScale: scales\.width/,
   'live family records must consume the exact phase body/head configuration');
 assert.match(familySource, /FamilyBabyLimbs\?\.balanceWalker\?\./, 'the family runtime must consume phase GLB size settings');
 assert(headRuntime.includes('hobunjiChildLimbVisualModifiers'), 'world child avatars must publish independent child sizes');
