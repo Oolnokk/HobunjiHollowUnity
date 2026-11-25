@@ -62,6 +62,14 @@
         resoluteFooting: '#f1d27a',
         resoluteHealth: '#8fd0ff',
         mirroredHealth: '#d9f0ff',
+        undertowStamina: '#237fbd', // Tothal recovery debt.
+        calcifiedFooting: '#c49a59',
+        soulweightedHealth: '#705480',
+        veilmarkedHealth: '#a1d8d5',
+        currentStamina: '#48e4ef',
+        hearthstoneFooting: '#e59f48',
+        pactHealth: '#aa63c9',
+        guardianHealth: '#e0f7c7',
         dementedStamina: '#d977ff', // Purple vertigo segment: every spent Stamina point affects navigation.
         panickedStamina: '#ff557b', // Panic reserve segment: surged dodge draws this buildup as additional cost.
         hypedStamina: '#fa69b6' // Bright augmented Stamina that powers rapid echo attacks.
