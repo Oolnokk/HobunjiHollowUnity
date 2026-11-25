@@ -2769,6 +2769,30 @@
   // HeldObjectRenderOrder.setReplayParticipants('all') restores the old set;
   // setShortXraySpecies([...]) and setFeetXrayDistance(units) tune the rule.
   let replayParticipantPolicy = 'rule';
+  let localReplayRingEnabled = true; // Gameplay default: restrict extra actor draws to the player's tile and eight neighbors.
+  let localReplayRingSkips = 0; // Lifetime base-pass counter; shell selection is not counted twice.
+
+  function createLocalReplayFilter(scene) {
+    if (!localReplayRingEnabled || replayParticipantPolicy === 'all') return null; // Explicit legacy A/B mode.
+    const player = window.PlayerBodyTransformComposer?.getPlayerMesh?.();
+    if (!player || !isDescendantOf(player, scene)) return null; // Editor/preview scenes have no active player.
+    player.updateWorldMatrix?.(true, false);
+    const p = player.matrixWorld?.elements;
+    if (!Number.isFinite(p?.[12]) || !Number.isFinite(p?.[14])) return null;
+    const col = Math.floor(p[12]), row = Math.floor(p[14]);
+    const rootEligibility = new Map(); // One position check per actor, shared by parts in this partition.
+    rootEligibility.set(player, true);
+    return mesh => {
+      const root = actorRootForXrayMesh(mesh, scene)?.root || mesh;
+      if (rootEligibility.has(root)) return rootEligibility.get(root);
+      root.updateWorldMatrix?.(true, false);
+      const m = root.matrixWorld?.elements;
+      const near = Number.isFinite(m?.[12]) && Number.isFinite(m?.[14])
+        && Math.abs(Math.floor(m[12]) - col) <= 1 && Math.abs(Math.floor(m[14]) - row) <= 1;
+      rootEligibility.set(root, near);
+      return near;
+    };
+  }
   const actorXrayDefaults = Object.freeze({ animals: true, enemies: false, player: true }); // Shared with Performance settings and reset.
   const actorXrayEnabled = { ...actorXrayDefaults }; // Settings gates shared by the main and shell passes.
   let hasDisabledActorXray = Object.values(actorXrayEnabled).includes(false); // All-on keeps the existing replay selection fast path.
@@ -2895,13 +2919,17 @@
     }
     if (replayParticipantPolicy === 'all' && !hasDisabledActorXray) return meshes;
     const keep = []; // Parts left to the existing replay after applying the Settings gates.
+    const nearPlayer = createLocalReplayFilter(scene); // Null in previews and explicit full-replay A/B mode.
     for (const mesh of meshes) {
       const group = hasDisabledActorXray ? actorXrayGroup(mesh, scene) : null; // Resolve categories only when needed.
-      if (actorXrayEnabled[group] !== false && isReplayParticipant(mesh, scene, isFoot)) keep.push(mesh);
+      const eligible = actorXrayEnabled[group] !== false && isReplayParticipant(mesh, scene, isFoot);
+      const inRing = eligible && (!nearPlayer || nearPlayer(mesh));
+      if (inRing) keep.push(mesh);
       else {
         if (repairHeld) enforceHeldMesh(mesh); // Keep the regular-pass held invariant without a second owner lookup.
         others.push(mesh);
         nonParticipantReplaySkips++;
+        if (eligible && !inRing) localReplayRingSkips++;
       }
     }
     return repairHeld && !isFoot && replayParticipantPolicy !== 'all' ? limitOtherWeaponParticipants(keep, scene, others) : keep;
@@ -3154,13 +3182,14 @@
     return !footprint.tiles || footprint.tiles.has(scope.col + ',' + scope.row); // No tile set = map-wide flood rectangle.
   }
 
-  function submergedPortraits(camera, covers, visiblePortraits) {
+  function submergedPortraits(camera, covers, visiblePortraits, scene = null) {
     const tintRule = xrayRule('portrait.waterTint');
     if (tintRule === 'off') return { portraits: [], scopes: [], touchingCovers: new Set() };
     const portraits = []; // Visible portrait meshes with a physically overlapping water/slush surface.
     const scopes = []; // Elected portrait world tiles join gear owners in the clipped water draw.
     const touchingCovers = new Set();
-    const visible = filterOffscreenReplayMeshes(camera, visiblePortraits);
+    const nearPlayer = scene ? createLocalReplayFilter(scene) : null; // Distant actors keep ordinary water depth.
+    const visible = filterOffscreenReplayMeshes(camera, nearPlayer ? visiblePortraits.filter(nearPlayer) : visiblePortraits);
     for (const portrait of visible) {
       const world = portrait.matrixWorld?.elements;
       if (!world) continue;
@@ -4451,7 +4480,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
     if (!covers.length || !portraits.length) return result;
     // Only actually wet portraits justify the independent water stencil pass. No actor ground
     // exemptions, gear overlays, floor collections, or outline replays are admitted in this mode.
-    const bodyTint = submergedPortraits(camera, covers, portraits);
+    const bodyTint = submergedPortraits(camera, covers, portraits, scene);
     lastWaterPortraits = bodyTint.portraits.length;
     if (!lastWaterPortraits) return result;
     actorXrayWaterOnlyFrames++;
@@ -4481,10 +4510,10 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
     if (isShellOutlinePass(scene, camera)) {
       if (hasDisabledActorXray && actorXrayScene !== scene) refreshActorXrayRoots(scene);
       const shellOthers = []; // Non-participant shells stay in the ordinary shell pass (normal depth).
-      const skipsBefore = nonParticipantReplaySkips, budgetSkipsBefore = otherWeaponXrayBudgetSkips;
+      const skipsBefore = nonParticipantReplaySkips, budgetSkipsBefore = otherWeaponXrayBudgetSkips, ringSkipsBefore = localReplayRingSkips;
       const held = collectVisible(heldRegistry, scene, shellOthers);
       const feet = collectVisible(waterOccludedRegistry, scene, shellOthers);
-      nonParticipantReplaySkips = skipsBefore; otherWeaponXrayBudgetSkips = budgetSkipsBefore; // Counted once a frame, by the base pass.
+      nonParticipantReplaySkips = skipsBefore; otherWeaponXrayBudgetSkips = budgetSkipsBefore; localReplayRingSkips = ringSkipsBefore; // Counted once a frame, by the base pass.
       const shellCandidates = [...new Set([...held, ...feet])].filter(mesh => hasLayer(mesh, SHELL_LAYER) && !isAuthoredInkPlane(mesh)); // Hands, feet and true 3D props only; PNG weapon/character art already has ink.
       window.HobunjiHandOutlineParity?.refreshHeldMatrices?.(shellCandidates); // Refresh live hand matrices before camera culling or shell scissor projections.
       const xrayMeshes = filterOffscreenReplayMeshes(camera, shellCandidates);
@@ -4563,6 +4592,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
     const canTintPortraits = !!(tintCovers.length && lastBaseStencilBits >= 1 && waterPortraitRegistry.all.size);
     const portraits = canTintPortraits || window.PlayerBodyTransformComposer?.getPlayerMesh?.()
       ? collectVisible(waterPortraitRegistry, scene) : [];
+    if (maskedHands.size && replayOthers.length) updateFrontPlaneHands(replayOthers, scene, camera, 'off'); // Restore previously masked shells/wings when their owner leaves the ring.
     updateFrontPlaneHands(held, scene, camera);
     const portraitOrder = nearbyPortraitOrder(scene, camera, portraits);
     lastRankedPortraitActors = portraitOrder?.count || 0;
@@ -4608,7 +4638,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
       window.HobunjiHandOutlineParity?.refreshHeldMatrices?.(held); // Update procedural hand matrices BEFORE camera filtering and subsequent depth-scissor bounds.
       const visibleHeld = filterOffscreenReplayMeshes(camera, held); // Omit offscreen rigid items only after the base pass updates world matrices.
       const visibleFeet = filterOffscreenReplayMeshes(camera, feet); // Apply the same conservative test to procedural feet.
-      const bodyTint = canTintPortraits ? submergedPortraits(camera, tintCovers, portraits) : null;
+      const bodyTint = canTintPortraits ? submergedPortraits(camera, tintCovers, portraits, scene) : null;
       lastWaterPortraits = bodyTint?.portraits.length || 0;
       lastBaseReplayCandidates = held.length + feet.length;
       lastBaseOffscreenFiltered = lastBaseReplayCandidates - visibleHeld.length - visibleFeet.length;
@@ -4705,7 +4735,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
       replayScissorEnabled, autoInertReplayEnabled, // Read by the Settings toggles (render-optimization-settings.js).
       lastReplayCulled: lastReplayCulledCount,
       lastReplayKept: lastReplayKeptCount,
-      lastReplayInstancedCulled, lastReplayInstancedKept, lastReplayInert: lastReplayInertCount, autoInertReplaySkips: autoInertReplayCount, colorOnlyDepthSkipEnabled, colorOnlyDepthSkips, skinnedScissorEnabled, skinnedScissorBounds, farOnlyReplaySkips, floorPunch: { enabled: floorPunchEnabled, punches: floorPunches, fallbacks: floorPunchFallbacks, depthResets: floorPunchDepthResets, refillHidden: floorPunchRefillHidden, refillKept: floorPunchRefillKept }, replayParticipants: replayParticipantPolicy, shortXraySpecies: [...shortXraySpecies], feetXrayDistance, nonParticipantReplaySkips, otherWeaponXrayLimit, otherWeaponXrayBudgetSkips, lastOtherWeaponXrayActors, heldOwnerLinkEnabled, gearParticlesOnceEnabled, gearParticleSkips, lastGearParticles,
+      lastReplayInstancedCulled, lastReplayInstancedKept, lastReplayInert: lastReplayInertCount, autoInertReplaySkips: autoInertReplayCount, colorOnlyDepthSkipEnabled, colorOnlyDepthSkips, skinnedScissorEnabled, skinnedScissorBounds, farOnlyReplaySkips, floorPunch: { enabled: floorPunchEnabled, punches: floorPunches, fallbacks: floorPunchFallbacks, depthResets: floorPunchDepthResets, refillHidden: floorPunchRefillHidden, refillKept: floorPunchRefillKept }, replayParticipants: replayParticipantPolicy, shortXraySpecies: [...shortXraySpecies], feetXrayDistance, localReplayRingEnabled, localReplayRingSkips, nonParticipantReplaySkips, otherWeaponXrayLimit, otherWeaponXrayBudgetSkips, lastOtherWeaponXrayActors, heldOwnerLinkEnabled, gearParticlesOnceEnabled, gearParticleSkips, lastGearParticles,
       instancedReplaySphereReuses, nearReplayBoxTests,
       nearReplayEnabled, nearReplaySnapshots, nearReplayFarCulled, nearReplayFallbacks,
       lastNearReplayFarDepth: Number.isFinite(lastNearReplayFarDepth) ? Number(lastNearReplayFarDepth.toFixed(2)) : null,
@@ -4808,6 +4838,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
     actorXrayDefaults,
     getActorXrayEnabled: group => Object.hasOwn(actorXrayEnabled, group) ? actorXrayEnabled[group] : null,
     setActorXrayEnabled,
+    setLocalReplayRingEnabled: value => { localReplayRingEnabled = value !== false; return localReplayRingEnabled; },
     setReplayParticipants: value => { replayParticipantPolicy = value === 'all' ? 'all' : 'rule'; return replayParticipantPolicy; },
     setShortXraySpecies: list => { shortXraySpecies.clear(); for (const id of list || []) shortXraySpecies.add(String(id).toLowerCase()); return [...shortXraySpecies]; },
     setFloorPunchEnabled: value => { floorPunchEnabled = value !== false; return floorPunchEnabled; },
