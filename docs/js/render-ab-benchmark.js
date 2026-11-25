@@ -364,6 +364,14 @@
     if (typeof dualWield?.setLeanSyncEnabled === 'function' && dualWield.leanSyncEnabled?.() === true) {
       variants.push({ id: 'dualWieldFullSync', apply: () => dualWield.setLeanSyncEnabled(false), undo: () => dualWield.setLeanSyncEnabled(true) });
     }
+    // Compare all three generated-outline modes while keeping the offscreen
+    // composite, painterly, X-ray color and target highlights unchanged.
+    if (debug?.outlinesSetting !== false && typeof pipeline?.setGeneratedOutlineMode === 'function') {
+      const outlineBefore = pipeline.getGeneratedOutlineMode();
+      for (const [id, mode] of [['shellOutlines','shell'],['screenDepthOutlines','screen'],['generatedOutlinesOff','none']]) {
+        variants.push({ id, apply: () => pipeline.setGeneratedOutlineMode(mode), undo: () => pipeline.setGeneratedOutlineMode(outlineBefore) });
+      }
+    }
     const heldOrder = window.HeldObjectRenderOrder;
     if (typeof heldOrder?.setLocalReplayRingEnabled === 'function') {
       const localBefore = heldOrder.snapshot?.().localReplayRingEnabled !== false; // Restore the user's exact policy after each sample window.
