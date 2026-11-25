@@ -57,6 +57,8 @@
         drunkenFooting: '#b66a2f',
         drunkenHealth: '#ff4f9a',
         kindlingHealth: '#ffb347',
+        unshackledStamina: '#a9dff7', // Ohthic combo tempo reserve.
+        weightlessStamina: '#b5f6db', // Bottom-anchored movement reserve.
         furiousStamina: '#ec2de8',
         moralizedStamina: '#ffe15a',
         resoluteFooting: '#f1d27a',
