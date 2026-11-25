@@ -133,6 +133,7 @@ class Vector3 {
   normalize() { const d = Math.hypot(this.x, this.y, this.z) || 1; this.x /= d; this.y /= d; this.z /= d; return this; }
   distanceTo(v) { return Math.hypot(this.x - v.x, this.y - v.y, this.z - v.z); }
 }
+let probeOptions = null; // Capture actual HUD vector and collider length.
 let focusCalls = 0, hitboxCalls = 0; // Cheap counters verify remote actors do not incur collider construction.
 const near = { id: 'near', x: 64, y: 0, health: 100, areaId: 'town' };
 const far = { id: 'far', x: 6400, y: 0, health: 100, areaId: 'town' };
@@ -143,7 +144,7 @@ const hudContext = {
       hitboxCalls++;
       return { box: { clampPoint(_origin, output) { output.x = entity.x / 64; output.y = .55; output.z = entity.y / 64; return output; } } };
     },
-  }, Combat: { meleeHit: (_player, entity) => ({ hit: entity === near }) } },
+  }, Combat: { meleeHit: (_player, entity, opts) => { probeOptions = opts; return { hit: entity === near }; } } },
 };
 const targetState = vm.runInNewContext('(' + hudSource.slice(hs, he) + ')', hudContext);
 let rosterScans = 0; // Counts full-hostile iteration by the actual HUD decision path.
@@ -172,4 +173,10 @@ deps.player.x = 0;
 targetState(deps, { x: 1, y: 0, z: 0 }, profile);
 near.health = 0;
 assert.equal(targetState(deps, { x: 1, y: 0, z: 0 }, profile).target, null, 'dead enemies are rejected on this frame even with a cached candidate list');
+near.health=100;
+const quickProfile=[{slotId:'tap2',attackId:'quick',reachPx:80,previewColliderRangePx:120,halfConeRad:Math.PI/4}];
+targetState(deps,{x:0,y:0,z:1},quickProfile);
+assert.equal(probeOptions.direction.x,0,'northward aim must not gain a false X component');
+assert.equal(probeOptions.direction.z,1);
+assert.equal(probeOptions.rangePx,120,'3D probe uses unprojected collider range instead of horizontal radius');
 console.log('actor decision/execution separation tests passed');
