@@ -89,20 +89,28 @@
     return mesh;
   }
 
+  const activeRegistryVisits = new WeakSet(); // Prevent nested visitors/registration sweeps from compacting an array under iteration.
   function visitTracked(list, callback) {
-    let kept = 0, i = 0; // Compaction must preserve unread entries if a consumer throws.
+    const outermost = !activeRegistryVisits.has(list);
+    if (outermost) activeRegistryVisits.add(list);
+    let collected = false; // No second pass when every visited weak ref is live.
     try {
-      for (; i < list.length; i++) {
-        const ref = list[i], mesh = ref.deref();
-        if (!mesh) continue;
-        list[kept++] = ref;
+      for (let i = 0; i < list.length; i++) {
+        const mesh = list[i].deref();
+        if (!mesh) { collected = true; continue; }
         callback(mesh);
       }
     } finally {
-      // The throwing entry was already retained; keep every unread ref,
-      // including registrations appended by a consumer during iteration.
-      for (let next = i + 1; next < list.length; next++) list[kept++] = list[next];
-      list.length = kept;
+      if (outermost) {
+        activeRegistryVisits.delete(list);
+        // Never rewrite positions while callbacks can enter this iterator.
+        // A throw or appended registration cannot lose or duplicate a ref.
+        if (collected) {
+          let kept = 0;
+          for (const ref of list) if (ref.deref()) list[kept++] = ref;
+          list.length = kept;
+        }
+      }
     }
   }
 
