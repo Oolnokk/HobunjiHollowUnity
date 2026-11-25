@@ -76,13 +76,13 @@
       ) || { afflictions: {}, stats: {} };
       const cost = (COST_BASE + count * COST_PER_STRIKE)
         * (1 + (effects.stats.staminaCostMul || 0)) / shapeStats.efficiency;
-      const spendResult = window.ResourceSystem?.spendStamina(
+      const fundedTempo = window.ResourceSystem?.attackTempoMultiplier?.(deps.player, 'offensiveHeldFlurry') ?? 1; // Snapshot before paying each distinct flurry strike.
+      window.ResourceSystem?.spendStamina(
         deps.player,
         cost,
         'Accelerating Flurry',
         { actionKind: 'offensiveHeldFlurry', abilityId: 'acceleratingFlurry' },
-      ) || { tempoMultiplier: 1 };
-      const fundedTempo = Math.max(1, Number(spendResult.tempoMultiplier) || 1); // Furious Stamina accelerates only the effective-cost portion it actually funded.
+      );
       const hypedAttackTempo = window.FeyHypedAttacks?.speedMultiplierForNextAction?.(deps.player, 'acceleratingFlurry') || 1; // Read immediately after the eligible Stamina payment, before the attack-event prepare consumes its credit.
       const timeScale = 1 / ((window.ResourceSystem?.getExhaustionSpeed(deps.player) ?? 1) * (shapeStats.speed * (window.DoubleEdgedCombatTrinkets?.attackSpeed?.() || 1) * hypedAttackTempo));
       const windupS = WINDUP_S * timeScale / fundedTempo;
