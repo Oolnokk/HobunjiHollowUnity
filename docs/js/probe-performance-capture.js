@@ -47,29 +47,44 @@
     const s = session;
     if (!s) return lastReport;
     session = null;
-    s.off?.(); // Only called from gameLoop boundary or a UI event, never from a render hook.
+    s.off?.(); // Only called from a scheduler boundary or UI event, never from a render hook.
+    s.schedulerOff?.();
     const frames = s.loops.length, denominator = Math.max(1, frames);
     const gaps = distribution(s.gaps);
     lastReport = {
       version: 1, reason, areaAtArm: s.area, areas: [...s.areas], elapsedMs: round(clock()-s.started),
-      completeFrames: frames, discardedWarmupFrames: s.warmed ? 1 : 0, interruptedFrames: s.interrupted + (s.frame ? 1 : 0),
+      completeFrames: frames, discardedWarmupFrames: s.warmed ? 1 : 0, interruptedFrames: s.interrupted + (s.frame ? 1 : 0), skippedNonWorldFrames: s.nonWorld,
+      schedulerBoundaryAvailable: !!s.schedulerOff, sampledIntervalMs: round(s.gaps.reduce((a,b)=>a+b,0)),
       fps: gaps?.meanMs > 0 ? round(1000/gaps.meanMs) : null, frameIntervals: gaps,
-      gameLoop: distribution(s.loops), nativeHookAvailable: s.hookAvailable,
+      gameLoop: distribution(s.loops), schedulerFrame: distribution(s.schedulerFrames), nativeHookAvailable: s.hookAvailable,
       subsystems: rows(s.buckets, denominator), nativePasses: rows(s.passes, denominator, true),
       nativeMatrixWrapFailures: s.matrixFailures,
-      notes: 'Wall-clock CPU submission timings, not GPU execution or stack samples. Subsystems overlap; do not sum inclusive buckets. Frame intervals include browser scheduling/wait. First completed frame excluded (one-shot census/warmup). Native counts are renderer.info at submission end; nested submissions are not separately timed.',
+      notes: 'Wall-clock CPU submission timings, not GPU execution or stack samples. Inclusive subsystem buckets overlap; scheduler pre-render is inside the driver. Frame intervals include browser scheduling/wait. First completed frame excluded (one-shot census/warmup). Frames without world rendering or failed drivers excluded. Native counts are renderer.info at submission end; nested submissions are not separately timed. Mixed areas are not a controlled comparison.',
     };
     return lastReport;
   }
   function cancel() {
     const s = session; session = null; lastReport = null;
     s?.off?.();
+    s?.schedulerOff?.();
   }
   function start(area) {
     cancel();
     const s = session = { area, started: clock(), frame: null, warmed: false, interrupted: 0,
-      areas: new Set(), loops: [], gaps: [], previousStart: null, buckets: new Map(), passes: new Map(),
-      off: null, hookAvailable: false, matrixFailures: 0 };
+      areas: new Set(), loops: [], gaps: [], schedulerFrames: [], previousStart: null, buckets: new Map(), passes: new Map(),
+      off: null, schedulerOff: null, hookAvailable: false, matrixFailures: 0, nonWorld: 0 };
+    s.schedulerOff = window.RuntimeFrameScheduler?.registerTimingObserver?.({
+      beginFrame(timestamp) { if (session === s) openFrame(s,timestamp); },
+      subscriber(id,phase,ms) {
+        if (session === s && s.frame) add(s.frame.buckets,'scheduler: '+phase+'/'+id,ms);
+      },
+      driver(ms,completed) {
+        if (session === s && s.frame) { s.frame.driverMs=ms; s.frame.driverCompleted=completed; }
+      },
+      endFrame() {
+        if (session === s && s.frame) closeFrame(s,s.frame.driverMs,s.frame.driverCompleted);
+      },
+    }) || null;
     const hooks = window.RenderHooks;
     if (typeof hooks?.register === 'function') {
       s.off = hooks.register({
@@ -118,29 +133,39 @@
     }
     return true;
   }
+  function openFrame(s,timestamp) {
+    if (clock()-s.started >= MAX_MS || s.loops.length >= MAX_FRAMES) { finish('limit'); return; }
+    if (s.frame) { s.interrupted++; s.previousStart = null; }
+    s.frame = { start: Number.isFinite(timestamp) ? timestamp : clock(), cpuStart: clock(),
+      buckets: new Map(), passes: new Map(), area: null, driverMs: 0, driverCompleted: false };
+  }
+  function closeFrame(s,driverMs,completed) {
+    const frame = s.frame;
+    if (!frame) return;
+    s.frame = null;
+    if (!completed || !Number.isFinite(driverMs)) { s.interrupted++; s.previousStart=null; return; }
+    if (frame.area == null) { s.nonWorld++; s.previousStart=null; return; }
+    if (!s.warmed) { s.warmed=true; s.previousStart=frame.start; return; }
+    if (s.previousStart !== null && frame.start > s.previousStart) s.gaps.push(frame.start-s.previousStart);
+    s.previousStart=frame.start;
+    s.loops.push(driverMs);
+    s.schedulerFrames.push(Math.max(0,clock()-frame.cpuStart));
+    s.areas.add(frame.area);
+    merge(s.buckets,frame.buckets); merge(s.passes,frame.passes);
+    if (clock()-s.started >= MAX_MS || s.loops.length >= MAX_FRAMES) finish('limit');
+  }
   function beginTiming(name) {
     const s = session;
     if (!s) return null;
-    if (name === 'gameLoop total') {
-      if (clock()-s.started >= MAX_MS || s.loops.length >= MAX_FRAMES) { finish('limit'); return null; }
-      if (s.frame) s.interrupted++; // Incomplete loop never contaminates another frame.
-      s.frame = { start: clock(), buckets: new Map(), passes: new Map(), area: null };
-    }
-    return s.frame; // Token identity rejects timings straddling a cancel or another frame.
+    // Older isolated hosts can still use the existing gameLoop bracket.
+    if (!s.schedulerOff && name === 'gameLoop total') openFrame(s,clock());
+    return session === s ? s.frame : null;
   }
   function recordTiming(frame,name,elapsed) {
     const s = session;
     if (!s || !frame || s.frame !== frame || !Number.isFinite(elapsed) || elapsed < 0) return;
     add(frame.buckets,name,elapsed);
-    if (name !== 'gameLoop total') return;
-    s.frame = null;
-    if (!s.warmed) { s.warmed = true; s.previousStart = frame.start; return; }
-    if (s.previousStart !== null && frame.start > s.previousStart) s.gaps.push(frame.start-s.previousStart);
-    s.previousStart = frame.start;
-    s.loops.push(elapsed);
-    if (frame.area != null) s.areas.add(frame.area);
-    merge(s.buckets,frame.buckets); merge(s.passes,frame.passes);
-    if (clock()-s.started >= MAX_MS || s.loops.length >= MAX_FRAMES) finish('limit');
+    if (!s.schedulerOff && name === 'gameLoop total') closeFrame(s,elapsed,true);
   }
   window.ProbePerformanceCapture = Object.freeze({
     start, finish, cancel, beginTiming, recordTiming,
