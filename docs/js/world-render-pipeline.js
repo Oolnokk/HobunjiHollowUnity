@@ -466,16 +466,21 @@
   registerRenderScope({ id: 'wilderness-distance-cull', owner: 'wilderness-distance-cull.js', order: 600,
     suspend: ctx => window.WildernessDistanceCull?.suspendForRender?.(ctx.scene, ctx.camera, ctx.playerTile, { isZone: ctx.isZone }) });
 
-  function suspendScopes(ctx, restores) {
+  function suspendScopes(ctx, restores, captureTimings = null) {
     for (const scope of scopes) {
       if (!scope.enabled) continue;
+      const startedAt = captureTimings ? performance.now() : 0; // Time scope preparation only on an explicitly captured frame.
+      let failed = false; // Distinguish a failed scope from a no-op.
       try {
         const restore = scope.suspend(ctx);
         if (typeof restore === 'function') restores.push(restore);
       } catch (error) {
+        failed = true;
         scope.errors++;
         scope.lastError = String(error?.message || error);
         if (scope.errors <= 3) console.warn(`[WorldRenderPipeline] scope ${scope.id} failed`, error);
+      } finally {
+        if (captureTimings) captureTimings.push({ id: scope.id, ms: Number((performance.now() - startedAt).toFixed(3)), failed });
       }
     }
   }
@@ -492,26 +497,35 @@
   let captureArmed = false;
   let capture = null; // Last captured frame.
   let captureRecords = null;
-  const captureStarts = [];
+  let captureMainCensus = null; // One draw-state graph census, after render scopes and presentation hooks.
+  let captureMainCensusError = null; // Diagnostic errors must not prevent rendering.
   function recordPassStart(ctx) {
-    captureStarts[ctx.depth] = performance.now();
+    const worldScene = ctx.scene === scopeCtx.scene; // Excludes other scenes and fullscreen composite.
+    if (currentPass === 'main' && worldScene && ctx.camera === scopeCtx.camera && !captureMainCensus && !captureMainCensusError) {
+      try { captureMainCensus = sceneMatrixCensus(ctx.scene); }
+      catch (error) { captureMainCensusError = String(error?.message || error); }
+    }
+    // At the last capture hook before native r128 rendering, true requests a full scene matrix walk.
+    return { startedAt: performance.now(), pass: currentPass, worldScene, sceneAutoUpdate: ctx.scene?.autoUpdate === true };
   }
-  function recordPassEnd(ctx) {
-    if (!captureRecords) return;
+  function recordPassEnd(ctx, state) {
+    if (!captureRecords || !state) return;
     const renderer = ctx.renderer;
     const scene = ctx.scene;
     const rt = renderer.getRenderTarget?.();
     const describe = window.HobunjiRenderLayers?.describe;
     captureRecords.push({
-      pass: currentPass,
+      pass: state.pass,
       depth: ctx.depth,
+      worldScene: state.worldScene,
+      sceneAutoUpdate: state.sceneAutoUpdate,
       scene: scene?.name || (scene === deps?.getActiveScene?.() ? 'activeScene' : scene?.type || '?'),
       layers: describe ? describe(ctx.camera?.layers?.mask) : ctx.camera?.layers?.mask,
       override: scene?.overrideMaterial ? (scene.overrideMaterial.name || scene.overrideMaterial.type) : null,
       target: rt ? `${rt.width}x${rt.height}` : 'canvas',
       draws: renderer.info?.render?.calls ?? null,
       triangles: renderer.info?.render?.triangles ?? null,
-      ms: Number((performance.now() - (captureStarts[ctx.depth] || performance.now())).toFixed(3)),
+      ms: Number((performance.now() - state.startedAt).toFixed(3)),
     });
   }
   function captureFrame() { captureArmed = true; return true; }
@@ -544,6 +558,8 @@
     if (captureArmed && window.RenderHooks?.register) {
       captureArmed = false;
       captureRecords = [];
+      captureMainCensus = null;
+      captureMainCensusError = null;
       captureHookOff = window.RenderHooks.register({
         id: 'world-render-pipeline-capture', owner: 'world-render-pipeline.js', order: 1e9,
         before: recordPassStart, afterRender: recordPassEnd,
@@ -551,7 +567,9 @@
     }
     const hooks = window.RenderHooks;
     let worldFrame = null;
-    suspendScopes(scopeCtx, scopeRestores);
+    const captureTimings = captureHookOff ? [] : null; // No extra timing arrays or walks in ordinary gameplay.
+    let completed = false; // Mark a failed native submission as an incomplete capture.
+    suspendScopes(scopeCtx, scopeRestores, captureTimings);
     try {
       worldFrame = hooks?.beginWorldFrame?.({ renderer, scene: activeScene, camera }) || null;
       // Frame-scoped whole-actor suppression; simulation still runs before and
@@ -563,6 +581,7 @@
       window.CloudForestFog?.prepareKanthicGlyphFrame?.(activeScene,now,camera); // Hide base-pass glow; only the occupied region receives depth-tested emission.
       if (outlines) renderOutlinedPasses(renderer, camera, activeScene, seamOn, area);
       else renderDirectPasses(renderer, camera, activeScene, area);
+      completed = true;
     } finally {
       pass('cleanup');
       window.CloudForestFog?.endKanthicGlyphFrame?.(); // Restore authored visibility before resuming gameplay.
@@ -572,8 +591,11 @@
       restoreScopes(scopeRestores); // Batches, culls and hidden walkers are back to their real state.
       if (captureHookOff) {
         captureHookOff();
-        capture = { at: now, area, outlines, passes: captureRecords };
+        capture = { at: now, area, outlines, completed, passes: captureRecords, scopeTimings: captureTimings,
+          mainMatrixCensus: captureMainCensus, mainMatrixCensusError: captureMainCensusError };
         captureRecords = null;
+        captureMainCensus = null;
+        captureMainCensusError = null;
       }
       pass('idle');
       stats.frames++;
@@ -826,8 +848,8 @@
         : data.terrainRenderChunkSource ? 'terrain chunk source'
         : data.hobunjiStaticBatchGroup ? 'static batch group'
         : data.backgroundScenery ? 'background scenery'
-        : /^WildernessChunk_/i.test(root.name || '') ? 'wilderness chunk'
-        : String(root.name || root.type || 'unnamed').replace(/[_-]\\d+(?:[_-]\\d+)*$/,'');
+        : data.wildernessChunk === true || /^WildernessChunk_/i.test(root.name || '') ? 'wilderness chunk'
+        : String(root.name || root.type || 'unnamed').replace(/[_-]\d+(?:[_-]\d+)*$/,'');
       let bucket = groups.get(category);
       if (!bucket) {
         bucket = { category, roots: 0, nodes: 0, meshes: 0, hiddenNodes: 0, hiddenMeshes: 0, autoLocalMatrices: 0, hiddenAutoLocalMatrices: 0, renderProxyNodes: 0 };
