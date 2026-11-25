@@ -241,23 +241,23 @@
   // Priority lists are highest-first: locked perks are skipped until affordable.
   const ENEMY_COMBAT_CLASSES = Object.freeze({
     bruiser: {
-      quick: ['exhaustCutter', 'exhaustCutter', 'mercySpike'], chargeChance: 0.65,
+      quick: ['exhaustCutter', 'exhaustCutter', 'mercySpike'], chargeChance: 0.65, counterChance: 0.10,
       priority: ['empowerOffensiveDebuffs', 'empowerDamageEffects', 'empowerHeavyAttacks', 'empowerQuickAttacks', 'increaseFootingDamage', 'increaseAoe', 'increaseFootingResistance', 'empowerRawDamage', 'increaseHealth', 'increaseStamina'],
     },
     assassin: {
-      quick: ['backstabFlick', 'backstabFlick', 'mercySpike'], chargeChance: 0.15,
+      quick: ['backstabFlick', 'backstabFlick', 'mercySpike'], chargeChance: 0.15, counterChance: 0.45,
       priority: ['empowerDamageEffects', 'empowerOffensiveDebuffs', 'empowerQuickAttacks', 'increaseLungeDistance', 'reduceStaminaUse', 'increaseFootingDamage', 'empowerRawDamage', 'increaseStamina', 'increaseHealth'],
     },
     guardian: {
-      quick: ['exhaustCutter', 'mercySpike'], chargeChance: 0.3,
+      quick: ['exhaustCutter', 'mercySpike'], chargeChance: 0.3, counterChance: 0.85,
       priority: ['empowerOffensiveDebuffs', 'empowerDamageEffects', 'empowerDefensiveAttacks', 'empowerHeavyAttacks', 'increaseFootingResistance', 'reduceStaminaUse', 'increaseFootingDamage', 'increaseHealth', 'increaseStamina', 'empowerRawDamage'],
     },
     duelist: {
-      quick: ['mercySpike', 'mercySpike', 'exhaustCutter', 'backstabFlick'], chargeChance: 0.35,
+      quick: ['mercySpike', 'mercySpike', 'exhaustCutter', 'backstabFlick'], chargeChance: 0.35, counterChance: 0.65,
       priority: ['empowerDamageEffects', 'empowerOffensiveDebuffs', 'empowerQuickAttacks', 'empowerDefensiveAttacks', 'reduceStaminaUse', 'increaseLungeDistance', 'increaseFootingResistance', 'increaseStamina', 'empowerRawDamage', 'increaseHealth'],
     },
     vanguard: {
-      quick: ['exhaustCutter', 'mercySpike', 'exhaustCutter'], chargeChance: 0.5,
+      quick: ['exhaustCutter', 'mercySpike', 'exhaustCutter'], chargeChance: 0.5, counterChance: 0.20,
       priority: ['empowerOffensiveDebuffs', 'empowerDamageEffects', 'empowerHeavyAttacks', 'increaseAoe', 'increaseLungeDistance', 'increaseFootingDamage', 'increaseHealth', 'empowerRawDamage', 'increaseStamina'],
     },
   }); // Shared class templates used only during enemy generation.
@@ -279,6 +279,11 @@
     const pool = ENEMY_COMBAT_CLASSES[combatClass]?.quick; // Only existing executable NPC techniques are included.
     if (!pool) return null;
     return pool[Math.min(pool.length - 1, Math.max(0, Math.floor((Number(random()) || 0) * pool.length)))];
+  }
+
+  function enemyHeldAttack(combatClass, random = Math.random) {
+    const template = ENEMY_COMBAT_CLASSES[combatClass] || ENEMY_COMBAT_CLASSES.duelist; // A single unlocked held slot is filled by the class's weighted choice.
+    return random() < template.counterChance ? 'counterShield' : 'chargedBreaker';
   }
 
   function buildEnemyCombatProfile(combatClass, level, loadout = {}, attackTag = '') {
@@ -420,7 +425,7 @@
     pointsEarned, pointsSpent, pointsAvailable,
     increase, decrease, resetTree,
     combatDamageMultiplier,
-    ENEMY_COMBAT_CLASSES, enemyCombatLevel, rollEnemyCombatClass, enemyQuickAttack, buildEnemyCombatProfile, scaleEnemyCombatHit,
+    ENEMY_COMBAT_CLASSES, enemyCombatLevel, rollEnemyCombatClass, enemyQuickAttack, enemyHeldAttack, buildEnemyCombatProfile, scaleEnemyCombatHit,
     render,
   };
 })();
