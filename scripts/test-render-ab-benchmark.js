@@ -130,7 +130,7 @@ nativeRender = function (passName, draws, sceneName) {
   rainSeenDuringRender.push(rainGroup.visible);
   return originalNative(passName, draws, sceneName);
 };
-const done = window.RenderABBenchmark.run({ rounds: 2, framesPerWindow: 20, variants: ['frameScopeOff', 'outlinesOff', 'painterlyOff', 'nearForest', 'fadedTreesDrawn', 'treeInstancingOff', 'propBatchesOff', 'staticWallMatricesOn', 'mixedWaterPruneOn', 'replayRegistryMemoOn', 'denCollisionEveryTile', 'wheelListEveryFrame', 'dualWieldFullSync', 'gearParticlesEveryPass', 'npcWeaponsXray', 'skinnedScissorOff', 'rainOff'] });
+const done = window.RenderABBenchmark.run({ rounds: 2, framesPerWindow: 20, variants: ['frameScopeOff', 'outlinesOff', 'painterlyOff', 'nearForest', 'fadedTreesDrawn', 'treeInstancingOff', 'propBatchesOff', 'staticWallMatricesOn', 'denCollisionEveryTile', 'wheelListEveryFrame', 'dualWieldFullSync', 'mixedWaterPruneOn', 'replayRegistryMemoOn', 'gearParticlesEveryPass', 'npcWeaponsXray', 'skinnedScissorOff', 'rainOff'] });
 (async function pump() {
   // Each animation frame: the game renders once, then the frame's callbacks run.
   await new Promise(resolve => setImmediate(resolve));
@@ -147,7 +147,7 @@ const done = window.RenderABBenchmark.run({ rounds: 2, framesPerWindow: 20, vari
   assert.deepEqual(outlineHistory.filter(v => v === false).length, 2, 'outlines are turned off once per round');
   assert.equal(window.__hobunjiFurnitureDebug.outlinesSetting, true, 'outlines restored');
   assert.equal(pipeline.renderFrame, originalRenderFrame, 'the timing wrapper is removed');
-  assert.deepEqual(Object.keys(report.variants), ['default', 'frameScopeOff', 'outlinesOff', 'painterlyOff', 'nearForest', 'fadedTreesDrawn', 'treeInstancingOff', 'propBatchesOff', 'staticWallMatricesOn', 'mixedWaterPruneOn', 'replayRegistryMemoOn', 'denCollisionEveryTile', 'wheelListEveryFrame', 'dualWieldFullSync', 'gearParticlesEveryPass', 'npcWeaponsXray', 'skinnedScissorOff', 'rainOff']);
+  assert.deepEqual(Object.keys(report.variants), ['default', 'frameScopeOff', 'outlinesOff', 'painterlyOff', 'nearForest', 'fadedTreesDrawn', 'treeInstancingOff', 'propBatchesOff', 'staticWallMatricesOn', 'denCollisionEveryTile', 'wheelListEveryFrame', 'dualWieldFullSync', 'mixedWaterPruneOn', 'replayRegistryMemoOn', 'gearParticlesEveryPass', 'npcWeaponsXray', 'skinnedScissorOff', 'rainOff']);
   assert.equal(denMemoHistory.join(' '), 'false true false true', 'denCollisionEveryTile restores the per-task memo after each window');
   assert.equal(wheelListHistory.join(' '), 'false true false true', 'wheelListEveryFrame restores the cross-frame list after each window');
   assert.equal(dualSyncHistory.join(' '), 'false true false true', 'dualWieldFullSync restores lean sync after each window');
