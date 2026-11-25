@@ -1032,7 +1032,7 @@ console.log('Fey Immundanity, real Stamina illusions, proc, scaled echo, migrati
   const amount = (actor, id) => RS.getAffliction(actor, id);
   const clear = (actor, id) => RS.removeAffliction(actor, id, 1000);
   const newBases = [
-    ['stormwake', 'Tothal', 'undertowStamina', 6.6],
+    ['stormwake', 'Tothal', 'windblownStamina', 6.6],
     ['stonebind', 'Hronal', 'leadboundStamina', 5.5],
     ['soulweight', 'Kanthic', 'soulweightedHealth', 6.6],
   ]; // One equipped planar enchantment gives +10% Immundanity.
@@ -1056,9 +1056,9 @@ console.log('Fey Immundanity, real Stamina illusions, proc, scaled echo, migrati
   equip(['stormwake', 'stonebind']);
   assert.equal(ES.getWeaponImmundanity(key), 0);
   hit();
-  close(amount(target, 'undertowStamina'), 6);
+  close(amount(target, 'windblownStamina'), 6);
   close(amount(target, 'leadboundStamina'), 5);
-  clear(target, 'undertowStamina');
+  clear(target, 'windblownStamina');
   clear(target, 'leadboundStamina');
   equip(['soulweight', 'ancestralSight']);
   assert.equal(ES.getWeaponImmundanity(key), 0);
@@ -1068,26 +1068,71 @@ console.log('Fey Immundanity, real Stamina illusions, proc, scaled echo, migrati
   clear(target, 'soulweightedHealth');
   clear(attacker, 'weightlessStamina');
 
-  // Undertow: recovery, not expenditure; black Stamina recovery is independent.
-  target.stamina = 30;
-  RS.addAffliction(target, 'undertowStamina', 10);
-  RS.restoreStamina(target, 4);
-  close(target.stamina, 30);
-  close(amount(target, 'undertowStamina'), 6);
-  RS.restoreStamina(target, 10);
-  close(target.stamina, 34);
-  close(amount(target, 'undertowStamina'), 0);
-  RS.addAffliction(target, 'undertowStamina', 10);
-  RS.tick(target, 0.5, { staminaRegenPerSec: 4, healthRegenPerSec: 0, footingRegenPerSec: 0 });
-  assert(amount(target, 'undertowStamina') < 10, 'natural recovery pays the same reserve');
-  close(target.stamina, 34);
-  target.exhaustion.active = true; target.exhaustion.blackStamina = 30;
-  const debt = amount(target, 'undertowStamina');
-  RS.restoreStamina(target, 10, { exhaustionAmount: 5 });
-  close(target.exhaustion.blackStamina, 35);
-  close(amount(target, 'undertowStamina'), debt);
-  target.exhaustion.active = false;
-  clear(target, 'undertowStamina');
+  // Windblown: rotate direction on every application, preserve world-space drift,
+  // charge only assisted voluntary travel, and use the same scalar modifiers.
+  const originalRandom = context.GameRandom.random;
+  const oldFey = context.FeyIllusions;
+  try {
+    context.GameRandom.random = () => 0; // Eastward wind.
+    RS.addAffliction(target, 'windblownStamina', 100);
+    const opts = { mode: 'walk', reference: 100, dt: 1 };
+    const east = RS.composeMovement(target, 100, 0, opts);
+    close(east.x, 150); close(east.y, 0); close(east.footingCost, 10);
+    const west = RS.composeMovement(target, -100, 0, opts);
+    close(west.x, -50); close(west.footingCost, 0);
+    const north = RS.composeMovement(target, 0, 100, opts);
+    close(north.x, 50); close(north.y, 100); close(north.footingCost, 0);
+    const idle = RS.composeMovement(target, 0, 0, opts);
+    close(idle.x, 50); close(idle.footingCost, 0);
+    target.footing = 100;
+    RS.beginMovementFrame(target);
+    assert(!RS.windMovementHandled(target));
+    RS.commitMovement(target, idle, 1);
+    assert(RS.windMovementHandled(target));
+    close(target.footing, 100);
+    RS.commitMovement(target, east, 0); // Blocked collision does not spend Footing.
+    close(target.footing, 100);
+    RS.commitMovement(target, east, .5); // Only actual movement costs Footing.
+    close(target.footing, 95);
+    for (let i = 0; i < 10; i++) {
+      RS.commitMovement(target, RS.composeMovement(target, 1, 0, { reference: 1, dt: .01 }), 1);
+    }
+    close(target.footing, 94); // Fractional costs are accumulated, not rounded up per frame.
+    context.GameRandom.random = () => .25; // Northward wind, even at maximum stack.
+    RS.addAffliction(target, 'windblownStamina', 1);
+    const changed = RS.composeMovement(target, 100, 0, opts);
+    close(changed.x, 100); close(changed.y, 50);
+    context.FeyIllusions = { movementRotationRad: () => Math.PI / 2 };
+    const combined = RS.composeMovement(target, 100, 0, opts);
+    close(combined.x, 0); close(combined.y, 150); close(combined.footingCost, 10);
+    const alreadyRotated = RS.composeMovement(target, 0, 100, { ...opts, rotationApplied: true });
+    close(alreadyRotated.x, combined.x); close(alreadyRotated.y, combined.y);
+    const dodge = RS.composeMovement(target, 0, -100, { ...opts, mode: 'dodge', rotationApplied: true });
+    close(dodge.y, -50); close(dodge.footingCost, 0);
+    const lunge = RS.composeMovement(target, 0, 100, { ...opts, mode: 'lunge', rotationApplied: true });
+    close(lunge.y, 150); close(lunge.footingCost, 10);
+    RS.addAffliction(target, 'weightlessStamina', 25);
+    RS.addAffliction(target, 'leadboundStamina', 50);
+    RS.applyTimedDebuff(target, 'heavy', 12, { power: 2 });
+    const speed = 100 * 1.5 * .625 * .85;
+    const all = RS.composeMovement(target, 100, 0, { reference: speed, dt: 1 });
+    close(all.x, 0); close(all.y, speed * 1.5);
+    clear(target, 'weightlessStamina'); clear(target, 'leadboundStamina');
+    RS.clearTimedDebuff(target, 'heavy');
+    context.FeyIllusions = oldFey;
+    target.stamina = 30;
+    RS.restoreStamina(target, 4);
+    close(target.stamina, 34); // No legacy Undertow regeneration tax.
+    RS.tick(target, .5, { staminaRegenPerSec: 4, healthRegenPerSec: 0, footingRegenPerSec: 0 });
+    assert(amount(target, 'windblownStamina') < 100, 'wind naturally fades');
+    assert(target.stamina > 34, 'wind never steals regeneration');
+    clear(target, 'windblownStamina');
+    close(RS.composeMovement(target, 100, 0, { ...opts, rotationApplied: true }).x, 100);
+    target.footing = 100;
+  } finally {
+    context.GameRandom.random = originalRandom;
+    context.FeyIllusions = oldFey;
+  }
 
   // Leadbound occupies current ordinary Stamina and never charges enhanced payments.
   target.stamina = 100;
