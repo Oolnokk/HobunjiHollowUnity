@@ -2824,3 +2824,43 @@ filesystem methods not provided there. Native Node/Three and browser
 CI remain required; no local clone (network DNS unavailable). No new
 FPS claim; compare Fast static tree matrices on/off and the scene
 matrix census before expanding to additional static subtree owners.
+
+
+### Pristine front-hood readback reuse
+
+The recovered static-tree repair (aa146ad17bf6e9178c010bbaf47723fa9972da36)
+passed all eleven CI workflows, including the full regression suite and
+semantic surface foliage browser smoke.
+
+Continued the original portrait-materialization readback investigation.
+The negotiated result cache already handles exact beard/hood combinations,
+and the pristine beard cache handles changing hood poses. A new bounded
+pristine cloth cache (4 MiB/24 entries, estimated RGBA bytes) now shares
+the unwarped front-hood readback across different beard/policy combinations.
+It is keyed by the existing exact canonical hood image/tint/transform
+identity and static deformation, independent of beard permissions. It is
+only used on the existing static, canonical result-key path; animated
+breathing, custom composer/tint, mutable mask overrides and pixel-dye
+paths retain their previous behavior. Scratch canvas drawing still takes
+place, so cached input does not replace the original unmodified artwork.
+Warping and approved cutout holes copy the immutable cached data before
+writing. Real warps still reread the canvas after putImageData to preserve
+browser premultiplied-alpha rounding; no-op warps transfer the readback.
+No changes to mask policy, outlines or original draw stages. Pixel Probe's
+existing Beard/hood CPU cache report automatically includes clothReads,
+clothReadHits and pristineCloth memory/eviction statistics.
+
+Targeted source-executing tests passed the entire pixel/canvas and actual
+portrait negotiation-cache section, including distinct beard identity,
+permission changes, no-op and real warp pixel parity, animated bypass,
+source replacement, static deformation invalidation, immutable cached
+input and bounded eviction. This is not a native browser pixel test or a
+measured FPS improvement. On cache hits this avoids one full Canvas
+getImageData call; extra retained pixel memory and private copies on
+mutation are the trade-off. Known direct and transitive gameplay/editor
+loader versions updated using the repository connector; local cache-bust
+checker/full Node suite could not be run without a checkout. Latest CI
+must validate the integration. Remaining priorities: on-device scene
+matrix census and A/B timing, broader appearance churn, hand solve
+deduplication and event-driven inventory. Do not bypass fresh animated
+pixels or global scene transforms.
