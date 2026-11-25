@@ -170,7 +170,7 @@ The static dense-wall matrix experiment is an explicit producer contract, not a
 visibility rule. BorderTerrain enrolls only flat wall groups after attaching
 them to the scene. Their placements live in instance buffers; before any new
 leaf local-transform, manual-matrix or custom-update writer, call
-`DenseForestWallBatches.invalidateStaticMatrixBranch(leafOrRoot)`. The existing
+`DenseForestWallBatches.invalidateStaticMatrixBranch(leafOrRoot)` to retire it permanently. The existing
 attachment observer retires modified hierarchies. Explicit subtree matrix
 updates outside native scene recursion retain normal behavior. Pixel Probe
 audits cached branches on demand; no continuous child scan. Keep this off by
