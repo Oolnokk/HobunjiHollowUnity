@@ -58,7 +58,9 @@ With 2+ registered players, nothing advances the world clock on one player's say
 New skip sources call `TimeConsensus.knockOut(player, { kind, source, minutes, run, onResolved, onRevived })` (forced) or `requestRest` (voluntary) when `shouldGate()`; `run` applies the time change and is only called if that skip wins.
 Dev: `DevDummyPlayer.sleep(min)`, `.knockOut(min)`, `.reviveLocal()`, `.reviveDummy()`, `.wake()`; `TimeConsensus.snapshot()`.
 
-**Not done yet:** a revive interaction prompt for the local player (only the API and dev hooks exist), a countdown HUD for the 60 s window, marking a knocked-out local avatar as down for enemy targeting, and live-testing the bed and Wait/Sleep menu paths with a second real player. Natural real-time clock progression is deliberately not gated; only skips are.
+**Countdown HUD** (`js/time-consensus-hud.js`): "Out cold — a friend has 0:54 to revive you", "<name> is down — revive them within 0:54", and "Waiting for the others to sleep (n/m)"; verified live in the game.
+
+**Not done yet:** a revive interaction prompt for the local player (only the API and dev hooks exist), marking a knocked-out local avatar as down for enemy targeting, and live-testing the bed and Wait/Sleep menu paths with a second real player. Natural real-time clock progression is deliberately not gated; only skips are.
 
 Simulation LOD is player-set aware: bandit sleep/wake (`wilderness-simulation-lod.js`)
 and Porakaneki ecology/aggro radii use `ActorRegistry.distanceToNearestPlayer` /
