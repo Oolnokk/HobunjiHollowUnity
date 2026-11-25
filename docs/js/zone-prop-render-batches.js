@@ -62,7 +62,7 @@
 
   let enabled = true;
   const records = new WeakMap(); // scene -> { holder, batches: Map<key, batch> }
-  const motion = new WeakMap(); // mesh -> { sig: Float64Array, stillSince }
+  const motion = new WeakMap(); // mesh -> last matrix, geometry/attribute references, versions and stillSince.
   const stats = { frames: 0, sources: 0, batches: 0, rebuilds: 0, moving: 0, drawsSaved: 0, fastReuseFrames: 0, fullCollects: 0, partialRepairFrames: 0, repairedGroups: 0, emptyReuseFrames: 0 };
   const rejectReasons = {};
   const defaultBeforeRender = window.THREE?.Object3D?.prototype?.onBeforeRender;
@@ -274,39 +274,42 @@
     return geometryEligible(mesh.geometry, !isCustomShader(material));
   }
 
-  // Per-mesh motion signature: world matrix + geometry identity/versions. Any change restarts the still timer.
-  const SIG = 27;
-  const attributeIds = new WeakMap(); // Detect attribute replacement even when both versions are zero.
-  let nextAttributeId = 0;
-  function attributeId(attribute) {
-    if (!attribute) return 0;
-    let id = attributeIds.get(attribute);
-    if (!id) { id = ++nextAttributeId; attributeIds.set(attribute, id); }
-    return id;
+  // Compare live references/versions and matrices directly. The old path
+  // wrote 27 scratch slots and resolved five WeakMap attribute IDs on every
+  // settled member, only to discover that none of those values changed.
+  function sameMotion(entry, mesh) {
+    const g = mesh.geometry, a = g.attributes;
+    if (entry.geometry !== g || entry.position !== a.position || entry.normal !== a.normal
+      || entry.uv !== a.uv || entry.color !== a.color || entry.index !== g.index
+      || entry.positionVersion !== a.position.version || entry.normalVersion !== a.normal?.version
+      || entry.uvVersion !== a.uv?.version || entry.colorVersion !== a.color?.version
+      || entry.indexVersion !== g.index?.version) return false;
+    const e = mesh.matrixWorld.elements, previous = entry.matrix;
+    for (let i = 0; i < 16; i++) if (previous[i] !== e[i]) return false;
+    return true;
   }
-  function writeSignature(out, mesh) {
-    const e = mesh.matrixWorld.elements, g = mesh.geometry, a = g.attributes;
-    for (let i = 0; i < 16; i++) out[i] = e[i];
-    out[16] = g.id;
-    out[17] = a.position.version;
-    out[18] = a.normal ? a.normal.version : -1;
-    out[19] = a.uv ? a.uv.version : -1;
-    out[20] = a.color ? a.color.version : -1;
-    out[21] = g.index ? g.index.version : -1;
-    out[22] = attributeId(a.position);
-    out[23] = attributeId(a.normal);
-    out[24] = attributeId(a.uv);
-    out[25] = attributeId(a.color);
-    out[26] = attributeId(g.index);
+
+  function captureMotion(entry, mesh, t) {
+    const g = mesh.geometry, a = g.attributes;
+    entry.geometry = g;
+    entry.position = a.position; entry.positionVersion = a.position.version;
+    entry.normal = a.normal; entry.normalVersion = a.normal?.version;
+    entry.uv = a.uv; entry.uvVersion = a.uv?.version;
+    entry.color = a.color; entry.colorVersion = a.color?.version;
+    entry.index = g.index; entry.indexVersion = g.index?.version;
+    entry.matrix.set(mesh.matrixWorld.elements);
+    entry.stillSince = t;
   }
-  const scratchSig = new Float64Array(SIG);
+
   function isStill(mesh, t) {
-    writeSignature(scratchSig, mesh);
     let entry = motion.get(mesh);
-    if (!entry) { entry = { sig: new Float64Array(SIG), stillSince: t }; entry.sig.set(scratchSig); motion.set(mesh, entry); return false; } // First sight: a fresh spawn's world matrix may not be computed yet, so it waits out STILL_MS like a moving prop.
-    let changed = false;
-    for (let i = 0; i < SIG; i++) if (entry.sig[i] !== scratchSig[i]) { changed = true; break; }
-    if (changed) { entry.sig.set(scratchSig); entry.stillSince = t; }
+    if (!entry) {
+      entry = { matrix: new Float64Array(16), stillSince: t }; // Used only by this source's motion/geometry invalidation.
+      motion.set(mesh, entry);
+      captureMotion(entry, mesh, t);
+      return false;
+    }
+    if (!sameMotion(entry, mesh)) captureMotion(entry, mesh, t);
     return t - entry.stillSince >= STILL_MS;
   }
 
