@@ -286,10 +286,14 @@
     api.attach.__socialDanceRuntimeWrapped = true;
   }
 
+  let lastRigSearchPlayer = null, lastRigSearchAt = -Infinity;
   function discoverHandRig() {
     const player = currentPlayerMesh();
     if (!player) return null;
     if (state.handRig && isPlayerHandRig(state.handRig)) return wrapHandRig(state.handRig);
+    const now = performance.now();
+    if (player === lastRigSearchPlayer && now - lastRigSearchAt < 500) return state.handRig; // A missing rig used to cost a full subtree traverse every frame.
+    lastRigSearchPlayer = player; lastRigSearchAt = now;
     let found = null;
     player.traverse?.(node => { if (!found && node?.userData?.proceduralHandRig) found = node.userData.proceduralHandRig; });
     if (found) state.handRig = wrapHandRig(found);
