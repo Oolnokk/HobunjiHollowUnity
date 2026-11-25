@@ -69,7 +69,7 @@ S.setFrameDriver(()=>{
   }
   F.end(loop);
 });
-function tick(t){now=t;const fn=queued;queued=null;assert.equal(typeof fn,'function');fn(t);}
+function tick(t,raf=t){now=t;const fn=queued;queued=null;assert.equal(typeof fn,'function');fn(raf);}
 P.start('forest');
 assert.equal(F.isEnabled(),false,'capture never enables overlay or expensive wrapper profiling');
 tick(0); // Warmup/census frame excluded.
@@ -81,7 +81,8 @@ tick(500);tick(600);
 observers[0].pending.push({name:'self',startTime:30,duration:60}, {name:'outside',startTime:-10,duration:55});
 observers[1].pending.push({startTime:100,duration:80,blockingDuration:30,styleAndLayoutStart:170,scripts:[{sourceURL:'https://example.com/docs/js/animals.js?v=secret',sourceFunctionName:'update',duration:70,forcedStyleAndLayoutDuration:2}]});
 const report=P.finish();
-assert.equal(report.version,2);
+assert.equal(report.version,3);
+assert.equal(report.rafTimestampIntervals.meanMs,100);
 assert.equal(report.browser.longtask.count,1);
 assert.equal(report.browser.longtask.totalMs,60);
 assert.equal(report.browser['long-animation-frame'].worst[0].scripts[0].source,'js/animals.js');
@@ -124,7 +125,9 @@ assert.equal(limited.terminalFrameGap.rafIntervalMs,20000);
 assert.equal(limited.terminalFrameGap.sinceLastSchedulerEndMs,19920);
 assert(observers.every(o=>o.disconnected));
 assert.equal(P.active,false);
+P.start('forest');tick(20910,1000);tick(21010,2000);const skew=P.finish();
+assert.equal(skew.frameIntervals.meanMs,100,'wall-clock callback gap drives FPS');assert.equal(skew.rafTimestampIntervals.meanMs,1000,'RAF skew reported separately');
 const off=S.registerTimingObserver({beginFrame(){throw Error('diagnostic error');}});
-assert.equal(typeof off,'function');tick(21000);off();
+assert.equal(typeof off,'function');tick(21100);off();
 assert.equal(errors.length,2,'driver and observer errors isolated');
 console.log('Pixel Probe performance window: actual scheduler/RenderHooks/PerfProfiler, native matrix/pass attribution, interval statistics, bounds and cleanup passed');
