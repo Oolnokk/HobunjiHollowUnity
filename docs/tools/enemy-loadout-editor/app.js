@@ -1,4 +1,4 @@
-import { EnemyPreview } from './preview.js?v=20261125enemyClassAudit2';
+import { EnemyPreview } from './preview.js?v=20261125enemyClassAudit3';
 const $ = (id) => document.getElementById(id);
 const DRAFT_KEY = 'hobunji.enemyLoadoutWorkshop.v1';
 const state = {
@@ -1307,6 +1307,10 @@ function showRecord(record) {
     fact('Species', a.speciesId),
     fact('Gender', a.gender),
     fact('Health / Stamina', def.maxHealth + ' / ' + def.maxStamina),
+    ...(def.combatClass ? [
+      fact('Combat class / level', def.combatClass + ' / ' + def.combatLevel),
+      fact('Combat perks (' + def.combatPerkPointsSpent + ' points)', Object.entries(def.combatPerks || {}).map(([id, rank]) => (window.PerkSystem?.TREES.combat.find(p => p.id === id)?.name || id) + ' ' + rank).join(' · '), true),
+    ] : []),
     fact('Weapon', def.weaponKey),
     fact('Ranged', def.rangedWeaponKey),
     fact('Outfit', record.roster.equippedCosmetics.join(', '), true),
