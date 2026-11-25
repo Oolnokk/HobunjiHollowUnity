@@ -279,13 +279,17 @@
     try {
       const ctx=hoodCanvas.getContext('2d',{willReadFrequently:true});
       if(!ctx)return empty;
-      const image=ctx.getImageData(0,0,SIZE,SIZE);
-      const plan=planTuftStretch(image.data,roots,options);
+      const pristine=options.pristineHoodImageData; // Immutable readback of the exact current, unwarped hood draw.
+      const source=pristine?.width===SIZE && pristine?.height===SIZE && pristine.data?.length===PIXELS*4
+        ? pristine : ctx.getImageData(0,0,SIZE,SIZE);
+      const plan=planTuftStretch(source.data,roots,options);
       // No write means the exact original readback is still current. A
       // warped canvas must be read again: browser premultiplied-alpha
       // roundtrips can change RGB at translucent edges after putImageData.
       if(!plan.moves.length)return options.retainUnchangedImageData
-        ? {...plan,applied:false,unchangedImageData:image} : {...plan,applied:false};
+        ? {...plan,applied:false,unchangedImageData:source} : {...plan,applied:false};
+      const image=source===pristine ? ctx.createImageData(SIZE,SIZE) : source; // Only actual warps require a private mutable copy.
+      if(image!==source)image.data.set(source.data);
       for(const move of plan.moves)warpForRoot(image,move);
       ctx.putImageData(image,0,0);
       return {...plan,applied:true}; // Only front hood is modified; rear cloth and beard stay untouched.
@@ -634,7 +638,7 @@
       const cachedBeard = options.beardImageData;
       const beard = cachedBeard?.width === SIZE && cachedBeard?.height === SIZE
         && cachedBeard.data?.length === PIXELS*4 ? cachedBeard : beardCtx.getImageData(0,0,SIZE,SIZE); // Optional pristine input, never mutated.
-      const hoodInput = options.unchangedHoodImageData; // Single-use buffer transferred from a no-op stretch.
+      const hoodInput = options.unchangedHoodImageData || options.pristineHoodImageData; // Unchanged stretch buffer or immutable source.
       const hood = hoodInput?.width === SIZE && hoodInput?.height === SIZE
         && hoodInput.data?.length === PIXELS*4 ? hoodInput : hoodCtx.getImageData(0,0,SIZE,SIZE);
       const automatic=options.permissionMode==='auto'
@@ -657,11 +661,13 @@
       // Permission applies ONLY where the transformed front hood actually has
       // pixels. No hood at that coordinate means nothing to erase from beard.
       if (approvedPixels) {
+        const output = hood === options.pristineHoodImageData ? hoodCtx.createImageData(SIZE,SIZE) : hood; // Cached cloth never receives cutout holes.
+        if(output!==hood)output.data.set(hood.data);
         for (let i = 0; i < PIXELS; i++) if (approved[i]) {
           const offset = i * 4;
-          hood.data[offset] = hood.data[offset+1] = hood.data[offset+2] = hood.data[offset+3] = 0;
+          output.data[offset] = output.data[offset+1] = output.data[offset+2] = output.data[offset+3] = 0;
         }
-        hoodCtx.putImageData(hood,0,0);
+        hoodCtx.putImageData(output,0,0);
       }
       let erasedPixels = 0, outlinedPixels = 0;
       if (refusedPixels) {
