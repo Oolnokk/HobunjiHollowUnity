@@ -361,6 +361,8 @@
       const reductionRank = Math.max(0, Number(window.PerkSystem?.rank?.('combat', 'reduceStaminaUse')) || 0);
       const perkMultiplier = 1 - Math.min(0.6, reductionRank * 0.08);
       cost /= alchemyMultiplier * perkMultiplier;
+    } else {
+      cost /= Math.max(0.01, entity?.def?.combatPerkModifiers?.staminaCost ?? 1); // Like the player, reloading reserves the authored threshold, even with Stamina perks.
     }
     return cost;
   }
