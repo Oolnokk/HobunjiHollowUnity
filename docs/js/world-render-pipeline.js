@@ -470,6 +470,8 @@
     for (const scope of scopes) {
       if (!scope.enabled) continue;
       const startedAt = captureTimings ? performance.now() : 0; // Time scope preparation only on an explicitly captured frame.
+      const profiler = window.PerfProfiler; // Reuse the existing opt-in timing owner.
+      const scopePerf = (window.ProbePerformanceCapture?.active || profiler?.isEnabled?.()) ? profiler?.begin('render scope: '+scope.id) : null;
       let failed = false; // Distinguish a failed scope from a no-op.
       try {
         const restore = scope.suspend(ctx);
@@ -481,6 +483,7 @@
         if (scope.errors <= 3) console.warn(`[WorldRenderPipeline] scope ${scope.id} failed`, error);
       } finally {
         if (captureTimings) captureTimings.push({ id: scope.id, ms: Number((performance.now() - startedAt).toFixed(3)), failed });
+        if (scopePerf) profiler.end(scopePerf);
       }
     }
   }
