@@ -1510,6 +1510,7 @@
       if (roll < riderLoss) {
         const rider = riders[Math.floor(rand() * riders.length)] || riders[0];
         rider.slain = true;
+        rider.materializationLifeRevision = (rider.materializationLifeRevision || 0) + 1; // Reject any pending avatar from the deceased resident's lifetime.
         rider.slainDay = gameDay();
         rider.activity = 'slain';
         rider.target = null;
