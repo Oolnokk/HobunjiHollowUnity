@@ -101,10 +101,10 @@
       description: 'Strengthens knockback and lunges, widens a knockback-only gust cone, and rewards attacks that topple their wielder.',
     }),
     stormwake: Object.freeze({
-      id: 'stormwake', displayName: 'Stormwake', type: 'Base', alignment: 'Tothal',
+      id: 'stormwake', displayName: 'Windblown', type: 'Base', alignment: 'Tothal',
       icon: '🌊', scalable: Object.freeze({ amount: true }),
-      hitAffliction: Object.freeze({ id: 'undertowStamina', amount: 6 }),
-      description: 'Each hit adds 6 Undertow Stamina. Ordinary Stamina recovery must clear Undertow point for point before restoring Stamina; Black-Stamina recovery is unaffected. Values scale with Immundanity.',
+      hitAffliction: Object.freeze({ id: 'windblownStamina', amount: 6 }),
+      description: 'Each hit adds 6 Windblown Stamina and changes the world-space wind direction. The wind adds movement up to 50% of authored speed at 100 points; moving with it costs Footing, moving against it slows travel. Naturally fades. Values scale with Immundanity.',
     }),
     stonebind: Object.freeze({
       id: 'stonebind', displayName: 'Leadbound', type: 'Base', alignment: 'Hronal',
