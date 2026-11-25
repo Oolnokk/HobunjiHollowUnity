@@ -19,6 +19,7 @@
   function init(injectedDeps) { deps = injectedDeps; }
 
   let _pixelProbeArmed = false;
+  let _pixelProbePreviousRenderCapture = null; // Reject old captures on a tap before the next frame.
   const _pixelProbeRaycaster = new THREE.Raycaster();
 
   function _pixelProbeAngleDeg(radians) {
@@ -890,6 +891,7 @@
 
   function disarmPixelProbe() {
     _pixelProbeArmed = false;
+    _pixelProbePreviousRenderCapture = null;
     const hint = document.getElementById('pixelProbeHint');
     if (hint) hint.style.display = 'none';
     deps.renderer.domElement.removeEventListener('pointerdown', _pixelProbeHandler, { capture: true });
@@ -898,6 +900,8 @@
   function armPixelProbe() {
     if (_pixelProbeArmed) { disarmPixelProbe(); return; }
     _pixelProbeArmed = true;
+    _pixelProbePreviousRenderCapture = window.WorldRenderPipeline?.lastCapture?.() || null;
+    window.WorldRenderPipeline?.captureFrame?.(); // Existing one-shot capture, not a continuous profiler.
     deps.closeMenu();
     const hint = document.getElementById('pixelProbeHint');
     if (hint) hint.style.display = 'flex';
@@ -912,6 +916,10 @@
 
     const renderer = deps.renderer, camera = deps.camera, playerMesh = deps.playerMesh;
     const currentArea = deps.getCurrentArea();
+    const latestWorldCapture = window.WorldRenderPipeline?.lastCapture?.(); // Snapshot before probe-only re-renders.
+    const worldCaptureAtClick = latestWorldCapture && latestWorldCapture !== _pixelProbePreviousRenderCapture
+      && latestWorldCapture.area === currentArea ? latestWorldCapture : null;
+    _pixelProbePreviousRenderCapture = null;
     const facingAtClick = _pixelProbeCurrentFacingDebug(); // Preserves the state of the visibly bad frame before probe re-renders run.
     const drunkAtClick = window.HobunjiDrunkWalk?.getDebug?.() || null; // Captures the gait contribution at the clicked frame.
     const composerAtClick = window.PlayerBodyTransformComposer?.getDebug?.() || null; // Captures the last normal render's temporary transform choice.
@@ -1230,6 +1238,8 @@
     const projectilePool = window.__rangedDebug?.projectilePool; // Inspect resource reuse without devtools.
     const matrixCensus = window.WorldRenderPipeline?.sceneMatrixCensus?.(activeScene); // Explicit user capture only; no diagnostic traversal during gameplay.
     if (matrixCensus) lines.push(`Scene matrix census (outside render scopes): ${JSON.stringify(matrixCensus)}`);
+    if (worldCaptureAtClick) lines.push(`World frame capture (one-shot, before probe renders): ${JSON.stringify(worldCaptureAtClick)}`);
+    else lines.push('World frame capture: unavailable for this arm/area; allow a gameplay frame after arming Pixel Probe before tapping.');
     const propBatches = window.ZonePropRenderBatches?.snapshot?.(); // Inspect draw savings and alpha-proof backlog.
     if (projectilePool) lines.push(`Projectile pools: ${JSON.stringify(projectilePool)}`);
     if (propBatches) lines.push(`Wilderness prop batches: ${JSON.stringify(propBatches)}`);
