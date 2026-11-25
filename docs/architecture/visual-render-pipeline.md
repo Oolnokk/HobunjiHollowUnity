@@ -415,3 +415,19 @@ appearance. The default remains shell until device and visual validation.
 Recording-renderer fixtures exercise all three modes, resize, disposal,
 error restoration and persistence; real WebGL visual parity and FPS are not
 yet established.
+
+
+## Pixel Probe bounded gameplay timing
+
+Arm Pixel Probe, allow 10–20 seconds of normal gameplay, then tap and copy
+its report. The bounded session ends automatically at 20 seconds or 1,200
+sampled frames; the tap ends it before diagnostic rerenders. A temporary
+late RenderHooks hook times outer native submissions and, where enabled,
+the actual scene-instance matrix walk (preserving the static-wall hook
+and original property descriptor in reverse-order cleanup). It records
+pass/layer/stage and matrix-walk versus matrix-reuse separately. The
+one-shot main-frame static-wall audit now runs after native rendering
+inside the live scopes, not after Pixel Probe rerenders. Render timings
+are inclusive CPU wall time, not GPU timing, and nested native submissions
+are not separately attributed. Explicit between-frame timing brackets
+are reported separately. No continuous scene census is introduced.
