@@ -1837,11 +1837,12 @@
     }
     return gangCfgLoading;
   }
-  function hunterCanMaterialize(hunter, generation) {
+  function hunterCanMaterialize(hunter, generation, lifeRevision = hunter?.materializationLifeRevision || 0) {
     // Both asynchronous boundaries may cross a map transition, radius exit,
     // resident death or camp replacement. Never build/publish a stale resident.
     const camp = hunter?.camp;
     return !!camp && !hunter.slain && !hunter.entity && generation === buildGeneration
+      && (hunter.materializationLifeRevision || 0) === lifeRevision
       && currentArea() === camp.zoneId && camp.hunters.includes(hunter) && sharesPlayerChunk(hunter);
   }
 
@@ -1849,11 +1850,12 @@
     const camp = hunter?.camp;
     if (!hunter || !camp || hunter.building || !hunterCanMaterialize(hunter, generation)) return hunter?.entity || null;
     hunter.building = true;
+    const lifeRevision = hunter.materializationLifeRevision || 0; // Prevent a slain and replaced resident from accepting its old pending rig.
     state.materializationAttempts++;
     try {
       const base = await loadGangConfig();
       if (!base) { state.materializationFailures++; return null; }
-      if (!hunterCanMaterialize(hunter, generation)) { state.materializationCancelledBeforeBuild++; return null; }
+      if (!hunterCanMaterialize(hunter, generation, lifeRevision)) { state.materializationCancelledBeforeBuild++; return null; }
       const weapon = weaponDef(hunter.weaponShape);
       window.HobunjiRangedWeaponArchetypes?.patchGeneratedDefinitions?.({ npcOnly: true, keys: [weapon.rangedWeaponKey] }); // Ensure only this hunter's ranged definition.
       const avenger = isAvenger(hunter);
@@ -1890,7 +1892,7 @@
         },
       });
       if (!entity) { state.materializationFailures++; return null; }
-      if (!hunterCanMaterialize(hunter, generation)) {
+      if (!hunterCanMaterialize(hunter, generation, lifeRevision)) {
         state.materializationCancelledAfterBuild++;
         window.BanditCombat.discardEntity?.(entity); // Drop a completed build whose data-only owner is no longer eligible.
         return null;
@@ -2118,6 +2120,7 @@
     if (!hunter || hunter.slain || (hunter.entity && hunter.entity.health > 0 && detailedEntityActive(hunter))) return false;
     const party = huntingPartyFor(hunter); // A party below its minimum size disbands immediately when a member dies, even during coarse offscreen simulation.
     hunter.slain = true;
+    hunter.materializationLifeRevision = (hunter.materializationLifeRevision || 0) + 1; // Invalidate an in-flight avatar for the former resident, even after replacement.
     hunter.slainDay = gameDay();
     hunter.activity = 'slain';
     hunter.target = null;
