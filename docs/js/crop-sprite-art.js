@@ -43,6 +43,11 @@
   const pendingMeshes = new Map(); // Used to retain placeholder meshes while their shared crop texture is loading.
   const activeBillboards = new Set(); // Used to re-face converted crop cluster anchors toward the current camera every render.
   const CROP_DISCOVERY_SCAN_INTERVAL_MS = 250; // Used to discover newly planted placeholders promptly without tying full-scene traversal frequency to frame rate or extra render passes.
+  const registeredPlaceholders = new Set(); // Newly created modern crop anchors, consumed before the next world draw.
+  let legacyDiscoveryForced = false; // Compatibility/debug escape hatch for older custom crop builders.
+  let registeredCropCount = 0; // Mobile diagnostics count explicit crop registrations.
+  const hasRegisteredSources = () => window.VegetationCropRendering?.registersCropSpritePlaceholders === true
+    && window.NpcFarmPlots?.registersCropSpritePlaceholders === true; // Both producers must be current before stopping periodic legacy scans.
   const sceneScanDeadlines = new WeakMap(); // Used to throttle each rendered scene independently when UI/depth replay passes render more than one scene.
   let discoveryScanCount = 0; // Used by the mobile-readable crop diagnostics to confirm crop-free scenes are no longer traversed every render.
   let lastDiscoveryObjectCount = 0; // Used to expose the most recent scan's scene size when investigating an unexpectedly expensive wilderness area.
@@ -276,6 +281,25 @@
     meshes.add(mesh);
   }
 
+  function registerPlaceholder(mesh) {
+    const cropKey = mesh?.userData?.hobunjiCropBaseKey; // Authoritative species identity from the farm/NPC crop builder.
+    if (!mesh?.isMesh || mesh.userData.hobunjiCropSpriteKey || CROP_WORLD_ART[cropKey]?.worldMode !== 'billboard') return false;
+    if (!registeredPlaceholders.has(mesh)) registeredCropCount++;
+    registeredPlaceholders.add(mesh);
+    return true;
+  }
+
+  function processRegisteredPlaceholders() {
+    for (const mesh of registeredPlaceholders) {
+      registeredPlaceholders.delete(mesh);
+      // The producer queues on creation/attachment, and finishes its transform
+      // before this frame hook. A harvested or replaced crop must not convert.
+      if (!mesh.parent || mesh.userData.hobunjiCropSpriteKey) continue;
+      const cropKey = mesh.userData.hobunjiCropBaseKey;
+      if (CROP_WORLD_ART[cropKey]?.worldMode === 'billboard') queueBillboard(mesh, cropKey);
+    }
+  }
+
   function discoverPlaceholderCrops(scene) {
     let inspected = 0; // Counts visited scene nodes for the debug snapshot without requiring a second traversal.
     scene?.traverse?.(object => {
@@ -295,7 +319,12 @@
   function updateBillboards(scene, camera) {
     const now = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now(); // Used to make discovery cadence independent of FPS and renderer pass count.
     const nextScanAt = scene && sceneScanDeadlines.get(scene);
-    if (scene && (!Number.isFinite(nextScanAt) || now >= nextScanAt)) {
+    // Initial scan adopts any pre-existing anchors (including legacy saves or
+    // module load-order races). Current producers then register new anchors;
+    // older/standalone integrations retain their original 250ms discovery.
+    const periodicDiscovery = legacyDiscoveryForced || !hasRegisteredSources();
+    processRegisteredPlaceholders();
+    if (scene && (!Number.isFinite(nextScanAt) || (periodicDiscovery && now >= nextScanAt))) {
       sceneScanDeadlines.set(scene, now + CROP_DISCOVERY_SCAN_INTERVAL_MS);
       discoverPlaceholderCrops(scene);
     }
@@ -351,6 +380,8 @@
   window.HobunjiCropSpriteArt = {
     getArt: cropKey => CROP_ART[cropKey] ? { ...CROP_ART[cropKey] } : null,
     applyItemArt,
+    registerPlaceholder,
+    setLegacyDiscoveryEnabled(value) { legacyDiscoveryForced = value === true; return legacyDiscoveryForced; },
     getDebug: () => ({
       ...lastItemSync,
       activeBillboards: activeBillboards.size,
@@ -362,9 +393,12 @@
       clusterPlantScale: CLUSTER_PLANT_SCALE,
       discoveryScanIntervalMs: CROP_DISCOVERY_SCAN_INTERVAL_MS,
       discoveryScanCount,
+      registeredCropCount,
+      pendingRegisteredCrops: registeredPlaceholders.size,
+      periodicDiscovery: legacyDiscoveryForced || !hasRegisteredSources(),
       lastDiscoveryObjectCount,
       lastDiscoveryScanAt: Math.round(lastDiscoveryScanAt),
-      lastChange: 'Crop placeholder discovery is time-throttled per scene, including when no crop billboards exist.',
+      lastChange: 'Modern farm and NPC crop builders register new anchors; legacy scenes retain time-throttled discovery.',
     }),
   };
 })();
