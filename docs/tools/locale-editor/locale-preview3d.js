@@ -184,8 +184,8 @@
     await loadScript('../../js/furniture-tile-span.js?v=20261113span1', () => !!window.FurnitureTileSpan?.apply);
     await loadScript('../../js/authored-furniture-runtime.js?v=20261119visualauth1', () => !!window.AuthoredFurniture?.buildGroup);
     await loadScript('../../js/color-fill.js?v=20261117h93b0e83', () => !!window.ColorFill?.shadeFillPixels);
-    await loadScript('../../js/beard-hood-cutout.js?v=20261125sparseMask1', () => !!window.PortraitBeardHoodCutout);
-    await loadScript('../../js/portrait-utils.js?v=20261124he37c11c', () => !!window.getShadeFillCanvas && !!window.parseHexColor);
+    await loadScript('../../js/beard-hood-cutout.js?v=20261125pristineCloth1', () => !!window.PortraitBeardHoodCutout);
+    await loadScript('../../js/portrait-utils.js?v=20261125pristineCloth1', () => !!window.getShadeFillCanvas && !!window.parseHexColor);
     await loadScript('../../js/terrain-preview.js', () => !!window.TerrainPreview?.buildMergedZoneGrid);
     await loadScript('../../js/den-cliff-placement.js', () => !!window.DenCliffPlacement?.findSites); // Den-entrance templates fit dens into cliffs inside the generator.
     await loadScript('../../js/wilderness-map-generator.js', () => !!window.WildernessMapGenerator?.generateZoneWorkspace);
