@@ -329,4 +329,13 @@ step()();
 assert.equal(proxies.children.length,2,'settled sources rediscovered after the usual interval');
 assert(proxies.children.includes(rightProxy),'timed discovery also reuses unaffected geometry');
 
+// Adding a child to a previously batchable source must not hide that child.
+clock+=100;
+const independent=new THREE.Mesh(panel,canvas);
+independent.onBeforeRender=()=>{}; // Independently drawn, never eligible for a proxy.
+left.children[0].add(independent);
+const childUndo=step();
+assert(left.children[0].visible && independent.visible,'source with an independently drawn child leaves the batch immediately');
+assert(left.children.slice(1).every(m=>!m.visible),'other leaf sources remain batched');
+childUndo();
 console.log(`ok zone prop render batches (${JSON.stringify(Batches.snapshot())})`);
