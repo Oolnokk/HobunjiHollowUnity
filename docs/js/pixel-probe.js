@@ -1233,6 +1233,8 @@
     const propBatches = window.ZonePropRenderBatches?.snapshot?.(); // Inspect draw savings and alpha-proof backlog.
     if (projectilePool) lines.push(`Projectile pools: ${JSON.stringify(projectilePool)}`);
     if (propBatches) lines.push(`Wilderness prop batches: ${JSON.stringify(propBatches)}`);
+    const treeMatrices = window.FoliageGenerator?.identityTreeMatrixStats?.(); // Counts actual matrix shortcut executions, not just visible draws.
+    if (treeMatrices) lines.push(`Static tree matrices: ${JSON.stringify(treeMatrices)}`);
     const treeBatches = window.WildernessTreeInstancer?.snapshot?.(); // On-demand mobile A/B: spatial cells, key hits, uploads and retired buffers.
     if (treeBatches) lines.push(`Wilderness tree instances: ${JSON.stringify(treeBatches)}`);
     const instanceRegistry = window.InstancedMeshBounds?.snapshot?.(); // On-demand stats for active-map index and fallback behavior.
