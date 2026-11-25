@@ -150,9 +150,9 @@
       const visitBricks = callback => bounds.forEachTrackedBrickInScene
         ? bounds.forEachTrackedBrickInScene(scene, callback)
         : (bounds.forEachTrackedBrick || bounds.forEachTracked)(callback); // Older preview pages retain the generic fallback.
-      visitBricks(mesh => {
+      visitBricks((mesh, visible) => {
         candidates++;
-        if (mesh.userData?.hobunjiBrickLod !== true || !(mesh.count > 0) || !drawnIn(mesh, scene)) return;
+        if (mesh.userData?.hobunjiBrickLod !== true || !(mesh.count > 0) || !(visible ?? drawnIn(mesh, scene))) return;
         meshes++;
         const world = bounds.worldSphere(mesh, sphere);
         if (!world) return;
