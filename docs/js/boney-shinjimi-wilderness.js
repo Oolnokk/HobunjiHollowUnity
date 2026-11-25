@@ -73,6 +73,7 @@
   function homeCenter() { return state.home ? {x:state.home.c+1.5,z:state.home.r+1.5} : null; }
   function moonCycle(day) { return Math.floor((day-1)/28); }
   function lunarDay(day) { return ((day-1)%28+28)%28+1; }
+  function latestFullMoonCycle(day) { return day>=14 ? moonCycle(day-13) : -1; } // Includes missed moons, even before the following month's 14th.
   function numberHash(seed) {
     let h=2166136261; // Deterministic FNV-1a keeps a chosen monthly location stable across reloads.
     for(let i=0;i<seed.length;i++) h=Math.imul(h^seed.charCodeAt(i),16777619);
@@ -120,10 +121,8 @@
     return null; // Never replace an occupied generated tile blindly.
   }
   function newMoonEncounter() {
-    const day=currentDay();
-    if(day<1||lunarDay(day)!==14)return;
-    const cycle=moonCycle(day);
-    if(cycle===state.completedCycle)return; // One reward per moon even if the player time-skips repeatedly.
+    const cycle=latestFullMoonCycle(currentDay()); // Recover the latest elapsed full moon instead of requiring an exact-date tick.
+    if(cycle<0||cycle<=state.completedCycle)return; // Never replay a claimed moon, including when time is rewound.
     if(state.phase!=='waiting'&&state.phase!=='complete')return; // Unfinished encounter stays until resolved, including across moons.
     const available=ZONES.filter(zoneEligible);
     if(!available.length)return;
@@ -770,7 +769,9 @@
     bumpEvent('Restored moonlit encounter from existing world save');
   }
   function debugSnapshot() {
+    const day=currentDay(); // Calendar diagnostics distinguish a missed moon from pending terrain placement.
     return {phase:state.phase,cycle:state.cycle,completedCycle:state.completedCycle,
+      day,lunarDay:day>=1?lunarDay(day):null,latestFullMoonCycle:latestFullMoonCycle(day),
       zone:state.zone,home:state.home,target:state.target,activity:state.activity,
       lastSight:state.lastSight,lastEvent:state.lastEvent,houseVisible:!!houseMesh?.visible,
       collision:!!houseUnregister,walker:!!walker,catches:state.catches,
@@ -792,6 +793,7 @@
           summary:spoilersRevealed?'Location revealed':'Location hidden',
           rows:spoilersRevealed?[
             ['Encounter',state.phase],
+            ['Lunar day',currentDay()>=1?lunarDay(currentDay()):'Calendar unavailable'],
             ['Zone',zoneLabel],
             ['Sector',sector || (state.phase==='planned'?'Pending house placement':'Not available')],
           ]:[],
@@ -799,7 +801,7 @@
             ? (state.phase==='planned'
               ? 'The zone is selected; its nine-sector location is not known until the terrain supports a 3×3 house.'
               : !state.zone
-                ? 'No current house. A new zone is selected on lunar day 14 when the next encounter is eligible.'
+                ? 'No current house. A new zone is selected from the latest unclaimed full moon (lunar day 14), including missed dates.'
                 : 'Sector is the house centre within a 3×3 compass grid of the whole wilderness zone.')
             : 'Press Show spoilers to reveal the house’s current zone and sector.',
           actions:[{id:'toggle',label:spoilersRevealed?'🙈 Hide spoilers':'👁 Show spoilers',active:spoilersRevealed}],
