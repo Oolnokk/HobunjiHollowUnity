@@ -50,6 +50,11 @@ function group(s = scene, n = 12, enroll = true) {
 }
 assert.equal(W.staticMatrixSnapshot().enabled,false,'experiment off by default');
 const wall = Array.from({length:63},()=>group());
+let actualLeafCompositions = 0; // Count native matrix arithmetic, not just the optimization's own counters.
+for (const root of wall) for (const part of root.children) {
+  const compose = part.matrix.compose;
+  part.matrix.compose = function (...args) { actualLeafCompositions++; return compose.apply(this,args); };
+}
 const first = wall[0], leaf = first.children[0];
 first.visible=false;
 draw();
@@ -58,7 +63,10 @@ W.setStaticMatrixEnabled(true);
 draw();
 const warm=W.staticMatrixSnapshot();
 assert.equal(warm.refreshes,63);
+assert.equal(actualLeafCompositions,2*63*12,'disabled and warm draws run native local composition');
+actualLeafCompositions=0;
 draw();
+assert.equal(actualLeafCompositions,0,'steady cached traversal never calls native leaf composition');
 const hot=W.staticMatrixSnapshot();
 assert.equal(hot.skippedBranches-warm.skippedBranches,63);
 assert.equal(hot.skippedLeaves-warm.skippedLeaves,63*12,'one native leaf call avoided per enrolled mesh, including hidden chunks');
@@ -93,6 +101,11 @@ assert.equal(W.invalidateStaticMatrixBranch(leaf),true);
 leaf.position.x=2;
 draw(); draw();
 assert.equal(leaf.matrixWorld.elements[12],2);
+const delayed=wall[6].children[0];
+assert.equal(W.invalidateStaticMatrixBranch(delayed),true);
+draw(); draw(); // The newly introduced writer has not made a nonidentity edit yet.
+delayed.position.z=4; draw();
+assert.equal(delayed.matrixWorld.elements[14],4,'writer registration retires even when its first edit is identity');
 // A nested object addition goes through the real shared topology observer.
 const other=wall[1], part=other.children[0], child=new THREE.Object3D();
 child.position.z=7; part.add(child); draw(); draw();
@@ -127,4 +140,25 @@ const unowned=group(scene,1,false); unowned.userData.denseForestWall=false;
 assert.equal(W.enrollStaticMatrixBranch(unowned),false);
 const nested=group(scene,1,false); nested.children[0].add(new THREE.Group());
 assert.equal(W.enrollStaticMatrixBranch(nested),false);
-console.log('PASS static dense wall matrices: real r128 scene/hook/topology, 756 leaf calls skipped, transform and lifecycle fallback, A/B and failure cleanup');
+// Actual producer enrollment, not merely the fixture helper.
+const border = fs.readFileSync('docs/js/border-terrain.js','utf8');
+const begin = border.indexOf('  function forEachDrawnTreeMesh(');
+const end = border.indexOf('  function installGeneratorPatch()',begin);
+assert.ok(begin>=0 && end>begin);
+const build = new Function('THREE','window',
+  'const FOREST_CHUNK_WIDTH=10,FOREST_CHUNK_DEPTH=6;'+border.slice(begin,end)+';return instanceDenseShadewoodForest;')(THREE,window);
+window.FoliageGenerator = { buildShadewoodMesh() {
+  const tree = new THREE.Group(); tree.add(new THREE.Mesh(geometry,material)); return tree;
+}};
+const builtScene = new THREE.Scene();
+const beforeBuild = W.staticMatrixSnapshot().enrolled;
+const built = build(builtScene,[{x:1,y:0,z:-2,yaw:0,scale:1,seedA:1,seedB:2},{x:14,y:0,z:-2,yaw:0,scale:1,seedA:3,seedB:4}]);
+assert.equal(built.chunks,2);
+assert.equal(W.staticMatrixSnapshot().enrolled,beforeBuild+2,'real BorderTerrain builder enrolls its own roots');
+draw(builtScene); prev=W.staticMatrixSnapshot(); draw(builtScene);
+assert.equal(W.staticMatrixSnapshot().skippedLeaves,prev.skippedLeaves+2);
+const movedNative = THREE.Group.prototype.updateMatrixWorld; let laterHooks=0;
+THREE.Group.prototype.updateMatrixWorld=function(force){laterHooks++;return movedNative.call(this,force);};
+try { draw(builtScene); assert.equal(laterHooks,2,'later native group hook is not bypassed'); }
+finally { delete THREE.Group.prototype.updateMatrixWorld; }
+console.log('PASS static dense wall matrices: real r128 scene/hook/topology and producer, 756 actual leaf compositions skipped, transform and lifecycle fallback, A/B and failure cleanup');
