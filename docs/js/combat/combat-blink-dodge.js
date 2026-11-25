@@ -914,10 +914,14 @@
       const zipDistancePx = ZIP_DISTANCE_PX * (1 + (stats.zipDistanceMul || 0)); // Used as the one-hop displacement magnitude.
       const startX = deps.player.x; // Used with startY to derive the actual collision-clamped hop displacement for the frozen afterimage burst.
       const startY = deps.player.y; // Used with startX to derive the actual collision-clamped hop displacement for the frozen afterimage burst.
-      const desiredX = deps.player.x + input.x * zipDistancePx; // Used by the existing axis-separated occupancy test.
-      const desiredY = deps.player.y + input.y * zipDistancePx; // Used by the existing axis-separated occupancy test.
+      const rs = window.ResourceSystem; // The hop's input already carries Demented steering; compose its dodge distance exactly once.
+      const mobility = rs?.movementMultiplier?.(deps.player, 'dodge') ?? 1;
+      const motion = rs?.composeMovement?.(deps.player, input.x * zipDistancePx * mobility, input.y * zipDistancePx * mobility, { mode: 'dodge', scalarApplied: true, rotationApplied: true, reference: zipDistancePx * mobility, dt: .2 }); // Instant hop uses a nominal 0.2-second exertion for Footing, independent of frame time.
+      const desiredX = deps.player.x + (motion?.x ?? input.x * zipDistancePx * mobility);
+      const desiredY = deps.player.y + (motion?.y ?? input.y * zipDistancePx * mobility);
       if (deps.canPlayerOccupy(desiredX, deps.player.y)) deps.player.x = desiredX;
       if (deps.canPlayerOccupy(deps.player.x, desiredY)) deps.player.y = desiredY;
+      if (motion?.wind) rs.commitMovement?.(deps.player, motion, Math.min(1, Math.hypot(deps.player.x - startX, deps.player.y - startY) / Math.max(.00001, Math.hypot(motion.x, motion.y))));
       const tilePx = Math.max(1, Number(deps.TILE) || 64); // Converts the player's pixel-space hop displacement into the Three.js world-space X/Z used by the portrait mesh.
       spawnHopAfterimages((deps.player.x - startX) / tilePx, (deps.player.y - startY) / tilePx);
       const travel = afterimageTravelByActor.get(deps.player); // Exclude the instantaneous hop from a concurrent ordinary roll/lunge's distance.
