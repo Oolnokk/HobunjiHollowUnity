@@ -84,6 +84,9 @@
 
   // Created by init(). Names kept from game.js so its old comments still match.
   let shellOutlineMat = null;
+  let generatedOutlineMode = 'shell'; // Experimental generated-outline selector; master Outlines still controls the composite.
+  let shellMaskMaterial = null; // Unexpanded, front-facing geometry for the selective screen-space mode.
+  let shellMaskRT = null; // Allocated only in screen-space mode, reused between frames.
   let targetOutlineGreenMat = null;
   let targetOutlineRedMat = null;
   let _furnitureIdMat = null;
@@ -236,6 +239,7 @@
 
   function createOutlineMaterials() {
     shellOutlineMat = createShellOutlineMaterial(THREE);
+    shellMaskMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.FrontSide, skinning: true, morphTargets: true });
 
     // Shared vertex shader used for coloured target outlines (supports instancing)
     const _targetOutlineVert = `
@@ -401,6 +405,7 @@
     if (!_mainRT) return;
     const seamOn = !!deps.settings.seamOutlines() && window.OutlineRenderPerformance?.nonShellOutlinesSuppressed !== true; // Retired seam output cannot justify a target switch, clear or full-size ID buffer.
     _mainRT.setSize(pixelW, pixelH);
+    if (shellMaskRT) shellMaskRT.setSize(pixelW, pixelH);
     // The material-ID buffer stays 1x1 while seam outlines are off.
     _edgeIdRT.setSize(seamOn ? pixelW : 1, seamOn ? pixelH : 1);
     _postMat.uniforms.uTexel.value.set(1 / pixelW, 1 / pixelH);
@@ -569,7 +574,7 @@
       }
       pass('idle');
       stats.frames++;
-      stats.lastFrame = { area, outlines, seamOutlines: seamOn, targetHighlights: targetMeshes.length, nativeRenders, scopes: scopes.filter(s => s.enabled).length };
+      stats.lastFrame = { area, outlines, generatedOutlineMode: outlines ? generatedOutlineMode : 'master-off', seamOutlines: seamOn, targetHighlights: targetMeshes.length, nativeRenders, scopes: scopes.filter(s => s.enabled).length };
     }
     PerfProfiler?.end(renderPassPerf);
     window.MobileRenderBudget?.sample(now, !deps.isPaused() && !window.PixelProbe?.armed);
@@ -584,6 +589,42 @@
     renderer.render(scene, camera);
     camera.layers.enableAll();
     scene.overrideMaterial = null;
+  }
+
+  function setGeneratedOutlineMode(mode) {
+    if (!['shell', 'screen', 'none'].includes(mode)) return generatedOutlineMode;
+    generatedOutlineMode = mode;
+    if (mode !== 'screen' && shellMaskRT) { shellMaskRT.dispose(); shellMaskRT = null; }
+    return generatedOutlineMode;
+  }
+
+  function renderScreenOutlineMask(renderer, camera, scene) {
+    // Same resolution/precision as world depth. Only shell-tagged curved surfaces
+    // are submitted, without expansion or the shell X-ray depth replay.
+    if (!shellMaskRT) shellMaskRT = makeSceneRT(_mainRT.width, _mainRT.height, true);
+    const oldTarget = renderer.getRenderTarget();
+    const oldMask = camera.layers.mask;
+    const oldMaterial = scene.overrideMaterial;
+    const oldBackground = scene.background;
+    const oldColorClear = renderer.autoClearColor, oldDepthClear = renderer.autoClearDepth;
+    const oldAutoClear = renderer.autoClear;
+    try {
+      renderer.setRenderTarget(shellMaskRT);
+      renderer.autoClear = false;
+      scene.background = null;
+      renderer.clear(true, true, true);
+      scene.overrideMaterial = shellMaskMaterial;
+      camera.layers.set(SHELL_LAYER);
+      renderer.render(scene, camera);
+    } finally {
+      scene.overrideMaterial = oldMaterial;
+      scene.background = oldBackground;
+      camera.layers.mask = oldMask;
+      renderer.setRenderTarget(oldTarget);
+      renderer.autoClear = oldAutoClear;
+      renderer.autoClearColor = oldColorClear;
+      renderer.autoClearDepth = oldDepthClear;
+    }
   }
 
   function renderOutlinedPasses(renderer, camera, activeScene, seamOn, area) {
@@ -610,15 +651,20 @@
     window.ActorRenderOcclusion?.probeAfterBase?.(); // Use existing world + PNG depth; no extra world redraw.
     PerfProfiler?.end(actorProbePerf);
 
-    // Selective shell outline pass (SHELL_OUTLINE objects only)
-    pass('shell');
-    const rpShellPerf = PerfProfiler?.begin('render: shell outline');
-    activeScene.overrideMaterial = shellOutlineMat;
-    camera.layers.set(SHELL_LAYER);
-    renderer.render(activeScene, camera);
-    camera.layers.enableAll();
-    activeScene.overrideMaterial = null;
-    PerfProfiler?.end(rpShellPerf);
+    if (generatedOutlineMode === 'shell') {
+      // Selective shell outline pass (SHELL_OUTLINE objects only).
+      pass('shell');
+      const rpShellPerf = PerfProfiler?.begin('render: shell outline');
+      activeScene.overrideMaterial = shellOutlineMat;
+      camera.layers.set(SHELL_LAYER);
+      try { renderer.render(activeScene, camera); }
+      finally { camera.layers.enableAll(); activeScene.overrideMaterial = null; PerfProfiler?.end(rpShellPerf); }
+    } else if (generatedOutlineMode === 'screen') {
+      pass('screenOutlineMask');
+      const maskPerf = PerfProfiler?.begin('render: screen outline mask');
+      try { renderScreenOutlineMask(renderer, camera, activeScene); }
+      finally { PerfProfiler?.end(maskPerf); }
+    }
 
     if (targetMeshes.length > 0) {
       pass('target');
@@ -669,6 +715,15 @@
     _postMat.uniforms.uCameraNear.value = camera.near;
     _postMat.uniforms.uCameraFar.value = camera.far;
     _postMat.uniforms.uSeamOutlinesOn.value = seamOn ? 1 : 0;
+    _postMat.uniforms.uDepthOutlinesOn.value = generatedOutlineMode === 'screen' && shellMaskRT ? 1 : 0;
+    _postMat.uniforms.tShellMaskDepth.value = shellMaskRT?.depthTexture || _mainRT.depthTexture;
+    _postMat.uniforms.uOrthographic.value = camera.isOrthographicCamera ? 1 : 0;
+    const fog = activeScene.fog; // Fade the generated ink towards the same scene fog as the shell shader.
+    _postMat.uniforms.uDepthFogMode.value = fog?.isFogExp2 ? 2 : fog?.isFog ? 1 : 0;
+    if (fog?.color) _postMat.uniforms.uDepthFogColor.value.copy(fog.color);
+    _postMat.uniforms.uDepthFogNear.value = fog?.near ?? 0;
+    _postMat.uniforms.uDepthFogFar.value = fog?.far ?? 1;
+    _postMat.uniforms.uDepthFogDensity.value = fog?.density ?? 0;
     renderer.render(_postScene, _postCamera);
     PerfProfiler?.end(rpCompositePerf);
     // Perception Mode silhouettes go on top of the finished composite so the
@@ -757,6 +812,8 @@
     get materials() { return { shell: shellOutlineMat, targetAllowed: targetOutlineGreenMat, targetBlocked: targetOutlineRedMat, seamId: _furnitureIdMat, composite: _postMat }; },
     get targets() { return { main: _mainRT, seamId: _edgeIdRT }; },
     get camera() { return deps?.camera || null; }, // The gameplay camera every world pass uses (diagnostics).
+    getGeneratedOutlineMode: () => generatedOutlineMode,
+    setGeneratedOutlineMode,
     getOutlineRenderingConfig: () => JSON.parse(JSON.stringify(outlineRenderingConfig)),
     applyOutlineRenderingConfig,
     currentPass: () => currentPass,
@@ -764,6 +821,7 @@
     lastCapture: () => capture,
     snapshot: () => ({
       initialized: !!deps,
+      generatedOutlineMode, // Mobile diagnostics and A/B mode verification.
       frames: stats.frames,
       lastFrame: stats.lastFrame ? { ...stats.lastFrame } : null,
       scopes: scopes.map(scope => ({ id: scope.id, owner: scope.owner, order: scope.order, enabled: scope.enabled, errors: scope.errors, lastError: scope.lastError })),
