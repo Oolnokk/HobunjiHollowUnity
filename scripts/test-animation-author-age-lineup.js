@@ -84,11 +84,16 @@ assert.equal(applied.at(-1).values.head, 1.1 * .5, 'baby head multiplier compose
 assert.equal(visuals.get('left_hand_visual').scale.x, 2 * 1.2, 'baby hands match the family GLB scale');
 assert.equal(visuals.get('right_foot').scale.y, 3 * 1.2, 'baby feet match the family GLB scale');
 
-api.applyAgeModifiers('body', '36');
+api.applyAgeModifiers('width', '36');
+api.applyAgeModifiers('height', '44');
 api.applyAgeModifiers('hand', '150');
-assert.equal(applied.at(-1).values.x, 1.2 * .36, 'global body edit updates the entire preview');
+assert.equal(applied.at(-1).values.x, 1.2 * .36, 'global width edit is independent of height');
+assert.equal(applied.at(-1).values.y, 1.5 * .44, 'global height edit is independent of width');
+assert.equal(applied.at(-1).values.legLength, 1.5 * .44, 'leg length follows stage Height instead of Width');
 assert.equal(visuals.get('left_hand_visual').scale.x, 3, 'global hand edit scales from the original, not the previous stage');
-assert.equal(JSON.parse(stored.get('hobunjiFullCharacterScale.ageModes.v1')).modifiers.baby.body, .36,
+assert.equal(JSON.parse(stored.get('hobunjiFullCharacterScale.ageModes.v1')).modifiers.baby.width, .36,
+  'baby width persists separately');
+assert.equal(JSON.parse(stored.get('hobunjiFullCharacterScale.ageModes.v1')).modifiers.baby.height, .44,
   'baby overrides persist in a dedicated key, not the species rig profile');
 assert.equal(entry.profile.anatomy.rigScaleX, 1.2, 'age modifiers never mutate canonical species anatomy');
 
@@ -101,6 +106,17 @@ assert.equal(applied.at(-1).values.head, 1.1 * .72, 'child head is the standard 
 api.setAgeMode('adult');
 assert.equal(applied.at(-1).values.x, 1.2, 'returning to adult restores canonical authored width');
 assert.equal(visuals.get('right_foot').scale.z, 4, 'returning to adult restores original foot geometry size');
+assert(editorSource.includes('maaFullScaleAgeRange${name}'), 'rendered stage UI retains the dynamic age-control IDs');
+assert(editorSource.includes("['Width','width',10,200],['Height','height',10,200]"), 'independent Width and Height sliders exist for every age stage');
+// Old v1 body-only autosaves must hydrate both new axes, not erase established presets.
+stored.set('hobunjiFullCharacterScale.ageModes.v1', JSON.stringify({ schema: 'hobunji.character-age-rig-modifiers.v1', modifiers: { baby: { body: .37, head: .55, hand: 1.6, foot: 1.1 } } }));
+api.loadAgeModifiers();
+assert.equal(api.ageValues().width, 1, 'adult remains unmodified after legacy migration');
+api.setAgeMode('baby');
+assert.equal(api.ageValues().width, .37, 'legacy baby body initializes width');
+assert.equal(api.ageValues().height, .37, 'legacy baby body initializes height');
+assert.equal(api.ageValues().head, .55, 'legacy head authoring survives migration');
+api.setAgeMode('adult');
 api.setAgeMode('nonexistent');
 assert.equal(api.ageMode, 'adult', 'unexpected saved/UI stage names are rejected');
 console.log('Animation Author age-wide lineup, dropdown selection, runtime sharing, and autosave checks passed.');
