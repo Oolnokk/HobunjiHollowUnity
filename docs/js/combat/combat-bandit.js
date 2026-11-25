@@ -1126,12 +1126,22 @@
   function applyEnemyCombatBuild(def, rank, tier, mineEnemy, opts = {}, authoredRule = null) {
     const perks = window.PerkSystem; // Live player tree also powers ordinary humanoid combat progression.
     const extra = opts.extra || {}; // Bespoke boss/caster choreography retains its authored tuning.
-    if (!perks?.buildEnemyCombatProfile || opts.disableCombatClass || extra.lichType || opts.rosterOverride?.lichType || extra.maskboundTroop === 'headtaker' || extra.mineWyrmWitchType || !def.banditAbilityLoadout?.tap1) return def;
+    if (!perks?.buildEnemyCombatProfile || def.combatPerkModifiers || opts.disableCombatClass || extra.combatTutorialTarget || extra.lichType || opts.rosterOverride?.lichType || extra.maskboundTroop === 'headtaker' || extra.mineWyrmWitchType || !def.banditAbilityLoadout?.tap1) return def;
     const combatClass = perks.rollEnemyCombatClass(deps.rnd); // Separate from enemyClass, which identifies faction/species elsewhere.
     const level = perks.enemyCombatLevel(rank, tier, mineEnemy);
     const loadout = { ...def.banditAbilityLoadout }; // Per-entity copy; never change a shared authored attack object.
     if (loadout.tap2 && !authoredRule?.attacks?.tap2 && !Object.hasOwn(opts.defOverride?.banditAbilityLoadout || {}, 'tap2')) {
       loadout.tap2 = perks.enemyQuickAttack(combatClass, deps.rnd) || loadout.tap2;
+    }
+    // Keep the rank's held-ability count, but a one-hold fighter can specialize
+    // in a counter rather than a charge. Fixed Workshop and caller slots win.
+    const fixedSlots = opts.defOverride?.banditAbilityLoadout || {}; // Caller-authored abilities must never be overwritten.
+    if (loadout.hold1 === 'chargedBreaker' && !loadout.hold2
+        && !authoredRule?.attacks?.hold1 && !authoredRule?.attacks?.hold2
+        && !Object.hasOwn(fixedSlots, 'hold1') && !Object.hasOwn(fixedSlots, 'hold2')
+        && perks.enemyHeldAttack(combatClass, deps.rnd) === 'counterShield') {
+      loadout.hold1 = null;
+      loadout.hold2 = 'counterShield';
     }
     def.banditAbilityLoadout = loadout;
     const profile = perks.buildEnemyCombatProfile(combatClass, level, loadout, def.attackTag); // Final attack slots determine which perks can actually be used.
