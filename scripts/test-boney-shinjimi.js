@@ -225,6 +225,28 @@ assert.equal(C.debugSnapshot().cycle,3,'old saves select only the latest elapsed
 C.restore({version:persisted.version,phase:'complete',cycle:3,completedCycle:3});
 liveDay.day=42;C.update(.016);
 assert.equal(C.debugSnapshot().zone,null,'rewinding time cannot replay a claimed cycle');
+// Civil dates roll at midnight; the simulation's raw day rolls at 06:00.
+C.restore(undefined);
+moonWindow.CalendarSystem={civilDayForRawDay:(raw,time01)=>raw+(time01>=.75?1:0)}; // Inject the shared calendar seam, with midnight at 18 hours after 06:00.
+liveDay.day=13;liveDay.time01=.74;C.update(.016);
+assert.equal(C.debugSnapshot().zone,null,'before civil midnight the moon is not eligible');
+liveDay.time01=.75;C.update(.016);
+assert.equal(C.debugSnapshot().rawDay,13);
+assert.equal(C.debugSnapshot().lunarDay,14,'the companion agrees with the displayed lunar date');
+assert.equal(C.debugSnapshot().cycle,0,'the full moon begins at civil midnight');
+const midnightHome=C.serialize().home; // The morning maintenance rollover must not move the house.
+const midnightSaves=saved;
+liveDay.day=14;liveDay.time01=0;C.update(.016);
+assert.deepEqual(C.serialize().home,midnightHome);
+assert.equal(saved,midnightSaves,'no second save or roll at 06:00');
+C.restore({version:persisted.version,phase:'complete',cycle:0,completedCycle:0});
+assert.equal(C.serialize().phase,'complete','a completed save has no house but retains its phase');
+liveDay.day=41;C.update(.016);
+assert.equal(C.serialize().phase,'complete','next full moon is not yet eligible');
+liveDay.time01=.75;C.update(.016);
+assert.equal(C.debugSnapshot().cycle,1,'next encounter is eligible at civil midnight');
+delete moonWindow.CalendarSystem;
+delete liveDay.time01;
 liveDay.day=14;C.restore(persisted); // Restore the original fixture for the full encounter flow.
 
 console.log('Boney Shinjimi assets, moon spawn, home collision, reward branches, work/regrowth and persistence passed.');
