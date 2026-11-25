@@ -14,7 +14,7 @@ const files = [
   'js/npc-avatar-preview-utils.js?v=20261122hKasa3',
   'js/character-spine.js?v=20261112longoran1', // Hunchback weights/deformation, read by the portrait skin, shoulder aim and leg solver.
   'js/hat-overflow-plane.js', // Big hats: hat pixels past the portrait square (HatOverflowPlane).
-  'js/png-plane-avatar.js?v=20261124h4f60280',
+  'js/png-plane-avatar.js?v=20261125h6aac694',
   'js/species-pose-scaling.js?v=20261115shoulders3',
   'js/character-dimensions.js?v=20261007he86e7d1', // Species heights drive the held weapon's height factor and grip offset, exactly as in the game and Attack Animation Editor.
   'js/transform-dump-utils.js?v=20261017h3ce7f8d',
@@ -52,7 +52,7 @@ const files = [
   'js/creature-genetics-render.js?v=20261124sharedBodyColors2',
   'config/modular-weapons.js?v=20261118captainWarCleaver2',
   'js/modular-weapons.js?v=20261119sideTangSweep2',
-  'js/held-action-animations.js?v=20261123npcBabyCarry1',
+  'js/held-action-animations.js?v=20261125he7d3071',
   'js/combat/shared-attack-pose.js?v=20261111flailPose1',
   'js/combat/attack-pose-templates.js?v=20261115h01bf772',
   'js/combat/melee-pose-spacing.js?v=20261028a',
