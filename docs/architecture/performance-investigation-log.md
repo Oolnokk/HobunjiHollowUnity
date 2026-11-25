@@ -2631,3 +2631,57 @@ inventory revision/event-driven action bar; safe same-frame hand solve
 deduplication only if no late pose writers are lost. The water change
 reduces potential traversal, not the number of native passes. Measure
 fallback rates and actual FPS before treating it as a speedup.
+
+
+### Audit and next continuation: active-scene instance indexes, spawn cancellation and combat UI
+
+The previous revision 82113f7f14070185a27bc9d43cd06971c4d54f11 passed all
+nine PR workflows (full regression, Android APK and browser smoke included).
+The same PR continues from that verified revision.
+
+- Water-only pruning now abandons unsafe scans immediately and retains the
+  unpruned scene when an enabled shadow map has a pending manual refresh.
+  Three native water operations and the existing material/depth state
+  restoration remain unchanged.
+- InstancedMeshBounds maintains per-root-scene weak membership, seeded once
+  from the existing global registry. The already-installed scene structure
+  hook in OutlineRenderPerformance publishes attachment notifications; no
+  additional Object3D prototype wrapper is introduced. New tracked tags
+  enroll immediately, queued nested attachments coalesce, and live
+  ancestry checks remove moved/detached entries. Culler and brick LOD share
+  the same visibility walk. Replay-only tags are excluded. Inactive-scene
+  queues cap at 256 roots; overflow safely reindexes from the global list.
+  Global weak refs are compacted periodically at registration. Nested
+  preview scenes and older hosts without structure notifications fall back
+  to the original global behavior where required. Settings and benchmark
+  globalInstanceRegistry/sceneInstanceRegistry support A/B; Pixel Probe
+  reports visits, overflow, reindex, stale and fallback counts. The
+  synthetic two-map fixture visits two active instances instead of 502
+  global candidates; this is a count, not a real-frame FPS measurement.
+- Hunter materialization: validate the actual resident, generation, life
+  revision, area and activation range before and after asynchronous config
+  and avatar creation. A stale request cannot start an expensive factory
+  after configuration resolves, nor publish a completed obsolete rig.
+  Existing three-second dormant grace, detailed AI, release radius and
+  faction logic remain intact. Tribe diagnostics count attempts, successful
+  materializations, cancellation before/after factory, failures, dormant
+  releases and reuses. These are diagnostic counters, not a new spawn cap.
+- Combat coin UI resolves the symbol signature before creating DOM nodes.
+  Holding changes CSS only. A changed ability, combo step, label, loaded
+  artwork, regenerated combo raster or removed coin rebuilds normally.
+  Combat slots and stale ownership share one physical-button lookup.
+  Pixel Probe reports actual coin builds/reuses. Existing observers and
+  timer fallback still run; this is not a complete event-driven UI rewrite.
+
+Executed source-based fixtures for the actual scene attachment hook and
+registry (500 inactive instances, late tags, replay-only tags, moves,
+visibility, nested scenes, overflow and A/B), and for the actual coin and
+hunter build functions (30 unchanged refreshes allocate zero DOM elements,
+config-await cancellation, obsolete-life rejection, successful neutral
+publication and retry after failure). Previous regression was green;
+new revision needs full CI and on-device verification. No global matrix
+freezing, save safety changes, or asserted FPS improvement. Remaining major
+work: capture Cloud Forest scene matrix census to identify high-value
+immutable subtrees; optimize full folder checkpoint serialization and
+appearance readbacks; prove hand-solve deduplication and inventory revision
+ownership before changing them.
