@@ -45,6 +45,21 @@ The Rootledoot encounter is participant-aware (`rootledoot-encounter.js`): activ
 the fight when no other participant is still standing. Picking the root (`action`/`pick`) stays the local client's own
 interaction.
 
+### Time rules (`js/time-consensus.js`, `window.TimeConsensus`)
+
+With 2+ registered players, nothing advances the world clock on one player's say-so:
+
+- **Sleep / rest / Wait** needs every player resting. The first sleeper waits (bed pose holds; Wait/Sleep menu closes with a toast). Walking away withdraws the vote.
+- **Forced skips** (alcohol blackout, fey/Rootledoot defeat, Ikthi later) knock the victim out for **60 s** (`REVIVE_WINDOW_MS`). Another standing player within ~2.5 tiles revives them (`TimeConsensus.revive(target, by)`), which cancels that player's skip. Otherwise the skip happens. Each knocked-out player has their own window; a second skip while out does not extend it.
+- **Several queued skips**: the longest (in game minutes) wins and is applied **once**; every participant still gets their own side effects (wander travel, healing).
+- **Resting while someone is knocked out** counts them as asleep: when everyone else is resting (or nobody is left awake to revive), the skip fires immediately.
+- Single player (`shouldGate()` false) keeps the original immediate paths untouched.
+
+New skip sources call `TimeConsensus.knockOut(player, { kind, source, minutes, run, onResolved, onRevived })` (forced) or `requestRest` (voluntary) when `shouldGate()`; `run` applies the time change and is only called if that skip wins.
+Dev: `DevDummyPlayer.sleep(min)`, `.knockOut(min)`, `.reviveLocal()`, `.reviveDummy()`, `.wake()`; `TimeConsensus.snapshot()`.
+
+**Not done yet:** a revive interaction prompt for the local player (only the API and dev hooks exist), a countdown HUD for the 60 s window, marking a knocked-out local avatar as down for enemy targeting, and live-testing the bed and Wait/Sleep menu paths with a second real player. Natural real-time clock progression is deliberately not gated; only skips are.
+
 Simulation LOD is player-set aware: bandit sleep/wake (`wilderness-simulation-lod.js`)
 and Porakaneki ecology/aggro radii use `ActorRegistry.distanceToNearestPlayer` /
 nearest-player tile position, so a camp beside a guest stays awake on the host and a
