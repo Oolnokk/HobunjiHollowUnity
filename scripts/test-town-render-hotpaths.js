@@ -894,8 +894,8 @@ assert.match(plateauMesa, /mesh\.userData\.hobunjiGroundSurface = true/,
   'raised wilderness mesa surfaces explicitly register as ground');
 assert.match(interiorBuilder, /cavernWalkableFloor: true,[\s\S]{0,120}hobunjiGroundSurface: true/,
   'cavern walkable surfaces still carry terrain semantics, independent of their x-ray exemption');
-assert.match(heldRender, /function markWaterOccludedMesh\(mesh\)[\s\S]{0,800}mesh.layers.enable\(HELD_OVERLAY_LAYER\)/,
-  'actual procedural foot mesh is enrolled in the same held/ground selective overlay layer');
+// Foot enrollment is checked by executing the actual registrar below, rather
+// than requiring its declaration to have a particular parameter list.
 assert.match(heldRender, /const overlayMeshes = \[\.\.\.held, \.\.\.feet\]/,
   'held gear and feet both participate in the selective overlay and screen scissor');
 assert.match(heldRender, /const heldDraws = suppressDraws\(\[\.\.\.held, \.\.\.feet\]\)/,
@@ -1064,14 +1064,18 @@ assert.ok(footRegistrarStart >= 0 && footRegistrarEnd > footRegistrarStart);
 const footLayerSet = new Set([0]);
 const garmentLayerSet = new Set([0]); // Tracks the same registration layers for a pants garment.
 const mockFoot = { isMesh: true, userData: {}, layers: { enable(layer) { footLayerSet.add(layer); } } };
+const registeredFootScenes = new Map(); // Observes the production registrar's scene handoff as well as its layer effects.
 const markFoot = new Function('waterOccludedMeshes', 'waterOccludedRegistry', 'FOOT_WATER_MASK_LAYER', 'HELD_OVERLAY_LAYER', 'hasLayer', 'waterOccludedMeshCount', 'pantsXrayRegistrations',
   heldRender.slice(footRegistrarStart, footRegistrarEnd) + '\nreturn markWaterOccludedMesh;')(
-    new WeakSet(), { add() {} }, 26, 29,
+    new WeakSet(), { add(mesh, scene) { registeredFootScenes.set(mesh, scene); } }, 26, 29,
     (mesh, layer) => (mesh === mockFoot ? footLayerSet : garmentLayerSet).has(layer), 0, 0);
-assert.equal(markFoot(mockFoot), true, 'newly registered foot is recognized');
+const footScene = { isScene: true }; // Full scene classifications supply this known root.
+assert.equal(markFoot(mockFoot, footScene), true, 'newly registered foot is recognized');
+assert.equal(registeredFootScenes.get(mockFoot), footScene, 'known scene is forwarded to the foot registry');
 assert.equal(footLayerSet.has(29), true, 'procedural foot belongs to the selective overlay');
 assert.equal(mockFoot.userData.hobunjiWaterOccludedBySurface, true, 'legacy semantic tagging is retained');
 assert.equal(markFoot(mockFoot), false, 'repeat registration does not duplicate the mesh');
+assert.equal(registeredFootScenes.get(mockFoot), null, 'ordinary callers retain deferred scene discovery');
 const mockPants = { isMesh: true, userData: { hobunjiPantsGarment: true },
   layers: { enable(layer) { garmentLayerSet.add(layer); } } };
 assert.equal(markFoot(mockPants), true, 'production registrar accepts a garment like a procedural foot');
