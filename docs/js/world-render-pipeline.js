@@ -240,6 +240,8 @@
   function createOutlineMaterials() {
     shellOutlineMat = createShellOutlineMaterial(THREE);
     shellMaskMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.FrontSide, skinning: true, morphTargets: true });
+    shellMaskMaterial.userData ||= {};
+    shellMaskMaterial.userData.hobunjiScreenOutlineMask = true; // Existing matrix-reuse owner identifies this secondary pass.
 
     // Shared vertex shader used for coloured target outlines (supports instancing)
     const _targetOutlineVert = `
@@ -718,12 +720,14 @@
     _postMat.uniforms.uDepthOutlinesOn.value = generatedOutlineMode === 'screen' && shellMaskRT ? 1 : 0;
     _postMat.uniforms.tShellMaskDepth.value = shellMaskRT?.depthTexture || _mainRT.depthTexture;
     _postMat.uniforms.uOrthographic.value = camera.isOrthographicCamera ? 1 : 0;
-    const fog = activeScene.fog; // Fade the generated ink towards the same scene fog as the shell shader.
-    _postMat.uniforms.uDepthFogMode.value = fog?.isFogExp2 ? 2 : fog?.isFog ? 1 : 0;
-    if (fog?.color) _postMat.uniforms.uDepthFogColor.value.copy(fog.color);
-    _postMat.uniforms.uDepthFogNear.value = fog?.near ?? 0;
-    _postMat.uniforms.uDepthFogFar.value = fog?.far ?? 1;
-    _postMat.uniforms.uDepthFogDensity.value = fog?.density ?? 0;
+    if (generatedOutlineMode === 'screen') {
+      const fog = activeScene.fog; // Fade ink towards the same scene fog as the shell shader.
+      _postMat.uniforms.uDepthFogMode.value = fog?.isFogExp2 ? 2 : fog?.isFog ? 1 : 0;
+      if (fog?.color) _postMat.uniforms.uDepthFogColor.value.copy(fog.color);
+      _postMat.uniforms.uDepthFogNear.value = fog?.near ?? 0;
+      _postMat.uniforms.uDepthFogFar.value = fog?.far ?? 1;
+      _postMat.uniforms.uDepthFogDensity.value = fog?.density ?? 0;
+    }
     renderer.render(_postScene, _postCamera);
     PerfProfiler?.end(rpCompositePerf);
     // Perception Mode silhouettes go on top of the finished composite so the
