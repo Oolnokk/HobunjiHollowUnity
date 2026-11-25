@@ -81,7 +81,7 @@
     }
     add(object, knownScene = null) {
       this.all.add(object);
-      if (knownScene) {
+      if (knownScene?.isScene && !knownScene.parent) {
         // A full root-scene walk has already established ancestry. Place in
         // traversal order, just as the old pending flush did, without another
         // pending insertion or ancestor walk. Preserve ordering for tied draws.
