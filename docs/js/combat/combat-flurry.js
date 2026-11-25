@@ -154,6 +154,7 @@
 
             const healthBefore = Math.max(0, Number(c.health) || 0); // Used by Mirrored Health to reward only damage that truly landed.
             deps.damageCreature(c, damage, deps.player.x, deps.player.y, knockbackPxS, {
+              attacker: deps.player, // Explicit source for Attack Power and Tempered Footing.
               abilityId: 'acceleratingFlurry', // Identifies the committed hit for authored training objectives.
               tag: dmgType,
               heavy: true,
