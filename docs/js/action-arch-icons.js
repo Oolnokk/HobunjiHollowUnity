@@ -174,7 +174,7 @@
     record.image = image;
     image.onload = () => {
       record.state = 'loaded';
-      if (file === 'draw_melee.png') comboRasterCache.clear(); comboRasterRevision++;
+      if (file === 'draw_melee.png') { comboRasterCache.clear(); comboRasterRevision++; }
       queueRefresh();
     };
     image.onerror = () => {
