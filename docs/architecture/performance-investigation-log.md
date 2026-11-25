@@ -2461,3 +2461,35 @@ speedup from the changes below.
   cadence reduction. Static world-matrix freezing and cross-native-render
   visibility sharing remain unproven: render hooks may change transforms or
   visibility, and relying on stale state can break occlusion.
+
+
+## 24 Nov 2026: performance-first shadow and actor replay range
+
+The user reported that the preceding CPU-hotpath changes did not deliver a
+satisfactory FPS improvement and explicitly accepted sacrificing shadows and
+distant X-ray. The earlier farm draw census counted about 270 shadow caster
+submissions on a refresh; disabling shadow maps removes those submissions
+instead of throttling them. This primarily benefits the farm (the existing
+shadow throttle identifies the farm sun as the only shadow-casting light).
+Ordinary lighting and authored shadow art remain.
+
+- ShadowMapRefreshThrottle owns the gameplay renderer's shadow-map enable
+  policy, defaults off, and preserves the previous 250 ms refresh mode when
+  opted in again. It also applies the policy to a newly created renderer.
+- HeldObjectRenderOrder filters participants by their owner's world-grid tile
+  relative to the player: the occupied tile plus its eight neighbors. The
+  same eligibility applies to color and shell replay, with distant parts
+  retained in ordinary color/depth and normal shell draws. Unknown owners use
+  the part's world position; previews without an active player and explicit
+  legacy all-participants mode retain the old policy. Local actor category,
+  weapon budget, and existing floor-circle/elevation rules still apply.
+  Independent portrait water tint is similarly local. A near actor's own
+  floor circle remains unchanged; this is a participant limit, not a new
+  shader clip boundary. Leaving the ring restores any prior hand masking.
+- Settings > Render optimizations exposes both policies; Pixel Probe reports
+  the real shadow-map flag and excluded X-ray part counts. The on-device
+  Render A/B benchmark includes fullXrayRange/localXrayRing and
+  shadowsOn/shadowsOff, restoring the original settings after each window.
+- Real ownership/partition fixtures and shadow toggle/renderer-replacement
+  fixtures passed in an isolated JavaScript harness. Full CI and same-save
+  device measurements remain required; no FPS improvement is claimed yet.
