@@ -391,10 +391,10 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
         ${scaleRow('Age', 'Age (hunch)', 0, 100, 1, 0, 'Per-NPC age hunch, lowers the head further')}
         <label class="maaToggleLine" style="margin:8px 0"><input id="maaFullScaleShowSpine" type="checkbox" checked> Show live spine and neck attachment</label>
         <div class="maaSmall maaMuted" style="margin-bottom:8px">Spine: green pelvis → orange vertebrae → violet shoulder/neck base; cyan marks the scaled head attachment. The selected avatar is highlighted, and hunch edits update the bones without changing the portrait art.</div>
-        <div class="scaleActions"><button id="maaFullScaleExport" type="button" class="good">Export scale JSON</button><button id="maaFullScaleFrame" type="button" class="secondary">Frame lineup</button><button id="maaFullScaleFocus" type="button" class="secondary" disabled>Focus selected</button><button id="maaFullScaleMatchMainAdults" type="button" class="secondary" title="Restore the exact original main adult silhouettes (width, Height, Leg/Beltline, Head, offsets, hands and feet) without changing child age stages or NPC hunch">Apply uploaded character scales</button><button id="maaFullScaleReset" type="button" class="secondary">Reset all to repo defaults</button></div>
+        <div class="scaleActions"><button id="maaFullScaleExport" type="button" class="good">Export scale JSON</button><button id="maaFullScaleFrame" type="button" class="secondary">Frame lineup</button><button id="maaFullScaleFocus" type="button" class="secondary" disabled>Focus selected</button><button id="maaFullScaleMatchMainAdults" type="button" class="secondary" title="Apply all 26 uploaded adult Width, Height/Beltline, Head, offsets and hand/foot values without altering age stages or NPC posture">Apply uploaded character scales</button><button id="maaFullScaleReset" type="button" class="secondary">Reset all to repo defaults</button></div>
         <div id="maaFullScaleStatus" class="scaleStatus">Height controls total floor-to-head stature. Beltline height (%) is the hip/posterior junction measured upward from the feet, as a percent of that total. The legs and portrait are derived together, preserving planted feet and existing saved proportions.</div>`;
       workspace.appendChild(panel);
-      panel.querySelector('#maaFullScaleMatchMainAdults').addEventListener('click', matchMainAdultScales); // Existing saved adult overrides can explicitly adopt the new 26-profile Mao'ao-relative defaults without erasing NPC age/Longoran posture.
+      panel.querySelector('#maaFullScaleMatchMainAdults').addEventListener('click', applyUploadedAdultScales); // Re-import the user-approved 26-profile baseline without erasing NPC age or Longoran spine posture.
       panel.querySelector('#maaFullScaleReset').addEventListener('click', resetAllToRepoDefaults);
       panel.querySelector('#maaFullScaleShowSpine').addEventListener('change', event => {
         showSpineGuides = event.target.checked; // Preview-only setting; not exported with species scales or Rig Coordinates data.
@@ -1028,9 +1028,8 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
     } catch (error) { console.warn('[full-character-scale] profile autosave failed', error); }
   }
 
-  // Restore the EXACT main adult silhouettes from the 4cfb39c reference, not the later
-  // 65% Head, Mao'ao-relative dimensions or nominal foot-height estimates. A saved local
-  // rig can outlive default-file changes, so make this available as an explicit adult-only action.
+  // Restore the 26 user-uploaded adult silhouettes, rather than an older main checkpoint.
+  // A saved local rig can outlive new defaults, so provide an explicit adult-only import action.
   function applyUploadedAdultScales() {
     if (!active) return;
     const baseline = window.HobunjiCharacterRigScaleDefaults?.uploadedScaleRestoreValues; // All 18 canonical plus 8 auxiliary identities; each adult part comes from the approved upload.
@@ -1080,7 +1079,7 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
     layout();
     frame();
     status(`Applied ${count}/${items.length} adult profiles from uploaded Full Character Scale (3). Baby/toddler/child modifiers and per-NPC hunches remain unchanged.`);
-    return count; // Bootstrap migration records success only after every adult scale was persisted.
+    return count; // Autosave migration records success only after the complete uploaded adult map is persisted.
   }
 
   function migratePersistedUploadedScalesOnce() {
