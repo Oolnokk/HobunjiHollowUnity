@@ -147,7 +147,9 @@
     const e = camera.matrixWorld.elements, camX = e[12], camY = e[13], camZ = e[14];
     let candidates = 0, meshes = 0, farMeshes = 0, farInstances = 0, avoided = 0;
     try {
-      const visitBricks = bounds.forEachTrackedBrick || bounds.forEachTracked; // Isolated older preview pages retain the generic fallback.
+      const visitBricks = callback => bounds.forEachTrackedBrickInScene
+        ? bounds.forEachTrackedBrickInScene(scene, callback)
+        : (bounds.forEachTrackedBrick || bounds.forEachTracked)(callback); // Older preview pages retain the generic fallback.
       visitBricks(mesh => {
         candidates++;
         if (mesh.userData?.hobunjiBrickLod !== true || !(mesh.count > 0) || !drawnIn(mesh, scene)) return;
