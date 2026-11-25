@@ -1015,3 +1015,111 @@ assert.equal(companionPanels.get('relic-grants').onAction('grant').ok, true);
   assert.equal(HR.decodeBoundKey('feyBound_dagger_abcd_Bburning_F'),null,'Fey key cannot smuggle another origin');
 }
 console.log('Fey Immundanity, real Stamina illusions, proc, scaled echo, migrations and bound relics passed');
+
+ 
+// Planar lore additions: exercise the actual hit/defense bus, not an isolated effect stub.
+{
+  reset();
+  const key = 'realm-test-blade'; // All tests use a private weapon and fresh actors.
+  const attacker = makeEntity({ name: 'Realm wielder' });
+  const target = makeEntity({ name: 'Realm target' });
+  const hit = (patch = {}) => CAE.hit(null, {
+    attacker, target, weaponKey: key, slotId: 'tap1', attackCategory: 'combo',
+    comboFinisher: true, actualDamage: 4, ...patch,
+  });
+  const equip = (base = [], flourishes = {}) => ES.load({ [key]: { base, flourishes } });
+  const close = (value, expected) => assert(Math.abs(value - expected) < 0.0001, `${value} != ${expected}`);
+  const newBases = [
+    ['stormwake', 'Tothal', 'reeling', 'knockbackTaken', 1.165],
+    ['stonebind', 'Hronal', 'heavy', 'moveSpeed', 0.9175],
+    ['soulweight', 'Kanthic', 'taxed', 'staminaCost', 1.0825],
+    ['ancestralSight', 'Ohthic', 'exposed', 'incomingDamage', 1.0825],
+  ]; // Expected one-stack multipliers at +10% Immundanity.
+  for (const [id, alignment, status, modifier, value] of newBases) {
+    equip([id]);
+    assert.equal(ES.DEFINITIONS[id].alignment, alignment);
+    assert.equal(ES.DEFINITIONS[id].type, 'Base');
+    assert.equal(ES.getWeaponImmundanity(key), 1);
+    CAE.prepare({ attacker, target, weaponKey: key });
+    assert.equal(RS.hasTimedDebuff(target, status), false, 'preparation alone cannot apply a Base debuff');
+    hit({ comboFinisher: false });
+    close(RS.timedDebuffModifier(target, modifier), value);
+    for (let i = 0; i < 8; i++) hit();
+    const entry = RS.getTimedDebuffs(target).find(item => item.id === status);
+    assert.equal(entry.stacks, 5, 'new Base uses existing timed-status cap');
+    assert.equal(entry.source, id);
+    testNowMs += 4001;
+    assert.equal(RS.hasTimedDebuff(target, status), false, 'normal resource clock expires the enchantment');
+  }
+  equip(['stormwake', 'stonebind']);
+  assert.equal(ES.getWeaponImmundanity(key), 0, 'Tothal and Hronal cancel normally');
+  hit();
+  close(RS.timedDebuffModifier(target, 'knockbackTaken'), 1.15);
+  RS.clearTimedDebuff(target, 'reeling');
+  RS.clearTimedDebuff(target, 'heavy');
+  equip(['soulweight', 'ancestralSight']);
+  assert.equal(ES.getWeaponImmundanity(key), 0, 'Kanthic and Ohthic cancel normally');
+  hit();
+  close(RS.timedDebuffModifier(target, 'staminaCost'), 1.075);
+  RS.clearTimedDebuff(target, 'taxed');
+  RS.clearTimedDebuff(target, 'exposed');
+  hit({ target: makeEntity({ health: 0 }) }); // Killing/dead targets do not acquire new timed statuses.
+
+  equip([], { tap1: 'stormRenewal' });
+  attacker.stamina = 20;
+  hit({ comboFinisher: false });
+  assert.equal(attacker.stamina, 20, 'ordinary combo hit does not trigger a Flourish');
+  hit();
+  close(attacker.stamina, 33.2);
+  attacker.stamina = 20;
+  hit({ attackCategory: 'offensiveHold', isFlurry: true, comboFinisher: false });
+  close(attacker.stamina, 23.3); // 12 × 1.1 × 0.25; no random proc for numeric Flourishes.
+  attacker.exhaustion.active = true;
+  attacker.exhaustion.blackStamina = 12;
+  hit();
+  assert.equal(attacker.exhaustion.active, true);
+  assert.equal(attacker.exhaustion.blackStamina, 12, 'Storm Renewal does not bypass exhausted recovery');
+  attacker.exhaustion.active = false;
+
+  equip([], { hold2: 'bedrock' });
+  CAE.defensive({ attacker, weaponKey: key, slotId: 'hold2', defensiveResult: 'block' });
+  close(RS.getAffliction(attacker, 'resoluteFooting'), 9.9);
+  RS.removeAffliction(attacker, 'resoluteFooting', 100);
+  equip([], { tap1: 'bedrock' });
+  hit({ attackCategory: 'offensiveHold', isFlurry: true, comboFinisher: false });
+  close(RS.getAffliction(attacker, 'resoluteFooting'), 2.5);
+
+  equip([], { tap1: 'blackBargain', hold2: 'blackBargain' });
+  assert.equal(ES.getWeaponImmundanity(key), 2);
+  hit();
+  close(RS.getAffliction(target, 'congealedHealth'), 9.6);
+  close(RS.getAffliction(attacker, 'congealedHealth'), 3.6);
+  close(RS.getEffectiveMax(target, 'health'), 90.4);
+  CAE.defensive({ attacker, weaponKey: key, slotId: 'hold2', defensiveResult: 'dodge' });
+  hit({ target: attacker });
+  assert.equal(RS.getAffliction(attacker, 'congealedHealth'), 3.6, 'missing/self targets cannot exact a bargain');
+  RS.removeAffliction(attacker, 'congealedHealth', 100);
+
+  equip([], { hold2: 'ancestralMercy' });
+  RS.addAffliction(attacker, 'bleedingHealth', 20);
+  RS.addAffliction(attacker, 'woundedStamina', 20);
+  RS.addAffliction(attacker, 'rentHealth', 5);
+  attacker.health = 50;
+  CAE.defensive({ attacker, weaponKey: key, slotId: 'hold2', defensiveResult: 'dodge' });
+  close(RS.getAffliction(attacker, 'bleedingHealth'), 11.2);
+  close(RS.getAffliction(attacker, 'woundedStamina'), 11.2);
+  assert.equal(RS.getAffliction(attacker, 'rentHealth'), 5);
+  assert.equal(attacker.health, 50, 'cleansing buildup never restores already lost Health');
+
+  const savedState = { base: ['stormwake', 'ancestralSight'], flourishes: { tap1: 'blackBargain', hold2: 'ancestralMercy' } };
+  equip(savedState.base, savedState.flourishes);
+  const serialized = ES.serialize(); // The new IDs must survive ordinary save/load and bound-weapon encoding.
+  ES.load(serialized);
+  same(ES.stateFor(key), savedState);
+  const relic = { shape: 'longsword', uid: 'realmtest123', enchantments: savedState };
+  const decoded = HR.decodeBoundKey(HR.encodeBoundKey(relic));
+  assert(decoded, 'new IDs can be recovered from a normal bound relic');
+  same(decoded.enchantments, savedState);
+  assert(newBases.every(([id]) => ES.DEFINITIONS[id].hitDebuff));
+}
+console.log('Planar lore enchantments: hit, stacking, expiry, defense, flurry, exhaustion, cleansing and persistence passed');
