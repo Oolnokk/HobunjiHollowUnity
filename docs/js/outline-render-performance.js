@@ -992,6 +992,7 @@
 
   const api = {
     installed: true,
+    sceneAttachmentNotifications: THREE.Object3D?.prototype?.add?.__hobunjiStructureEpochWrapped === true, // Old editor hosts fall back to global instance membership.
     nonShellOutlinesSuppressed: true,
     worldTextAboveShell: true,
     setScoreCharacterRootsProvider(provider) {
