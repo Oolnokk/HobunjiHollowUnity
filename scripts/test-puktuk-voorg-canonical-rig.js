@@ -60,7 +60,7 @@ const expected = {
   },
   'voorg-ass': {
     saddle: { x: -0.0016655977917167481, y: 0.18328943170147868, z: 0.043832914384796626 },
-    grip: { x: 0, y: -0.11122461401165312, z: 0.05961047587703741 },
+    grip: { x: 0, y: -0.29318061503235254, z: 0.051543592657975104 },
     scales: { large: { x: 1, y: 1 }, medium: { x: 0.75, y: 0.75 }, small: { x: 0.34, y: 0.34 } },
     ground: { large: 0.39, medium: 0.3, small: 0.11 },
     chathead: { x: 0.1235, y: 0.14, width: 0.3074, height: 0.3325, coordinateSpace: 'sprite-normalized-top-left', version: 1 },
@@ -71,7 +71,7 @@ for (const [kind, values] of Object.entries(expected)) {
   for (const library of [master.profiles, profiles]) {
     const profile = library.creatures[kind];
     assert.deepEqual(plain(profile.anchors.saddle.position), values.saddle, kind + ' saddle matches the latest Rig Coordinates authoring');
-    assert.deepEqual(plain(profile.anchors.shoulderGrip.position), values.grip, kind + ' shoulder grip matches canonical November 16 creature calibration');
+    assert.deepEqual(plain(profile.anchors.shoulderGrip.position), values.grip, kind + ' shoulder grip matches latest canonical creature calibration');
     assert.deepEqual(plain(profile.sizeScales), values.scales, kind + ' size scales match current canonical tuning');
     assert.deepEqual(plain(profile.groundOffsets), values.ground, kind + ' ground offsets match current canonical tuning');
     assert.deepEqual(plain(profile.chatheadFrame), values.chathead, kind + ' chathead frame matches September 15 authoring');
@@ -79,7 +79,7 @@ for (const [kind, values] of Object.entries(expected)) {
     assert.equal(profile.shoulderGripRule.authoredFixed, true, kind + ' shoulder grip is canonical');
     assert.equal(profile.sizeScaleRule.authoredFixed, true, kind + ' size scale is canonical');
     assert.equal(profile.saddleRule.source, 'animation-author-export-2026-09-15');
-    assert.equal(profile.shoulderGripRule.source, 'animation-author-export-2026-09-15');
+    assert.equal(profile.shoulderGripRule.source, kind === 'voorg-ass' ? 'animation-author-export-2026-11-24' : 'animation-author-export-2026-09-15');
   }
   assert.deepEqual(plain(profiles.creatureShoulderGripDefaults[kind]), values.grip, kind + ' duplicate runtime grip defaults match canonical profile');
 }
