@@ -21,8 +21,10 @@
   const brickSet = new WeakSet(); // Deduplicate brick enrollment without retaining disposed meshes.
   const trackedRefs = new WeakMap(); // Reuse the same weak reference in scene buckets.
   const sceneBuckets = new WeakMap(); // Scene -> weak tracked/brick membership and queued subtree attachments.
+  const MAX_PENDING_SCENE_ROOTS = 256; // Bound inactive-scene queued weak references; overflow forces an exact reindex.
+  let registrationsSinceCompaction = 0; // Global weak registries are swept occasionally, not every active-scene draw.
   let sceneScopedEnabled = true; // A/B fallback retains the global registry.
-  const sceneStats = { initialScans:0, incrementalRoots:0, scopedVisits:0, staleEntries:0, globalFallbacks:0 }; // On-demand Pixel Probe.
+  const sceneStats = { initialScans:0, incrementalRoots:0, scopedVisits:0, staleEntries:0, globalFallbacks:0, queueOverflows:0, globalCompactions:0 }; // On-demand Pixel Probe.
 
   // Mesh-local sphere around every instance, or null when nothing finite.
   function localSphere(mesh) {
@@ -68,6 +70,11 @@
       if (!alreadyTagged && !trackedSet.has(mesh)) {
         const ref = new WeakRef(mesh);
         trackedSet.add(mesh); trackedRefs.set(mesh, ref); tracked.push(ref);
+        if (++registrationsSinceCompaction >= 1024) {
+          registrationsSinceCompaction=0;
+          visitTracked(tracked,()=>{}); visitTracked(bricks,()=>{});
+          sceneStats.globalCompactions++;
+        }
       }
       if (trackedSet.has(mesh) && mesh.userData.hobunjiBrickLod === true && !brickSet.has(mesh)) {
         brickSet.add(mesh); bricks.push(trackedRefs.get(mesh));
@@ -97,8 +104,9 @@
   function forEachTrackedBrick(callback) { visitTracked(bricks, callback); }
 
   function owningScene(object) {
-    for (let node=object; node; node=node.parent) if (node.isScene) return node;
-    return null;
+    let node=object;
+    while(node?.parent) node=node.parent;
+    return node?.isScene ? node : null;
   }
 
   function enroll(bucket, mesh) {
@@ -111,12 +119,18 @@
   // Called by the existing scene-structure add hook (no extra prototype
   // wrapper). Only scenes already indexed need incremental maintenance.
   function noteSceneAttachment(scene, objects) {
-    const bucket = sceneBuckets.get(scene);
-    if (!bucket) return;
+    scene=owningScene(scene); // Nested preview scenes still belong to their top-level rendered world.
+    const bucket = scene && sceneBuckets.get(scene);
+    if (!bucket || bucket.needsReindex) return;
     for (const object of objects) {
       if (!object?.isObject3D || (!trackedSet.has(object) && !object.children?.length) || owningScene(object) !== scene) continue;
       if (trackedSet.has(object)) enroll(bucket, object);
       if (object.children?.length && !bucket.queued.has(object)) {
+        if(bucket.pending.length>=MAX_PENDING_SCENE_ROOTS){
+          bucket.pending=[]; bucket.queued=new WeakSet(); bucket.needsReindex=true;
+          sceneStats.queueOverflows++;
+          return;
+        }
         bucket.queued.add(object);
         bucket.pending.push(new WeakRef(object)); // An inactive scene cannot pin detached NPC/prop subtrees.
       }
@@ -125,8 +139,8 @@
 
   function bucketFor(scene) {
     let bucket = sceneBuckets.get(scene);
-    if (!bucket) {
-      bucket = { all:new Set(), bricks:new Set(), pending:[], queued:new WeakSet() };
+    if (!bucket || bucket.needsReindex) {
+      bucket = { all:new Set(), bricks:new Set(), pending:[], queued:new WeakSet(), needsReindex:false };
       sceneBuckets.set(scene,bucket);
       visitTracked(tracked, mesh => { if (owningScene(mesh) === scene) enroll(bucket,mesh); });
       sceneStats.initialScans++;
@@ -154,7 +168,7 @@
   function visitScene(scene, callback, bricksOnly) {
     // Old isolated editors without the existing scene-structure hook keep
     // their original global iteration. No assumption about their add/remove.
-    if (!sceneScopedEnabled || !scene?.isScene || root.OutlineRenderPerformance?.sceneAttachmentNotifications !== true || typeof WeakRef !== 'function') {
+    if (!sceneScopedEnabled || !scene?.isScene || scene.parent || root.OutlineRenderPerformance?.sceneAttachmentNotifications !== true || typeof WeakRef !== 'function') {
       sceneStats.globalFallbacks++;
       return visitTracked(bricksOnly ? bricks : tracked,callback);
     }
@@ -162,13 +176,15 @@
     for(const ref of (bricksOnly?bucket.bricks:bucket.all)){
       const mesh=ref.deref();
       // Reparenting/detachment is checked live, not inferred from visibility.
-      if(!mesh || owningScene(mesh)!==scene){
+      let node=mesh, visible=true; // Share one ancestry walk with both scope consumers.
+      while(node?.parent){if(node.visible===false) visible=false;node=node.parent;}
+      if(!mesh || node!==scene){
         bucket.all.delete(ref); bucket.bricks.delete(ref);
         sceneStats.staleEntries++;
         continue;
       }
       sceneStats.scopedVisits++;
-      callback(mesh);
+      callback(mesh,visible && scene.visible!==false);
     }
   }
 
