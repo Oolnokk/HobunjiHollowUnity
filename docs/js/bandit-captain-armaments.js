@@ -205,6 +205,7 @@
     if (!registerDefinition(key, record)) return entity;
     if (!replaceHolder(entity, key, d)) { releaseUnownedDefinition(key,d); return entity; }
     applyWeaponStats(entity, key, metal, d);
+    window.BanditCombat?.refreshEnemyCombatBuild?.(entity); // The modular head can change which combat perks the captain can actually use.
     const { visual, counts } = visualFor(state, d.rnd || random);
     entity._banditCaptainArmament = { ...record, key, visual, counts }; // The living NPC and its eventual corpse share the exact same roll.
     unlooted.set(key, state); // Only EnchantmentSystem's NPC lookup may see this until the loot transaction.

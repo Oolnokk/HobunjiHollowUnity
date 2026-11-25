@@ -315,7 +315,7 @@
   <!-- Shared condition-axis schema/evaluators (window.ConditionRegistry) —
        single source of truth for the dialogue system's and the Loot & Shop
        system's condition gating, also loaded by their respective dev tools. -->
-  <script src="js/condition-registry.js?v=20261125deepAudit1"></script>
+  <script src="js/condition-registry.js?v=20261125enemyClassAudit1"></script>
   <!-- Optional local-folder save mirror (window.LocalSaveFolder) — self-contained,
        only reads/writes the same hobunjiSaveMeta localStorage key onboarding.js/
        game.js already use. See docs/js/local-save-folder.js.
@@ -331,7 +331,7 @@
   <script src="js/farm-world-settings.js?v=20261013h4299425"></script>
   <script src="onboarding.js?v=20261124rootledoot2"></script>
   <!-- Combat system modules (windup/strike pipeline, loadout, abilities) -->
-  <script src="js/combat/resource-system.js?v=20261122familyBaby4"></script>
+  <script src="js/combat/resource-system.js?v=20261125enemyClassAudit2"></script>
   <script src="js/sacred-ground.js?v=20261108h9e2416f"></script> <!-- Global sacred-ground provider registry for totems, temple and future blessings. -->
   <script src="js/combat/knockback-collision-impact.js?v=20261105aerialAudit2"></script>
   <!-- Burning creatures and short-lived corpse flames share fire-hazard contact across knockback and adventuring torches. -->
@@ -382,7 +382,7 @@
        adapters to game.js. -->
   <script src="js/effect-buff-bar.js?v=20261124rootledoot1"></script>
   <script src="js/skill-system.js?v=20261122perception1"></script>
-  <script src="js/perk-system.js?v=20261031aoeWidth1"></script>
+  <script src="js/perk-system.js?v=20261125enemyClassAudit2"></script>
   <!-- Trinkets + base 8-point Attunement budget (expanded by character-owned Lich-hearts). -->
   <script src="js/trinket-system.js?v=20261122enemyTrinketAdd1"></script>
   <!-- Wearer-only trinket hooks: imported from PR #1421 and child #1426, before Combat.init in game.js. -->
@@ -540,7 +540,7 @@
        then), so load order relative to the other systems above doesn't
        matter; must load before game.js, which calls
        window.BanditCombatLog.init(...) during its own setup. -->
-  <script src="js/bandit-combat-log.js?v=20261122banditSurround1"></script>
+  <script src="js/bandit-combat-log.js?v=20261125enemyClassAudit1"></script>
   <!-- Wilderness AI snapshot capture, AI/Claude review tool for the whole
        Porakaneki camp network + den wildlife (window.WildernessAiSnapshot) —
        reads window.PorakanekiCamps/window.CalendarSystem at capture time
@@ -657,7 +657,7 @@
   <script src="config/modular-weapons.js?v=20261118captainWarCleaver2"></script>
   <script src="js/modular-weapon-bridge-fill.js?v=20261109boreflex1"></script>
   <script src="js/modular-weapons.js?v=20261119sideTangSweep2"></script>
-  <script src="js/bandit-captain-armaments.js?v=20261125deepAudit2"></script> <!-- Cultural donor pool + Foundry legal pair selection; registers unique loot before game startup. -->
+  <script src="js/bandit-captain-armaments.js?v=20261125enemyClassAudit1"></script> <!-- Cultural donor pool + Foundry legal pair selection; registers unique loot before game startup. -->
   <script src="js/town-proposals.js?v=20261016proposals1"></script>
   <script src="js/foundry-shop.js?v=20261116subtiers1"></script>
   <script src="js/metal-reinforcement.js?v=20261116bar50PowerRange075150"></script>
@@ -2988,7 +2988,7 @@
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups2" data-classic-group="render"></script>
   <script src="js/held-gift-policy.js?v=20261122heldGiftPolicy1"></script> <!-- Shared gifting policy and clothing visual preparation; game.js owns equipment state. -->
   <script src="js/rootledoot-encounter.js?v=20261124shared2"></script>
-  <script src="game.js?v=20261124encounterAudit3"></script>
+  <script src="game.js?v=20261125enemyClassAudit1"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261115nativeArena1"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->

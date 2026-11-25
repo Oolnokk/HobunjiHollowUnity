@@ -402,6 +402,7 @@
       const c = await window.BanditCombat.makeEntity({ ...gangCfg, speciesWeights: { [SPECIES_ID]: 1 }, weaponShapePool: [w.shapeKey], weaponMetalKey: w.metalKey, rangedWeaponChanceByRank: { grunt: 0, lieutenant: 0, captain: 0 } }, 'grunt', 0, agent.x * deps.TILE, agent.y * deps.TILE, {
         zoneId: s.zoneId,
         rosterOverride: agent.roster || roster(agent.index),
+        combatBuildSeed: agent.id, // Rebuilding a marcher cannot reroll its combat class or ability pool.
         defOverride: { label: agent.index === state.commanderIndex ? 'Harlyao Commander' : 'Harlyao Marcher', weaponKey: w.weaponKey, weaponShapeKey: w.shapeKey, weaponMetalKey: w.metalKey, attackTag: w.attackTag, rangedWeaponKey: null },
         extra: { isHarlyaoArmyMember: true, harlyaoArmyIndex: agent.index, harlyaoCommanderId: state.agents[state.commanderIndex]?.id, harlyaoWeaponShape: w.shapeKey },
       });

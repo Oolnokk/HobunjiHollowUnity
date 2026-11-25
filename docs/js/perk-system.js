@@ -228,12 +228,142 @@
   }
 
   // ── Combat helper consumed directly by game.js's damageCreature ──────
-  function combatDamageMultiplier(dmgOpts = {}) {
-    let mul = 1 + rank('combat', 'empowerRawDamage') * 0.08;
-    if (dmgOpts?.category === 'quickAttack') mul *= 1 + rank('combat', 'empowerQuickAttacks') * 0.08;
-    if (dmgOpts?.category === 'defensiveHold') mul *= 1 + rank('combat', 'empowerDefensiveAttacks') * 0.08;
-    if (dmgOpts?.heavy) mul *= 1 + rank('combat', 'empowerHeavyAttacks') * 0.08;
+  function combatDamageMultiplier(dmgOpts = {}, readRank = id => rank('combat', id)) {
+    let mul = 1 + readRank('empowerRawDamage') * 0.08;
+    if (dmgOpts?.category === 'quickAttack') mul *= 1 + readRank('empowerQuickAttacks') * 0.08;
+    if (dmgOpts?.category === 'defensiveHold') mul *= 1 + readRank('empowerDefensiveAttacks') * 0.08;
+    if (dmgOpts?.heavy) mul *= 1 + readRank('empowerHeavyAttacks') * 0.08;
     return mul;
+  }
+
+
+  // Enemy combat builds use the live player tree, point budget and tier gates.
+  // Priority lists are highest-first: locked perks are skipped until affordable.
+  const ENEMY_COMBAT_CLASSES = Object.freeze({
+    bruiser: {
+      quick: ['exhaustCutter', 'exhaustCutter', 'mercySpike'], chargeChance: 0.65, counterChance: 0.10,
+      priority: ['empowerOffensiveDebuffs', 'empowerDamageEffects', 'empowerHeavyAttacks', 'empowerQuickAttacks', 'increaseFootingDamage', 'increaseAoe', 'increaseFootingResistance', 'empowerRawDamage', 'increaseHealth', 'increaseStamina'],
+    },
+    assassin: {
+      quick: ['backstabFlick', 'backstabFlick', 'mercySpike'], chargeChance: 0.15, counterChance: 0.45,
+      priority: ['empowerDamageEffects', 'empowerOffensiveDebuffs', 'empowerQuickAttacks', 'increaseLungeDistance', 'reduceStaminaUse', 'increaseFootingDamage', 'empowerRawDamage', 'increaseStamina', 'increaseHealth'],
+    },
+    guardian: {
+      quick: ['exhaustCutter', 'mercySpike'], chargeChance: 0.3, counterChance: 0.85,
+      priority: ['empowerOffensiveDebuffs', 'empowerDamageEffects', 'empowerDefensiveAttacks', 'empowerHeavyAttacks', 'increaseFootingResistance', 'reduceStaminaUse', 'increaseFootingDamage', 'increaseHealth', 'increaseStamina', 'empowerRawDamage'],
+    },
+    duelist: {
+      quick: ['mercySpike', 'mercySpike', 'exhaustCutter', 'backstabFlick'], chargeChance: 0.35, counterChance: 0.65,
+      priority: ['empowerDamageEffects', 'empowerOffensiveDebuffs', 'empowerQuickAttacks', 'empowerDefensiveAttacks', 'reduceStaminaUse', 'increaseLungeDistance', 'increaseFootingResistance', 'increaseStamina', 'empowerRawDamage', 'increaseHealth'],
+    },
+    vanguard: {
+      quick: ['exhaustCutter', 'mercySpike', 'exhaustCutter'], chargeChance: 0.5, counterChance: 0.20,
+      priority: ['empowerOffensiveDebuffs', 'empowerDamageEffects', 'empowerHeavyAttacks', 'increaseAoe', 'increaseLungeDistance', 'increaseFootingDamage', 'increaseHealth', 'empowerRawDamage', 'increaseStamina'],
+    },
+  }); // Shared class templates used only during enemy generation.
+
+  function enemyCombatLevel(rankName, dangerTier, mineEnemy = false) {
+    const tier = Math.max(0, Math.min(mineEnemy ? 10 : 7, Math.floor(Number(dangerTier) || 0))); // Uses the existing danger rating, not the player's current level.
+    const rankBonus = rankName === 'captain' ? 4 : rankName === 'lieutenant' ? 2 : rankName === 'flasker' ? 1 : 0; // Rank remains independent of combat class.
+    const cap = Math.max(1, Number(window.SkillSystem?.MAX_LEVEL) || 20); // Same level ceiling as the player.
+    const progress = Math.min(20, 2 + Math.round(tier * (mineEnemy ? 1.4 : 2)) + rankBonus);
+    return Math.max(1, Math.min(cap, Math.round(progress * cap / 20)));
+  }
+
+  function enemyCombatRandom(seed, fallback = Math.random) {
+    if (seed == null) return fallback;
+    const seedText = 'enemy-combat:' + String(seed); // Separate from terrain and appearance randomness.
+    const shared = window.WildernessMapGenerator?.makeRng?.(seedText) || window.EnemyLoadoutRules?.seedRandom?.(seedText); // Reuse the existing deterministic world RNG.
+    if (typeof shared === 'function') return shared;
+    let state = 2166136261; // Deterministic fallback for standalone tools and tests without the map generator.
+    for (const ch of seedText) state = Math.imul(state ^ ch.charCodeAt(0), 16777619) >>> 0;
+    return () => {
+      state = (state + 0x6D2B79F5) >>> 0;
+      let t = Math.imul(state ^ (state >>> 15), state | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  function rollEnemyCombatClass(random = Math.random) {
+    const ids = Object.keys(ENEMY_COMBAT_CLASSES); // Uniform class roll per fighter, independent of faction or rank.
+    return ids[Math.min(ids.length - 1, Math.max(0, Math.floor((Number(random()) || 0) * ids.length)))];
+  }
+
+  function enemyQuickAttack(combatClass, random = Math.random) {
+    const pool = ENEMY_COMBAT_CLASSES[combatClass]?.quick; // Only existing executable NPC techniques are included.
+    if (!pool) return null;
+    return pool[Math.min(pool.length - 1, Math.max(0, Math.floor((Number(random()) || 0) * pool.length)))];
+  }
+
+  function enemyHeldAttack(combatClass, random = Math.random) {
+    const template = ENEMY_COMBAT_CLASSES[combatClass] || ENEMY_COMBAT_CLASSES.duelist; // A single unlocked held slot is filled by the class's weighted choice.
+    return random() < template.counterChance ? 'counterShield' : 'chargedBreaker';
+  }
+
+  function buildEnemyCombatProfile(combatClass, level, loadout = {}, attackTag = '', rangedWeaponKey = null) {
+    const template = Object.hasOwn(ENEMY_COMBAT_CLASSES, combatClass) ? ENEMY_COMBAT_CLASSES[combatClass] : ENEMY_COMBAT_CLASSES.duelist; // Unknown authored classes use the versatile default.
+    const budget = pointEntitlementAtLevel('combat', level); // Same entitlement as a player of this level.
+    const owned = {}; // Purchased enemy ranks; never written to the player's ranks object.
+    const resources = window.ResourceSystem; // Real melee and projectile status definitions, not duplicate affliction tables.
+    const meleeBonuses = resources?.afflictionBonusesForTag?.(attackTag) || {};
+    const ranged = rangedWeaponKey && window.RangedWeapons?.config?.[rangedWeaponKey]; // Only registered, equipped ranged weapons can contribute another affliction family.
+    const rangedBonuses = ranged ? (ranged.afflictionBonuses || resources?.afflictionBonusesForTag?.(ranged.damageType || 'sharp') || {}) : {};
+    const attackFamilies = new Set([...Object.keys(meleeBonuses), ...Object.keys(rangedBonuses)].map(id => {
+      const definition = resources?.AFFLICTIONS?.[id]; // Alias projectiles use the real stored status family.
+      return resources?.AFFLICTIONS?.[definition?.rangedAliasFor]?.family || definition?.family;
+    }));
+    const combo = window.Combat?.comboData?.[loadout.tap1]; // Player-authored combo finishers can also be Heavy attacks.
+    const hasHeavyCombo = Array.isArray(combo) ? combo.some(step => step.heavy === true) : ['swingCombo', 'pokeCombo'].includes(loadout.tap1);
+    const usable = perk => {
+      if (perk.id === 'increaseLootQuality') return false;
+      if (perk.id === 'empowerQuickAttacks') return ['exhaustCutter', 'backstabFlick', 'mercySpike'].includes(loadout.tap2);
+      if (perk.id === 'empowerDefensiveAttacks') return loadout.hold2 === 'counterShield';
+      if (perk.id === 'empowerHeavyAttacks') return loadout.hold1 === 'chargedBreaker' || hasHeavyCombo;
+      const family = {empowerDamageEffects:'damage', empowerControlEffects:'control', empowerOffensiveDebuffs:'offensiveDebuff', empowerDefensiveDebuffs:'defensiveDebuff'}[perk.id];
+      return !family || attackFamilies.has(family);
+    };
+    const order = [...new Set([...template.priority, ...TREES.combat.map(perk => perk.id)])]
+      .map(id => findPerk('combat', id)).filter(perk => perk && usable(perk)); // Fall back to other useful legal ranks once a preferred path is exhausted.
+    let spent = 0; // Used for the exact same tier thresholds as player purchases.
+    while (spent < budget) {
+      const perk = order.find(p => (owned[p.id] || 0) < p.maxRank && (p.tier === 1 || spent >= tierThreshold('combat', p.tier)));
+      if (!perk) break;
+      owned[perk.id] = (owned[perk.id] || 0) + 1;
+      spent++;
+    }
+    const getRank = id => owned[id] || 0; // Spawn-time rank reader for cached geometry and resource modifiers.
+    return {
+      combatClass: Object.hasOwn(ENEMY_COMBAT_CLASSES, combatClass) ? combatClass : 'duelist',
+      combatLevel: level, combatPerks: Object.freeze(owned), combatPerkPointsSpent: spent,
+      combatPerkModifiers: Object.freeze({
+        health: 1 + getRank('increaseHealth') * 0.08,
+        stamina: 1 + getRank('increaseStamina') * 0.08,
+        staminaCost: 1 - Math.min(0.6, getRank('reduceStaminaUse') * 0.08),
+        footingDamage: 1 + getRank('increaseFootingDamage') * 0.10,
+        footingResistance: 1 - Math.min(0.6, getRank('increaseFootingResistance') * 0.08),
+        lunge: 1 + getRank('increaseLungeDistance') * 0.12,
+        aoe: 1 + getRank('increaseAoe') * 0.10,
+        chargeChance: template.chargeChance,
+        comboDamage: combatDamageMultiplier({}, getRank),
+        quickDamage: combatDamageMultiplier({category:'quickAttack'}, getRank),
+        heavyDamage: combatDamageMultiplier({heavy:true}, getRank),
+        defensiveDamage: combatDamageMultiplier({category:'defensiveHold'}, getRank),
+      }),
+    };
+  }
+
+  // All explicit NPC-origin direct hits (including arrows and faction fights)
+  // enter the same gameplay hit adapters. Only the attacker's own build applies.
+  function scaleEnemyCombatHit(attacker, amount, options = {}) {
+    const mods = attacker?.def?.combatPerkModifiers; // Cached spawn profile, absent for ordinary animals and authored bosses.
+    if (!mods || attacker === window.Combat?.deps?.player) return null;
+    options ||= {}; // Some legacy damage callers explicitly pass null instead of omitting options.
+    let damageMul = options.enchantmentSlot === 'tap2' || options.category === 'quickAttack' ? mods.quickDamage
+      : options.enchantmentSlot === 'hold2' || options.category === 'defensiveHold' ? mods.defensiveDamage : mods.comboDamage;
+    if (options.heavy || options.perkHeavy) damageMul *= mods.heavyDamage / mods.comboDamage; // Heavy is an independent perk channel, as in the player's damage helper.
+    const priorFooting = Number(options.footingDamageMultiplier); // Preserve zero for arrows and other explicitly footing-free attacks.
+    return { amount: amount * damageMul, options: { ...options, footingDamageMultiplier: (Number.isFinite(priorFooting) ? priorFooting : 1) * mods.footingDamage } };
   }
 
   // ── Save/load — perks are character-scoped, same as skill levels/XP ──
@@ -320,6 +450,7 @@
     pointsEarned, pointsSpent, pointsAvailable,
     increase, decrease, resetTree,
     combatDamageMultiplier,
+    ENEMY_COMBAT_CLASSES, enemyCombatLevel, enemyCombatRandom, rollEnemyCombatClass, enemyQuickAttack, enemyHeldAttack, buildEnemyCombatProfile, scaleEnemyCombatHit,
     render,
   };
 })();
