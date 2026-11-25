@@ -1421,6 +1421,7 @@
     c._banditLunging = true;
     c._banditLungeT = durationS;
     c._banditLungeDur = durationS;
+    c._windBanditLungeIntegrated = false; // Preserve incremental wind displacement until the committed lunge finishes.
     c._banditLungeStartX = c.x;
     c._banditLungeStartY = c.y;
     c._banditLungeDirX = Math.cos(c.facing || 0);
@@ -1474,15 +1475,21 @@
       c._banditLungeDistancePx = 0;
     }
     // Facing and lunge direction stay fixed after windup begins, leaving a real backstab window.
+    const priorProgress = 1 - Math.pow(c._banditLungeT / c._banditLungeDur, 3);
     c._banditLungeT = Math.max(0, c._banditLungeT - dt);
     const t = 1 - c._banditLungeT / c._banditLungeDur;
     const eased = 1 - Math.pow(1 - t, 3);
-    const desiredX = c._banditLungeStartX + c._banditLungeDirX * c._banditLungeDistancePx * eased;
-    const desiredY = c._banditLungeStartY + c._banditLungeDirY * c._banditLungeDistancePx * eased;
+    const lungeStep = c._banditLungeDistancePx * Math.max(0, eased - priorProgress);
+    const motion = window.ResourceSystem?.composeMovement?.(c, c._banditLungeDirX * lungeStep, c._banditLungeDirY * lungeStep, { mode: 'lunge', scalarApplied: true, rotationApplied: true, reference: lungeStep || (Number(c.def?.moveSpeed) || deps.TILE * 3) * dt, dt });
+    if (motion?.wind) c._windBanditLungeIntegrated = true;
+    const desiredX = c._windBanditLungeIntegrated ? c.x + (motion?.x ?? c._banditLungeDirX * lungeStep) : c._banditLungeStartX + c._banditLungeDirX * c._banditLungeDistancePx * eased;
+    const desiredY = c._windBanditLungeIntegrated ? c.y + (motion?.y ?? c._banditLungeDirY * lungeStep) : c._banditLungeStartY + c._banditLungeDirY * c._banditLungeDistancePx * eased;
     c._banditLungeHopCurrent = (c._banditLungeHopUnits || 0) * Math.sin(eased * Math.PI);
     const swept = deps.sweptMove(c.x, c.y, desiredX, desiredY, (x, y) => deps.canOccupyAt(x, y, deps.TILE * 0.32));
     const stepPx = Math.hypot(swept.x - c.x, swept.y - c.y);
     c.x = swept.x; c.y = swept.y;
+    if (motion?.wind) window.ResourceSystem?.commitMovement?.(c, motion, Math.min(1, stepPx / Math.max(.00001, Math.hypot(motion.x, motion.y))), window.Combat?.deps?.movementFootingDepleted);
+    if (c.prone) return true;
     if (swept.blockedAt && c._banditLungeAirborne && !c._banditLungeImpactResolved) {
       const state = {
         airborne: true, lungeMaxDistancePx: c._banditLungeDistancePx,
