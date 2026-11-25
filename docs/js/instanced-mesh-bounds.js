@@ -114,7 +114,7 @@
     const bucket = sceneBuckets.get(scene);
     if (!bucket) return;
     for (const object of objects) {
-      if (!object?.isObject3D || owningScene(object) !== scene) continue;
+      if (!object?.isObject3D || (!trackedSet.has(object) && !object.children?.length) || owningScene(object) !== scene) continue;
       if (trackedSet.has(object)) enroll(bucket, object);
       if (object.children?.length && !bucket.queued.has(object)) {
         bucket.queued.add(object);
