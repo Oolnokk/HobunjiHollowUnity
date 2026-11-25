@@ -431,6 +431,8 @@
           const result = previous.apply(this, args);
           if (scene) {
             sceneStructureEpochs.set(scene, sceneStructureEpoch(scene) + 1);
+            // Share the existing topology notification with instanced bounds; no second Object3D.add wrapper.
+            if (method === 'add' && typeof window !== 'undefined') window.InstancedMeshBounds?.noteSceneAttachment?.(scene, args);
             if (method === 'add' && worldTextCandidates.has(scene)) {
               let pending = pendingWorldTextRoots.get(scene);
               if (!pending) {
