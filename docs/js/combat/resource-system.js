@@ -256,11 +256,11 @@
   const ENHANCED_RESOURCE_DEFS = Object.freeze({
     furiousStamina: Object.freeze({
       resource: "stamina", conversionRate: 1, normalPriority: 5, beneficialPriority: 130, tempoMultiplier: 3,
-      requiresBeneficialTransaction: true, benefitsTransaction: tx => tx?.actionKind === "offensiveHeldCharge" || tx?.actionKind === "offensiveHeldFlurry",
+      requiresBeneficialTransaction: true, benefitsTransaction: tx => (tx?.tempoActionKind || tx?.actionKind) === "offensiveHeldCharge" || (tx?.tempoActionKind || tx?.actionKind) === "offensiveHeldFlurry",
     }),
     unshackledStamina: Object.freeze({
       resource: "stamina", conversionRate: 1, normalPriority: 5, beneficialPriority: 130, tempoMultiplier: 3,
-      requiresBeneficialTransaction: true, benefitsTransaction: tx => tx?.actionKind === "combatCombo",
+      requiresBeneficialTransaction: true, benefitsTransaction: tx => (tx?.tempoActionKind || tx?.actionKind) === "combatCombo",
     }),
     moralizedStamina: Object.freeze({ resource: "stamina", conversionRate: 3, normalPriority: 50 }),
     hypedStamina: Object.freeze({
@@ -969,7 +969,7 @@
     const requested = Math.max(0, Number(amount) || 0); // Effective ordinary-resource points the transaction wants to pay/absorb.
     let remaining = requested; // Effective amount left after each enhanced pool contributes through its conversion rate.
     const consumed = []; // Detailed raw/effective contributions used by debug and offensive-Held tempo calculations.
-    const tempoSnapshot = resourceKey === "stamina" ? attackTempoMultiplier(entity, transaction.actionKind) : 1; // Read before any payment mutates the reserve.
+    const tempoSnapshot = resourceKey === "stamina" ? attackTempoMultiplier(entity, transaction.tempoActionKind || transaction.actionKind) : 1; // Read before any payment mutates the reserve.
 
     for (const entry of getEnhancedResources(entity, resourceKey, transaction)) {
       if (!(remaining > 0)) break;
