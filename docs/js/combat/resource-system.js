@@ -588,7 +588,7 @@
 
   function getAffliction(entity, id) {
     const locked = entity?._immutableAfflictions?.[id]; // Permanent afflictions stay gameplay-fixed even if outside code writes their display field.
-    return Number.isFinite(locked) ? locked : (entity.afflictions?.[id] ?? 0);
+    return Number.isFinite(locked) ? locked : (entity?.afflictions?.[id] ?? 0);
   }
 
   function maxAfflictionAmount(entity, def) {
