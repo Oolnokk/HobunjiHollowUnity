@@ -138,6 +138,7 @@ Registered hooks, in order (lower runs first, its restore runs last):
 | 950 | `family-baby-limbs` | frame | family-baby-limbs.js | carried baby's cloned 3D hands/feet wave and kick; rest pose restored |
 | 1000 | `npc-social-inhibition` | frame | npc-social-inhibition-runtime.js | NPC social facing / dance sway |
 | 5000 | `geometry-auto-lod` | render | geometry-auto-lod.js | Opt-in geometry substitutions, restored after every draw |
+| 900000000 | `dense-wall-static-matrices` | render | dense-forest-wall-batches.js | opt-in r128 owner-specific static branch matrix reuse; installs/restores only the active scene instance method during native rendering |
 
 **`frame` scope** = applied once, on the first render of the world scene in a
 frame, undone once at `endWorldFrame`. Every pass (main, PNG depth, shell,
@@ -164,6 +165,16 @@ height wrapper never installs (the town bridge marks the renderer first). Note: 
 replay render (`unwrapRendererRender`) stops at the onboarding wrapper (no
 marker), so replays go through the full lower chain, hooks included. Migrate
 these into `RenderHooks` when you next touch them for another reason.
+
+The static dense-wall matrix experiment is an explicit producer contract, not a
+visibility rule. BorderTerrain enrolls only flat wall groups after attaching
+them to the scene. Their placements live in instance buffers; before any new
+leaf local-transform, manual-matrix or custom-update writer, call
+`DenseForestWallBatches.invalidateStaticMatrixBranch(leafOrRoot)`. The existing
+attachment observer retires modified hierarchies. Explicit subtree matrix
+updates outside native scene recursion retain normal behavior. Pixel Probe
+audits cached branches on demand; no continuous child scan. Keep this off by
+default until a device comparison shows a gain.
 
 Every hook module keeps a small legacy prototype wrapper used **only** when
 `js/render-hooks.js` is absent (isolated tool pages and unit-test VMs).
