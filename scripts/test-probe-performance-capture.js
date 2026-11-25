@@ -5,6 +5,14 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 let now=0, queued=null, id=0, reads=0, writes=0;
 const errors=[];
+const observers=[];
+class Observer {
+  static supportedEntryTypes=['longtask','long-animation-frame'];
+  constructor(callback){this.callback=callback;this.pending=[];observers.push(this);}
+  observe(options){this.type=options.type;}
+  takeRecords(){return this.pending.splice(0);}
+  disconnect(){this.disconnected=true;}
+}
 class WebGLRenderer {
   constructor(){this.info={render:{calls:0,triangles:0}};}
   render(scene,camera){
@@ -14,7 +22,7 @@ class WebGLRenderer {
     this.info.render.triangles=this.info.render.calls*100;
   }
 }
-const window={THREE:{WebGLRenderer},localStorage:{getItem(){reads++;return null;},setItem(){writes++;}},
+const window={PerformanceObserver:Observer,THREE:{WebGLRenderer},localStorage:{getItem(){reads++;return null;},setItem(){writes++;}},
   HeldObjectRenderOrder:{replayingDepth:false}, DenseForestWallBatches:{staticMatrixSnapshot:()=>({enabled:true,skippedLeaves:wallSkips})}};
 let wallSkips=0;
 const context=vm.createContext({window,console:{log:console.log,warn:(...a)=>errors.push(a),error:(...a)=>errors.push(a)},
@@ -32,7 +40,7 @@ assert.equal(F.begin('inactive'),null,'normal gameplay has no profiler token');
 const renderer=new WebGLRenderer(), camera={layers:{mask:1}};
 const scene=Object.create({updateMatrixWorld(){now+=5;wallSkips+=10;}});
 scene.autoUpdate=true;
-let pass='main', fail=false, noWorld=false;
+let pass='main', fail=false, noWorld=false, extraMs=0;
 window.WorldRenderPipeline={currentPass:()=>pass};
 const original=scene.updateMatrixWorld;
 H.register({id:'existing-static-wall-hook',order:900000000,appliesTo:ctx=>ctx.scene===scene&&scene.autoUpdate,
@@ -43,7 +51,7 @@ S.register('pre-render-fixture',()=>{now+=4;},{phase:'pre-render'});
 S.register('post-fixture',()=>{now+=1;},{phase:'post-game'});
 S.setFrameDriver(()=>{
   const loop=F.begin('gameLoop total');
-  F.measure('work',()=>{now+=3;}); F.measure('work',()=>{now+=1;});
+  F.measure('work',()=>{now+=3+extraMs;}); F.measure('work',()=>{now+=1;});
   F.record('custom direct counter',.25);
   S.checkpoint('pre-render');
   if(!noWorld){
@@ -70,7 +78,18 @@ tick(100);tick(200);
 fail=true;tick(300);fail=false;
 noWorld=true;tick(400);noWorld=false;
 tick(500);tick(600);
+observers[0].pending.push({name:'self',startTime:30,duration:60}, {name:'outside',startTime:-10,duration:55});
+observers[1].pending.push({startTime:100,duration:80,blockingDuration:30,styleAndLayoutStart:170,scripts:[{sourceURL:'https://example.com/docs/js/animals.js?v=secret',sourceFunctionName:'update',duration:70,forcedStyleAndLayoutDuration:2}]});
 const report=P.finish();
+assert.equal(report.version,2);
+assert.equal(report.browser.longtask.count,1);
+assert.equal(report.browser.longtask.totalMs,60);
+assert.equal(report.browser['long-animation-frame'].worst[0].scripts[0].source,'js/animals.js');
+assert.equal(report.browser['long-animation-frame'].worst[0].styleToEndMs,10);
+assert(observers.every(o=>o.disconnected));
+assert.equal(report.slowFrameIntervals[0].intervalMs,100);
+assert.equal(report.slowFrameIntervals[0].betweenCallbacksMs,80);
+assert.equal(report.slowSchedulerFrames.length,0);
 assert.equal(report.completeFrames,4);
 assert.deepEqual(JSON.parse(JSON.stringify(report.outsideFrameSubsystems)),[{name:'deferred classification',calls:1,totalMs:3,maxCallMs:3}]);
 assert.equal(report.interruptedFrames,1);
@@ -98,8 +117,12 @@ assert.equal(P.active,false);assert.equal(F.begin('inactive'),null);
 assert(!H.list().includes('pixel-probe-performance-window'),'capture hook removed on finish');
 assert.equal(P.finish(),report,'limit/tap can retrieve the same completed report');
 P.start('forest');tick(700);P.cancel();assert.equal(P.finish(),null);
-P.start('forest');tick(800);tick(900);tick(20900);
+P.start('forest');tick(800);extraMs=60;tick(900);extraMs=0;tick(20900);
 const limited=P.finish();assert.equal(limited.reason,'limit');assert.equal(limited.completeFrames,1);
+assert.equal(limited.slowSchedulerFrames[0].schedulerMs,80);
+assert.equal(limited.terminalFrameGap.rafIntervalMs,20000);
+assert.equal(limited.terminalFrameGap.sinceLastSchedulerEndMs,19920);
+assert(observers.every(o=>o.disconnected));
 assert.equal(P.active,false);
 const off=S.registerTimingObserver({beginFrame(){throw Error('diagnostic error');}});
 assert.equal(typeof off,'function');tick(21000);off();
