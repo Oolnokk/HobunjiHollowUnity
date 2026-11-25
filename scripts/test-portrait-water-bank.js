@@ -19,6 +19,22 @@ assert.strictEqual(actorStandsInWater(flood, { col: 3, row: 3 }), true, 'map-wid
 assert.strictEqual(actorStandsInWater(flood, { col: 12, row: 3 }), false, 'outside the flood rectangle');
 assert.strictEqual(actorStandsInWater({ userData: {} }, { col: 1, row: 1 }), true, 'footprint-less scenery water keeps the bounds test only');
 
-const submerged = source.slice(source.indexOf('function submergedPortraits('));
-assert.ok(/actorStandsInWater\(cover, scope\)/.test(submerged.slice(0, 900)), 'submergedPortraits requires the actor tile to be wet');
+const submergedStart = source.indexOf('  function submergedPortraits(');
+const submergedEnd = source.indexOf('  function splitXrayGroupsForTint(', submergedStart);
+assert.ok(submergedStart >= 0 && submergedEnd > submergedStart);
+let rule = 'wet-tile'; // Exercise the production tint filter, not a fixed-length source substring.
+const submergedPortraits = new Function('xrayRule', 'createLocalReplayFilter', 'filterOffscreenReplayMeshes',
+  'tintCoverNearActor', 'actorStandsInWater', 'meshOverlapsWaterVolume',
+  source.slice(submergedStart, submergedEnd) + '\nreturn submergedPortraits;')(
+  () => rule, scene => portrait => scene.local.has(portrait), (_camera, meshes) => meshes,
+  () => true, actorStandsInWater, () => true);
+const portraitAt = (x,z) => ({matrixWorld:{elements:[1,0,0,0,0,1,0,0,0,0,1,0,x,0,z,1]}});
+const bank = portraitAt(9.5,6.5), wet = portraitAt(9.5,5.5), distantWet = portraitAt(10.5,5.5);
+const scene = {local:new Set([bank,wet])};
+assert.deepStrictEqual(submergedPortraits({},[pond],[bank,wet,distantWet],scene).portraits,[wet],
+  'dry bank and distant wet portrait both stay out of special tint replay');
+assert.deepStrictEqual(submergedPortraits({},[pond],[bank,wet,distantWet]).portraits,[wet,distantWet],
+  'legacy no-scene path retains all wet portraits');
+rule = 'off';
+assert.deepStrictEqual(submergedPortraits({},[pond],[wet],scene).portraits,[]);
 console.log('portrait water bank: ok');

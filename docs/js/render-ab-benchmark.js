@@ -365,6 +365,15 @@
       variants.push({ id: 'dualWieldFullSync', apply: () => dualWield.setLeanSyncEnabled(false), undo: () => dualWield.setLeanSyncEnabled(true) });
     }
     const heldOrder = window.HeldObjectRenderOrder;
+    if (typeof heldOrder?.setLocalReplayRingEnabled === 'function') {
+      const localBefore = heldOrder.snapshot?.().localReplayRingEnabled !== false; // Restore the user's exact policy after each sample window.
+      variants.push({ id: localBefore ? 'fullXrayRange' : 'localXrayRing', apply: () => heldOrder.setLocalReplayRingEnabled(!localBefore), undo: () => heldOrder.setLocalReplayRingEnabled(localBefore) });
+    }
+    const shadowPolicy = window.ShadowMapRefreshThrottle;
+    if (typeof shadowPolicy?.setShadowRenderingEnabled === 'function') {
+      const shadowBefore = shadowPolicy.snapshot().shadowRenderingEnabled;
+      variants.push({ id: shadowBefore ? 'shadowsOff' : 'shadowsOn', apply: () => shadowPolicy.setShadowRenderingEnabled(!shadowBefore), undo: () => shadowPolicy.setShadowRenderingEnabled(shadowBefore) });
+    }
     if (typeof heldOrder?.setGearParticlesOnceEnabled === 'function' && heldOrder.snapshot?.().gearParticlesOnceEnabled !== false) {
       variants.push({ id: 'gearParticlesEveryPass', apply: () => heldOrder.setGearParticlesOnceEnabled(false), undo: () => heldOrder.setGearParticlesOnceEnabled(true) });
     }

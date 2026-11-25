@@ -135,7 +135,7 @@ const diagnosticNames = ['lastBaseReplayCandidates', 'lastBaseOffscreenFiltered'
 const noReplay = new Function(block('  function resetBaseReplayDiagnostics(', '  wrappedRender.__hobunjiHeldRenderOrderWrapped')
   + `
     const internalReplay = false, enabled = true, hasDisabledActorXray = false, allActorXrayDisabled = false;
-    const retiredScenes = new WeakSet(), window = {};
+    const retiredScenes = new WeakSet(), window = {}, maskedHands = new Set();
     const heldRegistry = {}, groundRegistry = {}, topFaceGroundRegistry = {}, tintCoverRegistry = {};
     const waterOccludedRegistry = {}, waterPortraitRegistry = {};
     const isBaseWorldPass = () => true, isShellOutlinePass = () => false, xrayRule = () => 'off';
