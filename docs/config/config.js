@@ -64,7 +64,7 @@
         resoluteFooting: '#f1d27a',
         resoluteHealth: '#8fd0ff',
         mirroredHealth: '#d9f0ff',
-        undertowStamina: '#237fbd', // Tothal recovery debt.
+        windblownStamina: '#237fbd', // Tothal recovery debt.
         leadboundStamina: '#a29179',
         soulweightedHealth: '#705480',
         veilmarkedHealth: '#a1d8d5',
