@@ -937,9 +937,14 @@
         coffinBlocksBox(coffin,opened,actor.x/tile,actor.y/tile,half,null)&&
         !coffinBlocksBox(coffin,state,actor.x/tile,actor.y/tile,half,null);
     }
-    if(wouldTrap(wildlifeDeps?.player,.3))return false;
+    const player=wildlifeDeps?.player; // A closed lid is now a real walkable support: don't pull it out from beneath the player.
+    const lid=coffin.solidParts?.find(part=>part.id==='lid');
+    if(lid&&player&&Number.isFinite(player.physicalFeetY)&&Math.abs(player.physicalFeetY-lid.topY)<.08&&
+      player.x/tile>=lid.minX-.12&&player.x/tile<=lid.maxX+.12&&player.y/tile>=lid.minZ-.12&&player.y/tile<=lid.maxZ+.12)return false;
+    if(wouldTrap(player,.3))return false;
     for(const set of [wildlifeDeps?.hostileObjects,wildlifeDeps?.companionObjects])
       for(const actor of set||[])if(actor.areaId===mapId&&actor.health>0&&wouldTrap(actor,.32))return false; // Do not trap another cave inhabitant under a moving lid.
+    for(const record of bodiesByMapId.get(mapId)||[])if(record.emergence&&wouldTrap(record.entity,.32))return false; // Staged actors are not in the hostile registry yet.
     coffin.openStartedAt=caveClock;
     state.openedCoffins||=[];
     state.openedCoffins.push(coffin.id);
@@ -2002,8 +2007,10 @@
         const entity = await makeSkeleton(mapId, x, y, { state: 'idle', caveBodyId: body.id });
         if (wildlifeDeps?.getCurrentArea?.() !== mapId || plansByMapId.get(mapId) !== plan) { if (entity) devSpawnerDeps?.despawnCreature?.(entity); break; }
         if (!entity) continue;
+        const group=entity.avatarRef?.group,authoredScaleY=group?.scale?.y; // Shared corpse settling resets scale.y to one; keep the authored humanoid silhouette.
         window.CreatureDeath.settleAsCorpse(entity, { yaw: body.yaw, roll:0 });
-        if(entity.avatarRef?.group?.position)entity.avatarRef.group.position.y+=coffinFloorY(coffinForBody(plan,body)); // The corpse lies on the actual elevated plinth, not below it.
+        if(group?.scale&&Number.isFinite(authoredScaleY))group.scale.y=authoredScaleY;
+        if(group?.position)group.position.y+=coffinFloorY(coffinForBody(plan,body)); // The corpse lies on the actual elevated plinth, not below it.
         if (looted.has(body.id)) entity.corpseLooted = true;
         setBodySealed(entity,coffinProgress(coffinForBody(plan,body),state)<1);
         records.push({ body, entity, riser: Math.random() < BODY_RISE_CHANCE, armedAt: null, delay: 0, rising: false, risen: false });
@@ -2086,7 +2093,7 @@
       minion.avatarRef.legs?.update?.(0,0,true);
     }
     if(minion.groundShadow)minion.groundShadow.visible=false;
-    if(minion._banditToolHolder)minion._banditToolHolder.visible=false;
+    for(const holder of [minion._banditToolHolder,minion._banditRangedToolHolder,minion._banditFlaskToolHolder])if(holder)holder.visible=false; // Never expose scene-sibling equipment at its uninitialized transform.
     minion._caveBodyRising=true;
     devSpawnerDeps?.corpseObjects?.delete?.(corpse);
     devSpawnerDeps?.despawnCreature?.(corpse);
@@ -2107,8 +2114,9 @@
     const ground=api?.worldSurfaceTopAt?.(exit.col+.5,exit.row+.5,terrain,mapId)??terrain;
     // Step up over the panel and down onto ordinary floor. Blend the narrow vertical ledge instead of snapping.
     if(p<.12)return e.floor+(rim-e.floor)*smoothCoffinStep(p/.12);
-    if(p<.65)return rim; // Keep feet above the stone until the actor's footprint clears the rim.
-    return rim+(ground-rim)*smoothCoffinStep((p-.65)/.35);
+    const clearAt=.8; // Authored plinth extends .48 tiles plus .32 walking half-width on the exit axis.
+    if(p<clearAt)return rim;
+    return rim+(ground-rim)*smoothCoffinStep((p-clearAt)/(1-clearAt));
   }
 
   function animateEmergence(mapId,record,dt){
@@ -2139,7 +2147,7 @@
     const step=dt*COFFIN_WALK_TILES_S*tile/Math.max(1,distance);
     const old=e.walk;
     const next=clamp(e.walk+(clear?step:-step),0,1);
-    if(clear||emergencePathClear(mapId,record,e.x+(tx-e.x)*next,e.y+(ty-e.y)*next))e.walk=next; // Retreat only along a clear route. // If the exit is occupied mid-step, walk back into the coffin instead of teleporting through the blocker.
+    if(clear||emergencePathClear(mapId,record,e.x+(tx-e.x)*next,e.y+(ty-e.y)*next))e.walk=next; // Retreat only along a clear route.
     c.x=e.x+(tx-e.x)*e.walk;c.y=e.y+(ty-e.y)*e.walk;
     c.vx=dt>0?(tx-e.x)*(e.walk-old)/dt:0;c.vy=dt>0?(ty-e.y)*(e.walk-old)/dt:0;
     c.facing=direction;
@@ -2154,10 +2162,10 @@
     if(e.walk<1)return;
     c.vx=0;c.vy=0;c.homeX=c.x;c.homeY=c.y;
     c._caveBodyRising=false;c.state='chase';
-    window.BanditCombat?.setCombatExpression?.(c,true); // Hand off the native combat portrait too.
     if(c.groundShadow){c.groundShadow.visible=true; c.groundShadow.position?.set?.(c.x/tile,emergenceSurface(mapId,record,exit,1)+.01,c.y/tile);}
     wildlifeDeps?.hostileObjects?.add(c);
     record.emergence=null;record.rising=false;record.risen=true;
+    window.BanditCombat?.setCombatExpression?.(c,true); // After registry handoff so the native alert callback sees a live hostile.
     window.__farmLog?.(`[cave-sites] ${record.body.id} stood and walked out in ${mapId}.`,'world');
   }
 
