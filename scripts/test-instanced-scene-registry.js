@@ -86,5 +86,20 @@ a.clear();assert.equal(get(a).length,0);
   assert.throws(()=>api.forEachTracked(mesh=>{assert.equal(mesh,first);throw Error('consumer failed');}),/consumer failed/);
   const live=[];api.forEachTracked(mesh=>live.push(mesh));
   assert.deepEqual(live,[first,last],'failed compaction retains unread entries exactly once');
+  // Dead entries before a live callback used to make nested iteration see
+  // the same live object twice while the outer pass compacted in place.
+  const dead2=api.tag(new Instance()),tail=api.tag(new Instance());
+  refs.find(ref=>ref.object===first).object=null;
+  refs.find(ref=>ref.object===dead2).object=null;
+  const outer=[],inner=[];
+  api.forEachTracked(mesh=>{
+    outer.push(mesh);
+    if(mesh===last)api.forEachTracked(nested=>inner.push(nested));
+  });
+  assert.deepEqual(outer,[last,tail]);
+  assert.deepEqual(inner,[last,tail],'nested visits see the unmodified registry');
+  const final=[];api.forEachTracked(mesh=>final.push(mesh));
+  assert.deepEqual(final,[last,tail]);
+
 }
 console.log('instanced scene registry: active-map visits, attachments, visibility, reparenting, late tags, overflow and A/B PASS');
