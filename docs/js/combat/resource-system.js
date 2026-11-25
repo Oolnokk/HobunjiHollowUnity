@@ -1080,10 +1080,10 @@
   // docs above) proportional to how much of the band the spend crossed.
   function resolveSpentAfflictions(entity, spendEnd, spendStart) {
     const woundedOverlap = consumeZeroBasedSpend(entity, "woundedStamina", spendEnd, spendStart);
-    if (woundedOverlap > 0) applyDamage(entity, woundedOverlap, { reason: "spent Wounded Stamina" });
+    if (woundedOverlap > 0) applyDamage(entity, woundedOverlap, { reason: "spent Wounded Stamina", source: "afflictionTick" });
 
     const infectedOverlap = consumeZeroBasedSpend(entity, "infectedStamina", spendEnd, spendStart);
-    if (infectedOverlap > 0) applyDamage(entity, infectedOverlap, { reason: "spent Infected Stamina" });
+    if (infectedOverlap > 0) applyDamage(entity, infectedOverlap, { reason: "spent Infected Stamina", source: "afflictionTick" });
 
     const shatteredOverlap = consumeZeroBasedSpend(entity, "shatteredStamina", spendEnd, spendStart);
     if (shatteredOverlap > 0) addAffliction(entity, "bleedingHealth", shatteredOverlap * 1.6);
@@ -1121,6 +1121,25 @@
     return Number.isFinite(raw) ? Math.max(0, Math.min(500, raw)) : DEFAULT_ATTACK_POWER; // Only gameplay's authored Attack Power affects on-hit buildup, not post-defense Health damage.
   }
 
+  // Both the core damage path and the Drunken Health compatibility adapter use this single owner.
+  function resolvePlanarHealthTransaction(entity, amount, opts = {}) {
+    const damage = Math.max(0, Number(amount) || 0); // Damage remaining after ordinary attack modifiers / Drunken Health conversion.
+    const direct = opts.source !== "afflictionTick"; // Wounded/Infected expenditure is affliction damage, not a weapon strike.
+    const soulweightBefore = direct ? getAffliction(entity, "soulweightedHealth") : 0; // Snapshot old debt before Pact consumption adds new debt.
+    const bypass = direct ? removeAffliction(entity, "veilmarkedHealth", Math.min(damage, Math.max(0, entity.health), getAffliction(entity, "veilmarkedHealth"))) : 0;
+    const enhanced = resolveEnhancedResourceTransaction(entity, "health", Math.max(0, damage - bypass), {
+      kind: "damage", source: direct ? "directDamage" : "afflictionTick", reason: opts.reason || "damage",
+    });
+    return { ordinaryRemaining: round1(enhanced.ordinaryRemaining + bypass), soulweightBefore };
+  }
+
+  function settleSoulweight(entity, lost, transaction) {
+    const oldDebt = transaction?.soulweightBefore || 0; // Only the debt present before the hit may discharge.
+    if (!(lost > 0 && oldDebt > 0 && !entity.exhaustion?.active && entity.stamina > 0)) return;
+    const drained = removeAffliction(entity, "soulweightedHealth", Math.min(lost, oldDebt, entity.stamina));
+    entity.stamina = round1(Math.max(0, entity.stamina - drained)); // A drain, not a paid action: no action triggers or Black-Stamina debt.
+  }
+
   function applyDamage(entity, amount, opts = {}) {
     if (window.RomanceFamily?.isBasketBaby?.(entity?.rec?.id || entity?.id)) return 0; // Preserve the saved family member through every shared NPC damage path.
     if (!(amount > 0)) return 0;
@@ -1137,16 +1156,11 @@
 
     const buildupAttackPower = attackPowerForAttack(opts); // One shared source for ordinary and Drunken Health damage adapters.
     finalDamage *= statModifier(entity, 'incomingHealthDamage'); // Player trade-offs apply to actual direct Health damage (including heavy Bruised consumption), not raw affliction chances.
-    const soulweightBefore = getAffliction(entity, "soulweightedHealth"); // Snapshot old debt so a Pact consumed by this same hit does not discharge its new debt immediately.
-    const bypass = removeAffliction(entity, "veilmarkedHealth", Math.min(finalDamage, Math.max(0, entity.health), getAffliction(entity, "veilmarkedHealth"))); // Finite mark bypasses shields, never amplifies total incoming damage.
-    const enhanced = resolveEnhancedResourceTransaction(entity, "health", Math.max(0, finalDamage - bypass), { kind: "damage", source: "directDamage", reason: opts.reason || "damage" });
+    const transaction = resolvePlanarHealthTransaction(entity, finalDamage, opts);
     const before = entity.health;
-    entity.health = round1(clamp(entity.health - enhanced.ordinaryRemaining - bypass, 0, getEffectiveMax(entity, "health")));
+    entity.health = round1(clamp(entity.health - transaction.ordinaryRemaining, 0, getEffectiveMax(entity, "health")));
     const lost = round1(before - entity.health);
-    if (lost > 0 && soulweightBefore > 0 && !entity.exhaustion?.active && entity.stamina > 0) {
-      const drained = removeAffliction(entity, "soulweightedHealth", Math.min(lost, soulweightBefore, entity.stamina)); // A drain, not a paid action: no action triggers or Black-Stamina debt.
-      entity.stamina = round1(Math.max(0, entity.stamina - drained));
-    }
+    settleSoulweight(entity, lost, transaction);
     // Shared player/NPC damage path: retain the real lethal weapon type, not a
     // currently-active bleed/poison buildup that may have come from an older hit.
     if (before > 0 && entity.health <= 0) entity._lethalDamageCause = String(opts.tag || opts.damageType || opts.reason || 'impact').toLowerCase();
@@ -1393,6 +1407,8 @@
     restoreStamina,
     getEnhancedResources,
     resolveEnhancedResourceTransaction,
+    resolvePlanarHealthTransaction,
+    settleSoulweight,
     addEnhancedResource,
     convertKindlingToBurning,
     spendStamina,
