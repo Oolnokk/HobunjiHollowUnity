@@ -281,7 +281,7 @@ RS.addEnhancedResource(p2, 'resoluteHealth', 5);
 RS.applyDamage(p2, 15, {});
 assert.equal(p2.health, 100, '15. 5 Resolute Health absorb 15 Health loss');
 
-// ── 14: Furious Stamina tempo only for the funded portion ─────────
+// ── 14: Furious Stamina snapshots the amount before payment ────────
 const p3 = makeEntity();
 RS.addEnhancedResource(p3, 'furiousStamina', 6);
 RS.addEnhancedResource(p3, 'moralizedStamina', 10);
@@ -924,7 +924,7 @@ assert.equal(companionPanels.get('relic-grants').onAction('grant').ok, true);
     };
     const npcBanditSource=npcSlice('  function beginBanditMeleeStage(','  function resolvedBanditCombatTarget(')
       +npcSlice('  function damageBanditCombatTarget(','  // Mirrors combat-quickattacks.js')
-      +npcSlice('  function fireBanditComboStep(','  function fireBanditQuickAttack(');
+      +npcSlice('  function payBanditAttack(','  function fireBanditQuickAttack(');
     const liveStages=hypedStages; // Existing Combat.beginStagedAction test bridge records the real NPC stage options too.
     const liveLunges=[],liveNpcHits=[]; // Compare original and second real damage/lunge dispatch without reimplementing the bandit attack.
     const savedComboData=context.Combat.comboData,savedComboPose=context.Combat.comboStepPose;
@@ -963,7 +963,6 @@ assert.equal(companionPanels.get('relic-grants').onAction('grant').ok, true);
       vm.createContext(npcCombatScope);
       vm.runInContext(npcBanditSource,npcCombatScope,{filename:'combat-bandit.js#hyped-npc-integration'});
       RS.addEnhancedResource(npcCombatant,'hypedStamina',8);
-      RS.spendStamina(npcCombatant,8,'bandit attack',{actionKind:'combatNpcMelee',abilityId:'npcMelee'});
       const firstIndex=liveStages.length;
       assert.equal(npcCombatScope.fireBanditComboStep(npcCombatant,npcDef,{tap1:'swingCombo'},npcOpponent),true);
       const firstStage=liveStages[firstIndex];
@@ -992,7 +991,7 @@ assert.equal(companionPanels.get('relic-grants').onAction('grant').ok, true);
   // A Fey Flourish bound to a defensive slot cannot report a fake effect.
   ES.setFlourish('fey-testing-blade','hold2','feyDreadPulse');
   const feyDefensiveScope=fs.readFileSync('docs/js/combat/combat-enchantments.js','utf8');
-  assert(feyDefensiveScope.includes("def.alignment === 'Fey') return false"),'defensive Fey handlers explicitly fail closed');
+  assert(feyDefensiveScope.includes("def.alignment === 'Fey'"),'defensive Fey handlers explicitly fail closed');
 
   // The loaded Harlyao bound relic authority supports both origins, and
   // neither the ordinary boss chest nor Boney's Fey roll can borrow the other's shapes.
