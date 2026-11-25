@@ -101,47 +101,51 @@
     }),
     stormwake: Object.freeze({
       id: 'stormwake', displayName: 'Stormwake', type: 'Base', alignment: 'Tothal',
-      icon: '🌊', scalable: Object.freeze({ power: true }),
-      hitDebuff: Object.freeze({ id: 'reeling', durationS: 4 }),
-      description: 'Each hit makes the target Reeling for 4 seconds, increasing knockback received by 15% per stack before Immundanity. Tothus never lets anything come to rest.',
+      icon: '🌊', scalable: Object.freeze({ amount: true }),
+      hitAffliction: Object.freeze({ id: 'undertowStamina', amount: 6 }),
+      description: 'Each hit adds 6 Undertow Stamina. Ordinary Stamina recovery must clear Undertow point for point before restoring Stamina; Black-Stamina recovery is unaffected. Values scale with Immundanity.',
     }),
     stonebind: Object.freeze({
       id: 'stonebind', displayName: 'Stonebind', type: 'Base', alignment: 'Hronal',
-      icon: '⛰', scalable: Object.freeze({ power: true }),
-      hitDebuff: Object.freeze({ id: 'heavy', durationS: 4 }),
-      description: 'Each hit makes the target Heavy for 4 seconds, reducing movement and dodge/lunge distance by 7.5% per stack before Immundanity.',
+      icon: '⛰', scalable: Object.freeze({ amount: true }),
+      hitAffliction: Object.freeze({ id: 'calcifiedFooting', amount: 5 }),
+      description: 'Each hit adds 5 Calcified Footing. When ordinary Footing is lost, calcification is consumed to inflict equal additional loss, limited to remaining Footing. Values scale with Immundanity.',
     }),
     soulweight: Object.freeze({
       id: 'soulweight', displayName: 'Soulweight', type: 'Base', alignment: 'Kanthic',
-      icon: '◉', scalable: Object.freeze({ power: true }),
-      hitDebuff: Object.freeze({ id: 'taxed', durationS: 4 }),
-      description: 'Each hit makes the target Taxed for 4 seconds, increasing Stamina costs by 7.5% per stack before Immundanity. Echoes the weight that draws souls toward Kanth.',
+      icon: '◉', scalable: Object.freeze({ amount: true }),
+      hitAffliction: Object.freeze({ id: 'soulweightedHealth', amount: 6 }),
+      description: 'Each hit adds 6 Soulweighted Health. Subsequent direct Health loss discharges Soulweight into equal ordinary Stamina loss, without creating Exhaustion. Values scale with Immundanity.',
     }),
     ancestralSight: Object.freeze({
       id: 'ancestralSight', displayName: 'Ancestral Sight', type: 'Base', alignment: 'Ohthic',
-      icon: '◈', scalable: Object.freeze({ power: true }),
-      hitDebuff: Object.freeze({ id: 'exposed', durationS: 4 }),
-      description: 'Each hit makes the target Exposed for 4 seconds, increasing subsequent direct Health damage by 7.5% per stack before Immundanity. The watchers in Ohth see what mortals overlook.',
+      icon: '◈', scalable: Object.freeze({ amount: true }),
+      hitAffliction: Object.freeze({ id: 'veilmarkedHealth', amount: 5 }),
+      description: 'Each hit adds 5 Veilmarked Health. Subsequent direct damage consumes the mark to bypass enhanced Health protection for that portion of the hit. Values scale with Immundanity.',
     }),
     stormRenewal: Object.freeze({
       id: 'stormRenewal', displayName: 'Storm Renewal', type: 'Flourish', alignment: 'Tothal',
       icon: '↻', flurryBehavior: 'numeric', scalable: Object.freeze({ amount: true }),
-      description: 'A qualifying strike, block or near-hit dodge restores 12 ordinary Stamina before Immundanity, without clearing Exhaustion. Flurry hits restore one quarter.',
+      grantAffliction: Object.freeze({ id: 'currentStamina', amount: 8 }),
+      description: 'Grants 8 Current Stamina, usable exclusively for dodge costs at two ordinary Stamina per point. Values scale with Immundanity; Flurry hits grant one quarter.',
     }),
     bedrock: Object.freeze({
       id: 'bedrock', displayName: 'Bedrock', type: 'Flourish', alignment: 'Hronal',
       icon: '◆', flurryBehavior: 'numeric', scalable: Object.freeze({ amount: true }),
-      description: 'A qualifying strike, block or near-hit dodge grants 9 Resolute Footing before Immundanity, worth 27 ordinary Footing. Flurry hits grant one quarter.',
+      grantAffliction: Object.freeze({ id: 'hearthstoneFooting', amount: 10 }),
+      description: 'Grants 10 Hearthstone Footing. Each point absorbs one Footing damage and restores one ordinary Stamina when consumed. Values scale with Immundanity; Flurry hits grant one quarter.',
     }),
     blackBargain: Object.freeze({
       id: 'blackBargain', displayName: 'Black Bargain', type: 'Flourish', alignment: 'Kanthic',
       icon: '☾', flurryBehavior: 'numeric', scalable: Object.freeze({ amount: true }),
-      description: 'A qualifying strike or defense against a living opponent applies up to 8 Congealed Health to them and 3 to the wielder, temporarily reducing both maximum Health values. Immundanity scales both; Flurry hits apply one quarter.',
+      grantAffliction: Object.freeze({ id: 'pactHealth', amount: 8 }),
+      description: 'Grants 8 Pact Health, which absorbs two direct Health damage per point. Every point spent adds one Soulweighted Health to the wielder. Values scale with Immundanity; Flurry hits grant one quarter.',
     }),
     ancestralMercy: Object.freeze({
       id: 'ancestralMercy', displayName: 'Ancestral Mercy', type: 'Flourish', alignment: 'Ohthic',
       icon: '✧', flurryBehavior: 'numeric', scalable: Object.freeze({ amount: true }),
-      description: 'A qualifying strike, block or near-hit dodge removes up to 8 Bleeding Health and 8 Wounded Stamina from the wielder before Immundanity. Flurry hits cleanse one quarter. Does not restore lost Health or cleanse sacred-only wounds.',
+      grantAffliction: Object.freeze({ id: 'guardianHealth', amount: 8 }),
+      description: 'Grants 8 Guardian Health, which absorbs two Health-affliction damage per point but cannot absorb direct weapon damage. Values scale with Immundanity; Flurry hits grant one quarter.',
     }),
     feyDementedStamina: Object.freeze({
       id: 'feyDementedStamina', displayName: 'Demented Stamina', type: 'Base', alignment: 'Fey',
@@ -474,64 +478,34 @@
     // Fey deliberately ignores ordinary positive Immundanity boosts. At a hard zero enchantment-power gate, illusions also fail.
     window.FeyIllusions?.apply?.(def.id, event.target, { weaponKey: event.weaponKey, attacker: event.attacker });
   }
-  // Realm additions use the canonical resource and timed-debuff APIs; no additional actor tick or target scan.
+  // Planar effects share one data-driven application path; resource transactions own their unique behavior.
   function livingActor(actor) {
-    return !!actor && Number(actor.health) > 0 && !actor._downed;
+    return !!actor && Number(actor.health) > 0 && !actor._downed
+      && !window.RomanceFamily?.isBasketBaby?.(actor.rec?.id || actor.id);
   }
 
-  function applyRealmHitDebuff(event, def, power) {
+  function applyRealmHitAffliction(event, def, power) {
     if (!livingActor(event.target) || !(power > 0)) return false;
-    const effect = def.hitDebuff; // The authored per-hit timed status for this Base enchantment.
+    const effect = def.hitAffliction; // Authored reserve amount, scaled by weapon Immundanity.
     if (!effect) return false;
-    const applied = window.ResourceSystem?.applyTimedDebuff?.(event.target, effect.id, effect.durationS, {
-      power, source: def.id,
-    });
-    if (!applied) return false;
-    logEvent(`${def.displayName}: ${applied.name} ×${applied.stacks} on ${targetName(event.target)}`);
-    return true;
-  }
-
-  function applyStormRenewal(event, def, power) {
-    if (!livingActor(event.attacker) || !(power > 0)) return false;
-    const restored = window.ResourceSystem?.restoreStamina?.(event.attacker, 12 * power)?.stamina || 0; // Ordinary recovery cannot bypass Exhaustion.
-    if (!(restored > 0)) return false;
-    logEvent(`${def.displayName}: restored ${restored} Stamina`);
-    return true;
-  }
-
-  function applyBedrock(event, def, power) {
-    if (!livingActor(event.attacker) || !(power > 0)) return false;
-    const added = applyEnhanced(event.attacker, 'resoluteFooting', 9 * power, def.displayName); // Canonical 3:1 buffer, not raw Footing recovery.
+    const added = window.ResourceSystem?.addAffliction?.(event.target, effect.id, effect.amount * power) || 0;
     if (!(added > 0)) return false;
-    logEvent(`${def.displayName}: granted ${added} Resolute Footing`);
+    logEvent(`${def.displayName}: +${added} ${window.ResourceSystem.AFFLICTIONS[effect.id].name} on ${targetName(event.target)}`);
     return true;
   }
 
-  function applyBlackBargain(event, def, power) {
-    const wielder = event.attacker, target = event.target; // Both parties bear a cost; never transfer the burden to an unrelated actor.
-    if (!livingActor(wielder) || !livingActor(target) || wielder === target || !(power > 0)) return false;
-    const rs = window.ResourceSystem; // Existing temporary maximum-Health affliction and its recovery owner.
-    if (!rs?.addAffliction) return false;
-    const burden = rs.addAffliction(target, 'congealedHealth', 8 * power);
-    if (!(burden > 0)) return false;
-    const cost = rs.addAffliction(wielder, 'congealedHealth', 3 * power);
-    logEvent(`${def.displayName}: ${burden} Congealed Health on ${targetName(target)}; ${cost} on wielder`);
-    return true;
-  }
-
-  function applyAncestralMercy(event, def, power) {
+  function applyRealmFlourish(event, def, power) {
     if (!livingActor(event.attacker) || !(power > 0)) return false;
-    const rs = window.ResourceSystem; // Reuses the limited, canonical affliction removal path rather than healing Health directly.
-    if (!rs?.removeAffliction) return false;
-    const bleeding = rs.removeAffliction(event.attacker, 'bleedingHealth', 8 * power);
-    const wounded = rs.removeAffliction(event.attacker, 'woundedStamina', 8 * power);
-    if (!(bleeding > 0 || wounded > 0)) return false;
-    logEvent(`${def.displayName}: cleansed ${bleeding} Bleeding and ${wounded} Wounded`);
+    const effect = def.grantAffliction; // Authored enhanced reserve; Flurry's numerical scale is already included in power.
+    if (!effect) return false;
+    const added = applyEnhanced(event.attacker, effect.id, effect.amount * power, def.displayName);
+    if (!(added > 0)) return false;
+    logEvent(`${def.displayName}: +${added} ${window.ResourceSystem.AFFLICTIONS[effect.id].name}`);
     return true;
   }
 
   const FLOURISH_HANDLERS = { sicced: applySicced, fury: applyFury, moralized: applyMoralized, resolve: applyResolve,
-    stormRenewal: applyStormRenewal, bedrock: applyBedrock, blackBargain: applyBlackBargain, ancestralMercy: applyAncestralMercy,
+    stormRenewal: applyRealmFlourish, bedrock: applyRealmFlourish, blackBargain: applyRealmFlourish, ancestralMercy: applyRealmFlourish,
     feyHypedPulse: applyFeyFlourish, feyDreadPulse: applyFeyFlourish };
 
   function applyFlourish(event) {
@@ -604,7 +578,7 @@
     const baseIds = stateFor(key).base; // At most two equipped Base IDs; avoids scanning the expanded catalog on every hit.
     for (const id of baseIds) {
       const def = DEFINITIONS[id];
-      if (def?.hitDebuff) applyRealmHitDebuff(event, def, power);
+      if (def?.hitAffliction) applyRealmHitAffliction(event, def, power);
     }
 
     if (baseIds.includes('burning')) {
