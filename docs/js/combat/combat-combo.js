@@ -302,6 +302,7 @@
             const actualDamage = specialProc ? Math.round(damage * SPECIAL_FINISHER_DAMAGE_MULTIPLIER * (1 + (finisherStats.damageMul || 0))) : damage; // Unqualified targets retain normal third-hit damage.
             const actualKnockback = specialProc ? knockbackPxS * Math.max(0, 1 + (finisherStats.knockbackMul || 0)) : knockbackPxS;
             deps.damageCreature(c, actualDamage, deps.player.x, deps.player.y, actualKnockback, {
+              attacker: deps.player, // Explicit source for Attack Power and Tempered Footing.
               abilityId: id, // Identifies the committed hit for authored training objectives.
               tag: dmgType,
               heavy: step.heavy,
