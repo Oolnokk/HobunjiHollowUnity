@@ -101,4 +101,32 @@ close(authored.rangePx, base.rangePx * 1.25 * 0.8 * 1.15, 'newly loaded author t
 close(authored.reachPx, authored.lungePx + authored.rangePx, 'radius tracks runtime tuning after config loads');
 assert.equal(calls.spentFooting, 1, 'geometry checks remain side-effect free with changing gear/config');
 
+// Execute the real combat-core projection rather than another copy of its formula.
+const core = fs.readFileSync('docs/js/combat/combat-core.js','utf8');
+const projectionStart = core.indexOf('  function meleeLungeProfile(');
+const projectionEnd = core.indexOf('\n  // Shared held-windup curve.',projectionStart);
+assert.ok(projectionStart >= 0 && projectionEnd > projectionStart);
+context.THREE = {MathUtils:{clamp:(n,lo,hi)=>Math.min(hi,Math.max(lo,n)),lerp:(a,b,t)=>a+(b-a)*t}};
+context.deps = deps;
+context.MAX_MELEE_AIM_PITCH_RAD = Math.PI/2;
+context.MELEE_LEAP_START_PITCH_RAD = Math.PI/6; // Below-forward test uses zero leap, independent of this cutoff.
+context.Combat.meleeLungeProfile = vm.runInContext('('+core.slice(projectionStart,projectionEnd)+')',context);
+let aimPitch = Math.PI/4;
+deps.getPlayerMeleeAimPitch = () => aimPitch;
+for (const pitch of [Math.PI/4,-Math.PI/4,0,Math.PI/2]) {
+  aimPitch = pitch;
+  const projected = quick.getReachProfile(deps,'backstabFlick');
+  const actual = context.Combat.meleeLungeProfile(projected.lungePx,pitch,0,1,pitch>=0?1:0,pitch>=0?1:0,pitch>=0);
+  close(projected.horizontalLungePx,actual.distancePx,'cue uses real horizontal lunge projection');
+  close(projected.reachPx,actual.distancePx+projected.rangePx*Math.cos(actual.pitch),'cue adds actual horizontal cone length');
+  if (Math.cos(pitch)>1e-6) close(projected.previewColliderRangePx*Math.cos(pitch),projected.reachPx,'HUD collider projects reach exactly once');
+}
+context.Mounts = {rideState:'mounted'};
+aimPitch = 0;
+const mounted = quick.getReachProfile(deps,'backstabFlick');
+close(mounted.horizontalLungePx,0,'mounted attack has no ordinary player lunge');
+close(mounted.reachPx,mounted.rangePx,'mounted preview uses only the cone');
+context.Mounts.rideState='none';
+assert.equal(calls.spentFooting,1,'preview changes never prepare or spend Footing');
+
 console.log('quick attack opportunity reach matches live attack, modifiers and pure cue evaluation: PASS');
