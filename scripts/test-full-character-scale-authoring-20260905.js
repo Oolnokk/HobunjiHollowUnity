@@ -11,29 +11,26 @@ function plainPosition(value) {
   return { x: value.x, y: value.y, z: value.z };
 }
 
-// 1) The new exported Full Character Scale values are anchored to the ONLY changed Mao'ao male profile.
-// Original 2026-09-05 attachment-rig authoring tests below must remain isolated from the current proportions.
+// 1) Current adult scale values are precisely the user-uploaded 26-profile source.
+// Original 2026-09-05 attachment-rig authoring assertions below must remain isolated from current proportions.
 const defaultsSource = fs.readFileSync('docs/config/character-rig-scale-defaults.js', 'utf8');
+const approved = JSON.parse(fs.readFileSync('docs/config/hobunji_full_character_scales.json', 'utf8')); // One checked-in reference instead of historical Mao'ao percentage assumptions.
 const defaultsWindow = {};
 defaultsWindow.window = defaultsWindow;
-vm.runInContext(defaultsSource, vm.createContext(defaultsWindow), {filename:'character-rig-scale-defaults.js'});
-const canonical=defaultsWindow.HobunjiCharacterRigScaleDefaults;
-const actual=canonical.values;
-const male=canonical.maoaoRelativeShift.male;
-const female=canonical.maoaoRelativeShift.female;
-const close=(a,b,label)=>assert(Math.abs(a-b)<1e-9,label+': '+a+' != '+b);
-assert(canonical.version>=31,'defaults must encode the single Maoao MALE 65% head authoring pass');
-assert.strictEqual(Object.keys(actual).length,26,'complete 26-profile export is the source of all character defaults');
-for(const axis of ['x','y','handScale','footScale'])close(male[axis],female[axis],'no independent female Maoao '+axis);
-for(const key of ['tletingan::male','tletingan::female','engh-sho::male','engh-sho::female',
- 'mao-ao::male','mao-ao::female','kenkari::male','kenkari::female','mashtzarr::male','mashtzarr::female']){
-  const [species,gender]=key.split('::');
-  assert.deepStrictEqual(plainScale(canonical.scaleFor(species,gender)),plainScale(actual[key]),key+' exported dimensions');
-  const original=canonical.mainReferenceValues[key];
-  close(actual[key].x,original.x*male.x,key+' width uses male Maoao shift');
-  close(actual[key].y,original.y*male.y,key+' height uses male Maoao shift');
-  const portrait=species==='mao-ao'&&gender==='female' ? .8 : ({tletingan:.85,'engh-sho':.95,'mao-ao':1,kenkari:.75,mashtzarr:1.18}[species]||1);
-  close(actual[key].head*portrait,.65,key+' raw PNG Head is 65%');
+vm.runInContext(defaultsSource, vm.createContext(defaultsWindow), { filename:'character-rig-scale-defaults.js' });
+const canonical = defaultsWindow.HobunjiCharacterRigScaleDefaults;
+const actual = canonical.values;
+const close = (a,b,label) => assert(Math.abs(a-b) < 1e-9,label+': '+a+' != '+b);
+assert(canonical.version >= 35,'latest uploaded adult baseline must be installed');
+assert.strictEqual(Object.keys(actual).length,18,'the 18 canonical adult species/gender pairs stay in runtime defaults');
+assert.strictEqual(Object.keys(canonical.uploadedScaleRestoreValues).length,26,'all auxiliary identities remain available for explicit authoring import');
+for (const [species,genders] of Object.entries(approved)) for (const [gender,imported] of Object.entries(genders)) {
+  const key = species+'::'+gender;
+  const saved = canonical.uploadedScaleRestoreValues[key];
+  assert(saved,key+' is included in approved imported profiles');
+  for (const field of ['x','y','legLength','head','offsetY','handScale','footScale'])
+    close(saved[field],imported[field],key+' '+field+' matches uploaded source exactly');
+  if (actual[key]) assert.deepStrictEqual(plainScale(canonical.scaleFor(species,gender)),plainScale(actual[key]),key+' runtime dimensions');
 }
 
 // 2) The bulk rig export is intentionally allowlisted: only Mao-ao hand shoulders
