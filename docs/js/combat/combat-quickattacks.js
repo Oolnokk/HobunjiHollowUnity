@@ -220,8 +220,11 @@
     const gustScale = hasGust ? Number(enchantment.TUNING?.LIVING_GUST_LUNGE_MULTIPLIER) : 1; // Read the same authored enchantment scalar as prepareLivingGust.
     const lungeMultiplier = hasGust && Number.isFinite(gustPower) && Number.isFinite(gustScale)
       ? Math.max(0, 1 + (gustScale - 1) * gustPower) : 1; // Do not invoke the Footing-spending attack prepare hook.
-    const lungePx = baseLungePx * lungeMultiplier; // Furthest possible forward travel before the cone lands.
-    return { rangePx, halfConeRad, baseLungePx, lungePx, reachPx: lungePx + rangePx, effects }; // Share mastery effects with the indicator's affliction tint pass.
+    const lungePx = baseLungePx * lungeMultiplier; // Authored lunge vector before pitch projection.
+    const mounted = window.Mounts?.rideState === 'mounted'; // Mounted quick attacks accelerate the mount instead of lunging.
+    const pitch = Number(deps.getPlayerMeleeAimPitch?.()) || 0; // Same live aim the strike consumes.
+    const travel = mounted ? 0 : (window.Combat.meleeLungeProfile?.(lungePx, pitch, 0, 1, pitch >= 0 ? 1 : 0, pitch >= 0 ? 1 : 0, pitch >= 0)?.distancePx ?? lungePx);
+    return { rangePx, halfConeRad, baseLungePx, lungePx, horizontalLungePx: Math.max(0,travel), reachPx: Math.max(0,travel) + rangePx, effects }; // Share mastery effects with the indicator's affliction tint pass.
   }
 
   function registerQuickAttack(id, def) {
