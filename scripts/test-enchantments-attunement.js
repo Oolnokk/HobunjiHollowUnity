@@ -1101,6 +1101,11 @@ console.log('Fey Immundanity, real Stamina illusions, proc, scaled echo, migrati
   close(RS.timedDebuffModifier(target, 'moveSpeed'), .9375);
   close(RS.timedDebuffModifier(target, 'dodgeLungeDistance'), .9375);
   close(RS.timedDebuffModifier(target, 'attackSpeed'), 1);
+  RS.applyTimedDebuff(target, 'heavy', 12, { power: 2 });
+  close(RS.movementMultiplier(target, 'walk'), .9375 * .85);
+  close(RS.movementMultiplier(target, 'dodge'), .9375 * .85);
+  close(RS.movementMultiplier(target, 'lunge'), .9375 * .85);
+  RS.clearTimedDebuff(target, 'heavy');
   RS.addEnhancedResource(target, 'moralizedStamina', 2);
   RS.spendStamina(target, 6, 'ordinary');
   close(amount(target, 'leadboundStamina'), 50);
