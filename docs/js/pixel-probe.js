@@ -892,6 +892,7 @@
   function disarmPixelProbe() {
     _pixelProbeArmed = false;
     _pixelProbePreviousRenderCapture = null;
+    window.ProbePerformanceCapture?.cancel?.();
     const hint = document.getElementById('pixelProbeHint');
     if (hint) hint.style.display = 'none';
     deps.renderer.domElement.removeEventListener('pointerdown', _pixelProbeHandler, { capture: true });
@@ -901,10 +902,14 @@
     if (_pixelProbeArmed) { disarmPixelProbe(); return; }
     _pixelProbeArmed = true;
     _pixelProbePreviousRenderCapture = window.WorldRenderPipeline?.lastCapture?.() || null;
-    window.WorldRenderPipeline?.captureFrame?.(); // Existing one-shot capture, not a continuous profiler.
+    window.WorldRenderPipeline?.captureFrame?.(); // One draw-state census; separate from the timing window.
     deps.closeMenu();
+    if (window.PerfProfiler) window.ProbePerformanceCapture?.start?.(deps.getCurrentArea());
     const hint = document.getElementById('pixelProbeHint');
-    if (hint) hint.style.display = 'flex';
+    if (hint) {
+      hint.style.display = 'flex';
+      hint.textContent = 'Pixel Probe: play for 10–20 seconds to record performance, then tap a pixel (or tap now for a visual-only report).';
+    }
     deps.renderer.domElement.addEventListener('pointerdown', _pixelProbeHandler, { capture: true, once: true });
   }
 
@@ -916,6 +921,8 @@
 
     const renderer = deps.renderer, camera = deps.camera, playerMesh = deps.playerMesh;
     const currentArea = deps.getCurrentArea();
+    const performanceWindow = window.ProbePerformanceCapture?.finish?.('tap') || null; // Stop before readPixels, raycasts, screenshots, and forced renders.
+    const wallAtClick = window.DenseForestWallBatches?.staticMatrixSnapshot?.() || null;
     const latestWorldCapture = window.WorldRenderPipeline?.lastCapture?.(); // Snapshot before probe-only re-renders.
     const worldCaptureAtClick = latestWorldCapture && latestWorldCapture !== _pixelProbePreviousRenderCapture
       && latestWorldCapture.area === currentArea ? latestWorldCapture : null;
@@ -1238,6 +1245,8 @@
     const projectilePool = window.__rangedDebug?.projectilePool; // Inspect resource reuse without devtools.
     const matrixCensus = window.WorldRenderPipeline?.sceneMatrixCensus?.(activeScene); // Explicit user capture only; no diagnostic traversal during gameplay.
     if (matrixCensus) lines.push(`Scene matrix census (outside render scopes): ${JSON.stringify(matrixCensus)}`);
+    if (performanceWindow) lines.push(`Gameplay performance window (before probe renders): ${JSON.stringify(performanceWindow)}`);
+    else lines.push('Gameplay performance window: unavailable; re-arm after the performance runtime loads.');
     if (worldCaptureAtClick) lines.push(`World frame capture (one-shot, before probe renders): ${JSON.stringify(worldCaptureAtClick)}`);
     else lines.push('World frame capture: unavailable for this arm/area; allow a gameplay frame after arming Pixel Probe before tapping.');
     const propBatches = window.ZonePropRenderBatches?.snapshot?.(); // Inspect draw savings and alpha-proof backlog.
@@ -1253,10 +1262,8 @@
     if (actionCoins) lines.push(`Combat coins: builds=${actionCoins.coinBuilds ?? 0} reuses=${actionCoins.coinReuses ?? 0}`);
     const brickLod = window.InstancedBrickLod?.snapshot?.(); // Far brick meshes drawn with the octant hull and triangles avoided.
     if (brickLod?.frames) lines.push(`Brick LOD: ${JSON.stringify(brickLod)}`);
-    const staticWall = window.DenseForestWallBatches?.staticMatrixSnapshot?.(); // Lifetime skipped native branch/leaf calls; not milliseconds.
-    if (staticWall?.enrolled) {
-      const audit = window.DenseForestWallBatches.auditStaticMatrixBranches?.(activeScene); // On-demand only; retire any missed invalidation.
-      lines.push(`Static wall matrix subtrees: ${JSON.stringify({ ...window.DenseForestWallBatches.staticMatrixSnapshot(), audit })}`);
+    if (wallAtClick?.enrolled) {
+      lines.push(`Static wall matrix subtrees (at click): ${JSON.stringify({ ...wallAtClick, audit: worldCaptureAtClick?.mainStaticWallAudit?.audit ?? null })}`);
     }
     const wallBatches = window.DenseForestWallBatches?.snapshot?.(); // Cloud Forest wall merge + distance LOD split (far/near trees, triangles avoided).
     if (wallBatches?.frames) lines.push(`Dense wall batches: ${JSON.stringify({ ...wallBatches, liteTwins: window.FoliageGenerator?.liteTreeStats?.() || null })}`);
