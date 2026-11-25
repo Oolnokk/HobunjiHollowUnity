@@ -4,7 +4,7 @@
   const scriptUrls = [
     "js/combat/ranged-weapons.js?v=20261125deepHotpaths1",
     "js/combat/ranged-hud-reticle.js?v=20261114musicReticleMerge1",
-    "js/combat/melee-hud-reticle.js?v=20261125deepHotpaths1",
+    "js/combat/melee-hud-reticle.js?v=20261125deepAudit1",
     "js/combat/enemy-loadout-rules.js?v=20261101playerhead3",
     "js/combat/npc-duel-staging.js?v=20261122h2eade76",
     "js/combat/combat-bandit.js?v=20261125deepHotpaths1",
