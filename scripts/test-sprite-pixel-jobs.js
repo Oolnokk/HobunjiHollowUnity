@@ -55,11 +55,20 @@ const P=w.PixelWorkYield,F=w.FishCatalog,S=w.SpriteRecolor;
   const pattern=new Uint8ClampedArray([45,100,10,127,255,0,0,0,5,20,30,255]);
   for(const _ of F.patternSteps(pattern,'#ff0000')){}
   assert.deepEqual([...pattern],[100,0,0,127,255,0,0,0,30,0,0,255]);
+  { // Large sprites: both buffer copies are sliced and yield, and the pixels are still byte-identical.
+    const big=fixture(1500000), reference=big.slice(); // ~6 MB RGBA, several 1 MB copy slices each way.
+    for(const _ of F.pixelSteps(reference,'rockscale_goldplate','fixture-big')){}
+    const turnsBefore=turns, yieldsBefore=P.getDebug().yields;
+    now+=100; // Budget already spent, so each slice boundary must yield.
+    await P.runCanvasJob(()=>P.processPixels('fish-base',big,{key:'rockscale_goldplate',sourceKey:'fixture-big'},()=>{throw Error('unexpected fallback');}));
+    assert.equal(hash(big),hash(reference),'large buffer result matches the single-pass algorithm');
+    assert.ok(P.getDebug().yields-yieldsBefore>=2,'sliced copies yield to the main thread: '+(P.getDebug().yields-yieldsBefore));
+  }
   const result=fixture(20000),source=result.slice();
   await P.runCanvasJob(()=>P.processPixels('fish-base',result,{key:'rockscale_goldplate',sourceKey:'fixture'},()=>{throw Error('unexpected fallback');}));
   assert.equal(hash(result),expected.rockscale_goldplate);
-  assert.equal(P.getDebug().workerJobs,1);
-  assert.equal(P.getDebug().workerFish.profileBuilds,1);
+  assert.equal(P.getDebug().workerJobs,2); // The large-buffer case above plus this one.
+  assert.equal(P.getDebug().workerFish.profileBuilds,2);
   const second=source.slice();
   await P.runCanvasJob(()=>P.processPixels('fish-base',second,{key:'rockscale_silverplate',sourceKey:'fixture'},()=>{throw Error('unexpected fallback');}));
   assert.equal(hash(second),expected.rockscale_silverplate);assert.equal(P.getDebug().workerFish.profileHits,1);

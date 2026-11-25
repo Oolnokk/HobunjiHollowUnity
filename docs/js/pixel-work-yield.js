@@ -74,21 +74,36 @@
       return worker;
     }catch(error){failWorker(error);return null;}
   }
+  // Copies are sliced so a multi-megabyte sprite never costs one 20-60 ms main-thread task; the result is
+  // not read until the whole job finishes, so slicing cannot change any output.
+  const COPY_CHUNK_BYTES=1<<20;
+  async function copyInSlices(dest,src,destOffset=0){
+    for(let i=0;i<src.length;i+=COPY_CHUNK_BYTES){
+      dest.set(src.subarray(i,Math.min(src.length,i+COPY_CHUNK_BYTES)),destOffset+i);
+      await maybeYield();
+    }
+  }
+  let copying=false; // Set synchronously so two jobs cannot both pass the slot check while a sliced copy yields.
   async function processPixels(kind,data,args,fallback) {
     stats.lastKind=kind;
     const w=ensureWorker();
-    if(w&&!pending){
+    if(w&&!pending&&!copying){
+      copying=true;
       try{
         // Transfer a private copy. Keep the untouched caller buffer for retry
         // if worker creation, imports, CSP or processing fail.
-        const copy=data.slice(),id=++nextId;
+        const copy=new Uint8ClampedArray(data.length);
+        await copyInSlices(copy,data);
+        const id=++nextId;
         const reply=await new Promise((resolve,reject)=>{
           pending={id,bytes:copy.byteLength,resolve,reject,timer:setTimeout(()=>failWorker(new Error('Pixel worker timed out')),30000)};
+          copying=false; // The in-flight slot (pending) now guards the worker.
           try{w.postMessage({id,kind,args,buffer:copy.buffer},[copy.buffer]);}
           catch(error){failWorker(error);}
         });
-        data.set(new Uint8ClampedArray(reply));stats.workerJobs++;return;
+        await copyInSlices(data,new Uint8ClampedArray(reply));stats.workerJobs++;return;
       }catch(_){/* Original buffer remains intact; use the cooperative path. */}
+      finally{copying=false;}
     }
     stats.fallbackJobs++;
     const started=now();
