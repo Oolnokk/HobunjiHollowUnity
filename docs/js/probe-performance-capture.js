@@ -52,7 +52,7 @@
     const frames = s.loops.length, denominator = Math.max(1, frames);
     const gaps = distribution(s.gaps);
     lastReport = {
-      version: 1, reason, areaAtArm: s.area, areas: [...s.areas], elapsedMs: round(clock()-s.started),
+      version: 1, reason, areaAtArm: s.area, areas: [...s.areas], elapsedMs: round(clock()-s.started), finishedAtMs:round(clock()),
       completeFrames: frames, discardedWarmupFrames: s.warmed ? 1 : 0, interruptedFrames: s.interrupted + (s.frame ? 1 : 0), skippedNonWorldFrames: s.nonWorld,
       schedulerBoundaryAvailable: !!s.schedulerOff, sampledIntervalMs: round(s.gaps.reduce((a,b)=>a+b,0)),
       fps: gaps?.meanMs > 0 ? round(1000/gaps.meanMs) : null, frameIntervals: gaps,
@@ -95,7 +95,10 @@
           const mask = Number(ctx.camera?.layers?.mask) >>> 0;
           const layer = window.HobunjiRenderLayers?.describe?.(mask) || String(mask);
           const pass = window.WorldRenderPipeline?.currentPass?.() || 'unknown';
-          const state = { frame, key: pass + '/' + (ctx.worldScene ? 'world' : 'aux') + '/' + layer,
+          const replay = ctx.worldScene && window.HeldObjectRenderOrder?.replayingDepth === true; // Separate the base WORLD draw from colorless WORLD depth replays.
+          const stage = ctx.worldScene ? (replay ? 'held-replay' : 'world') : 'aux';
+          const matrixMode = ctx.worldScene ? (scene?.autoUpdate === true ? '/matrix-walk' : '/matrix-reuse') : '';
+          const state = { frame, key: pass + '/' + stage + '/' + layer + matrixMode,
             start: 0, matrixMs: 0, matrixCalls: 0, restore: null };
           // Instrument only this scene instance during this submission, AFTER
           // the existing static-wall walk hook. Preserve its exact method and
