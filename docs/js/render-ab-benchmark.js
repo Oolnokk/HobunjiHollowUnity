@@ -330,6 +330,11 @@
         && vegetationCull.snapshot().lastCullables > 0) {
       variants.push({ id: 'fadedTreesDrawn', apply: () => vegetationCull.setHideFadedOut(false), undo: () => vegetationCull.setHideFadedOut(true) });
     }
+    const foliage = window.FoliageGenerator; // Compare the same scene with native matrix composition.
+    if (typeof foliage?.setIdentityTreeMatrixFastPath === 'function') {
+      const before = foliage.identityTreeMatrixStats().enabled;
+      variants.push({ id: before ? 'identityTreeMatricesOff' : 'identityTreeMatricesOn', apply: () => foliage.setIdentityTreeMatrixFastPath(!before), undo: () => foliage.setIdentityTreeMatrixFastPath(before) });
+    }
     const treeInstancer = window.WildernessTreeInstancer;
     if (typeof treeInstancer?.setEnabled === 'function' && vegetationCull?.snapshot?.().lastCullables > 0) {
       const instancingBefore = treeInstancer.enabled?.() === true; // Toggled per window without persisting.
