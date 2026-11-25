@@ -1,5 +1,5 @@
-// Refreshes the gameplay renderer's shadow map a few times per second instead
-// of on every frame.
+// Real-time cast shadows are off by default. If opted in, refresh the
+// gameplay renderer's shadow map a few times per second rather than every frame.
 //
 // Only the farm has a shadow-casting light (game.js's fixed sunLight; its
 // position and shadow camera never move). Three.js re-renders every shadow
@@ -23,6 +23,7 @@
   let enabled = true; // Existing refresh throttle, used only if real-time shadows are enabled.
   let shadowRenderingEnabled = false; // Performance-first default, independent of lighting and authored blob shadows.
   let owned = false; // True while this module holds shadowMap.autoUpdate at false.
+  let previousMap = null; // A replacement gameplay renderer must not inherit another map's throttle state.
   let lastRefreshAt = -Infinity;
   let lastScene = null;
   let lastChildCount = -1;
@@ -34,6 +35,12 @@
     const r = renderer();
     const shadowMap = r?.shadowMap;
     if (!shadowMap) return;
+    if (shadowMap !== previousMap) {
+      if (owned && previousMap) previousMap.autoUpdate = true;
+      previousMap = shadowMap;
+      owned = false;
+      lastRefreshAt = -Infinity;
+    }
     if (!shadowRenderingEnabled) {
       if (shadowMap.enabled) shadowMap.enabled = false;
       if (shadowMap.needsUpdate) shadowMap.needsUpdate = false;
