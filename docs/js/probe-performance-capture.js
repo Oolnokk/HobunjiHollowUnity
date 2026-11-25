@@ -119,6 +119,8 @@
     // Explicit start/end only. Never flush classification or perform a scene scan.
     const result = {};
     for (const [name, read] of [
+      ['pixelJobs', () => window.PixelWorkYield?.getDebug?.()],
+      ['fishProfiles', () => window.FishCatalog?.getPixelDebug?.()],
       ['heldReplay', () => window.HeldObjectRenderOrder?.performanceCounters?.()],
       ['staticWall', () => window.DenseForestWallBatches?.staticMatrixSnapshot?.()],
       ['staticTree', () => window.FoliageGenerator?.identityTreeMatrixStats?.()],
@@ -156,19 +158,19 @@
     const gaps = distribution(s.gaps);
     const endCounters = counters(); // Includes warmup and any interrupted frame; separate from exact timed-frame buckets.
     lastReport = {
-      version: 2, reason, areaAtArm: s.area, areas: [...s.areas], elapsedMs: round(s.stoppedAt-s.started), finishedAtMs:round(s.stoppedAt),
+      version: 3, reason, areaAtArm: s.area, areas: [...s.areas], elapsedMs: round(s.stoppedAt-s.started), finishedAtMs:round(s.stoppedAt),
       slowSchedulerFrames:s.slowFrames, slowFrameIntervals:s.slowIntervals,
       terminalFrameGap:s.terminalGap, browser:{...s.browser,endPage:pageState()},
       browserNotes:'Long tasks and long animation frames may overlap each other and game timings. Only completed entries wholly inside the window are included; browser delivery can lag. Style-to-end is not pure layout time. Between-callback gaps include idle, browser, GPU waits and unrelated work; they are not CPU attribution.',
       completeFrames: frames, discardedWarmupFrames: s.warmed ? 1 : 0, interruptedFrames: s.interrupted + (s.frame ? 1 : 0), skippedNonWorldFrames: s.nonWorld,
       schedulerBoundaryAvailable: !!s.schedulerOff, sampledIntervalMs: round(s.gaps.reduce((a,b)=>a+b,0)),
-      fps: gaps?.meanMs > 0 ? round(1000/gaps.meanMs) : null, frameIntervals: gaps,
+      fps: gaps?.meanMs > 0 ? round(1000/gaps.meanMs) : null, frameIntervals: gaps, rafTimestampIntervals:distribution(s.rafGaps),
       gameLoop: distribution(s.loops), schedulerFrame: distribution(s.schedulerFrames), nativeHookAvailable: s.hookAvailable,
       subsystems: rows(s.buckets, denominator), nativePasses: rows(s.passes, denominator, true),
       outsideFrameSubsystems: [...s.outside.buckets].sort((a,b)=>b[1].totalMs-a[1].totalMs).map(([name,x])=>({name,calls:x.calls,totalMs:round(x.totalMs),maxCallMs:round(x.maxMs)})),
       nativeMatrixWrapFailures: s.matrixFailures,
       countersAtStart:s.startCounters, countersAtEnd:endCounters, counterDeltas:counterChanges(s.startCounters,endCounters),
-      notes: 'Wall-clock CPU submission timings, not GPU execution or stack samples. Inclusive subsystem buckets overlap; scheduler pre-render is inside the driver. Frame intervals include browser scheduling/wait. First completed frame excluded (one-shot census/warmup). Frames without world rendering or failed drivers excluded. Native counts are renderer.info at submission end; nested submissions are not separately timed. Outside-frame brackets are reported separately for the whole recording, including warmup; they do not attribute uninstrumented browser work. Mixed areas are not a controlled comparison.',
+      notes: 'Wall-clock CPU submission timings, not GPU execution or stack samples. Inclusive subsystem buckets overlap; scheduler pre-render is inside the driver. Frame intervals use actual scheduler callback entry time and include browser scheduling/wait. RAF timestamp intervals are separate. First completed frame excluded (one-shot census/warmup). Frames without world rendering or failed drivers excluded. Native counts are renderer.info at submission end; nested submissions are not separately timed. Outside-frame brackets are reported separately for the whole recording, including warmup; they do not attribute uninstrumented browser work. Mixed areas are not a controlled comparison.',
     };
     return lastReport;
   }
@@ -181,7 +183,7 @@
   function start(area) {
     cancel();
     const s = session = { area, started: clock(), frame: null, warmed: false, interrupted: 0,
-      areas: new Set(), loops: [], gaps: [], schedulerFrames: [], previousStart: null, buckets: new Map(), passes: new Map(),
+      areas: new Set(), loops: [], gaps: [], rafGaps:[], schedulerFrames: [], previousStart: null, buckets: new Map(), passes: new Map(),
       outside: { buckets: new Map() }, // Explicit timing brackets in microtasks and other callbacks between scheduler frames.
       previousFrame:null, slowFrames:[], slowIntervals:[], terminalGap:null, browserStops:[],
       browser:{startPage:pageState(),pageEvents:[],longtask:{supported:false,count:0,totalMs:0,worst:[]},
@@ -268,17 +270,21 @@
     if (!completed || !Number.isFinite(driverMs)) { s.interrupted++; s.previousStart=null; s.previousFrame=null; return; }
     if (frame.area == null) { s.nonWorld++; s.previousStart=null; s.previousFrame=null; return; }
     const end = clock(), schedulerMs=Math.max(0,end-frame.cpuStart); // Actual wall time, not RAF timestamps.
-    if (!s.warmed) { s.warmed=true; s.previousStart=frame.start; s.previousFrame={start:frame.start,end,schedulerMs,warmup:true}; return; }
-    if (s.previousStart !== null && frame.start > s.previousStart) {
-      const interval = frame.start-s.previousStart;
+    if (!s.warmed) { s.warmed=true; s.previousStart=frame.cpuStart; s.previousFrame={start:frame.start,end,schedulerMs,warmup:true}; return; }
+    if (s.previousStart !== null && frame.cpuStart > s.previousStart) {
+      // RAF timestamps may be delayed or refer to a different animation-frame epoch.
+      // FPS uses actual callback entry times; retain the browser timestamps separately.
+      const interval = frame.cpuStart-s.previousStart;
+      const rafInterval = s.previousFrame ? frame.start-s.previousFrame.start : null;
+      if (rafInterval > 0) s.rafGaps.push(rafInterval);
       s.gaps.push(interval);
       if (interval >= 50 && s.previousFrame) keepLargest(s.slowIntervals,{
-        atMs:round(frame.cpuStart-s.started),intervalMs:round(interval),
+        atMs:round(frame.cpuStart-s.started),intervalMs:round(interval),rafIntervalMs:rafInterval==null?null:round(rafInterval),
         previousSchedulerMs:round(s.previousFrame.schedulerMs),previousWasWarmup:!!s.previousFrame.warmup,
         betweenCallbacksMs:round(Math.max(0,frame.cpuStart-s.previousFrame.end))
       },'intervalMs');
     }
-    s.previousStart=frame.start;
+    s.previousStart=frame.cpuStart;
     s.previousFrame={start:frame.start,end,schedulerMs};
     s.loops.push(driverMs);
     s.schedulerFrames.push(schedulerMs);
