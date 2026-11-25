@@ -1,4 +1,4 @@
-// Shared age-rig authoring bridge. The family walker uses phaseScales and
+// Shared age-rig authoring bridge. The family walker uses independently authored phase width/height and
 // PNGPlaneAvatar.childScaleFor; the Animation Author reads these same values.
 // Editing a draft does not affect gameplay until the author explicitly applies
 // it on this device. No world/save mutations or per-frame hooks are installed.
@@ -8,7 +8,7 @@
 
   const SCHEMA = 'hobunji.character-age-rig-modifiers.v1'; // Validates the editor's export and the applied browser override.
   const APPLIED_KEY = 'hobunji.character-age-rig-active.v1'; // Only an explicit Apply action writes this game-facing preference.
-  const AXES = ['body', 'head', 'hand', 'foot']; // Same global proportion axes for the editor and family growth stages.
+  const AXES = ['width', 'height', 'head', 'hand', 'foot']; // Independent body axes plus head and GLB limb sizes for every growth stage.
   const MODES = ['baby', 'toddler', 'child']; // Adult reference never receives a size override.
   const family = window.HobunjiRomanceConfig?.family;
   const png = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar;
@@ -20,12 +20,16 @@
     const n = Number(v); // Shared input normalization for repository, imported, and applied percentages.
     return Number.isFinite(n) && n > 0 ? n : fallback;
   };
-  const stage = (source, fallback) => Object.fromEntries(AXES.map(axis => [axis, positive(source?.[axis], fallback[axis])]));
+  const stage = (source, fallback) => Object.fromEntries(AXES.map(axis => [
+    axis, positive(source?.[axis] ?? (axis === 'width' || axis === 'height' ? source?.body : null),
+      fallback[axis] ?? fallback.body),
+  ])); // Old body-only authoring maps to BOTH width and height; never discard existing saved stages.
   const defaults = {
-    baby: stage(family.phaseScales?.basket, { body: .32, head: .50, hand: 1.2, foot: 1.2 }),
-    toddler: stage(family.phaseScales?.toddler, { body: .4, head: .66, hand: 1, foot: 1 }),
+    baby: stage(family.phaseScales?.basket, { width: .32, height: .32, head: .50, hand: 1.2, foot: 1.2 }),
+    toddler: stage(family.phaseScales?.toddler, { width: .4, height: .4, head: .66, hand: 1, foot: 1 }),
     child: {
-      body: positive(png.childScaleMultiplier, .5),
+      width: positive(png.childWidthScaleMultiplier, positive(png.childScaleMultiplier, .5)), // Old child size was uniform; new config may override width independently.
+      height: positive(png.childScaleMultiplier, .5),
       head: positive(png.childHeadScaleMultiplier, .72),
       hand: positive(family.childLimbModifiers?.hand, 1),
       foot: positive(family.childLimbModifiers?.foot, 1),
@@ -44,16 +48,16 @@
   function sanitize(modifiers) {
     const result = clone(defaults); // Isolated all-stage value map consumed by both export and runtime.
     for (const mode of MODES) for (const axis of AXES)
-      result[mode][axis] = valid(modifiers?.[mode]?.[axis], axis, defaults[mode][axis]);
+      result[mode][axis] = valid(modifiers?.[mode]?.[axis] ?? (axis === 'width' || axis === 'height' ? modifiers?.[mode]?.body : null), axis, defaults[mode][axis]); // Migrate old v1 body autosaves for both axes independently.
     return result;
   }
 
   function composePreviewScale(authored, phase) {
-    const p = phase || { body: 1, head: 1 }; // Runtime child body is built into the portrait size; preview instead scales its whole floor parent.
+    const p = phase || { width: 1, height: 1, head: 1 }; // Runtime already bakes independently scaled X/Y into its child portrait.
     const base = authored || { x: 1, y: 1, head: 1, offsetY: 0 };
     return {
-      x: positive(base.x, 1) * positive(p.body, 1),
-      y: positive(base.y, 1) * positive(p.body, 1),
+      x: positive(base.x, 1) * positive(p.width, positive(p.body, 1)),
+      y: positive(base.y, 1) * positive(p.height, positive(p.body, 1)),
       head: positive(base.head, 1) * positive(p.head, 1),
       offsetY: Number.isFinite(Number(base.offsetY)) ? Number(base.offsetY) : 0,
     }; // Equivalent final body/head proportions: runtime child head bone = head/body, then the already-shrunken portrait supplies body.
@@ -63,9 +67,10 @@
     const values = sanitize(modifiers); // Reused for load, Apply and Reset so the live runtime never sees unvalidated values.
     family.phaseScales ||= {};
     for (const [mode, phase] of [['baby', 'basket'], ['toddler', 'toddler']])
-      family.phaseScales[phase] = { ...(family.phaseScales[phase] || {}), ...values[mode] };
+      family.phaseScales[phase] = { ...(family.phaseScales[phase] || {}), ...values[mode], body: values[mode].height }; // Legacy consumers still receive the vertical body scale; new portrait builder reads width separately.
     family.childLimbModifiers = { ...(family.childLimbModifiers || {}), hand: values.child.hand, foot: values.child.foot };
-    png.childScaleMultiplier = values.child.body;
+    png.childScaleMultiplier = values.child.height; // Existing child scale remains the vertical size for legacy gameplay readers.
+    png.childWidthScaleMultiplier = values.child.width; // New independent child width, used only by the portrait builder.
     png.childHeadScaleMultiplier = values.child.head;
     return values;
   }
