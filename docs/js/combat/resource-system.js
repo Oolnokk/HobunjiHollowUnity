@@ -260,7 +260,7 @@
     mirroredHealth: Object.freeze({ resource: "health", conversionRate: 1, normalPriority: 30 }),
     currentStamina: Object.freeze({
       resource: "stamina", conversionRate: 2, normalPriority: 5, beneficialPriority: 120,
-      requiresBeneficialTransaction: true, benefitsTransaction: tx => tx?.actionKind === "combatDodge" || (!tx?.actionKind && /\\bdodge\\b/i.test(String(tx?.reason || ''))),
+      requiresBeneficialTransaction: true, benefitsTransaction: tx => tx?.actionKind === "combatDodge" || /\bdodge\b/i.test(String(tx?.reason || '')),
     }),
     hearthstoneFooting: Object.freeze({ resource: "footing", conversionRate: 1, normalPriority: 60 }),
     pactHealth: Object.freeze({
