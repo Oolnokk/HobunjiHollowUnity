@@ -12,11 +12,14 @@
   const syllables = ['ba', 'be', 'bi', 'bo', 'bu', 'da', 'de', 'di', 'do', 'du', 'fa', 'fe', 'fi', 'fo', 'fu', 'ga', 'ge', 'gi', 'go', 'gu', 'ka', 'ke', 'ki', 'ko', 'ku', 'la', 'le', 'li', 'lo', 'lu', 'ma', 'me', 'mi', 'mo', 'mu', 'na', 'ne', 'ni', 'no', 'nu', 'pa', 'pe', 'pi', 'po', 'pu', 'sa', 'se', 'si', 'so', 'su', 'ta', 'te', 'ti', 'to', 'tu', 'wa', 'we', 'wi', 'wo', 'chi', 'chu', 'sha', 'shi', 'shu']; // Simple spoken syllables for either position in a baby's name.
   const finalConsonants = ['n', 'm', 't', 'k', 'b', 'g', 'p']; // Optional single-letter codas; b, g and p broaden the existing clipped-name sound.
   const speciesEmoji = { grehlr: '🐺', 'gar-wolf': '🐺', nelk: '🦎', puktuk: '🐇', nazgraku: '🐐', drenkirra: '🐾', uumkaoii: '🦆', 'voorg-ass': '🐴', voorgass: '🐴', honeyfuzzle: '🐝', moot: '🐂' }; // Hatch visuals use species hints where there is no portrait available.
-  const CHANGE = 'Baby naming uses genotype-aware animal chatheads and plain two-syllable names with optional final consonants.'; // Mobile debug snapshot change log.
+  const CHANGE = 'Animal arrival screens wait for a safe area; blocked arrivals retry once per in-game hour.'; // Mobile debug snapshot change log.
   let active = null; // Modal currently borrowing input focus, if any.
   let root = null; // Lazily created overlay so feature loading never touches the opening screen.
   let expiry = null; // The automatic end timer for an incubation reveal.
   let wakeTimer = null; // Only one deferred wake is needed when many babies arrive in a single tick.
+  const CLOCK_POLL_MS = 250; // Only a pending deferred queue samples the clock; danger scans occur on hour changes.
+  let deferredHour = null; // Absolute game-hour bucket of the last blocked attempt.
+  let deferredReason = null; // Explains the most recent blocked attempt in mobile diagnostics.
   let actionLock = null; // Prevents player movement and attacks while the modal is active.
   let previousFocus = null; // Restores keyboard focus on completing the queue.
   let lastEvent = null; // Most recent arrival/celebration for mobile diagnostics.
@@ -124,7 +127,7 @@
     expiry = null;
     active = null;
     if (root) { root.hidden = true; root.replaceChildren(); }
-    if (queue.length) { showNext(); return; }
+    if (queue.length) { showNext(); if (active) return; } // Release the old modal's lock if the next arrival must wait.
     actionLock?.release?.();
     actionLock = null;
     const previous = previousFocus; // Target from before the whole arrival batch.
@@ -201,8 +204,59 @@
     expiry = setTimeout(finish, reduced ? 900 : 3100);
   }
 
+  function dangerReason() {
+    const deps = window.Combat?.deps; // Live combat entities and player coordinates, not a scene traversal.
+    const area = deps?.getCurrentArea?.() || window.GridTileAccessors?.getCurrentArea?.(); // Current player area.
+    if (!area) return 'world-not-ready';
+    if (/^map_i_(?:den_|town_mine_|.*(?:cave|cavern|ruin))/.test(area)
+      || window.WildlifeSpawn?.denCavernZoneOf?.(area)
+      || window.CavernGenerator?.isLocaleCavernMapId?.(area)) return 'dangerous-interior';
+    const wilderness = /^map_(?:northern_cliffs|western_slope|eastern_mire|cloud_forest|dev_wilderness_chunk_lab)$/.test(area)
+      || !!window.GridTileAccessors?.getZoneSceneInfo?.(area); // The live zone registry also covers generated exterior zones.
+    if (!wilderness) return null;
+    const player = deps?.player; // Positions are in world pixels on both axes.
+    const chunkSize = Number(deps?.TILE) * Number(window.WildernessChunks?.constants?.CHUNK_TILES); // Use the streamer's actual chunk dimensions.
+    if (!player || !Number.isFinite(player.x) || !Number.isFinite(player.y) || !(chunkSize > 0) || !deps?.hostileObjects) return 'world-not-ready';
+    const cx = Math.floor(player.x / chunkSize), cy = Math.floor(player.y / chunkSize); // Player's current wilderness chunk.
+    for (const foe of deps.hostileObjects) {
+      if (!foe || !(foe.health > 0) || foe.areaId !== area || foe.isCompanion || foe._denHidden
+        || foe.denDisplacedPrey || foe._hiveTucked || foe.isEncounterProxy || foe.state === 'dying' || foe.state === 'corpse'
+        || foe._porakanekiPlannerControlled === true) continue;
+      const phase = foe._territorialBehavior?.phase; // Warning and fighting wildlife are threats even if ordinarily neutral.
+      if (!foe.isDenMother && !foe.isBandit && !foe.banditCompanion && phase !== 'warning' && phase !== 'fight'
+        && foe.def?.hostile === false) continue;
+      if (Math.floor(foe.x / chunkSize) === cx && Math.floor(foe.y / chunkSize) === cy) return 'hostile-in-chunk';
+    }
+    return null;
+  }
+
+  function scheduleWake(delay = 0) {
+    if (wakeTimer !== null || active || !queue.length) return;
+    wakeTimer = setTimeout(() => { wakeTimer = null; showNext(); }, delay);
+  }
+
   function showNext() {
-    if (active || !queue.length || !ensureRoot()) return;
+    if (active || !queue.length) return;
+    const clock = window.CalendarSystem; // Authoritative monotonic game time, including midnight and time skips.
+    const absoluteHour = clock?.getAbsoluteGameHour?.(); // Used solely to gate deferred danger checks.
+    const hour = Number.isFinite(absoluteHour) ? Math.floor(absoluteHour) : null; // Integer game-hour bucket.
+    if (hour === null || clock?.getNaturalGameHoursPerSecond?.() === 0) {
+      deferredReason = 'clock-not-ready-or-time-passage';
+      scheduleWake(CLOCK_POLL_MS);
+      return;
+    }
+    if (deferredHour === hour) { scheduleWake(CLOCK_POLL_MS); return; }
+    const reason = dangerReason(); // Initial arrivals are checked immediately; retries only after the clock advances.
+    if (reason) {
+      deferredHour = hour;
+      deferredReason = reason;
+      lastEvent = { type: 'deferred', id: queue[0].id, reason, hour };
+      scheduleWake(CLOCK_POLL_MS);
+      return;
+    }
+    deferredHour = null;
+    deferredReason = null;
+    if (!ensureRoot()) { scheduleWake(CLOCK_POLL_MS); return; }
     active = queue.shift(); // Only one prompt can borrow focus at once.
     acquireFocus();
     if (active.type === 'name') renderName(active);
@@ -217,7 +271,7 @@
   function enqueue(item) {
     if (!item?.id || typeof document === 'undefined' || queue.length >= 64) return false;
     queue.push(item);
-    if (!active && !wakeTimer) wakeTimer = setTimeout(() => { wakeTimer = null; showNext(); }, 0); // Complete saves first and coalesce same-tick arrivals.
+    scheduleWake(); // Complete saves first and coalesce same-tick arrivals; a deferred wake is never duplicated.
     return true;
   }
 
@@ -235,6 +289,7 @@
   function debugSnapshot() {
     return { mostRecentChange: CHANGE, active: active ? { type: active.type, id: active.id } : null,
       queued: queue.map(item => ({ type: item.type, id: item.id, scope: item.scope })),
+      deferredHour, deferredReason, retryPending: wakeTimer !== null,
       lastEvent, lastPortrait, locked: !!actionLock, rootVisible: !!root && !root.hidden };
   }
 
