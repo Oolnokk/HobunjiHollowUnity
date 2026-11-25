@@ -270,6 +270,21 @@
     return Math.max(1, Math.min(cap, Math.round(progress * cap / 20)));
   }
 
+  function enemyCombatRandom(seed, fallback = Math.random) {
+    if (seed == null) return fallback;
+    const seedText = 'enemy-combat:' + String(seed); // Separate from terrain and appearance randomness.
+    const shared = window.WildernessMapGenerator?.makeRng?.(seedText); // Reuse the existing deterministic world RNG.
+    if (typeof shared === 'function') return shared;
+    let state = 2166136261; // Deterministic fallback for standalone tools and tests without the map generator.
+    for (const ch of seedText) state = Math.imul(state ^ ch.charCodeAt(0), 16777619) >>> 0;
+    return () => {
+      state = (state + 0x6D2B79F5) >>> 0;
+      let t = Math.imul(state ^ (state >>> 15), state | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
   function rollEnemyCombatClass(random = Math.random) {
     const ids = Object.keys(ENEMY_COMBAT_CLASSES); // Uniform class roll per fighter, independent of faction or rank.
     return ids[Math.min(ids.length - 1, Math.max(0, Math.floor((Number(random()) || 0) * ids.length)))];
@@ -286,11 +301,18 @@
     return random() < template.counterChance ? 'counterShield' : 'chargedBreaker';
   }
 
-  function buildEnemyCombatProfile(combatClass, level, loadout = {}, attackTag = '') {
-    const template = ENEMY_COMBAT_CLASSES[combatClass] || ENEMY_COMBAT_CLASSES.duelist; // Unknown authored classes use the versatile default.
+  function buildEnemyCombatProfile(combatClass, level, loadout = {}, attackTag = '', rangedWeaponKey = null) {
+    const template = Object.hasOwn(ENEMY_COMBAT_CLASSES, combatClass) ? ENEMY_COMBAT_CLASSES[combatClass] : ENEMY_COMBAT_CLASSES.duelist; // Unknown authored classes use the versatile default.
     const budget = pointEntitlementAtLevel('combat', level); // Same entitlement as a player of this level.
     const owned = {}; // Purchased enemy ranks; never written to the player's ranks object.
-    const attackFamilies = new Set(Object.keys(window.ResourceSystem?.afflictionBonusesForTag?.(attackTag) || {}).map(id => window.ResourceSystem?.AFFLICTIONS?.[id]?.family)); // Avoid wasting ranks on an affliction the normal weapon cannot deliver.
+    const resources = window.ResourceSystem; // Real melee and projectile status definitions, not duplicate affliction tables.
+    const meleeBonuses = resources?.afflictionBonusesForTag?.(attackTag) || {};
+    const ranged = rangedWeaponKey && window.RangedWeapons?.config?.[rangedWeaponKey]; // Only registered, equipped ranged weapons can contribute another affliction family.
+    const rangedBonuses = ranged ? (ranged.afflictionBonuses || resources?.afflictionBonusesForTag?.(ranged.damageType || 'sharp') || {}) : {};
+    const attackFamilies = new Set([...Object.keys(meleeBonuses), ...Object.keys(rangedBonuses)].map(id => {
+      const definition = resources?.AFFLICTIONS?.[id]; // Alias projectiles use the real stored status family.
+      return resources?.AFFLICTIONS?.[definition?.rangedAliasFor]?.family || definition?.family;
+    }));
     const usable = perk => {
       if (perk.id === 'increaseLootQuality') return false;
       if (perk.id === 'empowerQuickAttacks') return !!loadout.tap2;
@@ -334,6 +356,7 @@
   function scaleEnemyCombatHit(attacker, amount, options = {}) {
     const mods = attacker?.def?.combatPerkModifiers; // Cached spawn profile, absent for ordinary animals and authored bosses.
     if (!mods || attacker === window.Combat?.deps?.player) return null;
+    options ||= {}; // Some legacy damage callers explicitly pass null instead of omitting options.
     const damageMul = options.enchantmentSlot === 'tap2' || options.category === 'quickAttack' ? mods.quickDamage
       : options.enchantmentSlot === 'hold2' || options.category === 'defensiveHold' ? mods.defensiveDamage
       : options.heavy ? mods.heavyDamage : mods.comboDamage;
@@ -425,7 +448,7 @@
     pointsEarned, pointsSpent, pointsAvailable,
     increase, decrease, resetTree,
     combatDamageMultiplier,
-    ENEMY_COMBAT_CLASSES, enemyCombatLevel, rollEnemyCombatClass, enemyQuickAttack, enemyHeldAttack, buildEnemyCombatProfile, scaleEnemyCombatHit,
+    ENEMY_COMBAT_CLASSES, enemyCombatLevel, enemyCombatRandom, rollEnemyCombatClass, enemyQuickAttack, enemyHeldAttack, buildEnemyCombatProfile, scaleEnemyCombatHit,
     render,
   };
 })();
