@@ -1085,7 +1085,7 @@
         const aliasScale = actualId !== id ? Math.max(1, Number(definition.rangedScale) || 1) : 1; // Converts authored alias into the real affliction exactly once.
         const perkId = FAMILY_PERK[AFFLICTIONS[actualId].family];
         const player = window.Combat?.deps?.player; // Legacy anonymous player hits on creatures retain their old behavior; known NPCs use their own ranks.
-        const attackerRank = opts.attacker ? (opts.attacker === player ? window.PerkSystem?.rank('combat', perkId) : opts.attacker.def?.combatPerks?.[perkId]) : (entity !== player ? window.PerkSystem?.rank('combat', perkId) : 0);
+        const attackerRank = opts.attacker ? (opts.attacker === player ? window.PerkSystem?.rank('combat', perkId) : opts.attacker.def?.combatPerks?.[perkId]) : (!Object.hasOwn(opts, 'attacker') && entity !== player ? window.PerkSystem?.rank('combat', perkId) : 0); // Explicit null/undefined sources are not attributed to the player.
         const familyMul = perkId ? 1 + (attackerRank || 0) * 0.12 : 1;
         addAffliction(entity, actualId, buildupAttackPower * mul * aliasScale * familyMul); // Status buildup follows Attack Power, not the dart/club's Health damage.
       }
