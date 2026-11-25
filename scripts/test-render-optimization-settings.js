@@ -46,6 +46,7 @@ const document = {
 const calls = [];
 const log = (name, v) => { calls.push(name + ':' + v); return v; };
 let denMemo = true, wheelCross = true, leanSync = true, propOn = true, gearOnce = true, ownerLink = true, weaponLimit = 0, frameScope = true, treeOn = false, faceted = true;
+let staticWallMatrices = false; // Independent experimental matrix branch owner.
 let localRing = true, realTimeShadows = false; // Owner state for the two new performance policies.
 const registered = [];
 const storage = new Map([['hobunjiRenderOptimizations', JSON.stringify({ propBatches: false, gearParticlesOnce: false, rainSheets: false, 'xray-enemies': true, unknownSwitch: false })]]);
@@ -55,6 +56,7 @@ rain.parent = scene;
 let outlineMode = 'screen'; // Fake pipeline owner for the experimental selector.
 const win = {
   WorldRenderPipeline:{defaultGeneratedOutlineMode:'screen',getGeneratedOutlineMode:()=>outlineMode,setGeneratedOutlineMode:v=>outlineMode=v},
+  DenseForestWallBatches: { staticMatrixSnapshot:()=>({enabled:staticWallMatrices}), setStaticMatrixEnabled:v=>{staticWallMatrices=log('staticWallMatrices',v===true);return staticWallMatrices;} },
   ZonePropRenderBatches: { snapshot: () => ({ enabled: propOn }), setEnabled: v => { propOn = log('prop', v !== false); return propOn; } },
   HeldObjectRenderOrder: {
     snapshot: () => ({ localReplayRingEnabled: localRing, gearParticlesOnceEnabled: gearOnce, heldOwnerLinkEnabled: ownerLink, otherWeaponXrayLimit: weaponLimit, replayScissorEnabled: true }),
@@ -112,6 +114,10 @@ for (const id of ['farmTileBatches', 'grassChunks', 'wildernessDistanceCull', 'h
 assert.equal(input('propBatches').checked, false, 'reflects the applied stored value');
 assert.equal(input('replayScissor').checked, true);
 assert.equal(input('treeInstancing').checked, false, 'tree instancing is off by default');
+assert.equal(input('staticWallMatrices').checked,false,'static wall experiment is off by default');
+input('staticWallMatrices').checked=true; input('staticWallMatrices').dispatch('change');
+assert.equal(staticWallMatrices,true);
+assert.equal(JSON.parse(storage.get('hobunjiRenderOptimizations')).staticWallMatrices,true);
 assert.equal(input('npcWeaponsBasePass').checked, true, 'NPC weapons in the base pass by default');
 
 assert.equal(input('localReplayRing').checked,true);
@@ -181,6 +187,7 @@ assert.equal(storage.has('hobunjiRenderOptimizations'), false);
 assert.equal(outlineMode,'screen');
 assert.equal(outlineSelect.value,'screen');
 assert.equal(localRing,true); assert.equal(realTimeShadows,false);
+assert.equal(staticWallMatrices,false,'reset disables static wall experiment');
 assert.deepEqual(actorXray, actorXrayDefaults);
 assert.deepEqual([animalXray.checked, enemyXray.checked, playerXray.checked], [true, false, true]);
 const html = fs.readFileSync(path.join(__dirname, '../docs/index.html'), 'utf8'); // Verify defaults before the settings script starts.
