@@ -12,7 +12,7 @@
   const syllables = ['ba', 'be', 'bi', 'bo', 'bu', 'da', 'de', 'di', 'do', 'du', 'fa', 'fe', 'fi', 'fo', 'fu', 'ga', 'ge', 'gi', 'go', 'gu', 'ka', 'ke', 'ki', 'ko', 'ku', 'la', 'le', 'li', 'lo', 'lu', 'ma', 'me', 'mi', 'mo', 'mu', 'na', 'ne', 'ni', 'no', 'nu', 'pa', 'pe', 'pi', 'po', 'pu', 'sa', 'se', 'si', 'so', 'su', 'ta', 'te', 'ti', 'to', 'tu', 'wa', 'we', 'wi', 'wo', 'chi', 'chu', 'sha', 'shi', 'shu']; // Simple spoken syllables for either position in a baby's name.
   const finalConsonants = ['n', 'm', 't', 'k', 'b', 'g', 'p']; // Optional single-letter codas; b, g and p broaden the existing clipped-name sound.
   const speciesEmoji = { grehlr: '🐺', 'gar-wolf': '🐺', nelk: '🦎', puktuk: '🐇', nazgraku: '🐐', drenkirra: '🐾', uumkaoii: '🦆', 'voorg-ass': '🐴', voorgass: '🐴', honeyfuzzle: '🐝', moot: '🐂' }; // Hatch visuals use species hints where there is no portrait available.
-  const CHANGE = 'Animal arrivals use live cave/zone classification, hourly danger retries and time-passage/review guards.'; // Mobile debug snapshot change log.
+  const CHANGE = 'Animal arrivals defer on dangerous maps, hourly hostile checks, downed state and explicit time transitions; duplicate pending arrivals coalesce.'; // Mobile debug snapshot change log.
   let active = null; // Modal currently borrowing input focus, if any.
   let root = null; // Lazily created overlay so feature loading never touches the opening screen.
   let expiry = null; // The automatic end timer for an incubation reveal.
@@ -241,8 +241,13 @@
     const clock = window.CalendarSystem; // Authoritative monotonic game time, including midnight and time skips.
     const absoluteHour = clock?.getAbsoluteGameHour?.(); // Used solely to gate deferred danger checks.
     const hour = Number.isFinite(absoluteHour) ? Math.floor(absoluteHour) : null; // Integer game-hour bucket.
-    if (hour === null || clock?.getNaturalGameHoursPerSecond?.() === 0 || window.DayProgressReview?.isBlocking?.()) {
+    if (hour === null || clock?.isTimePassageActive?.() || window.DayProgressReview?.isBlocking?.()) {
       deferredReason = 'clock-not-ready-or-time-passage-or-review';
+      scheduleWake(CLOCK_POLL_MS);
+      return;
+    }
+    if (window.PlayerDowned?.isDowned?.() || window.Combat?.deps?.player?.health <= 0) {
+      deferredReason = 'player-downed';
       scheduleWake(CLOCK_POLL_MS);
       return;
     }
@@ -271,8 +276,10 @@
   }
 
   function enqueue(item) {
-    if (!item?.id || typeof document === 'undefined' || queue.length >= 64) return false;
-    queue.push(item);
+    if (!item?.id || typeof document === 'undefined') return false;
+    const sameArrival = other => other && other.type === item.type && other.id === item.id && other.scope === item.scope; // Prevent repeated callbacks from inflating a long deferred batch.
+    if (sameArrival(active) || queue.some(sameArrival)) return true;
+    queue.push(item); // Distinct arrivals remain queued even during extended expeditions.
     scheduleWake(); // Complete saves first and coalesce same-tick arrivals; a deferred wake is never duplicated.
     return true;
   }

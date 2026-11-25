@@ -51,11 +51,14 @@ document.activeElement.isConnected = true;
 let gameHour = 100; // Simulates the authoritative game clock independently of real time.
 let area = 'farm'; // Current world area for danger and chunk tests.
 let reviewing = false; // Simulates the midnight review's independent modal ownership.
-let naturalRate = 0.1; // Simulates sleep/wait clock ownership and pause.
+let naturalRate = 0.1; // Simulates independent developer clock speed.
+let passingTime = false; // Simulates actual sleep/wait/dev-skip/iris ownership.
+let downed = false; // Simulates the positive-health downed state.
 let dangerScans = 0; // Counts live world reads to prove blocked retries are hourly, not per poll.
 const hostiles = new Set(); // Live combat registry, with positions in world pixels.
 const window = {
-  CalendarSystem: { getAbsoluteGameHour: () => gameHour, getNaturalGameHoursPerSecond: () => naturalRate },
+  CalendarSystem: { getAbsoluteGameHour: () => gameHour, getNaturalGameHoursPerSecond: () => naturalRate, isTimePassageActive: () => passingTime },
+  PlayerDowned: { isDowned: () => downed },
   DayProgressReview: { isBlocking: () => reviewing },
   GridTileAccessors: { isZoneArea: id => id === 'map_generated_test', getBuildingWallStyle: id => id === 'map_i_unusual' ? 'cavern' : null },
   Combat: { deps: { getCurrentArea: () => { dangerScans++; return area; }, TILE: 64, player: { x: 10, y: 10 }, hostileObjects: hostiles } },
@@ -253,10 +256,10 @@ async function testAsyncPortraitOwnership() {
   generatedFoe.health = 0;
   area = 'farm';
   gameHour = 110;
-  naturalRate = 0;
+  passingTime = true;
   flush(250);
   assert(root.hidden, 'a time skip does not open a naming dialog during sleep/wait');
-  naturalRate = 0.1;
+  passingTime = false;
   reviewing = true;
   flush(250);
   assert(root.hidden, 'a midnight review retains modal ownership');
@@ -273,6 +276,34 @@ async function testAsyncPortraitOwnership() {
   flush(250);
   assert.equal(feature.debugSnapshot().active.id, 'initializing_world', 'initialization does not consume a whole game hour');
   close();
+  naturalRate = 0;
+  pending('paused_clock');
+  flush(0);
+  assert.equal(feature.debugSnapshot().active.id, 'paused_clock', 'manual clock pause does not block an otherwise safe initial prompt');
+  close();
+  naturalRate = 0.1;
+  downed = true;
+  pending('downed_baby');
+  flush(0);
+  assert(root.hidden && !feature.debugSnapshot().locked, 'downed player retains control and is not interrupted');
+  assert.equal(feature.debugSnapshot().deferredReason, 'player-downed');
+  downed = false;
+  flush(250);
+  assert.equal(feature.debugSnapshot().active.id, 'downed_baby', 'revival permits an initial safety check');
+  close();
+
+  area = 'map_i_custom_puzzle';
+  for (let i = 0; i < 70; i++) assert(pending('backlog_' + i), 'each distinct arrival is accepted');
+  assert(pending('backlog_0'), 'duplicate arrivals coalesce successfully');
+  flush(0);
+  assert.equal(feature.debugSnapshot().queued.length, 70, 'extended expeditions neither drop unique names nor duplicate existing ones');
+  area = 'farm';
+  gameHour++;
+  flush(250);
+  for (let i = 0; i < 70; i++) {
+    assert.equal(feature.debugSnapshot().active.id, 'backlog_' + i, 'long backlog preserves arrival order');
+    close();
+  }
   assert.equal(timers.filter(task => !task.cancelled).length, 0, 'empty queue leaves no polling timer');
   assert.equal(lockState.acquired, lockState.released, 'all danger cases release action locks');
   console.log('Animal baby arrival/naming/animation and hourly danger tests passed.');
