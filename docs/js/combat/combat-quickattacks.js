@@ -222,9 +222,11 @@
       ? Math.max(0, 1 + (gustScale - 1) * gustPower) : 1; // Do not invoke the Footing-spending attack prepare hook.
     const lungePx = baseLungePx * lungeMultiplier; // Authored lunge vector before pitch projection.
     const mounted = window.Mounts?.rideState === 'mounted'; // Mounted quick attacks accelerate the mount instead of lunging.
-    const pitch = Number(deps.getPlayerMeleeAimPitch?.()) || 0; // Same live aim the strike consumes.
-    const travel = mounted ? 0 : (window.Combat.meleeLungeProfile?.(lungePx, pitch, 0, 1, pitch >= 0 ? 1 : 0, pitch >= 0 ? 1 : 0, pitch >= 0)?.distancePx ?? lungePx);
-    return { rangePx, halfConeRad, baseLungePx, lungePx, horizontalLungePx: Math.max(0,travel), reachPx: Math.max(0,travel) + rangePx, effects }; // Share mastery effects with the indicator's affliction tint pass.
+    const pitch = options.includeEnchantments === false ? 0 : Number(deps.getPlayerMeleeAimPitch?.()) || 0; // Preview only; the committed attack already uses the camera lunge authority.
+    const projection = window.Combat.meleeLungeProfile?.(lungePx, pitch, 0, 1, pitch >= 0 ? 1 : 0, pitch >= 0 ? 1 : 0, pitch >= 0); // Same pitch-distance profile as camera-aligned lunges.
+    const horizontalLungePx = mounted ? 0 : Math.max(0, projection?.distancePx ?? lungePx);
+    const horizontalRangePx = rangePx * Math.max(0, Math.cos(projection?.pitch ?? pitch)); // Matches meleeColliderVolume.horizontalRangeWorld.
+    return { rangePx, halfConeRad, baseLungePx, lungePx, horizontalLungePx, horizontalRangePx, reachPx: horizontalLungePx + horizontalRangePx, effects }; // Share mastery effects with the indicator's affliction tint pass.
   }
 
   function registerQuickAttack(id, def) {
