@@ -113,10 +113,11 @@
   // The real five-point curves are bilinearly sampled from the mesh; their endpoint weights can
   // differ, so a raw (ratio - 1) multiplier does NOT produce the requested final opening width.
   function stretchLegOpeningSpans(positions, segments, rings, splines, widthRatio = 1) {
-    const factor = Number(widthRatio); // The shared extremity-width ratio relative to the portrait's body X.
+    const absolute = widthRatio && typeof widthRatio === 'object'; // Runtime supplies independently measured X widths; old author exports may use a ratio.
+    const factor = absolute ? 1 : Number(widthRatio);
     const stride = Number(segments) + 1; // Garment grid width, matching all skinning/debug-spline samples.
     if (!Number.isInteger(stride) || stride < 2 || positions?.length !== stride * stride * 3
-        || !Number.isFinite(factor) || factor <= 0 || Math.abs(factor - 1) <= 1e-8) return false;
+        || !Number.isFinite(factor) || factor <= 0 || (!absolute && Math.abs(factor - 1) <= 1e-8)) return false;
 
     const corners = sample => { // Bilinear interpolation has four neighbours, including the clamped last row/column.
       if (!Number.isInteger(sample?.i) || sample.i < 0 || !(sample.fx >= 0 && sample.fx <= 1)
@@ -144,9 +145,11 @@
       const start = corners(samples[0]), end = corners(samples[samples.length - 1]), centre = corners(ring.anchor);
       if (!start || !end || !centre) continue;
       const center = sampleVector(centre), chord = difference(sampleVector(end), sampleVector(start));
+      if (absolute) { chord[1] = 0; chord[2] = 0; } // Fit the local X projection, not the slanted spline's length.
       const length = Math.hypot(...chord);
-      if (!(length > 1e-9) || !center.every(Number.isFinite)) continue;
-      axes.push({ start, end, center, chord, length, direction: chord.map(v => v / length), influence: ring.influence });
+      const wanted = absolute ? Number(widthRatio[side]) : length * factor; // Target in the same local units as the rest grid.
+      if (!(length > 1e-9) || !center.every(Number.isFinite) || !(wanted > 0) || !Number.isFinite(wanted)) continue;
+      axes.push({ start, end, center, chord, length, wanted, direction: chord.map(v => v / length), influence: ring.influence });
     }
     if (!axes.length) return false;
 
@@ -176,7 +179,7 @@
         base + gains.reduce((total, gain, k) => total + gain * chordResponse[j][k][coord], 0)));
       const length = chords.map(chord => Math.hypot(...chord));
       if (length.some(value => !(value > 1e-9))) break;
-      const residual = length.map((value, j) => axes[j].length * factor - value); // Zero means both real spline spans match the feet.
+      const residual = length.map((value, j) => axes[j].wanted - value); // Zero means both real spline spans match the feet.
       if (residual.every((value, j) => Math.abs(value) <= axes[j].length * 1e-6)) break;
       const jacobian = axes.map((axis, j) => axes.map((source, k) => dot(chords[j], chordResponse[j][k]) / length[j]));
       let correction;
@@ -193,7 +196,7 @@
       for (let k = 0; k < gains.length; k++) {
         const next = gains[k] + correction[k];
         if (!Number.isFinite(next)) return false;
-        gains[k] = Math.max(-0.99, Math.min(32, next)); // Degenerate authored rings must not invert or explode their legs.
+        gains[k] = Math.max(-0.999999, Math.min(32, next)); // Degenerate authored rings must not invert or explode their legs.
       }
     }
 
@@ -205,6 +208,27 @@
         const along = dot(difference(point, axis.center), axis.direction) * weight;
         for (let c = 0; c < 3; c++) positions[i + c] += axis.direction[c] * along;
       }
+    }
+    return true;
+  }
+
+  // Sample the actual grid, not the analytic spline: its points can fall between mesh vertices.
+  function sampleGridX(positions, segments, sample) {
+    const stride = segments + 1, i = sample.i * 3; // Four mesh neighbours for the authored spline point.
+    const top = positions[i] * (1 - sample.fx) + positions[i + 3] * sample.fx;
+    const bottom = positions[i + stride * 3] * (1 - sample.fx) + positions[i + stride * 3 + 3] * sample.fx;
+    return top * (1 - sample.fy) + bottom * sample.fy;
+  }
+
+  function fitWaistSpanX(positions, segments, samples, target, influence) {
+    if (!samples || samples.length < 2 || !target || influence?.length !== positions.length / 3) return false;
+    const xs = samples.map(sample => sampleGridX(positions, segments, sample)); // Actual sampled waist extremes, including mirrored portraits.
+    const lo = Math.min(...xs), hi = Math.max(...xs);
+    if (!(hi - lo > 1e-9) || !(target.right > target.left) || !Number.isFinite(target.left + target.right)) return false;
+    const scale = (target.right - target.left) / (hi - lo); // Width only; Y and Z remain exactly as authored.
+    for (let i = 0; i < influence.length; i++) {
+      const x = positions[i * 3];
+      positions[i * 3] = x + (target.left + (x - lo) * scale - x) * influence[i];
     }
     return true;
   }
@@ -1077,6 +1101,8 @@
     shrinkwrapSplineToAlpha,
     buildLegOpeningFitControls,
     stretchLegOpeningSpans,
+    sampleGridX,
+    fitWaistSpanX,
     inverseDistanceDisplacement,
     warpRgbaNearest,
     solveBeltSimilarity,
