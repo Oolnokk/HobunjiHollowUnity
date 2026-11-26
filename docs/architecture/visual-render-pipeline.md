@@ -124,7 +124,7 @@ Registered hooks, in order (lower runs first, its restore runs last):
 
 | Order | id | Scope | Owner | What it does |
 |---|---|---|---|---|
-| 50 | `animal-subtle-elevation` | frame | animal-subtle-elevation-bridge.js | creatures, companions, mounts, corpses, farm animals lifted onto terrain/supports (game renderer only) |
+| 50 | `animal-subtle-elevation` | frame | animal-subtle-elevation-bridge.js | animal terrain/support placement and ground-following shadows, plus the separate visual hop for companions (game renderer only) |
 | 100 | `death-mark-billboards` | frame | combat/combat-death-mark.js | Death-mark billboards face the camera |
 | 150 | `town-body-elevation` | frame | town-player-body-elevation-bridge.js | clears the retired composer lift channel; town support diagnostics (game renderer only) |
 | 200 | `drunk-prone-composition` | frame | drunk-prone-composition-bridge.js | publishes the drunk channel to the composer; bandit sway |

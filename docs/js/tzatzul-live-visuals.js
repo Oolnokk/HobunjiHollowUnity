@@ -5,6 +5,9 @@
   if (window.TzatzulLiveVisuals) return;
   const SCAN_PERIOD_S = 1.4; // Finds dev-spawned birds without checking every creature on every rendered frame.
   const RETRY_DELAY_MS = 10000; // An absent sprite or GLB cannot initiate a failing fetch every frame.
+  const COMPANION_HOP_CYCLE_S = .20; // Includes a planted interval after each .15-second hop arc.
+  const HOP_RATE_RAD_S = 21; // Arc speed shared by companion and hatchling hops.
+  const HOP_HEIGHT = .13; // Peak lift of the existing folded-wing hop.
   const tracked = new Map(); // Live adults only; stale area and removed Set members are disposed on the next reconciliation.
   const CARRY_POSE_OWNER = 'tzatzul-carry'; // Shared name in render and mobile pose diagnostics.
   const carryUndo = []; // The wildlife render hook reuses its rollback stack each world frame.
@@ -88,14 +91,22 @@
       state.lift = Math.min(.65, state.lift + step * 2.8);
     } else if (moving) {
       state.mode = 'hop';
-      state.phase += step * 21;
-      state.lift = Math.abs(Math.sin(state.phase)) * .13;
+      state.phase = (state.phase + step) % COMPANION_HOP_CYCLE_S;
+      state.lift = Math.max(0, Math.sin(state.phase * HOP_RATE_RAD_S)) * HOP_HEIGHT;
     } else {
-      state.lift = flightClear ? Math.max(0, state.lift - step * 3.6) : 0;
+      state.lift = state.mode === 'flight' && flightClear ? Math.max(0, state.lift - step * 3.6) : 0;
       state.mode = state.lift > 0 && state.mode === 'flight' ? 'flight' : 'perched';
       state.phase = 0;
     }
     return state;
+  }
+
+  function companionLift(actor, mode) {
+    const motion = actor._companionBirdMotion; // Physical placement consumes flight; the render hook consumes hops.
+    if (motion?.mode !== mode || actor.stableRole !== 'companion' || actor.health <= 0 ||
+        actor.prone || actor._downed || actor.knockbackT > 0 || actor._knockbackLedgeFall ||
+        actor.onBranch || actor._cliffClimb || actor._cliffRouteTravel || actor.tzatzulCapturedBy) return 0;
+    return motion.lift;
   }
 
   // Pure movement seam: only a successful clearance check may replace a ground detour.
@@ -162,8 +173,10 @@
         },
       }; // Cheap game-space viewpoint; no additional scene camera or RAF.
       try {
+        const bottomRatio = actor.avatarRef?.groundAnchorBottomRatio; // Shared with the native opacity correction, including a late image decode.
+        const footY = hatchling && Number.isFinite(bottomRatio) ? .5 - bottomRatio : undefined; // Normalized perched-plane coordinates for the camera pitch hinge.
         state.rig.update(camera?.getWorldPosition ? camera : fallback,
-          pose, seconds, !!actor.tzatzulCarrying, window.CreatureBlink?.isShut?.(actor) === true);
+          pose, seconds, !!actor.tzatzulCarrying, window.CreatureBlink?.isShut?.(actor) === true, footY);
         cueWingbeat(actor, state, pose); // SFX stays in lockstep with the actually rendered wing pose.
         if (!(Number(actor.hitFlashT) > 0) && state.rig.restoreTint?.(kind(actor)==='pingdort' ? actor.genotype?.base?.color : undefined)) debug.tintRestores++; // Repair native hit-flash tint and reflect any live Pingdort genotype edits.
         state.rig.root.rotation.z = pose !== 'perched' && !hatchling ? Number(isSkeeriActor(actor) ? actor.skeeriDivePitchRad : kind(actor)==='pingdort' ? actor.pingdortDivePitchRad : actor.tzatzulDivePitchRad) || 0 : 0; // Shared headfirst swoop pitch.
@@ -171,8 +184,8 @@
           let hopY = 0; // Only mobile hatchlings add hop height above the same native foot anchor used by every perched bird.
           if (hatchling) {
             const moved = state.previousHatchlingPosition && Math.hypot(actor.x - state.previousHatchlingPosition.x, actor.y - state.previousHatchlingPosition.y) > .08;
-            state.hopPhase = moved ? (state.hopPhase || 0) + Math.min(.1, state.renderDt || 0) * 21 : 0; // Native foot pathing moves, while only the visual body hops.
-            hopY = moved ? Math.max(0, Math.sin(state.hopPhase)) * .13 : 0;
+            state.hopPhase = moved ? ((state.hopPhase || 0) + Math.min(.1, state.renderDt || 0) * HOP_RATE_RAD_S) % (2 * Math.PI) : 0; // Bound the existing hop and planted phases.
+            hopY = moved ? Math.max(0, Math.sin(state.hopPhase)) * HOP_HEIGHT : 0;
             state.previousHatchlingPosition = { x: actor.x, y: actor.y };
           }
           state.rig.root.position.y = nativeGroundPlaneY(actor, state) + hopY; // Never let the flying-rig swap discard authored ground-Y/opaque-padding placement.
@@ -401,6 +414,6 @@
       liveRigs: [...tracked.values()].filter(state => !!state.rig).length,
       loading: [...tracked.values()].filter(state => state.loading).length };
   }
-  window.TzatzulLiveVisuals = Object.freeze({ init, tick, snapshot, release, updateCompanionLocomotion, tryCompanionFlightStep, getPlayerCarryPlacement,
+  window.TzatzulLiveVisuals = Object.freeze({ init, tick, snapshot, release, updateCompanionLocomotion, companionLift, tryCompanionFlightStep, getPlayerCarryPlacement,
     applyPlayerCarryPlacement: (group, placement, undo) => applyCarryPlacement(deps.player, group, placement, undo) });
 })();

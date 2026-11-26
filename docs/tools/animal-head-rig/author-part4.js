@@ -29,7 +29,11 @@ function runtimeRiggerSupplements(repoRecords){
   const renderer=window.CreatureGeneticsRender?.SPECIES||{}; // Registered gameplay species provide their real sprite paths when available.
   const known=new Set(repoRecords.map(record=>record?.id).filter(Boolean)); // Avoid listing a bestiary species twice.
   const supplements=[]; // Runtime-only animals, including Moot, appear beside bestiary species in the painter.
-  for(const [id,config] of Object.entries(RUNTIME_RIGGER_SPECIES)){
+  const pingdort=window.PingdortRegistration; // Read the same authored sprite and dimensions that gameplay uses.
+  const runtimeSpecies=pingdort
+    ? {...RUNTIME_RIGGER_SPECIES,[pingdort.KIND]:{...pingdort.PRESENTATION,baselineIds:[]}}
+    : RUNTIME_RIGGER_SPECIES; // Keep the same dedupe and export handling for every runtime-only species.
+  for(const [id,config] of Object.entries(runtimeSpecies)){
     if(known.has(id))continue;
     const species=renderer[id];
     const idle=species?.base?.idle||config.sprites?.idle;

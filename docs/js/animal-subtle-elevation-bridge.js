@@ -209,10 +209,11 @@
     const terrainLift = terrainLiftAt(worldX, worldZ, area);
     const supportLift = supportLiftAt(worldX, worldZ, area);
     const lift = terrainLift + supportLift;
-    if (Math.abs(lift) <= EPSILON) return false;
+    const hopLift = kind === 'companion' ? window.TzatzulLiveVisuals?.companionLift?.(actor, 'hop') || 0 : 0; // Draw the current hop exactly, independently of smoothed terrain height.
+    const bodyLift = lift + hopLift; // The shadow only follows the terrain and support, including at takeoff and touchdown.
 
     let roots = 0;
-    if (offsetRoot(group, lift)) roots++;
+    if (offsetRoot(group, bodyLift)) roots++;
     // Creature ground shadows are scene siblings rather than avatar children;
     // move them by the same temporary lift so they remain on the raised ground.
     if (actor.groundShadow && offsetRoot(actor.groundShadow, lift)) roots++;
@@ -220,11 +221,12 @@
 
     lastDebug.appliedActors++;
     lastDebug.appliedRoots += roots;
-    lastDebug.maxLift = Math.max(lastDebug.maxLift, Math.abs(lift));
+    lastDebug.maxLift = Math.max(lastDebug.maxLift, Math.abs(bodyLift), Math.abs(lift));
     lastDebug.lastActor = actorLabel(actor);
     lastDebug.lastLift = lift;
     lastDebug.lastTerrainLift = terrainLift;
     lastDebug.lastSupportLift = supportLift;
+    lastDebug.lastHopLift = hopLift;
     return true;
   }
 
@@ -437,6 +439,7 @@
       lastLift: 0,
       lastTerrainLift: 0,
       lastSupportLift: 0,
+      lastHopLift: 0, // Included in the existing mobile Surface Debug readout.
       waterActors: 0,
       maxWaterSink: 0,
       lastWaterActor: null,
