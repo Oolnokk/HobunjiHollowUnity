@@ -404,7 +404,7 @@
       return window.PerpRotation.perpClamp(state, 0, perps, radius * DEG).effectiveTarget;
     }
 
-    function update(camera, pose, seconds, carrying = false, blinkShut = false) {
+    function update(camera, pose, seconds, carrying = false, blinkShut = false, footY = 0) {
       const grounded = pose === 'perched' || pose === 'hatchling'; // Hatchlings display perched pixels without the adult's bent pose.
       wings.visible = !grounded;
       flying.visible = !grounded && !carrying;
@@ -428,7 +428,11 @@
       root.worldToLocal(view);
       if (Math.hypot(view.x, view.z) > 1e-6) yaw.rotation.y = correct(yawState, Math.atan2(view.x, view.z), rig.yawDeadzone);
       const depth = view.x * Math.sin(yaw.rotation.y) + view.z * Math.cos(yaw.rotation.y); // Camera Z after applying yaw.
-      pitch.rotation.x = pose === 'perched' ? 0 : correct(pitchState, Math.atan2(-view.y, depth), rig.pitchDeadzone); // Hatchling camera orientation matches flight.
+      const pitchAngle = pose === 'perched' ? 0 : correct(pitchState, Math.atan2(-view.y, depth), rig.pitchDeadzone); // Hatchlings retain their camera tilt.
+      pitch.rotation.x = pitchAngle;
+      const pivotY = pose === 'hatchling' ? footY : 0; // Counter the movement caused by rotating the opaque foot edge about the sprite center.
+      pitch.position.y = pivotY ? pivotY * (1 - Math.cos(pitchAngle)) : 0;
+      pitch.position.z = pivotY ? -pivotY * Math.sin(pitchAngle) : 0;
       const angle = flapAngle(rig, pose, seconds); // Mirrored stroke about the two fore-aft axes.
       bones[0].rotation.x = angle;
       bones[1].rotation.x = -angle;

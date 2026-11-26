@@ -29,6 +29,7 @@
       waiters.forEach(fn => fn(ratio));
     };
     const img = new Image();
+    img.crossOrigin = 'anonymous'; // The opacity scan reads canvas pixels on hosted previews too.
     img.onload = () => {
       const bounds = window.PNGPlaneAvatar?.scanOpaqueVerticalBoundsOfImage?.(img, FULL_OPAQUE_ALPHA_THRESHOLD);
       finish(bounds ? (bounds.bottom + 1) / img.naturalHeight : 1);
@@ -41,15 +42,13 @@
   // tracks the raw aim angle..." comment) keeps its true, unpadded size:
   // its floor is local Y = -halfH exactly as CREATURE_DB's modelWidth/
   // modelHeight define it, which is what places it correctly at surfY
-  // and is what any future hitbox/collision use of that size would
-  // expect. The correction belongs on the PLANE meshes themselves
-  // (children of the prism), not on the prism's own placement: shifting
-  // them down by the padding's share of modelHeight moves the art's
-  // real opaque bottom onto the prism's actual floor without changing
-  // the prism's own footprint at all. bottomRatio=1 (no padding) gives
-  // an offset of 0 — the plane stays exactly where it started.
-  function planeOffset(modelHeight, bottomRatio) {
-    return -modelHeight * (1 - bottomRatio);
+  // and is what any future hitbox/collision use of that size would expect.
+  // Callers with an authored lift can supply the local (unscaled) distance
+  // to the support surface. Place the opaque bottom at that distance while
+  // leaving the prism's position, footprint and attachment anchors alone.
+  function planeOffset(modelHeight, bottomRatio, floorToOrigin) {
+    const paddingOffset = -modelHeight * (1 - bottomRatio); // Existing half-height baseline for callers without a custom floor.
+    return Number.isFinite(floorToOrigin) ? paddingOffset + modelHeight / 2 - floorToOrigin : paddingOffset;
   }
 
   window.CreatureGroundAnchor = { resolveRatio, planeOffset };

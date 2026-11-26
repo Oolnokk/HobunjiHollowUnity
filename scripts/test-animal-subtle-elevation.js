@@ -267,6 +267,7 @@ console.log('animal subtle elevation + water-Y revert/prone-water regression che
   hooksWindow.window = hooksWindow;
   const hookContext = { ...context, window: hooksWindow, console, performance: { now: () => 0 } };
   vm.runInNewContext(fs.readFileSync('docs/js/render-hooks.js', 'utf8'), hookContext, { filename: 'render-hooks.js' });
+  vm.runInNewContext(fs.readFileSync('docs/js/tzatzul-live-visuals.js', 'utf8'), hookContext, { filename: 'tzatzul-live-visuals.js' });
   const companion2 = { id: 'companion2', areaId: 'town', isCompanion: true, avatarRef: { group: root(1) }, groundShadow: root(0.01) };
   const seenDuringPasses = [];
   const gameRenderer = Object.create(WebGLRenderer.prototype);
@@ -296,5 +297,20 @@ console.log('animal subtle elevation + water-Y revert/prone-water regression che
   otherRenderer.__hobunjiR128NativeRender = () => { seenDuringPasses.push(companion2.avatarRef.group.position.y); };
   otherRenderer.render({ isScene: true }, {});
   assert.equal(seenDuringPasses.at(-1), 1, 'preview renderers never lift world animals');
+
+  Object.assign(companion2, { stableRole: 'companion', health: 20, def: { isFlyingSpecies: true } });
+  const birds = hooksWindow.TzatzulLiveVisuals; // Drive both test phases through the same locomotion owner as the game.
+  const hop = birds.updateCompanionLocomotion(companion2, .05, 2, false).lift;
+  hooksWindow.RenderHooks.beginWorldFrame({ renderer: gameRenderer, scene });
+  gameRenderer.render(scene, {});
+  assert(Math.abs(companion2.avatarRef.group.position.y - (1.35 + hop)) < 1e-9, 'the body gets the complete hop above the raised terrain');
+  assert(Math.abs(companion2.groundShadow.position.y - .36) < 1e-9, 'the shadow remains on the raised terrain');
+  hooksWindow.RenderHooks.endWorldFrame();
+  assert.equal(companion2.avatarRef.group.position.y, 1, 'draw-only hops do not enter the next frame terrain interpolator');
+  birds.updateCompanionLocomotion(companion2, .1, 2, false);
+  hooksWindow.RenderHooks.beginWorldFrame({ renderer: gameRenderer, scene });
+  gameRenderer.render(scene, {});
+  assert.equal(companion2.avatarRef.group.position.y, 1.35, 'touchdown reaches the terrain while continuing to move');
+  hooksWindow.RenderHooks.endWorldFrame();
 }
 console.log('animal subtle elevation: render-hooks frame scope ok');
