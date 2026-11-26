@@ -568,6 +568,7 @@
   // General-purpose (not just for this one scan) so future once-per-
   // species/gender checks have somewhere to live instead of re-deriving
   // their own caching each time.
+  const handlesByLegRoot = new WeakMap(); // Author preview resolves the real procedural rig once, without a second skeleton.
   const _speciesGenderSession = new Map(); // "species::gender" -> {}
   function speciesGenderSession(speciesId, gender) {
     const key = `${speciesId}::${gender}`;
@@ -604,7 +605,8 @@
     box.setFromObject(foot); // Foot is still at the identity origin; bounds are shoe-local.
     if (box.isEmpty()) return foot;
     foot.userData.groundSupportBox = box;
-    const precise = new THREE.Box3().setFromObject(foot, true); // One-time vertex envelope, not the conservative ground-contact box.
+    const precise = new THREE.Box3();
+    precise.setFromObject(foot, true); // One-time vertex envelope, not the conservative ground-contact box.
     foot.userData.cuffWidthX = precise.max.x - precise.min.x; // Unscaled neutral shoe width for pants fitting.
     foot.userData.contactRadiusY = Math.max(0, -box.min.y); // Neutral ankle height, before age or authored axes.
     return foot;
@@ -2116,6 +2118,7 @@
       },
       getSeatedPoseDebug: () => lastSeatedPoseDebug,
     };
+    handlesByLegRoot.set(root, handle);
     registerScaleHandle(handle); // Once per new rig, no per-frame/scale global loop.
     alignPortraitWithLegs(parent, handle); // Spawn with an already-authored independent leg length leaves portrait and hips attached immediately.
     return handle;
@@ -2123,6 +2126,15 @@
 
   window.ProceduralLegAnimation = {
     attach,
+    handleForGroup: group => {
+      let node = group?.getObjectByName?.('left_thigh') || group; // Walk the actual leg ancestry, even if the author supplied its enclosing avatar.
+      while (node) {
+        const handle = handlesByLegRoot.get(node);
+        if (handle) return handle;
+        node = node.parent;
+      }
+      return null;
+    },
     syncScaleForParent, // Shared scale runtime notifies already-attached feet when portrait/leg ratios diverge.
     alignPortraitWithLegs, // Preview and game use exactly the same floor-relative hip/portrait reconnection.
     worldQuaternionWithoutScale, // Scale-independent orientation shared with the climb renderer.
