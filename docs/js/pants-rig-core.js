@@ -142,7 +142,18 @@
     for (const side of ['left', 'right']) {
       const ring = rings?.[side], samples = splines?.[`${side}Ankle`]?.samples;
       if (!ring || ring.influence?.length !== stride * stride || !Array.isArray(samples) || samples.length < 2) continue;
-      const start = corners(samples[0]), end = corners(samples[samples.length - 1]), centre = corners(ring.anchor);
+      let start = corners(samples[0]), end = corners(samples[samples.length - 1]);
+      const centre = corners(ring.anchor);
+      if (absolute) { // A curved or nonmonotonic authored cuff may have its X extremes at interior spline points.
+        let min = Infinity, max = -Infinity;
+        for (const sample of samples) {
+          const weights = corners(sample);
+          if (!weights) continue;
+          const x = sampleVector(weights)[0];
+          if (x < min) { min = x; start = weights; }
+          if (x > max) { max = x; end = weights; }
+        }
+      }
       if (!start || !end || !centre) continue;
       const center = sampleVector(centre), chord = difference(sampleVector(end), sampleVector(start));
       if (absolute) { chord[1] = 0; chord[2] = 0; } // Fit the local X projection, not the slanted spline's length.
