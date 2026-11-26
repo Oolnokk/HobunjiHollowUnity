@@ -3346,3 +3346,17 @@ otherwise they skip).
 Gotcha while doing this: a Python splice used `str.index("const seamDisp")` from the start of the file and silently duplicated ~230
 lines because an earlier function has the same text; the golden test still passed because the stale copy was the one being called.
 When splicing, search from the start marker, and check `git diff --stat` before trusting a green test.
+
+### Where the first zone build stands after these passes (2026-11-26, map_northern_cliffs, headless software GL)
+
+First build of the zone went 3972 ms -> ~2500 ms (run-to-run spread about +/-0.3 s). The profile is now flat; remaining stable costs, inclusive:
+`buildZoneMesaMeshes` ~1.0 s (of which `buildPlateauMesa` ~0.45 s, the natural-surface UV post-pass ~0.5 s, `batchMesaMeshes` ~0.3 s),
+chunk priming ~0.5 s, waterfall curtain overlay `buildDomain` ~0.3-0.45 s, path brick chunks ~0.33 s, border terrain ~0.28 s,
+`ZoneGrassBillboards`/log-wall `build` ~0.3 s, plus ~0.5 s of garbage collection (many short-lived index arrays and typed buffers).
+
+Unrelated to the zone build but visible in one wide profile (the async `buildBuildingScene` continuation landing in the same window):
+`FoliageGenerator.applySurfaceGrowth` -> `buildSurfaceGrowth` ~1.2 s, `surfaceGuideEdges` alone ~0.46 s self + 0.09 s in its `quant` helper.
+That is a separate, larger candidate for building interiors.
+
+Ideas not yet tried: write `buildPlateauMesa`'s grass/stone indices straight into typed arrays (it builds two plain arrays, `concat`s them, then copies
+into a Uint16/Uint32 array), and pool the per-chunk typed buffers to cut GC.
