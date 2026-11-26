@@ -44,6 +44,21 @@ assert.equal(context.CreatureGenetics.creatureGroundOffset('grehlr', null), 0.32
 assert.equal(context.CreatureGenetics.creatureGroundOffset('gar-wolf-alpha', { sizeClass: 'small' }), 0.11, 'variant inherits base species floor-to-origin lift');
 assert.equal(context.CreatureGenetics.creatureGroundOffset('unknown-kind', 'medium'), null, 'unknown species requests automatic fallback');
 
+vm.runInContext(fs.readFileSync('docs/js/creature-ground-anchor.js', 'utf8'), context);
+vm.runInContext(fs.readFileSync('docs/js/pingdort-registration.js', 'utf8'), context);
+const pingdort = context.PingdortRegistration.PRESENTATION; // The native field model also supplies the rig tool's preview proportions.
+const perchedBottomRatio = 413 / 494; // Last opaque row of the authored perched sprite, expressed as its lower edge.
+for (const width of [pingdort.modelWidth, context.SCRATCHBONES_CONFIG.game.livestock.animalWidths.pingdort]) {
+  const height = width * pingdort.spriteAspect; // Field and farm use slightly different native widths.
+  for (const sizeClass of ['small', 'medium', 'large']) {
+    const scaleY = context.CreatureGenetics.creatureSizeScale('pingdort', sizeClass).y; // The world scales both the sprite and its local correction.
+    const lift = context.CreatureGenetics.creatureGroundOffset('pingdort', sizeClass); // Absolute world distance from support to the actor origin.
+    const offset = context.CreatureGroundAnchor.planeOffset(height, perchedBottomRatio, lift / scaleY);
+    const footY = lift + (offset + (.5 - perchedBottomRatio) * height) * scaleY;
+    assert(Math.abs(footY) < 1e-9, `Pingdort ${width}/${sizeClass} lands on the support surface`);
+  }
+}
+
 const skeeriWidths = { small: 0.65, medium: 1.15, large: 2.2 }; // Real ruined Skeeri native model widths used for class-proportional floor lift.
 const expectedSkeeriOffset = { small: 0.07, medium: 0.07 * (1.15 / 0.65), large: 0.07 * (2.2 / 0.65) }; // Shared Pingdort Small floor Y scales to Skeeri native widths.
 const mediumSkeeriOffsets = { small: 0.1, medium: 0.26, large: 0.375 }; // Independently authored Medium Skeeri size-class floor lifts.

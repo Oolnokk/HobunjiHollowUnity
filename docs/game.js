@@ -5454,7 +5454,9 @@
         // by an earlier creature.
         if (!def.swarm) resolveCreatureGroundAnchorRatio(def.sprites.idle, (bottomRatio) => { // A hovering swarm has no feet to anchor.
           if (c.avatarRef !== avatarRef) return; // Ignore an opacity scan that completes after this visual rig was retired.
-          const offsetY = creaturePlaneGroundOffset(modelHeight, bottomRatio);
+          const localFloorLift = creatureKey === 'pingdort' && c.stableRole !== 'shoulderPet'
+            ? groundLift / sizeScale.y : undefined; // Match an unattached Pingdort's visible foot to its size-specific floor lift.
+          const offsetY = creaturePlaneGroundOffset(modelHeight, bottomRatio, localFloorLift);
           if (avatarRef.frontPlane) avatarRef.frontPlane.position.y = offsetY;
           if (avatarRef.backPlane) avatarRef.backPlane.position.y = offsetY;
         });

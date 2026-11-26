@@ -12,6 +12,10 @@
     perched:'assets/creaturesprites/pingdort_perched.png',
     wings:'assets/creaturesprites/pingdort_wings.png',
   }); // Authored PNGs also provide the native farm, nursery and companion fallback silhouette.
+  const PRESENTATION=Object.freeze({
+    label:'Pingdort',hostile:false,diet:'carnivore',modelWidth:.48,spriteAspect:1000/1617,
+    sprites:Object.freeze({idle:SPRITES.perched,run:Object.freeze([SPRITES.flying,SPRITES.flying])}),
+  }); // Shared creature metadata for gameplay and the Animal Head Rig bestiary picker.
   const RIG_URL='config/creatures/pingdort-flying-rig.json'; // Authored shared two-bone flying rig with burden socket.
   const debug={registered:false,rigLoaded:false,failures:0,tintAssignments:0,lastTint:null,lastError:null}; // Mobile-readable registration, coat tint and asset diagnostics.
   let rigPromise=null; // One image/config decode shared by all wild and pet Pingdorts.
@@ -31,13 +35,13 @@
     if(!db)return false;
     const baseline=db['gar-wolf']||db.grehlr||{};
     const previous=db[KIND]||{};
-    db[KIND]={...baseline,...previous,label:'Pingdort',hostile:false,diet:'carnivore',
-      defaultSizeClass:'small',modelWidth:.48,spriteAspect:1000/1617,
+    db[KIND]={...baseline,...previous,...PRESENTATION,
+      defaultSizeClass:'small',
       attackDamage:6,attackTag:'sharp',attackCooldownS:2.4,
       attackRangePx:(Number(injected.TILE)||64)*3.5,
       isFlyingSpecies:true,attacks:['pingdortBoulderBomb'],
       lootPool:'creature_pingdort', // Wild Pingdorts drop their own meat and skin, never inherited Gar-wolf loot.
-      sprites:{idle:SPRITES.perched,run:[SPRITES.flying,SPRITES.flying]}};
+      sprites:{idle:PRESENTATION.sprites.idle,run:[...PRESENTATION.sprites.run]}};
     // Wild flocks override their own attack dispatch; personal companions use this special.
     if(render)render[KIND]={...(render[KIND]||{}),prefix:KIND,
       base:{idle:SPRITES.perched,run1:SPRITES.flying,run2:SPRITES.flying},patterns:[],
@@ -115,7 +119,7 @@
     const initial=/^#[0-9a-f]{6}$/i.test(String(requested||''))?requested:null;
     let recolored=null; // A fallback to authored PNGs is safer than tinting the white eye when canvas compositing is unavailable.
     if(initial)try{recolored=recoloredImages(images,initial);}catch(error){debug.failures++;debug.lastError=String(error);}
-    const instance=window.FlyingAnimalRig.create(settings,recolored||images); // Retains the real wing bones, original silhouettes, and native cleanup owner.
+    const instance=window.FlyingAnimalRig.create({...settings,perchSpline:undefined},recolored||images); // World perches use the native folded sprite. The authoring spline is for curled attachment poses.
     let displayedColor=recolored?initial:null; // Tracks the exact color already baked into this rig's PNG textures, not a multiplied material tint.
     const poseMaterials=instance.bodyMaterials; // References the existing flying/perched/wings materials; gripping shares perched.
     instance.restoreTint=(nextHex=displayedColor)=>{
@@ -149,6 +153,6 @@
     return instance;
   }
   configureLivestock(); // Must run before game.js snapshots LIVESTOCK_ITEM_KINDS and resources.
-  window.PingdortRegistration=Object.freeze({KIND,FERTILE_EGG,FARM_EGG,ZONES,SPRITES,register,configureLivestock,loadRig,createRig,
+  window.PingdortRegistration=Object.freeze({KIND,FERTILE_EGG,FARM_EGG,ZONES,SPRITES,PRESENTATION,register,configureLivestock,loadRig,createRig,
     debugSnapshot:()=>({...debug})});
 })();
