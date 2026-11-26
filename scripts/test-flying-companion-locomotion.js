@@ -30,6 +30,16 @@ assert.equal(stepFlight(flyer, 100, 0, 50, .1, 1, () => true), true);
 assert.equal(flyer.x, 5, 'clear flight advances real coordinates without a ground detour');
 assert.equal(flyer._travelPath, null);
 assert.equal(stepFlight(flyer, NaN, 0, 50, .1, 1, () => true), false);
+const windFlyer = { ...flyer, x: 0, y: 0 }; // Composed displacement must be swept before the flight owner writes coordinates.
+const composeWind = (dx, dy, dt) => { assert.equal(dt, .1); return { x: dx, y: dy + 3 }; };
+assert.equal(stepFlight(windFlyer, 100, 0, 50, .2, 1, (_x, _y, nx, ny) => nx === 5 && ny === 3, composeWind), true);
+assert.equal(windFlyer.x, 5);
+assert.equal(windFlyer.y, 3);
+assert.equal(stepFlight(windFlyer, 100, 3, 50, .1, 1, () => false, composeWind), false);
+assert.equal(windFlyer.y, 3, 'rejected wind displacement never writes coordinates');
+assert.equal(stepFlight(windFlyer, 100, 3, 50, .1, 1, () => true, () => ({x: NaN, y: 0})), false);
+assert.match(game, /composeMovement\?\.\(c, dx, dy, \{ mode: 'walk', scalarApplied: true, reference: speed \* stepDt, dt: stepDt, airborne: true, wind: windActive \}\)/, 'direct bird flight composes airborne movement rather than bypassing afflictions');
+assert.match(game, /if \(moved && motion\?\.wind\) commitComposedMovement\(c, motion,/, 'only accepted flight pays its wind Footing cost');
 assert.match(game, /updateCompanionLocomotion\?\.\(c, dt, movedPx, flightClear, interrupted\)/);
 assert.match(game, /DevRandomRuin\?\.flightClear/);
 assert.match(game, /birdLift/);

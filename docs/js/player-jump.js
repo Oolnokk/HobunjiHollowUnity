@@ -319,8 +319,11 @@
 
   function movementVector() {
     const input = deps.getMovementInput?.() || { x: 0, y: 0 };
-    const length = Math.hypot(number(input.x, 0), number(input.y, 0));
-    return length > 0.01 ? { x: input.x / length, z: input.y / length, strength: Math.min(1, length) }
+    const reverse = window.RangedWeapons?.movementDirectionMultiplier?.(deps.player) ?? 1; // Match the ordinary locomotion input reversal.
+    const x = number(input.x, 0) * reverse, z = number(input.y, 0) * reverse;
+    const intent = window.ResourceSystem?.movementIntent?.(deps.player, x, z, input.rotationApplied === true) || { x, y: z }; // Shoulder input already contains Demented camera yaw.
+    const length = Math.hypot(intent.x, intent.y);
+    return length > 0.01 ? { x: intent.x / length, z: intent.y / length, strength: Math.min(1, length) }
       : { x: 0, z: 0, strength: 0 };
   }
 
@@ -401,7 +404,12 @@
     const carryZ = (number(state.vz, 0) + number(state.knockbackVZ, 0)) * seconds; // Existing rope momentum and hit impulses share the collision sweep.
     state.knockbackVX = number(state.knockbackVX, 0) * Math.exp(-9 * seconds);
     state.knockbackVZ = number(state.knockbackVZ, 0) * Math.exp(-9 * seconds); // Knockback decays; rope momentum remains untouched.
-    if (!direction.strength && !Math.hypot(carryX, carryZ)) { state.assist = null; return; }
+    const rs = window.ResourceSystem; // Native jump solver still owns elevation, gravity and collision.
+    const mobility = player.prone ? 1 : (rs?.movementMultiplier?.(player, 'walk') ?? 1);
+    const windy = !player.prone && !!rs?.hasWindblown?.(player);
+    const alteredSteering = windy || Math.abs(mobility - 1) > 1e-8 || !!window.FeyIllusions?.movementRotationRad?.(player);
+    if (alteredSteering) state.assist = null; // Fixed-target assistance cannot bypass a live mobility/steering modifier.
+    if (!direction.strength && !Math.hypot(carryX, carryZ) && !windy) { state.assist = null; return; }
     if (!direction.strength) state.assist = null;
     if (direction.strength) state.lastDirection = direction; // Falling beside the approached face can still catch it after movement input is released.
     if (state.assist && direction.strength) {
@@ -417,9 +425,15 @@
       }
     }
     const nativeSpeed = number(deps.getBaseMoveSpeedTiles?.(), speed); // Uses the same unbuffed speed as ordinary movement; fallback serves isolated tests.
-    const travel = (nativeSpeed > 0 ? nativeSpeed : speed) * seconds * direction.strength;
-    const dx = direction.x * travel + carryX, dz = direction.z * travel + carryZ;
+    const reference = (nativeSpeed > 0 ? nativeSpeed : speed) * seconds * mobility; // Tile units, already scaled once.
+    const travel = reference * direction.strength;
+    const motion = windy ? rs.composeMovement(player, direction.x * travel, direction.z * travel, { mode: 'walk', scalarApplied: true, rotationApplied: true, reference, dt: seconds, airborne: state.phase === 'air', voluntary: direction.strength > 0 }) : null;
+    // Rope launch and hit impulses are physical carry, not voluntary steering:
+    // they remain unscaled and never contribute to the wind alignment charge.
+    const dx = (motion?.x ?? direction.x * travel) + carryX, dz = (motion?.y ?? direction.z * travel) + carryZ;
     const segments = Math.max(1, Math.ceil(Math.hypot(dx, dz) / 0.08));
+    let traveled = 0; // Actual swept distance in tile units, including accepted wall slides.
+    try {
     for (let i = 0; i < segments; i++) {
       const x = player.x / deps.TILE + dx / segments;
       const z = player.y / deps.TILE + dz / segments;
@@ -432,20 +446,25 @@
         const slide = slideMovement(player.x / deps.TILE, player.y / deps.TILE,
           dx / segments, dz / segments, state.feetY); // Preserve tangential input while gravity continues.
         if (!slide) { state.vx = 0; state.vz = 0; break; } // A blocked rope launch cannot keep tunnelling into a wall.
+        traveled += Math.hypot(slide.x - player.x / deps.TILE, slide.z - player.y / deps.TILE);
         player.x = slide.x * deps.TILE; player.y = slide.z * deps.TILE;
         debug.slides++;
         if (state.phase === 'air' && tryAirGrab(state, direction.strength ? direction : state.lastDirection || direction, previousY)) return; // Also catch at the swept slide point, not only before the frame.
         continue;
       }
       if (state.phase === 'air' && state.obstaclePending) {
-        const target = player.prone ? null : findLandingAssist(state, direction); // Prone cannot use assisted ledge hops. // A collider's clearance opens a bounded, swept landing assist.
+        const target = player.prone || alteredSteering ? null : findLandingAssist(state, direction); // Prone cannot use assisted ledge hops. // A collider's clearance opens a bounded, swept landing assist.
         state.obstaclePending = false;
         state.blocked = null;
         if (target) { state.assist = { ...target, remaining: CONFIG.assistSeconds }; debug.assists++; }
       }
+      traveled += Math.hypot(dx, dz) / segments;
       player.x = x * deps.TILE; player.y = z * deps.TILE;
       state.lastX = x; state.lastZ = z;
       if (state.phase === 'air' && tryAirGrab(state, direction.strength ? direction : state.lastDirection || direction, previousY)) return; // Fast rope swings can cross a grip between frame starts; sample each swept movement segment.
+    }
+    } finally {
+      if (motion?.wind) rs.commitMovement?.(player, motion, Math.min(1, traveled / Math.max(1e-8, Math.hypot(dx, dz))));
     }
   }
 
@@ -554,6 +573,7 @@
           player.vx = 0; player.vy = 0;
           return !nativeDodge; // Do not swallow the game's ordinary dodge update.
         }
+        if (!nativeDodge) remaining = 0; // The supported sweep already consumed this frame's horizontal time; never apply wind twice when stepping off an edge.
       }
       state.phase = 'air';
       state.vy = 0; // Walking off an object begins a normal gravitational fall.
@@ -646,7 +666,7 @@
     reset: () => reset(deps?.player),
     get debug() {
       const s = deps?.player?._freeJump;
-      return { ...debug, latestChange: 'Free-jump and rope elevation now land on the same physical town/porch/bridge supports as ordinary walking', active: !!s, phase: s?.phase || null, feetY: s?.feetY ?? null,
+      return { ...debug, latestChange: 'Free-jump and raised-support steering share the resource movement compositor; rope carry and gravity remain independent', movement: window.ResourceSystem?.movementDebug?.(deps?.player) || null, active: !!s, phase: s?.phase || null, feetY: s?.feetY ?? null,
         heightAboveGround: deps?.player?.heightAboveGround ?? 0,
         vy: s?.vy ?? 0, proneFall: !!s?.proneFall, proneFallStartY: s?.proneFallStartY ?? null,
         knockbackVX: s?.knockbackVX ?? 0, knockbackVZ: s?.knockbackVZ ?? 0,

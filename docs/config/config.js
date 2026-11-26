@@ -57,11 +57,21 @@
         drunkenFooting: '#b66a2f',
         drunkenHealth: '#ff4f9a',
         kindlingHealth: '#ffb347',
+        unshackledStamina: '#a9dff7', // Ohthic combo tempo reserve.
+        weightlessStamina: '#b5f6db', // Bottom-anchored movement reserve.
         furiousStamina: '#ec2de8',
         moralizedStamina: '#ffe15a',
         resoluteFooting: '#f1d27a',
         resoluteHealth: '#8fd0ff',
         mirroredHealth: '#d9f0ff',
+        windblownStamina: '#237fbd', // Tothal recovery debt.
+        leadboundStamina: '#a29179',
+        soulweightedHealth: '#705480',
+        veilmarkedHealth: '#a1d8d5',
+        currentStamina: '#48e4ef',
+        temperedFooting: '#e59f48',
+        pactHealth: '#aa63c9',
+        guardianHealth: '#e0f7c7',
         dementedStamina: '#d977ff', // Purple vertigo segment: every spent Stamina point affects navigation.
         panickedStamina: '#ff557b', // Panic reserve segment: surged dodge draws this buildup as additional cost.
         hypedStamina: '#fa69b6' // Bright augmented Stamina that powers rapid echo attacks.

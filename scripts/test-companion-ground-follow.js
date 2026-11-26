@@ -61,7 +61,10 @@ assert.equal(followGoal(companion, climbingMaster).routeRequired, false, 'flat n
 const companionLoop = source.slice(source.indexOf('function updateCompanions(dt)'), source.indexOf('// Second pass for the real player'));
 assert.doesNotMatch(companionLoop, /Teleport-and-stick|c\.avatarRef\.group\.position\.y = playerMesh\.position\.y \+ c\.halfHeight \* 0\.5/,
   'legacy owner-back climb snapping is absent');
-assert.match(companionLoop, /if \(c\.stableRole === 'mount'\) continue/, 'mounted animals remain under mount control');
+const mountBranch = companionLoop.match(/if \(c\.stableRole === 'mount'\) \{([\s\S]*?)\n\s*\}/); // Mounts own movement while their resource clock continues.
+assert(mountBranch, 'mount role has a dedicated early branch');
+assert.match(mountBranch[1], /if \(window\.Mounts\?\.rideEntity === c\) tickCreatureResources\(c, dt\);/, 'ridden animals maintain their independent affliction clock');
+assert.match(mountBranch[1], /\bcontinue;/, 'mounted animals remain under mount control and never enter follower movement');
 assert.match(source, /CompanionFollowNavigation\.init\(\{/, 'game.js injects the live grid, projection and collision adapters');
 assert.match(companionLoop, /CompanionFollowNavigation\.goal\(c, master\)/,
   'the frame loop uses the extracted navigation goal');

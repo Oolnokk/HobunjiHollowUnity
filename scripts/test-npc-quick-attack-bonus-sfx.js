@@ -8,6 +8,7 @@ const quickSource = fs.readFileSync('docs/js/combat/combat-quickattacks.js', 'ut
 const banditSource = fs.readFileSync('docs/js/combat/combat-bandit.js', 'utf8'); // Exact NPC target conditions, damage routing and staged quick strike.
 const audioEvents = []; // Captures per-target slash and weapon-impact sounds at the point of dispatch.
 const damageEvents = []; // Captures real player-versus-creature damage dispatch and the committed damage.
+const staminaPayments = []; // Verifies the production payment helper keeps quick-attack resource metadata.
 let staged = null; // One NPC windup/strike instance returned by the real staged-action constructor.
 let contact = true; // Melee hit gate can switch to a miss without changing any attack logic.
 const player = { id: 'player', x: 0, y: 0, angle: 0 }; // Combat.deps requires a local player even when an NPC attacks another actor.
@@ -22,6 +23,7 @@ const win = {
   ResourceSystem: {
     getDepletionEquivalentCurrent: (actor, key) => actor[key],
     afflictionBonusesForTag: () => ({}),
+    spendStamina(actor, cost, reason, options) { staminaPayments.push({ actor, cost, reason, options }); },
   },
   AudioSystem: {
     playQuickAttackBonusSfx(...args) { audioEvents.push(['anime-slash', ...args]); },
@@ -40,6 +42,7 @@ function sliceBetween(source, start, end) {
 const damageSource = sliceBetween(banditSource, '  function damageBanditCombatTarget(', '  // Mirrors combat-quickattacks.js');
 const conditionSource = sliceBetween(banditSource, '  function banditBehindTarget(', "  // The weapon's own natural"); // Includes the shared facing/behind predicate now reused by Quick Attack and tactical backstab flanking.
 const attackSource = sliceBetween(banditSource, '  function fireBanditQuickAttack(', '  function fireBanditChargedBreaker(');
+const paymentSource = sliceBetween(banditSource, '  function payBanditAttack(', '  function fireBanditComboStep('); // Use the same payment helper as the live NPC quick attack.
 const deps = {
   TILE: 64,
   damageCreature(target, amount) { damageEvents.push({ route: 'creature', name: target.name, amount }); target.health -= amount; },
@@ -53,17 +56,23 @@ const ctx = {
   banditRetreatDurationS: () => 0,
 };
 vm.createContext(ctx);
-vm.runInContext(damageSource + '\n' + conditionSource + '\n' + attackSource, ctx, { filename: 'combat-bandit.js#quick-attack' });
+vm.runInContext(damageSource + '\n' + conditionSource + '\n' + paymentSource + '\n' + attackSource, ctx, { filename: 'combat-bandit.js#quick-attack' });
 const attacker = {
   id: 'attacker', x: 0, y: 0, areaId: 'farm', facing: 0,
-  def: { attackTag: 'sharp', attackCooldownS: 1, weaponShapeStats: { power: 1, speed: 1, range: 1 } },
+  def: { attackTag: 'sharp', attackCooldownS: 1, attackStaminaCost: 7, weaponShapeStats: { power: 1, speed: 1, range: 1 } },
 }; // A real NPC loadout with a fixed, known weapon shape.
 const makeTarget = (name, flags) => ({
   name, x: 12, y: 0, areaId: 'farm', angle: 0, health: 20, maxHealth: 100,
   stamina: 100, maxStamina: 100, ...flags,
 }); // Mercy Spike condition is true below 30% Health at the instant of contact.
 function strike(target) {
+  const priorPayments = staminaPayments.length; // Used to ensure each windup pays exactly once, even on a miss.
   assert.equal(ctx.fireBanditQuickAttack(attacker, attacker.def, { tap2: 'mercySpike' }, target), true);
+  assert.equal(staminaPayments.length, priorPayments + 1);
+  const payment = staminaPayments[priorPayments];
+  assert.equal(payment.actor, attacker);
+  assert.equal(payment.cost, 7);
+  assert.equal(payment.options.tempoActionKind, 'combatQuickAttack');
   assert(staged && typeof staged.onStrike === 'function');
   staged.onStrike(); // One actual NPC strike at contact, not a replicated conditional judgment.
 }
