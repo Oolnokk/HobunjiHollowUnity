@@ -21,6 +21,8 @@
 
   let rendererRef = null; // Used by the multi-pass painterly pipeline when the final world composite is presented.
   let pipeline = null; // Reused low-resolution render targets/scenes; avoids per-frame GPU allocation.
+  let outlineFirst = true; // Nonpersistent A/B override; the shipped order paints finished ink.
+  let outlinedFrames = 0; // Mobile diagnostics: successful outline-before-paint submissions.
   let pipelineFrames = 0; // Reported by Pixel Probe to prove the screenshot-faithful stack is actually running.
   let lastPipelineSize = ''; // Reported by Pixel Probe so mobile can verify the internal preview-sized buffer.
   let lastPipelineMode = 'off'; // Reported by Pixel Probe to distinguish selected mode from the last completed paint pass.
@@ -94,10 +96,7 @@
     }
 
     vec3 hobunjiFinishReferenceStack(vec2 uv) {
-      vec3 source = texture2D(tColor, uv).rgb; // Pre-painterly color, including ordinary fog and lighting.
-      if (uHobunjiPaintMode < 0.5) return source;
-      float sourcePeak = max(source.r, max(source.g, source.b)); // Protect existing black ink without another draw.
-      if (sourcePeak <= 0.00392157) return source;
+      if (uHobunjiPaintMode < 0.5) return texture2D(tColor, uv).rgb;
       vec3 c = hobunjiPaintRead(uv);
 
       vec2 t = uHobunjiPaintTexel;
@@ -138,10 +137,7 @@
       float grey = dot(color, vec3(0.299, 0.587, 0.114));
       float revive = 0.80 * (1.0 - sat) * 0.90;
       color = vec3(grey) + (color - vec3(grey)) * (1.0 + revive);
-      color = clamp(color, 0.0, 1.0);
-      // Prevent oil/wash from lifting dark ink; release smoothly into shading.
-      float ink = 1.0 - smoothstep(0.015, 0.06, sourcePeak);
-      return mix(color, min(color, source), ink);
+      return clamp(color, 0.0, 1.0);
     }
 
     vec3 hobunjiPainterlyCompositeEdge(vec3 color, float edge) {
@@ -411,7 +407,26 @@
     }
   }
 
-  function runReferencePipeline(renderer, compositeMaterial) {
+  // The tone target is dead until the final tone pass; oil consumes the
+  // outlined source before tone overwrites it. No extra target or world draw.
+  function renderOutlinedSource(renderer, p, material, scene, camera, sourceTexture) {
+    const u = material.uniforms;
+    const oldMode = u.uHobunjiPaintMode.value;
+    const oldPaint = u.tHobunjiPaint.value;
+    try {
+      u.uHobunjiPaintMode.value = 0;
+      // Even samplers in disabled GLSL branches must not alias the bound FBO.
+      u.tHobunjiPaint.value = sourceTexture;
+      renderer.setRenderTarget(p.toneRT);
+      p.rawRender.call(renderer, scene, camera);
+    } finally {
+      u.uHobunjiPaintMode.value = oldMode;
+      u.tHobunjiPaint.value = oldPaint;
+    }
+    return p.toneRT.texture;
+  }
+
+  function runReferencePipeline(renderer, compositeMaterial, scene, camera) {
     if (mode === 'off') return null;
     const p = ensurePipeline(renderer);
     if (!p?.rawRender) return null;
@@ -431,6 +446,10 @@
 
     const texelX = 1 / size.width;
     const texelY = 1 / size.height;
+    const u = compositeMaterial.uniforms;
+    // Shell outlines are already in tColor; none/off need no precomposite.
+    const precompose = outlineFirst && (Number(u.uDepthOutlinesOn?.value) > 0.5
+      || (Number(u.uSeamOutlinesOn.value) > 0.5 && window.OutlineRenderPerformance?.nonShellOutlinesSuppressed !== true));
     passes.oil.material.uniforms.tSource.value = sourceTexture;
     passes.oil.material.uniforms.uWorkTexel.value.set(texelX, texelY);
     passes.washH.material.uniforms.uWorkTexel.value.set(texelX, texelY);
@@ -443,6 +462,10 @@
     const sample = timing && gpuTimer.supported && pipelineFrames % 4 === 0 && gpuTimer.pending.length < 12; // Bounded outstanding queries.
     try {
       renderer.autoClear = true;
+      if (precompose) {
+        // Offscreen: the existing canvas-only world-text hook waits for presentation.
+        passes.oil.material.uniforms.tSource.value = renderOutlinedSource(renderer, p, compositeMaterial, scene, camera, sourceTexture);
+      }
       renderer.setRenderTarget(p.oilRT);
       renderer.clear?.(true, false, false);
       timedPass('oil', sample, () => p.rawRender.call(renderer, passes.oil.scene, passes.oil.camera));
@@ -462,9 +485,10 @@
     compositeMaterial.uniforms.tHobunjiPaint.value = p.toneRT.texture;
     compositeMaterial.uniforms.uHobunjiPaintTexel.value.set(texelX, texelY);
     pipelineFrames += 1;
+    if (precompose) outlinedFrames += 1;
     lastPipelineSize = `${size.width}x${size.height}`;
     lastPipelineMode = mode;
-    return p.toneRT.texture;
+    return precompose;
   }
 
   function patchCompositeMaterial(material) {
@@ -576,10 +600,24 @@
         material = cachedRenderSceneMaterial;
       }
       if (material) {
-        patchCompositeMaterial(material);
-        const p = ensurePipeline(this);
-        if (p) p.rawRender = originalRender;
-        if (mode !== 'off' && material.userData?.hobunjiPainterlyPatched) runReferencePipeline(this, material);
+        if (patchCompositeMaterial(material) && mode !== 'off') {
+          const p = ensurePipeline(this);
+          if (p) p.rawRender = originalRender;
+          const precomposed = p && runReferencePipeline(this, material, scene, camera);
+          if (precomposed) {
+            // Present the original painterly finish without doubling depth/seam ink.
+            const u = material.uniforms;
+            const depth = u.uDepthOutlinesOn?.value, seam = u.uSeamOutlinesOn.value;
+            try {
+              if (u.uDepthOutlinesOn) u.uDepthOutlinesOn.value = 0;
+              u.uSeamOutlinesOn.value = 0;
+              return originalRender.call(this, scene, camera);
+            } finally {
+              if (u.uDepthOutlinesOn) u.uDepthOutlinesOn.value = depth;
+              u.uSeamOutlinesOn.value = seam;
+            }
+          }
+        }
       }
       return originalRender.call(this, scene, camera);
     };
@@ -609,8 +647,12 @@
   window.PainterlyPostprocess = {
     setMode,
     getMode: () => mode,
+    getOutlineFirst: () => outlineFirst,
+    setOutlineFirst: enabled => { outlineFirst = enabled !== false; }, // Render A/B only; not a saved setting.
     snapshot: () => ({
-      latestChange: 'Latest full-res HTML-reference stack plus tan protection: yellow lift/blue suppression now target vivid yellow-green only, preserving muted tan/ochre while keeping weaving accents saturated.',
+      latestChange: 'Original painterly finish now processes authored ink and generated depth outlines together; toneRT is reused for the outline precomposite.',
+      outlineFirst,
+      outlinedFrames,
       mode,
       sampleCount: MODE_SAMPLE_COUNT[mode],
       internalSize: lastPipelineSize || null,

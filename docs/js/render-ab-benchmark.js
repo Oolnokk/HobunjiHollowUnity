@@ -314,6 +314,10 @@
       // The paint filter only runs on the outline composite, so outlinesOff also drops it;
       // this isolates its own cost.
       variants.push({ id: 'painterlyOff', apply: () => painterly.setMode('off'), undo: () => painterly.setMode(painterlyBefore) });
+      if (typeof painterly.setOutlineFirst === 'function' && pipeline.getGeneratedOutlineMode?.() === 'screen') {
+        const before = painterly.getOutlineFirst(); // Restore exact diagnostic order after each window.
+        variants.push({ id: before ? 'paintBeforeDepthOutlines' : 'paintAfterDepthOutlines', apply: () => painterly.setOutlineFirst(!before), undo: () => painterly.setOutlineFirst(before) });
+      }
     }
     if (resolution && resolutionBefore !== '0.5') {
       variants.push({ id: 'halfResolution', apply: () => setResolution(resolution, '0.5'), undo: () => setResolution(resolution, resolutionBefore) });
@@ -562,7 +566,7 @@
       syncedPasses: syncedRows,
       syncedTotalMsPerFrame: syncedRows ? round2(syncedRows.reduce((sum, p) => sum + p.msPerFrame, 0)) : null,
       syncOverheadMs: syncedRows ? round2(syncOverheadMs) : null,
-      painterly: painterly?.snapshot ? (({ mode, internalSize }) => ({ mode, internalSize }))(painterly.snapshot() || {}) : null,
+      painterly: painterly?.snapshot ? (({ mode, internalSize, outlineFirst, outlinedFrames }) => ({ mode, internalSize, outlineFirst, outlinedFrames }))(painterly.snapshot() || {}) : null,
       rounds,
       framesPerWindow,
       device: {

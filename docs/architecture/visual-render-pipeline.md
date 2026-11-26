@@ -403,8 +403,15 @@ neighbors twelve render-target pixels away to detect an inward silhouette or
 substantial depth discontinuity. Authored PNGs and
 hard-faced textured meshes are excluded by the existing shell-layer policy;
 an unrestricted world-depth Sobel filter would violate that policy. Standard
-scene fog fades the generated ink, and the painterly patch signatures are
-preserved. Reticle highlights, actor probes, PNG occlusion depth, water/color
+scene fog fades the generated ink. With painterly active, the existing composite
+first writes the outlined world into the reusable tone target, then the original
+oil/wash/tone/finish stack processes both authored and generated ink together.
+Oil consumes that source before tone overwrites it; no additional render target
+or world draw is needed. Shell/none and painterly-off frames skip the extra
+composite. The final canvas draw disables already-applied outlines temporarily,
+so world text and Perception Mode still appear after the filter. Render A/B's
+`paintBeforeDepthOutlines` variant compares the previous order; the painterly
+snapshot reports `outlineFirst` and `outlinedFrames`. Reticle highlights, actor probes, PNG occlusion depth, water/color
 X-ray and perception overlays remain independent.
 
 This is deliberately a selective-mask experiment, NOT a zero-geometry-pass
