@@ -474,6 +474,7 @@
   function setToolEdgeOnDeadzone(deg) { toolEdgeOnDeadzoneRad = Math.max(0, Number(deg) || 0) * DEG_TO_RAD; }
   function toolEdgeOnDeadzoneDeg() { return toolEdgeOnDeadzoneRad / DEG_TO_RAD; }
   function setCameraProvider(provider) { cameraProvider = typeof provider === 'function' ? provider : null; }
+  function getCameraPosition() { return cameraProvider?.()?.position||null; } // Shared held-sprite camera.
 
   // frame._q is the tool's world rotation, frame._v the world point the camera ray is cast to (the mouth). Rolls frame._q about its own
   // z by the minimum angle that takes the sprite out of the deadzone; returns the roll applied (radians, 0 when none).
@@ -599,7 +600,7 @@
   }
 
   window.SharedAttackPose = Object.freeze({
-    headAnchor, headFrame, placeAtMouth, anchorScaleAtPoint, poseFromHolderWorld, setToolEdgeOnDeadzone, toolEdgeOnDeadzoneDeg, setCameraProvider, createHeadFrame, mouthPixel, referenceHeadScale,
+    headAnchor, headFrame, placeAtMouth, anchorScaleAtPoint, poseFromHolderWorld, setToolEdgeOnDeadzone, toolEdgeOnDeadzoneDeg, setCameraProvider, getCameraPosition, createHeadFrame, mouthPixel, referenceHeadScale,
     version: 1,
     POSE_KEYS,
     SINK_KEY,
