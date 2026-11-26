@@ -4978,11 +4978,6 @@
         window.PlayerBodyTransformComposer?.setHeadAimTarget?.(null);
         if (window.CharacterActionLocks?.isLocked?.('player','head')) return; // Explicit paired gaze owns the same neck until its scoped lock releases.
         if (!playerNeckJoint) return;
-        if (window.BedLiePose?.isActive?.()) { // Sleeping rests the head with the flattened body instead of camera-tracking the reticle.
-          playerNeckJoint.rotation.set(0, 0, 0);
-          playerNeckJoint.userData.hobunjiPerspectiveAimLocked = false;
-          return;
-        }
         playerNeckJoint.userData.hobunjiPerspectiveAimLocked = (
           activeCameraMode === SHOULDER_SURF_MODE
           && !cutscenePreviewActive
@@ -14363,7 +14358,7 @@
               const oldHeadArea = w.area; // Area transfers must never be mistaken for extreme one-frame movement.
               w.update(walkerDt);
               if (npcWalkers[i] === w) {
-                if (!w._familyBabyFollowing) window.BedLiePose?.syncNpc?.(w, w.currentScheduleTarget, walkerDt, w._bedLieSurface); // Every humanoid NPC uses real schedule-driven lie/stand poses, not just the player.
+                if (!w._familyBabyFollowing) window.BedLiePose?.syncNpc?.(w, w.currentScheduleTarget, walkerDt, w._bedLieSurface); // Humanoid NPCs use real schedule-driven lie/stand poses.
                 npcMovementHeadLookOptions.currentArea = currentArea;
                 npcMovementHeadLookOptions.hasScriptedGaze = cutscenePreviewActive
                   || npcDialogueStaging?.walker === w || _dialogueWalker === w || oldHeadArea !== w.area;
@@ -19620,7 +19615,6 @@
         }
         if (dialogueOpen) { updateNpcDialogueStaging(dt); return; }
         if (window.FarmAnimals.isHarvesting()) { window.FarmAnimals.updateHarvestInteraction(dt); return; }
-        if (window.BedLiePose?.isActive?.()) { player.vx = 0; player.vy = 0; return; } // Animated bed entry owns movement until morning.
         if (sitInteraction) { updateSitInteraction(dt); return; }
         if (window.Fishing?.state?.active) return;
         if (window.MusicMinigame?.state?.active) return;
@@ -25862,7 +25856,6 @@
       // ── Update player cube ────────────────────────────────────────
       function updatePlayerMesh(dt) {
         const pairedPoseLocked = window.CharacterActionLocks?.isLocked?.('player', 'pose') === true; // Exclusive paired choreography owns the live root position/yaw and authored knees until its lock releases.
-        window.BedLiePose?.update?.(dt); // The module positions the actor and its composer pose before this frame's avatar render sync.
         mineTorchLight.visible = !!window.TownMine?.floorFromMapId?.(currentArea);
         // Mount ride state now lives in js/mount-system.js (window.Mounts) —
         // shadowed locally so the rest of this function (posture/rotation
@@ -27426,11 +27419,7 @@
         _saveWorldCalendar();
       }
 
-      window.BedLiePose?.init?.({
-        THREE, tileSize: () => TILE, player: () => player, playerRoot: () => playerMesh,
-        playerLegs: () => playerLegs, area: () => currentArea,
-        showToast, isPaused: () => paused, getNpcWalkers: () => npcWalkers,
-      }); // NPC mattress poses remain available; player sleep time is owned by CalendarSystem.
+      window.BedLiePose?.init?.({ THREE }); // NPC mattress presentation only; player sleep belongs to CalendarSystem.
 
       // Weather rolling (chooseWeatherForDay/updateRainState) now lives
       // in js/weather-fx.js — call via window.WeatherFX.*.
@@ -30599,7 +30588,7 @@
         sit: beginSitInteraction,
         endSit: endSitInteraction,
         get sitState() { return sitInteraction; },
-        bedPose: () => ({ player: window.BedLiePose?.debug?.() || null, npcs: window.BedLiePose?.npcDebug?.(npcWalkers) || [] }), // On-device player/NPC sleeping posture, surface and x-ray status.
+        bedPose: () => ({ passage: window.CalendarSystem?.timeDebugSnapshot?.() || null, npcs: window.BedLiePose?.npcDebug?.(npcWalkers) || [] }), // Current time passage and NPC mattress presentation for mobile diagnostics.
         get playerState() { return { x: player.x, y: player.y, angle: player.angle }; },
         get camState() { return { mode: activeCameraMode, azimuthOffsetDeg: cameraAzimuthOffsetDeg, position: { x: camera.position.x, y: camera.position.y, z: camera.position.z } }; },
         foliageFurniture: (mapId = currentArea) => window.FoliageFurnitureRuntime?.debugState(mapId) || [],
@@ -33060,7 +33049,7 @@
         getBaseMoveSpeedTiles: () => MOVE_SPEED / TILE, // Jump travel reuses normal walking distance per second, not a separate hard-coded pace.
         canStartFreeJump: () => gameStarted && !paused && !dialogueOpen && !sitInteraction &&
           !window.Fishing?.state?.active && !window.MusicMinigame?.state?.active &&
-          !window.BedLiePose?.isActive?.() && !window.FarmAnimals?.isHarvesting?.() &&
+          !window.FarmAnimals?.isHarvesting?.() &&
           !window.PlayerSocialPoses?.active, // Actions/minigames that own the player must not secretly queue a jump.
         canPlayerOccupy, // Normal grounded movement authority.
         canPlayerOccupyAtHeight, // Jump uses native world collision at the physical foot height.

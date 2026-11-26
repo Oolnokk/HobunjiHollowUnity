@@ -183,7 +183,7 @@ const bedStart = gameSource.indexOf("if (o.key === 'basicBed' || o.key === 'doub
 const bedEnd = gameSource.indexOf('const def = DECORATIVE_FURNITURE_DEFS[o.key];', bedStart);
 assert.ok(bedStart >= 0 && bedEnd > bedStart);
 const bedCallback = vm.runInNewContext('(function(o) {' + gameSource.slice(bedStart, bedEnd) + '})', {
-  window: { HobunjiSleepPassageActionBridge: bridge, FarmAnimals: { isHarvesting: () => false }, Mounts: { rideState: 'none' }, BedLiePose: { begin() { throw new Error('legacy bed animation must not be invoked'); } } },
+  window: { HobunjiSleepPassageActionBridge: bridge, FarmAnimals: { isHarvesting: () => false }, Mounts: { rideState: 'none' } },
   sitInteraction: false, dialogueOpen: false,
 });
 for (const key of ['basicBed', 'doubleBed', 'bedroll']) {
@@ -228,3 +228,5 @@ const blockedBed = makeButton('btnAction1', 'Sleep', 'E');
 blockedBed.classList = { contains: name => name === 'blocked' };
 assert.equal(bridge._test.buttonShowsSleep(blockedBed), false, 'blocked Sleep cannot be intercepted');
 console.log('generic Interact and rejected Sleep regression passed');
+
+assert.doesNotMatch(gameSource, /BedLiePose\?\.(?:begin|update|isActive|debug|cancel)\b/, 'gameplay has no obsolete player bed presentation dependencies');

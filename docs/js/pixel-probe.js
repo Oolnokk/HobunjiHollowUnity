@@ -722,8 +722,7 @@
     if (tables) lines.push(`Furniture tables: ${JSON.stringify(tables)}`);
     const rugPlacement = window.__hobunjiFurnitureDebug?.furniturePlacementSnapshot?.(); // Mobile Pixel Probe exposes every current rug's size, stack level and pending move corner.
     if (rugPlacement?.rugs?.length || rugPlacement?.rugFirstCorner) lines.push(`Rug placement: ${JSON.stringify({ firstCorner: rugPlacement.rugFirstCorner, movedId: rugPlacement.moveId, rugs: rugPlacement.rugs })}`);
-    const sleeping = window.BedLiePose?.debug?.(); // Check mattress contact height, flattened pose fraction, and how many front meshes actually received bed x-ray.
-    if (sleeping?.begins) lines.push(`Bed lie-down: ${JSON.stringify(sleeping)}`);
+    if (window.CalendarSystem?.isTimePassageActive?.()) lines.push(`Time passage: ${JSON.stringify(window.CalendarSystem.timeDebugSnapshot?.())}`); // Report the authoritative player Sleep/Wait state.
     const npcBedPoses = window.BedLiePose?.npcDebug?.(window._npcWalkers || []) || []; // Real NPC mattress height, full-body blend and x-ray are inspectable on mobile.
     if (npcBedPoses.length) lines.push(`NPC bed poses: ${JSON.stringify(npcBedPoses)}`);
     const npcYawns = window.NpcYawnRest?.debugSnapshot?.(); // Copyable yawns, voice fallback and daily Koma status for mobile.

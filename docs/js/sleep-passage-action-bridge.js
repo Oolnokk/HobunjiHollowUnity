@@ -110,9 +110,7 @@
     const code = displayedKeyCode(button);
     if (!code || event.code !== code) return;
 
-    // This bridge loads before game.js specifically so Sleep wins the input race.
-    // Owning E here is intentional: delegating E to CalendarSystem allowed the
-    // legacy sleepInBed() listener to run first on some startup/input paths.
+    // Preserve the displayed Sleep binding and E/Q tap-versus-hold selection semantics.
     consumeEvent(event);
     clearArmedKey({ closeHeldArc: true });
     armedKeyCode = code;
@@ -175,9 +173,7 @@
     const button = actionButtonFromTarget(event.target);
     if (!buttonShowsSleep(button)) return;
 
-    // Always consume the trailing click, even when pointerup already opened the
-    // passage. Returning merely because the modal is open would let game.js's
-    // older click handler continue into sleepInBed() and jump to next morning.
+    // Consume the trailing click so pointer release and click cannot dispatch the same action twice.
     consumeEvent(event);
     if (!passageIsOpen() && openSharedSleepPassage()) interceptedClickCount += 1;
   }
@@ -186,7 +182,7 @@
     if (!document?.createElement || !document.head || document.querySelector?.('script[data-hobunji-devotion-rest="1"]')) return false;
     const script = document.createElement('script'); // Used to keep the prayer/rest feature modular while piggybacking on the existing guaranteed sleep bridge bootstrap.
     script.dataset.hobunjiDevotionRest = '1';
-    script.src = new URL('devotion-rest-buffs.js?v=20261124traceClock4', BRIDGE_SCRIPT_URL || document.baseURI).href;
+    script.src = new URL('devotion-rest-buffs.js?v=20261126bedNpcOnly1', BRIDGE_SCRIPT_URL || document.baseURI).href;
     document.head.appendChild(script);
     return true;
   }

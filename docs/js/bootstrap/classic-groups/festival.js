@@ -4,7 +4,7 @@
   const scriptUrls = [
     "js/festival-ancestor-figures.js?v=20261122keyghostAudit2",
     "js/festival-props.js?v=20261118blossomPng25v3",
-    "js/festival-wheel-dance-runtime.js?v=20261118pairedContinuity2",
+    "js/festival-wheel-dance-runtime.js?v=20261126bedNpcOnly1",
     "js/npc-festival-dance.js?v=20261020hd350a73",
     "js/npc-shared-meals.js?v=20261021hdde83ea",
     "js/festival-potluck-contest.js?v=20261122perception1",

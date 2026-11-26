@@ -211,7 +211,7 @@
   <!-- Accepted alcohol handoff + NPC playback; game.js supplies private-state adapters. -->
   <script src="js/npc-drink-interaction.js?v=20261119komaRigIdle5"></script>
   <script src="js/player-yawn-stretch-presentation.js?v=20261119shoulderReach5"></script> <!-- Final-render player yawn stretch; temporarily hides held visuals without unequipping them. -->
-  <script src="js/npc-yawn-rest.js?v=20261123youngVoice1"></script> <!-- NPC fatigue, waking yawns, untrimmed 0.350x intensity-5 breath fallback, player stretch and daily Slagothim Koma. -->
+  <script src="js/npc-yawn-rest.js?v=20261126bedNpcOnly1"></script> <!-- NPC fatigue, waking yawns, untrimmed 0.350x intensity-5 breath fallback, player stretch and daily Slagothim Koma. -->
   <!-- Inventory/HUD serving-fraction badges for alcohol bottles. -->
   <script src="js/alcohol-inventory-ui.js?v=20261028packpreview2"></script>
   <!-- Shared 2-bone leg solver (hip->thigh->calf) used by procedural-leg-animation.js -->
@@ -2983,7 +2983,7 @@
   <script src="js/romance-wedding.js?v=20261126h44c94f3"></script>
   <script src="js/npc-following.js?v=20261122babyFollow1"></script>
   <!-- Shared spouse kiss motion/height solver. Loads before RomanceSystem.init but after the player render/leg APIs. -->
-  <script src="js/spouse-kiss-motion.js?v=20261119h7c67489"></script>
+  <script src="js/spouse-kiss-motion.js?v=20261126bedNpcOnly1"></script>
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="spouse-social"></script> <!-- Independently versioned, useful spouse dialogue and in-law relations. -->
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="romance-runtime"></script>
   <script src="js/npc-command-wheel.js?v=20261122familyBaby3"></script>
@@ -2996,12 +2996,12 @@
        See architecture/classic-script-groups.md. -->
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups2" data-classic-group="qol"></script>
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups2" data-classic-group="guild"></script>
-  <script src="js/bed-lie-pose.js?v=20261125h1082b9e"></script> <!-- Player sleep presentation; before game.js. -->
+  <script src="js/bed-lie-pose.js?v=20261126bedNpcOnly1"></script> <!-- Scheduled NPC mattress presentation; before game.js. -->
   <script src="js/lunge-targeting.js?v=20261121lungeAoeAudit2"></script>
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups2" data-classic-group="render"></script>
   <script src="js/held-gift-policy.js?v=20261122heldGiftPolicy1"></script> <!-- Shared gifting policy and clothing visual preparation; game.js owns equipment state. -->
   <script src="js/rootledoot-encounter.js?v=20261126h43c635f"></script>
-  <script src="game.js?v=20261126bedPassageAudit2"></script>
+  <script src="game.js?v=20261126bedNpcOnly1"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261115nativeArena1"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->
