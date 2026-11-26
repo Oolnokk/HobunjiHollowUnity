@@ -1779,7 +1779,7 @@
       || pixelWidth <= 0 || pixelHeight <= 0 || modelWidth <= 0 || modelHeight <= 0) return null;
     const renderedPixelX = portraitsFlipped ? pixelWidth - pixelX : pixelX; // Used below so authored attachment landmarks mirror with the UV-flipped portrait.
 
-    const localPoint = out || new THREE.Vector3(); // Optional caller-owned output avoids per-frame vector allocations.
+    const localPoint = out || skinnedPlane.position?.clone?.() || new THREE.Vector3(); // Use the mesh's actual Three instance in module-based authors; caller output remains allocation-free.
     localPoint.set(
       -modelWidth / 2 + (renderedPixelX / pixelWidth) * modelWidth,
       modelHeight / 2 - (pixelY / pixelHeight) * modelHeight,
@@ -1872,10 +1872,11 @@
     if (vertical.lengthSq() < 1e-10) return null;
     vertical.normalize();
     const normal = tangent.clone().cross(vertical).normalize();
-    const basis = new THREE.Matrix4().makeBasis(tangent, vertical, normal);
+    const mesh = resolveSkinnedPortraitRoot(avatarRoot)?.userData?.neckRig?.skinnedPlane; // Editor Three may be an ES module rather than a window global.
+    const basis = (mesh?.matrix?.clone?.() || new THREE.Matrix4()).makeBasis(tangent, vertical, normal);
     return {
       position: center,
-      quaternion: new THREE.Quaternion().setFromRotationMatrix(basis),
+      quaternion: (mesh?.quaternion?.clone?.() || new THREE.Quaternion()).setFromRotationMatrix(basis),
       tangent,
       vertical,
       normal,

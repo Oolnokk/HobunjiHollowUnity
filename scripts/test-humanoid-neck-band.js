@@ -77,3 +77,5 @@ assert.match(spine, /rig\.skinnedPlane\?\.geometry\?\.userData\?\.blendHeight/,
 assert.match(spine, /\(y - \(neckY - blend \* below\)\) \/ blend/,
   'spine projection follows broad turn falloff');
 console.log('Species-specific pivots, restored blending, mesh rows, editor and spine contracts passed');
+
+assert.match(editor, /window\.PNGPlaneAvatar\.detectHeadRigPixels\(headCanvas, avatarCanvas, 12\)/, 'editor and gameplay use the same horizontal and vertical base-head pivot');

@@ -4763,28 +4763,19 @@ function scanOpaqueCanvas(canvas, alphaThreshold = 12) {
   }
 }
 
-function detectNeckAndEyePixels(headCanvas) {
+function detectNeckAndEyePixels(headCanvas, avatarCanvas) {
+  const sharedHead = window.PNGPlaneAvatar.detectHeadRigPixels(headCanvas, avatarCanvas, 12); // Same horizontal head centroid and last opaque row as runtime.
   const scan = scanOpaqueCanvas(headCanvas, 12);
   if (!scan) {
     return {
-      pivotPx: { x: (headCanvas?.width || 200) * .5, y: (headCanvas?.height || 200) * .62 },
+      pivotPx: sharedHead?.pivotPx || { x: (headCanvas?.width || 200) * .5, y: (headCanvas?.height || 200) * .62 },
       eyePx: { x: (headCanvas?.width || 200) * .512, y: (headCanvas?.height || 200) * .43 },
       boundsPx: null,
       detectionMethod: 'fallback-center-ratios',
     };
   }
   const bottom = scan.bottom; // Exact lowest alpha-visible pixel of this species' rendered base head, not a guessed neck height.
-  const bandTop = Math.max(scan.top, bottom - Math.max(2, Math.round(scan.height * .015)));
-  let weightedX = 0, totalWeight = 0;
-  for (let y = bandTop; y <= bottom; y++) {
-    for (let x = 0; x < scan.width; x++) {
-      const alpha = scan.data[(y * scan.width + x) * 4 + 3];
-      if (alpha <= scan.alphaThreshold) continue;
-      weightedX += x * alpha;
-      totalWeight += alpha;
-    }
-  }
-  const pivotX = totalWeight ? weightedX / totalWeight : (scan.left + scan.right) / 2;
+  const pivot = sharedHead?.pivotPx || { x: (scan.left + scan.right) / 2, y: bottom + .5 }; // Shared production pivot, independently of the eye estimate.
   // Eye height is estimated from the opaque base-head bounds; the neck itself is exact alpha-derived data.
   const eyeY = scan.top + (bottom - scan.top) * .46;
   const eyeBandHalf = Math.max(2, Math.round(scan.height * .018));
@@ -4803,7 +4794,7 @@ function detectNeckAndEyePixels(headCanvas) {
   // Scale the correction to the detected opaque head width so it remains subtle and species-safe.
   const perspectiveEyeShiftPx = Math.max(1, (scan.right - scan.left + 1) * .025);
   return {
-    pivotPx: { x: pivotX, y: bottom + .5 },
+    pivotPx: pivot,
     eyePx: { x: Math.min(scan.width - 1, silhouetteEyeX + perspectiveEyeShiftPx), y: eyeY },
     eyePerspectiveShiftPx: perspectiveEyeShiftPx,
     boundsPx: { top: scan.top, bottom, left: scan.left, right: scan.right },
@@ -4960,7 +4951,7 @@ async function buildNpcNeckRig(model, avatar, npc) {
   const baseHeadProfile = portraitProfileForBaseHead(avatar.profile);
   await renderPortraitVariantSerial(baseHead, baseHeadProfile, { seatId, forceEyesOpen: true }, { bodyLayers: [], urLayers: [] });
 
-  const detected = detectNeckAndEyePixels(baseHead);
+  const detected = detectNeckAndEyePixels(baseHead, avatar.front);
   const modelWidth = Number(model.userData.portraitModelWidth) || 1;
   const modelHeight = Number(model.userData.portraitModelHeight) || modelWidth;
   const placementRatio = Number(model.userData.portraitVerticalPlacementRatio);
