@@ -37,6 +37,7 @@ async function main() {
       return api?.active && api.previewCount >= 1 && !!document.querySelector('#maaFullScaleChoose option');
     }, null, { timeout: 150000 });
 
+    await page.waitForFunction(() => !window.HobunjiFullCharacterScaleComparison?.debugSnapshot?.().building, null, { timeout: 180000 }); // Isolate slider timing from progressive asset construction.
     const browserReport = await page.evaluate(async () => {
       const api = window.HobunjiFullCharacterScaleComparison;
       const selectedKey = api.selectedKey;
@@ -56,14 +57,17 @@ async function main() {
       const [species, gender] = selectedKey.split('::');
       const authored = window.HobunjiCharacterRigScale?.scaleFor?.(species, gender,
         window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters?.[selectedKey]);
-      const expected = window.HobunjiCharacterAgeRigConfig?.composePreviewScale?.(authored, api.ageModifiers.baby);
+      const config = window.HobunjiCharacterAgeRigConfig;
+      const baseline = config.repositoryDefaults().baby;
+      const preset = config.profileFor('baby', species, gender, config.repositoryProfiles()); // The selected authored preset, not the global fallback.
+      const expected = config.composePreviewScale(authored, config.relativeProfile(preset || baseline, authored), { species, gender });
       const near = (a, b) => Math.abs(a - b) < 1e-5;
-      if (!expected || !near(state.factor.x, expected.x) || !near(state.factor.y, expected.y)) {
+      if (!expected || !near(state.factor.x, expected.x) || !near(state.factor.y, expected.y) || !near(state.authoredScale.head, expected.head)) {
         throw Error('Real Three.js avatar body is not the same size as shared runtime age math: ' + JSON.stringify({ state, expected }));
       }
       // Thirty inputs in a single UI task must not force thirty full lineup traversals.
       const before = api.debugSnapshot().agePerf;
-      const body = document.getElementById('maaFullScaleAgeRangeBody');
+      const body = document.getElementById('maaFullScaleAgeRangeHeight');
       for (let p = 38; p < 68; p++) {
         body.value = String(p);
         body.dispatchEvent(new Event('input', { bubbles: true }));
@@ -84,17 +88,16 @@ async function main() {
         throw Error('Hand-only slider triggered expensive whole-rig work');
       }
       document.getElementById('maaFullScaleAgeApply').click();
-      const config = window.HobunjiCharacterAgeRigConfig;
       const applied = config?.snapshot?.();
-      if (!applied?.applied || Math.abs(window.HobunjiRomanceConfig.family.phaseScales.basket.body - .67) > 0.0001) {
+      if (!applied?.applied || !near(applied.profiles.baby[selectedKey].height, .67) || !near(applied.profiles.baby[selectedKey].hand, 1.44) || !near(window.HobunjiRomanceConfig.family.phaseScales.basket.height, baseline.height)) {
         throw Error('Apply did not update the actual game family phase config');
       }
       document.getElementById('maaFullScaleAgeUnapply').click();
       if (config.snapshot().applied) throw Error('Restore did not clear the active game override');
-      if (Math.abs(window.HobunjiRomanceConfig.family.phaseScales.basket.body - .32) > 0.0001) {
+      if (!near(window.HobunjiRomanceConfig.family.phaseScales.basket.height, baseline.height) || !near(config.snapshot().profiles.baby[selectedKey].height, preset.height)) {
         throw Error('Restore did not recover repository game phase config');
       }
-      const result = { selectedKey, previewCount: api.previewCount, expected, appliedInGame: applied.values.baby.body,
+      const result = { selectedKey, previewCount: api.previewCount, expected, appliedInGame: applied.profiles.baby[selectedKey].height,
         perf: { before, after, beforeHand, afterHand }, debug: api.debugSnapshot() };
       return result;
     });

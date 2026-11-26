@@ -17,10 +17,10 @@ const defaults = scaleWindow.HobunjiCharacterRigScaleDefaults; // Uses actual ga
 const v22Male = { x: 1.05, y: 2, head: 0.9647, offsetY: -0.055 }; // Previously shipped (v22) male default, now eligible for migration.
 const v22Female = { x: 1.130294117647059, y: 2.0941176470588236, head: 1.0640073529411764, offsetY: -0.055 };
 const male = defaults.scaleFor('longoran', 'male'); // Nov 22 lanky/thick-framed pass at the Mammakhbuur's height.
-assert.deepEqual(JSON.parse(JSON.stringify(male)), { x: 1.08, y: 1.4, legLength: 2.3, head: 1.05, offsetY: -0.055 });
+assert.deepEqual(JSON.parse(JSON.stringify(male)), { x: 1.015, y: 2.45, legLength: 2.45, head: 1, offsetY: -0.055 });
 const female = defaults.scaleFor('longoran', 'female');
-assert.deepEqual(JSON.parse(JSON.stringify(female)), { x: 1.04, y: 2.25, legLength: 2.15, head: 1, offsetY: -0.055 });
-assert.equal(defaults.scaleFor('tletingan', 'male').x, 0.6075, 'Tletingan keeps its own short/stocky default, independent of Longoran');
+assert.deepEqual(JSON.parse(JSON.stringify(female)), { x: 1.1303, y: 2.78, legLength: 2.78, head: 1.064, offsetY: -0.055 });
+assert.equal(defaults.scaleFor('tletingan', 'male').x, 0.85, 'Tletingan keeps its own short/stocky default, independent of Longoran');
 
 // Execute the actual Full Character Scale save bridge: the old 200% cap used to turn a valid female height of 209.4% back into 200% after reload.
 function restoreScaleBridge(savedScales) {

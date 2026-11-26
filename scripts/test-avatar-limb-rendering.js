@@ -131,7 +131,7 @@ for (const depth of [0, 0.1, 1, 2.5, 4]) {
 camera.isPerspectiveCamera = false;
 assert.equal(handThickness(20), 0.012, 'orthographic size is independent of distance');
 
-assert.match(read('docs/js/procedural-leg-animation.js'), /placeIdleTarget\('right', state\.rightContactY\);\s*window\.HobunjiFeetOutlineParity\?\.refreshRig\?\.\(root\)/, 'the leg owner notifies parity after installing final GLB feet');
+assert.match(read('docs/js/procedural-leg-animation.js'), /placeIdleTarget\('right', state\.rightContactY\);\s*if \(typeof options\.onFootVisualsReplaced === 'function'\) \{[\s\S]*?\}\s*\/\/ Runs only on real GLB replacement, not every frame\.\s*window\.HobunjiFeetOutlineParity\?\.refreshRig\?\.\(root\)/, 'the leg owner notifies parity after installing final GLB feet');
 
 const fallback = mesh('left_foot'); // Initially attached procedural foot.
 const root = group([fallback]); // Stable leg root survives async foot replacement.

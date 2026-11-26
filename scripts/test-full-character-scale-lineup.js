@@ -105,7 +105,8 @@ vm.runInContext(source.replace('  install();\n})();', `  window.testLineup = { r
   assert(source.includes('applyLongoranSliders'), 'Authoring controls must apply tuning, not be decorative');
   assert(source.includes('rebuildLongoranFeet'), 'Gait changes must rebuild the existing real foot solver');
   assert(source.includes('exportLongoranTuning'), 'Longoran tunings must be exportable');
-  assert.match(source, /reps\.filter\(item => item\.species === 'longoran'\)/, 'Longoran should become available before the remaining slow species previews'); // Prioritize authoring without dropping any other species.
+  assert.match(source, /const ordered = reps\.sort\(compareLineupEntries\)/, 'progressive preview loading follows the requested species and gender lineup order');
+  assert.match(source, /for \(const rep of ordered\)/, 'builds every ordered representative rather than skipping slower species');
   assert.match(source, /buildPreviewEntry\(rep, buildId\)/, 'progressive builds must carry the cancellation generation');
   assert.match(source, /if \(buildId !== generation \|\| !previewRoot\) return null;/, 'an exited editor must not attach a stale avatar after image loading');
   assert.match(source, /active = true; \/\/ The first Kenkari is editable/, 'the first Kenkari is editable without loading the whole lineup');

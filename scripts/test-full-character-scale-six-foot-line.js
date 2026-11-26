@@ -45,7 +45,7 @@ const controls={target:new Vec3(0,1,0)}; // Camera orbit pivot can move to selec
 const window={HobunjiGameplayBackdrop:{getCameraControls:()=>controls}};
 const document={getElementById:id=>id==='view3d'?{clientHeight:480}:null};
 const scene={children:[],add(o){this.children.push(o);o.parent=this;},remove(o){this.children=this.children.filter(x=>x!==o);o.parent=null;}};
-const start=author.indexOf('  function installSixFootGuide('),end=author.indexOf('  function layout()',start);
+const start=author.indexOf('  function installSixFootGuide('),end=author.indexOf('  function layout(',start);
 assert(start>=0 && end>start,'production scene guide function remains findable');
 const setup=author.slice(start,end);
 const context={THREE,window,document,active:true,building:false,previewRoot:{children:[]},

@@ -664,5 +664,23 @@
     "reason": "Developer-triggered diagnostic: awaits at most three animation frames so its read-only render hook can record the next main pass's draw list, then removes the hook and returns; it never reschedules itself or runs without an explicit Settings/console request.",
     "migrationStage": "not-planned",
     "line": 298
+  },
+  {
+    "file": "docs/js/character-scale-comparison.js",
+    "owner": "FullCharacterScaleComparison",
+    "classification": "one-shot",
+    "function": "scheduleSelectedLayout",
+    "reason": "Guarded one-shot callback batches selected-character layout changes; checks active/building and never reschedules itself.",
+    "migrationStage": "not-planned",
+    "line": 866
+  },
+  {
+    "file": "docs/js/character-scale-comparison.js",
+    "owner": "FullCharacterScaleComparison",
+    "classification": "one-shot",
+    "function": "queueAgeRender",
+    "reason": "Guarded one-shot callback coalesces multiple age inputs; flushAgeRender clears the pending handle and does not recurse.",
+    "migrationStage": "not-planned",
+    "line": 892
   }
 ]

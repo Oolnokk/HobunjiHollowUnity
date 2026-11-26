@@ -10,8 +10,8 @@ const donors = JSON.parse(JSON.stringify(window.HOBUNJI_ATTACHMENT_RIG_PROFILES.
 const mashtzarrAppearanceBefore = JSON.parse(JSON.stringify(window.SCRATCHBONES_CONFIG.game.appearanceEditor.species.mashtzarr)); // Front-hair removal must stay isolated to Mammakhbuur.
 vm.runInNewContext(read('docs/js/mammakhbuur-species-runtime.js'), context);
 const expectedScale = {
-  male: { x: 0.96, y: 1.69, head: 0.9771, offsetY: -0.095 },
-  female: { x: 1.0153, y: 1.3331, head: 0.8402, offsetY: -0.02 },
+  male: { x: 0.96, y: 1.69, legLength: 1.69, head: 0.9771, offsetY: -0.095 },
+  female: { x: 1.0153, y: 1.3331, legLength: 1.3331, head: 0.8402, offsetY: -0.02 },
 };
 for (const gender of ['male','female']) {
   const donor = donors['mashtzarr::' + gender]; // Compares against the fully authored donor including snapshot corrections.

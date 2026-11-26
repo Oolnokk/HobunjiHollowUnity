@@ -58,9 +58,9 @@ function section(from, to) {
 } // Extracts production function bodies without duplicating the stage math in the test.
 const ageSource = [
   "  const AGE_SAVE_KEY = 'hobunjiFullCharacterScale.ageModes.v1';",
-  "  const AGE_AXES = ['body','head','hand','foot'];",
+  "  const AGE_AXES = ['width','height','head','hand','foot','widthConvergence','heightConvergence'];",
   "  const AGE_MODES = ['adult','baby','toddler','child'];",
-  "  let ageMode = 'adult', ageModifiers = {}, selected = null;",
+  "  let ageMode = 'adult', ageModifiers = {}, selected = null, ageProfiles = {}, ageOverall = {}, stageBasisCache = null;",
   section('repositoryAgeModifiers','host'),
   section('syncAgeControls','syncAgeLimbs'),
   '  window.__testAge = { loadAgeModifiers, syncAgeControls, repositoryAgeModifiers, ageValues, setMode: value => { ageMode = value; } };',
@@ -76,9 +76,9 @@ const document = {
 const storage = new Map(); // Missing or malformed draft autosaves must not break initial editor display.
 const localStorage = { getItem: key => storage.get(key) || null };
 const familyStages = {
-  baby: { body: 0.3, head: 0.5, hand: 1.2, foot: 1.2 },
-  toddler: { body: 0.4, head: 0.65, hand: 1, foot: 1 },
-  child: { body: 0.6, head: 0.8, hand: 1, foot: 1 },
+  baby: { width: 0.3, height: 0.3, head: 0.5, hand: 1.2, foot: 1.2, widthConvergence: 0, heightConvergence: 0 },
+  toddler: { width: 0.4, height: 0.4, head: 0.65, hand: 1, foot: 1, widthConvergence: 0, heightConvergence: 0 },
+  child: { width: 0.6, height: 0.6, head: 0.8, hand: 1, foot: 1, widthConvergence: 0, heightConvergence: 0 },
 };
 const window = {
   HobunjiCharacterAgeRigConfig: {
@@ -89,13 +89,13 @@ const window = {
 vm.runInNewContext(ageSource, { window, localStorage, document, console }, { filename: 'age-stage-production-functions.js' });
 const age = window.__testAge;
 age.loadAgeModifiers();
-assert.deepEqual(JSON.parse(JSON.stringify(age.ageValues())), { body: 1, head: 1, hand: 1, foot: 1 },
+assert.deepEqual(JSON.parse(JSON.stringify(age.ageValues())), { width: 1, height: 1, head: 1, hand: 1, foot: 1, widthConvergence: 0, heightConvergence: 0 },
   'adult stage must be unity even when shared game config exports only growth stages');
 age.syncAgeControls(); // This used to throw TypeError reading undefined.body before the lineup rendered.
-assert.equal(document.getElementById('maaFullScaleAgeRangeBody').value, '100', 'adult global body slider initializes');
+assert.equal(document.getElementById('maaFullScaleAgeRangeHeight').value, '100', 'adult global body slider initializes');
 age.setMode('baby');
 age.syncAgeControls();
-assert.equal(document.getElementById('maaFullScaleAgeRangeBody').value, '30', 'baby inherits game defaults');
+assert.equal(document.getElementById('maaFullScaleAgeRangeHeight').value, '30', 'baby inherits game defaults');
 age.setMode('child');
 age.syncAgeControls();
 assert.equal(document.getElementById('maaFullScaleAgeRangeHead').value, '80', 'child inherits game defaults');
@@ -106,15 +106,15 @@ storage.set('hobunjiFullCharacterScale.ageModes.v1', JSON.stringify({
 age.loadAgeModifiers();
 age.setMode('adult');
 age.syncAgeControls();
-assert.equal(age.ageValues().body, 1, 'malformed autosave cannot erase adult unity');
+assert.equal(age.ageValues().height, 1, 'malformed autosave cannot erase adult unity');
 age.setMode('baby');
 age.syncAgeControls();
-assert.equal(age.ageValues().body, 0.3, 'malformed baby scale falls back to checked-in stage');
+assert.equal(age.ageValues().height, 0.3, 'malformed baby scale falls back to checked-in stage');
 delete window.HobunjiCharacterAgeRigConfig;
 age.loadAgeModifiers();
 age.setMode('adult');
 age.syncAgeControls();
-assert.equal(age.ageValues().body, 1, 'late/missing shared config also keeps adult stage');
+assert.equal(age.ageValues().height, 1, 'late/missing shared config also keeps adult stage');
 assert.match(editor, /function showStartupError\(/, 'startup errors remain visible outside the hidden comparison panel');
 assert.match(editor, /id = 'maaFullScaleErrorBanner'/, 'mobile banner remains copyable after tab restoration');
 console.log('PASS age stage: adult unity, shared-bridge and missing-bridge initialization, malformed autosave, mobile diagnostics');
