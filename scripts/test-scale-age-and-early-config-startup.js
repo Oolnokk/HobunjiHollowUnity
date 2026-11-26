@@ -32,7 +32,8 @@ const mesh = {
   computeBoundingSphere() { this.boundsUpdated = (this.boundsUpdated || 0) + 1; },
 }; // Mimics Three.js InstancedMesh's matrix buffer, without needing constructors.
 const road = {
-  isGroup: true, name: 'WallBuilder_Instances', userData: { cullSphere: true }, children: [], // A real THREE.Group always has children, even when the test traverses manually.
+  // Match the group name assigned by TerrainGeometry before adding the paving to town.
+  isGroup: true, name: 'PathBrickSurfaceChunk', userData: { cullSphere: true }, children: [],
   traverse(callback) { callback(mesh); },
 };
 const scene = { children: [road], userData: {}, add(...objects) { this.children.push(...objects); return this; } };
