@@ -801,7 +801,9 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
     let missing = 0; // Retry only genuine late GLB arrivals, not every character every frame.
     for (const kind of (onlyKind ? [onlyKind] : ['hand', 'foot'])) {
       if (kind === 'foot' && typeof entry.feet?.setAgeFootScaleMultiplier === 'function') {
+        entry.feet.syncPreviewFootContact?.(); // Width/height changes alter the uniform foot contact ratio even if no gait tick runs.
         entry.feet.setAgeFootScaleMultiplier(values.foot); // Leg owner maintains the unscaled baseline, sole contact and late mesh replacement.
+        syncLegPortraitAlignment(entry); // Foot contact can move the hip when leg length is independently authored.
         continue;
       }
       for (const side of ['left', 'right']) {
@@ -882,7 +884,7 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
       for (const entry of entries) syncAgeLimbs(entry, 'hand'); // Reassert only hands after pose ownership settles.
       relayoutForAge();
     } else if (ageDirtyLimb) {
-      for (const entry of entries) syncAgeLimbs(entry, ageDirtyLimb === 'both' ? null : ageDirtyLimb); // Hands/feet only: no full rig traversal, leg solver, or layout.
+      for (const entry of entries) syncAgeLimbs(entry, ageDirtyLimb === 'both' ? null : ageDirtyLimb); // Limb-only work: no full rig traversal or layout; feet update their own contact solver.
     }
     ageDirtyBody = false;
     ageDirtyLimb = null;

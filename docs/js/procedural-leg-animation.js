@@ -1709,11 +1709,8 @@
       return true;
     }
 
-    function update(dt, speedWorldUnitsPerSecond, suppressed, seatedPose, motion) {
-      dt = Number.isFinite(dt) ? Math.max(0, Math.min(0.1, dt)) : 0; // Bounds animation integration after backgrounding or invalid inputs.
-      if (!motion?.lunging || motion?.airborne || suppressed || seatedPose) state.lungeActive = false;
+    function syncFootBodyScale(grounded, solveImmediately = false) {
       if (state.disposed) return;
-      if (!externalFootTargets) prepareLegSolve(); // Normal gait/seat/hover recovers the prior clean solved frame before damping.
       const bodyFactors = window.HobunjiCharacterRigScale?.bodyScaleFactorsFor?.(parent); // The scale owner can be several joints above the feet.
       state.bodyScaleX = Number(bodyFactors?.x) > 0 ? Number(bodyFactors.x) : 1;
       state.bodyScaleY = Number(bodyFactors?.y) > 0 ? Number(bodyFactors.y) : 1;
@@ -1722,15 +1719,23 @@
         state.extremityYRatio = footYRatio;
         const nextLeftContactY = (Number(state.left?.userData?.contactRadiusY) || 0) * footYRatio; // Resized sole height: used to keep an already planted left foot grounded.
         const nextRightContactY = (Number(state.right?.userData?.contactRadiusY) || 0) * footYRatio; // Matching right-foot correction without changing step lift.
-        if (!externalFootTargets && !state.lungeActive && !seatedPose && !suppressed && !state.hoverEnabled && !motion?.airborne) {
+        if (grounded) {
           state.leftTarget.y += nextLeftContactY - state.leftContactY;
           state.rightTarget.y += nextRightContactY - state.rightContactY;
         }
         state.leftContactY = nextLeftContactY;
         state.rightContactY = nextRightContactY;
-        if (Math.abs(legLengthMultiplier - 1) > 1e-9)
+        if (solveImmediately || Math.abs(legLengthMultiplier - 1) > 1e-9)
           setLegLengthMultiplier(legLengthMultiplier, true); // The contact changed with the portrait aspect even though the authored leg percentage did not.
       }
+    }
+
+    function update(dt, speedWorldUnitsPerSecond, suppressed, seatedPose, motion) {
+      dt = Number.isFinite(dt) ? Math.max(0, Math.min(0.1, dt)) : 0; // Bounds animation integration after backgrounding or invalid inputs.
+      if (!motion?.lunging || motion?.airborne || suppressed || seatedPose) state.lungeActive = false;
+      if (state.disposed) return;
+      if (!externalFootTargets) prepareLegSolve(); // Normal gait/seat/hover recovers the prior clean solved frame before damping.
+      syncFootBodyScale(!externalFootTargets && !state.lungeActive && !seatedPose && !suppressed && !state.hoverEnabled && !motion?.airborne);
       if (externalFootTargets) {
         if (applyWorldFootTargets(externalFootTargets, null, externalFootExtendedReach, externalFootDeepFold)) {
           state.motionMode = 'external-portrait-contact';
@@ -1970,6 +1975,7 @@
 
     const handle = {
       group: root, update, dispose, applyRecordedLegPose, setLegLengthMultiplier, setFootScaleMultiplier, setAgeFootScaleMultiplier,
+      syncPreviewFootContact: () => syncFootBodyScale(true, true), // Static editor rigs need current contact without advancing or resetting their gait.
       get standingPosteriorY() { return posteriorY; }, // Consumers such as chair/pants positioning read the live hip, not an outdated creation-time value.
       restPosteriorY, // Preview and game diagnostics can compare current leg length with its original source anatomy.
       get standingFootContactY() { return (state.leftContactY + state.rightContactY) * .5; }, // Author height/beltline conversion measures real sole-contact height; no scene traversal or extra update pass.

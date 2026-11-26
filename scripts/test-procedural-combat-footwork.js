@@ -144,6 +144,17 @@ independent.legs.setFootScaleMultiplier(1);
 independent.legs.setLegLengthMultiplier(1);
 assert(Math.abs(independent.legs.standingPosteriorY - originalHip) < 1e-9,
   'restoring both independent controls returns the entire leg chain to the original bind pose');
+const staticPreview = rig(1, null, { x: 1, y: 1 });
+staticPreview.legs.setLegLengthMultiplier(1.5);
+staticPreview.legs.setAgeFootScaleMultiplier(1.6);
+staticPreview.parent.userData.testBodyScale = { x: 1.5, y: .75 };
+staticPreview.legs.syncPreviewFootContact();
+const staticContact = staticPreview.legs.getStandingPoseDebug();
+assert(Math.abs(staticContact.left.contactY - .04 * 1.6 * 1.5) < 1e-9, 'static preview contact updates after nonuniform body resize without a gait tick');
+assert(Math.abs(staticContact.left.targetY - staticContact.left.contactY) < 1e-9, 'static preview remains planted');
+const staticRevision = staticPreview.legs.anatomyRevision();
+staticPreview.legs.syncPreviewFootContact();
+assert.equal(staticPreview.legs.anatomyRevision(), staticRevision, 'unchanged static contact does not trigger extra IK');
 const explicitlyScaledParent = new Group(); // Tests a hostile/game caller that authors a unique scale on its parent before attaching feet.
 explicitlyScaledParent.userData.hobunjiCharacterRigScaleState = { factor: { x: 1.1, y: .8 }, legLength: 1.6 };
 const explicitlyScaledLegs = context.window.ProceduralLegAnimation.attach(THREE, explicitlyScaledParent, { speciesId: 'test', modelHeight: 1 });
