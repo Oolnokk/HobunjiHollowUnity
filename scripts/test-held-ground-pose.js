@@ -58,3 +58,9 @@ assert.ok(traced.some(p=>p.x===1&&p.z===-1),'actual outer head pixel participate
 assert.ok(traced.every(p=>Number.isFinite(p.columnX)),'contact carries exact deformation column');
 assert.ok(!traced.some(p=>p.x===1&&p.z===1),'transparent lower corner is excluded');
 console.log('bounded bands and alpha contact: ok');
+
+const candidate=context.window.HeldGroundPose.ropeFitCandidate;
+close(candidate(0,2,1,1,.3,.5),1);
+close(candidate(0,2,1,.5,.3,.5),.5);
+close(candidate(0,2,1,.1,.3,.5),.3);
+close(candidate(1,Math.sqrt(3),1,.25,.1,.5),.5);

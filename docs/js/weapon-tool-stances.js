@@ -555,6 +555,7 @@
             deps?.scaleToolWorldPointAroundPlayerCentroid?.(this.position,lightFrame.yawRad);
             this.updateMatrix();
             clearanceContext.lightReference=this.matrix.clone(); // Local matrix; solver composes the same world/plane transforms.
+            clearanceContext.lightReferenceFlailScale=SAP.validFlailLength?.(idleStances.lightWeapon.flailLengthScale)??1;
           }finally{
             this.position.copy(livePosition);this.quaternion.copy(liveQuaternion);this.updateMatrix();
           }

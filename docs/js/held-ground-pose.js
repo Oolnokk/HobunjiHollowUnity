@@ -10,7 +10,21 @@
   const rootFits=new WeakMap(); // Flail owner resolves the exact same fit without another rig traversal.
   const NO_SEGMENTS=Object.freeze([]);
   const traceCache=new WeakMap(); // Final loaded image -> bounded alpha traces, never scan repeatedly in the render loop.
-  function needsFit(context,mesh) {const fit=fitFor(context,mesh);return !!fit&&!Number.isFinite(fit.amount);}
+  function needsFit(context,mesh) {
+    const fit=fitFor(context,mesh),image=mesh?.userData?.toolPlane?.material?.map?.image;
+    return !!fit&&!Number.isFinite(fit.amount)&&!!image&&(image.naturalWidth||image.width)>0
+      &&(!context.profile.modular||!!image.modularFrame);
+  }
+  function lightRopeScale(root){return rootFits.get(root)?.referenceFlailScale??1;}
+  function ropeFitCandidate(spanX,spanY,scale,drop,minScale,lightScale=1){
+    const base=Math.hypot(spanX,spanY);
+    if(!(base>0&&scale>0&&lightScale>0)||!Number.isFinite(drop))return null;
+    const available=Math.max(0,drop/scale);
+    const requiredY=Math.sqrt(Math.max(0,available*available-spanX*spanX))/lightScale;
+    return Math.max(minScale,Math.abs(spanX)/base,Math.min(1,Math.hypot(spanX,requiredY)/base));
+  }
+  function originalGeometryFor(geometry){return active?.geometry===geometry?active.source:geometry;}
+  function prepareGeometryUpdate(geometry){if(active?.geometry===geometry)restoreGeometry();}
   function referenceDrop(root,point) {
     const fit=rootFits.get(root),e=fit?.referenceMatrix?.elements;
     return e?e[1]*point.x+e[5]*point.y+e[9]*point.z+e[13]-fit.referenceFloor:null;
@@ -172,7 +186,7 @@
     return result;
   }
   function autoContact(image,box,segments) {
-    if(!image)return null;
+    if(!image||!(image.naturalWidth||image.width)||!(image.naturalHeight||image.height))return null;
     let cache=traceCache.get(image);
     if(!cache){cache=new Map();traceCache.set(image,cache);}
     const signature=[box.min.x,box.max.x,box.min.y,box.max.y,JSON.stringify(segments)].join('|');
@@ -193,11 +207,15 @@
   function setCompression(plane,source,box,rows,segments,gripZ,amount,holder,rootScale) {
     if(!amount) { releaseCompression(); return; }
     const T=global.THREE;
+    if(active?.plane===plane&&active.source===source&&active.amount===amount&&active.gripZ===gripZ&&active.segments===segments){
+      active.holder=holder;active.rootScale=rootScale;plane.geometry=active.geometry;return;
+    }
     const cuts=columnCuts(box,segments); // Independent strips duplicate the seam vertices so a rigid beard is never sheared.
     const signature=rows.join(',')+'|'+cuts.join(',');
     if(!active||active.plane!==plane||active.source!==source||active.signature!==signature) {
       restoreGeometry();
       const geometry=new T.BufferGeometry(),count=(cuts.length-1)*rows.length*2;
+      geometry.parameters={...source.parameters}; // Preserve canonical source width for flail pixel anchors and rope scale.
       geometry.setAttribute('position',new T.BufferAttribute(new Float32Array(count*3),3));
       geometry.setAttribute('uv',new T.BufferAttribute(new Float32Array(count*2),2));
       geometry.setAttribute('normal',new T.BufferAttribute(Float32Array.from({length:count*3},(_,i)=>i%3===2?1:0),3));
@@ -332,7 +350,7 @@
     // physical proportions of the weapon.
     const image=plane.material?.map?.image;
     const measuredSource=!!image&&(image.naturalWidth||image.width)>0&&(image.naturalHeight||image.height)>0
-      &&(profile?.modular||(profile?.a>=-box.max.y-1e-4&&profile?.b<=-box.min.y+1e-4));
+      &&(profile?.modular?!!image.modularFrame:(profile?.a>=-box.max.y-1e-4&&profile?.b<=-box.min.y+1e-4));
     const pending=!!fit&&context.allowFit&&!!context.lightReference&&measuredSource&&global.PlayerJump?.heldPoseGrounded?.()===true;
     const gripZ=fit?.anchorZ??context.authoredGripZ??gripZFor(primary,mesh);
     const segments=profile&&(pending||Number.isFinite(fit?.amount))?profile.segments:NO_SEGMENTS;
@@ -392,7 +410,7 @@
         }
       }
       fit.amount=fixedValue(fit.amount,true,amount);fit.anchorZ=gripZ;
-      fit.referenceMatrix=s.reference.clone();fit.referenceFloor=target;
+      fit.referenceMatrix=s.reference.clone();fit.referenceFloor=target;fit.referenceFlailScale=context.lightReferenceFlailScale??1;
       debug.lightFittedMinY=samplePoints(s,s.contact,segments,gripZ,amount,s.reference);
       min=samplePoints(s,s.contact,segments,gripZ,amount);
     }
@@ -479,5 +497,5 @@
     if(!clear(mesh.matrixWorld)||(extra&&!clear(extra)))return false;
     debug.ordinaryParts++;return true;
   }
-  global.HeldGroundPose=Object.freeze({enabled,groundY,constrainWeapon,constrainFreeHand,ordinaryDepthFor,adjustGrip,adjustHaftPoint,ropeClearance,fittedRopeScale,referenceDrop,needsFit,fixedValue,clear,contractedZ,contactVertices,tracePixels,minimumY,chooseAngle,snapshot:()=>({...debug})});
+  global.HeldGroundPose=Object.freeze({enabled,groundY,constrainWeapon,constrainFreeHand,ordinaryDepthFor,adjustGrip,adjustHaftPoint,ropeClearance,fittedRopeScale,referenceDrop,lightRopeScale,ropeFitCandidate,needsFit,originalGeometryFor,prepareGeometryUpdate,fixedValue,clear,contractedZ,contactVertices,tracePixels,autoContact,minimumY,chooseAngle,snapshot:()=>({...debug})});
 })(typeof window!=='undefined'?window:globalThis);

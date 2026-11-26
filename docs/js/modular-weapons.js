@@ -962,7 +962,10 @@
   }
   function fitPlaneGeometry(geometry, canvas, referenceWidth = 0.5) {
     const layout = planeLayout(canvas, referenceWidth); // Updates a shared quad, preserving its identity for dual-wield/NPC copies.
+    const fittedGeometry=geometry; // Async composition/recolor must never overwrite the first four vertices of the private fitted mesh.
+    geometry=global.HeldGroundPose?.originalGeometryFor?.(geometry)||geometry;
     if (geometry.userData?.modularLayout && Object.keys(layout).every(key => geometry.userData.modularLayout[key] === layout[key])) return false;
+    global.HeldGroundPose?.prepareGeometryUpdate?.(fittedGeometry);
     const position = geometry.attributes.position; // A one-segment PlaneGeometry has these four corners and unchanged UVs.
     position.setXYZ(0, layout.x - layout.width / 2, layout.y + layout.height / 2, 0);
     position.setXYZ(1, layout.x + layout.width / 2, layout.y + layout.height / 2, 0);

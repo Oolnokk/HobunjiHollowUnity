@@ -749,6 +749,9 @@
   // rope attachment to its authored contact edge, or all layer bounds.
   function idleHeadContact(state,unit,profile) {
     const head=state.config.flail.head,visual=head.visualTransform;
+    const cached=state.groundHeadContact; // Head geometry is static under its moving suspension; alpha trace only when image/geometry changes.
+    if(cached?.profile===profile&&cached.unit===unit&&cached.parts.length===state.headParts.length
+      &&state.headParts.every((p,i)=>p.geometry===cached.parts[i].geometry&&p.material?.map?.image===cached.parts[i].image))return cached.result;
     const index=Math.max(0,head.layers.findIndex(l=>l.id===head.anchorLayer));
     const mesh=state.headParts[index];
     if(!mesh)return null;
@@ -761,8 +764,18 @@
       :pixelPoint(state.headAnchorImage,state.headAnchor,unit,head.layers[index]?.offsetPx,state.scratch.headAnchorLocal);
     const anchorY=ty(a.x,a.y);
     let lower=Infinity;
-    const authored=!!profile.headContact;
-    if(authored) {
+    const auto=state.headParts.map(part=>{
+      if(!part.geometry.boundingBox)part.geometry.computeBoundingBox();
+      return global.HeldGroundPose?.autoContact?.(part.material?.map?.image,part.geometry.boundingBox,[]);
+    });
+    const traced=auto.every(points=>points?.length>0);
+    const authored=!traced&&!!profile.headContact;
+    if(traced){
+      for(let i=0;i<state.headParts.length;i++){
+        const part=state.headParts[i];
+        for(const p of auto[i])lower=Math.min(lower,ty(part.position.x+p.x,part.position.y-p.z));
+      }
+    }else if(authored) {
       if(!mesh.geometry.boundingBox)mesh.geometry.computeBoundingBox();
       const b=mesh.geometry.boundingBox;
       for(const p of profile.headContact)lower=Math.min(lower,ty(mesh.position.x+b.min.x+p.u*(b.max.x-b.min.x),mesh.position.y+b.max.y-p.v*(b.max.y-b.min.y)));
@@ -772,7 +785,9 @@
       for(const x of [b.min.x,b.max.x])for(const y of [b.min.y,b.max.y])lower=Math.min(lower,ty(part.position.x+x,part.position.y+y));
     }
     const drop=anchorY-lower+(Number(visual?.y)||0)*unit;
-    return Number.isFinite(drop)?{drop,authored}:null;
+    const result=Number.isFinite(drop)?{drop,authored,traced}:null;
+    state.groundHeadContact={profile,unit,parts:state.headParts.map(p=>({geometry:p.geometry,image:p.material?.map?.image})),result};
+    return result;
   }
 
   function updateOne(state, dt, now, effectsDt = dt) {
@@ -860,8 +875,7 @@
     const baseLength=Math.hypot(spanX,spanY)*attachmentScale;
     const lightDrop=profile?.ropeMinScale!=null?pose.referenceDrop(root,q.pivotLocal):null; // Same immutable light stance reference as the haft.
     const canFit=!!contact&&Number.isFinite(lightDrop)&&!state.fishingFlailHeadSpin&&global.PlayerJump?.heldPoseGrounded?.()===true;
-    const minimumSpan=baseLength>1e-8?Math.abs(spanX)*attachmentScale/baseLength:0;
-    const candidate=canFit&&baseLength>1e-8?Math.max(profile.ropeMinScale,minimumSpan,Math.min(1,(lightDrop-contact.drop*attachmentScale*headScale)/baseLength)):null;
+    const candidate=canFit?pose.ropeFitCandidate(spanX,spanY,attachmentScale,lightDrop-contact.drop*attachmentScale*headScale,profile.ropeMinScale,pose.lightRopeScale(root)):null;
     const fixedScale=profile?.ropeMinScale!=null?pose.fittedRopeScale(root,profile,canFit,candidate):1;
     const desiredLocal=baseLength*fixedScale/attachmentScale;
     if(fixedScale<1&&Math.abs(spanY)>1e-8)
@@ -990,7 +1004,7 @@
         state.direction.set(back.x,solve.directionY,back.z);
         state.angularVelocity.multiplyScalar(.25);
       }
-      state.groundClearance={length:state.physicsLength,fittedScale:fixedScale,trailing:!!solve?.trailing,headContact:contact.authored?'authored-edge':'bounds',floor};
+      state.groundClearance={length:state.physicsLength,fittedScale:fixedScale,trailing:!!solve?.trailing,headContact:contact.traced?'auto-alpha':contact.authored?'authored-edge':'bounds',floor};
     }
     const worldQ = planeQuaternion(q.headUp.copy(state.direction).negate(), normal, q.worldQ, q);
     worldQ.multiply(q.correction.setFromUnitVectors(chainSpan, q.axisUp)); // Align both opaque chain endpoints, not the image rectangle.
