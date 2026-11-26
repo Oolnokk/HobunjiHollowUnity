@@ -123,6 +123,8 @@ Measured on `updateHostiles` (794 lines): only **11** direct `currentArea` refer
 - **Verified live** (headless): local player in town, guest in never-built `map_northern_cliffs`: built once (~5.3 s, one frame), `currentArea` and local position unchanged, 43 creatures present after 30 ticks, 34 ticks / 0 errors. The ~5 s synchronous build is a visible hitch for the host; spreading it is future work.
 - **Not done:** bandit camps are not stamped for a remotely built zone (`ensureCurrentZoneCamps` keeps its release/re-stamp rules tied to the local entry), honeyfuzzle hives, random encounters, projectiles in flight.
 
+**Measured (headless, software GL; 41-47 creatures in the guest's zone, 200 ticks):** a remote-zone tick costs a median ~1.7-3.3 ms (p95 4-8 ms, worst 5-28 ms), i.e. roughly 9-17 ms of CPU per second at 5 Hz (about 1-2% of one core) for one occupied remote zone. Audio: 100-197 `playAnimalVoiceUtterance` calls ran under the remote scope and **none** produced sound (the utterance path compares the creature's area to the listener's real area). One leak was found and fixed: den-pack / herd / nest toasts in `wildlife-spawn.js` were gated on `getCurrentArea()`, so populating a guest's zone toasted the local player and played the error sound; they now compare with `AreaScope.listenerArea()`. After the fix, 0 media/Web Audio starts under the scope (HTMLMediaElement.play + AudioBufferSourceNode.start counted).
+
 Remaining stages:
 1. Remove the swap by passing an explicit area/scene/grid into the tick (the clean form), system by system.
 
