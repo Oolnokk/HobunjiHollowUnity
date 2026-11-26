@@ -598,12 +598,13 @@
     guideOpening = token;
     try {
       const result = await runtime.openFarmGuideDialogue(walker);
-      if (result === false || guideOpening !== token || guideWorld !== window.__hobunjiPlayerProfile?.worldId || !farmGuideNeeded(profile)) return;
+      if (result === false || guideOpening !== token || guideWorld !== window.__hobunjiPlayerProfile?.worldId || profile.characterId !== window.__hobunjiPlayerProfile?.characterId || !farmGuideNeeded(window.__hobunjiPlayerProfile)) return;
       guideNextHour = (guideHour() ?? hour) + 1;
       changeStory(profile, { opening: 'complete', farmGuideNextHour: guideNextHour }); // Portable save also retains the reminder's deadline.
       guideStatus = 'invited; awaiting farm entry';
       window.NpcScheduling?.invalidateTargetDecisions?.();
     } catch (error) {
+      if (guideOpening !== token) return; // An old world's failed asynchronous portrait load must not overwrite the new world's status.
       guideStatus = 'invitation failed: ' + (error?.message || String(error));
       log(guideStatus, 'warn');
     } finally { if (guideOpening === token) guideOpening = null; }
@@ -812,7 +813,7 @@
     buildHunundiMeetingScene,
     buildJubmirFeyScene, nextFeyVisit, playJubmirFeyVisit,
     play: (profile = window.__hobunjiPlayerProfile) => play(profile, { replay: true }),
-    debugSnapshot: () => ({ ...status, farmTourComplete: tourComplete(window.__hobunjiPlayerProfile), wildernessUnlocked: canEnterWilderness(), jubmirFey: feyVisitState(), farmGuide: { status: guideStatus, nextHour: guideNextHour, walking: farmGuideNeeded() && guideWalking() } }),
+    debugSnapshot: () => ({ ...status, farmTourComplete: tourComplete(window.__hobunjiPlayerProfile), wildernessUnlocked: canEnterWilderness(), jubmirFey: feyVisitState(), farmGuide: { status: tourComplete(window.__hobunjiPlayerProfile) ? 'tour complete' : guideStatus, nextHour: guideNextHour, walking: farmGuideNeeded() && guideWalking() } }),
     stateKey, readProgress,
     getStory: (profile = window.__hobunjiPlayerProfile) => storedStory(profile) || {}, // The Guild reads the same portable story record as Jubmir.
     updateStory: changeStory, // Reuses the single world-meta writer for additional story phases.
@@ -850,6 +851,9 @@
       rows: [
         ['World owner', profile?.isWorldOwner === true ? 'Yes' : 'No'],
         ['farmTourComplete', story.farmTourComplete ? 'Yes' : 'No'],
+        ['Spearhead invitation', story.farmGuide.status],
+        ['Spearhead next reminder (absolute hours)', story.farmGuide.nextHour ?? 'Armed / not yet invited'],
+        ['Spearhead heading to gate', story.farmGuide.walking ? 'Yes' : 'No'],
         ['Jubmir conversation complete', fey.completed ? 'Yes' : 'No'],
         ['Hours until visit', fey.hoursUntilVisit === null ? 'Unavailable' : Math.ceil(fey.hoursUntilVisit * 100) / 100],
         ['Farm tour completed at (world hours)', fey.farmTourCompletedAtHours ?? 'Unavailable'],
