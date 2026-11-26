@@ -60,7 +60,7 @@ const expected = {
   },
   'voorg-ass': {
     saddle: { x: -0.0016655977917167481, y: 0.18328943170147868, z: 0.043832914384796626 },
-    grip: { x: 0, y: -0.29318061503235254, z: 0.051543592657975104 },
+    grip: { x: 0, y: -0.27834423457602814, z: 0.051543592657975104 },
     scales: { large: { x: 1, y: 1 }, medium: { x: 0.75, y: 0.75 }, small: { x: 0.34, y: 0.34 } },
     ground: { large: 0.39, medium: 0.3, small: 0.11 },
     chathead: { x: 0.1235, y: 0.14, width: 0.3074, height: 0.3325, coordinateSpace: 'sprite-normalized-top-left', version: 1 },

@@ -8301,6 +8301,7 @@
         THREE,
         getPlayerMesh: () => playerMesh, // Read the current owner root after any avatar rebuild.
         getPlayerNeckJoint: () => playerNeckJoint, // Resolve the live neck each frame rather than capturing the old rig.
+        getOwnerPortraitMeshes: () => [_playerAvatarFrontMesh, _playerAvatarBackMesh], // Current deformed portrait faces for shoulder-pet geometry limits.
         getRotationSource: () => s_shoulderPetRotationSource, // Preserve the existing authored head/body/world choice.
         getInvertRotationSource: () => s_invertShoulderPetRotationSource, // Existing compatibility setting.
         getCancelRotationalOffset: () => s_cancelShoulderPetRotationalOffset, // Existing authored offset setting.
@@ -8330,7 +8331,6 @@
       const SHOULDER_PET_CURIOUS_PITCH_DEG = 5; // Slight up/down curiosity layered onto the authored head rig where available.
       const SHOULDER_PET_CURIOUS_HEAD_TURN_MIN_DEG = 14; // A separate, clearly visible head turn keeps the body glance from reading as a whole-body pivot.
       const SHOULDER_PET_CURIOUS_HEAD_TURN_MAX_DEG = 24;
-      const SHOULDER_PET_AWAY_HEAD_YAW_SIGN = 1; // Fixed pet-local left turn; both 0° and 180° body poses use this same head-yaw direction away from the character.
       const SHOULDER_PET_CURIOUS_TURN_SPEED_DEG = 180;
 
       function _companionHeadRestDeg(c) {
@@ -8537,8 +8537,8 @@
           state.timer = SHOULDER_PET_POSE_HOLD_MIN_S
             + rnd() * (SHOULDER_PET_POSE_HOLD_MAX_S - SHOULDER_PET_POSE_HOLD_MIN_S);
           c.__hobunjiShoulderFacingInward = facingInward; // The root attachment solve consumes this persistent state as 180° inward vs 0° outward.
-          state.targetYawDeg = SHOULDER_PET_AWAY_HEAD_YAW_SIGN * (SHOULDER_PET_CURIOUS_HEAD_TURN_MIN_DEG
-            + rnd() * (SHOULDER_PET_CURIOUS_HEAD_TURN_MAX_DEG - SHOULDER_PET_CURIOUS_HEAD_TURN_MIN_DEG)); // Same pet-local left/away turn in both body poses.
+          state.targetYawDeg = SHOULDER_PET_CURIOUS_HEAD_TURN_MIN_DEG
+            + rnd() * (SHOULDER_PET_CURIOUS_HEAD_TURN_MAX_DEG - SHOULDER_PET_CURIOUS_HEAD_TURN_MIN_DEG); // Unsigned magnitude; final shoulder attachment determines the physically outward sign.
           state.targetPitchDeg = (rnd() * 2 - 1) * SHOULDER_PET_CURIOUS_PITCH_DEG;
           window.ShoulderPetObservationFlip?.recordPose?.(c, {
             facingInward,
@@ -8554,7 +8554,8 @@
         state.currentLeanDeg = 0;
         state.targetLeanDeg = 0;
         state.currentPitchDeg += window.FormatUtils.clamp(state.targetPitchDeg - state.currentPitchDeg, -step, step);
-        state.currentYawDeg += window.FormatUtils.clamp(state.targetYawDeg - state.currentYawDeg, -step, step);
+        state.currentYawDeg = Math.abs(Number(state.currentYawDeg) || 0); // Migrate old signed curiosity snapshots to a magnitude.
+        state.currentYawDeg += window.FormatUtils.clamp(Math.abs(state.targetYawDeg) - state.currentYawDeg, -step, step);
         return state;
       }
 
@@ -8563,7 +8564,7 @@
         // The attachment root applies only the inward/outward observation flip.
         // Continuous curiosity pitch/yaw belongs exclusively to the head bones.
         _updateCompanionHeadRotation(c, _companionHeadRestDeg(c) + state.currentPitchDeg, dt);
-        if (typeof c.avatarRef?.updateHeadYaw === 'function') c.avatarRef.updateHeadYaw(state.currentYawDeg, dt);
+        // The final shoulder pin owns passive yaw, after the actual grip and body heading are known.
       }
 
       function _isPlayerGenuinelyIdle() {
@@ -8976,6 +8977,7 @@
         window.HeldObjectRenderOrder?.setShoulderPetLayering?.(
           nextPet, _playerAvatarFrontMesh, _playerAvatarBackMesh,
           _playerAvatarFrontMaterial, _playerAvatarBackMaterial,
+          { geometricDepth: true }, // Shoulder-pet visibility now follows physical depth, not paired portrait x-ray.
         );
       }
 

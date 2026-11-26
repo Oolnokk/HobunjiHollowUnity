@@ -355,3 +355,158 @@ assert.ok(orientationDot(
 ) > 1 - 1e-9, 'mobile debug reports the repaired applied orientation, not the false reflected source');
 
 console.log('production shoulder grip-pivot solver numerical cases passed');
+
+
+// Render-time shoulder correction follows the final posed pixel, not the
+// stale GPU palette or the simulation-time world position. The tiny fixture
+// uses the same cached triangle/skin interpolation as a real portrait.
+TestVector3.prototype.applyMatrix4=function(m){
+  const a=m.elements,{x,y,z}=this;
+  return this.set(a[0]*x+a[4]*y+a[8]*z+a[12],a[1]*x+a[5]*y+a[9]*z+a[13],a[2]*x+a[6]*y+a[10]*z+a[14]);
+};
+const translation=(x=0,y=0,z=0)=>({elements:[1,0,0,0,0,1,0,0,0,0,1,0,x,y,z,1]});
+let reads=0,fullUpdates=0,frameSamples=0,flipped=false;
+const attr=points=>({count:points.length,version:0,getX:i=>{reads++;return points[i][0];},getY:i=>{reads++;return points[i][1];},getZ:i=>{reads++;return points[i][2]||0;}});
+const coords=[[0,0],[1,0],[0,1],[1,0],[1,1],[0,1]];
+const attributes={position:attr(coords),uv:attr(coords.map(([x,y])=>[x,1-y])),skinIndex:{array:new Uint16Array(24),version:0},skinWeight:{array:new Float32Array(24),version:0}};
+for(let i=0;i<6;i++){attributes.skinIndex.array[i*4]=coords[i][0];attributes.skinWeight.array[i*4]=1;}
+const bone=(x=0,y=0,z=0)=>({x,y,z,matrixWorld:translation(x,y,z),updateWorldMatrix(){this.matrixWorld=translation(this.x,this.y,this.z);}});
+const torso=bone(10,0,0),neck=bone(10,4,0);
+const mesh={geometry:{userData:{portraitGridRows:[0,1],segmentsX:1,segmentsY:1},getAttribute:k=>attributes[k]},bindMatrix:translation(),bindMode:'attached',
+  skeleton:{bones:[torso,neck],boneInverses:[translation(),translation()],boneMatrices:new Float32Array(32),update(){fullUpdates++;}}};
+const owner={userData:{sourceCanvas:{width:100,height:100},neckRig:{available:true,skinnedPlane:mesh}},updateWorldMatrix(){},
+  getWorldQuaternion(){return yaw(0);},localToWorld(v){return v;},worldToLocal(v){return v;}};
+const win={PNGPlaneAvatar:{resolveSkinnedPortraitRoot:()=>owner,getPortraitsFlipped:()=>flipped,
+  resolveSkinnedPixelWorldPosition(){throw Error('regular grid must not use the full legacy sampler');},
+  resolveSkinnedPixelWorldFrame(){frameSamples++;throw Error('head mode must not compute five samples');}}};
+new Function('window',runtimeSource)(win);
+const sampler=win.ShoulderPetAttachmentRuntime.createPerchSampler(THREE);
+const pixel={x:25,y:25},out=new TestVector3();
+closeness(sampler(owner,pixel,out),new TestVector3(10.25,1.25,0),'weighted skin point matches barycentric triangle');
+const firstReads=reads;
+neck.y=8;
+closeness(sampler(owner,pixel,out),new TestVector3(10.25,2.25,0),'live neck matrix replaces stale skeleton palette');
+assert.equal(reads,firstReads,'same pixel never re-reads geometry attributes');
+assert.equal(fullUpdates,0,'no full skeleton update is needed');
+flipped=true;
+closeness(sampler(owner,pixel,out),new TestVector3(10.75,6.25,0),'mirrored source pixel recompiles the correct triangle');
+flipped=false;
+const runtime=win.ShoulderPetAttachmentRuntime.create({THREE,getOwnerMesh:()=>owner,getOwnerNeckJoint:()=>null,
+  getRotationSource:()=> 'head',getInvertRotationSource:()=>false,getCancelRotationalOffset:()=>false});
+const parent={scale:new TestVector3(-2,3,.5),offset:new TestVector3(3,4,5),getWorldQuaternion(){return yaw(0);},updateWorldMatrix(){},
+  localToWorld(v){return v.multiply(this.scale).add(this.offset);},
+  worldToLocal(v){v.sub(this.offset);return v.set(v.x/this.scale.x,v.y/this.scale.y,v.z/this.scale.z);}};
+const group={isObject3D:true,visible:true,parent,position:new TestVector3(),quaternion:yaw(0),scale:new TestVector3(.5,.75,1.2),userData:{},
+  updateWorldMatrix(){},updateMatrix(){},localToWorld(v){return parent.localToWorld(v.multiply(this.scale).applyQuaternion(this.quaternion).add(this.position));}};
+const pet={avatarRef:{group}};
+const grip={localPosition:new TestVector3(.12,-.34,.05),rotationDeg:{y:-61}};
+const perch={sourcePixel:pixel,x:.3,y:.5,z:.1};
+const pose=runtime.solveSurfaceTransform(perch,grip,pet);
+runtime.applyFinalTransform(pet,pose);
+closeness(group.localToWorld(grip.localPosition.clone()),pose.perchWorldPosition,'initial pin accounts for reflected nonuniform parent');
+assert.equal(frameSamples,0,'normal gameplay samples only the center pixel');
+const simPosition=group.position.clone(),simRotation=group.quaternion.clone();
+// Simulate late owner neck deformation and the pet's render-only body delta.
+neck.y=12;group.position.x+=.14;group.quaternion.copy(yaw(47));group.scale.y=.9;
+const composedPosition=group.position.clone(),composedRotation=group.quaternion.clone(),undo=[],renderDebug={};
+assert.equal(win.ShoulderPetAttachmentRuntime.repinForRender(group,undo,renderDebug),true);
+closeness(group.localToWorld(grip.localPosition.clone()),new TestVector3(10.25,3.25,0),'final composed grip follows live shoulder pixel');
+assert.deepEqual(group.quaternion,composedRotation,'translation correction does not change body rotation');
+assert.equal(group.scale.y,.9,'translation correction preserves live breathing scale');
+assert.ok(renderDebug.shoulderPerchPin.beforeError>.01);
+assert.ok(renderDebug.shoulderPerchPin.afterError<1e-9);
+assert.equal(undo.length,1);
+undo.pop()();
+closeness(group.position,composedPosition,'rollback restores the already composed transform, not the simulation root');
+group.position.copy(simPosition);group.quaternion.copy(simRotation);
+group.visible=false;
+assert.equal(win.ShoulderPetAttachmentRuntime.repinForRender(group,undo,renderDebug),false,'hidden pet does not incur a render pin');
+assert.equal(undo.length,0);
+const bridge=fs.readFileSync('docs/js/player-body-attachment-bridge.js','utf8');
+assert.match(bridge,/composer\.addPostHeadAimHook\?\.\(\(undo,renderDebug\)/,'late correction is attached to the existing final pose transaction');
+assert.match(bridge,/for\(const root of shoulderPetsForFrame\(\)\)repin\(root,undo,renderDebug\)/,'reuses active shoulder roots instead of traversing the scene');
+console.log('cached source pixel, live skinning and render-only shoulder translation passed');
+
+
+// Local-Z broad-face tilt follows the live head only on the occupied side.
+const head={isObject3D:true,quaternion:new TestQuaternion(),getWorldPosition(v){return v.set(10,2,this.z);},z:0,updateWorldMatrix(){}};
+const headFollow=win.ShoulderPetAttachmentRuntime.create({THREE,getOwnerMesh:()=>owner,getOwnerNeckJoint:()=>head,
+  getRotationSource:()=> 'head',getInvertRotationSource:()=>false,getCancelRotationalOffset:()=>false});
+group.visible=true;
+const testHeadPitch=(pitch,side,inward=false)=>{
+  head.quaternion.setFromAxisAngle({x:1,y:0,z:0},degrees(pitch));
+  head.z=-side;
+  pet.__hobunjiShoulderFacingInward=inward;
+  return headFollow.solveSurfaceTransform(perch,grip,pet);
+};
+for(const pitch of [-25,25])for(const side of [-1,1])for(const inward of [false,true]){
+  const solved=testHeadPitch(pitch,side,inward);
+  assert.ok(Math.abs(solved.headPitch-degrees(pitch))<1e-9,'live head pitch');
+  assert.equal(Math.sign(solved.petHeadSide),side,'pet center selects side');
+  const up=new TestVector3(0,1,0).applyQuaternion(solved.worldQuaternion);
+  if(pitch*side>0){
+    assert.ok(Math.abs(solved.headSideLean)>.05,'toward pet engages tilt');
+    assert.equal(Math.sign(up.z),Math.sign(pitch),'same depth direction');
+    assert.ok(Math.abs(new TestVector3(0,0,1).applyQuaternion(solved.worldQuaternion).y)<1e-9,'long axis remains horizontal');
+  }else{
+    assert.equal(solved.headSideLean,0,'away leaves upright');
+    closeness(up,new TestVector3(0,1,0),'opposite side');
+  }
+  headFollow.applyFinalTransform(pet,solved);
+  closeness(group.localToWorld(grip.localPosition.clone()),solved.perchWorldPosition,'tilt preserves grip');
+}
+const initial=testHeadPitch(0,1);
+headFollow.applyFinalTransform(pet,initial);
+const originalQ=group.quaternion.clone(),originalP=group.position.clone();
+head.quaternion.setFromAxisAngle({x:1,y:0,z:0},degrees(25));
+const lateUndo=[];
+assert.equal(win.ShoulderPetAttachmentRuntime.repinForRender(group,lateUndo,renderDebug),true);
+assert.ok(Math.abs(renderDebug.shoulderPerchPin.headSideLeanDeg)>1,'late head pitch');
+assert.ok(new TestVector3(0,1,0).applyQuaternion(group.quaternion).z>0,'actual rendered broad face tips forward');
+closeness(group.localToWorld(grip.localPosition.clone()),initial.perchWorldPosition,'late grip remains pinned');
+while(lateUndo.length)lateUndo.pop()();
+closeness(group.position,originalP,'position rollback');
+assert.deepEqual(group.quaternion,originalQ,'rotation rollback');
+const tilted=testHeadPitch(25,1);
+headFollow.applyFinalTransform(pet,tilted);
+head.quaternion.setFromAxisAngle({x:1,y:0,z:0},degrees(-25));
+win.ShoulderPetAttachmentRuntime.repinForRender(group,lateUndo,renderDebug);
+assert.equal(renderDebug.shoulderPerchPin.headSideLeanDeg,0);
+closeness(new TestVector3(0,1,0).applyQuaternion(group.quaternion),new TestVector3(0,1,0),'prior tilt removed, not accumulated');
+while(lateUndo.length)lateUndo.pop()();
+console.log('directional broad-face head follow, observation reversal and late grip correction passed');
+
+
+// Passive yaw sign is derived from the physical head-to-pet vector, not
+// the observation pose or portrait flip flag. Same magnitudes in both poses.
+const passiveRig={currentYawDeg:0,targetYawDeg:0};
+pet.avatarRef.headRig=passiveRig;
+pet.avatarRef.updateHeadYaw=(yaw)=>{passiveRig.currentYawDeg=passiveRig.targetYawDeg=yaw;};
+pet.shoulderCuriosity={currentYawDeg:20};
+head.quaternion.setFromAxisAngle({x:0,y:1,z:0},0);
+const baseHeadPosition=head.getWorldPosition;
+for(const mirror of [false,true])for(const inward of [false,true])for(const side of [-1,1]){
+  flipped=mirror;pet.__hobunjiShoulderFacingInward=inward;
+  // Offset the owner head along the pet's actual local X axis, on either side.
+  const neutral=headFollow.solveSurfaceTransform(perch,grip,pet);
+  const right=new TestVector3(1,0,0).applyQuaternion(neutral.worldQuaternion);
+  const center=neutral.worldPosition;
+  head.getWorldPosition=v=>v.copy(center).sub(right.clone().multiply(new TestVector3(side,side,side)));
+  const solved=headFollow.solveSurfaceTransform(perch,grip,pet);
+  assert.equal(Math.sign(solved.passiveYaw.applied),side,'local sign follows actual owner-relative side');
+  assert.ok(Math.abs(solved.passiveYaw.applied-20*side)<1e-6,'existing curiosity magnitude retained');
+  // Positive local yaw turns +Z toward +X, so the turned nose points outward.
+  const nose=new TestVector3(0,0,1).applyQuaternion(new TestQuaternion().setFromAxisAngle({x:0,y:1,z:0},degrees(solved.passiveYaw.applied))).applyQuaternion(solved.worldQuaternion);
+  assert.ok(side*(nose.x*right.x+nose.z*right.z)>0,'world head turn is away');
+  headFollow.applyFinalTransform(pet,solved);
+  // Late pose moves the owner to the other side; do not show an inward frame.
+  head.getWorldPosition=v=>v.copy(center).add(right.clone().multiply(new TestVector3(side,side,side)));
+  const yawUndo=[];
+  win.ShoulderPetAttachmentRuntime.repinForRender(group,yawUndo,renderDebug);
+  assert.equal(passiveRig.currentYawDeg,0,'late side change clamps inward yaw to neutral');
+  while(yawUndo.length)yawUndo.pop()();
+  assert.equal(Math.sign(passiveRig.currentYawDeg),side,'render rollback restores simulation yaw');
+  head.getWorldPosition=baseHeadPosition;
+}
+flipped=false;delete pet.shoulderCuriosity;
+console.log('passive yaw: mirrored perch, both observation poses, both head sides and late clamp passed');
