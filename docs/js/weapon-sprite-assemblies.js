@@ -843,8 +843,31 @@
       // Original raster chain may be diagonal: preserve its X width/offset and solve only Y stretch for the desired span.
     }
     const authoredChainScaleY = chainScaleY; // Preserve the authored rope width even when a combat pose shortens its longitudinal reach.
-    chainScaleY *= state.flailLengthScale; // The same scaled endpoints drive rendered length, head contact and pendulum lever arm.
     const headScale = relativePartScale(flail.head); // Head size is still independently handle-relative.
+    const pose=global.HeldGroundPose;
+    const runtime=pose?.enabled?.()&&!state.dualPhysicsSource
+      &&root.parent===global.ProceduralHandAttachments?.gameDeps?.toolHolder
+      ?global.WeaponToolStances?.getRuntimeState?.():null;
+    const profile=runtime?.activeSlot==='weapon'&&runtime.itemKey===state.itemKey
+      ?global.HobunjiHandToolGrips?.lengthProfileForTool?.(state.itemKey):null;
+    const floor=profile?.ropeMinScale!=null?pose.groundY():null;
+    const contact=Number.isFinite(floor)&&!state.attacking?idleHeadContact(state,unit,profile):null;
+    const available=contact?pivot.y-(floor+.035+contact.drop*attachmentScale*headScale):null;
+    // Fit the connector in the neutral, vertically hanging reference pose, not
+    // its transient pendulum direction. Reuse the physical fit on every frame.
+    const spanX=(state.chainBottom.x-state.chainTop.x)*unit*chainScaleX;
+    const spanY=(state.chainBottom.y-state.chainTop.y)*unit*chainScaleY;
+    const baseLength=Math.hypot(spanX,spanY)*attachmentScale;
+    const canFit=!!contact&&!state.fishingFlailHeadSpin&&global.PlayerJump?.heldPoseGrounded?.()===true;
+    const candidate=canFit&&baseLength>1e-8?Math.max(profile.ropeMinScale,Math.min(1,available/baseLength)):null;
+    const fixedScale=profile?.ropeMinScale!=null?pose.fittedRopeScale(root,profile,canFit,candidate):1;
+    const desiredLocal=baseLength*fixedScale/attachmentScale;
+    if(Math.abs(spanY)>1e-8&&desiredLocal*desiredLocal>=spanX*spanX)
+      chainScaleY*=Math.sqrt(Math.max(0,desiredLocal*desiredLocal-spanX*spanX))/Math.abs(spanY);
+    else if(fixedScale<1&&Math.abs(spanY)>1e-8)chainScaleY=0.00001;
+    // Existing authored flail length animations are separate from the physical
+    // fitted size; they may shorten further, but cannot exceed it.
+    chainScaleY *= fixedScale<1?Math.min(1,state.flailLengthScale):state.flailLengthScale;
     if (state.chain.userData?.hobunjiRuinRopeSprite) {
       state.chain.scale.setScalar(localHandleScale * authoredChainScaleY); // Child width already compensates for both authoring axes; keep the billboard uniformly scaled.
     } else {
@@ -952,45 +975,21 @@
     if (dt > 0 && !state.fishingFlailHeadSpin) state.hasPhysicsVelocity = true; // Head-only spin is a kinematic orbit, not an impulse into the pendulum integrator.
     }
     if (state.dualWieldHidden) return; // Hidden original still simulates the ONE pendulum, but need not position invisible rope/head art.
-    // Idle ground contact is a presentation constraint on the existing
-    // pendulum, not a second simulation. Attack motion is left untouched.
+    // Ground contact can now change only the direction of the already
+    // fitted rope. No frame, jump, or pendulum swing can make it longer.
     state.groundClearance=null;
-    const pose=global.HeldGroundPose;
-    const runtime=pose?.enabled?.()&&!state.attacking&&!state.fishingFlailHeadSpin&&!state.dualPhysicsSource
-      &&root.parent===global.ProceduralHandAttachments?.gameDeps?.toolHolder
-      ?global.WeaponToolStances?.getRuntimeState?.():null;
-    const profile=runtime?.activeSlot==='weapon'&&runtime.itemKey===state.itemKey
-      ?global.HobunjiHandToolGrips?.lengthProfileForTool?.(state.itemKey):null;
-    const floor=profile?.ropeMinScale!=null?pose.groundY():null;
-    if(Number.isFinite(floor)) {
-      const contact=idleHeadContact(state,unit,profile);
-      if(contact) {
-        const available=pivot.y-(floor+.035+contact.drop*attachmentScale*headScale);
-        const solve=pose.ropeClearance(state.physicsLength,profile.ropeMinScale,state.direction.y,available);
-        if(solve) {
-          // Raster chains may have a lateral span: preserve that axis when
-          // solving the exact longitudinal stretch, and never fake a shorter length.
-          const dx=topLocal.x-bottomLocal.x,dy=topLocal.y-bottomLocal.y;
-          const desired=solve.length/attachmentScale;
-          if(Math.abs(dy)>1e-8&&desired*desired>=dx*dx) {
-            const factor=Math.sqrt(Math.max(0,desired*desired-dx*dx))/Math.abs(dy);
-            chainScaleY*=factor;topLocal.y*=factor;bottomLocal.y*=factor;
-            chainSpan.copy(topLocal).sub(bottomLocal).normalize();
-            if(solve.trailing) {
-              // Choose behind the latest locomotion, then previous sway,
-              // then the haft's outward axis when perfectly stationary.
-              const back=q.target.set(-q.velocity.x,0,-q.velocity.z);
-              if(back.lengthSq()<1e-8)back.set(state.direction.x,0,state.direction.z);
-              if(back.lengthSq()<1e-8)back.set(q.shaftUp.x,0,q.shaftUp.z);
-              if(back.lengthSq()<1e-8)back.set(0,0,1);
-              back.normalize().multiplyScalar(Math.sqrt(Math.max(0,1-solve.directionY*solve.directionY)));
-              state.direction.set(back.x,solve.directionY,back.z);
-              state.angularVelocity.multiplyScalar(.25); // Contact damps rather than injecting pendulum energy.
-            }
-            state.groundClearance={length:solve.length,trailing:solve.trailing,headContact:contact.authored?'authored-edge':'bounds',floor};
-          }
-        }
+    if(contact&&Number.isFinite(available)&&!state.fishingFlailHeadSpin) {
+      const solve=pose.ropeClearance(state.physicsLength,1,state.direction.y,available);
+      if(solve?.trailing) {
+        const back=q.target.set(-q.velocity.x,0,-q.velocity.z);
+        if(back.lengthSq()<1e-8)back.set(state.direction.x,0,state.direction.z);
+        if(back.lengthSq()<1e-8)back.set(q.shaftUp.x,0,q.shaftUp.z);
+        if(back.lengthSq()<1e-8)back.set(0,0,1);
+        back.normalize().multiplyScalar(Math.sqrt(Math.max(0,1-solve.directionY*solve.directionY)));
+        state.direction.set(back.x,solve.directionY,back.z);
+        state.angularVelocity.multiplyScalar(.25);
       }
+      state.groundClearance={length:state.physicsLength,fittedScale:fixedScale,trailing:!!solve?.trailing,headContact:contact.authored?'authored-edge':'bounds',floor};
     }
     const worldQ = planeQuaternion(q.headUp.copy(state.direction).negate(), normal, q.worldQ, q);
     worldQ.multiply(q.correction.setFromUnitVectors(chainSpan, q.axisUp)); // Align both opaque chain endpoints, not the image rectangle.

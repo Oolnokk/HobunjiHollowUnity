@@ -6,6 +6,36 @@
   const STEP = Math.PI / 36; // Bounded five-degree rotation search with refinement.
   const debug = { reason: 'not-run', angleDeg: 0, shortening: 0, floorY: null, originalMinY: null, finalMinY: null, rotations: 0, compressions: 0, freeHandLifts: 0, ordinaryParts: 0, fallbacks: 0 };
   let active = null, proof = null, floorFrame = null, floor = null, scratch = null;
+  const actorFits=new WeakMap(); // Actor rig -> bounded per-item immutable physical fits, surviving equip/unequip and mesh replacement.
+  const rootFits=new WeakMap(); // Flail owner resolves the exact same fit without another rig traversal.
+  const NO_SEGMENTS=Object.freeze([]);
+  function fitFor(context,mesh) {
+    const owner=context.rig?.parent,profile=context.profile;
+    if(!owner||!profile||!context.itemKey)return null;
+    let items=actorFits.get(owner);
+    if(!items){items=new Map();actorFits.set(owner,items);}
+    const key=context.itemKey;
+    let fit=items.get(key);
+    if(!fit||fit.profile!==profile||fit.identity!==context.fitIdentity){
+      fit={profile,identity:context.fitIdentity,amount:null,anchorZ:null,ropeScale:null};
+      if(items.size>=128&&!items.has(key))items.delete(items.keys().next().value);
+      items.set(key,fit);
+    }
+    rootFits.set(mesh,fit);
+    return fit;
+  }
+  // A fitted length is immutable until the authoring profile or body identity changes.
+  // Airborne samples, later attacks, and ground changes can never refit it.
+  function fixedValue(previous,canFit,candidate) {
+    if(Number.isFinite(previous))return previous;
+    return canFit&&Number.isFinite(candidate)?candidate:null;
+  }
+  function fittedRopeScale(root,profile,canFit,candidate) {
+    const fit=rootFits.get(root);
+    if(!enabled()||fit?.profile!==profile)return 1;
+    fit.ropeScale=fixedValue(fit.ropeScale,canFit,candidate);
+    return fit.ropeScale??1;
+  }
   const frameId = () => global.RuntimeFrameScheduler?.frameId?.();
   function enabled() { return global.XrayHierarchy?.get?.('ground.heldPose') === 'rotation'; }
   function groundY() {
@@ -79,7 +109,7 @@
     active.amount=0; // Keep the private strip buffer for the next near-ground pose.
   }
   function clear() { proof=null; restoreGeometry(); }
-  function fail(reason) { debug.reason=reason; debug.fallbacks++; clear(); return false; }
+  function fail(reason,preserveFit=false) { debug.reason=reason; debug.fallbacks++; proof=null;if(!preserveFit)restoreGeometry();return false; }
   function boxFor(mesh) {
     const g=mesh?.geometry;
     if(!g||mesh.isSkinnedMesh||mesh.isInstancedMesh||g.morphAttributes?.position?.length)return null;
@@ -186,6 +216,7 @@
     if(!s||!Number.isFinite(y)||!context||!holder?.parent||!holder.visible||!mesh?.visible||!plane?.visible)return fail('no-ground-or-rig');
     if(active&&active.plane!==plane)restoreGeometry();
     if(context.flexibleHaft&&!context.profile)return fail('unmeasured-flail');
+    const fit=fitFor(context,mesh); // Fitting and rotation are separate: only the former is retained.
     // Reject independent assemblies, mirrored/multi-hand duplicates, dynamic
     // attachments, noncanonical planes, and shared/custom shader deformation.
     if(mesh.parent!==holder||plane.parent!==mesh||(!context.flexibleHaft&&mesh.children.length!==1)||plane.children.length
@@ -209,14 +240,15 @@
     s.matrix.multiplyMatrices(s.mesh,plane.matrix);
     const primary=context.primary?.position;
     if(!primary)return fail('no-primary-grip');
-    const gripZ=gripZFor(primary,mesh);
     const basis=context.basis;
     const profile=context.profile;
-    // Only compress an un-twisted canonical weapon in this first experiment.
-    // Rotation remains available in twisted sweeps; their grip remapping needs
-    // a separate parity adapter before deforming their visual segments.
-    const segments=profile&&Math.abs(plane.rotation.z)<1e-6&&Math.abs(plane.scale.y-1)<1e-6&&Math.abs(basis.x)+Math.abs(basis.y)+Math.abs(basis.z)<1e-6
-      ?profile.segments:[];
+    // Use a single source-space anchor for the whole lifetime of the fit.
+    // Animated grip ranges and sweep twists may change the hand, never the
+    // physical proportions of the weapon.
+    const neutralBasis=Math.abs(plane.rotation.z)<1e-6&&Math.abs(plane.scale.y-1)<1e-6&&Math.abs(basis.x)+Math.abs(basis.y)+Math.abs(basis.z)<1e-6;
+    const canFit=!!fit&&context.allowFit&&neutralBasis&&global.PlayerJump?.heldPoseGrounded?.()===true;
+    const gripZ=fit?.anchorZ??context.authoredGripZ??gripZFor(primary,mesh);
+    const segments=profile&&(canFit||Number.isFinite(fit?.amount))?profile.segments:NO_SEGMENTS;
     const rows=stripRows(box,segments,s.rows);
     const outline=profile?.contactOutline;
     const segmentKey=segments.length?segments:null;
@@ -231,8 +263,8 @@
     const target=y+PAD;
     const original=samplePoints(s,s.contact,segments,gripZ,0);
     debug.originalMinY=original;
-    let amount=0,min=original,angle=0;
-    worldGrip(s,primary,basis,mesh,gripZ,segments,0,s.pivot);
+    let amount=fit?.amount??0,min=samplePoints(s,s.contact,segments,gripZ,amount),angle=0;
+    worldGrip(s,primary,basis,mesh,gripZ,segments,amount,s.pivot);
     const rig=context.rig;
     const secondary=context.secondary?.position;
     function reachable(a,compression) {
@@ -249,7 +281,7 @@
       worldGrip(s,secondary,basis,mesh,gripZ,segments,0,s.base).applyMatrix4(s.inverse);
       return s.second.distanceTo(s.shoulder)<=Math.max(reach,s.base.distanceTo(s.shoulder))+0.002;
     }
-    if(min<target&&segments.length) {
+    if(canFit&&!Number.isFinite(fit.amount)&&min<target&&segments.length) {
       const max=1-profile.minSegmentScale;
       if(max>0) {
         const compressed=samplePoints(s,s.contact,segments,gripZ,max);
@@ -269,6 +301,18 @@
         } else min=samplePoints(s,s.contact,segments,gripZ,0);
       }
     }
+    if(canFit&&!Number.isFinite(fit.amount)){
+      fit.amount=fixedValue(fit.amount,true,amount);fit.anchorZ=gripZ;
+    }
+    // Always apply the fitted geometry before attempting a pose correction.
+    // A failed rotation retains the fit and falls back to legacy depth.
+    if(amount>1e-6&&segments.length) {
+      setCompression(plane,source,box,rows,segments,gripZ,amount,holder,mesh.scale.z);
+      active.rootOffset=mesh.position.z;
+      debug.compressions++;
+    } else releaseCompression();
+    debug.shortening=amount;debug.fitted=Number.isFinite(fit?.amount);
+    worldGrip(s,primary,basis,mesh,gripZ,segments,amount,s.pivot);
     if(min<target) {
       // Pick the horizontal axis perpendicular to the lowest point's radial
       // offset from the grip. This rotates the offending end upward.
@@ -290,14 +334,9 @@
         s.points.push({a:s.rel.y,b:s.cross.y});
       }
       angle=chooseAngle(s.points,s.pivot.y,target,a=>reachable(a,amount));
-      if(angle===null)return fail('no-reachable-clear-pose');
+      if(angle===null)return fail('no-reachable-clear-pose',true);
       min=minimumY(s.points,s.pivot.y,angle);
     }
-    if(amount>1e-6) {
-      setCompression(plane,source,box,rows,segments,gripZ,amount,holder,mesh.scale.z);
-      active.rootOffset=mesh.position.z;
-      debug.compressions++;
-    } else releaseCompression();
     if(angle) {
       // Apply a world rotation around the actual primary grip. Convert the
       // quaternion back to the holder's parent; preserve the raw grip exactly.
@@ -348,5 +387,5 @@
     if(!clear(mesh.matrixWorld)||(extra&&!clear(extra)))return false;
     debug.ordinaryParts++;return true;
   }
-  global.HeldGroundPose=Object.freeze({enabled,groundY,constrainWeapon,constrainFreeHand,ordinaryDepthFor,adjustGrip,adjustHaftPoint,ropeClearance,clear,contractedZ,contactVertices,minimumY,chooseAngle,snapshot:()=>({...debug})});
+  global.HeldGroundPose=Object.freeze({enabled,groundY,constrainWeapon,constrainFreeHand,ordinaryDepthFor,adjustGrip,adjustHaftPoint,ropeClearance,fittedRopeScale,fixedValue,clear,contractedZ,contactVertices,minimumY,chooseAngle,snapshot:()=>({...debug})});
 })(typeof window!=='undefined'?window:globalThis);

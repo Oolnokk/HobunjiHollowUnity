@@ -35,3 +35,12 @@ assert.equal(rope(2,.5,-1,3).length,2);
 assert.equal(rope(2,.5,-1,1.5).length,1.5);
 const drag=rope(2,.5,-1,.6);assert.equal(drag.length,1);assert.equal(drag.directionY,-.6);assert.equal(drag.trailing,true);
 assert.equal(rope(2,.5,-1,-2),null);
+
+const fixed=context.window.HeldGroundPose.fixedValue;
+assert.equal(fixed(null,false,.8),null,'airborne cannot fit');
+assert.equal(fixed(null,true,.4),.4,'grounded neutral fits');
+assert.equal(fixed(.4,false,0),.4,'jump cannot lengthen');
+assert.equal(fixed(.4,true,.7),.4,'later ground contact cannot shorten');
+assert.equal(fixed(0,true,.7),0,'zero shortening is also a permanent fit');
+assert.equal(rope(1,1,-1,.6).length,1,'fitted rope trails without changing its length');
+assert.equal(rope(1,1,-1,2).length,1,'airborne rope never grows');

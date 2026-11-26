@@ -15,7 +15,7 @@
     const wrap=document.createElement('details');wrap.open=true;wrap.className='field';
     const summary=document.createElement('summary');summary.textContent='Weapon geometry — draw on sprite';wrap.appendChild(summary);host.appendChild(wrap);
     const help=document.createElement('div');help.className='help';
-    help.textContent='Drag length A/B along the weapon, drag shortening bands across the shaft, or tap/trace the complete contact perimeter (including protruding heads and both ends). Cyan = length, amber = shortening, pink = contact. The outline closes automatically.';
+    help.textContent='Drag length A/B, drag shortening bands, or trace the complete contact perimeter. Bands and rope are fitted once in a grounded neutral pose; jumps change rotation, never fitted length. Cyan = length, amber = shortening, pink = contact.';
     wrap.appendChild(help);
     const toolbar=document.createElement('div');toolbar.style.cssText='display:flex;gap:5px;flex-wrap:wrap;margin:6px 0';wrap.appendChild(toolbar);
     const button=(parent,label,fn)=>{const b=document.createElement('button');b.type='button';b.textContent=label;b.addEventListener('click',fn);parent.appendChild(b);return b;};
@@ -32,7 +32,7 @@
     function number(label,min,max,step){const field=document.createElement('label');field.style.cssText='display:flex;flex:1;min-width:120px;flex-direction:column';field.textContent=label;const input=document.createElement('input');input.type='number';input.min=min;input.max=max;input.step=step;field.appendChild(input);numbers.appendChild(field);return input;}
     const fraction=number('Length (% character height; 0 = legacy)',0,400,1);
     const minimum=number('Minimum band length (%)',10,100,1);
-    const ropeMin=number('Flail minimum rope length (%; 0 = off)',0,100,1);
+    const ropeMin=number('Flail minimum fitted rope length (%; 0 = off)',0,100,1);
     const headCanvas=document.createElement('canvas');headCanvas.width=240;headCanvas.height=160;
     headCanvas.style.cssText='width:100%;max-width:320px;background:#202832;touch-action:none;display:none';
     headCanvas.setAttribute('aria-label','Flail head contact edge; drag between two points');

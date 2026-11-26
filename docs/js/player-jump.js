@@ -655,6 +655,10 @@
     start, tick, beginFlight, beginRopeRide, setRopeRidePoint, airControl, receiveKnockback, knockProne,
     enterRoofSupport, // Only the explicit interior exit action may put a grounded actor on a high rooftop.
     canOccupyAir: (x, z, feetY) => blockingReason(x, z, feetY) === null,
+    heldPoseGrounded() {
+      const flight=deps?.player?._freeJump;
+      return !!deps?.player&&flight?.phase!=='air'&&flight?.phase!=='rope'&&!(Number(deps.player.heightAboveGround)>0.05);
+    },
     heldPoseGroundY() {
       const player=deps?.player; // Physical support, never the cosmetic body sink or weapon transform.
       if(!player||!(deps.TILE>0))return null;
