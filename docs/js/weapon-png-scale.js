@@ -53,6 +53,7 @@
         && holderScale <= 1.0001
         // Intrinsically scaled shapes already receive their scale in hand-tool-grips.
         && Math.abs(itemBaseScale - 1) <= 0.0001
+        && !global.HobunjiHandToolGrips?.usesProportionalWeaponScale?.(itemKey)
         && !(global.HobunjiHandToolGrips?.lengthProfileForTool?.(itemKey)?.heightFraction > 0); // Measured length is absolute, never multiply it again.
 
       let savedScale = null;

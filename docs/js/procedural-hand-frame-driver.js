@@ -1063,7 +1063,7 @@
         const key=preview?toolGrips.toolKeyFor(itemKey):currentToolKey(record);
         if(!key||toolGrips.isDualWieldWeapon?.(key)||currentGripContext(record)!=='melee')return null;
         const identity={speciesId:record.speciesId,gender:record.gender,rigScaleY:Number(record.avatarRoot?.userData?.proceduralHandRigScaleY)||null};
-        return {rig:record.rig,itemKey:itemKey||key,preview,
+        return {rig:record.rig,itemKey:itemKey||key,preview,scaleIdentity:identity,
           fitIdentity:[identity.speciesId,identity.gender,identity.rigScaleY||'',toolGrips.actualCharacterHeight?.(identity.speciesId,identity.gender,identity.rigScaleY)||''].join(':'),
           authoredGripZ:toolGrips.authoredPrimaryGripForTool(key,'melee')?.position?.z,
           primary:toolGrips.primaryGripForTool(key,'melee',identity),

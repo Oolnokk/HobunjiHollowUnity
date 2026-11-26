@@ -56,8 +56,8 @@
       help: 'on: tools share the hand priority in the held overlay. off: tools get an independent overlay rank. Owner front-art masking is configured separately.',
     },
     'ground.heldPose': {
-      order: 12, label: 'Experimental held ground pose', default: 'rotation', options: ['xray', 'rotation'],
-      help: 'rotation: player rigid weapons shorten authored sections, then rotate about the grip; proven clear hands and weapons retain ground depth. Unsupported poses keep legacy x-ray. xray: original behavior.',
+      order: 12, label: 'Held weapon ground clearance', default: 'rotation', options: ['rotation', 'xray'],
+      help: 'rotation (default): fit the proportionally sized weapon in Light stance, then rotate about the grip; unsupported poses retain legacy x-ray. xray: original behavior.',
     },
     'ground.showZone': {
       order: 10, label: 'Show ground X-ray zone', default: 'off', options: ['on', 'off'],

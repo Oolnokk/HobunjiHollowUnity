@@ -35,9 +35,9 @@
     const actions=document.createElement('div');actions.style.cssText=toolbar.style.cssText;wrap.appendChild(actions);
     const numbers=document.createElement('div');numbers.style.cssText='display:flex;flex-wrap:wrap;gap:8px;margin:6px 0';wrap.appendChild(numbers);
     function number(label,min,max,step){const field=document.createElement('label');field.style.cssText='display:flex;flex:1;min-width:120px;flex-direction:column';field.textContent=label;const input=document.createElement('input');input.type='number';input.min=min;input.max=max;input.step=step;field.appendChild(input);numbers.appendChild(field);return input;}
-    const fraction=number('Length (% character height; 0 = legacy)',0,400,1);
+    const fraction=number('Mao\'ao length (% reference height; 0 = base scale)',0,400,1);
     const minimum=number('Minimum band length (%)',10,100,1);
-    const ropeMin=number('Flail minimum fitted rope length (%; 0 = off)',0,100,1);
+    const ropeMin=number('Flail minimum fitted rope length (%; 0 = fixed)',0,100,1);
     const headCanvas=document.createElement('canvas');headCanvas.width=240;headCanvas.height=160;
     headCanvas.style.cssText='width:100%;max-width:320px;background:#202832;touch-action:none;display:none';
     headCanvas.setAttribute('aria-label','Flail head contact edge; drag between two points');

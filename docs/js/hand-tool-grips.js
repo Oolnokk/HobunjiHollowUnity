@@ -481,6 +481,614 @@
     };
   }
 
+  // Approved geometry export: lengths are unshortened proportions of Mao'ao male height.
+  const GROUND_GEOMETRY_PRESET='ground-geometry-20261126-v1';
+  const AUTHORED_GROUND_PROFILES={
+    "hatchet": {
+      "a": -0.33333,
+      "b": 0.54111,
+      "heightFraction": 1.5092375950215045,
+      "minSegmentScale": 0.65,
+      "segments": [
+        {
+          "a": -0.20336,
+          "b": 0.40605,
+          "x0": -0.1048,
+          "x1": 0.0409
+        }
+      ],
+      "contactOutline": [
+        {
+          "x": -0.1111111111111111,
+          "z": -0.23222221458869124
+        },
+        {
+          "x": -0.10999999999999999,
+          "z": -0.23555554781245236
+        },
+        {
+          "x": -0.10111111111111112,
+          "z": -0.254444436080432
+        },
+        {
+          "x": -0.09111111111111111,
+          "z": -0.27444443542299873
+        },
+        {
+          "x": -0.07777777777777778,
+          "z": -0.2955555458401525
+        },
+        {
+          "x": -0.06888888888888889,
+          "z": -0.3077777676606099
+        },
+        {
+          "x": -0.05777777777777779,
+          "z": -0.3211111005556544
+        },
+        {
+          "x": -0.0488888888888889,
+          "z": -0.3288888780777637
+        },
+        {
+          "x": -0.045555555555555544,
+          "z": -0.33111110022693774
+        },
+        {
+          "x": -0.04222222222222222,
+          "z": -0.3322222113015248
+        },
+        {
+          "x": -0.03888888888888889,
+          "z": -0.3333333223761118
+        },
+        {
+          "x": -0.02888888888888888,
+          "z": -0.3333333223761118
+        },
+        {
+          "x": -0.02777777777777779,
+          "z": -0.3322222113015248
+        },
+        {
+          "x": -0.025555555555555554,
+          "z": -0.3299999891523507
+        },
+        {
+          "x": -0.024444444444444435,
+          "z": -0.3277777670031766
+        },
+        {
+          "x": 0.1433333333333333,
+          "z": 0.22777777029034307
+        },
+        {
+          "x": 0.14444444444444443,
+          "z": 0.2322222145886912
+        },
+        {
+          "x": 0.14777777777777779,
+          "z": 0.24555554748373565
+        },
+        {
+          "x": 0.15000000000000002,
+          "z": 0.254444436080432
+        },
+        {
+          "x": 0.15444444444444444,
+          "z": 0.27333332434841173
+        },
+        {
+          "x": 0.15555555555555556,
+          "z": 0.2788888797213469
+        },
+        {
+          "x": 0.15999999999999998,
+          "z": 0.31999998948106734
+        },
+        {
+          "x": 0.16333333333333333,
+          "z": 0.35111109956950437
+        },
+        {
+          "x": 0.16444444444444445,
+          "z": 0.3633333213899619
+        },
+        {
+          "x": 0.16666666666666669,
+          "z": 0.44111109661105474
+        },
+        {
+          "x": 0.16666666666666669,
+          "z": 0.4622222070282085
+        },
+        {
+          "x": 0.1611111111111111,
+          "z": 0.5188888718321474
+        },
+        {
+          "x": 0.15999999999999998,
+          "z": 0.5233333161304956
+        },
+        {
+          "x": 0.1577777777777778,
+          "z": 0.5299999825780177
+        },
+        {
+          "x": 0.1488888888888889,
+          "z": 0.5399999822493011
+        },
+        {
+          "x": 0.14444444444444443,
+          "z": 0.5411110933238881
+        },
+        {
+          "x": 0.13666666666666666,
+          "z": 0.5411110933238881
+        },
+        {
+          "x": 0.06555555555555553,
+          "z": 0.5399999822493011
+        },
+        {
+          "x": 0.04888888888888887,
+          "z": 0.5388888711747142
+        },
+        {
+          "x": 0.03999999999999998,
+          "z": 0.537777760100127
+        },
+        {
+          "x": 0.033333333333333326,
+          "z": 0.5366666490255401
+        },
+        {
+          "x": 0.021111111111111136,
+          "z": 0.534444426876366
+        },
+        {
+          "x": -0.052222222222222225,
+          "z": 0.5199999829067343
+        },
+        {
+          "x": -0.061111111111111116,
+          "z": 0.5177777607575604
+        },
+        {
+          "x": -0.06555555555555556,
+          "z": 0.5166666496829733
+        },
+        {
+          "x": -0.06777777777777777,
+          "z": 0.5155555386083863
+        },
+        {
+          "x": -0.07222222222222222,
+          "z": 0.5133333164592122
+        },
+        {
+          "x": -0.07333333333333333,
+          "z": 0.5122222053846253
+        },
+        {
+          "x": -0.07555555555555554,
+          "z": 0.5099999832354511
+        },
+        {
+          "x": -0.08555555555555555,
+          "z": 0.4988888724895806
+        },
+        {
+          "x": -0.1111111111111111,
+          "z": -0.20333332664942821
+        }
+      ],
+      "ropeMinScale": null,
+      "headContact": null
+    },
+    "grappleflail": {
+      "a": -0.47778,
+      "b": 0.55,
+      "heightFraction": 1.081080512508191,
+      "minSegmentScale": 0.65,
+      "segments": [
+        {
+          "a": -0.39848,
+          "b": 0.38476,
+          "x0": -0.10081,
+          "x1": 0.04489
+        }
+      ],
+      "contactOutline": [
+        {
+          "x": -0.07999999999999999,
+          "z": -0.4566666516552732
+        },
+        {
+          "x": -0.07555555555555554,
+          "z": -0.46666665132655655
+        },
+        {
+          "x": -0.07111111111111112,
+          "z": -0.4711110956249047
+        },
+        {
+          "x": -0.06888888888888889,
+          "z": -0.4722222066994918
+        },
+        {
+          "x": -0.062222222222222234,
+          "z": -0.47555553992325283
+        },
+        {
+          "x": -0.05555555555555555,
+          "z": -0.47777776207242695
+        },
+        {
+          "x": -0.03666666666666665,
+          "z": -0.47777776207242695
+        },
+        {
+          "x": -0.026666666666666672,
+          "z": -0.4766666509978399
+        },
+        {
+          "x": -0.0188888888888889,
+          "z": -0.47555553992325283
+        },
+        {
+          "x": -0.013333333333333336,
+          "z": -0.4744444288486658
+        },
+        {
+          "x": 0.015555555555555545,
+          "z": -0.46666665132655655
+        },
+        {
+          "x": 0.01777777777777778,
+          "z": -0.4644444291773825
+        },
+        {
+          "x": 0.0188888888888889,
+          "z": -0.46333331810279543
+        },
+        {
+          "x": 0.04555555555555557,
+          "z": 0.4844444285199492
+        },
+        {
+          "x": 0.04555555555555557,
+          "z": 0.5011110946387547
+        },
+        {
+          "x": 0.04444444444444445,
+          "z": 0.507777761086277
+        },
+        {
+          "x": 0.043333333333333335,
+          "z": 0.5111110943100381
+        },
+        {
+          "x": 0.03666666666666668,
+          "z": 0.5199999829067343
+        },
+        {
+          "x": 0.03555555555555556,
+          "z": 0.5211110939813215
+        },
+        {
+          "x": 0.03111111111111109,
+          "z": 0.5255555382796697
+        },
+        {
+          "x": 0.023333333333333317,
+          "z": 0.533333315801779
+        },
+        {
+          "x": 0.01777777777777778,
+          "z": 0.5388888711747142
+        },
+        {
+          "x": 0.016666666666666663,
+          "z": 0.5399999822493011
+        },
+        {
+          "x": 0.014444444444444426,
+          "z": 0.5411110933238881
+        },
+        {
+          "x": 0.011111111111111127,
+          "z": 0.5422222043984752
+        },
+        {
+          "x": 0.0044444444444444176,
+          "z": 0.5444444265476494
+        },
+        {
+          "x": -0.0011111111111111183,
+          "z": 0.5455555376222363
+        },
+        {
+          "x": -0.007777777777777772,
+          "z": 0.5466666486968235
+        },
+        {
+          "x": -0.02777777777777779,
+          "z": 0.5499999819205845
+        },
+        {
+          "x": -0.04666666666666666,
+          "z": 0.5499999819205845
+        },
+        {
+          "x": -0.05111111111111111,
+          "z": 0.5488888708459974
+        },
+        {
+          "x": -0.053333333333333344,
+          "z": 0.5477777597714104
+        },
+        {
+          "x": -0.05555555555555555,
+          "z": 0.5466666486968235
+        },
+        {
+          "x": -0.05777777777777779,
+          "z": 0.5455555376222363
+        },
+        {
+          "x": -0.061111111111111116,
+          "z": 0.5433333154730622
+        },
+        {
+          "x": -0.062222222222222234,
+          "z": 0.5422222043984752
+        },
+        {
+          "x": -0.06555555555555556,
+          "z": 0.5388888711747142
+        },
+        {
+          "x": -0.06888888888888889,
+          "z": 0.534444426876366
+        },
+        {
+          "x": -0.07111111111111112,
+          "z": 0.5299999825780177
+        },
+        {
+          "x": -0.07222222222222222,
+          "z": 0.5277777604288436
+        },
+        {
+          "x": -0.07333333333333333,
+          "z": 0.5244444272050826
+        },
+        {
+          "x": -0.07444444444444445,
+          "z": 0.5199999829067343
+        },
+        {
+          "x": -0.07555555555555554,
+          "z": 0.5133333164592122
+        },
+        {
+          "x": -0.07999999999999999,
+          "z": -0.4388888744618805
+        }
+      ],
+      "ropeMinScale": null,
+      "headContact": null
+    },
+    "workhammer": {
+      "a": -0.26444,
+      "b": 0.45444,
+      "heightFraction": 0.7561610060829054,
+      "minSegmentScale": 0.65,
+      "segments": [
+        {
+          "a": -0.26061,
+          "b": 0.27686,
+          "x0": -0.09682,
+          "x1": 0.03292
+        }
+      ],
+      "contactOutline": [
+        {
+          "x": -0.15,
+          "z": 0.30444443443684877
+        },
+        {
+          "x": -0.10444444444444445,
+          "z": -0.24444443640914865
+        },
+        {
+          "x": -0.10222222222222221,
+          "z": -0.24666665855832276
+        },
+        {
+          "x": -0.10111111111111112,
+          "z": -0.24777776963290976
+        },
+        {
+          "x": -0.09555555555555556,
+          "z": -0.2511111028566709
+        },
+        {
+          "x": -0.08555555555555555,
+          "z": -0.2566666582296061
+        },
+        {
+          "x": -0.08333333333333334,
+          "z": -0.25777776930419316
+        },
+        {
+          "x": -0.0788888888888889,
+          "z": -0.2599999914533672
+        },
+        {
+          "x": -0.07555555555555554,
+          "z": -0.2611111025279543
+        },
+        {
+          "x": -0.06888888888888889,
+          "z": -0.26333332467712833
+        },
+        {
+          "x": -0.06333333333333332,
+          "z": -0.2644444357517154
+        },
+        {
+          "x": -0.045555555555555544,
+          "z": -0.2644444357517154
+        },
+        {
+          "x": -0.03777777777777777,
+          "z": -0.26333332467712833
+        },
+        {
+          "x": -0.031111111111111117,
+          "z": -0.2622222136025413
+        },
+        {
+          "x": -0.026666666666666672,
+          "z": -0.2611111025279543
+        },
+        {
+          "x": -0.023333333333333345,
+          "z": -0.2599999914533672
+        },
+        {
+          "x": -0.0188888888888889,
+          "z": -0.25777776930419316
+        },
+        {
+          "x": 0,
+          "z": -0.2455555474837357
+        },
+        {
+          "x": 0.0011111111111111183,
+          "z": -0.24444443640914865
+        },
+        {
+          "x": 0.12222222222222223,
+          "z": 0.32222221163024145
+        },
+        {
+          "x": 0.12333333333333335,
+          "z": 0.32999998915235074
+        },
+        {
+          "x": 0.12555555555555553,
+          "z": 0.34666665527115637
+        },
+        {
+          "x": 0.12666666666666665,
+          "z": 0.35888887709161366
+        },
+        {
+          "x": 0.12666666666666665,
+          "z": 0.3877777650308767
+        },
+        {
+          "x": 0.12555555555555553,
+          "z": 0.39333332040381186
+        },
+        {
+          "x": 0.12444444444444447,
+          "z": 0.3977777647021601
+        },
+        {
+          "x": 0.12222222222222223,
+          "z": 0.4044444311496824
+        },
+        {
+          "x": 0.12111111111111111,
+          "z": 0.4077777643734435
+        },
+        {
+          "x": 0.11888888888888888,
+          "z": 0.4122222086717917
+        },
+        {
+          "x": 0.11555555555555558,
+          "z": 0.41555554189555277
+        },
+        {
+          "x": 0.11222222222222222,
+          "z": 0.4166666529701397
+        },
+        {
+          "x": 0.02777777777777779,
+          "z": 0.4444444298348158
+        },
+        {
+          "x": 0.016666666666666663,
+          "z": 0.44777776305857686
+        },
+        {
+          "x": 0.007777777777777772,
+          "z": 0.449999985207751
+        },
+        {
+          "x": 0.0022222222222222365,
+          "z": 0.4511110962823379
+        },
+        {
+          "x": -0.01777777777777778,
+          "z": 0.4544444295060992
+        },
+        {
+          "x": -0.032222222222222235,
+          "z": 0.4544444295060992
+        },
+        {
+          "x": -0.043333333333333335,
+          "z": 0.45333331843151203
+        },
+        {
+          "x": -0.0488888888888889,
+          "z": 0.4522222073569251
+        },
+        {
+          "x": -0.05777777777777779,
+          "z": 0.449999985207751
+        },
+        {
+          "x": -0.06333333333333332,
+          "z": 0.44777776305857686
+        },
+        {
+          "x": -0.06555555555555556,
+          "z": 0.4466666519839899
+        },
+        {
+          "x": -0.07444444444444445,
+          "z": 0.4422222076856417
+        },
+        {
+          "x": -0.07777777777777778,
+          "z": 0.4399999855364676
+        },
+        {
+          "x": -0.13777777777777778,
+          "z": 0.3411110998982212
+        },
+        {
+          "x": -0.14666666666666667,
+          "z": 0.3233333227048285
+        },
+        {
+          "x": -0.15,
+          "z": 0.308888878735197
+        }
+      ],
+      "ropeMinScale": null,
+      "headContact": null
+    }
+  };
+  const PROPORTIONAL_WEAPONS=new Set(['hatchet','hoe','pickshovel','fishingspear','fishingmace','bshuakauitl','hachututorchstaff','hachututorchflail','grappleflail','warhammer','workhammer','daggersword','plainssword','dagger','kylie','warcleaver','harlyaolongsword','harlyaobroadsword','crossbow','crossbowloaded','scatterbow','scatterbowloaded','shortbow','longbow','bow','sling','throwingflask']); // Weapon shapes and their normalized crafted aliases.
+  function usesProportionalWeaponScale(value){return PROPORTIONAL_WEAPONS.has(toolKeyFor(value))||!!global.ModularWeapons?.decode?.(value);}
   function normalizeData(raw) {
     const next = clone(raw || DEFAULT_DATA);
     const previousPrimaryRotationPreset = next.primaryRotationPreset; // Missing/older marker means saved grip rotations need the new authoritative weapon table once.
@@ -503,6 +1111,11 @@
     next.authoredHandRotationsPreset = AUTHORED_HAND_ROTATIONS_PRESET;
     const rawTools = next.tools && typeof next.tools === 'object' ? next.tools : {}; // Saved drafts override defaults, while newly added weapon defaults still appear after upgrades.
     next.tools = { ...clone(DEFAULT_DATA.tools), ...rawTools };
+    // Install approved bands once, without replacing unrelated grip edits.
+    if(next.groundGeometryPreset!==GROUND_GEOMETRY_PRESET)for(const [key,profile] of Object.entries(AUTHORED_GROUND_PROFILES)){
+      const entry=next.tools[key];if(entry&&typeof entry==='object')entry.lengthProfile=clone(profile);
+    }
+    next.groundGeometryPreset=GROUND_GEOMETRY_PRESET;
     if (resetFluteGrip) next.tools.flute = clone(DEFAULT_DATA.tools.flute); // One-time targeted replacement preserves every unrelated tool, including unsaved drafts.
     for (const [toolKey, entry] of Object.entries(next.tools)) {
       if (!entry || typeof entry !== 'object') continue;
@@ -682,7 +1295,7 @@
   function heightMultiplierForTool(value) {
     const key = toolKeyFor(value);
     const entry = key ? ensureTool(key) : null;
-    return normalizeHeightMultiplier(entry?.heightMultiplier, DEFAULT_DATA.tools[key]?.heightMultiplier ?? DEFAULT_HEIGHT_MULTIPLIER);
+    return usesProportionalWeaponScale(value)?1:normalizeHeightMultiplier(entry?.heightMultiplier, DEFAULT_DATA.tools[key]?.heightMultiplier ?? DEFAULT_HEIGHT_MULTIPLIER);
   }
 
   // rigScaleY is optional: a character whose body height is NOT the species/gender default (an authored per-enemy proportion such as a
@@ -787,24 +1400,29 @@
     return height > 0 && Number.isFinite(height) ? height : null;
   }
 
+  function maoaoBaseScaleForTool(value) {
+    const profile=lengthProfileForTool(value);
+    const reference=profile?.heightFraction>0?actualCharacterHeight(HEIGHT_REFERENCE_SPECIES,HEIGHT_REFERENCE_GENDER):null;
+    return reference==null?toolScaleForTool(value):reference*profile.heightFraction/(profile.b-profile.a);
+  }
+
   function measuredScaleForTool(value, speciesId, gender, rigScaleY = null) {
-    const profile = lengthProfileForTool(value);
-    if (!(profile?.heightFraction > 0)) return null;
-    const height = actualCharacterHeight(speciesId, gender, rigScaleY);
-    return height == null ? null : normalizeToolScale(height * profile.heightFraction / (profile.b-profile.a));
+    const profile=lengthProfileForTool(value);
+    if(!(profile?.heightFraction>0))return null;
+    const height=actualCharacterHeight(speciesId,gender,rigScaleY);
+    return height==null?null:height*profile.heightFraction/(profile.b-profile.a);
   }
 
   function heightFactorForTool(value, speciesId, gender, rigScaleY = null) {
-    const measured = measuredScaleForTool(value, speciesId, gender, rigScaleY);
-    if (measured != null) return measured / toolScaleForTool(value); // Replaces the old height multiplier, including for grip placement.
-    const heightMultiplier = heightMultiplierForTool(value);
-    const heightRatio = characterHeightRatio(speciesId, gender, rigScaleY);
-    return Math.max(0.05, 1 + (heightRatio - 1) * heightMultiplier);
+    const measured=measuredScaleForTool(value,speciesId,gender,rigScaleY);
+    if(measured!=null)return measured/toolScaleForTool(value); // Preserve the existing authored grip anchor.
+    const ratio=characterHeightRatio(speciesId,gender,rigScaleY);
+    if(usesProportionalWeaponScale(value))return ratio;
+    return Math.max(.05,1+(ratio-1)*heightMultiplierForTool(value));
   }
 
   function effectiveToolScaleForTool(value, speciesId, gender, rigScaleY = null) {
-    const baseScale = toolScaleForTool(value);
-    return normalizeToolScale(baseScale * heightFactorForTool(value, speciesId, gender, rigScaleY), baseScale);
+    return toolScaleForTool(value)*heightFactorForTool(value,speciesId,gender,rigScaleY);
   }
 
   // The base toolScale scales the item about its own origin (unchanged legacy
@@ -820,7 +1438,7 @@
     return {
       baseScale,
       heightFactor,
-      scale: normalizeToolScale(baseScale * heightFactor, baseScale),
+      scale: baseScale * heightFactor,
       offset: { x: numberOrZero(grip.x) * k, y: numberOrZero(grip.y) * k, z: numberOrZero(grip.z) * k },
     };
   }
@@ -1249,7 +1867,7 @@
 
   function applyScaleFromBase(node, base, toolScale) {
     if (!node?.scale || !base?.scale) return;
-    const factor = normalizeToolScale(toolScale);
+    const factor = Number.isFinite(toolScale)&&toolScale>0?toolScale:1; // Effective scale is not constrained by the authored slider's range.
     const sign = (current, fallback) => current < 0 ? -1 : (current > 0 ? 1 : (fallback < 0 ? -1 : 1)); // Preserves editor midline mirroring while resetting scale magnitude each frame.
     node.scale.set(
       Math.abs(base.scale.x) * factor * sign(node.scale.x, base.scale.x),
@@ -1521,10 +2139,11 @@
       : `Standard Z grip axis · ${previewLabel}. Enable the custom axis to show Nut → Bridge.`;
     if (editorUi.axisStatus.textContent !== axisStatusText) editorUi.axisStatus.textContent = axisStatusText;
     editorUi.scalePair.set(normalizeToolScale(entry?.toolScale));
-    editorUi.heightPair.set(normalizeHeightMultiplier(entry?.heightMultiplier));
+    editorUi.heightPair.set(heightMultiplierForTool(editorCurrentToolKey()));
     const length = lengthProfileForTool(editorCurrentToolKey()); // Avoid replacing an in-progress text edit.
     editorUi.lengthAuthor?.refresh(editorCurrentToolKey(),length); // The canvas keeps its unsaved draft during unrelated pose refreshes.
-    editorUi.heightPair.range.disabled = editorUi.heightPair.number.disabled = !!length?.heightFraction;
+    editorUi.heightPair.range.disabled = editorUi.heightPair.number.disabled = usesProportionalWeaponScale(editorCurrentToolKey())||!!length?.heightFraction;
+    editorUi.scalePair.range.disabled = editorUi.scalePair.number.disabled = !!length?.heightFraction; // The measured percentage owns size when present; the original grip anchor remains intact.
     editorUi.spanEnabled.checked = span.enabled === true;
     editorUi.startPair.set(numberOrZero(span.startZ)); editorUi.endPair.set(numberOrZero(span.endZ));
     for (const phase of ['neutral', 'windup', 'strike']) {
@@ -1556,7 +2175,7 @@
     const effectiveScale = effectiveToolScaleForTool(editorCurrentToolKey(), identity.speciesId, identity.gender);
     const measuredHeight = actualCharacterHeight(identity.speciesId, identity.gender);
     const scaleLabel = length?.heightFraction && measuredHeight
-      ? `measured source ${(length.b-length.a).toFixed(3)} · target ${(measuredHeight*length.heightFraction).toFixed(3)} · actual ${((length.b-length.a)*effectiveScale).toFixed(3)} (${(((length.b-length.a)*effectiveScale)/measuredHeight*100).toFixed(1)}% height)`
+      ? `Mao'ao base ×${maoaoBaseScaleForTool(editorCurrentToolKey()).toFixed(3)} · body ratio ×${heightRatio.toFixed(3)} · unshortened length ${((length.b-length.a)*effectiveScale).toFixed(3)} (${(((length.b-length.a)*effectiveScale)/measuredHeight*100).toFixed(1)}% height)`
       : `base ×${baseScale.toFixed(2)} · height multiplier ×${heightMultiplier.toFixed(2)} · body ratio ×${heightRatio.toFixed(3)} = effective ×${effectiveScale.toFixed(3)}`;
     const modeLabel = weaponHandModeForTool(editorCurrentToolKey()); // Mobile-visible diagnostics show which independent flag this weapon reads.
     const statusText = melee && mainSpan.enabled && span.enabled
@@ -1589,7 +2208,7 @@
     scalePanel.innerHTML = `
       <div class="hr"></div>
       <div class="poseGroupHead"><span class="dot" style="background:#60a5fa"></span>Held-item scale</div>
-      <div class="help" style="margin-bottom:6px"><b>Base tool scale</b> is this weapon's authored size at the Mao'ao male reference height. <b>Height multiplier</b> controls how strongly calculated character height changes that size: 0 ignores height, 1 is fully proportional, and values above 1 exaggerate the difference (default 0.5). Height scaling pivots on the primary grip, so the hand stays put and the weapon grows or shrinks around it. The Neutral pose's Tool scale remains a separate animation multiplier and should normally stay at 1.00 for melee weapons.</div>
+      <div class="help" style="margin-bottom:6px"><b>Base tool scale</b> is the unshortened Mao'ao male size when no measured length is set. With a measured length, its percentage of Mao'ao height defines the base size instead. Weapons always scale uniformly to the wielder's measured height before shortening; the height multiplier is locked to 1 for weapons, but remains editable for other props. Height scaling pivots on the primary grip, so the hand stays put and the weapon grows or shrinks around it. The Neutral pose's Tool scale remains a separate animation multiplier and should normally stay at 1.00 for melee weapons.</div>
       <div id="handToolScaleFields"></div>`;
     host.insertBefore(scalePanel, status);
     const scaleFields = scalePanel.querySelector('#handToolScaleFields');
@@ -1599,8 +2218,8 @@
     const lengthAuthor = global.HobunjiWeaponGeometryAuthor?.mount(scalePanel,{
       source:()=>global.HobunjiAttackEditorToolContext?.toolPlaneMesh,
       initialFraction:(a,b)=>{
-        const identity=editorScaleIdentity(),height=actualCharacterHeight(identity.speciesId,identity.gender);
-        return height ? (b-a)*effectiveToolScaleForTool(editorCurrentToolKey(),identity.speciesId,identity.gender)/height : 0;
+        const height=actualCharacterHeight(HEIGHT_REFERENCE_SPECIES,HEIGHT_REFERENCE_GENDER);
+        return height ? (b-a)*maoaoBaseScaleForTool(editorCurrentToolKey())/height : 0;
       },
       apply(raw,key){
         if(key!==editorCurrentToolKey())throw new Error('Selected weapon changed; reopen the correct sprite.');
@@ -1760,6 +2379,7 @@
     return {
       toolKey,
       toolScale: toolScaleForTool(toolKey),
+      maoaoBaseScale:maoaoBaseScaleForTool(toolKey),
       heightMultiplier: heightMultiplierForTool(toolKey),
       heightRatio: characterHeightRatio(identity.speciesId, identity.gender),
       effectiveToolScale: effectiveToolScaleForTool(toolKey, identity.speciesId, identity.gender,identity.rigScaleY),
@@ -1802,7 +2422,7 @@
     get data() { return data; },
     get defaultData() { return normalizeData(DEFAULT_DATA); },
     clone: cleanClone,
-    toolKeyFor, isDualWieldWeapon, weaponHandModeForTool, setEditorIdlePreview, setEditorSingleHandPreview, getEditorIdlePreview: () => editorHandPreview === 'pair', editorToolChanged, ensureTool, toolScaleForTool, apertureForTool, apertureHolderPointForTool, primaryGripHolderPointForTool, heightMultiplierForTool, lengthProfileForTool, groundProfileForTool, actualCharacterHeight, measuredScaleForTool, characterHeightRatio, characterHeightReady, heightFactorForTool, effectiveToolScaleForTool,
+    toolKeyFor, isDualWieldWeapon, weaponHandModeForTool, setEditorIdlePreview, setEditorSingleHandPreview, getEditorIdlePreview: () => editorHandPreview === 'pair', editorToolChanged, ensureTool, toolScaleForTool, apertureForTool, apertureHolderPointForTool, primaryGripHolderPointForTool, heightMultiplierForTool, lengthProfileForTool, groundProfileForTool, actualCharacterHeight, measuredScaleForTool, maoaoBaseScaleForTool, usesProportionalWeaponScale, characterHeightRatio, characterHeightReady, heightFactorForTool, effectiveToolScaleForTool,
     heldItemPlacementForTool, itemPointToHolder, holderPointToItem, applyHeldItemPlacement, DEFAULT_HEIGHT_MULTIPLIER, normalizeGripContext, currentGripContext,
     authoredPrimaryGripForTool, customGripAxisForTool, gripPointOnAxis, sampleFreeRightHand, primaryGripForTool, offhandPrimaryGripForTool, dualWieldOffhandGripOffsetForTool, spinPivotOffsetForTool, primaryGripSpanForTool, secondaryGripSpanForTool, secondaryGripForTool, dualWieldStateForTool, offhandIdleStateForTool, usesLegacyOffhandIdle,
     currentSecondaryGripAnimationState, currentDualWieldAnimationState, animationGripAt, gripModeForTool, setGripMode, replace, mutate, saveLocal, loadLocal, clearLocal, applyPrimaryGripVisuals, debugForTool,

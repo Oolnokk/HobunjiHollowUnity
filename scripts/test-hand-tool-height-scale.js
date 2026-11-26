@@ -34,46 +34,37 @@ vm.runInContext(source, context, { filename: 'hand-tool-grips.js' });
 
 const grips = windowObject.HobunjiHandToolGrips;
 assert.ok(grips, 'hand-tool grip API should load');
-assert.equal(grips.toolScaleForTool('hatchet'), 1, 'legacy base scale remains unchanged');
-assert.equal(grips.heightMultiplierForTool('hatchet'), 0.5, 'tools default to half of the calculated-height difference');
-assert.equal(grips.characterHeightRatio('engh-sho', 'male'), 2, 'height ratio should use calculated height against Mao-ao male');
-assert.equal(grips.effectiveToolScaleForTool('hatchet', 'engh-sho', 'male'), 1.5, 'default multiplier 0.5 follows half of the height ratio');
-
-// Drafts saved while every shape defaulted to 1.0 adopt the 0.5 default once.
-const legacyDraft = grips.clone();
-delete legacyDraft.heightMultiplierPreset;
-legacyDraft.tools.hatchet.heightMultiplier = 1;
-grips.replace(legacyDraft);
-assert.equal(grips.heightMultiplierForTool('hatchet'), 0.5, 'legacy all-1.0 drafts migrate to 0.5');
-grips.mutate(data => { data.tools.hatchet.heightMultiplier = 1; });
-assert.equal(grips.heightMultiplierForTool('hatchet'), 1, 'an explicitly authored multiplier survives after migration');
-assert.equal(grips.effectiveToolScaleForTool('hatchet', 'engh-sho', 'male'), 2, 'height multiplier 1 should fully follow the height ratio');
-
-grips.mutate(data => {
-  data.tools.hatchet.toolScale = 1.2;
-  data.tools.hatchet.heightMultiplier = 0.5;
-});
-assert.ok(Math.abs(grips.effectiveToolScaleForTool('hatchet', 'engh-sho', 'male') - 1.8) < 1e-12, 'height multiplier should blend between fixed and fully proportional size');
-
-// Height scaling pivots on the primary grip: the hand target is base * grip for
-// every body, and other item points expand around it.
-const tall = { speciesId: 'engh-sho', gender: 'male' };
-const primary = grips.primaryGripForTool('hatchet', 'melee', tall);
-assert.ok(Math.abs(primary.position.x - (-0.04 * 1.2)) < 1e-12, 'hand target ignores character height (grip is the scaling origin)');
-const placement = grips.heldItemPlacementForTool('hatchet', 'melee', tall);
-assert.ok(Math.abs(placement.scale - 1.8) < 1e-12, 'visible item uses base x height scale');
-const tip = grips.itemPointToHolder('hatchet', { x: 0, y: 0, z: 1 }, 'melee', tall);
-const grip = grips.authoredPrimaryGripForTool('hatchet', 'melee').position;
-assert.ok(Math.abs(tip.z - 1.2 * ((1 - 1.5) * grip.z + 1.5 * 1)) < 1e-12, 'item points expand about the grip');
-const back = grips.holderPointToItem('hatchet', tip, 'melee', tall);
-assert.ok(Math.abs(back.z - 1) < 1e-12 && Math.abs(back.x) < 1e-12, 'holder->item inverts item->holder');
-
-grips.mutate(data => {
-  data.tools.hatchet.heightMultiplier = 0;
-});
-assert.equal(grips.effectiveToolScaleForTool('hatchet', 'engh-sho', 'male'), 1.2, 'height multiplier 0 should preserve base scale for every character height');
-assert.equal(grips.effectiveToolScaleForTool('hatchet', 'unknown', 'male'), 1.2, 'missing dimensions should safely fall back to the authored base scale');
-
+const near=(a,b,m)=>assert.ok(Math.abs(a-b)<1e-10,m||a+' != '+b);
+const tall={speciesId:'engh-sho',gender:'male'};
+const mao={speciesId:'mao-ao',gender:'male'};
+for(const key of ['hatchet','grappleflail','workhammer']){
+  const p=grips.lengthProfileForTool(key);
+  assert.ok(p?.segments.length&&p.contactOutline.length>0,'approved geometry: '+key);
+  near(grips.maoaoBaseScaleForTool(key),p.heightFraction/(p.b-p.a));
+  near(grips.effectiveToolScaleForTool(key,mao.speciesId,mao.gender),grips.maoaoBaseScaleForTool(key));
+  near(grips.effectiveToolScaleForTool(key,tall.speciesId,tall.gender),2*grips.maoaoBaseScaleForTool(key));
+  assert.equal(grips.heightMultiplierForTool(key),1);
+  const small=grips.heldItemPlacementForTool(key,'melee',mao),big=grips.heldItemPlacementForTool(key,'melee',tall);
+  near(big.scale,small.scale*2,'uniform scale before fitting');
+  const grip=grips.authoredPrimaryGripForTool(key,'melee').position;
+  near(big.offset.z+grip.z*big.scale,small.offset.z+grip.z*small.scale,'grip anchor stays fixed');
+}
+assert.equal(grips.characterHeightRatio('engh-sho','male'),2);
+grips.mutate(data=>{delete data.tools.hatchet.lengthProfile;data.tools.hatchet.toolScale=1.2;data.tools.hatchet.heightMultiplier=0;});
+assert.equal(grips.lengthProfileForTool('hatchet'),null,'removing geometry survives migration');
+near(grips.effectiveToolScaleForTool('hatchet','engh-sho','male'),2.4);
+near(grips.effectiveToolScaleForTool('hatchet','unknown','male'),1.2);
+const placement=grips.heldItemPlacementForTool('hatchet','melee',tall);
+near(placement.scale,2.4);
+const grip=grips.authoredPrimaryGripForTool('hatchet','melee').position;
+const tip=grips.itemPointToHolder('hatchet',{x:0,y:0,z:1},'melee',tall);
+near(tip.z,1.2*((1-2)*grip.z+2));
+const back=grips.holderPointToItem('hatchet',tip,'melee',tall);
+near(back.z,1);near(back.x,0);
+near(grips.primaryGripForTool('hatchet','melee',tall).position.x,-.04*1.2);
+near(grips.effectiveToolScaleForTool('flute','engh-sho','male'),.9,'nonweapon retains authored height influence');
+const saved=grips.clone();delete saved.groundGeometryPreset;grips.replace(saved);
+assert.ok(grips.lengthProfileForTool('hatchet'),'legacy draft gets approved geometry once');
 console.log('hand tool calculated-height scaling: ok');
 
 grips.mutate(data=>{data.tools.hatchet.lengthProfile={a:-.5,b:.5,heightFraction:.8,minSegmentScale:.6,segments:[{a:-.4,b:-.2}],contactOutline:[{x:-.1,z:-.5},{x:.2,z:.5},{x:-.1,z:.5}]};});
