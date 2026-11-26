@@ -96,7 +96,12 @@
     if (!deps || !reg) return;
     const here = deps.getCurrentArea();
     const wanted = new Set();
-    for (const p of reg.getPlayers()) if (!reg.isLocalPlayer(p) && reg.areaOf(p) === here) wanted.add(p);
+    const cutscene = window.SharedCutscene?.isActive() === true; // During a shared cutscene only players who joined the crowd are drawn; the rest are watchers.
+    for (const p of reg.getPlayers()) {
+      if (reg.isLocalPlayer(p) || reg.areaOf(p) !== here) continue;
+      if (cutscene && !window.SharedCutscene.isInCrowd(p)) continue;
+      wanted.add(p);
+    }
     for (const p of Array.from(bodies.keys())) if (!wanted.has(p) || (bodies.get(p).area && bodies.get(p).area !== here)) dispose(p);
     const now = performance.now();
     for (const p of wanted) {
@@ -114,6 +119,14 @@
   function drive(player, body, dt) {
     const walker = body.walker, root = walker?.root;
     if (!root || !root.parent) return;
+    const slot = player._crowdSlot;
+    if (slot?.pose === 'sit' && window.CutscenePreviewHelpers?.cutscenePreviewApplyState) { // Seated in a crowd (e.g. a wedding pew): the same pose solve the cutscene runner uses for seated actors.
+      window.CutscenePreviewHelpers.cutscenePreviewApplyState({ kind: 'npc', root, walker }, body.area,
+        { c: slot.c, r: slot.r, rotation: slot.rotY, pose: 'sit', seatTarget: slot.seatTarget, proneBlend: 0 }, dt > 0 ? dt : 1 / 60);
+      body.seated = true; body.speedTiles = 0;
+      return;
+    }
+    if (body.seated) { body.seated = false; walker._cinematicPose = 'standing'; } // Back on their feet after the scene.
     const T = tile();
     const tx = player.x / T, tz = player.y / T;
     const dx = tx - root.position.x, dz = tz - root.position.z, dist = Math.hypot(dx, dz);

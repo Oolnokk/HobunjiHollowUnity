@@ -84,6 +84,7 @@
   function applyHit(player, amount, fromX, fromY, knockbackPxS, opts) {
     if (!tracked.has(player)) attach(player);
     const env = opts?.environmentalImpact === true;
+    if (player._inCutscene) return { applied: 0, lethal: false }; // Watching a shared cutscene: cannot be hurt (js/shared-cutscene.js).
     if (states.has(player)) { // Down: a hit only shortens the timer.
       if (!env) states.get(player).remainingS = Math.max(0, states.get(player).remainingS - cfg().hitPenaltySeconds);
       return { applied: 0, lethal: false };

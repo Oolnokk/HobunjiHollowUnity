@@ -6,7 +6,7 @@
   const RETAIN_RATIO = 0.76; // Beastmaster pets retain a current opponent until another is substantially closer.
 
   function viable(target, areaId) {
-    return !!target && Number(target.health) > 0 && !target._downed &&
+    return !!target && Number(target.health) > 0 && !target._downed && !target._inCutscene &&
       !target._deathTransitionStarted && !target._denHidden &&
       Number.isFinite(target.x) && Number.isFinite(target.y) &&
       (!target.areaId || target.areaId === areaId);

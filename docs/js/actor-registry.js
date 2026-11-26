@@ -105,7 +105,7 @@
     return entity.areaId ?? null;
   }
 
-  const isAlive = p => Number(p?.health) > 0 && !p._downed;
+  const isAlive = p => Number(p?.health) > 0 && !p._downed && !p._inCutscene; // A player watching a shared cutscene is not a target.
 
   // Players that are in `areaId` (all of them when areaId is nullish).
   function playersInArea(areaId, opts = {}) {

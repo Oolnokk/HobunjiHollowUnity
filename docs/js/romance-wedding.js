@@ -166,6 +166,8 @@
     });
     status.guests = guestTargets.size;
     status.seats = seats.length;
+    const members = window.SharedCutscene?.crowdMembers?.() || []; // Other players take the pews after the villager guests.
+    if (members.length) window.SharedCutscene.joinCrowd({ area: TEMPLE_MAP_ID, slots: seats.slice(guestTargets.size, guestTargets.size + members.length).map(slot => ({ c: slot.target.c, r: slot.target.r, rotY: slot.target.rotY, pose: 'sit', seatTarget: slot.target })) });
     return guestTargets;
   }
   // The rebuilt hall reports ready before its furniture has registered its
@@ -224,6 +226,7 @@
     const lock = window.CharacterActionLocks?.acquire?.({ owner: 'romance-wedding', reason: 'wedding ceremony', participants: [{ id: 'player', channels: ['movement', 'tools', 'actions'] }] });
     status.phase = 'loading';
     status.lastError = null;
+    window.SharedCutscene?.begin({ id: 'wedding', title: 'Wedding', area: TEMPLE_MAP_ID }); // Pauses every player; the others sit in the pews after the villagers (seatGuests).
     try {
       const records = await loadNpcRecords();
       const scene = buildWeddingScene(records, profile, { spouseId, officiantId });
@@ -269,6 +272,7 @@
       throw error;
     } finally {
       lock?.release?.();
+      window.SharedCutscene?.end();
     }
   }
 

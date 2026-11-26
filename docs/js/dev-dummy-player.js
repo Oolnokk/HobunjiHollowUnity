@@ -21,7 +21,7 @@
   let registered = false;
 
   function update(dt) {
-    if (!dummy) return;
+    if (!dummy || window.SharedCutscene?.isFrozen(dummy)) return; // A shared cutscene pauses every player.
     const reg = window.ActorRegistry;
     if (following && reg?.getLocalPlayer()) { const lp = reg.getLocalPlayer(); goal = { x: lp.x + 70, y: lp.y + 40 }; }
     if (!window.RemotePlayerState?.isDowned(dummy) && goal) {

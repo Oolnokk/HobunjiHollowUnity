@@ -18,7 +18,7 @@
     "js/combat/combat-attack-events.js?v=20261027shape2",
     "js/combat/companion-offense.js?v=20261123companionAudit3",
     "js/companion-combat-response.js?v=20261123companionAudit3",
-    "js/combat/enemy-pet-targeting.js?v=20261123companionAudit3",
+    "js/combat/enemy-pet-targeting.js?v=20261126h28ddb2d",
     "js/combat/animal-scent-targeting.js?v=20261123companionAudit4",
     "js/combat/combat-input.js?v=20261123autoTargetDisabled1",
     "js/combat/attack-pose-templates.js?v=20261115h01bf772",

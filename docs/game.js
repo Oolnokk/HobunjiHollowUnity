@@ -729,6 +729,7 @@
       window.ActorRegistry.registerPlayer(player, { local: true });
       window.ActorRegistry.setLocalAreaResolver(() => currentArea); // player.areaId is not always rewritten on a map swap.
       // Co-op time rules (beds, Wait/Sleep, blackouts) live in js/time-consensus.js; a knocked-out local avatar cannot act until revived or the skip lands.
+      window.SharedCutscene.init({ tilePx: TILE });
       let _timeKnockoutLock = null;
       window.TimeConsensus.init({
         tilePx: TILE,
@@ -7801,7 +7802,7 @@
                         halfConeRad: attackHalfConeRad,
                         color: trailColor,
                       });
-                      if (targetPlayer?.health > 0 && !targetPlayer._downed &&
+                      if (targetPlayer?.health > 0 && !targetPlayer._downed && !targetPlayer._inCutscene &&
                           (!targetPlayer.areaId || targetPlayer.areaId === currentArea) &&
                           window.Combat?.meleeHit?.(c, targetPlayer, {
                         rangePx: def.attackRangePx,
@@ -34097,7 +34098,14 @@
         } finally { for (const pin of preloadPins) _genotypeTextureResidency.release(pin); }
       }
 
+      // A cutscene pauses every player and everyone watches it, wherever they are (js/shared-cutscene.js).
+      // Crowd scenes (js/festival-blossom-ceremony.js, js/romance-wedding.js) place the other players in the crowd.
       async function runCutscenePreview(payload, runtimeOptions = {}) {
+        window.SharedCutscene.begin({ id: payload?.id || payload?.title || 'cutscene', title: payload?.title || null, area: payload?.mapId ? normalizeNpcArea(payload.mapId) : null });
+        try { return await runCutscenePreviewScene(payload, runtimeOptions); }
+        finally { window.SharedCutscene.end(); }
+      }
+      async function runCutscenePreviewScene(payload, runtimeOptions = {}) {
         payload = window.NpcPathfinding?.upgradeCutscenePayload?.(payload) ?? payload; // Move stages navigate around walls/furniture unless they opt out (collisionAware:false).
         const liveMode = runtimeOptions.live === true; // Switches the Director's existing stage engine from disposable preview semantics to a gameplay-safe authored cutscene.
         const previousArea = currentArea; // Restored after a live cutscene so its temporary scene swap never strands normal gameplay on the cinematic map.

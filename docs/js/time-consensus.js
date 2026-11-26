@@ -34,6 +34,7 @@
   let hooks = { onKnockoutStart: null, onKnockoutEnd: null, tilePx: 64 };
   let firing = false;
   let ticking = false;
+  let pausedAt = null;          // Set while a shared cutscene holds the world (revive windows must not run out unseen).
   let seq = 0;
 
   const clock = () => (window.SimClock ? window.SimClock.now() : performance.now());
@@ -63,7 +64,7 @@
   // Fire when nobody is left awake (every player resting or knocked out), or a
   // knocked-out player's revive window ran out.
   function evaluate() {
-    if (firing || !entries.size) return null;
+    if (firing || pausedAt !== null || !entries.size) return null;
     const reg = registry();
     const players = reg ? reg.getPlayers() : [];
     const now = clock();
@@ -158,8 +159,19 @@
     return r;
   }
 
+  // A shared cutscene pauses everyone: no revive window may expire and no vote may resolve while
+  // it plays. On resume every knockout window is pushed back by the paused time.
+  function pause() { if (pausedAt === null) pausedAt = clock(); }
+  function resume() {
+    if (pausedAt === null) return;
+    const held = clock() - pausedAt;
+    pausedAt = null;
+    for (const e of entries.values()) if (e.type === 'knockout') e.expiresAt += held;
+  }
+  const isPaused = () => pausedAt !== null;
+
   function tick() {
-    if (!entries.size) return null;
+    if (pausedAt !== null || !entries.size) return null;
     const reg = registry();
     for (const [player, e] of Array.from(entries)) {
       if (reg && !reg.isPlayer(player)) { // Left the session.
@@ -174,12 +186,12 @@
 
   function remainingMs(player) {
     const e = entries.get(player);
-    return e?.type === 'knockout' ? Math.max(0, e.expiresAt - clock()) : 0;
+    return e?.type === 'knockout' ? Math.max(0, e.expiresAt - (pausedAt ?? clock())) : 0;
   }
 
   window.TimeConsensus = {
     REVIVE_WINDOW_MS, MOVE_CANCEL_PX,
-    init, shouldGate, requestRest, knockOut, revive, cancelRest, consumeResolution, tick, onEvent,
+    init, shouldGate, requestRest, knockOut, revive, cancelRest, consumeResolution, tick, onEvent, pause, resume, isPaused,
     stateOf, isKnockedOut, remainingMs,
     snapshot: () => Array.from(entries, ([p, e]) => ({ id: registry()?.idOf(p) || null, type: e.type, kind: e.desc.kind, source: e.desc.source || null, minutes: lengthOf(e.desc), remainingMs: remainingMs(p) })),
   };
