@@ -1289,12 +1289,13 @@
     }
 
     const crossingRocks = !!m._mountHop?.overRock; // Capture before the hop is cleared at landing; don't move twice on that frame.
+    const airborneTravel = !!m._mountHop; // Capture flight before the landing tick clears it; the native hop owns height.
     updateMountHop(m, dt);
     const windy = !!rs?.hasWindblown?.(deps.player) || !!rs?.hasWindblown?.(m);
     let motion = null; // Retained until rider and mount have both been synchronized to the accepted position.
     if (!crossingRocks && (mountCurrentSpeedPxS > 0.01 || windy)) {
       const dx = Math.cos(mountAngle) * mountCurrentSpeedPxS * dt, dy = Math.sin(mountAngle) * mountCurrentSpeedPxS * dt;
-      motion = windy ? rs.composeMountedMovement?.(deps.player, m, dx, dy, { reference: Math.max(topSpeed, mountCurrentSpeedPxS) * dt, dt, voluntary: inputStrength > .01 && !braking }) : null;
+      motion = windy ? rs.composeMountedMovement?.(deps.player, m, dx, dy, { reference: Math.max(topSpeed, mountCurrentSpeedPxS) * dt, dt, airborne: airborneTravel, voluntary: inputStrength > .01 && !braking }) : null;
       const desiredX = m.x + (motion?.x ?? dx);
       const desiredY = m.y + (motion?.y ?? dy);
       const minX = deps.PLAYER_RADIUS, maxX = deps.getActiveCols() * deps.TILE - deps.PLAYER_RADIUS;
