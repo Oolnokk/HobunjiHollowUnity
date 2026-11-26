@@ -544,7 +544,21 @@
         ? window.ProceduralHandFrameDriver?.groundPoseContext?.(this,itemKey) : null;
       if(clearanceContext) {
         clearanceContext.flexibleHaft=!!assembly?.flail; // Suspension is solved separately by its existing owner.
-        clearanceContext.allowFit=(stanceApplied||!targetPose)&&!attackInProgress&&!authoredToolActionActive; // Never size a weapon from a swing or midair pose.
+        clearanceContext.allowFit=(stanceApplied||!targetPose)&&!attackInProgress&&!authoredToolActionActive;
+        // Size every weapon from the authored LIGHT neutral, regardless of
+        // which stance actually owns this frame. Restore the live pose before baking.
+        if(clearanceContext.allowFit&&window.PlayerJump?.heldPoseGrounded?.()===true&&mesh&&clearance.needsFit(clearanceContext,mesh)){
+          const livePosition=this.position.clone(),liveQuaternion=this.quaternion.clone();
+          try{
+            if(savedPosition&&savedQuaternion){this.position.copy(savedPosition);this.quaternion.copy(savedQuaternion);}
+            const lightFrame=applyRelativeHolderPose(this,sourcePose,idleStances.lightWeapon);
+            deps?.scaleToolWorldPointAroundPlayerCentroid?.(this.position,lightFrame.yawRad);
+            this.updateMatrix();
+            clearanceContext.lightReference=this.matrix.clone(); // Local matrix; solver composes the same world/plane transforms.
+          }finally{
+            this.position.copy(livePosition);this.quaternion.copy(liveQuaternion);this.updateMatrix();
+          }
+        }
       }
 
       // game.js writes a -90° local-Z twist into the child plane whenever the

@@ -9,6 +9,12 @@
   const actorFits=new WeakMap(); // Actor rig -> bounded per-item immutable physical fits, surviving equip/unequip and mesh replacement.
   const rootFits=new WeakMap(); // Flail owner resolves the exact same fit without another rig traversal.
   const NO_SEGMENTS=Object.freeze([]);
+  const traceCache=new WeakMap(); // Final loaded image -> bounded alpha traces, never scan repeatedly in the render loop.
+  function needsFit(context,mesh) {const fit=fitFor(context,mesh);return !!fit&&!Number.isFinite(fit.amount);}
+  function referenceDrop(root,point) {
+    const fit=rootFits.get(root),e=fit?.referenceMatrix?.elements;
+    return e?e[1]*point.x+e[5]*point.y+e[9]*point.z+e[13]-fit.referenceFloor:null;
+  }
   function fitFor(context,mesh) {
     const owner=context.rig?.parent,profile=context.profile;
     if(!owner||!profile||!context.itemKey)return null;
@@ -50,12 +56,16 @@
   }
   // Integrate equal strain over disjoint intervals. Subtract the grip's
   // displacement so it remains a fixed point even inside a compressible span.
-  function contractedZ(z, gripZ, segments, amount) {
+  function contractedZ(z, gripZ, segments, amount, columnX = null) {
     if (!amount) return z;
     let delta = 0;
     for (const v of segments) {
       const span = v.b-v.a;
-      delta += Math.max(0,Math.min(span,z-v.a))-Math.max(0,Math.min(span,gripZ-v.a));
+      // Outside a bounded band the protruding head stays rigid, following the
+      // headward end rather than being compressed along with the wooden haft.
+      const outside=columnX!=null&&v.x0!=null&&(columnX<v.x0||columnX>v.x1);
+      const sample=outside?(gripZ<=(v.a+v.b)/2?v.b:v.a):z;
+      delta += Math.max(0,Math.min(span,sample-v.a))-Math.max(0,Math.min(span,gripZ-v.a));
     }
     return z-amount*delta;
   }
@@ -87,7 +97,7 @@
     const T=global.THREE;
     if(!T)return null;
     return scratch ||= {
-      holder: new T.Matrix4(), mesh: new T.Matrix4(), plane: new T.Matrix4(), matrix: new T.Matrix4(),
+      holder: new T.Matrix4(), mesh: new T.Matrix4(), plane: new T.Matrix4(), matrix: new T.Matrix4(), reference: new T.Matrix4(),
       inverse: new T.Matrix4(), parentInverse: new T.Matrix4(), pivot: new T.Vector3(),
       grip: new T.Vector3(), second: new T.Vector3(), shoulder: new T.Vector3(),
       axis: new T.Vector3(), direction: new T.Vector3(), cross: new T.Vector3(),
@@ -126,13 +136,76 @@
     for(let i=rows.length-1;i>0;i--)if(Math.abs(rows[i]-rows[i-1])<1e-7)rows.splice(i,1);
     return rows;
   }
+  function columnCuts(box,segments) {
+    const cuts=[box.min.x,box.max.x];
+    for(const v of segments)for(const x of [v.x0,v.x1])if(x>box.min.x&&x<box.max.x)cuts.push(x);
+    return [...new Set(cuts)].sort((a,b)=>a-b);
+  }
+  function convexHull(points) {
+    const sorted=points.sort((a,b)=>a.x-b.x||a.z-b.z);
+    const cross=(a,b,c)=>(b.x-a.x)*(c.z-a.z)-(b.z-a.z)*(c.x-a.x);
+    const half=items=>{const out=[];for(const p of items){while(out.length>=2&&cross(out[out.length-2],out[out.length-1],p)<=0)out.pop();out.push(p);}out.pop();return out;};
+    return half(sorted).concat(half(sorted.slice().reverse()));
+  }
+  function tracePixels(rgba,w,h,box,segments) {
+    // Each column's alpha hull is clipped at the exact authored horizontal
+    // cuts; split hull edges at longitudinal cuts before transforming.
+    const cuts=columnCuts(box,segments),result=[];
+    const dx=(box.max.x-box.min.x)/w,dz=(box.max.y-box.min.y)/h;
+    for(let c=0;c<cuts.length-1;c++){
+      const left=cuts[c],right=cuts[c+1],columnX=(left+right)/2,points=[];
+      const start=Math.max(0,Math.floor((left-box.min.x)/dx)),end=Math.min(w,Math.ceil((right-box.min.x)/dx));
+      for(let y=0;y<h;y++){
+        let lo=end,hi=-1;
+        for(let x=start;x<end;x++)if(rgba[(y*w+x)*4+3]>=21){lo=Math.min(lo,x);hi=x;}
+        if(hi<lo)continue;
+        const x0=Math.max(left,box.min.x+lo*dx),x1=Math.min(right,box.min.x+(hi+1)*dx);
+        if(x1<=x0)continue;
+        const z0=-box.max.y+y*dz,z1=z0+dz;
+        points.push({x:x0,z:z0},{x:x1,z:z0},{x:x0,z:z1},{x:x1,z:z1});
+      }
+      if(!points.length)continue;
+      const hull=convexHull(points),vertices=[];
+      contactVertices(box,hull,segments,vertices);
+      for(const p of vertices)result.push({...p,columnX});
+    }
+    return result;
+  }
+  function autoContact(image,box,segments) {
+    if(!image)return null;
+    let cache=traceCache.get(image);
+    if(!cache){cache=new Map();traceCache.set(image,cache);}
+    const signature=[box.min.x,box.max.x,box.min.y,box.max.y,JSON.stringify(segments)].join('|');
+    if(cache.has(signature))return cache.get(signature);
+    let result=null;
+    try{
+      const w=image.naturalWidth||image.width,h=image.naturalHeight||image.height;
+      if(w>0&&h>0&&w*h<=16000000){
+        const canvas=global.document.createElement('canvas');canvas.width=w;canvas.height=h;
+        const ctx=canvas.getContext('2d',{willReadFrequently:true});ctx.drawImage(image,0,0);
+        const points=tracePixels(ctx.getImageData(0,0,w,h).data,w,h,box,segments);
+        if(points.length)result=points;
+      }
+    }catch(_){/* Unreadable alpha keeps legacy fallback; never freeze an unverified fit. */}
+    if(cache.size>=8)cache.delete(cache.keys().next().value);
+    cache.set(signature,result);return result;
+  }
   function setCompression(plane,source,box,rows,segments,gripZ,amount,holder,rootScale) {
     if(!amount) { releaseCompression(); return; }
     const T=global.THREE;
-    const signature=rows.join(',');
+    const cuts=columnCuts(box,segments); // Independent strips duplicate the seam vertices so a rigid beard is never sheared.
+    const signature=rows.join(',')+'|'+cuts.join(',');
     if(!active||active.plane!==plane||active.source!==source||active.signature!==signature) {
       restoreGeometry();
-      const geometry=new T.PlaneGeometry(box.max.x-box.min.x,box.max.y-box.min.y,1,rows.length-1);
+      const geometry=new T.BufferGeometry(),count=(cuts.length-1)*rows.length*2;
+      geometry.setAttribute('position',new T.BufferAttribute(new Float32Array(count*3),3));
+      geometry.setAttribute('uv',new T.BufferAttribute(new Float32Array(count*2),2));
+      geometry.setAttribute('normal',new T.BufferAttribute(Float32Array.from({length:count*3},(_,i)=>i%3===2?1:0),3));
+      const indices=[];
+      for(let c=0;c<cuts.length-1;c++)for(let i=0;i<rows.length-1;i++){
+        const a=(c*rows.length+i)*2;indices.push(a,a+2,a+1,a+2,a+3,a+1);
+      }
+      geometry.setIndex(indices);
       active={plane,source,geometry,signature,amount:-1,gripZ:NaN,holder,rootScale,segments};
     }
     // Geometry is private to this equipped plane, never the shared asset.
@@ -140,10 +213,12 @@
     if(active.amount!==amount||active.gripZ!==gripZ||!sameSegments) {
       const p=active.geometry.attributes.position,uv=active.geometry.attributes.uv;
       const height=box.max.y-box.min.y;
-      for(let i=0;i<rows.length;i++) {
-        const y=-contractedZ(-rows[i],gripZ,segments,amount),v=(rows[i]-box.min.y)/height;
-        p.setXYZ(i*2,box.min.x,y,0);p.setXYZ(i*2+1,box.max.x,y,0);
-        uv.setXY(i*2,0,v);uv.setXY(i*2+1,1,v);
+      const width=box.max.x-box.min.x;
+      for(let c=0;c<cuts.length-1;c++)for(let i=0;i<rows.length;i++) {
+        const left=cuts[c],right=cuts[c+1],columnX=(left+right)/2;
+        const y=-contractedZ(-rows[i],gripZ,segments,amount,columnX),v=(rows[i]-box.min.y)/height,index=(c*rows.length+i)*2;
+        p.setXYZ(index,left,y,0);p.setXYZ(index+1,right,y,0);
+        uv.setXY(index,(left-box.min.x)/width,v);uv.setXY(index+1,(right-box.min.x)/width,v);
       }
       p.needsUpdate=true;uv.needsUpdate=true;
       active.geometry.computeBoundingBox();active.geometry.computeBoundingSphere();
@@ -199,11 +274,11 @@
     }
     return valid;
   }
-  function samplePoints(s,vertices,segments,gripZ,amount) {
+  function samplePoints(s,vertices,segments,gripZ,amount,matrix=s.matrix) {
     let min=Infinity;
-    const e=s.matrix.elements; // Use actual X extent, including protruding heads.
+    const e=matrix.elements; // Actual X extent, including protruding heads.
     for(const p of vertices){
-      const y=-contractedZ(p.z,gripZ,segments,amount);
+      const y=-contractedZ(p.z,gripZ,segments,amount,p.columnX);
       min=Math.min(min,e[1]*p.x+e[5]*y+e[13]);
     }
     return min;
@@ -257,21 +332,27 @@
     // physical proportions of the weapon.
     const image=plane.material?.map?.image;
     const measuredSource=!!image&&(image.naturalWidth||image.width)>0&&(image.naturalHeight||image.height)>0
-      &&profile?.a>=-box.max.y-1e-4&&profile?.b<=-box.min.y+1e-4;
-    const canFit=!!fit&&context.allowFit&&measuredSource&&global.PlayerJump?.heldPoseGrounded?.()===true;
+      &&(profile?.modular||(profile?.a>=-box.max.y-1e-4&&profile?.b<=-box.min.y+1e-4));
+    const pending=!!fit&&context.allowFit&&!!context.lightReference&&measuredSource&&global.PlayerJump?.heldPoseGrounded?.()===true;
     const gripZ=fit?.anchorZ??context.authoredGripZ??gripZFor(primary,mesh);
-    const segments=profile&&(canFit||Number.isFinite(fit?.amount))?profile.segments:NO_SEGMENTS;
+    const segments=profile&&(pending||Number.isFinite(fit?.amount))?profile.segments:NO_SEGMENTS;
     const rows=stripRows(box,segments,s.rows);
     const outline=profile?.contactOutline;
     const segmentKey=segments.length?segments:null;
     const boundsChanged=s.contactMinX!==box.min.x||s.contactMaxX!==box.max.x||s.contactMinY!==box.min.y||s.contactMaxY!==box.max.y;
-    if(s.contactKey!==outline||s.contactSource!==source||s.contactSegments!==segmentKey||boundsChanged){
-      s.authoredContact=contactVertices(box,outline,segments,s.contact);
-      s.contactKey=outline;s.contactSource=source;s.contactSegments=segmentKey;
+    if(s.contactKey!==outline||s.contactSource!==source||s.contactImage!==image||s.contactSegments!==segmentKey||boundsChanged){
+      const auto=autoContact(image,box,segments);
+      s.contact.length=0;
+      if(auto)s.contact.push(...auto);
+      else contactVertices(box,outline,segments,s.contact);
+      s.autoContact=!!auto;s.contactKey=outline;s.contactSource=source;s.contactImage=image;s.contactSegments=segmentKey;
       s.contactMinX=box.min.x;s.contactMaxX=box.max.x;s.contactMinY=box.min.y;s.contactMaxY=box.max.y;
     }
-    debug.contactSource=s.authoredContact?'authored-outline':'quad-fallback';
+    const canFit=pending&&s.autoContact;
+    debug.contactSource=s.autoContact?'auto-alpha':outline?.length?'authored-fallback':'quad-fallback';
     debug.contactVertices=s.contact.length;
+    if(canFit)s.reference.multiplyMatrices(parent.matrixWorld,context.lightReference).multiply(mesh.matrix).multiply(plane.matrix);
+    debug.fitReference='lightWeapon';
     const target=y+PAD;
     const original=samplePoints(s,s.contact,segments,gripZ,0);
     debug.originalMinY=original;
@@ -293,28 +374,27 @@
       worldGrip(s,secondary,basis,mesh,gripZ,segments,0,s.base).applyMatrix4(s.inverse);
       return s.second.distanceTo(s.shoulder)<=Math.max(reach,s.base.distanceTo(s.shoulder))+0.002;
     }
-    if(canFit&&!Number.isFinite(fit.amount)&&min<target&&segments.length) {
-      const max=1-profile.minSegmentScale;
-      if(max>0) {
-        const compressed=samplePoints(s,s.contact,segments,gripZ,max);
-        if(compressed>original+1e-6) {
-          let lo=0,hi=max;
-          if(compressed>=target)for(let i=0;i<10;i++) {
-            const mid=(lo+hi)/2;
-            if(samplePoints(s,s.contact,segments,gripZ,mid)>=target)hi=mid;else lo=mid;
-          }
-          amount=hi;
-          if(!reachable(0,amount)) {
-            lo=0;hi=amount;
-            for(let i=0;i<10;i++) {const mid=(lo+hi)/2;if(reachable(0,mid))lo=mid;else hi=mid;}
-            amount=lo;
-          }
-          min=samplePoints(s,s.contact,segments,gripZ,amount);
-        } else min=samplePoints(s,s.contact,segments,gripZ,0);
-      }
-    }
     if(canFit&&!Number.isFinite(fit.amount)){
+      const referenceMin=samplePoints(s,s.contact,segments,gripZ,0,s.reference);
+      const max=1-profile.minSegmentScale;
+      debug.lightOriginalMinY=referenceMin;
+      if(referenceMin<target&&segments.length&&max>0){
+        // Minimum of affine contact heights is concave in shortening. Find
+        // the best safe amount even when another edge becomes the lowest.
+        const evaluate=a=>samplePoints(s,s.contact,segments,gripZ,a,s.reference);
+        let lo=0,hi=max;
+        for(let i=0;i<24;i++){const a=(2*lo+hi)/3,b=(lo+2*hi)/3;if(evaluate(a)<evaluate(b))lo=a;else hi=b;}
+        const peak=(lo+hi)/2;
+        let best=evaluate(max)>=evaluate(peak)?max:peak;
+        if(evaluate(best)>referenceMin+1e-6){
+          if(evaluate(best)>=target){lo=0;hi=best;for(let i=0;i<16;i++){const mid=(lo+hi)/2;if(evaluate(mid)>=target)hi=mid;else lo=mid;}best=hi;}
+          amount=best;
+        }
+      }
       fit.amount=fixedValue(fit.amount,true,amount);fit.anchorZ=gripZ;
+      fit.referenceMatrix=s.reference.clone();fit.referenceFloor=target;
+      debug.lightFittedMinY=samplePoints(s,s.contact,segments,gripZ,amount,s.reference);
+      min=samplePoints(s,s.contact,segments,gripZ,amount);
     }
     // Always apply the fitted geometry before attempting a pose correction.
     // A failed rotation retains the fit and falls back to legacy depth.
@@ -332,7 +412,7 @@
       let count=0,lowest=null;
       for(const vertex of s.contact){
         const p=s.samples[count] ||= new global.THREE.Vector3();
-        p.set(vertex.x,-contractedZ(vertex.z,gripZ,segments,amount),0).applyMatrix4(s.matrix);
+        p.set(vertex.x,-contractedZ(vertex.z,gripZ,segments,amount,vertex.columnX),0).applyMatrix4(s.matrix);
         count++;
         if(!lowest||p.y<lowest.y)lowest=p;
       }
@@ -399,5 +479,5 @@
     if(!clear(mesh.matrixWorld)||(extra&&!clear(extra)))return false;
     debug.ordinaryParts++;return true;
   }
-  global.HeldGroundPose=Object.freeze({enabled,groundY,constrainWeapon,constrainFreeHand,ordinaryDepthFor,adjustGrip,adjustHaftPoint,ropeClearance,fittedRopeScale,fixedValue,clear,contractedZ,contactVertices,minimumY,chooseAngle,snapshot:()=>({...debug})});
+  global.HeldGroundPose=Object.freeze({enabled,groundY,constrainWeapon,constrainFreeHand,ordinaryDepthFor,adjustGrip,adjustHaftPoint,ropeClearance,fittedRopeScale,referenceDrop,needsFit,fixedValue,clear,contractedZ,contactVertices,tracePixels,minimumY,chooseAngle,snapshot:()=>({...debug})});
 })(typeof window!=='undefined'?window:globalThis);

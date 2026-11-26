@@ -80,3 +80,14 @@ grips.mutate(data=>{data.tools.hatchet.lengthProfile={a:-.5,b:.5,heightFraction:
 assert.equal(grips.effectiveToolScaleForTool('hatchet','engh-sho','male'),1.6,'measured ratio overrides species multiplier');
 assert.equal(grips.lengthProfileForTool('hatchet').contactOutline.length,3);
 assert.equal(grips.clone().tools.hatchet.lengthProfile.contactOutline.length,3,'profile survives export');
+
+grips.mutate(data=>{data.tools.hatchet.lengthProfile.segments=[{a:-.4,b:-.2,x0:-.05,x1:.04}];});
+assert.equal(grips.lengthProfileForTool('hatchet').segments[0].x0,-.05);
+assert.equal(grips.clone().tools.hatchet.lengthProfile.segments[0].x1,.04);
+const shaft={shorteningBands:[{x0:180,x1:270,y0:400,y1:500}],minShorteningScale:.5};
+windowObject.ModularWeapons={decode:k=>k.startsWith('modular:')?{shaft:'hatchet'}:null,sourceShape:k=>k.startsWith('modular:')?'hatchet':null,getConfig:()=>({shafts:{hatchet:shaft}}),shaftArtTransform:()=>({enabled:true,scaleX:2,scaleY:1,x:10,y:0})};
+const gp=grips.groundProfileForTool('modular:hatchet:axe:iron');
+assert.equal(gp,grips.groundProfileForTool('modular:hatchet:hammer:steel'));
+assert.equal(gp.minSegmentScale,.5);
+assert.ok(Math.abs(gp.segments[0].x0-(-80*.5/450))<1e-10);
+assert.equal(gp.contactOutline.length,0,'never reuse donor contact for assembled head');

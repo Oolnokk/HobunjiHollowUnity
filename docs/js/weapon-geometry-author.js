@@ -15,7 +15,7 @@
     const wrap=document.createElement('details');wrap.open=true;wrap.className='field';
     const summary=document.createElement('summary');summary.textContent='Weapon geometry — draw on sprite';wrap.appendChild(summary);host.appendChild(wrap);
     const help=document.createElement('div');help.className='help';
-    help.textContent='Drag length A/B, drag shortening bands, or trace the complete contact perimeter. Bands and rope are fitted once in a grounded neutral pose; jumps change rotation, never fitted length. Cyan = length, amber = shortening, pink = contact.';
+    help.textContent='Drag length A/B, drag shortening bands, or trace the complete contact perimeter. Draw a rectangle around only the shortenable material. Bands and rope are fitted once in the grounded Light weapon stance; automatic alpha contact is used at runtime; jumps change rotation, never fitted length. Cyan = length, amber = shortening, pink = contact.';
     wrap.appendChild(help);
     const toolbar=document.createElement('div');toolbar.style.cssText='display:flex;gap:5px;flex-wrap:wrap;margin:6px 0';wrap.appendChild(toolbar);
     const button=(parent,label,fn)=>{const b=document.createElement('button');b.type='button';b.textContent=label;b.addEventListener('click',fn);parent.appendChild(b);return b;};
@@ -66,7 +66,7 @@
       return {x:round(b.minX+clamp((x-view.x)/view.w,0,1)*(b.maxX-b.minX)),z:round(b.minZ+clamp((y-view.y)/view.h,0,1)*(b.maxZ-b.minZ))};
     }
     function line(z,color,label){const y=pixel({x:0,z}).y;ctx.strokeStyle=color;ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(view.x,y);ctx.lineTo(view.x+view.w,y);ctx.stroke();ctx.fillStyle=color;ctx.font='12px sans-serif';ctx.fillText(label,view.x+4,y-4);}
-    function band(a,b){const y=pixel({x:0,z:Math.min(a,b)}).y,yy=pixel({x:0,z:Math.max(a,b)}).y;ctx.fillStyle='rgba(251,191,36,.23)';ctx.fillRect(view.x,y,view.w,yy-y);line(Math.min(a,b),'#fbbf24','');line(Math.max(a,b),'#fbbf24','');}
+    function band(a,b,x0=source.box.minX,x1=source.box.maxX){const p=pixel({x:Math.min(x0,x1),z:Math.min(a,b)}),q=pixel({x:Math.max(x0,x1),z:Math.max(a,b)});ctx.fillStyle='rgba(251,191,36,.23)';ctx.strokeStyle='#fbbf24';ctx.lineWidth=2;ctx.fillRect(p.x,p.y,q.x-p.x,q.y-p.y);ctx.strokeRect(p.x,p.y,q.x-p.x,q.y-p.y);}
     function drawHead(){
       const image=headSprite?.material?.map?.image;
       headCanvas.style.display=image?'block':'none';
@@ -94,9 +94,9 @@
       const scale=Math.min((canvas.width-30)/w,(canvas.height-34)/h);
       view={w:w*scale,h:h*scale,x:(canvas.width-w*scale)/2,y:(canvas.height-h*scale)/2};
       ctx.imageSmoothingEnabled=false;ctx.drawImage(image,view.x,view.y,view.w,view.h);
-      for(const v of draft.segments)band(v.a,v.b);
+      for(const v of draft.segments)band(v.a,v.b,v.x0,v.x1);
       line(draft.a,'#67e8f9','A');line(draft.b,'#67e8f9','B');
-      if(gesture&&mode.value==='band')band(gesture.start.z,gesture.end.z);
+      if(gesture&&mode.value==='band')band(gesture.start.z,gesture.end.z,gesture.start.x,gesture.end.x);
       if(gesture&&mode.value==='length'){line(gesture.start.z,'#fff','');line(gesture.end.z,'#fff','');}
       const outline=draft.contactOutline;
       if(outline.length){ctx.strokeStyle='#f472b6';ctx.fillStyle='rgba(244,114,182,.10)';ctx.lineWidth=2;ctx.beginPath();outline.forEach((p,i)=>{const q=pixel(p);i?ctx.lineTo(q.x,q.y):ctx.moveTo(q.x,q.y);});if(outline.length>2){ctx.closePath();ctx.fill();}ctx.stroke();for(const p of outline){const q=pixel(p);ctx.fillStyle='#f472b6';ctx.fillRect(q.x-2,q.y-2,4,4);}}
@@ -131,11 +131,13 @@
     function finish(event){
       if(!gesture||gesture.id!==event.pointerId)return;
       const p=fromEvent(event),a=Math.min(gesture.start.z,p.z),b=Math.max(gesture.start.z,p.z),kind=gesture.mode;
+      const x0=Math.min(gesture.start.x,p.x),x1=Math.max(gesture.start.x,p.x);
       gesture=null;
       if(kind==='length'&&b-a>1e-5){draft.a=a;draft.b=b;draft.segments=draft.segments.filter(v=>v.a>=a&&v.b<=b);}
       if(kind==='band'&&b-a>1e-5){
         if(a<draft.a||b>draft.b||draft.segments.some(v=>a<v.b&&b>v.a)){draw();message('Band must be within length A/B and not overlap another band.');return;}
-        if(draft.segments.length<16){draft.segments.push({a,b});draft.segments.sort((x,y)=>x.a-y.a);}
+        if(x1-x0<=1e-5){draw();message('Drag a rectangle with nonzero width.');return;}
+        if(draft.segments.length<16){draft.segments.push({a,b,x0,x1});draft.segments.sort((x,y)=>x.a-y.a);}
       }
       if(kind==='outline')addPoint(p);
       changed();

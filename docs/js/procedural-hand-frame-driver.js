@@ -1067,7 +1067,7 @@
           authoredGripZ:toolGrips.authoredPrimaryGripForTool(key,'melee')?.position?.z,
           primary:toolGrips.primaryGripForTool(key,'melee',identity),
           secondary:toolGrips.secondaryGripForTool(key,'melee',identity),basis:visualGripBasisDelta(record,holder).quaternion,
-          profile:toolGrips.lengthProfileForTool?.(itemKey||key)};
+          profile:toolGrips.groundProfileForTool?.(itemKey||key)};
       }
       return null;
     },

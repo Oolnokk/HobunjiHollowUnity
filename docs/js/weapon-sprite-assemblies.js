@@ -849,7 +849,7 @@
       &&root.parent===global.ProceduralHandAttachments?.gameDeps?.toolHolder
       ?global.WeaponToolStances?.getRuntimeState?.():null;
     const profile=runtime?.activeSlot==='weapon'&&runtime.itemKey===state.itemKey
-      ?global.HobunjiHandToolGrips?.lengthProfileForTool?.(state.itemKey):null;
+      ?global.HobunjiHandToolGrips?.groundProfileForTool?.(state.itemKey):null;
     const floor=profile?.ropeMinScale!=null?pose.groundY():null;
     const contact=Number.isFinite(floor)&&!state.attacking?idleHeadContact(state,unit,profile):null;
     const available=contact?pivot.y-(floor+.035+contact.drop*attachmentScale*headScale):null;
@@ -858,9 +858,10 @@
     const spanX=(state.chainBottom.x-state.chainTop.x)*unit*chainScaleX;
     const spanY=(state.chainBottom.y-state.chainTop.y)*unit*chainScaleY;
     const baseLength=Math.hypot(spanX,spanY)*attachmentScale;
-    const canFit=!!contact&&!state.fishingFlailHeadSpin&&global.PlayerJump?.heldPoseGrounded?.()===true;
+    const lightDrop=profile?.ropeMinScale!=null?pose.referenceDrop(root,q.pivotLocal):null; // Same immutable light stance reference as the haft.
+    const canFit=!!contact&&Number.isFinite(lightDrop)&&!state.fishingFlailHeadSpin&&global.PlayerJump?.heldPoseGrounded?.()===true;
     const minimumSpan=baseLength>1e-8?Math.abs(spanX)*attachmentScale/baseLength:0;
-    const candidate=canFit&&baseLength>1e-8?Math.max(profile.ropeMinScale,minimumSpan,Math.min(1,available/baseLength)):null;
+    const candidate=canFit&&baseLength>1e-8?Math.max(profile.ropeMinScale,minimumSpan,Math.min(1,(lightDrop-contact.drop*attachmentScale*headScale)/baseLength)):null;
     const fixedScale=profile?.ropeMinScale!=null?pose.fittedRopeScale(root,profile,canFit,candidate):1;
     const desiredLocal=baseLength*fixedScale/attachmentScale;
     if(fixedScale<1&&Math.abs(spanY)>1e-8)

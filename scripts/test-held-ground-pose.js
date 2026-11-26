@@ -44,3 +44,17 @@ assert.equal(fixed(.4,true,.7),.4,'later ground contact cannot shorten');
 assert.equal(fixed(0,true,.7),0,'zero shortening is also a permanent fit');
 assert.equal(rope(1,1,-1,.6).length,1,'fitted rope trails without changing its length');
 assert.equal(rope(1,1,-1,2).length,1,'airborne rope never grows');
+
+const {tracePixels}=context.window.HeldGroundPose;
+const bounded=[{a:-1,b:0,x0:-.2,x1:.2}];
+close(contractedZ(-1,1,bounded,.5,0),-.5);
+close(contractedZ(-.5,1,bounded,.5,0),-.25);
+close(contractedZ(-.5,1,bounded,.5,.8),0);
+close(contractedZ(-1,1,bounded,.5,.8)-contractedZ(.5,1,bounded,.5,.8),-1.5);
+const rgba=new Uint8ClampedArray(4*4*4);
+for(const [x,y] of [[1,0],[1,1],[1,2],[2,0],[3,0],[1,3]])rgba[(y*4+x)*4+3]=255;
+const traced=tracePixels(rgba,4,4,{min:{x:-1,y:-1},max:{x:1,y:1}},bounded);
+assert.ok(traced.some(p=>p.x===1&&p.z===-1),'actual outer head pixel participates');
+assert.ok(traced.every(p=>Number.isFinite(p.columnX)),'contact carries exact deformation column');
+assert.ok(!traced.some(p=>p.x===1&&p.z===1),'transparent lower corner is excluded');
+console.log('bounded bands and alpha contact: ok');

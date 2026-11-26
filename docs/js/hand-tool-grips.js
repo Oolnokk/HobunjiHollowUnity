@@ -723,7 +723,13 @@
     const segments = []; // Sorted disjoint shortening intervals in item units.
     const candidates = (Array.isArray(raw.segments) ? raw.segments : []).slice(0, 16)
       .filter(v => v && v.a != null && v.b != null && Number.isFinite(Number(v.a)) && Number.isFinite(Number(v.b)))
-      .map(v => ({ a: Math.max(a, Number(v.a)), b: Math.min(b, Number(v.b)) })).sort((x,y) => x.a-y.a);
+      .map(v => {
+        const band={a:Math.max(a,Number(v.a)),b:Math.min(b,Number(v.b))};
+        if(v.x0!=null&&v.x1!=null&&Number.isFinite(Number(v.x0))&&Number.isFinite(Number(v.x1))&&Number(v.x1)-Number(v.x0)>1e-5){
+          band.x0=Number(v.x0);band.x1=Number(v.x1);
+        }
+        return band;
+      }).sort((x,y) => x.a-y.a);
     for (const v of candidates) if (v.b-v.a > 1e-5 && (!segments.length || v.a >= segments[segments.length-1].b)) segments.push(v);
     const min = Number(raw.minSegmentScale);
     const contactOutline = []; // Closed contact perimeter in canonical item X/Z, independent of the length endpoints.
@@ -752,6 +758,23 @@
     if (!raw || typeof raw !== 'object') return null;
     if (!lengthProfiles.has(raw)) lengthProfiles.set(raw,normalizeLengthProfile(raw));
     return lengthProfiles.get(raw);
+  }
+
+  const shaftGroundProfiles=new WeakMap(); // Shaft config identity and donor metadata own one stable fit profile across all head/metal variants.
+  function groundProfileForTool(value) {
+    const donor=lengthProfileForTool(value),api=global.ModularWeapons,parts=api?.decode?.(value);
+    if(!parts)return donor;
+    const shaft=api.getConfig().shafts[parts.shaft];
+    const previous=shaftGroundProfiles.get(shaft);
+    if(previous&&previous.donor===donor)return previous.profile;
+    const art=api.shaftArtTransform(shaft),unit=.5/450; // Same canonical origin and units as ModularWeapons.planeLayout.
+    const x=p=>((p-225)*(art.enabled?art.scaleX:1)+(art.enabled?art.x:0))*unit;
+    const z=p=>((p-602)*(art.enabled?art.scaleY:1)+(art.enabled?art.y:0))*unit;
+    const segments=(shaft.shorteningBands||[]).map(v=>({a:z(v.y0),b:z(v.y1),x0:x(v.x0),x1:x(v.x1)}));
+    const profile={...donor,modular:true,a:segments.length?segments[0].a:0,b:segments.length?segments[segments.length-1].b:1,
+      segments,contactOutline:[],minSegmentScale:shaft.minShorteningScale??.65};
+    shaftGroundProfiles.set(shaft,{donor,profile});
+    return profile;
   }
 
   function actualCharacterHeight(speciesId, gender, rigScaleY = null) {
@@ -1778,7 +1801,7 @@
     get data() { return data; },
     get defaultData() { return normalizeData(DEFAULT_DATA); },
     clone: cleanClone,
-    toolKeyFor, isDualWieldWeapon, weaponHandModeForTool, setEditorIdlePreview, setEditorSingleHandPreview, getEditorIdlePreview: () => editorHandPreview === 'pair', editorToolChanged, ensureTool, toolScaleForTool, apertureForTool, apertureHolderPointForTool, primaryGripHolderPointForTool, heightMultiplierForTool, lengthProfileForTool, actualCharacterHeight, measuredScaleForTool, characterHeightRatio, characterHeightReady, heightFactorForTool, effectiveToolScaleForTool,
+    toolKeyFor, isDualWieldWeapon, weaponHandModeForTool, setEditorIdlePreview, setEditorSingleHandPreview, getEditorIdlePreview: () => editorHandPreview === 'pair', editorToolChanged, ensureTool, toolScaleForTool, apertureForTool, apertureHolderPointForTool, primaryGripHolderPointForTool, heightMultiplierForTool, lengthProfileForTool, groundProfileForTool, actualCharacterHeight, measuredScaleForTool, characterHeightRatio, characterHeightReady, heightFactorForTool, effectiveToolScaleForTool,
     heldItemPlacementForTool, itemPointToHolder, holderPointToItem, applyHeldItemPlacement, DEFAULT_HEIGHT_MULTIPLIER, normalizeGripContext, currentGripContext,
     authoredPrimaryGripForTool, customGripAxisForTool, gripPointOnAxis, sampleFreeRightHand, primaryGripForTool, offhandPrimaryGripForTool, dualWieldOffhandGripOffsetForTool, spinPivotOffsetForTool, primaryGripSpanForTool, secondaryGripSpanForTool, secondaryGripForTool, dualWieldStateForTool, offhandIdleStateForTool, usesLegacyOffhandIdle,
     currentSecondaryGripAnimationState, currentDualWieldAnimationState, animationGripAt, gripModeForTool, setGripMode, replace, mutate, saveLocal, loadLocal, clearLocal, applyPrimaryGripVisuals, debugForTool,

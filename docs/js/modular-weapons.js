@@ -368,6 +368,15 @@
     const raw = shaft?.shaftArtTransform;
     return { ...duplicateTransform(raw), enabled: raw?.enabled === true }; // Independent, opt-in sprite transform; flame source inherits it.
   }
+  function cleanShorteningBands(raw) {
+    if(!Array.isArray(raw))return [];
+    const out=[]; // Disjoint longitudinal bands, each with its own horizontal extent.
+    const sorted=raw.slice(0,16).filter(v=>v&&[v.x0,v.x1,v.y0,v.y1].every(Number.isFinite))
+      .map(v=>({x0:Math.max(0,v.x0),x1:Math.min(450,v.x1),y0:Math.max(0,v.y0),y1:Math.min(1204,v.y1)}))
+      .sort((a,b)=>a.y0-b.y0);
+    for(const v of sorted)if(v.x1-v.x0>=1&&v.y1-v.y0>=1&&(!out.length||v.y0>=out[out.length-1].y1))out.push(v);
+    return out;
+  }
   function cleanRigRegions(raw) {
     if (!Array.isArray(raw)) return [];
     const used = new Set();
@@ -730,6 +739,8 @@
         if (Object.hasOwn(raw, 'flailAssembly')) shaft.flailAssembly = cleanFlailReference(raw.flailAssembly); // Unlinking restores ordinary rigid assembly.
         if (raw.flailHaftAnchor) shaft.flailHaftAnchor = point(raw.flailHaftAnchor);
       }
+      shaft.shorteningBands=cleanShorteningBands(raw.shorteningBands??shaft.shorteningBands); // Original 450×1204 haft coordinates, independent of head/metal.
+      shaft.minShorteningScale=finite(raw.minShorteningScale,shaft.minShorteningScale??.65,.1,1);
       shaft.rigRegions = cleanRigRegions(raw.rigRegions || shaft.rigRegions); // Region selections are validated and persist in exported drafts.
       shaft.shaftArtTransform = { ...duplicateTransform(raw.shaftArtTransform || shaft.shaftArtTransform),
         enabled: (raw.shaftArtTransform || shaft.shaftArtTransform)?.enabled === true }; // Explicit opt-in, neutral for old saves.
@@ -1135,7 +1146,7 @@
     if (needsPairFitUpgrade) storage?.setItem(PAIR_FIT_MIGRATION_KEY, '1');
   } catch (error) { global.__farmLog?.(`[Foundry] Ignored invalid attachment draft: ${error.message}`, 'warn'); }
   global.ModularWeapons = { getConfig: () => config, replace, settings, isDisallowed, transforms, decode, itemKey, sourceShape, weaponName, weaponDamageType, flailRecipe, flailGuide, authoredFlailAnchor, isFlailHead, resolvedBores, boreShaft, cleanBores, headTransform, compositionFrame, planeLayout, fitPlaneGeometry, compose, loadImage, registerDefinitions, unlockedParts, matchingMounts,
-    duplicateTransform, duplicatePoint, shaftRigTransform, shaftArtTransform, cleanRigRegions, regionAt, regionAffine, affinePoint, rigPoint, shaftMounts, attachmentRig, rigBridgeOperations, multiplyAffine, JUNCTIONS, junctionPath, drawJunction, expandOps,
+    duplicateTransform, duplicatePoint, shaftRigTransform, shaftArtTransform, cleanShorteningBands, cleanRigRegions, regionAt, regionAffine, affinePoint, rigPoint, shaftMounts, attachmentRig, rigBridgeOperations, multiplyAffine, JUNCTIONS, junctionPath, drawJunction, expandOps,
     diagnostics: key => ({ parts: decode(key), gripSource: sourceShape(key),
       name: decode(key) ? weaponName(decode(key).shaft, decode(key).head, decode(key).metal) : null,
       flailOwner: decode(key) ? (config.heads[decode(key).head].flailAssembly ? 'head' : config.shafts[decode(key).shaft].flailAssembly ? 'haft' : null) : null,
