@@ -137,6 +137,13 @@
     return best || (strict ? null : fallback);
   }
 
+  // True when any player is in `areaId` (a player whose area is unknown counts: stay conservative).
+  // Off-area optimisations (coarse NPC ticks etc.) must use this, not "the local player's area".
+  function isAnyPlayerInArea(areaId) {
+    for (const p of players) { const a = areaOf(p); if (a == null || a === areaId) return true; }
+    return false;
+  }
+
   // Distance in px from (x, y) to the nearest player (same-area players first).
   // Simulation LOD (sleep/wake, ecology radius) must use this, never the local
   // player alone: a camp next to a guest has to stay awake on the host.
@@ -168,7 +175,7 @@
     assignId, idOf, getById,
     registerPlayer, unregisterPlayer, onPlayersChanged,
     getPlayers, getLocalPlayer, isPlayer, isLocalPlayer, playerCount,
-    setLocalAreaResolver, areaOf, playersInArea, nearestPlayer, distanceToNearestPlayer,
+    setLocalAreaResolver, areaOf, playersInArea, isAnyPlayerInArea, nearestPlayer, distanceToNearestPlayer,
     ownerOf, ownerPlayerOf, getDebug,
   };
 })();

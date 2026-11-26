@@ -20,6 +20,7 @@
   function eligible(w) {
     const area = w.area, current = deps.getCurrentArea?.();
     if (typeof area !== 'string' || !area || area === current) return false;
+    if (window.ActorRegistry?.playerCount() > 1 && window.ActorRegistry.isAnyPlayerInArea(area)) return false; // Another player is there: not off-area for them.
     if (w.animalDef || w._familyBabyFollowing || w._npcCliffClimb || w.pause === Infinity) return false;
     if (w._wildlifeThreatUntil > (deps.now ? deps.now() : performance.now())) return false;
     if (deps.isDialogueOrCutsceneWalker?.(w)) return false;
