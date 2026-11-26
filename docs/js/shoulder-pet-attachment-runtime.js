@@ -111,7 +111,6 @@
     const sampledPerch = new THREE.Vector3(), renderPerch = new THREE.Vector3(), localTarget = new THREE.Vector3(), gripOffset = new THREE.Vector3();
     const renderGrip = new THREE.Vector3(); // Actual world-space grip readback for the mobile diagnostic.
     const rotationLimits = window.ShoulderPetRotationLimits?.create?.(THREE); // One prepared deformation-envelope solver per owner.
-    const SHOULDER_PET_MAX_BODY_PITCH_DEG = 30; // Corrective whole-body tilt around the card normal; not curiosity animation.
     const SHOULDER_PET_BODY_NECK_BLEND = 0.5; // Equal quaternion midpoint between the player body and neck follow frames.
     const worldUp = new THREE.Vector3(0, 1, 0); // Axis for the upright pet's heading and observation turn.
     const constraintOwnerFrame=new THREE.Quaternion(); // Reused owner-heading scratch for legacy owner-relative limits.
@@ -133,6 +132,12 @@
     const ownerLateral = new THREE.Vector3(); // World-space lateral ray including the owner's actual reflection.
     const perchInOwnerSpace = new THREE.Vector3(); // Reads the live perch side after the source pixel follows the portrait flip.
     const ownerOrigin = new THREE.Vector3(); // Subtracted from the lateral point to obtain a direction.
+    const headRotation = new THREE.Quaternion(), leanRotation = new THREE.Quaternion(); // Head pose and corrective rotation, reused in both pins.
+    const renderedHeading = new THREE.Quaternion(), renderedLocalRotation = new THREE.Quaternion(); // Final render-only orientation and local conversion.
+    const inversePriorLean = new THREE.Quaternion(); // Removes simulation lean before resolving the final render pose.
+    const headUp = new THREE.Vector3(), headForward = new THREE.Vector3(), headOrigin = new THREE.Vector3(); // Live head basis and pivot.
+    const cardNormal = new THREE.Vector3(), petCenter = new THREE.Vector3(), broadSideAxis = new THREE.Vector3(0,0,1); // Animal YZ card tilts about its long Z axis.
+    let lastHeadPitch = 0, lastPetSide = 0; // Numeric diagnostics for the side gate and actual head motion.
     function keepHeadingUpright(rotation) {
       petHeading.set(0, 0, 1).applyQuaternion(rotation);
       if (Math.hypot(petHeading.x, petHeading.z) > 1e-6) {
@@ -150,6 +155,47 @@
       petHeading.set(0, 0, 1).applyQuaternion(rotation);
       return (petHeading.x * ownerLateral.x + petHeading.z * ownerLateral.z)
         / (Math.hypot(ownerLateral.x, ownerLateral.z) || 1);
+    }
+
+    // The animal's flat side is its YZ plane. Local X is its normal:
+    // rotating about local Z (not X) tips the broad side forward/backward.
+    // Follow the head only on the side toward which its top actually moves.
+    // Use the current head frame, not camera facing, observation direction,
+    // or the neck's raw Euler sign (which changes under reflected parents).
+    function resolveHeadSideLean(heading, perch, grip, scale) {
+      lastHeadPitch=lastPetSide=0;
+      const neck=getPlayerNeckJoint();
+      if(!neck?.isObject3D || typeof neck.getWorldPosition!=='function' || !grip || !scale)return 0;
+      neck.updateWorldMatrix?.(true,false);
+      const rotation=worldQuaternionWithoutReflection(neck,headRotation);
+      headUp.set(0,1,0).applyQuaternion(rotation);
+      headForward.set(0,0,1).applyQuaternion(rotation);
+      const length=Math.hypot(headForward.x,headForward.z);
+      if(length<1e-6 || headUp.y<=1e-6)return 0; // No ambiguous upside-down or vertical head frame.
+      headForward.set(headForward.x/length,0,headForward.z/length);
+      const forwardLean=headUp.x*headForward.x+headUp.z*headForward.z;
+      const pitch=Math.atan2(forwardLean,headUp.y);
+      lastHeadPitch=pitch;
+      neck.getWorldPosition(headOrigin);
+      // The perch itself lies on the owner portrait, so its depth does not
+      // identify the occupied side. Use the actual off-center animal root
+      // implied by the grip, its live scale and the solved body heading.
+      petCenter.set(-grip.x*scale.x,-grip.y*scale.y,-grip.z*scale.z).applyQuaternion(heading).add(perch).sub(headOrigin);
+      const side=petCenter.x*headForward.x+petCenter.z*headForward.z;
+      lastPetSide=side;
+      if(side*forwardLean<=0 || Math.abs(side)<1e-5 || Math.abs(pitch)<1e-6)return 0;
+      // Project the head pitch onto the animal card's broad-side normal.
+      // Rz rotates its up vector toward -local X. Reversing the animal's
+      // observation yaw reverses the local sign, not the world lean.
+      cardNormal.set(1,0,0).applyQuaternion(heading);
+      const normalProjection=cardNormal.x*headForward.x+cardNormal.z*headForward.z;
+      return -Math.atan2(forwardLean*normalProjection,headUp.y);
+    }
+
+    function applyHeadSideLean(heading,perch,grip,scale) {
+      const lean=resolveHeadSideLean(heading,perch,grip,scale);
+      if(Math.abs(lean)>1e-6)heading.multiply(leanRotation.setFromAxisAngle(broadSideAxis,lean));
+      return lean;
     }
 
     function _shoulderPetSurfaceTransform(perch, grip, pet) {
@@ -221,7 +267,7 @@
       const perchQuaternion = rotationQuaternion(perch.rotationDeg); // Authored shoulderPerch rotational correction.
       const inverseGripQuaternion = rotationQuaternion(grip.rotationDeg).invert(); // Authored inverse shoulderGrip rotational correction.
       const authoredRotationOffset = keepHeadingUpright(perchQuaternion.multiply(inverseGripQuaternion)); // Keep the authored facing correction on the horizontal plane.
-      const worldQuaternion = keepHeadingUpright(selectedRotationQuaternion.clone()); // Carrier pitch and roll still move the perch, but never tilt the pet's body.
+      const worldQuaternion = keepHeadingUpright(selectedRotationQuaternion.clone()); // Start with neutral heading; head-side lean is added after yaw constraints.
       let authoredFacesInward = false; // Identifies which of the two authored half-turns points toward the carrier's midline.
       if (!s_cancelShoulderPetRotationalOffset) {
         worldQuaternion.multiply(authoredRotationOffset);
@@ -235,7 +281,7 @@
       if (shoulderFacingTurnDeg) worldQuaternion.multiply(SHOULDER_PET_HALF_TURN_QUATERNION);
       // Curiosity pitch/yaw is animated by the animal's head bones, not this shared root.
       // Keep the entire body and its off-center grip still between the two authored 180° observation poses.
-      const shoulderLeanDeg = 0; // Curiosity remains head-only; geometry-driven pitch is recorded separately.
+      const shoulderLeanDeg = 0; // Curiosity remains head-only; owner-head lean is separate.
       const perchScaleX = Number(perch.scale?.x) > 0 ? Number(perch.scale.x) : 1; // Explicit authored grip multiplier; the runtime never recalculates it from body dimensions.
       const perchScaleY = Number(perch.scale?.y) > 0 ? Number(perch.scale.y) : 1; // Matches the pet's rendered Y scale when solving its foot grip.
       const perchScaleZ = Number(perch.scale?.z) > 0 ? Number(perch.scale.z) : 1; // Matches the pet's rendered depth scale.
@@ -250,9 +296,10 @@
           ownerMeshes: getOwnerPortraitMeshes(), pet, perch: perchWorldPosition, grip: rawGrip,
           scale: renderedScale, quaternion: worldQuaternion,
           ownerFrameYaw: 2*Math.atan2(ownerFrame.y,ownerFrame.w), perchSide: renderedPerchX,
-          maxBodyPitchDeg: SHOULDER_PET_MAX_BODY_PITCH_DEG,
         });
       }
+      lastHeadPitch=lastPetSide=0;
+      const headSideLean = useRenderedGrip ? applyHeadSideLean(worldQuaternion,perchWorldPosition,rawGrip,renderedScale) : 0; // One-sided broad-face lean, independent of the yaw collision solver.
       const gripWorldOffset = new THREE.Vector3(
         useRenderedGrip ? rawGrip.x * renderedScale.x : (grip.x || 0) * perchScaleX,
         useRenderedGrip ? rawGrip.y * renderedScale.y : (grip.y || 0) * perchScaleY,
@@ -275,7 +322,8 @@
         rotationalOffsetCancelled: s_cancelShoulderPetRotationalOffset,
         facingTowardPlayerCenter,
         shoulderFacingTurnDeg,
-        shoulderLeanDeg, // Curiosity never tilts the root; corrective pitch uses the resolved quaternion above.
+        shoulderLeanDeg, // Curiosity never tilts the root.
+        headSideLean, headPitch: lastHeadPitch, petHeadSide: lastPetSide, // Render hook refreshes these from the final composed head.
         geometryConstraint, // Requested/applied angles and bounded candidate checks for Pixel Probe.
       };
     }
@@ -329,7 +377,7 @@
         ? alignedGripWorldPosition.distanceTo(finalTransform.perchWorldPosition)
         : null; // Pixel Probe now measures real world transform drift, including genotype scaling and breathing.
       group.userData.hobunjiShoulderPetAttachment = { // Mobile-visible Pixel Probe diagnostics for this final authoritative pin.
-        recentChange: fallbackPlayerMesh ? 'Legacy shoulder pet uses the upright owner heading.' : 'Live bone envelopes constrain body yaw, in-plane body pitch and head yaw before pinning the authored grip.',
+        recentChange: fallbackPlayerMesh ? 'Legacy shoulder pet uses the upright owner heading.' : 'Head-side broad-face tilt follows the owner head, with the authored grip pinned.',
         rotationSource: finalTransform.rotationSource || finalTransform.faceRotationSource,
         positionSource: finalTransform.perchPositionSource,
         expectedWorldPosition: finalTransform.worldPosition.toArray(),
@@ -348,7 +396,9 @@
         shoulderFacingTurnDeg: Number(finalTransform.shoulderFacingTurnDeg) || 0,
         shoulderLeanDeg: Number(finalTransform.shoulderLeanDeg) || 0, // Legacy curiosity lean remains zero.
         spriteMirrored: false,
-        correctiveBodyPitchDeg: Number(finalTransform.geometryConstraint?.bodyPitchDeg) || 0, // Physical local-X body tilt around the grip.
+        headSideLeanDeg: (Number(finalTransform.headSideLean)||0)*180/Math.PI, // Signed local-Z tilt of the broad face.
+        ownerHeadPitchDeg: (Number(finalTransform.headPitch)||0)*180/Math.PI,
+        petHeadSide: Number(finalTransform.petHeadSide)||0,
         geometryConstraint: finalTransform.geometryConstraint || null, // Reports unavailable/no-safe-pose explicitly.
       };
       let canonicalPlaneRestored = group.userData.hobunjiShoulderSpriteCanonicalized === true;
@@ -358,13 +408,13 @@
       }
       group.userData.hobunjiShoulderPetAttachment.canonicalPlaneRestored = canonicalPlaneRestored;
       // The composer applies additional body and neck motion after simulation.
-      // Correct translation ONLY after those changes; never rerun rotation
-      // constraints or the animal's animation in a rendering hook.
+      // Refresh the cheap directional head lean and translation after those
+      // changes; never rerun the geometry solver or animal animation here.
       if(group.isObject3D && finalTransform.gripLocalPosition && finalTransform.perchLocalPosition){
         let pin=renderPins.get(group);
-        if(!pin || pin.owner!==getPlayerMesh()){
+        if(!pin || pin.owner!==getPlayerMesh() || pin.sampler!==samplePerch){
           const owner=getPlayerMesh();
-          const record={owner,grip:new THREE.Vector3(),pixel:null,local:new THREE.Vector3()};
+          const record={owner,grip:new THREE.Vector3(),pixel:null,local:new THREE.Vector3(),lean:0,headPitch:0,side:0};
           pin=(undo,renderDebug)=>{
             if(group.visible===false || !group.parent || record.owner!==getPlayerMesh())return false;
             const target=samplePerch(record.owner,record.pixel,renderPerch);
@@ -373,10 +423,30 @@
               record.owner.updateWorldMatrix?.(true,false);
               record.owner.localToWorld(renderPerch.copy(record.local));
             }
-            // The rendered group already includes the composer's pose. Keep
-            // its exact yaw/scale and solve the grip in its current parent space.
+            // The rendered group already includes the composer's pose. Strip
+            // the simulation-only lean, preserve its final heading, and apply
+            // the head's actual rendered pitch. One quaternion composition;
+            // no second silhouette solve or skeleton-wide update.
             group.localToWorld(renderGrip.copy(record.grip));
             const before=renderGrip.distanceTo(renderPerch);
+            let finalLean=record.lean,rotationChanged=false;
+            lastHeadPitch=record.headPitch;lastPetSide=record.side;
+            const neck=getPlayerNeckJoint();
+            if(neck?.isObject3D && typeof neck.getWorldPosition==='function'){
+              const heading=worldQuaternionWithoutReflection(group,renderedHeading);
+              if(Math.abs(record.lean)>1e-6)heading.multiply(inversePriorLean.setFromAxisAngle(broadSideAxis,-record.lean));
+              keepHeadingUpright(heading);
+              finalLean=applyHeadSideLean(heading,renderPerch,record.grip,group.scale);
+              renderedLocalRotation.copy(worldQuaternionWithoutReflection(group.parent,renderedLocalRotation)).invert().multiply(heading);
+              const current=group.quaternion;
+              const dot=Math.abs(current.x*renderedLocalRotation.x+current.y*renderedLocalRotation.y+current.z*renderedLocalRotation.z+current.w*renderedLocalRotation.w);
+              rotationChanged=dot<1-1e-12;
+              if(rotationChanged){
+                const old=current.clone(); // Transaction-specific rollback, even for nested renders.
+                undo.push(()=>{group.quaternion.copy(old);group.updateMatrix?.();});
+                current.copy(renderedLocalRotation);
+              }
+            }
             localTarget.copy(renderPerch);group.parent.worldToLocal(localTarget);
             gripOffset.copy(record.grip).multiply(group.scale).applyQuaternion(group.quaternion);
             localTarget.sub(gripOffset);
@@ -385,20 +455,23 @@
               const {x,y,z}=group.position; // Each transaction owns its own rollback, including nested diagnostic renders.
               undo.push(()=>{group.position.set(x,y,z);group.updateMatrix?.();});
               group.position.copy(localTarget);group.updateMatrix?.();
-              group.localToWorld(renderGrip.copy(record.grip));
             }
+            if(changed || rotationChanged){group.updateMatrix?.();group.localToWorld(renderGrip.copy(record.grip));}
             const debug=group.userData.hobunjiShoulderPetAttachment;
             if(debug){
               debug.renderPin={source:target?'live-skinned-pixel':'local-fallback',beforeError:before,afterError:renderGrip.distanceTo(renderPerch),
-                perch:renderPerch.toArray(),grip:renderGrip.toArray(),corrected:changed};
+                perch:renderPerch.toArray(),grip:renderGrip.toArray(),corrected:changed || rotationChanged,
+                headSideLeanDeg:finalLean*180/Math.PI,ownerHeadPitchDeg:lastHeadPitch*180/Math.PI,petHeadSide:lastPetSide};
               if(renderDebug)renderDebug.shoulderPerchPin=debug.renderPin;
             }
             return true;
           };
-          pin.owner=owner;pin.record=record;renderPins.set(group,pin);
+          pin.owner=owner;pin.sampler=samplePerch;pin.record=record;renderPins.set(group,pin);
         }
         pin.record.grip.copy(finalTransform.gripLocalPosition);
         pin.record.pixel=finalTransform.perchSourcePixel;
+        pin.record.lean=Number(finalTransform.headSideLean)||0;
+        pin.record.headPitch=Number(finalTransform.headPitch)||0;pin.record.side=Number(finalTransform.petHeadSide)||0;
         const p=finalTransform.perchLocalPosition;
         pin.record.local.set(p.x||0,p.y||0,p.z||0);
       }else renderPins.delete(group);

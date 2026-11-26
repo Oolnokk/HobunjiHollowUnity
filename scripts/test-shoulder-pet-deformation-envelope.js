@@ -42,8 +42,7 @@ class V {constructor(x=0,y=0,z=0){Object.assign(this,{x,y,z});}}
 class E {set(x,y,z,order='XYZ'){Object.assign(this,{x,y,z,order});return this;}}
 class Q {
   constructor(yaw=0){this.setFromAxisAngle(null,yaw);}
-  setFromAxisAngle(axis,yaw){const s=Math.sin(yaw/2);Object.assign(this,{x:(axis?.x||0)*s,y:(axis?.y??1)*s,z:(axis?.z||0)*s,w:Math.cos(yaw/2)});return this;}
-  multiply(b){const {x,y,z,w}=this;Object.assign(this,{x:w*b.x+x*b.w+y*b.z-z*b.y,y:w*b.y-x*b.z+y*b.w+z*b.x,z:w*b.z+x*b.y-y*b.x+z*b.w,w:w*b.w-x*b.x-y*b.y-z*b.z});return this;}
+  setFromAxisAngle(_,yaw){Object.assign(this,{x:0,y:Math.sin(yaw/2),z:0,w:Math.cos(yaw/2)});return this;}
   setFromEuler(e){return this.setFromAxisAngle(null,e.y);}
 }
 class M {
@@ -124,39 +123,3 @@ const render=fs.readFileSync('docs/js/bootstrap/classic-groups/render.js','utf8'
 assert.ok(render.indexOf('shoulder-pet-deformation-envelope.js')>=0 && render.indexOf('shoulder-pet-deformation-envelope.js')<render.indexOf('shoulder-pet-rotation-limits.js'),'live envelope module loads before its consumer');
 const integration=fs.readFileSync('docs/js/shoulder-pet-rotation-limits.js','utf8');
 assert.ok(integration.includes('if(liveEnvelope)return liveEnvelope.constrain(args);'),'real Three.js attachment uses the deformation-aware path');
-
-
-// The pitch interval is continuous, bounded, and respects both directions.
-const pitchScratch={a:[],b:[],pairs:[]};
-near(Math.abs(solveBodyYaw([a],[b],0,pitchScratch,Math.PI/6)),expected+1e-6,'bounded axis solution uses the exact angular boundary');
-assert.equal(solveBodyYaw([a],[b],0,pitchScratch,expected/2),null,'a tilt outside the allowed range is rejected');
-const card=(x,y,z)=>[[x,y-.01,z-.01],[x,y+.01,z-.01],[x,y-.01,z+.01],[x,y+.01,z+.01]];
-const rotateY=(p,yaw)=>[Math.cos(yaw)*p[0]+Math.sin(yaw)*p[2],p[1],-Math.sin(yaw)*p[0]+Math.cos(yaw)*p[2]];
-const tilt=(p,pitch)=>[p[0],Math.cos(pitch)*p[1]-Math.sin(pitch)*p[2],Math.sin(pitch)*p[1]+Math.cos(pitch)*p[2]];
-const petCard=card(.12,.3,.18);
-for(const heading of [0,Math.PI/3,Math.PI,-Math.PI/2])for(const sign of [-1,1]){
-  const headCenter=[.12,.3,.18+sign*.008];
-  const carrierBone=bone();
-  const carrier=mesh(card(...headCenter).map(p=>rotateY(p,heading)),[carrierBone]);
-  const actor={avatarRef:{group,frontPlane:mesh(petCard)}};
-  const request={ownerMeshes:[carrier],pet:actor,perch:new V(),grip:new V(),scale:new V(1,1,1),quaternion:new Q(heading),maxBodyPitchDeg:30};
-  let d=solver.constrain(request);
-  assert.equal(d.mode,'geometric-depth');
-  near(d.bodyOffsetDeg,0,'tilt preserves requested whole-body heading');
-  assert.ok(Math.abs(d.bodyPitchDeg)>0 && Math.abs(d.bodyPitchDeg)<=30,'small corrective tilt fits the configured bound');
-  assert.ok(sign*d.bodyPitchDeg<0,'whole body pitches away from the overlapping head');
-  assert.equal(d.pitchSolves,1,'one analytic pitch interval, not a candidate-angle scan');
-  assert.equal(d.checks,0);
-  const pitch=d.bodyPitchDeg*Math.PI/180,actual=request.quaternion,expectedQ=new Q(heading).multiply(new Q().setFromAxisAngle(new V(1,0,0),pitch));
-  for(const k of ['x','y','z','w'])near(actual[k],expectedQ[k],'pitch is local to the animal card after yaw');
-  const transformed=petCard.map(p=>tilt(p,pitch));
-  const center=tilt([.12,.3,.18],pitch);
-  assert.ok(Math.hypot(center[1]-headCenter[1],center[2]-headCenter[2])>2*Math.hypot(.01,.01)+.002,'resolved pitch separates the two projected disks');
-  assert.ok(transformed.every(p=>Math.abs(p[0]-.12)<1e-8),'pitch leaves the card normal coordinate unchanged');
-  const cachedReads=positionReads;
-  carrierBone.position.y=2;request.quaternion=new Q(heading);d=solver.constrain(request);
-  near(d.bodyPitchDeg,0,'moving the carrier head away restores upright pose');
-  assert.equal(d.pitchSolves,0,'unobstructed pose skips alternate-axis math');
-  assert.equal(positionReads,cachedReads,'pitch never rereads unchanged vertices');
-}
-console.log('whole-body local-X pitch limits, mirrored heading and upright fast path passed');

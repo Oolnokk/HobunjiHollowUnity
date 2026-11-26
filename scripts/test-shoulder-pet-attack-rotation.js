@@ -428,25 +428,50 @@ assert.match(bridge,/for\(const root of shoulderPetsForFrame\(\)\)repin\(root,un
 console.log('cached source pixel, live skinning and render-only shoulder translation passed');
 
 
-// Real pin integration: a whole-body in-plane correction must rotate about
-// the authored off-center grip, not the sprite center, including late repins.
-win.ShoulderPetRotationLimits={create:()=>({constrain(args){
-  assert.equal(args.maxBodyPitchDeg,30,'runtime enables bounded corrective tilt');
-  args.quaternion.multiply(new TestQuaternion().setFromAxisAngle({x:1,y:0,z:0},degrees(-18)));
-  return {bodyPitchDeg:-18};
-}})};
-const pitchedRuntime=win.ShoulderPetAttachmentRuntime.create({THREE,getOwnerMesh:()=>owner,getOwnerNeckJoint:()=>null,
-  getRotationSource:()=> 'head',getInvertRotationSource:()=>false,getCancelRotationalOffset:()=>false,getOwnerPortraitMeshes:()=>[mesh]});
+// Local-Z broad-face tilt follows the live head only on the occupied side.
+const head={isObject3D:true,quaternion:new TestQuaternion(),getWorldPosition(v){return v.set(10,2,this.z);},z:0,updateWorldMatrix(){}};
+const headFollow=win.ShoulderPetAttachmentRuntime.create({THREE,getOwnerMesh:()=>owner,getOwnerNeckJoint:()=>head,
+  getRotationSource:()=> 'head',getInvertRotationSource:()=>false,getCancelRotationalOffset:()=>false});
 group.visible=true;
-const pitched=pitchedRuntime.solveSurfaceTransform(perch,grip,pet);
-pitchedRuntime.applyFinalTransform(pet,pitched);
-assert.equal(group.userData.hobunjiShoulderPetAttachment.correctiveBodyPitchDeg,-18);
-assert.ok(Math.abs(group.quaternion.x)+Math.abs(group.quaternion.z)>.01,'body is actually tilted');
-closeness(group.localToWorld(grip.localPosition.clone()),pitched.perchWorldPosition,'body pitch leaves the grip at the authored pixel');
-const pitchedOrientation=group.quaternion.clone();
-neck.y=14;
-assert.equal(win.ShoulderPetAttachmentRuntime.repinForRender(group,undo,renderDebug),true);
-closeness(group.localToWorld(grip.localPosition.clone()),new TestVector3(10.25,3.75,0),'late neck motion does not detach the tilted body');
-assert.deepEqual(group.quaternion,pitchedOrientation,'late translation correction preserves corrective pitch');
-undo.pop()();
-console.log('pitch-aware authored grip pin passed');
+const testHeadPitch=(pitch,side,inward=false)=>{
+  head.quaternion.setFromAxisAngle({x:1,y:0,z:0},degrees(pitch));
+  head.z=-side;
+  pet.__hobunjiShoulderFacingInward=inward;
+  return headFollow.solveSurfaceTransform(perch,grip,pet);
+};
+for(const pitch of [-25,25])for(const side of [-1,1])for(const inward of [false,true]){
+  const solved=testHeadPitch(pitch,side,inward);
+  assert.ok(Math.abs(solved.headPitch-degrees(pitch))<1e-9,'live head pitch');
+  assert.equal(Math.sign(solved.petHeadSide),side,'pet center selects side');
+  const up=new TestVector3(0,1,0).applyQuaternion(solved.worldQuaternion);
+  if(pitch*side>0){
+    assert.ok(Math.abs(solved.headSideLean)>.05,'toward pet engages tilt');
+    assert.equal(Math.sign(up.z),Math.sign(pitch),'same depth direction');
+    assert.ok(Math.abs(new TestVector3(0,0,1).applyQuaternion(solved.worldQuaternion).y)<1e-9,'long axis remains horizontal');
+  }else{
+    assert.equal(solved.headSideLean,0,'away leaves upright');
+    closeness(up,new TestVector3(0,1,0),'opposite side');
+  }
+  headFollow.applyFinalTransform(pet,solved);
+  closeness(group.localToWorld(grip.localPosition.clone()),solved.perchWorldPosition,'tilt preserves grip');
+}
+const initial=testHeadPitch(0,1);
+headFollow.applyFinalTransform(pet,initial);
+const originalQ=group.quaternion.clone(),originalP=group.position.clone();
+head.quaternion.setFromAxisAngle({x:1,y:0,z:0},degrees(25));
+const lateUndo=[];
+assert.equal(win.ShoulderPetAttachmentRuntime.repinForRender(group,lateUndo,renderDebug),true);
+assert.ok(Math.abs(renderDebug.shoulderPerchPin.headSideLeanDeg)>1,'late head pitch');
+assert.ok(new TestVector3(0,1,0).applyQuaternion(group.quaternion).z>0,'actual rendered broad face tips forward');
+closeness(group.localToWorld(grip.localPosition.clone()),initial.perchWorldPosition,'late grip remains pinned');
+while(lateUndo.length)lateUndo.pop()();
+closeness(group.position,originalP,'position rollback');
+assert.deepEqual(group.quaternion,originalQ,'rotation rollback');
+const tilted=testHeadPitch(25,1);
+headFollow.applyFinalTransform(pet,tilted);
+head.quaternion.setFromAxisAngle({x:1,y:0,z:0},degrees(-25));
+win.ShoulderPetAttachmentRuntime.repinForRender(group,lateUndo,renderDebug);
+assert.equal(renderDebug.shoulderPerchPin.headSideLeanDeg,0);
+closeness(new TestVector3(0,1,0).applyQuaternion(group.quaternion),new TestVector3(0,1,0),'prior tilt removed, not accumulated');
+while(lateUndo.length)lateUndo.pop()();
+console.log('directional broad-face head follow, observation reversal and late grip correction passed');
