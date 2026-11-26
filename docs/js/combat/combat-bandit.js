@@ -1476,11 +1476,12 @@
     }
     // Facing and lunge direction stay fixed after windup begins, leaving a real backstab window.
     const priorProgress = 1 - Math.pow(c._banditLungeT / c._banditLungeDur, 3);
-    c._banditLungeT = Math.max(0, c._banditLungeT - dt);
+    const travelDt = Math.min(Math.max(0, dt), Math.max(0, c._banditLungeT)); // Only charge the committed remainder, not excess frame time.
+    c._banditLungeT = Math.max(0, c._banditLungeT - travelDt);
     const t = 1 - c._banditLungeT / c._banditLungeDur;
     const eased = 1 - Math.pow(1 - t, 3);
     const lungeStep = c._banditLungeDistancePx * Math.max(0, eased - priorProgress);
-    const motion = window.ResourceSystem?.composeMovement?.(c, c._banditLungeDirX * lungeStep, c._banditLungeDirY * lungeStep, { mode: 'lunge', scalarApplied: true, rotationApplied: true, reference: lungeStep || (Number(c.def?.moveSpeed) || deps.TILE * 3) * dt, dt });
+    const motion = window.ResourceSystem?.composeMovement?.(c, c._banditLungeDirX * lungeStep, c._banditLungeDirY * lungeStep, { mode: 'lunge', scalarApplied: true, rotationApplied: true, reference: lungeStep, dt: travelDt }); // Cone-halted attacks no longer regain horizontal motion from a fallback wind speed.
     if (motion?.wind) c._windBanditLungeIntegrated = true;
     const desiredX = c._windBanditLungeIntegrated ? c.x + (motion?.x ?? c._banditLungeDirX * lungeStep) : c._banditLungeStartX + c._banditLungeDirX * c._banditLungeDistancePx * eased;
     const desiredY = c._windBanditLungeIntegrated ? c.y + (motion?.y ?? c._banditLungeDirY * lungeStep) : c._banditLungeStartY + c._banditLungeDirY * c._banditLungeDistancePx * eased;
