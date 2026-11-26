@@ -158,7 +158,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
   <script src="debug.js?v=20261125probeWindow1"></script>
   <!-- Global gameplay/UI config must load before CSS so config-backed custom properties are available on first paint. -->
-  <script src="config/config.js?v=20261117feyColors3"></script>
+  <script src="config/config.js?v=20261123adultThreeFix1"></script>
   <script src="config/scratchbones-config.js?v=20261122h5cf4b6d"></script>
   <!-- Canonical source-art color fill math shared by portraits, creatures, weaving, tools, terrain, and item sprites. -->
   <script src="js/color-fill.js?v=20261117h93b0e83"></script>
@@ -167,8 +167,8 @@
   <script src="js/tool-metal-recolor.js?v=20261109profile1"></script>
   <script src="js/metal-armor-system.js?v=20261124patternNestAudit2"></script>
   <script src="config/colors/config.js?v=20261026h7f369c3"></script>
-  <script src="config/attachment-rig-profiles.js?v=20261125voorgGrip29Audit1"></script>
-  <link rel="stylesheet" href="style.css?v=20261124bulkRebase4">
+  <script src="config/attachment-rig-profiles.js?v=20261123neckAgeSync2"></script>
+  <link rel="stylesheet" href="style.css?v=20261118instrumentLoadout1">
   <link rel="stylesheet" href="cooking-ui.css?v=20261109craftHours1">
   <link rel="stylesheet" href="ui-element-editor.css?v=20260814a">
   <!-- Shared gameplay presentation: mirrors the outlined text + light translucent containers used by character/save select. -->
@@ -185,19 +185,19 @@
   <script src="js/portrait-utils.js?v=20261125pristineCloth1"></script>
   <script src="js/portrait-breathing.js?v=20260831syllable4"></script>
   <script src="js/npc-avatar-preview-utils.js?v=20261122hKasa3"></script>
-  <script src="js/character-spine.js?v=20261112longoran1"></script>
+  <script src="js/character-spine.js?v=20261123neckAgeSync2"></script>
   <script src="js/hat-overflow-plane.js?v=20261124hatOverflow3"></script>
-  <script src="js/png-plane-avatar.js?v=20261124h4f60280"></script>
+  <script src="js/png-plane-avatar.js?v=20261125babyToddlerPreset2"></script>
   <script src="js/creature-ground-anchor.js?v=20261023hf1"></script> <!-- Creature sprite ground-anchor scan/offset (extracted from game.js). -->
   <script src="js/species-pose-scaling.js?v=20261115shoulders3"></script>
-  <script src="js/character-dimensions.js?v=20261007he86e7d1"></script>
+  <script src="js/character-dimensions.js?v=20261124pixelCrownAudit1"></script>
   <!-- Keeps the portrait plane's occlusion-depth redraws (used so its silhouette can
        occlude 3D held items/tools) on the same matrix as its visible draw when
        PlayerBodyTransformComposer is composing a render-time body delta (mirrors
        procedural-hand-outline-parity.js's fix for the same class of bug). -->
-  <script src="js/portrait-plane-outline-parity.js?v=20261125waterSaveHand2"></script>
+  <script src="js/portrait-plane-outline-parity.js?v=20261123neckAgeSync2"></script>
   <!-- Shared held-item action poses used by game.js and its animation editor. -->
-  <script src="js/held-action-animations.js?v=20261125h931c37d"></script>
+  <script src="js/held-action-animations.js?v=20261125babyToddlerPreset2"></script>
   <!-- Great Fey skip voluntary gifts, proximity chatter, activity reactions, and pet greetings.
        Load once before all NPC interaction modules, including lazy runtimes. -->
   <script src="js/npc-interaction-policy.js?v=20261021fey1"></script>
@@ -218,7 +218,7 @@
   <script src="js/leg-bones.js?v=20261013hb53d07e"></script>
   <!-- Procedural leg/foot animation for non-creature avatars (player + NPC walkers) -->
   <script src="js/actor-body-sink.js?v=20261117hRigSink2"></script> <!-- Body sink for enemies and NPCs: lowers their own roots while the leg handle folds the knees. -->
-  <script src="js/procedural-leg-animation.js?v=20261119hf31697a"></script>
+  <script src="js/procedural-leg-animation.js?v=20261123heightBeltline2"></script>
   <!-- In-game pants garment: skinned onto the procedural legs (rig data in config/pants-rigs.js, maths in js/pants-rig-core.js) -->
   <script src="config/pants-rigs.js?v=20261015h74422e2"></script>
   <script src="js/pants-rig-core.js?v=20261117waistWidthSolve1"></script>
@@ -285,7 +285,7 @@
   <!-- Shared plateau/ramp fold math (Map Editor preview + Tothal Shift) and the
        headless Wilderness Map Generator core (Tothal Shift wilderness reroll) -->
   <script src="js/map-boundary-guard.js?v=1"></script>
-  <script src="js/terrain-preview.js?v=20261111mesaPreview1"></script>
+  <script src="js/terrain-preview.js?v=20261123neckAgeSync2"></script>
   <script src="js/den-cliff-placement.js?v=20261028localeopen1"></script>
   <script src="js/wilderness-archipelago.js?v=20261020islandatlas1"></script>
   <!-- Shared seclusion scorer, procedural generation and terrain-aware authored locales. Script versions live in the feature manifest, with parser-blocking ordering. -->
@@ -681,7 +681,7 @@
   <script src="js/town-zone-buildings.js?v=20261118blossomVases2"></script>
   <!-- Same-origin live Map Editor transport + runtime bridge. Loaded before
        game.js so its private scene state can be injected during setup. -->
-  <script src="js/map-live-preview.js?v=20261029maskSlots2&window=20260926rebase1"></script>
+  <script src="js/map-live-preview.js?v=20261123neckAgeSync2&window=20260926rebase1"></script>
   <!-- Wall-mounted furniture loads synchronously before game.js consumers initialize. -->
   <script src="js/wall-ornament-placement.js?v=20261119torchPerch1"></script>
   <script src="js/map-live-preview-runtime.js?v=20261002hb01296f"></script>
@@ -2365,7 +2365,7 @@
               <div class="settings-name">Editor Hub</div>
               <div class="settings-desc">Map Builder, Town Editor, NPC tools, Wall Builder</div>
             </div>
-            <a href="tools/index.html?v=20261104puzzleHud1" target="_blank" style="font-size:12px;padding:6px 10px;background:rgba(106,167,255,.14);border:1px solid rgba(106,167,255,.3);border-radius:8px;color:#6aa7ff;text-decoration:none;white-space:nowrap;align-self:center">Open Tools ↗</a>
+            <a href="tools/index.html?v=20261122scaleAudit1" target="_blank" style="font-size:12px;padding:6px 10px;background:rgba(106,167,255,.14);border:1px solid rgba(106,167,255,.3);border-radius:8px;color:#6aa7ff;text-decoration:none;white-space:nowrap;align-self:center">Open Tools ↗</a>
           </div>
           <label data-dev-only class="settings-row">
             <div class="settings-label">
@@ -2960,14 +2960,15 @@
   <!-- Dating / marriage / children + the hold-Action-1 NPC command wheel.
        romance-family.js must load before romance-system.js (whose init()
        wires the family module in); game.js calls both init()s. -->
-  <script src="config/romance-config.js?v=20261123babyBalance2"></script>
+  <script src="config/romance-config.js?v=20261125babyToddlerPreset2"></script>
+  <script src="js/character-age-rig-config.js?v=20261125babyToddlerPreset2"></script> <!-- Applies explicit Animation Author age proportions before family walkers initialize. -->
   <script src="config/family-baby-carry-pose.js?v=20261123babyMidpoint7"></script>
   <script src="js/family-baby-limbs.js?v=20261123babyGLB3"></script> <!-- Kicking hands/feet cloned from the hidden baby walker onto the carried proxy. -->
   <script src="js/family-baby-burdens.js?v=20261124babyFollowRebase1"></script>
   <script src="js/family-baby-ambient-voice.js?v=20261122decoupledVoice1"></script> <!-- Voice adapter; physical baby carry code unchanged. -->
   <script src="js/family-baby-follow.js?v=20261124babyFollowRebase1"></script> <!-- Uses shared companion navigation and downed crawl curves. -->
   <script src="js/family-baby-care.js?v=20261124babyFollowRebase1"></script>
-  <script src="js/romance-family.js?v=20261125childVatTeleport2"></script>
+  <script src="js/romance-family.js?v=20261125babyToddlerPreset2"></script>
   <script src="js/romance-wedding.js?v=20261027hbreath8"></script>
   <script src="js/npc-following.js?v=20261122babyFollow1"></script>
   <!-- Shared spouse kiss motion/height solver. Loads before RomanceSystem.init but after the player render/leg APIs. -->

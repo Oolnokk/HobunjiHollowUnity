@@ -30,11 +30,17 @@ assert.equal(context.headScaleGateAtPixel(nearPixelX, tight), 1, 'the skull itse
 assert.ok(context.headScaleGateAtPixel(farPixelX, bounds) > 0.5, 'default gate swallows a wide hood');
 assert.equal(context.headScaleGateAtPixel(farPixelX, tight), 0, 'tight gate hands the wide hood to the body');
 
-// Below the skull the default fade is long; the tight one ends head scaling close to the chin.
+// Both wide and tight horizontal gates now stop at the SAME tiny, sprite-anchored vertical neck band.
+vm.runInContext(extract(avatarSource, 'neckBlendWeight'), context);
 const model = 0.9, neckY = -0.1, belowChin = neckY - model * 0.1;
-assert.ok(context.headScaleWeightAt(belowChin, neckY, model, nearPixelX, bounds, 0) > 0.1, 'default gate still head-weights below the chin');
-assert.equal(context.headScaleWeightAt(belowChin, neckY, model, nearPixelX, tight, 0), 0, 'tight gate stops just below the skull');
-assert.equal(context.headScaleWeightAt(neckY + 0.2, neckY, model, nearPixelX, tight, 0), 1, 'skull height stays fully head-weighted');
+for (const gate of [bounds, tight]) {
+  assert.equal(context.headScaleWeightAt(belowChin, neckY, model, nearPixelX, gate, 0), 0,
+    'no gate may head-scale/rotate the torso ten percent below the base head');
+  assert.ok(context.headScaleWeightAt(neckY - model * .006, neckY, model, nearPixelX, gate, 0) > .4,
+    'the 1.2%-high neck band has a genuinely blended middle');
+  assert.equal(context.headScaleWeightAt(neckY + 0.2, neckY, model, nearPixelX, gate, 0), 1,
+    'all skull pixels above the detected head bottom stay fully head-weighted');
+}
 
 // Shared default: players, civilians and enemies use legacy, except Harlyao skeletons.
 vm.runInContext("const LEGACY_HEAD_GATE_COSMETICS = [/binding_mask/i];", context);

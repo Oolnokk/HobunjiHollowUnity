@@ -29,7 +29,7 @@ const context = vm.createContext({ // Minimal browser globals; test-only injecti
 vm.runInContext(source.replace('  install();\n})();', `  window.testLineup = { representatives, portraitExportFor };
   window.testFocusControl = {
     configure() { active = true; THREE = {}; previewRoot = {}; },
-    select, focusSelected, frame, applyLongoranSliders, applyBodyHeadSliders, applyAgeSlider,
+    select, focusSelected, frame, applyLongoranSliders, refreshFromScaleChange, applyAgeSlider,
     get focusKey() { return focusedEntryKey; },
   };
 })();`), context);
@@ -83,9 +83,11 @@ vm.runInContext(source.replace('  install();\n})();', `  window.testLineup = { r
   assert.equal(cameraFrames.length, 0, 'choosing a Longoran must not move the camera');
   assert.equal(getUiNode('maaFullScaleFocus').disabled, false, 'a valid selection enables the Focus selected button');
   window.testFocusControl.applyLongoranSliders();
-  window.testFocusControl.applyBodyHeadSliders();
+  window.testFocusControl.refreshFromScaleChange({ x: 1, y: 1, legLength: 1, handScale: 1, footScale: 1, head: 1, offsetY: 0 }, 'head');
   window.testFocusControl.applyAgeSlider();
-  assert.equal(cameraFrames.length, 0, 'editing posture, body/head scale, and NPC hunch must never reframe the camera');
+  assert.equal(cameraFrames.length, 0, 'editing posture, guarded scale, and NPC hunch must never reframe the camera');
+  assert(!source.includes('function applyBodyHeadSliders()'), 'a second all-fields scale listener must not compete with the guarded one-field handler');
+  assert(source.includes('HobunjiFullScaleBodyInputGuard?.applyScaleField'), 'the comparison requires the authoritative input guard instead of silently using an incompatible fallback');
   window.testFocusControl.focusSelected();
   assert.equal(window.testFocusControl.focusKey, longoran.key, 'Focus selected must lock onto the specific Longoran');
   assert.equal(cameraFrames.length, 1, 'Focus selected explicitly requests one camera frame');
@@ -106,7 +108,7 @@ vm.runInContext(source.replace('  install();\n})();', `  window.testLineup = { r
   assert.match(source, /reps\.filter\(item => item\.species === 'longoran'\)/, 'Longoran should become available before the remaining slow species previews'); // Prioritize authoring without dropping any other species.
   assert.match(source, /buildPreviewEntry\(rep, buildId\)/, 'progressive builds must carry the cancellation generation');
   assert.match(source, /if \(buildId !== generation \|\| !previewRoot\) return null;/, 'an exited editor must not attach a stale avatar after image loading');
-  assert.match(source, /active = true; \/\/ The first Longoran becomes tweakable/, 'the author must unlock before the entire lineup finishes');
+  assert.match(source, /active = true; \/\/ The first Kenkari is editable/, 'the first Kenkari is editable without loading the whole lineup');
   assert.match(source, /portraitLoading: window\.__portraitPixelCacheDebug/, 'mobile preview must expose real image-load diagnostics');
   console.log('Full Character Scale Longoran, Nuhongan and Mashtzarr lineup checks passed.');
 })().catch(error => { console.error(error); process.exitCode = 1; });

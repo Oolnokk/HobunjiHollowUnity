@@ -30,6 +30,7 @@
   let pendingClear = Promise.resolve(); // Used so addNpc waits for the public empty-project import even though the legacy caller does not await clearActors().
   let threePromise = null; // Used to share the already-cached Three.js module load with tap picking.
   const rigScaleOverrides = new Map(); // Survives Rig's fixed-field normalizer and is merged back into both shared profiles and every attachment-rig export.
+  const repositoryPartScales = new Map(); // Original hand/foot sizes are cached once for Reset; the new sliders cannot erase shipped anatomy.
 
   function profileKey(species, gender) {
     const normalizedSpecies = canonicalSpecies(species);
@@ -43,6 +44,7 @@
   }
 
   function normalizedRigScaleNumber(value) {
+    if (value == null || value === '') return null; // Missing optional leg/hand/foot fields must not silently become 10% via Number(null).
     const number = Number(value);
     return Number.isFinite(number) ? Math.max(0.1, Math.min(4, number)) : null; // Same [10%, 400%] envelope as HobunjiCharacterRigScale; female Longoran's 209.4% height must survive save/reload.
   }
@@ -67,7 +69,14 @@
     const head = normalizedRigScaleNumber(value.head);
     const offsetY = normalizedOffsetYNumber(value.offsetY);
     if (x == null && y == null && head == null && offsetY == null) return null;
-    return { x: x ?? y ?? head ?? 1, y: y ?? x ?? head ?? 1, head: head ?? x ?? y ?? 1, offsetY: offsetY ?? 0 };
+    const resolved = { x: x ?? y ?? head ?? 1, y: y ?? x ?? head ?? 1, head: head ?? x ?? y ?? 1, offsetY: offsetY ?? 0 };
+    const legLength = normalizedRigScaleNumber(value.legLength ?? value.legLengthScale); // Independent reach; omitted by old saves.
+    const handScale = normalizedRigScaleNumber(value.handScale); // Existing species/gender hand size field.
+    const footScale = normalizedRigScaleNumber(value.footScale); // Existing species/gender foot size field.
+    if (legLength != null) resolved.legLength = legLength;
+    if (handScale != null) resolved.handScale = handScale;
+    if (footScale != null) resolved.footScale = footScale;
+    return resolved;
   }
 
   function anatomyRigScale(anatomy) {
@@ -76,7 +85,11 @@
     const y = normalizedRigScaleNumber(anatomy.rigScaleY);
     const head = normalizedRigScaleNumber(anatomy.headScale);
     const offsetY = normalizedOffsetYNumber(anatomy.headOffsetY);
-    if (x != null || y != null || head != null || offsetY != null) return normalizedRigScale({ x, y, head, offsetY });
+    const legLength = normalizedRigScaleNumber(anatomy.legLengthScale); // Old rigScaleY controls legs when this field is absent.
+    const handScale = normalizedRigScaleNumber(anatomy.handScale);
+    const footScale = normalizedRigScaleNumber(anatomy.footScale);
+    if (x != null || y != null || head != null || offsetY != null || legLength != null || handScale != null || footScale != null)
+      return normalizedRigScale({ x, y, head, offsetY, legLength, handScale, footScale });
     return normalizedRigScale(anatomy.rigScale); // Pre-split single-field profiles.
   }
 
@@ -89,6 +102,10 @@
       profile.anatomy.rigScaleY = value.y;
       profile.anatomy.headScale = value.head;
       profile.anatomy.headOffsetY = value.offsetY;
+      if (value.legLength != null) profile.anatomy.legLengthScale = value.legLength; // Explicit independent leg reach.
+      else delete profile.anatomy.legLengthScale; // Importing an old Height tuple must restore its original shared portrait/leg proportion, never retain stale newer authoring.
+      if (value.handScale != null) profile.anatomy.handScale = value.handScale;
+      if (value.footScale != null) profile.anatomy.footScale = value.footScale;
     }
   }
 
@@ -128,7 +145,8 @@
       const scale = anatomyRigScale(profile?.anatomy);
       if (!key || scale == null) continue;
       const existing = rigScaleOverrides.get(key);
-      if (!existing || existing.x !== scale.x || existing.y !== scale.y || existing.head !== scale.head || existing.offsetY !== scale.offsetY) {
+      if (!existing || existing.x !== scale.x || existing.y !== scale.y || existing.head !== scale.head || existing.offsetY !== scale.offsetY
+          || existing.legLength !== scale.legLength || existing.handScale !== scale.handScale || existing.footScale !== scale.footScale) {
         rigScaleOverrides.set(key, scale);
         changed = true;
       }
@@ -143,14 +161,30 @@
   // (character-rig-scale-defaults.js) — not a frozen snapshot of them, so a later
   // change to that file is picked up without needing another reset. Also clears
   // every per-NPC age override, since "reset everything" should mean everything.
+  function rememberRepositoryPartScales() {
+    const characters = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters || {}; // Canonical source snapshot retained without deep-cloning meshes or textures.
+    for (const [key, profile] of Object.entries(characters)) {
+      if (repositoryPartScales.has(key)) continue;
+      const anatomy = profile?.anatomy || {};
+      repositoryPartScales.set(key, { handScale: anatomy.handScale, footScale: anatomy.footScale });
+    }
+  }
+
   function resetToRepositoryDefaults() {
+    rememberRepositoryPartScales(); // Reset uses the initial canonical species/gender extremity proportions.
     rigScaleOverrides.clear();
     try { localStorage.removeItem(RIG_SCALE_STORAGE_KEY); } catch (_) {}
     try { localStorage.removeItem(LEGACY_SCALE_STORAGE_KEY_V1); } catch (_) {}
     const characters = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters || {};
     let reset = 0;
-    for (const profile of Object.values(characters)) {
+    for (const [rawKey, profile] of Object.entries(characters)) {
       if (!profile?.anatomy) continue;
+      const original = repositoryPartScales.get(rawKey); // Restore exactly the authored hand/foot sizes rather than resetting every species to 100%.
+      if (original) for (const part of ['handScale', 'footScale']) {
+        if (original[part] == null) delete profile.anatomy[part];
+        else profile.anatomy[part] = original[part];
+      }
+      delete profile.anatomy.legLengthScale; // With no independent reach, the original Height default again controls both regions.
       delete profile.anatomy.rigScaleX;
       delete profile.anatomy.rigScaleY;
       delete profile.anatomy.headScale;
@@ -207,17 +241,31 @@
   }
 
   function migratePreviousLongoranDefaults(key, value) {
-    const previous = { // The only old saved profiles eligible for automatic migration, never an author's custom Longoran shape.
-      'longoran::male': { x: 1.0625, y: 1.275, head: 0.8, offsetY: 0 },
-      'longoran::female': { x: 1.14375, y: 1.335, head: 0.8823529411764706, offsetY: 0 },
+    // The only old saved profiles eligible for automatic migration: exact earlier
+    // *shipped defaults* (which captureSharedRigScales snapshots into storage),
+    // never an author's custom shape. v22/v24 entries let the Nov 22 Longoran /
+    // Tletingan / Nuhongan proportion pass reach browsers that already opened the editor.
+    const previous = {
+      'longoran::male': [{ x: 1.0625, y: 1.275, head: 0.8, offsetY: 0 }, { x: 1.05, y: 2, head: 0.9647, offsetY: -0.055 }, { x: 1.15, y: 1.4, head: 1.1, offsetY: -0.055 }],
+      'longoran::female': [{ x: 1.14375, y: 1.335, head: 0.8823529411764706, offsetY: 0 },
+        { x: 1.130294117647059, y: 2.0941176470588236, head: 1.0640073529411764, offsetY: -0.055 }, { x: 1.1, y: 2.25, head: 1.05, offsetY: -0.055 }],
+      'tletingan::male': [{ x: 0.85, y: 0.85, head: 0.8, offsetY: 0 }, { x: 0.9, y: 1.2, head: 0.85, offsetY: 0 }, { x: 0.675, y: 0.9, head: 0.638, offsetY: 0 }],
+      'tletingan::female': [{ x: 0.915, y: 0.89, head: 0.8823529411764706, offsetY: 0 }, { x: 0.9, y: 1.15, head: 0.85, offsetY: 0 }, { x: 0.771, y: 0.986, head: 0.728, offsetY: 0 }],
+      'nuhongan::male': [{ x: 0.68, y: 0.6375, head: 0.8, offsetY: 0 }, { x: 0.78, y: 0.7, head: 0.8, offsetY: 0 }, { x: 0.654, y: 0.587, head: 0.671, offsetY: 0 }],
+      'nuhongan::female': [{ x: 0.732, y: 0.6675, head: 0.8823529411764706, offsetY: 0 }, { x: 0.8, y: 0.7, head: 0.85, offsetY: 0 }, { x: 0.71, y: 0.622, head: 0.755, offsetY: 0 }],
+      'kenkari::male': [{ x: 1.225, y: 1.225, head: 1, offsetY: 0 }],
+      'kenkari::female': [{ x: 1.1, y: 1.1, head: 1, offsetY: 0 }],
     }[key];
     const scale = normalizedRigScale(value); // Current fields are normalized once before comparing with the old shipped defaults.
-    if (!previous || !scale || !Object.keys(previous).every(field => Math.abs(scale[field] - previous[field]) <= 0.000051)) {
+    const matches = candidate => Object.keys(candidate).every(field => Math.abs(scale[field] - candidate[field]) <= 0.000051);
+    if (!previous || !scale || !previous.some(matches)) {
       return { value, upgraded: false }; // Preserve genuinely edited values, including the uploaded custom male Longoran.
     }
-    const [, gender] = key.split('::');
-    const next = window.HobunjiCharacterRigScaleDefaults?.scaleFor?.('longoran', gender);
-    return next ? { value: next, upgraded: true } : { value, upgraded: false };
+    const [species, gender] = key.split('::');
+    const next = window.HobunjiCharacterRigScaleDefaults?.scaleFor?.(species, gender);
+    if (!next) return { value, upgraded: false };
+    const hand = normalizedRigScaleNumber(value?.handScale), foot = normalizedRigScaleNumber(value?.footScale);
+    return { value: { ...next, ...(hand != null ? { handScale: hand } : {}), ...(foot != null ? { footScale: foot } : {}) }, upgraded: true }; // Keep separately authored hand/foot sizes.
   }
 
   function restorePersistedRigScales() {
@@ -295,6 +343,10 @@
       profile.anatomy.rigScaleY = scale.y;
       profile.anatomy.headScale = scale.head;
       profile.anatomy.headOffsetY = scale.offsetY;
+      if (scale.legLength != null) profile.anatomy.legLengthScale = scale.legLength;
+      else delete profile.anatomy.legLengthScale; // Legacy rig imports do not preserve a previously authored independent limb length.
+      if (scale.handScale != null) profile.anatomy.handScale = scale.handScale;
+      if (scale.footScale != null) profile.anatomy.footScale = scale.footScale;
       delete profile.anatomy.rigScale; // Superseded by the x/y/head split; dropped so a re-export never resurrects the ambiguous uniform field.
     }
     return profiles;
@@ -304,8 +356,8 @@
     if (!data || data.schema !== 'hobunji.attachment-rig-profiles.v10') return data;
     data.profiles = mergeRigScalesIntoProfiles(data.profiles || data.attachmentRigProfiles || {});
     data.anatomySemantics ||= {};
-    data.anatomySemantics.rigScale = 'Whole-character species/gender x/y scale (rigScaleX, rigScaleY) authored in Full Character Scale, applied uniformly to the floor-relative visual root, hands, feet, and attachment coordinates; headScale is a separate, neck-rig-compensated factor that never inherits the body’s aspect ratio; headOffsetY additionally repositions the head (fraction of model height), composed at runtime with a per-NPC age-hunch factor that is instance data and not part of this export.';
-    data.fullCharacterScaleRoundTripVersion = 3;
+    data.anatomySemantics.rigScale = 'Full Character Scale authors per-species/gender width rigScaleX and portrait height rigScaleY (the legacy Y field). legLengthScale controls independent hip-to-foot reach, while handScale and footScale control procedural extremity sizes. Missing legLengthScale inherits the old Y scale for backward compatibility. headScale is independently compensated at the neck, and headOffsetY composes with the instance-only age hunch. The floor-relative root retains the original axis/coordinate conventions.';
+    data.fullCharacterScaleRoundTripVersion = 4; // Includes independent leg/portrait height and both existing extremity multipliers.
     return data;
   }
 
@@ -336,11 +388,14 @@
     return true;
   }
 
+  rememberRepositoryPartScales(); // Before recovery/import modifies the live rig's hand/foot scale settings.
+
   function installRigScaleRoundTripHooks() {
     if (document.documentElement.dataset.fullScaleRoundTripHooks === '1') return;
     document.documentElement.dataset.fullScaleRoundTripHooks = '1';
 
-    const FULL_SCALE_RANGE_IDS = new Set(['maaFullScaleRangeX', 'maaFullScaleRangeY', 'maaFullScaleRangeHead']);
+    const FULL_SCALE_RANGE_IDS = new Set(['maaFullScaleRangeX', 'maaFullScaleRangePortraitHeight', 'maaFullScaleRangeLegLength',
+      'maaFullScaleRangeHand', 'maaFullScaleRangeFoot', 'maaFullScaleRangeHead']);
     // The comparison sliders update the shared profile in their own target listener.
     // Capture it afterward at document bubble phase so the value is durable across reloads.
     document.addEventListener('input', event => {
@@ -385,6 +440,10 @@
       profile.anatomy.rigScaleX = scale.x;
       profile.anatomy.rigScaleY = scale.y;
       profile.anatomy.headScale = scale.head;
+      if (scale.legLength != null) profile.anatomy.legLengthScale = scale.legLength;
+      else delete profile.anatomy.legLengthScale; // Legacy rig imports do not preserve a previously authored independent limb length.
+      if (scale.handScale != null) profile.anatomy.handScale = scale.handScale;
+      if (scale.footScale != null) profile.anatomy.footScale = scale.footScale;
     }
     return profile;
   }
@@ -399,17 +458,14 @@
   }
 
   async function setMode(mode) {
-    const normalizedMode = String(mode || 'multi'); // Used to choose the safe public route versus the final in-tool Rig tab handler.
+    const normalizedMode = String(mode || 'multi'); // Multi, Single and Rig all share one native mode switch.
+    if (!MODE_TAB_IDS[normalizedMode]) throw new Error(`Unknown Animation Author mode “${normalizedMode}”.`);
     const api = publicApi();
-    if (normalizedMode === 'multi' || normalizedMode === 'single') {
-      if (typeof api.setMode !== 'function') throw new Error(`Animation Author mode “${normalizedMode}” is unavailable.`);
-      return api.setMode(normalizedMode);
-    }
-    const tab = document.getElementById(MODE_TAB_IDS[normalizedMode]); // Rig was added after the original public setMode reference was captured, so its real tab owns the final switch logic.
-    if (!tab) throw new Error(`Animation Author mode “${normalizedMode}” is unavailable.`);
-    tab.click();
-    await Promise.resolve();
-    return undefined;
+    if (typeof api.setMode !== 'function') throw new Error(`Animation Author mode “${normalizedMode}” is unavailable.`);
+    // Its public method is now a late-bound wrapper, so Rig uses the real final handler without a synthetic tab click.
+    // Also refresh chrome for Multi->Scale->Multi: the underlying mode was already Multi, so setMode itself is a no-op.
+    await api.setMode(normalizedMode);
+    api.refreshModeChrome?.();
   }
 
   async function addNpc(id, options) {
@@ -555,44 +611,8 @@
     };
   }
 
-  function installPicking() {
-    const canvas = document.getElementById('view3d');
-    if (!canvas || canvas.dataset.fullScaleHostPick === '1') return false;
-    canvas.dataset.fullScaleHostPick = '1';
-    let pointerDown = null; // Used to distinguish an intentional tap from camera dragging.
-    canvas.addEventListener('pointerdown', event => {
-      if (document.body.dataset.animationAuthorMode !== 'scale-compare') return;
-      pointerDown = { id: event.pointerId, x: event.clientX, y: event.clientY };
-    });
-    canvas.addEventListener('pointerup', async event => {
-      if (document.body.dataset.animationAuthorMode !== 'scale-compare' || !pointerDown || pointerDown.id !== event.pointerId) {
-        pointerDown = null;
-        return;
-      }
-      const moved = Math.hypot(event.clientX - pointerDown.x, event.clientY - pointerDown.y);
-      pointerDown = null;
-      if (moved > 8) return;
-      const THREE = await loadThree(); // Raycaster is loaded from the same Three.js build already used by the avatar preview.
-      const camera = window.HobunjiGameplayBackdrop?.getCamera?.();
-      const rect = canvas.getBoundingClientRect();
-      if (!THREE?.Raycaster || !camera || !rect.width || !rect.height) return;
-      const pointer = new THREE.Vector2(
-        ((event.clientX - rect.left) / rect.width) * 2 - 1,
-        -(((event.clientY - rect.top) / rect.height) * 2 - 1),
-      );
-      const raycaster = new THREE.Raycaster();
-      raycaster.setFromCamera(pointer, camera);
-      let best = null; // Tracks the nearest intersected comparison actor across every visible mesh child.
-      for (const actor of comparisonActors) {
-        const target = actor?.visualOffset || actor?.model || actor?.root;
-        const hit = target ? raycaster.intersectObject(target, true)[0] : null;
-        if (hit && (!best || hit.distance < best.distance)) best = { actor, distance: hit.distance };
-      }
-      if (best?.actor?.id) selectActor(best.actor.id);
-    });
-    loadThree();
-    return true;
-  }
+  // Viewport click-to-select was retired: Full Character Scale selection is dropdown-only.
+  // Do not install asynchronous pointer raycasts, which also outlive editor mode transitions.
 
   const host = Object.freeze({ // Used exclusively by Full Character Scale and its compatibility shims below.
     setMode,
@@ -652,9 +672,4 @@
     nativeRigExportBlobPatched: !!window.Blob?.__hobunjiRigScaleExportWrapped,
   };
 
-  let attempts = 0; // Used to attach tap picking once the repository-backed viewport exists.
-  const timer = setInterval(() => {
-    if (installPicking() || ++attempts >= 600) clearInterval(timer);
-  }, 50);
-  installPicking();
 })();

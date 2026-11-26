@@ -53,15 +53,20 @@
       const resolved = scaleApi.scaleFor(identity.speciesId, identity.gender); // Canonical authored tuple; body x/y are used to counter-compensate the head before the parent scale lands later.
       const child = window.PNGPlaneAvatar?.childScaleFor?.(options) || null; // Child body is already applied to the whole portrait; the head shrinks less.
       const childHeadFactor = child ? child.headFactor : 1;
+      const childHeadFactorX = child ? child.headFactorX : 1; // Head width cancels the separate child portrait-width modifier.
       const applied = scaleApi.applyHeadCompensation(
         root,
         identity.speciesId,
         identity.gender,
-        child ? { ...resolved, childHeadFactor } : resolved,
+        child ? { ...resolved, childHeadFactor, childHeadFactorX } : resolved,
         identity.age,
       );
 
       root.userData ||= {};
+      const independentChild = child
+        ? window.HobunjiCharacterAgeRigConfig?.nonFamilyChildLimbsFor?.({ ...(options.npcRecord || options.profile?.npcRecord), speciesId: identity.speciesId, gender: identity.gender })
+        : null; // Ordinary authored children use the shared GLB sizes; family children keep their existing per-stage limb owner.
+      if (independentChild) root.userData.hobunjiChildLimbVisualModifiers = independentChild; // Read on one-time hand/foot visual creation and GLB replacement, never per frame.
       const spineProfile = window.HobunjiCharacterSpine?.bind(root, options); // The whole options bag, so an authored aging.kyphosis (and sway) reaches the spine along with the hunch; shoulder aim and the weapon orbit read the same profile.
       if (spineProfile?.hunch > 0) window.HobunjiCharacterSpine.applyToRig(root.userData.neckRig, spineProfile, Number(root.userData.portraitModelHeight)); // Stoops the portrait itself.
       root.userData.hobunjiCharacterRigHeadRuntime = {
@@ -72,6 +77,9 @@
         headOffsetY: resolved.offsetY,
         age: identity.age, // Read back by HobunjiCharacterRigScale.ageFor when hands later reapply head compensation.
         childHeadFactor, // Read back by HobunjiCharacterRigScale.applyHeadCompensation on later reapplication.
+        childHeadFactorX, // Preserve head aspect ratio on subsequent hand/portrait rig rescaling.
+        childBodyWidthScale: child?.width ?? null,
+        childBodyHeightScale: child?.height ?? null,
         childBodyScale: child ? child.body : null,
         bodyScaleX: resolved.x,
         bodyScaleY: resolved.y,

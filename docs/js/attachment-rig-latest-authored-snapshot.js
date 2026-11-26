@@ -7,13 +7,18 @@
   'use strict';
   const selfUrl = document.currentScript?.src ? new URL('./', document.currentScript.src) : null;
   const base = selfUrl || new URL('./js/', location.href);
+  const needsAgeAuthoring = /\/tools\/animation-author\/(?:index\.html)?$/.test(location.pathname); // Only the editor needs family age defaults ahead of lineup.
   const urls = [
-    new URL('../config/character-rig-scale-defaults.js?v=20261113uniformRigStride2', base).href,
+    new URL('../config/character-rig-scale-defaults.js?v=20261125babyToddlerPreset2', base).href,
+    ...(needsAgeAuthoring ? [
+      new URL('../config/romance-config.js?v=20261125babyToddlerPreset2', base).href, // Authoring stage defaults precede lineup registration.
+      new URL('character-age-rig-config.js?v=20261125babyToddlerPreset2', base).href, // Shared runtime/author age proportions.
+    ] : []),
     new URL('attachment-rig-latest-authored-snapshot-core.js?v=20261114hrigcore1760', base).href,
     new URL('character-rig-maoao-authored-20260905.js?v=20260905b', base).href,
     new URL('mammakhbuur-species-runtime.js?v=20261116maoPerch2', base).href,
-    new URL('nuhongan-species-runtime.js?v=20261116maoPerch2', base).href,
-    new URL('longoran-species-runtime.js?v=20261120longoranApprovedV2', base).href,
+    new URL('nuhongan-species-runtime.js?v=20261122hbfe3b84', base).href,
+    new URL('longoran-species-runtime.js?v=20261122h76a9f21', base).href,
     new URL('harlyao-species-runtime.js?v=20261116maoPerch2', base).href,
     new URL('omgurku-connector-rig.js?v=20261022pantsFallback1', base).href,
     new URL('omgurku-species-runtime.js?v=20261028h1e29db1', base).href,
@@ -24,16 +29,16 @@
     new URL('boney-shinjimi-skeleton-species-runtime.js?v=20261116boney1', base).href,
     new URL('maskbound-guardian-species-runtime.js?v=20261101maskrear1', base).href,
     new URL('porakaneki-species-runtime.js?v=20260924poracolor2&rearHead=1', base).href,
-    new URL('character-rig-scale.js?v=20261113uniformRigStride2', base).href,
-    new URL('character-rig-scale-avatar-runtime.js?v=20261031hbf28f8b', base).href,
+    new URL('character-rig-scale.js?v=20261125babyToddlerPreset2', base).href,
+    new URL('character-rig-scale-avatar-runtime.js?v=20261125babyToddlerPreset2', base).href,
     new URL('maoao-arm-tint-runtime.js?v=20260907a', base).href,
     new URL('shoulder-camera-character-framing.js?v=20261024h224e340', base).href,
     new URL('shoulder-camera-reset-button.js?v=20261007h767d135', base).href,
     new URL('character-rig-pixel-probe-runtime.js?v=20260905a', base).href,
-    new URL('character-scale-comparison-host-bridge.js?v=20261113longoranscales5', base).href,
-    new URL('character-scale-comparison.js?v=20261120longoranScale7', base).href,
-    new URL('character-scale-comparison-body-input-guard.js?v=20260905b', base).href,
-    new URL('character-scale-comparison-presentation.js?v=20261113longoranscales5', base).href,
+    new URL('character-scale-comparison-host-bridge.js?v=20261122h0ddc348', base).href,
+    new URL('character-scale-comparison.js?v=20261125babyToddlerPreset2', base).href,
+    new URL('character-scale-comparison-body-input-guard.js?v=20261124rawHeadParity1', base).href,
+    new URL('character-scale-comparison-presentation.js?v=20261124rawHeadParity1', base).href,
     new URL('animation-author-rig-gameplay-appearance.js?v=20261017a', base).href,
   ];
   const loadSequentially = list => list.reduce((promise, src) => promise.then(() => new Promise((resolve, reject) => {

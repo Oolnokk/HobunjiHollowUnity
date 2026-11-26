@@ -1,0 +1,271 @@
+// Shared age-rig authoring bridge. The family walker uses independently authored phase width/height and
+// PNGPlaneAvatar.childScaleFor; the Animation Author reads these same values.
+// Editing a draft does not affect gameplay until the author explicitly applies
+// it on this device. No world/save mutations or per-frame hooks are installed.
+(() => {
+  'use strict';
+  if (window.HobunjiCharacterAgeRigConfig) return;
+
+  const SCHEMA = 'hobunji.character-age-rig-modifiers.v1'; // Validates the editor's export and the applied browser override.
+  const APPLIED_KEY = 'hobunji.character-age-rig-active.v1'; // Only an explicit Apply action writes this game-facing preference.
+  const AXES = ['width', 'height', 'head', 'hand', 'foot', 'widthConvergence', 'heightConvergence']; // Independent body axes plus head and GLB limb sizes for every growth stage.
+  const MODES = ['baby', 'toddler', 'child']; // Adult reference never receives a size override.
+  const family = window.HobunjiRomanceConfig?.family;
+  const png = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar;
+  if (!family || !png) {
+    console.warn('[age-rig] family or portrait configuration unavailable; leaving gameplay defaults unchanged');
+    return;
+  }
+  const positive = (v, fallback) => {
+    const n = Number(v); // Shared input normalization for repository, imported, and applied percentages.
+    return Number.isFinite(n) && n > 0 ? n : fallback;
+  };
+  const isConvergence = axis => axis === 'widthConvergence' || axis === 'heightConvergence'; // Unitless 0–1 strength, unlike the size multipliers.
+  const convergence = value => Math.max(0, Math.min(1, Number.isFinite(Number(value)) ? Number(value) : 0));
+  const stage = (source, fallback) => Object.fromEntries(AXES.map(axis => [
+    axis, isConvergence(axis) ? convergence(source?.[axis]) : positive(source?.[axis] ?? (axis === 'width' || axis === 'height' ? source?.body : null),
+      fallback[axis] ?? fallback.body),
+  ])); // Old body-only authoring maps to BOTH width and height; never discard existing saved stages.
+  const defaults = {
+    baby: stage(family.phaseScales?.basket, { width: .32, height: .32, head: .50, hand: 1.2, foot: 1.2 }),
+    toddler: stage(family.phaseScales?.toddler, { width: .4, height: .4, head: .66, hand: 1, foot: 1 }),
+    child: {
+      width: positive(png.childWidthScaleMultiplier, positive(png.childScaleMultiplier, .5)), // Old child size was uniform; new config may override width independently.
+      height: positive(png.childScaleMultiplier, .5),
+      head: positive(png.childHeadScaleMultiplier, .72),
+      widthConvergence: convergence(png.childWidthConvergence), // Stage-specific authored strength.
+      heightConvergence: convergence(png.childHeightConvergence),
+      hand: positive(family.childLimbModifiers?.hand, 1),
+      foot: positive(family.childLimbModifiers?.foot, 1),
+    },
+  }; // Captured BEFORE a browser-local override, so Reset always means the checked-in repo configuration.
+  const clone = value => JSON.parse(JSON.stringify(value)); // Snapshot only tiny plain numeric maps; never share mutable config with callers.
+  const bounds = axis => axis === 'hand' || axis === 'foot' ? [.5, 2] : [.1, 2];
+  const valid = (value, axis, fallback) => {
+    if (value == null || value === '') return fallback;
+    const n = Number(value); // Ignore malformed autosaves, Infinity, NaN, missing fields, and negative sizes.
+    if (isConvergence(axis)) return Number.isFinite(n) ? convergence(n) : fallback;
+    if (!Number.isFinite(n) || n <= 0) return fallback;
+    const [min, max] = bounds(axis);
+    return Math.max(min, Math.min(max, n));
+  };
+
+  function sanitize(modifiers) {
+    const result = clone(defaults); // Isolated all-stage value map consumed by both export and runtime.
+    for (const mode of MODES) for (const axis of AXES)
+      result[mode][axis] = valid(modifiers?.[mode]?.[axis] ?? (axis === 'width' || axis === 'height' ? modifiers?.[mode]?.body : null), axis, defaults[mode][axis]); // Migrate old v1 body autosaves for both axes independently.
+    return result;
+  }
+
+  const identityKey = (species, gender) => `${String(species || '').toLowerCase().replace(/[’']/g, '').replace(/_/g, '-')}::${String(gender).toLowerCase() === 'female' || String(gender).toLowerCase() === 'f' ? 'female' : 'male'}`; // Shared editor/runtime identity, including distinct genders.
+  const sanitizeBasis = source => Object.fromEntries(Object.entries(source || {}).filter(([key, row]) => /^[a-z0-9-]+::(male|female)$/.test(key) && Number.isFinite(row?.width) && row.width > 0 && Number.isFinite(row?.height) && row.height > 0).map(([key, row]) => [key, { width: Math.max(.02, Math.min(50, row.width)), height: Math.max(.02, Math.min(50, row.height)) }])); // Portable dimension ratios, never pixels or cosmetics.
+  const repositoryBasis = sanitizeBasis(png.ageConvergenceBasis); // Freeze the deployed reference before local override restoration.
+
+  const PROFILE_AXES = ['width','height','head','hand','foot']; // Individual stage controls, distinct from temporary convergence and overall scale.
+  const importedBaby = {
+    "kenkari::male": {"width":0.561,"height":0.303,"head":0.626,"hand":1.66,"foot":1.62},
+    "kenkari::female": {"width":0.613,"height":0.27699999999999997,"head":0.9359999999999999,"hand":1.66,"foot":1.62},
+    "tletingan::male": {"width":0.613,"height":0.355,"head":0.846,"hand":1.66,"foot":1.62},
+    "tletingan::female": {"width":0.613,"height":0.27699999999999997,"head":0.846,"hand":1.66,"foot":1.62},
+    "nuhongan::male": {"width":0.691,"height":0.303,"head":0.885,"hand":1.66,"foot":1.62},
+    "nuhongan::female": {"width":0.7809999999999999,"height":0.2,"head":0.9359999999999999,"hand":1.66,"foot":1.62},
+    "longoran::male": {"width":0.5870000000000001,"height":0.14800000000000002,"head":0.755,"hand":1.66,"foot":1.62},
+    "longoran::female": {"width":0.5870000000000001,"height":0.14800000000000002,"head":0.768,"hand":1.66,"foot":1.62},
+    "engh-sho::male": {"width":0.7012768800050903,"height":0.2775602587932603,"head":0.97,"hand":1.66,"foot":1.62},
+    "engh-sho::female": {"width":0.7236330221529035,"height":0.30470860905813646,"head":0.97,"hand":1.66,"foot":1.62},
+    "mao-ao::male": {"width":0.8204021391894106,"height":0.2521045076794498,"head":0.97,"hand":1.66,"foot":1.62},
+    "mao-ao::female": {"width":0.7931984954922331,"height":0.28493927228373717,"head":0.97,"hand":1.66,"foot":1.62},
+    "mashtzarr::male": {"width":0.27699999999999997,"height":0.122,"head":0.5,"hand":2,"foot":1.699},
+    "mashtzarr::female": {"width":0.355,"height":0.161,"head":0.5489999999999999,"hand":2,"foot":2},
+    "mammakhbuur::male": {"width":0.30875868988571564,"height":0.083,"head":0.5,"hand":2,"foot":2},
+    "mammakhbuur::female": {"width":0.36271536503322704,"height":0.096,"head":0.574,"hand":2,"foot":2},
+    "harlyao::male": {"width":0.5113477250037115,"height":0.2218560282272236,"head":0.97,"hand":1.66,"foot":1.62},
+    "boney-shinjimi-skeleton::male": {"width":0.754749242105478,"height":0.2580480180203811,"head":0.97,"hand":1.66,"foot":1.62},
+    "harlyao-skeleton::male": {"width":0.5717797288677866,"height":0.21055245015383095,"head":0.97,"hand":1.66,"foot":1.62},
+    "harlyao-skeleton::female": {"width":0.6662246427059282,"height":0.23736267192154487,"head":0.97,"hand":1.66,"foot":1.62},
+    "mao-ao-skeleton::male": {"width":0.9240318830870201,"height":0.2574119709990172,"head":0.97,"hand":1.66,"foot":1.62},
+    "maskbound-guardian::male": {"width":0.754749242105478,"height":0.2580480180203811,"head":0.97,"hand":1.66,"foot":1.62},
+    "nohuknuk::male": {"width":0.4378697893131019,"height":0.35272258887024277,"head":0.97,"hand":1.66,"foot":1.62},
+    "omgurku::male": {"width":0.4644610720649097,"height":0.22159813155567568,"head":0.97,"hand":1.66,"foot":1.62},
+    "porakaneki::male": {"width":0.5132970237137927,"height":0.4466340538315023,"head":0.97,"hand":1.66,"foot":1.62},
+    "harlyao::female": {"width":0.6184486373165619,"height":0.2880658436213992,"head":0.97,"hand":1.66,"foot":1.62},
+  }; // Exact 26 baby profiles from hobunji_character_age_rig_modifiers(1).json; no new convergence or size correction.
+  const PRESET_VERSION = 2; // One-time upgrade of earlier baby/toddler drafts and applied profiles to the latest authored preset.
+  const importedToddler = Object.fromEntries(Object.entries(importedBaby).map(([key,row]) => [key, { ...row, height: row.height + .20 }])); // Add 20 percentage points to height only; independent editable toddler rows.
+  const repositoryProfiles = sanitizeProfiles(png.ageProfiles || { baby: importedBaby, toddler: importedToddler, child: {} }); // Accept the exported baked profile table as checked-in configuration.
+  function rigReference(adult) {
+    if (!adult || !['x','y','head'].every(axis => Number.isFinite(adult[axis]) && adult[axis] > 0)) return null;
+    return { x: adult.x, y: adult.y, head: adult.head }; // Preserve the reference against which a younger stage's factors were authored.
+  }
+  function sanitizeProfiles(profiles) {
+    return Object.fromEntries(MODES.map(mode => [mode, Object.fromEntries(Object.entries(profiles?.[mode] || {})
+      .filter(([key, row]) => /^[a-z0-9-]+::(male|female)$/.test(key) && row && typeof row === 'object')
+      .map(([key, row]) => {
+        const values = Object.fromEntries(PROFILE_AXES.map(axis => [axis, Math.max(.01, Math.min(20, positive(row[axis], defaults[mode][axis])))]));
+        const reference = rigReference(row.adultReference);
+        return [key, reference ? { ...values, adultReference: reference } : values];
+      }))]));
+  }
+  function relativeProfile(row, adult) {
+    const reference = rigReference(row?.adultReference), current = rigReference(adult);
+    if (!reference || !current) return row;
+    return { ...row, width: row.width * reference.x/current.x, height: row.height * reference.y/current.y, head: row.head * reference.head/current.head };
+  } // Child factors are adjusted to the live adult rig, preserving baked dimensions even when the adult export has not been installed yet.
+  function profileFor(mode, species, gender, profiles = activeProfiles) {
+    const key = identityKey(species, gender); // Exact species+gender first; no shared male/female override.
+    const donor = identityKey(window.hobunjiTransformSpeciesId?.(species) || species, gender);
+    return profiles?.[mode]?.[key] || profiles?.[mode]?.[donor] || null;
+  }
+  function scaledProfile(row, factor) {
+    return { ...row, width: row.width * factor, height: row.height * factor, head: row.head * factor }; // Hands/feet are local relative-size factors: the body transform already scales their geometry.
+  }
+  function stageConvergenceBasis(rows, adultBasis) {
+    const values = Object.entries(rows).map(([key, row]) => [key, { width: positive(adultBasis?.[key]?.width, 1) * row.width, height: positive(adultBasis?.[key]?.height, 1) * row.height }]);
+    if (!values.length) return {};
+    const mean = axis => Math.exp(values.reduce((sum, [,row]) => sum + Math.log(row[axis]), 0) / values.length);
+    const w = mean('width'), h = mean('height');
+    return Object.fromEntries(values.map(([key,row]) => [key,{width:row.width/w,height:row.height/h}]));
+  } // Repeated convergence operates on CURRENT individual proportions, not the original adults.
+  function convergeProfile(row, reference, strength) {
+    return { ...row, width: row.width * Math.pow(positive(reference?.width,1), -convergence(strength.widthConvergence)), height: row.height * Math.pow(positive(reference?.height,1), -convergence(strength.heightConvergence)) };
+  }
+
+  function buildConvergenceBasis(profiles = []) {
+    const dimensions = window.HobunjiCharacterDimensions; // Cached bare-art alpha bounds: never scan pixels in the slider or spawn path.
+    const rig = window.HobunjiCharacterRigScale;
+    const rows = new Map(); // One measurement per distinct species/gender, including both sexes.
+    for (const profile of profiles) {
+      const { species, gender } = profile;
+      const key = identityKey(species, gender);
+      if (rows.has(key)) continue;
+      const authored = rig?.scaleFor?.(species, gender, profile.profile) || window.HobunjiCharacterRigScaleDefaults?.scaleFor?.(species, gender);
+      if (!authored) continue;
+      const measured = dimensions?.dimensionsFor?.(species, gender, { rigScale: authored, age: 0 });
+      const width = positive(measured?.body?.width, 0); // Body only: head size stays independently controllable.
+      const nominalHeight = positive(rig?.heightBeltlineFor?.(authored)?.height, positive(authored.y, 1));
+      const legDelta = (nominalHeight - positive(authored.y, 1)) * positive(measured?.factors?.modelHeight, 0); // Estimate the independent leg reach beyond the portrait-only crown metric.
+      const height = positive(Number(measured?.height) + legDelta, 0);
+      if (width > 0 && height > 0) rows.set(key, { width, height });
+    }
+    if (!rows.size) return {};
+    const reference = axis => Math.exp([...rows.values()].reduce((sum, row) => sum + Math.log(row[axis]), 0) / rows.size); // Geometric mean is the neutral midpoint for multiplicative scaling across the complete lineup.
+    const width = reference('width'), height = reference('height');
+    return sanitizeBasis(Object.fromEntries([...rows].map(([key, row]) => [key, { width: row.width / width, height: row.height / height }])));
+  }
+
+  function resolveStageAxes(authored, phase, identity = null, basis = null) {
+    const p = phase || {}; // Physical cross-lineup dimensions supersede the old per-rig factors when a measured reference is available.
+    const base = authored || {};
+    const key = identity && identityKey(identity.species, identity.gender); // Exact art identity first, donor alias only if necessary.
+    const map = basis || png.ageConvergenceBasis || repositoryBasis;
+    const measured = key && (map[key] || map[identityKey(window.hobunjiTransformSpeciesId?.(identity.species) || identity.species, identity.gender)]);
+    const adultWidth = positive(measured?.width, positive(base.x, 1));
+    const adultHeight = positive(measured?.height, positive(window.HobunjiCharacterRigScale?.heightBeltlineFor?.(base)?.height,
+      (positive(base.y, 1) + positive(base.legLength, positive(base.y, 1))) / 2)); // Unmeasured identities retain the nominal fallback.
+    return {
+      width: positive(p.width, positive(p.body, 1)) * Math.pow(adultWidth, -convergence(p.widthConvergence)),
+      height: positive(p.height, positive(p.body, 1)) * Math.pow(adultHeight, -convergence(p.heightConvergence)),
+    }; // At zero the previous behavior is exact; at full strength measured adult-axis differences converge toward the shared reference.
+  }
+
+  function composePreviewScale(authored, phase, identity = null, basis = null) {
+    const p = phase || { width: 1, height: 1, head: 1 }; // Runtime already bakes independently scaled X/Y into its child portrait.
+    const base = authored || { x: 1, y: 1, head: 1, offsetY: 0 };
+    const axes = resolveStageAxes(base, p, identity, basis); // Same correction used by the live child portrait builder.
+    return {
+      x: positive(base.x, 1) * axes.width,
+      y: positive(base.y, 1) * axes.height,
+      head: positive(base.head, 1) * positive(p.head, 1),
+      offsetY: Number.isFinite(Number(base.offsetY)) ? Number(base.offsetY) : 0,
+    }; // Equivalent final body/head proportions: runtime child head bone = head/body, then the already-shrunken portrait supplies body.
+  }
+
+  function applyToConfig(modifiers, basis = repositoryBasis) {
+    const values = sanitize(modifiers); // Reused for load, Apply and Reset so the live runtime never sees unvalidated values.
+    family.phaseScales ||= {};
+    for (const [mode, phase] of [['baby', 'basket'], ['toddler', 'toddler']])
+      family.phaseScales[phase] = { ...(family.phaseScales[phase] || {}), ...values[mode], body: values[mode].height }; // Legacy consumers still receive the vertical body scale; new portrait builder reads width separately.
+    family.childLimbModifiers = { ...(family.childLimbModifiers || {}), hand: values.child.hand, foot: values.child.foot };
+    png.childScaleMultiplier = values.child.height; // Existing child scale remains the vertical size for legacy gameplay readers.
+    png.childWidthScaleMultiplier = values.child.width; // New independent child width, used only by the portrait builder.
+    png.childHeadScaleMultiplier = values.child.head;
+    png.childWidthConvergence = values.child.widthConvergence; // Ordinary child portraits read these; family stages carry their own values.
+    png.childHeightConvergence = values.child.heightConvergence;
+    png.ageConvergenceBasis = sanitizeBasis(basis); // Both family and ordinary children share this frozen deployment reference, even before the game scans art.
+    return values;
+  }
+
+  function upgradePresetProfiles(profiles, version) {
+    const saved = sanitizeProfiles(profiles || {}); // Preserve the independently authored child table; replace only the two explicitly updated stages.
+    if (Number(version) >= PRESET_VERSION) return saved;
+    return { ...saved, baby: clone(repositoryProfiles.baby), toddler: clone(repositoryProfiles.toddler) };
+  }
+
+  function readApplied() {
+    try {
+      const data = JSON.parse(localStorage.getItem(APPLIED_KEY) || 'null');
+      return data?.schema === SCHEMA && data.modifiers && typeof data.modifiers === 'object'
+        ? { modifiers: sanitize(data.modifiers), basis: sanitizeBasis(data.convergenceBasis || repositoryBasis), profiles: upgradePresetProfiles(data.profiles, data.presetVersion), needsPresetUpgrade: !(Number(data.presetVersion) >= PRESET_VERSION) } : null;
+    } catch (error) {
+      console.warn('[age-rig] invalid applied authoring data, using repository proportions', error);
+      return null;
+    }
+  }
+
+  let activeProfiles = sanitizeProfiles(repositoryProfiles); // Repository preset is available before any child portrait or family limb builds.
+  const stored = readApplied(); // Saved device override is activated once, before family world/spawn initialization.
+  let applied = stored ? applyToConfig(stored.modifiers, stored.basis) : null;
+  if (stored?.profiles) activeProfiles = stored.profiles;
+  if (stored?.needsPresetUpgrade) {
+    // Persist the one-time upgrade, without overwriting later deliberate edits or the child stage.
+    try { localStorage.setItem(APPLIED_KEY, JSON.stringify({ schema: SCHEMA, presetVersion: PRESET_VERSION, modifiers: applied, convergenceBasis: stored.basis, profiles: activeProfiles })); } catch (_) {}
+  }
+
+  function applyOnThisDevice(modifiers, basis = repositoryBasis, profiles = null) {
+    const values = sanitize(modifiers); // Explicit editor action only; never triggered by a draft slider or autosave.
+    const reference = sanitizeBasis(basis); // Persist measured identity ratios atomically with stage settings for game/editor parity on reload.
+    const nextProfiles = profiles ? sanitizeProfiles(profiles) : sanitizeProfiles(repositoryProfiles); // Explicit apply persists baked individual values, not transient slider settings.
+    localStorage.setItem(APPLIED_KEY, JSON.stringify({ schema: SCHEMA, presetVersion: PRESET_VERSION, modifiers: values, convergenceBasis: reference, profiles: nextProfiles }));
+    activeProfiles = nextProfiles;
+    applied = applyToConfig(values, reference);
+    return clone(applied);
+  }
+
+  function restoreRepositoryOnThisDevice() {
+    localStorage.removeItem(APPLIED_KEY); // Does not touch drafts or permanent game saves.
+    applied = null;
+    activeProfiles = sanitizeProfiles(repositoryProfiles);
+    applyToConfig(defaults);
+    return clone(defaults);
+  }
+
+  function nonFamilyChildLimbsFor(npc) {
+    const record = npc || {}; // Only independent child NPCs need the generic attach-time hook; family stages retain FamilyBabyLimbs ownership.
+    const tags = Array.isArray(record.tags) ? record.tags.map(tag => String(tag).toLowerCase()) : [];
+    const child = record.isChild === true || String(record.role || '').toLowerCase() === 'child' || tags.includes('child');
+    if (!child || tags.includes('family') || record.homeId === 'farmhouse') return null;
+    const current = applied || defaults; // Follows the same active child proportion used by PNGPlaneAvatar and the family config.
+    const individual = profileFor('child', record.appearance?.speciesId || record.speciesId || record.species, record.appearance?.gender || record.gender);
+    return { hand: individual?.hand ?? current.child.hand, foot: individual?.foot ?? current.child.foot, phase: 'child', owner: 'generic-child-visuals' };
+  }
+
+  window.HobunjiCharacterAgeRigConfig = Object.freeze({
+    schema: SCHEMA,
+    appliedStorageKey: APPLIED_KEY,
+    repositoryDefaults: () => clone(defaults),
+    presetVersion: PRESET_VERSION,
+    upgradePresetProfiles,
+    repositoryProfiles: () => clone(repositoryProfiles),
+    effectiveProfiles: () => clone(activeProfiles),
+    sanitizeProfiles, profileFor, scaledProfile, stageConvergenceBasis, convergeProfile, identityKey, rigReference, relativeProfile,
+    effectiveValues: () => clone(applied || defaults),
+    sanitize,
+    composePreviewScale,
+    resolveStageAxes,
+    buildConvergenceBasis,
+    nonFamilyChildLimbsFor,
+    applyOnThisDevice,
+    restoreRepositoryOnThisDevice,
+    snapshot: () => ({ applied: !!applied, values: clone(applied || defaults), convergenceBasis: clone(png.ageConvergenceBasis || repositoryBasis), profiles: clone(activeProfiles) }),
+  }); // Also exposed to existing mobile debug panels; no devtools required.
+})();

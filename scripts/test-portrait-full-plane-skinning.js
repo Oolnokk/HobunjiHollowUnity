@@ -35,8 +35,8 @@ assert.match(authorGeometry, /new THREE\.PlaneGeometry\(modelWidth, modelHeight,
   'animation author skins one complete rectangular source plane');
 assert.doesNotMatch(authorGeometry, /scanOpaque|alphaThreshold|cellHasOpaquePixel/,
   'animation-author mesh coverage is independent of portrait opacity');
-assert.match(attackEditorSource, /whole-plane grid cells · \$\{coverageMode\}/,
-  'attack editor exposes whole-plane skin coverage without requiring developer tools');
+assert.match(attackEditorSource, /\$\{planeCellCount\} grid cells · \$\{coverageMode\}/,
+  'attack editor exposes full-plane cell count and coverage without developer tools');
 
 const gameHatOverlayStart = gameSource.indexOf('async function buildPlayerHatXrayOverlay'); // Used below to isolate the gameplay overlay builder.
 const gameHatOverlayEnd = gameSource.indexOf('async function refreshPlayerAvatar', gameHatOverlayStart);
