@@ -234,7 +234,7 @@ assert.equal(api.diagnostics().lastStartFailure.scale.x,0,'invalid-scale diagnos
  assert(game.includes('getPlayerMesh: () => playerMesh, // Passes the real player avatar root'),'festival injection supplies that same world root');
  assert(game.includes("window.CharacterActionLocks?.isLocked?.('player', 'pose') === true"),'ordinary player mesh update respects paired pose ownership');
  assert(game.includes('window.FestivalWheelDanceRuntime?.isPartner?.(w)'),'ordinary NPC walker update skips the paired partner');
- const choreographyUpdate='window.FestivalWheelDanceRuntime?.update?.(dt,paused,currentArea);'; // The sole paired pose commit point before rendering.
+ const choreographyUpdate='window.FestivalWheelDanceRuntime?.update?.(dt,worldPaused(),currentArea);'; // The sole paired pose commit point before rendering.
  const choreographyOffset=game.indexOf(choreographyUpdate); // Prevent an update-order regression that could hide only the player's dance.
  assert(choreographyOffset>game.indexOf('function updatePlayerMesh(dt)'), 'paired pose runs after the player mesh update function is defined');
  assert(game.lastIndexOf("window.RuntimeFrameScheduler.checkpoint('pre-render');",choreographyOffset)<choreographyOffset,'paired dance must run AFTER ordinary pre-render subscribers');

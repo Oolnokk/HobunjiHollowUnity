@@ -8,7 +8,7 @@
     "js/grass-billboard-render-chunks.js?v=20261112grasschunk1",
     "js/scissor-depth-snapshot.js?v=20261121hc90e239",
     "js/actor-render-occlusion.js?v=20261114farCull1",
-    "js/outline-composite-material.js?v=20261125deepHotpaths1",
+    "js/outline-composite-material.js?v=20261126h4258c8f",
     "js/character-visuals.js?v=20261124h21ad2df", // Character enumeration + visual capability table; game.js registers the provider.
     "js/character-held-tools.js?v=20261119charVisuals1", // Held tool/weapon planes for any character; game.js calls init() in its tool section.
     "js/world-render-pipeline.js?v=20261125probeReplay1", // Pass order, outline materials/targets and render scopes; game.js calls init() after its camera exists.
