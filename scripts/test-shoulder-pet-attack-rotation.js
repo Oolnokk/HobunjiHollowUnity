@@ -523,6 +523,8 @@ const detached={};oldRoot.parent=detached;
 const recoverySampler=win.ShoulderPetAttachmentRuntime.createPerchSampler(THREE);
 assert.ok(recoverySampler(outer,pixel,out),'replacement portrait resolves');
 assert.ok(recoverySampler(outer,pixel,out),'replacement remains cached');
+const secondLandmarkSampler=win.ShoulderPetAttachmentRuntime.createPerchSampler(THREE);
+assert.ok(secondLandmarkSampler(outer,{x:75,y:25},out),'second landmark resolves from same replacement');
 assert.equal(traversals,1,'stale shared root does not cause repeated hierarchy scans');
 delete oldRoot.parent;
 console.log('detached portrait recovery is cached');

@@ -12,6 +12,18 @@
   'use strict';
 
   const renderPins = new WeakMap(); // Only live, authoritatively pinned pet groups can participate in the render correction.
+  const recoveredPortraits = new WeakMap(); // Share validated replacement roots across the perch and head-center samplers.
+  function belongsToOwner(root,owner){for(let node=root;node;node=node.parent)if(node===owner)return true;return false;}
+  function resolvePortrait(owner,api){
+    const root=api?.resolveSkinnedPortraitRoot?.(owner);
+    if(!root || belongsToOwner(root,owner)){recoveredPortraits.delete(owner);return root||null;}
+    let replacement=recoveredPortraits.get(owner);
+    if(belongsToOwner(replacement,owner) && replacement.userData?.neckRig?.available && replacement.userData.neckRig.skinnedPlane?.skeleton && replacement.userData.sourceCanvas)return replacement;
+    replacement=null;
+    owner.traverse?.(n=>{if(!replacement && n.userData?.neckRig?.available && n.userData.neckRig.skinnedPlane?.skeleton && n.userData.sourceCanvas)replacement=n;});
+    if(replacement)recoveredPortraits.set(owner,replacement);else recoveredPortraits.delete(owner);
+    return replacement;
+  }
 
   // Compile the authored pixel into a few weighted bind-space control points.
   // The GPU interpolates already-skinned triangle vertices; grouping their
@@ -21,7 +33,6 @@
   function createPerchSampler(THREE) {
     const point = new THREE.Vector3(); // Scratch for one weighted bone contribution.
     let cached = null; // One fixed pixel per owner; rebuild on a mirror, rig or density change.
-    let recoveredRoot = null; // Reuse the replacement if the shared portrait resolver still remembers a detached avatar.
     function compile(mesh,u,v,pos,uv,indices,weights) {
       const geo=mesh.geometry,grid=geo.userData,rows=grid?.portraitGridRows;
       const sx=grid?.segmentsX,sy=grid?.segmentsY;
@@ -54,16 +65,8 @@
     function sample(owner,pixel,out) {
       if(!pixel || !Number.isFinite(Number(pixel.x)) || !Number.isFinite(Number(pixel.y)))return null;
       const api=window.PNGPlaneAvatar;
-      const belongs=root=>{for(let node=root;node;node=node.parent)if(node===owner)return true;return false;};
-      let root=api?.resolveSkinnedPortraitRoot?.(owner);
-      // A cached descendant can retain an immediate parent inside a detached
-      // avatar. Recover once, then verify ancestry without traversing again.
-      const stale=!!root && !belongs(root);
-      if(stale){
-        root=belongs(recoveredRoot)?recoveredRoot:null;
-        if(!root)owner.traverse?.(n=>{if(!root && n.userData?.neckRig?.available && n.userData.neckRig.skinnedPlane?.skeleton && n.userData.sourceCanvas)root=n;});
-        recoveredRoot=root;
-      }else recoveredRoot=null;
+      if(!owner)return null;
+      const root=resolvePortrait(owner,api);
       const mesh=root?.userData?.neckRig?.skinnedPlane,geo=mesh?.geometry,skeleton=mesh?.skeleton;
       const canvas=root?.userData?.sourceCanvas,w=Number(canvas?.naturalWidth||canvas?.width),h=Number(canvas?.naturalHeight||canvas?.height);
       if(mesh && skeleton?.bones?.length && mesh.bindMatrix && w>0 && h>0 && point.applyMatrix4){
@@ -92,7 +95,7 @@
       }
       // Legacy/irregular portrait builders retain the shared authoritative resolver.
       // The frame API is a compatibility fallback for old standalone editor fixtures.
-      if(stale && !root)return null; // Never fall back into the detached hierarchy.
+      if(!root && api?.resolveSkinnedPortraitRoot?.(owner))return null; // Never fall back into a detached hierarchy.
       const fallbackRoot=root || owner;
       if(typeof api?.resolveSkinnedPixelWorldPosition==='function')return api.resolveSkinnedPixelWorldPosition(fallbackRoot,pixel,out);
       const frame=api?.resolveSkinnedPixelWorldFrame?.(fallbackRoot,pixel);
@@ -211,8 +214,8 @@
     function prepareAway(owner,perch,grip,scale) {
       awayReady=false;
       if(!owner || !perch || !grip || !scale)return;
-      const root=window.PNGPlaneAvatar?.resolveSkinnedPortraitRoot?.(owner);
-      const pixel=root?.userData?.neckRig?.headCentroidPx;
+      const root=resolvePortrait(owner,window.PNGPlaneAvatar);
+      const pixel=root?.userData?.neckRig?.headCentroidPx; // Read the same validated avatar that will actually supply the skinned point.
       if(!pixel || !sampleHeadCenter(owner,pixel,awayCenter)){
         const neck=getPlayerNeckJoint();
         if(typeof neck?.getWorldPosition!=='function')return;
