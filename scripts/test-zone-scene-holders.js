@@ -33,6 +33,7 @@ function slice(source, from, to) {
     const actorXrayRoots = new Map(); // Used by the immediately preceding world frame.
     let actorXrayScene = null;
     const lastSceneScan = new WeakMap();
+    const scanJobs = new WeakMap();
 
     const pendingClassification = new Set(); // The deferred add queue also holds scene members until the next flush.
     ${forgetFn}

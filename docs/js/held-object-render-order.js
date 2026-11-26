@@ -1435,9 +1435,44 @@
   wrapAdd(objectProto, '__hobunjiHeldGroundXrayObjectAdd');
   wrapAdd(sceneProto, '__hobunjiHeldGroundXraySceneAdd');
 
-  function scanScene(scene, force = false) {
+  // The periodic repair walk used to classify the whole scene in one go (~22 ms on a 9,000-node Cloud Forest, the
+  // worst single stall in the frame). On a world frame it now runs as bounded slices of a snapshot of the same
+  // nodes: identical per-node work and identical repair cadence (a walk is due 750 ms after the previous one
+  // STARTED), just spread over a few frames. The first scan of a scene, forced scans and non-world renders stay
+  // synchronous, so registration is never later than before. Nodes detached mid-walk are skipped, and anything
+  // added mid-walk is already covered by the add hooks.
+  const SCAN_SLICE_BUDGET_MS = 3; // Per world frame; the clock is read every SCAN_SLICE_CHECK_NODES nodes.
+  const SCAN_SLICE_CHECK_NODES = 48;
+  const scanJobs = new WeakMap(); // scene -> { nodes, index } while a spread walk is in flight.
+  let classificationScanSlices = 0;
+  function advanceScanJob(scene, job) {
+    const started = performance.now();
+    const nodes = job.nodes;
+    const perf = window.PerfProfiler?.begin('held-overlay: fallback classification');
+    try {
+      let sinceCheck = 0;
+      while (job.index < nodes.length) {
+        const object = nodes[job.index++];
+        if (object !== scene && !object.parent) continue; // Detached since the snapshot.
+        classifyObject(object, scene);
+        if (++sinceCheck >= SCAN_SLICE_CHECK_NODES) {
+          sinceCheck = 0;
+          if (performance.now() - started >= SCAN_SLICE_BUDGET_MS) break;
+        }
+      }
+    } finally { window.PerfProfiler?.end(perf); }
+    classificationScanSlices++;
+    if (job.index >= nodes.length) scanJobs.delete(scene);
+  }
+
+  function scanScene(scene, force = false, spread = false) {
     if (!scene?.isScene || retiredScenes.has(scene)) return;
     if (classificationScheduled) flushClassification(); // Registries must reflect every add() made before this scan/render.
+    const job = scanJobs.get(scene);
+    if (job) {
+      if (spread && !force) { advanceScanJob(scene, job); return; } // Continue the in-flight walk; it is not restarted.
+      scanJobs.delete(scene); // A forced or non-world scan supersedes it and walks synchronously below.
+    }
     const now = performance.now();
     const previous = lastSceneScan.get(scene);
     // With every actor category off, seed an existing scene once and rely on the add hooks
@@ -1447,6 +1482,14 @@
     lastSceneScan.set(scene, now);
     classificationFullScans++;
     if (force) classificationForcedScans++;
+    if (spread && !force && previous !== undefined && !scene.parent) {
+      const nodes = [];
+      scene.traverse(object => { nodes.push(object); }); // Same visit order as classifyTree: the root first, then every descendant.
+      const spreadJob = { nodes, index: 0 };
+      scanJobs.set(scene, spreadJob);
+      advanceScanJob(scene, spreadJob);
+      return;
+    }
     const perf = window.PerfProfiler?.begin('held-overlay: fallback classification');
     const world = window.RenderHooks?.currentWorldFrame?.();
     const detail = world ? window.PerfProfiler?.begin(scene === world.scene ? 'held classification: active world' : 'held classification: auxiliary scene') : null;
@@ -3765,7 +3808,7 @@
       if (hasDisabledActorXray) refreshActorXrayRoots(scene);
       syncShoulderPetLayering(camera); // Reassert paired-sprite policy after other actor depth writers.
     }
-    scanScene(scene);
+    scanScene(scene, false, baseWorldPass); // A world frame spreads the periodic repair walk over several frames.
     if (isShellOutlinePass(scene, camera)) {
       if (hasDisabledActorXray && actorXrayScene !== scene) refreshActorXrayRoots(scene);
       const shellOthers = []; // Non-participant shells stay in the ordinary shell pass (normal depth).
@@ -3885,7 +3928,7 @@
       waterOnlyBranchPruneEnabled, waterOnlyPrunedFrames, waterOnlyPrunedBranches, waterOnlyPruneFallbacks,
       mixedWaterBranchPruneEnabled, mixedWaterPrunedFrames, mixedWaterPrunedBranches, mixedWaterPruneFallbacks, mixedWaterVisited,
       replayRegistryMemoEnabled, registryAncestorReads, registryAncestorHits, frontRegistryReuses,
-      slowClassificationFallbackEnabled, classificationFullScans, classificationForcedScans, classificationExplicitInvalidations,
+      slowClassificationFallbackEnabled, classificationFullScans, classificationScanSlices, classificationForcedScans, classificationExplicitInvalidations,
       mode: 'ordinary-depth-replay',
       legacyHeldRenderOrder: LEGACY_HELD_RENDER_ORDER,
       heldOverlayLayer: HELD_OVERLAY_LAYER,
@@ -3993,6 +4036,7 @@
       for (const registry of registries) if (registry.delete(object)) removed++;
     });
     lastSceneScan.delete(scene);
+    scanJobs.delete(scene);
     return removed;
   }
 
@@ -4023,7 +4067,7 @@
       waterOnlyBranchPruneEnabled, waterOnlyPrunedFrames, waterOnlyPrunedBranches, waterOnlyPruneFallbacks,
       mixedWaterBranchPruneEnabled, mixedWaterPrunedFrames, mixedWaterPrunedBranches, mixedWaterPruneFallbacks, mixedWaterVisited,
       replayRegistryMemoEnabled, registryAncestorReads, registryAncestorHits, frontRegistryReuses,
-      slowClassificationFallbackEnabled, classificationFullScans, classificationForcedScans, classificationExplicitInvalidations,
+      slowClassificationFallbackEnabled, classificationFullScans, classificationScanSlices, classificationForcedScans, classificationExplicitInvalidations,
       baseWorldRenderCount, selectiveOverlayCount, nonGroundDepthReplayCount, groundDepthRestoreCount,
       waterReplayCount,
       ordinaryDepthSceneWalksAvoided, emptyOrdinaryDepthPassesAvoided, emptyHeldReplayTransactionsAvoided,

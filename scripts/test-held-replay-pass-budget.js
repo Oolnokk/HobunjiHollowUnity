@@ -172,6 +172,7 @@ const disabled = new Function('assert', [
     const tintCoverRegistry = {all:new Set()};
     let time=0, wet=false, classificationScheduled=false;
     let lastSceneScan = new WeakMap();
+    const scanJobs = new WeakMap(), advanceScanJob = () => { throw Error('the all-off entry point must not run a spread walk'); }, classifyObject = () => {};
     const FALLBACK_SCAN_INTERVAL_MS=750, CLASSIFICATION_PILOT_INTERVAL_MS=3000, retiredScenes=new WeakSet(), internalReplay=false;
     let slowClassificationFallbackEnabled=false, classificationFullScans=0, classificationForcedScans=0;
     const actorXrayEnabled={animals:false,enemies:false,player:false}, actorXrayRoots=new Map();
