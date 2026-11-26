@@ -127,12 +127,17 @@ assert.ok(RS.getAffliction(enemy, 'frostbittenStamina') > 0, '1. Frostbitten app
 
 // ── 9-11: Immundanity ─────────────────────────────────────────────
 function immFor(state) { gear = { weaponEnchantments: { w: state } }; return ES.getWeaponImmundanity('w'); }
-// Planes: sicced=Tothal fury=Hronal moralized=Kanthic resolve=Ohthic frostbitten=Tothal burning=Hronal mirrored=Kanthic livingGust=Ohthic livingFlame=Hronal
+// Planes: sicced=Tothal fury=Hronal moralized=Kanthic resolve=Ohthic frostbitten=Tothal burning=Hronal mirrored=Kanthic livingGust=Tothal livingFlame=Hronal
 assert.equal(immFor({ base: ['frostbitten'], flourishes: {} }), 1, 'Tothal 1 → 1');
 assert.equal(immFor({ base: ['frostbitten', 'burning'], flourishes: {} }), 0, '9. Tothal + Hronal cancel');
 assert.equal(immFor({ base: ['frostbitten'], flourishes: { tap1: 'sicced', tap2: 'fury' } }), 1, 'Tothal 2, Hronal 1 → 1');
 assert.equal(immFor({ base: ['frostbitten', 'burning'], flourishes: { tap1: 'sicced', tap2: 'fury' } }), 0, '11. Tothal 2, Hronal 2 → 0 (one-for-one, not Cartesian)');
-assert.equal(immFor({ base: ['mirrored', 'livingGust'], flourishes: {} }), 0, '10. Kanthic + Ohthic cancel');
+assert.equal(immFor({ base: ['mirrored', 'ancestralSight'], flourishes: {} }), 0, '10. Kanthic + Ohthic cancel');
+assert.equal(immFor({ base: ['livingGust', 'burning'], flourishes: {} }), 0, 'Living Gust cancels Hronal');
+assert.equal(immFor({ base: ['livingGust', 'mirrored'], flourishes: {} }), 2, 'Living Gust does not cancel Kanthic');
+assert.equal(immFor({ base: ['livingGust', 'frostbitten'], flourishes: {} }), 2, 'Living Gust stacks with Tothal');
+assert.equal(ES.planarCounts('w').Tothal, 2, 'Living Gust is counted as Tothal for presentation');
+assert.equal(ES.planarCounts('w').Ohthic, 0, 'Living Gust is no longer Ohthic');
 assert.equal(immFor({ base: ['frostbitten', 'mirrored'], flourishes: { tap1: 'sicced' } }), 3, 'Tothal 2, Kanthic 1 → 3');
 assert.equal(ES.getEnchantmentPowerMultiplier('w'), 1.3, '12. +10% enchantment power per Immundanity');
 assert.ok(Math.abs(ES.getMasteryPowerMultiplier('w') - 0.7) < 1e-9, '12. −10% mastery power per Immundanity');
@@ -346,7 +351,7 @@ const hitSet = new Set([center]);
 const affected = ES.applyPeripheralGust(gustCtx, hitSet);
 assert.equal(affected, 1, '19. only the peripheral target gets the gust');
 assert.equal(knockbacks[0].target, periph);
-const gustPower = ES.getEnchantmentPowerMultiplier('sword'); // Living Gust alone: Ohthic 1 → Immundanity 1 → ×1.1.
+const gustPower = ES.getEnchantmentPowerMultiplier('sword'); // Living Gust alone: Tothal 1 → Immundanity 1 → ×1.1.
 assert.ok(Math.abs(knockbacks[0].speed - 200 * (1 + 0.25 * gustPower) * 0.5) < 1e-9, '19. peripheral target gets half of the (power-scaled) +25% knockback');
 assert.equal(periph.health, 100, '19. no damage outside the real hit cone');
 assert.ok(gustCtx.modifiers.lunge > 1.24, '21. lunge goes through the attack context modifier (+25%)');

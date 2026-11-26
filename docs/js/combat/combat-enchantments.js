@@ -96,7 +96,7 @@
       description: 'Hits burn enemies and kindle the wielder. Rolling away Burning throws three times the cured fire into nearby enemies.',
     }),
     livingGust: Object.freeze({
-      id: 'livingGust', displayName: 'Living Gust', type: 'Base', alignment: 'Ohthic',
+      id: 'livingGust', displayName: 'Living Gust', type: 'Base', alignment: 'Tothal',
       icon: '〰', scalable: Object.freeze({ selfFootingCost: true }),
       description: 'Strengthens knockback and lunges, widens a knockback-only gust cone, and rewards attacks that topple their wielder.',
     }),
