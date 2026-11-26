@@ -448,6 +448,50 @@ assert.equal(win.Mounts.ridingDebug.orbitActive, false, 'switching from a ranged
 win.Combat.input.isAutoTargetEnabled = () => false;
 input.x = 0; input.y = 0;
 
+
+{
+  // Use the actual shared compositor, not a stubbed multiplication.
+  vm.runInContext(read('docs/js/combat/resource-system.js'), ctx);
+  const rs = win.ResourceSystem;
+  for (const actor of [player, mount]) {
+    Object.assign(actor, { maxHealth: 100, stamina: 100, maxStamina: 100, footing: 100, maxFooting: 100 });
+    rs.initEntity(actor);
+  }
+  mount.x = player.x = 30*T; mount.y = player.y = 8*T; // Open ground, far from the scripted rock hop.
+  const baseTop = win.Mounts.mountedTopSpeedPxS();
+  rs.addAffliction(player, 'weightlessStamina', 25);
+  rs.addAffliction(mount, 'leadboundStamina', 40);
+  assert(Math.abs(win.Mounts.mountedTopSpeedPxS() - baseTop*1.5*.7) < 1e-6, 'rider and mount mobility applied once each');
+  rs.removeAffliction(player, 'weightlessStamina', 100);
+  rs.removeAffliction(mount, 'leadboundStamina', 100);
+  win.GameRandom.random = () => 0;
+  rs.addAffliction(player, 'windblownStamina', 100);
+  win.GameRandom.random = () => .25;
+  rs.addAffliction(mount, 'windblownStamina', 100);
+  const compose = rs.composeMountedMovement;
+  let composed = null;
+  rs.composeMountedMovement = (...args) => { composed = compose(...args); return composed; };
+  input.x = 0; input.y = 0;
+  const x = mount.x, y = mount.y;
+  win.Mounts.updateMountedMovement(.05);
+  assert(composed, 'coasting mount uses the shared mounted compositor');
+  assert(Math.abs(mount.x-x-composed.x)<1e-6 && Math.abs(mount.y-y-composed.y)<1e-6, 'one actual mounted sweep contains both winds');
+  assert.equal(player.x,mount.x); assert.equal(player.y,mount.y);
+  assert.equal(player.footing,100); assert.equal(mount.footing,100);
+  win.FeyIllusions = { movementRotationRad: actor => actor === player ? Math.PI/2 : 0 };
+  input.x=1; input.y=0;
+  assert(win.Mounts.jumpMount());
+  composed = null;
+  win.Mounts.updateMountedMovement(.05);
+  assert(Math.abs(player.inputX)<1e-6 && Math.abs(player.inputY-1)<1e-6, 'Demented rotates mounted reins once');
+  assert(composed && win.Mounts.ridingDebug.jumping, 'ordinary mounted jump retains the shared wind sweep');
+  assert.equal(player.x,mount.x); assert.equal(player.y,mount.y);
+  rs.removeAffliction(player,'windblownStamina',100); rs.removeAffliction(mount,'windblownStamina',100);
+  rs.composeMountedMovement=compose; delete win.FeyIllusions;
+  for(let i=0;i<40 && win.Mounts.ridingDebug.jumping;i++) win.Mounts.updateMountedMovement(1/60);
+  input.x=0;input.y=0;
+}
+
 // Dismounting mid-jump releases visual hop state immediately, without losing the rider/mount transition.
 assert.equal(win.Mounts.jumpMount(), true, 'manual hop begins before dismount');
 assert.equal(win.Mounts.ridingDebug.jumping, true);
