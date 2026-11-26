@@ -61,6 +61,22 @@ for (const policy of ['rule', 'all']) {
 }
 api.setPolicy('rule');
 assert.deepEqual(api.split([playerHand, playerBlade], scene, [], false, true), [playerHand, playerBlade], 'hands and weapons are unchanged');
+// Water-only selection uses the real selector with explicit scope/volume fixtures.
+const wetFoot = node('wet_foot', player, {hobunjiProceduralFoot:true});
+const dryFoot = node('dry_foot', player, {hobunjiProceduralFoot:true});
+const wetPants = node('wet_pants', player, {hobunjiPantsGarment:true});
+const distantFoot = node('distant_foot', tall, {hobunjiProceduralFoot:true});
+const cover = {userData:{hobunjiWaterTileFootprint:{bounds:[0,0,1,1]}}};
+const selectWaterOnly = new Function('createLocalReplayFilter','hasDisabledActorXray','actorXrayEnabled','actorXrayGroup','isReplayParticipant','actorXrayScope','tintCoverNearActor','actorStandsInWater','meshOverlapsWaterVolume',
+  slice('  function selectWaterOnlyFeet(', '  function splitXrayGroupsForTint(') + '\nreturn selectWaterOnlyFeet;')(
+  () => mesh => mesh !== distantFoot, false, {}, () => null, () => true,
+  mesh => mesh.parent, () => true, () => true, mesh => mesh === wetFoot);
+const dryOthers = [wetFoot,dryFoot,wetPants,distantFoot,playerBlade], wetOnly = [];
+selectWaterOnly(scene,[cover],dryOthers,wetOnly);
+assert.deepEqual(wetOnly,[wetFoot,wetPants], 'water-only path selects actual submerged foot and pants but not dry, distant or unrelated gear');
+assert.deepEqual(dryOthers,[dryFoot,distantFoot,playerBlade], 'selected water-only meshes are removed from suppression list exactly once');
+assert.match(source,/if \(forceOrdinary\?\.has\(mesh\)\) \{ ordinary\.push\(mesh\); continue; \}/, 'water-only meshes skip ground region construction');
+assert.match(source,/buildXrayGroups\(renderer, scene, camera, overlayMeshes, null, waterOnlyFeet\)/, 'visible water-only feet explicitly enter ordinary group');
 api.setFootXray(true); // Existing fixtures verify the explicit legacy comparison still works.
 // The shipped local gate keeps whole actors together, independent of the camera.
 assert.equal(api.ringDefault, true);
