@@ -157,4 +157,28 @@ function runFrame({ rearmAfterReplays, scene, elapsedBeforeSecondaryPasses = 0 }
   assert.equal(records[0].matricesUpdated, true, 're-arming with an old computedAt does not revive stale matrices');
 }
 
+// 6. An isolated probe scene (actor / distant-scenery occlusion proxies) renders between the PNG-depth and the outline
+// passes of every frame. It never touches the world scene's matrices, so when it opts in with
+// userData.hobunjiOutlineSequenceNeutral it must not end the reuse sequence; otherwise the next pass re-walks the
+// whole scene and the world-text overlay (which needs an unbroken sequence) re-walks it again.
+{
+  const run = probeUserData => {
+    const renderer = new Renderer(), world = makeWorld();
+    const camera = { layers: new Layers(1) };
+    camera.layers.enableAll(); renderer.setRenderTarget({}); // Every layer + offscreen target: what a base render (and the probe's own render) looks like.
+    records.length = 0;
+    renderer.render(world, camera); // Base render: walks the scene.
+    camera.layers.set(4); renderer.render(world, camera); // PNG occluder depth: reuses.
+    camera.layers.enableAll();
+    renderer.render({ ...makeOtherScene('probe'), userData: probeUserData }, camera); // Occlusion probe proxy scene.
+    world.overrideMaterial = shellMaterial; camera.layers.set(1); renderer.render(world, camera); world.overrideMaterial = null; // Outline pass.
+    return records.filter(r => r.scene === 'world').map(r => r.matricesUpdated);
+  };
+  assert.deepEqual(run({ hobunjiOutlineSequenceNeutral: true }), [true, false, false],
+    'a neutral probe scene leaves the base matrices valid for every later world pass');
+  assert.deepEqual(run({}), [true, false, true],
+    'control: an unflagged scene still ends the sequence, so the next world pass re-walks');
+  assert.deepEqual(run(undefined), run({}), 'scenes without userData behave exactly as before');
+}
+
 console.log('Outline matrix reuse checks passed.');
