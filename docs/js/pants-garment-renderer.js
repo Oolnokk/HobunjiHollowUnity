@@ -1120,6 +1120,22 @@
             for (const side of LEG_SIDES) if (handle.rings[side]) handle.rings[side].influence[i] *= 1 - waist;
           }
         }
+        // Lock the bilinear cuff samples to their own width field, including samples
+        // between grid vertices. Leave genuinely shared or waist-adjacent vertices alone.
+        const cuffOwners = new Uint8Array(stride * stride);
+        for (let sideIndex = 0; sideIndex < LEG_SIDES.length; sideIndex++) {
+          const side = LEG_SIDES[sideIndex];
+          for (const sample of handle.splineSpec[side + 'Ankle'].samples) {
+            for (const index of [sample.i, sample.i + 1, sample.i + stride, sample.i + stride + 1]) cuffOwners[index] |= 1 << sideIndex;
+          }
+        }
+        for (let i = 0; i < cuffOwners.length; i++) {
+          if (handle.waistWidthInfluence[i] > 0 || (cuffOwners[i] !== 1 && cuffOwners[i] !== 2)) continue;
+          for (let sideIndex = 0; sideIndex < LEG_SIDES.length; sideIndex++) {
+            const ring = handle.rings[LEG_SIDES[sideIndex]];
+            if (ring) ring.influence[i] = cuffOwners[i] === (1 << sideIndex) ? 1 : 0;
+          }
+        }
       }
       const measuredBounds = legHandle.getTorsoBeltBounds?.(); // Isolated base art is shared per species/gender.
       const bounds = measuredBounds || (torsoFit && { left: torsoFit.center - torsoFit.width / 2, right: torsoFit.center + torsoFit.width / 2 });
