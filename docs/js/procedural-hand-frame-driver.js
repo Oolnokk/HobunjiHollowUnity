@@ -432,7 +432,8 @@
     }
     quaternion.multiply(visualBasis.quaternion);
     if (gripFrame) {
-      const p = gripFrame.position || {};
+      const rawPoint = gripFrame.position || {};
+      const p = global.HeldGroundPose?.adjustGrip?.(toolHolder, rawPoint) || rawPoint; // The same longitudinal map as the visible weapon.
       const localOffset = new Vector3(Number(p.x) || 0, Number(p.y) || 0, Number(p.z) || 0)
         .applyQuaternion(visualBasis.quaternion);
       if (visualBasis.mirrorX) localOffset.x = -localOffset.x; // Backhand reflects the entire weapon child after its sweep-plane twist, so hands must follow that same final handle location.
@@ -1054,6 +1055,19 @@
   }
 
   global.ProceduralHandFrameDriver = {
+    groundPoseContext(holder, itemKey) {
+      if(inAttackEditor()||!gameDeps?.playerMesh||holder!==gameDeps.toolHolder)return null;
+      for(const record of managed) {
+        if(record.rig?.parent!==gameDeps.playerMesh||record.avatarRoot?.userData?.proceduralHandToolHolder||currentToolHolder(record)!==holder)continue;
+        const key=currentToolKey(record);
+        if(!key||toolGrips.isDualWieldWeapon?.(key)||currentGripContext(record)!=='melee')return null;
+        const identity={speciesId:record.speciesId,gender:record.gender,rigScaleY:Number(record.avatarRoot?.userData?.proceduralHandRigScaleY)||null};
+        return {rig:record.rig,primary:toolGrips.primaryGripForTool(key,'melee',identity),
+          secondary:toolGrips.secondaryGripForTool(key,'melee',identity),basis:visualGripBasisDelta(record,holder).quaternion,
+          profile:toolGrips.lengthProfileForTool?.(itemKey||key)};
+      }
+      return null;
+    },
     syncNow() {
       const results = [];
       for (const record of managed) {

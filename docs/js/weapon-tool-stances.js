@@ -537,6 +537,11 @@
         SAP.anchorScaleAtPoint?.(this, grip, targetPose.scale);
       }
 
+      const clearance = window.HeldGroundPose; // Use the very same raw grip basis as the hand driver, before transient child-plane twist.
+      const clearanceContext = clearance?.enabled?.() && activeSlot === 'weapon' && !idleDualWield
+        && !window.HobunjiWeaponSpriteAssemblies?.definitionFor?.(itemKey,def)
+        ? window.ProceduralHandFrameDriver?.groundPoseContext?.(this,itemKey) : null;
+
       // game.js writes a -90° local-Z twist into the child plane whenever the
       // active animation is sweep. That twist belongs to the sweep motion, not
       // to the shared Heavy/Light Neutral stance. Cancel it at Neutral itself
@@ -560,6 +565,12 @@
 
       let result;
       try {
+        if (clearanceContext) {
+          const beforePosition=this.position.clone(),beforeQuaternion=this.quaternion.clone();
+          if(clearance.constrainWeapon(this,mesh,clearanceContext)) {
+            savedPosition ||= beforePosition; savedQuaternion ||= beforeQuaternion;
+          }
+        } else clearance?.clear?.(); // Unequip, unsupported assemblies or A/B disable restore the original geometry.
         result = originalUpdateMatrixWorld.call(this, force);
         lastBakedHolderMatrixWorld = this.matrixWorld.clone();
       } finally {

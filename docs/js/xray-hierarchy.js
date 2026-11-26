@@ -55,6 +55,10 @@
       order: 9, label: 'Weapons follow hands in the layer hierarchy', default: 'on', options: ['on', 'off'],
       help: 'on: tools share the hand priority in the held overlay. off: tools get an independent overlay rank. Owner front-art masking is configured separately.',
     },
+    'ground.heldPose': {
+      order: 12, label: 'Experimental held ground pose', default: 'rotation', options: ['xray', 'rotation'],
+      help: 'rotation: player rigid weapons shorten authored sections, then rotate about the grip; proven clear hands and weapons retain ground depth. Unsupported poses keep legacy x-ray. xray: original behavior.',
+    },
     'ground.showZone': {
       order: 10, label: 'Show ground X-ray zone', default: 'off', options: ['on', 'off'],
       help: 'Dev-only translucent circle at the player standing elevation; not a rendering behavior override.',
@@ -276,7 +280,7 @@
     return !!snapshot && typeof snapshot === 'object' && !!snapshot.rules
       && typeof snapshot.rules === 'object' && validDrawOrder(snapshot.drawOrder)
       && keys.every(key => RULES[key].options.includes(snapshot.rules[key])
-        || (key === 'ground.showZone' && snapshot.rules[key] === undefined)) // Legacy pre-preset backups omit this new rule.
+        || (['ground.showZone','ground.heldPose'].includes(key) && snapshot.rules[key] === undefined)) // Legacy pre-preset backups omit this new rule.
       && ['held', 'world'].includes(snapshot.stage)
       && DRAW_LAYER_IDS.has(snapshot.layer);
   }
@@ -569,6 +573,7 @@
             ...(selectedPresetId !== activePresetId && selectedPreset
               ? [['Next test hypothesis', selectedPreset.hypothesis]] : []),
             ['Render model', 'World → held/foot depth replay → water tint; outlines separate'],
+            ['Held pose constraint', JSON.stringify(window.HeldGroundPose?.snapshot?.() || {})],
             ['Ground X-ray zone', 'World-space filled circle, radius 1.5 tiles; ' + (state['ground.showZone'] === 'on' ? 'debug visible' : 'debug hidden')],
             ['Ground depth overrides (last replay)', String(live.forcedGroundDepthMaterials ?? '-')],
             ['Ordinary held parts', String(live.xrayOrdinaryMeshes ?? '-')],
@@ -610,6 +615,9 @@
             { id: 'set', args: { key: 'hand.frontPlaneMask' }, label: 'Hands vs owner front art',
               value: state['hand.frontPlaneMask'], options: RULES['hand.frontPlaneMask'].options.map(value => ({ value, label: value })),
               group: 'Front portrait occlusion', title: RULES['hand.frontPlaneMask'].help },
+            { id: 'set', args: { key: 'ground.heldPose' }, label: RULES['ground.heldPose'].label,
+              value: state['ground.heldPose'], options: RULES['ground.heldPose'].options.map(value => ({ value, label: value })),
+              group: 'World depth and airborne replay', title: RULES['ground.heldPose'].help },
             { id: 'toggle-ground-zone', label: 'Show ground X-ray circle in the world', checkbox: true,
                checked: state['ground.showZone'] === 'on', group: 'World depth and airborne replay', title: RULES['ground.showZone'].help },
             { id: 'toggle-floor-punch', label: 'Use stencil floor punch (A/B test)', checkbox: true,

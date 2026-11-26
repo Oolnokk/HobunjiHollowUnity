@@ -730,7 +730,8 @@
   }
 
   function lengthProfileForTool(value) {
-    return normalizeLengthProfile(ensureTool(value)?.lengthProfile);
+    const raw = data.tools[toolKeyFor(value)]?.lengthProfile; // Fast legacy path: no allocation or repeated normalization for unmeasured items.
+    return raw ? normalizeLengthProfile(raw) : null;
   }
 
   function actualCharacterHeight(speciesId, gender, rigScaleY = null) {

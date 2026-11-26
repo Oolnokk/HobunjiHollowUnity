@@ -769,3 +769,8 @@ with reseeding when toggled. No claim is made that all legacy semantic
 writers publish invalidation yet. Unannounced changes can be delayed,
 so test visually before promoting this experiment. Probe records full
 scans, forced scans, explicit invalidations and active/auxiliary costs.
+
+
+## Experimental ground pose (player only)
+
+X-ray Hierarchy → World depth and airborne replay → Experimental held ground pose switches rotation / legacy xray. The branch defaults to rotation. A rigid single-plane melee weapon is solved inside WeaponToolStances' temporary matrix bake, keeping the primary grip fixed. Explicit measured A/B item-space Z endpoints and heightFraction override the legacy relative scale; optional disjoint segments contract by equal fractional strain down to minSegmentScale before grip-pivot rotation. Twisted planes may rotate but do not contract; independent multi-sprite, flail, dual-wield and NPC weapons retain legacy behavior. A failed clearance solve retains x-ray. Ground support is sampled by PlayerJump, not by visual body Y; ordinary free hands can lift within authored arm reach. The regular held-depth, owner mask, water tint, pants, feet, and combat collision remain independent. Mobile X-ray Hierarchy reports floor, original/final clearance, rotation, shortening and fallback reason. Authored profiles are opt-in; no existing weapon lengths were guessed or migrated.
