@@ -104,7 +104,7 @@
       id: 'stormwake', displayName: 'Windblown', type: 'Base', alignment: 'Tothal',
       icon: '🌊', scalable: Object.freeze({ amount: true }),
       hitAffliction: Object.freeze({ id: 'windblownStamina', amount: 6 }),
-      description: 'Each hit adds 6 Windblown Stamina and changes the world-space wind direction. The wind adds movement up to 50% of authored speed at 100 points; moving with it costs Footing, moving against it slows travel. Naturally fades. Values scale with Immundanity.',
+      description: 'Each hit adds 6 Windblown Stamina and changes the world-space wind direction. The wind adds movement up to 50% of available speed on the ground or 75% in midair at 100 points; moving with it costs Footing (50% more in midair), moving against it slows travel. Naturally fades. Values scale with Immundanity.',
     }),
     stonebind: Object.freeze({
       id: 'stonebind', displayName: 'Leadbound', type: 'Base', alignment: 'Hronal',
