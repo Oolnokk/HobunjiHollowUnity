@@ -359,7 +359,7 @@
   function setFlourish(key, slotId, enchantmentId, options = {}) {
     if (!(window.Combat?.loadout?.SLOT_IDS || ['tap1','tap2','hold1','hold2']).includes(slotId)) return false;
     const def = DEFINITIONS[enchantmentId];
-    if (enchantmentId && !allowsFlourishSlot(enchantmentId, slotId)) return false;
+    if (enchantmentId && !allowsFlourishSlot(enchantmentId, slotId) && !(options.importLegacySlot === true && def?.type === 'Flourish')) return false; // Only an already-owned bound relic may import a now-inactive legacy slot.
     const state = stateFor(key, true);
     if (enchantmentId) state.flourishes[slotId] = enchantmentId;
     else delete state.flourishes[slotId];
@@ -439,7 +439,7 @@
     const out = [attacker].filter(Boolean);
     for (const actor of window.Combat?.deps?.companionObjects || []) {
       if (!actor || actor.health <= 0 || actor.stableRole === 'shoulderPet') continue;
-      if ((actor.master || attacker) === attacker) out.push(actor);
+      if ((actor.master || window.Combat?.deps?.player) === attacker) out.push(actor); // An unowned/player pet must never inherit a hostile attacker's Flourish.
     }
     return out;
   }
@@ -487,7 +487,7 @@
   }
   // Planar effects share one data-driven application path; resource transactions own their unique behavior.
   function livingActor(actor) {
-    return !!actor && Number(actor.health) > 0 && !actor._downed
+    return !!actor && Number(actor.health) > 0 && !actor._downed && !actor._denHidden && !actor._deathTransitionStarted
       && !window.RomanceFamily?.isBasketBaby?.(actor.rec?.id || actor.id);
   }
 
