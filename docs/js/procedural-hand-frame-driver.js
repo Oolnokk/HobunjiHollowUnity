@@ -432,7 +432,8 @@
     }
     quaternion.multiply(visualBasis.quaternion);
     if (gripFrame) {
-      const p = gripFrame.position || {};
+      const rawPoint = gripFrame.position || {};
+      const p = global.HeldGroundPose?.adjustGrip?.(toolHolder, rawPoint) || rawPoint; // The same longitudinal map as the visible weapon.
       const localOffset = new Vector3(Number(p.x) || 0, Number(p.y) || 0, Number(p.z) || 0)
         .applyQuaternion(visualBasis.quaternion);
       if (visualBasis.mirrorX) localOffset.x = -localOffset.x; // Backhand reflects the entire weapon child after its sweep-plane twist, so hands must follow that same final handle location.
@@ -1054,6 +1055,25 @@
   }
 
   global.ProceduralHandFrameDriver = {
+    groundPoseContext(holder, itemKey) {
+      const preview=inAttackEditor();
+      if(preview?holder!==global.HobunjiAttackEditorToolContext?.toolHolder:(!gameDeps?.playerMesh||holder!==gameDeps.toolHolder))return null;
+      for(const record of managed) {
+        if((!preview&&record.rig?.parent!==gameDeps.playerMesh)||record.avatarRoot?.userData?.proceduralHandToolHolder||currentToolHolder(record)!==holder)continue;
+        const key=preview?toolGrips.toolKeyFor(itemKey):currentToolKey(record);
+        if(!key||currentGripContext(record)!=='melee')return null;
+        const identity={speciesId:record.speciesId,gender:record.gender,rigScaleY:Number(record.avatarRoot?.userData?.proceduralHandRigScaleY)||null};
+        const dual=!!toolGrips.dualWieldStateForTool?.(key,'melee',identity);
+        return {rig:record.rig,itemKey:itemKey||key,preview,scaleIdentity:identity,dual,
+          offhand:dual?toolGrips.offhandPrimaryGripForTool?.(key,'melee',identity):null,
+          fitIdentity:[identity.speciesId,identity.gender,identity.rigScaleY||'',toolGrips.actualCharacterHeight?.(identity.speciesId,identity.gender,identity.rigScaleY)||''].join(':'),
+          authoredGripZ:toolGrips.authoredPrimaryGripForTool(key,'melee')?.position?.z,
+          primary:toolGrips.primaryGripForTool(key,'melee',identity),
+          secondary:toolGrips.secondaryGripForTool(key,'melee',identity),basis:visualGripBasisDelta(record,holder).quaternion,
+          profile:toolGrips.groundProfileForTool?.(itemKey||key)};
+      }
+      return null;
+    },
     syncNow() {
       const results = [];
       for (const record of managed) {

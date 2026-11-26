@@ -55,6 +55,10 @@
       order: 9, label: 'Weapons follow hands in the layer hierarchy', default: 'on', options: ['on', 'off'],
       help: 'on: tools share the hand priority in the held overlay. off: tools get an independent overlay rank. Owner front-art masking is configured separately.',
     },
+    'ground.heldPose': {
+      order: 13, label: 'Held weapon ground clearance', default: 'rotation', options: ['rotation', 'ordinary'],
+      help: 'rotation: fit the authored-size weapon in Light stance, then rotate about the grip. ordinary: disable geometric correction for comparison. Both modes use solid terrain depth; weapon ground X-ray is disabled.',
+    },
     'feet.groundXray': {
       order: 12, label: 'Feet and pants ground X-ray (legacy A/B)', default: 'off', options: ['off', 'on'],
       help: 'off: feet and pants use ordinary world depth and outlines, relying on scaled geometric contact. on: restore the legacy selective ground replay for comparison.',
@@ -280,13 +284,14 @@
     return !!snapshot && typeof snapshot === 'object' && !!snapshot.rules
       && typeof snapshot.rules === 'object' && validDrawOrder(snapshot.drawOrder)
       && keys.every(key => RULES[key].options.includes(snapshot.rules[key])
-        || (['ground.showZone', 'feet.groundXray'].includes(key) && snapshot.rules[key] === undefined)) // Legacy pre-preset backups omit this new rule.
+        || (key === 'ground.heldPose' && snapshot.rules[key] === 'xray')
+        || (['ground.showZone','ground.heldPose','feet.groundXray'].includes(key) && snapshot.rules[key] === undefined)) // Legacy pre-preset backups omit this new rule.
       && ['held', 'world'].includes(snapshot.stage)
       && DRAW_LAYER_IDS.has(snapshot.layer);
   }
   function applyConfiguration(snapshot) {
     if (!validConfiguration(snapshot)) return false; // Fully validate before mutating any live rules.
-    for (const key of keys) set(key, snapshot.rules[key] ?? RULES[key].default);
+    for (const key of keys) set(key, key === 'ground.heldPose' && snapshot.rules[key] === 'xray' ? 'rotation' : snapshot.rules[key] ?? RULES[key].default);
     setDrawOrder(snapshot.drawOrder);
     selectedStage = snapshot.stage;
     selectedLayer = snapshot.layer;
@@ -314,7 +319,7 @@
   }
   function matchesConfiguration(snapshot) {
     return validConfiguration(snapshot)
-      && keys.every(key => state[key] === (snapshot.rules[key] ?? RULES[key].default))
+      && keys.every(key => state[key] === (key === 'ground.heldPose' && snapshot.rules[key] === 'xray' ? 'rotation' : snapshot.rules[key] ?? RULES[key].default))
       && drawOrder.every((id, index) => id === snapshot.drawOrder[index]);
   }
   function persistDiagnosticSession() {
@@ -573,6 +578,7 @@
             ...(selectedPresetId !== activePresetId && selectedPreset
               ? [['Next test hypothesis', selectedPreset.hypothesis]] : []),
             ['Render model', 'World → held/foot depth replay → water tint; outlines separate'],
+            ['Held pose constraint', JSON.stringify(window.HeldGroundPose?.snapshot?.() || {})],
             ['Ground X-ray zone', 'World-space filled circle, radius 1.5 tiles; ' + (state['ground.showZone'] === 'on' ? 'debug visible' : 'debug hidden')],
             ['Ground depth overrides (last replay)', String(live.forcedGroundDepthMaterials ?? '-')],
             ['Ordinary held parts', String(live.xrayOrdinaryMeshes ?? '-')],
@@ -614,6 +620,9 @@
             { id: 'set', args: { key: 'hand.frontPlaneMask' }, label: 'Hands vs owner front art',
               value: state['hand.frontPlaneMask'], options: RULES['hand.frontPlaneMask'].options.map(value => ({ value, label: value })),
               group: 'Front portrait occlusion', title: RULES['hand.frontPlaneMask'].help },
+            { id: 'set', args: { key: 'ground.heldPose' }, label: RULES['ground.heldPose'].label,
+              value: state['ground.heldPose'], options: RULES['ground.heldPose'].options.map(value => ({ value, label: value })),
+              group: 'World depth and airborne replay', title: RULES['ground.heldPose'].help },
             { id: 'toggle-ground-zone', label: 'Show ground X-ray circle in the world', checkbox: true,
                checked: state['ground.showZone'] === 'on', group: 'World depth and airborne replay', title: RULES['ground.showZone'].help },
             { id: 'toggle-floor-punch', label: 'Use stencil floor punch (A/B test)', checkbox: true,

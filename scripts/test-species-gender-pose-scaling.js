@@ -137,7 +137,7 @@ assert.match(localDb, /speciesPoseOrbitScales/, 'local database override system 
 assert.doesNotMatch(editor, /id="poseOrbitScale"|orbitScalesDownloadBtn|orbitScalesSaveOverrideBtn|orbitScalesClearOverrideBtn/, 'Attack Editor must not expose retired per-species weapon-scale authoring controls');
 assert.doesNotMatch(editor, /setOverride\('speciesPoseOrbitScales'|setScale\?\.\(\$\('avatarSpecies'\)\.value, \$\('avatarGender'\)\.value/, 'Attack Editor must not author per-species weapon scale anymore');
 assert.match(editor, /character-dimensions\.js\?v=/, 'Attack Editor must load the calculated character-height service used by weapon sizing');
-assert.match(handGripSource, /'handToolHeightMultiplier', 'Height multiplier'/, 'Attack Editor held-item metadata UI must replace species scale authoring with a per-weapon height multiplier');
+assert.match(handGripSource, /'handToolHeightMultiplier', 'Species scale multiplier'/, 'Attack Editor held-item metadata UI must replace species scale authoring with a per-weapon height multiplier');
 assert.match(handGripSource, /effectiveToolScaleForTool/, 'held-item runtime must expose the shared base + calculated-height effective scale');
 assert.match(editor, /currentPoseOrbitScale/, 'editor may still consume legacy species pose-orbit data internally for pose POSITION mapping');
 assert.match(editor, /untransformPosePoint[\s\S]*currentAvatarModelHeight[\s\S]*currentPoseOrbitScale/, 'editor gizmo inverse must undo both horizontal pose orbit and rigger-height Y mapping');

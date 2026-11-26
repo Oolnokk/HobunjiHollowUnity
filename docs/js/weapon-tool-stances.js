@@ -537,6 +537,34 @@
         SAP.anchorScaleAtPoint?.(this, grip, targetPose.scale);
       }
 
+      const clearance = window.HeldGroundPose; // Use the very same raw grip basis as the hand driver, before transient child-plane twist.
+      const assembly=window.HobunjiWeaponSpriteAssemblies?.definitionFor?.(itemKey,def);
+      const clearanceContext = clearance?.enabled?.() && activeSlot === 'weapon'
+        // The solver checks exact topology, including emitter-only children.
+        ? window.ProceduralHandFrameDriver?.groundPoseContext?.(this,itemKey) : null;
+      if(clearanceContext) {
+        clearanceContext.flexibleHaft=window.HobunjiWeaponSpriteAssemblies?.assemblyKind?.(mesh)==='flail'||!!assembly?.flail; // Suspension is solved separately by its existing owner.
+        const scaleIdentity=clearanceContext.scaleIdentity; // Height readiness matters only for explicitly enabled species scaling.
+        const grips=window.HobunjiHandToolGrips;
+        clearanceContext.allowFit=(stanceApplied||!targetPose)&&!attackInProgress&&!authoredToolActionActive&&(!grips?.heightMultiplierForTool?.(itemKey)||grips?.characterHeightReady?.(scaleIdentity?.speciesId,scaleIdentity?.gender)!==false);
+        if(clearanceContext.allowFit&&mesh&&clearance.needsFit(clearanceContext,mesh))grips?.applyHeldItemPlacement?.(mesh,itemKey,'melee',scaleIdentity);
+        // Size every weapon from the authored LIGHT neutral, regardless of
+        // which stance actually owns this frame. Restore the live pose before baking.
+        if(clearanceContext.allowFit&&window.PlayerJump?.heldPoseGrounded?.()===true&&mesh&&clearance.needsFit(clearanceContext,mesh)){
+          const livePosition=this.position.clone(),liveQuaternion=this.quaternion.clone();
+          try{
+            if(savedPosition&&savedQuaternion){this.position.copy(savedPosition);this.quaternion.copy(savedQuaternion);}
+            const lightFrame=applyRelativeHolderPose(this,sourcePose,idleStances.lightWeapon);
+            deps?.scaleToolWorldPointAroundPlayerCentroid?.(this.position,lightFrame.yawRad);
+            this.updateMatrix();
+            clearanceContext.lightReference=this.matrix.clone(); // Local matrix; solver composes the same world/plane transforms.
+            clearanceContext.lightReferenceFlailScale=SAP.validFlailLength?.(idleStances.lightWeapon.flailLengthScale)??1;
+          }finally{
+            this.position.copy(livePosition);this.quaternion.copy(liveQuaternion);this.updateMatrix();
+          }
+        }
+      }
+
       // game.js writes a -90° local-Z twist into the child plane whenever the
       // active animation is sweep. That twist belongs to the sweep motion, not
       // to the shared Heavy/Light Neutral stance. Cancel it at Neutral itself
@@ -560,6 +588,12 @@
 
       let result;
       try {
+        if (clearanceContext) {
+          const beforePosition=this.position.clone(),beforeQuaternion=this.quaternion.clone();
+          if(clearance.constrainWeapon(this,mesh,clearanceContext)) {
+            savedPosition ||= beforePosition; savedQuaternion ||= beforeQuaternion;
+          }
+        } else clearance?.clear?.(); // Unequip, unsupported assemblies or A/B disable restore the original geometry.
         result = originalUpdateMatrixWorld.call(this, force);
         lastBakedHolderMatrixWorld = this.matrixWorld.clone();
       } finally {

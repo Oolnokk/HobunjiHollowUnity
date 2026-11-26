@@ -244,18 +244,18 @@
       THREE, scene, root: null, plane: null, head: null, nodes: [], headNodes: [],
       generation: -1, revision: -1, weaponKey: '', baseSource: null, progress: 0, ready: false,
       corner: new THREE.Vector3(), size: new THREE.Vector3(), center: new THREE.Vector3(), offset: new THREE.Vector3(),
-      ropeBounds: new THREE.Box3(), bounds: new THREE.Box3(), actor: new THREE.Vector3(), metalOptions: null,
+      ropeBounds: new THREE.Box3(), bounds: new THREE.Box3(), actor: new THREE.Vector3(), primaryCameraPosition: new THREE.Vector3(0,0,3), metalOptions: null,
     }; // All reusable scene and framing scratch objects are allocated once.
     return live;
   }
 
-  function applyPreviewPose(t) {
+  function applyPreviewPose(t, resetHeadMotion=false) {
     const l = live, sample = global.SharedAttackPose?.fourPhaseLerp; // Reuse the game's exact four-stage pose sampler.
     if (!sample) throw Error('Shared attack-pose sampler did not load');
     l.plane.rotation.set(sample(t, .16, .42, .72, 0, -1.1, .85), sample(t, .16, .42, .72, 0, -.25, .35), 0, 'YXZ');
     global.HobunjiWeaponSpriteAssemblies.setAction(l.root, {
       attacking: t > .001 && t < .999, progress: t,
-      movementPosition: l.actor, windupFrac: .16, strikeFrac: .42, holdFrac: .72,
+      resetHeadMotion, cameraPosition: l.primaryCameraPosition, movementPosition: l.actor, windupFrac: .16, strikeFrac: .42, holdFrac: .72,
     }); // Representative authoring swing; actual authored attacks remain available in the Attack Animation Editor.
   }
 
@@ -291,12 +291,12 @@
         l.root.traverse(child => { if (child.isMesh) l.nodes.push(child); }); // One shallow assembly scan after async layer construction, never a per-frame scene traversal.
         if (l.head) l.head.traverse(child => { if (child.isMesh) l.headNodes.push(child); });
         l.ready = true;
-        applyPreviewPose(0); api.tick(0);
+        applyPreviewPose(0,true); api.tick(0);
         for (let step = 0; step < 80; step++) api.tick(1 / 120, true); // Prime the real fire so a paused edit immediately shows its full steady-state strength.
       }
     }
     if (!options.playing && l.progress !== model.progress || l.progress < 0 && model.progress > 0) {
-      applyPreviewPose(0); api.tick(0);
+      applyPreviewPose(0,true); api.tick(0);
       const steps = Math.ceil(model.progress * DURATION * 120); // Reconstruct physical momentum on direct timeline seeks.
       for (let step = 1; step <= steps; step++) {
         applyPreviewPose(model.progress * step / steps);
@@ -393,6 +393,7 @@
         l.offset.copy(l.center).sub(view.center); view.camera.position.add(l.offset); view.controls.target.add(l.offset); view.center.copy(l.center); // Follow a moving head without replacing the author's orbit angle or zoom.
       }
       view.controls.update();
+      if(kind!=='head')l.primaryCameraPosition.copy(view.camera.position); // Combined view owns the shared simulation; head-only view inspects that same pose.
       view.renderer.render(l.scene, view.camera);
       lastLayout ||= {};
       lastLayout[kind] = { mode: 'gameplay-3d', ready: l.ready, partsReady: l.headNodes.length, partsExpected: model.parts.length, chainReady: !!l.head, haftReady: !!l.baseSource, fireReach: reach, worldHandleWidth: .5, cameraDistance: view.camera.position.distanceTo(view.controls.target) }; // Copy diagnostics includes actual world scale and framing.

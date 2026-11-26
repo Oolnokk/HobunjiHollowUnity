@@ -56,8 +56,10 @@ class DuplicateMesh {
   }
 }
 const builderSource = dual.slice(dual.indexOf('  function makeDuplicateMesh('), dual.indexOf('  function makeRoot(')); // Isolates the unchanged production factory dependencies.
+const fixtureGlobal = {}; // The source geometry owner is optional, but must be honored when installed.
 const builder = vm.runInNewContext(`(${builderSource.trim()})`, {
   HALF_Z_SEPARATION: 0.075,
+  global: fixtureGlobal,
   cloneOwnedMaterial: material => ({ ...material }),
 }); // Calls the actual factory for both anatomical sides.
 const sourcePlane = new DuplicateMesh({ axeBlade: true }, {}); // Shared source geometry must retain its authored handedness.
@@ -69,6 +71,13 @@ for (const side of ['main', 'off']) {
   assert.equal(copy.scale.z, 1);
   assert.equal(copy.position.z, side === 'main' ? -0.075 : 0.075);
 }
+
+// A temporary compressed buffer must not become a duplicate's permanent source.
+const originalGeometry = {original: true};
+fixtureGlobal.HeldGroundPose = {originalGeometryFor: geometry => {assert.equal(geometry, sourcePlane.geometry);return originalGeometry;}};
+assert.equal(builder(sourcePlane, 'main').geometry, originalGeometry);
+assert.equal(builder(sourcePlane, 'off').geometry, originalGeometry);
+delete fixtureGlobal.HeldGroundPose;
 
 class GripQuaternion {
   constructor(x = 0, y = 0, z = 0, w = 1) { this.set(x, y, z, w); }
