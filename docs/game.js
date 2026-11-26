@@ -6731,7 +6731,7 @@
           : c._cliffClimb ? c._cliffClimb.surfaceY
           : Number.isFinite(dynamicSurfaceY) ? dynamicSurfaceY
           : (g[row]?.[col] ? tileSurfaceYInArea(g[row][col], c.areaId) : 0);
-        const birdLift = c.stableRole === 'companion' && !c.prone && !(c.knockbackT > 0) && !c._knockbackLedgeFall
+        const birdLift = c.stableRole === 'companion' && !c.prone && !(c.knockbackT > 0) && !c._knockbackLedgeFall && !c.onBranch && !c.tzatzulCapturedBy
           ? (c._companionBirdMotion?.lift || 0) : 0; // Actual rendered body height for low flight and folded-wing hops.
         const surfY = knockbackVisualSurfaceY(c, ordinarySurfY) + birdLift;
         const grp = c.avatarRef.group;
@@ -8871,6 +8871,7 @@
           if (c.health <= 0) continue;
           if (c.areaId !== currentArea) continue;
           if (c.tzatzulCapturedBy) {
+            window.TzatzulLiveVisuals?.updateCompanionLocomotion?.(c, dt, 0, false, true); // A carrier owns height and position, not follower flight.
             updateCreatureMesh(c, dt, c.facing);
             updateCreatureAnimFrame(c, dt, false);
             continue; // Captured companions share the carrier's flight path instead of following their master.
