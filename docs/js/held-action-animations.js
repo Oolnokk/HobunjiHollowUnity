@@ -479,9 +479,9 @@
     new URL('config/hand-shoulder-points.js?v=20260818b', docsBase).href,
     new URL('config/hand-shoulder-pose-profiles.js?v=20260920localhinge1', docsBase).href,
     new URL('js/procedural-hand-foot-material-roles.js?v=20260821e', docsBase).href,
-    new URL('js/hand-tool-grips.js?v=20261125h30ec43c', docsBase).href,
+    new URL('js/hand-tool-grips.js?v=20261126fixedWeaponSize1', docsBase).href,
     new URL('js/hand-tool-grip-authored-overrides.js?v=20261022hbc21c80', docsBase).href, // Must follow hand-tool-grips.js: migrates authored spear/bshuakauitl grips onto its live data.
-    new URL('js/dual-wield-weapon-visuals.js?v=20261120hdd0485e', docsBase).href,
+    new URL('js/dual-wield-weapon-visuals.js?v=20261126dualGround1', docsBase).href,
     new URL('js/hand-grip-modes.js?v=20261005h2e47f31', docsBase).href,
     new URL('js/hand-shoulder-pose-runtime.js?v=20261123npcBabyCarry1', docsBase).href,
     new URL('js/portrait-arm-cloud-mask.js?v=20261005h2d40d1a', docsBase).href,
@@ -491,8 +491,8 @@
     new URL('js/procedural-hand-outline-parity.js?v=20261117handDepthReplay2', docsBase).href,
     new URL('js/attachment-rig-latest-authored-snapshot.js?v=20261126h4b1d215', docsBase).href,
     new URL('js/procedural-hand-scale-free-world.js?v=20261017h3921033', docsBase).href,
-    new URL('js/procedural-hand-shoulder-aim.js?v=20261119rigIdleHand2', docsBase).href,
-    new URL('js/procedural-hand-frame-driver.js?v=20261126neckAudit2', docsBase).href,
+    new URL('js/procedural-hand-shoulder-aim.js?v=20261126groundPose1', docsBase).href,
+    new URL('js/procedural-hand-frame-driver.js?v=20261126dualGround1', docsBase).href,
   ];
   if (isAttackEditor) {
     // The editor starts its first avatar rebuild immediately after these parser-time
@@ -513,7 +513,7 @@
     handScripts.push(new URL('js/weapon-idle-body-yaw-runtime.js?v=20261115hposelease05', docsBase).href);
     handScripts.push(new URL('js/weapon-stance-drop-runtime.js?v=20261115hposelease06', docsBase).href);
     handScripts.push(new URL('js/crossbow-strike-audio-trim.js?v=20260818a', docsBase).href);
-    handScripts.push(new URL('js/weapon-png-scale.js?v=20260902c', docsBase).href);
+    handScripts.push(new URL('js/weapon-png-scale.js?v=20261126fixedWeaponSize1', docsBase).href);
     handScripts.push(new URL('js/hand-pixel-probe-diagnostics.js?v=20261117toolWalkProbe1', docsBase).href);
   }
 

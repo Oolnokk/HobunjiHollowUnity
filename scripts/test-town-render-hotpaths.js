@@ -576,7 +576,7 @@ assert.ok(npcHeldEquipment.includes('walker.root.userData.hobunjiXrayActorRoot =
 assert.equal(resolveScope({ parent: actorScene }, actorScene, new Map()), null, 'unknown actor fails closed');
 
 const groupEnd = heldRender.indexOf('  const gearWaterBounds = ', elevationHelperEnd);
-const groupMeshes = new Function('actorXrayScope', 'replayScissorRect', 'isReplayCullable', heldRender.slice(elevationHelperEnd, groupEnd).replace(
+const groupMeshes = new Function('actorXrayScope', 'replayScissorRect', 'isReplayCullable', 'xrayRule', 'window', heldRender.slice(elevationHelperEnd, groupEnd).replace(
   '  function rectsOverlap', `  const XRAY_TILE_RADIUS = 1, XRAY_CIRCLE_RADIUS = 1.5, XRAY_MAX_BATCH_TILES = 8, XRAY_ELEVATION_GROUP_EPSILON = 0.05, XRAY_ELEVATION_TOLERANCE = 0.18;
   let lastElevationReplayGroups, lastUnknownElevationMeshes, lastXrayTileRegions, lastXrayOrdinaryMeshes, scissorMinimumWorldY = 2;
   const xrayGearRect = {}, xrayGroundRect = {};
@@ -592,6 +592,7 @@ const groupMeshes = new Function('actorXrayScope', 'replayScissorRect', 'isRepla
     return true;
   },
   () => true,
+  () => 'xray', {}, // Exercise legacy replay with the optional ground-fit route disabled.
 );
 const part = (col, row, elevation = 0, x = col + 0.5, z = row + 0.5) => ({ scope: { col, row, elevation }, x, z });
 const a = part(0, 0), sameTile = part(0, 0), far = part(10, 0), nearby = part(1, 0), upper = part(0, 0, 6);
@@ -961,7 +962,7 @@ assert.ok(shellDepthAt >= 0 && shellDepthAt < shellGroundFilterAt
   && shellGroundFilterAt < shellDepthDrawAt && shellDepthDrawAt < shellOnlyAt
   && shellOnlyAt < shellOutlineDrawAt && shellOutlineDrawAt < shellRestoreAt && shellRestoreAt < shellDepthRestoreAt,
   'shell replay prepares depth once, changes only the per-group elevation mask, then restores complete depth and materials');
-assert.ok(heldRender.includes('const shellCandidates = held.filter(mesh => hasLayer(mesh, SHELL_LAYER) && !isAuthoredInkPlane(mesh))')
+assert.ok((/const shellCandidates = held\.filter\(mesh => hasLayer\(mesh, SHELL_LAYER\)\s*&& mesh\.userData\?\.hobunjiProceduralHand !== true && !isAuthoredInkPlane\(mesh\)\)/).test(heldRender)
   && heldRender.includes('const xrayMeshes = filterOffscreenReplayMeshes(camera, shellCandidates)'),
   'held ground-X-ray participants retain shell parity before camera culling; feet stay in the ordinary outline pass');
 assert.ok(pixelProbe.includes('shellXray=${heldRenderDebug.shellXrayPasses ?? 0}/${heldRenderDebug.shellXrayMeshes ?? 0}'),

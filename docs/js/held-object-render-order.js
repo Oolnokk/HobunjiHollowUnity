@@ -452,7 +452,7 @@
   }
 
   // Central x-ray rules (js/xray-hierarchy.js). Defaults here only apply if that module is absent.
-  const XRAY_RULE_FALLBACK = { 'actors.order': 'all', 'pants.sortWithActor': 'on', 'weapon.frontPlaneMask': 'off', 'hand.frontPlaneMask': 'off', 'portrait.waterTint': 'wet-tile', 'layers.manualOrder': 'off', 'background.gearDepth': 'ignore', 'airborne.rebuildDepth': 'on', 'weapon.followHandLayer': 'on', 'ground.showZone': 'off', 'baby.carrierForeground': 'on' };
+  const XRAY_RULE_FALLBACK = { 'actors.order': 'all', 'pants.sortWithActor': 'on', 'weapon.frontPlaneMask': 'off', 'hand.frontPlaneMask': 'off', 'portrait.waterTint': 'wet-tile', 'layers.manualOrder': 'off', 'background.gearDepth': 'ignore', 'airborne.rebuildDepth': 'on', 'weapon.followHandLayer': 'on', 'ground.showZone': 'off', 'ground.heldPose': 'rotation', 'baby.carrierForeground': 'on' };
   function xrayRule(key) { return window.XrayHierarchy?.get?.(key) ?? XRAY_RULE_FALLBACK[key]; }
 
   const SHOULDER_PET_RENDER_ORDERS = Object.freeze({
@@ -3156,6 +3156,14 @@
         continue;
       }
       tintScopeByMesh.set(mesh, scope);
+      // Hands, held tools and their suspension parts never punch through the floor.
+      // Retain ordinary held/water/owner-mask compositing regardless of the geometric solve.
+      const data = mesh.userData;
+      const heldPart = data?.hobunjiProceduralHand === true || data?.hobunjiWeaponAssemblyPart === true
+        || (data?.hobunjiHeldObjectPlane === true && data.hobunjiProceduralFoot !== true && data.hobunjiPantsGarment !== true);
+      if (heldPart) {
+        ordinary.push(mesh); continue;
+      }
       if (forceOrdinary?.has(mesh)) { ordinary.push(mesh); continue; } // Water-only lower-body draws never open a ground region, even with valid actor elevation.
       const tileKey = scope.col + ',' + scope.row; // Exact grid tile identity; elevation still uses the existing epsilon comparison.
       let sameTile = regionsByTile.get(tileKey);
@@ -4655,7 +4663,8 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
       const skipsBefore = nonParticipantReplaySkips, budgetSkipsBefore = otherWeaponXrayBudgetSkips, ringSkipsBefore = localReplayRingSkips;
       const held = collectVisible(heldRegistry, scene, shellOthers);
       nonParticipantReplaySkips = skipsBefore; otherWeaponXrayBudgetSkips = budgetSkipsBefore; localReplayRingSkips = ringSkipsBefore; // Counted once a frame, by the base pass.
-      const shellCandidates = held.filter(mesh => hasLayer(mesh, SHELL_LAYER) && !isAuthoredInkPlane(mesh)); // Lower-body shells stay in the ordinary pass; PNG art already has ink.
+      const shellCandidates = held.filter(mesh => hasLayer(mesh, SHELL_LAYER)
+        && mesh.userData?.hobunjiProceduralHand !== true && !isAuthoredInkPlane(mesh)); // Hands and feet keep their ordinary 3D shells, without a ground replay.
       window.HobunjiHandOutlineParity?.refreshHeldMatrices?.(shellCandidates); // Refresh live hand matrices before camera culling or shell scissor projections.
       const xrayMeshes = filterOffscreenReplayMeshes(camera, shellCandidates);
       lastShellReplayCandidates = shellCandidates.length;
