@@ -74,14 +74,65 @@
     window.AudioSystem?.playWingflapSfx?.(actor); // One beat per flapping cycle, shared by Tzatzul, Pingdort and Skeeri.
   }
 
+  // Shared owned-bird locomotion. Existing navigation still decides safe horizontal movement;
+  // the caller supplies clearance at the actual previous/current footprint.
+  function updateCompanionLocomotion(actor, dt, movedPx, flightClear, interrupted = false) {
+    if (!actor?.def?.isFlyingSpecies || actor.stableRole !== 'companion') return;
+    const state = actor._companionBirdMotion || (actor._companionBirdMotion = { mode: 'perched', lift: 0, phase: 0 }); // Read by native and articulated renderers and Pixel Probe.
+    const step = Math.max(0, Math.min(.1, Number(dt) || 0)); // No giant hop or flap after tab resume.
+    const moving = Number(movedPx) > .08;
+    if (interrupted) {
+      state.mode = 'perched'; state.lift = 0; state.phase = 0;
+    } else if (moving && flightClear) {
+      state.mode = 'flight'; state.phase = 0;
+      state.lift = Math.min(.65, state.lift + step * 2.8);
+    } else if (moving) {
+      state.mode = 'hop';
+      state.phase += step * 21;
+      state.lift = Math.abs(Math.sin(state.phase)) * .13;
+    } else {
+      state.lift = flightClear ? Math.max(0, state.lift - step * 3.6) : 0;
+      state.mode = state.lift > 0 && state.mode === 'flight' ? 'flight' : 'perched';
+      state.phase = 0;
+    }
+    return state;
+  }
+
+  // Pure movement seam: only a successful clearance check may replace a ground detour.
+  function tryCompanionFlightStep(actor, tx, ty, speed, dt, direction, canFly) {
+    if (!actor?.def?.isFlyingSpecies || actor.stableRole !== 'companion' ||
+        ![actor.x, actor.y, tx, ty, speed, dt, direction].every(Number.isFinite) ||
+        speed <= 0 || dt <= 0 || typeof canFly !== 'function') return false;
+    const dx = tx - actor.x, dy = ty - actor.y, distance = Math.hypot(dx, dy);
+    if (distance < 1) return false;
+    const step = Math.min(distance, speed * Math.min(.1, dt)); // Bounded step; no tunneling after a long pause.
+    const nx = actor.x + dx / distance * step * direction, ny = actor.y + dy / distance * step * direction;
+    if (!canFly(actor.x, actor.y, nx, ny)) return false;
+    actor.vx = (nx - actor.x) / dt; actor.vy = (ny - actor.y) / dt;
+    actor.x = nx; actor.y = ny;
+    actor._travelPath = null; actor._travelPathTarget = null; actor._travelStuckT = 0; actor._travelPathFailure = null;
+    return true;
+  }
+
   function present(actor, state, camera) {
     if (!state.rig) return;
     const flightPose = isSkeeriActor(actor) ? actor.skeeriFlightPose : kind(actor)==='pingdort' ? actor.pingdortFlightPose : actor.tzatzulFlightPose; // All three flyers use the shared authored wing assembly.
     const hatchling = kind(actor) === window.TzatzulRegistration?.HATCHLING_KIND; // Perched artwork with no adult seated deformation.
-    const pose = hatchling ? 'hatchling' : flightPose === 'perched' || flightPose === 'glide'
+    const ownedBird = actor.isCompanion && actor.def?.isFlyingSpecies; // Only tame flyers opt out of the curled wild perch.
+    const ownedPose = actor._companionBirdMotion?.mode === 'flight' ? 'flap' : 'perched'; // Hops use folded wings and the native ground pose.
+    const pose = hatchling ? 'hatchling' : ownedBird && !actor._animalAttack && !actor._companionBiteTarget && !actor.tzatzulCapturedBy ? ownedPose : flightPose === 'perched' || flightPose === 'glide'
       || flightPose === 'flap' ? flightPose
       : actor.onBranch ? 'perched'
         : actor._animalAttack || ['chase','patrol-chase','fleeing-low-health'].includes(actor.state) ? 'flap' : 'perched';
+    // A head-rigged bird can look around on its undeformed native perch. Keep that
+    // rig visible instead of replacing it with the articulated body's flat card.
+    if (ownedBird && pose === 'perched' && actor.avatarRef?.headRig) {
+      clearOriginal(state);
+      state.rig.root.visible = false;
+      cueWingbeat(actor, state, 'perched');
+      state.lastPose = 'perched'; debug.lastPose = 'perched';
+      return;
+    }
     // Ordinary avatar code can re-enable its canonical sprite after a genotype
     // animation or visual promotion. Keep it hidden only while our rig exists.
     const known = new Set(state.originals.map(record => record.node)); // Damage/genotype refresh can replace a native plane without replacing the whole avatar group.
@@ -147,15 +198,19 @@
     Promise.resolve().then(() => kind(actor) === window.TzatzulRegistration?.HATCHLING_KIND
       ? create(appearance, { undeformedPerch: true }) : create(appearance)).then(rig => { // Only Tzatzul hatchlings receive an override; Pingdort and Skeeri retain their existing genotype/rig contract.
       if (!rig?.root || !rig?.dispose) throw new Error('Flying rig renderer did not return a disposable root');
-      if (state.removed || tracked.get(actor) !== state || actor.health <= 0
+      if (state.removed || tracked.get(actor) !== state || actor.health <= 0 || actor.stableRole === 'shoulderPet'
         || actor.avatarRef?.group !== group || !group.parent || actor._wildlifeVisualsReleased) {
         rig.dispose(); // Prevent leaked geometry and detached late-loading meshes.
         return;
       }
       state.group = group; // Pose and visual cleanup use the exact native avatar owner.
       state.rig = rig;
-      state.originals = portraitPlanes(actor, group).map(node => ({ node, visible: node.visible }));
+      if (actor.isCompanion && actor.def?.isFlyingSpecies) rig.setPerchSpline?.(null); // Flatten every owned flying species, preserving its authored palette and wing assembly.
+      const nativePerch = actor.isCompanion && actor.def?.isFlyingSpecies && actor.avatarRef?.headRig
+        && actor._companionBirdMotion?.mode !== 'flight' && !actor._animalAttack; // Keep the native head rig visible on the first mounted frame.
+      state.originals = nativePerch ? [] : portraitPlanes(actor, group).map(node => ({ node, visible: node.visible }));
       for (const record of state.originals) record.node.visible = false;
+      if (nativePerch) rig.root.visible = false;
       const height = Number(actor.avatarRef?.frontPlane?.geometry?.parameters?.height)
         || Number(state.originals[0]?.node?.geometry?.parameters?.height)
         || Number(actor.def?.modelWidth) || 1; // Match the authoritative native portrait height, including large birds.
@@ -202,6 +257,7 @@
         const isSkeeri = isSkeeriActor(actor) && (kind(actor) === 'skeeri' || Object.values(window.SkeeriRuins?.SPECIES || {}).some(spec => spec.key === kind(actor))); // Stable Skeeri can fly without allowing arbitrary hostile lookalikes to acquire ruin rigs.
         const isPingdort = kind(actor)==='pingdort' && (actor.isWildPingdort || actor.isCompanion); // Wild flocks and active trained companions get wings, not farm pen renderers.
         if (!isSkeeri && !isPingdort && ![window.TzatzulRegistration?.KIND, window.TzatzulRegistration?.HATCHLING_KIND].includes(kind(actor)) || actor.areaId !== area || !(actor.health > 0)) continue;
+        if (actor.stableRole === 'shoulderPet') continue; // Native undeformed idle and head rig own the shoulder grip, not the alternate flying card.
         if (tracked.has(actor)) continue;
         if (!isSkeeri && !isPingdort) actor.tzatzulIdentity ||= window.TzatzulRegistration.identityFor(area, stableIndex(actor)); // Tzatzul retain their nest identity; Pingdort genotype tints are supplied on rig mount.
         tracked.set(actor, { rig: null, loading: false, removed: false, originals: [],
@@ -222,7 +278,7 @@
         present(actor, state, camera); // Keep the authored dye and camera-facing card; no new rig is created for dead actors.
         continue;
       }
-      if (actor.health <= 0 || actor.areaId !== area || (!deps.hostileObjects.has(actor) && !deps.companionObjects?.has?.(actor))) {
+      if (actor.stableRole === 'shoulderPet' || actor.health <= 0 || actor.areaId !== area || (!deps.hostileObjects.has(actor) && !deps.companionObjects?.has?.(actor))) {
         release(actor, 'died, despawned or left area');
         continue;
       }
@@ -341,6 +397,6 @@
       liveRigs: [...tracked.values()].filter(state => !!state.rig).length,
       loading: [...tracked.values()].filter(state => state.loading).length };
   }
-  window.TzatzulLiveVisuals = Object.freeze({ init, tick, snapshot, release, getPlayerCarryPlacement,
+  window.TzatzulLiveVisuals = Object.freeze({ init, tick, snapshot, release, updateCompanionLocomotion, tryCompanionFlightStep, getPlayerCarryPlacement,
     applyPlayerCarryPlacement: (group, placement, undo) => applyCarryPlacement(deps.player, group, placement, undo) });
 })();
