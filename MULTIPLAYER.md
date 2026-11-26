@@ -109,10 +109,16 @@ Measured on `updateHostiles` (794 lines): only **11** direct `currentArea` refer
 - **Verified live** (headless, real zones): with the tick off, 0 of 23 creatures in the guest's built zone moved over 8 s; on, all moved, 0 errors, `currentArea` never left the local zone. Deterministic end-to-end run (spawned wolf in the dev arena, local player in another zone, guest in front of the wolf, 50 simulated seconds): the wolf chased and bit the guest (100 -> 40 health, five remote-hit events through `DamageAuthority` -> `RemotePlayerState`), the local player was never targeted and kept full health.
 - **Not verified / not done:** audio silence was not measured (only wired); the wolf was already `chase`-ing when placed (its stale local target is dropped by the scoped targeting); NPC walkers, bandit camps, den spawning, projectiles in flight and a zone nobody has built on the host are NOT ticked yet; no performance measurement of the extra ticks.
 
-Remaining stages, each gated and verified live before the next:
-2. Same for NPC walkers (`offarea-npc-tick.js` is already player-set aware) and bandit camps.
-3. Build a guest's zone scene on the host when nobody has built it (paced, like the zone-build entry path).
-4. Remove the swap by passing an explicit area/scene/grid into the tick (the clean form), system by system.
+**Stage 2 (bandit camps and NPCs) is implemented in the same opt-in tick:**
+
+- `WildernessSimulationLOD.tick` (just the bandit sleep/wake pass, with a **per-area** cadence) runs before the scoped hostile tick, so a camp beside a guest wakes and one with every player in that zone far away sleeps. The base `BanditCamps.updateCampBanners` is deliberately **not** called in the scope: it shows the local player a camp banner from local coordinates, and the Harlyao march planner and Porakaneki clutter sync are wrapped onto it (the march would run twice per frame).
+- **NPC walkers need nothing**: the main loop already updates every walker whatever its area; `OffAreaNpcTick` only coarsens, opt-in, and only when no player is in the walker's area.
+- **Verified live** (headless, real zones; bandit spawned in the dev arena, local player in another zone): tick off, guest 30 tiles away -> the bandit stays awake (nothing runs for that zone); tick on -> it goes to sleep (parked under `__wilderness_lod_sleep__:<zone>`); guest moves 6 tiles away -> it wakes and chases the guest; 160 ticks, 0 errors, the local player untouched. (A bandit never sleeps while in combat, so it did not re-sleep during the final far-away step; that is by design.)
+- **Not done:** the Porakaneki/Harlyao camp *planners* (abstract state for camps nobody local is near), random bandit encounters and den spawning near a guest, projectiles in flight, and zones nobody has built on the host.
+
+Remaining stages:
+1. Build a guest's zone scene on the host when nobody has built it (paced, like the zone-build entry path).
+2. Remove the swap by passing an explicit area/scene/grid into the tick (the clean form), system by system.
 
 ### Conversations and menus (`js/npc-conversations.js`, `window.NpcConversations`)
 
