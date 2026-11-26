@@ -12225,6 +12225,7 @@
         const area = _travelAreaOf(currentArea);
         const pc = Math.floor(player.x / TILE), pr = Math.floor(player.y / TILE);
         const nowMs = performance.now();
+        if (area === 'town' && gameStarted && !dialogueOpen && !cutscenePreviewActive) void window.OpeningStoryCutscene?.updateFarmGuide?.(nowMs);
         if (!_spotResolveDirty && !_pendingSpotTransition && area === _spotLastArea && pc === _spotLastCol && pr === _spotLastRow
             && nowMs - _spotResolvedAt < SPOT_RESOLVE_TTL_MS && nowMs >= _spotResolvedAt) {
           if (_spotReachedBar) refreshActionBar(); // Unchanged resolution: only the cached action-bar refresh remains per frame (not while latched, as before).
@@ -12240,10 +12241,17 @@
         else pool = area === 'town' ? worldTownTransitions : worldTransitions;
         const t = pool.find(x =>
           (_isBuildingArea(area) || _isZoneArea(area) || x.area === area) && x.col === pc && x.row === pr &&
-          (x.target !== 'zone' || window.OpeningStoryCutscene?.canEnterWilderness?.(_playerData) !== false) &&
           (!x.requiresKeyItem || !!window.KeyItemSystem?.has?.(x.requiresKeyItem)) &&
           canUseRoofSpot(x, area) &&
           (x.target === 'building' ? !!x.targetMapId : x.target === 'zone' ? !!x.targetMapId : x.target === 'exit_building' ? true : (Number.isFinite(x.targetCol) && Number.isFinite(x.targetRow)))) || null;
+        if (t?.target === 'zone' && window.OpeningStoryCutscene?.canEnterWilderness?.(_playerData) === false) {
+          _pendingSpotTransition = null;
+          _transitionLatch = key; // One reminder per approach; stepping away rearms the exit.
+          showToast(window.OpeningStoryCutscene.farmGuideExitMessage, true);
+          _spotReachedBar = true;
+          refreshActionBar();
+          return;
+        }
         _pendingSpotTransition = t;
         // Deliberately once per frame, not only when the spot changes: nothing
         // else re-resolves the action arch as the reticle moves or a tile/NPC
@@ -16133,7 +16141,7 @@
       // ── Exterior zones (Northern Cliffs / Southern Cloud Forest) ──────
       async function enterZone(mapId, defaultCol, defaultRow) {
         if (!cutscenePreviewActive && window.OpeningStoryCutscene?.canEnterWilderness?.() === false) {
-          showToast('Visit your farm with Spearhead before heading into the wilderness.', true);
+          showToast(window.OpeningStoryCutscene.farmGuideExitMessage, true);
           return;
         }
         // A Tothal Shift in progress is about to replace this zone's layout —
@@ -35406,6 +35414,34 @@
         window.WeaponToolStances?.invalidateHolderMatrixWorld?.();
       }
 
+      function openingFarmGuideTarget(walking) {
+        const gate = worldTownTransitions.find(spot => spot.target === 'farm' && spot.area === 'town'); // Actual authored farm entrance, not a hard-coded tile.
+        if (!gate || !townGrid) return null;
+        const candidates = []; // Find walkable positions beside the gate, avoiding transition trigger tiles.
+        for (let dr = -4; dr <= 4; dr++) for (let dc = -4; dc <= 4; dc++) {
+          const c = gate.col + dc, r = gate.row + dr, distance = Math.hypot(dc, dr);
+          if (distance < 1 || distance > 4 || !isNpcTileWalkable('town', c, r)) continue;
+          if (worldTownTransitions.some(spot => spot.col === c && spot.row === r)) continue;
+          candidates.push({ c, r, distance });
+        }
+        const desired = walking ? 1 : 3; // Start a few steps inside town, then lead to the gate after dialogue.
+        candidates.sort((a,b) => Math.abs(a.distance - desired) - Math.abs(b.distance - desired));
+        const point = candidates[0];
+        return point ? { area: 'town', c: point.c, r: point.r, pose: 'stand', activity: 'Waiting for the new farmer', label: 'Farm entrance' } : null;
+      }
+
+      function visibleOpeningFarmGuide() {
+        if (currentArea !== 'town' || !gameStarted || paused || dialogueOpen || cutscenePreviewActive || sceneTransDir !== 0 || isPlayerInCombat()) return null;
+        const walker = findNpcWalker('spearhead_unumanuk'); // Use the real NPC and the shared dialogue staging.
+        const point = walker?.root?.position;
+        if (walker?.area !== 'town' || !walker.root?.visible || !point) return null;
+        const target = openingFarmGuideTarget(false); // Do not summon the player while Spearhead is still crossing town.
+        if (!target || Math.hypot(point.x - target.c - .5, point.z - target.r - .5) > 1.25) return null;
+        const observer = { x: point.x * TILE, y: point.z * TILE, health: 1, avatarGroup: walker.avatarGroup, root: walker.root, areaId: 'town', walker }; // Shared ranged sight expects pixel coordinates and the real avatar height.
+        if (Math.hypot(observer.x - player.x, observer.y - player.y) > 4 * TILE) return null;
+        return window.RangedWeapons?.hasLineOfSight?.(observer, player, true) === true ? walker : null;
+      }
+
       function openingFarmTourPoints() {
         const entry = { c: Math.floor(player.x / TILE), r: Math.floor(player.y / TILE) }; // Starts where the owner actually entered the farm.
         const front = window.FarmhouseLoginSpawn?.frontDoor?.(); // Supplies both the approach and door normal for the final facade view.
@@ -35452,6 +35488,9 @@
         preloadOpeningMeeting,
         placeOutsideTemple: placeOpeningPlayerOutsideTemple,
         farmTourPoints: openingFarmTourPoints,
+        farmGuideTarget: openingFarmGuideTarget,
+        visibleFarmGuide: visibleOpeningFarmGuide,
+        openFarmGuideDialogue: walker => openNpcDialogue(walker, { node: { type: 'line', text: 'Follow me. I will show you to your farm.', next: null } }),
         run: (payload, options = {}) => runCutscenePreview(payload, { ...options, live: true }), // Plays Director-format payloads as real gameplay cinematics with cleanup/restoration.
         isActive: () => cutscenePreviewActive, // Gameplay HUD owners can check the director without allocating a debug snapshot.
         debugSnapshot: () => ({ active: !!cutscenePreviewActive, currentArea, stageId: cutscenePreviewStageId, zoomPercent: cutscenePreviewZoomPercent, horizontalCameraSqueeze: _cameraHorizontalDebug, orbit: window.CinematicCameraRuntime?.activeCamera?.()?.orbitDebug || null, latestChange: 'Rescue now uses a temporary generated Cloud Forest mini-wilderness with the authored locale and full mini-map residency; cleaned up after playback. Fight uses the rescue wide shot; Spearhead enters from outside the prior view; moving humanoids animate legs; final player stance yaw obeys body/neck deadzones; tighter surveyor shots and rear chair with departure hiding; lower farm camera, moving two-character follow shot and facade view after both arrivals; intro wind-only audio.' }), // Mobile/debug-panel callers can inspect live cinematic ownership without a console.
