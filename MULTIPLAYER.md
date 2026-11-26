@@ -93,6 +93,20 @@ Three things that used to be one ("the area the player is in") and now have diff
 - Chunk meshes are pure asset/render state (nothing in the simulation queries `WildernessChunks` for loaded chunks), so **each client streams the chunks around its own player** and the host does not load chunks around a guest.
 - **Still single-area (the big remaining item):** `updateHostiles`, wildlife/den spawning, and most world updates only tick creatures whose `areaId === currentArea`, and `currentArea` is a global that also selects the active scene and grid. A zone only a guest occupies is therefore *kept* but not *ticked* by the host. Ticking several areas needs those updates to take an explicit area/scene/grid context instead of reading `currentArea`; do it one system at a time, starting with `updateHostiles`.
 
+#### Ticking more than one area: measurements and plan (not started in code)
+
+Measured on `updateHostiles` (794 lines): only **11** direct `currentArea` references (area filters and targeting arguments) and **1** direct audio call, so the function body is shallow. The risk is in its callees and in global state:
+
+- `GridTileAccessors.getActiveGrid()` / `getActiveScene()` are **pure lookups on `currentArea`** (and `getZoneSceneInfo(areaId)` already gives per-area access), and creatures already carry `areaGrid`/`scene`, with many movement helpers using `c.areaGrid || active grid`. So a bracketed per-area tick (`currentArea = X; tick; restore`, the same swap `runCutscenePreview` already does) is **mechanically viable**.
+- Hazards for that swap: `getActiveGrid()`/`getActiveScene()` **build a missing zone scene as a side effect** (never tick an unbuilt zone through them); per-frame caches keyed to the active area (`grazingPreyIndexArea`, `releasePreviousAreaCreatureTextures`, LOS and visibility caches) would thrash or release the wrong textures when areas alternate; sounds and effects triggered by creatures in a remote area would play at the local listener or draw into a scene nobody sees; `updateCreatureMesh` is interleaved with the AI so remote-area creatures would pay for visuals.
+- Reach: `currentArea` has 545 references in `game.js`, 213 modules call `getCurrentArea`, 22 of them in `js/combat/` (LOS, projectiles, bandit combat, afflictions).
+
+Staged plan, each stage gated and verified live before the next:
+1. **Opt-in remote-area tick** (off with one registered player, so single-player cannot change): for every *occupied, already-built* zone other than the current one, run the creature tick at the existing coarse 5 Hz (`FAR_WILDLIFE_AI_TICK_INTERVAL_S`) inside an area scope, with audio/FX muted and mesh updates skipped; make the per-area caches per-area.
+2. Same for NPC walkers (`offarea-npc-tick.js` is already player-set aware) and bandit camps.
+3. Build a guest's zone scene on the host when nobody has built it (paced, like the zone-build entry path).
+4. Remove the swap by passing an explicit area/scene/grid into the tick (the clean form), system by system.
+
 ### Conversations and menus (`js/npc-conversations.js`, `window.NpcConversations`)
 
 Design decision: an ordinary NPC conversation holds **only the person talking**. The world, the clock and
