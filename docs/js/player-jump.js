@@ -427,7 +427,7 @@
     const nativeSpeed = number(deps.getBaseMoveSpeedTiles?.(), speed); // Uses the same unbuffed speed as ordinary movement; fallback serves isolated tests.
     const reference = (nativeSpeed > 0 ? nativeSpeed : speed) * seconds * mobility; // Tile units, already scaled once.
     const travel = reference * direction.strength;
-    const motion = windy ? rs.composeMovement(player, direction.x * travel, direction.z * travel, { mode: 'walk', scalarApplied: true, rotationApplied: true, reference, dt: seconds, voluntary: direction.strength > 0 }) : null;
+    const motion = windy ? rs.composeMovement(player, direction.x * travel, direction.z * travel, { mode: 'walk', scalarApplied: true, rotationApplied: true, reference, dt: seconds, airborne: state.phase === 'air', voluntary: direction.strength > 0 }) : null;
     // Rope launch and hit impulses are physical carry, not voluntary steering:
     // they remain unscaled and never contribute to the wind alignment charge.
     const dx = (motion?.x ?? direction.x * travel) + carryX, dz = (motion?.y ?? direction.z * travel) + carryZ;
