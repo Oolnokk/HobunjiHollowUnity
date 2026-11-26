@@ -296,3 +296,22 @@ async function checkEnemyWeaponCleanup() {
 }
 
 checkEnemyWeaponCleanup().catch(error => { console.error(error); process.exitCode = 1; });
+
+// Idle head movement retains logical yaw through settling and camera re-clamps.
+{
+  const motion={yaw:null,leanX:0,leanZ:0,perp:null,side:0},dead=40*Math.PI/180;
+  for(let i=0;i<60;i++)api.stepIdleHeadMotion(motion,4,0,1/60,0,dead);
+  assert.ok(Math.abs(motion.yaw-Math.PI/2)<1e-10);
+  assert.ok(motion.leanX>.5&&motion.leanX<=dead);assert.equal(motion.leanZ,0);
+  const yaw=motion.yaw,rendered=api.clampIdleHeadYaw(motion,yaw,0,dead);
+  assert.ok(Math.abs(Math.abs(rendered-Math.PI/2)-dead)<1e-9);
+  for(let i=0;i<180;i++)api.stepIdleHeadMotion(motion,0,0,1/60,0,dead);
+  assert.equal(motion.leanX,0);assert.equal(motion.leanZ,0);assert.equal(motion.yaw,yaw);
+  assert.equal(api.clampIdleHeadYaw(motion,yaw,Math.PI/2,dead),yaw);
+  api.stepIdleHeadMotion(motion,0,-100,1,0,dead);assert.ok(Math.abs(motion.leanZ)<=dead);assert.equal(motion.yaw,Math.PI);
+  const before=motion.yaw;api.stepIdleHeadMotion(motion,100,0,0,0,dead);assert.equal(motion.yaw,before);
+  const bounds={minX:-.3,maxX:.5,maxY:.1,drop:.7};
+  assert.equal(api.tiltedHeadDrop(bounds,{x:0,y:0,z:0,w:1}),.7);
+  const theta=.3,tilted=api.tiltedHeadDrop(bounds,{x:0,y:0,z:Math.sin(theta/2),w:Math.cos(theta/2)});
+  assert.ok(Math.abs(tilted-(.3*Math.sin(theta)+.7*Math.cos(theta)))<1e-10);
+}
