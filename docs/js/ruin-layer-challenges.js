@@ -138,6 +138,8 @@
       ||typeof isActive!=='function'||typeof onSolved!=='function')
       throw new Error('Invalid layered ruin challenge '+id+' ('+kind+').');
     const cx=room.x+room.w/2,cz=room.z+room.d/2;
+    const cavePlateZ=cz-1.6; // Shared by the indoor melody and fallback plate.
+    const cavePlateFloorY=options.sampleCaveFloorY?.(cx,cavePlateZ)??y; // Prepared once at scene build from the tile under the slab.
     const caveGateZ=room.z+room.d-2.8; // Leave a genuinely reachable treasure alcove behind the slab; the whole door remains inside the carved nine-tile room.
     const caveWallHeight=Math.max(9,Number(options.caveRoofHeight)||0); // Shared roof-height boundary for the permanent stone and its collision, not recomputed on every movement probe.
     const owned=[],materials=[],targets=[],authoredVisuals=[]; // Each challenge owns its geometry, authored fixture instances and their per-room materials.
@@ -415,7 +417,7 @@
       const gateY=gate.position.y; // Only the physical slab rises; the sconces remain on the stone wall.
       if(kind==='cavePressurePlate'){
         const plate=body('puzzle-cave-simple-plate-'+id,
-          new THREE.CylinderGeometry(MELODY_PLATE_RADIUS,MELODY_PLATE_RADIUS,.15,24),plateMat,cx,y+.08,cz-1.6);
+          new THREE.CylinderGeometry(MELODY_PLATE_RADIUS,MELODY_PLATE_RADIUS,.15,24),plateMat,cx,cavePlateFloorY+.08,cavePlateZ);
         rec.plate=plate; // Used by the runtime occupancy check and the shared stepped-on SFX.
         rec.plateSignal=root.FurniturePatternSurfaces?.attachStoneSignal?.(plate,{
           width:.11,height:.11,idleColor:'#e5aa55',activeColor:'#65ffaf',
@@ -459,9 +461,9 @@
       if(!composer?.generate||!composer?.createSession)throw new Error('PuzzleCaveMelody is not installed.');
       const song=composer.generate(id,options.songOptions||{}); // The cave's stable ID fixes the tune and reward tier on reload.
       const plate=body('puzzle-cave-music-plate-'+id,
-        new THREE.CylinderGeometry(MELODY_PLATE_RADIUS,MELODY_PLATE_RADIUS,.15,32),plateMat,cx,y+.08,cz-1.6);
+        new THREE.CylinderGeometry(MELODY_PLATE_RADIUS,MELODY_PLATE_RADIUS,.15,32),plateMat,cx,cavePlateFloorY+.08,cavePlateZ);
       rec.plate=plate;rec.attempts=0;rec.lastDown=false;
-      rec.melodyPlate={x:cx,z:cz-1.6,radius:MELODY_PLATE_RADIUS}; // Collision and visible stone agree on the same one-tile radius.
+      rec.melodyPlate={x:cx,y:cavePlateFloorY,z:cavePlateZ,radius:MELODY_PLATE_RADIUS}; // Collision and visible stone agree on the same one-tile radius.
       const plateSignal=root.FurniturePatternSurfaces?.attachStoneSignal?.(plate,{width:.11,height:.11,idleColor:'#e5aa55',activeColor:'#65ffaf'});
       if(plateSignal?.glyph)plateSignal.glyph.position.x=.31; // Small state rune sits outside the central Hao'uun ring.
       rec.plateSignal=plateSignal; // Both the musical session and an external result use the same glyph state.
@@ -643,7 +645,7 @@
           new THREE.BoxGeometry(width,height,depth),stone,post.x,y+dy,post.z);
       } // Matching plinths and capitals identify the paired columns as one deliberately built puzzle fixture.
       const inscriptions=posts.map((post,column)=>root.RuinMelodyGlyphDecal?.create?.({
-        root:scoreRoot,plate:{x:cx,y,z:cz-1.6},
+        root:scoreRoot,plate:{x:cx,y:cavePlateFloorY,z:cavePlateZ},
         notes:notes.filter((_,index)=>index%2===column),maxColumns:1,
         surfaces:[{x:post.x,y:y+postHeight/2,z:post.z-.254,yaw:Math.PI}],
         sampleSupport:()=>({y}),
@@ -782,7 +784,7 @@
     if(rec.session&&rec.glyphs?.length){
       rec.releaseMelodyCamera=root.MelodyCameraFraming?.register?.({
         area:options.area||options.mapId,
-        plate:{...rec.melodyPlate,y},glyphs:rec.glyphs,
+        plate:{y,...rec.melodyPlate},glyphs:rec.glyphs,
         isActive:()=>!rec.disposed&&!rec.solved&&isActive()&&rec.lastDown,
       }); // One grouped view includes both of an interior cave's distant note columns.
     }
@@ -800,7 +802,7 @@
       }
       if(kind==='cavePressurePlate'&&!rec.solved&&isActive()){
         const standing=player&&Number.isFinite(currentY)&&Math.abs(currentY-y)<.75
-          &&Math.hypot(player.x-cx,player.z-(cz-1.6))<=MELODY_PLATE_RADIUS;
+          &&Math.hypot(player.x-cx,player.z-cavePlateZ)<=MELODY_PLATE_RADIUS;
         root.RuinInteractionAudio?.watchPlate?.(rec.plate,!!standing);
         if(standing)complete(); // One step permanently solves this cave instead of requiring a held timer or a second interaction.
       }

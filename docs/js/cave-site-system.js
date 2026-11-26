@@ -1256,6 +1256,11 @@
     try {
       const compose = challengeKind => creator({
         THREE:window.THREE,parent:scene,room,id:puzzle.id,kind:challengeKind,y:0,area:key,authoredCliffDoor:true,
+        sampleCaveFloorY:(x,z)=>{
+          const tileY=Number(mapData.floorSurfaceByTile?.[tileKey(Math.floor(x),Math.floor(z))]); // Same carved tile elevation used by the movement grid.
+          const caveFloorY=Number(mapData.floorSurfaceY); // Legacy caves can supply only a map-wide ground height.
+          return Number.isFinite(tileY)?tileY:Number.isFinite(caveFloorY)?caveFloorY:0;
+        },
         caveRoofHeight:Math.max(9,Number(mapData.mesh?.vaultCeiling?.topY)||0), // Seals the sculpted wall up to the new vaulted ceiling instead of leaving a jumpable gap.
         songOptions:{difficulty:puzzle.difficulty}, // Deterministic 1–2-measure challenge range, not a universal easy one-measure song.
         isActive:()=>String(wildlifeDeps?.getCurrentArea?.()||'')===key && puzzleChallengesByMapId.get(key)?.scene===scene,
@@ -1270,7 +1275,7 @@
           const p=wildlifeDeps?.player,t=Number(wildlifeDeps?.TILE)||32;
           return p?{x:Number(p.x)/t,z:Number(p.y)/t}:null;
         },
-        getPlayerY:()=>0, // Cave interiors are flat, level-zero generated slices.
+        getPlayerY:()=>0, // Preserve the cave puzzle’s level-zero activation datum.
         onMusicUnavailable:()=>wildlifeDeps?.showToast?.('Equip an instrument to attempt the stone song.',false),
       });
       let challenge;
