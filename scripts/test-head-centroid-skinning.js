@@ -41,6 +41,7 @@ vm.runInContext(extract(avatarSource, 'neckBlendWeight'), context);
 vm.runInContext(extract(avatarSource, 'headOffsetWeightAt'), context);
 vm.runInContext(extract(avatarSource, 'headScaleGateAtPixel'), context);
 vm.runInContext(extract(avatarSource, 'headScaleWeightAt'), context);
+vm.runInContext(extract(avatarSource, 'humanoidBlendWeightsAt'), context);
 context.avatarApi = { resolveSkinnedPortraitRoot: root => root,
   neckBlendBand: context.neckBlendBand, neckBlendWeight: context.neckBlendWeight, headOffsetWeightAt: context.headOffsetWeightAt, // The outline/parity adapter reads both identical neck and independent head-placement weights.
   headScaleGateAtPixel: context.headScaleGateAtPixel, headScaleWeightAt:context.headScaleWeightAt, getPortraitsFlipped: () => context.portraitsFlipped };

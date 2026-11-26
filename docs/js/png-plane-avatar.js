@@ -1842,11 +1842,11 @@
     spline.a = 0; spline.b = 0; spline.wb = 0;
     if (splineLayout) (typeof window !== 'undefined' ? window.HobunjiCharacterSpine : null)?.nodeWeightsAt?.(localPoint.y, Number.isFinite(rig.spineBase?.y) ? rig.spineBase.y : neckY, modelHeight, rig.spinePosteriorY, spline);
     const broad = blendHeight > modelHeight * .05; // Production skin restores blending against the real spine; narrow legacy rigs keep their old weights.
-    const offsetWeight = broad
-      ? (authorOffset ? Math.max(0, headOffsetWeightAt(localPoint.y, neckY, modelHeight, blendHeight) - headWeight) : 0)
+    const shared = broad && (splitOffset || authorOffset) ? humanoidBlendWeightsAt(localPoint.y, neckY, modelHeight, renderedPixelX, rig.headBoundsPx, blendHeight, blendHeight, authorOffset, pixelPositionScratch.blend ||= {}) : null;
+    const offsetWeight = shared ? shared.offset : broad ? 0
       : hasPlacement ? (headWeight > 0 ? 1 - headWeight : authorOffset ? headOffsetWeightAt(localPoint.y, neckY, modelHeight, blendHeight) : 0) : 0;
-    headWeight = broad || !hasPlacement ? Math.max(headWeight, headScaleWeight) : headWeight;
-    const bodyWeight = 1 - headWeight - offsetWeight;
+    headWeight = shared ? shared.turn + shared.scale : broad || !hasPlacement ? Math.max(headWeight, headScaleWeight) : headWeight;
+    const bodyWeight = shared ? shared.body : 1 - headWeight - offsetWeight;
     for (let i = 0; i < Math.min(headBone + 1, skeleton.bones.length); i++) {
       const weight = hasPlacement && i === offsetBone ? offsetWeight
         : i === neckBone ? headWeight - headScaleWeight : i === headBone ? headScaleWeight
