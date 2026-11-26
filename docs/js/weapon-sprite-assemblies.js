@@ -127,6 +127,7 @@
     if(!(dt>0))return motion;
     const speed=Math.hypot(vx,vz);
     const moving=Number.isFinite(speed)&&speed>HEAD_MOVE_EPSILON;
+    if(!moving&&motion.leanX===0&&motion.leanZ===0)return motion; // Exact idle equilibrium: no exponential/trigonometry.
     if(moving)motion.yaw=Math.atan2(vx,vz);
     const target=moving?Math.min(deadRad,speed*HEAD_LEAN_PER_SPEED)/speed:0;
     const blend=1-Math.exp(-HEAD_SETTLE_RATE*dt);
@@ -137,16 +138,28 @@
   }
   // Measure the actual baked rope attachment independently of the pendulum's resettable
   // pivot history. Only strike recovery can feed an idle head impulse; locomotion wins.
+  function resetIdleHeadMotion(m,resetYaw=false) {
+    m.leanX=m.leanZ=m.returnX=m.returnZ=0;
+    m.tipReady=m.previousAttack=m.sawStrike=false;m.previousProgress=0;
+    if(resetYaw){m.yaw=m.renderedYaw=m.perp=null;m.side=0;m.source='initial';}
+  }
   function advanceIdleHeadMotion(m,attacking,progress,strikeFrac,holdFrac,pivot,bodyVX,bodyVZ,dt,seedYaw,deadRad) {
     if(!Number.isFinite(m.yaw))m.yaw=seedYaw;
-    if(!(dt>0))return; // Paused redraws cannot consume a transition or create artificial velocity.
-    let vx=0,vz=0;
+    if(!(dt>0)) {
+      // Initialization may establish a neutral baseline, but paused redraws cannot consume a return.
+      if(!m.tipReady){m.tipReady=true;m.tipX=pivot.x;m.tipY=pivot.y;m.tipZ=pivot.z;}
+      return;
+    }
     const dx=pivot.x-m.tipX,dy=pivot.y-m.tipY,dz=pivot.z-m.tipZ;
     const valid=m.tipReady&&dx*dx+dy*dy+dz*dz<=9;
-    if(valid){vx=dx/dt-bodyVX;vz=dz/dt-bodyVZ;}
+    if(!valid)resetIdleHeadMotion(m);
+    let vx=0,vz=0,tipMoving=false;
+    if(valid&&(attacking||m.previousAttack)){
+      vx=dx/dt-bodyVX;vz=dz/dt-bodyVZ;
+      tipMoving=Number.isFinite(vx)&&Number.isFinite(vz)&&vx*vx+vz*vz>HEAD_MOVE_EPSILON*HEAD_MOVE_EPSILON;
+    }
     m.tipReady=true;m.tipX=pivot.x;m.tipY=pivot.y;m.tipZ=pivot.z;
-    const tipMoving=valid&&Math.hypot(vx,vz)>HEAD_MOVE_EPSILON;
-    const bodyMoving=Math.hypot(bodyVX,bodyVZ)>HEAD_MOVE_EPSILON;
+    const bodyMoving=Number.isFinite(bodyVX)&&Number.isFinite(bodyVZ)&&bodyVX*bodyVX+bodyVZ*bodyVZ>HEAD_MOVE_EPSILON*HEAD_MOVE_EPSILON;
     if(attacking){
       if(!m.previousAttack||progress<m.previousProgress-.01||!valid){
         m.sawStrike=false;m.returnX=m.returnZ=0;
@@ -174,21 +187,26 @@
     m.previousAttack=attacking;m.previousProgress=progress;
   }
 
+  // Solve the tilted plane's NORMAL from its desired horizontal yaw and its
+  // tilted up vector. Pitching a yawed quaternion directly drifts its actual
+  // horizontal normal back into the forbidden NPC deadzone.
+  function leanHeadBasis(leanX,leanZ,lean,yaw,up,normal){
+    const scale=Math.sin(lean)/Math.hypot(leanX,leanZ);
+    up.set(leanX*scale,Math.cos(lean),leanZ*scale);
+    const x=Math.sin(yaw),z=Math.cos(yaw);
+    normal.set(x,-(up.x*x+up.z*z)/Math.max(1e-8,up.y),z);
+  }
   function idleHeadQuaternion(state,pivot,normal,out) {
     const q=state.scratch,motion=state.idleHeadMotion; // Each actual hand has its own baked tip; dual wield still shares actor motion and rope physics.
     const deadRad=headDeadzone();
     const camera=state.cameraPosition||global.SharedAttackPose?.getCameraPosition?.()||global.PerpRotation?.liveCameraPosition?.();
     const rawYaw=Number.isFinite(motion.yaw)?motion.yaw:Math.atan2(normal.x,normal.z);
     const viewYaw=camera&&Math.hypot(camera.x-pivot.x,camera.z-pivot.z)>1e-8?Math.atan2(camera.x-pivot.x,camera.z-pivot.z):null;
-    const facing=state.idleHeadMotion; // Each copy clamps its own camera bearing; logical movement is shared.
-    const yaw=clampIdleHeadYaw(facing,rawYaw,viewYaw,deadRad);facing.renderedYaw=yaw;
-    out.setFromAxisAngle(q.axisUp,yaw);
-    const lean=Math.min(deadRad,Math.hypot(motion.leanX,motion.leanZ));
-    if(lean>1e-8){
-      q.headUp.set(motion.leanZ,0,-motion.leanX).normalize(); // Tilt world-up toward travel without replacing retained yaw.
-      out.premultiply(q.deltaQ.setFromAxisAngle(q.headUp,lean));
-    }
-    return out;
+    const yaw=clampIdleHeadYaw(motion,rawYaw,viewYaw,deadRad);motion.renderedYaw=yaw;
+    const lean=Math.min(deadRad,Math.PI/2-1e-5,Math.hypot(motion.leanX,motion.leanZ));
+    if(lean<=1e-8)return out.setFromAxisAngle(q.axisUp,yaw);
+    leanHeadBasis(motion.leanX,motion.leanZ,lean,yaw,q.headUp,q.tmp);
+    return planeQuaternion(q.headUp,q.tmp,out,q);
   }
 
   function planeQuaternion(worldUp, preferredNormal, result, scratch) {
@@ -481,6 +499,7 @@
   function setAction(root, options = {}) {
     const state = states.get(root);
     if (!state) return;
+    if(options.resetHeadMotion===true)resetIdleHeadMotion(state.idleHeadMotion,true); // Explicit editor seek, not ordinary neutral frames.
     if (options.progress === 0 || options.attacking !== true && state.attacking) {
       state.angularVelocity.set(0, 0, 0); state.hasPhysicsVelocity = false; // Reset attack replay without carrying momentum from a different timeline.
       if (options.progress === 0) { state.direction.set(0, -1, 0); state.hasPivot = false; }
@@ -921,9 +940,7 @@
         state.detachedAt = now;
         state.hasPivot = false; // Re-equipping resets old idle momentum rather than launching the suspended head.
         state.hasMovementPosition=false;
-        state.idleHeadMotion.leanX=state.idleHeadMotion.leanZ=0;
-        state.idleHeadMotion.tipReady=state.idleHeadMotion.previousAttack=state.idleHeadMotion.sawStrike=false;
-        state.idleHeadMotion.returnX=state.idleHeadMotion.returnZ=0;
+        resetIdleHeadMotion(state.idleHeadMotion);
         state.hasPhysicsVelocity = false;
         state.angularVelocity.set(0, 0, 0);
       }
@@ -1034,6 +1051,7 @@
     if (sharedPhysics) {
       state.direction.copy(sharedPhysics.direction); // Identical world-space sway; each side still uses its own baked haft attachment below.
       q.velocity.copy(sharedPhysics.scratch.velocity); // Shared actor movement for both visible copies.
+      state.actorMotionValid=sharedPhysics.actorMotionValid;
     } else {
     q.measuredPivotVelocity.copy(pivot).sub(state.lastPivot).divideScalar(Math.max(0.001, dt)); // The animated attachment transfers real handle momentum.
     q.pivotAcceleration.copy(q.measuredPivotVelocity).sub(state.pivotVelocity).divideScalar(Math.max(0.001, dt));
@@ -1045,7 +1063,8 @@
     }
     const actorPosition = state.movementPosition; // World-space locomotion supplied by game/preview, independent of the animated haft.
     const velocity = q.velocity;
-    if (actorPosition && Number.isFinite(actorPosition.x) && Number.isFinite(actorPosition.z)) {
+    state.actorMotionValid=!!actorPosition&&Number.isFinite(actorPosition.x)&&Number.isFinite(actorPosition.y)&&Number.isFinite(actorPosition.z);
+    if (state.actorMotionValid) {
       if (!state.hasMovementPosition || state.lastMovementPosition.distanceToSquared(actorPosition) > 9) {
         state.lastMovementPosition.copy(actorPosition); // Teleports / first observation must not whip the chain.
         state.hasMovementPosition = true;
@@ -1120,8 +1139,8 @@
     if (dt > 0 && !state.fishingFlailHeadSpin) state.hasPhysicsVelocity = true; // Head-only spin is a kinematic orbit, not an impulse into the pendulum integrator.
     }
     // Run after the shared physics branch so each visible dual copy measures its own tip.
-    const bodyVX=state.movementPosition?q.velocity.x:0,bodyVZ=state.movementPosition?q.velocity.z:0;
-    advanceIdleHeadMotion(state.idleHeadMotion,state.attacking,state.progress,state.sf,state.hf,pivot,bodyVX,bodyVZ,dt,Math.atan2(normal.x,normal.z),headDeadzone());
+    const bodyVX=state.actorMotionValid?q.velocity.x:0,bodyVZ=state.actorMotionValid?q.velocity.z:0;
+    advanceIdleHeadMotion(state.idleHeadMotion,state.attacking,state.progress,state.sf,state.hf,pivot,bodyVX,bodyVZ,dt,state.idleHeadMotion.yaw??Math.atan2(normal.x,normal.z),headDeadzone());
     if (state.dualWieldHidden) return; // Hidden original still simulates the ONE pendulum, but need not position invisible rope/head art.
     // Ground contact can now change only the direction of the already
     // fitted rope. No frame, jump, or pendulum swing can make it longer.
@@ -1369,7 +1388,7 @@
 
   global.HobunjiWeaponSpriteAssemblies = {
     definitions: DEF, assemblyKind, isGroundNonSolidChild, groundFitSpec, groundStatus:root=>states.get(root)?.groundClearance||null, decorate, setAction, tick, drop, syncDualWield, scheduleTickAfterPose, debugSnapshot, previewParts, enchantmentTargets, dualWieldEnchantmentTargets, bakedPoint,
-    opaqueAt, anchor, refreshWorldMatrix, definitionFor, ropeSpriteSizing, ropeOpaqueBounds, tintRopePixels, stepPendulum, flailDamping, flailStrikeStraightening, flailYawTravel, fishingFlailHeadDirection, clampIdleHeadYaw, stepIdleHeadMotion, advanceIdleHeadMotion, tiltedHeadDrop, // Pure sizing and phase helpers have regression tests.
+    opaqueAt, anchor, refreshWorldMatrix, definitionFor, ropeSpriteSizing, ropeOpaqueBounds, tintRopePixels, stepPendulum, flailDamping, flailStrikeStraightening, flailYawTravel, fishingFlailHeadDirection, clampIdleHeadYaw, stepIdleHeadMotion, advanceIdleHeadMotion, resetIdleHeadMotion, leanHeadBasis, tiltedHeadDrop, // Pure sizing and phase helpers have regression tests.
   };
   global.HobunjiCacheAudit?.register('weapon assemblies (weak owner registry)', () => { let count = 0; for (const entry of records) if (liveState(entry)) count++; return count; });
   if (global.RuntimeFrameScheduler?.register) {

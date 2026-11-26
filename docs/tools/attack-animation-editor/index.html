@@ -104,12 +104,12 @@ canvas{display:block;width:100%;height:100%}
   .compactGrid{grid-template-columns:1fr}
 }
 </style>
-<script src="../../js/panel-ui.js?v=20261126hea1fd7a"></script>
+<script src="../../js/panel-ui.js?v=20261126flailAudit2"></script>
 <script src="../../config/weapon-sprite-assemblies.js?v=20261126staffClearance1"></script>
 <script src="../../js/color-fill.js?v=20261117h93b0e83"></script>
 <script src="../../js/tool-metal-recolor.js?v=20261030rigall5"></script>
 <script src="../../js/weapon-layer-effects.js?v=20261115torchWick2"></script>
-<script src="../../js/weapon-sprite-assemblies.js?v=20261126flailHeadReturn1"></script>
+<script src="../../js/weapon-sprite-assemblies.js?v=20261126flailAudit2"></script>
 <!-- Three.js r128 ESM — matches the version used by the main game (docs/index.html) -->
 <script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.128.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.128.0/examples/jsm/"}}</script>
 </head>
@@ -671,7 +671,8 @@ function refreshPreviewDebug() {
   setDebug([
     'Hobunji Attack Animation Editor',
     (()=>{const s=window.HeldGroundPose?.snapshot?.()||{};return 'Ground fit: '+s.reason+(s.assemblyDetail?' ('+s.assemblyDetail+')':'')+'\n  Band shortening: '+(100*(s.shortening||0)).toFixed(1)+'% · rotation: '+(s.angleDeg||0).toFixed(2)+'° · haft Y: '+String(s.originalMinY??'—')+' → '+String(s.finalMinY??'—')+'\n  Light full-weapon Y: '+String(s.lightOriginalMinY??'—')+' → '+String(s.lightFittedMinY??'—')+(s.dual?'\n  Right: '+JSON.stringify(s.dual.right)+'\n  Left: '+JSON.stringify(s.dual.left):'');})(),
-    'Latest: flail Hold uses momentum, gravity and actual rope length; paused scrubbing replays the swing.',
+    'Latest: flail heads use locomotion, or the last strike-return tip velocity when stationary; scrubbing replays from a clean head state.',
+    (()=>{const h=window.HobunjiWeaponSpriteAssemblies?.debugSnapshot?.().find(e=>e.attached&&e.idleHead)?.idleHead;return h?'Flail idle head: '+h.source+' · yaw '+((h.yaw||0)*180/Math.PI).toFixed(1)+'° · displayed '+((h.renderedYaw||0)*180/Math.PI).toFixed(1)+'° · lean '+(Math.hypot(h.leanX,h.leanZ)*180/Math.PI).toFixed(1)+'°':'Flail idle head: select a flail';})(),
     (() => { const physics = window.HobunjiWeaponSpriteAssemblies?.debugSnapshot().find(entry => entry.physics)?.physics; return physics ? `Flail physics: ${physics.model} · lever ${physics.length.toFixed(3)} · angular velocity [${physics.angularVelocity.map(value => value.toFixed(2)).join(', ')}] rad/s · gravity ${physics.gravity}` : 'Flail physics: select a flail preview to inspect'; })(),
     `Neck preview: ${Math.round(neckPreviewStrength * 100)}% strength · ${(neckPreviewRadiusFrac * 100).toFixed(1)}% radius · ${neckWeightSummary}`,
     `Animation origin: ${$('headRelative').checked ? 'head' : 'hand'}`,
@@ -3077,10 +3078,10 @@ resize();
 
 let lastFlailPreviewT = -1; // Detect timeline seeks for deterministic physics reconstruction.
 document.addEventListener('input', () => { lastFlailPreviewT = -1; }); // Parameter edits also invalidate a paused physical preview.
-function updatePreviewFlail(sampleT, sampleDt) {
+function updatePreviewFlail(sampleT, sampleDt, resetHeadMotion=false) {
   window.HobunjiWeaponSpriteAssemblies?.setAction(toolPlaneMesh, {
     attacking: sampleT > 0.001 && sampleT < 0.999, progress: sampleT,
-    cameraPosition: camera.position, // NPC deadzone uses the actual preview camera.
+    resetHeadMotion, cameraPosition: camera.position, // NPC deadzone uses the actual preview camera.
     movementPosition: rig.position, // Preview character stays stationary unless authoring moves the rig; animation itself cannot tilt the hanging chain.
     windupFrac: anim.windupFrac, strikeFrac: anim.strikeFrac, holdFrac: anim.holdFrac,
     flailLengthScale: SharedAttackPose.flailLengthScaleAt(anim.poses, sampleT, anim.windupFrac, anim.strikeFrac, anim.holdFrac, anim.sequence), // Same keyframe interpolation as player and enemy swings.
@@ -3091,7 +3092,7 @@ function updatePreviewFlail(sampleT, sampleDt) {
 }
 function replayPreviewFlail(targetT) {
   applyPoseToRig(poseAt(0).pose);
-  updatePreviewFlail(0,0);
+  updatePreviewFlail(0,0,true);
   const steps=Math.ceil(targetT*Math.max(.05,anim.durationS)*120); // The same 120Hz deterministic replay as the existing paused-scrub preview.
   for(let step=1;step<=steps;step++){
     const t=targetT*step/steps;

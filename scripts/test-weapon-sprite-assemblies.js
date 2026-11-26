@@ -337,3 +337,22 @@ checkEnemyWeaponCleanup().catch(error => { console.error(error); process.exitCod
   const g=make();recovery(g);advance(g,false,0,.12,0,0,0,0);assert.equal(g.previousAttack,true);advance(g,false,0,.12,0);assert.equal(g.source,'strike-return');
   const h=make();recovery(h);advance(h,true,.05,.18,0);advance(h,false,0,.24,0);assert.equal(h.leanX,0,'new windup clears old recovery');
 }
+
+// Audit: true horizontal normal keeps the requested yaw even under maximal diagonal lean.
+{
+  const vec=()=>({set(x,y,z){this.x=x;this.y=y;this.z=z;return this;}});
+  for(const yaw of [-2,-.7,0,.9,2.8])for(const heading of [-2,-.2,1.1,3]){
+    const u=vec(),n=vec(),lean=.69;
+    api.leanHeadBasis(Math.sin(heading),Math.cos(heading),lean,yaw,u,n);
+    assert.ok(Math.abs(u.x*n.x+u.y*n.y+u.z*n.z)<1e-10);
+    assert.ok(Math.abs(Math.atan2(n.x,n.z)-yaw)<1e-10);
+    assert.ok(Math.abs(Math.acos(u.y)-lean)<1e-10);
+  }
+  const m={yaw:2,leanX:.4,leanZ:.1,returnX:1,returnZ:2,previousAttack:true,sawStrike:true,tipReady:true,previousProgress:.9,renderedYaw:1,perp:0,side:1};
+  api.resetIdleHeadMotion(m,true);
+  assert.equal(m.yaw,null);assert.equal(m.leanX,0);assert.equal(m.returnX,0);assert.equal(m.previousAttack,false);
+  api.advanceIdleHeadMotion(m,false,0,.3,.7,{x:4,y:1,z:2},0,0,0,.2,.7);
+  assert.equal(m.tipReady,true);assert.equal(m.yaw,.2);assert.equal(m.tipX,4);
+  api.advanceIdleHeadMotion(m,false,0,.3,.7,{x:4,y:1,z:2},0,0,.016,.2,.7);
+  assert.equal(m.leanX,0);assert.equal(m.yaw,.2);
+}
