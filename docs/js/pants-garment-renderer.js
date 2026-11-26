@@ -617,7 +617,7 @@
     // Keep the authored character fit as the baseline; apply a separate width field to the torso, not the entire trousers.
     const feet = (footObjects || ['left_foot', 'right_foot'].map(foot => legHandle.group?.getObjectByName?.(foot))).filter(Boolean); // The procedural foot models.
     const footLift = footFrontLift(THREE, avatarGroup, feet);
-    const data = buildGarmentData(THREE, Core, avatarGroup, plane, garment, character, segmentsForBudget(meshBudget), torsoFit);
+    const data = buildGarmentData(THREE, Core, avatarGroup, plane, garment, character, segmentsForBudget(meshBudget));
     if (!data) return null;
     const handle = {
       name, garmentId, legHandle, model: avatarGroup, nodes, mesh: null, disposed: false, texture: null, material: null,
@@ -635,6 +635,50 @@
     // Per-vertex shift the spine curve gives the garment (see rebuildSpineShift): zeros for an upright character. The GPU path adds
     // all three components to the skinned vertex; the mask lookup subtracts .xy in either path.
     handle.geometry.setAttribute('pantsSpineShift', new THREE.BufferAttribute(new Float32Array(handle.basePositions.length), 3));
+    // Prepare the shared CPU/GPU seam constraints before their attributes are created.
+    {
+      const SEGMENTS = handle.segments, stride = SEGMENTS + 1;
+      const top = Math.min(1, Math.max(...garment.pantsBeltSpline.map(p => p.y)) + 1 / SEGMENTS);
+      const cuffY = Math.min(...['left', 'right'].flatMap(side => (garment.legOpenings?.[side] || []).map(p => p.y)));
+      const kneeY = Math.min(...['left', 'right'].map(side => Number(garment.legBones?.[side]?.knee?.y) || .5));
+      const end = Math.max(top + 1 / SEGMENTS, Math.min(kneeY, cuffY - 1 / SEGMENTS));
+      handle.waistWidthInfluence = new Float32Array(stride * stride);
+      for (let row = 0, i = 0; row < stride; row++) {
+        const t = Math.max(0, Math.min(1, (row / SEGMENTS - top) / (end - top)));
+        const waist = 1 - t * t * (3 - 2 * t);
+        for (let col = 0; col < stride; col++, i++) {
+          handle.waistWidthInfluence[i] = waist;
+          for (const side of LEG_SIDES) if (handle.rings[side]) handle.rings[side].influence[i] *= 1 - waist;
+        }
+      }
+      // Lock the bilinear cuff samples to their own width field, including samples
+      // between grid vertices. Leave genuinely shared or waist-adjacent vertices alone.
+      const waistOwners = new Uint8Array(stride * stride); // Belt spline interpolation must never blend a moving bone.
+      for (const sample of handle.splineSpec.belt.samples) {
+        for (const index of [sample.i, sample.i + 1, sample.i + stride, sample.i + stride + 1]) waistOwners[index] = 1;
+      }
+      const cuffOwners = new Uint8Array(stride * stride);
+      for (let sideIndex = 0; sideIndex < LEG_SIDES.length; sideIndex++) {
+        const side = LEG_SIDES[sideIndex];
+        for (const sample of handle.splineSpec[side + 'Ankle'].samples) {
+          for (const index of [sample.i, sample.i + 1, sample.i + stride, sample.i + stride + 1]) cuffOwners[index] |= 1 << sideIndex;
+        }
+      }
+      for (let i = 0; i < cuffOwners.length; i++) {
+        if (waistOwners[i]) {
+          for (let c = 0; c < 5; c++) handle.weights[i * 5 + c] = c === 0 ? 1 : 0;
+          for (const side of LEG_SIDES) if (handle.rings[side]) handle.rings[side].influence[i] = 0;
+          continue;
+        }
+        if (handle.waistWidthInfluence[i] > 0 || (cuffOwners[i] !== 1 && cuffOwners[i] !== 2)) continue;
+        const calfChannel = cuffOwners[i] === 1 ? 2 : 4;
+        for (let c = 0; c < 5; c++) handle.weights[i * 5 + c] = c === calfChannel ? 1 : 0;
+        for (let sideIndex = 0; sideIndex < LEG_SIDES.length; sideIndex++) {
+          const ring = handle.rings[LEG_SIDES[sideIndex]];
+          if (ring) ring.influence[i] = cuffOwners[i] === (1 << sideIndex) ? 1 : 0;
+        }
+      }
+    }
     installGpuSkin(THREE, handle, gpuSkin);
 
     const depthBiasLimits=new Map(); // Paired close-contact animations may limit the feet-behind-pants cosmetic push.
@@ -912,8 +956,9 @@
       if (!visible) return;
       if (!handle.restCaptured) handle.captureRest();
       const widthScale = legHandle.getFootWidthScaleX?.() ?? openingWidthRatioForFeet(); // Scalar checks only; no scan or geometry work on ordinary frames.
-      if (Math.abs(widthScale - handle.openingWidthScale) > 1e-6 || (legHandle.anatomyRevision?.() ?? null) !== handle.fitAnatomyRevision) {
-        handle.alignToRest(); // A late NPC rig scale or live editor change must resize the hems without stacking stretches.
+      if (!renderOnly && (Math.abs(widthScale - handle.openingWidthScale) > 1e-6 || (legHandle.anatomyRevision?.() ?? null) !== handle.fitAnatomyRevision)) {
+        if (!renderOnly) handle.captureRest(); // Update standing joints before refitting, not again in the stance check below.
+        handle.alignToRest(); // Rebuild from untouched art after a real anatomy change.
         rebuildSpineShift(spineProfile()); // The prior hunch offsets were sampled from the OLD rest vertices.
         handle.dirty = true;
       }
@@ -1104,39 +1149,6 @@
         for (const side of ['left', 'right']) for (const joint of ['hip', 'knee', 'ankle']) { const r = handle.rest[side][joint]; handle.bones2D[side][joint] = { x: r.x, y: r.y, z: r.z }; } // The 2D bones now lie on the 3D rest bones.
       }
       // Independent neutral fits: exact horizontal waist edges and independent foot-local X widths.
-      // Prepare taper once per binding. All four bilinear neighbours of every belt sample remain rigid.
-      if (!handle.waistWidthInfluence) {
-        const stride = SEGMENTS + 1;
-        const top = Math.min(1, Math.max(...garment.pantsBeltSpline.map(p => p.y)) + 1 / SEGMENTS);
-        const cuffY = Math.min(...['left', 'right'].flatMap(side => (garment.legOpenings?.[side] || []).map(p => p.y)));
-        const kneeY = Math.min(...['left', 'right'].map(side => Number(garment.legBones?.[side]?.knee?.y) || .5));
-        const end = Math.max(top + 1 / SEGMENTS, Math.min(kneeY, cuffY - 1 / SEGMENTS));
-        handle.waistWidthInfluence = new Float32Array(stride * stride);
-        for (let row = 0, i = 0; row < stride; row++) {
-          const t = Math.max(0, Math.min(1, (row / SEGMENTS - top) / (end - top)));
-          const waist = 1 - t * t * (3 - 2 * t);
-          for (let col = 0; col < stride; col++, i++) {
-            handle.waistWidthInfluence[i] = waist;
-            for (const side of LEG_SIDES) if (handle.rings[side]) handle.rings[side].influence[i] *= 1 - waist;
-          }
-        }
-        // Lock the bilinear cuff samples to their own width field, including samples
-        // between grid vertices. Leave genuinely shared or waist-adjacent vertices alone.
-        const cuffOwners = new Uint8Array(stride * stride);
-        for (let sideIndex = 0; sideIndex < LEG_SIDES.length; sideIndex++) {
-          const side = LEG_SIDES[sideIndex];
-          for (const sample of handle.splineSpec[side + 'Ankle'].samples) {
-            for (const index of [sample.i, sample.i + 1, sample.i + stride, sample.i + stride + 1]) cuffOwners[index] |= 1 << sideIndex;
-          }
-        }
-        for (let i = 0; i < cuffOwners.length; i++) {
-          if (handle.waistWidthInfluence[i] > 0 || (cuffOwners[i] !== 1 && cuffOwners[i] !== 2)) continue;
-          for (let sideIndex = 0; sideIndex < LEG_SIDES.length; sideIndex++) {
-            const ring = handle.rings[LEG_SIDES[sideIndex]];
-            if (ring) ring.influence[i] = cuffOwners[i] === (1 << sideIndex) ? 1 : 0;
-          }
-        }
-      }
       const measuredBounds = legHandle.getTorsoBeltBounds?.(); // Isolated base art is shared per species/gender.
       const bounds = measuredBounds || (torsoFit && { left: torsoFit.center - torsoFit.width / 2, right: torsoFit.center + torsoFit.width / 2 });
       const beltSamples = handle.splineSpec.belt.samples;
