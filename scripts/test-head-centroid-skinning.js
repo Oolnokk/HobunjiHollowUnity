@@ -56,7 +56,7 @@ function fixture(bodyScale, floorY, headScale, cachedMatrices = true, legacy = f
   if (cachedMatrices) skeleton.boneMatrices = matrices.flatMap(m => {
     const a = Array(16).fill(0); a[0] = a[5] = a[10] = m.s; a[13] = m.y; a[15] = 1; return a;
   });
-  const skinnedPlane = { isSkinnedMesh: true, skeleton, geometry: { userData: { blendHeight: .012 } },
+  const skinnedPlane = { isSkinnedMesh: true, position: new Vector3(), skeleton, geometry: { userData: { blendHeight: .012 } },
     bindMatrix: new Matrix4(), bindMatrixInverse: new Matrix4(),
     updateMatrixWorld() { this.bindMatrixInverse = new Matrix4(1 / bodyScale, -floorY / bodyScale); },
     localToWorld(v) { return v.applyMatrix4(world); } };
@@ -94,7 +94,7 @@ function splineFixture(nodeShift) {
   const world = new Matrix4(1, 0);
   const matrices = Array.from({ length: 9 }, (_, k) => (k >= 1 && k <= 6 ? new Matrix4(1, nodeShift[k]) : world)); // Nodes 1-6 displaced, node 0 pinned, neck/head bones at rest.
   const skeleton = { bones: matrices.map(matrixWorld => ({ matrixWorld })), boneInverses: matrices.map(() => new Matrix4()), update() {} };
-  const skinnedPlane = { isSkinnedMesh: true, skeleton, geometry: { userData: { blendHeight: .012 } }, bindMatrix: new Matrix4(), bindMatrixInverse: new Matrix4(),
+  const skinnedPlane = { isSkinnedMesh: true, position: new Vector3(), skeleton, geometry: { userData: { blendHeight: .012 } }, bindMatrix: new Matrix4(), bindMatrixInverse: new Matrix4(),
     updateMatrixWorld() {}, localToWorld(v) { return v; } };
   return { updateMatrixWorld() {}, userData: { sourceCanvas: { width: 100, height: 100 }, portraitModelWidth: 1, portraitModelHeight: 1,
     neckRig: { available: true, skinnedPlane, neckLocal: { y: .2 }, spineBase: { y: .1 }, spinePosteriorY: -.3, headScaleJoint: {}, headBoundsPx: { left: 40, right: 60 } } } };
@@ -121,7 +121,7 @@ function offsetFixture(offset) {
     boneMatrices: matrices.flatMap(m => { const a = Array(16).fill(0); a[0] = a[5] = a[10] = m.s; a[13] = m.y; a[15] = 1; return a; }),
     update() {},
   };
-  const skinnedPlane = { isSkinnedMesh: true, skeleton, geometry: { userData: { blendHeight: .012 } },
+  const skinnedPlane = { isSkinnedMesh: true, position: new Vector3(), skeleton, geometry: { userData: { blendHeight: .012 } },
     bindMatrix: new Matrix4(), bindMatrixInverse: new Matrix4(),
     updateMatrixWorld() {}, localToWorld(v) { return v; } };
   return { updateMatrixWorld() {}, userData: {
@@ -161,7 +161,7 @@ function authorNeckFixture(headForward, headPlacement) {
     }),
     update() {},
   };
-  const skinnedPlane = { isSkinnedMesh: true, skeleton, geometry: { userData: { blendHeight: .012 } },
+  const skinnedPlane = { isSkinnedMesh: true, position: new Vector3(), skeleton, geometry: { userData: { blendHeight: .012 } },
     bindMatrix: new Matrix4(), bindMatrixInverse: new Matrix4(),
     updateMatrixWorld() {}, localToWorld(v) { return v; } };
   return { updateMatrixWorld() {}, userData: {

@@ -1713,7 +1713,7 @@
       || pixelWidth <= 0 || pixelHeight <= 0 || modelWidth <= 0 || modelHeight <= 0) return null;
     const renderedPixelX = portraitsFlipped ? pixelWidth - pixelX : pixelX; // Used below so authored attachment landmarks mirror with the UV-flipped portrait.
 
-    const localPoint = out || new THREE.Vector3(); // Optional caller-owned output avoids per-frame vector allocations.
+    const localPoint = out || skinnedPlane.position.clone(); // Infer the Three.js vector from the rendered mesh, including module-based editors.
     localPoint.set(
       -modelWidth / 2 + (renderedPixelX / pixelWidth) * modelWidth,
       modelHeight / 2 - (pixelY / pixelHeight) * modelHeight,
@@ -1802,10 +1802,10 @@
     if (vertical.lengthSq() < 1e-10) return null;
     vertical.normalize();
     const normal = tangent.clone().cross(vertical).normalize();
-    const basis = new THREE.Matrix4().makeBasis(tangent, vertical, normal);
+    const basis = avatarRoot.matrixWorld.clone().makeBasis(tangent, vertical, normal); // Use the avatar’s Three.js instance, including module-based editors.
     return {
       position: center,
-      quaternion: new THREE.Quaternion().setFromRotationMatrix(basis),
+      quaternion: avatarRoot.quaternion.clone().setFromRotationMatrix(basis),
       tangent,
       vertical,
       normal,
