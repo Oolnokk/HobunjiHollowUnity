@@ -713,7 +713,46 @@
     return dimensions.isMeasured(speciesId, gender || 'male') && dimensions.isMeasured(HEIGHT_REFERENCE_SPECIES, HEIGHT_REFERENCE_GENDER);
   }
 
+  // Authoring coordinates are actual item-space world units along the weapon's
+  // longitudinal Z axis, not pixel/image scale. Intervals may not overlap.
+  function normalizeLengthProfile(raw) {
+    if (!raw || typeof raw !== 'object') return null;
+    const a = Number(raw.a), b = Number(raw.b), fraction = Number(raw.heightFraction);
+    if (raw.a == null || raw.b == null || !Number.isFinite(a) || !Number.isFinite(b) || !(b-a > 1e-5)) return null;
+    const heightFraction = Number.isFinite(fraction) && fraction > 0 ? Math.min(4, fraction) : 0;
+    const segments = []; // Sorted disjoint shortening intervals in item units.
+    const candidates = (Array.isArray(raw.segments) ? raw.segments : []).slice(0, 16)
+      .filter(v => v && v.a != null && v.b != null && Number.isFinite(Number(v.a)) && Number.isFinite(Number(v.b)))
+      .map(v => ({ a: Math.max(a, Number(v.a)), b: Math.min(b, Number(v.b)) })).sort((x,y) => x.a-y.a);
+    for (const v of candidates) if (v.b-v.a > 1e-5 && (!segments.length || v.a >= segments[segments.length-1].b)) segments.push(v);
+    const min = Number(raw.minSegmentScale);
+    return { a, b, heightFraction, minSegmentScale: raw.minSegmentScale != null && Number.isFinite(min) ? Math.max(0.1,Math.min(1,min)) : 0.65, segments };
+  }
+
+  function lengthProfileForTool(value) {
+    return normalizeLengthProfile(ensureTool(value)?.lengthProfile);
+  }
+
+  function actualCharacterHeight(speciesId, gender, rigScaleY = null) {
+    const dimensions = global.HobunjiCharacterDimensions;
+    if (!speciesId || !dimensions?.dimensionsFor || (dimensions.isMeasured && !dimensions.isMeasured(speciesId, gender || 'male'))) return null;
+    let height = Number(dimensions.dimensionsFor(speciesId, gender || 'male')?.height);
+    const authoredY = Number(rigScaleY); // Respect a differently sized instance, not just its species default.
+    const defaultY = authoredY > 0 ? Number(global.HobunjiCharacterRigScale?.scaleFor?.(speciesId, gender || 'male')?.y) : 0;
+    if (defaultY > 0) height *= authoredY/defaultY;
+    return height > 0 && Number.isFinite(height) ? height : null;
+  }
+
+  function measuredScaleForTool(value, speciesId, gender, rigScaleY = null) {
+    const profile = lengthProfileForTool(value);
+    if (!(profile?.heightFraction > 0)) return null;
+    const height = actualCharacterHeight(speciesId, gender, rigScaleY);
+    return height == null ? null : normalizeToolScale(height * profile.heightFraction / (profile.b-profile.a));
+  }
+
   function heightFactorForTool(value, speciesId, gender, rigScaleY = null) {
+    const measured = measuredScaleForTool(value, speciesId, gender, rigScaleY);
+    if (measured != null) return measured / toolScaleForTool(value); // Replaces the old height multiplier, including for grip placement.
     const heightMultiplier = heightMultiplierForTool(value);
     const heightRatio = characterHeightRatio(speciesId, gender, rigScaleY);
     return Math.max(0.05, 1 + (heightRatio - 1) * heightMultiplier);
@@ -1439,6 +1478,9 @@
     if (editorUi.axisStatus.textContent !== axisStatusText) editorUi.axisStatus.textContent = axisStatusText;
     editorUi.scalePair.set(normalizeToolScale(entry?.toolScale));
     editorUi.heightPair.set(normalizeHeightMultiplier(entry?.heightMultiplier));
+    const length = lengthProfileForTool(editorCurrentToolKey()); // Avoid replacing an in-progress text edit.
+    if (document.activeElement !== editorUi.lengthInput) editorUi.lengthInput.value = length ? JSON.stringify(length, null, 2) : '';
+    editorUi.heightPair.range.disabled = editorUi.heightPair.number.disabled = !!length?.heightFraction;
     editorUi.spanEnabled.checked = span.enabled === true;
     editorUi.startPair.set(numberOrZero(span.startZ)); editorUi.endPair.set(numberOrZero(span.endZ));
     for (const phase of ['neutral', 'windup', 'strike']) {
@@ -1468,7 +1510,10 @@
     const heightMultiplier = normalizeHeightMultiplier(entry?.heightMultiplier);
     const heightRatio = characterHeightRatio(identity.speciesId, identity.gender);
     const effectiveScale = effectiveToolScaleForTool(editorCurrentToolKey(), identity.speciesId, identity.gender);
-    const scaleLabel = `base ×${baseScale.toFixed(2)} · height multiplier ×${heightMultiplier.toFixed(2)} · body ratio ×${heightRatio.toFixed(3)} = effective ×${effectiveScale.toFixed(3)}`;
+    const measuredHeight = actualCharacterHeight(identity.speciesId, identity.gender);
+    const scaleLabel = length?.heightFraction && measuredHeight
+      ? `measured source ${(length.b-length.a).toFixed(3)} · target ${(measuredHeight*length.heightFraction).toFixed(3)} · actual ${((length.b-length.a)*effectiveScale).toFixed(3)} (${(((length.b-length.a)*effectiveScale)/measuredHeight*100).toFixed(1)}% height)`
+      : `base ×${baseScale.toFixed(2)} · height multiplier ×${heightMultiplier.toFixed(2)} · body ratio ×${heightRatio.toFixed(3)} = effective ×${effectiveScale.toFixed(3)}`;
     const modeLabel = weaponHandModeForTool(editorCurrentToolKey()); // Mobile-visible diagnostics show which independent flag this weapon reads.
     const statusText = melee && mainSpan.enabled && span.enabled
       ? `${editorCurrentToolKey() || 'held item'} · ${gripContext.toUpperCase()} grip · ${scaleLabel} · main-hand Z ${numberOrZero(mainSpan.startZ).toFixed(4)} → ${numberOrZero(mainSpan.endZ).toFixed(4)} · off-hand Z ${numberOrZero(span.startZ).toFixed(2)} → ${numberOrZero(span.endZ).toFixed(2)} · main ${Math.round(state.primaryPercent ?? 50)}% · weapon mode ${modeLabel} · Dual Wield ${Math.round(state.dualWieldInfluence * 100)}% · 2H influence ${Math.round(state.influence * 100)}% · span position ${Math.round(state.percent)}%`
@@ -1506,6 +1551,32 @@
     const scaleFields = scalePanel.querySelector('#handToolScaleFields');
     const scalePair = editorFieldPair(scaleFields, 'handToolScale', 'Base tool scale', 1, 0.1, 3, 0.01, value => mutate(() => { ensureTool(editorCurrentToolKey()).toolScale = normalizeToolScale(value); }));
     const heightPair = editorFieldPair(scaleFields, 'handToolHeightMultiplier', 'Height multiplier', DEFAULT_HEIGHT_MULTIPLIER, 0, 3, 0.01, value => mutate(() => { ensureTool(editorCurrentToolKey()).heightMultiplier = normalizeHeightMultiplier(value); }));
+
+    const lengthHelp = document.createElement('div'); // Explicit longitudinal source measurement and multiple compressible sections.
+    lengthHelp.className = 'help';
+    lengthHelp.textContent = 'Optional measured length: A/B are the actual butt/tip coordinates on item-local Z (world units before scaling). heightFraction: 1 = character height, 0 = old sizing. segments: disjoint A/B intervals, uniformly compressed down to minSegmentScale before ground rotation. Empty = legacy. Press Apply.';
+    scalePanel.appendChild(lengthHelp);
+    const lengthInput = document.createElement('textarea');
+    lengthInput.rows = 6; lengthInput.style.width = '100%';
+    lengthInput.placeholder = '{"a":-0.5,"b":0.5,"heightFraction":0.8,"minSegmentScale":0.65,"segments":[{"a":-0.35,"b":-0.1}]}';
+    scalePanel.appendChild(lengthInput);
+    const lengthApply = document.createElement('button');
+    lengthApply.type = 'button'; lengthApply.textContent = 'Apply measured length / shortening';
+    scalePanel.appendChild(lengthApply);
+    const lengthMessage = document.createElement('div'); lengthMessage.className = 'help'; scalePanel.appendChild(lengthMessage);
+    lengthApply.addEventListener('click', () => {
+      try {
+        const raw = lengthInput.value.trim();
+        const profile = raw ? normalizeLengthProfile(JSON.parse(raw)) : null;
+        if (raw && !profile) throw new Error('A/B must be finite, with B greater than A.');
+        mutate(() => {
+          const entry = ensureTool(editorCurrentToolKey());
+          if (profile) entry.lengthProfile = profile; else delete entry.lengthProfile;
+        });
+        lengthMessage.textContent = profile ? 'Applied. Export grip configuration to keep these values.' : 'Legacy sizing restored.';
+        syncEditorSpanUi();
+      } catch (error) { lengthMessage.textContent = error.message; }
+    });
 
     const panel = document.createElement('div');
     panel.id = 'handSecondaryGripSpanPanel';
@@ -1611,7 +1682,7 @@
       pose[phase] = { enabled, dual, percent, primaryPercent, offhandEnabled, offhandCustom, offhandFields, offhandPairs };
     }
     spanEnabled.addEventListener('change', () => mutate(() => { currentSpan().enabled = spanEnabled.checked; }));
-    editorUi = { scalePanel, scalePair, heightPair, panel, axisEnabled, axisFields, axisStatus, axisPairs, mainEnabled, mainStartPair, mainEndPair, spanEnabled, startPair, endPair, pose, status: panel.querySelector('#handSecondarySpanStatus') };
+    editorUi = { scalePanel, scalePair, heightPair, lengthInput, panel, axisEnabled, axisFields, axisStatus, axisPairs, mainEnabled, mainStartPair, mainEndPair, spanEnabled, startPair, endPair, pose, status: panel.querySelector('#handSecondarySpanStatus') };
 
     document.getElementById('toolSpriteSelect')?.addEventListener('change', () => setTimeout(syncEditorSpanUi, 0));
     document.getElementById('handGripContextSelect')?.addEventListener('change', () => {
@@ -1694,7 +1765,7 @@
     get data() { return data; },
     get defaultData() { return normalizeData(DEFAULT_DATA); },
     clone: cleanClone,
-    toolKeyFor, isDualWieldWeapon, weaponHandModeForTool, setEditorIdlePreview, setEditorSingleHandPreview, getEditorIdlePreview: () => editorHandPreview === 'pair', editorToolChanged, ensureTool, toolScaleForTool, apertureForTool, apertureHolderPointForTool, primaryGripHolderPointForTool, heightMultiplierForTool, characterHeightRatio, characterHeightReady, heightFactorForTool, effectiveToolScaleForTool,
+    toolKeyFor, isDualWieldWeapon, weaponHandModeForTool, setEditorIdlePreview, setEditorSingleHandPreview, getEditorIdlePreview: () => editorHandPreview === 'pair', editorToolChanged, ensureTool, toolScaleForTool, apertureForTool, apertureHolderPointForTool, primaryGripHolderPointForTool, heightMultiplierForTool, lengthProfileForTool, actualCharacterHeight, measuredScaleForTool, characterHeightRatio, characterHeightReady, heightFactorForTool, effectiveToolScaleForTool,
     heldItemPlacementForTool, itemPointToHolder, holderPointToItem, applyHeldItemPlacement, DEFAULT_HEIGHT_MULTIPLIER, normalizeGripContext, currentGripContext,
     authoredPrimaryGripForTool, customGripAxisForTool, gripPointOnAxis, sampleFreeRightHand, primaryGripForTool, offhandPrimaryGripForTool, dualWieldOffhandGripOffsetForTool, spinPivotOffsetForTool, primaryGripSpanForTool, secondaryGripSpanForTool, secondaryGripForTool, dualWieldStateForTool, offhandIdleStateForTool, usesLegacyOffhandIdle,
     currentSecondaryGripAnimationState, currentDualWieldAnimationState, animationGripAt, gripModeForTool, setGripMode, replace, mutate, saveLocal, loadLocal, clearLocal, applyPrimaryGripVisuals, debugForTool,
