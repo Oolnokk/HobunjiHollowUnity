@@ -573,11 +573,13 @@
     guideScanAt = -Infinity;
     guideWalking = false;
     guideOpening = false;
+    guideStatus = 'waiting for opening';
   }
 
   window.NpcScheduling?.registerTargetOverride('opening-farm-guide', rec => {
-    if (rec?.id !== FARM_GUIDE_ID || !farmGuideNeeded()) return null;
-    syncGuideWorld(window.__hobunjiPlayerProfile);
+    const profile = window.__hobunjiPlayerProfile; // Stage him during initial world setup, before the opening cinematics end.
+    if (rec?.id !== FARM_GUIDE_ID || profile?.isWorldOwner !== true || tourComplete(profile)) return null;
+    syncGuideWorld(profile);
     return window.AuthoredCutsceneRuntime?.farmGuideTarget?.(guideWalking) || null;
   }, 110); // The mandatory opening appointment takes precedence over ordinary schedules and festivals.
 
@@ -586,7 +588,8 @@
     syncGuideWorld(profile);
     if (now >= guideScanAt && now - guideScanAt < 250) return; // At most four proximity decisions per real second.
     guideScanAt = now;
-    if (!farmGuideNeeded(profile) || status.running || guideOpening) return;
+    if (!farmGuideNeeded(profile)) { guideStatus = tourComplete(profile) ? 'tour complete' : 'waiting for opening'; return; }
+    if (status.running || guideOpening) return;
     const hour = gameHours(); // A missed reminder remains armed until a visible encounter, even across midnight.
     if (hour === null) return;
     if (guideNextHour !== null && hour >= guideNextHour && guideWalking) {
