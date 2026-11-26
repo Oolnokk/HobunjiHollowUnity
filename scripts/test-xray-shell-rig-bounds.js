@@ -112,10 +112,16 @@ assert.match(leg,/mesh\.onBeforeRender\.__hobunjiScreenSpaceInvariantDepthPush\s
   'screen-preserving known depth-push hooks receive explicit provenance, not a wildcard trust');
 assert.match(leg,/!camera\?\.isPerspectiveCamera/,
   'orthographic cameras skip the camera-scaled depth push');
-assert.match(leg,/const k = 1 \+ \(state\.footDepthPush \+ fore\) \/ distance/,
-  'the certified push remains uniform eye-relative scaling');
-assert.match(leg,/e\[12\] = pushCamera\.x \+ dx \* k/,
-  'the foot camera translation is uniformly scaled with its geometry');
+assert.match(leg,/let k = 1 \+ \(state\.footDepthPush \+ fore\) \/ distance/,
+  'the certified push starts from uniform eye-relative scaling');
+assert.match(leg,/k = groundSafeDepthFactor\(k, pushCamera\.y, bottom, root\.matrixWorld\.elements\[13\]\)/,
+  'the same scale is capped against the world floor before drawing');
+assert.match(leg,/e\[column\] \*= k; e\[column \+ 1\] \*= k; e\[column \+ 2\] \*= k/,
+  'every spatial matrix column uses the identical capped scale');
+for (const [i, axis] of [[12,'x'],[13,'y'],[14,'z']]) {
+  assert(leg.includes(`e[${i}] = pushCamera.${axis} + (e[${i}] - pushCamera.${axis}) * k`),
+    'all submesh translations scale about the same camera origin, preserving perspective projection');
+}
 assert.match(foot,/previousBefore\.__hobunjiScreenSpaceInvariantDepthPush === true/,
   'only previously certified foot push hooks may expose safe two-pose scissor bounds');
 const trustMatch=foot.match(/if \((!previousBefore[\s\S]*?)\) \{\s*\/\/ The foot-depth push/);
@@ -130,6 +136,9 @@ assert(acceptsFootHook(noop,threeLike),'ordinary foot with no depth push remains
 const projectedFeet=isolated.map(mesh=>({...mesh,__hobunjiXrayBoundParity:{hook:hooked,visibleMatrixWorld:{},isFresh:()=>true}}));
 assert.equal(groupActors({},null,{},projectedFeet).groups.length,3,
   '24 mock eye-scaled foot parts may batch in three screen-separated groups');
+const waterOnly = groupActors({},null,{},projectedFeet,null,new Set(projectedFeet));
+assert.equal(waterOnly.groups.length,0,'wet feet cannot open any ground-exemption region');
+assert.deepEqual(waterOnly.ordinary,projectedFeet,'wet feet retain ordinary depth for water composition');
 const untrustedFeet=isolated.map(mesh=>({...mesh,__hobunjiXrayBoundParity:null}));
 assert.equal(groupActors({},null,{},untrustedFeet).groups.length,24,
   'unproven custom foot hooks still receive separate conservative depth replays');
