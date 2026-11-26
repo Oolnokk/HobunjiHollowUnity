@@ -1,5 +1,5 @@
-// Prepared shoulder-pet angular envelopes. Geometry is sampled only for a new
-// attachment configuration; the animation path selects cached angle cells.
+// Shared painted silhouette preparation for shoulder constraints. Real rigs use
+// live bone envelopes; the cached angular table remains for legacy/test runtimes.
 (() => {
   'use strict';
   const GRID_X = 10, GRID_Y = 12; // Bounded proxy density, independent of visual tessellation.
@@ -47,6 +47,7 @@
     const tables = new WeakMap(); // At most two cached configurations per pet (mirrored perch sides).
     const vertex = new THREE.Vector3(), uvPoint = new THREE.Vector2();
     const axis = new THREE.Vector3(0, 1, 0);
+    const liveEnvelope=window.ShoulderPetDeformationEnvelope?.create?.(THREE,proxyFor); // Bone-driven math shares the same cached alpha/topology.
 
     function alphaMask(map) {
       const image = map?.image;
@@ -379,6 +380,7 @@
     function constrain(args) {
       const {pet,grip,scale,quaternion}=args,avatar=pet?.avatarRef,group=avatar?.group;
       if(!group?.isObject3D || !avatar.frontPlane || !grip || !scale || !args.ownerMeshes?.length)return {mode:'geometry-unavailable'};
+      if(liveEnvelope)return liveEnvelope.constrain(args);
       const yaw=Math.atan2(2*(quaternion.w*quaternion.y+quaternion.x*quaternion.z),1-2*(quaternion.y**2+quaternion.z**2));
       const ownerYaw=Number(args.ownerFrameYaw)||0,requestedHead=Number(avatar.headRig?.currentYawDeg)||0;
       const limit=headLimit(avatar,requestedHead),side=args.perchSide<0?0:1;

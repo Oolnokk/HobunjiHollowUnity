@@ -19,10 +19,10 @@
       throw new TypeError('ShoulderPetAttachmentRuntime requires THREE and live owner (getOwnerMesh/getOwnerNeckJoint) and configuration getters.');
     }
 
-    const rotationLimits = window.ShoulderPetRotationLimits?.create?.(THREE); // One cached geometric solver per owner.
+    const rotationLimits = window.ShoulderPetRotationLimits?.create?.(THREE); // One prepared deformation-envelope solver per owner.
     const SHOULDER_PET_BODY_NECK_BLEND = 0.5; // Equal quaternion midpoint between the player body and neck follow frames.
     const worldUp = new THREE.Vector3(0, 1, 0); // Axis for the upright pet's heading and observation turn.
-    const constraintOwnerFrame=new THREE.Quaternion(); // Reused owner-heading scratch for the cached angular envelope.
+    const constraintOwnerFrame=new THREE.Quaternion(); // Reused owner-heading scratch for legacy owner-relative limits.
     function worldQuaternionWithoutReflection(node, out = new THREE.Quaternion()) {
       if (node?.isObject3D && node.quaternion) {
         const rigResolver = window.ProceduralLegAnimation?.worldQuaternionWithoutScale; // Reuse the leg solver's canonical scale-free world orientation when present.
@@ -147,7 +147,7 @@
       const renderedScale = pet?.avatarRef?.group?.scale; // Actual THREE root scale, including the swapped width/depth axes and the current breath/squash multiplier.
       const useRenderedGrip = !!(rawGrip && renderedScale
         && Number.isFinite(renderedScale.x) && Number.isFinite(renderedScale.y) && Number.isFinite(renderedScale.z)); // Only fall back for old callers without a real avatar root.
-      let geometryConstraint = null; // Animation uses prepared owner-relative angular constraints before composing the grip.
+      let geometryConstraint = null; // Live bone envelopes constrain the requested angles before composing the grip.
       if (rotationLimits && useRenderedGrip && typeof getOwnerPortraitMeshes === 'function') {
         const ownerFrame=keepHeadingUpright(worldQuaternionWithoutReflection(playerMesh,constraintOwnerFrame));
         geometryConstraint = rotationLimits?.constrain({
@@ -222,7 +222,7 @@
         ? alignedGripWorldPosition.distanceTo(finalTransform.perchWorldPosition)
         : null; // Pixel Probe now measures real world transform drift, including genotype scaling and breathing.
       group.userData.hobunjiShoulderPetAttachment = { // Mobile-visible Pixel Probe diagnostics for this final authoritative pin.
-        recentChange: fallbackPlayerMesh ? 'Legacy shoulder pet uses the upright owner heading.' : 'Cached owner-relative angular limits constrain body and head yaw before pinning the authored grip.',
+        recentChange: fallbackPlayerMesh ? 'Legacy shoulder pet uses the upright owner heading.' : 'Prepared skin controls and live bone envelopes constrain body/head yaw before pinning the authored grip.',
         rotationSource: finalTransform.rotationSource || finalTransform.faceRotationSource,
         positionSource: finalTransform.perchPositionSource,
         expectedWorldPosition: finalTransform.worldPosition.toArray(),
