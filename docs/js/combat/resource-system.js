@@ -523,7 +523,8 @@
     const amount = Math.min(100, Math.max(0, getAffliction(entity, "windblownStamina")));
     if (!amount || !entity || options.wind === false) return { x: baseX, y: baseY, footingCost: 0, wind: false };
     const direction = windblownDirection(entity); // Shared world-space wind, never camera-relative.
-    const reference = Math.max(0, Number(options.reference) || Math.hypot(baseX, baseY)); // In the same units as the caller's vector (velocity or displacement).
+    const suppliedReference = Number(options.reference); // An explicitly halted action has a zero budget, not an implicit replacement speed.
+    const reference = Math.max(0, Number.isFinite(suppliedReference) ? suppliedReference : Math.hypot(baseX, baseY)); // In the same units as the caller's vector (velocity or displacement).
     const airMultiplier = windAirMultiplier(entity, options.airborne); // Only wind changes, never authored steering or vertical physics.
     const strength = reference * amount * .005 * airMultiplier;
     const voluntary = options.voluntary === false ? 0 : Math.hypot(baseX, baseY);
@@ -561,14 +562,37 @@
     if (!entity || !motion?.wind) return;
     windMotionFrames.add(entity);
     const cost = Math.max(0, Number(motion.footingCost) || 0) * Math.max(0, Math.min(1, Number(fraction) || 0));
-    if (!cost || entity.prone) return;
-    const total = (windFootingRemainders.get(entity) || 0) + cost;
-    const spend = Math.floor((total + 1e-9) * 10) / 10;
+    if (!cost || entity.prone || !Number.isFinite(entity.footing)) return;
+    // Accumulate effective cost AFTER resistance. Quantize against the next
+    // enhanced pool's conversion rate, so 0.1-point updates cannot bypass a
+    // 3:1 shield or round resistance away at high frame rates.
+    const total = (windFootingRemainders.get(entity) || 0) + cost * footingLossMultiplier(entity);
+    const spend = quantizedWindFootingCost(entity, total);
     windFootingRemainders.set(entity, Math.max(0, total - spend));
     if (spend > 0) {
-      spendFooting(entity, spend, "Windblown movement");
-      if (entity.footing <= 0 && !entity.prone) (onDepleted || window.Combat?.deps?.movementFootingDepleted)?.(entity, motion.windX, motion.windY);
+      spendFooting(entity, spend, "Windblown movement", { effectiveCost: true });
+      if (entity.footing <= 0 && !entity.prone) {
+        windFootingRemainders.delete(entity); // A prior fall never lends a fractional charge to the next recovery.
+        (onDepleted || window.Combat?.deps?.movementFootingDepleted)?.(entity, motion.windX, motion.windY);
+      }
     }
+  }
+
+  function quantizedWindFootingCost(entity, total) {
+    // Only consult the enhanced priority table when an enhanced reserve is
+    // actually present; ordinary Windblown movement stays allocation-free.
+    const pools = getAffliction(entity, "temperedFooting") > 0 || getAffliction(entity, "resoluteFooting") > 0
+      ? getEnhancedResources(entity, "footing", { kind: "loss", reason: "Windblown movement" }) : [];
+    let remaining = total;
+    for (const entry of pools) {
+      const rate = entry.def.conversionRate;
+      const capacity = entry.amount * rate;
+      if (remaining + 1e-9 < capacity) {
+        return round1(total - remaining + Math.floor((remaining + 1e-9) * 10 / rate) * rate / 10);
+      }
+      remaining = Math.max(0, remaining - capacity);
+    }
+    return round1(total - remaining + Math.floor((remaining + 1e-9) * 10) / 10);
   }
 
   function timedDebuffModifier(entity, key) {
@@ -1200,12 +1224,16 @@
   // 0 is what the caller uses as its signal to enter prone (see initEntity's
   // comment) rather than anything tracked in here. A prone entity is immune
   // to further loss until it recovers, per the feature's own rule.
-  function spendFooting(entity, amount, reason = "hit") {
+  function footingLossMultiplier(entity) {
+    const resistance = entity === window.Combat?.deps?.player ? 1 - Math.min(0.6, (window.PerkSystem?.rank('combat', 'increaseFootingResistance') || 0) * 0.08) : 1; // Same resistance for every ordinary Footing loss.
+    return timedDebuffModifier(entity, "footingDamageTaken") * statModifier(entity, 'incomingFootingDamage') * resistance;
+  }
+
+  function spendFooting(entity, amount, reason = "hit", options = {}) {
     if (window.RomanceFamily?.isBasketBaby?.(entity?.rec?.id || entity?.id)) return 0; // Newborns do not enter prone/footing damage from combat.
     if (entity.prone) return 0;
     if (!(amount > 0) || !Number.isFinite(entity.footing)) return 0;
-    amount *= timedDebuffModifier(entity, "footingDamageTaken") * statModifier(entity, 'incomingFootingDamage'); // Double-edged balance trinkets adjust only received Footing damage, before existing resistance and enhanced Footing.
-    if (entity === window.Combat?.deps?.player) amount *= 1 - Math.min(0.6, (window.PerkSystem?.rank('combat', 'increaseFootingResistance') || 0) * 0.08); // Increase Footing Resistance perk.
+    if (!options.effectiveCost) amount *= footingLossMultiplier(entity); // Wind's accumulator already contains the mitigated cost; never apply resistance twice.
     const enhanced = resolveEnhancedResourceTransaction(entity, "footing", amount, { kind: "loss", reason }); // Resolute Footing absorbs at its authored 3:1 effective value.
     const ordinaryLoss = enhanced.ordinaryRemaining;
     const before = entity.footing;
