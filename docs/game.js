@@ -19199,6 +19199,10 @@
       let camX = COLS * TILE * 0.5, camY = ROWS * TILE * 0.72;
       let lastActionMessage = 'Stormtide — dig trenches now to route the water.';
       let paused = false;
+      // Co-op: every UI hold that sets `paused` (menus, the appearance editor, town proposals, the pause button) holds only
+      // the LOCAL player; the world keeps running for everyone else. `paused` therefore means "the local player is held";
+      // worldPaused() means "the whole world is stopped", which only happens in single-player. World-simulation readers use it.
+      const worldPaused = () => paused && window.TimeConsensus?.shouldGate() !== true;
 
       // Facing lag: visual/reticle angle lags behind raw movement angle.
       // facingAngle is what the reticle and sprite actually use.
@@ -26876,11 +26880,11 @@
         window.PerfProfiler?.end(prePausePerf);
 
         if (paused) window.PlayerDowned?.setGiveUpHeld?.(false); // The paused frame still runs: cancel surrender before wall-clock hold can complete after unpausing.
-        // Co-op: the main menu holds only the local player; the world, the clock and everyone else keep running (a
-        // conversation never paused the world either). Other modal gates that reuse `paused` still stop it.
+        // Co-op: any UI hold (main menu, appearance editor, town proposals, the pause button) holds only the local player;
+        // the world, the clock and everyone else keep running (a conversation never paused the world either).
+        // Single-player is unchanged: `paused` stops the whole world (see worldPaused above).
         const localPaused = paused;
-        const coopWorldContinues = paused && mainMenuOpen && window.TimeConsensus?.shouldGate() === true;
-        if (!paused || coopWorldContinues) {
+        if (!worldPaused()) {
           updateCalendar(dt);
           _layoutCheckAccumS += dt;
           if (_layoutCheckAccumS >= 2) { _layoutCheckAccumS = 0; checkMapLayoutChanges(); }
@@ -26972,19 +26976,21 @@
 
           const miscGameplayPerf = window.PerfProfiler?.begin('misc gameplay'); // Dens/climbing/tent interactions and transition-spot checks below.
           window.ClimbSystem?.updateFallenNests?.(dt);
-          window.DenNestSystem.updateNestInteraction(dt);
-          window.CorpseHoldLoot?.update(dt); // Short hold-to-loot bodies (cave catacomb skeletons) — js/corpse-hold-loot.js.
-          if (_isZoneArea(currentArea)) window.BanditCamps.updateTentInteraction(dt);
+          if (!localPaused) { // The local player's own interactions stay held under their menu (the world above keeps running in co-op).
+            window.DenNestSystem.updateNestInteraction(dt);
+            window.CorpseHoldLoot?.update(dt); // Short hold-to-loot bodies (cave catacomb skeletons) — js/corpse-hold-loot.js.
+            if (_isZoneArea(currentArea)) window.BanditCamps.updateTentInteraction(dt);
+          }
 
           // Interior exit detection: player walks onto any door's exit-nub
           // threshold (see js/house-pieces.js's computeInteriorLayout()).
-          if (currentArea === 'interior' && sceneTransDir === 0) {
+          if (!localPaused && currentArea === 'interior' && sceneTransDir === 0) {
             const iCol = Math.floor(player.x / TILE), iRow = Math.floor(player.y / TILE);
             if (_interiorExitTiles.has(iCol + ',' + iRow)) exitInterior();
           }
 
           // Transition spots (farm ↔ interior ↔ town ↔ building)
-          if (sceneTransDir === 0) checkTransitionSpots();
+          if (!localPaused && sceneTransDir === 0) checkTransitionSpots(); // Never walk through a door because the player stands on it while a menu is open.
 
           if (currentArea === 'farm' || currentArea === 'town') {
             window.WeatherFX.updateWaterParticles(dt);
@@ -27237,7 +27243,7 @@
         // Run it AFTER ordinary pre-render hand, neck and stance presentation,
         // so those other writers cannot hide the player or invalidate the next
         // frame's pose checkpoint. The two dancers are finalized together.
-        window.FestivalWheelDanceRuntime?.update?.(dt,paused,currentArea);
+        window.FestivalWheelDanceRuntime?.update?.(dt,worldPaused(),currentArea); // NPC dance progress follows the world clock, not one player's menu.
         worldPopupRuntime?.update(now); // Billboards use the final camera and portrait poses for this frame, including during pause.
 
         // ── Render active scene ──────────────────────────────────
@@ -28870,6 +28876,7 @@
       if (menuResetBtn) menuResetBtn.addEventListener('click', doReset);
       if (menuPauseBtn) menuPauseBtn.addEventListener('click', () => {
         paused = !paused;
+        if (paused && window.TimeConsensus?.shouldGate()) showToast('Co-op: the world keeps running while you are paused.', false);
         menuPauseBtn.textContent = paused ? '▶' : '⏸';
         debugLog(paused ? 'paused' : 'resumed');
       });
@@ -31395,7 +31402,7 @@
 
       const NON_PLAYER_TOOL_HOLDER = Object.freeze({ kind: 'non-player' }); // No mastery, fresh base metal unless the caller passes the real holder.
       window.BanditCombat?.init({
-        isPaused: () => paused, // The commander-led army pauses its abstract planner with the game.
+        isPaused: worldPaused, // The commander-led army pauses its abstract planner with the world (not with one co-op player's menu).
         isGameStarted: () => window.__hobunjiGameStarted === true, // Prevent abstract marching while the title/creator owns the world.
         rnd,
         clamp: window.FormatUtils.clamp,
