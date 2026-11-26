@@ -274,7 +274,7 @@
       }
     }
 
-    function constrain(args) {
+    function solve(args) {
       const started=clock(),d=diagnostic;
       const {pet,perch,grip,scale,quaternion}=args,avatar=pet?.avatarRef,group=avatar?.group;
       const requested=Math.atan2(2*(quaternion.w*quaternion.y+quaternion.x*quaternion.z),1-2*(quaternion.y**2+quaternion.z**2));
@@ -349,6 +349,31 @@
       if(bestDelta>EPS)quaternion.setFromAxisAngle(axis,bestBody);
       if(canTurn && Math.abs(bestHead-head)>EPS)avatar.updateHeadYaw(bestHead,1000);
       return finish();
+    }
+    // Last pose this solver verified as clear, per pet, stored relative to the owner's
+    // heading. When geometry cannot be evaluated (unavailable) or no clear angle exists,
+    // the requested body and head yaw must not be applied unchecked: that is exactly the
+    // forbidden range the solver exists to block. Hold the last verified pose instead.
+    const lastSafe=new WeakMap();
+    function constrain(args) {
+      const d=solve(args),avatar=args.pet?.avatarRef,group=avatar?.group,quaternion=args.quaternion;
+      d.heldLastSafe=false;
+      if(!group || !quaternion)return d;
+      const ownerYaw=Number(args.ownerFrameYaw)||0;
+      if(d.mode==='geometric-depth'){
+        let held=lastSafe.get(group);if(!held)lastSafe.set(group,held={body:0,head:0});
+        held.body=wrap(d.resolvedBodyYawDeg*DEG-ownerYaw);held.head=d.headYawDeg;
+        return d;
+      }
+      const held=lastSafe.get(group);
+      if(!held)return d; // Never verified for this pet: nothing safe to hold, behaviour is unchanged.
+      const resolved=wrap(ownerYaw+held.body);
+      quaternion.setFromAxisAngle(axis,resolved);
+      const rig=avatar.headRig,current=Number(rig?.currentYawDeg)||0;
+      if(typeof avatar.updateHeadYaw==='function' && rig && Math.abs(current-held.head)>EPS)avatar.updateHeadYaw(held.head,1000);
+      d.heldLastSafe=true;d.resolvedBodyYawDeg=resolved/DEG;
+      d.bodyOffsetDeg=wrap(resolved-d.requestedBodyYawDeg*DEG)/DEG;d.headYawDeg=held.head;
+      return d;
     }
     return {constrain};
   }

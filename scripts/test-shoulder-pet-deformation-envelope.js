@@ -133,3 +133,44 @@ const restricted=solver.constrain(args);
 assert.ok(restricted.headYawDeg===0 || restricted.mode==='no-safe-rotation','passive constraint never selects a forbidden yaw');
 if(restricted.mode==='geometric-depth')assert.equal(pet.avatarRef.headRig.currentYawDeg,0);
 console.log('passive geometry candidates respect permitted direction');
+
+// When the live geometry cannot be evaluated, or no clear angle exists, the requested
+// body/head yaw must never be applied unchecked (that is the forbidden range itself).
+// The last verified pose is held, relative to the owner's heading.
+{
+  const yawOf=q=>2*Math.atan2(q.y,q.w);
+  const neckH=bone(),altH=bone();neckH.position.x=0; // Neck deformation closes the requested angle, forcing a non-trivial verified yaw.
+  const ownerH=mesh(rectangle(.3,0),[neckH,altH]);
+  const groupH={isObject3D:true,children:[],matrixWorld:new M(),updateWorldMatrix(){}};
+  const headBone=bone();let headNow=20;const writes=[];
+  const petH={avatarRef:{group:groupH,frontPlane:mesh(rectangle(.3,0)),
+    headRig:{currentYawDeg:headNow,frontYawBone:headBone,rig:{minDeg:-40,maxDeg:40}},
+    updateHeadYaw(deg){writes.push(deg);this.headRig.currentYawDeg=deg;}}};
+  const solverH=create({Matrix4:M,Quaternion:Q,Euler:E,Vector3:V},()=>proxy);
+  const argsH=()=>({ownerMeshes:[ownerH],pet:petH,perch:new V(),grip:new V(),scale:new V(1,1,1),quaternion:new Q(),ownerFrameYaw:0});
+
+  const good=solverH.constrain(argsH());
+  assert.equal(good.mode,'geometric-depth');assert.equal(good.heldLastSafe,false);
+  assert.ok(Math.abs(good.bodyOffsetDeg)>1,'fixture really forces a corrected body yaw');
+  const safeYaw=good.resolvedBodyYawDeg,safeHead=good.headYawDeg;
+
+  // Same frame, geometry now unavailable: the unchecked requested yaw (0) must not be applied.
+  const down=argsH();down.ownerMeshes=[];petH.avatarRef.headRig.currentYawDeg=35; // Head also drifted toward a blocked angle.
+  const held=solverH.constrain(down);
+  assert.equal(held.mode,'geometry-unavailable');assert.equal(held.heldLastSafe,true);
+  near(yawOf(down.quaternion)/(Math.PI/180),safeYaw,'body holds the last verified yaw, not the requested one');
+  near(held.headYawDeg,safeHead,'head holds the last verified yaw');
+  assert.equal(writes[writes.length-1],safeHead,'held head yaw is applied to the live rig');
+
+  // The held pose is relative to the owner: turning the owner carries it along.
+  const turned=argsH();turned.ownerMeshes=[];turned.ownerFrameYaw=0.5;
+  solverH.constrain(turned);
+  near(wrap(yawOf(turned.quaternion)-0.5)/(Math.PI/180),safeYaw,'held yaw follows the owner heading');
+
+  // A pet that was never verified has nothing safe to hold: behaviour is unchanged.
+  const fresh={avatarRef:{group:{isObject3D:true,children:[],matrixWorld:new M(),updateWorldMatrix(){}},frontPlane:mesh(rectangle(.3,0))}};
+  const none={ownerMeshes:[],pet:fresh,perch:new V(),grip:new V(),scale:new V(1,1,1),quaternion:new Q(),ownerFrameYaw:0};
+  const unchanged=solverH.constrain(none);
+  assert.equal(unchanged.heldLastSafe,false);near(yawOf(none.quaternion),0,'unverified pet keeps the requested yaw');
+}
+console.log('unavailable or blocked geometry holds the last verified pose instead of passing requested yaw through');
