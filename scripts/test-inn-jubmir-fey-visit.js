@@ -66,7 +66,7 @@ const context = {
     __hobunjiPlayerProfile: profile, __hobunjiGameStarted: true,
     DevCompanion: { registerStateProvider() {}, registerPanel: value => { panel = value; } },
     CalendarSystem: { isInitialized: () => true, previewAfterHours: () => ({ day: Math.floor(hour / 24) + 1, time01: hour % 24 }), getHour: value => value },
-    NpcScheduling: { registerTargetOverride: (id, callback) => { storyTarget = callback; }, resolveNpcStationTarget: () => null },
+    NpcScheduling: { registerTargetOverride: (id, callback) => { if (id === 'jubmir_great_fey') storyTarget = callback; }, resolveNpcStationTarget: () => null },
     DoorstepVisits: { registerProvider: value => { provider = value; }, markDone() {}, dismissVisit() { dismissed++; } },
     LocalDBOverrides: { loadDatabase: async () => db },
     AuthoredCutsceneRuntime: { farmTourPoints: () => ({ entry: {}, porch: {}, guide: {}, playerPorch: {} }), run: async (scene, options) => {
