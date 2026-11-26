@@ -3303,3 +3303,60 @@ pathfinding counters at its start and end (`counterDeltas.sceneLoad`, `counterDe
 
 Unrelated finding: `assets/audio/sfx/farming/sfx_harvest.mp3` is referenced by `config/scratchbones-config.js` and the sfx README
 but has never existed in the repository (combat audio HTTP 404 in the probe).
+
+## Wilderness zone first build: water-body outline distance (2026-11-26)
+
+Profiled `buildZoneScene('map_northern_cliffs')` (first build, headless software GL, Chrome CPU profiler): 3972 ms. About 1.8 s of it was
+`water-body-outline-overlay.js` `buildDomain` -> `applyProtectedBand`, which measured every mapped vertex against every boundary
+segment (O(vertices x segments), `Math.hypot` per pair; `pointSegmentDistance` alone ~1.0 s self time).
+
+Fix: `buildBoundaryDistanceIndex` (uniform grid + outward ring search that stops once nothing unseen can be closer, squared distances,
+one sqrt per query). Exact: `scripts/test-water-body-boundary-index.js` compares against brute force (random, pond rim, diagonal,
+degenerate, outside points) to 1e-9, and it is ~21x faster on a 1200-segment outline. Same zone after: 2466 ms (-38%).
+
+Remaining top of the build (not yet touched): `buildZoneMesaMeshes` ~0.94 s (surface-stretch UV remap/unwrap), `buildPathNetworkGeo`
+~0.3 s self. This benefits every first zone entry, single-player included, and shortens the co-op host's guest-zone build hitch.
+
+### Mesa UV unwrap: interned vertex ids, numeric edge keys (2026-11-26)
+
+`HobunjiSurfaceStretchUV.mapGeometry` (the mesa/cliff surface-stretch UV remap, ~0.9-1.1 s of a wilderness zone build) spent its time on
+string keys: `edgeKey` (`${a}|${b}` concat + long-string hashing) was the top self-time function (~350 ms), then `collectTriangles` /
+`islandData`. Vertex keys are now interned to integer ids once per mesh and an edge is one number; the edge's orientation still comes
+from the original string order of the vertex names, because it decides which end seeds a boundary loop and the adjacency insertion order.
+Gotcha found by the equivalence test: ids start at 1, since `traceBoundaryLoops` tests `if (!next)` and a vertex id of 0 is falsy.
+
+Proof of identical output: `scripts/test-surface-stretch-topology-equivalence.js` (golden hashes from the pre-change code over 7
+deterministic mesas: holes, pieces, material slot, tight angle, quad pairs, edge options; needs `THREE_PATH` or `npm i three`, else it skips).
+Node micro-benchmark, 7,200-triangle mesa: 186 ms -> 105 ms per `mapGeometry`.
+
+### Zone build: plateau mesa bookkeeping and path network heightfield (2026-11-26)
+
+Both are pure functions of the zone grid, so each got a golden-hash test generated from the pre-change code before any edit
+(`scripts/test-plateau-mesa-golden.js`, `scripts/test-path-network-golden.js`; real three.js needed via `THREE_PATH` or `npm i three`,
+otherwise they skip).
+
+- `buildPlateauMesa`: `inMask` built a template-string key per call (several per vertex), the BFS allocated `[gi, gj]` arrays and a
+  neighbour table per step, and every quad built a string key for the own-mask test. Memoized per tile / indexed BFS / per-tile gate.
+  41 -> 25 ms per 66x66-tile mesa (Node).
+- `buildPathNetworkGeo` (route heightfield for a whole zone): profiling showed the bilinear `maskAt` lookup plus `roughDisp` ran for every
+  render vertex even though the blurred route mask is exactly 0 almost everywhere. Tiles whose sampling window sees no non-zero mask cell
+  skip the lookup (result is exactly +0) and `roughDisp` is skipped where the blend is +0 (it adds +/-0). The mask build/blur also lost
+  its per-vertex arrays and per-pass buffers (same float summation order). 1203 -> 758 ms on a 200x180-tile zone (Node).
+
+Gotcha while doing this: a Python splice used `str.index("const seamDisp")` from the start of the file and silently duplicated ~230
+lines because an earlier function has the same text; the golden test still passed because the stale copy was the one being called.
+When splicing, search from the start marker, and check `git diff --stat` before trusting a green test.
+
+### Where the first zone build stands after these passes (2026-11-26, map_northern_cliffs, headless software GL)
+
+First build of the zone went 3972 ms -> ~2500 ms (run-to-run spread about +/-0.3 s). The profile is now flat; remaining stable costs, inclusive:
+`buildZoneMesaMeshes` ~1.0 s (of which `buildPlateauMesa` ~0.45 s, the natural-surface UV post-pass ~0.5 s, `batchMesaMeshes` ~0.3 s),
+chunk priming ~0.5 s, waterfall curtain overlay `buildDomain` ~0.3-0.45 s, path brick chunks ~0.33 s, border terrain ~0.28 s,
+`ZoneGrassBillboards`/log-wall `build` ~0.3 s, plus ~0.5 s of garbage collection (many short-lived index arrays and typed buffers).
+
+Unrelated to the zone build but visible in one wide profile (the async `buildBuildingScene` continuation landing in the same window):
+`FoliageGenerator.applySurfaceGrowth` -> `buildSurfaceGrowth` ~1.2 s, `surfaceGuideEdges` alone ~0.46 s self + 0.09 s in its `quant` helper.
+That is a separate, larger candidate for building interiors.
+
+Ideas not yet tried: write `buildPlateauMesa`'s grass/stone indices straight into typed arrays (it builds two plain arrays, `concat`s them, then copies
+into a Uint16/Uint32 array), and pool the per-chunk typed buffers to cut GC.
