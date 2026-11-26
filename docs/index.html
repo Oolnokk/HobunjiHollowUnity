@@ -36,7 +36,7 @@
        module so its fetch() wrapper can log each config/JSON access. -->
   <script src="js/dev-companion-bridge.js?v=20261019handoff1"></script>
   <script src="js/dev-companion-appearance.js?v=20261107appearance-audit2"></script>
-  <script src="js/xray-hierarchy.js?v=20261126proportional1"></script>
+  <script src="js/xray-hierarchy.js?v=20261126fixedWeaponSize1"></script>
   <script src="js/held-ground-pose.js?v=20261126dualGround1"></script>
   <script src="https://unpkg.com/three@0.128.0/examples/js/controls/TransformControls.js"></script>
   <script src="js/geometry-quality.js?v=20261110cloneaudit2"></script> <!-- Baked GLB quality profiles; source fallback. -->
@@ -198,7 +198,7 @@
        procedural-hand-outline-parity.js's fix for the same class of bug). -->
   <script src="js/portrait-plane-outline-parity.js?v=20261126neckBlendConsolidate3"></script>
   <!-- Shared held-item action poses used by game.js and its animation editor. -->
-  <script src="js/held-action-animations.js?v=20261126dualGround1"></script>
+  <script src="js/held-action-animations.js?v=20261126fixedWeaponSize1"></script>
   <!-- Great Fey skip voluntary gifts, proximity chatter, activity reactions, and pet greetings.
        Load once before all NPC interaction modules, including lazy runtimes. -->
   <script src="js/npc-interaction-policy.js?v=20261021fey1"></script>
@@ -667,9 +667,9 @@
        relative to the other systems above doesn't matter; must load
        before game.js, which calls window.MetalCraftShop.init(...) during
        its own setup. -->
-  <script src="config/modular-weapons.js?v=20261118captainWarCleaver2"></script>
+  <script src="config/modular-weapons.js?v=20261126fixedWeaponSize1"></script>
   <script src="js/modular-weapon-bridge-fill.js?v=20261109boreflex1"></script>
-  <script src="js/modular-weapons.js?v=20261119sideTangSweep2"></script>
+  <script src="js/modular-weapons.js?v=20261126fixedWeaponSize1"></script>
   <script src="js/bandit-captain-armaments.js?v=20261126planarRebase1"></script> <!-- Cultural donor pool + Foundry legal pair selection; registers unique loot before game startup. -->
   <script src="js/town-proposals.js?v=20261016proposals1"></script>
   <script src="js/foundry-shop.js?v=20261116subtiers1"></script>

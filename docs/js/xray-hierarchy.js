@@ -57,7 +57,7 @@
     },
     'ground.heldPose': {
       order: 12, label: 'Held weapon ground clearance', default: 'rotation', options: ['rotation', 'xray'],
-      help: 'rotation (default): fit the proportionally sized weapon in Light stance, then rotate about the grip; unsupported poses retain legacy x-ray. xray: original behavior.',
+      help: 'rotation (default): fit the authored-size weapon in Light stance, then rotate about the grip; unsupported poses retain legacy x-ray. xray: original behavior.',
     },
     'ground.showZone': {
       order: 10, label: 'Show ground X-ray zone', default: 'off', options: ['on', 'off'],

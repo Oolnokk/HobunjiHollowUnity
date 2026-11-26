@@ -3433,8 +3433,10 @@
     }
   };
   const AUTHORED_BROADSWORD={"toolScale":1,"heightMultiplier":0.5,"primaryGrip":{"position":{"x":0,"y":0,"z":0},"rotationDeg":{"pitch":0,"yaw":0,"roll":0}},"customGripAxis":{"enabled":false,"start":{"x":0,"y":0,"z":0},"end":{"x":0,"y":0,"z":0.5}},"secondaryGripSpan":{"enabled":false,"startZ":0,"endZ":0},"primaryGripSpan":{"enabled":false,"startZ":0,"endZ":0},"gripMode":null,"rangedPrimaryGrip":{"position":{"x":0,"y":0,"z":0},"rotationDeg":{"pitch":0,"yaw":0,"roll":0}},"rangedSecondaryGripSpan":{"enabled":false,"startZ":0,"endZ":0},"rangedGripMode":null,"lengthProfile":{"a":-0.16,"b":0.65667,"heightFraction":1.134275992099158,"minSegmentScale":0.65,"segments":[{"a":-0.10277,"b":0.06707,"x0":-0.07087,"x1":0.01096}],"contactOutline":[{"x":-0.11777777777777779,"z":0.11999999605540024},{"x":-0.06555555555555556,"z":-0.12333332927916141},{"x":-0.06444444444444444,"z":-0.12777777357750952},{"x":-0.061111111111111116,"z":-0.13666666217420587},{"x":-0.05888888888888888,"z":-0.13999999539796693},{"x":-0.05777777777777779,"z":-0.14111110647255398},{"x":-0.05666666666666667,"z":-0.14222221754714104},{"x":-0.05111111111111111,"z":-0.1477777729200762},{"x":-0.025555555555555554,"z":-0.15666666151677255},{"x":-0.016666666666666663,"z":-0.15888888366594667},{"x":-0.0111111111111111,"z":-0.15999999474053372},{"x":-0.005555555555555564,"z":-0.15999999474053372},{"x":-0.0022222222222222088,"z":-0.1577777725913596},{"x":-0.0011111111111111183,"z":-0.15666666151677255},{"x":0.010000000000000009,"z":-0.1311111068012707},{"x":0.062222222222222234,"z":0.11777777390622612},{"x":0.06555555555555553,"z":0.13777777324879292},{"x":0.06555555555555553,"z":0.1433333286217281},{"x":-0.012222222222222218,"z":0.6322222014400254},{"x":-0.014444444444444454,"z":0.6433333121858957},{"x":-0.016666666666666663,"z":0.6499999786334181},{"x":-0.01777777777777778,"z":0.6533333118571791},{"x":-0.0188888888888889,"z":0.6555555340063532},{"x":-0.02111111111111111,"z":0.6566666450809402},{"x":-0.0411111111111111,"z":0.6566666450809402},{"x":-0.043333333333333335,"z":0.6544444229317663},{"x":-0.04444444444444445,"z":0.647777756484244},{"x":-0.045555555555555544,"z":0.6411110900367216},{"x":-0.11777777777777779,"z":0.12888888465209658}],"ropeMinScale":null,"headContact":null}}; // New shape absent from older defaults.
-  const PROPORTIONAL_WEAPONS=new Set(['hatchet','hoe','pickshovel','fishingspear','fishingmace','bshuakauitl','hachututorchstaff','hachututorchflail','grappleflail','warhammer','workhammer','daggersword','plainssword','dagger','kylie','warcleaver','harlyaolongsword','harlyaobroadsword','crossbow','crossbowloaded','scatterbow','scatterbowloaded','shortbow','longbow','bow','sling','throwingflask']); // Weapon shapes and their normalized crafted aliases.
-  function usesProportionalWeaponScale(value){return PROPORTIONAL_WEAPONS.has(toolKeyFor(value))||!!global.ModularWeapons?.decode?.(value);}
+  const WEAPON_SCALE_TOOLS=new Set(['hatchet','hoe','pickshovel','fishingspear','fishingmace','bshuakauitl','hachututorchstaff','hachututorchflail','grappleflail','warhammer','workhammer','daggersword','plainssword','dagger','kylie','warcleaver','harlyaolongsword','harlyaobroadsword','crossbow','crossbowloaded','scatterbow','scatterbowloaded','shortbow','longbow','bow','sling','throwingflask','bgungku','greatclub','porakanekigreatclub','heavymallet','roundshield']); // Weapon shapes and their normalized crafted aliases.
+  function isWeaponScaleTool(value){return WEAPON_SCALE_TOOLS.has(toolKeyFor(value))||!!global.ModularWeapons?.decode?.(value);}
+  const WEAPON_HEIGHT_PRESET='weapon-height-inactive-20261126-v1'; // Reset existing weapon settings once; later explicit edits remain authorable.
+  function defaultHeightMultiplier(key){return isWeaponScaleTool(key)?0:(DEFAULT_DATA.tools[key]?.heightMultiplier??DEFAULT_HEIGHT_MULTIPLIER);}
   function normalizeData(raw) {
     const next = clone(raw || DEFAULT_DATA);
     const previousPrimaryRotationPreset = next.primaryRotationPreset; // Missing/older marker means saved grip rotations need the new authoritative weapon table once.
@@ -3442,6 +3444,7 @@
     const resetTwoHandSpans = next.twoHandSpanPreset !== TWO_HAND_SPAN_PRESET; // Old drafts adopt both stance-authored ranges, leaving 1H grips unchanged.
     const resetManualMeleeSpans = next.manualMeleeSpanPreset !== MANUAL_MELEE_SPAN_PRESET; // Old local drafts receive the manual ranges without changing primary grips or scales.
     const resetLongHaftGrips = next.longHaftGripPreset !== LONG_HAFT_GRIP_PRESET; // Older drafts adopt the measured long-haft 1H centers and paired ranges once.
+    const resetWeaponHeights=next.weaponHeightPreset!==WEAPON_HEIGHT_PRESET; // Also migrates local drafts from the proportional experiment.
     const resetHeightMultipliers = next.heightMultiplierPreset !== HEIGHT_MULTIPLIER_PRESET; // Drafts from the all-1.0 default era adopt the 0.5 default once.
     const resetFluteGrip = next.fluteGripPreset !== FLUTE_GRIP_PRESET; // Previously saved flute grips adopt these exported coordinates only once.
     const resetAuthoredHandRotations = next.authoredHandRotationsPreset !== AUTHORED_HAND_ROTATIONS_PRESET; // Prior drafts get the corrected hand rotations once, without migrating tool placement.
@@ -3453,6 +3456,7 @@
     next.primaryRotationPreset = PRIMARY_ROTATION_PRESET;
     next.rangedGripPreset = RANGED_GRIP_PRESET;
     next.heightMultiplierPreset = HEIGHT_MULTIPLIER_PRESET;
+    next.weaponHeightPreset=WEAPON_HEIGHT_PRESET;
     next.fluteGripPreset = FLUTE_GRIP_PRESET;
     next.authoredHandRotationsPreset = AUTHORED_HAND_ROTATIONS_PRESET;
     const rawTools = next.tools && typeof next.tools === 'object' ? next.tools : {}; // Saved drafts override defaults, while newly added weapon defaults still appear after upgrades.
@@ -3474,9 +3478,9 @@
       entry.toolScale = normalizeToolScale(entry.toolScale, fallbackEntry.toolScale ?? 1);
       entry.aperture = normalizeAperture(entry.aperture ?? fallbackEntry.aperture);
       if (!entry.aperture) delete entry.aperture;
-      entry.heightMultiplier = resetHeightMultipliers
-        ? (fallbackEntry.heightMultiplier ?? DEFAULT_HEIGHT_MULTIPLIER)
-        : normalizeHeightMultiplier(entry.heightMultiplier, fallbackEntry.heightMultiplier ?? DEFAULT_HEIGHT_MULTIPLIER);
+      entry.heightMultiplier = (resetWeaponHeights&&isWeaponScaleTool(toolKey))||resetHeightMultipliers
+        ? defaultHeightMultiplier(toolKey)
+        : normalizeHeightMultiplier(entry.heightMultiplier,defaultHeightMultiplier(toolKey));
       entry.primaryGrip = normalizeTransform(entry.primaryGrip);
       entry.customGripAxis = normalizeCustomGripAxis(entry.customGripAxis ?? fallbackEntry.customGripAxis); // One optional 3D axis per tool, independent of 1H and ranged grip anchors.
       if (previousPrimaryRotationPreset !== PRIMARY_ROTATION_PRESET) {
@@ -3604,7 +3608,7 @@
     entry.toolScale = normalizeToolScale(entry.toolScale, fallbackEntry.toolScale ?? 1);
     entry.aperture = normalizeAperture(entry.aperture ?? fallbackEntry.aperture);
     if (!entry.aperture) delete entry.aperture;
-    entry.heightMultiplier = normalizeHeightMultiplier(entry.heightMultiplier, fallbackEntry.heightMultiplier ?? DEFAULT_HEIGHT_MULTIPLIER);
+    entry.heightMultiplier = normalizeHeightMultiplier(entry.heightMultiplier,defaultHeightMultiplier(key));
     entry.primaryGrip = normalizeTransform(entry.primaryGrip);
     entry.customGripAxis = normalizeCustomGripAxis(entry.customGripAxis ?? fallbackEntry.customGripAxis); // Materialize defaults for legacy entries and keep invalid endpoints safe.
     entry.secondaryGripSpan = inferredSpan(entry);
@@ -3646,7 +3650,7 @@
   function heightMultiplierForTool(value) {
     const key = toolKeyFor(value);
     const entry = key ? ensureTool(key) : null;
-    return usesProportionalWeaponScale(value)?1:normalizeHeightMultiplier(entry?.heightMultiplier, DEFAULT_DATA.tools[key]?.heightMultiplier ?? DEFAULT_HEIGHT_MULTIPLIER);
+    return normalizeHeightMultiplier(entry?.heightMultiplier,defaultHeightMultiplier(key));
   }
 
   // rigScaleY is optional: a character whose body height is NOT the species/gender default (an authored per-enemy proportion such as a
@@ -3751,12 +3755,9 @@
     return height > 0 && Number.isFinite(height) ? height : null;
   }
 
-  function maoaoBaseScaleForTool(value) {
-    const profile=lengthProfileForTool(value);
-    const reference=profile?.heightFraction>0?actualCharacterHeight(HEIGHT_REFERENCE_SPECIES,HEIGHT_REFERENCE_GENDER):null;
-    return reference==null?toolScaleForTool(value):reference*profile.heightFraction/(profile.b-profile.a);
-  }
+  function maoaoBaseScaleForTool(value) { return toolScaleForTool(value); }
 
+  // Reference measurement only; never used to determine rendered size.
   function measuredScaleForTool(value, speciesId, gender, rigScaleY = null) {
     const profile=lengthProfileForTool(value);
     if(!(profile?.heightFraction>0))return null;
@@ -3765,11 +3766,9 @@
   }
 
   function heightFactorForTool(value, speciesId, gender, rigScaleY = null) {
-    const measured=measuredScaleForTool(value,speciesId,gender,rigScaleY);
-    if(measured!=null)return measured/toolScaleForTool(value); // Preserve the existing authored grip anchor.
-    const ratio=characterHeightRatio(speciesId,gender,rigScaleY);
-    if(usesProportionalWeaponScale(value))return ratio;
-    return Math.max(.05,1+(ratio-1)*heightMultiplierForTool(value));
+    const multiplier=heightMultiplierForTool(value); // Zero is an exact early out; no character dimension lookup in the normal weapon path.
+    if(multiplier===0)return 1;
+    return Math.max(.05,1+(characterHeightRatio(speciesId,gender,rigScaleY)-1)*multiplier);
   }
 
   function effectiveToolScaleForTool(value, speciesId, gender, rigScaleY = null) {
@@ -4493,8 +4492,8 @@
     editorUi.heightPair.set(heightMultiplierForTool(editorCurrentToolKey()));
     const length = lengthProfileForTool(editorCurrentToolKey()); // Avoid replacing an in-progress text edit.
     editorUi.lengthAuthor?.refresh(editorCurrentToolKey(),length); // The canvas keeps its unsaved draft during unrelated pose refreshes.
-    editorUi.heightPair.range.disabled = editorUi.heightPair.number.disabled = usesProportionalWeaponScale(editorCurrentToolKey())||!!length?.heightFraction;
-    editorUi.scalePair.range.disabled = editorUi.scalePair.number.disabled = !!length?.heightFraction; // The measured percentage owns size when present; the original grip anchor remains intact.
+    editorUi.heightPair.range.disabled = editorUi.heightPair.number.disabled = false;
+    editorUi.scalePair.range.disabled = editorUi.scalePair.number.disabled = false; // Authored base size is authoritative.
     editorUi.spanEnabled.checked = span.enabled === true;
     editorUi.startPair.set(numberOrZero(span.startZ)); editorUi.endPair.set(numberOrZero(span.endZ));
     for (const phase of ['neutral', 'windup', 'strike']) {
@@ -4521,13 +4520,11 @@
     const state = editorAnimationGripState();
     const identity = editorScaleIdentity();
     const baseScale = normalizeToolScale(entry?.toolScale);
-    const heightMultiplier = normalizeHeightMultiplier(entry?.heightMultiplier);
+    const heightMultiplier = heightMultiplierForTool(editorCurrentToolKey());
     const heightRatio = characterHeightRatio(identity.speciesId, identity.gender);
     const effectiveScale = effectiveToolScaleForTool(editorCurrentToolKey(), identity.speciesId, identity.gender);
     const measuredHeight = actualCharacterHeight(identity.speciesId, identity.gender);
-    const scaleLabel = length?.heightFraction && measuredHeight
-      ? `Mao'ao base ×${maoaoBaseScaleForTool(editorCurrentToolKey()).toFixed(3)} · body ratio ×${heightRatio.toFixed(3)} · unshortened length ${((length.b-length.a)*effectiveScale).toFixed(3)} (${(((length.b-length.a)*effectiveScale)/measuredHeight*100).toFixed(1)}% height)`
-      : `base ×${baseScale.toFixed(2)} · height multiplier ×${heightMultiplier.toFixed(2)} · body ratio ×${heightRatio.toFixed(3)} = effective ×${effectiveScale.toFixed(3)}`;
+    const scaleLabel = `base ×${baseScale.toFixed(2)} · species multiplier ×${heightMultiplier.toFixed(2)} · effective ×${effectiveScale.toFixed(3)}`+(length&&measuredHeight?` · unshortened length ${((length.b-length.a)*effectiveScale).toFixed(3)} (${(((length.b-length.a)*effectiveScale)/measuredHeight*100).toFixed(1)}% height)`:'');
     const modeLabel = weaponHandModeForTool(editorCurrentToolKey()); // Mobile-visible diagnostics show which independent flag this weapon reads.
     const statusText = melee && mainSpan.enabled && span.enabled
       ? `${editorCurrentToolKey() || 'held item'} · ${gripContext.toUpperCase()} grip · ${scaleLabel} · main-hand Z ${numberOrZero(mainSpan.startZ).toFixed(4)} → ${numberOrZero(mainSpan.endZ).toFixed(4)} · off-hand Z ${numberOrZero(span.startZ).toFixed(2)} → ${numberOrZero(span.endZ).toFixed(2)} · main ${Math.round(state.primaryPercent ?? 50)}% · weapon mode ${modeLabel} · Dual Wield ${Math.round(state.dualWieldInfluence * 100)}% · 2H influence ${Math.round(state.influence * 100)}% · span position ${Math.round(state.percent)}%`
@@ -4559,12 +4556,12 @@
     scalePanel.innerHTML = `
       <div class="hr"></div>
       <div class="poseGroupHead"><span class="dot" style="background:#60a5fa"></span>Held-item scale</div>
-      <div class="help" style="margin-bottom:6px"><b>Base tool scale</b> is the unshortened Mao'ao male size when no measured length is set. With a measured length, its percentage of Mao'ao height defines the base size instead. Weapons always scale uniformly to the wielder's measured height before shortening; the height multiplier is locked to 1 for weapons, but remains editable for other props. Height scaling pivots on the primary grip, so the hand stays put and the weapon grows or shrinks around it. The Neutral pose's Tool scale remains a separate animation multiplier and should normally stay at 1.00 for melee weapons.</div>
+      <div class="help" style="margin-bottom:6px"><b>Base tool scale</b> controls the unshortened sprite size. <b>Species scale multiplier</b> defaults to 0 for weapons (no height scaling); 1 follows the full height ratio if deliberately enabled. The recorded length percentage is reference information only; it never pre-scales the weapon. Shortening bands still fit the authored sprite around its grip. Neutral Tool scale remains a separate animation multiplier.</div>
       <div id="handToolScaleFields"></div>`;
     host.insertBefore(scalePanel, status);
     const scaleFields = scalePanel.querySelector('#handToolScaleFields');
     const scalePair = editorFieldPair(scaleFields, 'handToolScale', 'Base tool scale', 1, 0.1, 3, 0.01, value => mutate(() => { ensureTool(editorCurrentToolKey()).toolScale = normalizeToolScale(value); }));
-    const heightPair = editorFieldPair(scaleFields, 'handToolHeightMultiplier', 'Height multiplier', DEFAULT_HEIGHT_MULTIPLIER, 0, 3, 0.01, value => mutate(() => { ensureTool(editorCurrentToolKey()).heightMultiplier = normalizeHeightMultiplier(value); }));
+    const heightPair = editorFieldPair(scaleFields, 'handToolHeightMultiplier', 'Species scale multiplier', DEFAULT_HEIGHT_MULTIPLIER, 0, 3, 0.01, value => mutate(() => { ensureTool(editorCurrentToolKey()).heightMultiplier = normalizeHeightMultiplier(value); }));
 
     const lengthAuthor = global.HobunjiWeaponGeometryAuthor?.mount(scalePanel,{
       source:()=>global.HobunjiAttackEditorToolContext?.toolPlaneMesh,
@@ -4773,7 +4770,7 @@
     get data() { return data; },
     get defaultData() { return normalizeData(DEFAULT_DATA); },
     clone: cleanClone,
-    toolKeyFor, isDualWieldWeapon, weaponHandModeForTool, setEditorIdlePreview, setEditorSingleHandPreview, getEditorIdlePreview: () => editorHandPreview === 'pair', editorToolChanged, ensureTool, toolScaleForTool, apertureForTool, apertureHolderPointForTool, primaryGripHolderPointForTool, heightMultiplierForTool, lengthProfileForTool, groundProfileForTool, actualCharacterHeight, measuredScaleForTool, maoaoBaseScaleForTool, usesProportionalWeaponScale, characterHeightRatio, characterHeightReady, heightFactorForTool, effectiveToolScaleForTool,
+    toolKeyFor, isDualWieldWeapon, weaponHandModeForTool, setEditorIdlePreview, setEditorSingleHandPreview, getEditorIdlePreview: () => editorHandPreview === 'pair', editorToolChanged, ensureTool, toolScaleForTool, apertureForTool, apertureHolderPointForTool, primaryGripHolderPointForTool, heightMultiplierForTool, lengthProfileForTool, groundProfileForTool, actualCharacterHeight, measuredScaleForTool, maoaoBaseScaleForTool, isWeaponScaleTool, characterHeightRatio, characterHeightReady, heightFactorForTool, effectiveToolScaleForTool,
     heldItemPlacementForTool, itemPointToHolder, holderPointToItem, applyHeldItemPlacement, DEFAULT_HEIGHT_MULTIPLIER, normalizeGripContext, currentGripContext,
     authoredPrimaryGripForTool, customGripAxisForTool, gripPointOnAxis, sampleFreeRightHand, primaryGripForTool, offhandPrimaryGripForTool, dualWieldOffhandGripOffsetForTool, spinPivotOffsetForTool, primaryGripSpanForTool, secondaryGripSpanForTool, secondaryGripForTool, dualWieldStateForTool, offhandIdleStateForTool, usesLegacyOffhandIdle,
     currentSecondaryGripAnimationState, currentDualWieldAnimationState, animationGripAt, gripModeForTool, setGripMode, replace, mutate, saveLocal, loadLocal, clearLocal, applyPrimaryGripVisuals, debugForTool,

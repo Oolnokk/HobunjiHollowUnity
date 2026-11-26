@@ -128,7 +128,37 @@
   const alphaBounds = new WeakMap(); // Each source bitmap is scanned once when finding visible composition bounds.
   const canvases = new Map(); // Bounded composed sprites, created only when requested.
   const boredCanvases = new Map(); // One regenerated source-art image per edited shaft and revision, shared by all head/metal combinations.
+  // The donor and haft PNG headers were verified to be 450 × 1204 for these pairs.
+  // Convert donor item-local bands at authoring time (900 px per world unit, origin 225/602).
+  // Only bands and minimum strain are copied; assembled-head contact is traced independently.
+  const DONOR_BAND_PRESET='same-canvas-donor-bands-20261126-v1'; // One-time upgrade of pre-band Foundry drafts.
+  const DONOR_BANDS={
+    "bshuakauitl":{"shorteningBands":[{"x0":123.489,"x1":231.273,"y0":365.651,"y1":824.201}],"minShorteningScale":0.65},
+    "dagger-sword":{"shorteningBands":[{"x0":139.662,"x1":249.237,"y0":660.563,"y1":879.947}],"minShorteningScale":0.65},
+    "dagger":{"shorteningBands":[{"x0":161.217,"x1":247.437,"y0":424.997,"y1":595.826}],"minShorteningScale":0.65},
+    "fishing-mace":{"shorteningBands":[{"x0":146.844,"x1":249.237,"y0":532.889,"y1":840.392}],"minShorteningScale":0.65},
+    "fishing-spear":{"shorteningBands":[{"x0":155.826,"x1":252.828,"y0":245.168,"y1":714.509}],"minShorteningScale":0.65},
+    "harlyao-broadsword":{"shorteningBands":[{"x0":161.217,"x1":234.864,"y0":509.507,"y1":662.363}],"minShorteningScale":0.65},
+    "harlyao-longsword":{"shorteningBands":[{"x0":152.235,"x1":238.455,"y0":495.125,"y1":683.945}],"minShorteningScale":0.65},
+    "war-cleaver":{"shorteningBands":[{"x0":145.044,"x1":276.183,"y0":487.934,"y1":834.992}],"minShorteningScale":0.65},
+    "warhammer":{"shorteningBands":[{"x0":139.662,"x1":256.419,"y0":457.361,"y1":887.147}],"minShorteningScale":0.75},
+    "hatchet":{"shorteningBands":[{"x0":130.68,"x1":261.81,"y0":418.976,"y1":967.445}],"minShorteningScale":0.65},
+    "hoe":{"shorteningBands":[{"x0":132.471,"x1":254.628,"y0":462.752,"y1":869.165}],"minShorteningScale":0.65},
+    "kylie":{"shorteningBands":[{"x0":87.561,"x1":401.931,"y0":430.388,"y1":921.311}],"minShorteningScale":0.65},
+    "pick-shovel":{"shorteningBands":[{"x0":155.826,"x1":238.455,"y0":349.469,"y1":836.792}],"minShorteningScale":0.65},
+    "plains-sword":{"shorteningBands":[{"x0":127.08,"x1":249.237,"y0":110.303,"y1":403.415}],"minShorteningScale":0.65},
+    "grapple-flail":{"shorteningBands":[{"x0":112.716,"x1":276.183,"y0":259.55,"y1":959.075}],"minShorteningScale":0.65}
+  };
+  function seedDonorBands(catalog){
+    if(catalog.donorBandPreset===DONOR_BAND_PRESET)return;
+    for(const [key,entry] of Object.entries(DONOR_BANDS)){
+      const shaft=catalog.shafts?.[key];
+      if(shaft&&!shaft.shorteningBands?.length){shaft.shorteningBands=entry.shorteningBands.map(b=>({...b}));shaft.minShorteningScale=entry.minShorteningScale;}
+    }
+    catalog.donorBandPreset=DONOR_BAND_PRESET;
+  }
   let config = global.MODULAR_WEAPON_CONFIG; // Current authored attachment data.
+  seedDonorBands(config);
   let revision = 0; // Discards stale preview renders after edits.
   let migratedPairFits = 0; // Counts upgraded old presets for the existing in-game diagnostic surface.
 
@@ -739,8 +769,9 @@
         if (Object.hasOwn(raw, 'flailAssembly')) shaft.flailAssembly = cleanFlailReference(raw.flailAssembly); // Unlinking restores ordinary rigid assembly.
         if (raw.flailHaftAnchor) shaft.flailHaftAnchor = point(raw.flailHaftAnchor);
       }
-      shaft.shorteningBands=cleanShorteningBands(raw.shorteningBands??shaft.shorteningBands); // Original 450×1204 haft coordinates, independent of head/metal.
-      shaft.minShorteningScale=finite(raw.minShorteningScale,shaft.minShorteningScale??.65,.1,1);
+      const oldEmpty=incoming.donorBandPreset!==DONOR_BAND_PRESET&&!!DONOR_BANDS[key]&&!raw.shorteningBands?.length; // Old empty drafts predate donor-band defaults; later explicit clears survive.
+      shaft.shorteningBands=cleanShorteningBands(oldEmpty?shaft.shorteningBands:raw.shorteningBands??shaft.shorteningBands); // Original 450×1204 haft coordinates, independent of head/metal.
+      shaft.minShorteningScale=finite(oldEmpty?shaft.minShorteningScale:raw.minShorteningScale,shaft.minShorteningScale??.65,.1,1);
       shaft.rigRegions = cleanRigRegions(raw.rigRegions || shaft.rigRegions); // Region selections are validated and persist in exported drafts.
       shaft.shaftArtTransform = { ...duplicateTransform(raw.shaftArtTransform || shaft.shaftArtTransform),
         enabled: (raw.shaftArtTransform || shaft.shaftArtTransform)?.enabled === true }; // Explicit opt-in, neutral for old saves.
@@ -780,6 +811,7 @@
         }
       }
     }
+    next.donorBandPreset=DONOR_BAND_PRESET;
     next.recipes = cleanRecipes(Object.hasOwn(incoming, 'recipes') ? incoming.recipes : reference.recipes);
     config = next;
     revision++;

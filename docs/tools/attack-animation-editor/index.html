@@ -332,8 +332,8 @@ canvas{display:block;width:100%;height:100%}
 <script src="../../js/transform-dump-utils.js?v=20261017h3ce7f8d"></script>
 <script src="../../js/rig-transform-dump.js?v=20261029rigdump1"></script>
 <script src="../../js/held-ground-pose.js?v=20261126dualGround1"></script>
-<script src="../../js/weapon-geometry-author.js?v=20261126proportional1"></script>
-<script src="../../js/held-action-animations.js?v=20261126dualGround1"></script>
+<script src="../../js/weapon-geometry-author.js?v=20261126fixedWeaponSize1"></script>
+<script src="../../js/held-action-animations.js?v=20261126fixedWeaponSize1"></script>
 <script src="../../js/kurraya-instrument.js?v=20261118festival1954x1955a"></script>
 <!-- Shared attack-pose math (window.SharedAttackPose): the SAME timeline, rest poses and mirroring rule the game plays for the player and every enemy. -->
 <script src="../../config/portrait-mouth-points.js?v=20261025mouth1"></script>
@@ -1962,7 +1962,7 @@ function applyWeaponGroundPreview(){
   if(context.dual)context.offhand=grips.offhandPrimaryGripForTool?.(currentToolKey,'melee',identity);
   context.fitIdentity=[currentSpeciesId,currentGender,height||'',characterBodyScaleRoot.scale.y,
     toolPlaneMesh.scale.z,toolBaseRestY,light.x,light.y,light.z,light.pitch,light.yaw,light.roll,light.bodyYaw,light.bodySink,light.scale,light.flailLengthScale].join(':');
-  context.allowFit=height>0&&grips.characterHeightReady?.(identity.speciesId,identity.gender)!==false;
+  context.allowFit=!grips.heightMultiplierForTool(currentToolKey)||grips.characterHeightReady?.(identity.speciesId,identity.gender)!==false;
   context.flexibleHaft=window.HobunjiWeaponSpriteAssemblies?.assemblyKind?.(toolPlaneMesh)==='flail'||!!window.HobunjiWeaponSpriteAssemblies?.definitionFor?.(currentToolKey,TOOL_SPRITE_DEFS[currentToolKey])?.flail;
   toolBase.updateWorldMatrix(true,false);
   context.rig.parent.updateWorldMatrix?.(true,false);

@@ -53,8 +53,7 @@
         && holderScale <= 1.0001
         // Intrinsically scaled shapes already receive their scale in hand-tool-grips.
         && Math.abs(itemBaseScale - 1) <= 0.0001
-        && !global.HobunjiHandToolGrips?.usesProportionalWeaponScale?.(itemKey)
-        && !(global.HobunjiHandToolGrips?.lengthProfileForTool?.(itemKey)?.heightFraction > 0); // Measured length is absolute, never multiply it again.
+        && !global.HeldGroundPose?.enabled?.(); // The fitted path uses authored base scale, not a hidden renderer-only enlargement. Legacy x-ray keeps its old baseline.
 
       let savedScale = null;
       if (shouldUpscale) {

@@ -544,9 +544,9 @@
         ? window.ProceduralHandFrameDriver?.groundPoseContext?.(this,itemKey) : null;
       if(clearanceContext) {
         clearanceContext.flexibleHaft=window.HobunjiWeaponSpriteAssemblies?.assemblyKind?.(mesh)==='flail'||!!assembly?.flail; // Suspension is solved separately by its existing owner.
-        const scaleIdentity=clearanceContext.scaleIdentity; // Wait for the actual wielder and reference heights before freezing length.
+        const scaleIdentity=clearanceContext.scaleIdentity; // Height readiness matters only for explicitly enabled species scaling.
         const grips=window.HobunjiHandToolGrips;
-        clearanceContext.allowFit=(stanceApplied||!targetPose)&&!attackInProgress&&!authoredToolActionActive&&grips?.characterHeightReady?.(scaleIdentity?.speciesId,scaleIdentity?.gender)!==false;
+        clearanceContext.allowFit=(stanceApplied||!targetPose)&&!attackInProgress&&!authoredToolActionActive&&(!grips?.heightMultiplierForTool?.(itemKey)||grips?.characterHeightReady?.(scaleIdentity?.speciesId,scaleIdentity?.gender)!==false);
         if(clearanceContext.allowFit&&mesh&&clearance.needsFit(clearanceContext,mesh))grips?.applyHeldItemPlacement?.(mesh,itemKey,'melee',scaleIdentity);
         // Size every weapon from the authored LIGHT neutral, regardless of
         // which stance actually owns this frame. Restore the live pose before baking.
