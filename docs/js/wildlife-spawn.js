@@ -2105,8 +2105,22 @@
       caution:'Wildlife population alive right now is not the same as world-wide encounter or capture success'};
   }
 
+  // Co-op remote-area tick (js/remote-area-tick.js): populate `currentArea` (an AreaScope-swapped guest zone) the way the
+  // den check does, minus camps/ticking UI. Callers must already have the zone's scene built.
+  function populateZone() {
+    const currentArea = deps.getCurrentArea();
+    if (!deps._isZoneArea(currentArea) || !deps.buildZoneScene(currentArea)) return false;
+    ensureCurrentZoneDenPacks();
+    ensureCurrentZoneRoamingHerds();
+    ensureCurrentZoneNestTrees();
+    window.TzatzulFlightRuntime?.ensureZone?.(currentArea);
+    window.PingdortFlocks?.ensureZone?.(currentArea);
+    return true;
+  }
+
   window.WildlifeSpawn = {
     init,
+    populateZone,
     applyWildlifeSkirmishDamage,
     denKeyFor,
     denCavernMapId,

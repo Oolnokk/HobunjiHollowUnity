@@ -99,8 +99,8 @@ assert.equal(w.SCRATCHBONES_CONFIG.game.assets.pngPlaneAvatar.behindView.headUrl
 assert.equal(w.SCRATCHBONES_CONFIG.game.assets.pngPlaneAvatar.proceduralFeet.species.longoran.glb, 'sloth.glb');
 assert.equal(w.HOBUNJI_ATTACHMENT_RIG_PROFILES.characters['longoran::male'].anatomy.rigScaleX, undefined);
 assert.equal(w.HOBUNJI_ATTACHMENT_RIG_PROFILES.characters['longoran::male'].anatomy.legLengthScale, undefined, 'a seeded Tletingan leg length must not override the lanky Longoran default');
-assert.deepEqual(JSON.parse(JSON.stringify(w.HOBUNJI_ATTACHMENT_RIG_PROFILES.characters['longoran::male'].anatomy.handScaleAxes)), { x: 0.72, y: 1, z: 0.8 }, 'lanky Longoran hands are thinner but keep their length (y)');
-assert.deepEqual(JSON.parse(JSON.stringify(w.HOBUNJI_ATTACHMENT_RIG_PROFILES.characters['longoran::male'].anatomy.footScaleAxes)), { x: 0.7, y: 0.85, z: 1 }, 'lanky Longoran feet are thinner but keep their length (z)');
+assert.equal(w.HOBUNJI_ATTACHMENT_RIG_PROFILES.characters['longoran::male'].anatomy.handScaleAxes, undefined, 'Donor axes must yield to uniform Longoran defaults');
+assert.equal(w.HOBUNJI_ATTACHMENT_RIG_PROFILES.characters['longoran::male'].anatomy.footScaleAxes, undefined, 'Donor axes must yield to uniform Longoran defaults');
 assert(w.ConditionRegistry.PLAYER_SPECIES.includes('longoran'));
 assert.equal(w._getMouthSpriteUrl('talk', 'longoran'), 'tletingan');
 assert.equal(bridge.rollSubspecies(() => .0499), 'longoran');

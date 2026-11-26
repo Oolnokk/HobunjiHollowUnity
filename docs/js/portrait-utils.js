@@ -1021,8 +1021,45 @@ function spritePngMaterialOptions(THREE, texture, debugName, overrides = {}) {
   return options;
 }
 
+// Solid-depth black ink should be solid in color too, without changing
+// silhouette coverage, transparent draw order or deliberately soft effects.
+function installSpritePngInkCoverage(material, cutoff) {
+  const coverage = cutoff.toFixed(6); // Same solid-coverage cutoff as PNG depth replays.
+  const previousCompile = material.onBeforeCompile;
+  const previousKey = material.customProgramCacheKey;
+  material.onBeforeCompile = function spriteInkCompile(shader, renderer) {
+    previousCompile?.call(this, shader, renderer);
+    shader.fragmentShader = shader.fragmentShader.replace('#include <alphatest_fragment>', `
+      #include <alphatest_fragment>
+      #if defined(USE_MAP) && !defined(USE_ALPHAMAP)
+        // The original alpha test still rejects empty pixels first.
+        if (opacity >= 0.999 && diffuseColor.a >= ${coverage}
+            && max(diffuseColor.r, max(diffuseColor.g, diffuseColor.b)) <= 0.025) {
+          diffuseColor.a = 1.0;
+        }
+      #endif
+    `);
+  };
+  material.customProgramCacheKey = function spriteInkKey() {
+    return 'hobunji-sprite-ink-' + coverage + '|' + (previousKey?.call(this) || '');
+  };
+  const baseClone = material.clone; // Three.js Material.copy drops shader callbacks.
+  if (typeof baseClone === 'function') {
+    material.clone = function spriteInkClone() {
+      return installSpritePngInkCoverage(baseClone.call(this), cutoff);
+    };
+  }
+  return material;
+}
+
 function makeSpritePngUnlitMaterial(THREE, texture, debugName, overrides = {}) {
-  return new THREE.MeshBasicMaterial(spritePngMaterialOptions(THREE, texture, debugName, overrides));
+  const options = spritePngMaterialOptions(THREE, texture, debugName, overrides);
+  const material = new THREE.MeshBasicMaterial(options);
+  // Keep UI, glows, alpha maps and explicitly translucent effects unchanged.
+  if (options.map && options.transparent && options.depthWrite && options.opacity === 1 && !options.alphaMap) {
+    installSpritePngInkCoverage(material, spritePngMaskAlphaTest());
+  }
+  return material;
 }
 
 // Carvings retain the authored stroke but darken only a thinner core inside it.

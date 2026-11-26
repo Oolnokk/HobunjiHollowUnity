@@ -27,8 +27,10 @@ w.AreaScope = {
   listenerArea: () => listener ?? currentArea,
 };
 reg.setLocalAreaResolver(() => w.AreaScope.listenerArea());
-const ticks = [];
-rat.init({ getCurrentArea: () => currentArea, tickHostiles: dt => { ticks.push({ area: currentArea, dt: +dt.toFixed(3), listener: w.AreaScope.listenerArea() }); } });
+const ticks = [], order = [];
+rat.init({ getCurrentArea: () => currentArea,
+  tickPre: dt => { order.push('pre:' + currentArea); },
+  tickHostiles: dt => { order.push('hostiles:' + currentArea); ticks.push({ area: currentArea, dt: +dt.toFixed(3), listener: w.AreaScope.listenerArea() }); } });
 
 const host = { x: 0, y: 0, health: 100 };
 reg.registerPlayer(host, { local: true });
@@ -54,6 +56,7 @@ assert.equal(ticks[0].listener, 'map_a', 'while the listener (audio, local playe
 assert.equal(ticks[0].dt, 0.21, 'the skipped time is accumulated into one step');
 assert.equal(currentArea, 'map_a', 'currentArea is restored');
 assert.equal(reg.areaOf(host), 'map_a');
+assert.deepEqual(Array.from(order), ['pre:map_b', 'hostiles:map_b'], 'the bandit sleep/wake pass runs first, in the same scoped area, then the hostile tick');
 
 // During the scoped tick the local player is NOT in the guest's zone (so zone creatures cannot target them).
 let seenLocalArea = null, seenPlayers = null;
@@ -90,4 +93,32 @@ ticks.length = 0;
 rat.init({ getCurrentArea: () => currentArea, tickHostiles: () => ticks.push(1) });
 rat.update(1);
 assert.equal(ticks.length, 0, 'players in the local area are ticked by the normal loop');
+
+// Stage 3: an occupied zone nobody built is built once per round (calm only), then populated and ticked.
+{
+  const buildLog = [], popLog = [];
+  w.AreaScope.ensureScene = a => { buildLog.push(a); built.add(a); return true; };
+  let calm = false;
+  guest.areaId = 'map_new1'; ticks.length = 0;
+  rat.init({ getCurrentArea: () => currentArea, isCalm: () => calm,
+    populate: () => { popLog.push(currentArea); return true; },
+    tickHostiles: () => ticks.push(currentArea) });
+  rat.update(1);
+  assert.deepEqual(buildLog, [], 'not built while the host is not calm (cutscene/paused)');
+  calm = true;
+  rat.update(1);
+  assert.deepEqual(buildLog, ['map_new1'], 'built when calm');
+  assert.deepEqual(Array.from(popLog), ['map_new1'], 'populated on first scoped tick, same round as the build');
+  assert.deepEqual(Array.from(ticks), ['map_new1']);
+  rat.update(1);
+  assert.deepEqual(buildLog, ['map_new1'], 'built exactly once');
+  assert.equal(currentArea, 'map_a', 'building never moves the local area');
+  const g2 = { x: 0, y: 0, health: 100, areaId: 'map_new2' };
+  reg.registerPlayer(g2, { playerId: 'g2' });
+  buildLog.length = 0; guest.areaId = 'map_new3'; // two unbuilt zones at once
+  rat.update(1);
+  assert.equal(buildLog.length, 1, 'at most one zone is built per round');
+  reg.unregisterPlayer(g2);
+  assert.ok(rat.getDebug().built >= 2);
+}
 console.log('remote area tick tests passed');

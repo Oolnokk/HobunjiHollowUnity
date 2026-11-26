@@ -75,8 +75,8 @@
       // Retain donor size controls; fixed per-axis authoring cancels only the
       // extremities' inherited body shrink, without moving their anchors.
       for (const key of ['rigScale', 'rigScaleX', 'rigScaleY', 'legLengthScale', 'headScale', 'headOffsetY']) delete profile.anatomy[key]; // legLengthScale too: never inherit the Tletingan's seeded leg length.
-      profile.anatomy.handScaleAxes = clone(HAND_SCALE_AXES);
-      profile.anatomy.footScaleAxes = clone(PART_SCALE_AXES);
+      delete profile.anatomy.handScaleAxes; // Limb defaults belong to this species rather than its donor.
+      delete profile.anatomy.footScaleAxes;
       characters[`${ID}::${gender}`] = profile;
       installed += 1;
     }

@@ -663,7 +663,10 @@
       const overrides = { side: DOUBLE_SIDE, depthTest: true, depthWrite: true, polygonOffset: true, polygonOffsetFactor: 2, polygonOffsetUnits: 2 };
       const material = surface?.makeMaterial ? surface.makeMaterial(THREE, texture, `${name}-pants`, overrides) : new THREE.MeshBasicMaterial({ map: texture, transparent: true, alphaTest: 0.01, ...overrides });
       // Pixels covered by arm/overwear/pauldron/hood art stay in front of the pants: the portrait underneath shows through there.
-      material.onBeforeCompile = shader => {
+      const previousCompile = material.onBeforeCompile; // Retain the shared PNG ink hook; garment coverage still runs before the alpha test.
+      const previousCacheKey = material.customProgramCacheKey;
+      material.onBeforeCompile = function pantsMaskCompile(shader, renderer) {
+        previousCompile?.call(this, shader, renderer);
         Object.assign(shader.uniforms, handle.maskUniforms);
         shader.vertexShader = shader.vertexShader
           .replace('#include <common>', `#include <common>\nvarying vec2 vPantsLocal;\n${GPU_SKIN_VERTEX_DECLARATIONS}`)
@@ -672,7 +675,9 @@
           .replace('#include <common>', '#include <common>\nvarying vec2 vPantsLocal;\nuniform sampler2D uPantsMask;\nuniform float uPantsMaskOn;\nuniform vec2 uPantsMaskO;\nuniform vec4 uPantsMaskInv;')
           .replace('#include <alphatest_fragment>', 'if (uPantsMaskOn > 0.5) { vec2 pd = vPantsLocal - uPantsMaskO; vec2 pc = vec2(uPantsMaskInv.x * pd.x + uPantsMaskInv.y * pd.y, uPantsMaskInv.z * pd.x + uPantsMaskInv.w * pd.y); float pantsInside = step(0.0, pc.x) * step(pc.x, 1.0) * step(0.0, pc.y) * step(pc.y, 1.0); diffuseColor.a *= 1.0 - pantsInside * texture2D(uPantsMask, vec2(pc.x, 1.0 - pc.y)).a; }\n#include <alphatest_fragment>');
       };
-      material.customProgramCacheKey = () => 'pantsOverlayMaskSpineGpuSkin';
+      material.customProgramCacheKey = function pantsMaskCacheKey() {
+        return 'pantsOverlayMaskSpineGpuSkin|' + (previousCacheKey?.call(this) || '');
+      };
       return { texture, material };
     };
 

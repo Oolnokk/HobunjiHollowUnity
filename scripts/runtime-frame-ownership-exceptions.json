@@ -15,7 +15,7 @@
     "function": "loadBuildingScene",
     "reason": "Defers loading-label rendering to the next paints before worker-backed den carving, mine generation or their synchronous fallbacks; each deferral runs once per scene-load request.",
     "migrationStage": "not-planned",
-    "line": 15015
+    "line": 15035
   },
   {
     "file": "docs/game.js",
@@ -24,7 +24,7 @@
     "function": "runMove",
     "reason": "Steps a previewed cutscene actor toward its move target every frame and stops rescheduling once advanceActorToward reports arrival or the preview's running flag clears.",
     "migrationStage": "not-planned",
-    "line": 35034
+    "line": 35099
   },
   {
     "file": "docs/game.js",
@@ -33,7 +33,7 @@
     "function": "runFade",
     "reason": "Defers writing the fade element's target opacity to the next paint so the CSS transition actually animates instead of jumping instantly; runs once per fade stage.",
     "migrationStage": "not-planned",
-    "line": 35190
+    "line": 35255
   },
   {
     "file": "docs/game.js",
@@ -42,7 +42,7 @@
     "function": "runZoom",
     "reason": "Eases the preview camera's zoom toward a target percentage over the stage's authored duration and stops once t reaches 1.",
     "migrationStage": "not-planned",
-    "line": 35209
+    "line": 35274
   },
   {
     "file": "docs/game.js",
@@ -51,7 +51,7 @@
     "function": "cutsceneRotationTick",
     "reason": "Eases previewed actors' facing every frame for the scene's lifetime, gated on the same running flag every other preview RAF loop checks, so stopping the preview stops it too.",
     "migrationStage": "not-planned",
-    "line": 35295
+    "line": 35360
   },
   {
     "file": "docs/js/action-arc-ui.js",
@@ -672,7 +672,7 @@
     "function": "scheduleSelectedLayout",
     "reason": "Guarded one-shot callback batches selected-character layout changes; checks active/building and never reschedules itself.",
     "migrationStage": "not-planned",
-    "line": 866
+    "line": 933
   },
   {
     "file": "docs/js/character-scale-comparison.js",
@@ -681,6 +681,6 @@
     "function": "queueAgeRender",
     "reason": "Guarded one-shot callback coalesces multiple age inputs; flushAgeRender clears the pending handle and does not recurse.",
     "migrationStage": "not-planned",
-    "line": 892
+    "line": 964
   }
 ]

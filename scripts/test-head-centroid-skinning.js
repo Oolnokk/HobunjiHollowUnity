@@ -41,11 +41,14 @@ vm.runInContext(extract(avatarSource, 'neckBlendWeight'), context);
 vm.runInContext(extract(avatarSource, 'headOffsetWeightAt'), context);
 vm.runInContext(extract(avatarSource, 'headScaleGateAtPixel'), context);
 vm.runInContext(extract(avatarSource, 'headScaleWeightAt'), context);
+vm.runInContext(extract(avatarSource, 'humanoidBlendWeightsAt'), context);
 context.avatarApi = { resolveSkinnedPortraitRoot: root => root,
   neckBlendBand: context.neckBlendBand, neckBlendWeight: context.neckBlendWeight, headOffsetWeightAt: context.headOffsetWeightAt, // The outline/parity adapter reads both identical neck and independent head-placement weights.
   headScaleGateAtPixel: context.headScaleGateAtPixel, headScaleWeightAt:context.headScaleWeightAt, getPortraitsFlipped: () => context.portraitsFlipped };
+vm.runInContext(extract(avatarSource, 'sampleSkinnedPortraitSurface'), context);
 vm.runInContext(extract(avatarSource, 'resolveSkinnedPixelWorldPosition'), context);
-vm.runInContext(extract(paritySource, 'resolvePosition'), context);
+assert(!/avatarApi\.resolveSkinnedPixelWorldPosition\s*=/.test(paritySource), 'outline adapter must not replace the shared resolver');
+context.resolvePosition = context.resolveSkinnedPixelWorldPosition; // Both game and preview now use the same function.
 
 function fixture(bodyScale, floorY, headScale, cachedMatrices = true, legacy = false) {
   const world = new Matrix4(bodyScale, floorY);
@@ -56,7 +59,7 @@ function fixture(bodyScale, floorY, headScale, cachedMatrices = true, legacy = f
   if (cachedMatrices) skeleton.boneMatrices = matrices.flatMap(m => {
     const a = Array(16).fill(0); a[0] = a[5] = a[10] = m.s; a[13] = m.y; a[15] = 1; return a;
   });
-  const skinnedPlane = { isSkinnedMesh: true, skeleton, geometry: { userData: { blendHeight: .012 } },
+  const skinnedPlane = { isSkinnedMesh: true, position: new Vector3(), skeleton, geometry: { userData: { blendHeight: .012 } },
     bindMatrix: new Matrix4(), bindMatrixInverse: new Matrix4(),
     updateMatrixWorld() { this.bindMatrixInverse = new Matrix4(1 / bodyScale, -floorY / bodyScale); },
     localToWorld(v) { return v.applyMatrix4(world); } };
@@ -94,7 +97,7 @@ function splineFixture(nodeShift) {
   const world = new Matrix4(1, 0);
   const matrices = Array.from({ length: 9 }, (_, k) => (k >= 1 && k <= 6 ? new Matrix4(1, nodeShift[k]) : world)); // Nodes 1-6 displaced, node 0 pinned, neck/head bones at rest.
   const skeleton = { bones: matrices.map(matrixWorld => ({ matrixWorld })), boneInverses: matrices.map(() => new Matrix4()), update() {} };
-  const skinnedPlane = { isSkinnedMesh: true, skeleton, geometry: { userData: { blendHeight: .012 } }, bindMatrix: new Matrix4(), bindMatrixInverse: new Matrix4(),
+  const skinnedPlane = { isSkinnedMesh: true, position: new Vector3(), skeleton, geometry: { userData: { blendHeight: .012 } }, bindMatrix: new Matrix4(), bindMatrixInverse: new Matrix4(),
     updateMatrixWorld() {}, localToWorld(v) { return v; } };
   return { updateMatrixWorld() {}, userData: { sourceCanvas: { width: 100, height: 100 }, portraitModelWidth: 1, portraitModelHeight: 1,
     neckRig: { available: true, skinnedPlane, neckLocal: { y: .2 }, spineBase: { y: .1 }, spinePosteriorY: -.3, headScaleJoint: {}, headBoundsPx: { left: 40, right: 60 } } } };
@@ -121,7 +124,7 @@ function offsetFixture(offset) {
     boneMatrices: matrices.flatMap(m => { const a = Array(16).fill(0); a[0] = a[5] = a[10] = m.s; a[13] = m.y; a[15] = 1; return a; }),
     update() {},
   };
-  const skinnedPlane = { isSkinnedMesh: true, skeleton, geometry: { userData: { blendHeight: .012 } },
+  const skinnedPlane = { isSkinnedMesh: true, position: new Vector3(), skeleton, geometry: { userData: { blendHeight: .012 } },
     bindMatrix: new Matrix4(), bindMatrixInverse: new Matrix4(),
     updateMatrixWorld() {}, localToWorld(v) { return v; } };
   return { updateMatrixWorld() {}, userData: {
@@ -161,7 +164,7 @@ function authorNeckFixture(headForward, headPlacement) {
     }),
     update() {},
   };
-  const skinnedPlane = { isSkinnedMesh: true, skeleton, geometry: { userData: { blendHeight: .012 } },
+  const skinnedPlane = { isSkinnedMesh: true, position: new Vector3(), skeleton, geometry: { userData: { blendHeight: .012 } },
     bindMatrix: new Matrix4(), bindMatrixInverse: new Matrix4(),
     updateMatrixWorld() {}, localToWorld(v) { return v; } };
   return { updateMatrixWorld() {}, userData: {
@@ -187,3 +190,40 @@ for (const resolve of [context.resolveSkinnedPixelWorldPosition, context.resolve
   }
 }
 console.log('head centroid skinning regression passed, including ten-bone and three-bone author offset parity');
+
+// Production broad blend: both attachment resolvers must give the same partial shoulder motion as the skin.
+for (const resolve of [context.resolveSkinnedPixelWorldPosition, context.resolvePosition]) {
+  const root = offsetFixture(.08);
+  root.userData.neckRig.skinnedPlane.geometry.userData.blendHeight = .30;
+  const y = .12, pixel = {x: 90, y: 38};
+  const spline = context.window.HobunjiCharacterSpine.nodeWeightsAt(y, .175, 1, -.3, {});
+  const head = context.neckBlendWeight(y, .2, .30, 1);
+  const body = (spline.a * (1 - spline.wb) + spline.b * spline.wb) / 6;
+  near(resolve(root, pixel).y, y + .08 * ((1 - head) * body + head), 'broad skin and both CPU landmark resolvers agree');
+}
+
+// A posed triangle is not equivalent to skinning its interpolated rest point.
+// Use a coarse quad with only its upper vertices head-scaled; the interpolated
+// midpoint must follow the triangle itself rather than an analytic curve.
+{
+  const root = fixture(1, 0, 2);
+  const plane = root.userData.neckRig.skinnedPlane;
+  const makeAttr = (array, n) => ({ array, count: array.length / n, getX:i=>array[i*n], getY:i=>array[i*n+1], getZ:i=>array[i*n+2] });
+  const pos = makeAttr([-.5,-.5,0, .5,-.5,0, -.5,.5,0, .5,-.5,0, .5,.5,0, -.5,.5,0],3);
+  const uv = makeAttr([0,0,1,0,0,1,1,0,1,1,0,1],2);
+  const idx = makeAttr([0,0,0,0, 0,0,0,0, 2,0,0,0, 0,0,0,0, 2,0,0,0, 2,0,0,0],4);
+  const wt = makeAttr(Array.from({length:6},()=>[1,0,0,0]).flat(),4);
+  const attrs = { position:pos, uv, skinIndex:idx, skinWeight:wt };
+  plane.geometry = { userData:{segmentsX:1,segmentsY:1,portraitGridRows:[0,1],blendHeight:.30},getAttribute:k=>attrs[k] };
+  const resolve = context.resolveSkinnedPixelWorldPosition;
+  // Pixel (25,50) lies within the first triangle. Top corner y .5 -> .8,
+  // bottom corner stays -.5. At the middle of the row, y must be .15.
+  near(resolve(root,{x:25,y:50}).y,.15,'interior landmark follows GPU triangle, not nonlinear analytic weights');
+  near(resolve(root,{x:75,y:50}).y,.15,'both quad triangles interpolate the live vertex positions');
+  near(resolve(root,{x:0,y:0}).y,.8,'top boundary uses actual posed corner');
+  near(resolve(root,{x:100,y:100}).y,-.5,'bottom boundary uses actual posed corner');
+  context.portraitsFlipped=true;
+  near(resolve(root,{x:25,y:50}).x,.25,'flipped landmarks use the opposite actual triangle');
+  context.portraitsFlipped=false;
+}
+console.log('Actual posed portrait triangle sampling PASS');

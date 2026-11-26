@@ -26,7 +26,7 @@ const context = vm.createContext({ // Minimal browser globals; test-only injecti
   clearTimeout() {},
   fetch: async () => ({ ok: true, json: async () => db }),
 });
-vm.runInContext(source.replace('  install();\n})();', `  window.testLineup = { representatives, portraitExportFor };
+vm.runInContext(source.replace('  install();\n})();', `  window.testLineup = { representatives, portraitExportFor, previewPortraitExport };
   window.testFocusControl = {
     configure() { active = true; THREE = {}; previewRoot = {}; },
     select, focusSelected, frame, applyLongoranSliders, refreshFromScaleChange, applyAgeSlider,
@@ -46,6 +46,25 @@ vm.runInContext(source.replace('  install();\n})();', `  window.testLineup = { r
     }
   }
   assert.equal(JSON.stringify(db), original, 'preview clones must not modify shipping NPC records');
+  window.HOBUNJI_PANTS_RIGS = { garments: { pants_basic: {}, layered_skirt: {} } }; // Minimal registry for the shared gameplay wardrobe helper.
+  vm.runInContext(fs.readFileSync('docs/js/pants-garment-renderer.js', 'utf8'), context);
+  const { previewPortraitExport } = window.testLineup;
+  const wardrobeNpc = { id: 'wardrobe-parity', appearance: { speciesId: 'mao-ao', gender: 'female' },
+    restingExpression: 'neutral', clothingPatterns: { pants: 'plain' }, equippedCosmetics: ['layered_skirt'], appliedDyes: { PANTS: 'current' },
+    avatarEditor: { rawExport: { equippedCosmetics: ['pants_basic'], appliedDyes: { PANTS: 'stale' } } } }; // Old raw snapshot differs from the live NPC fields.
+  const exported = previewPortraitExport(wardrobeNpc);
+  assert.equal(exported.id, wardrobeNpc.id);
+  assert.equal(exported.restingExpression, wardrobeNpc.restingExpression);
+  assert.equal(exported.clothingPatterns, wardrobeNpc.clothingPatterns);
+  assert.equal(exported.equippedCosmetics[0], 'layered_skirt');
+  assert.equal(exported.appliedDyes.PANTS, 'current');
+  assert.equal(previewPortraitExport({ ...wardrobeNpc, equippedCosmetics: [] }).equippedCosmetics.length, 0,
+    'authored empty wardrobes do not receive generated pants');
+  const generated = { appearance: wardrobeNpc.appearance, appliedDyes: { CLOTH: 'dye:CLOTH:blue' } }; // Gameplay generates and tints the default female Mao-ao skirt.
+  const generatedExport = previewPortraitExport(generated);
+  assert.equal(generatedExport.equippedCosmetics[0], 'layered_skirt');
+  assert.equal(generatedExport.appliedDyes.PANTS, generated.appliedDyes.CLOTH);
+  assert.equal(generated.appliedDyes.PANTS, undefined, 'preview wardrobe fallback does not mutate the source');
   const authored = JSON.parse(JSON.stringify(lineup.find(item => item.key === 'nuhongan::male').npc)); // Simulates a future authored Nuhongan NPC superseding the fallback.
   authored.id = 'authored_nuhongan';
   db.npcs.push(authored);
