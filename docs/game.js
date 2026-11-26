@@ -731,9 +731,10 @@
       // and the combat deps with nothing else to change.
       const players = window.ActorRegistry.getPlayers();
       window.ActorRegistry.registerPlayer(player, { local: true });
-      window.ActorRegistry.setLocalAreaResolver(() => currentArea); // player.areaId is not always rewritten on a map swap.
+      window.ActorRegistry.setLocalAreaResolver(() => window.AreaScope ? window.AreaScope.listenerArea() : currentArea); // player.areaId is not always rewritten on a map swap; the listener's REAL area even during a remote-area tick.
       // Co-op time rules (beds, Wait/Sleep, blackouts) live in js/time-consensus.js; a knocked-out local avatar cannot act until revived or the skip lands.
       window.SharedCutscene.init({ tilePx: TILE });
+      window.RemoteAreaTick?.init({ tickHostiles: dt => updateHostiles(dt), getCurrentArea: () => currentArea }); // updateHostiles is a hoisted declaration below.
       let _timeKnockoutLock = null;
       window.TimeConsensus.init({
         tilePx: TILE,
@@ -7376,7 +7377,7 @@
         return other / TILE < window.WildlifeVisualLod.wakeRadius();
       }
       function updateWildlifeVisualLod(c, distanceTiles) {
-        const hidden = window.WildlifeVisualLod.update(c, distanceTiles); // Promotes data-only actors through the same distance owner.
+        const hidden = window.WildlifeVisualLod.update(c, _areaScopeDepth > 0 ? Infinity : distanceTiles); // A remote-area tick has no camera there: never build rigs for it. // Promotes data-only actors through the same distance owner.
         if (hidden) releaseInactiveCreatureTextures(c);
         return hidden;
       }
@@ -7420,11 +7421,14 @@
       });
 
       function updateHostiles(dt) {
+        const simPlayers = _areaScopeDepth > 0 ? window.ActorRegistry.playersInArea(currentArea) : players; // A remote-area tick (js/remote-area-tick.js) only sees the players actually in that area.
         window.WildlifeFoodWeb?.tickParticles?.(dt); // Integrates scene-owned dig clods even when their owner is out of visual range.
         const foodWebCtx = { zoneId: currentArea, tile: TILE, canOccupyAt, moveCreatureToward }; // Shared across the actor batch to avoid per-animal allocation.
-        window.OffscreenRigLod.beginFrame(camera); // One frustum per frame for the behind-camera rig skip in updateCreatureMesh.
-        window.WildlifeVisualLod.beginFrame(); // Caps calm character-rig promotions during an entry burst; combatants always wake immediately.
-        releasePreviousAreaCreatureTextures();
+        if (_areaScopeDepth === 0) { // Per-frame bookkeeping for the LOCAL area only; a remote-area tick must not reset it or release this scene's textures.
+          window.OffscreenRigLod.beginFrame(camera); // One frustum per frame for the behind-camera rig skip in updateCreatureMesh.
+          window.WildlifeVisualLod.beginFrame(); // Caps calm character-rig promotions during an entry burst; combatants always wake immediately.
+          releasePreviousAreaCreatureTextures();
+        }
         currentHostilesFrame.length = 0;
         if (grazingPreyIndexArea !== currentArea) {
           grazingPreyIndexArea = currentArea;
@@ -7523,7 +7527,7 @@
             c.targetPlayer = null; // Dead, downed, departed or unloaded targets must not hold enemy aggro indefinitely.
             if (c.state === 'chase' || c.state === 'searching') c.state = 'return';
           }
-          window.WildlifeFoodWeb?.updateThreats?.(c, entityDt, currentHostilesFrame, players, npcWalkers, foodWebCtx); // Food-chain hunting + food-site defense coexist with existing enemy/creature states.
+          window.WildlifeFoodWeb?.updateThreats?.(c, entityDt, currentHostilesFrame, simPlayers, npcWalkers, foodWebCtx); // Food-chain hunting + food-site defense coexist with existing enemy/creature states.
           // The den-night/retaliation/chase branches outrank forage animation.
           // Cancel its residual dive/chew pose here rather than waiting for
           // tickForage (which those higher-priority branches never reach).
@@ -7597,7 +7601,7 @@
               c.state !== 'fleeing-low-health' && !onFleeCooldown &&
               distFromHome <= def.leashRangePx * LEASH_REENTER_FRAC) {
             const acquiredTarget = window.EnemyPetTargeting?.chooseAggroTarget
-              ? window.EnemyPetTargeting.chooseAggroTarget(c, players, companionObjects, currentArea, def.aggroRangePx, enemyCanSeeTarget)
+              ? window.EnemyPetTargeting.chooseAggroTarget(c, simPlayers, companionObjects, currentArea, def.aggroRangePx, enemyCanSeeTarget)
               : (distToPlayer <= def.aggroRangePx && enemyCanSeeTarget(c, targetPlayer, def.aggroRangePx) ? targetPlayer : null); // Legacy player-only fallback for isolated runtimes that omit the new targeting module.
             if (acquiredTarget) {
               c.state = 'chase';
@@ -7625,7 +7629,7 @@
           // Scent-marked opponents take priority without bypassing wild animals' existing
           // aggro, leash, perception or attack-commitment rules.
           window.AnimalScentTargeting?.prioritizeWild?.(
-            c, players, companionObjects, currentArea, opponent => enemyCanSeeTarget(c, opponent, def.aggroRangePx), LEASH_REENTER_FRAC
+            c, simPlayers, companionObjects, currentArea, opponent => enemyCanSeeTarget(c, opponent, def.aggroRangePx), LEASH_REENTER_FRAC
           );
           if (c.state === 'chase' && c.targetPlayer && c.targetPlayer !== targetPlayer) {
             targetPlayer = c.targetPlayer; // The chosen scent opponent must own movement, alignment and strikes immediately.
@@ -19204,6 +19208,29 @@
       // worldPaused() means "the whole world is stopped", which only happens in single-player. World-simulation readers use it.
       const worldPaused = () => paused && window.TimeConsensus?.shouldGate() !== true;
 
+      // Area scope (co-op, stage 1 of ticking more than one area; see MULTIPLAYER.md "Ticking more than one area").
+      // The active grid/scene lookups are pure functions of `currentArea`, so a simulation tick for an area nobody local is in
+      // runs with `currentArea` swapped to that area and restored afterwards. Only an already-BUILT zone is ever scoped (the
+      // lookups would build a missing scene as a side effect). While scoped: the audio system keeps hearing from the player's
+      // real area (listenerArea) so remote creatures make no sound, and the wildlife visual LOD sees everything as far away so
+      // no rigs are built for a scene nobody is looking at.
+      let _areaScopeDepth = 0, _areaScopeListenerArea = null;
+      function withAreaScope(areaId, fn) {
+        if (!areaId || areaId === currentArea) return fn();
+        if (!_isZoneArea(areaId) || !_zoneScenes.has(areaId)) return undefined;
+        const saved = currentArea;
+        if (_areaScopeDepth === 0) _areaScopeListenerArea = saved;
+        _areaScopeDepth++;
+        currentArea = areaId;
+        try { return fn(); } finally { currentArea = saved; if (--_areaScopeDepth === 0) _areaScopeListenerArea = null; }
+      }
+      window.AreaScope = Object.freeze({
+        with: withAreaScope,
+        isRemote: () => _areaScopeDepth > 0,
+        listenerArea: () => _areaScopeListenerArea ?? currentArea,
+        hasScene: areaId => areaId === currentArea || (_isZoneArea(areaId) && _zoneScenes.has(areaId)),
+      });
+
       // Facing lag: visual/reticle angle lags behind raw movement angle.
       // facingAngle is what the reticle and sprite actually use.
       // cardinalHoldTimer keeps the last cardinal locked briefly after stopping.
@@ -26954,6 +26981,7 @@
               updateHostiles(dt);
               window.PerfProfiler?.end(hostilePerf);
               tickCorpses(dt);
+              window.RemoteAreaTick?.update(dt); // Co-op only and opt-in: coarse tick of creatures in other occupied, already-built zones (js/remote-area-tick.js).
             } else if (currentArea === 'interior' || _isBuildingArea(currentArea)) {
               window.TzatzulLiveVisuals?.tick?.(dt, currentArea); // Owned flying companions need the same renderer in ordinary rooms too, including the farmhouse.
               // Ordinary building interiors still have no wild spawns; this
@@ -30918,7 +30946,7 @@
         MAX_WATER,
         clamp: window.FormatUtils.clamp,
         player,
-        getCurrentArea: () => currentArea,
+        getCurrentArea: () => window.AreaScope.listenerArea(), // The listener's real area, even while a remote-area tick has swapped currentArea (js/remote-area-tick.js).
         camera, // Camera orientation supplies the listener's right/up/forward axes; actual ear stays at the player.
         worldSurfaceY: (x, y) => activeSurfaceYAtWorld(x / TILE, y / TILE), // Audio occlusion/distance samples the same wilderness and interior heights as combat.
         getActorWorldY: (actor) => window.Combat?.deps?.getActorWorldY?.(actor), // Reuses the live player/creature height resolver already injected into Combat.init below.
