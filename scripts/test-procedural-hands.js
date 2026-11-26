@@ -524,7 +524,9 @@ for (const toolKey of ['hatchet','hoe','bshuakauitl','pickshovel','daggersword',
   );
 }
 assert.strictEqual(grips.data.rangedGripPreset, 'melee-ranged-split-20260921-v8-spear-end-flip-mirrored', 'Committed grip data must advertise the mirrored end-flip ranged-grip revision.');
-assert.strictEqual(grips.toolScaleForTool('dagger'), 0.55, 'Dagger must use the editor-authored 0.55 item scale.');
+assert.strictEqual(grips.toolScaleForTool('dagger'), 0.75, 'Dagger must use the latest editor-authored 0.75 base scale, independent of species height.');
+assert.strictEqual(grips.heightMultiplierForTool('dagger'), 0, 'Dagger must not use height-based prescaling by default.');
+assert.strictEqual(grips.toolScaleForTool('fishingmace'), 0.9, 'Fishing mace retains the latest authored base scale.');
 assert.strictEqual(grips.authoredPrimaryGripForTool('dagger', 'melee').position.z, -0.09, 'Dagger melee grip keeps its authored blade-side Z.');
 assert.deepStrictEqual(
   JSON.parse(JSON.stringify(grips.authoredPrimaryGripForTool('dagger', 'ranged').position)),
