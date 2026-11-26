@@ -12225,7 +12225,6 @@
         const area = _travelAreaOf(currentArea);
         const pc = Math.floor(player.x / TILE), pr = Math.floor(player.y / TILE);
         const nowMs = performance.now();
-        if (area === 'town' && gameStarted && !dialogueOpen && !cutscenePreviewActive) void window.OpeningStoryCutscene?.updateFarmGuide?.(nowMs);
         if (!_spotResolveDirty && !_pendingSpotTransition && area === _spotLastArea && pc === _spotLastCol && pr === _spotLastRow
             && nowMs - _spotResolvedAt < SPOT_RESOLVE_TTL_MS && nowMs >= _spotResolvedAt) {
           if (_spotReachedBar) refreshActionBar(); // Unchanged resolution: only the cached action-bar refresh remains per frame (not while latched, as before).
@@ -27182,6 +27181,7 @@
         }
         // Run after NPC routing/facing so an active ambient greeting can hold
         // its speaker toward the intended target for the rendered frame.
+        if (currentArea === 'town' && gameStarted && !paused && !dialogueOpen && !cutscenePreviewActive && sceneTransDir === 0) void window.OpeningStoryCutscene?.updateFarmGuide?.(now); // NPC positions and player mesh are current; travel/input decisions have already finished.
         ambientDialogueRuntime?.update(now);
         if (currentArea === 'town') {
           window.WaterSystem.updateTownWaterMeshes();
@@ -35414,31 +35414,47 @@
         window.WeaponToolStances?.invalidateHolderMatrixWorld?.();
       }
 
+      let openingGuidePoints = null; // Cached pair of safe road-adjacent waiting/leading tiles, replaced on town layout change.
       function openingFarmGuideTarget(walking) {
-        const gate = worldTownTransitions.find(spot => spot.target === 'farm' && spot.area === 'town'); // Actual authored farm entrance, not a hard-coded tile.
+        const gate = worldTownTransitions.find(spot => spot.target === 'farm' && spot.area === 'town'); // Actual authored farm entrance.
         if (!gate || !townGrid) return null;
-        const candidates = []; // Find walkable positions beside the gate, avoiding transition trigger tiles.
+        const cached = openingGuidePoints;
+        if (cached?.gate === gate && cached.grid === townGrid &&
+            isNpcTileWalkable('town', cached.wait.c, cached.wait.r) && isNpcTileWalkable('town', cached.lead.c, cached.lead.r)) return walking ? cached.lead : cached.wait;
+        const candidates = []; // Rebuild only when the authored map changes or a selected spot becomes blocked.
         for (let dr = -4; dr <= 4; dr++) for (let dc = -4; dc <= 4; dc++) {
           const c = gate.col + dc, r = gate.row + dr, distance = Math.hypot(dc, dr);
           if (distance < 1 || distance > 4 || !isNpcTileWalkable('town', c, r)) continue;
           if (worldTownTransitions.some(spot => spot.col === c && spot.row === r)) continue;
-          candidates.push({ c, r, distance });
+          const road = townGrid[r]?.[c]?.type === TileType.PATH;
+          candidates.push({ c, r, distance, road, inward: dr < 0 });
         }
-        const desired = walking ? 1 : 3; // Start a few steps inside town, then lead to the gate after dialogue.
-        candidates.sort((a,b) => Math.abs(a.distance - desired) - Math.abs(b.distance - desired));
-        const point = candidates[0];
-        return point ? { area: 'town', c: point.c, r: point.r, pose: 'stand', activity: 'Waiting for the new farmer', label: 'Farm entrance' } : null;
+        const rank = (p, desired) => Math.abs(p.distance - desired) + (p.road ? 0 : 2) + (p.inward ? 0 : .5); // Prefer the visible approach road inside town.
+        const leads = candidates.slice().sort((a,b) => rank(a,1) - rank(b,1));
+        const waits = candidates.slice().sort((a,b) => rank(a,3) - rank(b,3));
+        let pair = null; // Require a connected, directly traversable pair instead of independent nearby tiles.
+        for (const lead of leads) {
+          const wait = waits.find(p => p.distance > lead.distance + .75 && canNpcBeeline('town', p.c + .5, p.r + .5, lead.c, lead.r));
+          if (wait) { pair = { lead, wait }; break; }
+        }
+        if (!pair) return null;
+        const target = p => ({ area: 'town', c: p.c, r: p.r, pose: 'stand', activity: 'Waiting for the new farmer', label: 'Farm entrance' });
+        openingGuidePoints = { gate, grid: townGrid, wait: target(pair.wait), lead: target(pair.lead) };
+        return walking ? openingGuidePoints.lead : openingGuidePoints.wait;
       }
 
       function visibleOpeningFarmGuide() {
-        if (currentArea !== 'town' || !gameStarted || paused || dialogueOpen || cutscenePreviewActive || sceneTransDir !== 0 || isPlayerInCombat()) return null;
+        if (currentArea !== 'town' || !gameStarted || paused || menuOpen || dialogueOpen || cutscenePreviewActive || sceneTransDir !== 0 ||
+            isPlayerInCombat() || sitInteraction || farmEditMode || actionHeldDown || chargeAction || toolSwingT > 0 ||
+            window.CombatTutorial?.active?.() || window.Fishing?.state?.active || window.MusicMinigame?.state?.active ||
+            window.CharacterActionLocks?.isLocked?.('player', 'movement')) return null;
         const walker = findNpcWalker('spearhead_unumanuk'); // Use the real NPC and the shared dialogue staging.
         const point = walker?.root?.position;
-        if (walker?.area !== 'town' || !walker.root?.visible || !point) return null;
+        if (walker?.area !== 'town' || !walker.root?.visible || !point || window.NpcConversations?.isBusy?.(walker, player)) return null;
+        if (Math.hypot(point.x * TILE - player.x, point.z * TILE - player.y) > 4 * TILE) return null;
         const target = openingFarmGuideTarget(false); // Do not summon the player while Spearhead is still crossing town.
         if (!target || Math.hypot(point.x - target.c - .5, point.z - target.r - .5) > 1.25) return null;
-        const observer = { x: point.x * TILE, y: point.z * TILE, health: 1, avatarGroup: walker.avatarGroup, root: walker.root, areaId: 'town', walker }; // Shared ranged sight expects pixel coordinates and the real avatar height.
-        if (Math.hypot(observer.x - player.x, observer.y - player.y) > 4 * TILE) return null;
+        const observer = { x: point.x * TILE, y: point.z * TILE, health: 1, avatarGroup: walker.avatarGroup, root: walker.root, areaId: 'town', walker }; // Shared sight expects pixel coordinates and real avatar height.
         return window.RangedWeapons?.hasLineOfSight?.(observer, player, true) === true ? walker : null;
       }
 
