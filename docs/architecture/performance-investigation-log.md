@@ -3316,3 +3316,15 @@ degenerate, outside points) to 1e-9, and it is ~21x faster on a 1200-segment out
 
 Remaining top of the build (not yet touched): `buildZoneMesaMeshes` ~0.94 s (surface-stretch UV remap/unwrap), `buildPathNetworkGeo`
 ~0.3 s self. This benefits every first zone entry, single-player included, and shortens the co-op host's guest-zone build hitch.
+
+### Mesa UV unwrap: interned vertex ids, numeric edge keys (2026-11-26)
+
+`HobunjiSurfaceStretchUV.mapGeometry` (the mesa/cliff surface-stretch UV remap, ~0.9-1.1 s of a wilderness zone build) spent its time on
+string keys: `edgeKey` (`${a}|${b}` concat + long-string hashing) was the top self-time function (~350 ms), then `collectTriangles` /
+`islandData`. Vertex keys are now interned to integer ids once per mesh and an edge is one number; the edge's orientation still comes
+from the original string order of the vertex names, because it decides which end seeds a boundary loop and the adjacency insertion order.
+Gotcha found by the equivalence test: ids start at 1, since `traceBoundaryLoops` tests `if (!next)` and a vertex id of 0 is falsy.
+
+Proof of identical output: `scripts/test-surface-stretch-topology-equivalence.js` (golden hashes from the pre-change code over 7
+deterministic mesas: holes, pieces, material slot, tight angle, quad pairs, edge options; needs `THREE_PATH` or `npm i three`, else it skips).
+Node micro-benchmark, 7,200-triangle mesa: 186 ms -> 105 ms per `mapGeometry`.
