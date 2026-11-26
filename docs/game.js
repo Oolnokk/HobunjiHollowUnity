@@ -8911,7 +8911,12 @@
           // A mount is driven entirely by updateMountRide/updateMountedMovement
           // (see the V-key/D-pad-down call-in/dismiss flow) — it never runs
           // the fight/wander companion AI at all, so skip it here.
-          if (c.stableRole === 'mount') continue;
+          if (c.stableRole === 'mount') {
+            // Riding owns positions, but not the animal's independent affliction clock.
+            // Active summoned mounts were skipped by both ordinary creature loops.
+            if (window.Mounts?.rideEntity === c) tickCreatureResources(c, dt);
+            continue;
+          }
 
           // A shoulder pet doesn't fight or wander off — it stays glued to
           // its master's side, positioned/oriented so its shoulderGrip anchor
@@ -32906,7 +32911,7 @@
         getPlayerAimRay: currentPlayerAimRay,
         getPlayerInteractionRay: currentPlayerInteractionRay,
         worldSurfaceY: (x, y) => activeSurfaceYAtWorld(x / TILE, y / TILE),
-        getMovementInput: climbMovementInput,
+        getMovementInput: () => ({ ...climbMovementInput(), rotationApplied: activeCameraMode === SHOULDER_SURF_MODE }), // Free-jump compositor must not rotate the shoulder camera's inherited Demented yaw twice.
         getBaseMoveSpeedTiles: () => MOVE_SPEED / TILE, // Jump travel reuses normal walking distance per second, not a separate hard-coded pace.
         canStartFreeJump: () => gameStarted && !paused && !dialogueOpen && !sitInteraction &&
           !window.Fishing?.state?.active && !window.MusicMinigame?.state?.active &&
