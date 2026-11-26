@@ -77,7 +77,7 @@ assert(measured.every(({foot})=>Math.hypot(foot.x,foot.y,foot.z)<.25),
 // for the exact grapple while staying active during normal walking.
 assert(legSource.includes('(externalFootTargets && externalFootExtendedReach)'), 'render hook opts out of pants depth push on exact contacts');
 const pushStart=legSource.indexOf('    function installFootDepthPush(foot) {');
-const pushEnd=legSource.indexOf('    function installFootAxes(foot) {',pushStart);
+const pushEnd=legSource.indexOf('    const childLimbMetadata =',pushStart); // The attach-time metadata is outside the render-hook closure under test.
 assert(pushStart>0 && pushEnd>pushStart,'read the actual foot render hook');
 const pushSource=legSource.slice(pushStart,pushEnd);
 const makePush=new Function('THREE','state','root','externalFootTargets','externalFootExtendedReach',

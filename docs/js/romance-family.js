@@ -333,9 +333,15 @@
   }
   function phaseScaleFields(phase) {
     const scales = cfg().phaseScales?.[phase];
-    return scales ? { childBodyScale: scales.body, childHeadScale: scales.head } : {};
+    return scales ? { childBodyScale: scales.height ?? scales.body, childBodyHeightScale: scales.height ?? scales.body, childBodyWidthScale: scales.width ?? scales.body, childHeadScale: scales.head, childWidthConvergence: scales.widthConvergence ?? 0, childHeightConvergence: scales.heightConvergence ?? 0 } : {}; // Both independent axes travel with family baby/toddler records.
   }
   function childRecord(child) {
+    const phase = phaseOf(child); // Same stage identity for the portrait and any direct record consumer.
+    const stage = phase === 'basket' ? 'baby' : phase;
+    const api = window.HobunjiCharacterAgeRigConfig;
+    const individual = api?.profileFor?.(stage,child.speciesId,child.gender);
+    const adult = window.HobunjiCharacterRigScale?.scaleFor?.(child.speciesId,child.gender) || window.HobunjiCharacterRigScaleDefaults?.scaleFor?.(child.speciesId,child.gender);
+    const resolved = individual ? api.relativeProfile(individual,adult) : null;
     return {
       id: child.id,
       name: child.name,
@@ -348,7 +354,9 @@
       role: 'child',
       homeId: 'farmhouse', // Keeps village children anchored to their farm household.
       tags: phaseOf(child) === 'child' ? ['child', 'family', 'villager'] : ['child', 'family'], // Join village activities only when old enough.
-      ...phaseScaleFields(phaseOf(child)),
+      childGrowthStage: stage, // Explicit phase for species/gender baked proportion lookup.
+      ...phaseScaleFields(phase),
+      ...(resolved ? {childBodyScale:resolved.height,childBodyHeightScale:resolved.height,childBodyWidthScale:resolved.width,childHeadScale:resolved.head,childWidthConvergence:0,childHeightConvergence:0} : {}),
       bio: `Your ${child.gender === 'female' ? 'daughter' : 'son'}.`,
       relationship: { canBefriend: true, canDate: false, canMarry: false, maxHearts: 10 },
       ambientGreetings: true, // Babies babble and toddlers have first words without a new speech loop.
@@ -640,7 +648,11 @@
       return;
     }
     walker._childPhase = phase;
-    if (phase === 'basket') window.FamilyBabyLimbs?.balanceWalker?.(walker, cfg().phaseScales?.basket); // Resize newborn-only visuals before the carried proxy copies their GLBs.
+    const individual = window.HobunjiCharacterAgeRigConfig?.profileFor?.(phase === 'basket' ? 'baby' : phase, child.speciesId, child.gender);
+    const limbScale = individual || (phase === 'child' ? cfg().childLimbModifiers : cfg().phaseScales?.[phase]); // Same age-global hand/foot fields exported by Full Character Scale.
+    if (phase === 'basket' || (limbScale && (Number(limbScale.hand) !== 1 || Number(limbScale.foot) !== 1))) {
+      window.FamilyBabyLimbs?.balanceWalker?.(walker, limbScale); // Preserve the baby's carried proxy, and support optional toddler/child limb modifiers without a permanent new frame loop.
+    }
     window.FamilyBabyBurdens?.sync?.(child,walker,phase,()=>H.persist());
     window.FamilyBabyFollow?.bind?.(child, walker, phase); // The normal walker tick owns the baby's movement.
     if (phase === 'toddler') {

@@ -10,8 +10,8 @@ const donors = JSON.parse(JSON.stringify(window.HOBUNJI_ATTACHMENT_RIG_PROFILES.
 const mashtzarrAppearanceBefore = JSON.parse(JSON.stringify(window.SCRATCHBONES_CONFIG.game.appearanceEditor.species.mashtzarr)); // Front-hair removal must stay isolated to Mammakhbuur.
 vm.runInNewContext(read('docs/js/mammakhbuur-species-runtime.js'), context);
 const expectedScale = {
-  male: { x: 0.96, y: 1.69, head: 0.9771, offsetY: -0.095 },
-  female: { x: 1.0153, y: 1.3331, head: 0.8402, offsetY: -0.02 },
+  male: { x: 0.96, y: 1.69, legLength: 1.69, head: 0.9771, offsetY: -0.095 },
+  female: { x: 1.0153, y: 1.3331, legLength: 1.3331, head: 0.8402, offsetY: -0.02 },
 };
 for (const gender of ['male','female']) {
   const donor = donors['mashtzarr::' + gender]; // Compares against the fully authored donor including snapshot corrections.
@@ -39,7 +39,7 @@ for (const gender of ['male','female']) {
   assert(fs.existsSync('docs/assets/' + species[gender].headSprite));
   for (const fallback of species[gender].headFallbackUrls || []) assert(fs.existsSync('docs/assets/' + fallback));
   const expectedAnchors = JSON.parse(JSON.stringify(donors['mashtzarr::' + gender].anchors)); // Preserve every donor anchor except the independently authored perch size.
-  const expectedPerchScale = gender === 'male' ? 1.992106 : 1.819542; // Fixed world-space portrait-plane authoring, uniform across X/Y/Z.
+  const expectedPerchScale = gender === 'male' ? 1.992045 : 1.819486; // Fixed world-space portrait-plane authoring, uniform across X/Y/Z.
   expectedAnchors.shoulderPerch.scale = { x: expectedPerchScale, y: expectedPerchScale, z: expectedPerchScale };
   assert.deepEqual(JSON.parse(JSON.stringify(window.HOBUNJI_ATTACHMENT_RIG_PROFILES.characters['mammakhbuur::' + gender].anchors)), expectedAnchors);
 }

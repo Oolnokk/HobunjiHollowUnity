@@ -22,8 +22,8 @@ assert.match(author, /AUTHOR_PORTRAIT_RUNTIME_SCRIPT = new URL\('\.\.\/\.\.\/js\
 assert.match(author, /relativePath === 'js\/png-plane-avatar\.js' \? AUTHOR_PORTRAIT_RUNTIME_SCRIPT/,
   'the repository runtime loader selects the pinned portrait module');
 assert.match(author, /densityBudget\?\.portraitGrid\?\.\('full'\)/, 'the editor builds its initial NPC grid from the shared density authority');
-assert.match(author, /registerExternalSkinnedPortrait\?\.\(skinnedPlane/, 'the editor registers its own two-bone skin with the shared live update controller');
-assert.match(author, /buildGeometry: grid => buildTwoSidedSkinnedPlaneGeometry\(THREE, modelWidth, modelHeight, neckLocal, grid\)/,
+assert.match(author, /registerExternalSkinnedPortrait\?\.\(skinnedPlane/, 'the editor registers its own skinned rig with the shared live update controller');
+assert.ok(author.includes('buildGeometry: grid => buildTwoSidedSkinnedPlaneGeometry(THREE, modelWidth, modelHeight, neckLocal, { ...grid, pixelHeight: pxH })'),
   'density changes preserve the editor-specific portrait skin weighting function');
 assert.match(author, /afterGeometryChange\(nextGeometry\)/, 'editor hat layers receive refreshed face-specific skin geometry');
 assert.match(author, /rig\.hatXrayOverlay\?\.meshes/, 'existing lazy hat skin clones are updated');
@@ -37,7 +37,14 @@ assert.match(avatar, /setPortraitWireframeEnabled/, 'production module provides 
 const start = author.indexOf('function smoothstep01(value)');
 const end = author.indexOf('async function buildNpcNeckRig(', start);
 assert(start >= 0 && end > start, 'extract the real Animation Author geometry builder');
-const build = vm.runInNewContext('(() => { ' + author.slice(start, end) + ' return buildTwoSidedSkinnedPlaneGeometry; })()');
+const runtimeWindow = {}; // The editor uses gameplay's exact base-head neck and independent placement helpers.
+vm.runInNewContext(avatar, {
+  window: runtimeWindow,
+  localStorage: { getItem() { return null; } },
+  document: { getElementById() { return null; } },
+});
+assert.ok(runtimeWindow.PNGPlaneAvatar?.headOffsetWeightAt, 'native placement helper is available to the author');
+const build = vm.runInNewContext('(() => { ' + author.slice(start, end) + ' return buildTwoSidedSkinnedPlaneGeometry; })()', { window: runtimeWindow });
 class Attribute {
   constructor(array, itemSize) { this.array = array; this.itemSize = itemSize; this.count = array.length / itemSize; }
   getX(index) { return this.array[index * this.itemSize]; }
@@ -78,11 +85,11 @@ for (const [sx,sy] of [[28,36],[14,18],[6,8],[4,6]]) {
   assert.equal(geometry.groups[0].count, sx*sy*6, 'front material group covers exactly one face');
   assert.equal(geometry.groups[1].start, sx*sy*6, 'rear group starts after front-face vertices');
   assert.equal(geometry.groups[1].count, sx*sy*6, 'rear material group covers exactly one face');
-  assert.equal(geometry.getAttribute('skinIndex').count, sx*sy*12, 'every vertex retains two-bone indices');
+  assert.equal(geometry.getAttribute('skinIndex').count, sx*sy*12, 'every vertex retains three-bone indices');
   const weights = geometry.getAttribute('skinWeight');
   for (let i=0;i<weights.count;i+=Math.max(1,Math.floor(weights.count/17))) {
-    const a=weights.array[i*4], b=weights.array[i*4+1];
-    assert(Math.abs(a+b-1)<1e-6, 'neck and torso skin weights remain normalized at all densities');
+    const a=weights.array[i*4], b=weights.array[i*4+1], c=weights.array[i*4+2];
+    assert(Math.abs(a+b+c-1)<1e-6, 'offset, neck and torso weights remain normalized at all densities');
   }
 }
-console.log('OK: Animation Author controls parse and produce correct two-sided skinned meshes at each density.');
+console.log('OK: Animation Author renders sprite-anchored three-bone meshes at every density.');

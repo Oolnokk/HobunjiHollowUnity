@@ -11,42 +11,26 @@ function plainPosition(value) {
   return { x: value.x, y: value.y, z: value.z };
 }
 
-// 1) The separate Full Character Scale export is authoritative for all ten tuples.
+// 1) Current adult scale values are precisely the user-uploaded 26-profile source.
+// Original 2026-09-05 attachment-rig authoring assertions below must remain isolated from current proportions.
 const defaultsSource = fs.readFileSync('docs/config/character-rig-scale-defaults.js', 'utf8');
+const approved = JSON.parse(fs.readFileSync('docs/config/hobunji_full_character_scales.json', 'utf8')); // One checked-in reference instead of historical Mao'ao percentage assumptions.
 const defaultsWindow = {};
 defaultsWindow.window = defaultsWindow;
-vm.runInContext(defaultsSource, vm.createContext(defaultsWindow), { filename: 'character-rig-scale-defaults.js' });
-const expected = {
-  'tletingan::male': { x: 0.85, y: 0.85, head: 0.8, offsetY: 0 },
-  'tletingan::female': { x: 0.915, y: 0.89, head: 0.8823529411764706, offsetY: 0 },
-  'engh-sho::male': { x: 0.8, y: 0.845, head: 0.7894736842105263, offsetY: 0 },
-  'engh-sho::female': { x: 0.795, y: 0.81, head: 0.7894736842105263, offsetY: 0 },
-  'mao-ao::male': { x: 0.81675, y: 1.089, head: 0.726, offsetY: 0 },
-  'mao-ao::female': { x: 0.895, y: 0.94, head: 0.7813, offsetY: 0 },
-  'kenkari::male': { x: 1.225, y: 1.225, head: 1, offsetY: 0 },
-  'kenkari::female': { x: 1.1, y: 1.1, head: 1, offsetY: 0 },
-  'mashtzarr::male': { x: 0.955, y: 1.255, head: 0.9856, offsetY: -0.095 },
-  'mashtzarr::female': { x: 1.01, y: 0.99, head: 0.8475, offsetY: -0.02 },
-};
-const portraitScales = {
-  'tletingan::male': 0.85,
-  'tletingan::female': 0.85,
-  'engh-sho::male': 0.95,
-  'engh-sho::female': 0.95,
-  'mao-ao::male': 1,
-  'mao-ao::female': 0.8,
-  'kenkari::male': 0.75,
-  'kenkari::female': 0.75,
-}; // Used below to lock intentional raw-PNG Head percentages; Mao-ao male is now 72.6% after the requested additional +10% adjustment, while the other non-Mashtzarr profiles remain 75%.
-assert.ok(defaultsWindow.HobunjiCharacterRigScaleDefaults.version >= 12,
-  'Full Character Scale defaults must include the latest Mao-ao male +10% adjustment');
-for (const [key, tuple] of Object.entries(expected)) {
-  const [species, gender] = key.split('::');
-  assert.deepStrictEqual(plainScale(defaultsWindow.HobunjiCharacterRigScaleDefaults.scaleFor(species, gender)), tuple, `${key} scale tuple mismatch`);
-  if (portraitScales[key]) {
-    const expectedRawHeadPercent = key === 'mao-ao::male' ? 72.6 : (key === 'mao-ao::female' ? 62.504 : (key === 'tletingan::male' ? 68 : 75));
-    assert.ok(Math.abs(tuple.head * portraitScales[key] * 100 - expectedRawHeadPercent) < 1e-9, `${key} raw-PNG Head must equal ${expectedRawHeadPercent}%`);
-  }
+vm.runInContext(defaultsSource, vm.createContext(defaultsWindow), { filename:'character-rig-scale-defaults.js' });
+const canonical = defaultsWindow.HobunjiCharacterRigScaleDefaults;
+const actual = canonical.values;
+const close = (a,b,label) => assert(Math.abs(a-b) < 1e-9,label+': '+a+' != '+b);
+assert(canonical.version >= 35,'latest uploaded adult baseline must be installed');
+assert.strictEqual(Object.keys(actual).length,18,'the 18 canonical adult species/gender pairs stay in runtime defaults');
+assert.strictEqual(Object.keys(canonical.uploadedScaleRestoreValues).length,26,'all auxiliary identities remain available for explicit authoring import');
+for (const [species,genders] of Object.entries(approved)) for (const [gender,imported] of Object.entries(genders)) {
+  const key = species+'::'+gender;
+  const saved = canonical.uploadedScaleRestoreValues[key];
+  assert(saved,key+' is included in approved imported profiles');
+  for (const field of ['x','y','legLength','head','offsetY','handScale','footScale'])
+    close(saved[field],imported[field],key+' '+field+' matches uploaded source exactly');
+  if (actual[key]) assert.deepStrictEqual(plainScale(canonical.scaleFor(species,gender)),plainScale(actual[key]),key+' runtime dimensions');
 }
 
 // 2) The bulk rig export is intentionally allowlisted: only Mao-ao hand shoulders

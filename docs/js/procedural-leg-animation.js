@@ -648,6 +648,20 @@
     return group;
   }
 
+  // Full Character Scale's isolated lineup can display anatomy from the
+  // opposite model-forward convention. Mirror only the Z of the *visual*
+  // subtree, not the leg-root, hip, IK chain, or anatomical X handedness.
+  // This must work for fallback feet now and asynchronously loaded GLBs later.
+  function alignPreviewFootFacing(THREE, foot, reverseDepth) {
+    if (!reverseDepth || !foot?.children?.length) return foot;
+    const visual = new THREE.Group(); // Carries preview-only depth reversal without changing leg targets or gameplay feet.
+    visual.name = 'full_scale_preview_foot_facing';
+    for (const child of [...foot.children]) visual.add(child);
+    visual.scale.z = -1; // Reverse forward/backward geometry, keep left/right and ankle roll exactly as authored.
+    foot.add(visual);
+    return foot;
+  }
+
   const _glbSceneCache = new Map(); // glb path -> Promise<THREE.Object3D>
 
   function loaderForThree(THREE) {
@@ -802,6 +816,58 @@
     return mesh;
   }
 
+  const legHandlesByScaleParent = new WeakMap(); // Object3D transform parent -> affected leg handles; used only when proportions change.
+  function registerScaleHandle(handle) {
+    const parents = []; // Cached ancestor membership supports O(depth) teardown on disposal.
+    for (let parent = handle.group?.parent; parent; parent = parent.parent) {
+      let handles = legHandlesByScaleParent.get(parent);
+      if (!handles) { handles = new Set(); legHandlesByScaleParent.set(parent, handles); }
+      handles.add(handle);
+      parents.push(parent);
+    }
+    handle.scaleRegistrationParents = parents;
+  }
+  function unregisterScaleHandle(handle) {
+    for (const parent of handle.scaleRegistrationParents || []) {
+      const handles = legHandlesByScaleParent.get(parent);
+      handles?.delete(handle);
+      if (handles?.size === 0) legHandlesByScaleParent.delete(parent);
+    }
+    handle.scaleRegistrationParents = null;
+  }
+  function alignPortraitWithLegs(parent, handle) {
+    if (!parent || !handle) return false;
+    const desired = Number(handle.standingPosteriorY) - Number(handle.restPosteriorY); // Parent-local additional leg reach, with feet remaining at floor Y=0.
+    if (!Number.isFinite(desired)) return false;
+    let portrait = handle.portraitNode; // The portrait is a stable mesh per rig; caching avoids walking its entire hierarchy on every size edit.
+    if (!portrait?.parent) {
+      portrait = null;
+      parent.traverse?.(node => {
+        if (portrait || node === parent) return;
+        if (node.userData?.neckRig?.available && node.position) portrait = node; // Never reposition the floor root that owns both feet.
+      });
+      handle.portraitNode = portrait;
+    }
+    if (!portrait) return false;
+    portrait.userData ||= {};
+    const previous = Number(portrait.userData.hobunjiLegLengthPortraitOffsetY) || 0; // Remembers our offset so unrelated action animations are not wiped on later slider updates.
+    if (Math.abs(desired - previous) <= 1e-9) return true;
+    let betweenY = 1; // Converts parent-floor-relative delta into the actual portrait parent's coordinates when wrappers carry a uniform species scale.
+    for (let current = portrait.parent; current && current !== parent; current = current.parent) betweenY *= Number(current.scale?.y) || 1;
+    portrait.position.y += (desired - previous) / (Math.abs(betweenY) > 1e-6 ? betweenY : 1);
+    portrait.userData.hobunjiLegLengthPortraitOffsetY = desired;
+    portrait.updateMatrix?.();
+    return true;
+  }
+  function syncScaleForParent(parent, legRatio) {
+    const handles = legHandlesByScaleParent.get(parent); // O(affected characters); never scan the town's other NPC rigs.
+    if (!handles) return;
+    for (const handle of handles) {
+      handle.setLegLengthMultiplier(legRatio); // Live hip-to-foot adjustment preserves authored leg length.
+      alignPortraitWithLegs(parent, handle); // Portrait tracks the matching hip contact point.
+    }
+  }
+
   // Attaches a procedural feet pair under `parent` (the avatar's own
   // floor-anchored root/playerMesh — NOT the billboard plane child, which
   // sits modelHeight/2 above it). Returns a handle with update()/dispose(),
@@ -841,7 +907,10 @@
     // (proceduralFeet.footScale) on top of this base formula — defaults to
     // 1 (formula unchanged) for any species/gender without an authored
     // entry.
-    const radius = modelHeight * footHeightFraction * 0.5 * footScaleMultiplierForSpecies(speciesId, gender) * sizeBalanceMultiplier;
+    const initialFootScale = footScaleMultiplierForSpecies(speciesId, gender); // Original species multiplier, retained so later slider updates never compound scale.
+    let ageFootScale = 1; // Preview age factor is composed with the independent adult foot size and sole contact.
+    let footSizeScale = initialFootScale; // Current multiplier used by fallback feet and any asynchronously arriving GLB.
+    const radius = modelHeight * footHeightFraction * 0.5 * initialFootScale * sizeBalanceMultiplier;
     const isKenkariFamily = KENKARI_FAMILY.has(speciesId);
     const sphereScaleXZ = isKenkariFamily ? 0.6 : 1;
     const sphereScaleY = isKenkariFamily ? 1 : 0.75;
@@ -854,7 +923,9 @@
     const root = new THREE.Group();
     root.name = `${options.name || 'avatar'}_procedural_feet`;
 
-    const posteriorY = posteriorYForSpecies(speciesId, gender, modelHeight, Number(options.handAttachY));
+    const restPosteriorY = posteriorYForSpecies(speciesId, gender, modelHeight, Number(options.handAttachY)); // Authored original hip height, in the parent/foot-root's floor-relative frame.
+    let posteriorY = restPosteriorY; // Live hip height, lengthened independently of the portrait and never used to scale a foot mesh.
+    let legLengthMultiplier = 1; // Relative to portrait Y scale, so old rigScaleY still scales portrait and legs together.
     const posteriorX = posteriorXForSpecies(speciesId, gender); // Used to recenter the legs and to locate the seated surface in this avatar-local frame.
     // Hunched characters (js/character-spine.js) plant their feet farther apart and take longer strides to carry the stooped upper body. Fixed per avatar.
     const spineGait = window.HobunjiCharacterSpine?.resolve({ speciesId, gender, spine: options.spine, profile: options.profile }) || null; // The legs also inherit species hunch, not only explicit per-enemy spine.
@@ -1028,9 +1099,59 @@
     }
 
     function standingLegLength() {
-      const leftLength = Math.max(0.001, posteriorY - state.leftContactY); // Used with rightLength to drive stride from the left leg's actual standing anatomy.
-      const rightLength = Math.max(0.001, posteriorY - state.rightContactY); // Keeps stride current if a fallback foot is replaced by a GLB with a different contact height.
+      const leftLength = Math.max(0.001, posteriorY - state.leftContactY); // Uses the resized hip-to-ankle span, not the unmodified portrait height.
+      const rightLength = Math.max(0.001, posteriorY - state.rightContactY); // Rechecks sole contact height after asynchronous foot/GLB replacement.
       return (leftLength + rightLength) * 0.5;
+    }
+
+    function setLegLengthMultiplier(multiplier, contactChanged = false) {
+      if (state.disposed) return posteriorY;
+      const raw = Number(multiplier); // Ratio of authored leg length to portrait Y, both in canonical world-size units.
+      const next = Number.isFinite(raw) && raw > 0 ? Math.max(.025, Math.min(40, raw)) : 1;
+      if (!contactChanged && Math.abs(next - legLengthMultiplier) <= 1e-9) return posteriorY; // Width/head/age changes must not re-solve both bones or rebuild pants.
+      legLengthMultiplier = next;
+      const contact = (state.leftContactY + state.rightContactY) * .5; // Feet remain planted: leg growth moves the hip, not the shoe geometry.
+      posteriorY = contact + (restPosteriorY - contact) * legLengthMultiplier;
+      for (const side of ['left', 'right']) {
+        legChains[side].hip.position.y = posteriorY;
+        if (state[side]) applyLegChain(side); // Contact changes still re-solve the real joints once.
+      }
+      state.anatomyRevision++; // Pants cuff bindings refresh only when hip proportion or sole contact actually changes.
+      return posteriorY;
+    }
+
+    function setFootScaleMultiplier(multiplier, meshChanged = false) {
+      if (state.disposed) return footSizeScale;
+      const raw = Number(multiplier); // Independent hand/foot authored setting; zero and non-finite values are rejected.
+      const next = Number.isFinite(raw) && raw > 0 ? Math.max(.1, Math.min(4, raw)) : initialFootScale;
+      if (!meshChanged && Math.abs(next - footSizeScale) <= 1e-9) return footSizeScale; // Repeated identical slider inputs need no foot transforms or leg IK.
+      footSizeScale = next;
+      const relative = footSizeScale / initialFootScale * ageFootScale; // Relative to the foot geometry's original shipped multiplier.
+      for (const side of ['left', 'right']) {
+        const foot = state[side];
+        if (!foot) continue;
+        const base = foot.userData.hobunjiFootScaleBase ||= {
+          x: foot.scale.x, y: foot.scale.y, z: foot.scale.z,
+          contactRadiusY: Number(foot.userData.contactRadiusY) || 0,
+        }; // Preserves GLB handedness, sole height and existing generated fallback dimensions across repeat edits.
+        foot.scale.set(base.x * relative, base.y * relative, base.z * relative); // Uniform size only; leg length and contact direction are separate.
+        foot.userData.contactRadiusY = base.contactRadiusY * relative;
+        const key = side === 'left' ? 'leftContactY' : 'rightContactY';
+        const resizedContact = foot.userData.contactRadiusY * state.extremityYRatio;
+        state[`${side}Target`].y += resizedContact - state[key]; // Do not reset the current stride/pose when sizing an idle or walking foot.
+        state[key] = resizedContact;
+      }
+      setLegLengthMultiplier(legLengthMultiplier, true); // Sole contact changed even if the leg-size slider did not; refresh IK once.
+      return footSizeScale;
+    }
+
+    function setAgeFootScaleMultiplier(multiplier) {
+      const raw = Number(multiplier); // Separate authoring stage; never overwrite the authored adult size.
+      const next = Number.isFinite(raw) && raw > 0 ? Math.max(.01, Math.min(20, raw)) : 1;
+      if (state.disposed || Math.abs(next - ageFootScale) <= 1e-9) return ageFootScale;
+      ageFootScale = next;
+      setFootScaleMultiplier(footSizeScale, true); // Reuse the sole-contact/IK owner and the original per-mesh baseline.
+      return ageFootScale;
     }
 
     // Solves the leg chain for `side` ('left'/'right') from that leg's own
@@ -1214,14 +1335,27 @@
       });
     }
 
+    const childLimbMetadata = options.childLimbVisualModifiers
+      || window.HobunjiCharacterAgeRigConfig?.nonFamilyChildLimbsFor?.(options.npcRecord || options.profile?.npcRecord)
+      || parent.userData?.hobunjiChildLimbVisualModifiers
+      || (parent.children || []).find(node => node.userData?.hobunjiChildLimbVisualModifiers)?.userData?.hobunjiChildLimbVisualModifiers
+      || null; // Attach-time child limb lookup only; no recurring scans.
+    const childFootFactor = Number(childLimbMetadata?.foot) > 0 ? Number(childLimbMetadata.foot) : 1;
     function installFootAxes(foot) {
       installFootDepthPush(foot);
       window.HobunjiCharacterRigScale?.installPartScaleAxes?.(THREE, foot, parent, () => window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters?.[partProfileKey]?.anatomy?.footScaleAxes, true); // Shared uniform hand/foot average through moving leg joints.
       if (partAxes?.y > 0) foot.userData.contactRadiusY *= partAxes.y; // Sphere fallback retains ground contact after geometry grows about its center; GLB bottom origin remains zero.
+      if (childFootFactor !== 1 && foot?.scale?.multiplyScalar) {
+        foot.scale.multiplyScalar(childFootFactor); // Scale final GLB visuals and sphere fallbacks equally.
+        if (Number.isFinite(foot.userData?.contactRadiusY)) foot.userData.contactRadiusY *= childFootFactor;
+        foot.updateMatrix?.();
+      }
     }
 
-    const leftFallback = buildFallbackFoot(THREE, { speciesId, radius, sphereScaleXZ, sphereScaleY, initialColorHex });
-    const rightFallback = buildFallbackFoot(THREE, { speciesId, radius, sphereScaleXZ, sphereScaleY, initialColorHex });
+    const leftFallback = alignPreviewFootFacing(THREE,
+      buildFallbackFoot(THREE, { speciesId, radius, sphereScaleXZ, sphereScaleY, initialColorHex }), options.previewReverseFootDepth); // Corrects the isolated author lineup, not shared gameplay leg transforms.
+    const rightFallback = alignPreviewFootFacing(THREE,
+      buildFallbackFoot(THREE, { speciesId, radius, sphereScaleXZ, sphereScaleY, initialColorHex }), options.previewReverseFootDepth);
     leftFallback.name = 'left_foot';
     rightFallback.name = 'right_foot';
     legChains.left.calf.add(leftFallback);
@@ -1261,6 +1395,8 @@
         buildGlbFoot(THREE, footConfig, { speciesId, targetHeight, surfaceForRole }),
       ]).then(([leftMesh, rightMesh]) => {
         if (state.disposed) { disposeObjectResources(leftMesh); disposeObjectResources(rightMesh); return; }
+        alignPreviewFootFacing(THREE, leftMesh, options.previewReverseFootDepth); // Async replacement preserves the exact same preview convention as temporary feet.
+        alignPreviewFootFacing(THREE, rightMesh, options.previewReverseFootDepth);
         leftMesh.name = 'left_foot';
         rightMesh.name = 'right_foot';
         leftMesh.scale.x *= -1; // mirrors handedness for the left foot from a single authored mesh
@@ -1276,9 +1412,14 @@
         state.right = rightMesh;
         state.leftContactY = leftMesh.userData.contactRadiusY * state.extremityYRatio;
         state.rightContactY = rightMesh.userData.contactRadiusY * state.extremityYRatio;
+        setFootScaleMultiplier(footSizeScale, true); // Async GLB swap needs a fresh baseline even when the slider percentage itself is unchanged.
         state.anatomyRevision++;
         placeIdleTarget('left', state.leftContactY);
         placeIdleTarget('right', state.rightContactY);
+        if (typeof options.onFootVisualsReplaced === 'function') {
+          try { options.onFootVisualsReplaced({ left: leftMesh, right: rightMesh, root }); }
+          catch (error) { console.warn('[ProceduralLegAnimation] foot replacement callback failed:', error); }
+        } // Runs only on real GLB replacement, not every frame.
         window.HobunjiFeetOutlineParity?.refreshRig?.(root); // Register the final visible meshes for water/outline passes regardless of load duration.
       }).catch(error => {
         console.warn(`[ProceduralLegAnimation] foot GLB load failed for "${speciesId}" (${footConfig.glb}):`, error);
@@ -1317,6 +1458,15 @@
     }
 
     parent.add(root);
+    let authoredLegRatio = window.HobunjiCharacterRigScale?.legLengthRatioFor?.(speciesId, gender); // Species/gender default includes legacy Height migration.
+    for (let owner = parent; owner; owner = owner.parent) {
+      const scaleState = owner.userData?.hobunjiCharacterRigScaleState; // A hostile's explicit parent scale can differ from species defaults.
+      if (!scaleState) continue;
+      authoredLegRatio = (Number(scaleState.legLength) || Number(scaleState.factor?.y) || 1)
+        / (Number(scaleState.factor?.y) || 1);
+      break;
+    }
+    if (Number.isFinite(Number(authoredLegRatio))) setLegLengthMultiplier(authoredLegRatio); // Initial spawn honors the CURRENT parent scale, not a possibly different default.
 
     function applyPose(side, contactY, idleX, pose, response, dt) {
       const target = state[`${side}Target`];
@@ -1559,11 +1709,8 @@
       return true;
     }
 
-    function update(dt, speedWorldUnitsPerSecond, suppressed, seatedPose, motion) {
-      dt = Number.isFinite(dt) ? Math.max(0, Math.min(0.1, dt)) : 0; // Bounds animation integration after backgrounding or invalid inputs.
-      if (!motion?.lunging || motion?.airborne || suppressed || seatedPose) state.lungeActive = false;
+    function syncFootBodyScale(grounded, solveImmediately = false) {
       if (state.disposed) return;
-      if (!externalFootTargets) prepareLegSolve(); // Normal gait/seat/hover recovers the prior clean solved frame before damping.
       const bodyFactors = window.HobunjiCharacterRigScale?.bodyScaleFactorsFor?.(parent); // The scale owner can be several joints above the feet.
       state.bodyScaleX = Number(bodyFactors?.x) > 0 ? Number(bodyFactors.x) : 1;
       state.bodyScaleY = Number(bodyFactors?.y) > 0 ? Number(bodyFactors.y) : 1;
@@ -1572,13 +1719,23 @@
         state.extremityYRatio = footYRatio;
         const nextLeftContactY = (Number(state.left?.userData?.contactRadiusY) || 0) * footYRatio; // Resized sole height: used to keep an already planted left foot grounded.
         const nextRightContactY = (Number(state.right?.userData?.contactRadiusY) || 0) * footYRatio; // Matching right-foot correction without changing step lift.
-        if (!externalFootTargets && !state.lungeActive && !seatedPose && !suppressed && !state.hoverEnabled && !motion?.airborne) {
+        if (grounded) {
           state.leftTarget.y += nextLeftContactY - state.leftContactY;
           state.rightTarget.y += nextRightContactY - state.rightContactY;
         }
         state.leftContactY = nextLeftContactY;
         state.rightContactY = nextRightContactY;
+        if (solveImmediately || Math.abs(legLengthMultiplier - 1) > 1e-9)
+          setLegLengthMultiplier(legLengthMultiplier, true); // The contact changed with the portrait aspect even though the authored leg percentage did not.
       }
+    }
+
+    function update(dt, speedWorldUnitsPerSecond, suppressed, seatedPose, motion) {
+      dt = Number.isFinite(dt) ? Math.max(0, Math.min(0.1, dt)) : 0; // Bounds animation integration after backgrounding or invalid inputs.
+      if (!motion?.lunging || motion?.airborne || suppressed || seatedPose) state.lungeActive = false;
+      if (state.disposed) return;
+      if (!externalFootTargets) prepareLegSolve(); // Normal gait/seat/hover recovers the prior clean solved frame before damping.
+      syncFootBodyScale(!externalFootTargets && !state.lungeActive && !seatedPose && !suppressed && !state.hoverEnabled && !motion?.airborne);
       if (externalFootTargets) {
         if (applyWorldFootTargets(externalFootTargets, null, externalFootExtendedReach, externalFootDeepFold)) {
           state.motionMode = 'external-portrait-contact';
@@ -1716,6 +1873,7 @@
     function dispose() {
       if (state.disposed) return;
       state.disposed = true;
+      unregisterScaleHandle(handle); // Remove all registrations on despawn or editor exit.
       externalFootTargets = null;
       externalFootDeepFold = false;
       portraitGuides?.dispose();
@@ -1815,8 +1973,15 @@
       publishSolvedLegPose(side); // Recorded ragdoll samples share the authoritative solved baseline.
     }
 
-    return {
-      group: root, update, dispose, applyRecordedLegPose, getStandingPoseDebug, beginLunge, motionAnatomy, applyWorldFootTargets, setExternalFootTargets, releaseExternalFootTargets,
+    const handle = {
+      group: root, update, dispose, applyRecordedLegPose, setLegLengthMultiplier, setFootScaleMultiplier, setAgeFootScaleMultiplier,
+      syncPreviewFootContact: () => syncFootBodyScale(true, true), // Static editor rigs need current contact without advancing or resetting their gait.
+      get standingPosteriorY() { return posteriorY; }, // Consumers such as chair/pants positioning read the live hip, not an outdated creation-time value.
+      restPosteriorY, // Preview and game diagnostics can compare current leg length with its original source anatomy.
+      get standingFootContactY() { return (state.leftContactY + state.rightContactY) * .5; }, // Author height/beltline conversion measures real sole-contact height; no scene traversal or extra update pass.
+      get legLengthMultiplier() { return legLengthMultiplier; },
+      get footScaleMultiplier() { return footSizeScale; },
+ getStandingPoseDebug, beginLunge, motionAnatomy, applyWorldFootTargets, setExternalFootTargets, releaseExternalFootTargets,
       hasExternalFootTargets: () => !!externalFootTargets, // Cliff crawl must not overwrite a live grapple/mount/paired-action leg contact.
       captureMotionState: () => ({ // Render-scoped cliff IK must not persist its temporary foot targets into the next gait solve.
         leftTarget: state.leftTarget.clone(), rightTarget: state.rightTarget.clone(),
@@ -1862,14 +2027,18 @@
         return stance;
       },
       setHoverMode, isHoverMode,
-      standingPosteriorY: posteriorY, // Used by NPC chair stations to lower the whole avatar onto the authored seat.
       anatomyRevision: () => state.anatomyRevision,
       getSeatedPoseDebug: () => lastSeatedPoseDebug,
     };
+    registerScaleHandle(handle); // Once per new rig, no per-frame/scale global loop.
+    alignPortraitWithLegs(parent, handle); // Spawn with an already-authored independent leg length leaves portrait and hips attached immediately.
+    return handle;
   }
 
   window.ProceduralLegAnimation = {
     attach,
+    syncScaleForParent, // Shared scale runtime notifies already-attached feet when portrait/leg ratios diverge.
+    alignPortraitWithLegs, // Preview and game use exactly the same floor-relative hip/portrait reconnection.
     worldQuaternionWithoutScale, // Scale-independent orientation shared with the climb renderer.
     setShowBones: (visible) => { showLegBoneGuides = !!visible; },
     get showBones() { return showLegBoneGuides; },

@@ -1204,15 +1204,17 @@ body[data-animation-author-mode="rig"] #maaViewportBadge { max-width:calc(100% -
      Only resolves when this tool is served from its real docs/tools/
      animation-author/ location; the inline default below still applies
      when it isn't (e.g. fetched standalone from a different docs root). -->
-<script src="../../config/attachment-rig-profiles.js?v=20261125voorgGrip29Audit1"></script>
+<script src="../../config/attachment-rig-profiles.js?v=20261126neckAudit2"></script>
+<script>window.__hobunjiCharacterDimensionsNoAutoMeasure = true;</script> <!-- Full Character Scale starts exact bare-PNG measurement only after finishing its own portrait queue. -->
+<script src="../../js/character-dimensions.js?v=20261126neckAudit2"></script> <!-- Shared pixel-accurate floor-to-crown measurements, already used by gameplay. -->
 <script src="../../js/local-db-overrides.js?v=20261122hsharedDatabaseAudit2"></script> <!-- Reuses the gameplay NPC species composer. -->
 <script src="../../js/animal-chathead-frame.js?v=20261123hbd21292"></script>
 <script src="../../js/transform-dump-utils.js?v=20261017h3ce7f8d"></script>
 <script src="../../js/spouse-kiss-motion.js?v=20261119h7c67489"></script>
 <script src="../../js/animation-author-creature-gameplay-parity.js?v=20261122hAnimalRig28"></script> <!-- Shared game creature dimensions and floor solver. -->
 <script src="rig-preview-species.js?v=20261123ha26d360"></script>
-<script src="../../js/animation-author-shoulder-pose-preview.js?v=20261119classGround1"></script>
-<script src="../../js/animation-author-rig-carrier-preview.js?v=20261118h2f19a18"></script>
+<script src="../../js/animation-author-shoulder-pose-preview.js?v=20261123neckAgeSync2"></script>
+<script src="../../js/animation-author-rig-carrier-preview.js?v=20261123neckAgeSync2"></script>
 <script src="../../js/belt-stow-torch-display.js?v=20261122stowSplit1"></script> <!-- Shared torch art and pivot, separate from the rig profile schema. -->
 <script src="../../js/belt-stow-rig.js?v=20261122stowSplit1"></script> <!-- Shared belt-stow coordinates and torch art with gameplay. -->
 <script src="../../js/animation-author-belt-stow.js?v=20261122posteriorFire2"></script> <!-- Reusable Rig Coordinates belt slot, preview and mobile controls. --> <!-- Fixed Small pet; non-interactive NPC is inverse-positioned around its grip. --> <!-- Rig Coordinates: gameplay shoulder deformation preview for the authored grip. -->
@@ -1226,11 +1228,11 @@ const STORAGE_KEY = 'hobunjiNpcPlaneAvatarRepoViewer.source.v1';
 const KURRAYA_STORAGE_KEY = 'hobunjiNpcPlaneAvatarRepoViewer.kurrayaProfiles.v1';
 const CREATURE_STORAGE_KEY = 'hobunjiGameplayBackdropRepoViewer.creatureProfiles.v1';
 const CREATURE_RENDER_SCRIPT = 'js/creature-genetics-render.js';
-const AUTHOR_HAND_RUNTIME_SCRIPT = new URL('../../js/held-action-animations.js?v=20261126hfd256c8', location.href).href; // Keeps the hand preview paired with this exact Animation Author build instead of an older selected repository ref.
-const AUTHOR_PORTRAIT_RUNTIME_SCRIPT = new URL('../../js/png-plane-avatar.js?v=20261124h4f60280', location.href).href; // Always pair the editor controls with the local portrait-density/wireframe API, even when previewing older repository art.
-const AUTHOR_SPINE_RUNTIME_SCRIPT = new URL('../../js/character-spine.js?v=20261112longoran1', location.href).href; // The paired Longoran preview must load the same real spline solver as gameplay before it builds a skinned portrait.
+const AUTHOR_HAND_RUNTIME_SCRIPT = new URL('../../js/held-action-animations.js?v=20261126neckMultiplayer1', location.href).href; // Keeps the hand preview paired with this exact Animation Author build instead of an older selected repository ref.
+const AUTHOR_PORTRAIT_RUNTIME_SCRIPT = new URL('../../js/png-plane-avatar.js?v=20261126neckMultiplayer1', location.href).href; // Always pair the editor controls with the local portrait-density/wireframe API, even when previewing older repository art.
+const AUTHOR_SPINE_RUNTIME_SCRIPT = new URL('../../js/character-spine.js?v=20261126neckAudit2', location.href).href; // The paired Longoran preview must load the same real spline solver as gameplay before it builds a skinned portrait.
 const AUTHOR_LEG_BONES_SCRIPT = new URL('../../js/leg-bones.js?v=20260821a', location.href).href; // Supplies the exact invisible two-bone solver used by the paired feet preview.
-const AUTHOR_FEET_RUNTIME_SCRIPT = new URL('../../js/procedural-leg-animation.js?v=20261119hf31697a', location.href).href; // Keeps rig-preview feet paired with this author build instead of the selected repository ref.
+const AUTHOR_FEET_RUNTIME_SCRIPT = new URL('../../js/procedural-leg-animation.js?v=20261126neckAudit3', location.href).href; // Keeps rig-preview feet paired with this author build instead of the selected repository ref.
 const AUTHOR_SHOULDER_RIG_RUNTIME_URLS = Object.freeze(Object.fromEntries([
   'js/grehlr-head-rig-correction.js', 'js/animal-head-rig-authored.js',
   'js/animal-shoulder-spline-profiles.js', 'js/animal-shoulder-spline.js',
@@ -1307,6 +1309,7 @@ const state = {
   thumbnailObserver: null,
   thumbnailQueue: [],
   thumbnailWorkers: 0,
+  thumbnailStartupBlocked: false, // Pauses low-priority NPC portrait thumbnails while critical repository scripts and workspace initialize.
   portraitRenderChain: Promise.resolve(),
   three: {
     ready: false,
@@ -1469,7 +1472,8 @@ async function fetchRepoText(path) {
   for (const url of candidates) {
     try {
       log(`Fetching ${normalized} from ${url.includes('raw.githubusercontent') ? 'GitHub raw' : 'jsDelivr fallback'}`);
-      return await (await fetchWithTimeout(url)).text();
+      const stableRevision = /^[a-f0-9]{40}$/i.test(state.resolvedSha || ''); // Preserve fresh uncached reads if the GitHub API could not pin a branch name.
+      return await (await fetchWithTimeout(url, { cache: stableRevision ? 'default' : 'no-store' })).text();
     } catch (error) {
       lastError = error;
       log(`Fetch failed for ${url}: ${error.message}`, 'warn');
@@ -1564,6 +1568,35 @@ async function executeClassicScript(code, sourceUrl) {
   } finally { URL.revokeObjectURL(blobUrl); }
 }
 
+// Fetch future runtime scripts up to four slots ahead but *execute in original order*.
+// This avoids one network round trip per script while bounding mobile peak memory.
+async function executeOrderedPrefetch(items, fetchItem, runItem, parallel = 4) {
+  const slots = new Array(items.length); // Each slot stores one settled download result, never a rejected/unhandled promise.
+  let next = 0; // Next item whose download can be started.
+  let active = 0; // In-flight HTTP downloads; capped by parallel.
+  let consumed = 0; // Completed executions; limits how far ahead we may buffer sources.
+  let stopped = false; // Stops scheduling further downloads after an execution or fetch error.
+  const pump = () => {
+    while (!stopped && active < parallel && next < Math.min(items.length, consumed + parallel)) {
+      const index = next++; // Reserve this slot before invoking asynchronous fetch code.
+      active++;
+      slots[index] = Promise.resolve().then(() => fetchItem(items[index], index))
+        .then(value => ({ value }), error => ({ error }))
+        .finally(() => { active--; pump(); }); // A failure is a *value* until consumed; no unhandled rejections.
+    }
+  };
+  pump();
+  try {
+    for (let index = 0; index < items.length; index++) {
+      const outcome = await slots[index];
+      if (outcome.error) throw outcome.error;
+      await runItem(outcome.value, index);
+      consumed = index + 1;
+      pump();
+    }
+  } finally { stopped = true; }
+}
+
 async function loadRepositoryRuntime(settings) {
   const key = repoKey(settings);
   if (state.runtimeKey === key && window.NpcAvatarPreview && window.PNGPlaneAvatar && window.CreatureGeneticsRender) return;
@@ -1574,22 +1607,27 @@ async function loadRepositoryRuntime(settings) {
     throw new Error('Reloading for a clean repository runtime.');
   }
 
-  for (const relativePath of REQUIRED_SCRIPTS) {
-    const path = settings.docsRoot + relativePath;
+  const runtimeStartMs = performance.now(); // Mobile-visible timing of the full runtime download/execute path.
+  await executeOrderedPrefetch(REQUIRED_SCRIPTS, async relativePath => {
+    const path = settings.docsRoot + relativePath; // Retains the repository-relative path for diagnostics and sourceURL.
     const authorPairedRuntimeUrl = relativePath === 'js/held-action-animations.js' ? AUTHOR_HAND_RUNTIME_SCRIPT
       : relativePath === 'js/character-spine.js' ? AUTHOR_SPINE_RUNTIME_SCRIPT
       : relativePath === 'js/png-plane-avatar.js' ? AUTHOR_PORTRAIT_RUNTIME_SCRIPT
       : relativePath === 'js/leg-bones.js' ? AUTHOR_LEG_BONES_SCRIPT
         : relativePath === 'js/procedural-leg-animation.js' ? AUTHOR_FEET_RUNTIME_SCRIPT
-        : AUTHOR_SHOULDER_RIG_RUNTIME_URLS[relativePath] || null; // Hands, feet and shoulder rigs must match this author page's preview contract.
-    const sourceUrl = authorPairedRuntimeUrl || rawUrl(path); // Provides accurate diagnostics for the actual script revision being executed.
+        : AUTHOR_SHOULDER_RIG_RUNTIME_URLS[relativePath] || null; // Exact matching tool/game source revision for rig components.
+    const sourceUrl = authorPairedRuntimeUrl || rawUrl(path); // Recorded in Diagnostics when a download fails.
     const sourceCode = authorPairedRuntimeUrl
-      ? await (await fetchWithTimeout(sourceUrl)).text()
+      ? await (await fetchWithTimeout(sourceUrl, { cache: 'default' })).text()
       : await fetchRepoText(path);
-    const code = prepareRepositoryScript(sourceCode, relativePath, settings);
-    await executeClassicScript(code, sourceUrl);
-    log(`Loaded runtime script ${path}`);
-  }
+    return { relativePath, path, sourceUrl, sourceCode };
+  }, async ({ relativePath, path, sourceUrl, sourceCode }, index) => {
+    $('overlayDetail').textContent = `Loading runtime ${index + 1}/${REQUIRED_SCRIPTS.length}: ${relativePath}`; // Visible on phones without browser DevTools.
+    const started = performance.now(); // Per-script parse/evaluation timing for the existing Diagnostics log.
+    await executeClassicScript(prepareRepositoryScript(sourceCode, relativePath, settings), sourceUrl);
+    log(`Loaded runtime ${index + 1}/${REQUIRED_SCRIPTS.length}: ${path} (${Math.round(performance.now() - started)} ms to execute)`);
+  }, 4); // Four in-flight sources at most; large compositor bundles are not all retained simultaneously.
+  log(`Repository runtime scripts ready in ${Math.round(performance.now() - runtimeStartMs)} ms (4-way bounded prefetch; ordered execution).`);
   if (window.HobunjiHandRuntimeReady) await window.HobunjiHandRuntimeReady;
   const attachmentProfileReady = window.applyHobunjiAttachmentRigProfileCorrections?.(); // Feeds config-order failures into the author's built-in mobile-accessible Diagnostics panel.
   if (window.applyHobunjiAttachmentRigProfileCorrections && !attachmentProfileReady) {
@@ -2767,8 +2805,10 @@ function enqueueThumbnail(canvas, npc) {
 }
 
 function runThumbnailQueue() {
+  if (state.thumbnailStartupBlocked) return; // The initial scene and usable Head slider take priority over list decorations.
   while (state.thumbnailWorkers < 1 && state.thumbnailQueue.length) {
     const job = state.thumbnailQueue.shift();
+    if (!job.canvas.isConnected) continue; // Skip detached thumbnails from superseded searches/source reloads.
     state.thumbnailWorkers++;
     buildAvatarRender(job.npc)
       .then(avatar => { if (job.canvas.isConnected) copyCanvas(avatar.front, job.canvas); })
@@ -2813,6 +2853,7 @@ function updateSourceDetails(settings) {
 }
 
 async function loadSource(settings = settingsFromInputs()) {
+  state.thumbnailStartupBlocked = true; // Postpone sidebar portrait jobs until the repository and author workspace are usable.
   try {
     validateSettings(settings);
     writeSettings(settings);
@@ -2822,6 +2863,8 @@ async function loadSource(settings = settingsFromInputs()) {
     state.resolvedSha = await resolveCommit(settings);
     configureBases(settings, state.resolvedSha);
     updateSourceDetails(settings);
+    const databaseDownload = fetchRepoJson(settings.dbPath)
+      .then(value => ({ value }), error => ({ error })); // Start the independent NPC database download while shared runtime scripts load.
 
     setStatus('Loading portrait runtime…', 'warn');
     showOverlay('Loading portrait runtime', 'Fetching the same shared scripts used by the Character Studio.', true);
@@ -2829,8 +2872,9 @@ async function loadSource(settings = settingsFromInputs()) {
 
     setStatus('Loading NPC database…', 'warn');
     showOverlay('Loading NPC database', settings.dbPath, true);
-    const rawDb = await fetchRepoJson(settings.dbPath);
-    state.db = await composeAuthoredNpcSpecies(normalizeDatabase(rawDb), settings);
+    const databaseResult = await databaseDownload;
+    if (databaseResult.error) throw databaseResult.error; // Database errors still surface at the same stage, without an unhandled promise.
+    state.db = await composeAuthoredNpcSpecies(normalizeDatabase(databaseResult.value), settings);
     state.npcs = state.db.npcs.filter(npc => npc && typeof npc === 'object');
     if (!state.npcs.length) throw new Error('The NPC database contains no NPC records.');
     state.renderCache.clear();
@@ -2853,6 +2897,9 @@ async function loadSource(settings = settingsFromInputs()) {
     log(error.stack || error.message, 'error');
     $('leftPanel').open = true;
     $('repoSettings').open = true;
+  } finally {
+    state.thumbnailStartupBlocked = false;
+    runThumbnailQueue(); // Resume visible queued thumbnails after success or failure without leaving them permanently paused.
   }
 }
 
@@ -3226,6 +3273,11 @@ async function setAnimationAuthorMode(mode) {
   if (animationAuthor.modeRoots[mode]) animationAuthor.modeRoots[mode].visible = true;
   for (const line of animationAuthor.relationLines.values()) line.visible = true;
   document.body.dataset.animationAuthorMode = mode;
+  if (mode === 'single' && !animationAuthor.single.catalog.length && !animationAuthor.single.loadingCatalog && state.runtimeKey) {
+    loadSingleAvatarAnimationCatalog().catch(error => { // Background catalog fills its selector without blocking the initial Single-Avatar viewport.
+      log('Single-Avatar animation catalog could not load: ' + (error.stack || error.message), 'warn');
+    });
+  }
   if (mode === 'single' && !animationAuthor.single.animation) loadDefaultSingleAvatarAnimation();
   if (mode === 'single' && !animationAuthor.actors.length && state.npcs.length) {
     const npcId = animationAuthor.single.preferredNpcId || state.npcs[0].id || state.npcs[0].name;
@@ -3390,7 +3442,9 @@ async function loadSingleAvatarAnimationCatalog({ force = false } = {}) {
     single.catalog = entries;
     const stillExists = entries.some(entry => entry.id === single.selectedCatalogId);
     if (!stillExists) single.selectedCatalogId = entries[0]?.id || null;
-    if (!single.animation && entries.length) loadSingleAvatarCatalogEntry(entries[0], { announce: false });
+    const untouchedFallback = single.source?.id === 'custom:fallback' && !single.dirty && animationAuthor.mode === 'single'; // A fresh Single-Avatar tab starts with neutral controls while network assets load.
+    if ((!single.animation || untouchedFallback) && entries.length)
+      loadSingleAvatarCatalogEntry(entries[0], { announce: false }); // Restore the historical first catalog animation unless the user edited the provisional pose or restored an autosave.
     log(`Loaded ${entries.length} editable single-avatar animations; excluded ${single.excludedPaths.length} tool-animation paths.`);
   } finally {
     single.loadingCatalog = false;
@@ -4438,7 +4492,8 @@ function prepareMultiAvatarAnimationAuthor() {
     getCreatureTransformProfiles: () => structuredCloneSafe(animationAuthor.creatureTransformProfiles),
     getAttachmentRigProfiles: () => structuredCloneSafe(animationAuthor.attachmentRigProfiles),
     setCreatureSizeClass: (actorId, sizeClass) => applyCreatureSizeClass(actorById(actorId), sizeClass),
-    setMode: setAnimationAuthorMode,
+    setMode: mode => setAnimationAuthorMode(mode), // Resolve the final Rig-aware mode implementation, not the early Multi/Single-only function.
+    refreshModeChrome: () => renderAnimationModeChrome(), // Full Character Scale restores the real tab UI even when the native mode is already Multi.
     getViewportDeadzones: () => structuredCloneSafe(animationAuthor.viewportFacing),
     setViewportDeadzones: values => {
       if (values && Object.hasOwn(values, 'characterDeg')) setViewportDeadzoneOverride('character', values.characterDeg);
@@ -4456,7 +4511,9 @@ async function onAnimationRepositoryReady() {
   await initAnimationWorkspaceScene();
   loadViewportDeadzoneDefaultsFromRepository();
   populateAnimationCreatureSpecies();
-  await loadSingleAvatarAnimationCatalog();
+  // A full GitHub recursive-tree scan and serial animation JSON downloads are
+  // only needed in Single-Avatar mode. Skip that network work for Multi, Rig,
+  // and Full Character Scale so their initial preview is not held hostage.
   hydrateSingleAvatarAutosave(animationAuthor.single.pendingProject);
   animationAuthor.single.pendingProject = null;
   renderAnimationNpcLibrary();
@@ -4580,9 +4637,11 @@ function refreshAnimationCreatureFrames() {
   else if (frames.includes('idle')) select.value = 'idle';
 }
 
+let maaNpcThumbnailObserver = null; // Tracks only on-screen Multi-Avatar NPC thumbnails instead of decoding every library portrait at startup.
 function renderAnimationNpcLibrary() {
   const container = $('maaNpcResults');
   if (!container) return;
+  maaNpcThumbnailObserver?.disconnect(); // A search or mode redraw must stop observing detached canvases.
   const query = $('maaNpcSearch')?.value.trim().toLowerCase() || '';
   const matches = state.npcs.filter(npc => matchesNpc(npc, query)).slice(0, 40);
   if (!matches.length) {
@@ -4598,11 +4657,24 @@ function renderAnimationNpcLibrary() {
     </button>`;
   }).join('');
   container.querySelectorAll('[data-add-npc]').forEach(button => button.addEventListener('click', () => addNpcAnimationActor(button.dataset.addNpc)));
-  container.querySelectorAll('canvas[data-maa-thumb]').forEach(canvas => {
+  const thumbnails = container.querySelectorAll('canvas[data-maa-thumb]'); // At most forty eligible previews; none render until visible.
+  const queueThumbnail = canvas => {
+    if (!canvas.isConnected) return;
     const npc = state.npcs.find(item => String(item.id || item.name) === canvas.dataset.maaThumb);
-    if (!npc) return;
-    buildAvatarRender(npc).then(avatar => { if (canvas.isConnected) copyCanvas(avatar.front, canvas); }).catch(() => {});
-  });
+    if (npc) enqueueThumbnail(canvas, npc); // Shares the existing single-worker render queue with the repository NPC drawer.
+  };
+  if (typeof IntersectionObserver !== 'function') {
+    [...thumbnails].slice(0, 5).forEach(queueThumbnail); // Older browsers retain a small useful fallback without forty startup jobs.
+    return;
+  }
+  maaNpcThumbnailObserver = new IntersectionObserver(entries => {
+    for (const entry of entries) {
+      if (!entry.isIntersecting) continue;
+      maaNpcThumbnailObserver.unobserve(entry.target);
+      queueThumbnail(entry.target);
+    }
+  }, { rootMargin: '80px 0px', threshold: 0.01 }); // Viewport intersection also respects closed/hidden author panels.
+  thumbnails.forEach(canvas => maaNpcThumbnailObserver.observe(canvas));
 }
 
 
@@ -4701,10 +4773,7 @@ function detectNeckAndEyePixels(headCanvas) {
       detectionMethod: 'fallback-center-ratios',
     };
   }
-  // Ignore isolated antialias specks by accepting the lowest row that contains a small coherent run.
-  const minimumRowPixels = Math.max(2, Math.round(scan.width * .012));
-  let bottom = scan.bottom;
-  while (bottom > scan.top && scan.rowCounts[bottom] < minimumRowPixels) bottom--;
+  const bottom = scan.bottom; // Exact lowest alpha-visible pixel of this species' rendered base head, not a guessed neck height.
   const bandTop = Math.max(scan.top, bottom - Math.max(2, Math.round(scan.height * .015)));
   let weightedX = 0, totalWeight = 0;
   for (let y = bandTop; y <= bottom; y++) {
@@ -4782,7 +4851,10 @@ function buildTwoSidedSkinnedPlaneGeometry(THREE, modelWidth, modelHeight, neckL
   // These segment counts give the neck bend enough resolution without making each avatar expensive.
   const segmentsX = Math.max(4, Math.round(Number(options.segmentsX) || 28));
   const segmentsY = Math.max(6, Math.round(Number(options.segmentsY) || 36));
-  const blendHeight = Math.max(modelHeight * .012, Number(options.blendHeight) || modelHeight * .065);
+  const pixelHeight = Math.max(1, Number(options.pixelHeight) || 200); // The base-head canvas determines the neck bend's actual pixel-space position.
+  const band = window.PNGPlaneAvatar.neckBlendBand(neckLocal.y, modelHeight, pixelHeight); // Use gameplay's species-dependent short neck strip, not an editor-only approximation.
+  const blendHeight = band.height; // Preserved in geometry diagnostics for the mobile inspector.
+  const rowPixels = window.PNGPlaneAvatar.neckBlendRows(segmentsY, pixelHeight, band.topPx, band.bottomPx); // Two cells resolve the narrow bend at any mesh density.
   const source = new THREE.PlaneGeometry(modelWidth, modelHeight, segmentsX, segmentsY).toNonIndexed();
   const sourcePosition = source.getAttribute('position');
   const sourceUv = source.getAttribute('uv');
@@ -4797,7 +4869,10 @@ function buildTwoSidedSkinnedPlaneGeometry(THREE, modelWidth, modelHeight, neckL
 
   const appendVertex = (sourceIndex, normalZ) => {
     const x = sourcePosition.getX(sourceIndex);
-    const y = sourcePosition.getY(sourceIndex);
+    const originalPixelY = (1 - sourceUv.getY(sourceIndex)) * pixelHeight; // Original even-grid vertex row before redistributing rows around the neck.
+    const row = Math.max(0, Math.min(segmentsY, Math.round(originalPixelY / pixelHeight * segmentsY))); // Map both triangle faces to the same neck-aligned row.
+    const remappedPixelY = rowPixels[row]; // Nonuniform geometry height, paired with the matching UV so portrait art never stretches.
+    const y = modelHeight * (.5 - remappedPixelY / pixelHeight);
     const z = sourcePosition.getZ(sourceIndex);
     positions[cursor * 3] = x;
     positions[cursor * 3 + 1] = y;
@@ -4806,14 +4881,19 @@ function buildTwoSidedSkinnedPlaneGeometry(THREE, modelWidth, modelHeight, neckL
     normals[cursor * 3 + 1] = 0;
     normals[cursor * 3 + 2] = normalZ;
     uvs[cursor * 2] = sourceUv.getX(sourceIndex);
-    uvs[cursor * 2 + 1] = sourceUv.getY(sourceIndex);
+    uvs[cursor * 2 + 1] = 1 - remappedPixelY / pixelHeight; // Keep head/pants PNG texture coordinates in register with the redistributed mesh.
 
-    // Root bone = 0, neck bone = 1. A smooth vertical band prevents a visible card-like hinge.
-    const headWeight = smoothstep01((y - (neckLocal.y - blendHeight * .55)) / blendHeight);
-    skinIndices[cursor * 4] = 0;
-    skinIndices[cursor * 4 + 1] = 1;
-    skinWeights[cursor * 4] = 1 - headWeight;
-    skinWeights[cursor * 4 + 1] = headWeight;
+    // The Rotation bone (2) only bends the exact base-head neck strip; Offset (1)
+    // shifts the head vertically without giving that short strip an inverted fold.
+    const turnWeight = window.PNGPlaneAvatar.neckBlendWeight(y, neckLocal.y, blendHeight);
+    const offsetWeight = turnWeight > 0 ? 1 - turnWeight
+      : window.PNGPlaneAvatar.headOffsetWeightAt(y, neckLocal.y, modelHeight, blendHeight); // Editor and runtime share the same broad, nonrotating placement fade.
+    skinIndices[cursor * 4] = 0; // Root torso (used below the offset-only band).
+    skinIndices[cursor * 4 + 1] = 1; // Head-offset bone, which doesn't inherit neck rotation.
+    skinIndices[cursor * 4 + 2] = 2; // Neck rotation (and this editor's optional head scale).
+    skinWeights[cursor * 4] = 1 - offsetWeight - turnWeight;
+    skinWeights[cursor * 4 + 1] = offsetWeight;
+    skinWeights[cursor * 4 + 2] = turnWeight;
     cursor++;
   };
 
@@ -4841,7 +4921,7 @@ function buildTwoSidedSkinnedPlaneGeometry(THREE, modelWidth, modelHeight, neckL
   geometry.addGroup(frontVertexCount, cursor - frontVertexCount, 1);
   geometry.computeBoundingBox();
   geometry.computeBoundingSphere();
-  geometry.userData = { segmentsX, segmentsY, blendHeight, neckLocal: { ...neckLocal } };
+  geometry.userData = { segmentsX, segmentsY, blendHeight, neckLocal: { ...neckLocal }, neckBandPx: { top: band.topPx, bottom: band.bottomPx } }; // Mobile diagnostics expose the actual sampled strip.
   source.dispose();
   return geometry;
 }
@@ -4920,14 +5000,17 @@ async function buildNpcNeckRig(model, avatar, npc) {
   const backMaterial = makeRigMaterial(THREE, backTexture, `${model.name}_skinned_back_material`);
   const densityBudget = window.PNGPlaneAvatar?.meshBudget; // Shares the runtime portrait-density percentage with the game while keeping the author's custom neck weights.
   const geometry = buildTwoSidedSkinnedPlaneGeometry(THREE, modelWidth, modelHeight, neckLocal,
-    densityBudget?.portraitGrid?.('full') || { segmentsX: 28, segmentsY: 36 });
+    { ...(densityBudget?.portraitGrid?.('full') || { segmentsX: 28, segmentsY: 36 }), pixelHeight: pxH });
 
   const torsoBone = new THREE.Bone();
   torsoBone.name = `${model.name}_torso_bone`;
+  const headOffsetJoint = new THREE.Bone(); // Authored vertical head placement no longer deforms the narrow bend as a head turn.
+  headOffsetJoint.name = `${model.name}_head_offset_bone`;
+  headOffsetJoint.position.set(neckLocal.x, neckLocal.y, neckLocal.z);
+  torsoBone.add(headOffsetJoint);
   const neckJoint = new THREE.Bone();
   neckJoint.name = `${model.name}_neck_bone`;
-  neckJoint.position.set(neckLocal.x, neckLocal.y, neckLocal.z);
-  torsoBone.add(neckJoint);
+  headOffsetJoint.add(neckJoint);
 
   const skinnedPlane = new THREE.SkinnedMesh(geometry, [frontMaterial, backMaterial]);
   skinnedPlane.name = `${model.name}_single_skinned_portrait_plane`;
@@ -4935,7 +5018,7 @@ async function buildNpcNeckRig(model, avatar, npc) {
   skinnedPlane.renderOrder = 2;
   skinnedPlane.frustumCulled = false;
   skinnedPlane.add(torsoBone);
-  const skeleton = new THREE.Skeleton([torsoBone, neckJoint]);
+  const skeleton = new THREE.Skeleton([torsoBone, headOffsetJoint, neckJoint]);
   skinnedPlane.bind(skeleton);
   rigRoot.add(skinnedPlane);
 
@@ -4955,6 +5038,7 @@ async function buildNpcNeckRig(model, avatar, npc) {
     skinnedPlane,
     skeleton,
     torsoBone,
+    headOffsetJoint,
     neckJoint,
     neckAxes,
     eyeMarker,
@@ -4974,7 +5058,7 @@ async function buildNpcNeckRig(model, avatar, npc) {
   model.userData.neckRig = rig;
   densityBudget?.registerExternalSkinnedPortrait?.(skinnedPlane, {
     THREE, width: modelWidth, height: modelHeight, neckLocal,
-    buildGeometry: grid => buildTwoSidedSkinnedPlaneGeometry(THREE, modelWidth, modelHeight, neckLocal, grid),
+    buildGeometry: grid => buildTwoSidedSkinnedPlaneGeometry(THREE, modelWidth, modelHeight, neckLocal, { ...grid, pixelHeight: pxH }),
     afterGeometryChange(nextGeometry) {
       rig.mesh.segmentsX = nextGeometry.userData.segmentsX;
       rig.mesh.segmentsY = nextGeometry.userData.segmentsY;
@@ -5292,7 +5376,7 @@ function renderAnimationInspector() {
   const neckStatus = neckRig?.implementation === 'creature-painted-neck'
     ? `Native painted creature neck: <b>${neckRig.mesh.segmentsX}×${neckRig.mesh.segmentsY}</b> weighted skin, pivot <b>${neckRig.detected.pivotPx.x.toFixed(1)}, ${neckRig.detected.pivotPx.y.toFixed(1)} px</b>. Shoulder Rig keyframes animate the actual creature head.`
     : neckRig?.available
-      ? `One <b>${neckRig.mesh?.segmentsX || 28}×${neckRig.mesh?.segmentsY || 36}</b> skinned plane. The neck bone is anchored at <b>${neckRig.detected.pivotPx.x.toFixed(1)}, ${neckRig.detected.pivotPx.y.toFixed(1)} px</b> from the lowest opaque base-head pixels; blended weights bend the portrait without a head/torso seam.`
+      ? `One <b>${neckRig.mesh?.segmentsX || 28}×${neckRig.mesh?.segmentsY || 36}</b> skinned plane. Species base-head bottom / bend top: <b>${neckRig.skinnedPlane.geometry.userData.neckBandPx.top.toFixed(1)} px</b>; bend ends at <b>${neckRig.skinnedPlane.geometry.userData.neckBandPx.bottom.toFixed(1)} px</b> (pivot X: ${neckRig.detected.pivotPx.x.toFixed(1)} px). Same strip as gameplay.`
     : 'This actor has no skinned portrait neck rig. Creature targets can receive eye contact but do not currently deform a humanoid portrait plane.';
   inspector.innerHTML = `
     <section id="maaBatchOffsetSection" class="maaSection">
@@ -8224,6 +8308,17 @@ importAnimationProjectFile = async function(file) {
   } catch (error) {
     showOverlay('Import failed', error.message, false); setStatus(`Import failed: ${error.message}`, 'bad'); log(error.stack || error.message, 'error');
   } finally { if ($('maaImportInput')) $('maaImportInput').value=''; }
+};
+
+// Every file import (including the built-in latest-authored rig snapshot,
+// which attachment-rig-latest-authored-snapshot-core.js feeds through the
+// file input on a startup timer) is tracked, so code that must not race a
+// mode switch, such as a URL scene, can wait for it to settle first.
+const untrackedImportAnimationProjectFileV1547 = importAnimationProjectFile;
+importAnimationProjectFile = function(file) {
+  const pending = Promise.resolve(untrackedImportAnimationProjectFileV1547(file));
+  animationAuthor.importInFlightV1547 = pending;
+  return pending;
 };
 
 importAnimationProjectData = async function(data, options = {}) {
@@ -14505,12 +14600,24 @@ function parseAnimationUrlSceneV1547(search) {
   return { actorIds, preset: appliedPreset, name, time };
 }
 
+// The startup rig-snapshot import switches the author into Rig mode when it
+// completes. If that lands while a URL scene is adding actors, Rig mode's
+// one-actor rule clears the first NPC (CI: the Pahu/Leaf kiss lost Pahu and
+// failed with no kiss pair). Wait for that import to be dispatched and finish.
+async function waitForStartupRigImportV1547(timeoutMs = 5000) {
+  const deadline = performance.now() + timeoutMs;
+  const snapshotPending = () => !!window.HOBUNJI_ATTACHMENT_RIG_LATEST_AUTHORED && !window.__hobunjiLatestAuthoredSnapshotImported;
+  while (snapshotPending() && performance.now() < deadline) await new Promise(resolve => setTimeout(resolve, 50));
+  try { await animationAuthor.importInFlightV1547; } catch (_) { /* a failed import already reported itself */ }
+}
+
 async function installAnimationUrlSceneV1547(scene) {
   const npcs = scene.actorIds.map(id => state.npcs.find(npc =>
     String(npc.id || '').toLowerCase() === id || String(npc.name || '').toLowerCase() === id));
   const missing = scene.actorIds.filter((id, i) => !npcs[i]);
   if (missing.length) throw new Error('NPCs not found in this repository: ' + missing.join(', '));
   if (!state.three.ready || !animationAuthor.workspaceRoot) throw new Error('The animation workspace is not ready.');
+  await waitForStartupRigImportV1547(); // Never let the startup Rig-mode switch land mid-install.
   await setAnimationAuthorMode('multi');
   // Unlike "New", an explicit URL scene deliberately replaces a local scene.
   // The old autosave remains untouched if validation fails above.
@@ -14931,7 +15038,7 @@ if (window.MultiAvatarAnimationAuthor) {
       };
     });
   window.MultiAvatarAnimationAuthor.tick = tickAnimationAuthor; // The public author API was created before the V15.48 preview wrapper.
-  window.MultiAvatarAnimationAuthor.setMode = setAnimationAuthorMode;
+  window.MultiAvatarAnimationAuthor.setMode = mode => setAnimationAuthorMode(mode); // Keep the final Rig-aware handler live after V15.51 reinstalls public API methods.
   window.MultiAvatarAnimationAuthor.parseSceneUrl = parseAnimationUrlSceneV1547;
   window.MultiAvatarAnimationAuthor.getSceneLink = currentAnimationSceneUrlV1547;
   window.MultiAvatarAnimationAuthor.applyKissPreset = applyKissPresetV1546;

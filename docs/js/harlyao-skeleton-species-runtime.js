@@ -20,7 +20,7 @@
     extremityColor: '#D4D6C9', // Fixed A/B/C descriptor consumed by procedural hand/foot body-material paths.
     genders: ['male', 'female'],
     scaleMultiplier: 1.2,
-    perchScaleByGender: { male: 1.242309, female: 1.212502 }, // Fixed world-space portrait-plane size relative to Mao-ao male 1x.
+    perchScaleByGender: { male: 1.242271, female: 1.212465 }, // Fixed world-space portrait-plane size relative to Mao-ao male 1x.
     allowedClothingIds: ['fine_hood', 'ragged_hood', 'tankan_tunic', 'bandolier1', 'tankan_bodywrap', 'rugged_poncho', 'fine_poncho', 'rounded_pauldron', 'tangedcirclet'], // Broad species-level clothing support survives while Minion randomization itself is restricted to bodywrap/poncho/bandolier.
     behindHeads: {
       male: 'fightersprites/special_cases/head-behind_hskel_m.png',

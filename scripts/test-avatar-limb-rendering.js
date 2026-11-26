@@ -131,7 +131,7 @@ for (const depth of [0, 0.1, 1, 2.5, 4]) {
 camera.isPerspectiveCamera = false;
 assert.equal(handThickness(20), 0.012, 'orthographic size is independent of distance');
 
-assert.match(read('docs/js/procedural-leg-animation.js'), /placeIdleTarget\('right', state\.rightContactY\);\s*window\.HobunjiFeetOutlineParity\?\.refreshRig\?\.\(root\)/, 'the leg owner notifies parity after installing final GLB feet');
+assert.match(read('docs/js/procedural-leg-animation.js'), /placeIdleTarget\('right', state\.rightContactY\);\s*if \(typeof options\.onFootVisualsReplaced === 'function'\) \{[\s\S]*?\}\s*\/\/ Runs only on real GLB replacement, not every frame\.\s*window\.HobunjiFeetOutlineParity\?\.refreshRig\?\.\(root\)/, 'the leg owner notifies parity after installing final GLB feet');
 
 const fallback = mesh('left_foot'); // Initially attached procedural foot.
 const root = group([fallback]); // Stable leg root survives async foot replacement.
@@ -179,7 +179,7 @@ layeredFoot.onAfterRender = function originalAfter() {};
 layeredFoot.matrixWorld.elements[14] = 1;
 const depthSource = read('docs/js/procedural-leg-animation.js'); // Real foot draw-time push implementation, not a stand-in translation.
 const depthStart = depthSource.indexOf('    function installFootDepthPush(foot) {');
-const depthEnd = depthSource.indexOf('    function installFootAxes(foot) {', depthStart);
+const depthEnd = depthSource.indexOf('    const childLimbMetadata =', depthStart); // Isolate the rendering closure from attachment metadata.
 assert(depthStart >= 0 && depthEnd > depthStart, 'found real camera-relative foot depth hook');
 class EyeVector {
   setFromMatrixPosition(matrix) {

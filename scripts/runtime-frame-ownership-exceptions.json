@@ -490,7 +490,7 @@
     "owner": "ProceduralHandFrameDriver",
     "classification": "isolated-context",
     "function": "frame (fallback branch inside the trailing if/else)",
-    "reason": "This module also loads inside the standalone Attack Animation Editor and Animation Author tool pages (docs/tools/*), which never load RuntimeFrameScheduler. When the scheduler is absent this fallback keeps the original combined per-frame loop for that isolated editor/preview context. In the shipped game, RuntimeFrameScheduler.register('procedural-hand-attachment', ...) and RuntimeFrameScheduler.register('procedural-hand-pose-sync', { phase: 'pre-render' }, ...) run instead, with no raw RAF call site at all \u2014 attachment/discovery has no ordering dependency on simulation or rendering; pose-sync needs this frame's simulation state but must run before Three.js traverses the scene. The final exact tool/hand matrix stays entirely in ensureSyncSentinel's onBeforeRender hook, untouched by either migrated piece.",
+    "reason": "This module also loads inside the standalone Attack Animation Editor and Animation Author tool pages (docs/tools/*), which never load RuntimeFrameScheduler. When the scheduler is absent this fallback keeps the original combined per-frame loop for that isolated editor/preview context. In the shipped game, RuntimeFrameScheduler.register('procedural-hand-attachment', ...) and RuntimeFrameScheduler.register('procedural-hand-pose-sync', { phase: 'pre-render' }, ...) run instead, with no raw RAF call site at all — attachment/discovery has no ordering dependency on simulation or rendering; pose-sync needs this frame's simulation state but must run before Three.js traverses the scene. The final exact tool/hand matrix stays entirely in ensureSyncSentinel's onBeforeRender hook, untouched by either migrated piece.",
     "migrationStage": "not-planned",
     "line": 1123
   },
@@ -553,7 +553,7 @@
     "owner": "UIElementEditor",
     "classification": "bounded-animation",
     "function": "tick",
-    "reason": "RAF loop only runs while the dev UI-element-editor panel is shown \u2014 started in updateListeners() when shown becomes true (line 879) and explicitly cancelAnimationFrame'd when it becomes false \u2014 to keep the selection highlight box's position synced to the selected element; a dev-tool-gated bounded loop, not a permanent gameplay subscription.",
+    "reason": "RAF loop only runs while the dev UI-element-editor panel is shown — started in updateListeners() when shown becomes true (line 879) and explicitly cancelAnimationFrame'd when it becomes false — to keep the selection highlight box's position synced to the selected element; a dev-tool-gated bounded loop, not a permanent gameplay subscription.",
     "migrationStage": "not-planned",
     "line": 557
   },
@@ -643,7 +643,7 @@
     "owner": "SelectSteppers",
     "classification": "one-shot",
     "function": "onArrow",
-    "reason": "After a \u25c0/\u25b6 press, checks once on the next frame whether the owning panel rerendered away the focused arrow and, if so, hands focus to the replacement select's arrow; it never reschedules.",
+    "reason": "After a ◀/▶ press, checks once on the next frame whether the owning panel rerendered away the focused arrow and, if so, hands focus to the replacement select's arrow; it never reschedules.",
     "migrationStage": "not-planned",
     "line": 233
   },
@@ -664,5 +664,23 @@
     "reason": "Developer-triggered diagnostic: awaits at most three animation frames so its read-only render hook can record the next main pass's draw list, then removes the hook and returns; it never reschedules itself or runs without an explicit Settings/console request.",
     "migrationStage": "not-planned",
     "line": 298
+  },
+  {
+    "file": "docs/js/character-scale-comparison.js",
+    "owner": "FullCharacterScaleComparison",
+    "classification": "one-shot",
+    "function": "scheduleSelectedLayout",
+    "reason": "Guarded one-shot callback batches selected-character layout changes; checks active/building and never reschedules itself.",
+    "migrationStage": "not-planned",
+    "line": 866
+  },
+  {
+    "file": "docs/js/character-scale-comparison.js",
+    "owner": "FullCharacterScaleComparison",
+    "classification": "one-shot",
+    "function": "queueAgeRender",
+    "reason": "Guarded one-shot callback coalesces multiple age inputs; flushAgeRender clears the pending handle and does not recurse.",
+    "migrationStage": "not-planned",
+    "line": 892
   }
 ]

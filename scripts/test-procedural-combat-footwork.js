@@ -103,6 +103,78 @@ assert(Math.abs(tallerGait.left.contactY - .04 * .75) < 1e-9, 'tall narrow feet 
 assert(Math.abs(widerGait.left.contactY - .04 * 1.5) < 1e-9, 'wide feet retain floor contact after mean-scaling');
 const measureWorldStride = gait => gait.gait.worldStrideLength / gait.gait.worldLegLength; // World reach bound cannot be tested by comparing two local distances.
 assert(measureWorldStride(tallerGait) <= 1.8 + 1e-9 && measureWorldStride(widerGait) <= 1.8 + 1e-9, 'no stride overextends the scaled world leg');
+// Full Character Scale adjusts ACTUAL hip-to-ankle reach, not the foot mesh or the portrait's parent scale.
+const independent = rig();
+const originalHip = independent.legs.standingPosteriorY; // Authored posterior/hip anchor in the same local frame as the feet.
+const startContact = independent.legs.getStandingPoseDebug().left.contactY;
+const restLength = originalHip - startContact;
+const extendedHip = independent.legs.setLegLengthMultiplier(1.75);
+assert(Math.abs(extendedHip - (startContact + restLength * 1.75)) < 1e-9,
+  'Leg length extends the actual hip while keeping the existing shoe contacts at floor level');
+assert(Math.abs(independent.legs.getStandingPoseDebug().left.contactY - startContact) < 1e-9,
+  'Leg length alone must not make the 3D foot larger or move the planted sole');
+assert(Math.abs(independent.legs.getRestStance().left.hip.y - extendedHip) < 1e-9,
+  'Pants and the real limb solver see the updated hip, not a cosmetic leg-height illusion');
+const revisionAfterStretch = independent.legs.anatomyRevision(); // Read the real pants/cuff refresh counter after one meaningful change.
+assert.equal(independent.legs.setLegLengthMultiplier(1.75), extendedHip, 'repeated leg slider values never accumulate stretch');
+assert.equal(independent.legs.anatomyRevision(), revisionAfterStretch, 'unchanged legs must not trigger any redundant IK or pants rebuild');
+const sizedFoot = independent.legs.setFootScaleMultiplier(1.4);
+assert.equal(sizedFoot, 1.4, 'independent Foot scale accepts the species multiplier');
+const afterFootSize = independent.legs.getStandingPoseDebug();
+assert(Math.abs(afterFootSize.left.contactY - startContact * 1.4) < 1e-9,
+  'scaling a fallback foot recomputes sole contact without resizing the hip-to-ankle percentage');
+assert(Math.abs(afterFootSize.left.targetY - afterFootSize.left.contactY) < 1e-9,
+  'resizing planted feet does not drive the toes through the floor');
+assert(Math.abs(independent.legs.standingPosteriorY - (afterFootSize.left.contactY
+    + (originalHip - afterFootSize.left.contactY) * 1.75)) < 1e-9,
+  'leg proportion survives an independently adjusted shoe size');
+independent.legs.setAgeFootScaleMultiplier(1.6);
+assert(Math.abs(independent.legs.getStandingPoseDebug().left.contactY - afterFootSize.left.contactY * 1.6) < 1e-9, 'age foot sizing updates actual sole contact');
+independent.legs.setFootScaleMultiplier(1.2);
+assert(Math.abs(independent.legs.getStandingPoseDebug().left.contactY - startContact * 1.2 * 1.6) < 1e-9, 'adult foot edits compose with age rather than replacing it');
+independent.legs.setAgeFootScaleMultiplier(1);
+assert(Math.abs(independent.legs.getStandingPoseDebug().left.contactY - startContact * 1.2) < 1e-9, 'adult stage restores the newly authored foot size');
+independent.legs.setFootScaleMultiplier(1.4);
+assert.equal(independent.legs.getStandingPoseDebug().left.contactY, afterFootSize.left.contactY,
+  'reapplying foot size is idempotent, including for late asynchronous GLB replacements');
+independent.legs.setLegLengthMultiplier(1);
+assert(Math.abs(independent.legs.standingPosteriorY - originalHip) < 1e-9,
+  'leg length resets to its authored posterior when foot size is restored to the original multiplier');
+independent.legs.setFootScaleMultiplier(1);
+independent.legs.setLegLengthMultiplier(1);
+assert(Math.abs(independent.legs.standingPosteriorY - originalHip) < 1e-9,
+  'restoring both independent controls returns the entire leg chain to the original bind pose');
+const staticPreview = rig(1, null, { x: 1, y: 1 });
+staticPreview.legs.setLegLengthMultiplier(1.5);
+staticPreview.legs.setAgeFootScaleMultiplier(1.6);
+staticPreview.parent.userData.testBodyScale = { x: 1.5, y: .75 };
+staticPreview.legs.syncPreviewFootContact();
+const staticContact = staticPreview.legs.getStandingPoseDebug();
+assert(Math.abs(staticContact.left.contactY - .04 * 1.6 * 1.5) < 1e-9, 'static preview contact updates after nonuniform body resize without a gait tick');
+assert(Math.abs(staticContact.left.targetY - staticContact.left.contactY) < 1e-9, 'static preview remains planted');
+const staticRevision = staticPreview.legs.anatomyRevision();
+staticPreview.legs.syncPreviewFootContact();
+assert.equal(staticPreview.legs.anatomyRevision(), staticRevision, 'unchanged static contact does not trigger extra IK');
+const explicitlyScaledParent = new Group(); // Tests a hostile/game caller that authors a unique scale on its parent before attaching feet.
+explicitlyScaledParent.userData.hobunjiCharacterRigScaleState = { factor: { x: 1.1, y: .8 }, legLength: 1.6 };
+const explicitlyScaledLegs = context.window.ProceduralLegAnimation.attach(THREE, explicitlyScaledParent, { speciesId: 'test', modelHeight: 1 });
+assert.equal(explicitlyScaledLegs.legLengthMultiplier, 2,
+  'first procedural leg attachment honors the character parent\'s authored leg-to-portrait ratio, even if species defaults differ');
+explicitlyScaledLegs.dispose(); // Real root registry must release one-off hostile previews after disposal.
+const independentAspect = rig(1, null, { x: 1, y: 1 }); // Independent leg slider remains meaningful when Portrait height changes during an idle preview.
+independentAspect.legs.setLegLengthMultiplier(1.8);
+independentAspect.parent.userData.testBodyScale = { x: 1.5, y: .75 };
+independentAspect.legs.update(0, 0, false);
+const aspectPose = independentAspect.legs.getStandingPoseDebug();
+const aspectContact = aspectPose.left.contactY;
+assert(Math.abs(independentAspect.legs.standingPosteriorY - (aspectContact
+  + (independentAspect.legs.restPosteriorY - aspectContact) * 1.8)) < 1e-9,
+  'independent hip-to-ankle reach remains correct after a non-uniform portrait aspect update');
+assert(Math.abs(aspectPose.left.targetY - aspectContact) < 1e-9,
+  'changing portrait height with long legs keeps both feet planted on the same floor');
+independentAspect.legs.dispose();
+independent.legs.dispose(); // Registry cleanup prevents hidden preview legs from receiving future global scale edits.
+
 const aspectChanged = rig(); // Starts with square body scale, then changes width/height in-place while standing still.
 tick(aspectChanged.legs, 0, {}, 1);
 aspectChanged.parent.userData.testBodyScale = { x: 1.5, y: .75 };

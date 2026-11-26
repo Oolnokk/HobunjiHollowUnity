@@ -487,12 +487,12 @@
     new URL('js/portrait-arm-cloud-mask.js?v=20261005h2d40d1a', docsBase).href,
     new URL('js/portrait-hand-shoulder-scan.js?v=20260818c', docsBase).href,
     new URL('js/portrait-hand-shoulder-scan-species.js?v=20260818a', docsBase).href,
-    new URL('js/procedural-hand-attachments.js?v=20261119h0a8646b', docsBase).href,
+    new URL('js/procedural-hand-attachments.js?v=20261126neckAudit2', docsBase).href,
     new URL('js/procedural-hand-outline-parity.js?v=20261117handDepthReplay2', docsBase).href,
-    new URL('js/attachment-rig-latest-authored-snapshot.js?v=20261120longoranBundleV2', docsBase).href,
+    new URL('js/attachment-rig-latest-authored-snapshot.js?v=20261126neckAudit3', docsBase).href,
     new URL('js/procedural-hand-scale-free-world.js?v=20261017h3921033', docsBase).href,
     new URL('js/procedural-hand-shoulder-aim.js?v=20261119rigIdleHand2', docsBase).href,
-    new URL('js/procedural-hand-frame-driver.js?v=20261125idleGate1', docsBase).href,
+    new URL('js/procedural-hand-frame-driver.js?v=20261126neckAudit2', docsBase).href,
   ];
   if (isAttackEditor) {
     // The editor starts its first avatar rebuild immediately after these parser-time

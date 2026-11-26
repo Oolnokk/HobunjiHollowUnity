@@ -7,14 +7,14 @@
     "js/combat/melee-hud-reticle.js?v=20261125deepAudit1",
     "js/combat/enemy-loadout-rules.js?v=20261101playerhead3",
     "js/combat/npc-duel-staging.js?v=20261122h2eade76",
-    "js/combat/combat-bandit.js?v=20261126h15a438c",
+    "js/combat/combat-bandit.js?v=20261126neckMultiplayer1",
     "js/combat/ghoul-special-variants.js?v=20261125deepAudit2",
     "js/combat/bandit-rank-wardrobe.js?v=20261031rankwardrobe1",
     "js/combat/combat-ghoul-wyrm-witches.js?v=20261027hcd7121b",
     "js/combat/combat-minion.js?v=20261103harlyaoDemolitionist1",
     "js/combat/combat-maskbound-guardian.js?v=20261031headtakerguardian6",
     "js/combat/combat-enemy-dodge.js?v=20261126planarRebase1",
-    "js/combat/combat-maskbound-headtaker.js?v=20261101h33d9d71",
+    "js/combat/combat-maskbound-headtaker.js?v=20261126neckPlanarIntegration1",
     "js/combat/combat-lich.js?v=20261118pursuitRetreat1",
     "js/combat/combat-special-liches.js?v=20261118combatOrbit1"
 ]; // Versioned modules evaluated before gameplay boot.

@@ -33,12 +33,13 @@ const tletinganMale = scaleWindow.HobunjiCharacterRigScaleDefaults.scaleFor('tle
 const tletinganFemale = scaleWindow.HobunjiCharacterRigScaleDefaults.scaleFor('tletingan', 'female'); // Female ratio donor.
 const nuhonganMale = scaleWindow.HobunjiCharacterRigScaleDefaults.scaleFor('nuhongan', 'male'); // Male Nuhongan proportions.
 const nuhonganFemale = scaleWindow.HobunjiCharacterRigScaleDefaults.scaleFor('nuhongan', 'female'); // Female Nuhongan proportions.
-assert(Math.abs(nuhonganMale.x - tletinganMale.x * 0.8) < 1e-9);
-assert(Math.abs(nuhonganMale.y - tletinganMale.y * 0.75) < 1e-9);
-assert.equal(nuhonganMale.head, tletinganMale.head);
-assert(Math.abs(nuhonganFemale.x - tletinganFemale.x * 0.8) < 1e-9);
-assert(Math.abs(nuhonganFemale.y - tletinganFemale.y * 0.75) < 1e-9);
-assert.equal(nuhonganFemale.head, tletinganFemale.head);
+// Nov 22 visual pass: Nuhongans are Ewok-like (shorter, stubbier, relatively
+// bigger-headed) and no longer a fixed 0.8x/0.75x copy of the stocky Tletingan.
+for (const [nuhongan, tletingan] of [[nuhonganMale, tletinganMale], [nuhonganFemale, tletinganFemale]]) {
+  assert(nuhongan.x < tletingan.x && nuhongan.y < tletingan.y, 'Nuhongans stay smaller than Tletingans');
+  assert(nuhongan.legLength < tletingan.legLength, 'Nuhongans have stubbier legs');
+  assert(nuhongan.head / nuhongan.y > tletingan.head / tletingan.y, 'Nuhongan heads are relatively larger');
+}
 
 const runtimeWindow = { // Models the real inheritance registries closely enough to catch lost hands/feet and direct-lookup systems.
   HobunjiCharacterRigScaleDefaults: scaleWindow.HobunjiCharacterRigScaleDefaults,
@@ -64,7 +65,7 @@ const runtimeWindow = { // Models the real inheritance registries closely enough
   ConditionRegistry: { PLAYER_SPECIES: ['mao-ao', 'tletingan', 'kenkari', 'engh-sho', 'rakakoan'] },
   HOBUNJI_ATTACHMENT_RIG_PROFILES: {
     characters: {
-      'tletingan::male': { species: 'tletingan', gender: 'male', anchors: { hand: 1 }, anatomy: { rigScaleX: 99, rigScaleY: 99, headScale: 99, headOffsetY: 99, handScale: 0.9, footScale: 1 } },
+      'tletingan::male': { species: 'tletingan', gender: 'male', anchors: { hand: 1 }, anatomy: { rigScaleX: 99, rigScaleY: 99, legLengthScale: 99, headScale: 99, headOffsetY: 99, handScale: 0.9, footScale: 1 } },
       'tletingan::female': { species: 'tletingan', gender: 'female', anchors: { hand: 2 }, anatomy: { rigScaleX: 98, rigScaleY: 98, headScale: 98, headOffsetY: 98, handScale: 0.925, footScale: 1.025 } },
     },
   },
@@ -155,10 +156,11 @@ for (const gender of ['male', 'female']) {
   assert.equal(profile.anatomy.rigScaleY, undefined);
   assert.equal(profile.anatomy.headScale, undefined);
   assert.equal(profile.anatomy.headOffsetY, undefined);
+  assert.equal(profile.anatomy.legLengthScale, undefined, 'Nuhongan never inherits the Tletingan leg length');
   assert(Number.isFinite(profile.anatomy.handScale), `${gender} Nuhongan must retain Tletingan handScale`);
   assert(Number.isFinite(profile.anatomy.footScale), `${gender} Nuhongan must retain Tletingan footScale`);
-  assert.equal(JSON.stringify(profile.anatomy.handScaleAxes), JSON.stringify({ x: 31 / 24, y: 31 / 24, z: 31 / 24 }));
-  assert.equal(JSON.stringify(profile.anatomy.footScaleAxes), JSON.stringify(profile.anatomy.handScaleAxes));
+  assert.equal(JSON.stringify(profile.anatomy.footScaleAxes), JSON.stringify({ x: 31 / 24, y: 31 / 24, z: 31 / 24 }));
+  for (const axis of ['x', 'y', 'z']) assert(Math.abs(profile.anatomy.handScaleAxes[axis] - 31 / 24 * 0.88) < 1e-12, 'Nuhongan hands are 88% of the shared extremity size');
 }
 const runtimeDebug = runtimeWindow.HobunjiNuhonganSpecies.debugSnapshot();
 assert.equal(runtimeDebug.rigHeightMultiplier, 0.75);

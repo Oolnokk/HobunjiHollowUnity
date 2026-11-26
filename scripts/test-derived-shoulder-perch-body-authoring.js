@@ -16,10 +16,10 @@ const host = { // In-memory profile and appearance registries consumed by every 
   getPortraitFighters() { return []; },
 };
 const donorPerches = { // Donor fixture values plus the Mao-ao reference, all authored independent of pose-orbit scale.
-  'tletingan::male': 0.957612, 'tletingan::female': 1.016661,
-  'engh-sho::male': 1.035258, 'engh-sho::female': 1.010418,
-  'mashtzarr::male': 1.71221, 'mashtzarr::female': 1.56391,
-  'mao-ao::male': 1, 'mao-ao::female': 0.972561,
+  'tletingan::male': 0.957582, 'tletingan::female': 1.016629,
+  'engh-sho::male': 0.896974, 'engh-sho::female': 0.950541,
+  'mashtzarr::male': 1.712158, 'mashtzarr::female': 1.563862,
+  'mao-ao::male': 1, 'mao-ao::female': 0.972531,
 };
 const donorPortraitScales = { tletingan: 0.85, 'engh-sho': 0.95, mashtzarr: 1.18, 'mao-ao': 0.8 }; // Latest authored portraitScale, consumed when constructing each donor fixture.
 for (const [id, size] of Object.entries(donorPerches)) {
@@ -38,11 +38,11 @@ for (const path of ['docs/js/nuhongan-species-runtime.js', 'docs/js/longoran-spe
   'docs/js/harlyao-species-runtime.js', 'docs/js/mammakhbuur-species-runtime.js',
   'docs/js/skeleton-species-runtime.js', 'docs/js/harlyao-skeleton-species-runtime.js']) run(path);
 const expected = { // Constant values supplied by species installers, not derived by gameplay.
-  'nuhongan': ['tletingan', 0.741763, 0.787502],
-  'longoran': ['tletingan', 1.632601, 1.733272],
-  'harlyao': ['engh-sho', 1.242309, 1.212502],
-  'mammakhbuur': ['mashtzarr', 1.992106, 1.819542],
-  'harlyao-skeleton': ['engh-sho', 1.242309, 1.212502],
+  'nuhongan': ['tletingan', 0.74174, 0.787478],
+  'longoran': ['tletingan', 1.776533, 1.996992],
+  'harlyao': ['engh-sho', 1.242271, 1.212465],
+  'mammakhbuur': ['mashtzarr', 1.992045, 1.819486],
+  'harlyao-skeleton': ['engh-sho', 1.242271, 1.212465],
 };
 for (const [species, [donorSpecies, male, female]] of Object.entries(expected)) {
   for (const [gender, size] of [['male', male], ['female', female]]) {

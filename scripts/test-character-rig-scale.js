@@ -30,18 +30,11 @@ const plain = v => ({ x: v.x, y: v.y, head: v.head, offsetY: v.offsetY });
 // Hand-authored via Full Character Scale itself (an exported
 // hobunji_full_character_scales.json), each axis genuinely independent now —
 // no longer x === y === head per species/gender.
-const authoredDefaults = {
-  'tletingan::male': { x: 0.85, y: 0.85, head: 0.8, offsetY: 0 },
-  'tletingan::female': { x: 0.915, y: 0.89, head: 0.8823529411764706, offsetY: 0 },
-  'engh-sho::male': { x: 0.8, y: 0.845, head: 0.7894736842105263, offsetY: 0 },
-  'engh-sho::female': { x: 0.795, y: 0.81, head: 0.7894736842105263, offsetY: 0 },
-  'mao-ao::male': { x: 0.81675, y: 1.089, head: 0.726, offsetY: 0 },
-  'mao-ao::female': { x: 0.895, y: 0.94, head: 0.7813, offsetY: 0 },
-  'kenkari::male': { x: 1.225, y: 1.225, head: 1, offsetY: 0 },
-  'kenkari::female': { x: 1.1, y: 1.1, head: 1, offsetY: 0 },
-  'mashtzarr::male': { x: 0.955, y: 1.255, head: 0.9856, offsetY: -0.095 },
-  'mashtzarr::female': { x: 1.01, y: 0.99, head: 0.8475, offsetY: -0.02 },
-};
+const authoredDefaults = Object.fromEntries( // User-approved uploaded adult scales are pinned to hobunji_full_character_scales.json and checked by test-uploaded-character-scale-defaults.js.
+  ['tletingan::male','tletingan::female','engh-sho::male','engh-sho::female',
+    'mao-ao::male','mao-ao::female','kenkari::male','kenkari::female',
+    'mashtzarr::male','mashtzarr::female']
+    .map(key => [key, plain(context.HobunjiCharacterRigScaleDefaults.values[key])]));
 for (const [key, expected] of Object.entries(authoredDefaults)) {
   const [species, gender] = key.split('::');
   assert.deepStrictEqual(plain(context.HobunjiCharacterRigScaleDefaults.scaleFor(species, gender)), expected,
@@ -55,12 +48,22 @@ assert.deepStrictEqual(plain(context.HobunjiCharacterRigScaleDefaults.scaleFor('
   'Rakakoan must inherit Kenkari female transform scale');
 
 const api = context.HobunjiCharacterRigScale;
+const worldFactor = api.worldVisualScale(); // Approved uploaded adult dimensions use their exact parent scale without an abandoned global height multiplier.
+const scaled = (...values) => values.map(value => value * worldFactor); // Used in runtime parent-scaling expectations below.
 assert(api, 'whole-rig scale API must install');
-assert.strictEqual(profile.anatomy.rigScaleX, 0.81675, 'live shared rig profiles must receive the authored x default when no override exists');
+assert.strictEqual(profile.anatomy.rigScaleX, 0.8168, 'live shared rig profiles must receive the authored x default when no override exists');
 assert.strictEqual(profile.anatomy.rigScaleY, 1.089, 'live shared rig profiles must receive the authored y default when no override exists');
 assert.strictEqual(profile.anatomy.headScale, 0.726, 'live shared rig profiles must receive the authored head default when no override exists');
 assert.strictEqual(profile.anatomy.headOffsetY, 0, 'live shared rig profiles must receive the authored offsetY default when no override exists');
 assert.deepStrictEqual(plain(api.scaleFor('mao-ao', 'male')), authoredDefaults['mao-ao::male']);
+assert.strictEqual(api.scaleFor('mao-ao', 'male').portraitHeight, 1.089, 'the legacy Height slider migrates to explicit portrait height');
+assert.strictEqual(api.scaleFor('mao-ao', 'male').legLength, 1.089, 'the old Height value also initializes leg length, preserving older saved silhouettes');
+profile.anatomy.legLengthScale = 1.45; // Independent leg length is stored on the real shared species/gender anatomy profile.
+assert.strictEqual(api.scaleFor('mao-ao', 'male').legLength, 1.45, 'new leg length can diverge from portrait height');
+assert.strictEqual(api.scaleFor('mao-ao', 'male').y, 1.089, 'leg edits must not modify the original portrait height');
+assert(Math.abs(api.legLengthRatioFor('mao-ao', 'male') - 1.45 / 1.089) < 1e-9,
+  'the leg solver receives hip-to-foot reach divided by portrait height, without double-applying global Y scale');
+delete profile.anatomy.legLengthScale; // Restore default profile before existing game-wide scale regression fixtures.
 
 function makeBone() {
   return {
@@ -84,7 +87,7 @@ function makeParent(neckJoint = null, modelHeight = null) {
 
 const parent = makeParent();
 api.applyToParent(parent, 'mao-ao', 'male');
-assert.deepStrictEqual([parent.scale.x, parent.scale.y, parent.scale.z], [0.81675, 1.089, 0.81675]);
+assert.deepStrictEqual([parent.scale.x, parent.scale.y, parent.scale.z], scaled(0.8168, 1.089, 0.8168));
 
 // Changing an explicit authored/imported legacy value must override the default without
 // multiplying the previous result cumulatively, and still resolves uniformly on every axis.
@@ -93,22 +96,40 @@ profile.anatomy.rigScaleY = undefined;
 profile.anatomy.headScale = undefined;
 profile.anatomy.rigScale = 0.5;
 api.applyToParent(parent, 'mao-ao', 'male');
-assert.deepStrictEqual([parent.scale.x, parent.scale.y, parent.scale.z], [0.5, 0.5, 0.5]);
+assert.deepStrictEqual([parent.scale.x, parent.scale.y, parent.scale.z], scaled(0.5, 0.5, 0.5));
 
 // If another system recomputes the parent scale (body-scale preview), treat that
 // as the new assembled base and reapply whole-rig scale exactly once.
 parent.scale.set(1.2, 1.2, 1.2);
 api.applyToParent(parent, 'mao-ao', 'male');
-assert.deepStrictEqual([parent.scale.x, parent.scale.y, parent.scale.z], [0.6, 0.6, 0.6]);
+assert.deepStrictEqual([parent.scale.x, parent.scale.y, parent.scale.z], scaled(0.6, 0.6, 0.6));
 
 // Body width and height must be independently settable — z (depth) tracks x, since these
 // are camera-facing planes with no independently authored depth.
 const nonUniformParent = makeParent();
 api.applyToParent(nonUniformParent, 'mao-ao', 'male', { x: 1.3, y: 0.9, head: 1 });
-assert.deepStrictEqual([nonUniformParent.scale.x, nonUniformParent.scale.y, nonUniformParent.scale.z], [1.3, 0.9, 1.3]);
+assert.deepStrictEqual([nonUniformParent.scale.x, nonUniformParent.scale.y, nonUniformParent.scale.z], scaled(1.3, 0.9, 1.3));
 // Reapplying with a different y-only change must not cumulatively multiply x.
 api.applyToParent(nonUniformParent, 'mao-ao', 'male', { x: 1.3, y: 1.5, head: 1 });
-assert.deepStrictEqual([nonUniformParent.scale.x, nonUniformParent.scale.y, nonUniformParent.scale.z], [1.3, 1.5, 1.3]);
+assert.deepStrictEqual([nonUniformParent.scale.x, nonUniformParent.scale.y, nonUniformParent.scale.z], scaled(1.3, 1.5, 1.3));
+
+// Rendering Width/Head/age edits must not resample the procedural leg chain.
+// Only the leg-to-portrait ratio affects the underlying hip-to-ankle solver.
+const legSyncCalls = []; // Counts the shared procedural leg solver updates without requiring Three.js.
+context.ProceduralLegAnimation = { syncScaleForParent(_parent, ratio) { legSyncCalls.push(ratio); } };
+const separateLegParent = makeParent();
+api.applyToParent(separateLegParent, 'mao-ao', 'male', { x: 1, y: 1, legLength: 1.5, head: 1 });
+assert.strictEqual(legSyncCalls.length, 1, 'new rig performs its initial leg synchronization');
+api.applyToParent(separateLegParent, 'mao-ao', 'male', { x: 1.3, y: 1, legLength: 1.5, head: 1.2 });
+assert.strictEqual(legSyncCalls.length, 1, 'resizing Width or Head cannot re-solve unchanged leg IK');
+api.applyToParent(separateLegParent, 'mao-ao', 'male', { x: 1.3, y: 1.2, legLength: 1.8, head: 1.2 });
+assert.strictEqual(legSyncCalls.length, 1, 'matching portrait and leg scaling does not alter their IK ratio');
+api.applyToParent(separateLegParent, 'mao-ao', 'male', { x: 1.3, y: 1.2, legLength: 2.4, head: 1.2 });
+assert.strictEqual(legSyncCalls.length, 2, 'new hip-to-portrait ratio updates real IK once');
+assert.strictEqual(legSyncCalls[1], 2, 'only the leg-to-portrait multiplier reaches procedural legs');
+api.clearFromParent(separateLegParent);
+assert.strictEqual(legSyncCalls.at(-1), 1, 'clearing the rig scale restores original hip-to-foot reach');
+delete context.ProceduralLegAnimation; // Restores the test's ordinary no-leg stub before checking head and NPC poses.
 
 // Head must be compensated at the neck rig bone so a distorted body aspect ratio never
 // distorts the meticulously authored head/head-cosmetic/expression proportions: the neck
@@ -117,11 +138,25 @@ assert.deepStrictEqual([nonUniformParent.scale.x, nonUniformParent.scale.y, nonU
 const neckJoint = makeBone();
 const headParent = makeParent(neckJoint);
 api.applyToParent(headParent, 'mao-ao', 'male', { x: 1.3, y: 0.7, head: 1.1 });
-assert.strictEqual(headParent.scale.x, 1.3);
-assert.strictEqual(headParent.scale.y, 0.7);
+assert.strictEqual(headParent.scale.x, 1.3 * worldFactor);
+assert.strictEqual(headParent.scale.y, 0.7 * worldFactor);
 assert.ok(Math.abs(neckJoint.scale.x - (1.1 / 1.3)) < 1e-9, 'neck bone must cancel body width stretch and land on the authored head scale');
 assert.ok(Math.abs(neckJoint.scale.y - (1.1 / 0.7)) < 1e-9, 'neck bone must cancel body height stretch and land on the authored head scale');
 assert.strictEqual(neckJoint.scale.z, 1);
+// Age controls accept 10–200%; the derived head/body ratio can lie outside adult scale limits.
+for (const [width, height, head] of [[.1, .1, 2], [.1, .4, 1.5], [2, 2, .1], [.29, .38, .55]]) {
+  const ageBone = makeBone(); // Actual head scale bone driven by the shared runtime.
+  const ageParent = makeParent(ageBone, height);
+  const adult = { x: .8168, y: 1.089, head: .726 }; // Representative uploaded Mao'ao transform.
+  const childFactors = { childHeadFactor: head / height, childHeadFactorX: head / width }; // PNG-plane child dimensions are already baked in.
+  api.applyHeadCompensation(ageParent, 'mao-ao', 'male', { ...adult, ...childFactors });
+  assert.ok(Math.abs(ageBone.scale.x * adult.x * width - adult.head * head) < 1e-9, 'child head width must match authored age head factor');
+  assert.ok(Math.abs(ageBone.scale.y * adult.y * height - adult.head * head) < 1e-9, 'child head height must match authored age head factor');
+  ageParent.userData.hobunjiCharacterRigHeadRuntime = childFactors; // Later hand attachment reuses stored compensation.
+  api.applyHeadCompensation(ageParent, 'mao-ao', 'male', adult);
+  assert.ok(Math.abs(ageBone.scale.x * adult.x * width - adult.head * head) < 1e-9, 'reapplication must retain age head width');
+  assert.ok(Math.abs(ageBone.scale.y * adult.y * height - adult.head * head) < 1e-9, 'reapplication must retain age head height');
+}
 // An avatar with no neck rig (most world creatures/NPCs) must be entirely unaffected.
 assert.strictEqual(api.applyHeadCompensation(makeParent(), 'mao-ao', 'male', { x: 1.3, y: 0.7, head: 1.1 }), false,
   'avatars without a neck rig have no head to protect and must be a safe no-op');
@@ -179,6 +214,53 @@ api.clearFromParent(splitParent);
 assert.deepStrictEqual([splitHeadScaleJoint.scale.x, splitHeadScaleJoint.scale.y, splitHeadScaleJoint.scale.z], [1, 1, 1],
   'clearFromParent must reset headScaleJoint, not (only) neckJoint, when a headScaleJoint exists');
 
+// New short-neck rigs separate head rotation/scale from the head's broad, nonrotating
+// height compensation. A -9.5% Mashtzarr offset must not shear the short neck band.
+const splitOffsetBone = makeBone(); // Used only for independent head-height translation in this rig fixture.
+splitParent.userData.neckRig.headOffsetJoint = splitOffsetBone;
+splitParent.userData.portraitModelHeight = 2;
+const unchangedHeadScaleY = splitHeadScaleJoint.position.y;
+const headOffsetRestY = splitOffsetBone.position.y;
+api.applyToParent(splitParent, 'mashtzarr', 'male', { x: 1, y: 1, head: 1, offsetY: -0.095 });
+assert.ok(Math.abs(splitOffsetBone.position.y - (headOffsetRestY - 0.095 * 2)) < 1e-9,
+  'author-specific offset must move the new nonrotating placement bone');
+assert.strictEqual(splitHeadScaleJoint.position.y, unchangedHeadScaleY,
+  'head-scale bone must not compress a 9.5%-height offset into the two-pixel neck');
+assert.strictEqual(splitNeckJoint.position.y, splitBaselineY,
+  'the rotating neck bone must not inherit a destructive local translation');
+api.applyToParent(splitParent, 'mashtzarr', 'male', { x: 1, y: 1, head: 1, offsetY: -0.095 });
+assert.ok(Math.abs(splitOffsetBone.position.y - (headOffsetRestY - 0.095 * 2)) < 1e-9,
+  'reapplying head placement is idempotent');
+api.clearFromParent(splitParent);
+assert.strictEqual(splitOffsetBone.position.y, headOffsetRestY,
+  'reset must restore independent placement bone rest position');
+assert.strictEqual(splitHeadScaleJoint.position.y, unchangedHeadScaleY,
+  'reset must leave the independent head-scale bone at its original rest position');
+
+// Head size changes have to calculate the scaled skull's true bottom first, then
+// move the neck attachment before a Longoran's hunch can displace the spine.
+splitParent.userData.neckRig.neckLocal = { x: 0, y: -.1, z: 0 }; // Rest bottom of the base-head sprite, in portrait-local coordinates.
+splitParent.userData.neckRig.headCentroidLocal = { x: 0, y: .2, z: 0 }; // Alpha-derived center of the head, which should stay fixed while scaling.
+api.applyToParent(splitParent, 'mao-ao', 'male', { x: 1, y: 1, head: 1.5, offsetY: 0 });
+const largerHeadNeck = headOffsetRestY - .15; // 1.5× head: (1 - 1.5) × (.2 - -.1) moves the jaw and neck lower by .15.
+assert.ok(Math.abs(splitOffsetBone.position.y - largerHeadNeck) < 1e-9,
+  'head scaling must place the neck at the scaled head bottom, not at the unscaled sprite row');
+assert.ok(Math.abs(splitParent.userData.neckRig.scaledNeckLocal.y - (-.25)) < 1e-9,
+  'live rig diagnostics must expose the post-scale neck pixel position');
+assert.strictEqual(splitNeckJoint.position.y, splitBaselineY,
+  'the scaled head correction must use the broad nonrotating placement bone, not the two-pixel bend');
+api.applyToParent(splitParent, 'mao-ao', 'male', { x: 1, y: 1, head: 1.5, offsetY: 0 });
+assert.ok(Math.abs(splitOffsetBone.position.y - largerHeadNeck) < 1e-9,
+  'dragging and reapplying the head slider must not accumulate neck displacement');
+api.applyToParent(splitParent, 'mao-ao', 'male', { x: 1, y: 1, head: .5, offsetY: 0 });
+assert.ok(Math.abs(splitOffsetBone.position.y - (headOffsetRestY + .15)) < 1e-9,
+  'reducing head size raises the recomputed neck attachment');
+api.clearFromParent(splitParent);
+assert.strictEqual(splitOffsetBone.position.y, headOffsetRestY,
+  'clearFromParent must restore the post-scale neck recalculation to its original base');
+assert.strictEqual(splitParent.userData.neckRig.scaledNeckLocal, undefined,
+  'reset clears the temporary scaled-head contact metadata');
+
 // Head Y offset is authored per species/gender as a fraction of the avatar's own
 // model height, and composes additively with a separate per-NPC age-hunch factor —
 // neither one is baked into shared profile data, both are supplied by the caller.
@@ -220,7 +302,7 @@ const runtimeParent = {
   traverse(visit) { visit(this); },
 };
 hands.attach(null, runtimeParent, { speciesId: 'engh-sho', gender: 'male' });
-assert.deepStrictEqual([runtimeParent.scale.x, runtimeParent.scale.y, runtimeParent.scale.z], [0.8, 0.845, 0.8]);
+assert.deepStrictEqual([runtimeParent.scale.x, runtimeParent.scale.y, runtimeParent.scale.z], scaled(context.HobunjiCharacterRigScaleDefaults.values['engh-sho::male'].x, context.HobunjiCharacterRigScaleDefaults.values['engh-sho::male'].y, context.HobunjiCharacterRigScaleDefaults.values['engh-sho::male'].x));
 assert.strictEqual(runtimeParent.userData.hobunjiCharacterRigScaleState.coordinateSpace, 'character-floor-parent');
 
 assert.match(source, /coordinateSpace: 'character-floor-parent'/);
@@ -288,7 +370,7 @@ assert.match(scaleHostSource, /RigScaleAwareBlob/,
   'native attachment-rig downloads must be patched without replacing their metadata payload');
 assert.match(scaleHostSource, /maaImportInput/,
   'native Rig imports must recover rigScale from the selected JSON');
-assert.match(scaleHostSource, /fullCharacterScaleRoundTripVersion = 3/,
+assert.match(scaleHostSource, /fullCharacterScaleRoundTripVersion = 4/,
   'patched v10 exports must identify the x/y/head/offsetY round-trip extension');
 assert.match(scaleHostSource, /profile\.anatomy\.headOffsetY = value\.offsetY/,
   'shared species profiles must receive restored/imported headOffsetY values');
@@ -323,10 +405,10 @@ assert.match(scaleComparisonSource, /model\.userData\.proceduralHandParent = gro
   'comparison avatars must use the normal free-hand parent contract');
 assert.match(scaleComparisonSource, /ProceduralLegAnimation\?\.attach\?/,
   'comparison avatars must attach the gameplay procedural feet runtime');
-assert.match(scaleComparisonSource, /raycaster\.intersectObject\(entry\.group, true\)/,
-  'selection must raycast each preview group directly');
-assert.match(scaleComparisonSource, /select\(best\.entry\)/,
-  'a tapped preview must directly update the comparison selection');
+assert.doesNotMatch(scaleComparisonSource, /raycaster\.intersectObject\(entry\.group, true\)|pickAt\(event\.clientX/,
+  'the Full Character Scale lineup must not select through 3D raycasts');
+assert.match(scaleComparisonSource, /querySelector\('#maaFullScaleChoose'\)\.addEventListener\('change'/,
+  'the always-open character dropdown must remain wired to selection');
 assert.doesNotMatch(scaleComparisonSource, /addNpcAnimationActor/,
   'comparison lineup must not create Animation Author actors');
 assert.doesNotMatch(scaleComparisonSource, /selectedAnimationActor/,
@@ -335,11 +417,8 @@ assert.doesNotMatch(scaleBootstrapSource, /character-scale-comparison-camera\.js
   'obsolete private-state camera/picking wrapper must not load with the isolated comparison');
 assert.match(scaleBootstrapSource, /character-scale-comparison\.js\?v=[A-Za-z0-9_.-]+/,
   'bootstrap must cache-bust the isolated Full Character Scale comparison');
-// The five slider rows are rendered through one small scaleRow(axis, ...) template
-// helper (id="maaFullScaleRange${axis}"/"maaFullScaleNum${axis}") rather than five
-// near-identical literal blocks, so these check the call sites, not the interpolated
-// ids — still fails if any of the five controls is dropped or renamed.
-for (const axis of ['X', 'Y', 'Head', 'OffsetY', 'Age']) {
+// Height and Beltline Height replace separate portrait/leg sliders while preserving the old runtime anatomy fields.
+for (const axis of ['X', 'Height', 'Beltline', 'Hand', 'Foot', 'Head', 'OffsetY', 'Age']) {
   assert.match(scaleComparisonSource, new RegExp(`scaleRow\\('${axis}'`),
     `the comparison tab must expose a ${axis} slider row`);
 }

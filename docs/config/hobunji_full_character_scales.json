@@ -1,0 +1,332 @@
+{
+  "kenkari": {
+    "male": {
+      "height": 1.225,
+      "beltlineHeightPercent": 13.1337,
+      "x": 1.225,
+      "y": 1.225,
+      "portraitHeight": 1.225,
+      "legLength": 1.225,
+      "handScale": 1,
+      "footScale": 1,
+      "head": 1,
+      "offsetY": 0
+    },
+    "female": {
+      "height": 1.1,
+      "beltlineHeightPercent": 18.4968,
+      "x": 1.1,
+      "y": 1.1,
+      "portraitHeight": 1.1,
+      "legLength": 1.1,
+      "handScale": 0.93,
+      "footScale": 1,
+      "head": 1,
+      "offsetY": 0
+    }
+  },
+  "tletingan": {
+    "male": {
+      "height": 0.85,
+      "beltlineHeightPercent": 28.4376,
+      "x": 0.85,
+      "y": 0.85,
+      "portraitHeight": 0.85,
+      "legLength": 0.85,
+      "handScale": 0.95,
+      "footScale": 0.95,
+      "head": 0.8,
+      "offsetY": 0
+    },
+    "female": {
+      "height": 0.89,
+      "beltlineHeightPercent": 21.6264,
+      "x": 0.915,
+      "y": 0.89,
+      "portraitHeight": 0.89,
+      "legLength": 0.89,
+      "handScale": 0.925,
+      "footScale": 1.025,
+      "head": 0.8824,
+      "offsetY": 0
+    }
+  },
+  "nuhongan": {
+    "male": {
+      "height": 0.6375,
+      "beltlineHeightPercent": 28.4376,
+      "x": 0.68,
+      "y": 0.6375,
+      "portraitHeight": 0.6375,
+      "legLength": 0.6375,
+      "handScale": 0.95,
+      "footScale": 0.95,
+      "head": 0.8,
+      "offsetY": 0
+    },
+    "female": {
+      "height": 0.6675,
+      "beltlineHeightPercent": 21.6264,
+      "x": 0.732,
+      "y": 0.6675,
+      "portraitHeight": 0.6675,
+      "legLength": 0.6675,
+      "handScale": 0.925,
+      "footScale": 1.025,
+      "head": 0.8824,
+      "offsetY": 0
+    }
+  },
+  "longoran": {
+    "male": {
+      "height": 2.45,
+      "beltlineHeightPercent": 28.4376,
+      "x": 1.015,
+      "y": 2.45,
+      "portraitHeight": 2.45,
+      "legLength": 2.45,
+      "handScale": 0.95,
+      "footScale": 0.95,
+      "head": 1,
+      "offsetY": -0.055
+    },
+    "female": {
+      "height": 2.78,
+      "beltlineHeightPercent": 21.6264,
+      "x": 1.1303,
+      "y": 2.78,
+      "portraitHeight": 2.78,
+      "legLength": 2.78,
+      "handScale": 0.925,
+      "footScale": 1.025,
+      "head": 1.064,
+      "offsetY": -0.055
+    }
+  },
+  "engh-sho": {
+    "male": {
+      "height": 0.725,
+      "beltlineHeightPercent": 37.5749,
+      "x": 0.7,
+      "y": 0.725,
+      "portraitHeight": 0.725,
+      "legLength": 0.725,
+      "handScale": 1.45,
+      "footScale": 1.25,
+      "head": 0.7895,
+      "offsetY": 0
+    },
+    "female": {
+      "height": 0.765,
+      "beltlineHeightPercent": 40.9298,
+      "x": 0.745,
+      "y": 0.765,
+      "portraitHeight": 0.765,
+      "legLength": 0.765,
+      "handScale": 1.3,
+      "footScale": 1.17,
+      "head": 0.7895,
+      "offsetY": 0
+    }
+  },
+  "mao-ao": {
+    "male": {
+      "height": 1.089,
+      "beltlineHeightPercent": 47.5939,
+      "x": 0.8168,
+      "y": 1.089,
+      "portraitHeight": 1.089,
+      "legLength": 1.089,
+      "handScale": 1.1,
+      "footScale": 1.3125,
+      "head": 0.726,
+      "offsetY": 0
+    },
+    "female": {
+      "height": 0.94,
+      "beltlineHeightPercent": 48.6331,
+      "x": 0.895,
+      "y": 0.94,
+      "portraitHeight": 0.94,
+      "legLength": 0.94,
+      "handScale": 1,
+      "footScale": 1.2813,
+      "head": 0.7813,
+      "offsetY": 0
+    }
+  },
+  "mashtzarr": {
+    "male": {
+      "height": 1.255,
+      "beltlineHeightPercent": 28.188,
+      "x": 0.955,
+      "y": 1.255,
+      "portraitHeight": 1.255,
+      "legLength": 1.255,
+      "handScale": 1,
+      "footScale": 1.175,
+      "head": 0.9856,
+      "offsetY": -0.095
+    },
+    "female": {
+      "height": 0.99,
+      "beltlineHeightPercent": 28.8933,
+      "x": 1.01,
+      "y": 0.99,
+      "portraitHeight": 0.99,
+      "legLength": 0.99,
+      "handScale": 0.95,
+      "footScale": 1,
+      "head": 0.8475,
+      "offsetY": -0.02
+    }
+  },
+  "mammakhbuur": {
+    "male": {
+      "height": 1.69,
+      "beltlineHeightPercent": 28.188,
+      "x": 0.96,
+      "y": 1.69,
+      "portraitHeight": 1.69,
+      "legLength": 1.69,
+      "handScale": 1,
+      "footScale": 1.175,
+      "head": 0.9771,
+      "offsetY": -0.095
+    },
+    "female": {
+      "height": 1.3331,
+      "beltlineHeightPercent": 28.8933,
+      "x": 1.0153,
+      "y": 1.3331,
+      "portraitHeight": 1.3331,
+      "legLength": 1.3331,
+      "handScale": 0.95,
+      "footScale": 1,
+      "head": 0.8402,
+      "offsetY": -0.02
+    }
+  },
+  "boney-shinjimi-skeleton": {
+    "male": {
+      "x": 1,
+      "y": 1,
+      "portraitHeight": 1,
+      "legLength": 1,
+      "handScale": 1.2,
+      "footScale": 1.05,
+      "head": 1,
+      "offsetY": 0
+    }
+  },
+  "harlyao": {
+    "male": {
+      "x": 0.96,
+      "y": 1.014,
+      "portraitHeight": 1.014,
+      "legLength": 1.014,
+      "handScale": 1.45,
+      "footScale": 1.25,
+      "head": 0.9474,
+      "offsetY": 0
+    },
+    "female": {
+      "x": 0.954,
+      "y": 0.972,
+      "portraitHeight": 0.972,
+      "legLength": 0.972,
+      "handScale": 1.3,
+      "footScale": 1.17,
+      "head": 0.9474,
+      "offsetY": 0
+    }
+  },
+  "harlyao-skeleton": {
+    "male": {
+      "x": 0.96,
+      "y": 1.014,
+      "portraitHeight": 1.014,
+      "legLength": 1.014,
+      "handScale": 1.45,
+      "footScale": 1.25,
+      "head": 0.9474,
+      "offsetY": 0
+    },
+    "female": {
+      "x": 0.954,
+      "y": 0.972,
+      "portraitHeight": 0.972,
+      "legLength": 0.972,
+      "handScale": 1.3,
+      "footScale": 1.17,
+      "head": 0.9474,
+      "offsetY": 0
+    }
+  },
+  "mao-ao-skeleton": {
+    "male": {
+      "x": 0.8168,
+      "y": 1.089,
+      "portraitHeight": 1.089,
+      "legLength": 1.089,
+      "handScale": 1.1,
+      "footScale": 1.3125,
+      "head": 0.726,
+      "offsetY": 0
+    }
+  },
+  "maskbound-guardian": {
+    "male": {
+      "x": 1,
+      "y": 1,
+      "portraitHeight": 1,
+      "legLength": 1,
+      "handScale": 1.2,
+      "footScale": 1.05,
+      "head": 1,
+      "offsetY": 0
+    }
+  },
+  "nohuknuk": {
+    "male": {
+      "height": 1,
+      "beltlineHeightPercent": 32,
+      "x": 1,
+      "y": 1,
+      "portraitHeight": 1,
+      "legLength": 1,
+      "handScale": 1,
+      "footScale": 1,
+      "head": 1,
+      "offsetY": 0
+    }
+  },
+  "omgurku": {
+    "male": {
+      "height": 1,
+      "beltlineHeightPercent": 50,
+      "x": 1,
+      "y": 1,
+      "portraitHeight": 1,
+      "legLength": 1,
+      "handScale": 1.45,
+      "footScale": 1.25,
+      "head": 1,
+      "offsetY": 0
+    }
+  },
+  "porakaneki": {
+    "male": {
+      "height": 1,
+      "beltlineHeightPercent": 13.1337,
+      "x": 1,
+      "y": 1,
+      "portraitHeight": 1,
+      "legLength": 1,
+      "handScale": 1,
+      "footScale": 1,
+      "head": 1,
+      "offsetY": 0
+    }
+  }
+}
