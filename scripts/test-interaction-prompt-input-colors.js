@@ -115,7 +115,7 @@ const syncRuin=new Function(...Object.keys(deps),
 const row={kind:'transitdoor',action:'dev_ruin_world_0'},other={kind:'mechanism',action:'dev_ruin_world_1'}; // Door and unrelated action controls.
 const nativeIds=rows=>{syncRuin(rows);return result.promptInputs.map(p=>p.actionId);}; // Real bridge hints.
 device='controller';assert.deepEqual(nativeIds([row]),['action3'],'native controller torch door shows X');
-assert.deepEqual(nativeIds([other,row]),['action1','action3'],'unrelated ruin action is not remapped');
+assert.deepEqual(nativeIds([other,row]),['action3'],'unrelated ruin Action 1 prompt is suppressed while holding torch');
 device='touch';assert.deepEqual(nativeIds([row]),['action3'],'native touch torch door shows third action');
 device='keyboard';assert.deepEqual(nativeIds([row]),['interact'],'keyboard door keeps E');
 torch=false;assert.deepEqual(nativeIds([row]),['action1'],'normal door keeps Action 1');
