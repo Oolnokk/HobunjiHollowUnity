@@ -431,7 +431,8 @@
       let x = baseX, y = baseY;
       if (enabled && rest.useSpline) {
         const source = { x: canonicalPoints[i * 2], y: canonicalPoints[i * 2 + 1] };
-        const target = deformWeightedPoint(source, headInfluences[i], rest); // Apply the authored offset to the rendered vertex, in its corresponding source region.
+        const target = rest.fullSprite ? deformNormalizedPoint(source, rest)
+          : deformWeightedPoint(source, headInfluences[i], rest); // Birds can use the same full-sprite curl as their articulated perch.
         x += (target.x - source.x) * dimensions.width * (mirrorX ? -1 : 1);
         y -= (target.y - source.y) * dimensions.height;
       }
@@ -499,11 +500,12 @@
   }
   function disposeLayer(layer) { if (!layer) return; layer.mesh?.parent?.remove?.(layer.mesh); for (const texture of layer.textures || []) texture?.dispose?.(); for (const material of materialsFor(layer)) material?.dispose?.(); layer.geometry?.dispose?.(); }
 
-  function decorateAvatar(THREE, avatarRef, rawRig) {
+  function decorateAvatar(THREE, avatarRef, rawRig, { fullSprite = false } = {}) {
     const rest = normalizeRest(rawRig);
     if (!rest || !avatarRef?.headRig || Number(avatarRef.shoulderRest?.version) >= 10) return avatarRef;
     const normalizedRig = window.AnimalHeadRigRuntime?.normalizeRig?.(rawRig) || null;
     if (!normalizedRig) return avatarRef;
+    rest.fullSprite = fullSprite;
     const rigState = avatarRef.headRig, frontMesh = rest.useSpline || rest.splitFrame ? findRiggedMeshForBone(avatarRef.group, rigState.frontHeadBone) : null, backMesh = rest.useSpline || rest.splitFrame ? findRiggedMeshForBone(avatarRef.group, rigState.backHeadBone) : null;
     // Runtime mesh proportions are authoritative for sprite-plane geometry.
     // This repairs older authored shoulder records that predate separatorAspect
@@ -590,6 +592,7 @@
     separatorPointIsRight,
     separatorPolygon,
     sampleHeadInfluence,
+    decorateAvatar,
     install,
   };
   window.AnimalShoulderRest = window.AnimalShoulderSpline;

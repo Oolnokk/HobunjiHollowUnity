@@ -17,7 +17,7 @@
 
   if (!window.AnimalShoulderSpline || Number(window.AnimalShoulderSpline.version) < 10) {
     loadScript('js/animal-shoulder-spline-profiles.js?v=20261115groundRoster5', 'animal-shoulder-spline-profiles');
-    loadScript('js/animal-shoulder-spline.js?v=20261119h401d940', 'animal-shoulder-spline');
+    loadScript('js/animal-shoulder-spline.js?v=20261126hc84ce7c', 'animal-shoulder-spline');
     loadScript('js/animal-shoulder-spline-layering.js?v=20261117animalWireSpawn1', 'animal-shoulder-spline-layering');
   }
   if (window.AnimalShoulderSpline) window.AnimalShoulderRest = window.AnimalShoulderSpline;
