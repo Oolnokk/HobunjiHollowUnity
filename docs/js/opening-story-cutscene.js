@@ -556,6 +556,61 @@
     return profile?.isWorldOwner !== true || tourComplete(profile);
   }
 
+  const FARM_GUIDE_ID = 'spearhead_unumanuk'; // The real scheduled guard, not a duplicate cutscene actor.
+  const FARM_GUIDE_EXIT_MESSAGE = 'Turn back and meet Spearhead on the south side of town first.';
+  let guideWorld = null, guideNextHour = null, guideScanAt = -Infinity, guideWalking = false, guideOpening = false; // Local invitation cadence and schedule phase, reset on world change.
+  let guideStatus = 'waiting for opening'; // Mobile debug explanation of the most recent decision.
+
+  function farmGuideNeeded(profile = window.__hobunjiPlayerProfile) {
+    return profile?.isWorldOwner === true && readProgress(profile) === 'complete' && !tourComplete(profile);
+  }
+
+  function syncGuideWorld(profile) {
+    const key = profile?.worldId || null;
+    if (guideWorld === key) return;
+    guideWorld = key;
+    guideNextHour = null;
+    guideScanAt = -Infinity;
+    guideWalking = false;
+    guideOpening = false;
+  }
+
+  window.NpcScheduling?.registerTargetOverride('opening-farm-guide', rec => {
+    if (rec?.id !== FARM_GUIDE_ID || !farmGuideNeeded()) return null;
+    syncGuideWorld(window.__hobunjiPlayerProfile);
+    return window.AuthoredCutsceneRuntime?.farmGuideTarget?.(guideWalking) || null;
+  }, 110); // The mandatory opening appointment takes precedence over ordinary schedules and festivals.
+
+  async function updateFarmGuide(now) {
+    const profile = window.__hobunjiPlayerProfile;
+    syncGuideWorld(profile);
+    if (now >= guideScanAt && now - guideScanAt < 250) return; // At most four proximity decisions per real second.
+    guideScanAt = now;
+    if (!farmGuideNeeded(profile) || status.running || guideOpening) return;
+    const hour = gameHours(); // A missed reminder remains armed until a visible encounter, even across midnight.
+    if (hour === null) return;
+    if (guideNextHour !== null && hour >= guideNextHour && guideWalking) {
+      guideWalking = false;
+      window.NpcScheduling?.invalidateTargetDecisions?.();
+    }
+    if (guideNextHour !== null && hour < guideNextHour) { guideStatus = 'cooldown'; return; }
+    const runtime = window.AuthoredCutsceneRuntime;
+    const walker = runtime?.visibleFarmGuide?.(); // Live town walker, range and real terrain line of sight.
+    if (!walker) { guideStatus = 'armed; awaiting line of sight'; return; }
+    guideOpening = true;
+    try {
+      const result = await runtime.openFarmGuideDialogue(walker);
+      if (result === false || guideWorld !== profile.worldId || !farmGuideNeeded(profile)) return;
+      guideNextHour = (gameHours() ?? hour) + 1;
+      guideWalking = true; // After speaking, lead toward the farm gate and wait for the owner to enter.
+      guideStatus = 'invited; awaiting farm entry';
+      window.NpcScheduling?.invalidateTargetDecisions?.();
+    } catch (error) {
+      guideStatus = 'invitation failed: ' + (error?.message || String(error));
+      log(guideStatus, 'warn');
+    } finally { guideOpening = false; }
+  }
+
   function buildFarmTourScene(records, profile, points) {
     const entry = points.entry; // Current farm arrival tile; the real player remains parked here during the authored tour.
     const porch = points.porch; // Shared farmhouse door resolver supplies the final stop instead of a hardcoded house coordinate.
@@ -596,6 +651,7 @@
         },
       });
       status.phase = tourComplete(profile) ? 'farm-tour-complete' : 'farm-tour-interrupted';
+      window.NpcScheduling?.invalidateTargetDecisions?.(); // Release the guard to his normal schedule as soon as the tour completes.
       return tourComplete(profile);
     } catch (error) {
       status.lastError = error?.message || String(error);
@@ -740,11 +796,12 @@
     buildHunundiMeetingScene,
     buildJubmirFeyScene, nextFeyVisit, playJubmirFeyVisit,
     play: (profile = window.__hobunjiPlayerProfile) => play(profile, { replay: true }),
-    debugSnapshot: () => ({ ...status, farmTourComplete: tourComplete(window.__hobunjiPlayerProfile), wildernessUnlocked: canEnterWilderness(), jubmirFey: feyVisitState() }),
+    debugSnapshot: () => ({ ...status, farmTourComplete: tourComplete(window.__hobunjiPlayerProfile), wildernessUnlocked: canEnterWilderness(), jubmirFey: feyVisitState(), farmGuide: { status: guideStatus, nextHour: guideNextHour, walking: guideWalking } }),
     stateKey, readProgress,
     getStory: (profile = window.__hobunjiPlayerProfile) => storedStory(profile) || {}, // The Guild reads the same portable story record as Jubmir.
     updateStory: changeStory, // Reuses the single world-meta writer for additional story phases.
     tourKey, needsTempleArrival, canEnterWilderness, onFarmEntered, buildFarmTourScene,
+    farmGuideNeeded, updateFarmGuide, farmGuideExitMessage: FARM_GUIDE_EXIT_MESSAGE,
   });
   function storyVisitPanel() {
     const profile = window.__hobunjiPlayerProfile; // Supplies owner eligibility for the companion's read-only story panel.
