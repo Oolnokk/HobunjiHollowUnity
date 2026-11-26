@@ -127,18 +127,22 @@ assert.ok(RS.getAffliction(enemy, 'frostbittenStamina') > 0, '1. Frostbitten app
 
 // ── 9-11: Immundanity ─────────────────────────────────────────────
 function immFor(state) { gear = { weaponEnchantments: { w: state } }; return ES.getWeaponImmundanity('w'); }
-// Planes: sicced=Tothal fury=Hronal moralized=Kanthic resolve=Ohthic frostbitten=Tothal burning=Hronal mirrored=Kanthic livingGust=Tothal livingFlame=Hronal
+// Planes: sicced=Kanthic fury=Hronal moralized=Tothal resolve=Ohthic frostbitten=Tothal burning=Hronal mirrored=Kanthic livingGust=Tothal livingFlame=Hronal
 assert.equal(immFor({ base: ['frostbitten'], flourishes: {} }), 1, 'Tothal 1 → 1');
 assert.equal(immFor({ base: ['frostbitten', 'burning'], flourishes: {} }), 0, '9. Tothal + Hronal cancel');
-assert.equal(immFor({ base: ['frostbitten'], flourishes: { tap1: 'sicced', tap2: 'fury' } }), 1, 'Tothal 2, Hronal 1 → 1');
-assert.equal(immFor({ base: ['frostbitten', 'burning'], flourishes: { tap1: 'sicced', tap2: 'fury' } }), 0, '11. Tothal 2, Hronal 2 → 0 (one-for-one, not Cartesian)');
+assert.equal(immFor({ base: ['frostbitten'], flourishes: { tap1: 'moralized', tap2: 'fury' } }), 1, 'Tothal 2, Hronal 1 → 1');
+assert.equal(immFor({ base: ['frostbitten', 'burning'], flourishes: { tap1: 'moralized', tap2: 'fury' } }), 0, '11. Tothal 2, Hronal 2 → 0 (one-for-one, not Cartesian)');
+assert.equal(immFor({ base: ['burning'], flourishes: { tap1: 'moralized' } }), 0, 'Moralized cancels Hronal');
+assert.equal(ES.planarCounts('w').Tothal, 1, 'Moralized has Tothal presentation');
+assert.equal(immFor({ base: ['ancestralSight'], flourishes: { tap1: 'sicced' } }), 0, 'Sicced cancels Ohthic');
+assert.equal(ES.planarCounts('w').Kanthic, 1, 'Sicced has Kanthic presentation');
 assert.equal(immFor({ base: ['mirrored', 'ancestralSight'], flourishes: {} }), 0, '10. Kanthic + Ohthic cancel');
 assert.equal(immFor({ base: ['livingGust', 'burning'], flourishes: {} }), 0, 'Living Gust cancels Hronal');
 assert.equal(immFor({ base: ['livingGust', 'mirrored'], flourishes: {} }), 2, 'Living Gust does not cancel Kanthic');
 assert.equal(immFor({ base: ['livingGust', 'frostbitten'], flourishes: {} }), 2, 'Living Gust stacks with Tothal');
 assert.equal(ES.planarCounts('w').Tothal, 2, 'Living Gust is counted as Tothal for presentation');
 assert.equal(ES.planarCounts('w').Ohthic, 0, 'Living Gust is no longer Ohthic');
-assert.equal(immFor({ base: ['frostbitten', 'mirrored'], flourishes: { tap1: 'sicced' } }), 3, 'Tothal 2, Kanthic 1 → 3');
+assert.equal(immFor({ base: ['frostbitten', 'mirrored'], flourishes: { tap1: 'sicced' } }), 3, 'Tothal 1, Kanthic 2 → 3');
 assert.equal(ES.getEnchantmentPowerMultiplier('w'), 1.3, '12. +10% enchantment power per Immundanity');
 assert.ok(Math.abs(ES.getMasteryPowerMultiplier('w') - 0.7) < 1e-9, '12. −10% mastery power per Immundanity');
 gear = { weaponEnchantments: { w: { base: ['frostbitten', 'mirrored'], flourishes: { tap1: 'sicced', tap2: 'moralized', hold1: 'sicced', hold2: 'moralized' } } } };

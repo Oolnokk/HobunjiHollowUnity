@@ -51,7 +51,7 @@
 
   const DEFINITIONS = Object.freeze({
     sicced: Object.freeze({
-      id: 'sicced', displayName: 'Sicced', type: 'Flourish', alignment: 'Tothal',
+      id: 'sicced', displayName: 'Sicced', type: 'Flourish', alignment: 'Kanthic',
       icon: '🐾', flurryBehavior: 'proc',
       scalable: Object.freeze({ companionPower: true }),
       description: 'Marks the struck enemy as the animal companion’s exclusive target and empowers the companion against it.',
@@ -64,7 +64,7 @@
       description: 'Combo finishers and qualifying Quick Attacks grant Furious Stamina. Offensive Held attacks snapshot +2% speed per point (up to +200%) before spending it.',
     }),
     moralized: Object.freeze({
-      id: 'moralized', displayName: 'Moralized', type: 'Flourish', alignment: 'Kanthic',
+      id: 'moralized', displayName: 'Moralized', type: 'Flourish', alignment: 'Tothal',
       icon: '✦', flurryBehavior: 'proc',
       scalable: Object.freeze({ amount: true }),
       description: 'Grants Moralized Stamina; each point pays three points of Stamina cost or drain.',
