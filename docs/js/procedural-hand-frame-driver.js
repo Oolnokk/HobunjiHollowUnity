@@ -800,6 +800,30 @@
         scaleIdentity.animationGripState = record.avatarRoot.userData.proceduralHandAnimationGrip ?? null; // Each NPC’s own animation gates both ranges; idle NPCs stay 1H.
       }
       const dualWield = toolGrips.dualWieldStateForTool?.(toolKey, gripContext, scaleIdentity) || null;
+      const groundPose=global.HeldGroundPose; // The player clearance owner must publish this frame's pose before sockets read it.
+      const offhandIdle=dualWield?null:toolGrips.offhandIdleStateForTool?.(toolKey,gripContext,scaleIdentity);
+      const playerClearance=!inAttackEditor()&&!record.avatarRoot?.userData?.proceduralHandToolHolder
+        &&record.rig?.parent===gameDeps?.playerMesh&&toolHolder===gameDeps?.toolHolder
+        &&groundPose?.enabled?.()&&global.WeaponToolStances?.getRuntimeState?.()?.activeSlot==='weapon';
+      if(playerClearance){
+        // The dual sync can rebake the holder and move both visible copies.
+        // Perform it before either canonical socket, then reuse this one result.
+        if(dualWield||offhandIdle){
+          const visuals=global.HobunjiDualWieldWeaponVisuals;
+          if(visuals?.syncNow){
+            toolHolder.parent.updateWorldMatrix?.(true,false);
+            dualSolve.dualWieldState=visuals.syncNow(record);
+            dualSolve.dualWieldRecord=record;dualSolve.dualWieldSynced=true;dualSolve.clearancePrepared=true;
+          }
+        }
+        // Single weapons with no dual helper otherwise only bake during scene
+        // traversal, after pre-render hand sync. Avoid another bake when a
+        // current-frame helper already established the exact rendered pose.
+        if(!groundPose.hasCurrentGripPose?.(toolHolder)){
+          toolHolder.parent.updateWorldMatrix?.(true,false);
+          toolHolder.updateMatrixWorld?.(true);
+        }
+      }
       const primaryGrip = toolGrips.primaryGripForTool(toolKey, gripContext, scaleIdentity);
       const visualBasis = visualGripBasisDelta(record, toolHolder); // The holder and its visual basis are stable throughout this synchronous multi-hand solve.
       const primarySocket = toolSocketWorld(record, toolHolder, primaryGrip, visualBasis); // Raw fixed 1H target remains the canonical weapon-grip reference before optional Dual Wield remapping.
@@ -850,7 +874,6 @@
         } else {
           // Not 2H and not Dual Wield: the free hand holds an INVISIBLE copy of the weapon at an authored offhand pose (default: the dual-wield
           // offhand stance) instead of falling back to the locomotion idle, which reads wrong once the legs bend. Enemies read it from their own animation grip.
-          const offhandIdle = toolGrips.offhandIdleStateForTool?.(toolKey, gripContext, scaleIdentity);
           const offhandBaseSocket = offhandIdle ? toolSocketWorld(record, toolHolder, toolGrips.offhandPrimaryGripForTool?.(toolKey, gripContext, scaleIdentity) || primaryGrip, visualBasis) : null;
           const offhandSocket = offhandBaseSocket ? global.HobunjiDualWieldWeaponVisuals?.transformSocketForHand?.(record, 'left', offhandBaseSocket, dualSolve) : null;
           if (offhandSocket && offhandSocket !== offhandBaseSocket && offhandSocket.dualWield) {
@@ -1072,7 +1095,7 @@
           fitIdentity:[identity.speciesId,identity.gender,identity.rigScaleY||'',toolGrips.actualCharacterHeight?.(identity.speciesId,identity.gender,identity.rigScaleY)||''].join(':'),
           authoredGripZ:toolGrips.authoredPrimaryGripForTool(key,'melee')?.position?.z,
           primary:toolGrips.primaryGripForTool(key,'melee',identity),
-          secondary:toolGrips.secondaryGripForTool(key,'melee',identity),basis:visualGripBasisDelta(record,holder).quaternion,
+          secondary:toolGrips.secondaryGripForTool(key,'melee',identity),
           profile:toolGrips.groundProfileForTool?.(itemKey||key)};
       }
       return null;

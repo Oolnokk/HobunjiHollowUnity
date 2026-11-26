@@ -7,6 +7,7 @@
   const debug = { reason: 'not-run', angleDeg: 0, shortening: 0, floorY: null, originalMinY: null, finalMinY: null, rotations: 0, compressions: 0, contactHullBuilds: 0, contactHullVertices: 0, gripPivotDrift: null, freeHandLifts: 0, fallbacks: 0 };
   let active = null, floorFrame = null, floor = null, scratch = null;
   let gripHolder=null; // Owner of the exact current sprite-space grip transform, shared with hand sockets.
+  let lastPoseHolder=null,lastPoseFrame=null; // Prevent an extra pre-render bake when the dual owner already solved this frame.
   let dualPrepared=null; // The canonical fit is prepared before the independently posed visible copies.
   const borrowedCopies=new Set(); // At most two copies borrow the canonical private fitted buffer; detach before disposal.
   let previewRoot=null; // Exact currently corrected editor root; raw gizmo mode must also bypass the suspension solve.
@@ -149,7 +150,7 @@
     if(active.plane.geometry===active.geometry)active.plane.geometry=active.source;
     active.amount=0; // Keep the private strip buffer for the next near-ground pose.
   }
-  function clear() { previewRoot=null;gripHolder=null;dualPrepared=null;debug.dual=null;restoreGeometry(); }
+  function clear() { previewRoot=null;gripHolder=null;lastPoseHolder=null;lastPoseFrame=null;dualPrepared=null;debug.dual=null;debug.gripPivotDrift=null;restoreGeometry(); }
   function fail(reason,preserveFit=false) { debug.reason=reason; debug.fallbacks++; if(!preserveFit)restoreGeometry();return false; }
   // The canonical PNG is a flat XY quad; its -90 degree X basis makes
   // image Y correspond to -item Z. Split exactly at the authored endpoints,
@@ -297,6 +298,10 @@
   function gripBasisFor(holder) {
     return holder===gripHolder?scratch?.gripBasis:null;
   }
+  function hasCurrentGripPose(holder) {
+    const id=frameId();
+    return id!=null&&lastPoseHolder===holder&&lastPoseFrame===id;
+  }
   function resolveGripLocal(holder,point,out) {
     const s=scratch;
     if(!s||!gripHolder||holder!==gripHolder)return null;
@@ -363,6 +368,7 @@
   function constrainWeapon(holder,mesh,context) {
     dualPrepared=null;gripHolder=null;debug.gripPivotDrift=null;
     if(!enabled()){clear();return false;}
+    lastPoseHolder=holder;lastPoseFrame=frameId();
     previewRoot=null;debug.dual=null;debug.angleDeg=0;debug.shortening=0;debug.originalMinY=null;debug.finalMinY=null;debug.fitted=false;debug.assemblyDetail=null;debug.lightOriginalMinY=null;debug.lightFittedMinY=null;
     const y=groundY(),s=work(),plane=mesh?.userData?.toolPlane;
     if(!s||!context||!holder?.parent||!holder.visible||!mesh?.visible||(!plane?.visible&&!context.dual))return fail('no-rig');
@@ -404,7 +410,7 @@
       return fail('unsupported-rotation-basis',true);
     const parent=holder.parent;
     parent.matrixWorld.decompose(s.pos,s.parentQ,s.scale);
-    if(!(s.scale.x>0)||Math.abs(s.scale.x-s.scale.y)>1e-5||Math.abs(s.scale.x-s.scale.z)>1e-5)return fail('nonuniform-holder-parent',true);
+    if(!uniformParentScale(s.scale))return fail('nonuniform-holder-parent',true);
     holder.updateMatrix();mesh.updateMatrix();plane.updateMatrix();
     s.holder.multiplyMatrices(parent.matrixWorld,holder.matrix);
     s.mesh.multiplyMatrices(s.holder,mesh.matrix);
@@ -550,13 +556,20 @@
   }
   // Rotate a node in world space around the actual grip, not its authored
   // holder origin. The accompanying translation keeps that world point fixed.
+  function uniformParentScale(scale){
+    const magnitude=Math.abs(scale.x); // Three's decomposition places a reflection on X.
+    return magnitude>0&&scale.y>0&&scale.z>0&&Math.abs(magnitude-scale.y)<1e-5&&Math.abs(magnitude-scale.z)<1e-5;
+  }
   function rotateAroundGrip(node,parentMatrix,nodeWorld,pivot,axis,angle,s=work()){
     parentMatrix.decompose(s.pos,s.parentQ,s.scale);
-    if(!(s.scale.x>0)||Math.abs(s.scale.x-s.scale.y)>1e-5||Math.abs(s.scale.x-s.scale.z)>1e-5)return false;
+    if(!uniformParentScale(s.scale))return false;
     s.q.setFromAxisAngle(axis,angle);
     s.parentInverse.copy(parentMatrix).invert();
     s.pos.setFromMatrixPosition(nodeWorld).sub(pivot).applyQuaternion(s.q).add(pivot).applyMatrix4(s.parentInverse);
     s.localQ.copy(s.parentQ).invert().multiply(s.q).multiply(s.parentQ);
+    // Conjugate the world delta by the parent's X reflection as well as its
+    // proper rotation. The mirrored dual weapon still rotates about its grip.
+    if(s.scale.x<0){s.localQ.y=-s.localQ.y;s.localQ.z=-s.localQ.z;}
     node.position.copy(s.pos);node.quaternion.premultiply(s.localQ);node.updateMatrix?.();
     return true;
   }
@@ -635,5 +648,5 @@
     if(s.point.distanceTo(shoulder)>reach+0.002)return false;
     socket.position.copy(s.candidate);debug.freeHandLifts++;return true;
   }
-  global.HeldGroundPose=Object.freeze({configurePreview,setPreviewEnabled,previewAppliesTo,suspendedReferenceY,hasDrawingHaftChildren,skip,enabled,groundY,constrainWeapon,constrainDualCopies,releaseDualCopy,rotateAroundGrip,constrainFreeHand,adjustGrip,gripBasisFor,resolveGripLocal,adjustHaftPoint,ropeClearance,fittedRopeScale,referenceDrop,lightRopeScale,ropeFitCandidate,needsFit,originalGeometryFor,prepareGeometryUpdate,fixedValue,clear,contractedZ,contactVertices,tracePixels,autoContact,bakeContact,projectedContactY,minimumY,chooseAngle,snapshot:()=>({...debug})});
+  global.HeldGroundPose=Object.freeze({configurePreview,setPreviewEnabled,previewAppliesTo,suspendedReferenceY,hasDrawingHaftChildren,skip,enabled,groundY,constrainWeapon,constrainDualCopies,releaseDualCopy,rotateAroundGrip,constrainFreeHand,adjustGrip,gripBasisFor,hasCurrentGripPose,resolveGripLocal,adjustHaftPoint,ropeClearance,fittedRopeScale,referenceDrop,lightRopeScale,ropeFitCandidate,needsFit,originalGeometryFor,prepareGeometryUpdate,fixedValue,clear,contractedZ,contactVertices,tracePixels,autoContact,bakeContact,projectedContactY,minimumY,chooseAngle,snapshot:()=>({...debug})});
 })(typeof window!=='undefined'?window:globalThis);

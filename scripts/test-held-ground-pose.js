@@ -109,7 +109,7 @@ const author=fs.readFileSync('docs/js/weapon-geometry-author.js','utf8');
 assert.ok(author.includes('originalGeometryFor?.(plane?.geometry)'),'drawing retains source coordinates during compression');
 assert.ok(author.includes('weaponGeometryFitStatus'),'visible live diagnostic');
 let THREE;
-try{THREE=require('three');}catch(e){if(e.code!=='MODULE_NOT_FOUND')throw e;}
+try{THREE=require('three');}catch(e){if(e.code!=='MODULE_NOT_FOUND'||process.env.REQUIRE_THREE==='1')throw e;}
 if(THREE){
   // Actual Three transforms and buffer geometry, synthetic opaque sprite.
   // No browser/WebGL or gameplay singleton is needed to run the editor path.
@@ -197,6 +197,27 @@ if(THREE){
   assert.ok(holder.matrix.equals(holderBefore),'dual solve does not modify authored holder');
   assert.equal(mainMesh.geometry,plane.geometry);
   assert.equal(offMesh.geometry,plane.geometry);
+  // Mirrored source planes are real dual-wield parents during Backhand.
+  // The parent has negative determinant but a uniform scale; the correction
+  // must retain each physical grip and clear the floor, not reject reflection.
+  holder.position.set(.1,.45,0);holder.rotation.set(Math.PI/2,0,0);
+  weapon.scale.x=-1;mainRoot.position.set(-.2,0,0);mainRoot.quaternion.identity();
+  offRoot.position.set(.3,0,.08);offRoot.rotation.set(0,0,.25);
+  parent.updateMatrixWorld(true);solver.constrainWeapon(holder,weapon,ctx);parent.updateMatrixWorld(true);
+  const mirroredInverse=plane.matrixWorld.clone().invert();
+  const mirrorRight=new THREE.Vector3().applyMatrix4(holder.matrixWorld).applyMatrix4(mirroredInverse);
+  const mirrorLeft=new THREE.Vector3(-.05,0,0).applyMatrix4(holder.matrixWorld).applyMatrix4(mirroredInverse);
+  const mirrorBeforeRight=mirrorRight.clone().applyMatrix4(mainMesh.matrixWorld);
+  const mirrorBeforeLeft=mirrorLeft.clone().applyMatrix4(offMesh.matrixWorld);
+  solver.constrainDualCopies({plane,mainRoot,offRoot,mainMesh,offMesh,invisible:false});
+  const md=solver.snapshot().dual;
+  for(const side of ['right','left']){
+    assert.ok(md[side].angleDeg!==0&&md[side].finalMinY>=.035-1e-5,'mirrored '+side+' clears floor');
+    close(md[side].gripPivotDrift,0);
+  }
+  close(mirrorRight.clone().applyMatrix4(mainMesh.matrixWorld).distanceTo(mirrorBeforeRight),0);
+  close(mirrorLeft.clone().applyMatrix4(offMesh.matrixWorld).distanceTo(mirrorBeforeLeft),0);
+  weapon.scale.x=1;
   // Unsupported live basis must keep the fixed geometry, not lengthen copies.
   plane.rotation.x=0;parent.updateMatrixWorld(true);
   solver.constrainWeapon(holder,weapon,ctx);
@@ -218,6 +239,15 @@ if(THREE){
   solver.adjustHaftPoint(plane,sourceTip);solver.adjustHaftPoint(mainMesh,copyTip);
   close(sourceTip.distanceTo(copyTip),0);assert.ok(copyTip.y>-.8,'flexible copy anchor follows shortening');
   solver.setPreviewEnabled(false);assert.equal(mainMesh.geometry,source);assert.equal(offMesh.geometry,source);
+  // Runtime freshness is tied to the scheduler frame, not the last draw.
+  solver.configurePreview(null);w.THREE=THREE;w.XrayHierarchy={get:()=> 'rotation'};
+  let frame=10;w.RuntimeFrameScheduler={frameId:()=>frame};w.PlayerJump={heldPoseGroundY:()=>0,heldPoseGrounded:()=>true};
+  assert.equal(solver.hasCurrentGripPose(holder),false);
+  solver.constrainWeapon(holder,weapon,{...ctx,preview:false});
+  assert.equal(solver.hasCurrentGripPose(holder),true);
+  assert.equal(solver.hasCurrentGripPose(new THREE.Group()),false);
+  frame++;assert.equal(solver.hasCurrentGripPose(holder),false);
+  solver.clear();assert.equal(solver.hasCurrentGripPose(holder),false);
   console.log('held ground pose: actual Three preview and independent dual grip pivots passed');
 }
 
