@@ -100,6 +100,8 @@ continues to depth-test normally; weapon stencils share the actor order.
 
 ## Worn pants use the feet's ground-x-ray policy
 
+As of the scaled-foot grounding change, `feet.groundXray` defaults to `off` in Xray Hierarchy. Dry feet and pants remain in ordinary world and shell depth passes. Submerged local lower-body meshes may enter the existing water-only color compositor, explicitly forced into the ordinary-depth group with no terrain exemption. The legacy shared ground replay below is available only as a developer A/B comparison. Solid-cover depth remains authoritative.
+
 Each live pants garment now registers with the existing selective feet replay through
 `HeldObjectRenderOrder.markWaterOccludedMesh()`. This reuses the same local
 same-elevation grass/road/walkable-floor exemption, actor/camera-distance
@@ -810,3 +812,6 @@ The rigid Torch-Staff has no solid overlay: its child group owns fire particles.
 
 ### Dual-wield grip-pivot correction
 The canonical hidden weapon establishes the immutable Light fit even in dual poses. Both visible copies borrow its private fitted buffer (released before disposal), and the dual visual owner solves each separately after its idle/lag pose is baked. Corrections use the actual respective hand socket as world pivot, preserving its position with a compensating translation; orientation follows the corrected weapon. The original authored holder pose remains untouched during dual correction. Exact owned dual roots are the only additional visible children allowed by the canonical fit. The existing unsupported fallback remains for solid overlays and dual suspended assemblies. Per-copy floor proofs are independent.
+
+### Weapon ground X-ray retired
+Weapons and held tools (including flail heads/ropes and both dual copies) always use ordinary solid-world depth in both color and shell grouping. Rotation mode remains the default geometric clearance; ordinary mode disables only the fit for comparison. Unsupported or failed solves can visually intersect and be occluded by the floor, never reveal art through it. Existing saved `xray` values migrate to rotation. Hands retain their independent clearance/replay policy; the feet/pants opt-in comparison and wet lower-body ordinary-depth compositing from main remain intact.

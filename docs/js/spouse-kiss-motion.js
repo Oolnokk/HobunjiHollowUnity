@@ -638,9 +638,6 @@
     if (window.CinematicCameraRuntime?.isActive?.() || window.FestivalWheelDanceRuntime?.isActive?.()) {
       lastError = 'another-paired-animation-active'; return false;
     }
-    if (window.BedLiePose?.isActive?.()) {
-      lastError = 'player-lying-down'; return false; // Bed approach owns the same root/tile placement; do not begin an absolute kiss that would fight its wake/return solver.
-    }
     if (window.CharacterActionLocks?.isLocked?.('player', 'movement')) {
       lastError = 'player-busy'; return false;
     }

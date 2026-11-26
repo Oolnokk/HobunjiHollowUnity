@@ -56,8 +56,12 @@
       help: 'on: tools share the hand priority in the held overlay. off: tools get an independent overlay rank. Owner front-art masking is configured separately.',
     },
     'ground.heldPose': {
-      order: 12, label: 'Held weapon ground clearance', default: 'rotation', options: ['rotation', 'xray'],
-      help: 'rotation (default): fit the authored-size weapon in Light stance, then rotate about the grip; unsupported poses retain legacy x-ray. xray: original behavior.',
+      order: 13, label: 'Held weapon ground clearance', default: 'rotation', options: ['rotation', 'ordinary'],
+      help: 'rotation: fit the authored-size weapon in Light stance, then rotate about the grip. ordinary: disable geometric correction for comparison. Both modes use solid terrain depth; weapon ground X-ray is disabled.',
+    },
+    'feet.groundXray': {
+      order: 12, label: 'Feet and pants ground X-ray (legacy A/B)', default: 'off', options: ['off', 'on'],
+      help: 'off: feet and pants use ordinary world depth and outlines, relying on scaled geometric contact. on: restore the legacy selective ground replay for comparison.',
     },
     'ground.showZone': {
       order: 10, label: 'Show ground X-ray zone', default: 'off', options: ['on', 'off'],
@@ -280,13 +284,14 @@
     return !!snapshot && typeof snapshot === 'object' && !!snapshot.rules
       && typeof snapshot.rules === 'object' && validDrawOrder(snapshot.drawOrder)
       && keys.every(key => RULES[key].options.includes(snapshot.rules[key])
-        || (['ground.showZone','ground.heldPose'].includes(key) && snapshot.rules[key] === undefined)) // Legacy pre-preset backups omit this new rule.
+        || (key === 'ground.heldPose' && snapshot.rules[key] === 'xray')
+        || (['ground.showZone','ground.heldPose','feet.groundXray'].includes(key) && snapshot.rules[key] === undefined)) // Legacy pre-preset backups omit this new rule.
       && ['held', 'world'].includes(snapshot.stage)
       && DRAW_LAYER_IDS.has(snapshot.layer);
   }
   function applyConfiguration(snapshot) {
     if (!validConfiguration(snapshot)) return false; // Fully validate before mutating any live rules.
-    for (const key of keys) set(key, snapshot.rules[key] ?? RULES[key].default);
+    for (const key of keys) set(key, key === 'ground.heldPose' && snapshot.rules[key] === 'xray' ? 'rotation' : snapshot.rules[key] ?? RULES[key].default);
     setDrawOrder(snapshot.drawOrder);
     selectedStage = snapshot.stage;
     selectedLayer = snapshot.layer;
@@ -314,7 +319,7 @@
   }
   function matchesConfiguration(snapshot) {
     return validConfiguration(snapshot)
-      && keys.every(key => state[key] === (snapshot.rules[key] ?? RULES[key].default))
+      && keys.every(key => state[key] === (key === 'ground.heldPose' && snapshot.rules[key] === 'xray' ? 'rotation' : snapshot.rules[key] ?? RULES[key].default))
       && drawOrder.every((id, index) => id === snapshot.drawOrder[index]);
   }
   function persistDiagnosticSession() {

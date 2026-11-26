@@ -452,7 +452,7 @@
   }
 
   // Central x-ray rules (js/xray-hierarchy.js). Defaults here only apply if that module is absent.
-  const XRAY_RULE_FALLBACK = { 'actors.order': 'all', 'pants.sortWithActor': 'on', 'weapon.frontPlaneMask': 'off', 'hand.frontPlaneMask': 'off', 'portrait.waterTint': 'wet-tile', 'layers.manualOrder': 'off', 'background.gearDepth': 'ignore', 'airborne.rebuildDepth': 'on', 'weapon.followHandLayer': 'on', 'ground.showZone': 'off', 'ground.heldPose': 'rotation', 'baby.carrierForeground': 'on' };
+  const XRAY_RULE_FALLBACK = { 'actors.order': 'all', 'pants.sortWithActor': 'on', 'weapon.frontPlaneMask': 'off', 'hand.frontPlaneMask': 'off', 'portrait.waterTint': 'wet-tile', 'layers.manualOrder': 'off', 'background.gearDepth': 'ignore', 'airborne.rebuildDepth': 'on', 'weapon.followHandLayer': 'on', 'ground.showZone': 'off', 'feet.groundXray': 'off', 'ground.heldPose': 'rotation', 'baby.carrierForeground': 'on' };
   function xrayRule(key) { return window.XrayHierarchy?.get?.(key) ?? XRAY_RULE_FALLBACK[key]; }
 
   const SHOULDER_PET_RENDER_ORDERS = Object.freeze({
@@ -1181,6 +1181,7 @@
   function isLegacyHeldPlane(object) {
     if (!object?.isMesh || object.isInstancedMesh || object.isSkinnedMesh) return false;
     if (object.userData?.hobunjiFamilyBabyPhysicalCarry && xrayRule('baby.carrierForeground') === 'on') return false; // A held infant is physical PNG art, never a weapon-plane replay.
+    if (object.userData?.hobunjiProceduralFoot === true || object.userData?.hobunjiPantsGarment === true) return false; // Lower-body parts belong to the water registry, not the legacy weapon-order heuristic.
     if (object.userData?.hobunjiHeldObjectPlane === true) return true;
     return Math.abs(Number(object.renderOrder) - LEGACY_HELD_RENDER_ORDER) < 1e-6;
   }
@@ -2854,7 +2855,8 @@
   //     the ground whatever the holder's height);
   //   - hands: the player and short species only (SHORT_XRAY_SPECIES; taller
   //     species never hold their hands that low);
-  //   - feet: the player and short species. The local player ring is the
+  //   - feet and pants: ordinary depth by default; the opt-in legacy comparison uses
+  //     the player and short species. The local player ring is the
   //     distance authority; the legacy camera-distance test is used only
   //     when the local filter is unavailable or explicitly switched off.
   // Parts with no resolvable owner keep the old fail-safe x-ray. Everything
@@ -3005,10 +3007,11 @@
     return !isFoot || !useLegacyFeetDistance || withinFeetXrayDistance(mesh);
   }
   function splitReplayParticipants(meshes, scene, others, isFoot = false, repairHeld = false) {
-    if (allActorXrayDisabled) {
+    if (allActorXrayDisabled || (isFoot && xrayRule('feet.groundXray') !== 'on')) {
+      // Feet and their pants share normal depth; neither base nor shell replay may punch the ground for them.
       for (const mesh of meshes) { if (repairHeld) enforceHeldMesh(mesh); others.push(mesh); }
       nonParticipantReplaySkips += meshes.length;
-      return []; // Even orphaned gear and legacy 'all' policy cannot override the master off state.
+      return []; // Even orphaned parts and legacy 'all' policy cannot override explicit off rules.
     }
     if (replayParticipantPolicy === 'all' && !hasDisabledActorXray) return meshes;
     const keep = []; // Parts left to the existing replay after applying the Settings gates.
@@ -3131,7 +3134,7 @@
     return materials.every(material => !material?.isShaderMaterial && !material?.displacementMap);
   }
 
-  function buildXrayGroups(renderer, scene, camera, meshes, shellPadding = null) {
+  function buildXrayGroups(renderer, scene, camera, meshes, shellPadding = null, forceOrdinary = null) {
     const actors = new Map(); // Resolve each actor's tile and standing floor only once per pass.
     const regions = []; // Parts on the same tile and standing floor use one projected neighborhood.
     const regionsByTile = new Map(); // Tile-indexed buckets; actors at different positions in one tile keep distinct circles.
@@ -3155,11 +3158,14 @@
         continue;
       }
       tintScopeByMesh.set(mesh, scope);
-      // Keep ordinary held/water/owner-mask compositing; omit only the floor
-      // exemption for parts whose final geometry has proven clearance.
-      if (xrayRule('ground.heldPose') === 'rotation' && window.HeldGroundPose?.ordinaryDepthFor?.(mesh, scope, shellPadding)) {
+      // Weapons, tools and their suspension parts always use solid terrain depth.
+      // Retain ordinary held/water/owner-mask compositing, even if geometric fitting fails.
+      const data=mesh.userData;
+      const weaponPart=data?.hobunjiWeaponAssemblyPart===true||data?.hobunjiHeldObjectPlane===true&&data.hobunjiProceduralHand!==true&&data.hobunjiProceduralFoot!==true&&data.hobunjiPantsGarment!==true;
+      if (weaponPart || (xrayRule('ground.heldPose') === 'rotation' && window.HeldGroundPose?.ordinaryDepthFor?.(mesh, scope, shellPadding))) {
         ordinary.push(mesh); continue;
       }
+      if (forceOrdinary?.has(mesh)) { ordinary.push(mesh); continue; } // Water-only lower-body draws never open a ground region, even with valid actor elevation.
       const tileKey = scope.col + ',' + scope.row; // Exact grid tile identity; elevation still uses the existing epsilon comparison.
       let sameTile = regionsByTile.get(tileKey);
       if (!sameTile) {
@@ -3301,6 +3307,34 @@
       if (wet) { portraits.push(portrait); scopes.push(scope); }
     }
     return { portraits, scopes, touchingCovers };
+  }
+
+  // Water is transparent and can draw before feet/pants in the world pass. Retain the existing water compositing only for nearby lower-body parts that may actually be submerged.
+  // The selected meshes enter an ordinary-depth group, never a floor-exempt group or a shell x-ray replay.
+  function selectWaterOnlyFeet(scene, covers, others, feet) {
+    if (!covers.length || !others.length) return;
+    const nearPlayer = createLocalReplayFilter(scene); // Keep the legacy local replay budget.
+    const scopes = new Map(); // Resolve each eligible owner's tile and elevation only once.
+    const wetCovers = new Map(); // Share the wet cover candidates between both feet and pants.
+    let write = 0; // Compact the ordinary list in place; selected parts must not be suppressed from their own overlay.
+    for (const mesh of others) {
+      const data = mesh.userData;
+      if (data?.hobunjiProceduralFoot !== true && data?.hobunjiPantsGarment !== true) { others[write++] = mesh; continue; }
+      const group = hasDisabledActorXray ? actorXrayGroup(mesh, scene) : null;
+      if (actorXrayEnabled[group] === false || !isReplayParticipant(mesh, scene, true, !nearPlayer)
+          || (nearPlayer && !nearPlayer(mesh))) { others[write++] = mesh; continue; }
+      const scope = actorXrayScope(mesh, scene, scopes);
+      if (!scope) { others[write++] = mesh; continue; } // No verified owner: retain ordinary depth, not an unbounded replay.
+      if (!wetCovers.has(scope)) wetCovers.set(scope, covers.filter(cover => tintCoverNearActor(cover, [scope])));
+      const wet = wetCovers.get(scope).some(cover => {
+        if (data.hobunjiPantsGarment === true && Array.isArray(cover.userData?.hobunjiWaterTileFootprint?.bounds))
+          return actorStandsInWater(cover, scope); // GPU-deformed pants have rest-pose bounds; the actual owner tile is authoritative.
+        return meshOverlapsWaterVolume(mesh, cover, false); // Feet use their real cached geometry bounds, including shallow water at a bank.
+      });
+      if (wet) feet.push(mesh);
+      else others[write++] = mesh;
+    }
+    others.length = write;
   }
 
   function splitXrayGroupsForTint(groups, tintScopeByMesh, nearbyTintCovers) {
@@ -3925,7 +3959,8 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
       ? collectVisible(backgroundDepthRegistry, scene) : [];
     const rebuildAirborne = airborne && overlayMeshes.length > 0 && backgroundMeshes.length > 0 && xrayRule('airborne.rebuildDepth') !== 'off';
     if (rebuildAirborne) airborneDepthRebuilds++; // Diagnostic counter, includes no-op frames with no ordinary group.
-    let { groups, ordinary, scopes, hasUnknownOwner, tintScopeByMesh } = buildXrayGroups(renderer, scene, camera, overlayMeshes);
+    const waterOnlyFeet = feet.length && xrayRule('feet.groundXray') !== 'on' ? new Set(feet) : null; // Only wet, ordinary-depth lower-body parts may remain here.
+    let { groups, ordinary, scopes, hasUnknownOwner, tintScopeByMesh } = buildXrayGroups(renderer, scene, camera, overlayMeshes, null, waterOnlyFeet);
     lastBaseElevationGroups = groups.length;
     const groundMaterials = groups.length ? collectGroundElevationMaterials(groundMeshes, scene) : null; // Reuse the same material list for every tile batch.
     if (ordinary.length) groups.unshift({ meshes: ordinary, regions: [] }); // Keep existing cutout and water depth rules for regular parts.
@@ -4704,7 +4739,9 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
     const replayOthers = []; // Non-participant hands/feet/held items: drawn in the base pass, hidden from the replays.
     const held = collectVisible(heldRegistry, scene, replayOthers);
     const tintCovers = collectVisible(tintCoverRegistry, scene); // Water/slush foreground alpha applies to gear, hands and feet; not opaque snow.
-    const feet = collectVisible(waterOccludedRegistry, scene, replayOthers); // Procedural foot meshes share selective ground x-ray.
+    const feet = collectVisible(waterOccludedRegistry, scene, replayOthers); // Dry feet and pants stay in the ordinary base pass.
+    if (lastBaseStencilBits >= 1 && tintCovers.length && xrayRule('feet.groundXray') !== 'on')
+      selectWaterOnlyFeet(scene, tintCovers, replayOthers, feet); // Water-only color replay keeps physical floor depth intact.
     const canTintPortraits = !!(tintCovers.length && lastBaseStencilBits >= 1 && waterPortraitRegistry.all.size);
     const portraits = canTintPortraits || window.PlayerBodyTransformComposer?.getPlayerMesh?.()
       ? collectVisible(waterPortraitRegistry, scene) : [];
@@ -4857,7 +4894,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
       replayScissorEnabled, autoInertReplayEnabled, // Read by the Settings toggles (render-optimization-settings.js).
       lastReplayCulled: lastReplayCulledCount,
       lastReplayKept: lastReplayKeptCount,
-      lastReplayInstancedCulled, lastReplayInstancedKept, lastReplayInert: lastReplayInertCount, autoInertReplaySkips: autoInertReplayCount, colorOnlyDepthSkipEnabled, colorOnlyDepthSkips, skinnedScissorEnabled, skinnedScissorBounds, farOnlyReplaySkips, floorPunch: { enabled: floorPunchEnabled, punches: floorPunches, fallbacks: floorPunchFallbacks, depthResets: floorPunchDepthResets, refillHidden: floorPunchRefillHidden, refillKept: floorPunchRefillKept }, replayParticipants: replayParticipantPolicy, shortXraySpecies: [...shortXraySpecies], feetXrayDistance, localReplayRingEnabled, localReplayTileRadius: XRAY_TILE_RADIUS, localReplayRingSkips, nonParticipantReplaySkips, otherWeaponXrayLimit, otherWeaponXrayBudgetSkips, lastOtherWeaponXrayActors, heldOwnerLinkEnabled, gearParticlesOnceEnabled, gearParticleSkips, lastGearParticles,
+      lastReplayInstancedCulled, lastReplayInstancedKept, lastReplayInert: lastReplayInertCount, autoInertReplaySkips: autoInertReplayCount, colorOnlyDepthSkipEnabled, colorOnlyDepthSkips, skinnedScissorEnabled, skinnedScissorBounds, farOnlyReplaySkips, floorPunch: { enabled: floorPunchEnabled, punches: floorPunches, fallbacks: floorPunchFallbacks, depthResets: floorPunchDepthResets, refillHidden: floorPunchRefillHidden, refillKept: floorPunchRefillKept }, replayParticipants: replayParticipantPolicy, shortXraySpecies: [...shortXraySpecies], feetXrayDistance, footGroundXrayEnabled: xrayRule('feet.groundXray') === 'on', localReplayRingEnabled, localReplayTileRadius: XRAY_TILE_RADIUS, localReplayRingSkips, nonParticipantReplaySkips, otherWeaponXrayLimit, otherWeaponXrayBudgetSkips, lastOtherWeaponXrayActors, heldOwnerLinkEnabled, gearParticlesOnceEnabled, gearParticleSkips, lastGearParticles,
       instancedReplaySphereReuses, nearReplayBoxTests,
       nearReplayEnabled, nearReplaySnapshots, nearReplayFarCulled, nearReplayFallbacks,
       lastNearReplayFarDepth: Number.isFinite(lastNearReplayFarDepth) ? Number(lastNearReplayFarDepth.toFixed(2)) : null,

@@ -94,7 +94,7 @@
     if(session)return failStart('already-dancing');
     if(window.SocialActionWheel?.isDancing?.())return failStart('solo-dance-active');
     if(window.CinematicCameraRuntime?.isActive?.())return failStart('camera-busy');
-    if(window.BedLiePose?.isActive?.())return failStart('player-lying-down'); // An active bed approach owns the same root placement and cannot coexist with a full-body paired dance.
+    if(window.CharacterActionLocks?.isLocked?.('player','movement'))return failStart('player-busy'); // Shared movement ownership includes the calendar passage and other exclusive actions.
     if(!walker?.root?.parent||!player?.parent||!walker.rec?.id||walker.root===player)return failStart('partner-unavailable');
     const T=window.THREE,p=player.position,n=walker.root.position; // World roots remain the real participants, never preview clones.
     if(!T?.Vector3)return failStart('renderer-not-ready');
