@@ -15,7 +15,7 @@
     "function": "loadBuildingScene",
     "reason": "Defers loading-label rendering to the next paints before worker-backed den carving, mine generation or their synchronous fallbacks; each deferral runs once per scene-load request.",
     "migrationStage": "not-planned",
-    "line": 15015
+    "line": 15035
   },
   {
     "file": "docs/game.js",
@@ -42,7 +42,7 @@
     "function": "runZoom",
     "reason": "Eases the preview camera's zoom toward a target percentage over the stage's authored duration and stops once t reaches 1.",
     "migrationStage": "not-planned",
-    "line": 35209
+    "line": 35274
   },
   {
     "file": "docs/game.js",
@@ -51,7 +51,7 @@
     "function": "cutsceneRotationTick",
     "reason": "Eases previewed actors' facing every frame for the scene's lifetime, gated on the same running flag every other preview RAF loop checks, so stopping the preview stops it too.",
     "migrationStage": "not-planned",
-    "line": 35295
+    "line": 35360
   },
   {
     "file": "docs/js/action-arc-ui.js",
