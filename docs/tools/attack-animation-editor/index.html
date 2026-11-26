@@ -635,19 +635,13 @@ function applyPreviewNeckWeights() {
   if (neckPreviewRadiusCustomized && neckRig.headOffsetJoint) {
     const sourceWidth = Number(avatarModel?.userData?.sourceCanvas?.width) || 200; // Horizontal head scale gate uses the original sprite's pixel space.
     const modelWidth = Number(avatarModel?.userData?.portraitModelWidth) || MODEL_W; // Maps the skinned vertex X back to source pixels.
-    const splineScratch = {}; // Reuse during diagnostic weight rewrites, not one allocation per vertex.
+    const skin = {}; // Shared runtime skin scratch; diagnostic edits only replace the turn radius.
     for (let index = 0; index < positions.count; index++) {
       const y = positions.getY(index);
-      const turnWeight = window.PNGPlaneAvatar.neckBlendWeight(y, neckRig.neckLocal.y, radius, modelHeight, true);
       const pixelX = (positions.getX(index) / modelWidth + .5) * sourceWidth;
-      const scaleWeight = window.PNGPlaneAvatar.headScaleWeightAt(
-        y, neckRig.neckLocal.y, modelHeight, pixelX, neckRig.headBoundsPx, turnWeight, originalRadius
-      ); // Radius editing changes rotation, not the independent authored head-scale gate.
-      const headWeight = Math.max(turnWeight, scaleWeight);
-      const bodyWeight = 1 - headWeight;
-      const spline = window.HobunjiCharacterSpine?.nodeWeightsAt(y, neckRig.spineBase?.y ?? neckRig.neckLocal.y, modelHeight, neckRig.spinePosteriorY, splineScratch) || { a: 6, b: 6, wb: 0 };
-      indices.setXYZW(index, spline.a, 8, 9, spline.b);
-      weights.setXYZW(index, bodyWeight * (1 - spline.wb), headWeight - scaleWeight, scaleWeight, bodyWeight * spline.wb);
+      window.PNGPlaneAvatar.humanoidSpineSkinAt(y, neckRig.neckLocal.y, modelHeight, pixelX, neckRig.headBoundsPx, radius, originalRadius, neckRig.spineBase?.y, neckRig.spinePosteriorY, skin);
+      indices.setXYZW(index, skin.a, 8, 9, skin.b);
+      weights.setXYZW(index, skin.wa, skin.turn, skin.scale, skin.wb);
     }
     indices.needsUpdate = true;
     weights.needsUpdate = true;

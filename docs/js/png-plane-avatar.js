@@ -580,6 +580,30 @@
     return verticalWeight * headScaleGateAtPixel(pixelX, bounds); // Preserve the separate wide/tight *horizontal* head-scale gates.
   }
 
+  // The single broad humanoid influence calculation. The author uses a
+  // three-bone layout; gameplay and the attack editor use the full spine.
+  // Output is caller-owned so rebuilding a mesh allocates nothing per vertex.
+  function humanoidBlendWeightsAt(y, neckY, modelHeight, pixelX, bounds, turnHeight, scaleHeight, author, out) {
+    const turn = neckBlendWeight(y, neckY, turnHeight, modelHeight, true);
+    const scale = author ? 0 : headScaleWeightAt(y, neckY, modelHeight, pixelX, bounds, turn, scaleHeight);
+    const head = Math.max(turn, scale);
+    const offset = author ? Math.max(0, headOffsetWeightAt(y, neckY, modelHeight, scaleHeight) - head) : 0;
+    out.body = 1 - head - offset;
+    out.offset = offset;
+    out.turn = head - scale;
+    out.scale = scale;
+    return out;
+  }
+
+  function humanoidSpineSkinAt(y, neckY, modelHeight, pixelX, bounds, turnHeight, scaleHeight, spineBaseY, posteriorY, out) {
+    humanoidBlendWeightsAt(y, neckY, modelHeight, pixelX, bounds, turnHeight, scaleHeight, false, out);
+    const spline = spineNodeWeightsAt(y, Number.isFinite(spineBaseY) ? spineBaseY : neckY, modelHeight, posteriorY);
+    out.a = spline.a; out.b = spline.b;
+    out.wa = out.body * (1 - spline.wb);
+    out.wb = out.body * spline.wb;
+    return out;
+  }
+
   // Builds the complete rectangular PNG plane as one two-sided SkinnedMesh.
   // Every grid vertex receives root/head weights regardless of the texel alpha
   // beneath it. Cosmetics, separated silhouettes, and transparent space are
@@ -1154,6 +1178,7 @@
     // and scale against those nodes, not against one long pseudo-neck bone.
     const headBoundsPx = options.headBoundsPx || null;
     const positions = [], normals = [], uvs = [], skinIndices = [], skinWeights = [];
+    const skin = {}; // Shared weight scratch for each vertex in this geometry build.
 
     const toModelX = pixelX => -modelWidth / 2 + (pixelX / pixelWidth) * modelWidth;
     const toModelY = pixelY => modelHeight / 2 - (pixelY / pixelHeight) * modelHeight;
@@ -1163,13 +1188,9 @@
       positions.push(x, y, 0);
       normals.push(0, 0, normalZ);
       uvs.push(pixelX / pixelWidth, 1 - pixelY / pixelHeight);
-      const turnWeight = neckBlendWeight(y, neckLocal.y, blendHeight, modelHeight); // Original gradual upper-body turn.
-      const scaleWeight = headScaleWeightAt(y, neckLocal.y, modelHeight, pixelX, headBoundsPx, turnWeight, blendHeight);
-      const headWeight = Math.max(turnWeight, scaleWeight); // Independent scale can keep skull/cosmetics rigid without scaling distant shoulders.
-      const bodyWeight = 1 - headWeight;
-      const spline = spineNodeWeightsAt(y, Number.isFinite(options.spineBaseY) ? options.spineBaseY : neckLocal.y, modelHeight, options.posteriorY); // New spine remains the owner of the unturned body.
-      skinIndices.push(spline.a, NECK_BONE, HEAD_BONE, spline.b);
-      skinWeights.push(bodyWeight * (1 - spline.wb), headWeight - scaleWeight, scaleWeight, bodyWeight * spline.wb);
+      humanoidSpineSkinAt(y, neckLocal.y, modelHeight, pixelX, headBoundsPx, blendHeight, blendHeight, options.spineBaseY, options.posteriorY, skin);
+      skinIndices.push(skin.a, NECK_BONE, HEAD_BONE, skin.b);
+      skinWeights.push(skin.wa, skin.turn, skin.scale, skin.wb);
     };
 
     const appendCell = ({ column, row }, normalZ) => {
@@ -2178,6 +2199,8 @@
     meshBudget,
     headScaleGateAtPixel,
     headScaleWeightAt,
+    humanoidBlendWeightsAt,
+    humanoidSpineSkinAt,
     headGateBounds,
     defaultHeadGateFor,
     npcHeadGateFor,

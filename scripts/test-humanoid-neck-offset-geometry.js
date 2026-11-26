@@ -23,7 +23,7 @@ function extract(name) {
 const ctx = vm.createContext({});
 for (const name of [
   'smoothstep01', 'neckBlendBand', 'neckBlendWeight', 'headOffsetWeightAt',
-  'neckBlendRows', 'headScaleGateAtPixel', 'headScaleWeightAt',
+  'neckBlendRows', 'headScaleGateAtPixel', 'headScaleWeightAt', 'humanoidBlendWeightsAt', 'humanoidSpineSkinAt',
 ]) vm.runInContext(extract(name), ctx);
 ctx.window = ctx; // Run the exact shared seven-node interpolation, not a fixture that puts every torso vertex on spine node 6.
 vm.runInContext(fs.readFileSync('docs/js/character-spine.js', 'utf8'), ctx);

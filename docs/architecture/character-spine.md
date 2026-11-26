@@ -36,3 +36,5 @@ Verified with headless screenshots against `main`: the lineup uses the **gamepla
 The Attack Animation Editor diagnostic radius uses the same pivot-centered curve at all slider positions. The Animation Author inspector reports the physical joint pixel independently of the blend boundaries. Geometry density rebuilds retain normalized row coordinates for exact attachment sampling; legacy rigs without this metadata retain the analytic fallback.
 
 The multi-actor author's neck pivot now comes from the same alpha centroid and last opaque base-head row as gameplay, rather than its former independent bottom-row X estimate. Attachment vectors and frames can be constructed from the live mesh when Three is imported as an ES module.
+
+The runtime geometry and Attack Animation Editor now call `humanoidSpineSkinAt`; the independent three-bone Animation Author calls `humanoidBlendWeightsAt`. Both share the same turn, scale and placement calculation; only the actual bone layout differs. The spine projection uses the exported rotation falloff when available.

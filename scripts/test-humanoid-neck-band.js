@@ -61,8 +61,10 @@ for (const [species, headBottom] of [['mao-ao', 65], ['kenkari', 91], ['longoran
     `${species}: middle neck row preserves actual smooth deformation even on low-poly NPCs`);
 }
 assert.match(avatar, /neckBandPx: \{ top: band\.topPx, bottom: band\.bottomPx \}/, 'runtime geometry reports real pixel endpoints');
-assert.match(avatar, /headScaleWeightAt\(y, neckLocal\.y, modelHeight, pixelX, headBoundsPx, turnWeight, blendHeight\)/,
-  'head scaling and rotation share the actual geometry');
+assert.match(avatar, /humanoidSpineSkinAt\(y, neckLocal\.y, modelHeight, pixelX, headBoundsPx, blendHeight, blendHeight/,
+  'geometry uses the shared spine influence calculation');
+assert.match(editor, /PNGPlaneAvatar\.humanoidBlendWeightsAt\(y, neckLocal\.y, modelHeight/,
+  'three-bone author uses the shared influence calculation');
 assert.match(avatar, /neckBlendWeight\(localPoint\.y, neckY, blendHeight, modelHeight\)/,
   'CPU pixel attachment landmarks sample the same blend as GPU');
 assert.match(editor, /window\.PNGPlaneAvatar\.neckBlendBand\(neckLocal\.y, modelHeight, pixelHeight\)/,

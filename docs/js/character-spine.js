@@ -309,7 +309,8 @@
     const w = nodeWeightsAt(y, baseY, modelHeight, posteriorY, weightScratch);
     const blend = Math.max(modelHeight * 0.0001, Number(profile.blendHeight) || modelHeight * .30); // Match the active portrait's broad turn falloff.
     const below = blend > modelHeight * .05 ? .55 : 1; // Same legacy curve as PNGPlaneAvatar.neckBlendWeight, including narrow diagnostic overrides.
-    const head = smoothstep01((y - (neckY - blend * below)) / blend);
+    const head = window.PNGPlaneAvatar?.neckBlendWeight?.(y, neckY, blend, modelHeight)
+      ?? smoothstep01((y - (neckY - blend * below)) / blend); // Standalone spine tests and older tools retain the same fallback.
     const a = curve[w.a], b = curve[w.b], last = curve[SEGMENTS];
     out.x = (1 - head) * (a.x + (b.x - a.x) * w.wb) + head * last.x;
     out.y = (1 - head) * (a.y + (b.y - a.y) * w.wb) + head * last.y;
