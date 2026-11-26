@@ -934,6 +934,38 @@
     return {x:p.x,y:p.y,spanX,spanY,headDrop:contact.drop*relativePartScale(f.head)};
   }
 
+  // Direction of a connector that the floor forces to trail. The horizontal
+  // heading follows the actor's travel only while it is actually moving; once it
+  // stops, the last heading is kept instead of falling back to a fixed angle (the
+  // haft's up-vector or +Z), and the pendulum direction eases toward it instead of
+  // snapping. The vertical component is never allowed below the floor-safe value.
+  function resolveTrailingDirection(state, velocityX, velocityZ, shaftX, shaftZ, solveY, dt) {
+    const heading = state.trailHeading || (state.trailHeading = { x: 0, z: 0, valid: false });
+    const direction = state.direction;
+    const speedSq = velocityX * velocityX + velocityZ * velocityZ;
+    if (Number.isFinite(speedSq) && speedSq > HEAD_MOVE_EPSILON * HEAD_MOVE_EPSILON) {
+      const speed = Math.sqrt(speedSq);
+      heading.x = -velocityX / speed; heading.z = -velocityZ / speed; heading.valid = true; // Dragged behind the travel direction.
+    } else if (!heading.valid) {
+      let x = direction.x, z = direction.z; // First contact while already standing: the pendulum's own lean, then the haft.
+      if (x * x + z * z < 1e-8) { x = shaftX; z = shaftZ; }
+      if (x * x + z * z < 1e-8) { x = 0; z = 1; }
+      const length = Math.hypot(x, z);
+      heading.x = x / length; heading.z = z / length; heading.valid = true;
+    }
+    const horizontal = Math.sqrt(Math.max(0, 1 - solveY * solveY));
+    const blend = dt > 0 ? 1 - Math.exp(-HEAD_SETTLE_RATE * dt) : 0; // Frozen physics never moves the rope.
+    let x = direction.x + (heading.x * horizontal - direction.x) * blend;
+    let y = direction.y + (solveY - direction.y) * blend;
+    let z = direction.z + (heading.z * horizontal - direction.z) * blend;
+    if (y < solveY) y = solveY; // Easing may not dip the head through the floor-safe direction.
+    const flat = Math.hypot(x, z), want = Math.sqrt(Math.max(0, 1 - y * y));
+    if (flat > 1e-8) { x *= want / flat; z *= want / flat; }
+    else { x = heading.x * want; z = heading.z * want; }
+    direction.set(x, y, z);
+    return direction;
+  }
+
   function updateOne(state, dt, now, effectsDt = dt) {
     const { root, plane, config, scratch: q } = state;
     if (!root.parent) {
@@ -1155,12 +1187,7 @@
     if(contact&&Number.isFinite(available)&&!state.fishingFlailHeadSpin) {
       const solve=pose.ropeClearance(state.physicsLength,1,state.direction.y,available);
       if(solve?.trailing) {
-        const back=q.target.set(-q.velocity.x,0,-q.velocity.z);
-        if(back.lengthSq()<1e-8)back.set(state.direction.x,0,state.direction.z);
-        if(back.lengthSq()<1e-8)back.set(q.shaftUp.x,0,q.shaftUp.z);
-        if(back.lengthSq()<1e-8)back.set(0,0,1);
-        back.normalize().multiplyScalar(Math.sqrt(Math.max(0,1-solve.directionY*solve.directionY)));
-        state.direction.set(back.x,solve.directionY,back.z);
+        resolveTrailingDirection(state,q.velocity.x,q.velocity.z,q.shaftUp.x,q.shaftUp.z,solve.directionY,dt); // Keeps the last drag heading once the actor stops; no snap to a default angle.
         state.angularVelocity.multiplyScalar(.25);
       }
       state.groundClearance={length:state.physicsLength,fittedScale:fixedScale,trailing:!!solve?.trailing,headContact:contact.traced?'auto-alpha':contact.authored?'authored-edge':'bounds',floor,headMinY:pivot.y+state.physicsLength*state.direction.y-liveDrop*attachmentScale*headScale,reason:solve?'solved':'unreachable'};
@@ -1392,7 +1419,7 @@
 
   global.HobunjiWeaponSpriteAssemblies = {
     definitions: DEF, assemblyKind, isGroundNonSolidChild, groundFitSpec, groundStatus:root=>states.get(root)?.groundClearance||null, decorate, setAction, tick, drop, syncDualWield, scheduleTickAfterPose, debugSnapshot, previewParts, enchantmentTargets, dualWieldEnchantmentTargets, bakedPoint,
-    opaqueAt, anchor, refreshWorldMatrix, definitionFor, ropeSpriteSizing, ropeOpaqueBounds, tintRopePixels, stepPendulum, flailDamping, flailStrikeStraightening, flailYawTravel, fishingFlailHeadDirection, clampIdleHeadYaw, stepIdleHeadMotion, advanceIdleHeadMotion, resetIdleHeadMotion, leanHeadBasis, tiltedHeadDrop, // Pure sizing and phase helpers have regression tests.
+    resolveTrailingDirection, opaqueAt, anchor, refreshWorldMatrix, definitionFor, ropeSpriteSizing, ropeOpaqueBounds, tintRopePixels, stepPendulum, flailDamping, flailStrikeStraightening, flailYawTravel, fishingFlailHeadDirection, clampIdleHeadYaw, stepIdleHeadMotion, advanceIdleHeadMotion, resetIdleHeadMotion, leanHeadBasis, tiltedHeadDrop, // Pure sizing and phase helpers have regression tests.
   };
   global.HobunjiCacheAudit?.register('weapon assemblies (weak owner registry)', () => { let count = 0; for (const entry of records) if (liveState(entry)) count++; return count; });
   if (global.RuntimeFrameScheduler?.register) {
