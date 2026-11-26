@@ -662,7 +662,7 @@
       const airborne=flight?.phase==='air'||flight?.phase==='rope';
       const ruin=window.DevRandomRuin?.getPlayerGroundSupportY?.();
       if(!airborne&&Number.isFinite(ruin))return ruin;
-      const feet=Number.isFinite(player.physicalFeetY)?player.physicalFeetY:deps.playerMesh?.position?.y;
+      const feet=Number.isFinite(player.physicalFeetY)?player.physicalFeetY:(deps.playerMesh||window.PlayerBodyTransformComposer?.getPlayerMesh?.())?.position?.y;
       if(!Number.isFinite(feet))return null;
       return groundAt(player.x/deps.TILE,player.y/deps.TILE,feet+CONFIG.landingTolerance);
     },

@@ -729,9 +729,12 @@
     return { a, b, heightFraction, minSegmentScale: raw.minSegmentScale != null && Number.isFinite(min) ? Math.max(0.1,Math.min(1,min)) : 0.65, segments };
   }
 
+  const lengthProfiles = new WeakMap(); // Entries are immutable until mutate()/replace() re-normalize grip data.
   function lengthProfileForTool(value) {
-    const raw = data.tools[toolKeyFor(value)]?.lengthProfile; // Fast legacy path: no allocation or repeated normalization for unmeasured items.
-    return raw ? normalizeLengthProfile(raw) : null;
+    const raw = data.tools[toolKeyFor(value)]?.lengthProfile;
+    if (!raw || typeof raw !== 'object') return null;
+    if (!lengthProfiles.has(raw)) lengthProfiles.set(raw,normalizeLengthProfile(raw));
+    return lengthProfiles.get(raw);
   }
 
   function actualCharacterHeight(speciesId, gender, rigScaleY = null) {
@@ -1283,7 +1286,7 @@
       runtimeIdentityCache = { playerMesh, node: found?.node || null, rig: found?.rig || null };
     }
     const rig = runtimeIdentityCache.rig;
-    return rig?.speciesId ? { speciesId: rig.speciesId, gender: rig.gender || 'male' } : NO_SCALE_IDENTITY;
+    return rig?.speciesId ? { speciesId: rig.speciesId, gender: rig.gender || 'male', rigScaleY: Number(runtimeIdentityCache.node?.userData?.proceduralHandRigScaleY)||null } : NO_SCALE_IDENTITY;
   }
 
   function applyEditorGripPresentation() {
@@ -1561,6 +1564,38 @@
     lengthInput.rows = 6; lengthInput.style.width = '100%';
     lengthInput.placeholder = '{"a":-0.5,"b":0.5,"heightFraction":0.8,"minSegmentScale":0.65,"segments":[{"a":-0.35,"b":-0.1}]}';
     scalePanel.appendChild(lengthInput);
+    const measureButton=document.createElement('button'); // One explicit alpha scan, never during animation frames.
+    measureButton.type='button';measureButton.textContent='Measure visible sprite A/B';
+    scalePanel.appendChild(measureButton);
+    measureButton.addEventListener('click',()=>{
+      try {
+        const ctx=global.HobunjiAttackEditorToolContext;
+        const plane=ctx?.toolPlaneMesh?.userData?.toolPlane;
+        const material=Array.isArray(plane?.material)?plane.material[0]:plane?.material;
+        const image=material?.map?.image;
+        const width=image?.naturalWidth||image?.width,height=image?.naturalHeight||image?.height;
+        if(!plane?.geometry||!(width>0&&height>0))throw new Error('Wait for the weapon artwork to load.');
+        if(width*height>16000000)throw new Error('Artwork is too large for the measurement tool.');
+        const canvas=document.createElement('canvas');canvas.width=width;canvas.height=height;
+        const c=canvas.getContext('2d',{willReadFrequently:true});c.drawImage(image,0,0);
+        const rgba=c.getImageData(0,0,width,height).data;
+        let top=height,bottom=-1;
+        for(let y=0;y<height;y++)for(let x=0;x<width;x++)if(rgba[(y*width+x)*4+3]>=21){top=Math.min(top,y);bottom=y;break;}
+        if(bottom<top)throw new Error('No opaque pixels found.');
+        plane.geometry.computeBoundingBox();
+        const box=plane.geometry.boundingBox;
+        const span=box.max.y-box.min.y;
+        if(!(span>0))throw new Error('Invalid source geometry.');
+        const round=v=>Math.round(v*100000)/100000;
+        const prev=lengthInput.value.trim()?JSON.parse(lengthInput.value):{};
+        const a=round(-box.max.y+span*top/height),b=round(-box.max.y+span*(bottom+1)/height);
+        if(!(b>a))throw new Error('Measured length is zero.');
+        const identity=editorScaleIdentity(),characterHeight=actualCharacterHeight(identity.speciesId,identity.gender);
+        const fraction=prev.heightFraction??(characterHeight?round((b-a)*effectiveToolScaleForTool(editorCurrentToolKey(),identity.speciesId,identity.gender)/characterHeight):0);
+        lengthInput.value=JSON.stringify({...prev,a,b,heightFraction:fraction,minSegmentScale:prev.minSegmentScale??.65,segments:prev.segments??[]},null,2);
+        lengthMessage.textContent='Measured opaque art along item Z. Adjust the target fraction or segments and press Apply.';
+      }catch(error){lengthMessage.textContent=error.message;}
+    });
     const lengthApply = document.createElement('button');
     lengthApply.type = 'button'; lengthApply.textContent = 'Apply measured length / shortening';
     scalePanel.appendChild(lengthApply);
@@ -1728,7 +1763,9 @@
       toolScale: toolScaleForTool(toolKey),
       heightMultiplier: heightMultiplierForTool(toolKey),
       heightRatio: characterHeightRatio(identity.speciesId, identity.gender),
-      effectiveToolScale: effectiveToolScaleForTool(toolKey, identity.speciesId, identity.gender),
+      effectiveToolScale: effectiveToolScaleForTool(toolKey, identity.speciesId, identity.gender,identity.rigScaleY),
+      measuredLengthProfile:lengthProfileForTool(toolKey),
+      actualCharacterHeight:actualCharacterHeight(identity.speciesId,identity.gender,identity.rigScaleY),
       gripContext: currentGripContext(),
       primaryGrip: authoredPrimaryGripForTool(toolKey, currentGripContext()),
       primaryGripSpan: primaryGripSpanForTool(toolKey, currentGripContext()),

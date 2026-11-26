@@ -73,6 +73,11 @@
     active.geometry.dispose();
     active=null;
   }
+  function releaseCompression() {
+    if(!active)return;
+    if(active.plane.geometry===active.geometry)active.plane.geometry=active.source;
+    active.amount=0; // Keep the private strip buffer for the next near-ground pose.
+  }
   function clear() { proof=null; restoreGeometry(); }
   function fail(reason) { debug.reason=reason; debug.fallbacks++; clear(); return false; }
   function boxFor(mesh) {
@@ -92,7 +97,7 @@
     return rows;
   }
   function setCompression(plane,source,box,rows,segments,gripZ,amount,holder,rootScale) {
-    if(!amount) { restoreGeometry(); return; }
+    if(!amount) { releaseCompression(); return; }
     const T=global.THREE;
     const signature=rows.join(',');
     if(!active||active.plane!==plane||active.source!==source||active.signature!==signature) {
@@ -101,7 +106,7 @@
       active={plane,source,geometry,signature,amount:-1,gripZ:NaN,holder,rootScale,segments};
     }
     // Geometry is private to this equipped plane, never the shared asset.
-    const sameSegments=JSON.stringify(active.segments)===JSON.stringify(segments);
+    const sameSegments=active.segments===segments; // Profiles are normalized and cached by the grip metadata owner.
     if(active.amount!==amount||active.gripZ!==gripZ||!sameSegments) {
       const p=active.geometry.attributes.position,uv=active.geometry.attributes.uv;
       const height=box.max.y-box.min.y;
@@ -128,13 +133,14 @@
       .applyQuaternion(basis).applyMatrix4(s.holder);
   }
   function samplePoints(s,box,rows,segments,gripZ,amount) {
-    s.samples.length=0;
+    // Evaluate the two extrema of each horizontal strip. During compression
+    // search only Y is required; no vector or array allocation per candidate.
     let min=Infinity;
-    for(const row of rows)for(const x of [box.min.x,box.max.x]) {
+    const e=s.matrix.elements;
+    for(const row of rows) {
       const y=-contractedZ(-row,gripZ,segments,amount);
-      s.point.set(x,y,0).applyMatrix4(s.matrix);
-      s.samples.push({x:s.point.x,y:s.point.y,z:s.point.z});
-      min=Math.min(min,s.point.y);
+      const base=e[5]*y+e[13];
+      min=Math.min(min,base+e[1]*box.min.x,base+e[1]*box.max.x);
     }
     return min;
   }
@@ -152,7 +158,7 @@
       ||Math.abs(mesh.quaternion.x)+Math.abs(mesh.quaternion.y)+Math.abs(mesh.quaternion.z)>1e-6
       ||!(mesh.scale.z>0)||Math.abs(plane.rotation.x+Math.PI/2)>1e-4
       ||Math.abs(plane.rotation.y)>1e-4||plane.position.lengthSq()>1e-8
-      ||plane.scale.distanceToSquared(s.scale.set(1,1,1))>1e-8)return fail('unsupported-assembly-or-basis');
+      ||!(plane.scale.x>0&&plane.scale.y>0&&plane.scale.z>0))return fail('unsupported-assembly-or-basis');
     const source=active?.plane===plane&&plane.geometry===active.geometry?active.source:plane.geometry;
     if(source?.type!=='PlaneGeometry'||source.attributes.position.count!==4)return fail('non-quad-weapon');
     if(active&&active.source!==source)restoreGeometry();
@@ -174,7 +180,7 @@
     // Only compress an un-twisted canonical weapon in this first experiment.
     // Rotation remains available in twisted sweeps; their grip remapping needs
     // a separate parity adapter before deforming their visual segments.
-    const segments=profile&&Math.abs(plane.rotation.z)<1e-6&&Math.abs(basis.x)+Math.abs(basis.y)+Math.abs(basis.z)<1e-6
+    const segments=profile&&Math.abs(plane.rotation.z)<1e-6&&Math.abs(plane.scale.y-1)<1e-6&&Math.abs(basis.x)+Math.abs(basis.y)+Math.abs(basis.z)<1e-6
       ?profile.segments:[];
     const rows=stripRows(box,segments,s.rows);
     const target=y+PAD;
@@ -221,8 +227,18 @@
     if(min<target) {
       // Pick the horizontal axis perpendicular to the lowest point's radial
       // offset from the grip. This rotates the offending end upward.
-      let lowest=s.samples[0];
-      for(const p of s.samples)if(p.y<lowest.y)lowest=p;
+      // Only construct world XYZ samples when actual rotation is required.
+      let count=0,lowest=null;
+      for(const row of rows) {
+        const yy=-contractedZ(-row,gripZ,segments,amount);
+        for(let i=0;i<2;i++) {
+          const p=s.samples[count] ||= new global.THREE.Vector3();
+          p.set(i?box.max.x:box.min.x,yy,0).applyMatrix4(s.matrix);
+          count++;
+          if(!lowest||p.y<lowest.y)lowest=p;
+        }
+      }
+      s.samples.length=count;
       s.axis.set(-(lowest.z-s.pivot.z),0,lowest.x-s.pivot.x);
       if(s.axis.lengthSq()<1e-10)s.axis.set(1,0,0);else s.axis.normalize();
       s.points.length=0;
@@ -239,7 +255,7 @@
       setCompression(plane,source,box,rows,segments,gripZ,amount,holder,mesh.scale.z);
       active.rootOffset=mesh.position.z;
       debug.compressions++;
-    } else restoreGeometry();
+    } else releaseCompression();
     if(angle) {
       // Apply a world rotation around the actual primary grip. Convert the
       // quaternion back to the holder's parent; preserve the raw grip exactly.
@@ -279,8 +295,11 @@
     if(proof?.plane===mesh&&proof.frame===frameId()&&proof.min>=y+margin) {debug.ordinaryParts++;return true;}
     if(mesh.userData?.hobunjiProceduralHand!==true)return false;
     const box=boxFor(mesh),s=work();if(!box||!s)return false;
+    const materials=Array.isArray(mesh.material)?mesh.material:[mesh.material];
+    if(materials.some(mat=>mat?.isShaderMaterial||mat?.displacementMap))return false;
     // Alternate outline/depth matrices must also clear the floor.
     const parity=mesh.__hobunjiXrayBoundParity;
+    if(mesh.onBeforeRender&&mesh.onBeforeRender!==global.THREE?.Object3D?.prototype?.onBeforeRender&&parity?.hook!==mesh.onBeforeRender)return false;
     const extra=parity?.hook===mesh.onBeforeRender&&parity.isFresh?.()?parity.visibleMatrixWorld:null;
     if(parity&&parity.hook===mesh.onBeforeRender&&shellPadding!=null&&!extra)return false;
     const clear=matrix=>!!matrix&&s.box.copy(box).applyMatrix4(matrix).min.y>=y+margin;
