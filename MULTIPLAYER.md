@@ -64,6 +64,21 @@ While knocked out the local avatar is flagged `_downed` (enemies and `nearestPla
 
 **Not done yet:** a revive interaction prompt for the local player (only the API and dev hooks exist), live-testing the bed and Wait/Sleep menu paths with a second real player. Natural real-time clock progression is deliberately not gated; only skips are.
 
+### Cutscenes (`js/shared-cutscene.js`, `window.SharedCutscene`)
+
+Design decisions: a cutscene **pauses everyone** and **everyone can watch it, no matter where they are**.
+If it is a **crowd scene** (a wedding, an announcement, the Five Blossoms crowning - anywhere the villagers
+gather as an audience) the **other players are placed in the crowd** too.
+
+- `runCutscenePreview` (the one runner every authored/live scene goes through) is wrapped: `SharedCutscene.begin()` first, `end()` in a `finally`. Scenes nest (depth-counted), so a scene owner can open the session earlier than the runner.
+- Every registered player is a participant for the whole scene, in any area; a late joiner watches, a leaver is released. Remote participants are frozen, untargetable and invulnerable (`_inCutscene`; honoured by `ActorRegistry` alive checks, `EnemyPetTargeting.viable`, the hostile bite check, `RemotePlayerState.applyHit`, the dummy). `viewAreaFor(player)` is the scene's area for everyone (each client shows it).
+- The player who triggered the scene (`controller`) makes the dialogue choices; the others watch.
+- Time-skip revive windows and sleep votes are held for the length of the scene (`TimeConsensus.pause/resume`) and pick up where they left off.
+- **Crowd scenes opt in**: the scene owner lays out its villagers, then asks `crowdMembers()` (everyone but the controller) and calls `joinCrowd({ area, slots })` with the next slots of the **same layout** (`{ c, r, rotY, pose: 'stand' | 'sit', seatTarget? }`). The player's entity is moved to the slot (area, position, facing) and put back exactly afterwards. `RemotePlayerAvatar` draws crowd members only during a scene (standing, or seated through the cutscene runner's own seated-pose solve); other watchers are not drawn.
+- Opted in so far: **Five Blossoms crowning** (ranks, after the villagers) and the **wedding** (pews, after the villager guests). New crowd scenes: copy those two call sites.
+
+**Not done yet / not verified:** the local host avatar when it is *not* the controller (the runner places only the controller; `joinCrowd` skips the local entity); a spectator camera for guests whose own client must switch to the scene's area (needs the network layer); who may skip a scene; verified live only for a standing crowd slot and the begin/end/pause behaviour (seated slots and both owners are covered by unit tests with real owner code, not yet seen in a browser).
+
 ### Remote player avatar (`js/remote-player-avatar.js`, `window.RemotePlayerAvatar`)
 
 Every non-local player gets an on-screen body while they are in the area this client shows. It is the
