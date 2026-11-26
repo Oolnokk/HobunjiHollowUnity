@@ -962,7 +962,7 @@ assert.ok(shellDepthAt >= 0 && shellDepthAt < shellGroundFilterAt
   && shellGroundFilterAt < shellDepthDrawAt && shellDepthDrawAt < shellOnlyAt
   && shellOnlyAt < shellOutlineDrawAt && shellOutlineDrawAt < shellRestoreAt && shellRestoreAt < shellDepthRestoreAt,
   'shell replay prepares depth once, changes only the per-group elevation mask, then restores complete depth and materials');
-assert.ok(heldRender.includes('const shellCandidates = [...new Set([...held, ...feet])].filter(mesh => hasLayer(mesh, SHELL_LAYER) && !isAuthoredInkPlane(mesh))')
+assert.ok((/const shellCandidates = \[\.\.\.new Set\(\[\.\.\.held, \.\.\.feet\]\)\]\.filter\(mesh => hasLayer\(mesh, SHELL_LAYER\)\s*&& mesh\.userData\?\.hobunjiProceduralHand !== true && !isAuthoredInkPlane\(mesh\)\)/).test(heldRender)
   && heldRender.includes('const xrayMeshes = filterOffscreenReplayMeshes(camera, shellCandidates)'),
   'all held/foot ground-x-ray participants retain shell parity before conservative camera culling');
 assert.ok(pixelProbe.includes('shellXray=${heldRenderDebug.shellXrayPasses ?? 0}/${heldRenderDebug.shellXrayMeshes ?? 0}'),

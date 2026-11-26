@@ -146,7 +146,14 @@ const weaponDepth=groupActors({},null,{},weaponParts);
 assert.equal(weaponDepth.groups.length,0,'hafts, flail parts and dual copies never open floor regions');
 assert.deepEqual(weaponDepth.ordinary,weaponParts,'all weapon parts use ordinary depth even under legacy settings');
 const handPart={...isolated[0],userData:{hobunjiHeldObjectPlane:true,hobunjiProceduralHand:true}};
-assert.equal(groupActors({},null,{},[handPart]).groups.length,1,'independent hand x-ray policy remains intact');
+for (const shellPadding of [null, .04]) {
+  const intersectingHand = {...handPart, onBeforeRender: otherHook};
+  const orphanHand = {...intersectingHand, scope: null};
+  const parts = [intersectingHand, orphanHand, ...weaponParts];
+  const depth = groupActors({},null,{},parts,shellPadding);
+  assert.equal(depth.groups.length,0,'hands and held weapons cannot open a floor region in color or shell');
+  assert.deepEqual(depth.ordinary,parts,'intersecting, unbounded and ownerless parts still keep ordinary depth');
+}
 const untrustedFeet=isolated.map(mesh=>({...mesh,__hobunjiXrayBoundParity:null}));
 assert.equal(groupActors({},null,{},untrustedFeet).groups.length,24,
   'unproven custom foot hooks still receive separate conservative depth replays');
@@ -253,15 +260,17 @@ function shellScenario(withException,enableScissor=false){
   const metrics={normal:0,depthReplays:0,hidden:[],replayed:[],padding:0,scissorParticipants:null};
   const plain=mkMesh(),special=mkMesh(hooked);
   special.__hobunjiXrayBoundParity={hook:hooked,visibleMatrixWorld:{},isFresh:()=>true};
-  const held=[plain,special];
+  const handMesh=mkMesh(hooked); handMesh.userData.hobunjiProceduralHand=true;
+  const held=[plain,special,handMesh];
   const h={
-    internalReplay:false,retiredScenes:{has(){return false;}},originalRender(){metrics.normal++;return 42;},
+    internalReplay:false,retiredScenes:{has(){return false;}},originalRender(){metrics.normal++;assert(!metrics.hidden.includes(handMesh),'ordinary hand is not hidden from its normal outline draw');return 42;},
     scanScene(){},isShellOutlinePass(){return true;},
     heldRegistry:'held',waterOccludedRegistry:'feet',groundRegistry:'ground',topFaceGroundRegistry:'top',
     collectVisible(name){return name==='held'?held:name==='ground'?[{visible:true}]:[];},
     SHELL_LAYER:1,hasLayer(){return true;},isAuthoredInkPlane,
     filterOffscreenReplayMeshes:(camera,parts)=>parts,
     window:{HobunjiHandOutlineParity:{refreshHeldMatrices(){}}},buildXrayGroups:(renderer,scene,camera,meshes)=>{
+      assert(!meshes.includes(handMesh),'ordinary hands skip shell replay grouping');
       return withException?{groups:[{meshes:[special],regions:[{col:1,row:2,elevation:0}]}],ordinary:[plain]}:{groups:[],ordinary:meshes};
     },
     replayScissorEnabled:enableScissor,replayScissorRect(_renderer,_camera,parts){metrics.scissorParticipants=parts.slice();return true;},

@@ -1,13 +1,12 @@
-// Experimental player-only clearance. Rigid art, grip sockets and the
-// ground exemption share the same solved pose; gameplay collision is untouched.
+// Experimental player-only clearance. Rigid art and grip sockets share the
+// same solved pose; ground depth and gameplay collision are independent.
 (function (global) {
   'use strict';
   const PAD = 0.035; // Clearance above the physical standing surface, in world units.
   const STEP = Math.PI / 36; // Bounded five-degree rotation search with refinement.
-  const debug = { reason: 'not-run', angleDeg: 0, shortening: 0, floorY: null, originalMinY: null, finalMinY: null, rotations: 0, compressions: 0, freeHandLifts: 0, ordinaryParts: 0, fallbacks: 0 };
-  let active = null, proof = null, floorFrame = null, floor = null, scratch = null;
+  const debug = { reason: 'not-run', angleDeg: 0, shortening: 0, floorY: null, originalMinY: null, finalMinY: null, rotations: 0, compressions: 0, freeHandLifts: 0, fallbacks: 0 };
+  let active = null, floorFrame = null, floor = null, scratch = null;
   let dualPrepared=null; // The canonical fit is prepared before the independently posed visible copies.
-  let dualProofs=new WeakMap(),dualProofsUsed=false; // Per-copy floor proof, never shared between hands.
   const borrowedCopies=new Set(); // At most two copies borrow the canonical private fitted buffer; detach before disposal.
   let previewRoot=null; // Exact currently corrected editor root; raw gizmo mode must also bypass the suspension solve.
   let previewThree=null,previewEnabled=false; // Standalone editor uses its ESM Three namespace and the visible Y=0 grid.
@@ -128,7 +127,7 @@
       axis: new T.Vector3(), direction: new T.Vector3(), cross: new T.Vector3(),
       point: new T.Vector3(), rel: new T.Vector3(), base: new T.Vector3(), candidate: new T.Vector3(),
       pos: new T.Vector3(), scale: new T.Vector3(), parentQ: new T.Quaternion(), q: new T.Quaternion(),
-      localQ: new T.Quaternion(), oldQ: new T.Quaternion(), box: new T.Box3(),
+      localQ: new T.Quaternion(), oldQ: new T.Quaternion(),
       samples: [], points: [], rows: [], contact: [], contactKey: null, contactSource: null, contactSegments: null,
     };
   }
@@ -149,14 +148,8 @@
     if(active.plane.geometry===active.geometry)active.plane.geometry=active.source;
     active.amount=0; // Keep the private strip buffer for the next near-ground pose.
   }
-  function clear() { proof=null;previewRoot=null;dualPrepared=null;if(dualProofsUsed){dualProofs=new WeakMap();dualProofsUsed=false;}debug.dual=null;restoreGeometry(); }
-  function fail(reason,preserveFit=false) { debug.reason=reason; debug.fallbacks++; proof=null;if(!preserveFit)restoreGeometry();return false; }
-  function boxFor(mesh) {
-    const g=mesh?.geometry;
-    if(!g||mesh.isSkinnedMesh||mesh.isInstancedMesh||g.morphAttributes?.position?.length)return null;
-    if(!g.boundingBox)g.computeBoundingBox?.();
-    return g.boundingBox&&!g.boundingBox.isEmpty()?g.boundingBox:null;
-  }
+  function clear() { previewRoot=null;dualPrepared=null;debug.dual=null;restoreGeometry(); }
+  function fail(reason,preserveFit=false) { debug.reason=reason; debug.fallbacks++; if(!preserveFit)restoreGeometry();return false; }
   // The canonical PNG is a flat XY quad; its -90 degree X basis makes
   // image Y correspond to -item Z. Split exactly at the authored endpoints,
   // preserving UVs so the rigid portions are never squashed by interpolation.
@@ -330,7 +323,7 @@
     return false;
   }
   function constrainWeapon(holder,mesh,context) {
-    proof=null;dualPrepared=null;
+    dualPrepared=null;
     if(!enabled()){clear();return false;}
     previewRoot=null;debug.dual=null;debug.angleDeg=0;debug.shortening=0;debug.originalMinY=null;debug.finalMinY=null;debug.fitted=false;debug.assemblyDetail=null;debug.lightOriginalMinY=null;debug.lightFittedMinY=null;
     const y=groundY(),s=work(),plane=mesh?.userData?.toolPlane;
@@ -506,7 +499,6 @@
     }
     debug.angleDeg=angle*180/Math.PI;debug.shortening=amount;debug.finalMinY=min;
     debug.reason=angle?'rotation':amount?'shortening':'already-clear';
-    proof={plane,frame:frameId(),min,floor:y};
     return !!angle;
   }
   // Rotate a node in world space around the actual grip, not its authored
@@ -523,14 +515,12 @@
   }
   function releaseDualCopy(copy){
     if(!copy)return;
-    dualProofs.delete(copy);
     if(borrowedCopies.delete(copy)&&copy.geometry===active?.geometry)copy.geometry=active.source;
   }
   function constrainDualCopies(current){
     const d=dualPrepared,s=work();
     if(!current)return;
     const main=current.mainMesh,off=current.offMesh;
-    dualProofs.delete(main);dualProofs.delete(off);
     if(!enabled()||!s||!d||d.plane!==current.plane||current.invisible||!current.mainRoot.visible){
       releaseDualCopy(main);releaseDualCopy(off);return;
     }
@@ -577,7 +567,6 @@
         min=samplePoints(s,d.contact,d.segments,d.gripZ,d.amount,copy.matrixWorld);
       }
       results[side]={reason:angle?'rotation':'already-clear',angleDeg:angle*180/Math.PI,originalMinY:original,finalMinY:min};
-      if(min>=d.target-1e-7){dualProofs.set(copy,{frame:frameId(),min});dualProofsUsed=true;}
     }
     debug.reason='dual-clearance';debug.finalMinY=Math.min(results.right?.finalMinY??Infinity,results.left?.finalMinY??Infinity);
   }
@@ -597,25 +586,5 @@
     if(s.point.distanceTo(shoulder)>reach+0.002)return false;
     socket.position.copy(s.candidate);debug.freeHandLifts++;return true;
   }
-  function ordinaryDepthFor(mesh,scope,shellPadding) {
-    if(!enabled()||scope?.root!==global.PlayerBodyTransformComposer?.getPlayerMesh?.())return false;
-    const y=groundY();if(!Number.isFinite(y))return false;
-    const margin=Math.max(PAD,Number(shellPadding)||0);
-    if(proof?.plane===mesh&&proof.frame===frameId()&&proof.min>=y+margin) {debug.ordinaryParts++;return true;}
-    const dual=dualProofs.get(mesh);
-    if(dual&&dual.frame===frameId()&&dual.min>=y+margin){debug.ordinaryParts++;return true;}
-    if(mesh.userData?.hobunjiProceduralHand!==true)return false;
-    const box=boxFor(mesh),s=work();if(!box||!s)return false;
-    const materials=Array.isArray(mesh.material)?mesh.material:[mesh.material];
-    if(materials.some(mat=>mat?.isShaderMaterial||mat?.displacementMap))return false;
-    // Alternate outline/depth matrices must also clear the floor.
-    const parity=mesh.__hobunjiXrayBoundParity;
-    if(mesh.onBeforeRender&&mesh.onBeforeRender!==global.THREE?.Object3D?.prototype?.onBeforeRender&&parity?.hook!==mesh.onBeforeRender)return false;
-    const extra=parity?.hook===mesh.onBeforeRender&&parity.isFresh?.()?parity.visibleMatrixWorld:null;
-    if(parity&&parity.hook===mesh.onBeforeRender&&shellPadding!=null&&!extra)return false;
-    const clear=matrix=>!!matrix&&s.box.copy(box).applyMatrix4(matrix).min.y>=y+margin;
-    if(!clear(mesh.matrixWorld)||(extra&&!clear(extra)))return false;
-    debug.ordinaryParts++;return true;
-  }
-  global.HeldGroundPose=Object.freeze({configurePreview,setPreviewEnabled,previewAppliesTo,suspendedReferenceY,hasDrawingHaftChildren,skip,enabled,groundY,constrainWeapon,constrainDualCopies,releaseDualCopy,rotateAroundGrip,constrainFreeHand,ordinaryDepthFor,adjustGrip,adjustHaftPoint,ropeClearance,fittedRopeScale,referenceDrop,lightRopeScale,ropeFitCandidate,needsFit,originalGeometryFor,prepareGeometryUpdate,fixedValue,clear,contractedZ,contactVertices,tracePixels,autoContact,minimumY,chooseAngle,snapshot:()=>({...debug})});
+  global.HeldGroundPose=Object.freeze({configurePreview,setPreviewEnabled,previewAppliesTo,suspendedReferenceY,hasDrawingHaftChildren,skip,enabled,groundY,constrainWeapon,constrainDualCopies,releaseDualCopy,rotateAroundGrip,constrainFreeHand,adjustGrip,adjustHaftPoint,ropeClearance,fittedRopeScale,referenceDrop,lightRopeScale,ropeFitCandidate,needsFit,originalGeometryFor,prepareGeometryUpdate,fixedValue,clear,contractedZ,contactVertices,tracePixels,autoContact,minimumY,chooseAngle,snapshot:()=>({...debug})});
 })(typeof window!=='undefined'?window:globalThis);

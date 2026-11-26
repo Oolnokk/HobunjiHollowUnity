@@ -3158,11 +3158,12 @@
         continue;
       }
       tintScopeByMesh.set(mesh, scope);
-      // Weapons, tools and their suspension parts always use solid terrain depth.
-      // Retain ordinary held/water/owner-mask compositing, even if geometric fitting fails.
-      const data=mesh.userData;
-      const weaponPart=data?.hobunjiWeaponAssemblyPart===true||data?.hobunjiHeldObjectPlane===true&&data.hobunjiProceduralHand!==true&&data.hobunjiProceduralFoot!==true&&data.hobunjiPantsGarment!==true;
-      if (weaponPart || (xrayRule('ground.heldPose') === 'rotation' && window.HeldGroundPose?.ordinaryDepthFor?.(mesh, scope, shellPadding))) {
+      // Hands, held tools and their suspension parts never punch through the floor.
+      // Retain ordinary held/water/owner-mask compositing regardless of the geometric solve.
+      const data = mesh.userData;
+      const heldPart = data?.hobunjiProceduralHand === true || data?.hobunjiWeaponAssemblyPart === true
+        || (data?.hobunjiHeldObjectPlane === true && data.hobunjiProceduralFoot !== true && data.hobunjiPantsGarment !== true);
+      if (heldPart) {
         ordinary.push(mesh); continue;
       }
       if (forceOrdinary?.has(mesh)) { ordinary.push(mesh); continue; } // Water-only lower-body draws never open a ground region, even with valid actor elevation.
@@ -4665,7 +4666,8 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
       const held = collectVisible(heldRegistry, scene, shellOthers);
       const feet = collectVisible(waterOccludedRegistry, scene, shellOthers);
       nonParticipantReplaySkips = skipsBefore; otherWeaponXrayBudgetSkips = budgetSkipsBefore; localReplayRingSkips = ringSkipsBefore; // Counted once a frame, by the base pass.
-      const shellCandidates = [...new Set([...held, ...feet])].filter(mesh => hasLayer(mesh, SHELL_LAYER) && !isAuthoredInkPlane(mesh)); // Hands, feet and true 3D props only; PNG weapon/character art already has ink.
+      const shellCandidates = [...new Set([...held, ...feet])].filter(mesh => hasLayer(mesh, SHELL_LAYER)
+        && mesh.userData?.hobunjiProceduralHand !== true && !isAuthoredInkPlane(mesh)); // Hands keep their ordinary 3D shell, without a ground replay.
       window.HobunjiHandOutlineParity?.refreshHeldMatrices?.(shellCandidates); // Refresh live hand matrices before camera culling or shell scissor projections.
       const xrayMeshes = filterOffscreenReplayMeshes(camera, shellCandidates);
       lastShellReplayCandidates = shellCandidates.length;
