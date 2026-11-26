@@ -720,6 +720,7 @@
       return;
     }
     entity.afflictions[id] = round1(clamp(amount, 0, maxAfflictionAmount(entity, def)));
+    if (id === "windblownStamina" && entity.afflictions[id] <= 0) { windDirections.delete(entity); windFootingRemainders.delete(entity); } // Direct clears, cleansing and expenditure all reset the same runtime state.
   }
 
   function setImmutableAffliction(entity, id, amount) {
@@ -787,7 +788,6 @@
     const before = getAffliction(entity, id);
     setAffliction(entity, id, before - amount);
     const remaining = getAffliction(entity, id);
-    if (id === "windblownStamina" && remaining <= 0) { windDirections.delete(entity); windFootingRemainders.delete(entity); } // No leftover wind debt across independent applications.
     return round1(before - remaining);
   }
 
@@ -1250,7 +1250,7 @@
   // SFX, UI labels) — it no longer implies any specific affliction. Returns
   // the actual Health lost.
   function attackPowerForAttack(opts = {}) {
-    const raw = Number(opts.attackPower ?? opts.attacker?.def?.attackPower ?? opts.attacker?.def?.weaponShapeStats?.attackPower ?? (opts.attacker === window.Combat?.deps?.player ? window.WeaponShapeStats?.current?.().attackPower : null) ?? DEFAULT_ATTACK_POWER); // Player shape, NPC shape, or ranged weapon declares offensive status strength.
+    const raw = Number(opts.attackPower ?? opts.attacker?.def?.attackPower ?? opts.attacker?.def?.weaponShapeStats?.attackPower ?? (opts.attacker === window.Combat?.deps?.player ? window.WeaponShapeStats?.current?.()?.attackPower : null) ?? DEFAULT_ATTACK_POWER); // Player shape, NPC shape, or ranged weapon declares offensive status strength.
     const basePower = Number.isFinite(raw) ? Math.max(0, Math.min(500, raw)) : DEFAULT_ATTACK_POWER; // Retain the authored base limit, then apply the enhanced reserve.
     return basePower * planarAmountMultiplier(opts.attacker, "temperedFooting"); // Buildup only: never changes direct Health or Footing damage.
   }
