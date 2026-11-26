@@ -221,9 +221,17 @@
     if (!isChildAvatar(options)) return null;
     const record = options.npcRecord || options.profile?.npcRecord || {};
     const positive = value => { const n = Number(value); return Number.isFinite(n) && n > 0 ? n : null; };
-    const height = positive(record.childBodyHeightScale) ?? positive(options.childBodyHeightScale) ?? positive(record.childBodyScale) ?? positive(options.childBodyScale) ?? positive(cfg().childScaleMultiplier) ?? 1;
-    const width = positive(record.childBodyWidthScale) ?? positive(options.childBodyWidthScale) ?? positive(cfg().childWidthScaleMultiplier) ?? height; // Existing saves without a width keep the historical uniform body size.
+    let height = positive(record.childBodyHeightScale) ?? positive(options.childBodyHeightScale) ?? positive(record.childBodyScale) ?? positive(options.childBodyScale) ?? positive(cfg().childScaleMultiplier) ?? 1;
+    let width = positive(record.childBodyWidthScale) ?? positive(options.childBodyWidthScale) ?? positive(cfg().childWidthScaleMultiplier) ?? height; // Existing saves without a width keep the historical uniform body size.
     const head = positive(record.childHeadScale) ?? positive(options.childHeadScale) ?? positive(cfg().childHeadScaleMultiplier) ?? height;
+    const widthConvergence = record.childWidthConvergence ?? options.childWidthConvergence ?? cfg().childWidthConvergence ?? 0; // Explicit family stage overrides the generic child setting.
+    const heightConvergence = record.childHeightConvergence ?? options.childHeightConvergence ?? cfg().childHeightConvergence ?? 0;
+    if (widthConvergence > 0 || heightConvergence > 0) {
+      const { species, gender } = avatarSpeciesAndGender(options);
+      const adult = window.HobunjiCharacterRigScale?.scaleFor?.(species, gender) || window.HobunjiCharacterRigScaleDefaults?.scaleFor?.(species, gender);
+      const adjusted = window.HobunjiCharacterAgeRigConfig?.resolveStageAxes?.(adult, { width, height, widthConvergence, heightConvergence });
+      if (adjusted) { width = adjusted.width; height = adjusted.height; }
+    }
     return { body: height, height, width, head, headFactor: head / height, headFactorX: head / width }; // Head remains an independent final size in both axes.
   }
 

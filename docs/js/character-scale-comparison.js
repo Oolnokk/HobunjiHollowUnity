@@ -48,7 +48,7 @@
   let portraitRenderChain = Promise.resolve(); // Serializes portrait rendering because NpcAvatarPreview temporarily installs the active NPC account shim.
   const AGE_SAVE_KEY = 'hobunjiFullCharacterScale.ageModes.v1'; // Keeps global phase proportions separate from per-species rig-profile autosaves.
   const AGE_MODES = ['adult', 'baby', 'toddler', 'child']; // Full lineup modes, with adult as the unmodified reference.
-  const AGE_AXES = ['width', 'height', 'head', 'hand', 'foot']; // Separate width/height for every global baby/toddler/child stage, plus head/limbs.
+  const AGE_AXES = ['width', 'height', 'head', 'hand', 'foot', 'widthConvergence', 'heightConvergence']; // Separate width/height for every global baby/toddler/child stage, plus head/limbs.
   let ageMode = 'adult'; // Current preview stage; never stored on individual NPCs or their authored rig profiles.
   let ageModifiers = {}; // Editable age-wide values, initialized from gameplay configuration and then local editor overrides.
   let ageLimbTimer = 0; // Bounded retry window for hands/feet whose GLB visuals arrive after the portrait.
@@ -81,7 +81,7 @@
 
   function repositoryAgeModifiers() {
     const shared = window.HobunjiCharacterAgeRigConfig?.repositoryDefaults?.(); // Same stages and axes as gameplay.
-    if (shared) return { adult: { width: 1, height: 1, head: 1, hand: 1, foot: 1 }, ...shared };
+    if (shared) return { adult: { width: 1, height: 1, head: 1, hand: 1, foot: 1, widthConvergence: 0, heightConvergence: 0 }, ...shared };
     const phases = window.HobunjiRomanceConfig?.family?.phaseScales || {};
     const png = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar || {};
     const positive = (value, fallback) => Number.isFinite(Number(value)) && Number(value) > 0 ? Number(value) : fallback;
@@ -91,14 +91,18 @@
       head: positive(phase?.head, fallback.head),
       hand: positive(phase?.hand, fallback.hand),
       foot: positive(phase?.foot, fallback.foot),
+      widthConvergence: Math.max(0, Math.min(1, Number(phase?.widthConvergence) || 0)),
+      heightConvergence: Math.max(0, Math.min(1, Number(phase?.heightConvergence) || 0)),
     }); // Existing body-only stages initialize BOTH dimensions.
     return {
-      adult: { width: 1, height: 1, head: 1, hand: 1, foot: 1 },
+      adult: { width: 1, height: 1, head: 1, hand: 1, foot: 1, widthConvergence: 0, heightConvergence: 0 },
       baby: mode(phases.basket, { width: .32, height: .32, head: .50, hand: 1.2, foot: 1.2 }),
       toddler: mode(phases.toddler, { width: .4, height: .4, head: .66, hand: 1, foot: 1 }),
       child: mode(phases.child, {
         width: positive(png.childWidthScaleMultiplier, positive(png.childScaleMultiplier, .5)),
         height: positive(png.childScaleMultiplier, .5),
+        widthConvergence: Number(png.childWidthConvergence) || 0,
+        heightConvergence: Number(png.childHeightConvergence) || 0,
         head: positive(png.childHeadScaleMultiplier, .72),
         hand: positive(window.HobunjiRomanceConfig?.family?.childLimbModifiers?.hand, 1),
         foot: positive(window.HobunjiRomanceConfig?.family?.childLimbModifiers?.foot, 1),
@@ -108,6 +112,7 @@
 
   function clampAgeModifier(value, axis, fallback) {
     const n = Number(value); // Only finite percentages from UI/storage are allowed to reach preview transforms.
+    if (axis.endsWith('Convergence')) return value != null && value !== '' && Number.isFinite(n) ? Math.max(0, Math.min(1, n)) : fallback;
     return Number.isFinite(n) && n > 0 ? Math.max(axis === 'hand' || axis === 'foot' ? .5 : .1, Math.min(2, n)) : fallback;
   }
 
@@ -129,7 +134,7 @@
   }
 
   function ageValues() {
-    return ageModifiers[ageMode] || ageModifiers.adult || { width: 1, height: 1, head: 1, hand: 1, foot: 1 }; // Safe even when the shared bridge provides only baby/toddler/child or an old draft is malformed.
+    return ageModifiers[ageMode] || ageModifiers.adult || { width: 1, height: 1, head: 1, hand: 1, foot: 1, widthConvergence: 0, heightConvergence: 0 }; // Safe even when the shared bridge provides only baby/toddler/child or an old draft is malformed.
   }
 
   function host() {
@@ -360,11 +365,12 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
         <div class="scaleHead"><label for="maaFullScaleAgeMode">Lineup age</label><select id="maaFullScaleAgeMode" aria-label="Show full lineup at age"><option value="adult">Adult (reference)</option><option value="baby">Baby</option><option value="toddler">Toddler</option><option value="child">Child</option></select></div>
         <section id="maaFullScaleAgeControls" aria-label="Global age proportions" hidden>
           <b>Global <span id="maaFullScaleAgeTitle">age</span> modifiers — all species</b>
-          ${[['Width','width',10,200],['Height','height',10,200],['Head','head',10,200],['Hands','hand',50,200],['Feet','foot',50,200]].map(([name,axis,min,max]) => `
-          <div class="scaleRow"><label for="maaFullScaleAgeRange${name}">${name}</label>
+          ${[['Width','width',10,200],['Height','height',10,200],['Head','head',10,200],['Hands','hand',50,200],['Feet','foot',50,200],['WidthConvergence','widthConvergence',0,100],['HeightConvergence','heightConvergence',0,100]].map(([name,axis,min,max]) => `
+          <div class="scaleRow"><label for="maaFullScaleAgeRange${name}">${name.replace("Convergence", " convergence")}</label>
             <input id="maaFullScaleAgeRange${name}" type="range" min="${min}" max="${max}" step="1" value="100" aria-label="Global ${name.toLowerCase()} size for selected age mode">
             <input id="maaFullScaleAgeNum${name}" type="number" min="${min}" max="${max}" step="1" value="100" aria-label="Global ${name.toLowerCase()} percent (exact)">%
           </div>`).join('')}
+          <p class="maaSmall maaMuted">Convergence: 0% keeps the same age multiplier for all. Higher values make taller adult rigs shrink more and wider adult rigs scale up less, relative to each species/gender’s own unscaled rig.</p>
           <div class="scaleActions"><button id="maaFullScaleAgeExport" type="button" class="secondary">Export age defaults JSON</button><button id="maaFullScaleAgeApply" type="button" class="good">Apply to game (same site)</button><button id="maaFullScaleAgeUnapply" type="button" class="secondary">Restore game's defaults</button></div>
           <div id="maaFullScaleRuntimeStatus" class="scaleStatus" aria-live="polite">Draft only until applied.</div>
         </section>
@@ -401,7 +407,7 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
         syncSpineGuides(); // Immediately hide/show the existing meshes; never rebuild the portrait to toggle debug bones.
       });
       panel.querySelector('#maaFullScaleAgeMode').addEventListener('change', event => setAgeMode(event.target.value));
-      for (const [name, axis] of [['Width','width'],['Height','height'],['Head','head'],['Hands','hand'],['Feet','foot']]) {
+      for (const [name, axis] of [['Width','width'],['Height','height'],['Head','head'],['Hands','hand'],['Feet','foot'],['WidthConvergence','widthConvergence'],['HeightConvergence','heightConvergence']]) {
         const range = panel.querySelector(`#maaFullScaleAgeRange${name}`);
         const number = panel.querySelector(`#maaFullScaleAgeNum${name}`);
         range.addEventListener('input', () => { number.value = range.value; applyAgeModifiers(axis, range.value); });
@@ -649,7 +655,7 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
     const title = document.getElementById('maaFullScaleAgeTitle');
     if (title) title.textContent = ageMode;
     const values = ageValues();
-    for (const [name, axis] of [['Width','width'],['Height','height'],['Head','head'],['Hands','hand'],['Feet','foot']]) {
+    for (const [name, axis] of [['Width','width'],['Height','height'],['Head','head'],['Hands','hand'],['Feet','foot'],['WidthConvergence','widthConvergence'],['HeightConvergence','heightConvergence']]) {
       const percent = String(Math.round(values[axis] * 100));
       const range = document.getElementById(`maaFullScaleAgeRange${name}`);
       const number = document.getElementById(`maaFullScaleAgeNum${name}`);
@@ -691,7 +697,8 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
     const stage = ageValues();
     const composed = window.HobunjiCharacterAgeRigConfig?.composePreviewScale?.(authored, stage)
       || { x: authored.x * (stage.width ?? stage.body), y: authored.y * (stage.height ?? stage.body), head: authored.head * stage.head, offsetY: authored.offsetY };
-    composed.legLength = (Number(authored.legLength) > 0 ? Number(authored.legLength) : Number(authored.y) || 1) * (stage.height ?? stage.body); // Leg height follows Height and keeps the authored beltline.
+    composed.legLength = (Number(authored.legLength) > 0 ? Number(authored.legLength) : Number(authored.y) || 1) * (composed.y / (Number(authored.y) || 1));
+    if (ageMode !== 'adult') composed.ageComposed = true; // Derived preview multipliers can exceed the adult authoring bounds. // Leg height follows Height and keeps the authored beltline.
     // Gameplay builds the child body scale into modelWidth/modelHeight and uses childHeadFactor=head/body at the neck.
     // This editor starts with a neutral adult portrait and applies the mathematically equivalent floor-parent transform.
     window.HobunjiCharacterRigScale?.applyToParent?.(entry.group, entry.species, entry.gender, composed,
@@ -707,7 +714,7 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
   }
 
   function relayoutForAge() {
-    layout(); // Box3 traversal is proportional to every rig's mesh count; only call after body/head changes.
+    layout(selected); // Keep the selected rig's world X stable while neighbors redistribute. Box3 traversal is proportional to every rig's mesh count; only call after body/head changes.
     agePerf.layoutPasses++;
   }
 
@@ -736,7 +743,7 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
   }
 
   function queueAgeRender(axis) {
-    ageDirtyBody ||= axis === 'width' || axis === 'height' || axis === 'head';
+    ageDirtyBody ||= axis === 'width' || axis === 'height' || axis === 'head' || axis.endsWith('Convergence');
     if (!ageDirtyBody && (axis === 'hand' || axis === 'foot')) ageDirtyLimb = ageDirtyLimb && ageDirtyLimb !== axis ? 'both' : axis;
     if (ageRenderFrame) return;
     if (typeof requestAnimationFrame !== 'function') { flushAgeRender(); return; } // Node/mobile diagnostics use the same path without a render loop.
@@ -784,7 +791,7 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
     if (!active || ageMode === 'adult' || !AGE_AXES.includes(axis)) return;
     const values = ageValues();
     const parsed = Number(rawPercent) / 100; // Incomplete numeric edits must not force the slider to an unrelated valid value.
-    if (!Number.isFinite(parsed) || parsed <= 0) return;
+    if (!Number.isFinite(parsed) || parsed < 0 || (parsed === 0 && !axis.endsWith('Convergence'))) return;
     values[axis] = clampAgeModifier(parsed, axis, values[axis]);
     syncAgeControls();
     queueAgeRender(axis);
@@ -813,7 +820,7 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
     const values = ageModifiers; // Distinct age-wide schema; species/gender rig-scale export remains backwards-compatible.
     const data = { schema: 'hobunji.character-age-rig-modifiers.v1',
       phaseScales: { basket: { ...clone(values.baby), body: values.baby.height }, toddler: { ...clone(values.toddler), body: values.toddler.height } }, // Height remains the legacy body alias for older game code consuming exported JSON.
-      pngPlaneAvatar: { childScaleMultiplier: values.child.height, childWidthScaleMultiplier: values.child.width, childHeadScaleMultiplier: values.child.head }, // Vertical height retains legacy child body alias.
+      pngPlaneAvatar: { childScaleMultiplier: values.child.height, childWidthScaleMultiplier: values.child.width, childHeadScaleMultiplier: values.child.head, childWidthConvergence: values.child.widthConvergence, childHeightConvergence: values.child.heightConvergence }, // Vertical height retains legacy child body alias.
       childLimbModifiers: { hand: values.child.hand, foot: values.child.foot },
       note: 'Baby/toddler width/height/head map to HobunjiRomanceConfig.family.phaseScales; child width/height/head map to PNGPlaneAvatar childWidthScaleMultiplier/childScaleMultiplier/childHeadScaleMultiplier. Legacy body loads as both axes.' };
     const blob = new Blob([JSON.stringify(data, null, 2) + '\n'], { type: 'application/json' });
@@ -1455,8 +1462,9 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
     sixFootGuide = line;
   }
 
-  function layout() {
+  function layout(anchor = null) {
     if (!THREE || !entries.length || !previewRoot) return;
+    const anchorX = entries.includes(anchor) ? Number(anchor.group.position.x) : NaN; // Snapshot before resetting group positions to measure new widths.
     if (chair) chair.parent?.remove?.(chair);
     let cursor = 0;
     let minDepth = Infinity, maxDepth = -Infinity; // Cached Box3 depth of all previews; avoids an all-NPC traversal on each camera frame.
@@ -1484,8 +1492,8 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
       cursor += 0.48 + width;
     }
     if (Number.isFinite(minDepth) && Number.isFinite(maxDepth)) sixFootGuideDepth = Math.max(1.5, Math.abs(minDepth), Math.abs(maxDepth)) + 1; // Conservative back-plane distance for all orbit directions.
-    const shift = cursor / 2;
-    sixFootLineupBounds = { minX: -shift, maxX: cursor - shift, minZ: minDepth, maxZ: maxDepth }; // Exact centered X extents and cached geometry Z, measured once per layout.
+    const shift = Number.isFinite(anchorX) ? anchor._lineX - anchorX : cursor / 2; // Preserve the selected floor origin; camera and zoom remain untouched.
+    sixFootLineupBounds = { minX: -shift, maxX: cursor - shift, minZ: minDepth, maxZ: maxDepth }; // Exact shifted X extents and cached geometry Z, measured once per layout.
     for (const entry of entries) entry.group.position.x = entry._lineX - shift;
     if (chair) chair.position.x -= shift;
     previewRoot.updateMatrixWorld(true);
@@ -1854,6 +1862,7 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
         panelVisible: !!document.getElementById(PANEL_ID)?.offsetParent, // Detects a hidden selector on mobile.
         ageMode,
         globalAgeModifiers: clone(ageValues()), // Confirms the active phase is shared by every lineup avatar.
+        selectedAgeAxes: selected ? window.HobunjiCharacterAgeRigConfig?.resolveStageAxes?.(window.HobunjiCharacterRigScale?.scaleFor?.(selected.species, selected.gender, selected.profile), ageValues()) || null : null, // Effective selected width/height after convergence.
         runtimeAgeConfig: window.HobunjiCharacterAgeRigConfig?.snapshot?.() || null, // Distinguishes local drafts from the explicit game override.
         agePerf: { ...agePerf }, // Counts rig/body recalculations and late GLB probes for phone performance checks.
         view: focusedEntryKey ? 'focused-character' : 'lineup', // Mobile diagnostics report the explicitly chosen camera mode.

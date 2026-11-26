@@ -8,7 +8,7 @@
 
   const SCHEMA = 'hobunji.character-age-rig-modifiers.v1'; // Validates the editor's export and the applied browser override.
   const APPLIED_KEY = 'hobunji.character-age-rig-active.v1'; // Only an explicit Apply action writes this game-facing preference.
-  const AXES = ['width', 'height', 'head', 'hand', 'foot']; // Independent body axes plus head and GLB limb sizes for every growth stage.
+  const AXES = ['width', 'height', 'head', 'hand', 'foot', 'widthConvergence', 'heightConvergence']; // Independent body axes plus head and GLB limb sizes for every growth stage.
   const MODES = ['baby', 'toddler', 'child']; // Adult reference never receives a size override.
   const family = window.HobunjiRomanceConfig?.family;
   const png = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar;
@@ -20,8 +20,10 @@
     const n = Number(v); // Shared input normalization for repository, imported, and applied percentages.
     return Number.isFinite(n) && n > 0 ? n : fallback;
   };
+  const isConvergence = axis => axis === 'widthConvergence' || axis === 'heightConvergence'; // Unitless 0–1 strength, unlike the size multipliers.
+  const convergence = value => Math.max(0, Math.min(1, Number.isFinite(Number(value)) ? Number(value) : 0));
   const stage = (source, fallback) => Object.fromEntries(AXES.map(axis => [
-    axis, positive(source?.[axis] ?? (axis === 'width' || axis === 'height' ? source?.body : null),
+    axis, isConvergence(axis) ? convergence(source?.[axis]) : positive(source?.[axis] ?? (axis === 'width' || axis === 'height' ? source?.body : null),
       fallback[axis] ?? fallback.body),
   ])); // Old body-only authoring maps to BOTH width and height; never discard existing saved stages.
   const defaults = {
@@ -31,6 +33,8 @@
       width: positive(png.childWidthScaleMultiplier, positive(png.childScaleMultiplier, .5)), // Old child size was uniform; new config may override width independently.
       height: positive(png.childScaleMultiplier, .5),
       head: positive(png.childHeadScaleMultiplier, .72),
+      widthConvergence: convergence(png.childWidthConvergence), // Stage-specific authored strength.
+      heightConvergence: convergence(png.childHeightConvergence),
       hand: positive(family.childLimbModifiers?.hand, 1),
       foot: positive(family.childLimbModifiers?.foot, 1),
     },
@@ -40,6 +44,7 @@
   const valid = (value, axis, fallback) => {
     if (value == null || value === '') return fallback;
     const n = Number(value); // Ignore malformed autosaves, Infinity, NaN, missing fields, and negative sizes.
+    if (isConvergence(axis)) return Number.isFinite(n) ? convergence(n) : fallback;
     if (!Number.isFinite(n) || n <= 0) return fallback;
     const [min, max] = bounds(axis);
     return Math.max(min, Math.min(max, n));
@@ -52,12 +57,25 @@
     return result;
   }
 
+  function resolveStageAxes(authored, phase) {
+    const p = phase || {}; // Normalize each species/gender against its own unscaled rig, not the other species' physical height.
+    const base = authored || {};
+    const adultWidth = positive(base.x, 1);
+    const adultHeight = positive(window.HobunjiCharacterRigScale?.heightBeltlineFor?.(base)?.height,
+      (positive(base.y, 1) + positive(base.legLength, positive(base.y, 1))) / 2); // Shared nominal stature includes leg reach as well as portrait height.
+    return {
+      width: positive(p.width, positive(p.body, 1)) * Math.pow(adultWidth, -convergence(p.widthConvergence)),
+      height: positive(p.height, positive(p.body, 1)) * Math.pow(adultHeight, -convergence(p.heightConvergence)),
+    }; // At zero the previous behavior is exact; at full strength the authored adult-axis deviations converge to the native rig.
+  }
+
   function composePreviewScale(authored, phase) {
     const p = phase || { width: 1, height: 1, head: 1 }; // Runtime already bakes independently scaled X/Y into its child portrait.
     const base = authored || { x: 1, y: 1, head: 1, offsetY: 0 };
+    const axes = resolveStageAxes(base, p); // Same correction used by the live child portrait builder.
     return {
-      x: positive(base.x, 1) * positive(p.width, positive(p.body, 1)),
-      y: positive(base.y, 1) * positive(p.height, positive(p.body, 1)),
+      x: positive(base.x, 1) * axes.width,
+      y: positive(base.y, 1) * axes.height,
       head: positive(base.head, 1) * positive(p.head, 1),
       offsetY: Number.isFinite(Number(base.offsetY)) ? Number(base.offsetY) : 0,
     }; // Equivalent final body/head proportions: runtime child head bone = head/body, then the already-shrunken portrait supplies body.
@@ -72,6 +90,8 @@
     png.childScaleMultiplier = values.child.height; // Existing child scale remains the vertical size for legacy gameplay readers.
     png.childWidthScaleMultiplier = values.child.width; // New independent child width, used only by the portrait builder.
     png.childHeadScaleMultiplier = values.child.head;
+    png.childWidthConvergence = values.child.widthConvergence; // Ordinary child portraits read these; family stages carry their own values.
+    png.childHeightConvergence = values.child.heightConvergence;
     return values;
   }
 
@@ -119,6 +139,7 @@
     effectiveValues: () => clone(applied || defaults),
     sanitize,
     composePreviewScale,
+    resolveStageAxes,
     nonFamilyChildLimbsFor,
     applyOnThisDevice,
     restoreRepositoryOnThisDevice,

@@ -34,9 +34,9 @@ const initial = start();
 assert(initial.api, 'the shared age-rig API must initialize when family and PNG settings are available');
 const plain = value => JSON.parse(JSON.stringify(value));
 assert.deepEqual(plain(initial.api.repositoryDefaults()), {
-  baby: { width: .32, height: .32, head: .50, hand: 1.2, foot: 1.2 },
-  toddler: { width: .4, height: .4, head: .66, hand: 1, foot: 1 },
-  child: { width: .5, height: .5, head: .72, hand: 1, foot: 1 },
+  baby: { width: .32, height: .32, head: .50, hand: 1.2, foot: 1.2, widthConvergence: 0, heightConvergence: 0 },
+  toddler: { width: .4, height: .4, head: .66, hand: 1, foot: 1, widthConvergence: 0, heightConvergence: 0 },
+  child: { width: .5, height: .5, head: .72, hand: 1, foot: 1, widthConvergence: 0, heightConvergence: 0 },
 });
 assert.equal(initial.api.snapshot().applied, false, 'drafts never change the game before explicit Apply');
 const draftKey = 'hobunjiFullCharacterScale.ageModes.v1'; // Editor drafts must not silently become gameplay overrides.
@@ -47,7 +47,7 @@ const override = {
   child: { width: .57, height: .63, head: .76, hand: 1.15, foot: 1.13 },
 };
 const applied = plain(initial.api.applyOnThisDevice(override));
-assert.deepEqual(applied, override, 'valid global authoring values must be persisted unchanged');
+assert.deepEqual(applied, Object.fromEntries(Object.entries(override).map(([mode, values]) => [mode, { ...values, widthConvergence: 0, heightConvergence: 0 }])), 'valid global authoring values must be persisted unchanged');
 assert.equal(initial.family.phaseScales.basket.width, .36, 'baby width reaches the family record');
 assert.equal(initial.family.phaseScales.basket.height, .42, 'baby height is independent of width');
 assert.equal(initial.family.phaseScales.basket.body, .42, 'older family readers receive Height through legacy Body');

@@ -225,13 +225,16 @@
     const x = Number(explicitScale.x), y = Number(explicitScale.portraitHeight ?? explicitScale.y), head = Number(explicitScale.head);
     const legLength = Number(explicitScale.legLength); // New independent leg factor; an old explicit y continues to scale both regions.
     const offsetY = Number(explicitScale.offsetY);
-    const normalizedY = Number.isFinite(y) && y > 0 ? clampScale(y) : fallback.y;
-    const normalizedLeg = Number.isFinite(legLength) && legLength > 0 ? clampScale(legLength)
+    const ageComposed = explicitScale.ageComposed === true; // Internal preview composition only; adult authoring still uses the existing limits.
+    const limit = ageComposed ? v => v : clampScale;
+    const normalizedY = Number.isFinite(y) && y > 0 ? limit(y) : fallback.y;
+    const normalizedLeg = Number.isFinite(legLength) && legLength > 0 ? limit(legLength)
       : Number.isFinite(y) && y > 0 ? normalizedY : (fallback.legLength || normalizedY);
     return {
-      x: Number.isFinite(x) && x > 0 ? clampScale(x) : fallback.x,
+      ...(ageComposed ? { ageComposed: true } : {}),
+      x: Number.isFinite(x) && x > 0 ? limit(x) : fallback.x,
       y: normalizedY, portraitHeight: normalizedY, legLength: normalizedLeg,
-      head: Number.isFinite(head) && head > 0 ? clampScale(head) : fallback.head,
+      head: Number.isFinite(head) && head > 0 ? limit(head) : fallback.head,
       offsetY: Number.isFinite(offsetY) ? clampOffset(offsetY) : fallback.offsetY,
     };
   }
@@ -331,11 +334,12 @@
     const target = rig.headScaleJoint || rig.neckJoint; // Scaling remains on the head-only rig bone.
     const offsetTarget = rig.headOffsetJoint || target; // Separate unrotated offset bone prevents authored head-height shifts folding the short neck bend.
     const resolved = scaleFor(species, gender);
-    const bx = clampScale(Number.isFinite(Number(overrides.x)) && Number(overrides.x) > 0 ? overrides.x : resolved.x);
-    const by = clampScale(Number.isFinite(Number(overrides.y)) && Number(overrides.y) > 0 ? overrides.y : resolved.y);
+    const limit = overrides.ageComposed === true ? v => v : clampScale; // Final preview scale is a product of two already validated controls.
+    const bx = limit(Number.isFinite(Number(overrides.x)) && Number(overrides.x) > 0 ? overrides.x : resolved.x);
+    const by = limit(Number.isFinite(Number(overrides.y)) && Number(overrides.y) > 0 ? overrides.y : resolved.y);
     const headNumber = Number(overrides.head);
     const verticalChildHead = childHeadFactorFor(overrides, found.node);
-    const head = clampScale(Number.isFinite(headNumber) && headNumber > 0 ? headNumber : resolved.head) * verticalChildHead; // Clamp only the authored adult factor; child compensation is a derived ratio, not an authoring input.
+    const head = limit(Number.isFinite(headNumber) && headNumber > 0 ? headNumber : resolved.head) * verticalChildHead; // Clamp only the authored adult factor; child compensation is a derived ratio, not an authoring input.
     const relativeHeadY = by > 0 ? head / by : head; // Local head-size factor after removing body height scaling.
     const horizontalChildHead = childHeadFactorXFor(overrides, found.node, verticalChildHead); // Compensate the independently authored portrait width, while leaving final head width equal to final head height.
     target.scale.set(bx > 0 ? head / bx * horizontalChildHead / verticalChildHead : head, relativeHeadY, 1);
@@ -485,7 +489,8 @@
       ...resolved, y: resolved.y * artHeightCorrection,
       legLength: (Number(resolved.legLength) > 0 ? Number(resolved.legLength) : Number(resolved.y) || 1) * artHeightCorrection,
     }; // Both portrait and legs follow calibrated height; preserve beltline ratio and authored body/limb settings.
-    const next = { x: clampScale(corrected.x), y: clampScale(corrected.y) }; // Body Y is refined from painted PNG bounds rather than nominal canvas height.
+    const limit = corrected.ageComposed === true ? v => v : clampScale;
+    const next = { x: limit(corrected.x), y: limit(corrected.y) }; // Body Y is refined from painted PNG bounds rather than nominal canvas height.
     const worldMultiplier = worldVisualScale(); // Common outer transform scales portrait, hands, feet, head, and offsets together without resetting species ratios.
     parent.userData ||= {};
     const previous = parent.userData.hobunjiCharacterRigScaleState || null;
@@ -493,15 +498,15 @@
     let base = current;
     if (previous && vectorNear(current, previous.output)) {
       const priorWorld = Number(previous.worldVisualScale) > 0 ? Number(previous.worldVisualScale) : 1; // Older scale state had no shared height calibration.
-      const divisorX = clampScale(previous.factor?.x ?? previous.factor) * priorWorld;
-      const divisorY = clampScale(previous.factor?.y ?? previous.factor) * priorWorld;
+      const divisorX = (Number(previous.factor?.x ?? previous.factor) || 1) * priorWorld;
+      const divisorY = (Number(previous.factor?.y ?? previous.factor) || 1) * priorWorld;
       base = { x: current.x / divisorX, y: current.y / divisorY, z: current.z / divisorX };
     }
     const output = { x: base.x * next.x * worldMultiplier, y: base.y * next.y * worldMultiplier,
       z: base.z * next.x * worldMultiplier }; // One uniform outer size factor; depth and head must grow with the body, not remain fixed.
-    const legLength = clampScale(corrected.legLength || next.y); // Measured height scales legs and portrait together, leaving the relative IK ratio intact.
+    const legLength = limit(corrected.legLength || next.y); // Measured height scales legs and portrait together, leaving the relative IK ratio intact.
     const previousLegRatio = previous
-      ? (Number(previous.legLength) || clampScale(previous.factor?.y ?? previous.factor)) / clampScale(previous.factor?.y ?? previous.factor)
+      ? (Number(previous.legLength) || (Number(previous.factor?.y ?? previous.factor) || 1)) / (Number(previous.factor?.y ?? previous.factor) || 1)
       : null; // Used to avoid notifying every NPC's procedural leg handle when only Head, Width or age changed.
     const nextLegRatio = legLength / next.y; // A 1:1 ratio leaves the old whole-body Y behavior unchanged.
     parent.scale.set(output.x, output.y, output.z);
@@ -740,8 +745,8 @@
         const state = actor?.visualOffset?.userData?.hobunjiCharacterRigScaleState;
         const saved = actor?.rigBodyVisualOffsetBaseScaleV1535;
         if (state && saved) {
-          const fx = clampScale(state.factor?.x ?? state.factor);
-          const fy = clampScale(state.factor?.y ?? state.factor);
+          const fx = (Number(state.factor?.x ?? state.factor) || 1);
+          const fy = (Number(state.factor?.y ?? state.factor) || 1);
           saved.x /= fx; saved.y /= fy; saved.z /= fx;
         }
         return result;

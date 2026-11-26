@@ -80,6 +80,24 @@ const oldChild=childFixture.childScaleFor({npcRecord:{isChild:true,childBodyScal
 assert.equal(oldChild.width,.51,'nonfamily child without a width inherits applied width default');
 assert.equal(oldChild.height,.4,'old child record body still overrides height');
 assert.equal(oldChild.head,.66,'old record head remains authoritative');
+const wideTall = { x: 2, y: 2, legLength: 3, head: .8 }; // Nominal adult height 2.5 and width 2 relative to its own source rig.
+const narrowShort = { x: .5, y: .5, legLength: .5, head: .8 };
+const full = { width: .6, height: .4, head: .7, widthConvergence: 1, heightConvergence: 1 };
+const wide = api.resolveStageAxes(wideTall, full);
+const narrow = api.resolveStageAxes(narrowShort, full);
+assert.equal(wide.width, .3); assert.equal(narrow.width, 1.2);
+assert.ok(Math.abs(wide.height - .16) < 1e-12); assert.equal(narrow.height, .8);
+assert.equal(api.composePreviewScale(wideTall, full).head, .8 * .7, 'convergence cannot change authored age head');
+const zero = api.resolveStageAxes(wideTall, { ...full, widthConvergence: 0, heightConvergence: 0 });
+assert.equal(zero.width, .6); assert.equal(zero.height, .4);
+api.applyOnThisDevice({ baby: full, child: full });
+assert.equal(png.childWidthConvergence, 1); assert.equal(png.childHeightConvergence, 1);
+assert.equal(family.phaseScales.basket.widthConvergence, 1);
+childFixture.window = { HobunjiCharacterAgeRigConfig: api, HobunjiCharacterRigScale: { scaleFor: () => wideTall } };
+childFixture.avatarSpeciesAndGender = () => ({ species: 'test', gender: 'male' });
+const actual = childFixture.childScaleFor({ npcRecord: { isChild: true } });
+assert.equal(actual.width, wide.width); assert.equal(actual.height, wide.height);
+assert.equal(actual.headFactorX * actual.width, full.head);
 const restored=api.restoreRepositoryOnThisDevice();
 assert.equal(restored.child.width,.5,'restoring game returns prior uniform child size');
 assert.equal(png.childWidthScaleMultiplier,.5,'reset also clears applied child width');
