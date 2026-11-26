@@ -12,13 +12,14 @@
   'use strict';
 
   function create({ THREE, getOwnerMesh, getOwnerNeckJoint, getPlayerMesh = getOwnerMesh, getPlayerNeckJoint = getOwnerNeckJoint,
-    getRotationSource, getInvertRotationSource, getCancelRotationalOffset } = {}) {
+    getRotationSource, getInvertRotationSource, getCancelRotationalOffset, getOwnerPortraitMeshes } = {}) {
     if (!THREE?.Quaternion || !THREE?.Vector3 || typeof getPlayerMesh !== 'function'
       || typeof getPlayerNeckJoint !== 'function' || typeof getRotationSource !== 'function'
       || typeof getInvertRotationSource !== 'function' || typeof getCancelRotationalOffset !== 'function') {
       throw new TypeError('ShoulderPetAttachmentRuntime requires THREE and live owner (getOwnerMesh/getOwnerNeckJoint) and configuration getters.');
     }
 
+    const rotationLimits = window.ShoulderPetRotationLimits?.create?.(THREE); // One cached geometric solver per owner.
     const SHOULDER_PET_BODY_NECK_BLEND = 0.5; // Equal quaternion midpoint between the player body and neck follow frames.
     const worldUp = new THREE.Vector3(0, 1, 0); // Axis for the upright pet's heading and observation turn.
     function worldQuaternionWithoutReflection(node) {
@@ -146,6 +147,19 @@
       const renderedScale = pet?.avatarRef?.group?.scale; // Actual THREE root scale, including the swapped width/depth axes and the current breath/squash multiplier.
       const useRenderedGrip = !!(rawGrip && renderedScale
         && Number.isFinite(renderedScale.x) && Number.isFinite(renderedScale.y) && Number.isFinite(renderedScale.z)); // Only fall back for old callers without a real avatar root.
+      let geometryConstraint = null; // The live collision solve runs before the grip offset is composed.
+      if (rotationLimits && useRenderedGrip && typeof getOwnerPortraitMeshes === 'function') {
+        const front = pet.avatarRef.frontPlane; // Use the exact canonical rendered face, not the pre-pin billboard rotation.
+        if (front) {
+          front.matrixAutoUpdate = true;
+          front.rotation.set(0, Math.PI / 2, 0);
+          front.updateMatrix();
+        }
+        geometryConstraint = rotationLimits?.constrain({
+          ownerMeshes: getOwnerPortraitMeshes(), pet, perch: perchWorldPosition, grip: rawGrip,
+          scale: renderedScale, quaternion: worldQuaternion,
+        });
+      }
       const gripWorldOffset = new THREE.Vector3(
         useRenderedGrip ? rawGrip.x * renderedScale.x : (grip.x || 0) * perchScaleX,
         useRenderedGrip ? rawGrip.y * renderedScale.y : (grip.y || 0) * perchScaleY,
@@ -167,6 +181,7 @@
         facingTowardPlayerCenter,
         shoulderFacingTurnDeg,
         shoulderLeanDeg, // Always zero: head movement cannot drift the body or the shoulder grip.
+        geometryConstraint, // Requested/applied angles and bounded candidate checks for Pixel Probe.
       };
     }
 
@@ -230,6 +245,7 @@
         shoulderFacingTurnDeg: Number(finalTransform.shoulderFacingTurnDeg) || 0,
         shoulderLeanDeg: Number(finalTransform.shoulderLeanDeg) || 0, // Reports the local X lean solved around the grip instead of either sprite center.
         spriteMirrored: false,
+        geometryConstraint: finalTransform.geometryConstraint || null, // Reports unavailable/no-safe-pose explicitly.
       };
       let canonicalPlaneRestored = group.userData.hobunjiShoulderSpriteCanonicalized === true;
       if (!canonicalPlaneRestored && finalTransform.perchWorldPosition) {

@@ -599,9 +599,9 @@
     window.HobunjiShoulderSplitLayerParity?.syncAvatar?.(avatar);
   }
 
-  function setShoulderPetLayering(pet, frontMesh, backMesh, frontMaterial, backMaterial) {
+  function setShoulderPetLayering(pet, frontMesh, backMesh, frontMaterial, backMaterial, options = {}) {
     // World/gameplay chooses only which shoulder pet is active; the compositor owns occlusion.
-    shoulderPetPresentation = { pet: pet || null, frontMesh, backMesh, frontMaterial, backMaterial };
+    shoulderPetPresentation = { pet: pet || null, frontMesh, backMesh, frontMaterial, backMaterial, geometricDepth: options.geometricDepth === true };
     syncShoulderPetLayering();
   }
 
@@ -618,7 +618,7 @@
   function syncShoulderPetLayering(camera) {
     const state = shoulderPetPresentation;
     if (!state) return;
-    const pet = actorXrayEnabled.animals ? state.pet : null; // Ordinary portrait depth when animal x-ray is disabled.
+    const pet = !state.geometricDepth && actorXrayEnabled.animals ? state.pet : null; // Geometry-limited gameplay pets always retain ordinary depth.
     if (previouslyPresentedPet && previouslyPresentedPet !== pet) restoreShoulderPet(previouslyPresentedPet);
     if (!pet) {
       syncShoulderOwnerOverlayDepth(state, false);
@@ -630,7 +630,9 @@
         if (state.backMesh && state.backMesh !== state.frontMesh) state.backMesh.renderOrder = SHOULDER_PET_RENDER_ORDERS.back;
       }
       previouslyPresentedPet = null;
-      lastShoulderPetDecision = { active: false, mode: 'owner-portrait-stages' };
+      lastShoulderPetDecision = state.geometricDepth
+        ? { active: !!state.pet, mode: 'geometric-depth', xrayEnabled: false }
+        : { active: false, mode: 'owner-portrait-stages' };
       return;
     }
     previouslyPresentedPet = pet;

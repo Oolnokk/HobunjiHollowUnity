@@ -8303,6 +8303,7 @@
         THREE,
         getPlayerMesh: () => playerMesh, // Read the current owner root after any avatar rebuild.
         getPlayerNeckJoint: () => playerNeckJoint, // Resolve the live neck each frame rather than capturing the old rig.
+        getOwnerPortraitMeshes: () => [_playerAvatarFrontMesh, _playerAvatarBackMesh], // Current deformed portrait faces for shoulder-pet geometry limits.
         getRotationSource: () => s_shoulderPetRotationSource, // Preserve the existing authored head/body/world choice.
         getInvertRotationSource: () => s_invertShoulderPetRotationSource, // Existing compatibility setting.
         getCancelRotationalOffset: () => s_cancelShoulderPetRotationalOffset, // Existing authored offset setting.
@@ -8978,6 +8979,7 @@
         window.HeldObjectRenderOrder?.setShoulderPetLayering?.(
           nextPet, _playerAvatarFrontMesh, _playerAvatarBackMesh,
           _playerAvatarFrontMaterial, _playerAvatarBackMaterial,
+          { geometricDepth: true }, // Shoulder-pet visibility now follows physical depth, not paired portrait x-ray.
         );
       }
 
