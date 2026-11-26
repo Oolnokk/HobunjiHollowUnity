@@ -27,12 +27,12 @@
 //   7. target   — layer TARGET_HIGHLIGHT, farm scene, only with a reticle target.
 //   8. mist     — Cloud Forest mist redraw over the outlines (when active).
 //   9. seamId   — layer MATERIAL_SEAM_ID into edgeIdRT; off by default.
-//  10. composite — mainRT -> canvas (OutlineCompositeMaterial); world text
-//                 overlay is drawn by outline-render-performance.js after it.
+//  10. composite — mainRT -> canvas (OutlineCompositeMaterial + painterly).
 //  11. Perception Mode overlay.
 //   With outlines OFF: main pass straight to the canvas, probes, target pass,
 //   Perception Mode.
-//  12. finally: ActorRenderOcclusion.endFrame(), RenderHooks.endWorldFrame(),
+//  12. worldText — final popup/dialogue and actor-masked active puzzle notes.
+//  13. finally: ActorRenderOcclusion.endFrame(), RenderHooks.endWorldFrame(),
 //      scopes restore in reverse order — nothing render-only leaks into
 //      gameplay, raycasts or the next frame.
 //
@@ -594,7 +594,11 @@
       occlusionFrame.walkers = deps.npcWalkers; occlusionFrame.hostiles = deps.hostileObjects; occlusionFrame.area = area;
       window.ActorRenderOcclusion?.beginFrame?.(occlusionFrame);
       window.CloudForestFog?.prepareKanthicGlyphFrame?.(activeScene,now,camera); // Hide base-pass glow; only the occupied region receives depth-tested emission.
-      finishWorldText = window.OutlineRenderPerformance?.prepareWorldTextOverlay?.(renderer, activeScene, camera) || null;
+      const overlayOwner = window.OutlineRenderPerformance;
+      if (overlayOwner?.prepareWorldTextOverlay) {
+        const activeScores = window.PuzzleCaveEntrances?.activeScoreMeshes?.(area, activeScene); // Authoritative plate state, both render modes.
+        finishWorldText = overlayOwner.prepareWorldTextOverlay(renderer, activeScene, camera, activeScores);
+      }
       if (outlines) renderOutlinedPasses(renderer, camera, activeScene, seamOn, area);
       else renderDirectPasses(renderer, camera, activeScene, area, !!finishWorldText);
       pass('worldText');

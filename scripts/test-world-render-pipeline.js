@@ -395,9 +395,10 @@ console.log('PASS world render pipeline: pass order, scopes, frame hooks, failur
 // The gameplay pipeline, not the inner composite wrapper, owns the final text
 // draw after perception. Both render modes release reservations on failure.
 for (const outlines of [true,false]) {
-  const stages=[];
-  const h=createWorldRenderPipelineHarness({window:{OutlineRenderPerformance:{
-    prepareWorldTextOverlay(renderer,scene,camera) {
+  const stages=[],scoreMeshes=[{}];
+  const h=createWorldRenderPipelineHarness({window:{PuzzleCaveEntrances:{activeScoreMeshes:()=>scoreMeshes},OutlineRenderPerformance:{
+    prepareWorldTextOverlay(renderer,scene,camera,scores) {
+      assert.equal(scores,scoreMeshes,'authoritative active score iterator reaches both render paths');
       stages.push('reserve');
       let finished=false;
       return present=>{
