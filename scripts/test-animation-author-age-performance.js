@@ -98,8 +98,9 @@ api.applyAgeModifiers('hand', '165');
 api.applyAgeModifiers('foot', '135');
 assert.equal(scheduled.size, 1, 'mixed hand/foot changes must be in one frame');
 flush();
-assert.equal(entries[0].limbs.get('left_hand_visual').scale.x, 2 * 1.65, 'hand update survives batching with foot change');
-assert.equal(entries[0].limbs.get('left_foot').scale.x, 2 * 1.35, 'foot update survives batching with hand change');
+const extentRatio = (1.2 + 1.5) * .65 / (1.2 * .8 + 1.5 * .65); // Convert the preview mean to the gameplay age-scaled hand/foot size.
+assert.ok(Math.abs(entries[0].limbs.get('left_hand_visual').scale.x - 2 * 1.65 * extentRatio) < 1e-10, 'hand update survives batching with foot change');
+assert.ok(Math.abs(entries[0].limbs.get('left_foot').scale.x - 2 * 1.35 * extentRatio) < 1e-10, 'foot update survives batching with hand change');
 assert.equal(rigPassCalls, 6, 'mixed limb-only changes cannot recompute whole-body transforms');
 
 const layoutBefore = api.snapshot().perf.layoutPasses; // Species-specific width/head edits need just one further lineup placement pass.

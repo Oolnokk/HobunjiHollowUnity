@@ -60,7 +60,7 @@ const ageSource = [
   "  const AGE_SAVE_KEY = 'hobunjiFullCharacterScale.ageModes.v1';",
   "  const AGE_AXES = ['width','height','head','hand','foot','widthConvergence','heightConvergence'];",
   "  const AGE_MODES = ['adult','baby','toddler','child'];",
-  "  let ageMode = 'adult', ageModifiers = {}, selected = null, ageProfiles = {}, ageOverall = {}, stageBasisCache = null;",
+  "  let ageMode = 'adult', ageModifiers = {}, selected = null, ageProfiles = {}, stageBasisCache = null; const overallDrafts = new Map();",
   section('repositoryAgeModifiers','host'),
   section('syncAgeControls','syncAgeLimbs'),
   '  window.__testAge = { loadAgeModifiers, syncAgeControls, repositoryAgeModifiers, ageValues, setMode: value => { ageMode = value; } };',

@@ -73,7 +73,7 @@ const exposed = editorSource.replace('  install();\n})();', `
     configure(next,chosen) { entries=next; selected=chosen; loadAgeModifiers(); syncAgeControls(); },
     choose(entry) { selected=entry; syncAgeControls(); },
     editIndividualAge, bakeConvergence, previewOverall, bakeOverall, previewAgeValues,
-    individualAgeValues, get overall() {return ageOverall[ageMode];},
+    individualAgeValues, get overall() {return overallFactorFor();},
   };
 })();`);
 assert.notEqual(exposed, editorSource, 'the production editor exposes its private test seam');
@@ -94,7 +94,8 @@ api.applyAgeModifiers('hand', '150');
 assert.equal(applied.at(-1).values.x, 1.2 * .36, 'global width edit is independent of height');
 assert.equal(applied.at(-1).values.y, 1.5 * .44, 'global height edit is independent of width');
 assert.equal(applied.at(-1).values.legLength, 1.5 * .44, 'leg length follows stage Height instead of Width');
-assert.equal(visuals.get('left_hand_visual').scale.x, 3, 'global hand edit scales from the original, not the previous stage');
+const expectedYoungHands = 3 * ((1.2 + 1.5) * .44) / (1.2 * .36 + 1.5 * .44); // Live children build limb meshes at stage height before adult mean scale.
+assert.ok(Math.abs(visuals.get('left_hand_visual').scale.x - expectedYoungHands) < 1e-10, 'independent width cannot change gameplay-equivalent hand size');
 assert.equal(JSON.parse(stored.get('hobunjiFullCharacterScale.ageModes.v1')).modifiers.baby.width, .36,
   'baby width persists separately');
 assert.equal(JSON.parse(stored.get('hobunjiFullCharacterScale.ageModes.v1')).modifiers.baby.height, .44,
@@ -149,29 +150,55 @@ const beforeBake=[entry,other].map(e=>api.previewAgeValues(e));
 api.bakeConvergence();
 assert.equal(api.ageValues().widthConvergence,0);assert.equal(api.ageValues().heightConvergence,0);
 for(const [i,e] of [entry,other].entries()) for(const axis of ['width','height','head','hand','foot']) assert.ok(Math.abs(api.previewAgeValues(e)[axis]-beforeBake[i][axis])<1e-10,'convergence bake preserves preview '+axis);
+api.applyAgeModifiers('widthConvergence','35');
+const unscaled = [entry,other].map(e=>api.previewAgeValues(e)); // Convergence remains active while testing Overall Scale.
+const passesBefore = applied.length; // An overall drag should only recompose its target rig.
 api.previewOverall('75');
+assert.equal(applied.length, passesBefore + 1);
+assert.equal(applied.at(-1).species, other.species);
+assert.deepEqual(api.previewAgeValues(entry), unscaled[0], 'overall preview leaves the other identity alone');
+assert.ok(Math.abs(api.previewAgeValues(other).width - unscaled[1].width * .75) < 1e-10);
+api.choose(entry);
+assert.equal(api.overall, 1, 'selecting a different identity does not inherit its draft');
+api.choose(other);
+assert.equal(api.overall, .75, 'returning to the same identity restores its draft');
 const scaledBefore=[entry,other].map(e=>api.previewAgeValues(e));
 api.bakeOverall();
 assert.equal(api.overall,1);
 for(const [i,e] of [entry,other].entries()) for(const axis of ['width','height','head','hand','foot']) assert.ok(Math.abs(api.previewAgeValues(e)[axis]-scaledBefore[i][axis])<1e-10,'overall bake preserves preview '+axis);
+api.bakeConvergence();
 const savedBaby=api.individualAgeValues(entry).width;
+api.choose(entry);
 api.setAgeMode('toddler');
 const toddlerWidth=window.HobunjiCharacterAgeRigConfig.repositoryProfiles().toddler[entry.key].width;
 assert.equal(api.individualAgeValues(entry).width,toddlerWidth,'baby bake leaves toddler proportions alone');
 assert.equal(api.individualAgeValues(entry).height,window.HobunjiCharacterAgeRigConfig.repositoryProfiles().baby[entry.key].height+.2);
+const otherToddler = api.individualAgeValues(other);
 api.previewOverall('125');api.bakeOverall();
+assert.deepEqual(api.individualAgeValues(other), otherToddler, 'toddler bake preserves other identities');
 assert.equal(api.individualAgeValues(entry).width,toddlerWidth*1.25);
 api.setAgeMode('child');
 assert.equal(api.individualAgeValues(entry).width,.5,'toddler bake leaves child proportions alone');
+api.previewOverall('115');
+assert.equal(api.overall, 1.15);
 api.setAgeMode('adult');
+assert.equal(api.overall, 1, 'drafts are independent by stage');
+const otherAdult = applied.filter(item=>item.species===other.species).at(-1).values;
 api.previewOverall('80');
+assert.deepEqual(applied.filter(item=>item.species===other.species).at(-1).values, otherAdult);
 const adultPreview=applied.filter(item=>item.species===entry.species).at(-1).values;
 api.bakeOverall();
 assert.equal(api.overall,1);
+assert.deepEqual([...liveAdult.keys()], [entry.key], 'adult bake writes only the selected species and gender');
 const adultBaked=applied.filter(item=>item.species===entry.species).at(-1).values;
 for(const axis of ['x','y','legLength','head'])assert.ok(Math.abs(adultPreview[axis]-adultBaked[axis])<1e-10,'adult bake preserves preview '+axis);
 api.setAgeMode('baby');
 assert.ok(Math.abs(api.previewAgeValues(entry).width*liveAdult.get(entry.key).x-savedBaby*1.2)<1e-10,'adult overall bake does not change young world width');
+api.setAgeMode('child');
+assert.equal(api.overall, 1.15, 'adult bake preserves the separate child draft');
+api.bakeOverall();
+assert.equal(api.individualAgeValues(entry).width * liveAdult.get(entry.key).x, .5 * 1.15 * 1.2, 'child bake applies the selected draft at the current adult reference');
+api.setAgeMode('baby');
 api.loadAgeModifiers();
 assert.equal(api.ageValues().widthConvergence,0,'pending convergence resets on reload');
 assert.ok(Math.abs(api.previewAgeValues(entry).width*liveAdult.get(entry.key).x-savedBaby*1.2)<1e-10,'baked age profile reloads without drift');

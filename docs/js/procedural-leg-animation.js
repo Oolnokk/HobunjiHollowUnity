@@ -1145,9 +1145,10 @@
       return footSizeScale;
     }
 
-    function setAgeFootScaleMultiplier(multiplier) {
+    function setAgeFootScaleMultiplier(multiplier, bodyRatio = 1) {
       const raw = Number(multiplier); // Separate authoring stage; never overwrite the authored adult size.
-      const next = Number.isFinite(raw) && raw > 0 ? Math.max(.01, Math.min(20, raw)) : 1;
+      const authored = Number.isFinite(raw) && raw > 0 ? Math.max(.01, Math.min(20, raw)) : 1;
+      const next = authored * (Number.isFinite(bodyRatio) && bodyRatio > 0 ? bodyRatio : 1); // Editor correction from the preview body mean to the gameplay stage height.
       if (state.disposed || Math.abs(next - ageFootScale) <= 1e-9) return ageFootScale;
       ageFootScale = next;
       setFootScaleMultiplier(footSizeScale, true); // Reuse the sole-contact/IK owner and the original per-mesh baseline.
