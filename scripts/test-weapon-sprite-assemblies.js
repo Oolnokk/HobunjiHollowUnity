@@ -315,3 +315,25 @@ checkEnemyWeaponCleanup().catch(error => { console.error(error); process.exitCod
   const theta=.3,tilted=api.tiltedHeadDrop(bounds,{x:0,y:0,z:Math.sin(theta/2),w:Math.cos(theta/2)});
   assert.ok(Math.abs(tilted-(.3*Math.sin(theta)+.7*Math.cos(theta)))<1e-10);
 }
+
+// Strike-return tip motion is a one-shot fallback, never a competitor to locomotion.
+{
+  const dead=40*Math.PI/180,dt=.02;
+  const make=()=>({yaw:null,leanX:0,leanZ:0,tipReady:false,tipX:0,tipY:0,tipZ:0,returnX:0,returnZ:0,previousAttack:false,previousProgress:0,sawStrike:false,source:'initial'});
+  const advance=(m,attacking,p,x,z,bx=0,bz=0,time=dt)=>api.advanceIdleHeadMotion(m,attacking,p,.3,.7,{x,y:1,z},bx,bz,time,0,dead);
+  const near=(a,b)=>assert.ok(Math.abs(a-b)<1e-10);
+  const recovery=m=>{advance(m,false,0,0,0);advance(m,true,.4,0,0);advance(m,true,.8,.06,0);advance(m,true,.98,.12,0);};
+  const a=make();recovery(a);advance(a,false,0,.12,0);
+  near(a.yaw,Math.PI/2);assert.equal(a.source,'strike-return');assert.ok(a.leanX>.4&&a.leanX<=dead);
+  for(let i=0;i<200;i++)advance(a,false,0,.12,0);
+  assert.equal(a.leanX,0);near(a.yaw,Math.PI/2);
+  advance(a,false,0,.12,.1);near(a.yaw,Math.PI/2);assert.equal(a.leanZ,0,'ordinary idle tip movement cannot retrigger');
+  const b=make();recovery(b);advance(b,false,0,.12,.08,0,4);
+  near(b.yaw,0);assert.equal(b.source,'locomotion');assert.ok(b.leanZ>0);assert.equal(b.leanX,0);
+  const c=make();recovery(c);advance(c,false,0,.12,-.08);near(c.yaw,Math.PI);assert.equal(c.source,'strike-return');
+  advance(c,false,0,.2,-.08,4,0);near(c.yaw,Math.PI/2);assert.equal(c.source,'locomotion');
+  const d=make();advance(d,false,0,0,0);advance(d,true,.1,.02,0);advance(d,false,0,.08,0);assert.equal(d.leanX,0,'cancelled windup is not a strike');
+  const e=make();recovery(e);advance(e,false,0,20,0);assert.equal(e.leanX,0,'teleport does not inject a strike impulse');
+  const g=make();recovery(g);advance(g,false,0,.12,0,0,0,0);assert.equal(g.previousAttack,true);advance(g,false,0,.12,0);assert.equal(g.source,'strike-return');
+  const h=make();recovery(h);advance(h,true,.05,.18,0);advance(h,false,0,.24,0);assert.equal(h.leanX,0,'new windup clears old recovery');
+}
