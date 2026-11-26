@@ -510,10 +510,13 @@
     const rowLeft = new Int32Array(height).fill(width);
     const rowRight = new Int32Array(height).fill(-1);
     let top = height, bottom = -1;
+    let opaqueTop = height, opaqueBottom = -1; // Ignore faint antialiasing when identifying the lower waist region.
     for (let y = 0; y < height; y++) {
       const rowOffset = y * width * 4;
       for (let x = 0; x < width; x++) {
-        if (data[rowOffset + x * 4 + 3] <= alphaThreshold) continue;
+        const alpha = data[rowOffset + x * 4 + 3];
+        if (alpha >= 128) { opaqueTop = Math.min(opaqueTop, y); opaqueBottom = y; }
+        if (alpha <= alphaThreshold) continue;
         if (x < rowLeft[y]) rowLeft[y] = x;
         if (x > rowRight[y]) rowRight[y] = x;
         if (y < top) top = y;
@@ -538,8 +541,8 @@
     // The lowest tenth of the isolated torso includes both ends of a curved hem.
     // Use actual pixel edges, not the widest body row or clothing silhouette.
     let beltLeft = width, beltRight = -1;
-    const beltTop = Math.max(top, bottom - Math.max(1, Math.ceil((bottom - top + 1) * .10)) + 1);
-    for (let y = beltTop; y <= bottom; y++) for (let x = 0; x < width; x++) {
+    const beltTop = Math.max(opaqueTop, opaqueBottom - Math.max(1, Math.ceil((opaqueBottom - opaqueTop + 1) * .10)) + 1);
+    for (let y = beltTop; y <= opaqueBottom; y++) for (let x = 0; x < width; x++) {
       if (data[(y * width + x) * 4 + 3] < 128) continue;
       beltLeft = Math.min(beltLeft, x); beltRight = Math.max(beltRight, x);
     }
