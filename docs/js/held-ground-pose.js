@@ -4,7 +4,7 @@
   'use strict';
   const PAD = 0.035; // Clearance above the physical standing surface, in world units.
   const STEP = Math.PI / 36; // Bounded five-degree rotation search with refinement.
-  const debug = { reason: 'not-run', angleDeg: 0, shortening: 0, floorY: null, originalMinY: null, finalMinY: null, rotations: 0, compressions: 0, contactHullBuilds: 0, contactHullVertices: 0, gripPivotDrift: null, freeHandLifts: 0, fallbacks: 0 };
+  const debug = { reason: 'not-run', angleDeg: 0, shortening: 0, floorY: null, originalMinY: null, finalMinY: null, rotations: 0, compressions: 0, contactHullBuilds: 0, contactHullVertices: 0, gripPivotDrift: null, gripLift: 0, clearanceStrategy: null, freeHandLifts: 0, fallbacks: 0 };
   let active = null, floorFrame = null, floor = null, scratch = null;
   let gripHolder=null; // Owner of the exact current sprite-space grip transform, shared with hand sockets.
   let lastPoseHolder=null,lastPoseFrame=null; // Prevent an extra pre-render bake when the dual owner already solved this frame.
@@ -127,6 +127,7 @@
       inverse: new T.Matrix4(), parentInverse: new T.Matrix4(), pivot: new T.Vector3(),
       grip: new T.Vector3(), second: new T.Vector3(), shoulder: new T.Vector3(),
       axis: new T.Vector3(), direction: new T.Vector3(), cross: new T.Vector3(),
+      radialAxis: new T.Vector3(), flatAxis: new T.Vector3(), // Fallback rotation axes used only when the authored pose penetrates.
       point: new T.Vector3(), rel: new T.Vector3(), base: new T.Vector3(), candidate: new T.Vector3(),
       pos: new T.Vector3(), scale: new T.Vector3(), parentQ: new T.Quaternion(), q: new T.Quaternion(),
       localQ: new T.Quaternion(), oldQ: new T.Quaternion(), gripBasis: new T.Quaternion(),
@@ -150,7 +151,7 @@
     if(active.plane.geometry===active.geometry)active.plane.geometry=active.source;
     active.amount=0; // Keep the private strip buffer for the next near-ground pose.
   }
-  function clear() { previewRoot=null;gripHolder=null;lastPoseHolder=null;lastPoseFrame=null;dualPrepared=null;debug.dual=null;debug.gripPivotDrift=null;restoreGeometry(); }
+  function clear() { previewRoot=null;gripHolder=null;lastPoseHolder=null;lastPoseFrame=null;dualPrepared=null;debug.dual=null;debug.gripPivotDrift=null;debug.gripLift=0;debug.clearanceStrategy=null;restoreGeometry(); }
   function fail(reason,preserveFit=false) { debug.reason=reason; debug.fallbacks++; if(!preserveFit)restoreGeometry();return false; }
   // The canonical PNG is a flat XY quad; its -90 degree X basis makes
   // image Y correspond to -item Z. Split exactly at the authored endpoints,
@@ -366,7 +367,8 @@
     return false;
   }
   function constrainWeapon(holder,mesh,context) {
-    dualPrepared=null;gripHolder=null;debug.gripPivotDrift=null;
+    dualPrepared=null;gripHolder=null;debug.gripPivotDrift=null;debug.gripLift=0;debug.clearanceStrategy=null;
+    debug.itemKey=context?.itemKey??null;debug.speciesId=context?.scaleIdentity?.speciesId??null;debug.gripY=null;
     if(!enabled()){clear();return false;}
     lastPoseHolder=holder;lastPoseFrame=frameId();
     previewRoot=null;debug.dual=null;debug.angleDeg=0;debug.shortening=0;debug.originalMinY=null;debug.finalMinY=null;debug.fitted=false;debug.assemblyDetail=null;debug.lightOriginalMinY=null;debug.lightFittedMinY=null;
@@ -519,40 +521,102 @@
     let angle=0; // Clear poses skip the pivot and rotation work.
     if(min<target) {
       worldGrip(s,primary,basis,mesh,gripZ,segments,amount,s.pivot);
-      // Pick the horizontal axis perpendicular to the lowest point's radial
-      // offset from the grip. This rotates the offending end upward.
-      // Only construct world XYZ samples when actual rotation is required.
-      let count=0,lowest=null;
-      for(const vertex of contact.points){
-        const p=s.samples[count] ||= new (three().Vector3)();
-        p.set(vertex.x,-vertex.z,0).applyMatrix4(s.matrix);
-        count++;
-        if(!lowest||p.y<lowest.y)lowest=p;
+      debug.gripY=s.pivot.y;
+      angle=solveContactRotation(s,contact,s.matrix,target,secondary?a=>reachable(a,amount):null);
+      debug.clearanceStrategy=s.clearanceStrategy;
+      if(angle&&!rotateAroundGrip(holder,parent.matrixWorld,s.holder,s.pivot,s.axis,angle,s)){
+        debug.finalMinY=min;return fail('unsupported-pivot-parent',true);
       }
-      s.samples.length=count;
-      s.axis.set(-(lowest.z-s.pivot.z),0,lowest.x-s.pivot.x);
-      if(s.axis.lengthSq()<1e-10)s.axis.set(1,0,0);else s.axis.normalize();
-      s.points.length=0;
-      for(const p of s.samples) {
-        s.rel.set(p.x-s.pivot.x,p.y-s.pivot.y,p.z-s.pivot.z);
-        s.cross.crossVectors(s.axis,s.rel);
-        s.points.push({a:s.rel.y,b:s.cross.y});
-      }
-      angle=chooseAngle(s.points,s.pivot.y,target,a=>reachable(a,amount));
-      if(angle===null){debug.finalMinY=min;return fail('no-reachable-clear-pose',true);}
-      min=minimumY(s.points,s.pivot.y,angle);
-    }
-    if(angle) {
-      // Apply a world rotation around the actual primary grip. Convert the
-      // quaternion back to the holder's parent; preserve the raw grip exactly.
-      rotateAroundGrip(holder,parent.matrixWorld,s.holder,s.pivot,s.axis,angle,s);
       s.holder.multiplyMatrices(parent.matrixWorld,holder.matrix);
       debug.gripPivotDrift=worldGrip(s,primary,basis,mesh,gripZ,segments,amount,s.point).distanceTo(s.pivot);
-      debug.rotations++;
+      // Validate against the resulting matrix, not the search's predicted Y.
+      s.matrix.multiplyMatrices(s.holder,mesh.matrix).multiply(plane.matrix);
+      min=projectedContactY(contact.hull,s.matrix);
+      if(angle)debug.rotations++;
+      if(min<target-1e-7){
+        // A grip below the floor (or a sprite offset below it) cannot always
+        // be solved by rotation alone. Lift the entire weapon and its sockets
+        // only by the remaining deficit; never change its established length.
+        debug.gripLift=target-min;
+        liftNode(holder,parent.matrixWorld,s.holder,debug.gripLift,s);
+        s.holder.multiplyMatrices(parent.matrixWorld,holder.matrix);
+        s.matrix.multiplyMatrices(s.holder,mesh.matrix).multiply(plane.matrix);
+        min=projectedContactY(contact.hull,s.matrix);
+      }
     }
     debug.angleDeg=angle*180/Math.PI;debug.shortening=amount;debug.finalMinY=min;
-    debug.reason=angle?'rotation':amount?'shortening':'already-clear';
-    return !!angle;
+    debug.reason=debug.gripLift?'rotation-and-lift':angle?'rotation':amount?'shortening':'already-clear';
+    return !!angle||debug.gripLift>0;
+  }
+  // Project around one horizontal axis. Reuse the sampled points and coefficient
+  // objects: the common already-clear case never enters this routine.
+  function rotationCoefficients(s,axis){
+    s.axis.copy(axis);
+    let i=0;
+    for(const p of s.samples){
+      s.rel.copy(p).sub(s.pivot);s.cross.crossVectors(s.axis,s.rel);
+      const c=s.points[i]||={a:0,b:0};c.a=s.rel.y;c.b=s.cross.y;i++;
+    }
+    s.points.length=i;
+  }
+  function solveContactRotation(s,contact,matrix,target,reachable){
+    let count=0,lowest=null;
+    for(const v of contact.points){
+      const p=s.samples[count]||=new (three().Vector3)();
+      p.set(v.x,-v.z,0).applyMatrix4(matrix);count++;
+      if(!lowest||p.y<lowest.y)lowest=p;
+    }
+    s.samples.length=count;
+    s.radialAxis.set(-(lowest.z-s.pivot.z),0,lowest.x-s.pivot.x);
+    if(s.radialAxis.lengthSq()<1e-10)s.radialAxis.set(1,0,0);else s.radialAxis.normalize();
+    rotationCoefficients(s,s.radialAxis);
+    let angle=chooseAngle(s.points,s.pivot.y,target,reachable||undefined);
+    s.clearanceStrategy='radial';
+    if(angle!==null)return angle;
+    // Rotating the weapon plane to horizontal supplies an exact alternate
+    // solution even when the lowest-vertex axis misses the safe orientations.
+    const e=matrix.elements;
+    s.direction.set(e[0],e[1],e[2]).cross(s.cross.set(e[4],e[5],e[6])).normalize();
+    const horizontal=Math.hypot(s.direction.x,s.direction.z);
+    s.flatAxis.set(-s.direction.z,0,s.direction.x);
+    if(horizontal<1e-10)s.flatAxis.set(1,0,0);else s.flatAxis.multiplyScalar(1/horizontal);
+    const up=Math.atan2(horizontal,s.direction.y),down=up-Math.PI;
+    function flatCandidate(check){
+      rotationCoefficients(s,s.flatAxis);
+      const found=chooseAngle(s.points,s.pivot.y,target,check||undefined);
+      if(found!==null)return found;
+      let best=null;
+      for(const a of [up,down]){
+        if(minimumY(s.points,s.pivot.y,a)>=target-1e-9&&(!check||check(a))
+          &&(best===null||Math.abs(a)<Math.abs(best)))best=a;
+      }
+      return best;
+    }
+    s.clearanceStrategy='alternate-axis';
+    angle=flatCandidate(reachable);
+    if(angle!==null)return angle;
+    // A second hand's reach must not make the primary-held blade cut the floor.
+    // Preserve the primary pivot and fitted length before relaxing arm reach.
+    if(reachable){
+      rotationCoefficients(s,s.radialAxis);
+      angle=chooseAngle(s.points,s.pivot.y,target);
+      s.clearanceStrategy='radial-reach-relaxed';
+      if(angle!==null)return angle;
+      s.clearanceStrategy='alternate-axis-reach-relaxed';
+      angle=flatCandidate(null);
+      if(angle!==null)return angle;
+    }
+    // Neither axis yielded a clear fixed-pivot pose. Compare the exact flat
+    // orientations and keep the higher one (smaller angle breaks ties).
+    rotationCoefficients(s,s.flatAxis);
+    const minUp=minimumY(s.points,s.pivot.y,up),minDown=minimumY(s.points,s.pivot.y,down);
+    s.clearanceStrategy='flat-plus-minimum-lift';
+    return Math.abs(minUp-minDown)<1e-9?(Math.abs(up)<=Math.abs(down)?up:down):minUp>minDown?up:down;
+  }
+  function liftNode(node,parentMatrix,nodeWorld,lift,s){
+    s.parentInverse.copy(parentMatrix).invert();
+    s.pos.setFromMatrixPosition(nodeWorld);s.pos.y+=lift;
+    node.position.copy(s.pos.applyMatrix4(s.parentInverse));node.updateMatrix?.();
   }
   // Rotate a node in world space around the actual grip, not its authored
   // holder origin. The accompanying translation keeps that world point fixed.
@@ -605,32 +669,28 @@
     ]){
       if(!grip?.position){results[side]={reason:'no-grip'};continue;}
       let min=projectedContactY(d.contact.hull,copy.matrixWorld),angle=0;
-      const original=min;let gripPivotDrift=null;
+      const original=min;let gripPivotDrift=null,gripLift=0,strategy=null;
       if(min<d.target){
         localGrip(grip.position,s.grip);
         s.pivot.copy(s.grip).applyMatrix4(copy.matrixWorld);
-        let count=0,lowest=null;
-        for(const v of d.contact.points){
-          const p=s.samples[count]||=new (three().Vector3)();
-          p.set(v.x,-v.z,0).applyMatrix4(copy.matrixWorld);
-          count++;if(!lowest||p.y<lowest.y)lowest=p;
-        }
-        s.samples.length=count;
-        s.axis.set(-(lowest.z-s.pivot.z),0,lowest.x-s.pivot.x);
-        if(s.axis.lengthSq()<1e-10)s.axis.set(1,0,0);else s.axis.normalize();
-        s.points.length=0;
-        for(const p of s.samples){s.rel.copy(p).sub(s.pivot);s.cross.crossVectors(s.axis,s.rel);s.points.push({a:s.rel.y,b:s.cross.y});}
-        angle=chooseAngle(s.points,s.pivot.y,d.target);
-        if(angle===null||!rotateAroundGrip(root,d.plane.matrixWorld,root.matrixWorld,s.pivot,s.axis,angle,s)){
-          results[side]={reason:'no-reachable-clear-pose',originalMinY:original,finalMinY:min};continue;
+        angle=solveContactRotation(s,d.contact,copy.matrixWorld,d.target,null);
+        strategy=s.clearanceStrategy;
+        if(angle&&!rotateAroundGrip(root,d.plane.matrixWorld,root.matrixWorld,s.pivot,s.axis,angle,s)){
+          results[side]={reason:'unsupported-pivot-parent',originalMinY:original,finalMinY:min};continue;
         }
         root.updateMatrixWorld(true);
         min=projectedContactY(d.contact.hull,copy.matrixWorld);
         gripPivotDrift=s.point.copy(s.grip).applyMatrix4(copy.matrixWorld).distanceTo(s.pivot);
+        if(min<d.target-1e-7){
+          gripLift=d.target-min;
+          liftNode(root,d.plane.matrixWorld,root.matrixWorld,gripLift,s);
+          root.updateMatrixWorld(true);
+          min=projectedContactY(d.contact.hull,copy.matrixWorld);
+        }
       }
-      results[side]={reason:angle?'rotation':'already-clear',angleDeg:angle*180/Math.PI,originalMinY:original,finalMinY:min,gripPivotDrift};
+      results[side]={reason:gripLift?'rotation-and-lift':angle?'rotation':'already-clear',angleDeg:angle*180/Math.PI,originalMinY:original,finalMinY:min,gripPivotDrift,gripLift,clearanceStrategy:strategy};
     }
-    debug.reason='dual-clearance';debug.finalMinY=Math.min(results.right?.finalMinY??Infinity,results.left?.finalMinY??Infinity);
+    debug.reason='dual-clearance';debug.gripLift=Math.max(results.right?.gripLift??0,results.left?.gripLift??0);debug.finalMinY=Math.min(results.right?.finalMinY??Infinity,results.left?.finalMinY??Infinity);
   }
   function constrainFreeHand(parent,socket,shoulder,reach,height) {
     if(!enabled()||parent!==global.PlayerBodyTransformComposer?.getPlayerMesh?.()||!(reach>0)||!socket?.parent)return false;

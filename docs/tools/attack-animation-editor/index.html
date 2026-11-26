@@ -331,7 +331,7 @@ canvas{display:block;width:100%;height:100%}
      in-game character dump use the exact same code/format. -->
 <script src="../../js/transform-dump-utils.js?v=20261017h3ce7f8d"></script>
 <script src="../../js/rig-transform-dump.js?v=20261029rigdump1"></script>
-<script src="../../js/held-ground-pose.js?v=20261126exactGrip3"></script>
+<script src="../../js/held-ground-pose.js?v=20261126floorPriority5"></script>
 <script src="../../js/weapon-geometry-author.js?v=20261126fixedWeaponSize1"></script>
 <script src="../../js/held-action-animations.js?v=20261126exactGrip4"></script>
 <script src="../../js/kurraya-instrument.js?v=20261118festival1954x1955a"></script>
@@ -1998,7 +1998,7 @@ function updateGroundPreviewStatus(now){
   const number=n=>Number.isFinite(n)?n.toFixed(3):'—';
   const suspended=window.HobunjiWeaponSpriteAssemblies?.groundStatus?.(toolPlaneMesh);
   const text='Ground preview: '+s.reason+(s.assemblyDetail?' ('+s.assemblyDetail+')':'')+' · fit '+(s.fitted?(100*s.shortening).toFixed(1)+'% band shortening':'not fitted')+
-    ' · rotation '+number(s.angleDeg)+'° · grip drift '+number(s.gripPivotDrift??(s.dual?.right?.gripPivotDrift!=null||s.dual?.left?.gripPivotDrift!=null?Math.max(s.dual?.right?.gripPivotDrift??0,s.dual?.left?.gripPivotDrift??0):null))+' · lowest Y '+number(s.originalMinY)+' → '+number(s.finalMinY)+' · floor 0'+(s.contactSource?' · '+s.contactSource:'')+(suspended?' · rope '+(suspended.fittedScale*100).toFixed(1)+'% · '+(suspended.trailing?'trailing':suspended.reason)+' · head Y '+number(suspended.headMinY):'');
+    ' · rotation '+number(s.angleDeg)+'° · grip drift '+number(s.gripPivotDrift??(s.dual?.right?.gripPivotDrift!=null||s.dual?.left?.gripPivotDrift!=null?Math.max(s.dual?.right?.gripPivotDrift??0,s.dual?.left?.gripPivotDrift??0):null))+' · lift '+number(s.gripLift)+' · '+(s.clearanceStrategy||'')+' · lowest Y '+number(s.originalMinY)+' → '+number(s.finalMinY)+' · floor 0'+(s.contactSource?' · '+s.contactSource:'')+(suspended?' · rope '+(suspended.fittedScale*100).toFixed(1)+'% · '+(suspended.trailing?'trailing':suspended.reason)+' · head Y '+number(suspended.headMinY):'');
   if(node.textContent!==text)node.textContent=text;
 }
 function applyPoseToRig(pose) {

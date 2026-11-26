@@ -202,6 +202,28 @@ if(THREE){
   }
   weapon.position.set(0,0,0);weapon.scale.set(1,1,1);plane.rotation.z=0;
   solver.setPreviewEnabled(false);
+  // A short character's second hand may have no reachable solution, but a
+  // primary-grip rotation still clears the weapon. Never leave it buried.
+  solver.setPreviewEnabled(true);
+  holder.position.set(0,.25,0);holder.rotation.set(Math.PI/2,0,0);
+  parent.updateMatrixWorld(true);
+  const reachBlocked={...ctx,itemKey:'reach-blocked',profile:null,allowFit:false,secondary:{position:{x:0,y:0,z:.4}}};
+  const gripBefore=new THREE.Vector3().applyMatrix4(holder.matrixWorld);
+  assert.equal(solver.constrainWeapon(holder,weapon,reachBlocked),true);
+  parent.updateMatrixWorld(true);
+  const reachResult=solver.snapshot();
+  assert.ok(reachResult.clearanceStrategy.includes('reach-relaxed'),'unavailable secondary reach cannot suppress clearance');
+  assert.ok(reachResult.finalMinY>=.035-1e-7);close(reachResult.gripLift,0);
+  close(new THREE.Vector3().applyMatrix4(holder.matrixWorld).distanceTo(gripBefore),0);
+  // A grip already below ground cannot always clear through a pivot alone.
+  // Only the impossible residual gets lifted; shortening is unchanged.
+  holder.position.set(0,-.08,0);holder.rotation.set(Math.PI/2,0,0);parent.updateMatrixWorld(true);
+  assert.equal(solver.constrainWeapon(holder,weapon,{...reachBlocked,secondary:null,itemKey:'below-ground'}),true);
+  parent.updateMatrixWorld(true);
+  const liftResult=solver.snapshot();assert.equal(liftResult.clearanceStrategy,'flat-plus-minimum-lift');
+  close(liftResult.gripLift,.115);close(liftResult.shortening,0);
+  assert.ok(liftResult.finalMinY>=.035-1e-7);close(liftResult.gripPivotDrift,0);
+  solver.setPreviewEnabled(false);
   // Two visible copies have distinct raw poses. Correct around each actual
   // grip, including the offhand offset, rather than either mesh's origin.
   solver.setPreviewEnabled(true);
