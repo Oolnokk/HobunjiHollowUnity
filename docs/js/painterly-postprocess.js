@@ -94,8 +94,11 @@
     }
 
     vec3 hobunjiFinishReferenceStack(vec2 uv) {
+      vec3 source = texture2D(tColor, uv).rgb; // Pre-painterly color, including ordinary fog and lighting.
+      if (uHobunjiPaintMode < 0.5) return source;
+      float sourcePeak = max(source.r, max(source.g, source.b)); // Protect existing black ink without another draw.
+      if (sourcePeak <= 0.00392157) return source;
       vec3 c = hobunjiPaintRead(uv);
-      if (uHobunjiPaintMode < 0.5) return texture2D(tColor, uv).rgb;
 
       vec2 t = uHobunjiPaintTexel;
       vec3 tl = hobunjiPaintRead(uv + vec2(-t.x,  t.y));
@@ -135,7 +138,10 @@
       float grey = dot(color, vec3(0.299, 0.587, 0.114));
       float revive = 0.80 * (1.0 - sat) * 0.90;
       color = vec3(grey) + (color - vec3(grey)) * (1.0 + revive);
-      return clamp(color, 0.0, 1.0);
+      color = clamp(color, 0.0, 1.0);
+      // Prevent oil/wash from lifting dark ink; release smoothly into shading.
+      float ink = 1.0 - smoothstep(0.015, 0.06, sourcePeak);
+      return mix(color, min(color, source), ink);
     }
 
     vec3 hobunjiPainterlyCompositeEdge(vec3 color, float edge) {

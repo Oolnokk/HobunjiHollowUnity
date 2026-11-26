@@ -21,9 +21,25 @@ const portrait = runtime.makeSpritePngUnlitMaterial(THREE, tex, 'portrait');
 assert.equal(portrait.alphaTest, 0.35, 'depth-writing PNG planes must not hide other sprites with near-invisible fringe');
 assert.equal(portrait.depthWrite, true);
 assert.equal(portrait.transparent, true);
+const shader = { fragmentShader: '#include <alphatest_fragment>\n#include <fog_fragment>' };
+portrait.onBeforeCompile(shader);
+assert.match(shader.fragmentShader, /#include <alphatest_fragment>[\s\S]*diffuseColor\.a >= 0\.350000[\s\S]*diffuseColor\.a = 1\.0/);
+assert.match(shader.fragmentShader, /opacity >= 0\.999/);
+assert.match(shader.fragmentShader, /!defined\(USE_ALPHAMAP\)/);
+assert.match(portrait.customProgramCacheKey(), /hobunji-sprite-ink-0\.350000/);
 
 const softOverlay = runtime.makeSpritePngUnlitMaterial(THREE, tex, 'effect', { depthWrite: false });
 assert.equal(softOverlay.alphaTest, 0.001, 'depth-disabled translucent sprites should retain soft antialiasing');
+assert.equal(softOverlay.onBeforeCompile, undefined);
+assert.equal(runtime.makeSpritePngUnlitMaterial(THREE, tex, 'fade', { opacity: 0.5 }).onBeforeCompile, undefined);
+const cloneTHREE = { FrontSide: 0, MeshBasicMaterial: class {
+  constructor(properties) { Object.assign(this, properties); }
+  clone() { return new this.constructor({ map: this.map, opacity: this.opacity }); }
+} };
+const clone = runtime.makeSpritePngUnlitMaterial(cloneTHREE, tex, 'clone').clone();
+const cloneShader = { fragmentShader: '#include <alphatest_fragment>' };
+clone.onBeforeCompile(cloneShader);
+assert.equal((cloneShader.fragmentShader.match(/diffuseColor\.a = 1\.0/g) || []).length, 1);
 assert.equal(runtime.makeSpritePngUnlitMaterial(THREE, tex, 'explicit', { alphaTest: 0.55 }).alphaTest, 0.55,
   'stronger authored alpha tests must never be reduced');
 assert.equal(runtime.makeSpritePngUnlitMaterial(THREE, tex, 'too-low', { alphaTest: 0.01 }).alphaTest, 0.35,
