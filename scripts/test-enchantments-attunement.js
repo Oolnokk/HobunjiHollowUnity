@@ -752,7 +752,7 @@ assert.equal(companionPanels.get('relic-grants').onAction('grant').ok, true);
   fey.update(.2,player);
   const gameFeyHooks=fs.readFileSync('docs/game.js','utf8'); // Uses real closure-owned gameplay seam, not a duplicate mock camera.
   assert(gameFeyHooks.includes('window.FeyIllusions?.cameraYawDeg?.(player)'), 'real gameplay camera azimuth consumes Fey yaw');
-  assert(gameFeyHooks.includes('window.FeyIllusions?.movementRotationRad?.(player)'), 'non-shoulder movement consumes the same yaw');
+  assert(gameFeyHooks.includes('window.ResourceSystem?.movementIntent?.(player, ix, iy)'), 'non-shoulder movement delegates yaw to the shared compositor');
   assert(gameFeyHooks.includes('window.FeyIllusions?.isPanickedRolling?.(player)'), 'ordinary dodge hot path skips Fey-only collision work');
 
   // A Hyped first swing that misses still makes its paid second swing, with its
@@ -1157,6 +1157,18 @@ console.log('Fey Immundanity, real Stamina illusions, proc, scaled echo, migrati
     context.FeyIllusions = oldFey;
   }
 
+  // Passive Blink upkeep must not consume dodge-only enhanced or Panicked Stamina.
+  const blinkUser = makeEntity();
+  RS.addEnhancedResource(blinkUser, 'currentStamina', 8);
+  RS.addAffliction(blinkUser, 'panickedStamina', 5);
+  RS.spendStamina(blinkUser, 2, 'Blink Dodge (passive)', { actionKind: 'blinkPassive' });
+  close(amount(blinkUser, 'currentStamina'), 8);
+  close(amount(blinkUser, 'panickedStamina'), 5);
+  close(blinkUser.stamina, 98);
+  RS.spendStamina(blinkUser, 2, 'Blink Dodge hop', { actionKind: 'combatDodge' });
+  close(amount(blinkUser, 'currentStamina'), 7);
+  close(amount(blinkUser, 'panickedStamina'), 0);
+
   // Leadbound occupies current ordinary Stamina and never charges enhanced payments.
   target.stamina = 100;
   RS.addAffliction(target, 'leadboundStamina', 50);
@@ -1312,6 +1324,10 @@ console.log('Fey Immundanity, real Stamina illusions, proc, scaled echo, migrati
   RS.tick(attacker, 2, { staminaRegenPerSec: 0, healthRegenPerSec: 0, footingRegenPerSec: 0 });
   assert(amount(attacker, 'weightlessStamina') < 15, 'Weightless fades on the affliction tick');
   clear(attacker, 'weightlessStamina');
+  equip([], { tap2: 'ancestralMercy', hold1: 'ancestralMercy', hold2: 'ancestralMercy' });
+  clear(attacker, 'unshackledStamina');
+  CAE.defensive({ attacker, weaponKey: key, slotId: 'hold2', defensiveResult: 'block' });
+  close(amount(attacker, 'unshackledStamina'), 0); // A block is not a Held attack.
   equip([], { tap2: 'ancestralMercy', hold1: 'ancestralMercy' });
   hit({ slotId: 'tap2', attackCategory: 'quickAttack', quickBonusEffectProc: true });
   close(amount(attacker, 'unshackledStamina'), 9.6);
