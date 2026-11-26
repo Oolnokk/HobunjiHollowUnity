@@ -100,7 +100,7 @@
   }
 
   function create({ THREE, getOwnerMesh, getOwnerNeckJoint, getPlayerMesh = getOwnerMesh, getPlayerNeckJoint = getOwnerNeckJoint,
-    getRotationSource, getInvertRotationSource, getCancelRotationalOffset, getOwnerPortraitMeshes } = {}) {
+    getRotationSource, getInvertRotationSource, getCancelRotationalOffset, getOwnerPortraitMeshes, getCameraDeadzone } = {}) {
     if (!THREE?.Quaternion || !THREE?.Vector3 || typeof getPlayerMesh !== 'function'
       || typeof getPlayerNeckJoint !== 'function' || typeof getRotationSource !== 'function'
       || typeof getInvertRotationSource !== 'function' || typeof getCancelRotationalOffset !== 'function') {
@@ -346,6 +346,7 @@
           scale: renderedScale, quaternion: worldQuaternion,
           ownerFrameYaw: 2*Math.atan2(ownerFrame.y,ownerFrame.w), perchSide: renderedPerchX,
           passiveAwayLimit: passive && useRenderedGrip ? awayLimitAtYaw : null, // Candidate headings may reverse the allowed side.
+          cameraDeadzone: typeof getCameraDeadzone === 'function' ? getCameraDeadzone() : null, // Camera-edge-on zone: perps + radius, same convention as PerpRotation.
         });
       }
       lastHeadPitch=lastPetSide=0;

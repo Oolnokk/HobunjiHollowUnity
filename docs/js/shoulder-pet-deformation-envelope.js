@@ -38,10 +38,14 @@
     }
   }
 
-  function solveBodyYaw(owners,pets,requested,scratch={a:[],b:[],pairs:[]}) {
+  // `forbidden` is an optional flat list of extra angular arcs [centre, halfWidth, ...] (radians)
+  // that the answer may not lie in, e.g. the camera-edge-on zone; they are cut from the
+  // allowed set exactly like the analytic collision arcs.
+  function solveBodyYaw(owners,pets,requested,scratch={a:[],b:[],pairs:[]},forbidden=null) {
     const pairs=scratch.pairs; pairs.length=0;
     const c=Math.cos(requested),s=Math.sin(requested);
     let blocked=false;
+    if(forbidden)for(let i=0;i<forbidden.length;i+=2)if(Math.abs(wrap(requested-forbidden[i]))<forbidden[i+1])blocked=true;
     // Each surviving pair defines a single forbidden angular arc. Collect
     // them once; if the requested heading is already clear, no acos or arc
     // subtraction is needed.
@@ -59,6 +63,23 @@
     if(!blocked)return wrap(requested);
     let allowed=scratch.a,next=scratch.b;
     allowed.length=0;allowed.push(0,TAU);
+    const cut=(center,half)=>{
+      const lo=center-half,hi=center+half;
+      if(lo<0) {
+        subtract(allowed,next,0,hi);{const swap=allowed;allowed=next;next=swap;}
+        subtract(allowed,next,lo+TAU,TAU);{const swap=allowed;allowed=next;next=swap;}
+      } else if(hi>TAU) {
+        subtract(allowed,next,lo,TAU);{const swap=allowed;allowed=next;next=swap;}
+        subtract(allowed,next,0,hi-TAU);{const swap=allowed;allowed=next;next=swap;}
+      } else {
+        subtract(allowed,next,lo,hi);{const swap=allowed;allowed=next;next=swap;}
+      }
+    };
+    if(forbidden)for(let i=0;i<forbidden.length;i+=2) {
+      if(forbidden[i+1]>=Math.PI)return null; // A zone covering every heading leaves no answer.
+      cut(positive(forbidden[i]),forbidden[i+1]+ANGLE_EPS);
+      if(!allowed.length)return null;
+    }
     for(let i=0;i<pairs.length;i+=3) {
       const o=pairs[i],p=pairs[i+1],r=pairs[i+2],product=2*o.radial*p.radial;
       const numerator=o.radial**2+p.radial**2-r*r;
@@ -71,16 +92,7 @@
       if(threshold<=-1)return null;
       const half=Math.acos(Math.max(-1,Math.min(1,threshold)))+ANGLE_EPS;
       if(half>=Math.PI)return null;
-      const center=positive(o.angle-p.angle),lo=center-half,hi=center+half;
-      if(lo<0) {
-        subtract(allowed,next,0,hi);{const swap=allowed;allowed=next;next=swap;}
-        subtract(allowed,next,lo+TAU,TAU);{const swap=allowed;allowed=next;next=swap;}
-      } else if(hi>TAU) {
-        subtract(allowed,next,lo,TAU);{const swap=allowed;allowed=next;next=swap;}
-        subtract(allowed,next,0,hi-TAU);{const swap=allowed;allowed=next;next=swap;}
-      } else {
-        subtract(allowed,next,lo,hi);{const swap=allowed;allowed=next;next=swap;}
-      }
+      cut(positive(o.angle-p.angle),half);
       if(!allowed.length)return null;
     }
     let best=null,distance=Infinity;
@@ -95,6 +107,69 @@
     return best===null?null:wrap(best);
   }
 
+  // Camera-edge-on zone. A pet card is edge-on to the camera when its world yaw is within
+  // `deadRad` of any of `perps` (the same convention as PerpRotation / cameraRelativeCreaturePerps).
+  // The body card is at the body yaw; the head region is at body yaw + head yaw.
+  function zoneActive(zone) {return !!zone && Array.isArray(zone.perps) && zone.perps.length>0 && zone.deadRad>0 && zone.deadRad<Math.PI;}
+  function zoneArcs(zone,headRad,out) {
+    out.length=0;
+    for(const perp of zone.perps) {
+      out.push(perp,zone.deadRad);
+      if(Math.abs(headRad)>EPS)out.push(perp-headRad,zone.deadRad); // body + head inside the zone <=> body inside the zone shifted by -head.
+    }
+    return out;
+  }
+  function inZone(zone,yaw) {
+    for(const perp of zone.perps)if(Math.abs(wrap(yaw-perp))<zone.deadRad-ANGLE_EPS)return true;
+    return false;
+  }
+  // Smallest margin (radians, negative inside) of a yaw to the zone edge.
+  function zoneMargin(zone,yaw) {
+    let best=Infinity;
+    for(const perp of zone.perps)best=Math.min(best,Math.abs(wrap(yaw-perp))-zone.deadRad);
+    return best;
+  }
+  const headCandidates=[]; // Reused: no per-frame arrays on the head path.
+  // Nearest head yaw (degrees, within [lo,hi]) to `headDeg` whose world yaw (body + head) stays outside the zone.
+  const headClear=(zone,bodyYaw,h,lo,hi)=>h>=lo-EPS && h<=hi+EPS && !inZone(zone,bodyYaw+h*DEG);
+  function nearestHeadOutside(zone,bodyYaw,headDeg,lo,hi) {
+    if(headClear(zone,bodyYaw,headDeg,lo,hi))return headDeg;
+    headCandidates.length=0;headCandidates.push(0);
+    const half=zone.deadRad/DEG;
+    for(let i=0;i<zone.perps.length;i++) {
+      const centre=wrap(zone.perps[i]-bodyYaw)/DEG;
+      headCandidates.push(wrap((centre-half)*DEG)/DEG,wrap((centre+half)*DEG)/DEG);
+    }
+    let best=null,distance=Infinity;
+    for(let i=0;i<headCandidates.length;i++) {
+      const h=headCandidates[i];
+      if(!headClear(zone,bodyYaw,h,lo,hi))continue;
+      const d=Math.abs(h-headDeg);
+      if(d<distance){distance=d;best=Math.max(lo,Math.min(hi,h));}
+    }
+    return best===null?headDeg:best;
+  }
+  // When the requested yaw sits inside a zone, resolve towards the side the pet last settled on
+  // so a heading hovering at the zone centre cannot flip the pet between the two edges.
+  function biasedRequest(zone,requested,memory) {
+    let yaw=requested;
+    for(let i=0;i<zone.perps.length;i++) {
+      const perp=zone.perps[i],d=wrap(requested-perp);
+      if(Math.abs(d)<zone.deadRad) {
+        const side=memory&&memory[i]?memory[i]:(d>=0?1:-1);
+        yaw=perp+side*Math.max(Math.abs(d),1e-4);
+      }
+    }
+    return wrap(yaw);
+  }
+  function rememberZoneSide(zone,resolved,requested,memory) {
+    for(let i=0;i<zone.perps.length;i++) {
+      const perp=zone.perps[i],d=wrap(resolved-perp);
+      if(Math.abs(d)<=zone.deadRad+1e-3)memory[i]=d>=0?1:-1;
+      else if(Math.abs(wrap(requested-perp))>zone.deadRad+.2)memory[i]=0; // Far from the zone: forget.
+    }
+  }
+
   function create(THREE,proxyFor) {
     if(!THREE?.Matrix4 || !THREE?.Quaternion || !THREE?.Euler)return null;
     const entries=new WeakMap(); // Prepared controls, released with their painted mesh.
@@ -105,6 +180,7 @@
     const q=new THREE.Quaternion(),euler=new THREE.Euler(),axis=new THREE.Vector3(0,1,0);
     const scratch={a:[],b:[],pairs:[],pairTests:0,ownerSorted:true};
     const diagnostic={}; // Pixel Probe reads the final constraint, not speculative head alternatives.
+    const zoneBuffer=[],zoneSides=new WeakMap(),dzScratch={a:[],b:[],pairs:[]},edgeDiagnostic={deadDeg:0,bodyMarginDeg:0,headMarginDeg:0}; // Reused; the zone adds no per-frame allocation.
 
     function materials(mesh) {
       return Array.isArray(mesh.material)?mesh.material:[mesh.material];
@@ -274,29 +350,29 @@
       }
     }
 
+    function finishSolve(d,started) { // Hoisted: shared by every solve exit without a per-frame closure.
+      d.cacheHit=d.preparations===0;d.envelopePairs=scratch.pairTests;d.poseMs=Math.max(0,clock()-started-d.buildMs);
+      // Do not keep the last unequipped/disposed avatar alive through scratch references.
+      ownerEntries.length=petEntries.length=ownerDisks.length=petDisks.length=scratch.pairs.length=0;
+      seenMeshes.clear();seenBones.clear();
+      return d;
+    }
     function solve(args) {
       const started=clock(),d=diagnostic;
       const {pet,perch,grip,scale,quaternion}=args,avatar=pet?.avatarRef,group=avatar?.group;
       const requested=Math.atan2(2*(quaternion.w*quaternion.y+quaternion.x*quaternion.z),1-2*(quaternion.y**2+quaternion.z**2));
       const rig=avatar?.headRig,head=Number(rig?.currentYawDeg)||0;
-      Object.assign(d,{mode:'geometry-unavailable',quality:'live-bone-envelopes',checks:0,buildChecks:0,buildMs:0,
-        preparations:0,weightRefreshes:0,envelopePairs:0,headCandidates:0,ownerPatches:0,petPatches:0,cacheHit:true,
-        requestedBodyYawDeg:requested/DEG,resolvedBodyYawDeg:requested/DEG,bodyOffsetDeg:0,requestedHeadYawDeg:head,headYawDeg:head});
-      const finish=()=>{
-        d.cacheHit=d.preparations===0;d.envelopePairs=scratch.pairTests;d.poseMs=Math.max(0,clock()-started-d.buildMs);
-        // Do not keep the last unequipped/disposed avatar alive through scratch references.
-        ownerEntries.length=petEntries.length=ownerDisks.length=petDisks.length=scratch.pairs.length=0;
-        seenMeshes.clear();seenBones.clear();
-        return d;
-      };
+      d.mode='geometry-unavailable';d.quality='live-bone-envelopes';d.checks=0;d.buildChecks=0;d.buildMs=0; // Direct writes: no per-frame literal.
+      d.preparations=0;d.weightRefreshes=0;d.envelopePairs=0;d.headCandidates=0;d.ownerPatches=0;d.petPatches=0;d.cacheHit=true;
+      d.requestedBodyYawDeg=requested/DEG;d.resolvedBodyYawDeg=requested/DEG;d.bodyOffsetDeg=0;d.requestedHeadYawDeg=head;d.headYawDeg=head;
       scratch.pairTests=0;
-      if(!group?.isObject3D || !avatar.frontPlane || !grip || !scale || !perch || !args.ownerMeshes?.length)return finish();
+      if(!group?.isObject3D || !avatar.frontPlane || !grip || !scale || !perch || !args.ownerMeshes?.length)return finishSolve(d,started);
       ownerEntries.length=petEntries.length=ownerDisks.length=petDisks.length=0;seenMeshes.clear();seenBones.clear();
       for(const mesh of args.ownerMeshes) {
         if(!mesh || seenMeshes.has(mesh))continue;
-        seenMeshes.add(mesh);const e=entryFor(mesh,d);if(!e)return finish();ownerEntries.push(e);sync(e);
+        seenMeshes.add(mesh);const e=entryFor(mesh,d);if(!e)return finishSolve(d,started);ownerEntries.push(e);sync(e);
       }
-      if(!ownerEntries.length)return finish();
+      if(!ownerEntries.length)return finishSolve(d,started);
       group.updateWorldMatrix(true,false);
       // The owner uses world-aligned coordinates around the live perch;
       // the pet uses native root coordinates around its authored grip.
@@ -306,23 +382,26 @@
         if(!mesh || seenMeshes.has(mesh))return true;
         seenMeshes.add(mesh);canonicalize(mesh,back);const e=entryFor(mesh,d);if(!e)return false;petEntries.push(e);sync(e);return true;
       };
-      if(!addPet(avatar.frontPlane,false) || !addPet(avatar.backPlane,true))return finish();
-      for(const m of group.children)if(m.visible && m.userData?.hobunjiShoulderSplitOverlay && !addPet(m,m.userData.hobunjiPlaneFace==='back'))return finish();
+      if(!addPet(avatar.frontPlane,false) || !addPet(avatar.backPlane,true))return finishSolve(d,started);
+      for(const m of group.children)if(m.visible && m.userData?.hobunjiShoulderSplitOverlay && !addPet(m,m.userData.hobunjiPlaneFace==='back'))return finishSolve(d,started);
       for(const e of ownerEntries)pose(e,ownerFrame,null,0,null,null,ownerDisks);
       ownerDisks.sort((a,b)=>a.y0-b.y0); // Vertical broad phase shared by every head alternative.
       d.ownerPatches=ownerDisks.length;
       let bestBody=null,bestHead=head,bestDelta=Infinity;
+      const zone=zoneActive(args.cameraDeadzone)?args.cameraDeadzone:null; // Camera-edge-on zone, enforced for body and head alike.
+      let memory=null;if(zone){memory=zoneSides.get(group);if(!memory)zoneSides.set(group,memory=[]);}
+      const target=zone?biasedRequest(zone,requested,memory):requested;
       const evaluate=angle=>{
         petDisks.length=0;
         for(const e of petEntries)pose(e,petFrame,rig,angle,grip,scale,petDisks);
         d.petPatches=petDisks.length;d.headCandidates++;
-        const body=solveBodyYaw(ownerDisks,petDisks,requested,scratch);
+        const body=solveBodyYaw(ownerDisks,petDisks,target,scratch,zone?zoneArcs(zone,angle*DEG,zoneBuffer):null);
         if(body===null)return false;
         if(args.passiveAwayLimit && Math.abs(angle)>EPS){
           const allowed=args.passiveAwayLimit(body);
           if(angle*allowed<=0 || Math.abs(angle)>Math.abs(allowed)+EPS)return false;
         }
-        const delta=Math.abs(wrap(body-requested));
+        const delta=Math.abs(wrap(body-target)); // Ranked against the side-biased target, so zone hysteresis is not undone by head alternatives.
         if(delta<bestDelta-EPS || (Math.abs(delta-bestDelta)<=EPS && Math.abs(angle-head)<Math.abs(bestHead-head))) {
           bestDelta=delta;bestBody=body;bestHead=angle;
         }
@@ -335,6 +414,11 @@
       const canTurn=typeof avatar.updateHeadYaw==='function' && !!(rig?.frontYawBone || rig?.frontCombinedBone);
       if(!clear && canTurn) {
         candidates.length=0;
+        if(zone && zoneMargin(zone,requested)>=0) { // Only useful when the body itself is clear: a head turn cannot move a body out of the zone.
+          const lo=Number.isFinite(rig.rig?.minDeg)?rig.rig.minDeg:-90,hi=Number.isFinite(rig.rig?.maxDeg)?rig.rig.maxDeg:90;
+          const edge=nearestHeadOutside(zone,requested,head,lo,hi);
+          if(Math.abs(edge-head)>EPS)candidates.push(edge);
+        }
         if(Math.abs(head)>EPS)candidates.push(head*.75,head*.5,head*.25,0);
         for(const candidate of candidates)if(evaluate(candidate))break;
         if(bestBody===null && !args.passiveAwayLimit) { // Passive curiosity can yield to neutral, never search inward.
@@ -344,38 +428,55 @@
           if(Math.abs(head)<EPS && bestBody===null && !evaluate(-sign*limit*.5) && bestBody===null)evaluate(-sign*limit);
         }
       }
-      if(bestBody===null){d.mode='no-safe-rotation';return finish();}
+      if(bestBody===null){d.mode='no-safe-rotation';return finishSolve(d,started);}
       d.mode='geometric-depth';d.bodyOffsetDeg=wrap(bestBody-requested)/DEG;d.resolvedBodyYawDeg=bestBody/DEG;d.headYawDeg=bestHead;
+      if(zone)rememberZoneSide(zone,bestBody,requested,memory);
       if(bestDelta>EPS)quaternion.setFromAxisAngle(axis,bestBody);
       if(canTurn && Math.abs(bestHead-head)>EPS)avatar.updateHeadYaw(bestHead,1000);
-      return finish();
+      return finishSolve(d,started);
     }
-    // Last pose this solver verified as clear, per pet, stored relative to the owner's
-    // heading. When geometry cannot be evaluated (unavailable) or no clear angle exists,
-    // the requested body and head yaw must not be applied unchecked: that is exactly the
-    // forbidden range the solver exists to block. Hold the last verified pose instead.
+    // Last pose this solver verified as clear, per pet, stored relative to the owner's heading.
+    // When geometry cannot be evaluated (unavailable) or no clear angle exists, the requested
+    // body and head yaw must not be applied unchecked: that is exactly the forbidden range the
+    // solver exists to block. Hold the last verified pose instead.
     const lastSafe=new WeakMap();
+    const headMin=avatar=>{const v=avatar?.headRig?.rig?.minDeg;return Number.isFinite(v)?v:-90;};
+    const headMax=avatar=>{const v=avatar?.headRig?.rig?.maxDeg;return Number.isFinite(v)?v:90;};
     function constrain(args) {
       const d=solve(args),avatar=args.pet?.avatarRef,group=avatar?.group,quaternion=args.quaternion;
-      d.heldLastSafe=false;
+      d.heldLastSafe=false;d.cameraEdge=null;
       if(!group || !quaternion)return d;
-      const ownerYaw=Number(args.ownerFrameYaw)||0;
-      if(d.mode==='geometric-depth'){
+      const ownerYaw=Number(args.ownerFrameYaw)||0,zone=zoneActive(args.cameraDeadzone)?args.cameraDeadzone:null;
+      const solved=d.mode==='geometric-depth';
+      let bodyYaw=d.resolvedBodyYawDeg*DEG,headDeg=d.headYawDeg,changed=false;
+      if(solved) {
         let held=lastSafe.get(group);if(!held)lastSafe.set(group,held={body:0,head:0});
-        held.body=wrap(d.resolvedBodyYawDeg*DEG-ownerYaw);held.head=d.headYawDeg;
-        return d;
+        held.body=wrap(bodyYaw-ownerYaw);held.head=headDeg;
+      } else {
+        const held=lastSafe.get(group);
+        if(held) { // Never verified pets have nothing safe to hold and keep their requested pose.
+          bodyYaw=wrap(ownerYaw+held.body);headDeg=held.head;changed=true;d.heldLastSafe=true;
+        }
+        if(zone) { // No geometry verdict this frame: the camera-edge zone is still enforced on whatever is applied.
+          let memory=zoneSides.get(group);if(!memory)zoneSides.set(group,memory=[]);
+          const fitted=solveBodyYaw([],[],biasedRequest(zone,bodyYaw,memory),dzScratch,zoneArcs(zone,0,zoneBuffer));
+          if(fitted!==null && Math.abs(wrap(fitted-bodyYaw))>EPS) {rememberZoneSide(zone,fitted,bodyYaw,memory);bodyYaw=fitted;changed=true;}
+          const edge=nearestHeadOutside(zone,bodyYaw,headDeg,headMin(avatar),headMax(avatar));
+          if(Math.abs(edge-headDeg)>EPS) {headDeg=edge;changed=true;}
+        }
+        if(changed) {
+          quaternion.setFromAxisAngle(axis,bodyYaw);
+          const rig=avatar.headRig,current=Number(rig?.currentYawDeg)||0;
+          if(typeof avatar.updateHeadYaw==='function' && rig && Math.abs(current-headDeg)>EPS)avatar.updateHeadYaw(headDeg,1000);
+          d.resolvedBodyYawDeg=bodyYaw/DEG;d.bodyOffsetDeg=wrap(bodyYaw-d.requestedBodyYawDeg*DEG)/DEG;d.headYawDeg=headDeg;
+        }
       }
-      const held=lastSafe.get(group);
-      if(!held)return d; // Never verified for this pet: nothing safe to hold, behaviour is unchanged.
-      const resolved=wrap(ownerYaw+held.body);
-      quaternion.setFromAxisAngle(axis,resolved);
-      const rig=avatar.headRig,current=Number(rig?.currentYawDeg)||0;
-      if(typeof avatar.updateHeadYaw==='function' && rig && Math.abs(current-held.head)>EPS)avatar.updateHeadYaw(held.head,1000);
-      d.heldLastSafe=true;d.resolvedBodyYawDeg=resolved/DEG;
-      d.bodyOffsetDeg=wrap(resolved-d.requestedBodyYawDeg*DEG)/DEG;d.headYawDeg=held.head;
+      if(zone) // Distance beyond the zone edge (degrees, negative = inside) for Pixel Probe.
+      {edgeDiagnostic.deadDeg=zone.deadRad/DEG;edgeDiagnostic.bodyMarginDeg=zoneMargin(zone,bodyYaw)/DEG;
+        edgeDiagnostic.headMarginDeg=zoneMargin(zone,bodyYaw+headDeg*DEG)/DEG;d.cameraEdge=edgeDiagnostic;}
       return d;
     }
     return {constrain};
   }
-  window.ShoulderPetDeformationEnvelope=Object.freeze({create,solveBodyYaw,diskMetrics});
+  window.ShoulderPetDeformationEnvelope=Object.freeze({create,solveBodyYaw,diskMetrics,nearestHeadOutside,zoneMargin});
 })();

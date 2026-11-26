@@ -378,9 +378,9 @@
     const paddedResult={},exactResult={}; // Reused scratch; no runtime lookup allocations.
 
     function constrain(args) {
+      if(liveEnvelope)return liveEnvelope.constrain(args); // Owns its own unavailable cases, so the held pose and camera-edge zone still apply.
       const {pet,grip,scale,quaternion}=args,avatar=pet?.avatarRef,group=avatar?.group;
       if(!group?.isObject3D || !avatar.frontPlane || !grip || !scale || !args.ownerMeshes?.length)return {mode:'geometry-unavailable'};
-      if(liveEnvelope)return liveEnvelope.constrain(args);
       const yaw=Math.atan2(2*(quaternion.w*quaternion.y+quaternion.x*quaternion.z),1-2*(quaternion.y**2+quaternion.z**2));
       const ownerYaw=Number(args.ownerFrameYaw)||0,requestedHead=Number(avatar.headRig?.currentYawDeg)||0;
       const limit=headLimit(avatar,requestedHead),side=args.perchSide<0?0:1;

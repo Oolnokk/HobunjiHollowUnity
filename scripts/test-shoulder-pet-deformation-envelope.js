@@ -174,3 +174,108 @@ console.log('passive geometry candidates respect permitted direction');
   assert.equal(unchanged.heldLastSafe,false);near(yawOf(none.quaternion),0,'unverified pet keeps the requested yaw');
 }
 console.log('unavailable or blocked geometry holds the last verified pose instead of passing requested yaw through');
+
+// ---- Camera-edge-on zone: body AND head must stay out of it (same convention as PerpRotation) ----
+{
+  const {nearestHeadOutside,zoneMargin}=win.ShoulderPetDeformationEnvelope;
+  const D=Math.PI/180,dead=27.5*D;
+  const close=(a,b,m,tol=1e-4)=>assert.ok(Math.abs(a-b)<tol,m+': '+a+' vs '+b);
+  const yawOf=q=>2*Math.atan2(q.y,q.w);
+  const inside=(yaw,perps)=>perps.some(p=>Math.abs(wrap(yaw-p))<dead-1e-5);
+
+  // A. Analytic solver with extra forbidden arcs agrees with a brute-force half-degree sweep.
+  let s2=987;const r2=()=>{s2=(Math.imul(s2,1664525)+1013904223)>>>0;return s2/4294967296;};
+  for(let i=0;i<100;i++){
+    const make=()=>Array.from({length:3},()=>disk((r2()-.5)*.8,(r2()-.5)*.8,.015+r2()*.05,.2+r2()*.1,.35+r2()*.1));
+    const owners=make(),pets=make(),request=r2()*2*Math.PI-Math.PI,az=r2()*2*Math.PI-Math.PI,perps=[az,az+Math.PI];
+    const arcs=[az,dead,az+Math.PI,dead];
+    const resolved=solveBodyYaw(owners,pets,request,undefined,arcs);
+    if(resolved!==null){
+      assert.ok(pairSafe(owners,pets,resolved),'zone-aware answer is still collision-free');
+      assert.ok(!inside(resolved,perps),'zone-aware answer is outside the camera-edge zone');
+    }
+    for(let j=0;j<720;j++){
+      const sample=j*Math.PI/360;
+      if(!pairSafe(owners,pets,sample)||inside(sample,perps))continue;
+      assert.ok(resolved!==null && Math.abs(wrap(resolved-request))<=Math.abs(wrap(sample-request))+1e-4,'nearest permitted angle outside the zone is not missed');
+    }
+  }
+  assert.equal(solveBodyYaw([],[],0,undefined,[0,Math.PI]),null,'a zone covering every heading leaves no answer');
+
+  // B. Head helper: nearest head yaw whose world yaw (body + head) is outside the zone, inside the rig limits.
+  const zoneB={perps:[.72,.72+Math.PI],deadRad:dead};
+  close(nearestHeadOutside(zoneB,0,10*D*0+0,-40,40),0,'a clear head is untouched');
+  const headEdge=nearestHeadOutside(zoneB,0,40,-40,40);
+  close(headEdge,(.72-dead)/D,'a head facing the camera edge-on yields to the zone edge nearest its request');
+  assert.ok(zoneMargin(zoneB,headEdge*D)>=-1e-6,'resulting head margin is not negative');
+  assert.ok(Math.abs(nearestHeadOutside(zoneB,0,40,-40,5))<=5+1e-9,'rig limits are respected');
+
+  // Shared fixture: geometry resolves cleanly (neck away), so only the zone moves things.
+  const build=()=>{
+    const neck=bone(),alt=bone();neck.position.x=.4;
+    const owner=mesh(rectangle(.3,0),[neck,alt]);
+    const group={isObject3D:true,children:[],matrixWorld:new M(),updateWorldMatrix(){}};
+    const yaw=bone(),writes=[];
+    const pet={avatarRef:{group,frontPlane:mesh(rectangle(.3,0),[yaw]),
+      headRig:{currentYawDeg:0,frontYawBone:yaw,rig:{minDeg:-40,maxDeg:40}},
+      updateHeadYaw(deg){writes.push(deg);this.headRig.currentYawDeg=deg;yaw.rotation.y=deg*D;}}};
+    const solver=create({Matrix4:M,Quaternion:Q,Euler:E,Vector3:V},()=>proxy);
+    const frame=(requestedYaw,zone,extra={})=>({ownerMeshes:[owner],pet,perch:new V(),grip:new V(),scale:new V(1,1,1),quaternion:new Q(requestedYaw),ownerFrameYaw:0,cameraDeadzone:zone,...extra});
+    return {solver,pet,frame,writes};
+  };
+
+  // C. Body requested edge-on to the camera is moved out of the zone, to the nearest edge.
+  {
+    const {solver,frame}=build();const zone={perps:[.1,.1+Math.PI],deadRad:dead};
+    const a=frame(0,zone),r=solver.constrain(a);
+    assert.equal(r.mode,'geometric-depth');
+    close(yawOf(a.quaternion),.1-dead,'body lands on the nearest zone edge, not inside it');
+    assert.ok(r.cameraEdge.bodyMarginDeg>=-1e-4 && r.cameraEdge.headMarginDeg>=-1e-4,'reported margins are non-negative');
+    const free=frame(1.2,zone),r2=solver.constrain(free);
+    close(yawOf(free.quaternion),1.2,'a body already clear of the zone is untouched');
+    assert.equal(r2.cameraEdge.bodyMarginDeg>0,true);
+  }
+
+  // D. Side memory: a request hovering at the zone centre cannot flip the pet between the two edges.
+  {
+    const {solver,frame}=build();const zone={perps:[.1,.1+Math.PI],deadRad:dead};
+    const a=frame(.1-.001,zone);solver.constrain(a);const first=yawOf(a.quaternion);
+    const b=frame(.1+.001,zone);solver.constrain(b);
+    close(yawOf(b.quaternion),first,'crossing the centre keeps the side the pet settled on');
+    const far=frame(1.4,zone);solver.constrain(far);
+    const c=frame(.1+.001,zone);solver.constrain(c);
+    close(yawOf(c.quaternion),.1+dead,'after leaving the zone the side is forgotten and the nearest edge wins');
+  }
+
+  // E. Head turn facing the camera edge-on is clamped to the zone edge; the body is not disturbed for it.
+  {
+    const {solver,pet,frame,writes}=build();const zone={perps:[.72,.72+Math.PI],deadRad:dead};
+    pet.avatarRef.headRig.currentYawDeg=40;pet.avatarRef.headRig.frontYawBone.rotation.y=40*D;
+    const a=frame(0,zone),r=solver.constrain(a);
+    assert.equal(r.mode,'geometric-depth');
+    assert.ok(zoneMargin(zone,yawOf(a.quaternion)+r.headYawDeg*D)>=-1e-4,'head world yaw is outside the zone');
+    assert.ok(Math.abs(r.headYawDeg)<=40+1e-9,'head stays within its rig limits');
+  }
+
+  // F. No geometry verdict (unavailable): the zone is still enforced on body and head.
+  {
+    const {solver,pet,frame,writes}=build();const zone={perps:[.72,.72+Math.PI],deadRad:dead};
+    pet.avatarRef.headRig.currentYawDeg=40;
+    const a=frame(.5,zone,{ownerMeshes:[]}),r=solver.constrain(a); // Nearer the negative edge, which leaves a 40° head inside the zone.
+    assert.equal(r.mode,'geometry-unavailable');
+    assert.ok(zoneMargin(zone,yawOf(a.quaternion))>=-1e-4,'body is moved out of the zone even without geometry');
+    assert.ok(r.cameraEdge.bodyMarginDeg>=-1e-4 && r.cameraEdge.headMarginDeg>=-1e-4,'head also leaves the zone without geometry');
+    assert.ok(writes.length>=1 && Math.abs(writes[writes.length-1]-r.headYawDeg)<1e-9,'the clamped head yaw is applied to the live rig');
+  }
+
+  // G. A held last-safe pose that has since become camera-edge-on (the camera moved) is pushed out too.
+  {
+    const {solver,frame}=build();
+    const ok=frame(0.5,null);solver.constrain(ok);close(yawOf(ok.quaternion),.5,'verified without a zone');
+    const zone={perps:[.5,.5+Math.PI],deadRad:dead};
+    const down=frame(0,zone,{ownerMeshes:[]}),r=solver.constrain(down);
+    assert.equal(r.heldLastSafe,true);
+    assert.ok(zoneMargin(zone,yawOf(down.quaternion))>=-1e-4,'held pose is moved out of the zone');
+  }
+}
+console.log('camera-edge zone: body and head stay out of it, with side memory, with and without geometry');
