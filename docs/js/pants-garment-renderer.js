@@ -604,6 +604,7 @@
     const plane = findPortraitPlane(avatarGroup);
     const nodes = findLegNodes(legHandle);
     if (!THREE || !Core || !garment || !character || !plane || !nodes) return null;
+    const fitCuffs = garmentId !== 'layered_skirt'; // A shared skirt has no independent ankle openings; keep its legacy hem deformation.
     const openingWidthRatioForFeet = () => { // Mirrors November 14's uniform body-X/Y average for procedural hands and feet.
       const factors = global.HobunjiCharacterRigScale?.bodyScaleFactorsFor?.(legHandle.group?.parent || avatarGroup);
       const x = Number(factors?.x), y = Number(factors?.y); // Body width/height scales from the existing character-rig owner.
@@ -658,7 +659,7 @@
         for (const index of [sample.i, sample.i + 1, sample.i + stride, sample.i + stride + 1]) waistOwners[index] = 1;
       }
       const cuffOwners = new Uint8Array(stride * stride);
-      for (let sideIndex = 0; sideIndex < LEG_SIDES.length; sideIndex++) {
+      for (let sideIndex = 0; fitCuffs && sideIndex < LEG_SIDES.length; sideIndex++) {
         const side = LEG_SIDES[sideIndex];
         for (const sample of handle.splineSpec[side + 'Ankle'].samples) {
           for (const index of [sample.i, sample.i + 1, sample.i + stride, sample.i + stride + 1]) cuffOwners[index] |= 1 << sideIndex;
@@ -955,9 +956,10 @@
       if (handle.mesh.visible !== visible) handle.mesh.visible = visible;
       if (!visible) return;
       if (!handle.restCaptured) handle.captureRest();
-      const widthScale = legHandle.getFootWidthScaleX?.() ?? openingWidthRatioForFeet(); // Scalar checks only; no scan or geometry work on ordinary frames.
+      // The normal update owns all neutral fitting. Render-only calls never even resolve a scale profile.
+      const widthScale = renderOnly ? handle.openingWidthScale : (fitCuffs ? legHandle.getFootWidthScaleX?.() ?? openingWidthRatioForFeet() : openingWidthRatioForFeet());
       if (!renderOnly && (Math.abs(widthScale - handle.openingWidthScale) > 1e-6 || (legHandle.anatomyRevision?.() ?? null) !== handle.fitAnatomyRevision)) {
-        if (!renderOnly) handle.captureRest(); // Update standing joints before refitting, not again in the stance check below.
+        handle.captureRest(); // Update standing joints before refitting, not again in the stance check below.
         handle.alignToRest(); // Rebuild from untouched art after a real anatomy change.
         rebuildSpineShift(spineProfile()); // The prior hunch offsets were sampled from the OLD rest vertices.
         handle.dirty = true;
@@ -1163,16 +1165,18 @@
         waistTarget = { left: Math.min(x1, x2), right: Math.max(x1, x2) };
         Core.fitWaistSpanX(handle.basePositions, SEGMENTS, beltSamples, waistTarget, handle.waistWidthInfluence);
       }
-      handle.openingWidthScale = legHandle.getFootWidthScaleX?.() ?? openingWidthRatioForFeet();
+      handle.openingWidthScale = fitCuffs ? legHandle.getFootWidthScaleX?.() ?? openingWidthRatioForFeet() : openingWidthRatioForFeet();
       handle.fitAnatomyRevision = legHandle.anatomyRevision?.() ?? null;
       let footTargets = null;
-      if (legHandle.getFootWidthX) {
+      if (fitCuffs && legHandle.getFootWidthX) {
         // Neutral leg-root X expressed in garment-model units; no animated foot world AABB.
-        const frame = restStanceBones(handle)?.frame;
+        const frame = legHandle.getRestStance ? restScratch.frame : null; // Already captured by the same neutral bind; avoid a second matrix traversal.
         const unit = frame ? Math.hypot(frame[0], frame[3], frame[6]) : 1;
         const mirrored = portraitsFlipped();
         footTargets = { left: legHandle.getFootWidthX(mirrored ? 'right' : 'left') * unit, right: legHandle.getFootWidthX(mirrored ? 'left' : 'right') * unit };
       }
+      const validFootTarget = width => Number.isFinite(width) && width > 0; // Unsupported geometry must not disable the prior safe fit.
+      if (footTargets && !validFootTarget(footTargets.left) && !validFootTarget(footTargets.right)) footTargets = null;
       Core.stretchLegOpeningSpans(handle.basePositions, SEGMENTS, handle.rings, handle.splineSpec, footTargets || handle.openingWidthScale);
       const sampledWidth = samples => {
         if (!samples?.length) return null;
