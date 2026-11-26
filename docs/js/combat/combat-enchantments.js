@@ -459,11 +459,11 @@
     const registry = window.ActorRegistry; // Live co-op roster and authoritative area lookup.
     const resources = window.ResourceSystem; // Ordinary recovery respects effective maxima and healing penalties.
     if (!livingActor(attacker) || !Number.isFinite(actualDamage) || !(actualDamage > 0) || !(power > 0) || !resources?.applyHealthRecovery) return;
-    const isPlayer = actor => actor === deps?.player || registry?.isPlayer?.(actor) === true;
+    const isPlayer = actor => !!actor && (actor === deps?.player || registry?.isPlayer?.(actor) === true); // Null ownership never qualifies as a co-op player.
     const canHeal = actor => livingActor(actor) && !actor._inCutscene && !actor.rec?.dead && !actor.rec?.deceased
       && !(actor === deps?.player && window.PlayerDowned?.isDowned?.());
-    if (!canHeal(attacker) || target === attacker) return;
-    const areaOf = actor => registry?.areaOf?.(actor) ?? (actor === deps?.player ? deps?.getCurrentArea?.() : null) ?? actor.areaId;
+    if (!canHeal(attacker) || !target || target === attacker) return;
+    const areaOf = actor => (actor === deps?.player ? deps?.getCurrentArea?.() : null) ?? registry?.areaOf?.(actor) ?? actor.areaId; // Local area authority wins over a stale avatar areaId.
     const area = areaOf(attacker); // Never heal across map boundaries.
     const radius = TUNING.SPIRIT_HEAL_RADIUS_TILES * (Number(deps?.TILE) || 0); // Squared range avoids square roots on recipient checks.
     const radiusSq = radius * radius;
@@ -486,7 +486,8 @@
     }
     for (const actor of deps?.companionObjects || []) {
       const owner = registry?.ownerOf?.(actor) || actor.master || (actor.banditCompanion ? null : deps?.player); // Preserve legacy ownership fallback only for non-hostile pets.
-      if (owner === attacker || (playerSide && !actor.banditCompanion && isPlayer(owner))) healAlly(actor);
+      if (playerSide && actor.banditCompanion) continue; // A malformed hostile-pet owner must not turn it into a party ally.
+      if (owner === attacker || (playerSide && isPlayer(owner))) healAlly(actor);
     }
     if (playerSide) {
       for (const actor of deps?.hostileObjects || []) {
@@ -495,6 +496,12 @@
       }
     }
     if (restored > 0) logEvent(`Spirit Heal restored ${Math.round(restored * 10) / 10} Health (${allyCount} allies)`);
+  }
+
+  // Projectile impacts use this narrow adapter because they do not publish melee attack events.
+  function applyRangedSpiritHeal(attacker, target, weaponKey, actualDamage) {
+    if (!weaponKey || !Number.isFinite(actualDamage) || !(actualDamage > 0) || !hasBase('spiritHeal', weaponKey)) return;
+    applySpiritHeal({ attacker, target, actualDamage }, getEnchantmentPowerMultiplier(weaponKey));
   }
 
   function applySicced(event, def, power) {
@@ -962,6 +969,7 @@
     getMasteryPowerMultiplier,
     flourishQualifies,
     applyPeripheralGust,
+    applyRangedSpiritHeal,
     getCurrentSiccedTarget,
     enforceCompanionTargeting,
     renderLoadoutUI,

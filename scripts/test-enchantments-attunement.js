@@ -319,6 +319,7 @@ assert.ok(Math.abs(RS.getAffliction(player, 'mirroredHealth') - mirrorBefore - 7
   load('docs/js/actor-registry.js');
   const registry = context.ActorRegistry;
   const savedHealth = player.health;
+  const savedArea = player.areaId; // Exercise the live local-area resolver rather than a stale avatar field.
   const savedMirrored = RS.getAffliction(player, 'mirroredHealth'); // Ensure Spirit Heal does not create a shield.
   const pet = makeEntity({ health: 50, x: 20, master: player, isCompanion: true, stableRole: 'companion' });
   const guest = makeEntity({ health: 50, x: 30 });
@@ -336,6 +337,7 @@ assert.ok(Math.abs(RS.getAffliction(player, 'mirroredHealth') - mirrorBefore - 7
   companionObjects.push(pet, guestPet, hostilePet, shoulder, downed, pet); // Duplicate pet exercises recipient deduplication.
   hostileObjects.push(hunter, neutral, hostileHunter);
   player.health = 50;
+  player.areaId = 'old-map';
   assert.equal(ES.addBase('sword', 'spiritHeal'), true);
   assert.equal(ES.DEFINITIONS.spiritHeal.alignment, 'Ohthic');
   const hit = actualDamage => CAE.hit(CAE.prepare({ abilityId: 'swingCombo', damage: 100 }), { target: enemy, actualDamage });
@@ -349,11 +351,33 @@ assert.ok(Math.abs(RS.getAffliction(player, 'mirroredHealth') - mirrorBefore - 7
   pet.health = 99;
   hit(20);
   assert.equal(pet.health, 100, 'Spirit Heal respects maximum Health');
+  // Exact projectile weapon identity, including a weapon swap before impact.
+  assert.equal(ES.addBase('throwingBlade', 'spiritHeal'), true);
+  weapon = 'unenchanted';
+  const beforeRanged = player.health; // Proves a non-enchanted source does not borrow the equipped or stored enchantment.
+  ES.applyRangedSpiritHeal(player, enemy, 'unenchanted', 20);
+  ES.applyRangedSpiritHeal(player, enemy, 'throwingBlade', 0);
+  assert.equal(player.health, beforeRanged);
+  ES.applyRangedSpiritHeal(player, enemy, 'throwingBlade', 20);
+  assert.ok(Math.abs(player.health - beforeRanged - 1.1) < 1e-9, 'Projectile hit uses the thrown weapon even after a swap');
+  // Healing respects the resource system's actual recovery penalties.
+  guest.health = 50;
+  RS.applyTimedDebuff(guest, 'inhibited', 12, { power: 2 });
+  ES.applyRangedSpiritHeal(player, enemy, 'throwingBlade', 20);
+  assert.equal(guest.health, 52.6, 'Inhibited reduces the ordinary ally recovery');
+  // Hostile wielders cannot heal the player party, even using the same enchantment definition.
+  const hostileWielder = makeEntity({ health: 50 });
+  const beforeHostileHit = player.health;
+  ES.applyRangedSpiritHeal(hostileWielder, player, 'throwingBlade', 20);
+  assert.equal(hostileWielder.health, 51.1);
+  assert.equal(player.health, beforeHostileHit, 'Victim and player party never receive hostile healing');
+  weapon = 'sword';
   companionObjects.splice(companionObjects.length - 6, 6);
   hostileObjects.splice(hostileObjects.length - 3, 3);
   for (const actor of [player, guest, distant, offArea]) registry.unregisterPlayer(actor);
   delete context.ActorRegistry;
   player.health = savedHealth;
+  player.areaId = savedArea;
 }
 
 // ── 17: Kindling conversion ───────────────────────────────────────
