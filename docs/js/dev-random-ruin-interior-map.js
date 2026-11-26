@@ -1179,9 +1179,10 @@
            }:puzzleOptions,
            nativePuzzle:nativeSoloType, // The embedded V50 generator authors its real stone gate and matching activator inside the lab.
           ...(stoneAgeRequested?{pieceSet:'stoneAge',floorProps:'pillarsOnly'}:{})}).catch(error=>{
-            if(!nativeSoloType||!String(error?.message).includes('V50 one-room '+nativeSoloType+' fixture was not authored:'))throw error;
+            const fixtureRejected=nativeSoloType&&String(error?.message).includes('V50 one-room '+nativeSoloType+' fixture was not authored:');
+            if(error?.name!=='V50PillarClearanceError'&&!fixtureRejected)throw error;
             lastGenerationAudit.attempts.push({seed:candidateSeed,ok:false,failures:[error.message]});
-            return null; // Try the next deterministic seed when V50 cannot fit the requested fixture.
+            return null; // Try the next deterministic seed when V50 cannot fit the requested fixture or a clear pillar face.
           });
         if(!generated)continue;
         generationMark('projecting-v50-layout-'+(attempt+1));
@@ -1253,10 +1254,16 @@
         ruin.nativeV50Pending=nativeSnapshots;
         if(planned?.nativeFloorCount){
           generationMark('generating-native-v50-floors');
-          await window.RuinV50NativeFloors.generateFloors({
-            api,plan:planned,seed:candidateSeed,density:cfg('generation.density',62),records:nativeSnapshots,
-            ...(stoneAgeRequested?{pieceSet:'stoneAge',floorProps:'pillarsOnly'}:{}),
-          }); // Skip expensive, unrelated room generation entirely for the five-room Hachutu root temple while preserving its climbable 3D shaft.
+          try{
+            await window.RuinV50NativeFloors.generateFloors({
+              api,plan:planned,seed:candidateSeed,density:cfg('generation.density',62),records:nativeSnapshots,
+              ...(stoneAgeRequested?{pieceSet:'stoneAge',floorProps:'pillarsOnly'}:{}),
+            });
+          }catch(error){
+            if(error?.name!=='V50PillarClearanceError')throw error;
+            lastGenerationAudit.attempts.push({seed:candidateSeed,ok:false,failures:[error.message]});
+            continue; // clearRuntime(false) on the next attempt disposes any previously accepted floor snapshots.
+          } // Skip expensive, unrelated room generation entirely for the five-room Hachutu root temple while preserving its climbable 3D shaft.
         }
         // Upper V50 stories reuse the source room's furniture-pattern pipeline.
         if(!ruin.hachutu)for(const item of nativeSnapshots){

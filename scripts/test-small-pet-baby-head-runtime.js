@@ -57,7 +57,7 @@ const windowStub = {
   localStorage: { getItem() { return null; }, setItem() {} },
   HOBUNJI_ATTACHMENT_RIG_PROFILES: { creatures: { bulky: { chatheadFrame: HEAD_BOX }, tiny: { chatheadFrame: HEAD_BOX } } },
   HobunjiGrehlrHeadRigCorrection: { version: 10 },
-  HobunjiAuthoredAnimalHeadRigs: { version: '2026-11-18-nine-authored-rigs2' },
+  HobunjiAuthoredAnimalHeadRigs: { version: '2026-11-26-ten-authored-rigs1' },
   HobunjiShoulderSplineProfiles: { version: 5, allows: () => false },
   AnimalShoulderSpline: { version: 10 },
   HobunjiShoulderSplitLayerParity: { version: 3 },

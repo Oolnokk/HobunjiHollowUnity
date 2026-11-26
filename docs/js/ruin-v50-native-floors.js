@@ -107,7 +107,7 @@
     if(!plan?.ok||!api?.generateInteriorLocale||!api?.takePreviewRoots)
       throw new Error('Native V50 generation requires a valid plan and generator');
     for(const floor of plan.floors.filter(item=>item.nativePort)){
-      let failure=null; // Keep retries local to the failed floor; accepted snapshots belong to the caller's cleanup lifecycle.
+      let failure=null; // Keep the last error (including its retryable name) while accepted snapshots belong to the caller's cleanup lifecycle.
       for(let retry=0;retry<6;retry++){
         try{
           const generated=await api.generateInteriorLocale({
@@ -124,9 +124,13 @@
           api.snapMechanismState(0); // Preserve genuine unsolved V50 puzzles; the native game bridge now owns their interactive state.
           records.push({floor:floor.floor,generated,roots:api.takePreviewRoots({snapshot:true,floor:floor.floor})});
           failure=null;break;
-        }catch(error){failure=String(error?.message||error);}
+        }catch(error){failure=error||new Error('Unknown V50 generation failure');}
       }
-      if(failure)throw new Error('V50 could not generate traversable floor '+floor.floor+': '+failure);
+      if(failure){
+        const error=new Error('V50 could not generate traversable floor '+floor.floor+': '+String(failure?.message||failure));
+        if(failure.name==='V50PillarClearanceError')error.name=failure.name; // Exhausted local retries can reroll the parent ruin.
+        throw error;
+      }
     }
     return records;
   }

@@ -232,6 +232,24 @@ async function check(){
     for(const pose of Object.keys(materials))materials[pose].map={image:images[pose],dispose(){this.disposed=true;}};
     return {root:{},bodyMaterials:materials,dispose(){}};}}; // Only geometry and GPU upload are stubbed, not Pingdort's pixel recolor or map-swapping code.
   const tintedRig=await w.PingdortRegistration.createRig({base:{color:'#485543'}});
+  const avatar={headRig:{},group:{parent:{}}}; // A mounted native shoulder card can receive the shared spline once its settings load.
+  const shoulder={stableRole:'shoulderPet',avatarRef:avatar};
+  const shoulderRig=w.PingdortRegistration.shoulderHeadRig(null);
+  let appliedRest;
+  w.AnimalShoulderSpline={decorateAvatar(_three,target,settings,options){
+    assert.equal(target,avatar);
+    assert.equal(options.fullSprite,true);
+    appliedRest=settings.shoulderRest;
+  }};
+  await w.PingdortRegistration.attachShoulderRest(shoulder,avatar,shoulderRig);
+  assert.equal(appliedRest.enabled,true);
+  assert.equal(appliedRest.afterPoints,(await w.PingdortRegistration.loadRig()).settings.perchSpline.afterPoints,
+    'the shoulder uses the same authored curl as a wild Pingdort');
+  appliedRest=null;
+  const obsolete=w.PingdortRegistration.attachShoulderRest(shoulder,avatar,shoulderRig);
+  shoulder.stableRole='companion';
+  await obsolete;
+  assert.equal(appliedRest,null,'a role switch invalidates a pending shoulder curl');
   for(const material of Object.values(materials)){
     assert.deepEqual([...material.map.image.pixels.slice(0,3)],[72,85,67],'Only approved moss-green plumage is recolored');
     assert.deepEqual([...material.map.image.pixels.slice(4,8)],[255,255,255,255],'The white eye remains white');
