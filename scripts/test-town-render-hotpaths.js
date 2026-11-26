@@ -962,9 +962,9 @@ assert.ok(shellDepthAt >= 0 && shellDepthAt < shellGroundFilterAt
   && shellGroundFilterAt < shellDepthDrawAt && shellDepthDrawAt < shellOnlyAt
   && shellOnlyAt < shellOutlineDrawAt && shellOutlineDrawAt < shellRestoreAt && shellRestoreAt < shellDepthRestoreAt,
   'shell replay prepares depth once, changes only the per-group elevation mask, then restores complete depth and materials');
-assert.ok((/const shellCandidates = \[\.\.\.new Set\(\[\.\.\.held, \.\.\.feet\]\)\]\.filter\(mesh => hasLayer\(mesh, SHELL_LAYER\)\s*&& mesh\.userData\?\.hobunjiProceduralHand !== true && !isAuthoredInkPlane\(mesh\)\)/).test(heldRender)
+assert.ok((/const shellCandidates = held\.filter\(mesh => hasLayer\(mesh, SHELL_LAYER\)\s*&& mesh\.userData\?\.hobunjiProceduralHand !== true && !isAuthoredInkPlane\(mesh\)\)/).test(heldRender)
   && heldRender.includes('const xrayMeshes = filterOffscreenReplayMeshes(camera, shellCandidates)'),
-  'all held/foot ground-x-ray participants retain shell parity before conservative camera culling');
+  'held ground-X-ray participants retain shell parity before camera culling; feet stay in the ordinary outline pass');
 assert.ok(pixelProbe.includes('shellXray=${heldRenderDebug.shellXrayPasses ?? 0}/${heldRenderDebug.shellXrayMeshes ?? 0}'),
   'mobile Pixel Probe reports shell x-ray replay activity');
 assert.ok(heldRender.includes('replayShellOutlineXray(this, scene, camera, xrayGroupMeshes, ground, topFaceGround, scissored, groups, shellPadding)'),
@@ -1095,16 +1095,16 @@ assert.equal(markFoot(oldTaggedPants), false, 'late-adopted pants stay idempoten
 
 const participantStart = heldRender.indexOf('  function isReplayParticipant(');
 const participantEnd = heldRender.indexOf('  function splitReplayParticipants(', participantStart);
-assert(participantStart > 0 && participantEnd > participantStart, 'production actor-distance x-ray rule is available');
-const makeParticipantRule = (owner, withinDistance) => new Function('participantOwner', 'withinFeetXrayDistance',
+assert(participantStart > 0 && participantEnd > participantStart, 'production actor and lower-body water-tint eligibility rule is available');
+const makeParticipantRule = (owner, withinDistance) => new Function('participantOwner', 'withinFeetWaterTintDistance',
   "const replayParticipantPolicy = 'rule'; " + heldRender.slice(participantStart, participantEnd)
     + '\nreturn isReplayParticipant;')(() => owner, () => withinDistance);
 assert.equal(makeParticipantRule('player', true)(mockPants, null, true), true,
-  'player pants use the same ground exemption as player feet');
+  'player pants have the same water-tint eligibility as player feet');
 assert.equal(makeParticipantRule('other', true)(mockPants, null, true), false,
-  'ordinary NPC pants outside the eligible species retain normal depth');
+  'ordinary NPC pants outside the eligible species do not require a separate tint draw');
 assert.equal(makeParticipantRule('player', false)(mockPants, null, true), false,
-  'pants still obey the short-distance rule that limits foot replay cost');
+  'the camera fallback still bounds lower-body tint replay cost');
 
 
 

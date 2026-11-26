@@ -59,10 +59,6 @@
       order: 13, label: 'Held weapon ground clearance', default: 'rotation', options: ['rotation', 'ordinary'],
       help: 'rotation: fit the authored-size weapon in Light stance, then rotate about the grip. ordinary: disable geometric correction for comparison. Both modes use solid terrain depth; weapon ground X-ray is disabled.',
     },
-    'feet.groundXray': {
-      order: 12, label: 'Feet and pants ground X-ray (legacy A/B)', default: 'off', options: ['off', 'on'],
-      help: 'off: feet and pants use ordinary world depth and outlines, relying on scaled geometric contact. on: restore the legacy selective ground replay for comparison.',
-    },
     'ground.showZone': {
       order: 10, label: 'Show ground X-ray zone', default: 'off', options: ['on', 'off'],
       help: 'Dev-only translucent circle at the player standing elevation; not a rendering behavior override.',
@@ -285,7 +281,7 @@
       && typeof snapshot.rules === 'object' && validDrawOrder(snapshot.drawOrder)
       && keys.every(key => RULES[key].options.includes(snapshot.rules[key])
         || (key === 'ground.heldPose' && snapshot.rules[key] === 'xray')
-        || (['ground.showZone','ground.heldPose','feet.groundXray'].includes(key) && snapshot.rules[key] === undefined)) // Legacy pre-preset backups omit this new rule.
+        || (['ground.showZone','ground.heldPose'].includes(key) && snapshot.rules[key] === undefined)) // Legacy pre-preset backups omit this new rule.
       && ['held', 'world'].includes(snapshot.stage)
       && DRAW_LAYER_IDS.has(snapshot.layer);
   }
