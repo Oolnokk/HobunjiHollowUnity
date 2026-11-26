@@ -959,7 +959,7 @@
       // The normal update owns all neutral fitting. Render-only calls never even resolve a scale profile.
       const widthScale = renderOnly ? handle.openingWidthScale : (fitCuffs ? legHandle.getFootWidthScaleX?.() ?? openingWidthRatioForFeet() : openingWidthRatioForFeet());
       if (!renderOnly && (Math.abs(widthScale - handle.openingWidthScale) > 1e-6 || (legHandle.anatomyRevision?.() ?? null) !== handle.fitAnatomyRevision)) {
-        handle.captureRest(); // Update standing joints before refitting, not again in the stance check below.
+        if (legHandle.getRestStance) handle.captureRest(); // Rebind only to an analytic standing pose, not animated fallback bones.
         handle.alignToRest(); // Rebuild from untouched art after a real anatomy change.
         rebuildSpineShift(spineProfile()); // The prior hunch offsets were sampled from the OLD rest vertices.
         handle.dirty = true;
