@@ -135,9 +135,47 @@
     if(!moving&&Math.hypot(motion.leanX,motion.leanZ)<.001)motion.leanX=motion.leanZ=0;
     return motion;
   }
+  // Measure the actual baked rope attachment independently of the pendulum's resettable
+  // pivot history. Only strike recovery can feed an idle head impulse; locomotion wins.
+  function advanceIdleHeadMotion(m,attacking,progress,strikeFrac,holdFrac,pivot,bodyVX,bodyVZ,dt,seedYaw,deadRad) {
+    if(!Number.isFinite(m.yaw))m.yaw=seedYaw;
+    if(!(dt>0))return; // Paused redraws cannot consume a transition or create artificial velocity.
+    let vx=0,vz=0;
+    const dx=pivot.x-m.tipX,dy=pivot.y-m.tipY,dz=pivot.z-m.tipZ;
+    const valid=m.tipReady&&dx*dx+dy*dy+dz*dz<=9;
+    if(valid){vx=dx/dt-bodyVX;vz=dz/dt-bodyVZ;}
+    m.tipReady=true;m.tipX=pivot.x;m.tipY=pivot.y;m.tipZ=pivot.z;
+    const tipMoving=valid&&Math.hypot(vx,vz)>HEAD_MOVE_EPSILON;
+    const bodyMoving=Math.hypot(bodyVX,bodyVZ)>HEAD_MOVE_EPSILON;
+    if(attacking){
+      if(!m.previousAttack||progress<m.previousProgress-.01||!valid){
+        m.sawStrike=false;m.returnX=m.returnZ=0;
+      }
+      if(progress>=strikeFrac)m.sawStrike=true;
+      if(m.sawStrike&&progress>=holdFrac&&tipMoving){m.returnX=vx;m.returnZ=vz;}
+      m.leanX=m.leanZ=0; // The existing attack quaternion still owns active swings.
+    }else{
+      const returned=m.previousAttack&&m.sawStrike&&valid;
+      if(bodyMoving){
+        m.source='locomotion';
+        stepIdleHeadMotion(m,bodyVX,bodyVZ,dt,seedYaw,deadRad);
+      }else if(returned){
+        // Prefer the real last return step; a fully settled final keyframe uses
+        // the most recent nonzero recovery sample instead. Consume exactly once.
+        const x=tipMoving?vx:m.returnX,z=tipMoving?vz:m.returnZ,speed=Math.hypot(x,z);
+        if(speed>HEAD_MOVE_EPSILON){
+          const magnitude=Math.min(deadRad,speed*HEAD_LEAN_PER_SPEED);
+          m.yaw=Math.atan2(x,z);m.leanX=x/speed*magnitude;m.leanZ=z/speed*magnitude;
+          m.source='strike-return';
+        }else stepIdleHeadMotion(m,0,0,dt,seedYaw,deadRad);
+      }else stepIdleHeadMotion(m,0,0,dt,seedYaw,deadRad);
+      m.sawStrike=false;m.returnX=m.returnZ=0;
+    }
+    m.previousAttack=attacking;m.previousProgress=progress;
+  }
+
   function idleHeadQuaternion(state,pivot,normal,out) {
-    const q=state.scratch,source=state.dualPhysicsSource;
-    const motion=source&&!source.dead?source.idleHeadMotion:state.idleHeadMotion;
+    const q=state.scratch,motion=state.idleHeadMotion; // Each actual hand has its own baked tip; dual wield still shares actor motion and rope physics.
     const deadRad=headDeadzone();
     const camera=state.cameraPosition||global.SharedAttackPose?.getCameraPosition?.()||global.PerpRotation?.liveCameraPosition?.();
     const rawYaw=Number.isFinite(motion.yaw)?motion.yaw:Math.atan2(normal.x,normal.z);
@@ -268,7 +306,7 @@
       metalOptions: options.metalOptions || null, masteryLevel: options.masteryLevel || (() => 0), resolveAsset: imageUrl, // Live XP rank drives authored non-metal VFX, while metal still uses plating/mastery options.
       headRoot: null, headAnchorImage: null, chainImage: null,
       direction: new THREE.Vector3(0, -1, 0), strikeStartDirection: new THREE.Vector3(0, -1, 0), lastPivot: new THREE.Vector3(), hasPivot: false, // Preserves the gravitational chain orientation only when the strike begins.
-      idleHeadMotion:{yaw:null,leanX:0,leanZ:0,renderedYaw:null,side:0,perp:null}, cameraPosition:null, // Retained logical heading and smoothed lean, separate from pendulum.
+      idleHeadMotion:{yaw:null,leanX:0,leanZ:0,renderedYaw:null,side:0,perp:null,tipReady:false,tipX:0,tipZ:0,tipY:0,returnX:0,returnZ:0,previousAttack:false,previousProgress:0,sawStrike:false,source:'initial'}, cameraPosition:null, // Retained logical heading and smoothed lean, separate from pendulum.
       lastMovementPosition: new THREE.Vector3(), hasMovementPosition: false, movementPosition: null, // Character movement source supplied by gameplay, not the weapon's animated joint.
       angularVelocity: new THREE.Vector3(), pivotVelocity: new THREE.Vector3(), hasPhysicsVelocity: false, physicsLength: 0, // Persistent world-space pendulum momentum and measured lever length.
       equilibriumSkips: 0, // Diagnostic count of exact no-torque integration substeps skipped.
@@ -884,6 +922,8 @@
         state.hasPivot = false; // Re-equipping resets old idle momentum rather than launching the suspended head.
         state.hasMovementPosition=false;
         state.idleHeadMotion.leanX=state.idleHeadMotion.leanZ=0;
+        state.idleHeadMotion.tipReady=state.idleHeadMotion.previousAttack=state.idleHeadMotion.sawStrike=false;
+        state.idleHeadMotion.returnX=state.idleHeadMotion.returnZ=0;
         state.hasPhysicsVelocity = false;
         state.angularVelocity.set(0, 0, 0);
       }
@@ -1016,8 +1056,6 @@
       state.hasMovementPosition = false;
       velocity.copy(pivot).sub(state.lastPivot).divideScalar(Math.max(0.001, dt)); // Fallback for third-party holders lacking an actor position.
     }
-    if(state.attacking){state.idleHeadMotion.leanX=state.idleHeadMotion.leanZ=0;}
-    else stepIdleHeadMotion(state.idleHeadMotion,actorPosition?velocity.x:0,actorPosition?velocity.z:0,dt,Math.atan2(normal.x,normal.z),headDeadzone());
     state.lastPivot.copy(pivot);
     if (!state.hasPhysicsVelocity) q.pivotAcceleration.set(0, 0, 0); // Ignore unknown velocity at initialization or after a seek.
     if (dt > 0) state.pivotVelocity.copy(q.measuredPivotVelocity);
@@ -1081,6 +1119,9 @@
     }
     if (dt > 0 && !state.fishingFlailHeadSpin) state.hasPhysicsVelocity = true; // Head-only spin is a kinematic orbit, not an impulse into the pendulum integrator.
     }
+    // Run after the shared physics branch so each visible dual copy measures its own tip.
+    const bodyVX=state.movementPosition?q.velocity.x:0,bodyVZ=state.movementPosition?q.velocity.z:0;
+    advanceIdleHeadMotion(state.idleHeadMotion,state.attacking,state.progress,state.sf,state.hf,pivot,bodyVX,bodyVZ,dt,Math.atan2(normal.x,normal.z),headDeadzone());
     if (state.dualWieldHidden) return; // Hidden original still simulates the ONE pendulum, but need not position invisible rope/head art.
     // Ground contact can now change only the direction of the already
     // fitted rope. No frame, jump, or pendulum swing can make it longer.
@@ -1188,7 +1229,7 @@
       physics: { model: 'taut-pendulum', length: s.physicsLength, angularVelocity: s.angularVelocity.toArray(), angularDamping: flailDamping(s.config.flail?.motion), gravity: 9.81 }, // Existing mobile snapshot exposes actual lever length and rad/s momentum.
       fire: (s.fireEmitters || []).map(fx => ({ layer: fx.sourceLayer.id, particles: fx.particles.length, sourcePixels: fx.sources.length, sourceFallback: fx.sourceFallback, clusters: fx.clusters?.length || 0, worldRise: fx.worldRise, modularShaft: s.config.flail ? null : s.itemKey.startsWith('modular:') ? s.itemKey.split(':')[1] : null, masteryRank: Number(fx.config.fixedMasteryRank ?? s.masteryLevel?.()) || 0, size: fx.config.size, visualScale: fx.visualScale, worldMoteSize: (Number(fx.config.size) || 0.035) * fx.visualScale, masteryFocus: fx.config.masteryFocus ?? 1, blend: fx.config.blendMode || 'additive', opacity: fx.config.opacity ?? 0.92, tipAnchors: fx.anchors?.map(anchor => [anchor.x, anchor.y]) || [], rate: fx.config.rate, life: fx.config.life, speed: fx.config.speed })), // Mobile tools inspect the actual shared emitter instead of a separate approximation.
       groundClearance: s.groundClearance || null, // Mobile diagnostics for shortened and trailing connectors.
-      idleHead: s.config.flail?{yaw:(s.dualPhysicsSource||s).idleHeadMotion.yaw,renderedYaw:s.idleHeadMotion.renderedYaw,leanX:(s.dualPhysicsSource||s).idleHeadMotion.leanX,leanZ:(s.dualPhysicsSource||s).idleHeadMotion.leanZ}:null, // Phone-visible head motion diagnosis.
+      idleHead: s.config.flail?{yaw:s.idleHeadMotion.yaw,renderedYaw:s.idleHeadMotion.renderedYaw,leanX:s.idleHeadMotion.leanX,leanZ:s.idleHeadMotion.leanZ,source:s.idleHeadMotion.source}:null, // Phone-visible head motion diagnosis.
       lagSource: s.movementPosition ? 'character' : 'haft-fallback', // Mobile checks can distinguish locomotion from animated weapon movement.
       scale: s.config.flail ? {
         chainX: connectorAxisScale(s.config.flail.chain, 'scaleX'),
@@ -1328,7 +1369,7 @@
 
   global.HobunjiWeaponSpriteAssemblies = {
     definitions: DEF, assemblyKind, isGroundNonSolidChild, groundFitSpec, groundStatus:root=>states.get(root)?.groundClearance||null, decorate, setAction, tick, drop, syncDualWield, scheduleTickAfterPose, debugSnapshot, previewParts, enchantmentTargets, dualWieldEnchantmentTargets, bakedPoint,
-    opaqueAt, anchor, refreshWorldMatrix, definitionFor, ropeSpriteSizing, ropeOpaqueBounds, tintRopePixels, stepPendulum, flailDamping, flailStrikeStraightening, flailYawTravel, fishingFlailHeadDirection, clampIdleHeadYaw, stepIdleHeadMotion, tiltedHeadDrop, // Pure sizing and phase helpers have regression tests.
+    opaqueAt, anchor, refreshWorldMatrix, definitionFor, ropeSpriteSizing, ropeOpaqueBounds, tintRopePixels, stepPendulum, flailDamping, flailStrikeStraightening, flailYawTravel, fishingFlailHeadDirection, clampIdleHeadYaw, stepIdleHeadMotion, advanceIdleHeadMotion, tiltedHeadDrop, // Pure sizing and phase helpers have regression tests.
   };
   global.HobunjiCacheAudit?.register('weapon assemblies (weak owner registry)', () => { let count = 0; for (const entry of records) if (liveState(entry)) count++; return count; });
   if (global.RuntimeFrameScheduler?.register) {
