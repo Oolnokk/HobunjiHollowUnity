@@ -227,8 +227,10 @@
       if (state.maskCache?.front !== portrait.front) state.maskCache = { front: portrait.front, promise: Renderer.buildOverlayMask(portrait.front, portrait.profile, { seatId: seatNpc?.id || seatNpc?.name || 'npc' }).catch(() => null) };
       overlayMask = state.maskCache.promise;
     }
+    const legRoot = legSearchRoot(model); // Reuse gameplay anatomy and cached widths when the preview has a real procedural rig.
+    const legHandle = window.ProceduralLegAnimation?.handleForGroup?.(legRoot) || { group: legRoot };
     const handle = Renderer.attach(THREE, {
-      overlayMask, avatarGroup: model, legHandle: { group: legSearchRoot(model) }, speciesId: identity.speciesId, gender: identity.gender,
+      overlayMask, avatarGroup: model, legHandle, sourceCanvas: portrait?.front, speciesId: identity.speciesId, gender: identity.gender,
       garmentId, garmentRecord: garment, characterRecord: character, imageUrl: garmentSourceUrl(garment), name: 'pantsLivePreview',
       footObjects: window.HobunjiGameplayBackdrop?.getFootObjects?.() || null, debugSplines: state.splinesToggle ? state.splinesToggle.checked : true,
       gpuSkin: false, // getPreviewData() reads the skinned vertex positions back, so the author keeps the CPU skin.
