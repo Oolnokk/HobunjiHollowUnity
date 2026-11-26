@@ -226,7 +226,7 @@
         ? alignedGripWorldPosition.distanceTo(finalTransform.perchWorldPosition)
         : null; // Pixel Probe now measures real world transform drift, including genotype scaling and breathing.
       group.userData.hobunjiShoulderPetAttachment = { // Mobile-visible Pixel Probe diagnostics for this final authoritative pin.
-        recentChange: fallbackPlayerMesh ? 'Legacy shoulder pet uses the upright owner heading.' : 'Body stays fixed between the two observation poses; curiosity yaw/pitch moves the head only.',
+        recentChange: fallbackPlayerMesh ? 'Legacy shoulder pet uses the upright owner heading.' : 'Live portrait geometry limits the final body heading and independent head yaw before pinning the authored grip.',
         rotationSource: finalTransform.rotationSource || finalTransform.faceRotationSource,
         positionSource: finalTransform.perchPositionSource,
         expectedWorldPosition: finalTransform.worldPosition.toArray(),

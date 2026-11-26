@@ -4867,7 +4867,7 @@ else if (hobunjiXrayNearFloor > 0.5) discard;`);
       frontPortraitMaskReason: lastFrontPortraitMaskReason,
       shoulderPetCompositor: {
         ...lastShoulderPetDecision,
-        stowedBurdenAbovePet: lastShoulderPetDecision.active && !!window.Shattercasks?.backCarriedInfo?.(),
+        stowedBurdenAbovePet: lastShoulderPetDecision.mode !== 'geometric-depth' && lastShoulderPetDecision.active && !!window.Shattercasks?.backCarriedInfo?.(),
       },
       frontPortraitMaskPasses: frontPortraitMaskPassCount,
       frontPortraitDepthFallbackPasses, // Visibility into fallback use without mobile devtools.

@@ -50,7 +50,7 @@
       if (!(w > 0 && h > 0) || !image || typeof image !== 'object') return null;
       const version = map.version; // Canvas-backed portrait and split-layer updates invalidate the alpha mask.
       const old = imageMasks.get(image);
-      if (old?.version === version && old.w === w && old.h === h) return old;
+      if (old && old.version === version && old.w === w && old.h === h) return old;
       const mw = Math.min(w, 128), mh = Math.min(h, 128);
       try {
         const canvas = document.createElement('canvas');
@@ -140,13 +140,17 @@
       const maps=(Array.isArray(mesh.material)?mesh.material:[mesh.material]).map(m=>m?.map).filter(Boolean);
       if (!maps.length || maps.some(m=>typeof m.transformUv!=='function')) return null;
       const key=maps.map(m=>[m,m.image,m.version,m.repeat?.x,m.repeat?.y,m.offset?.x,m.offset?.y,m.rotation,m.flipY]);
-      const old=meshProxies.get(mesh);
-      if (old?.geo===mesh.geometry && old.key.length===key.length && old.key.every((v,i)=>v.every((x,j)=>x===key[i][j]))) return old.proxy;
+      let entries=meshProxies.get(mesh); // Keep a small LRU for alternating idle/split animation maps.
+      if (!entries || entries.geo!==mesh.geometry) {
+        entries={geo:mesh.geometry,items:[]};meshProxies.set(mesh,entries);
+      }
+      const found=entries.items.findIndex(old=>old.key.length===key.length && old.key.every((v,i)=>v.every((x,j)=>x===key[i][j])));
+      if(found>=0) {const hit=entries.items.splice(found,1)[0];entries.items.unshift(hit);return hit.proxy;}
       const masks=maps.map(alphaMask);
       if (masks.some(m=>!m)) return null;
       for (const map of maps) if (map.matrixAutoUpdate) map.updateMatrix();
       const proxy=makeProxy(mesh,maps,masks);
-      if (proxy) meshProxies.set(mesh,{geo:mesh.geometry,key,proxy});
+      if (proxy) {entries.items.unshift({key,proxy});if(entries.items.length>6)entries.items.pop();}
       return proxy;
     }
 
@@ -236,18 +240,29 @@
       const contact=0.035; // Intentional grip contact in world units, not a global collision exemption.
       let checks=0;
       const safe=(offset)=>{checks++;return !collisions(owners,poses,perch,grip,scale,yaw+offset,contact);};
-      if(safe(0)) { previous.set(group,0);return {mode:'geometric-depth',bodyOffsetDeg:0,headYawDeg:requestedHead,checks}; }
+      const finish=(offset,headYaw,mode='geometric-depth')=>{
+        if(mode==='geometric-depth') {
+          quaternion.setFromAxisAngle(axis,yaw+offset);
+          previous.set(group,{offset,worldYaw:yaw+offset});
+        }
+        return {mode,bodyOffsetDeg:offset/DEG,requestedBodyYawDeg:yaw/DEG,resolvedBodyYawDeg:(yaw+offset)/DEG,
+          headYawDeg:headYaw,requestedHeadYawDeg:requestedHead,checks};
+      };
+      if(safe(0)) return finish(0,requestedHead);
       const setHead=degrees=>{avatar.updateHeadYaw(degrees,1000);poses=petPose();};
-      if(canTurnHead && requestedHead) setHead(0);
-      let offset=null;
-      if(poses && safe(0)) offset=0;
-      else if(poses) {
+      const wrap=a=>Math.atan2(Math.sin(a),Math.cos(a));
+      function findBodyOffset() {
+        if(!poses) return null;
+        if(safe(0)) return 0;
+        let offset=null;
         const last=previous.get(group);
-        if(Number.isFinite(last) && last && safe(last)) {
-          // A safe preceding clamp gives an inexpensive bracket for the new live pose.
-          offset=last;
-        } else {
-          for(let d=15;d<=90 && offset===null;d+=15) {
+        // Recheck both the previous relative limit and absolute world pose:
+        // a deadzone or observation flip can change the desired frame abruptly.
+        if(last) for(const candidate of [last.offset,wrap(last.worldYaw-yaw)]) {
+          if(candidate && safe(candidate)) {offset=candidate;break;}
+        }
+        if(offset===null) {
+          for(let d=15;d<=180 && offset===null;d+=15) {
             for(const sign of [-1,1]) if(safe(sign*d*DEG)) {offset=sign*d*DEG;break;}
           }
         }
@@ -256,12 +271,20 @@
           for(let i=0;i<4;i++) {const mid=(lo+hi)/2;if(safe(mid))hi=mid;else lo=mid;}
           offset=hi;
         }
+        return offset;
       }
-      // Preserve the requested head direction when it fits. Clamp its final
-      // applied angle independently of body yaw, not the owner's deadzone input.
+      // Prefer preserving the body heading by releasing the independent head turn.
+      if(canTurnHead && requestedHead) setHead(0);
+      let offset=findBodyOffset();
       if(offset===null) {
-        if(canTurnHead && requestedHead) setHead(requestedHead);
-        return {mode:'no-safe-rotation',bodyOffsetDeg:0,headYawDeg:requestedHead,checks};
+        // A neutral head is not always the safest shape. Try the original head
+        // at other body angles before declaring an impossible grip/portrait pair.
+        if(canTurnHead && requestedHead) {
+          setHead(requestedHead);
+          offset=findBodyOffset();
+          if(offset!==null) return finish(offset,requestedHead);
+        }
+        return finish(0,requestedHead,poses?'no-safe-rotation':'geometry-unavailable');
       }
       let headYaw=0;
       if(canTurnHead && requestedHead) {
@@ -278,9 +301,7 @@
           setHead(headYaw);
         }
       }
-      quaternion.setFromAxisAngle(axis,yaw+offset);
-      previous.set(group,offset);
-      return {mode:'geometric-depth',bodyOffsetDeg:offset/DEG,headYawDeg:headYaw,requestedHeadYawDeg:requestedHead,checks};
+      return finish(offset,headYaw);
     }
     return { constrain };
   }
