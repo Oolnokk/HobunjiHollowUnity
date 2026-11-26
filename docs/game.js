@@ -22426,6 +22426,7 @@
       const SLAB_H     = 0.5;   // thickness of all ground slabs
       const TRENCH_TOP = -0.5;  // top surface of trench
       const NORMAL_TOP =  0.0;  // top surface of grass/tilled/etc
+      const PATH_TOP   = NORMAL_TOP + 0.075; // Standing height for PATH tiles, near the lower quartile of paved brick center heights.
       const RAISED_TOP = +0.5;  // top surface of raised bed
       // World-Y rise per plateau elevation tier (absolute units shared by each
       // merged tile's elevTier and authored ramp.rampElevation values — see
@@ -23574,6 +23575,7 @@
       // Surface top Y for water placement and player standing
       function tileSurfaceY(type) {
         switch (type) {
+          case TileType.PATH:      return PATH_TOP;
           case TileType.TRENCH:    return TRENCH_TOP;
           case TileType.RIVER:     return RIVER_TOP;
           case TileType.STREAM:    return STREAM_TOP;
