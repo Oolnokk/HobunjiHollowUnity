@@ -922,7 +922,18 @@
     deps.renderer.domElement.addEventListener('pointerdown', _pixelProbeHandler, { capture: true, once: true });
   }
 
+  // A throwing optional diagnostic used to leave the hint on "Reading pixel..." forever with no clue why; surface the error instead.
   async function _pixelProbeHandler(ev) {
+    try { return await _pixelProbeHandlerInner(ev); }
+    catch (error) {
+      console.error('[PixelProbe] report failed', error);
+      const hint = document.getElementById('pixelProbeHint');
+      if (hint) { hint.style.display = 'flex'; hint.textContent = 'Pixel Probe failed: ' + String(error?.message || error).slice(0, 200) + ' (details in the console)'; }
+      throw error;
+    }
+  }
+
+  async function _pixelProbeHandlerInner(ev) {
     ev.preventDefault(); ev.stopImmediatePropagation?.(); ev.stopPropagation();
     setTimeout(() => { _pixelProbeArmed = false; }, 0); // Keep the armed input guard alive through this event so the parent gameplay pointer handler cannot attack.
     const hint = document.getElementById('pixelProbeHint');
@@ -1474,8 +1485,7 @@
         ? `${actor.label}=missing${aiSuffix(actor)}`
         : `${actor.label}=Y${Number(actor.min.y).toFixed(2)}..${Number(actor.max.y).toFixed(2)}${actor.onBranch ? '/branch' : ''}${actor.climbing ? '/climbing' : ''}${aiSuffix(actor)}`).join(' ');
       lines.push(`3D hitboxes: ${actorState}`);
-      const sceneLoadLine = window.SceneLoadSummary?.format?.(); // Counts and distance buckets that the per-creature list above lacks.
-      if (sceneLoadLine) lines.push(sceneLoadLine);
+      try { const sceneLoadLine = window.SceneLoadSummary?.format?.(); if (sceneLoadLine) lines.push(sceneLoadLine); } catch (_) { /* Never block a probe report on an optional summary. */ }
     }
     const interactionRay = hitboxDebug?.interactionRay;
     if (interactionRay) {
