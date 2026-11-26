@@ -69,6 +69,7 @@ source = source.replace('  window.ProceduralLegAnimation = {', `
   buildFallbackFoot = function () { const foot = new THREE.Group(); foot.userData.contactRadiusY = 0.04; return foot; };
   makeSurfaceRoleResolver = function () { return () => new Promise(() => {}); };
   makeBoneGuide = makeJointGuide = function () { return new THREE.Group(); };
+  window.__groundSupportMath = { rolledSoleOffset, transformedFootBottomY, groundSafeDepthFactor };
   window.ProceduralLegAnimation = {`);
 vm.runInNewContext(source, context);
 function rig(height = 1, gaitProfile = null, bodyScale = null) {
@@ -81,6 +82,24 @@ function tick(legs, speed, motion, count = 180) {
   for (let i = 0; i < count; i++) legs.update(1 / 60, speed, false, undefined, motion);
   return legs.getStandingPoseDebug();
 }
+// Verify the same precalculated shoe support and camera-relative ground limit used in the real solver.
+const { rolledSoleOffset, transformedFootBottomY, groundSafeDepthFactor } = context.window.__groundSupportMath;
+const shoe = { min: { x: -.08, y: 0, z: -.12 }, max: { x: .08, y: .14, z: .3 } }; // Asymmetric toe and heel of a floor-normalized GLB.
+const near = (actual, expected) => assert(Math.abs(actual - expected) < 1e-9, `${actual} != ${expected}`);
+near(rolledSoleOffset(shoe, { y: 1, z: 1 }, 0, 1), 0);
+near(rolledSoleOffset(shoe, { y: 2, z: 2 }, Math.PI / 6, 1), .3);
+near(rolledSoleOffset(shoe, { y: 2, z: 2 }, -Math.PI / 6, .5), .06);
+const fallbackShoe = { min: { x: -.1, y: -.1, z: -.2 }, max: { x: .1, y: .1, z: .2 } }; // Centered procedural fallback.
+near(rolledSoleOffset(fallbackShoe, { y: 1.5, z: 1.5 }, Math.PI / 6, .8),
+  (.1 * (Math.cos(Math.PI / 6) - 1) + .2 * Math.sin(Math.PI / 6)) * 1.5 * .8);
+const world = [1, .2, 0, 0, 0, 2, 0, 0, 0, -.5, 1, 0, 0, 3, 0, 1]; // Full affine vertical row, including independent axes and tilt.
+near(transformedFootBottomY(shoe, world), 3 - .2 * .08 - .5 * .3);
+near(groundSafeDepthFactor(1.2, 5, 0, 0), 1); // Planted feet may not be projected through the ground.
+near(groundSafeDepthFactor(1.2, 5, .5, 0), 5 / 4.5); // Swing clearance can still cover pants.
+near(groundSafeDepthFactor(1.02, 5, .5, 0), 1.02);
+near(groundSafeDepthFactor(1.2, 5, 3, 3), 1); // Elevated floors use the same rule.
+near(groundSafeDepthFactor(1.2, 5, 2.5, 3), 1); // A pre-existing penetration cannot be worsened by a downward depth push.
+near(groundSafeDepthFactor(1.2, -1, 0, 0), 1.2); // Low camera moves the shoe upward, not through ground.
 const walk = rig(), run = rig(), tall = rig(2); // Compares mode changes at identical speed and different anatomical lengths.
 const walkDebug = tick(walk.legs, 2, {}), runDebug = tick(run.legs, 2, { combat: true }); // Settled walk/run cycles.
 assert(runDebug.gait.strideLength > walkDebug.gait.strideLength * 1.4);
