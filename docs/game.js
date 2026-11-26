@@ -26857,7 +26857,10 @@
               // Ordinary building interiors still have no wild spawns; this
               // branch only keeps any authored interior hostile/corpse active.
               const hostilePerf = window.PerfProfiler?.begin('hostiles'); // Uses the same timing bucket for authored interior combatants.
-              if (_isBuildingArea(currentArea)) { updateHostiles(dt); tickCorpses(dt); } // The legacy farmhouse never ran an interior hostile loop.
+              if (_isBuildingArea(currentArea)) { // The legacy farmhouse never ran an interior hostile loop.
+                updateHostiles(dt);
+                tickCorpses(dt);
+              }
               window.PerfProfiler?.end(hostilePerf);
             }
           }
