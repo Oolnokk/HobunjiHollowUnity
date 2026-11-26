@@ -23,14 +23,18 @@
   //
   // Not yet scoped: the camp banner UI and Harlyao/Porakaneki camp planners (local-player/local-scene concerns,
   // wrapped onto BanditCamps.updateCampBanners, which must NOT be called here), den spawning, random encounters,
-  // projectiles in flight, and zones nobody has built on the host.
+  // projectiles in flight. Stage 3: a zone nobody has built is built by the host (one per round, calm moments only),
+  // then populated (dens, herds, nest trees, flocks) on entry and every 5 s; camps are not stamped remotely yet.
 
   const INTERVAL_S = 0.2;   // Same 5 Hz the far-wildlife coarse tick already uses.
   const MAX_DT_S = 0.6;     // No single coarse step is larger than this.
   let deps = null;
   let enabled = false;
   let accum = 0;
-  const stats = { ticks: 0, skippedUnbuilt: 0, errors: 0, lastAreas: [] };
+  const POPULATE_INTERVAL_S = 5;  // Den/herd top-up for a remote zone, like the local den check cadence.
+  const stats = { ticks: 0, skippedUnbuilt: 0, built: 0, populated: 0, errors: 0, lastAreas: [] };
+  let populateAccum = 0;
+  const populated = new Set();
 
   try {
     enabled = new URLSearchParams(window.location?.search || '').get('remoteAreaTick') === '1'
@@ -58,10 +62,24 @@
     const scope = window.AreaScope;
     if (!scope) return;
     stats.lastAreas = [];
+    populateAccum += step;
+    const populateNow = populateAccum >= POPULATE_INTERVAL_S;
+    if (populateNow) populateAccum = 0;
+    let builtThisRound = false;
     for (const area of targetAreas()) {
-      if (!scope.hasScene(area)) { stats.skippedUnbuilt++; continue; }
+      if (!scope.hasScene(area)) {
+        // Stage 3: nobody has built this guest's zone on the host. Build at most ONE zone per round (a build is a
+        // multi-second synchronous cost) and only at a calm moment; ticking starts next round.
+        if (!builtThisRound && scope.ensureScene && deps.isCalm?.() !== false) {
+          try { builtThisRound = true; if (scope.ensureScene(area)) stats.built++; } catch (error) { stats.errors++; console.warn('[RemoteAreaTick] build failed for', area, error); }
+        }
+        if (!scope.hasScene(area)) { stats.skippedUnbuilt++; continue; }
+      }
       try {
-        scope.with(area, () => { deps.tickPre?.(step); deps.tickHostiles(step); }); // Bandit sleep/wake first, like the local order (camps pre-pass, then hostiles).
+        scope.with(area, () => {
+          if (populateNow || !populated.has(area)) { if (deps.populate?.()) { populated.add(area); stats.populated++; } }
+          deps.tickPre?.(step); deps.tickHostiles(step); // Bandit sleep/wake first, like the local order (camps pre-pass, then hostiles).
+        });
         stats.ticks++;
         stats.lastAreas.push(area);
       } catch (error) {

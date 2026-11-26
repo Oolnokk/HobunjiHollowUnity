@@ -116,9 +116,15 @@ Measured on `updateHostiles` (794 lines): only **11** direct `currentArea` refer
 - **Verified live** (headless, real zones; bandit spawned in the dev arena, local player in another zone): tick off, guest 30 tiles away -> the bandit stays awake (nothing runs for that zone); tick on -> it goes to sleep (parked under `__wilderness_lod_sleep__:<zone>`); guest moves 6 tiles away -> it wakes and chases the guest; 160 ticks, 0 errors, the local player untouched. (A bandit never sleeps while in combat, so it did not re-sleep during the final far-away step; that is by design.)
 - **Not done:** the Porakaneki/Harlyao camp *planners* (abstract state for camps nobody local is near), random bandit encounters and den spawning near a guest, projectiles in flight, and zones nobody has built on the host.
 
+**Stage 3 (host builds the guest's zone) is implemented in the same opt-in tick:**
+
+- An occupied zone with no scene on the host is built by `AreaScope.ensureScene(area)` (`buildZoneScene` + reagents/berries/treasure, i.e. `enterZone` minus the player move, loading screen and `currentArea` change). At most **one zone per round**, and only when the host is calm (no cutscene preview, not paused), because a build is a multi-second synchronous cost.
+- Then `WildlifeSpawn.populateZone()` runs scoped (den packs, roaming herds, nest trees, Tzatzul/Pingdort flocks) on the first scoped tick and every 5 s, followed by the normal bandit LOD + hostile tick.
+- **Verified live** (headless): local player in town, guest in never-built `map_northern_cliffs`: built once (~5.3 s, one frame), `currentArea` and local position unchanged, 43 creatures present after 30 ticks, 34 ticks / 0 errors. The ~5 s synchronous build is a visible hitch for the host; spreading it is future work.
+- **Not done:** bandit camps are not stamped for a remotely built zone (`ensureCurrentZoneCamps` keeps its release/re-stamp rules tied to the local entry), honeyfuzzle hives, random encounters, projectiles in flight.
+
 Remaining stages:
-1. Build a guest's zone scene on the host when nobody has built it (paced, like the zone-build entry path).
-2. Remove the swap by passing an explicit area/scene/grid into the tick (the clean form), system by system.
+1. Remove the swap by passing an explicit area/scene/grid into the tick (the clean form), system by system.
 
 ### Conversations and menus (`js/npc-conversations.js`, `window.NpcConversations`)
 
