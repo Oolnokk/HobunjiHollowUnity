@@ -682,3 +682,6 @@ dispose because active flails have independent clones. The original
 
 Run `node scripts/test-weapon-sprite-assemblies.js` and
 `node scripts/test-flail-rope-picker-scale.js` for regression coverage.
+
+### Idle flail head facing
+The independent head retains its last real horizontal actor travel yaw, smoothly leans toward motion and returns exactly upright after stopping. Render yaw obeys the configured NPC portrait deadzone relative to the active camera; the logical heading is unchanged by camera movement. Attack/fishing orientation and fixed connector length remain unchanged. Maximum lean uses the NPC deadzone angle, and live floor clearance accounts for tilt using cached transformed bounds.
