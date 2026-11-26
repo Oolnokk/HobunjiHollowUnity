@@ -37,6 +37,9 @@ class Renderer {
 }
 Renderer.prototype.render = function render(scene, camera) {
   this.calls.push({ scene: scene?.name || '', mask: Number(camera?.layers?.mask ?? 0) >>> 0, target: this._target,
+    popupVisible:scene?.testPopup?.visible, popupLayers:scene?.testPopup?.layers?.mask,
+    popupOrder:scene?.testPopup?.renderOrder, noteOrder:scene?.scoreNote?.renderOrder,
+    secondNoteOrder:scene?.secondNote?.renderOrder, secondNoteDepthTest:scene?.secondNote?.material?.depthTest,
     noteVisible:scene?.scoreNote?.visible, noteDepthTest:scene?.scoreNote?.material?.depthTest, actorColorWrite:scene?.maskActor?.material?.colorWrite,
     actorDepthWrite:scene?.maskActor?.material?.depthWrite, actorAlphaTest:scene?.maskActor?.material?.alphaTest,
     effectLayers:scene?.maskEffect?.layers?.mask, actorLayers:scene?.maskActor?.layers?.mask });
@@ -406,3 +409,75 @@ testGameplayZoneChangeReplacesStaleOverlay();
 testSameSceneAuxiliaryAndLiveCameraSwap();
 testPlateGatedScoreAvoidsHiddenFinalPass();
 console.log('world-text final-overlay regression guard passed');
+
+// Gameplay owns final presentation, regardless of the painterly wrapper order.
+// Simulate an early canvas composite, an offscreen precomposite, final canvas
+// and perception. The same reservation covers both outlined and direct modes.
+for (const outlined of [true, false]) {
+  const renderer = new Renderer(), popup = makePopupMesh();
+  const scene = makeWorldScene('managed-world', popup); scene.testPopup = popup;
+  const camera = { layers: new Layers(0xffffffff) };
+  const post = makePostScene('world_render_composite'), postCamera = {layers:new Layers(1)};
+  const finish = api.prepareWorldTextOverlay(renderer, scene, camera);
+  if (outlined) renderBase(renderer, scene, camera);
+  else { renderer.setRenderTarget(null); renderer.render(scene,camera); }
+  assert.equal(popup.visible,false,'text withheld for every world pass');
+  if (outlined) {
+    renderer.setRenderTarget({texture:{}}); renderer.render(post,postCamera);
+    renderer.setRenderTarget(null); renderer.render(post,postCamera);
+    renderer.render(post,postCamera);
+  }
+  renderer.setRenderTarget(null);
+  renderer.render({name:'perception',children:[]},postCamera);
+  assert.equal(renderer.calls.filter(c=>c.scene===scene.name&&c.mask===(1<<6)).length,0,'no intermediate presentation consumes text');
+  assert.equal(finish(true),true);
+  const last=renderer.calls.at(-1);
+  assert.equal(last.scene,scene.name); assert.equal(last.target,null); assert.equal(last.mask,1<<6);
+  assert.equal(last.popupVisible,true); assert.equal(last.popupLayers,1<<6);
+  assert.equal(popup.visible,true); assert.equal(popup.layers.mask,1);
+  assert.equal(finish(false),false,'cleanup does not draw twice');
+  const next=api.prepareWorldTextOverlay(renderer,scene,camera);
+  const count=renderer.calls.length;
+  next(false);
+  assert.equal(renderer.calls.length,count,'aborted frame draws no text');
+  assert.equal(popup.visible,true); assert.equal(popup.layers.mask,1);
+}
+console.log('Explicit world text presentation passed');
+
+// Active notes are discovered immediately from the plate owner, even when
+// the previous full-scene candidate scan did not include their new meshes.
+for (const outlined of [true,false]) {
+  const renderer=new Renderer(), popup=makePopupMesh();
+  const scene=makeWorldScene('mixed-managed-overlay',popup);scene.testPopup=popup;
+  const camera={layers:new Layers(0xffffffff)};
+  const empty=api.prepareWorldTextOverlay(renderer,scene,camera);empty(false);
+  const note=makePopupMesh(), halo=makePopupMesh();
+  note.userData=halo.userData={puzzleCaveScoreOverlay:true};
+  note.renderOrder=1204;halo.renderOrder=1202;halo.material=note.material;
+  const board={visible:true,parent:scene};note.parent=halo.parent=board;
+  scene.scoreNote=note;scene.secondNote=halo;
+  const body={isMesh:true,visible:true,layers:new Layers(1),material:{map:{},transparent:true,alphaTest:.001,colorWrite:true,depthWrite:false,depthTest:true}};
+  const invisible={isMesh:true,visible:true,layers:new Layers(1),material:{opacity:0,depthTest:true,colorWrite:true}};
+  const actor={visible:true,parent:scene,traverse(fn){fn(body);fn(invisible)}};body.parent=invisible.parent=actor;
+  api.setScoreCharacterRootsProvider(()=>[actor]);
+  const start=api.snapshot(), finish=api.prepareWorldTextOverlay(renderer,scene,camera,[note,halo,note]);
+  assert.equal(note.visible,false);assert.equal(halo.visible,false);
+  if(outlined)renderBase(renderer,scene,camera);else renderer.render(scene,camera);
+  renderer.setRenderTarget(null);renderer.render({name:'perception',children:[]},{layers:new Layers(1)});
+  assert.equal(finish(true),true);
+  const draw=renderer.calls.at(-1);
+  assert.equal(draw.mask,1<<6);assert.equal(draw.noteDepthTest,true);assert.equal(draw.secondNoteDepthTest,true);
+  assert.ok(draw.secondNoteOrder<draw.noteOrder && draw.noteOrder<draw.popupOrder,'halos then note ink then ordinary popups');
+  assert.equal(note.material.depthTest,false,'shared note material restored once');
+  assert.equal(note.renderOrder,1204);assert.equal(halo.renderOrder,1202);
+  assert.equal(note.layers.mask,1);assert.equal(halo.layers.mask,1);assert.equal(popup.layers.mask,1);
+  assert.equal(api.snapshot().scoreActorDepthPasses,start.scoreActorDepthPasses+1);
+  assert.equal(api.snapshot().scoreActorDepthMeshes,1,'fully transparent actor effect excluded');
+  board.visible=false;
+  const before=renderer.calls.length, hidden=api.prepareWorldTextOverlay(renderer,scene,camera,[note,halo]);
+  hidden(true);
+  assert.equal(renderer.calls.length,before+1,'ordinary popup alone adds only its existing single overlay draw');
+  assert.equal(api.snapshot().scoreActorDepthPasses,start.scoreActorDepthPasses+1,'hidden plate never adds actor mask');
+  api.setScoreCharacterRootsProvider(null);
+}
+console.log('Managed mixed popup and Scratchbone score parity passed');

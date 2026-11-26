@@ -47,8 +47,9 @@ frame never see render-only state. Keep it that way.
 | 5 | `target` | reticle target highlight (only with a target) | `TARGET_HIGHLIGHT` | `mainRT` | world-render-pipeline.js |
 | 6 | `mist` | Cloud Forest / blizzard mist redraw (when active) | `MIST_REDRAW` | `mainRT` | cloud-forest-fog.js |
 | 7 | `seamId` | material-ID buffer (off by default) | `MATERIAL_SEAM_ID` | `seamIdRT` | world-render-pipeline.js |
-| 8 | `composite` | `mainRT` → canvas, then world text | `WORLD_TEXT_OVERLAY` | canvas | outline-composite-material.js, outline-render-performance.js |
+| 8 | `composite` | `mainRT` → canvas, with painterly if enabled | — | canvas | outline-composite-material.js, painterly-postprocess.js |
 | 9 | `perception` | Perception Mode silhouettes | `PERCEPTION_MODE` | canvas | perception-mode.js |
+| 10 | `worldText` | popup/dialogue + active Scratchbone ink and halos; only notes use actor depth | `WORLD_TEXT_OVERLAY`, `SCORE_ACTOR_DEPTH` | canvas | outline-render-performance.js |
 
 Outlines off: `main` straight to the canvas, `actorProbes`, `target`,
 `perception`. A quiet Western Slope frame is **17 native renders, ~160 draws**
@@ -403,8 +404,19 @@ neighbors twelve render-target pixels away to detect an inward silhouette or
 substantial depth discontinuity. Authored PNGs and
 hard-faced textured meshes are excluded by the existing shell-layer policy;
 an unrestricted world-depth Sobel filter would violate that policy. Standard
-scene fog fades the generated ink, and the painterly patch signatures are
-preserved. Reticle highlights, actor probes, PNG occlusion depth, water/color
+scene fog fades the generated ink. With painterly active, the existing composite
+first writes the outlined world into the reusable tone target, then the original
+oil/wash/tone/finish stack processes both authored and generated ink together.
+Oil consumes that source before tone overwrites it; no additional render target
+or world draw is needed. Shell/none and painterly-off frames skip the extra
+composite. The final canvas draw disables already-applied outlines temporarily,
+so Perception Mode and then world text still appear after the filter. The world
+pipeline explicitly reserves popup/dialogue and active score meshes in both
+render modes, presents them after perception, and restores their original state
+on failure. Active Scratchbone ink/halos ignore cliff depth but test against a
+colorless foreground character mask; ordinary text stays above the notes. Render A/B's
+`paintBeforeDepthOutlines` variant compares the previous order; the painterly
+snapshot reports `outlineFirst` and `outlinedFrames`. Reticle highlights, actor probes, PNG occlusion depth, water/color
 X-ray and perception overlays remain independent.
 
 This is deliberately a selective-mask experiment, NOT a zero-geometry-pass

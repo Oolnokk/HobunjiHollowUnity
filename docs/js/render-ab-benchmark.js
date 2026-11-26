@@ -171,9 +171,12 @@
 
   // painterly-postprocess.js renders its filter passes from inside the
   // composite draw; label them by scene so they are not lumped in with it.
-  function passLabel(pipeline, scene) {
+  function passLabel(pipeline, scene, renderer) {
     const pass = pipeline.currentPass?.() || 'unknown';
-    if (pass === 'composite' && scene && scene.name !== 'world_render_composite') return 'painterly filter';
+    if (pass === 'composite' && scene) {
+      if (scene.name !== 'world_render_composite') return 'painterly filter';
+      if (renderer?.getRenderTarget?.()) return 'outline precomposite'; // Distinguish the new offscreen draw from canvas presentation.
+    }
     return pass;
   }
 
@@ -266,12 +269,12 @@
           const start = performance.now();
           synced.overheadMs += start - idleStart;
           synced.syncs++;
-          const key = passKey(passLabel(pipeline, ctx?.scene));
+          const key = passKey(passLabel(pipeline, ctx?.scene, ctx?.renderer));
           const syncedEntry = synced.passes[key] || (synced.passes[key] = { ms: 0, renders: 0 });
           return { start, syncedEntry };
         }
         if (!breakdown) return { start: performance.now() };
-        const key = passKey(passLabel(pipeline, ctx?.scene));
+        const key = passKey(passLabel(pipeline, ctx?.scene, ctx?.renderer));
         const entry = breakdown.passes[key] || (breakdown.passes[key] = { ms: 0, draws: 0, triangles: 0, renders: 0, gpu: [] });
         return { start: performance.now(), entry, key, query: gpuTimer && !(ctx?.depth > 0) ? gpuTimer.begin() : null }; // Timer queries cannot nest: a render inside a render is CPU-timed only.
       },
@@ -314,6 +317,10 @@
       // The paint filter only runs on the outline composite, so outlinesOff also drops it;
       // this isolates its own cost.
       variants.push({ id: 'painterlyOff', apply: () => painterly.setMode('off'), undo: () => painterly.setMode(painterlyBefore) });
+      if (typeof painterly.setOutlineFirst === 'function' && pipeline.getGeneratedOutlineMode?.() === 'screen') {
+        const before = painterly.getOutlineFirst(); // Restore exact diagnostic order after each window.
+        variants.push({ id: before ? 'paintBeforeDepthOutlines' : 'paintAfterDepthOutlines', apply: () => painterly.setOutlineFirst(!before), undo: () => painterly.setOutlineFirst(before) });
+      }
     }
     if (resolution && resolutionBefore !== '0.5') {
       variants.push({ id: 'halfResolution', apply: () => setResolution(resolution, '0.5'), undo: () => setResolution(resolution, resolutionBefore) });
@@ -562,7 +569,7 @@
       syncedPasses: syncedRows,
       syncedTotalMsPerFrame: syncedRows ? round2(syncedRows.reduce((sum, p) => sum + p.msPerFrame, 0)) : null,
       syncOverheadMs: syncedRows ? round2(syncOverheadMs) : null,
-      painterly: painterly?.snapshot ? (({ mode, internalSize }) => ({ mode, internalSize }))(painterly.snapshot() || {}) : null,
+      painterly: painterly?.snapshot ? (({ mode, internalSize, outlineFirst, outlinedFrames }) => ({ mode, internalSize, outlineFirst, outlinedFrames }))(painterly.snapshot() || {}) : null,
       rounds,
       framesPerWindow,
       device: {
@@ -592,7 +599,7 @@
       ...Object.entries(lastReport.variants).map(([id, v]) => `${id.padEnd(14)}: ${v.fps} fps (avg ${v.avgFrameMs} ms, p90 ${v.p90FrameMs} ms), render CPU ${v.renderCpuMs} ms${v.renderGpuMs != null ? `, GPU ${v.renderGpuMs} ms` : ''}${v.trianglesPerFrame != null ? `, ${Math.round(v.trianglesPerFrame / 1000)}k tris` : ''}`),
       `default render by pass (CPU ms${gpuTimer ? ' | GPU ms' : ''} / draws / k triangles per frame): ${passes.map(p => `${p.pass} ${p.msPerFrame}${p.gpuMsPerFrame != null ? `|${p.gpuMsPerFrame}` : ''}ms/${p.drawsPerFrame}d/${(p.trianglesPerFrame / 1000).toFixed(1)}kt`).join('; ')}; between draws (scopes, hooks, replay bookkeeping) ${lastReport.betweenDrawsMsPerFrame}ms`,
       ...(syncedRows ? [`default render by pass, synced CPU+GPU ms per frame (own window, total ${lastReport.syncedTotalMsPerFrame} ms, sync overhead ${lastReport.syncOverheadMs} ms removed): ${syncedRows.map(p => `${p.pass} ${p.msPerFrame}ms`).join('; ')}`] : []),
-      `weather: rain planes ${lastReport.weather.raining ? 'on' : 'off'}, mist ${lastReport.weather.mist ? 'on' : 'off'}; painterly ${lastReport.painterly?.mode ?? 'n/a'}${lastReport.painterly?.internalSize ? ` @ ${lastReport.painterly.internalSize}` : ''}`,
+      `weather: rain planes ${lastReport.weather.raining ? 'on' : 'off'}, mist ${lastReport.weather.mist ? 'on' : 'off'}; painterly ${lastReport.painterly?.mode ?? 'n/a'}${lastReport.painterly?.internalSize ? ` @ ${lastReport.painterly.internalSize}` : ''}${lastReport.painterly?.outlineFirst == null ? '' : `; order=${lastReport.painterly.outlineFirst ? 'outline-first' : 'paint-first'}, outlined frames=${lastReport.painterly.outlinedFrames ?? 0}`}`,
       `native renders/frame ${lastReport.lastFrame?.nativeRenders ?? '?'}, buffer ${lastReport.device.drawingBuffer?.join('x') ?? '?'} @ dpr ${lastReport.device.devicePixelRatio}, context antialias=${lastReport.device.context?.antialias} preserveDrawingBuffer=${lastReport.device.context?.preserveDrawingBuffer}, GPU timing ${gpuTimer ? 'on' : 'unavailable'}${lastReport.device.gpu ? `, ${lastReport.device.gpu}` : ''}`,
       `characters ${JSON.stringify(Object.fromEntries(Object.entries(lastReport.characters || {}).filter(([, n]) => n)))}`,
       ...(lastReport.heldReplays ? [(h => `held/x-ray replays per frame: scissored ${h.scissoredPerFrame}, fullscreen ${h.fullscreenPerFrame} (last reasons held=${h.lastHeldFullscreenReason} shell=${h.lastShellFullscreenReason}); last scissor coverage ${h.lastCoverage}, culled/kept ${h.lastCulled}/${h.lastKept}, held meshes ${h.heldMeshes}`)(lastReport.heldReplays)] : []),

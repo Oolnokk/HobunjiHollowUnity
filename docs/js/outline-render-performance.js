@@ -454,7 +454,7 @@
   }
   installStructureEpoch();
 
-  function collectWorldTextOverlayEntries(scene) {
+  function collectWorldTextOverlayEntries(scene, activeScoreMeshes) {
     if (!scene?.traverse) return [];
     const now = performance.now();
     let cached = worldTextCandidates.get(scene);
@@ -485,6 +485,11 @@
         }
         pending.clear();
       } else worldTextCacheHits++;
+    }
+    // The puzzle owner knows which plates are active right now. Seed the
+    // existing candidate set directly instead of depending on its periodic scan.
+    if (activeScoreMeshes) for (const mesh of activeScoreMeshes) {
+      if (mesh?.userData?.puzzleCaveScoreOverlay === true && isWorldTextOverlayMesh(mesh)) cached.meshes.add(mesh);
     }
     const entries = [];
     for (const object of cached.meshes) {
@@ -530,7 +535,7 @@
     if (pending) {
       restoreWorldTextBaseVisibility(pending.entries);
       restoreWorldTextOverlayLayers(pending);
-      abandonedWorldTextOverlays++;
+      if (pending.entries.length) abandonedWorldTextOverlays++;
     }
     pendingWorldTextOverlayByRenderer.delete(renderer);
   }
@@ -586,7 +591,7 @@
           // Transparent overlays without an actual alpha cutout, including additive
           // creature eye/glow planes, would stamp their full rectangle into depth.
           if (!materials.length || materials.some(material => !material
-              || material.visible === false || material.depthTest === false
+              || material.visible === false || material.colorWrite === false || Number(material.opacity) <= 0 || material.depthTest === false
               || (THREE.AdditiveBlending !== undefined && material.blending === THREE.AdditiveBlending)
               || (material.transparent && material.map && !(Number(material.alphaTest) > 0)))) continue;
           seenMeshes.add(node);
@@ -647,7 +652,8 @@
       if (shadowMap?.enabled) shadowMap.autoUpdate = false;
       const scoreNotes = pending.entries.filter(entry => entry.object.userData?.puzzleCaveScoreOverlay === true); // Only plate-revealed Scratchbone ink and halos need character silhouettes.
       let mask = null;
-      const scoreMaterialStates = []; // Restore normal depth-independent score materials even if the actor-depth pass throws.
+      const scoreMaterialStates = new Map(); // Shared note materials must restore their original depth test exactly once.
+      const scoreOrderStates = []; // Keep ordinary text above note ink/glow without a second overlay draw.
       const temporarilyHiddenNotes = []; // Fail closed when the game cannot provide a trustworthy character mask.
       try {
         if (scoreNotes.length) {
@@ -678,11 +684,24 @@
               mask.restore(); // Do not leave rig material colorWrite/depthWrite or layer membership changed during final note draw.
               mask = null;
             }
+            let minTextOrder = Infinity, maxScoreOrder = -Infinity; // Compare only the meshes actually reserved for this frame.
+            for (const entry of pending.entries) {
+              if (entry.object.userData?.puzzleCaveScoreOverlay === true) maxScoreOrder = Math.max(maxScoreOrder, entry.object.renderOrder);
+              else minTextOrder = Math.min(minTextOrder, entry.object.renderOrder);
+            }
+            const orderShift = Number.isFinite(minTextOrder) ? Math.max(0, maxScoreOrder - minTextOrder + 1) : 0;
             for (const entry of scoreNotes) {
-              const material = entry.object.material;
-              if (!material) continue;
-              scoreMaterialStates.push([material, material.depthTest]);
-              material.depthTest = true; // The score ignores the cliff but obeys the just-written foreground character depth.
+              const object = entry.object;
+              const materials = Array.isArray(object.material) ? object.material : [object.material];
+              for (const material of materials) {
+                if (!material || scoreMaterialStates.has(material)) continue;
+                scoreMaterialStates.set(material, material.depthTest);
+                material.depthTest = true; // The score ignores the cliff but obeys foreground character depth.
+              }
+              if (orderShift) {
+                scoreOrderStates.push([object, object.renderOrder]);
+                object.renderOrder -= orderShift; // Preserve halo/ink relative ordering below damage text/dialogue.
+              }
             }
             camera.layers.set(WORLD_TEXT_OVERLAY_LAYER);
           }
@@ -691,6 +710,7 @@
       } finally {
         mask?.restore();
         for (const [material, depthTest] of scoreMaterialStates) material.depthTest = depthTest;
+        for (const [object, order] of scoreOrderStates) object.renderOrder = order;
         for (const note of temporarilyHiddenNotes) note.visible = true;
       }
       finalWorldTextOverlayPasses++;
@@ -863,7 +883,7 @@
           // Without a camera authority, prefer accepting a new world camera rather than
           // indefinitely presenting glyphs from a stale camera after a scene transition.
         }
-        if (auxiliaryScene || auxiliaryCamera) {
+        if (pending.explicit || auxiliaryScene || auxiliaryCamera) {
           auxiliaryWorldBasePassesPreserved++;
           if (auxiliaryCamera) {
             // The auxiliary camera traverses this same scene with every layer
@@ -930,7 +950,17 @@
     const startedAt = performance.now();
     let result;
     try {
-      if (pass === 'base') {
+      const explicit = pendingWorldTextOverlayByRenderer.get(renderer);
+      if (explicit?.explicit && explicit.scene === scene && explicit.camera === camera
+          && (pass === 'base' || pass === 'postOrDirect')) {
+        // The world pipeline already reserved and hid these meshes. Never let
+        // a nested composite, replay or direct render consume the reservation.
+        result = originalRender.call(renderer, scene, camera);
+        if (pass === 'base' || !renderer.getRenderTarget?.()) {
+          explicit.matrixEpoch = matrixEpochOf(scene);
+          explicit.baseAt = performance.now();
+        }
+      } else if (pass === 'base') {
         // A still-pending overlay means the prior frame never reached the known
         // presentation pass. Restore those layers before collecting this frame so
         // a bad/alternate render sequence cannot strand popup meshes indefinitely.
@@ -964,7 +994,7 @@
       }
 
       const pending = pendingWorldTextOverlayByRenderer.get(renderer);
-      if (pass === 'postOrDirect' && pending && !renderer.getRenderTarget?.()) {
+      if (pass === 'postOrDirect' && pending && !pending.explicit && !renderer.getRenderTarget?.()) {
         const isOutlineComposite = !!findOutlineCompositeMaterial(scene);
         const isDirectGameplayPresentation = pending.scene === scene && pending.camera === camera;
         if (isOutlineComposite || isDirectGameplayPresentation) {
@@ -1002,6 +1032,25 @@
     setScoreCharacterRootsProvider(provider) {
       scoreActorRootProvider = typeof provider === 'function' ? provider : null; // Injected once from the game, executed only for a plate-revealed exterior melody.
     },
+    // The gameplay pipeline owns presentation timing; keep text out of every
+    // world/paint/perception pass, then draw exactly once on the finished canvas.
+    // The older render-wrapper detection remains only for standalone hosts.
+    prepareWorldTextOverlay(renderer, scene, camera, activeScoreMeshes) {
+      invalidatePendingWorldTextOverlay(renderer);
+      const entries = collectWorldTextOverlayEntries(scene, activeScoreMeshes);
+      const pending = { scene, camera, entries, explicit: true, matrixEpoch: -1, baseAt: NaN }; // Epoch becomes valid only after the base draw.
+      reserveWorldTextOverlayLayer(entries);
+      hideWorldTextDuringBase(entries);
+      pendingWorldTextOverlayByRenderer.set(renderer, pending);
+      if (entries.length) withheldWorldTextBasePasses++;
+      return function finishWorldTextOverlay(present) {
+        if (pendingWorldTextOverlayByRenderer.get(renderer) !== pending) return false;
+        restoreWorldTextBaseVisibility(entries);
+        if (present) return finalizeWorldTextOverlay(renderer, pending);
+        invalidatePendingWorldTextOverlay(renderer);
+        return false;
+      };
+    },
     prepareDirectScoreOverlay(renderer, scene, camera, scoreMeshes) {
       if (!scoreMeshes) return null;
       const entries = []; // Reserve only active exterior notes for the direct canvas path.
@@ -1038,7 +1087,7 @@
         suppressedCompositeActivations,
         withheldWorldTextBasePasses,
         finalWorldTextOverlayPasses,
-        latestScoreChange: 'Timed Scratchbone glyphs survive depth replays and respect character silhouettes with Outlines on or off.',
+        latestScoreChange: 'Final world text follows painterly/perception; active Scratchbone ink and halos respect actor silhouettes, with ordinary text above them.',
         scoreActorDepthPasses,
         scoreActorDepthMeshes,
         scoreActorDepthReady: typeof scoreActorRootProvider === 'function',
