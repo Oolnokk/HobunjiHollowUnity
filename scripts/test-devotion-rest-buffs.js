@@ -19,7 +19,7 @@ assert.doesNotThrow(() => new vm.Script(integration), 'prayer/rest integration p
 assert.doesNotThrow(() => new vm.Script(sleepBridge), 'sleep bridge still parses');
 assert.doesNotThrow(() => new vm.Script(combatBootstrap), 'parser-time compatibility bootstrap still parses');
 
-assert.match(combatBootstrap, /sleep-passage-action-bridge\.js\?v=[A-Za-z0-9_.-]+[\s\S]{0,120}HobunjiSleepPassageActionBridge\?\.version\)\s*>=\s*3/, 'parser-time loader requests a cache-busted Sleep bridge and requires the current bridge version');
+assert.match(combatBootstrap, /sleep-passage-action-bridge\.js\?v=[A-Za-z0-9_.-]+[\s\S]{0,120}HobunjiSleepPassageActionBridge\?\.version\)\s*>=\s*4/, 'parser-time loader requests a cache-busted Sleep bridge and requires the current bridge version');
 assert.match(sleepBridge, /devotion-rest-buffs\.js\?v=[A-Za-z0-9_.-]+/, 'Sleep bridge cache-busts the prayer/rest integration');
 assert.match(integration, /temple-prayer-rest-blessings\.js\?v=[A-Za-z0-9_.-]+/, 'integration cache-busts the prayer/rest core authority');
 assert.match(core, /PRAYER_DURATION_HOURS\s*=\s*7\s*\*\s*24/, 'prayers last one in-game week');

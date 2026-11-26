@@ -3850,7 +3850,7 @@
               if (sitInteraction || dialogueOpen || window.FarmAnimals.isHarvesting() || (window.Mounts?.rideState ?? 'none') !== 'none') return { ok: false, message: 'Cannot lie down right now.' };
               // Every input, including generic Interact (controller A), must use the chosen-duration passage.
               const opened = window.HobunjiSleepPassageActionBridge?.openSharedSleepPassage?.();
-              return opened ? { ok: true, message: '' } : { ok: false, message: 'Sleep is not available right now.' };
+              return opened ? { ok: true, message: '', deferMemberSave: true } : { ok: false, message: 'Sleep is not available right now.' };
             },
           };
         }
@@ -27390,7 +27390,7 @@
           // Breeding progress ticks per in-game hour crossed (rather than
           // once per day) so a pair's bar visibly creeps forward through
           // the day and can complete the moment it fills, not just at the
-          // next morning — see FarmAnimals.tickBreedingProgress. the Sleep passage
+          // next morning — see FarmAnimals.tickBreedingProgress. The Sleep passage
           // uses the same hourly calendar progression.
           window.FarmAnimals.tickBreedingProgress();
           // Cheap once-per-in-game-hour flush (~every 12 real seconds at the
@@ -30755,7 +30755,7 @@
       window.addEventListener('resize', () => { fitToAspect(); resizeCanvas(); updateCameraPosition(); if (menuOpen) auditInventorySizing(); });
       // Safety net for any inventory/pack change not already covered by an
       // explicit saveMemberWorldData() call above. Also flushes the
-      // in-progress time-of-day (advanceDay/sleepInBed already save on their
+      // in-progress time-of-day (advanceDay already saves on its
       // own day rollovers, but this catches whatever time01 progress
       // happened since the last one, so closing mid-afternoon doesn't roll
       // back to that morning next session).
@@ -33828,7 +33828,7 @@
         else window.FarmPlotEditor?.restore?.(null); // A world with no saved layout has no family plots either.
         window.FarmEditor.applyFarmLayoutObjects(_worldLayout);
         window.FarmProduction.load(_worldLayout?.productionBuildings || []); // repositions again if THIS world saved custom crate positions
-        // Seed a starter bed in the farmhouse for a brand-new world — sleepInBed()
+        // Seed a starter bed in the farmhouse for a brand-new world — the Sleep passage
         // (see getInteriorInteractableAt) needs somewhere to sleep, and a fresh
         // player has no bed item in inventory yet to buy+place one themselves.
         // Gated on this world having no saved layout at all, so it never

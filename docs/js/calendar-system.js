@@ -39,6 +39,7 @@
   const NATURAL_TIME_WRITE_SCALE = BASE_DAY_LENGTH_SECONDS / TARGET_DAY_LENGTH_SECONDS; // Applied only to tiny positive frame-to-frame time01 writes.
   const MAX_NATURAL_TIME_WRITE = 0.02; // Used by the time01 setter to distinguish normal frame ticks from explicit jumps.
   const PLAYER_ACTION_LOCK_ID = 'player'; // Used while the sleep/wait modal or iris transition owns input.
+  const BED_SLEEP_TOKEN = '__hobunjiOwnedBedSleepPending'; // Shared bed provenance; retained only by an active menu or queued bed vote.
   const MAX_PASSAGE_HOURS = 16; // Used by the shared duration selector; matches the game's represented 6:00→22:00 clock span.
   const TIME_PASSAGE_FIRST_TICK_MS = 1000; // Used so the first fully-black countdown hour remains visible for one complete real second.
   const TIME_PASSAGE_TICK_DECAY = 0.8; // Used to shorten each subsequent countdown interval by exactly 20 percent.
@@ -567,6 +568,7 @@
     _passagePreviewTimer = 0;
     if (!options.keepLock) releaseTimePassageLock();
     if (!options.keepKind) _timePassageKind = null;
+    window[BED_SLEEP_TOKEN] = null; // Cancel or completed passage must not confer bed benefits on later unrelated sleep.
   }
 
   function setSelectedPassageHours(value) {
@@ -628,7 +630,8 @@
     const me = window.PlayerSocialPoses?.getPlayerEntity?.();
     if (tc?.shouldGate() && me && _timePassageKind && _timePassageUi && !_passageRunning) {
       const kind = _timePassageKind, hours = _selectedPassageHours;
-      const result = tc.requestRest(me, { kind, source: 'menu', minutes: hours * 60, run: () => { void runQueuedTimePassage(kind, hours); } });
+      const bedToken = kind === 'sleep' ? window[BED_SLEEP_TOKEN] : null; // Capture provenance with this particular queued vote.
+      const result = tc.requestRest(me, { kind, source: 'menu', minutes: hours * 60, run: () => { void runQueuedTimePassage(kind, hours, bedToken); } });
       if (result.state === 'waiting') (window.Combat?.deps?.showToast || window.showToast)?.(`💤 ${kind === 'sleep' ? 'Sleeping' : 'Resting'} — waiting for the others…`, true);
       if (!_passageRunning) closeTimePassageMenu(); // A winning vote already started the passage; do not cancel it.
       return;
@@ -637,10 +640,11 @@
   }
 
   // The consensus decided this player's passage is the one that happens. The menu may have been closed while waiting.
-  async function runQueuedTimePassage(kind, hours) {
+  async function runQueuedTimePassage(kind, hours, bedToken = null) {
     if (_passageRunning) return;
+    window[BED_SLEEP_TOKEN] = bedToken;
     if (_timePassageKind !== kind || !_timePassageUi?.backdrop?.classList?.contains('open')) {
-      if (!openTimePassage(kind)) return;
+      if (!openTimePassage(kind)) { window[BED_SLEEP_TOKEN] = null; return; }
     }
     setSelectedPassageHours(hours);
     return runTimePassage();
@@ -894,6 +898,7 @@
   function buttonShowsSleep(button) {
     return !!button
       && !button.classList.contains('abt-hidden')
+      && !button.classList.contains('blocked')
       && button.dataset.action === 'obj_interact'
       && /\bSleep\b/i.test(button.textContent || '');
   }
@@ -917,7 +922,7 @@
   }
 
   function interceptedDesktopContext(key) {
-    if (key === 'e') return findSleepActionButton() ? 'sleep' : null;
+    // Bed Sleep is owned by its action bridge and the live furniture callback; E must not bypass either.
     if (key === 'q') return isSeatedReady() ? 'wait' : null;
     return null;
   }
@@ -968,11 +973,10 @@
     const interceptActionPointer = event => {
       const button = actionButtonFromTarget(event.target); // Action-arch button receiving this captured pointer event.
       const wantsWait = button?.dataset.action === 'calendar_wait'; // Used to route the injected seated Action 2 to Wait.
-      const wantsSleep = buttonShowsSleep(button); // Used to route the existing bed interaction to the new duration menu.
-      if (!wantsWait && !wantsSleep) return;
+      if (!wantsWait) return; // Sleep is owned by its action bridge, not a second calendar listener.
       event.preventDefault();
       event.stopImmediatePropagation();
-      if (event.type === 'pointerup') openTimePassage(wantsSleep ? 'sleep' : 'wait');
+      if (event.type === 'pointerup') openTimePassage('wait');
     };
     document.addEventListener('pointerdown', interceptActionPointer, true);
     document.addEventListener('pointerup', interceptActionPointer, true);

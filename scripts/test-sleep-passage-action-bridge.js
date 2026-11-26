@@ -50,6 +50,7 @@ const windowStub = {
     openTimePassage(kind) {
       opened.push(kind);
       passageOpen = true;
+      return true;
     },
   },
   _desktopSelectionArc: {
@@ -78,7 +79,7 @@ vm.runInNewContext(bridgeSource, {
 }, { filename: 'sleep-passage-action-bridge.js' });
 
 const bridge = windowStub.HobunjiSleepPassageActionBridge;
-assert.equal(bridge?.version, 3, 'bridge installs current farmhouse sleep interception');
+assert.equal(bridge?.version, 4, 'bridge installs current farmhouse sleep interception');
 
 const f3Sleep = makeButton('btnAction3', 'Sleep', 'F3');
 buttons.set('btnAction3', f3Sleep);
@@ -194,3 +195,36 @@ for (const key of ['basicBed', 'doubleBed', 'bedroll']) {
   assert.equal(windowStub.__hobunjiOwnedBedSleepPending?.source, 'player-bed');
 }
 assert.doesNotMatch(gameSource, /function (?:sleepInBed|performSleepToMorning|bedSleepGate)\(/, 'no legacy automatic morning skip remains in gameplay');
+
+
+// Exercise the real generic Interact dispatch, not just its furniture callback.
+const interactStart = gameSource.indexOf('function runInteractAction()');
+const interactEnd = gameSource.indexOf('function cycleActiveTool(', interactStart);
+assert.ok(interactStart >= 0 && interactEnd > interactStart);
+let jumpCount = 0;
+const dispatchContext = {
+  dispatchWorldInputClaim: () => false,
+  toolActions: { weapon: ['attack'] },
+  computeActionButtons: () => [{ allowed: true, action: 'obj_interact' }],
+  performJumpAction: () => { jumpCount++; },
+  activeAction: null,
+  useActiveAction() { bedCallback({ key: 'basicBed' }).onAction(dispatchContext.activeAction); },
+};
+const runInteract = vm.runInNewContext('(' + gameSource.slice(interactStart, interactEnd) + ')', dispatchContext);
+passageOpen = false;
+opened = [];
+runInteract();
+assert.deepEqual(opened, ['sleep'], 'controller A generic Interact reaches the same duration selector');
+assert.equal(jumpCount, 0);
+passageOpen = false;
+opened = [];
+windowStub.__hobunjiOwnedBedSleepPending = null;
+const originalOpen = windowStub.CalendarSystem.openTimePassage;
+windowStub.CalendarSystem.openTimePassage = () => false;
+assert.equal(bedCallback({ key: 'basicBed' }).onAction('obj_interact').ok, false, 'refused selector must not report success or skip time');
+assert.equal(windowStub.__hobunjiOwnedBedSleepPending, null, 'failed open must not leak bed provenance');
+windowStub.CalendarSystem.openTimePassage = originalOpen;
+const blockedBed = makeButton('btnAction1', 'Sleep', 'E');
+blockedBed.classList = { contains: name => name === 'blocked' };
+assert.equal(bridge._test.buttonShowsSleep(blockedBed), false, 'blocked Sleep cannot be intercepted');
+console.log('generic Interact and rejected Sleep regression passed');
