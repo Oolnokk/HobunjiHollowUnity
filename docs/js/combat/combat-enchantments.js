@@ -619,7 +619,7 @@
   function onDefensive(event) {
     const id = flourishForSlot(event.slotId, event.weaponKey);
     const def = DEFINITIONS[id];
-    if (!def || def.type !== 'Flourish' || def.alignment === 'Fey' || !allowsFlourishSlot(id, event.slotId) || id === 'fury') return false; // Illusory strikes require a real offensive hit; Fey cannot claim a defensive effect it never applied.
+    if (!def || def.type !== 'Flourish' || def.alignment === 'Fey' || !allowsFlourishSlot(id, event.slotId) || id === 'fury' || id === 'ancestralMercy') return false; // Attack-tempo Flourishes require an attack rather than a block; illusory strikes require a real offensive hit; Fey cannot claim a defensive effect it never applied.
     const handler = FLOURISH_HANDLERS[id];
     if (typeof handler !== 'function') return false;
     const power = getEnchantmentPowerMultiplier(event.weaponKey);
