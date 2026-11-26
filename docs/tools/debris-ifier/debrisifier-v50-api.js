@@ -199,6 +199,94 @@
     return tagged;
   }
 
+  // Pick a cardinal face with a clear approach from the actual generated geometry.
+  // Local V50 units are doubled in the game; .07 allows a crossbow-sized shot.
+  function choosePillarShotSide(origin, preferred, obstacles, floorAt) {
+    const sides = [['north',0,-1],['east',1,0],['south',0,1],['west',-1,0]];
+    const ordered = sides.slice().sort((a,b) => Number(b[0] === preferred) - Number(a[0] === preferred));
+    for (const [side,dx,dz] of ordered) {
+      const reach = 1.05; // Clear space for a shooter outside the .78-wide pillar base.
+      const mouth = .24; // Maximum depth of the tapered niche entrance from pillar center.
+      const pad = .07;
+      if (![.48,.76,reach].every(d => floorAt(origin.x+dx*d,origin.z+dz*d))) continue;
+      const x0=origin.x+dx*mouth,x1=origin.x+dx*reach,z0=origin.z+dz*mouth,z1=origin.z+dz*reach;
+      const blocked = obstacles.some(box =>
+        box.min.y <= origin.y+pad && box.max.y >= origin.y-pad &&
+        box.min.x <= Math.max(x0,x1)+pad && box.max.x >= Math.min(x0,x1)-pad &&
+        box.min.z <= Math.max(z0,z1)+pad && box.max.z >= Math.min(z0,z1)-pad);
+      if (!blocked) return side;
+    }
+    return null;
+  }
+
+  // Run once, after every V50 prop and puzzle has been placed but before roots
+  // are transferred to the game and their static collision is registered.
+  function ensurePillarShotClearance(root, locale) {
+    const shell=locale.meta.interiorShell;
+    const housings=[], obstacles=[];
+    root.updateMatrixWorld(true);
+    root.traverse(object => {
+      if (object.userData?.hiddenActivatorMount === 'pillarNiche') housings.push(object);
+    });
+    if (!housings.length) return { checked:0, turned:0 };
+    const housingSet=new Set(housings); // Other pillars use their full, rotation-invariant square envelope.
+    for (const housing of housings) obstacles.push({owner:housing,box:new THREE.Box3().setFromObject(housing)});
+    root.traverse(mesh => {
+      if (!mesh.isMesh || !mesh.geometry || mesh.isInstancedMesh) return; // Instanced Roughbrick is the floor, not a solid prop.
+      for (let node=mesh;node;node=node.parent) {
+        if (housingSet.has(node) || node.visible === false) return;
+        if (node === root) break;
+      }
+      const materials=Array.isArray(mesh.material)?mesh.material:[mesh.material];
+      if (materials.every(mat=>!mat || mat.visible===false || mat.colorWrite===false || (mat.transparent && mat.opacity<.2))) return;
+      if (!mesh.geometry.boundingBox) mesh.geometry.computeBoundingBox();
+      const box=mesh.geometry.boundingBox?.clone().applyMatrix4(mesh.matrixWorld);
+      if (box && !box.isEmpty()) obstacles.push({owner:null,box});
+    });
+    const floorKeys=new Set((shell.floorCells||[]).map(cell=>cell.join(',')));
+    const cell=Number(shell.cellSize)||.5;
+    const local=new THREE.Vector3(); // Reused for scene-to-generator floor lookup.
+    const floorAt=(x,z)=>{
+      root.worldToLocal(local.set(x,0,z));
+      return floorKeys.has(Math.floor((local.x+shell.worldWidth/2)/cell)+','+Math.floor((local.z+shell.worldDepth/2)/cell));
+    };
+    let turned=0;
+    for (const housing of housings) {
+      const core=housing.children.find(child=>Number.isFinite(child.userData?.pillarNicheMouthZ) || child.userData?.obeliskProfile==='pillarHoused'); // Standalone V50 lacks the embedded projectile-mouth tag.
+      if (!core) throw new Error('V50 target pillar has no projectile mouth');
+      const center=new THREE.Box3().setFromObject(core).getCenter(new THREE.Vector3());
+      const origin=housing.getWorldPosition(new THREE.Vector3());
+      origin.y=center.y; // Test the actual glyph height, not the pillar's ground position.
+      const nearby=obstacles.filter(entry=>entry.owner!==housing &&
+        entry.box.min.x<=origin.x+1.2 && entry.box.max.x>=origin.x-1.2 &&
+        entry.box.min.z<=origin.z+1.2 && entry.box.max.z>=origin.z-1.2).map(entry=>entry.box);
+      const preferred=housing.userData.openingSide;
+      const side=choosePillarShotSide(origin,preferred,nearby,floorAt);
+      if (!side) {
+        const error=new Error('V50 target pillar has no clear projectile face: '+(housing.userData.pillarSlotKey||housing.id));
+        error.name='V50PillarClearanceError'; // Parent runtime retries this layout-specific failure, not unrelated programmer errors.
+        throw error;
+      }
+      if (side===preferred) continue;
+      const direction=sideDirection(side);
+      housing.rotation.y=yawForLocalNegativeZ(direction.dx,direction.dz);
+      housing.userData.openingSide=side;
+      housing.updateMatrixWorld(true);
+      turned++;
+      const slot=housing.userData.pillarSlotKey; // Keep exported generator metadata consistent with the actual scene.
+      if (slot) {
+        for (const object of locale.objects||[]) if (object.previewRuin?.pillarSlotKey===slot && object.previewRuin.mountType==='pillarNiche') {
+          object.previewRuin.openingSide=side;
+          object.rot=Math.round(housing.rotation.y/DEG);
+        }
+        for (const part of shell.movingParts||[]) for (const anchor of part.anchors||[]) {
+          if (anchor.pillarSlotKey===slot) anchor.openingSide=side;
+        }
+      }
+    }
+    return { checked:housings.length, turned };
+  }
+
   function normalizeLayoutReservation(raw) {
     if (raw == null) return null;
     const fields = ['x', 'z', 'w', 'd', 'floor', 'y', 'tileScale']; // Allocation crosses the iframe boundary as plain finite numbers.
@@ -251,6 +339,7 @@
       shell.layoutReservation = { ...reservation };
     }
     hydrateInteriorPlateauLevels();
+    lastGeneratedLocale.meta.interiorShell.pillarShotClearance = ensurePillarShotClearance(localePreviewRoot, lastGeneratedLocale); // Export checked/turned counts for seed diagnostics.
     const puzzleFurniture = tagPuzzleFurniture(localePreviewRoot);
     const wallPlaneCount = prepareRuntimeWallPlanes();
     const hallwayState = runtimeHallwayState();
