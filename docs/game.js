@@ -358,6 +358,9 @@
       // scripts) instead of the NPC's ordinary tree/turn-in/favor routing.
       async function openNpcDialogue(walker, opts = null) {
         if (!walker || isPlayerInCombat()) return false; // Combat disables both direct dialogue calls and contextual Talk commands.
+        // Co-op: a conversation holds only the person talking, and an NPC talks to one player at a time (js/npc-conversations.js).
+        const conversation = window.NpcConversations.begin(player, walker);
+        if (!conversation.ok) { showToast(`${walker.rec?.name || 'They'} ${walker.rec?.name ? 'is' : 'are'} already talking with someone else.`, false); return false; }
         const rec  = walker.rec;
         window.DialogueContent?.recordNpcMemory(rec?.id, 'talked');
         window.WorldPopupText?.clearInteractionPrompts?.();
@@ -410,6 +413,7 @@
 
       function closeNpcDialogue() {
         if (cutscenePreviewActive) return; // Only the director may advance/close cinematic dialogue; Leave, Escape and controller cancel share this authority.
+        window.NpcConversations.end(player); // The NPC is free for other players again.
         dialogueOpen = false;
         window.CinematicCameraRuntime?.endDialogue?.();
         window.DialogueCameraFraming?.end?.();
@@ -26726,15 +26730,21 @@
         window.PerfProfiler?.end(prePausePerf);
 
         if (paused) window.PlayerDowned?.setGiveUpHeld?.(false); // The paused frame still runs: cancel surrender before wall-clock hold can complete after unpausing.
-        if (!paused) {
+        // Co-op: the main menu holds only the local player; the world, the clock and everyone else keep running (a
+        // conversation never paused the world either). Other modal gates that reuse `paused` still stop it.
+        const localPaused = paused;
+        const coopWorldContinues = paused && mainMenuOpen && window.TimeConsensus?.shouldGate() === true;
+        if (!paused || coopWorldContinues) {
           updateCalendar(dt);
           _layoutCheckAccumS += dt;
           if (_layoutCheckAccumS >= 2) { _layoutCheckAccumS = 0; checkMapLayoutChanges(); }
           window.WeatherFX._advanceSmoothedLighting(dt);
           const inputPerf = window.PerfProfiler?.begin('movement+input'); // Isolates controller polling/camera-look and player movement from everything else below.
-          pollControllerInput();
-          applyControllerCameraLook(dt);
-          updateMovement(dt);
+          if (!localPaused) { // The local player's own input and movement stay held while their menu is open.
+            pollControllerInput();
+            applyControllerCameraLook(dt);
+            updateMovement(dt);
+          }
           if (window.WallOrnamentPlacement?.isPlayerReticlePlacementActive?.()) {
             window.WallOrnamentPlacement.updatePlayerReticlePreview?.(); // Touch camera/movement retargets wall preview even without a connected controller.
           }
@@ -26752,7 +26762,7 @@
           const worldSystemsPerf = window.PerfProfiler?.begin('world systems'); // Campfire/fog/vitals/alchemy/cooking/bounty updates that run every frame regardless of area.
           window.WildernessCampfire?.updateVfx(dt);
           window.WildernessMap.updateFogAroundPlayer();
-          window.PlayerVitals.updatePlayerVitals(dt);
+          if (!localPaused) window.PlayerVitals.updatePlayerVitals(dt);
           window.AlchemySystem.update();
           window.AlchemyFlasks?.update(dt);
           window.CookingSystem.update();
@@ -30462,6 +30472,7 @@
       });
       window.__hobunjiFurnitureDebug = {
         give: (itemKey, n = 1) => { inventory[itemKey] = (inventory[itemKey] || 0) + n; },
+        openNpcDialogue: walker => openNpcDialogue(walker), // Headless/dev: start the real NPC dialogue (conversation lock included).
         place: placeDecorativeFurniture,
         sit: beginSitInteraction,
         endSit: endSitInteraction,

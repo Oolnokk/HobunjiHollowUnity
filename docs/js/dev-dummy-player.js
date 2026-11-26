@@ -21,7 +21,7 @@
   let registered = false;
 
   function update(dt) {
-    if (!dummy || window.SharedCutscene?.isFrozen(dummy)) return; // A shared cutscene pauses every player.
+    if (!dummy || window.SharedCutscene?.isFrozen(dummy) || window.NpcConversations?.isTalking(dummy)) return; // A shared cutscene pauses everyone; a conversation holds the speaker. // A shared cutscene pauses every player.
     const reg = window.ActorRegistry;
     if (following && reg?.getLocalPlayer()) { const lp = reg.getLocalPlayer(); goal = { x: lp.x + 70, y: lp.y + 40 }; }
     if (!window.RemotePlayerState?.isDowned(dummy) && goal) {
@@ -82,6 +82,9 @@
     knockOut(minutes = 120) { return dummy && window.TimeConsensus?.knockOut(dummy, timeSkip('blackout', minutes)); },
     reviveDummy() { const lp = window.ActorRegistry?.getLocalPlayer(); return !!dummy && window.TimeConsensus?.revive(dummy, lp); }, // The local player revives the dummy.
     reviveLocal() { const lp = window.ActorRegistry?.getLocalPlayer(); return !!dummy && window.TimeConsensus?.revive(lp, dummy); }, // The dummy revives the local player.
+    // Conversations (js/npc-conversations.js): the dummy talks to an NPC walker (find one with CharacterVisuals.forEachCharacter).
+    talkTo(walker) { return dummy && window.NpcConversations?.begin(dummy, walker, { ownsPause: true }); },
+    stopTalking() { return !!dummy && window.NpcConversations?.end(dummy); },
     wake() { return !!dummy && window.TimeConsensus?.cancelRest(dummy); },
     setPosition(x, y) { if (dummy) { dummy.x = x; dummy.y = y; } },
   };
