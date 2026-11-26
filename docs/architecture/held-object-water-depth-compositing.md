@@ -100,7 +100,7 @@ continues to depth-test normally; weapon stencils share the actor order.
 
 ## Worn pants use the feet's ground-x-ray policy
 
-As of the scaled-foot grounding change, `feet.groundXray` defaults to `off` in Xray Hierarchy. Both feet and pants remain in ordinary world and shell depth passes; the legacy shared ground replay below is available only as a developer A/B comparison. Ordinary water and solid-cover occlusion are retained.
+As of the scaled-foot grounding change, `feet.groundXray` defaults to `off` in Xray Hierarchy. Dry feet and pants remain in ordinary world and shell depth passes. Submerged local lower-body meshes may enter the existing water-only color compositor, explicitly forced into the ordinary-depth group with no terrain exemption. The legacy shared ground replay below is available only as a developer A/B comparison. Solid-cover depth remains authoritative.
 
 Each live pants garment now registers with the existing selective feet replay through
 `HeldObjectRenderOrder.markWaterOccludedMesh()`. This reuses the same local
