@@ -661,6 +661,8 @@
         const limits = attachmentDebug?.geometryConstraint; // Mobile diagnostics for the final geometric yaw solver.
         if (limits) lines.push(`Shoulder geometry: ${limits.mode}; body requested=${limits.requestedBodyYawDeg?.toFixed(2) ?? 'n/a'}° resolved=${limits.resolvedBodyYawDeg?.toFixed(2) ?? 'n/a'}°; head requested=${limits.requestedHeadYawDeg?.toFixed(2) ?? 'n/a'}° resolved=${limits.headYawDeg?.toFixed(2) ?? 'n/a'}°; checks=${limits.checks ?? 0}; cache=${limits.cacheHit ? 'hit' : 'prepare'}; quality=${limits.quality || 'n/a'}; prep=${Number(limits.buildMs || 0).toFixed(1)}ms / ${limits.buildChecks ?? 0} checks`);
         if (limits?.quality === 'live-bone-envelopes') lines.push(`Shoulder envelopes: owner=${limits.ownerPatches} pet=${limits.petPatches}; pairs=${limits.envelopePairs}; head alternatives=${limits.headCandidates}; weight refreshes=${limits.weightRefreshes}; pose=${Number(limits.poseMs || 0).toFixed(3)}ms`);
+        const renderPin = attachmentDebug?.renderPin; // Separately report the actual composed render pose, not the restored simulation transform.
+        if(renderPin) lines.push(`Rendered shoulder pin: ${renderPin.source}; before=${renderPin.beforeError.toFixed(6)}u after=${renderPin.afterError.toFixed(6)}u corrected=${renderPin.corrected}; PERCH=(${renderPin.perch.map(v=>v.toFixed(5)).join(', ')}) GRIP=(${renderPin.grip.map(v=>v.toFixed(5)).join(', ')})`);
         const perchWorld = attachmentDebug?.authoredPerchWorldPosition;
         const gripWorld = attachmentDebug?.alignedGripWorldPosition;
         const perchWorldValid = Array.isArray(perchWorld) && perchWorld.length >= 3 && perchWorld.slice(0, 3).every(Number.isFinite);

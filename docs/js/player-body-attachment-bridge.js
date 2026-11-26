@@ -636,7 +636,7 @@
   let cachedShoulderPetsFrameId = -1;
   let cachedShoulderPetsRoots = [];
 
-  composer.registerExternalRootProvider('shoulderPets', () => {
+  function shoulderPetsForFrame() {
     const frameId = window.RuntimeFrameScheduler?.frameId?.();
     if (frameId != null && frameId === cachedShoulderPetsFrameId) return cachedShoulderPetsRoots;
 
@@ -665,6 +665,15 @@
     if (frameId != null) cachedShoulderPetsFrameId = frameId;
     cachedShoulderPetsRoots = roots;
     return roots;
+  }
+  composer.registerExternalRootProvider('shoulderPets', shoulderPetsForFrame);
+  // The ordinary simulation pin precedes render-only stance/deadzone/head
+  // composition. Reuse the existing frame transaction, after the final neck
+  // pose, and the existing memoized active roots; no new scheduler or pass.
+  composer.addPostHeadAimHook?.((undo,renderDebug) => {
+    const repin=window.ShoulderPetAttachmentRuntime?.repinForRender;
+    if(!repin)return;
+    for(const root of shoulderPetsForFrame())repin(root,undo,renderDebug);
   });
 
   window.PlayerBodyAttachmentBridge = {
