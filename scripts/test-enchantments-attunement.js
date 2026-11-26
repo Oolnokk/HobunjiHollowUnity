@@ -1034,6 +1034,28 @@ console.log('Fey Immundanity, real Stamina illusions, proc, scaled echo, migrati
   const close = (value, expected) => assert(Math.abs(value - expected) < 0.0001, `${value} != ${expected}`);
   const amount = (actor, id) => RS.getAffliction(actor, id);
   const clear = (actor, id) => RS.removeAffliction(actor, id, 1000);
+  // Fury triggers only on attacks, and a hostile wielding Fury cannot
+  // accidentally buff the player's unassigned companions.
+  const pet = makeEntity({ name: 'Player pet', isCompanion: true });
+  const enemyAlly = makeEntity({ name: 'Hostile ally', master: attacker });
+  const roster = context.Combat.deps.companionObjects;
+  roster.push(pet, enemyAlly);
+  try {
+    equip([], { tap1: 'fury' });
+    hit({ comboFinisher: false });
+    close(amount(attacker, 'furiousStamina'), 0);
+    hit();
+    assert(amount(attacker, 'furiousStamina') > 0);
+    close(amount(enemyAlly, 'furiousStamina'), amount(attacker, 'furiousStamina'));
+    close(amount(pet, 'furiousStamina'), 0);
+    clear(attacker, 'furiousStamina');
+    equip([], { tap2: 'fury' });
+    hit({ slotId: 'tap2', attackCategory: 'quickAttack', quickBonusEffectProc: false });
+    close(amount(attacker, 'furiousStamina'), 0);
+    hit({ slotId: 'tap2', attackCategory: 'quickAttack', quickBonusEffectProc: true });
+    assert(amount(attacker, 'furiousStamina') > 0);
+    clear(attacker, 'furiousStamina');
+  } finally { roster.splice(roster.indexOf(pet), 2); }
   const newBases = [
     ['stormwake', 'Tothal', 'windblownStamina', 6.6],
     ['stonebind', 'Hronal', 'leadboundStamina', 5.5],
