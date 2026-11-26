@@ -160,7 +160,7 @@ const pageErrors = []; // Captured so CI failures also have mobile-readable diag
       && result.material.factor > 0 && result.material.units > 0,
     'pants use real depth and a rearward camera-independent coplanar offset');
     for (const script of ['render-layers', 'render-hooks', 'social-action-r128-render-bridge',
-      'surface-occlusion-composer', 'scissor-depth-snapshot', 'held-object-render-order']) {
+      'surface-occlusion-composer', 'held-object-render-order']) {
       await page.addScriptTag({ path: path.join(root, 'docs/js', script + '.js') });
     }
     const heldPixels = await page.evaluate(() => {

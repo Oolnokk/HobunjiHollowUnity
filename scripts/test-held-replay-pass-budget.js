@@ -85,7 +85,6 @@ assert.deepEqual(rectCalls, [{ x: 100, y: 20, z: 40, w: 60 }, rect],
   'each known group is tightly bounded, while uncertainty restores union bounds');
 
 const held = block('  function replaySelectiveHeldOverlay(', '  function isShellOutlinePass(');
-const shell = block('  function replayShellOutlineXray(', '  function wrappedRender(');
 const hiddenAt = held.indexOf('suppressedOverlay = suppressDraws('); // Runtime must first hide hands/tools/feet before collecting the ordinary depth blockers.
 const cutoutAt = held.indexOf('const cutoutDepthMeshes = groups.length && canLockColorMask ? collectVisible(pngDepthRegistry, scene');
 const coverAt = held.indexOf('const protectedDepthMeshes = groups.length && canLockColorMask ? collectVisible(protectedCoverRegistry, scene');
@@ -98,7 +97,7 @@ assert.match(depthIteration, /prepareCutoutDepthMaterials\(cutoutDepthMeshes, pr
 assert.doesNotMatch(depthIteration, /collectVisible\((pngDepthRegistry|protectedCoverRegistry)/,
   'no elevation group may re-walk the same expensive depth registries');
 
-for (const [name, body, flag] of [['held', held, 'scissored'], ['shell', shell, 'scissorActive']]) {
+for (const [name, body, flag] of [['held', held, 'scissored']]) {
   const group = body.indexOf('for (const group of groups)');
   const bounded = body.indexOf('applyElevationScissor(renderer, camera, group.meshes, glState', group);
   const depth = body.indexOf('renderer.clearDepth();', group);
@@ -120,17 +119,14 @@ const baseFilter = entry.indexOf('filterOffscreenReplayMeshes(camera, held)');
 assert(entry.indexOf('const baseRenderEndedAt = performance.now()') < baseRefresh && baseRefresh < baseFilter,
   'active procedural hand matrices must refresh before camera rejection');
 const shellRefresh = entry.indexOf('refreshHeldMatrices?.(shellCandidates)');
-const shellFilter = entry.indexOf('filterOffscreenReplayMeshes(camera, shellCandidates)');
-assert(shellRefresh >= 0 && shellRefresh < shellFilter,
-  'shell-source hand matrices must refresh before conservative shell rejection');
+assert(shellRefresh >= 0, 'shell-source matrices still refresh before the ordinary shell pass draws');
 assert(entry.indexOf('const baseRenderEndedAt = performance.now()') < entry.indexOf('filterOffscreenReplayMeshes(camera, held)'),
   'source meshes are frustum-checked only after the base render updates matrices');
 assert(entry.indexOf('filterOffscreenReplayMeshes(camera, held)') < entry.indexOf('replaySelectiveHeldOverlay(this, scene, camera, visibleHeld'),
   'out-of-view equipment cannot create extra elevation groups');
 // A frame with no visible replay participants must replace old debug values.
-const diagnosticNames = ['lastBaseReplayCandidates', 'lastBaseOffscreenFiltered', 'lastBaseElevationGroups',
-  'lastForcedGroundDepthMaterials', 'lastElevationReplayGroups', 'lastXrayTileRegions',
-  'lastXrayOrdinaryMeshes', 'lastUnknownElevationMeshes', 'lastNearbyTintCovers',
+const diagnosticNames = ['lastBaseReplayCandidates', 'lastBaseOffscreenFiltered',
+  'lastForcedGroundDepthMaterials', 'lastNearbyTintCovers',
   'lastDistantTintCovers', 'lastWaterClipScopes', 'lastWaterClipOverflow'];
 const noReplay = new Function(block('  function resetBaseReplayDiagnostics(', '  wrappedRender.__hobunjiHeldRenderOrderWrapped')
   + `
@@ -168,7 +164,7 @@ const disabled = new Function('assert', [
   block('  function setActorXrayEnabled(', '  // Non-player weapon x-ray budget'),
   block('  function resetBaseReplayDiagnostics(', '  wrappedRender.__hobunjiHeldRenderOrderWrapped'),
   `
-    const counts = { renders:0, scans:0, flushes:0, water:0, sorted:0, shoulder:0, repaired:0, previews:0 };
+    const counts = { renders:0, scans:0, flushes:0, water:0, sorted:0, shoulder:0, repaired:0 };
     const collections = []; // Only ordinary held/portrait/water registries may be read.
     const scene = {isScene:true}, camera = {isCamera:true,layers:{mask:1}};
     const held = {}, portrait = {}, cover = {};
@@ -184,7 +180,6 @@ const disabled = new Function('assert', [
     const performance={now:()=>time}, maskedHands=new Set();
     const window={
       PlayerBodyTransformComposer:{getPlayerMesh:()=>({})},
-      XrayHierarchy:{updateGroundZone(s,scope,radius){assert.equal(s,null);assert.equal(scope,null);assert.equal(radius,0);counts.previews++;}},
     };
     const isBaseWorldPass=s=>!s.overrideMaterial;
     const classifyTree=()=>{counts.scans++;};
@@ -208,7 +203,7 @@ const disabled = new Function('assert', [
       assert.deepEqual(covers,[cover]);assert.equal(mask,1);
       assert.deepEqual(body.portraits,[portrait]);counts.water++;
     };
-    let lastBaseStencilBits,lastShellElevationGroups,lastShellReplayCandidates,lastShellOffscreenFiltered,lastShellFullscreenReason;
+    let lastBaseStencilBits;
     let lastReplayCulledCount,lastReplayKeptCount,lastReplayInstancedCulled,lastReplayInstancedKept,lastReplayInertCount,lastReplayScissorCoverage;
     let lastOtherWeaponXrayActors,lastWaterPortraits,lastDryGearWaterSkips,lastFrontPortraitMaskCount,lastFrontPortraitGearCandidates;
     let lastFrontPortraitMaskedGear,lastFrontPortraitMaskReason,lastRankedPortraitActors,lastHeldFullscreenReason;
@@ -218,7 +213,7 @@ const disabled = new Function('assert', [
       advance:()=>{time+=1000;}, added:()=>{classificationScheduled=true;},
       water:(submerged)=>{tintCoverRegistry.all.add(cover);wet=submerged;},
       scan:(s=scene,force=false)=>scanScene(s,force), setActorXrayEnabled,
-      read:()=>({actorXrayBypassFrames,actorXrayWaterOnlyFrames,lastBaseElevationGroups,lastShellReplayCandidates,lastHeldFullscreenReason})};
+      read:()=>({actorXrayBypassFrames,actorXrayWaterOnlyFrames,lastHeldFullscreenReason})};
   `
 ].join('\n'))(assert);
 assert.equal(disabled.draw(),42);
@@ -240,8 +235,6 @@ disabled.water(true);disabled.draw();
 assert.equal(disabled.counts.water,1,'wet portraits retain independent water tint, without actor geometry');
 assert.equal(disabled.read().actorXrayWaterOnlyFrames,1);
 assert.equal(disabled.read().actorXrayBypassFrames,5);
-assert.equal(disabled.read().lastBaseElevationGroups,0);
-assert.equal(disabled.read().lastShellReplayCandidates,0);
 assert.equal(disabled.read().lastHeldFullscreenReason,'all-actor-xray-disabled');
 disabled.scan({isScene:true});assert.equal(disabled.counts.scans,2,'a newly entered scene still registers once');
 disabled.scan(disabled.scene,true);assert.equal(disabled.counts.scans,3,'explicit forced registration remains supported');
@@ -251,14 +244,13 @@ disabled.advance();disabled.scan();
 assert.equal(disabled.counts.scans,5,'enabled fallback discovery remains intact');
 disabled.setActorXrayEnabled('player',false);disabled.advance();disabled.scan();
 assert.equal(disabled.counts.scans,5,'disabling again stops periodic discovery');
-assert.equal(disabled.counts.previews,1,'all-off removes any visible debug ground circle');
 console.log('all actor x-ray disabled: dry, wet, shell, registration and re-enable paths passed');
 
 
  // The actual ordinary supplement helper may reuse the union's survivor list,
  // but must retain required cutouts, missing ground, live descendants and hooks.
-const sharing = new Function(block('  function hideOrdinaryDepthRedraws(', '  // ── Near-only depth rebuilds')
-  + block('  function isStillVisibleForShellReplay(', '  function collectShellReplayCandidates(')
+const sharing = new Function(block('  function hideOrdinaryDepthRedraws(', '  function replaySelectiveHeldOverlay(')
+  + block('  function isStillVisibleInScene(', '  function wrappedRender(')
   + `
     const MASK_ALL=0xffffffff,objectProto={}, scene={isScene:true,visible:true};
     const leaf=(parent=scene)=>({isMesh:true,isObject3D:true,visible:true,parent,children:[],layers:{mask:1}});

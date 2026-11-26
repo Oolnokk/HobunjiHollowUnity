@@ -1,5 +1,12 @@
 # Held objects, ground x-ray, and translucent water: rendering contract
 
+> **Floor-exemption x-ray no longer exists.** Weapons, hands, held tools, feet and pants all draw with ordinary
+> solid-world depth, so the per-holder floor reveal (elevation-filtered ground shader, stencil floor punch,
+> near-only depth snapshot, shell-outline x-ray replay and the ground-zone debug circle) was deleted. The held
+> replay that remains is the **ordinary-depth replay**: held parts draw after the PNG cutout/protected-cover
+> depth supplement so billboards occlude them, with the owner-portrait mask and water tint applied in the same
+> pass. Passages below that mention those retired mechanisms are historical; the code is the authority.
+
 > **Regression warning (farm flood, October 19, 2026):** Do not move the
 > **colorless opaque-grass/path depth restore** after the water/slush tint
 > pass. Doing so reintroduces irregular teal floodwater patches over raised
@@ -165,36 +172,6 @@ Regression guards: `scripts/test-shoulder-pet-layering.js`,
 `scripts/test-held-front-portrait-mask.js`,
 `scripts/test-xray-hierarchy.js`, and `scripts/test-hat-xray-facing.js`.
 
-## Elevation-aware ground x-ray
-
-Ground is no longer removed wholesale from the held/foot depth rebuild.
-Each replay scopes visible tools, hands, feet and shell sources to the
-standing elevation and tile of their owning actor:
-
-- The player uses the movement root plus the active
-  `townSubtleElevation` composer channel, which is the same lift used for
-  town terrain and walkable furniture.
-- NPC equipment resolves to its `npc_walker_*` root (also explicitly tagged
-  by the NPC held-equipment runtime). NPC procedural body parts can resolve
-  through the existing `hobunjiCharacterRigScaleRoot` marker. Named-animal
-  body groups use their existing `namedAnimalNpc` marker.
-- The holder’s tile and its eight neighbors are eligible for the ground exemption. The holder’s world X/Z selects that area even when a weapon or rig part swings across a boundary.
-- Ground materials with standard Three.js world-position shaders discard only
-  front-facing, upward-facing fragments within 0.18 world units of the actor's standing
-  elevation. Lit materials use their transformed normal; unlit MeshBasic grass
-  uses its geometry normal. Any ground geometry without a normal attribute keeps
-  full-depth occlusion rather than guessing its surface orientation. World-space Y naturally includes map
-  tiers, trench bottoms, raised earth and continuous terrain surfaces.
-- Vertical cliff/wall faces and back-facing floors/ceilings remain depth occluders. Water, slush, snow,
-  billboard grass, props and other solid geometry retain their existing
-  material/depth behavior.
-- Unknown actor ownership, missing geometry normals, and custom ground shaders
-  without the required standard chunks fail closed: their ground remains fully opaque to the
-  held/foot overlay rather than guessing an elevation.
-
-Actors at effectively the same elevation can share a replay when their gear bounds cannot overlap each other’s projected floor neighborhoods. Unknown/custom draw hooks still use conservative separate replays. Procedural hands and feet may join batching only when their registered parity hook owns the mesh's onBeforeRender without an earlier custom hook: the projection encloses both the current transform and a fresh prior visible transform, plus up to 2× shell-thickness expansion. If another hook replaces that callback, batching automatically falls back to conservative bounds. The leg rig's existing foot-depth-push callback is now explicitly certified as *screen-projection invariant* only when it has no preceding custom hook: a uniform scale about a perspective camera moves the foot in depth without changing its projected outline, while an orthographic view skips this adjustment. The feet parity adapter may trust that certified callback, expanding the existing batching opportunity to hands and feet across players, civilians and enemies. Any other draw-hook chain remains conservative. The synthetic 24-to-3 grouping test is a capacity check, **not** a measured NPC or enemy frame improvement. The renderer prepares the ground material list once per pass and narrows each depth draw to its own screen bounds when it can prove them. Parts that cannot be covered by their neighborhood use ordinary ground depth. The shell-outline pass uses the same tile and elevation filter. The final colorless ground
-restore remains before translucent water/slush tinting.
-
 ## Ordinary-depth replay supplement
 
 When every source in a group is proven not to need the holder-local floor
@@ -210,60 +187,6 @@ then restores translucent-cover depth as before. Mixed groups and renderers
 without color-mask locking retain the ground restore and original ordering.
 `test-held-ordinary-depth-budget.js` executes these pass budgets and restoration
 on both success and a thrown render.
-
-## Actor-centered ground X-ray zone
-
-The optional floor exception now uses a **filled circle in world X/Z**, rather
-than a square of nearby tiles. The shipped authored radius of one tile on each
-side corresponds to a 1.5-world-unit circle, preserving the previous three-tile
-diameter without snapping its center to a grid corner. The shader checks the
-squared distance of each eligible ground fragment to the actor's world X/Z,
-after applying the existing standing-elevation and upward-floor-face tests.
-Actual 3D geometry, walls, raised floors, water, snow and grass billboards
-continue to follow their own physical depth rules.
-**Ground depth outside the circle:** Some wilderness ground materials
-intentionally use `depthWrite: false` in the regular world color pass.
-Previously, the held-gear depth replay preserved that setting, allowing
-weapons to show through the ground *outside* the local exception even when
-the floor should obscure them. The depth-only held replay now temporarily
-enables depth writing for registered ground materials, including when
-their elevation shader is not yet compiled or is unsupported. When supported,
-mode 1 still discards standing-level ground *inside* the circle; other
-fragments write actual ground depth. Unsupported shader variants fail closed,
-so the floor remains a physical occluder even inside the circle instead of
-accidentally allowing x-ray outside it. The material's original `depthWrite`
-value is restored through the existing transaction after that replay.
-Normal world drawing, walls, raised surfaces and water rules do not change.
-
-**Ordinary held parts:** Equipment fully above the standing floor skips the
-local circle filter and normally uses a cheap depth supplement. This path
-previously skipped all terrain, including ground whose visible world material
-had never written depth. The supplement now keeps only registered ground
-leaves missing depth, temporarily enables their depth writes, and restores
-their materials before the held color draw. It still skips unrelated world
-geometry and does not clear the base depth.
-
-The mobile X-ray panel displays **Ground depth writers repaired (last replay)**,
-**Ground shader fallbacks**, and a **Use stencil floor punch (A/B test)**
-checkbox. It additionally reports ordinary held parts and actual floor-punch
-call/fallback counts, to distinguish permission to punch from an actual
-stencil reset. The checkbox switches between the fast stencil floor reset
-and full-depth rebuild when a depth snapshot is supported, helping isolate
-remaining *inside-circle* obstruction. The copied diagnostic report includes
-these counters. This does not alter the authored 1.5-world-unit radius.
-
-The existing per-tile lookup remains only a CPU batching index: characters
-standing at different coordinates inside one tile have separate circle centers.
-Both the standard clear-and-rebuild pass and stencil floor-punch use the same
-circle centers. The patch-refill cull uses a conservative bounding square plus
-the existing margin; it is an optimization, not the visible boundary.
-
-Dev Companion → X-ray and layer compositing → **Show ground X-ray circle in the
-world** toggles a translucent filled disc and rim at the player's standing
-elevation. That geometry is created lazily, follows the player, and is removed
-when disabled or when switching scenes. It does not write depth and cannot
-change the X-ray mask. This switch is a developer-only browser override, not
-part of save data.
 
 ## Shared surface occlusion composer
 
@@ -479,49 +402,6 @@ overlay overlap check limit the cost. Near-plane/uncertain geometry can
 fall back to the full tint path. Framebuffers with no usable stencil
 keep conservative cover occlusion rather than painting unsupported
 partial tint.
-
-## Shell outlines inherit the source object's ground-x-ray visibility
-
-Flat character portrait PNGs, modular weapon sprite layers, flail-rope PNGs, merged leaf cards, and grass/weed billboards carry their **own authored outlines** and must not join layer 1. The only character parts requiring an inverted-hull outline are the volumetric hands and feet; independent volumetric terrain/furniture still uses its ordinary shell policy. Render classification removes accidental layer-1 membership from authored planes when they join the scene, including art outside the held-object registry. Their other render layers are retained. Held-object enforcement and shell replay also check authored art.
-
-The occluder depth material transaction is prepared **once per shell replay**, not once per elevation group: each group updates only ground tile/elevation uniforms. The final full-depth restore uses that same material transaction, and the outer `finally` restores material/camera/renderer flags even if a draw throws.
-
-The inverted-hull shell pass is a separate render from the visible object draw.
-Without an explicit parity step, the base mesh can correctly x-ray through
-classified ground while its shell is still rejected by the ordinary ground
-depth left in the framebuffer.
-
-HeldObjectRenderOrder applies the same rule to both representations:
-
-1. The normal layer-1 shell pass omits **only** registered held/foot meshes
-   whose owning tile/elevation actually requires the special floor exception.
-   Ordinary-depth player, civilian, enemy and companion shells stay in the
-   ordinary pass and draw once. If none needs a floor exception, there is no
-   shell-depth reconstruction at all.
-2. A scissored replay clears depth only around those meshes and reconstructs
-   solid depth while excluding the exact groundKind() set used by the
-   visible held/foot x-ray. The source meshes remain in the depth replay (with
-   depth writes temporarily enabled) so their front faces still mask the
-   expanded shell. Snow, water, slush, furniture, rocks, walls and other
-   non-ground occluders remain in this depth reconstruction. Carved
-   cavern shells retain their complete geometry; only same-height top faces are
-   discarded by the elevation filter, while different-height floors, walls and
-   ceilings continue to block outlines.
-3. Only the registered x-ray meshes' layer-1 shells are drawn against that
-   reconstructed depth. Their shell therefore follows the same ground
-   visibility exception as the underlying mesh without becoming visible
-   through unrelated solid objects.
-4. The ordinary scene depth is rebuilt colorlessly before later target and
-   outline consumers run. The replay restores the camera mask, override
-   material, visibility, geometry, scissor, shadow and renderer state.
-
-This is deliberately tied to the shared x-ray participant registries and
-ground classifier, rather than adding separate per-material or per-species
-shell exceptions. When another object type joins the selective ground-x-ray
-system, its registered shell automatically receives the same visibility
-policy. The shell replay is limited to the projected bounds of the affected
-objects when safe; skinned, instanced, morphed or near-plane-uncertain bounds
-fall back to a full-frame replay.
 
 ## The confirmed regression: teal patches in raised flooded grass
 

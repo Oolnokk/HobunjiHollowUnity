@@ -428,14 +428,9 @@
       ...(frozenPortraits?.enabled ? [`Frozen portraits: ${frozenPortraits.flat} flat · ${frozenPortraits.posed} baked · ${frozenPortraits.trianglesSaved} fewer triangles per eligible draw`] : []),
       npcVisual ? `NPC view cull: ${npcVisual.hidden}/${npcVisual.eligible} camera-hidden · ${npcVisual.replayHidden}/${npcVisual.replayChecks} depth-replay skips · ${npcVisual.close} near · ${npcVisual.inside} onscreen${npcVisual.diagnostic ? ' · TEST: all NPC visuals hidden' : ''}` : 'NPC view culling: unavailable',
       actorOcclusion ? `Actor occlusion: ${actorOcclusion.frustumHidden} frustum · ${actorOcclusion.occludedHidden} covered · ${actorOcclusion.visible} drawn · ${actorOcclusion.corpseFrustumHidden + actorOcclusion.corpseOccludedHidden}/${actorOcclusion.corpseCandidates} corpse rigs culled · ${actorOcclusion.probes} GPU probes · ${actorOcclusion.queriesPending} pending · ${actorOcclusion.gpuAvailable ? 'WebGL2 active' : actorOcclusion.gpuError ? 'fail-open' : 'GPU unavailable'}` : 'Actor occlusion: unavailable',
-      (() => { // Whether the held/shell x-ray replays copy depth back (cheap) or redraw the whole scene (the fallback).
-        const depth = root.ScissorDepthSnapshot?.snapshot?.();
-        const held = root.HeldObjectRenderOrder?.snapshot?.() || {};
-        const depthLine = depth ? `X-ray depth snapshot: near replay ${held.nearReplayEnabled === false ? 'OFF (Settings)' : 'on'} · ${depth.saves} saves · ${depth.restores} restores · ${depth.wholeBuffer ? 'whole-buffer copies (partial blits rejected)' : 'partial copies'} · ${held.nearReplayFallbacks || 0} redraw fallbacks · disabled: ${depth.disabledReason}` : 'X-ray depth snapshot: unavailable';
+      (() => { // AutoLOD effect on this frame's draws.
         const lod = root.GeometryAutoLOD?.snapshot?.();
-        const ground = held.groundMaterialCacheHits !== undefined ? `${held.groundMaterialCacheHits} ground cache hits · ${held.groundMaterialCacheBuilds} builds` : 'ground cache unavailable';
-        const geometry = lod?.enabled ? `${lod.renderGeometryChecks} AutoLOD source checks · ${lod.renderSwaps} draw swaps` : 'AutoLOD off';
-        return `${depthLine}\nRender reuse: ${ground} · ${geometry}`;
+        return `Render reuse: ${lod?.enabled ? `${lod.renderGeometryChecks} AutoLOD source checks · ${lod.renderSwaps} draw swaps` : 'AutoLOD off'}`;
       })(),
       `Render CPU ${avgRender.toFixed(2)} ms`,
       `Creature path searches: ground ${groundDetour?.samples || 0} (max ${(groundDetour?.max || 0).toFixed(2)} ms) · cliff ${cliffDetour?.samples || 0} (max ${(cliffDetour?.max || 0).toFixed(2)} ms)`,
