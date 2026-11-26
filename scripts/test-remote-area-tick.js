@@ -27,8 +27,10 @@ w.AreaScope = {
   listenerArea: () => listener ?? currentArea,
 };
 reg.setLocalAreaResolver(() => w.AreaScope.listenerArea());
-const ticks = [];
-rat.init({ getCurrentArea: () => currentArea, tickHostiles: dt => { ticks.push({ area: currentArea, dt: +dt.toFixed(3), listener: w.AreaScope.listenerArea() }); } });
+const ticks = [], order = [];
+rat.init({ getCurrentArea: () => currentArea,
+  tickPre: dt => { order.push('pre:' + currentArea); },
+  tickHostiles: dt => { order.push('hostiles:' + currentArea); ticks.push({ area: currentArea, dt: +dt.toFixed(3), listener: w.AreaScope.listenerArea() }); } });
 
 const host = { x: 0, y: 0, health: 100 };
 reg.registerPlayer(host, { local: true });
@@ -54,6 +56,7 @@ assert.equal(ticks[0].listener, 'map_a', 'while the listener (audio, local playe
 assert.equal(ticks[0].dt, 0.21, 'the skipped time is accumulated into one step');
 assert.equal(currentArea, 'map_a', 'currentArea is restored');
 assert.equal(reg.areaOf(host), 'map_a');
+assert.deepEqual(Array.from(order), ['pre:map_b', 'hostiles:map_b'], 'the bandit sleep/wake pass runs first, in the same scoped area, then the hostile tick');
 
 // During the scoped tick the local player is NOT in the guest's zone (so zone creatures cannot target them).
 let seenLocalArea = null, seenPlayers = null;

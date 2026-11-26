@@ -17,8 +17,13 @@
   //  * Only zones whose scene is already built: AreaScope.with refuses to build one as a side effect.
   //  * A throwing tick is caught and counted; `currentArea` is restored by AreaScope in a finally.
   //
-  // Not yet scoped (stage 2+): NPC walkers, bandit camps, den spawning, projectiles in flight, and
-  // zones nobody has built on the host.
+  // Stage 2: also the bandit sleep/wake pass for that zone (WildernessSimulationLOD.tick), so a camp next
+  // to a guest wakes. NPC walkers need nothing: the main loop already updates every walker whatever its area
+  // (OffAreaNpcTick only coarsens, and only when no player is in the walker's area).
+  //
+  // Not yet scoped: the camp banner UI and Harlyao/Porakaneki camp planners (local-player/local-scene concerns,
+  // wrapped onto BanditCamps.updateCampBanners, which must NOT be called here), den spawning, random encounters,
+  // projectiles in flight, and zones nobody has built on the host.
 
   const INTERVAL_S = 0.2;   // Same 5 Hz the far-wildlife coarse tick already uses.
   const MAX_DT_S = 0.6;     // No single coarse step is larger than this.
@@ -56,7 +61,7 @@
     for (const area of targetAreas()) {
       if (!scope.hasScene(area)) { stats.skippedUnbuilt++; continue; }
       try {
-        scope.with(area, () => deps.tickHostiles(step));
+        scope.with(area, () => { deps.tickPre?.(step); deps.tickHostiles(step); }); // Bandit sleep/wake first, like the local order (camps pre-pass, then hostiles).
         stats.ticks++;
         stats.lastAreas.push(area);
       } catch (error) {

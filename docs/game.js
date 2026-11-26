@@ -734,7 +734,7 @@
       window.ActorRegistry.setLocalAreaResolver(() => window.AreaScope ? window.AreaScope.listenerArea() : currentArea); // player.areaId is not always rewritten on a map swap; the listener's REAL area even during a remote-area tick.
       // Co-op time rules (beds, Wait/Sleep, blackouts) live in js/time-consensus.js; a knocked-out local avatar cannot act until revived or the skip lands.
       window.SharedCutscene.init({ tilePx: TILE });
-      window.RemoteAreaTick?.init({ tickHostiles: dt => updateHostiles(dt), getCurrentArea: () => currentArea }); // updateHostiles is a hoisted declaration below.
+      window.RemoteAreaTick?.init({ tickPre: dt => window.WildernessSimulationLOD?.tick?.(dt), tickHostiles: dt => updateHostiles(dt), getCurrentArea: () => currentArea }); // updateHostiles is a hoisted declaration below.
       let _timeKnockoutLock = null;
       window.TimeConsensus.init({
         tilePx: TILE,
