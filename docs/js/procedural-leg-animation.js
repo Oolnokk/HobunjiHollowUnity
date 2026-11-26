@@ -608,9 +608,25 @@
     box.setFromObject(foot); // Foot is still at the identity origin; bounds are shoe-local.
     if (box.isEmpty()) return foot;
     foot.userData.groundSupportBox = box;
-    const precise = new THREE.Box3();
-    precise.setFromObject(foot, true); // One-time vertex envelope, not the conservative ground-contact box.
-    foot.userData.cuffWidthX = precise.max.x - precise.min.x; // Unscaled neutral shoe width for pants fitting.
+    // The Animation Author uses an older Three.js where Box3's precise flag is ignored.
+    // Project actual vertices onto X at construction, using the existing updated matrices.
+    let minX = Infinity, maxX = -Infinity;
+    foot.traverse?.(mesh => {
+      const vertices = mesh.isMesh && mesh.geometry?.attributes?.position, e = mesh.matrixWorld?.elements;
+      if (!vertices?.getX || !vertices.getY || !vertices.getZ || !e) return;
+      const bounds = mesh.geometry.boundingBox; // Axis-aligned transforms can reuse the already-computed exact geometry extrema.
+      const axes = [e[0], e[4], e[8]], axis = axes.findIndex(value => Math.abs(value) > 1e-12);
+      if (bounds && axis >= 0 && axes.every((value, i) => i === axis || Math.abs(value) <= 1e-12)) {
+        const key = ['x', 'y', 'z'][axis], a = bounds.min[key] * axes[axis] + e[12], b = bounds.max[key] * axes[axis] + e[12];
+        minX = Math.min(minX, a, b); maxX = Math.max(maxX, a, b);
+        return;
+      }
+      for (let i = 0; i < vertices.count; i++) {
+        const x = e[0] * vertices.getX(i) + e[4] * vertices.getY(i) + e[8] * vertices.getZ(i) + e[12];
+        minX = Math.min(minX, x); maxX = Math.max(maxX, x);
+      }
+    });
+    foot.userData.cuffWidthX = Number.isFinite(maxX - minX) && maxX > minX ? maxX - minX : box.max.x - box.min.x; // Neutral shoe width, not animated AABB.
     foot.userData.contactRadiusY = Math.max(0, -box.min.y); // Neutral ankle height, before age or authored axes.
     return foot;
   }
@@ -1047,7 +1063,7 @@
       rightRoll: 0,
       // Retained for getStandingPoseDebug() so gait scaling can be checked in-game/mobile without devtools.
       gaitLegLength: 0,
-      bodyScaleX: 1, bodyScaleY: 1, extremityYRatio: 1, // Cached whole-body aspect for anatomical stride and grounded foot contacts.
+      bodyScaleX: 1, bodyScaleY: 1, extremityYRatio: 1, extremityXRatio: 1, // Cached body compensation for gait, soles, and cuff width.
       gaitFullStride: 0,
       gaitStrideLength: 0,
       gaitCadenceHz: 0,
@@ -1442,7 +1458,9 @@
     installFootAxes(rightFallback);
     state.left = leftFallback;
     state.right = rightFallback;
-    state.extremityYRatio = (footAxes()?.y || 1) / (partScale?.bodyScaleFactorsFor?.(parent)?.y || 1); // First-frame contact uses the same body compensation.
+    const initialAxes = footAxes(), initialBodyFactors = partScale?.bodyScaleFactorsFor?.(parent); // Same independent part axes used by the live mesh.
+    state.extremityYRatio = (initialAxes?.y || 1) / (initialBodyFactors?.y || 1);
+    state.extremityXRatio = (initialAxes?.x || 1) / (initialBodyFactors?.x || 1);
     state.leftContactY = leftFallback.userData.contactRadiusY * state.extremityYRatio;
     state.rightContactY = rightFallback.userData.contactRadiusY * state.extremityYRatio;
     placeIdleTarget('left', state.leftContactY);
@@ -1793,7 +1811,9 @@
       const bodyFactors = window.HobunjiCharacterRigScale?.bodyScaleFactorsFor?.(parent); // The scale owner can be several joints above the feet.
       state.bodyScaleX = Number(bodyFactors?.x) > 0 ? Number(bodyFactors.x) : 1;
       state.bodyScaleY = Number(bodyFactors?.y) > 0 ? Number(bodyFactors.y) : 1;
-      const footYRatio = (footAxes()?.y || 1) / state.bodyScaleY; // Sole contact uses authored Y independently of body height.
+      const axes = footAxes(); // Share the existing profile lookup for both axes.
+      state.extremityXRatio = (axes?.x || 1) / state.bodyScaleX;
+      const footYRatio = (axes?.y || 1) / state.bodyScaleY; // Sole contact uses authored Y independently of body height.
       if (Math.abs(footYRatio - state.extremityYRatio) > 1e-9) {
         state.extremityYRatio = footYRatio;
         const nextLeftContactY = (Number(state.left?.userData?.contactRadiusY) || 0) * footYRatio; // Resized sole height: used to keep an already planted left foot grounded.
@@ -2109,15 +2129,11 @@
       setHoverMode, isHoverMode,
       anatomyRevision: () => state.anatomyRevision,
       getTorsoBeltBounds: () => state.torsoBeltBounds || null,
-      getFootWidthScaleX: () => { // Cheap invalidation key; independent axes can change without a sole-height change.
-        const bodyX = Number(partScale?.bodyScaleFactorsFor?.(parent)?.x) || 1;
-        return (Number(footAxes()?.x) || 1) / bodyX;
-      },
+      getFootWidthScaleX: () => state.extremityXRatio, // O(1) read of the existing leg-scale sync, no profile lookup or ancestor walk.
       getFootWidthX: side => { // Neutral leg-root units; never inspect animated world-space bounds.
         const foot = state[side];
         const width = Number(foot?.userData?.cuffWidthX) || 0;
-        const bodyX = Number(partScale?.bodyScaleFactorsFor?.(parent)?.x) || 1;
-        return width * Math.abs(Number(foot?.scale?.x) || 1) * (Number(footAxes()?.x) || 1) / bodyX;
+        return width * Math.abs(Number(foot?.scale?.x) || 1) * state.extremityXRatio;
       },
       getSeatedPoseDebug: () => lastSeatedPoseDebug,
     };
