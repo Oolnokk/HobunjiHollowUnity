@@ -535,7 +535,17 @@
       Math.abs(row - verticalCenter) < Math.abs(best - verticalCenter) ? row : best, widestRows[0]);
     const left = rowLeft[sampleRow], right = rowRight[sampleRow];
     const split = (left + right) / 2;
+    // The lowest tenth of the isolated torso includes both ends of a curved hem.
+    // Use actual pixel edges, not the widest body row or clothing silhouette.
+    let beltLeft = width, beltRight = -1;
+    const beltTop = Math.max(top, bottom - Math.max(1, Math.ceil((bottom - top + 1) * .10)) + 1);
+    for (let y = beltTop; y <= bottom; y++) for (let x = 0; x < width; x++) {
+      if (data[(y * width + x) * 4 + 3] < 128) continue;
+      beltLeft = Math.min(beltLeft, x); beltRight = Math.max(beltRight, x);
+    }
+    const beltBounds = beltRight > beltLeft ? { left: beltLeft / width, right: (beltRight + 1) / width } : null; // Normalized raw portrait coordinates.
     return {
+      beltBounds,
       canvasWidth: width, canvasHeight: height,
       leftMedian: (left + split) / 2,
       rightMedian: (split + right) / 2,
@@ -594,6 +604,8 @@
     box.setFromObject(foot); // Foot is still at the identity origin; bounds are shoe-local.
     if (box.isEmpty()) return foot;
     foot.userData.groundSupportBox = box;
+    const precise = new THREE.Box3().setFromObject(foot, true); // One-time vertex envelope, not the conservative ground-contact box.
+    foot.userData.cuffWidthX = precise.max.x - precise.min.x; // Unscaled neutral shoe width for pants fitting.
     foot.userData.contactRadiusY = Math.max(0, -box.min.y); // Neutral ankle height, before age or authored axes.
     return foot;
   }
@@ -1502,6 +1514,7 @@
       const portraitSize = Number(options.portraitSize) || 200;
       cachedTorsoScan(speciesId, gender, options.profile, portraitSize).then(scan => {
         if (state.disposed || !scan) return;
+        state.torsoBeltBounds = scan.beltBounds; // Cached isolated torso result for the garment's next anatomy rebind.
         const scannedLeftX = pixelToModelX(scan.leftMedian, scan.canvasWidth, modelWidth);
         const scannedRightX = pixelToModelX(scan.rightMedian, scan.canvasWidth, modelWidth);
         // The scan's own left/right medians can land asymmetrically around
@@ -2090,6 +2103,17 @@
       },
       setHoverMode, isHoverMode,
       anatomyRevision: () => state.anatomyRevision,
+      getTorsoBeltBounds: () => state.torsoBeltBounds || null,
+      getFootWidthScaleX: () => { // Cheap invalidation key; independent axes can change without a sole-height change.
+        const bodyX = Number(partScale?.bodyScaleFactorsFor?.(parent)?.x) || 1;
+        return (Number(footAxes()?.x) || 1) / bodyX;
+      },
+      getFootWidthX: side => { // Neutral leg-root units; never inspect animated world-space bounds.
+        const foot = state[side];
+        const width = Number(foot?.userData?.cuffWidthX) || 0;
+        const bodyX = Number(partScale?.bodyScaleFactorsFor?.(parent)?.x) || 1;
+        return width * Math.abs(Number(foot?.scale?.x) || 1) * (Number(footAxes()?.x) || 1) / bodyX;
+      },
       getSeatedPoseDebug: () => lastSeatedPoseDebug,
     };
     registerScaleHandle(handle); // Once per new rig, no per-frame/scale global loop.
