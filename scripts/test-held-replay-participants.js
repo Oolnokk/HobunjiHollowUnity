@@ -39,15 +39,45 @@ const orphanHand = hand(node('loose_group', scene)); // No resolvable owner: kee
 
 const window = { PlayerBodyTransformComposer: { getPlayerMesh: () => player, getVisualRoots: () => [playerFootRig], getPlayerLegHandle: () => null } };
 const api = new Function('window', 'performance', code + `
+  let footGroundXray = 'off'; // Mirrors the shipped default; opt in for the legacy A/B fixtures below.
+  const xrayRule = key => key === 'feet.groundXray' ? footGroundXray : undefined;
   let lastSceneScan = new WeakMap(); // Standalone ownership harness supplies the scene-discovery cache.
   const syncShoulderPetLayering = () => {}; // This test exercises the replay partition only.
   replayCameraPosition = { x: 0, y: 0, z: 0 };
   const repaired = []; // Nonparticipant weapon-hand invariants are maintained in the same split loop.
   const enforceHeldMesh = mesh => repaired.push(mesh);
-  return { setCamera: (x,y,z) => { replayCameraPosition = {x,y,z}; }, ringDefault: localReplayRingEnabled, setRing: v => { localReplayRingEnabled = v; }, ringSkips: () => localReplayRingSkips, actorXrayDefaults, setActorXrayEnabled, refreshActorXrayRoots, split: (m, s, o, foot, repair = false) => splitReplayParticipants(m, s, o, foot, repair), repaired, setPolicy: v => { replayParticipantPolicy = v; }, skips: () => nonParticipantReplaySkips,
+  return { setFootXray: value => { footGroundXray = value ? 'on' : 'off'; }, setCamera: (x,y,z) => { replayCameraPosition = {x,y,z}; }, ringDefault: localReplayRingEnabled, setRing: v => { localReplayRingEnabled = v; }, ringSkips: () => localReplayRingSkips, actorXrayDefaults, setActorXrayEnabled, refreshActorXrayRoots, split: (m, s, o, foot, repair = false) => splitReplayParticipants(m, s, o, foot, repair), repaired, setPolicy: v => { replayParticipantPolicy = v; }, skips: () => nonParticipantReplaySkips,
     actorOf: (m, s) => actorRootForXrayMesh(m, s), setOwnerLink: v => { heldOwnerLinkEnabled = v; participantCache = new WeakMap(); }, setLimit: n => { otherWeaponXrayLimit = n; },
     budgetSkips: () => otherWeaponXrayBudgetSkips, ownerLinkDefault: heldOwnerLinkEnabled, limitDefault: otherWeaponXrayLimit };`)(window, { now: () => 0 });
 
+// Default geometric grounding keeps every foot and pants mesh in the ordinary pass, including ownerless and legacy-all paths.
+const defaultPants = node('pants', player, {hobunjiPantsGarment:true});
+const defaultParts = [playerFootNear, tallFoot, shortFootNear, defaultPants, node('orphan_foot', scene)];
+for (const policy of ['rule', 'all']) {
+  api.setPolicy(policy);
+  const ordinary = [];
+  assert.deepEqual(api.split(defaultParts, scene, ordinary, true), []);
+  assert.deepEqual(ordinary, defaultParts);
+}
+api.setPolicy('rule');
+assert.deepEqual(api.split([playerHand, playerBlade], scene, [], false, true), [playerHand, playerBlade], 'hands and weapons are unchanged');
+// Water-only selection uses the real selector with explicit scope/volume fixtures.
+const wetFoot = node('wet_foot', player, {hobunjiProceduralFoot:true});
+const dryFoot = node('dry_foot', player, {hobunjiProceduralFoot:true});
+const wetPants = node('wet_pants', player, {hobunjiPantsGarment:true});
+const distantFoot = node('distant_foot', tall, {hobunjiProceduralFoot:true});
+const cover = {userData:{hobunjiWaterTileFootprint:{bounds:[0,0,1,1]}}};
+const selectWaterOnly = new Function('createLocalReplayFilter','hasDisabledActorXray','actorXrayEnabled','actorXrayGroup','isReplayParticipant','actorXrayScope','tintCoverNearActor','actorStandsInWater','meshOverlapsWaterVolume',
+  slice('  function selectWaterOnlyFeet(', '  function splitXrayGroupsForTint(') + '\nreturn selectWaterOnlyFeet;')(
+  () => mesh => mesh !== distantFoot, false, {}, () => null, () => true,
+  mesh => mesh.parent, () => true, () => true, mesh => mesh === wetFoot);
+const dryOthers = [wetFoot,dryFoot,wetPants,distantFoot,playerBlade], wetOnly = [];
+selectWaterOnly(scene,[cover],dryOthers,wetOnly);
+assert.deepEqual(wetOnly,[wetFoot,wetPants], 'water-only path selects actual submerged foot and pants but not dry, distant or unrelated gear');
+assert.deepEqual(dryOthers,[dryFoot,distantFoot,playerBlade], 'selected water-only meshes are removed from suppression list exactly once');
+assert.match(source,/if \(forceOrdinary\?\.has\(mesh\)\) \{ ordinary\.push\(mesh\); continue; \}/, 'water-only meshes skip ground region construction');
+assert.match(source,/buildXrayGroups\(renderer, scene, camera, overlayMeshes, null, waterOnlyFeet\)/, 'visible water-only feet explicitly enter ordinary group');
+api.setFootXray(true); // Existing fixtures verify the explicit legacy comparison still works.
 // The shipped local gate keeps whole actors together, independent of the camera.
 assert.equal(api.ringDefault, true);
 at(player, -0.2, -0.2);

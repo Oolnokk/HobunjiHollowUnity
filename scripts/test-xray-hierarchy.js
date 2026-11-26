@@ -32,6 +32,7 @@ assert.strictEqual(X.get('weapon.frontPlaneMask'), 'off', 'owner portrait weapon
 // Defaults, validation, live change, listeners.
 assert.strictEqual(X.get('hand.frontPlaneMask'), 'off', 'hands are not masked by owner front art by default');
 assert.strictEqual(X.get('actors.order'), 'all');
+assert.strictEqual(X.get('feet.groundXray'), 'off', 'geometrically grounded feet and pants use ordinary depth by default');
 assert.strictEqual(X.get('layers.manualOrder'), 'off');
 assert.strictEqual(X.get('background.gearDepth'), 'ignore');
 assert.strictEqual(X.get('airborne.rebuildDepth'), 'on');

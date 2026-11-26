@@ -55,6 +55,10 @@
       order: 9, label: 'Weapons follow hands in the layer hierarchy', default: 'on', options: ['on', 'off'],
       help: 'on: tools share the hand priority in the held overlay. off: tools get an independent overlay rank. Owner front-art masking is configured separately.',
     },
+    'feet.groundXray': {
+      order: 12, label: 'Feet and pants ground X-ray (legacy A/B)', default: 'off', options: ['off', 'on'],
+      help: 'off: feet and pants use ordinary world depth and outlines, relying on scaled geometric contact. on: restore the legacy selective ground replay for comparison.',
+    },
     'ground.showZone': {
       order: 10, label: 'Show ground X-ray zone', default: 'off', options: ['on', 'off'],
       help: 'Dev-only translucent circle at the player standing elevation; not a rendering behavior override.',
@@ -276,7 +280,7 @@
     return !!snapshot && typeof snapshot === 'object' && !!snapshot.rules
       && typeof snapshot.rules === 'object' && validDrawOrder(snapshot.drawOrder)
       && keys.every(key => RULES[key].options.includes(snapshot.rules[key])
-        || (key === 'ground.showZone' && snapshot.rules[key] === undefined)) // Legacy pre-preset backups omit this new rule.
+        || (['ground.showZone', 'feet.groundXray'].includes(key) && snapshot.rules[key] === undefined)) // Legacy pre-preset backups omit this new rule.
       && ['held', 'world'].includes(snapshot.stage)
       && DRAW_LAYER_IDS.has(snapshot.layer);
   }

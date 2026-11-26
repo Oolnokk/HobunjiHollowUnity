@@ -586,6 +586,37 @@
   // family only) a pair of forward/backward teardrop-toe "V"s, mirroring the
   // reference tool's primitive anatomy. Used for any species without a
   // configured GLB (today: kenkari, rakako'an).
+  // Cache the unscaled, unparented shoe envelope at construction, never during animation.
+  // A conservative box includes toes/claws and the full GLB, unlike a sphere radius.
+  function cacheFootGroundSupport(THREE, foot) {
+    const box = new THREE.Box3();
+    if (!box.setFromObject) return foot; // Geometry-free solver harnesses retain their supplied contact radius.
+    box.setFromObject(foot); // Foot is still at the identity origin; bounds are shoe-local.
+    if (box.isEmpty()) return foot;
+    foot.userData.groundSupportBox = box;
+    foot.userData.contactRadiusY = Math.max(0, -box.min.y); // Neutral ankle height, before age or authored axes.
+    return foot;
+  }
+
+  function rolledSoleOffset(box, scale, roll, yRatio) {
+    if (!box || Math.abs(roll) < 1e-9) return 0;
+    const y = Math.cos(roll) * scale.y, z = -Math.sin(roll) * scale.z; // Vertical row of the foot's explicit roll.
+    const bottom = y * (y >= 0 ? box.min.y : box.max.y) + z * (z >= 0 ? box.min.z : box.max.z);
+    return (box.min.y * scale.y - bottom) * yRatio; // Convert the scaled support delta into the existing floor-relative IK units.
+  }
+
+  function transformedFootBottomY(box, e) {
+    // Minimum of a linear transform over the cached local box, without a Box3 allocation or scene traversal.
+    return e[13] + e[1] * (e[1] >= 0 ? box.min.x : box.max.x)
+      + e[5] * (e[5] >= 0 ? box.min.y : box.max.y)
+      + e[9] * (e[9] >= 0 ? box.min.z : box.max.z);
+  }
+
+  function groundSafeDepthFactor(desired, cameraY, bottomY, floorY) {
+    if (cameraY <= bottomY) return desired; // Moving away from a low camera cannot sink a sole.
+    return Math.max(1, Math.min(desired, (cameraY - floorY) / (cameraY - bottomY))); // Preserve as much pants bias as the actual ground clearance allows.
+  }
+
   function buildFallbackFoot(THREE, options) {
     const { speciesId, radius, sphereScaleXZ, sphereScaleY, initialColorHex } = options;
     const group = new THREE.Group();
@@ -1018,6 +1049,10 @@
       disposed: false,
     };
 
+    let externalFootTargets = null; // Optional per-foot world coordinates, owned by a grapple/mount/cutscene until cleared.
+    let externalFootExtendedReach = false; // Opt-in: Headtaker feet must reach the real portrait surface; other users retain fixed walking limb length.
+    let externalFootDeepFold = false; // Opt-in: petite partners fold knees around a spouse posterior without changing regular grounded gait.
+
     const motionScratch = new THREE.Vector3(); // Reused for world/local foot placement during lunges.
     const motionDirection = new THREE.Vector3(); // World-space lunge heading, independent of billboard rotation.
     state.lungeFeet = ['left', 'right'].map(side => ({
@@ -1175,6 +1210,12 @@
       chain.calfGuide.position.y = -calfLength * 0.5;
     }
 
+    const groundedSolveTarget = new THREE.Vector3(); // Reused corrected ankle target; the gait phase and uncorrected swing lift remain untouched.
+    function usesFloorContact() {
+      return state.motionMode === 'idle' || state.motionMode === 'walk' || state.motionMode === 'run'
+        || state.motionMode === 'maskbound-lurch' || state.motionMode === 'lunge';
+    }
+
     const footLevel = new THREE.Quaternion(), footRoll = new THREE.Quaternion(), footAxisX = new THREE.Vector3(1, 0, 0); // Scratch for levelling and restoring feet to their complete neutral orientation.
     function applyFootRollOnly(mesh, roll) {
       mesh.quaternion.setFromAxisAngle(footAxisX, roll); // Never inherit a stale yaw/half-turn from a previous climbing, paired or recorded pose.
@@ -1215,9 +1256,17 @@
       const chain = legChains[side];
       const target = state[`${side}Target`];
       if (!mesh || !chain || !target || !window.LegBones) return;
+      const support = mesh.userData.groundSupportBox; // Construction-time sole envelope; absent for geometry-free test rigs.
+      const grounded = usesFloorContact() && !externalFootTargets && !state.hoverEnabled && !!support;
+      const lift = grounded ? rolledSoleOffset(support, mesh.scale, state[`${side}Roll`], state.extremityYRatio) : 0;
+      mesh.userData.groundSoleOffsetY = lift; // Existing mobile diagnostics report the additional support height.
+      const contactY = state[`${side}ContactY`]; // Neutral support height in the same frame as the gait target.
+      const solvedY = grounded ? Math.max(contactY, target.y) + lift : target.y; // A landing, resized foot or lunge onto raised ground may retain a stale below-floor target.
+      const solveTarget = solvedY === target.y ? target : groundedSolveTarget.copy(target); // Do not accumulate corrections into animation state.
+      solveTarget.y = solvedY;
       const bend = legBend[side];
       const solved = window.LegBones.solveTwoBoneLeg(THREE, {
-        hip: chain.hip.position, foot: target, bendDegX: bend.x, bendDegZ: bend.z,
+        hip: chain.hip.position, foot: solveTarget, bendDegX: bend.x, bendDegZ: bend.z,
         foldMaxLength: state.lungeActive ? standingLegLength() : state.gaitStrideLength > 0.001 ? (standingLegLength() + Math.hypot(standingLegLength(), state.gaitStrideLength * 0.5)) * 0.5 : state.stanceDrop > 0.0001 ? standingLegLength() : 0, // Legs just straighten (and slightly extend) at the extremes of a stride; the knees fold forward in between. A lowered stance keeps the full bone length and bends the knees.
       });
       chain.thigh.quaternion.copy(solved.thighQuaternion);
@@ -1225,8 +1274,8 @@
       chain.calf.quaternion.copy(solved.calfLocalQuaternion);
       chain.calf.userData.hobunjiCalfLength = solved.calfLength; // Lets the Pants rig place the ankle: calf origin + calf-down * calfLength.
       mesh.position.set(0, -solved.calfLength, 0);
-      if (state.stanceDrop > 1e-4) {
-        // A sunk stance folds the shin well off vertical; the sole stays flat on the floor by undoing the shin's world tilt (then the stride roll).
+      if (grounded || state.stanceDrop > 1e-4) {
+        // Grounded feet keep their authored stride roll but no longer inherit shin pitch/bend; the precalculated sole support now matches the IK target.
         footLevel.copy(solved.thighQuaternion).multiply(solved.calfLocalQuaternion).invert();
         mesh.quaternion.copy(footLevel).multiply(footRoll.setFromAxisAngle(footAxisX, state[`${side}Roll`]));
       } else {
@@ -1304,19 +1353,32 @@
         mesh.onBeforeRender = function footDepthPushBefore(renderer, scene, camera, ...rest) {
           before.call(this, renderer, scene, camera, ...rest);
           pushed = false;
+          foot.userData.groundDepthFactor = 1; // Clear old diagnostic values when no bias is applied this draw.
           if (!(state.footDepthPush > 0) || !camera?.isPerspectiveCamera || (externalFootTargets && externalFootExtendedReach)) return; // Exact-contact grapple soles must NOT be pushed behind the victim's opaque portrait by the normal pants-depth overlay.
           const e = this.matrixWorld.elements;
           pushCamera.setFromMatrixPosition(camera.matrixWorld);
-          const dx = e[12] - pushCamera.x, dy = e[13] - pushCamera.y, dz = e[14] - pushCamera.z;
+          const fe = foot.matrixWorld.elements; // One shared projection factor for every material/submesh of this shoe.
+          const dx = fe[12] - pushCamera.x, dy = fe[13] - pushCamera.y, dz = fe[14] - pushCamera.z;
           const distance = Math.hypot(dx, dy, dz);
           if (distance < 1e-3) return;
-          for (let i = 0; i < 16; i++) saved[i] = e[i];
           // The base push covers how far a foot bulges past the portrait plane; the feet also sit fore/aft of that plane (stance split, stride), so the
           // push grows with their displacement and pants cover the feet from the back as well as the front.
           const fore = Math.max(Math.abs(state.leftTarget.z), Math.abs(state.rightTarget.z)) * rootScaleY();
-          const k = 1 + (state.footDepthPush + fore) / distance;
-          for (const i of [0, 1, 2, 4, 5, 6, 8, 9, 10]) e[i] *= k;
-          e[12] = pushCamera.x + dx * k; e[13] = pushCamera.y + dy * k; e[14] = pushCamera.z + dz * k;
+          let k = 1 + (state.footDepthPush + fore) / distance;
+          const support = foot.userData.groundSupportBox; // Cached envelope already includes claws and imported GLB geometry.
+          if (support && usesFloorContact() && !externalFootTargets && !state.hoverEnabled) {
+            const bottom = transformedFootBottomY(support, fe); // Actual world-scale foot depth, including authored/age axes.
+            k = groundSafeDepthFactor(k, pushCamera.y, bottom, root.matrixWorld.elements[13]);
+          }
+          foot.userData.groundDepthFactor = k; // Mobile parity probe; 1 means no camera-relative depth displacement.
+          if (k <= 1 + 1e-9) return;
+          for (let i = 0; i < 16; i++) saved[i] = e[i];
+          for (let column = 0; column < 12; column += 4) {
+            e[column] *= k; e[column + 1] *= k; e[column + 2] *= k;
+          }
+          e[12] = pushCamera.x + (e[12] - pushCamera.x) * k;
+          e[13] = pushCamera.y + (e[13] - pushCamera.y) * k;
+          e[14] = pushCamera.z + (e[14] - pushCamera.z) * k;
           pushed = true;
         };
         // Scaling uniformly around a perspective camera changes depth but
@@ -1353,6 +1415,8 @@
       buildFallbackFoot(THREE, { speciesId, radius, sphereScaleXZ, sphereScaleY, initialColorHex }), options.previewReverseFootDepth); // Corrects the isolated author lineup, not shared gameplay leg transforms.
     const rightFallback = alignPreviewFootFacing(THREE,
       buildFallbackFoot(THREE, { speciesId, radius, sphereScaleXZ, sphereScaleY, initialColorHex }), options.previewReverseFootDepth);
+    cacheFootGroundSupport(THREE, leftFallback);
+    cacheFootGroundSupport(THREE, rightFallback);
     leftFallback.name = 'left_foot';
     rightFallback.name = 'right_foot';
     legChains.left.calf.add(leftFallback);
@@ -1395,6 +1459,8 @@
         if (state.disposed) { disposeObjectResources(leftMesh); disposeObjectResources(rightMesh); return; }
         alignPreviewFootFacing(THREE, leftMesh, options.previewReverseFootDepth); // Async replacement preserves the exact same preview convention as temporary feet.
         alignPreviewFootFacing(THREE, rightMesh, options.previewReverseFootDepth);
+        cacheFootGroundSupport(THREE, leftMesh);
+        cacheFootGroundSupport(THREE, rightMesh);
         leftMesh.name = 'left_foot';
         rightMesh.name = 'right_foot';
         leftMesh.scale.x *= -1; // mirrors handedness for the left foot from a single authored mesh
@@ -1685,9 +1751,6 @@
       return true;
     }
 
-    let externalFootTargets = null; // Optional per-foot world coordinates, owned by a grapple/mount/cutscene until cleared.
-    let externalFootExtendedReach = false; // Opt-in: Headtaker feet must reach the real portrait surface; other users retain fixed walking limb length.
-    let externalFootDeepFold = false; // Opt-in: petite partners fold knees around a spouse posterior without changing regular grounded gait.
     function setExternalFootTargets(targets, options = null) {
       externalFootTargets = targets?.left && targets?.right ? targets : null;
       externalFootExtendedReach = !!(externalFootTargets && options?.allowExtendedReach);
@@ -1899,7 +1962,7 @@
       const rightBounds = footBoundsInRoot(state.right);
       const currentLegLength = standingLegLength(); // Shown in mobile-facing diagnostics so stride scaling can be verified without a console.
       return {
-        lastChange: 'Extended-reach portrait contacts bypass pants foot-depth push and retain exact anatomical targets',
+        lastChange: 'Scaled sole envelopes drive grounded ankle height; pants depth push cannot sink a grounded shoe below its floor',
         motionMode: state.motionMode,
         footOrientation: {
           rootYawDeg: root.rotation.y * 180 / Math.PI,
@@ -1918,6 +1981,7 @@
         }, // Existing mobile diagnostics expose the applied reach and its anatomical limits.
         coordinateSpace: 'avatar-floor-relative',
         floorY: 0,
+        groundSupport: { left: { offsetY: state.left?.userData.groundSoleOffsetY ?? 0, depthFactor: state.left?.userData.groundDepthFactor ?? 1 }, right: { offsetY: state.right?.userData.groundSoleOffsetY ?? 0, depthFactor: state.right?.userData.groundDepthFactor ?? 1 } }, // Per-foot support and projection correction for mobile checks.
         posteriorY,
         hover: {
           enabled: state.hoverEnabled,
