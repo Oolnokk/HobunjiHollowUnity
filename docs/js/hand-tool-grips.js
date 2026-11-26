@@ -291,8 +291,15 @@
     },
   };
 
+  // Pure string function called every frame per character with a small set of repeated inputs
+  // (species ids, tool keys): memoized (bounded) because five chained regex replaces showed in a CPU profile.
+  const normalizeKeyCache = new Map();
   function normalizeKey(value) {
-    return String(value || '').trim().toLowerCase().replace(/[’']/g, '').replace(/_/g, '-').replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '');
+    const cacheable = typeof value === 'string';
+    if (cacheable) { const hit = normalizeKeyCache.get(value); if (hit !== undefined) return hit; }
+    const key = String(value || '').trim().toLowerCase().replace(/[’']/g, '').replace(/_/g, '-').replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '');
+    if (cacheable && normalizeKeyCache.size < 1024) normalizeKeyCache.set(value, key);
+    return key;
   }
 
   const LEGACY_OFFHAND_IDLE_SPECIES = new Set(['kenkari', 'tletingan', 'rakakoan', 'nuhongan', 'longoran']); // Species whose free arm keeps the original locomotion idle instead of the invisible one-grip offhand pose.

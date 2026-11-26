@@ -131,7 +131,7 @@ assert.match(ranged, /friendlyFire = nearest\.kind === 'hostile'/,
 const game = read('docs/game.js'); // Integration assertion guards the otherwise private runtime AI wiring.
 assert.match(game, /EnemyPetTargeting\?\.chooseAggroTarget/);
 assert.match(game, /EnemyPetTargeting\?\.chooseBeastmasterTarget/);
-assert.match(game, /damageCreature\(targetPlayer, def\.attackDamage, c\.x, c\.y, HOSTILE_BITE_KNOCKBACK_PX_S, biteDamageOptions\)/);
+assert.match(game, /DamageAuthority\.hit\(targetPlayer, def\.attackDamage, c\.x, c\.y, HOSTILE_BITE_KNOCKBACK_PX_S, biteDamageOptions\)/); // Bite routes by victim: players via damagePlayer, pets via damageCreature.
 assert.match(game, /shouldRetaliateToPetHit/, 'enemy damage handling forwards the real pet attacker into retaliation checks');
 assert.match(game, /!companionObjects\.has\(c\.targetPlayer\)/,
   'ordinary enemy chases release a removed companion rather than chasing its stale entity');

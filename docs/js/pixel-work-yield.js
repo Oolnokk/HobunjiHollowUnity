@@ -7,7 +7,7 @@
   const SLICE_MS = 6; // Budget for cooperating pixel loops, not a hard browser task deadline.
   const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
   const workerUrl = typeof document !== 'undefined' && document.currentScript?.src
-    ? new URL('sprite-pixel-worker.js?v=20261125pixelWorker1',document.currentScript.src).href : null;
+    ? new URL('sprite-pixel-worker.js?v=20261126hc7319c8',document.currentScript.src).href : null;
   let sliceStart=now(), yielding=null, yields=0; // One shared yield, even with simultaneous asset continuations.
   let tail=Promise.resolve(), worker=null, workerDisabled=false, nextId=0;
   let pending=null; // At most one transferred pixel buffer is outstanding.

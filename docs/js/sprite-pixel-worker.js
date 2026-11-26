@@ -3,7 +3,7 @@
 'use strict';
 self.window=self;
 self.__hobunjiPixelWorker=true;
-importScripts('color-fill.js?v=20261117h93b0e83','sprite-recolor.js?v=20261125pixelWorker1','fish-catalog.js?v=20261125pixelWorker1');
+importScripts('color-fill.js?v=20261117h93b0e83','sprite-recolor.js?v=20261126he9d2fa1','fish-catalog.js?v=20261125pixelWorker1');
 self.onmessage=event=>{
   const {id,kind,args,buffer}=event.data;
   try{

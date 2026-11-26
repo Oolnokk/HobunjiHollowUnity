@@ -41,10 +41,12 @@
   }
 
   function distanceTilesToPlayer(c) {
-    if (!deps?.player || !deps?.TILE) return Infinity;
-    const dx = c.x - deps.player.x;
-    const dy = c.y - deps.player.y;
-    return Math.hypot(dx, dy) / deps.TILE;
+    if (!deps?.TILE) return Infinity;
+    // Nearest of ALL players in the bandit's area, so a camp beside a guest stays awake on the host.
+    const reg = window.ActorRegistry;
+    if (reg && reg.playerCount() > 0) return reg.distanceToNearestPlayer(c.x, c.y, { areaId: actualAreaId(c) }) / deps.TILE;
+    if (!deps.player) return Infinity;
+    return Math.hypot(c.x - deps.player.x, c.y - deps.player.y) / deps.TILE;
   }
 
   function isSleeping(c) {

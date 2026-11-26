@@ -283,7 +283,7 @@ const upgraded = window.NpcPathfinding.upgradeCutscenePayload({ stages: [
 ]});
 assert.equal(upgraded.stages[0].navigate, true);
 assert.equal(upgraded.stages[1].navigate, undefined);
-assert.match(gameSource, /async function runCutscenePreview\(payload, runtimeOptions = \{\}\) \{\s*payload = window\.NpcPathfinding\?\.upgradeCutscenePayload\?\.\(payload\)/, 'live cutscenes and Director previews both pass through the navigation upgrade');
+assert.match(gameSource, /async function runCutscenePreviewScene\(payload, runtimeOptions = \{\}\) \{\s*payload = window\.NpcPathfinding\?\.upgradeCutscenePayload\?\.\(payload\)/, 'live cutscenes and Director previews both pass through the navigation upgrade (runCutscenePreview wraps this scene runner in the shared co-op session)');
 assert.equal(Object.getOwnPropertyDescriptor(window, 'AuthoredCutsceneRuntime'), undefined, 'no assignment hooks are installed on window globals');
 
 assert.match(gameSource, /if \(entity\.walker\) window\.NpcPathfinding\?\.decorateWalkerCollision\?\.\(entity\.walker\)/, 'real cutscene NPC walkers must get the collision guard where they are attached');
