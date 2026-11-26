@@ -685,3 +685,5 @@ Run `node scripts/test-weapon-sprite-assemblies.js` and
 
 ### Idle flail head facing
 The independent head retains its last real horizontal actor travel yaw, smoothly leans toward motion and returns exactly upright after stopping. Render yaw obeys the configured NPC portrait deadzone relative to the active camera; the logical heading is unchanged by camera movement. Attack/fishing orientation and fixed connector length remain unchanged. Maximum lean uses the NPC deadzone angle, and live floor clearance accounts for tilt using cached transformed bounds.
+
+On strike-to-neutral, the idle head additionally consumes the final real horizontal rope-attachment velocity (or last nonzero recovery sample if the final keyframe has already stopped). The actor's horizontal velocity is removed from the measured tip motion; locomotion overrides this fallback immediately. It is one-shot, ignores cancelled windup and teleport discontinuities, and each dual-wield head samples its own actual tip. The existing attack pose, rope length, and clearance remain authoritative.
