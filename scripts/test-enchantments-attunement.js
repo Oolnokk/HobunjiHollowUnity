@@ -313,6 +313,49 @@ assert.equal(RS.getAffliction(player, 'mirroredHealth'), mirrorBefore, '16. zero
 CAE.hit(CAE.prepare({ abilityId: 'swingCombo', damage: 50 }), { target: enemy, actualDamage: 7 });
 assert.ok(Math.abs(RS.getAffliction(player, 'mirroredHealth') - mirrorBefore - 7 * ES.getEnchantmentPowerMultiplier('sword')) < 0.11, '16. Mirrored equals post-mitigation damage (× enchantment power)');
 
+// Spirit Heal: ordinary recovery, one full grant per nearby ally, actual damage only.
+{
+  reset();
+  load('docs/js/actor-registry.js');
+  const registry = context.ActorRegistry;
+  const savedHealth = player.health;
+  const savedMirrored = RS.getAffliction(player, 'mirroredHealth'); // Ensure Spirit Heal does not create a shield.
+  const pet = makeEntity({ health: 50, x: 20, master: player, isCompanion: true, stableRole: 'companion' });
+  const guest = makeEntity({ health: 50, x: 30 });
+  const guestPet = makeEntity({ health: 50, x: 40, master: guest, isCompanion: true, stableRole: 'companion' });
+  const distant = makeEntity({ health: 50, x: 1000 });
+  const offArea = makeEntity({ health: 50, areaId: 'elsewhere' });
+  const hostilePet = makeEntity({ health: 50, banditCompanion: true, master: enemy });
+  const shoulder = makeEntity({ health: 50, master: player, stableRole: 'shoulderPet' });
+  const downed = makeEntity({ health: 50, master: player, _downed: true });
+  const hunter = makeEntity({ health: 50, isTribeHunter: true, _porakanekiPlannerControlled: true, _chunkCombatTarget: enemy });
+  const neutral = makeEntity({ health: 50, isTribeHunter: true, _porakanekiPlannerControlled: true });
+  const hostileHunter = makeEntity({ health: 50, isTribeHunter: true, _porakanekiPlannerControlled: false, _chunkCombatTarget: enemy });
+  registry.registerPlayer(player, { local: true });
+  for (const actor of [guest, distant, offArea]) registry.registerPlayer(actor);
+  companionObjects.push(pet, guestPet, hostilePet, shoulder, downed, pet); // Duplicate pet exercises recipient deduplication.
+  hostileObjects.push(hunter, neutral, hostileHunter);
+  player.health = 50;
+  assert.equal(ES.addBase('sword', 'spiritHeal'), true);
+  assert.equal(ES.DEFINITIONS.spiritHeal.alignment, 'Ohthic');
+  const hit = actualDamage => CAE.hit(CAE.prepare({ abilityId: 'swingCombo', damage: 100 }), { target: enemy, actualDamage });
+  hit(0);
+  for (const actor of [player, pet, guest, guestPet, hunter]) assert.equal(actor.health, 50, 'Spirit Heal requires actual Health damage');
+  hit(20); // One Ohthic point: 1.1 multiplier, 1.1 self and 3.3 per ally.
+  assert.equal(player.health, 51.1);
+  for (const actor of [pet, guest, guestPet, hunter]) assert.equal(actor.health, 53.3, 'Each eligible ally gets the full 15% independently');
+  for (const actor of [distant, offArea, hostilePet, shoulder, downed, neutral, hostileHunter]) assert.equal(actor.health, 50, 'Ineligible actors receive no recovery');
+  assert.equal(RS.getAffliction(player, 'mirroredHealth'), savedMirrored, 'Spirit Heal grants no enhanced Health');
+  pet.health = 99;
+  hit(20);
+  assert.equal(pet.health, 100, 'Spirit Heal respects maximum Health');
+  companionObjects.splice(companionObjects.length - 6, 6);
+  hostileObjects.splice(hostileObjects.length - 3, 3);
+  for (const actor of [player, guest, distant, offArea]) registry.unregisterPlayer(actor);
+  delete context.ActorRegistry;
+  player.health = savedHealth;
+}
+
 // ── 17: Kindling conversion ───────────────────────────────────────
 const k = makeEntity();
 RS.addAffliction(k, 'kindlingHealth', 6);
