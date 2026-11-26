@@ -115,3 +115,15 @@ if(THREE){
   assert.equal(plane.geometry,source,'raw mode restores original geometry');
   console.log('held ground pose: actual Three preview integration passed');
 }
+
+const suspended=context.window.HeldGroundPose.suspendedReferenceY;
+// Local positive Y points upward in the Light reference. Moving a downward
+// attachment toward the grip improves the full suspended-contact height.
+const ref={elements:[1,0,0,0,0,1,0,0,0,0,1,0,0,1,0,1]};
+const spec={x:0,y:-.6,spanX:0,spanY:.8,headDrop:.2};
+close(suspended(ref,spec,[{a:0,b:.6}],0,0,.6),-.28);
+close(suspended(ref,spec,[{a:0,b:.6}],0,.5,.6),.02);
+assert.equal(rope(1,1,-1,.2).trailing,true,'fixed rope still trails');
+const assemblies=fs.readFileSync('docs/js/weapon-sprite-assemblies.js','utf8');
+assert.ok(assemblies.includes('const floor=profile?pose.groundY():null'),'zero rope-minimum does not disable clearance');
+assert.ok(assemblies.includes('function groundFitSpec(root,profile)'),'fit uses actual suspended assembly');

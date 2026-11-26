@@ -191,6 +191,7 @@
     states.delete(root);
   }
 
+  function assemblyKind(root) { const state=states.get(root);return state?.config?.flail?'flail':state?'layered':null; } // Exact decorated root, not a guessed tool-name alias.
   function definitionFor(itemKey, def) {
     return def?.weaponAssembly || DEF[itemKey] || DEF[def?.shapeKey] || (Array.isArray(def?.spriteLayers) && def.spriteLayers.length ? { layers: def.spriteLayers } : null);
   }
@@ -790,6 +791,28 @@
     return result;
   }
 
+  // Read the authored physical connector and head from this exact assembly.
+  // Called only while a permanent Light fit is still pending.
+  function groundFitSpec(root,profile) {
+    const state=states.get(root),f=state?.config?.flail;
+    if(!f||!state.chain||!state.headRoot||!state.chainTop||!state.chainBottom||!state.headAnchor)return null;
+    const plane=state.plane,image=plane.material?.map?.image;
+    const width=image?.naturalWidth||image?.width;
+    if(!(width>0))return null;
+    const unit=(plane.geometry?.parameters?.width||.5)/width;
+    if(state.baseAnchorImage!==image){state.baseAnchor=anchor(image,f.haftAnchor,'top');state.baseAnchorImage=image;}
+    if(!state.baseAnchor)return null;
+    const contact=idleHeadContact(state,unit,profile);
+    if(!contact?.traced)return null; // Never freeze a physical fit against transparent texture bounds.
+    const p=pixelPoint(image,state.baseAnchor,unit,null,state.scratch.pivotLocal);
+    const spanX=(state.chainBottom.x-state.chainTop.x)*unit*connectorAxisScale(f.chain,'scaleX');
+    let spanY=(state.chainBottom.y-state.chainTop.y)*unit*connectorAxisScale(f.chain,'scaleY');
+    const mount=Number(f.chain.mountLengthPx);
+    if(!state.chain.userData?.hobunjiRuinRopeSprite&&Number.isFinite(mount)&&mount>0&&Math.abs(spanY)>1e-8)
+      spanY=Math.sign(spanY)*Math.sqrt(Math.max(1e-8,(mount*unit)**2-spanX**2));
+    return {x:p.x,y:p.y,spanX,spanY,headDrop:contact.drop*relativePartScale(f.head)};
+  }
+
   function updateOne(state, dt, now, effectsDt = dt) {
     const { root, plane, config, scratch: q } = state;
     if (!root.parent) {
@@ -860,13 +883,13 @@
     const authoredChainScaleY = chainScaleY; // Preserve the authored rope width even when a combat pose shortens its longitudinal reach.
     const headScale = relativePartScale(flail.head); // Head size is still independently handle-relative.
     const pose=global.HeldGroundPose;
-    const preview=pose?.enabled?.()&&!state.dualPhysicsSource&&global.HobunjiAttackEditorToolContext?.toolPlaneMesh===root;
+    const preview=pose?.previewAppliesTo?.(root)&&!state.dualPhysicsSource;
     const runtime=pose?.enabled?.()&&!state.dualPhysicsSource
       &&root.parent===global.ProceduralHandAttachments?.gameDeps?.toolHolder
       ?global.WeaponToolStances?.getRuntimeState?.():null;
     const profile=preview||runtime?.activeSlot==='weapon'&&runtime.itemKey===state.itemKey
       ?global.HobunjiHandToolGrips?.groundProfileForTool?.(state.itemKey):null;
-    const floor=profile?.ropeMinScale!=null?pose.groundY():null;
+    const floor=profile?pose.groundY():null; // No shortening limit means fixed rope length, NOT disabled ground contact.
     const contact=Number.isFinite(floor)&&!state.attacking?idleHeadContact(state,unit,profile):null;
     const available=contact?pivot.y-(floor+.035+contact.drop*attachmentScale*headScale):null;
     // Fit the connector in the neutral, vertically hanging reference pose, not
@@ -875,7 +898,7 @@
     const spanY=(state.chainBottom.y-state.chainTop.y)*unit*chainScaleY;
     const baseLength=Math.hypot(spanX,spanY)*attachmentScale;
     const lightDrop=profile?.ropeMinScale!=null?pose.referenceDrop(root,q.pivotLocal):null; // Same immutable light stance reference as the haft.
-    const canFit=!!contact&&Number.isFinite(lightDrop)&&!state.fishingFlailHeadSpin&&(preview||global.PlayerJump?.heldPoseGrounded?.()===true);
+    const canFit=!!contact?.traced&&Number.isFinite(lightDrop)&&!state.fishingFlailHeadSpin&&(preview||global.PlayerJump?.heldPoseGrounded?.()===true);
     const candidate=canFit?pose.ropeFitCandidate(spanX,spanY,attachmentScale,lightDrop-contact.drop*attachmentScale*headScale,profile.ropeMinScale,pose.lightRopeScale(root)):null;
     const fixedScale=profile?.ropeMinScale!=null?pose.fittedRopeScale(root,profile,canFit,candidate):1;
     const desiredLocal=baseLength*fixedScale/attachmentScale;
@@ -1005,7 +1028,7 @@
         state.direction.set(back.x,solve.directionY,back.z);
         state.angularVelocity.multiplyScalar(.25);
       }
-      state.groundClearance={length:state.physicsLength,fittedScale:fixedScale,trailing:!!solve?.trailing,headContact:contact.traced?'auto-alpha':contact.authored?'authored-edge':'bounds',floor};
+      state.groundClearance={length:state.physicsLength,fittedScale:fixedScale,trailing:!!solve?.trailing,headContact:contact.traced?'auto-alpha':contact.authored?'authored-edge':'bounds',floor,headMinY:pivot.y+state.physicsLength*state.direction.y-contact.drop*attachmentScale*headScale,reason:solve?'solved':'unreachable'};
     }
     const worldQ = planeQuaternion(q.headUp.copy(state.direction).negate(), normal, q.worldQ, q);
     worldQ.multiply(q.correction.setFromUnitVectors(chainSpan, q.axisUp)); // Align both opaque chain endpoints, not the image rectangle.
@@ -1233,7 +1256,7 @@
   }
 
   global.HobunjiWeaponSpriteAssemblies = {
-    definitions: DEF, decorate, setAction, tick, drop, syncDualWield, scheduleTickAfterPose, debugSnapshot, previewParts, enchantmentTargets, dualWieldEnchantmentTargets, bakedPoint,
+    definitions: DEF, assemblyKind, groundFitSpec, groundStatus:root=>states.get(root)?.groundClearance||null, decorate, setAction, tick, drop, syncDualWield, scheduleTickAfterPose, debugSnapshot, previewParts, enchantmentTargets, dualWieldEnchantmentTargets, bakedPoint,
     opaqueAt, anchor, refreshWorldMatrix, definitionFor, ropeSpriteSizing, ropeOpaqueBounds, tintRopePixels, stepPendulum, flailDamping, flailStrikeStraightening, flailYawTravel, fishingFlailHeadDirection, // Pure sizing and phase helpers have regression tests.
   };
   global.HobunjiCacheAudit?.register('weapon assemblies (weak owner registry)', () => { let count = 0; for (const entry of records) if (liveState(entry)) count++; return count; });

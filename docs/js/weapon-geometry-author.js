@@ -59,7 +59,7 @@
       if(!geometry.boundingBox)geometry.computeBoundingBox?.();
       const b=geometry.boundingBox;
       if(!b||!(b.max.x>b.min.x)||!(b.max.y>b.min.y))return null;
-      return {plane,image,geometry,box:{minX:b.min.x,maxX:b.max.x,minZ:-b.max.y,maxZ:-b.min.y},unsupported:root.children?.length!==1||plane.children?.length>0||root.userData?.toolEndFlipBase===true};
+      return {plane,image,geometry,box:{minX:b.min.x,maxX:b.max.x,minZ:-b.max.y,maxZ:-b.min.y},unsupported:(global.HobunjiWeaponSpriteAssemblies?.assemblyKind?.(root)!=='flail'&&root.children?.length!==1)||plane.children?.length>0||root.userData?.toolEndFlipBase===true};
     }
     function defaultDraft(){const b=source.box;return {a:round(b.minZ),b:round(b.maxZ),heightFraction:0,minSegmentScale:.65,segments:[],contactOutline:[]};}
     function syncNumbers(){if(draft){fraction.value=Math.round(draft.heightFraction*10000)/100;minimum.value=Math.round(draft.minSegmentScale*10000)/100;ropeMin.value=(draft.ropeMinScale||0)*100;}}

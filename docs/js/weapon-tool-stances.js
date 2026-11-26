@@ -543,7 +543,7 @@
         && (!assembly || assembly.flail)
         ? window.ProceduralHandFrameDriver?.groundPoseContext?.(this,itemKey) : null;
       if(clearanceContext) {
-        clearanceContext.flexibleHaft=!!assembly?.flail; // Suspension is solved separately by its existing owner.
+        clearanceContext.flexibleHaft=window.HobunjiWeaponSpriteAssemblies?.assemblyKind?.(mesh)==='flail'||!!assembly?.flail; // Suspension is solved separately by its existing owner.
         clearanceContext.allowFit=(stanceApplied||!targetPose)&&!attackInProgress&&!authoredToolActionActive;
         // Size every weapon from the authored LIGHT neutral, regardless of
         // which stance actually owns this frame. Restore the live pose before baking.

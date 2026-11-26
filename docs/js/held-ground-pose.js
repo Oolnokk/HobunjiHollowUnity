@@ -6,11 +6,13 @@
   const STEP = Math.PI / 36; // Bounded five-degree rotation search with refinement.
   const debug = { reason: 'not-run', angleDeg: 0, shortening: 0, floorY: null, originalMinY: null, finalMinY: null, rotations: 0, compressions: 0, freeHandLifts: 0, ordinaryParts: 0, fallbacks: 0 };
   let active = null, proof = null, floorFrame = null, floor = null, scratch = null;
+  let previewRoot=null; // Exact currently corrected editor root; raw gizmo mode must also bypass the suspension solve.
   let previewThree=null,previewEnabled=false; // Standalone editor uses its ESM Three namespace and the visible Y=0 grid.
   function configurePreview(three){previewThree=three;previewEnabled=!!three;}
   function setPreviewEnabled(value){previewEnabled=!!value;if(!previewEnabled)skip('raw-preview');}
   function three(){return previewThree||global.THREE;}
-  function skip(reason){clear();Object.assign(debug,{reason,fitted:false,angleDeg:0,shortening:0,originalMinY:null,finalMinY:null,contactSource:null});}
+  function skip(reason){clear();Object.assign(debug,{reason,fitted:false,angleDeg:0,shortening:0,originalMinY:null,finalMinY:null,contactSource:null,lightOriginalMinY:null,lightFittedMinY:null,assemblyDetail:null});}
+  function previewAppliesTo(root){return !!previewThree&&previewEnabled&&previewRoot===root;}
   const actorFits=new WeakMap(); // Actor rig -> bounded per-item immutable physical fits, surviving equip/unequip and mesh replacement.
   const rootFits=new WeakMap(); // Flail owner resolves the exact same fit without another rig traversal.
   const NO_SEGMENTS=Object.freeze([]);
@@ -138,7 +140,7 @@
     if(active.plane.geometry===active.geometry)active.plane.geometry=active.source;
     active.amount=0; // Keep the private strip buffer for the next near-ground pose.
   }
-  function clear() { proof=null; restoreGeometry(); }
+  function clear() { proof=null; previewRoot=null; restoreGeometry(); }
   function fail(reason,preserveFit=false) { debug.reason=reason; debug.fallbacks++; proof=null;if(!preserveFit)restoreGeometry();return false; }
   function boxFor(mesh) {
     const g=mesh?.geometry;
@@ -253,7 +255,7 @@
   function gripZFor(point,mesh) { return (point.z-mesh.position.z)/mesh.scale.z; }
   function adjustHaftPoint(plane,point) {
     // The rope anchor follows exactly the same strip deformation as the art.
-    if(enabled()&&active?.plane===plane&&active.amount)point.y=-contractedZ(-point.y,active.gripZ,active.segments,active.amount);
+    if(enabled()&&active?.plane===plane&&active.amount)point.y=-contractedZ(-point.y,active.gripZ,active.segments,active.amount,point.x);
     return point;
   }
   // The shortest permissible straight connector is tried first. If that
@@ -307,20 +309,31 @@
     }
     return min;
   }
+  function suspendedReferenceY(matrix,spec,segments,gripZ,amount,lightScale){
+    const e=matrix.elements,scale=Math.hypot(e[4],e[5],e[6]); // Actual Light stance long-axis scale, never the live attack scale.
+    const anchorY=e[1]*spec.x-e[5]*contractedZ(-spec.y,gripZ,segments,amount,spec.x)+e[13];
+    return anchorY-scale*(spec.headDrop+Math.hypot(spec.spanX,spec.spanY*lightScale));
+  }
   function constrainWeapon(holder,mesh,context) {
     proof=null;
     if(!enabled()){if(active)restoreGeometry();return false;}
-    debug.angleDeg=0;debug.shortening=0;debug.originalMinY=null;debug.finalMinY=null;
+    previewRoot=null;debug.angleDeg=0;debug.shortening=0;debug.originalMinY=null;debug.finalMinY=null;debug.fitted=false;debug.assemblyDetail=null;
     const y=groundY(),s=work(),plane=mesh?.userData?.toolPlane;
     if(!s||!context||!holder?.parent||!holder.visible||!mesh?.visible||!plane?.visible)return fail('no-rig');
     // A missing support sample is normal over a gap; it must not undo a fit.
     if(active&&active.plane!==plane)restoreGeometry();
-    if(context.flexibleHaft&&!context.profile)return fail('unmeasured-flail');
+    const kind=global.HobunjiWeaponSpriteAssemblies?.assemblyKind?.(mesh);
+    const flexible=kind==='flail'||context.flexibleHaft===true;
+    if(flexible&&!context.profile)return fail('unmeasured-flail');
     const fit=fitFor(context,mesh); // Fitting and rotation are separate: only the former is retained.
-    // Only a single canonical rigid plane (or an independent flail haft)
-    // owns a fitted strip. Rotation eligibility is checked separately below.
-    if(mesh.parent!==holder||plane.parent!==mesh||(!context.flexibleHaft&&mesh.children.length!==1)||plane.children.length
-      ||mesh.userData.toolEndFlipBase||plane.isSkinnedMesh||plane.isInstancedMesh||!(mesh.scale.z>0))return fail('unsupported-assembly');
+    // Suspension siblings are owned by the actual decorated root. A caller's
+    // spelling of the weapon key cannot cause a legitimate flail to be rejected.
+    const detail=mesh.parent!==holder?'root-parent':plane.parent!==mesh?'haft-parent':
+      (!flexible&&mesh.children.length!==1)?'rigid-siblings':
+      plane.children.length?'haft-children':mesh.userData.toolEndFlipBase?'end-flip':
+      plane.isSkinnedMesh||plane.isInstancedMesh?'nonrigid-plane':!(mesh.scale.z>0)?'nonpositive-scale':null;
+    if(detail){debug.assemblyDetail=detail+' · '+(kind||'unregistered')+' · root children '+mesh.children.length+' · haft children '+plane.children.length;return fail('unsupported-assembly');}
+    if(context.preview)previewRoot=mesh;
     const source=active?.plane===plane&&plane.geometry===active.geometry?active.source:plane.geometry;
     if(source?.type!=='PlaneGeometry'||source.attributes.position.count!==4)return fail('non-quad-weapon');
     if(active&&active.source!==source)restoreGeometry();
@@ -372,7 +385,8 @@
       s.autoContact=!!auto;s.contactKey=outline;s.contactSource=source;s.contactImage=image;s.contactSegments=segmentKey;
       s.contactMinX=box.min.x;s.contactMaxX=box.max.x;s.contactMinY=box.min.y;s.contactMaxY=box.max.y;
     }
-    const canFit=pending&&s.autoContact;
+    const suspension=pending&&flexible?global.HobunjiWeaponSpriteAssemblies?.groundFitSpec?.(mesh,profile):null;
+    const canFit=pending&&s.autoContact&&(!flexible||!!suspension); // Do not lock zero shortening before the rope/head have loaded.
     debug.contactSource=s.autoContact?'auto-alpha':outline?.length?'authored-fallback':'quad-fallback';
     debug.contactVertices=s.contact.length;
     if(canFit)s.reference.multiplyMatrices(parent.matrixWorld,context.lightReference).multiply(mesh.matrix).multiply(context.lightPlaneReference||plane.matrix);
@@ -399,13 +413,14 @@
       return s.second.distanceTo(s.shoulder)<=Math.max(reach,s.base.distanceTo(s.shoulder))+0.002;
     }
     if(canFit&&!Number.isFinite(fit.amount)){
-      const referenceMin=samplePoints(s,s.contact,segments,gripZ,0,s.reference);
+      const lightScale=context.lightReferenceFlailScale??1;
+      const evaluate=a=>Math.min(samplePoints(s,s.contact,segments,gripZ,a,s.reference),suspension?suspendedReferenceY(s.reference,suspension,segments,gripZ,a,lightScale):Infinity);
+      const referenceMin=evaluate(0);
       const max=1-profile.minSegmentScale;
       debug.lightOriginalMinY=referenceMin;
       if(referenceMin<target&&segments.length&&max>0){
         // Minimum of affine contact heights is concave in shortening. Find
         // the best safe amount even when another edge becomes the lowest.
-        const evaluate=a=>samplePoints(s,s.contact,segments,gripZ,a,s.reference);
         let lo=0,hi=max;
         for(let i=0;i<24;i++){const a=(2*lo+hi)/3,b=(lo+2*hi)/3;if(evaluate(a)<evaluate(b))lo=a;else hi=b;}
         const peak=(lo+hi)/2;
@@ -417,7 +432,12 @@
       }
       fit.amount=fixedValue(fit.amount,true,amount);fit.anchorZ=gripZ;
       fit.referenceMatrix=s.reference.clone();fit.referenceFloor=target;fit.referenceFlailScale=context.lightReferenceFlailScale??1;
-      debug.lightFittedMinY=samplePoints(s,s.contact,segments,gripZ,amount,s.reference);
+      debug.lightFittedMinY=evaluate(amount);
+      if(suspension){
+        const e=s.reference.elements,scale=Math.hypot(e[4],e[5],e[6]);
+        const anchorY=e[1]*suspension.x-e[5]*contractedZ(-suspension.y,gripZ,segments,amount,suspension.x)+e[13];
+        fit.ropeScale=profile.ropeMinScale!=null?ropeFitCandidate(suspension.spanX,suspension.spanY,scale,anchorY-target-scale*suspension.headDrop,profile.ropeMinScale,lightScale):1;
+      }
       min=samplePoints(s,s.contact,segments,gripZ,amount);
     }
     // Always apply the fitted geometry before attempting a pose correction.
@@ -503,5 +523,5 @@
     if(!clear(mesh.matrixWorld)||(extra&&!clear(extra)))return false;
     debug.ordinaryParts++;return true;
   }
-  global.HeldGroundPose=Object.freeze({configurePreview,setPreviewEnabled,skip,enabled,groundY,constrainWeapon,constrainFreeHand,ordinaryDepthFor,adjustGrip,adjustHaftPoint,ropeClearance,fittedRopeScale,referenceDrop,lightRopeScale,ropeFitCandidate,needsFit,originalGeometryFor,prepareGeometryUpdate,fixedValue,clear,contractedZ,contactVertices,tracePixels,autoContact,minimumY,chooseAngle,snapshot:()=>({...debug})});
+  global.HeldGroundPose=Object.freeze({configurePreview,setPreviewEnabled,previewAppliesTo,suspendedReferenceY,skip,enabled,groundY,constrainWeapon,constrainFreeHand,ordinaryDepthFor,adjustGrip,adjustHaftPoint,ropeClearance,fittedRopeScale,referenceDrop,lightRopeScale,ropeFitCandidate,needsFit,originalGeometryFor,prepareGeometryUpdate,fixedValue,clear,contractedZ,contactVertices,tracePixels,autoContact,minimumY,chooseAngle,snapshot:()=>({...debug})});
 })(typeof window!=='undefined'?window:globalThis);

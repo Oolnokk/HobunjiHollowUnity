@@ -109,7 +109,7 @@ canvas{display:block;width:100%;height:100%}
 <script src="../../js/color-fill.js?v=20261117h93b0e83"></script>
 <script src="../../js/tool-metal-recolor.js?v=20261030rigall5"></script>
 <script src="../../js/weapon-layer-effects.js?v=20261115torchWick2"></script>
-<script src="../../js/weapon-sprite-assemblies.js?v=20261126groundFit2"></script>
+<script src="../../js/weapon-sprite-assemblies.js?v=20261126groundPreview2"></script>
 <!-- Three.js r128 ESM — matches the version used by the main game (docs/index.html) -->
 <script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.128.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.128.0/examples/jsm/"}}</script>
 </head>
@@ -331,8 +331,8 @@ canvas{display:block;width:100%;height:100%}
      in-game character dump use the exact same code/format. -->
 <script src="../../js/transform-dump-utils.js?v=20261017h3ce7f8d"></script>
 <script src="../../js/rig-transform-dump.js?v=20261029rigdump1"></script>
-<script src="../../js/held-ground-pose.js?v=20261126groundPreview1"></script>
-<script src="../../js/weapon-geometry-author.js?v=20261126groundPreview1"></script>
+<script src="../../js/held-ground-pose.js?v=20261126groundPreview2"></script>
+<script src="../../js/weapon-geometry-author.js?v=20261126groundPreview2"></script>
 <script src="../../js/held-action-animations.js?v=20261126groundFit1"></script>
 <script src="../../js/kurraya-instrument.js?v=20261118festival1954x1955a"></script>
 <!-- Shared attack-pose math (window.SharedAttackPose): the SAME timeline, rest poses and mirroring rule the game plays for the player and every enemy. -->
@@ -670,7 +670,7 @@ function applyPreviewNeckWeights() {
 function refreshPreviewDebug() {
   setDebug([
     'Hobunji Attack Animation Editor',
-    `Ground fit: ${JSON.stringify(window.HeldGroundPose?.snapshot?.()||{})}`,
+    (()=>{const s=window.HeldGroundPose?.snapshot?.()||{};return 'Ground fit: '+s.reason+(s.assemblyDetail?' ('+s.assemblyDetail+')':'')+'\n  Band shortening: '+(100*(s.shortening||0)).toFixed(1)+'% · rotation: '+(s.angleDeg||0).toFixed(2)+'° · haft Y: '+String(s.originalMinY??'—')+' → '+String(s.finalMinY??'—')+'\n  Light full-weapon Y: '+String(s.lightOriginalMinY??'—')+' → '+String(s.lightFittedMinY??'—');})(),
     'Latest: flail Hold uses momentum, gravity and actual rope length; paused scrubbing replays the swing.',
     (() => { const physics = window.HobunjiWeaponSpriteAssemblies?.debugSnapshot().find(entry => entry.physics)?.physics; return physics ? `Flail physics: ${physics.model} · lever ${physics.length.toFixed(3)} · angular velocity [${physics.angularVelocity.map(value => value.toFixed(2)).join(', ')}] rad/s · gravity ${physics.gravity}` : 'Flail physics: select a flail preview to inspect'; })(),
     `Neck preview: ${Math.round(neckPreviewStrength * 100)}% strength · ${(neckPreviewRadiusFrac * 100).toFixed(1)}% radius · ${neckWeightSummary}`,
@@ -1962,7 +1962,7 @@ function applyWeaponGroundPreview(){
   context.fitIdentity=[currentSpeciesId,currentGender,height||'',characterBodyScaleRoot.scale.y,
     toolPlaneMesh.scale.z,toolBaseRestY,light.x,light.y,light.z,light.pitch,light.yaw,light.roll,light.bodyYaw,light.bodySink,light.scale,light.flailLengthScale].join(':');
   context.allowFit=!profile?.heightFraction||height>0;
-  context.flexibleHaft=!!window.HobunjiWeaponSpriteAssemblies?.definitionFor?.(currentToolKey,TOOL_SPRITE_DEFS[currentToolKey])?.flail;
+  context.flexibleHaft=window.HobunjiWeaponSpriteAssemblies?.assemblyKind?.(toolPlaneMesh)==='flail'||!!window.HobunjiWeaponSpriteAssemblies?.definitionFor?.(currentToolKey,TOOL_SPRITE_DEFS[currentToolKey])?.flail;
   toolBase.updateWorldMatrix(true,false);
   context.rig.parent.updateWorldMatrix?.(true,false);
   if(context.allowFit&&solver.needsFit(context,toolPlaneMesh)){
@@ -1992,8 +1992,9 @@ function updateGroundPreviewStatus(now){
   const node=$('weaponGeometryFitStatus'),s=window.HeldGroundPose?.snapshot?.();
   if(!node||!s)return;
   const number=n=>Number.isFinite(n)?n.toFixed(3):'—';
-  const text='Ground preview: '+s.reason+' · fit '+(s.fitted?(100*s.shortening).toFixed(1)+'% band shortening':'not fitted')+
-    ' · rotation '+number(s.angleDeg)+'° · lowest Y '+number(s.originalMinY)+' → '+number(s.finalMinY)+' · floor 0'+(s.contactSource?' · '+s.contactSource:'');
+  const suspended=window.HobunjiWeaponSpriteAssemblies?.groundStatus?.(toolPlaneMesh);
+  const text='Ground preview: '+s.reason+(s.assemblyDetail?' ('+s.assemblyDetail+')':'')+' · fit '+(s.fitted?(100*s.shortening).toFixed(1)+'% band shortening':'not fitted')+
+    ' · rotation '+number(s.angleDeg)+'° · lowest Y '+number(s.originalMinY)+' → '+number(s.finalMinY)+' · floor 0'+(s.contactSource?' · '+s.contactSource:'')+(suspended?' · rope '+(suspended.fittedScale*100).toFixed(1)+'% · '+(suspended.trailing?'trailing':suspended.reason)+' · head Y '+number(suspended.headMinY):'');
   if(node.textContent!==text)node.textContent=text;
 }
 function applyPoseToRig(pose) {
