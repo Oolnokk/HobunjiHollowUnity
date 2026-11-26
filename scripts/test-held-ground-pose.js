@@ -102,6 +102,7 @@ assert.equal(preview.groundY(),0);
 const editor=fs.readFileSync('docs/tools/attack-animation-editor/index.html','utf8');
 assert.ok(editor.includes('js/held-ground-pose.js?'),'standalone page loads shared solver');
 assert.ok(editor.includes('configurePreview?.(THREE)'),'editor supplies module-scoped Three');
+assert.ok(editor.includes("{ id: 'nuhongan', label: 'Nuhongan' }"),'Nuhongan uses its own preview rig, not the Tletingan donor scale');
 assert.ok(editor.includes('solver.constrainWeapon(toolHolder,toolPlaneMesh,context)'),'editor runs real solver');
 assert.ok(editor.includes('applyWeaponGroundPreview();'),'applied pose reaches solver');
 assert.ok(editor.includes('previewAppliedGeometry()'),'Apply exits raw gizmo mode and focuses Neutral');

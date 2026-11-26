@@ -73,8 +73,8 @@ const handsPlaced = [];
 let twoHands = true;
 const primary = { position: { x: 1 } };
 const secondary = { position: { x: 2 }, influence: 1 };
-const sync = extract('syncRigToTool', '\n  const originalInstallGameRuntime', {
-  syncing: false,
+const syncGlobals = {
+  syncing: false, gameDeps: null, inAttackEditor: () => false,
   global: { HobunjiHandGripModes: { currentModeKey: () => 'normal' } },
   playerKurrayaActive: () => false,
   freeRightHandFor: () => null,
@@ -95,7 +95,9 @@ const sync = extract('syncRigToTool', '\n  const originalInstallGameRuntime', {
   ensureFallbackState: r => r.fallback,
   applyFallbackSide: () => {},
   applyFallbackBoth: () => {},
-});
+};
+syncGlobals.prepareGroundPoseForSockets=extract('prepareGroundPoseForSockets','\n  function syncRigToTool(',syncGlobals); // Exercise the real disabled/non-player early return rather than stubbing it.
+const sync=extract('syncRigToTool','\n  const originalInstallGameRuntime',syncGlobals);
 const actor = {
   speciesId: 'mao-ao', gender: 'male', avatarRoot: { userData: {} },
   fallback: { owners: {}, overridden: {} },
