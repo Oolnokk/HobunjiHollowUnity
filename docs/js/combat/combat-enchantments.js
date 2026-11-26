@@ -438,7 +438,7 @@
     // recipients without changing individual Flourish handlers.
     const out = [attacker].filter(Boolean);
     for (const actor of window.Combat?.deps?.companionObjects || []) {
-      if (!actor || actor.health <= 0 || actor.stableRole === 'shoulderPet') continue;
+      if (!livingActor(actor) || actor.stableRole === 'shoulderPet') continue;
       if ((actor.master || window.Combat?.deps?.player) === attacker) out.push(actor); // An unowned/player pet must never inherit a hostile attacker's Flourish.
     }
     return out;
