@@ -143,3 +143,9 @@ context.window.HobunjiWeaponSpriteAssemblies={isGroundNonSolidChild:(p,c)=>p===f
 assert.equal(preview.hasDrawingHaftChildren(firePlane),false,'staff flame must not reject rigid sprite');
 firePlane.children.push({userData:{weaponInterleavedVfx:true}});
 assert.equal(preview.hasDrawingHaftChildren(firePlane),true,'unowned child cannot bypass topology check');
+
+const dualChild={visible:true},canonical={children:[dualChild]};
+context.window.HobunjiDualWieldWeaponVisuals={isOwnedChild:(p,c)=>p===canonical&&c===dualChild};
+assert.equal(preview.hasDrawingHaftChildren(canonical),true);
+assert.equal(preview.hasDrawingHaftChildren(canonical,true),false,'canonical dual source allows only owned copies');
+canonical.children.push({visible:true});assert.equal(preview.hasDrawingHaftChildren(canonical,true),true);

@@ -1061,9 +1061,11 @@
       for(const record of managed) {
         if((!preview&&record.rig?.parent!==gameDeps.playerMesh)||record.avatarRoot?.userData?.proceduralHandToolHolder||currentToolHolder(record)!==holder)continue;
         const key=preview?toolGrips.toolKeyFor(itemKey):currentToolKey(record);
-        if(!key||toolGrips.isDualWieldWeapon?.(key)||currentGripContext(record)!=='melee')return null;
+        if(!key||currentGripContext(record)!=='melee')return null;
         const identity={speciesId:record.speciesId,gender:record.gender,rigScaleY:Number(record.avatarRoot?.userData?.proceduralHandRigScaleY)||null};
-        return {rig:record.rig,itemKey:itemKey||key,preview,scaleIdentity:identity,
+        const dual=!!toolGrips.dualWieldStateForTool?.(key,'melee',identity);
+        return {rig:record.rig,itemKey:itemKey||key,preview,scaleIdentity:identity,dual,
+          offhand:dual?toolGrips.offhandPrimaryGripForTool?.(key,'melee',identity):null,
           fitIdentity:[identity.speciesId,identity.gender,identity.rigScaleY||'',toolGrips.actualCharacterHeight?.(identity.speciesId,identity.gender,identity.rigScaleY)||''].join(':'),
           authoredGripZ:toolGrips.authoredPrimaryGripForTool(key,'melee')?.position?.z,
           primary:toolGrips.primaryGripForTool(key,'melee',identity),

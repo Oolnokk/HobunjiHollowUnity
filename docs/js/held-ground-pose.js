@@ -6,6 +6,9 @@
   const STEP = Math.PI / 36; // Bounded five-degree rotation search with refinement.
   const debug = { reason: 'not-run', angleDeg: 0, shortening: 0, floorY: null, originalMinY: null, finalMinY: null, rotations: 0, compressions: 0, freeHandLifts: 0, ordinaryParts: 0, fallbacks: 0 };
   let active = null, proof = null, floorFrame = null, floor = null, scratch = null;
+  let dualPrepared=null; // The canonical fit is prepared before the independently posed visible copies.
+  let dualProofs=new WeakMap(); // Per-copy floor proof, never shared between hands.
+  const borrowedCopies=new Set(); // At most two copies borrow the canonical private fitted buffer; detach before disposal.
   let previewRoot=null; // Exact currently corrected editor root; raw gizmo mode must also bypass the suspension solve.
   let previewThree=null,previewEnabled=false; // Standalone editor uses its ESM Three namespace and the visible Y=0 grid.
   function configurePreview(three){previewThree=three;previewEnabled=!!three;}
@@ -129,18 +132,24 @@
       samples: [], points: [], rows: [], contact: [], contactKey: null, contactSource: null, contactSegments: null,
     };
   }
+  function detachBorrowed(){
+    for(const copy of borrowedCopies)if(copy.geometry===active?.geometry)copy.geometry=active.source;
+    borrowedCopies.clear();
+  }
   function restoreGeometry() {
     if (!active) return;
+    detachBorrowed();
     if (active.plane.geometry===active.geometry) active.plane.geometry=active.source;
     active.geometry.dispose();
     active=null;
   }
   function releaseCompression() {
     if(!active)return;
+    detachBorrowed();
     if(active.plane.geometry===active.geometry)active.plane.geometry=active.source;
     active.amount=0; // Keep the private strip buffer for the next near-ground pose.
   }
-  function clear() { proof=null; previewRoot=null; restoreGeometry(); }
+  function clear() { proof=null;previewRoot=null;dualPrepared=null;dualProofs=new WeakMap();debug.dual=null;restoreGeometry(); }
   function fail(reason,preserveFit=false) { debug.reason=reason; debug.fallbacks++; proof=null;if(!preserveFit)restoreGeometry();return false; }
   function boxFor(mesh) {
     const g=mesh?.geometry;
@@ -314,18 +323,18 @@
     const anchorY=e[1]*spec.x-e[5]*contractedZ(-spec.y,gripZ,segments,amount,spec.x)+e[13];
     return anchorY-scale*(spec.headDrop+Math.hypot(spec.spanX,spec.spanY*lightScale));
   }
-  function hasDrawingHaftChildren(plane){
+  function hasDrawingHaftChildren(plane,allowDual=false){
     const copies=global.HobunjiDualWieldWeaponVisuals;
     const assemblies=global.HobunjiWeaponSpriteAssemblies;
-    for(const child of plane.children)if(!copies?.isNonDrawingChild?.(plane,child)&&!assemblies?.isGroundNonSolidChild?.(plane,child))return true;
+    for(const child of plane.children)if(!copies?.isNonDrawingChild?.(plane,child)&&!(allowDual&&copies?.isOwnedChild?.(plane,child))&&!assemblies?.isGroundNonSolidChild?.(plane,child))return true;
     return false;
   }
   function constrainWeapon(holder,mesh,context) {
-    proof=null;
+    proof=null;dualPrepared=null;
     if(!enabled()){if(active)restoreGeometry();return false;}
-    previewRoot=null;debug.angleDeg=0;debug.shortening=0;debug.originalMinY=null;debug.finalMinY=null;debug.fitted=false;debug.assemblyDetail=null;debug.lightOriginalMinY=null;debug.lightFittedMinY=null;
+    previewRoot=null;debug.dual=null;debug.angleDeg=0;debug.shortening=0;debug.originalMinY=null;debug.finalMinY=null;debug.fitted=false;debug.assemblyDetail=null;debug.lightOriginalMinY=null;debug.lightFittedMinY=null;
     const y=groundY(),s=work(),plane=mesh?.userData?.toolPlane;
-    if(!s||!context||!holder?.parent||!holder.visible||!mesh?.visible||!plane?.visible)return fail('no-rig');
+    if(!s||!context||!holder?.parent||!holder.visible||!mesh?.visible||(!plane?.visible&&!context.dual))return fail('no-rig');
     // A missing support sample is normal over a gap; it must not undo a fit.
     if(active&&active.plane!==plane)restoreGeometry();
     const kind=global.HobunjiWeaponSpriteAssemblies?.assemblyKind?.(mesh);
@@ -336,7 +345,7 @@
     // spelling of the weapon key cannot cause a legitimate flail to be rejected.
     const detail=mesh.parent!==holder?'root-parent':plane.parent!==mesh?'haft-parent':
       (!flexible&&mesh.children.length!==1)?'rigid-siblings':
-      hasDrawingHaftChildren(plane)?'haft-children':mesh.userData.toolEndFlipBase?'end-flip':
+      hasDrawingHaftChildren(plane,context.dual===true)?'haft-children':mesh.userData.toolEndFlipBase?'end-flip':
       plane.isSkinnedMesh||plane.isInstancedMesh?'nonrigid-plane':!(mesh.scale.z>0)?'nonpositive-scale':null;
     if(detail){debug.assemblyDetail=detail+' · '+(kind||'unregistered')+' · root children '+mesh.children.length+' · haft children '+plane.children.length;return fail('unsupported-assembly');}
     if(context.preview)previewRoot=mesh;
@@ -456,6 +465,12 @@
     } else releaseCompression();
     debug.shortening=amount;debug.fitted=Number.isFinite(fit?.amount);
     worldGrip(s,primary,basis,mesh,gripZ,segments,amount,s.pivot);
+    if(context.dual){
+      // The hidden source owns length, not either hand's live orientation.
+      // Copies are posed later by the dual-wield owner, then individually corrected.
+      dualPrepared={holder,mesh,plane,context,segments,gripZ,amount,contact:s.contact.slice(),target,floor:y,flexible};
+      debug.reason='dual-ready';debug.finalMinY=null;return false;
+    }
     if(min<target) {
       // Pick the horizontal axis perpendicular to the lowest point's radial
       // offset from the grip. This rotates the offending end upward.
@@ -483,18 +498,84 @@
     if(angle) {
       // Apply a world rotation around the actual primary grip. Convert the
       // quaternion back to the holder's parent; preserve the raw grip exactly.
-      s.q.setFromAxisAngle(s.axis,angle);
-      s.parentInverse.copy(parent.matrixWorld).invert();
-      s.pos.setFromMatrixPosition(s.holder).sub(s.pivot).applyQuaternion(s.q).add(s.pivot).applyMatrix4(s.parentInverse);
-      s.localQ.copy(s.parentQ).invert().multiply(s.q).multiply(s.parentQ);
-      holder.position.copy(s.pos);
-      holder.quaternion.premultiply(s.localQ);
+      rotateAroundGrip(holder,parent.matrixWorld,s.holder,s.pivot,s.axis,angle,s);
       debug.rotations++;
     }
     debug.angleDeg=angle*180/Math.PI;debug.shortening=amount;debug.finalMinY=min;
     debug.reason=angle?'rotation':amount?'shortening':'already-clear';
     proof={plane,frame:frameId(),min,floor:y};
     return !!angle;
+  }
+  // Rotate a node in world space around the actual grip, not its authored
+  // holder origin. The accompanying translation keeps that world point fixed.
+  function rotateAroundGrip(node,parentMatrix,nodeWorld,pivot,axis,angle,s=work()){
+    parentMatrix.decompose(s.pos,s.parentQ,s.scale);
+    if(!(s.scale.x>0)||Math.abs(s.scale.x-s.scale.y)>1e-5||Math.abs(s.scale.x-s.scale.z)>1e-5)return false;
+    s.q.setFromAxisAngle(axis,angle);
+    s.parentInverse.copy(parentMatrix).invert();
+    s.pos.setFromMatrixPosition(nodeWorld).sub(pivot).applyQuaternion(s.q).add(pivot).applyMatrix4(s.parentInverse);
+    s.localQ.copy(s.parentQ).invert().multiply(s.q).multiply(s.parentQ);
+    node.position.copy(s.pos);node.quaternion.premultiply(s.localQ);node.updateMatrix?.();
+    return true;
+  }
+  function releaseDualCopy(copy){
+    if(!copy)return;
+    dualProofs.delete(copy);
+    if(borrowedCopies.delete(copy)&&copy.geometry===active?.geometry)copy.geometry=active.source;
+  }
+  function constrainDualCopies(current){
+    const d=dualPrepared,s=work();
+    if(!current)return;
+    const main=current.mainMesh,off=current.offMesh;
+    dualProofs.delete(main);dualProofs.delete(off);
+    if(!enabled()||!s||!d||d.plane!==current.plane||current.invisible||!current.mainRoot.visible||d.flexible){
+      releaseDualCopy(main);releaseDualCopy(off);return;
+    }
+    // Both copies have identical source geometry. They borrow the fitted
+    // buffer rather than allocate one per hand; the owner restores them before
+    // disposing it. Never modify the canonical geometry.
+    for(const copy of [main,off]){
+      if(copy.geometry!==d.plane.geometry)copy.geometry=d.plane.geometry;
+      if(active?.geometry===copy.geometry)borrowedCopies.add(copy);
+    }
+    const context=d.context;
+    const grips=global.HobunjiHandToolGrips;
+    const live=global.ProceduralHandFrameDriver?.groundPoseContext?.(d.holder,context.itemKey)||context;
+    s.holder.copy(d.holder.matrixWorld);
+    s.inverse.copy(d.plane.matrixWorld).invert();
+    const localGrip=(point,out)=>worldGrip(s,point,live.basis||context.basis,d.mesh,d.gripZ,d.segments,d.amount,out).applyMatrix4(s.inverse);
+    const results=debug.dual={};
+    for(const [side,root,copy,grip] of [
+      ['right',current.mainRoot,main,live.primary],
+      ['left',current.offRoot,off,live.offhand||grips?.offhandPrimaryGripForTool?.(context.itemKey,'melee',live.scaleIdentity||context.scaleIdentity)]
+    ]){
+      if(!grip?.position){results[side]={reason:'no-grip'};continue;}
+      localGrip(grip.position,s.pivot).applyMatrix4(copy.matrixWorld);
+      let min=samplePoints(s,d.contact,d.segments,d.gripZ,d.amount,copy.matrixWorld),angle=0;
+      const original=min;
+      if(min<d.target){
+        let count=0,lowest=null;
+        for(const v of d.contact){
+          const p=s.samples[count]||=new (three().Vector3)();
+          p.set(v.x,-contractedZ(v.z,d.gripZ,d.segments,d.amount,v.columnX),0).applyMatrix4(copy.matrixWorld);
+          count++;if(!lowest||p.y<lowest.y)lowest=p;
+        }
+        s.samples.length=count;
+        s.axis.set(-(lowest.z-s.pivot.z),0,lowest.x-s.pivot.x);
+        if(s.axis.lengthSq()<1e-10)s.axis.set(1,0,0);else s.axis.normalize();
+        s.points.length=0;
+        for(const p of s.samples){s.rel.copy(p).sub(s.pivot);s.cross.crossVectors(s.axis,s.rel);s.points.push({a:s.rel.y,b:s.cross.y});}
+        angle=chooseAngle(s.points,s.pivot.y,d.target);
+        if(angle===null||!rotateAroundGrip(root,d.plane.matrixWorld,root.matrixWorld,s.pivot,s.axis,angle,s)){
+          results[side]={reason:'no-reachable-clear-pose',originalMinY:original,finalMinY:min};continue;
+        }
+        root.updateMatrixWorld(true);
+        min=samplePoints(s,d.contact,d.segments,d.gripZ,d.amount,copy.matrixWorld);
+      }
+      results[side]={reason:angle?'rotation':'already-clear',angleDeg:angle*180/Math.PI,originalMinY:original,finalMinY:min};
+      if(min>=d.target-1e-7)dualProofs.set(copy,{frame:frameId(),min});
+    }
+    debug.reason='dual-clearance';debug.finalMinY=Math.min(results.right?.finalMinY??Infinity,results.left?.finalMinY??Infinity);
   }
   function constrainFreeHand(parent,socket,shoulder,reach,height) {
     if(!enabled()||parent!==global.PlayerBodyTransformComposer?.getPlayerMesh?.()||!(reach>0)||!socket?.parent)return false;
@@ -517,6 +598,8 @@
     const y=groundY();if(!Number.isFinite(y))return false;
     const margin=Math.max(PAD,Number(shellPadding)||0);
     if(proof?.plane===mesh&&proof.frame===frameId()&&proof.min>=y+margin) {debug.ordinaryParts++;return true;}
+    const dual=dualProofs.get(mesh);
+    if(dual?.frame===frameId()&&dual.min>=y+margin){debug.ordinaryParts++;return true;}
     if(mesh.userData?.hobunjiProceduralHand!==true)return false;
     const box=boxFor(mesh),s=work();if(!box||!s)return false;
     const materials=Array.isArray(mesh.material)?mesh.material:[mesh.material];
@@ -530,5 +613,5 @@
     if(!clear(mesh.matrixWorld)||(extra&&!clear(extra)))return false;
     debug.ordinaryParts++;return true;
   }
-  global.HeldGroundPose=Object.freeze({configurePreview,setPreviewEnabled,previewAppliesTo,suspendedReferenceY,hasDrawingHaftChildren,skip,enabled,groundY,constrainWeapon,constrainFreeHand,ordinaryDepthFor,adjustGrip,adjustHaftPoint,ropeClearance,fittedRopeScale,referenceDrop,lightRopeScale,ropeFitCandidate,needsFit,originalGeometryFor,prepareGeometryUpdate,fixedValue,clear,contractedZ,contactVertices,tracePixels,autoContact,minimumY,chooseAngle,snapshot:()=>({...debug})});
+  global.HeldGroundPose=Object.freeze({configurePreview,setPreviewEnabled,previewAppliesTo,suspendedReferenceY,hasDrawingHaftChildren,skip,enabled,groundY,constrainWeapon,constrainDualCopies,releaseDualCopy,rotateAroundGrip,constrainFreeHand,ordinaryDepthFor,adjustGrip,adjustHaftPoint,ropeClearance,fittedRopeScale,referenceDrop,lightRopeScale,ropeFitCandidate,needsFit,originalGeometryFor,prepareGeometryUpdate,fixedValue,clear,contractedZ,contactVertices,tracePixels,autoContact,minimumY,chooseAngle,snapshot:()=>({...debug})});
 })(typeof window!=='undefined'?window:globalThis);

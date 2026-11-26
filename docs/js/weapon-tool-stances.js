@@ -539,7 +539,7 @@
 
       const clearance = window.HeldGroundPose; // Use the very same raw grip basis as the hand driver, before transient child-plane twist.
       const assembly=window.HobunjiWeaponSpriteAssemblies?.definitionFor?.(itemKey,def);
-      const clearanceContext = clearance?.enabled?.() && activeSlot === 'weapon' && !idleDualWield
+      const clearanceContext = clearance?.enabled?.() && activeSlot === 'weapon'
         // The solver checks exact topology, including emitter-only children.
         ? window.ProceduralHandFrameDriver?.groundPoseContext?.(this,itemKey) : null;
       if(clearanceContext) {

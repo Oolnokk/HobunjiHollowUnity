@@ -331,9 +331,9 @@ canvas{display:block;width:100%;height:100%}
      in-game character dump use the exact same code/format. -->
 <script src="../../js/transform-dump-utils.js?v=20261017h3ce7f8d"></script>
 <script src="../../js/rig-transform-dump.js?v=20261029rigdump1"></script>
-<script src="../../js/held-ground-pose.js?v=20261126staffClearance1"></script>
+<script src="../../js/held-ground-pose.js?v=20261126dualGround1"></script>
 <script src="../../js/weapon-geometry-author.js?v=20261126proportional1"></script>
-<script src="../../js/held-action-animations.js?v=20261126staffClearance1"></script>
+<script src="../../js/held-action-animations.js?v=20261126dualGround1"></script>
 <script src="../../js/kurraya-instrument.js?v=20261118festival1954x1955a"></script>
 <!-- Shared attack-pose math (window.SharedAttackPose): the SAME timeline, rest poses and mirroring rule the game plays for the player and every enemy. -->
 <script src="../../config/portrait-mouth-points.js?v=20261025mouth1"></script>
@@ -670,7 +670,7 @@ function applyPreviewNeckWeights() {
 function refreshPreviewDebug() {
   setDebug([
     'Hobunji Attack Animation Editor',
-    (()=>{const s=window.HeldGroundPose?.snapshot?.()||{};return 'Ground fit: '+s.reason+(s.assemblyDetail?' ('+s.assemblyDetail+')':'')+'\n  Band shortening: '+(100*(s.shortening||0)).toFixed(1)+'% · rotation: '+(s.angleDeg||0).toFixed(2)+'° · haft Y: '+String(s.originalMinY??'—')+' → '+String(s.finalMinY??'—')+'\n  Light full-weapon Y: '+String(s.lightOriginalMinY??'—')+' → '+String(s.lightFittedMinY??'—');})(),
+    (()=>{const s=window.HeldGroundPose?.snapshot?.()||{};return 'Ground fit: '+s.reason+(s.assemblyDetail?' ('+s.assemblyDetail+')':'')+'\n  Band shortening: '+(100*(s.shortening||0)).toFixed(1)+'% · rotation: '+(s.angleDeg||0).toFixed(2)+'° · haft Y: '+String(s.originalMinY??'—')+' → '+String(s.finalMinY??'—')+'\n  Light full-weapon Y: '+String(s.lightOriginalMinY??'—')+' → '+String(s.lightFittedMinY??'—')+(s.dual?'\n  Right: '+JSON.stringify(s.dual.right)+'\n  Left: '+JSON.stringify(s.dual.left):'');})(),
     'Latest: flail Hold uses momentum, gravity and actual rope length; paused scrubbing replays the swing.',
     (() => { const physics = window.HobunjiWeaponSpriteAssemblies?.debugSnapshot().find(entry => entry.physics)?.physics; return physics ? `Flail physics: ${physics.model} · lever ${physics.length.toFixed(3)} · angular velocity [${physics.angularVelocity.map(value => value.toFixed(2)).join(', ')}] rad/s · gravity ${physics.gravity}` : 'Flail physics: select a flail preview to inspect'; })(),
     `Neck preview: ${Math.round(neckPreviewStrength * 100)}% strength · ${(neckPreviewRadiusFrac * 100).toFixed(1)}% radius · ${neckWeightSummary}`,
@@ -1945,7 +1945,6 @@ function applyWeaponGroundPreview(){
   if(gizmoMode!=='off')return solver.skip('raw-gizmo-authoring');
   if(handCalibrationPresentationActive||anim.headRelative||!TOOL_SPRITE_DEFS[currentToolKey]?.usesWeaponStanceBasis||grips?.currentGripContext?.()==='ranged')return solver.skip('not-melee-preview');
   if(!plane||!grips||!avatarModel)return solver.skip('waiting-for-preview');
-  if(grips.isDualWieldWeapon?.(currentToolKey))return solver.skip('dual-wield-unsupported');
   const identity={speciesId:currentSpeciesId,gender:currentGender};
   const height=grips.actualCharacterHeight?.(identity.speciesId,identity.gender);
   const profile=grips.groundProfileForTool?.(currentToolKey);
@@ -1958,7 +1957,9 @@ function applyWeaponGroundPreview(){
     primary:grips.primaryGripForTool(currentToolKey,'melee',identity),secondary:null,
     basis:new THREE.Quaternion(),profile,
   }; // Geometry still previews while the hand rig is loading.
-  context.preview=true;context.profile=profile;
+  context.preview=true;context.profile=profile;context.scaleIdentity=identity;
+  context.dual=!!grips.dualWieldStateForTool?.(currentToolKey,'melee',identity);
+  if(context.dual)context.offhand=grips.offhandPrimaryGripForTool?.(currentToolKey,'melee',identity);
   context.fitIdentity=[currentSpeciesId,currentGender,height||'',characterBodyScaleRoot.scale.y,
     toolPlaneMesh.scale.z,toolBaseRestY,light.x,light.y,light.z,light.pitch,light.yaw,light.roll,light.bodyYaw,light.bodySink,light.scale,light.flailLengthScale].join(':');
   context.allowFit=height>0&&grips.characterHeightReady?.(identity.speciesId,identity.gender)!==false;

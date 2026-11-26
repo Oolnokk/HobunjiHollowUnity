@@ -196,6 +196,7 @@
     if (!old) return;
     global.HobunjiWeaponSpriteAssemblies?.syncDualWield?.(old.visual, old.mainMesh, old.offMesh, false); // Release both independent suspension rigs before their parent meshes are disposed.
     restoreOriginalMaterial(old);
+    global.HeldGroundPose?.releaseDualCopy?.(old.mainMesh);global.HeldGroundPose?.releaseDualCopy?.(old.offMesh);
     old.mainRoot?.parent?.remove?.(old.mainRoot);
     old.offRoot?.parent?.remove?.(old.offRoot);
     disposeOwnedMaterial(old.mainMesh?.material);
@@ -601,6 +602,11 @@
     } else if (active && !invisible) applyMainLag(current);
     current.offRoot.updateMatrixWorld?.(true);
     current.mainRoot.updateMatrixWorld?.(true);
+    if(key===PLAYER_KEY){
+      const clearance=global.HeldGroundPose;
+      if(active)clearance?.constrainDualCopies?.(current);
+      else{clearance?.releaseDualCopy?.(current.mainMesh);clearance?.releaseDualCopy?.(current.offMesh);}
+    }
     current.flailCopiesReady = !!global.HobunjiWeaponSpriteAssemblies?.syncDualWield?.(current.visual, current.mainMesh, current.offMesh, active); // Each hand has its own real flail physics and head, never a world-space clone of the original rope.
     return current;
   }
@@ -754,6 +760,7 @@
     defaultOffhandPose: () => { const pose = global.SharedAttackPose?.IDLE_OFFHAND_POSE || idleStancePoses()?.offhand || null; return pose ? { x: pose.x, y: pose.y, z: pose.z, pitch: pose.pitch, yaw: pose.yaw, roll: pose.roll } : null; }, // The invisible idle offhand's default pose (the shared IDLE_OFFHAND_POSE).
     setEditorIdlePreview,
     setEditorOffhandAuthoring,
+    isOwnedChild(plane,child){const state=states.get(PLAYER_KEY);return state?.plane===plane&&(child===state.mainRoot||child===state.offRoot);},
     isNonDrawingChild(plane,child) {
       const state=states.get(PLAYER_KEY); // Clearance is currently restricted to the player and the editor.
       if(state?.plane!==plane||!(child===state.mainRoot||child===state.offRoot))return false;
