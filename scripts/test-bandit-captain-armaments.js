@@ -15,16 +15,12 @@ const scene = () => { const root = new Group(); return root; };
 const gear = { tools: {}, weaponEnchantments: {}, weaponEnchantmentVisuals: {} };
 let savedGearCount = 0; // Records real captain-loot gear persistence without relying on a browser save UI.
 const eventLog = [];
-const effectIds = {
-  burning: ['Base', 'Hronal'], frostbitten: ['Base', 'Tothal'], mirrored: ['Base', 'Kanthic'],
-  livingFlame: ['Base', 'Hronal'], livingGust: ['Base', 'Ohthic'],
-  fury: ['Flourish', 'Hronal'], moralized: ['Flourish', 'Kanthic'], resolve: ['Flourish', 'Ohthic'],
-  sicced: ['Flourish', 'Tothal'], feyTurnabout: ['Base', 'Fey'], feyHypedPulse: ['Flourish', 'Fey'],
-};
-const definitions = Object.fromEntries(Object.entries(effectIds).map(([id, [type, alignment]]) => [id, { id, type, alignment }]));
+const catalogWindow = {}; // Load the real catalogue/slot eligibility instead of a stale mock that permits Fury on Held slots.
+vm.runInNewContext(fs.readFileSync('docs/js/combat/combat-enchantments.js', 'utf8'), { window: catalogWindow });
+const definitions = catalogWindow.EnchantmentSystem.DEFINITIONS;
 const window = {
   THREE: { Group }, GameRandom: { random: () => 0.37 }, EnemyLoadoutRules: { ruleFor: () => null },
-  EnchantmentSystem: { DEFINITIONS: definitions, cleanWeaponState: raw => JSON.parse(JSON.stringify(raw)) },
+  EnchantmentSystem: { DEFINITIONS: definitions, allowsFlourishSlot: catalogWindow.EnchantmentSystem.allowsFlourishSlot, cleanWeaponState: raw => JSON.parse(JSON.stringify(raw)) },
   CombatAttackEvents: { hit: (_base, patch) => { eventLog.push(patch); return patch; } },
   Combat: { poses: { SWEEP_POSE: { id: 'real-sweep' } } },
   WeaponEnchantmentVFX: { ALIGNMENTS: Object.fromEntries(['Tothal', 'Hronal', 'Kanthic', 'Ohthic', 'Fey'].map(id => [id, { dyeIds: ['dye'], effects: [{ id: 'orb' }] }])),
@@ -112,6 +108,16 @@ for (const [tier, expected] of [[4,2],[5,3],[6,4],[7,5]]) {
   assert.equal(new Set(Object.values(state.flourishes)).size, expected - 2, 'Flourishes are distinct');
   assert(Object.keys(state.flourishes).every(slot => ['tap1','tap2','hold1'].includes(slot)));
   for (const id of [...state.base,...Object.values(state.flourishes)]) assert.notEqual(definitions[id].alignment, 'Fey');
+  for (const [slot,id] of Object.entries(state.flourishes)) assert(catalogWindow.EnchantmentSystem.allowsFlourishSlot(id,slot), 'captain uses a legal slot');
+}
+
+// Exercise seeded selection across many roll orders, not just the fixed fixture RNG.
+let seed = 139;
+const rng = () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 4294967296; };
+for (let i=0;i<500;i++) {
+  const state=cap.rollEnchantments(8,rng);
+  assert(state && state.base.length===2 && Object.keys(state.flourishes).length===3, '8-star weapon never loses a promised enchantment');
+  for (const [slot,id] of Object.entries(state.flourishes)) assert(catalogWindow.EnchantmentSystem.allowsFlourishSlot(id,slot));
 }
 
 (async () => {
