@@ -1,11 +1,16 @@
-// Geometric shoulder-pet collision proxy. Alpha masks and UV topology are cached;
-// only the small set of sampled vertices follows the live skinning each pin.
+// Prepared shoulder-pet angular envelopes. Geometry is sampled only for a new
+// attachment configuration; the animation path selects cached angle cells.
 (() => {
   'use strict';
   const GRID_X = 10, GRID_Y = 12; // Bounded proxy density, independent of visual tessellation.
   const DEG = Math.PI / 180;
   const CLEARANCE = 0.002; // World-space clearance between the two painted surfaces.
   const EPS = 1e-9;
+  const BODY_CELLS=36, BODY_STEP=2*Math.PI/BODY_CELLS; // 10-degree cells around the owner-relative grip.
+  const HEAD_STEP=8, SCALE_TOLERANCE=0.06, POSE_MARGIN=0.003; // Preparation-only sweep allowances.
+  const wrap=a=>Math.atan2(Math.sin(a),Math.cos(a));
+  const mod=(n,m)=>((n%m)+m)%m;
+  const clamp=(n,lo,hi)=>Math.max(lo,Math.min(hi,n));
 
   function separated(a, ai, b, bi, x, y, z, margin) {
     const length = Math.hypot(x, y, z);
@@ -39,7 +44,7 @@
   function create(THREE) {
     const imageMasks = new WeakMap(); // Downsampled alpha integral image, shared by textures using the same pixels.
     const meshProxies = new WeakMap(); // Topology / texture caches are released with the live mesh.
-    const previous = new WeakMap(); // Last safe body offset per attached avatar; avoids repeating a full angle sweep.
+    const tables = new WeakMap(); // At most two cached configurations per pet (mirrored perch sides).
     const vertex = new THREE.Vector3(), uvPoint = new THREE.Vector2();
     const axis = new THREE.Vector3(0, 1, 0);
 
@@ -192,14 +197,40 @@
       }
       bounds(p,p.world);
     }
-    function collisions(owners,pets,perch,grip,scale,yaw,contact) {
+    function radialBounds(boxes,i) {
+      const j=i*6,x0=boxes[j],z0=boxes[j+2],x1=boxes[j+3],z1=boxes[j+5];
+      return [Math.hypot(Math.max(x0,0,-x1),Math.max(z0,0,-z1)),
+        Math.hypot(Math.max(Math.abs(x0),Math.abs(x1)),Math.max(Math.abs(z0),Math.abs(z1)))];
+    }
+
+    function prepareCandidates(owners,pets,grip,scale) {
+      for(const p of pets) {
+        worldPet(p,origin,grip,scale,0);
+        p.candidates=new Array(p.tris.length); // Rotation-invariant radial/height broad phase, reused by every body angle.
+        for(let i=0;i<p.tris.length;i++) {
+          const [r0,r1]=radialBounds(p.boxes,i),a=i*6,margin=Math.max(CLEARANCE,p.padding[i]);
+          const candidates=[];
+          for(const o of owners)for(let j=0;j<o.tris.length;j++) {
+            const b=j*6,k=j*2;
+            if(p.boxes[a+1]>o.boxes[b+4]+margin || o.boxes[b+1]>p.boxes[a+4]+margin
+              || r0>o.radials[k+1]+margin || o.radials[k]>r1+margin)continue;
+            candidates.push(o,j);
+          }
+          p.candidates[i]=candidates;
+        }
+      }
+    }
+
+    function collisions(owners,pets,perch,grip,scale,yaw,contact,padded) {
       for(const p of pets) {
         worldPet(p,perch,grip,scale,yaw);
-        for(const o of owners) for(let i=0;i<p.tris.length;i++) for(let j=0;j<o.tris.length;j++) {
+        for(let i=0;i<p.tris.length;i++) for(let k=0;k<p.candidates[i].length;k+=2) {
+          const o=p.candidates[i][k],j=p.candidates[i][k+1];
           const a=i*6,b=j*6,A=p.boxes,B=o.boxes;
-          if(A[a]>B[b+3]+CLEARANCE || B[b]>A[a+3]+CLEARANCE ||
-             A[a+1]>B[b+4]+CLEARANCE || B[b+1]>A[a+4]+CLEARANCE ||
-             A[a+2]>B[b+5]+CLEARANCE || B[b+2]>A[a+5]+CLEARANCE) continue;
+          const margin=padded?p.padding[i]:CLEARANCE;
+          if(A[a]>B[b+3]+margin || B[b]>A[a+3]+margin ||
+             A[a+1]>B[b+4]+margin || B[b+1]>A[a+4]+margin ||
+             A[a+2]>B[b+5]+margin || B[b+2]>A[a+5]+margin) continue;
           // The authored grip is meant to touch the shoulder. Ignore only overlap
           // confined to this small contact neighborhood, not the pet's entire lower body.
           let far2=0;
@@ -209,99 +240,175 @@
             far2+=Math.max(Math.abs(lo-origin),Math.abs(hi-origin))**2;
           }
           if(far2<=contact*contact) continue;
-          if(trianglesOverlap(p.world,p.tris[i],o.points,o.tris[j])) return true;
+          if(trianglesOverlap(p.world,p.tris[i],o.points,o.tris[j],margin)) return true;
         }
       }
       return false;
     }
 
-    function constrain({ ownerMeshes, pet, perch, grip, scale, quaternion }) {
-      const avatar=pet?.avatarRef, group=avatar?.group, front=avatar?.frontPlane;
-      if (!group?.isObject3D || !front || !grip || !scale || !ownerMeshes?.length) return {mode:'geometry-unavailable'};
-      const owners=[];
-      for(const mesh of new Set(ownerMeshes.filter(Boolean))) {
+    const origin={x:0,y:0,z:0}; // Grip-centered coordinates during preparation.
+    const clock=()=>typeof performance!=='undefined'?performance.now():Date.now();
+
+    function headLimit(avatar,requested) {
+      if(typeof avatar.updateHeadYaw!=='function' || !avatar.headRig)return 0;
+      const rig=avatar.headRig.rig;
+      return Math.min(180,Math.max(Math.abs(Number(rig?.minDeg)||0),Math.abs(Number(rig?.maxDeg)||0)) || Math.abs(requested));
+    }
+
+    function matches(e,a,v,limit) {
+      if(!e || e.front!==v.frontPlane || e.fg!==v.frontPlane.geometry || e.back!==v.backPlane
+        || e.bg!==v.backPlane?.geometry || e.children!==v.group.children.length || e.rig!==v.headRig || e.limit!==limit
+        || e.gx!==a.grip.x || e.gy!==a.grip.y || e.gz!==a.grip.z || e.owners.length!==a.ownerMeshes.length)return false;
+      for(let i=0;i<e.owners.length;i++)if(e.owners[i]!==a.ownerMeshes[i] || e.geometries[i]!==a.ownerMeshes[i]?.geometry)return false;
+      return Math.abs(a.scale.x-e.sx)<=Math.abs(e.sx)*SCALE_TOLERANCE
+        && Math.abs(a.scale.y-e.sy)<=Math.abs(e.sy)*SCALE_TOLERANCE
+        && Math.abs(a.scale.z-e.sz)<=Math.abs(e.sz)*SCALE_TOLERANCE;
+    }
+
+    function configuration(a,v,limit) {
+      return {front:v.frontPlane,fg:v.frontPlane.geometry,back:v.backPlane,bg:v.backPlane?.geometry,
+        children:v.group.children.length,rig:v.headRig,limit,gx:a.grip.x,gy:a.grip.y,gz:a.grip.z,
+        sx:a.scale.x,sy:a.scale.y,sz:a.scale.z,owners:a.ownerMeshes.slice(),geometries:a.ownerMeshes.map(m=>m?.geometry),
+        diagnostic:{},retries:0};
+    }
+
+    function compileRows(safe,count) {
+      const rows=new Array(BODY_CELLS),left=new Int16Array(BODY_CELLS),right=new Int16Array(BODY_CELLS);
+      left.fill(-1);right.fill(-1);let any=false;
+      for(let i=0;i<BODY_CELLS;i++) {
+        const row=new Int16Array(count);row.fill(-1);let valid=false;
+        for(let j=0;j<count;j++)for(let d=0;d<count;d++) {
+          if(j-d>=0 && safe[i*count+j-d]){row[j]=j-d;valid=true;break;}
+          if(j+d<count && safe[i*count+j+d]){row[j]=j+d;valid=true;break;}
+        }
+        if(valid){rows[i]=row;any=true;}
+      }
+      if(!any)return null;
+      for(let i=0;i<BODY_CELLS;i++)for(let d=0;d<BODY_CELLS;d++) {
+        const a=mod(i-d,BODY_CELLS),b=mod(i+d,BODY_CELLS);
+        if(left[i]<0 && rows[a])left[i]=a;
+        if(right[i]<0 && rows[b])right[i]=b;
+        if(left[i]>=0 && right[i]>=0)break;
+      }
+      return {rows,left,right};
+    }
+
+    function prepare(args,avatar,e,requestedHead) {
+      const started=clock(),owners=[],{perch,grip,scale}=args;
+      const yaw=Number(args.ownerFrameYaw)||0,c=Math.cos(yaw),sn=Math.sin(yaw);
+      for(const mesh of new Set(args.ownerMeshes.filter(Boolean))) {
         mesh.updateWorldMatrix(true,false);mesh.updateMatrixWorld(true);
-        const p=pose(mesh,mesh.matrixWorld);
-        if(!p) return {mode:'geometry-unavailable'};
-        bounds(p,p.points);owners.push(p);
+        const p=pose(mesh,mesh.matrixWorld);if(!p)return;
+        for(let i=0;i<p.points.length;i+=3) {
+          const x=p.points[i]-perch.x,z=p.points[i+2]-perch.z;
+          p.points[i]=c*x-sn*z;p.points[i+1]-=perch.y;p.points[i+2]=sn*x+c*z;
+        }
+        bounds(p,p.points);p.radials=new Float64Array(p.tris.length*2);
+        for(let i=0;i<p.tris.length;i++)p.radials.set(radialBounds(p.boxes,i),i*2);
+        owners.push(p);
       }
-      if(!owners.length) return {mode:'geometry-unavailable'};
-      const meshes=[front,...group.children.filter(m=>m.visible && m.userData?.hobunjiShoulderSplitOverlay && m.userData?.hobunjiPlaneFace==='front')];
-      function petPose() {
+      if(!owners.length)return;
+      const group=avatar.group,front=avatar.frontPlane,back=avatar.backPlane,meshes=[front];
+      if(back && back!==front)meshes.push(back);
+      for(const m of group.children)if(m.visible && m.userData?.hobunjiShoulderSplitOverlay && !meshes.includes(m))meshes.push(m);
+      for(const m of meshes)if(m.rotation?.set) {
+        m.matrixAutoUpdate=true;m.rotation.set(0,m===back || m.userData?.hobunjiPlaneFace==='back'?-Math.PI/2:Math.PI/2,0);m.updateMatrix?.();
+      }
+      const n=Math.ceil(e.limit/HEAD_STEP),count=2*n+1,step=n?e.limit/n:0;
+      const padded=new Uint8Array(BODY_CELLS*count),exact=new Uint8Array(padded.length);
+      const canTurn=typeof avatar.updateHeadYaw==='function' && !!avatar.headRig;
+      let current=requestedHead,checks=0;
+      function sample(deg,copy) {
+        if(canTurn && current!==deg){avatar.updateHeadYaw(deg,1000);current=deg;}
         group.updateWorldMatrix(true,false);group.updateMatrixWorld(true);
-        const poses=meshes.map(m=>pose(m,m.matrix)); // All canonical animal cards are direct children of the scaled root.
-        return poses.every(Boolean)?poses:null;
+        const p=meshes.map(m=>pose(m,m.matrix));if(!p.every(Boolean))return null;
+        return copy?p.map(v=>({proxy:v,points:new Float64Array(v.points)})):p;
       }
-      let poses=petPose();
-      if(!poses) return {mode:'geometry-unavailable'};
+      try {
+        for(let j=0;j<count;j++) {
+          const center=(j-n)*step,lo=Math.max(-e.limit,center-step/2),hi=Math.min(e.limit,center+step/2);
+          const a=step?sample(lo,true):null,b=step?sample(hi,true):null,pets=sample(center,false);
+          if(!pets)return;
+          let continuous=!step || !!(a&&b);
+          for(let k=0;k<pets.length;k++) {
+            const p=pets[k];p.padding=new Float64Array(p.tris.length);
+            if(step && (!a || !b || a[k].proxy!==p || b[k].proxy!==p)){continuous=false;continue;}
+            for(let i=0;i<p.tris.length;i++) {
+              let pad=0;
+              for(const v of p.tris[i]) {
+                const x=(p.points[v]-grip.x)*scale.x,y=(p.points[v+1]-grip.y)*scale.y,z=(p.points[v+2]-grip.z)*scale.z;
+                let headSweep=0;
+                if(step)for(const endpoint of [a[k].points,b[k].points])
+                  headSweep=Math.max(headSweep,Math.hypot((endpoint[v]-p.points[v])*scale.x,(endpoint[v+1]-p.points[v+1])*scale.y,(endpoint[v+2]-p.points[v+2])*scale.z));
+                pad=Math.max(pad,2*Math.hypot(x,z)*Math.sin(BODY_STEP/4)+Math.hypot(x,y,z)*SCALE_TOLERANCE+headSweep*1.1);
+              }
+              p.padding[i]=CLEARANCE+POSE_MARGIN+pad;
+            }
+          }
+          prepareCandidates(owners,pets,grip,scale);
+          for(let i=0;i<BODY_CELLS;i++) {
+            const angle=i*BODY_STEP,index=i*count+j;
+            if(continuous){checks++;if(!collisions(owners,pets,origin,grip,scale,angle,0.035,true)){padded[index]=exact[index]=1;continue;}}
+            checks++;if(!collisions(owners,pets,origin,grip,scale,angle,0.035,false))exact[index]=1;
+          }
+        }
+      } finally {
+        if(canTurn && current!==requestedHead)avatar.updateHeadYaw(requestedHead,1000);
+        e.buildChecks=checks;e.buildMs=clock()-started;
+      }
+      e.padded=compileRows(padded,count);e.exact=compileRows(exact,count);
+      e.count=count;e.n=n;e.step=step;e.prepared=true;
+    }
+
+    function lookup(table,e,relative,requestedHead,bodyIndex,requestedIndex,padded,out) {
+      if(!table)return false;
+      const {rows,left,right}=table;
+      let index=bodyIndex;
+      if(!rows[index]) {
+        const l=left[index],r=right[index];
+        index=Math.abs(wrap(relative-l*BODY_STEP))<=Math.abs(wrap(relative-r*BODY_STEP))?l:r;
+      }
+      const center=index*BODY_STEP,half=padded?BODY_STEP/2-1e-7:0;
+      out.body=wrap(center+clamp(wrap(relative-center),-half,half));
+      const headCenter=(rows[index][requestedIndex]-e.n)*e.step,headHalf=padded?e.step/2:0;
+      out.head=clamp(requestedHead,Math.max(-e.limit,headCenter-headHalf),Math.min(e.limit,headCenter+headHalf));
+      return true;
+    }
+    const paddedResult={},exactResult={}; // Reused scratch; no runtime lookup allocations.
+
+    function constrain(args) {
+      const {pet,grip,scale,quaternion}=args,avatar=pet?.avatarRef,group=avatar?.group;
+      if(!group?.isObject3D || !avatar.frontPlane || !grip || !scale || !args.ownerMeshes?.length)return {mode:'geometry-unavailable'};
       const yaw=Math.atan2(2*(quaternion.w*quaternion.y+quaternion.x*quaternion.z),1-2*(quaternion.y**2+quaternion.z**2));
-      const requestedHead=Number(avatar.headRig?.currentYawDeg)||0;
-      const canTurnHead=typeof avatar.updateHeadYaw==='function' && !!avatar.headRig;
-      const contact=0.035; // Intentional grip contact in world units, not a global collision exemption.
-      let checks=0;
-      const safe=(offset)=>{checks++;return !collisions(owners,poses,perch,grip,scale,yaw+offset,contact);};
-      const finish=(offset,headYaw,mode='geometric-depth')=>{
-        if(mode==='geometric-depth') {
-          quaternion.setFromAxisAngle(axis,yaw+offset);
-          previous.set(group,{offset,worldYaw:yaw+offset});
-        }
-        return {mode,bodyOffsetDeg:offset/DEG,requestedBodyYawDeg:yaw/DEG,resolvedBodyYawDeg:(yaw+offset)/DEG,
-          headYawDeg:headYaw,requestedHeadYawDeg:requestedHead,checks};
-      };
-      if(safe(0)) return finish(0,requestedHead);
-      const setHead=degrees=>{avatar.updateHeadYaw(degrees,1000);poses=petPose();};
-      const wrap=a=>Math.atan2(Math.sin(a),Math.cos(a));
-      function findBodyOffset() {
-        if(!poses) return null;
-        if(safe(0)) return 0;
-        let offset=null;
-        const last=previous.get(group);
-        // Recheck both the previous relative limit and absolute world pose:
-        // a deadzone or observation flip can change the desired frame abruptly.
-        if(last) for(const candidate of [last.offset,wrap(last.worldYaw-yaw)]) {
-          if(candidate && safe(candidate)) {offset=candidate;break;}
-        }
-        if(offset===null) {
-          for(let d=15;d<=180 && offset===null;d+=15) {
-            for(const sign of [-1,1]) if(safe(sign*d*DEG)) {offset=sign*d*DEG;break;}
-          }
-        }
-        if(offset!==null && offset!==0) {
-          let lo=0,hi=offset;
-          for(let i=0;i<4;i++) {const mid=(lo+hi)/2;if(safe(mid))hi=mid;else lo=mid;}
-          offset=hi;
-        }
-        return offset;
-      }
-      // Prefer preserving the body heading by releasing the independent head turn.
-      if(canTurnHead && requestedHead) setHead(0);
-      let offset=findBodyOffset();
-      if(offset===null) {
-        // A neutral head is not always the safest shape. Try the original head
-        // at other body angles before declaring an impossible grip/portrait pair.
-        if(canTurnHead && requestedHead) {
-          setHead(requestedHead);
-          offset=findBodyOffset();
-          if(offset!==null) return finish(offset,requestedHead);
-        }
-        return finish(0,requestedHead,poses?'no-safe-rotation':'geometry-unavailable');
-      }
-      let headYaw=0;
-      if(canTurnHead && requestedHead) {
-        setHead(requestedHead);
-        if(poses && safe(offset)) headYaw=requestedHead;
-        else {
-          let lo=0,hi=1;
-          for(let i=0;i<4;i++) {
-            const mid=(lo+hi)/2;
-            setHead(requestedHead*mid);
-            if(poses && safe(offset))lo=mid;else hi=mid;
-          }
-          headYaw=requestedHead*lo;
-          setHead(headYaw);
-        }
-      }
-      return finish(offset,headYaw);
+      const ownerYaw=Number(args.ownerFrameYaw)||0,requestedHead=Number(avatar.headRig?.currentYawDeg)||0;
+      const limit=headLimit(avatar,requestedHead),side=args.perchSide<0?0:1;
+      let slots=tables.get(group);if(!slots){slots=[null,null];tables.set(group,slots);}
+      let e=slots[side],built=false;
+      if(!matches(e,args,avatar,limit)){e=configuration(args,avatar,limit);slots[side]=e;prepare(args,avatar,e,requestedHead);built=true;}
+      else if(!e.prepared && ++e.retries>=30){e.retries=0;prepare(args,avatar,e,requestedHead);built=true;}
+      const d=e.diagnostic; // Reuse per configuration. No geometry sampling or collision tests on cache hits.
+      d.mode=!e.prepared?'geometry-unavailable':e.exact?'geometric-depth':'no-safe-rotation';
+      d.quality='unavailable';d.cacheHit=!built;d.checks=built?(e.buildChecks||0):0;
+      d.buildChecks=e.buildChecks||0;d.buildMs=e.buildMs||0;d.requestedBodyYawDeg=yaw/DEG;d.resolvedBodyYawDeg=yaw/DEG;
+      d.bodyOffsetDeg=0;d.requestedHeadYawDeg=requestedHead;d.headYawDeg=requestedHead;
+      if(!e.exact)return d;
+      const relative=wrap(yaw-ownerYaw),bodyIndex=mod(Math.round(relative/BODY_STEP),BODY_CELLS);
+      const requestedIndex=e.step?clamp(Math.round(requestedHead/e.step)+e.n,0,e.count-1):0;
+      const hasPadded=lookup(e.padded,e,relative,requestedHead,bodyIndex,requestedIndex,true,paddedResult);
+      lookup(e.exact,e,relative,requestedHead,bodyIndex,requestedIndex,false,exactResult);
+      // Prefer a swept cell, but preserve a verified sample if padding would unnecessarily
+      // move the body farther, or force a requested head turn past neutral.
+      const chooseExact=!hasPadded
+        || Math.abs(wrap(exactResult.body-relative))+1e-7<Math.abs(wrap(paddedResult.body-relative))
+        || (Math.abs(wrap(exactResult.body-relative))<=Math.abs(wrap(paddedResult.body-relative))+1e-7
+            && requestedHead*paddedResult.head<0 && requestedHead*exactResult.head>=0);
+      const result=chooseExact?exactResult:paddedResult;
+      const resolvedYaw=wrap(ownerYaw+result.body),headYaw=result.head;
+      quaternion.setFromAxisAngle(axis,resolvedYaw);
+      if(typeof avatar.updateHeadYaw==='function' && avatar.headRig && Math.abs(headYaw-requestedHead)>1e-6)avatar.updateHeadYaw(headYaw,1000);
+      d.quality=chooseExact?'sampled-centre':'padded-cell';
+      d.bodyOffsetDeg=wrap(resolvedYaw-yaw)/DEG;d.resolvedBodyYawDeg=resolvedYaw/DEG;d.headYawDeg=headYaw;
+      return d;
     }
     return { constrain };
   }

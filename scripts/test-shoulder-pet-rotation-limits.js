@@ -25,9 +25,10 @@ class Q {constructor(yaw){this.setFromAxisAngle(null,yaw);}setFromAxisAngle(axis
 const uv={getX:i=>[0,1,0,1][i],getY:i=>[0,0,1,1][i]};
 const index={count:6,getX:i=>[0,1,2,1,3,2][i]};
 const map={image:{width:16,height:16},version:1,transformUv(v){return v;}};
+let vertexReads=0; // The cache must not touch live mesh vertices during animation.
 function mesh(points, deform) {
   return {geometry:{index,getAttribute(k){return k==='uv'?uv:{count:4};}},material:{map},matrix:{},matrixWorld:{},
-    updateWorldMatrix(){},updateMatrixWorld(){},getVertexPosition(i,out){return out.set(...(deform?deform(points[i],i):points[i]));}};
+    updateWorldMatrix(){},updateMatrixWorld(){},getVertexPosition(i,out){vertexReads++;return out.set(...(deform?deform(points[i],i):points[i]));}};
 }
 const owner=mesh([[-.6,.2,0],[.4,.2,0],[-.6,.8,0],[.4,.8,0]]);
 const petPoints=[[0,0,-.25],[0,0,.25],[0,.4,-.25],[0,.4,.25]];
@@ -40,16 +41,48 @@ const solver=actual.ShoulderPetRotationLimits.create({Vector2:V2,Vector3:V3});
 let result=solver.constrain(args);
 assert.equal(result.mode,'geometric-depth','rotate off a colliding body heading');
 assert.ok(Math.abs(result.bodyOffsetDeg)>1);
-assert.ok(result.checks>1);
+assert.ok(result.checks>1,'first attachment prepares the angular table');
+assert.equal(result.cacheHit,false);
+const initialReads=vertexReads;
 args.quaternion=new Q(0);
 result=solver.constrain(args);
-assert.equal(result.bodyOffsetDeg,0,'already separated body heading is preserved');
-pet.avatarRef.headRig={currentYawDeg:24};
+assert.ok(Math.abs(result.bodyOffsetDeg)<1e-5,'already separated body heading is preserved');
+assert.equal(result.checks,0,'cached animation performs no collision checks');
+assert.equal(result.cacheHit,true);
+assert.equal(vertexReads,initialReads,'cached animation never samples vertices');
+args.ownerFrameYaw=Math.PI/3;args.quaternion=new Q(Math.PI/3);
+result=solver.constrain(args);
+assert.equal(result.checks,0,'world heading does not invalidate owner-relative bounds');
+assert.ok(Math.abs(result.bodyOffsetDeg)<1e-5);
+assert.equal(vertexReads,initialReads);
+args.ownerFrameYaw=0;
+args.scale.y=1.02;args.quaternion=new Q(0);
+result=solver.constrain(args);
+assert.equal(result.checks,0,'ordinary breathing within the prepared envelope is cached');
+assert.equal(vertexReads,initialReads);
+args.scale.y=1;
+pet.avatarRef.headRig={currentYawDeg:24,rig:{minDeg:-24,maxDeg:24}};
 pet.avatarRef.updateHeadYaw=deg=>{pet.avatarRef.headRig.currentYawDeg=deg;};
 pet.avatarRef.frontPlane=mesh(petPoints,(point,i)=>[point[0]-(i>=2?.25*pet.avatarRef.headRig.currentYawDeg/24:0),point[1],point[2]]);
 args.quaternion=new Q(0);
 result=solver.constrain(args);
 assert.equal(result.mode,'geometric-depth','head can be clamped independently');
-assert.equal(result.bodyOffsetDeg,0);
+assert.ok(Math.abs(result.bodyOffsetDeg)<1e-5,'head limits preserve safe body heading');
 assert.ok(result.headYawDeg<24 && result.headYawDeg>=0);
 assert.equal(pet.avatarRef.headRig.currentYawDeg,result.headYawDeg);
+
+const before=result.headYawDeg, headReads=vertexReads;
+for(let i=0;i<20;i++) {
+  pet.avatarRef.headRig.currentYawDeg=24;args.quaternion=new Q(0);
+  result=solver.constrain(args);
+  assert.equal(result.checks,0,'head animation does not rebuild the authored range');
+  assert.equal(result.headYawDeg,before);
+}
+assert.equal(vertexReads,headReads,'head animation performs no geometry sampling');
+args.perchSide=-1;args.quaternion=new Q(0);
+assert.equal(solver.constrain(args).cacheHit,false,'the other mirrored side prepares its own envelope');
+const mirroredReads=vertexReads;
+args.perchSide=1;args.quaternion=new Q(0);
+assert.equal(solver.constrain(args).cacheHit,true,'returning to a previously prepared side reuses its envelope');
+assert.equal(vertexReads,mirroredReads);
+console.log('cached shoulder angular envelope and runtime lookup passed');
