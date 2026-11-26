@@ -121,3 +121,44 @@ assert.ok(proneStateSource.includes('beginSomersaultRecovery();'), 'automatic pr
 assert.ok(proneStateSource.includes('!(player.proneThrowT > 0)') && proneStateSource.includes('!player._knockbackLedgeFall'), 'automatic get-up waits for prone throws and ledge falls to finish');
 
 console.log('Footing timing checks passed.');
+
+
+// Real ResourceSystem plus the live recovery bridge: continuous wind must
+// pay the same amount at every frame rate, even with armor-like resistance
+// and 3:1 enhanced Footing. The test intentionally uses both shield types.
+{
+  const live = { GameRandom: { random: () => 0 }, Combat: { deps: {} }, dispatchEvent() {} };
+  const liveContext = vm.createContext({ window: live, performance: { now: () => now }, console });
+  vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'docs', 'js', 'combat', 'resource-system.js'), 'utf8'), liveContext);
+  vm.runInContext(source, liveContext);
+  live.GameRandom.random = () => 0; // ResourceSystem installs the canonical seeded generator at load time.
+  const rs = live.ResourceSystem;
+  rs.registerStatModifierProvider((_entity, key) => key === 'incomingFootingDamage' ? .4 : 1); // A strong resistance which formerly rounded individual 0.1 charges to zero.
+  const run = (fps, enhanced = false) => {
+    const actor = rs.initEntity({ health:100, maxHealth:100, stamina:100, maxStamina:100, footing:100, maxFooting:100 });
+    rs.addAffliction(actor, 'windblownStamina', 100);
+    if (enhanced) {
+      rs.addEnhancedResource(actor, 'temperedFooting', 2);
+      rs.addEnhancedResource(actor, 'resoluteFooting', 1);
+    }
+    for(let i=0;i<fps;i++) {
+      const motion = rs.composeMovement(actor, 100/fps, 0, { reference:100/fps, dt:1/fps });
+      rs.commitMovement(actor, motion, 1);
+    }
+    return actor;
+  };
+  for (const fps of [20,60,144,240]) {
+    const ordinary = run(fps);
+    assert.strictEqual(ordinary.footing, 92, '8 effective damage after shared 2x and .4 resistance at '+fps+' FPS');
+    assert.strictEqual(ordinary.lastFootingDamageAt, now, 'wind loss starts the ordinary recovery delay');
+    const shielded = run(fps, true);
+    assert.strictEqual(shielded.footing, 97, 'enhanced pools absorb 5 effective damage before ordinary loss');
+    assert.strictEqual(rs.getAffliction(shielded,'temperedFooting'),0);
+    assert.strictEqual(rs.getAffliction(shielded,'resoluteFooting'),0);
+  }
+  const actor = run(60);
+  const halted = rs.composeMovement(actor, 0, 0, { mode:'lunge', reference:0, dt:.2 });
+  assert.strictEqual(halted.x, 0, 'explicit zero budget cannot restart a cone-halted lunge');
+  assert.strictEqual(halted.footingCost, 0);
+}
+console.log('Real wind Footing resistance, shield conversion and recovery gate checks passed.');

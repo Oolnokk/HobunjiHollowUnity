@@ -97,18 +97,21 @@
   }
 
   function authoredShoulderRestFor(companion, combatDeps) {
+    if (companion?.def?.isFlyingSpecies) return null; // Native folded-wing perch, never a mammal curl.
     const kind = genotypeKindFor(companion, combatDeps);
     const rawRig = kind ? window.CreatureGeneticsRender?.headRigForKind?.(kind) : null;
     return rawRig?.shoulderRest || null;
   }
 
   function effectiveShoulderRest(companion, combatDeps) {
+    if (companion?.def?.isFlyingSpecies) return null; // Do not inherit a stale baked rest profile.
     const runtime = companion?.avatarRef?.shoulderRest;
     const authored = authoredShoulderRestFor(companion, combatDeps);
     return runtime || authored ? { ...(runtime || {}), ...(authored || {}) } : null;
   }
 
   function splineAllowedFor(companion, combatDeps) {
+    if (companion?.def?.isFlyingSpecies) return false;
     const kind = genotypeKindFor(companion, combatDeps);
     return !!window.HobunjiShoulderSplineProfiles?.allows?.(kind);
   }

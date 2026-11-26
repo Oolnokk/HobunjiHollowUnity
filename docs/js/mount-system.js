@@ -288,12 +288,13 @@
 
   function currentPlayerRunningSpeedPxS() {
     const computed = Number(window.CompanionMovementSpeed?.playerRunningSpeed?.(deps?.player)); // Uses the same live terrain/buff/footing target-speed formula as on-foot locomotion, even while riding.
-    return Number.isFinite(computed) && computed >= 0 ? computed : Math.max(0, Number(deps?.MOVE_SPEED) || 0); // Isolated preview fixtures can still ride before the companion service initializes.
+    return Number.isFinite(computed) && computed >= 0 ? computed : Math.max(0, Number(deps?.MOVE_SPEED) || 0) * (window.ResourceSystem?.movementMultiplier?.(deps?.player, 'walk') ?? 1); // Isolated preview fixtures can still ride before the companion service initializes.
   }
 
   function mountedTopSpeedPxS() {
     const training = Number(mountedTrainingModifiers().baseSpeed); // Fleet Stride applies once outside the animal's shared species definition.
-    return currentPlayerRunningSpeedPxS() * MOUNT_PLAYER_RUN_RATIO * (Number.isFinite(training) && training > 0 ? training : 1);
+    const carrierMobility = window.ResourceSystem?.movementMultiplier?.(mountRideEntity, 'walk') ?? 1; // Rider mobility already lives in playerRunningSpeed; the animal has its own independent resources.
+    return currentPlayerRunningSpeedPxS() * MOUNT_PLAYER_RUN_RATIO * carrierMobility * (Number.isFinite(training) && training > 0 ? training : 1);
   }
 
   function mountedMeleeStaminaMultiplier() {
@@ -767,6 +768,23 @@
     updateMountedCreatureMesh(m, dt, m.facing);
   }
 
+  // A broken-Footing rider or mount cannot remain attached to a moving
+  // carrier. Release in place instead of lerping a ragdoll through a wall.
+  function releaseProneMountedPair(m) {
+    if (!m || !['mounted', 'mountingUp', 'climbLeap'].includes(mountRideState) || !(m.prone || deps.player.prone)) return false;
+    m._climbLeap?.lock?.release?.();
+    m._mountHop = null; m._banditLungeHopCurrent = 0;
+    window.GroundObstacleAvoidance?.reset('mounted');
+    window.WorldActionInputClaims?.clearClaims?.('mount-riding');
+    mountActionsClaimed = false;
+    window.Combat?.input?.abortAllPresses?.();
+    mountCurrentSpeedPxS = 0;
+    mountRideState = 'none'; mountRideEntity = null;
+    deps.despawnCreature(m); deps.companionObjects.delete(m);
+    refreshMountWheatHud();
+    return true;
+  }
+
   function updateMountRide(dt) {
     ensureMountWheatHud();
     syncMountedActionClaims();
@@ -779,10 +797,12 @@
     if (mountRideState === 'none') return;
     const m = mountRideEntity;
     if (!m || m.health <= 0) {
-      if (m) { m._climbLeap?.lock?.release?.(); deps.despawnCreature(m); deps.companionObjects.delete(m); }
+      if (m) { m._climbLeap?.lock?.release?.(); if (!m._deathTransitionStarted) deps.despawnCreature(m); deps.companionObjects.delete(m); } // The resource/death owner retains its corpse and presentation.
       mountRideState = 'none'; mountRideEntity = null;
       return;
     }
+    if (releaseProneMountedPair(m)) return;
+    if (mountRideState === 'rushingIn' || mountRideState === 'rushingOut') window.ResourceSystem?.beginMovementFrame?.(m); // Summoned ground travel has the same once-per-frame wind guard as other creatures.
     // While the summoned mount is rushing in (or running out after dismount),
     // the player is still on foot. Only boarding/riding owns and cancels an active roll.
     if (mountRideState !== 'rushingIn' && mountRideState !== 'rushingOut') {
@@ -1192,11 +1212,15 @@
       return;
     }
     if (m.areaId !== currentArea) relocateMountForAreaChange(m);
+    if (releaseProneMountedPair(m)) return;
 
+    const rs = window.ResourceSystem; // The carrier collision owner consumes a single composed rider+mount vector.
     const keyboardVector = deps.getKeyboardVector();
     const usingKeyboard = keyboardVector.active;
     let ix = usingKeyboard ? keyboardVector.x : deps.input.x;
     let iy = usingKeyboard ? keyboardVector.y : deps.input.y;
+    const reverse = window.RangedWeapons?.movementDirectionMultiplier?.(deps.player) ?? 1;
+    ix *= reverse; iy *= reverse;
     const inputLen = Math.hypot(ix, iy);
     let inputStrength = 0;
     if (inputLen > 0.001) {
@@ -1210,6 +1234,11 @@
       const rIx = -ix * s - iy * c;
       const rIy =  ix * c - iy * s;
       ix = rIx; iy = rIy;
+    }
+    if (inputStrength > .001) {
+      const riderIntent = rs?.movementIntent?.(deps.player, ix, iy, deps.isShoulderSurfMode()) || { x: ix, y: iy }; // Shoulder input has inherited rider yaw already.
+      const carrierIntent = rs?.movementIntent?.(m, riderIntent.x, riderIntent.y) || riderIntent;
+      ix = carrierIntent.x; iy = carrierIntent.y;
     }
     deps.player.inputX = ix; deps.player.inputY = iy; deps.player.inputStrength = inputStrength;
 
@@ -1260,10 +1289,15 @@
     }
 
     const crossingRocks = !!m._mountHop?.overRock; // Capture before the hop is cleared at landing; don't move twice on that frame.
+    const airborneTravel = !!m._mountHop; // Capture flight before the landing tick clears it; the native hop owns height.
     updateMountHop(m, dt);
-    if (!crossingRocks && mountCurrentSpeedPxS > 0.01) {
-      const desiredX = m.x + Math.cos(mountAngle) * mountCurrentSpeedPxS * dt;
-      const desiredY = m.y + Math.sin(mountAngle) * mountCurrentSpeedPxS * dt;
+    const windy = !!rs?.hasWindblown?.(deps.player) || !!rs?.hasWindblown?.(m);
+    let motion = null; // Retained until rider and mount have both been synchronized to the accepted position.
+    if (!crossingRocks && (mountCurrentSpeedPxS > 0.01 || windy)) {
+      const dx = Math.cos(mountAngle) * mountCurrentSpeedPxS * dt, dy = Math.sin(mountAngle) * mountCurrentSpeedPxS * dt;
+      motion = windy ? rs.composeMountedMovement?.(deps.player, m, dx, dy, { reference: Math.max(topSpeed, mountCurrentSpeedPxS) * dt, dt, airborne: airborneTravel, voluntary: inputStrength > .01 && !braking }) : null;
+      const desiredX = m.x + (motion?.x ?? dx);
+      const desiredY = m.y + (motion?.y ?? dy);
       const minX = deps.PLAYER_RADIUS, maxX = deps.getActiveCols() * deps.TILE - deps.PLAYER_RADIUS;
       const minY = deps.PLAYER_RADIUS, maxY = deps.getActiveRows() * deps.TILE - deps.PLAYER_RADIUS;
       const nextX = deps.clamp(desiredX, minX, maxX), nextY = deps.clamp(desiredY, minY, maxY);
@@ -1285,8 +1319,10 @@
     m.facing = mountAngle;
     deps.player.x = m.x; deps.player.y = m.y;
     deps.player.vx = 0; deps.player.vy = 0;
+    if (motion) rs.commitMountedMovement?.(deps.player, m, motion, Math.min(1, movedPx / Math.max(1e-8, Math.hypot(motion.x, motion.y))));
+    if (releaseProneMountedPair(m)) return;
     const airborne = !!m._mountHop || (m._banditLungeHopCurrent || 0) > 0; // Ground gait/footstep contacts must pause while the mount is visibly airborne.
-    updateMountLocomotion(m, dt, !airborne && mountCurrentSpeedPxS > 5 && movedPx > 0, airborne ? 0 : movedPx);
+    updateMountLocomotion(m, dt, !airborne && (windy ? movedPx / Math.max(.001, dt) : mountCurrentSpeedPxS) > 5 && movedPx > 0, airborne ? 0 : movedPx);
     updateWheatAndBreathing(m, dt, movedPx);
 
     // Rider facing remains independent of mount heading while look input is active.
@@ -1322,7 +1358,7 @@
     get renderSync() { return { ...mountRenderSync }; },
     get footstepDebug() { return { ...mountFootstepDebug }; },
     mountedTopSpeedPxS,
-    get ridingDebug() { return { ...ridingDebug, playerRunSpeedPxS: currentPlayerRunningSpeedPxS(), topSpeedPxS: mountedTopSpeedPxS(), wheatRemaining, boostSeconds: mountBoostS, combatBoostSeconds: mountedCombatBoostS, combatBoostMultiplier: mountedCombatBoostMultiplier, windupOwner: mountedWindupOwner, windupSpentFraction: mountedWindupSpentFraction, windupMultiplier: mountedWindupMultiplier, meleeDamageMultiplier: mountedMeleeDamageMultiplier(), rechargeSeconds: wheatRecoveryS, cruise: mountRideState === 'mounted', jumping: !!mountRideEntity?._mountHop, speedPxS: mountCurrentSpeedPxS, coasting: mountRideState === 'mounted' && !!ridingDebug.coasting, orbitActive: !!ridingDebug.orbitActive, claimed: mountActionsClaimed }; },
+    get ridingDebug() { return { ...ridingDebug, movement: window.ResourceSystem?.movementDebug?.(deps?.player) || null, carrierMovement: mountRideEntity ? window.ResourceSystem?.movementDebug?.(mountRideEntity) || null : null, playerRunSpeedPxS: currentPlayerRunningSpeedPxS(), topSpeedPxS: mountedTopSpeedPxS(), wheatRemaining, boostSeconds: mountBoostS, combatBoostSeconds: mountedCombatBoostS, combatBoostMultiplier: mountedCombatBoostMultiplier, windupOwner: mountedWindupOwner, windupSpentFraction: mountedWindupSpentFraction, windupMultiplier: mountedWindupMultiplier, meleeDamageMultiplier: mountedMeleeDamageMultiplier(), rechargeSeconds: wheatRecoveryS, cruise: mountRideState === 'mounted', jumping: !!mountRideEntity?._mountHop, speedPxS: mountCurrentSpeedPxS, coasting: mountRideState === 'mounted' && !!ridingDebug.coasting, orbitActive: !!ridingDebug.orbitActive, claimed: mountActionsClaimed }; },
     accelerateMount, jumpMount,
     beginMountedCombatBurst, setMountedCombatWindupBoost, clearMountedCombatWindupBoost, mountedMeleeDamageMultiplier, mountedMeleeStaminaMultiplier,
   };

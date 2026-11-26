@@ -762,7 +762,8 @@
             deps.damageCreature(
               c, damage, deps.player.x, deps.player.y, knockbackPxS,
               {
-                abilityId: 'counterShield',
+                attacker: deps.player, // Explicit source for Attack Power and Tempered Footing.
+              abilityId: 'counterShield',
                 tag: deps.currentWeaponDamageType(),
                 category: 'defensiveHold',
                 footingDamageMultiplier: attackContext.modifiers?.footingDamage || 1,

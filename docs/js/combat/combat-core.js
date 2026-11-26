@@ -1161,7 +1161,7 @@
     (Number(entity?.maxHealth) || 0) - RS.getAffliction(entity, "bleedingHealth"));
 
   RS.applyDamage = function drunkenAwareApplyDamage(entity, amount, opts = {}) {
-    if (!(amount > 0)) return 0;
+    if (!(amount > 0) || window.RomanceFamily?.isBasketBaby?.(entity?.rec?.id || entity?.id)) return 0;
     entity.lastAttackReceivedAt = performance.now();
     let finalDamage = Number(amount) || 0;
     if (opts.heavy) {
@@ -1179,12 +1179,12 @@
     }
 
     const remaining = Math.max(0, finalDamage - convertible);
-    const enhanced = RS.resolveEnhancedResourceTransaction?.(entity, "health", remaining, { kind: "damage", reason: opts.reason || "damage" })
-      || { ordinaryRemaining: remaining }; // Drunken Health converts first, then Resolute/Mirrored Health absorb what would otherwise reach real Health.
+    const transaction = RS.resolvePlanarHealthTransaction(entity, remaining, opts); // Drunken conversion first, then the shared planar and enhanced Health transaction.
     const before = Number(entity.health) || 0;
-    if (enhanced.ordinaryRemaining > 0) entity.health = round1(clamp(before - enhanced.ordinaryRemaining, 0, original.getEffectiveMax(entity, "health")));
-    if (entity === window.Combat?.deps?.player && opts.attacker?.rootledoot && entity.health <= 0) window.Rootledoots?.noteDown?.(opts.attacker, Math.max(0, enhanced.ordinaryRemaining - before)); // Actual excess after damage conversion/absorption, before Health clamp.
+    if (transaction.ordinaryRemaining > 0) entity.health = round1(clamp(before - transaction.ordinaryRemaining, 0, original.getEffectiveMax(entity, "health")));
+    if (entity === window.Combat?.deps?.player && opts.attacker?.rootledoot && entity.health <= 0) window.Rootledoots?.noteDown?.(opts.attacker, Math.max(0, transaction.ordinaryRemaining - before)); // Actual excess after damage conversion/absorption, before Health clamp.
     const lost = round1(before - (Number(entity.health) || 0));
+    RS.settleSoulweight(entity, lost, transaction);
 
     RS.applyAttackAfflictions?.(entity, opts); // The live alcohol adapter uses the same attack-power, alias and attacker-specific perk calculation as ordinary damage.
     if (opts.fixedAfflictionBuildup) {

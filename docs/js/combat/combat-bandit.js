@@ -1483,6 +1483,7 @@
     c._banditLunging = true;
     c._banditLungeT = durationS;
     c._banditLungeDur = durationS;
+    c._windBanditLungeIntegrated = false; // Preserve incremental wind displacement until the committed lunge finishes.
     c._banditLungeStartX = c.x;
     c._banditLungeStartY = c.y;
     c._banditLungeDirX = Math.cos(c.facing || 0);
@@ -1536,15 +1537,22 @@
       c._banditLungeDistancePx = 0;
     }
     // Facing and lunge direction stay fixed after windup begins, leaving a real backstab window.
-    c._banditLungeT = Math.max(0, c._banditLungeT - dt);
+    const priorProgress = 1 - Math.pow(c._banditLungeT / c._banditLungeDur, 3);
+    const travelDt = Math.min(Math.max(0, dt), Math.max(0, c._banditLungeT)); // Only charge the committed remainder, not excess frame time.
+    c._banditLungeT = Math.max(0, c._banditLungeT - travelDt);
     const t = 1 - c._banditLungeT / c._banditLungeDur;
     const eased = 1 - Math.pow(1 - t, 3);
-    const desiredX = c._banditLungeStartX + c._banditLungeDirX * c._banditLungeDistancePx * eased;
-    const desiredY = c._banditLungeStartY + c._banditLungeDirY * c._banditLungeDistancePx * eased;
+    const lungeStep = c._banditLungeDistancePx * Math.max(0, eased - priorProgress);
+    const motion = window.ResourceSystem?.composeMovement?.(c, c._banditLungeDirX * lungeStep, c._banditLungeDirY * lungeStep, { mode: 'lunge', scalarApplied: true, rotationApplied: true, reference: lungeStep, dt: travelDt }); // Cone-halted attacks no longer regain horizontal motion from a fallback wind speed.
+    if (motion?.wind) c._windBanditLungeIntegrated = true;
+    const desiredX = c._windBanditLungeIntegrated ? c.x + (motion?.x ?? c._banditLungeDirX * lungeStep) : c._banditLungeStartX + c._banditLungeDirX * c._banditLungeDistancePx * eased;
+    const desiredY = c._windBanditLungeIntegrated ? c.y + (motion?.y ?? c._banditLungeDirY * lungeStep) : c._banditLungeStartY + c._banditLungeDirY * c._banditLungeDistancePx * eased;
     c._banditLungeHopCurrent = (c._banditLungeHopUnits || 0) * Math.sin(eased * Math.PI);
     const swept = deps.sweptMove(c.x, c.y, desiredX, desiredY, (x, y) => deps.canOccupyAt(x, y, deps.TILE * 0.32));
     const stepPx = Math.hypot(swept.x - c.x, swept.y - c.y);
     c.x = swept.x; c.y = swept.y;
+    if (motion?.wind) window.ResourceSystem?.commitMovement?.(c, motion, Math.min(1, stepPx / Math.max(.00001, Math.hypot(motion.x, motion.y))), window.Combat?.deps?.movementFootingDepleted);
+    if (c.prone) return true;
     if (swept.blockedAt && c._banditLungeAirborne && !c._banditLungeImpactResolved) {
       const state = {
         airborne: true, lungeMaxDistancePx: c._banditLungeDistancePx,
@@ -1590,6 +1598,12 @@
   // js/combat/npc-duel-staging.js). Same pose, lunge, trail and audio, but no
   // 3D aim solve, no per-frame lunge cone probe, a 2D strike test and no
   // afflictions -- and the defender may play a cosmetic dodge.
+  function payBanditAttack(c, def, tempoActionKind) {
+    const tempo = window.ResourceSystem?.attackTempoMultiplier?.(c, tempoActionKind) ?? 1; // Snapshot before expenditure; keep Fey's NPC sequence identity.
+    window.ResourceSystem?.spendStamina(c, def.attackStaminaCost, 'bandit attack', { actionKind: 'combatNpcMelee', abilityId: 'npcMelee', tempoActionKind });
+    return tempo;
+  }
+
   function fireBanditComboStep(c, def, loadout, targetPlayer, opts = null) {
     const staged = opts?.staged === true && !!window.NpcDuelStaging;
     const comboData = window.Combat?.comboData;
@@ -1601,7 +1615,8 @@
     // authority for bandit mirrors of either combo family too.
     const comboStep = c._banditComboIndex % steps.length;
     const step = steps[comboStep];
-    const shapeStats = def.weaponShapeStats || window.WeaponShapeStats?.DEFAULT || { power: 1, speed: 1, range: 1, efficiency: 1 }; // Rolled shape drives humanoid combo animations.
+    const baseShape = def.weaponShapeStats || window.WeaponShapeStats?.DEFAULT || { power: 1, speed: 1, range: 1, efficiency: 1 }; // Preserve authored reach/power; only the speed snapshot changes.
+    const shapeStats = { ...baseShape, speed: baseShape.speed * payBanditAttack(c, def, 'combatCombo') };
     const configuredPitch = comboData.sfxPitchByStep?.[comboStep];
     const sfxPitch = Number.isFinite(configuredPitch) && configuredPitch > 0 ? configuredPitch : undefined;
     const isFinalStep = comboStep === steps.length - 1;
@@ -1704,6 +1719,7 @@
     const qa = window.Combat?.quickAttackData;
     const techDef = qa?.TECHNIQUES?.[loadout.tap2];
     if (!techDef) return false;
+    payBanditAttack(c, def, 'combatQuickAttack'); // Quick attacks generate either tempo reserve but do not spend them.
     const cond = banditQuickAttackConditions(c, targetPlayer);
     const tech = window.Combat.buildQuickAttack(techDef, cond);
     const shapeStats = def.weaponShapeStats || window.WeaponShapeStats?.DEFAULT || { power: 1, speed: 1, range: 1, efficiency: 1 }; // Quick-attack timing follows the equipped bandit shape.
@@ -1761,7 +1777,9 @@
   function fireBanditChargedBreaker(c, def, targetPlayer, prepared = null) {
     const cb = window.Combat?.chargedBreakerData;
     if (!cb) return false;
-    const shapeStats = def.weaponShapeStats || window.WeaponShapeStats?.DEFAULT || { power: 1, speed: 1, range: 1, efficiency: 1 }; // NPCs scale charge windup and strike as one animation.
+    const baseShape = def.weaponShapeStats || window.WeaponShapeStats?.DEFAULT || { power: 1, speed: 1, range: 1, efficiency: 1 };
+    const paidTempo = payBanditAttack(c, def, 'offensiveHeldCharge'); // Actual release owns the payment; preparation only snapshots.
+    const shapeStats = { ...baseShape, speed: baseShape.speed * (prepared?.furiousTempo ?? paidTempo) };
     const chargeT = Number.isFinite(Number(prepared?.chargeT)) ? deps.clamp(Number(prepared.chargeT), 0.5, 1) : 0.5 + deps.rnd() * 0.5; // A precharged attack retains the exact strength displayed during preparation.
     const base = banditAttackBaseline(def);
     const damage = Math.max(1, Math.round(base.damage * (cb.DAMAGE_MUL_MIN + (cb.DAMAGE_MUL_MAX - cb.DAMAGE_MUL_MIN) * chargeT)));
@@ -2093,12 +2111,13 @@
     const cb = window.Combat?.chargedBreakerData;
     if (!cb || c._banditPreparedCharge || c._banditAction) return false;
     const chargeT = 0.5 + deps.rnd() * 0.5; // Once per charge, matching the existing Charged Breaker roll (not a random draw every frame).
-    const speed = c.def?.weaponShapeStats?.speed || 1;
+    const furiousTempo = window.ResourceSystem?.attackTempoMultiplier?.(c, 'offensiveHeldCharge') ?? 1; // Preserve this snapshot through the actual release.
+    const speed = (c.def?.weaponShapeStats?.speed || 1) * furiousTempo;
     const rawWindup = cb.holdSecondsForPoseCharge?.(chargeT) ?? (cb.WINDUP_S * chargeT);
     const duration = Math.max(0.25, Number(rawWindup) / speed || 0.5); // The visible preparatory windup runs even while a second bandit attacks.
     const preview = { windupS: duration, strikeS: 0.01, t: 0, phase: 'windup' }; // Draw-only stage: Combat.beginStagedAction is not called until attack permission becomes free.
     const releaseRange = banditEngagementReachPx(c, c.def, c.def.banditAbilityLoadout, target); // The same existing safe attack-commit reach used by the real Charged Breaker release.
-    const charge = { target, t: 0, duration, chargeT, action: preview, reachPx: releaseRange }; // One immutable reach snapshot plus one advancing preview stage; no range recalculation in other fighters' hot loop.
+    const charge = { target, t: 0, duration, chargeT, action: preview, reachPx: releaseRange, furiousTempo }; // One immutable reach snapshot plus one advancing preview stage; no range recalculation in other fighters' hot loop.
     banditTurnState(target).charge = { actor: c, target };
     c._banditPreparedCharge = charge;
     c._rangedMode = false; // The held melee weapon, not a stowed crossbow, represents the charge.
@@ -2574,7 +2593,6 @@
         comboReachPx: actor => banditComboReachPx(actor, actor.def, actor.def.banditAbilityLoadout),
         fireStagedSwing: (actor, foe, stepDt) => {
           // Same stamina cost and same-frame lunge catch-up as the full path's swing.
-          window.ResourceSystem?.spendStamina(actor, actor.def.attackStaminaCost, 'bandit attack', { actionKind: 'combatNpcMelee', abilityId: 'npcMelee' }); // NPC staged duels share the same Hyped transaction as visible melee.
           const fired = fireBanditComboStep(actor, actor.def, actor.def.banditAbilityLoadout, foe, { staged: true });
           if (!fired) window.FeyHypedAttacks?.clearCredit?.(actor, 'npcMelee'); // No stale Hyped charge after a rejected staged duel.
           if (fired) updateBanditLunge(actor, stepDt, foe);
@@ -2665,7 +2683,6 @@
       if (heldSlot && prep.t >= prep.duration && distToPlayer <= reach
         && banditPreparedChargeHasPriority(c, targetPlayer) && claimBanditAttackTurn(c, targetPlayer)) {
         releaseBanditCharge(c, targetPlayer, true); // Keep the pose when converting preparation to a real Charged Breaker.
-        window.ResourceSystem?.spendStamina(c, def.attackStaminaCost, 'bandit charged release', { actionKind: 'combatNpcMelee', abilityId: 'npcMelee' });
         const fired = fireBanditChargedBreaker(c, def, targetPlayer, prep);
         if (!fired) {
           releaseBanditAttackTurn(c, targetPlayer);
@@ -2852,7 +2869,6 @@
     }
     if (alignment?.aligned) c.facing = alignment.desiredFacing;
     if (!claimBanditAttackTurn(c, targetPlayer)) return { aimAngle: towardAngle, moving: false }; // Another actor (or ready charge) got the turn after this frame's eligibility check.
-    window.ResourceSystem?.spendStamina(c, def.attackStaminaCost, 'bandit attack', { actionKind: 'combatNpcMelee', abilityId: 'npcMelee' }); // Real NPC melee expenditure can fund exactly one two-strike Hyped sequence.
     const openingFresh = c._banditComboIndex === 0;
     let fired = false;
     let attackChoice = 'combo'; // Mobile AI diagnostics distinguish the actual selected ability, not simply whether a swing fired.

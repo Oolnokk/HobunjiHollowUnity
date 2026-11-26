@@ -201,8 +201,9 @@
       state.remainingRad -= delta;
       state.remainingS = Math.max(0, state.remainingS - deltaS);
       if (entity === player()) {
-        perceivedYaw.set(entity, finite(perceivedYaw.get(entity)) + delta); // Camera and movement add the same drift through their independent gameplay basis.
+        perceivedYaw.set(entity, finite(perceivedYaw.get(entity)) + delta); // Camera and compositor consume the same perceived steering yaw.
       } else {
+        perceivedYaw.set(entity, finite(perceivedYaw.get(entity)) + delta); // AI navigation intent is world-space; the shared compositor applies this yaw once.
         const angle = finite(entity.angle, finite(entity.facing, 0)) + delta;
         entity.angle = angle;
         if ('facing' in entity) entity.facing = angle;
@@ -211,7 +212,7 @@
     }
     // Perceptual distortion fades smoothly after the hallucination clears;
     // it never changes or permanently overwrites the player's camera setting.
-    if (entity === player() && !activeTurns.has(entity) && !(finite(rs()?.getAffliction?.(entity, 'dementedStamina')) > 0)) {
+    if (!activeTurns.has(entity) && !(finite(rs()?.getAffliction?.(entity, 'dementedStamina')) > 0)) {
       const currentYaw = finite(perceivedYaw.get(entity));
       if (Math.abs(currentYaw) > 0.00001) {
         const nextYaw = currentYaw * Math.exp(-deltaS * 5);
@@ -223,11 +224,11 @@
   }
 
   function movementRotationRad(entity) {
-    return entity === player() ? finite(perceivedYaw.get(entity)) : 0; // Used after cardinal bias, before publishing authoritative movement intent.
+    return finite(perceivedYaw.get(entity)); // Shared compositor rotates player and AI world-space steering; committed attack rays retain their aim.
   }
 
   function cameraYawDeg(entity) {
-    return -movementRotationRad(entity) / DEG_TO_RAD; // The camera's azimuth is opposite to its world-space forward bearing.
+    return entity === player() ? -movementRotationRad(entity) / DEG_TO_RAD : 0; // The camera's azimuth is opposite to its world-space forward bearing.
   }
 
   function playerSymptoms() {
@@ -258,7 +259,7 @@
     movementRotationRad, cameraYawDeg,
     isPanickedRolling: entity => !!entity && panicRolls.has(entity), // Allows game.js to skip obstacle classification during entirely ordinary dodges.
     hasRuntime: entity => !!entity && (activeTurns.has(entity) || panicRolls.has(entity)
-      || (entity === player() && Math.abs(finite(perceivedYaw.get(entity))) > 0.00001)), // Used by ResourceSystem.tick to skip unmodified actors.
+      || (Math.abs(finite(perceivedYaw.get(entity))) > 0.00001)), // Used by ResourceSystem.tick to skip unmodified actors.
     debugSnapshot: () => ({
       registered, lastEffect, hype: window.FeyHypedAttacks?.debugSnapshot?.() || null,
       playerTurnRadiansRemaining: activeTurns.get(player())?.remainingRad || 0,

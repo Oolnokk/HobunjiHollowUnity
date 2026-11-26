@@ -6424,6 +6424,7 @@
 
       function tickCreatureFootsteps(c, distPx) {
         if (c._familyBabyFollower || c.areaId !== currentArea) return; // Infants crawl rather than play animal footfalls.
+        if (c._companionBirdMotion?.mode === 'flight') return; // A flapping companion has wingbeat audio, not ground footsteps.
         if (!Number.isFinite(c.x) || !Number.isFinite(c.y)) return; // belt-and-suspenders: see moveCreatureToward/creatureCanEnterTile's own NaN guards
         if (!window.AudioSystem?.footstepAdvance(c, distPx)) return;
         const spatial = window.AudioSystem?.combatAudioSpatial(c, { earshotTiles: 9 }); // Footstep falloff includes real cliff/branch height, not just flat map distance.
@@ -6461,6 +6462,10 @@
         if (wx < 0 || wy < 0 || wx >= aC * TILE || wy >= aR * TILE) return false;
         if (window.DevRandomRuin?.shaftCreatureCanEnter?.(actor, wx, wy, walkingPath) === false) return false;
         const col = Math.floor(wx / TILE), row = Math.floor(wy / TILE);
+        if (actor?.stableRole === 'companion' && def?.isFlyingSpecies && (currentArea === 'interior' || _isBuildingArea(currentArea)) && currentArea !== 'map_i_dev_random_ruin') {
+          const birdRadius = Math.max(.08, Math.min(.45, (actor.visualModelWidth || def.modelWidth || .5) * .25)) * TILE; // Hop routes must not pass through walls or solid furniture.
+          if (!canOccupyAt(wx, wy, birdRadius)) return false;
+        }
         if (actor?._familyBabyFollower) {
           const tile = window.GridTileAccessors.getActiveGrid()?.[row]?.[col]; // Crawlers cannot swim or pass solid walls, even where wildlife may.
           if (!tile || tile.incline || isSolid(tile.type) || WATERWAY_TYPES.has(tile.type) || (Number(tile.water) || 0) >= 0.003) return false;
@@ -6531,6 +6536,28 @@
       // tuning constants) now lives in js/enemy-collision-reposition.js.
       window.EnemyCollisionReposition.init({ creatureCanEnterTile });
 
+      // The compositor proposes motion; these native terrain owners alone commit positions.
+      function movementFootingDepleted(entity, dx, dy) {
+        const facing = entity === player ? entity.angle : (entity.facing || 0);
+        const direction = hitDirectionRelativeToFacing(facing, entity.x, entity.y, entity.x - dx * TILE, entity.y - dy * TILE);
+        enterProneIfFootingDepleted(entity, entity === player, direction);
+      }
+
+      function commitComposedMovement(entity, motion, requestedPx, actualPx) {
+        if (!motion?.wind) return;
+        window.ResourceSystem?.commitMovement?.(entity, motion, requestedPx > 0 ? Math.min(1, actualPx / requestedPx) : 0, movementFootingDepleted);
+      }
+
+      function driftIdleCreature(c, dt, startX, startY) {
+        const rs = window.ResourceSystem;
+        if (!rs?.hasWindblown?.(c) || rs.windMovementHandled?.(c) || c.x !== startX || c.y !== startY ||
+            c.prone || c.knockbackT > 0 || c._knockbackLedgeFall || c._cliffClimb?.phase || c.onBranch ||
+            c._denHidden || c._animalSleeping || c.tzatzulCapturedBy || c.health <= 0) return false;
+        // Idle ground AI has no native walk request, so resolve its zero-intent wind
+        // through exactly the same tile-entry owner as a normal walk.
+        return moveCreatureToward(c, c.x, c.y, Number(c.def?.moveSpeed) || MOVE_SPEED, dt);
+      }
+
       function moveCreatureToward(c, tx, ty, speed, dt, movementOptions = null) {
         // A NaN/undefined target (e.g. a momentarily-gone companion master,
         // a stale reference) must never reach the position math below — dist
@@ -6557,9 +6584,10 @@
         if (!c._familyBabyFollower && window.CreatureCliffClimb?.navigate?.(c, tx, ty, baseSpeed, dt)) return true; // Crawling babies use ground routes and the same unseen recovery rather than cliff leaps.
         const dx = tx - c.x, dy = ty - c.y;
         const dist = Math.hypot(dx, dy);
-        if (dist < 1) { c.vx = 0; c.vy = 0; return false; }
+        const windActive = !!window.ResourceSystem?.hasWindblown?.(c) && !window.ResourceSystem?.windMovementHandled?.(c); // Idle targets still receive additive wind.
+        if (dist < 1 && !windActive) { c.vx = 0; c.vy = 0; return false; }
         const directionMul = window.RangedWeapons?.movementDirectionMultiplier?.(c) || 1; // Disorient inverts normal movement AI at this shared choke point.
-        const nx = dx / dist * directionMul, ny = dy / dist * directionMul;
+        const nx = dist >= 1 ? dx / dist * directionMul : 0, ny = dist >= 1 ? dy / dist * directionMul : 0;
         const effectiveSpeed = isCreatureSwimming(c) ? baseSpeed * SWIM_SPEED_MUL : isCreatureClimbing(c) ? baseSpeed * CLIMB_SPEED_MUL : baseSpeed;
         const step = Math.min(dist, effectiveSpeed * dt);
         // Axis-separated so a creature turned back by a cliff face or river
@@ -6567,7 +6595,8 @@
         // collision in updateMovement). A genuinely pinned chasing enemy then
         // gets one short lateral/backoff escape attempt below.
         const prevX = c.x, prevY = c.y;
-        const desiredX = c.x + nx * step, desiredY = c.y + ny * step;
+        const motion = (windActive || window.FeyIllusions?.movementRotationRad?.(c)) ? window.ResourceSystem?.composeMovement?.(c, nx * step, ny * step, { mode: 'walk', scalarApplied: true, reference: effectiveSpeed * dt, dt, voluntary: dist >= 1, wind: windActive }) : null; // AI steering and wind share the existing ground collision request.
+        const desiredX = c.x + (motion?.x ?? nx * step), desiredY = c.y + (motion?.y ?? ny * step);
         const canMoveX = creatureCanEnterTile(c.def, desiredX, c.y, prevX, prevY, c); // Used both to apply the normal X slide and to identify the blocking axis for escape diagnostics.
         if (canMoveX) c.x = desiredX;
         const canMoveY = creatureCanEnterTile(c.def, c.x, desiredY, prevX, prevY, c); // Used after X resolution so the ordinary axis-separated slide keeps its existing behavior.
@@ -6575,10 +6604,10 @@
         const blockedX = Math.abs(desiredX - prevX) > 0.001 && !canMoveX; // Used below to detect a real collision rather than a zero-length axis request.
         const blockedY = Math.abs(desiredY - prevY) > 0.001 && !canMoveY; // Used with blockedX to distinguish collision stalls from ordinary target arrival.
         let moved = Math.hypot(c.x - prevX, c.y - prevY); // Used as the movement already achieved before deciding whether a collision escape is necessary.
-        let motionNX = nx, motionNY = ny; // Used for the reported velocity; replaced by the escape vector only when repositioning actually succeeds.
-        if ((blockedX || blockedY) && moved < step * window.EnemyCollisionReposition.MIN_MOVE_FRAC) {
+        let motionNX = motion && step > 0 ? motion.x / step : nx, motionNY = motion && step > 0 ? motion.y / step : ny; // Used for the reported velocity; replaced by the escape vector only when repositioning actually succeeds.
+        if (!motion?.wind && (blockedX || blockedY) && moved < step * window.EnemyCollisionReposition.MIN_MOVE_FRAC) {
           const remainingStep = Math.max(0, step - moved); // Used to keep axis-slide plus escape movement within the original per-frame travel budget.
-          const reposition = window.EnemyCollisionReposition.tryReposition(c, nx, ny, remainingStep, blockedX, blockedY); // Used only for active combat chases; companions/passive travel keep their existing movement behavior.
+          const reposition = window.EnemyCollisionReposition.tryReposition(c, motionNX, motionNY, remainingStep, blockedX, blockedY); // Used only for active combat chases; companions/passive travel keep their existing movement behavior.
           if (reposition) {
             moved = Math.hypot(c.x - prevX, c.y - prevY);
             motionNX = reposition.nx;
@@ -6587,7 +6616,8 @@
         } else if (c._collisionRepositionDebug?.active) {
           c._collisionRepositionDebug.active = false;
         }
-        c.vx = motionNX * effectiveSpeed; c.vy = motionNY * effectiveSpeed;
+        c.vx = motion?.wind && dt > 0 ? (c.x - prevX) / dt : motionNX * effectiveSpeed; c.vy = motion?.wind && dt > 0 ? (c.y - prevY) / dt : motionNY * effectiveSpeed;
+        if (motion?.wind) commitComposedMovement(c, motion, Math.hypot(motion.x, motion.y), moved);
         if (moved > 0) {
           window.DevRandomRuin?.syncShaftCreatureFloor?.(c);
           tickCreatureFootsteps(c, moved);
@@ -6704,6 +6734,72 @@
       function _companionPersonalSpacePx() {
         return 1.5 * (playerAvatarModelWidth || 0.9) * TILE;
       }
+      // A low-flight step is independent of swimming penalties and existing ground
+      // detours, but must leave a safe landing surface beneath the bird. High
+      // cliffs, unsupported shaft crossings, and unmeasured caves retain ground routing.
+      function companionBirdFlightClear(c, fromX, fromY, toX, toY) {
+        const outside = currentArea === 'farm' || currentArea === 'town' || _isZoneArea(currentArea);
+        const ruin = currentArea === 'map_i_dev_random_ruin';
+        const roomData = !outside && !ruin && _isBuildingArea(currentArea) && !_isCavernBuildingArea(currentArea) ? _rawMapDataByMapId.get(currentArea) : null;
+        const farmhouse = currentArea === 'interior'; // The original farmhouse has its own scene and known ceiling.
+        if (!outside && !ruin && !roomData && !farmhouse) return false;
+        const radius = Math.max(.08, Math.min(.45, (c.visualModelWidth || c.def.modelWidth || .5) * .25)); // Conservative body footprint in world units.
+        const height = Math.max(.2, (c.halfHeight || .2) * 2);
+        const ceiling = farmhouse ? INTERIOR_WALL_HEIGHT : roomData ? (window.InteriorEnvironmentRuntime?.normalizeEnvironment?.(roomData)?.wallHeight ?? INTERIOR_WALL_HEIGHT) : Infinity;
+        const gridNow = c.areaGrid || window.GridTileAccessors.getActiveGrid();
+        const support = (x, y) => ruin ? Number(c.shaftSupportY ?? c.surfaceYOverride?.() ?? activeSurfaceYAtWorld(x / TILE, y / TILE)) : activeSurfaceYAtWorld(x / TILE, y / TILE);
+        const fromFloor = support(fromX, fromY);
+        const clear = window.DevRandomRuin?.flightClear;
+        if (ruin && (typeof clear !== 'function' || !window.DevRandomRuin?.getState?.())) return false;
+        let previous = { x: fromX / TILE, z: fromY / TILE, floor: fromFloor };
+        const steps = Math.max(1, Math.ceil(Math.hypot(toX - fromX, toY - fromY) / (TILE * .2)));
+        for (let i = 0; i <= steps; i++) {
+          const wx = fromX + (toX - fromX) * i / steps, wy = fromY + (toY - fromY) * i / steps;
+          const x = wx / TILE, z = wy / TILE, floor = support(wx, wy);
+          const tile = gridNow?.[Math.floor(z)]?.[Math.floor(x)];
+          // An interrupted bird must be able to return to the same walkable story.
+          if (!tile || tile.mapBoundary || tile.incline || isSolid(tile.type) || !Number.isFinite(fromFloor) || !Number.isFinite(floor) || Math.abs(floor - fromFloor) > .55) return false;
+          if (!creatureCanEnterTile(c.def, wx, wy, fromX, fromY, c)) return false;
+          // Probe both the grounded-to-flight ascent and full body at cruise height.
+          const feet = floor + .65;
+          if (feet + height + .15 > ceiling) return false;
+          if (!ruin) {
+            for (const lift of [.08, .35, .65]) {
+              if (!canOccupyAt(wx, wy, radius * TILE, floor + lift + radius)
+                || !canOccupyAt(wx, wy, radius * TILE, floor + lift + Math.max(radius, height))) return false;
+            }
+          } else {
+            for (const offset of [-radius, 0, radius]) {
+              if (!clear(previous.x + offset, previous.floor + .65 + radius, previous.z, x + offset, feet + radius, z)
+                || !clear(previous.x, previous.floor + .65 + height, previous.z + offset, x, feet + height, z + offset)
+                || !clear(x + offset, floor + radius, z, x + offset, feet + Math.max(radius, height), z)) return false;
+            }
+          }
+          previous = { x, z, floor };
+        }
+        return true;
+      }
+
+      function tryBirdFollowFlight(c, tx, ty, dt) {
+        if (!c.def?.isFlyingSpecies || c.stableRole !== 'companion' || c._cliffClimb || c._cliffRouteTravel || c.onBranch || c._downed || c.prone || c.knockbackT > 0 || c._knockbackLedgeFall) return false;
+        const speed = c.def.chaseSpeed * devGlobalSpeedMul
+          * (window.ResourceSystem?.timedDebuffModifier?.(c, 'moveSpeed') ?? 1)
+          * (window.RangedWeapons?.movementSpeedMultiplier?.(c) ?? 1); // Same authored pursuit pace and debuffs, but no swimming slowdown.
+        const direction = window.RangedWeapons?.movementDirectionMultiplier?.(c) || 1;
+        let motion = null; // Accepted flight commits the same wind transaction as ground travel.
+        const startX = c.x, startY = c.y;
+        const resources = window.ResourceSystem;
+        const windActive = !!resources?.hasWindblown?.(c) && !resources?.windMovementHandled?.(c);
+        const moved = window.TzatzulLiveVisuals?.tryCompanionFlightStep?.(c, tx, ty, speed, dt, direction,
+          (x, y, nx, ny) => companionBirdFlightClear(c, x, y, nx, ny),
+          (dx, dy, stepDt) => {
+            motion = resources?.composeMovement?.(c, dx, dy, { mode: 'walk', scalarApplied: true, reference: speed * stepDt, dt: stepDt, airborne: true, wind: windActive });
+            return motion;
+          }) === true;
+        if (moved && motion?.wind) commitComposedMovement(c, motion, Math.hypot(motion.x, motion.y), Math.hypot(c.x - startX, c.y - startY));
+        return moved;
+      }
+
       function _companionFollowWanderTick(c, dt, master) {
         c.wanderT -= dt;
         if (!c.wanderTarget || c.wanderT <= 0) {
@@ -6742,7 +6838,9 @@
           : c._cliffClimb ? c._cliffClimb.surfaceY
           : Number.isFinite(dynamicSurfaceY) ? dynamicSurfaceY
           : (g[row]?.[col] ? tileSurfaceYInArea(g[row][col], c.areaId) : 0);
-        const surfY = knockbackVisualSurfaceY(c, ordinarySurfY);
+        const birdLift = c.stableRole === 'companion' && !c.prone && !(c.knockbackT > 0) && !c._knockbackLedgeFall && !c.onBranch && !c.tzatzulCapturedBy
+          ? (c._companionBirdMotion?.lift || 0) : 0; // Actual rendered body height for low flight and folded-wing hops.
+        const surfY = knockbackVisualSurfaceY(c, ordinarySurfY) + birdLift;
         const grp = c.avatarRef.group;
         window.BurningAfflictionVfx?.syncEntity?.(c, grp); // Burning Health presentation follows the same live creature group used by every avatar update.
         // scaleY (driven by attacks like Pounce, default 1) squashes the
@@ -7582,6 +7680,8 @@
             }
           }
 
+          const windStartX = c.x, windStartY = c.y; // Idle fallback is eligible only if no other motion owner moved this actor.
+          window.ResourceSystem?.beginMovementFrame?.(c);
           let moving = false, aimAngle = c.facing || 0, forageResult = null; // Shared foraging return feeds ordinary movement + sprite animation.
           if (c._knockbackLedgeFall) {
             advanceKnockbackLedgeFall(c, entityDt);
@@ -8016,6 +8116,7 @@
           // interpolation target instead of being immediately smoothed back
           // to rest by that block's own unconditional _restoreCompanionHead.
           window.HobunjiGrehlrForaging?.applyForagingPose?.(c, entityDt);
+          if (driftIdleCreature(c, entityDt, windStartX, windStartY)) moving = true;
           if (c.onBranch) window.ClimbSystem?.constrainEntityToBranch?.(c);
           c.x = window.FormatUtils.clamp(c.x, 0, (c.areaCols || COLS) * TILE);
           c.y = window.FormatUtils.clamp(c.y, 0, (c.areaRows || ROWS) * TILE);
@@ -8889,6 +8990,7 @@
           if (c.health <= 0) continue;
           if (c.areaId !== currentArea) continue;
           if (c.tzatzulCapturedBy) {
+            window.TzatzulLiveVisuals?.updateCompanionLocomotion?.(c, dt, 0, false, true); // A carrier owns height and position, not follower flight.
             updateCreatureMesh(c, dt, c.facing);
             updateCreatureAnimFrame(c, dt, false);
             continue; // Captured companions share the carrier's flight path instead of following their master.
@@ -8907,7 +9009,12 @@
           // A mount is driven entirely by updateMountRide/updateMountedMovement
           // (see the V-key/D-pad-down call-in/dismiss flow) — it never runs
           // the fight/wander companion AI at all, so skip it here.
-          if (c.stableRole === 'mount') continue;
+          if (c.stableRole === 'mount') {
+            // Riding owns positions, but not the animal's independent affliction clock.
+            // Active summoned mounts were skipped by both ordinary creature loops.
+            if (window.Mounts?.rideEntity === c) tickCreatureResources(c, dt);
+            continue;
+          }
 
           // A shoulder pet doesn't fight or wander off — it stays glued to
           // its master's side, positioned/oriented so its shoulderGrip anchor
@@ -9014,6 +9121,7 @@
           }
 
           const def = c.def;
+          const birdStartX = c.x, birdStartY = c.y; // Only actual horizontal motion can trigger flight or hopping.
           c.attackCooldownT = c._furiousSpecial
             ? c._furiousSpecial.cooldownBefore // Freeze the original companion cooldown while an interrupt attack runs.
             : Math.max(0, (Number(c.attackCooldownT) || 0) - dt);
@@ -9033,6 +9141,7 @@
             const catchupFacing = Math.atan2(master.y - c.y, master.x - c.x); // Face the owner after the invisible relocation.
             c.facing = catchupFacing;
             _restoreCompanionHead(c, dt);
+            window.TzatzulLiveVisuals?.updateCompanionLocomotion?.(c, dt, 0, false, true); // An off-camera recovery is not flight.
             followDebug.mode = 'distance-recovery'; followDebug.distancePx = Math.round(Math.hypot(master.x - c.x, master.y - c.y));
             followDebug.routeActive = false;
             updateCreatureMesh(c, dt, catchupFacing);
@@ -9127,7 +9236,10 @@
             && !window.Combat?.animalAttacks?.isBusy(c)
             && !window.Combat?.telegraph?.isBusy(c)) _tickCompanionHorizonScan(c, master, dt);
 
+          const windStartX = c.x, windStartY = c.y;
+          window.ResourceSystem?.beginMovementFrame?.(c);
           let moving = false, runInPlace = false, aimAngle = c.facing || 0;
+          let directBirdFlight = false; // Reuse the accepted volume sweep rather than repeating it after movement.
           if (c._knockbackLedgeFall || c.prone || c.knockbackT > 0) {
             // An interrupted animal must not resume a stale lunge after recovering.
             // cancel() also restores any paused Furious cooldown; its attack owns the cleanup.
@@ -9276,7 +9388,8 @@
             // A climbing owner is not a carrier: chase the walkable destination via
             // the shared cliff-route network, or wait on the ground once nearby.
             if (followGoal.routeRequired || followGoal.distance > (master.climbing ? FOLLOW_NEAR_PX : FOLLOW_FAR_PX)) {
-              moving = travelCreatureToward(c, followGoal.x, followGoal.y, def.chaseSpeed, dt);
+              directBirdFlight = tryBirdFollowFlight(c, followGoal.x, followGoal.y, dt);
+              moving = directBirdFlight || travelCreatureToward(c, followGoal.x, followGoal.y, def.chaseSpeed, dt);
               if (moving) aimAngle = Math.atan2(c.vy, c.vx);
             } else {
               c.vx = 0; c.vy = 0;
@@ -9300,16 +9413,30 @@
             moving = _companionFollowWanderTick(c, dt, master);
             if (moving) aimAngle = Math.atan2(c.vy, c.vx);
           }
+          if (driftIdleCreature(c, dt, windStartX, windStartY)) moving = true;
           c.facing = aimAngle;
           c.x = window.FormatUtils.clamp(c.x, 0, (c.areaCols || COLS) * TILE);
           c.y = window.FormatUtils.clamp(c.y, 0, (c.areaRows || ROWS) * TILE);
-          if (!hardCatchup && window.CompanionFollowNavigation.tickRecovery(c, master, followGoal, dt)) {
+          const recoveredAfterMove = !hardCatchup && window.CompanionFollowNavigation.tickRecovery(c, master, followGoal, dt); // Also cancels any accumulated flight/hop elevation.
+          if (recoveredAfterMove) {
             moving = false; runInPlace = false; // The invisible snap has already updated the animal's true and rendered positions.
+          }
+          if (def.isFlyingSpecies && c.stableRole === 'companion') {
+            const interrupted = !!(recoveredAfterMove || c.prone || c.knockbackT > 0 || c._knockbackLedgeFall || c._cliffClimb || c._cliffRouteTravel || c.onBranch || c._downed || window.Combat?.animalAttacks?.isBusy(c) || window.Combat?.telegraph?.isBusy(c)); // Do not let follower flight override another physical or combat owner.
+            const movedPx = moving ? Math.hypot(c.x - birdStartX, c.y - birdStartY) : 0; // Ground navigation already applied the actual collision-safe step.
+            const flightClear = !interrupted && (directBirdFlight || ((movedPx > .08 || c._companionBirdMotion?.lift > 0) && companionBirdFlightClear(c, birdStartX, birdStartY, c.x, c.y))); // Same clearance owner as direct movement.
+            const birdMotion = window.TzatzulLiveVisuals?.updateCompanionLocomotion?.(c, dt, movedPx, flightClear, interrupted);
+            followDebug.birdLocomotion = birdMotion?.mode || 'perched'; // Existing mobile companion debug record.
+            followDebug.birdFlightClear = flightClear;
+            followDebug.birdLift = birdMotion?.lift || 0;
           }
 
           if (c._animalAttack?.id === 'rearKick' && !window.VoorgAssRearKick?.isHoldingKickPose?.(c)) _restoreCompanionHead(c, dt); // Companions release old gaze during windup, not during their frozen hoof pose.
           updateCreatureMesh(c, dt, aimAngle);
-          if (!window.Combat?.animalAttacks?.isBusy(c)) updateCreatureAnimFrame(c, dt, moving || runInPlace, runInPlace);
+          if (!window.Combat?.animalAttacks?.isBusy(c)) {
+            const birdMoving = c._companionBirdMotion ? c._companionBirdMotion.mode === 'flight' : moving || runInPlace; // Hopping and landing use the native folded-wing idle, not the flying run sprite.
+            updateCreatureAnimFrame(c, dt, birdMoving, c._companionBirdMotion ? false : runInPlace);
+          }
         }
 
         // Run last, after every avatar's position has actually been updated
@@ -10538,6 +10665,7 @@
         player.lunging = true;
         player.lungeT = durationS;
         player.lungeDur = durationS;
+        player._windLungeIntegrated = false; // Once wind perturbs a lunge, use incremental native sweeps for the rest of that lunge.
         player.lungeStartX = player.x;
         player.lungeStartY = player.y;
         player.lungeOriginX = player.x; // Immutable record of where this attack's lunge began (lungeStartX/Y are re-seated when a flight freezes); read by hanging ropes to turn lunge distance into swing force.
@@ -19498,13 +19626,17 @@
         }
 
         if (player.dodging) {
-          player.dodgeT -= dt;
+          const travelDt = Math.min(Math.max(0, dt), Math.max(0, player.dodgeT)); // Final partial roll frame must not extend travel or wind cost.
+          player.dodgeT -= travelDt;
           const minX = PLAYER_RADIUS, maxX = window.GridTileAccessors.getActiveCols() * TILE - PLAYER_RADIUS;
           const minY = PLAYER_RADIUS, maxY = window.GridTileAccessors.getActiveRows() * TILE - PLAYER_RADIUS;
           const heavyDistanceMul = window.ResourceSystem?.timedDebuffModifier?.(player, 'dodgeLungeDistance') ?? 1; // Heavy reduces dodge travel over the unchanged dodge duration/iframe window.
-          const dodgeSpeedPx = DODGE_SPEED_PX * heavyDistanceMul; // Shared per-frame speed keeps position and reported velocity identical.
-          const desiredX = window.FormatUtils.clamp(player.x + player.dodgeDirX * dodgeSpeedPx * dt, minX, maxX);
-          const desiredY = window.FormatUtils.clamp(player.y + player.dodgeDirY * dodgeSpeedPx * dt, minY, maxY);
+          const dodgeSpeedPx = DODGE_SPEED_PX * heavyDistanceMul;
+          const dodgeMotion = window.ResourceSystem?.composeMovement?.(player, player.dodgeDirX * dodgeSpeedPx * travelDt, player.dodgeDirY * dodgeSpeedPx * travelDt, { mode: 'dodge', scalarApplied: true, rotationApplied: true, reference: dodgeSpeedPx * travelDt, dt: travelDt }); // Input direction was already resolved by the compositor.
+          const dodgeDx = dodgeMotion?.x ?? player.dodgeDirX * dodgeSpeedPx * travelDt, dodgeDy = dodgeMotion?.y ?? player.dodgeDirY * dodgeSpeedPx * travelDt;
+          const dodgeStartX = player.x, dodgeStartY = player.y; // Report and charge the accepted sweep, not unrelated earlier frame movement.
+          const desiredX = window.FormatUtils.clamp(player.x + dodgeDx, minX, maxX);
+          const desiredY = window.FormatUtils.clamp(player.y + dodgeDy, minY, maxY);
           const dodgeSwept = sweptMove(player.x, player.y, desiredX, desiredY, canPlayerDodgeOccupy); // Raised-support dodges use the same physical foot height as jumps, without altering native dodge timing or panicked-impact callbacks.
           player.x = dodgeSwept.x; player.y = dodgeSwept.y; // Commit physical contact before the impact can cause a lethal/respawn transition.
           if ((dodgeSwept.blockedX || dodgeSwept.blockedY) && window.FeyIllusions?.isPanickedRolling?.(player)) {
@@ -19519,8 +19651,10 @@
               return; // The physical impact owner may already have killed/respawned the actor; do not overwrite that state.
             }
           }
-          player.vx = player.dodgeDirX * dodgeSpeedPx;
-          player.vy = player.dodgeDirY * dodgeSpeedPx;
+          player.vx = travelDt > 0 ? (player.x - dodgeStartX) / travelDt : 0;
+          player.vy = travelDt > 0 ? (player.y - dodgeStartY) / travelDt : 0;
+          commitComposedMovement(player, dodgeMotion, Math.hypot(dodgeDx, dodgeDy), Math.hypot(player.x - dodgeStartX, player.y - dodgeStartY));
+          if (player.prone) return; // The normal depletion path cancelled the action.
           if (player.dodgeT <= 0) {
             player.dodging = false;
             player.vx = 0; player.vy = 0;
@@ -19578,21 +19712,29 @@
           facingAngle = committedLungeAngle;
           player.angle = committedLungeAngle;
 
-          player.lungeT = Math.max(0, player.lungeT - dt);
+          const priorProgress = 1 - Math.pow(player.lungeT / player.lungeDur, 3); // Delta of the authored ease-out curve, not an independent wind animation.
+          const travelDt = Math.min(Math.max(0, dt), Math.max(0, player.lungeT)); // The ease-out and Footing charge share the same remaining action time.
+          player.lungeT = Math.max(0, player.lungeT - travelDt);
           const t = 1 - player.lungeT / player.lungeDur;
           const eased = 1 - Math.pow(1 - t, 3); // ease-out: fast off the top, settles into the landing
           const minX = PLAYER_RADIUS, maxX = window.GridTileAccessors.getActiveCols() * TILE - PLAYER_RADIUS;
           const minY = PLAYER_RADIUS, maxY = window.GridTileAccessors.getActiveRows() * TILE - PLAYER_RADIUS;
-          const desiredX = window.FormatUtils.clamp(player.lungeStartX + player.lungeDirX * player.lungeDistancePx * eased, minX, maxX);
-          const desiredY = window.FormatUtils.clamp(player.lungeStartY + player.lungeDirY * player.lungeDistancePx * eased, minY, maxY);
+          const lungeStep = player.lungeDistancePx * Math.max(0, eased - priorProgress);
+          const lungeMotion = window.ResourceSystem?.composeMovement?.(player, player.lungeDirX * lungeStep, player.lungeDirY * lungeStep, { mode: 'lunge', scalarApplied: true, rotationApplied: true, reference: lungeStep, dt: travelDt }); // A cone-halted lunge has no remaining horizontal budget.
+          if (lungeMotion?.wind) player._windLungeIntegrated = true;
+          const desiredX = window.FormatUtils.clamp(player._windLungeIntegrated ? player.x + (lungeMotion?.x ?? player.lungeDirX * lungeStep) : player.lungeStartX + player.lungeDirX * player.lungeDistancePx * eased, minX, maxX);
+          const desiredY = window.FormatUtils.clamp(player._windLungeIntegrated ? player.y + (lungeMotion?.y ?? player.lungeDirY * lungeStep) : player.lungeStartY + player.lungeDirY * player.lungeDistancePx * eased, minY, maxY);
           // Swept, not a single endpoint check — this recomputes an absolute
           // target from total elapsed progress every frame (ease-out is
           // fastest right at the start), so a big lunge like Charged
           // Breaker's ~7 tiles can cover more than a tile in one frame and
           // would otherwise tunnel clean through a one-tile-thick plateau
           // wall instead of stopping at it.
+          const lungeStartX = player.x, lungeStartY = player.y; // Wind costs only the actual committed lunge sweep.
           const lungeSwept = sweptMove(player.x, player.y, desiredX, desiredY, canPlayerOccupy);
           player.x = lungeSwept.x; player.y = lungeSwept.y;
+          commitComposedMovement(player, lungeMotion, Math.hypot(lungeMotion?.x || 0, lungeMotion?.y || 0), Math.hypot(player.x - lungeStartX, player.y - lungeStartY));
+          if (player.prone) return;
           player.lungeHopCurrent = player.lungeHopUnits * Math.sin(eased * Math.PI);
           if (Number.isFinite(player.lungeFlightWorldY)) {
             player.lungeFlightWorldY = player.lungeFlightStartWorldY
@@ -19701,13 +19843,8 @@
           ix = rIx; iy = rIy;
         } else if (ix !== 0 || iy !== 0) {
           // Shoulder mode already inherits the hallucinated yaw from camera bearing; world-space input receives it once here.
-          const drift = window.FeyIllusions?.movementRotationRad?.(player) || 0; // Composes after cardinal bias, preserving user input strength.
-          if (drift) {
-            const cos = Math.cos(drift), sin = Math.sin(drift);
-            const movedX = ix * cos - iy * sin;
-            iy = ix * sin + iy * cos;
-            ix = movedX;
-          }
+          const intent = window.ResourceSystem?.movementIntent?.(player, ix, iy); // Demented steering belongs to the compositor, after cardinal bias.
+          if (intent) { ix = intent.x; iy = intent.y; }
         }
 
         // Resolved per-frame movement intent, read by ordinary dodge and
@@ -19810,8 +19947,9 @@
         const maxX = window.GridTileAccessors.getActiveCols() * TILE - PLAYER_RADIUS;
         const minY = PLAYER_RADIUS;
         const maxY = window.GridTileAccessors.getActiveRows() * TILE - PLAYER_RADIUS;
-        const desiredX = player.x + player.vx * dt;
-        const desiredY = player.y + player.vy * dt;
+        const walkMotion = !crawlMotion ? window.ResourceSystem?.composeMovement?.(player, player.vx * dt, player.vy * dt, { mode: 'walk', scalarApplied: true, rotationApplied: true, reference: targetSpeed / Math.max(.001, analogEase) * dt, dt, voluntary: inputStrength > 0.001 }) : null; // Wind is external velocity; do not store it in the acceleration integrator.
+        const desiredX = player.x + (walkMotion?.x ?? player.vx * dt);
+        const desiredY = player.y + (walkMotion?.y ?? player.vy * dt);
         const nextX = window.FormatUtils.clamp(desiredX, minX, maxX);
         const nextY = window.FormatUtils.clamp(desiredY, minY, maxY);
         const moveStartX = player.x;
@@ -19831,6 +19969,9 @@
         if (Math.hypot(player.x - moveStartX, player.y - moveStartY) < 0.001) {
           tryPlayerTileSidestep(moveStartX, moveStartY, nextX, nextY, minX, maxX, minY, maxY);
         }
+
+        commitComposedMovement(player, walkMotion, Math.hypot(walkMotion?.x || 0, walkMotion?.y || 0), Math.hypot(player.x - moveStartX, player.y - moveStartY));
+        if (walkMotion?.wind && player.prone) return; // Preserve normal prone crawling/facing when no wind-induced fall occurred.
 
         // ── Facing ────────────────────────────────────────────
         btnWeaponSwitch?.classList.toggle('active', heldMode === 'tool' && (activeTool === 'weapon' || activeTool === 'ranged'));
@@ -26804,13 +26945,16 @@
               updateHostiles(dt);
               window.PerfProfiler?.end(hostilePerf);
               tickCorpses(dt);
-            } else if (_isBuildingArea(currentArea)) {
+            } else if (currentArea === 'interior' || _isBuildingArea(currentArea)) {
+              window.TzatzulLiveVisuals?.tick?.(dt, currentArea); // Owned flying companions need the same renderer in ordinary rooms too, including the farmhouse.
               // Ordinary building interiors still have no wild spawns; this
               // branch only keeps any authored interior hostile/corpse active.
               const hostilePerf = window.PerfProfiler?.begin('hostiles'); // Uses the same timing bucket for authored interior combatants.
-              updateHostiles(dt);
+              if (_isBuildingArea(currentArea)) { // The legacy farmhouse never ran an interior hostile loop.
+                updateHostiles(dt);
+                tickCorpses(dt);
+              }
               window.PerfProfiler?.end(hostilePerf);
-              tickCorpses(dt);
             }
           }
 
@@ -30876,6 +31020,7 @@
         cancelWeaponSwingHold,
         cancelPlayerToolAnimation: cancelPlayerToolAnimationForInteraction, // Bandaging clears legacy pending strikes alongside staged attacks.
         beginCombatLunge,
+        movementFootingDepleted, // Shared compositor invokes the original prone owner for enemy movement losses.
         setCombatSwingCone,
         spawnBurstEffect,
         playCreatureBark: (...a) => window.AudioSystem?.playCreatureBark(...a),
@@ -32933,7 +33078,7 @@
         getPlayerAimRay: currentPlayerAimRay,
         getPlayerInteractionRay: currentPlayerInteractionRay,
         worldSurfaceY: (x, y) => activeSurfaceYAtWorld(x / TILE, y / TILE),
-        getMovementInput: climbMovementInput,
+        getMovementInput: () => ({ ...climbMovementInput(), rotationApplied: activeCameraMode === SHOULDER_SURF_MODE }), // Free-jump compositor must not rotate the shoulder camera's inherited Demented yaw twice.
         getBaseMoveSpeedTiles: () => MOVE_SPEED / TILE, // Jump travel reuses normal walking distance per second, not a separate hard-coded pace.
         canStartFreeJump: () => gameStarted && !paused && !dialogueOpen && !sitInteraction &&
           !window.Fishing?.state?.active && !window.MusicMinigame?.state?.active &&
