@@ -97,6 +97,33 @@ async function main() {
       if (!near(window.HobunjiRomanceConfig.family.phaseScales.basket.height, baseline.height) || !near(config.snapshot().profiles.baby[selectedKey].height, preset.height)) {
         throw Error('Restore did not recover repository game phase config');
       }
+      const neighborKey = [...chooser.options].find(option => option.value !== selectedKey)?.value;
+      const scene = window.HobunjiGameplayBackdrop.getScene();
+      const neighbor = scene.getObjectByName('FullScalePreview_' + neighborKey);
+      if (!neighbor) throw Error('Overall Scale requires a second rendered identity for isolation checks');
+      const overall = document.getElementById('maaFullScaleRangeOverall');
+      const bakeOverall = document.getElementById('maaFullScaleBakeOverall');
+      const settle = () => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      for (const mode of ['baby', 'toddler', 'child', 'adult']) {
+        age.value = mode;
+        age.dispatchEvent(new Event('change', { bubbles: true }));
+        const originalScale = group.scale.clone();
+        const neighborScale = neighbor.scale.clone();
+        const beforeResize = api.debugSnapshot().agePerf.rigPasses;
+        overall.value = '110';
+        overall.dispatchEvent(new Event('input', { bubbles: true }));
+        await settle();
+        if (api.debugSnapshot().agePerf.rigPasses - beforeResize !== 1) throw Error(mode + ' Overall Scale should recompose only one rig');
+        if (!neighbor.scale.equals(neighborScale) || !near(group.scale.x, originalScale.x * 1.1) || !near(group.scale.y, originalScale.y * 1.1)) {
+          throw Error(mode + ' Overall Scale changed the wrong rig or used the wrong scale');
+        }
+        const draftScale = group.scale.clone();
+        bakeOverall.click();
+        await settle();
+        if (overall.value !== '100' || !near(group.scale.x, draftScale.x) || !near(group.scale.y, draftScale.y) || !neighbor.scale.equals(neighborScale)) {
+          throw Error(mode + ' bake did not preserve the selected preview and its neighbor');
+        }
+      }
       const result = { selectedKey, previewCount: api.previewCount, expected, appliedInGame: applied.profiles.baby[selectedKey].height,
         perf: { before, after, beforeHand, afterHand }, debug: api.debugSnapshot() };
       return result;

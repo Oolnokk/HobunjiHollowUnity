@@ -219,13 +219,13 @@
     const id = String(npcId || '');
     const value = normalizedAge(age);
     if (!id || value == null) return null;
-    if (value <= 0) npcAgeOverrides.delete(id); else npcAgeOverrides.set(id, value);
+    npcAgeOverrides.set(id, value); // Zero explicitly straightens an NPC whose authored base pose is hunched.
     persistNpcAgeOverrides();
     return value;
   }
 
-  function npcAgeFor(npcId) {
-    return npcAgeOverrides.get(String(npcId || '')) || 0;
+  function npcAgeFor(npcId, fallback = 0) {
+    return npcAgeOverrides.get(String(npcId || '')) ?? fallback;
   }
 
   function resetNpcAges() {
