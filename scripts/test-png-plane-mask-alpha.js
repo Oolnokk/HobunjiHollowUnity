@@ -65,7 +65,7 @@ const hookEnd = pantsSource.indexOf('return { texture, material };', hookStart);
 assert.ok(hookStart >= 0 && hookEnd > hookStart);
 const pants = runtime.makeSpritePngUnlitMaterial(THREE, tex, 'pants');
 vm.runInNewContext(pantsSource.slice(hookStart,hookEnd), {
-  material: pants, handle: {maskUniforms:{}}, GPU_SKIN_VERTEX_DECLARATIONS:'', GPU_SKIN_VERTEX_BODY:''
+  material: pants, handle: {maskUniforms:{}}, GPU_SKIN_VERTEX_DECLARATIONS:'', GPU_SKIN_VERTEX_BODY:'', cameraCuffs:false
 });
 const pantsShader={uniforms:{},vertexShader:'#include <common>\n#include <begin_vertex>',fragmentShader:'#include <common>\n#include <alphatest_fragment>'};
 pants.onBeforeCompile(pantsShader);
