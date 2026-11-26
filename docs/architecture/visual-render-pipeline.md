@@ -385,10 +385,10 @@ The Kanthic redraw selects meshes by cached world-space bounds, then clips their
 Before world rendering, the Kanthic owner prepares the ordinary lighting canvas; its resize-recovery path is not allowed to execute while mainRT's depth is bound. The glyph pass disables all autoClear flags (Color backgrounds otherwise force a clear) and restores them after direct PNG depth replay and glyph drawing. Camera-frustum rejection prevents empty glyph frames from invoking the GPU darkness pass.
 
 
-### Experimental generated outline modes (24 Nov 2026)
+### Generated outline modes
 
-Settings → Render optimizations → Generated outlines (experiment) selects
-`shell` (shipped default), `screen` or `none`. The ordinary Outlines
+Settings → Render optimizations → Generated outlines selects
+`screen` (default), `shell` or `none`. The ordinary Outlines
 setting remains the master offscreen/composite switch. The A/B benchmark
 compares `shellOutlines`, `screenDepthOutlines` and
 `generatedOutlinesOff` while preserving painterly and the master setting.
@@ -398,8 +398,9 @@ replay with one unexpanded front-facing depth draw on the existing
 SHELL_OUTLINE layer. The mask target is allocated only when used, resized
 with the main target, and disposed when leaving screen mode. Existing
 outline pass classification allows base-matrix reuse. The composite accepts
-only pixels whose mask depth matches the world depth, then detects an inward
-one-pixel silhouette or substantial depth discontinuity. Authored PNGs and
+only pixels whose mask depth matches the world depth, then samples four
+neighbors twelve render-target pixels away to detect an inward silhouette or
+substantial depth discontinuity. Authored PNGs and
 hard-faced textured meshes are excluded by the existing shell-layer policy;
 an unrestricted world-depth Sobel filter would violate that policy. Standard
 scene fog fades the generated ink, and the painterly patch signatures are
@@ -411,7 +412,7 @@ implementation: sampling the current depth alone cannot identify authorized
 outline surfaces, and the r128 world materials have no common eligibility
 channel. Depthless transparent foreground effects, restored ground depth
 over X-rayed limbs, and custom mist can differ from the original shell
-appearance. The default remains shell until device and visual validation.
+appearance.
 Recording-renderer fixtures exercise all three modes, resize, disposal,
 error restoration and persistence; real WebGL visual parity and FPS are not
 yet established.
