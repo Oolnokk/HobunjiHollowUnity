@@ -797,7 +797,7 @@
     if (mountRideState === 'none') return;
     const m = mountRideEntity;
     if (!m || m.health <= 0) {
-      if (m) { m._climbLeap?.lock?.release?.(); deps.despawnCreature(m); deps.companionObjects.delete(m); }
+      if (m) { m._climbLeap?.lock?.release?.(); if (!m._deathTransitionStarted) deps.despawnCreature(m); deps.companionObjects.delete(m); } // The resource/death owner retains its corpse and presentation.
       mountRideState = 'none'; mountRideEntity = null;
       return;
     }
