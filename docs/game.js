@@ -394,6 +394,7 @@
           await window.DialogueContent?.renderNpcDialoguePortrait(); // Updates the existing world-space avatar/expression texture only.
         }
 
+        if (opts?.openingFarmGuide && (!dialogueOpen || _dialogueWalker !== walker)) return false; // A canceled asynchronous portrait load must not reopen the invitation.
         _npcDialogueEl.classList.add('open');
         _npcDialogueEl.setAttribute('aria-hidden', 'false');
 
@@ -35506,7 +35507,14 @@
         farmTourPoints: openingFarmTourPoints,
         farmGuideTarget: openingFarmGuideTarget,
         visibleFarmGuide: visibleOpeningFarmGuide,
-        openFarmGuideDialogue: walker => openNpcDialogue(walker, { node: { type: 'line', text: 'Follow me. I will show you to your farm.', next: null } }),
+        async openFarmGuideDialogue(walker) {
+          try {
+            return await openNpcDialogue(walker, { openingFarmGuide: true, node: { type: 'line', text: 'Follow me. I will show you to your farm.', next: null } });
+          } catch (error) {
+            if (dialogueOpen && _dialogueWalker === walker) closeNpcDialogue(); // Release the local conversation lock if portrait or dialogue setup fails.
+            throw error;
+          }
+        },
         run: (payload, options = {}) => runCutscenePreview(payload, { ...options, live: true }), // Plays Director-format payloads as real gameplay cinematics with cleanup/restoration.
         isActive: () => cutscenePreviewActive, // Gameplay HUD owners can check the director without allocating a debug snapshot.
         debugSnapshot: () => ({ active: !!cutscenePreviewActive, currentArea, stageId: cutscenePreviewStageId, zoomPercent: cutscenePreviewZoomPercent, horizontalCameraSqueeze: _cameraHorizontalDebug, orbit: window.CinematicCameraRuntime?.activeCamera?.()?.orbitDebug || null, latestChange: 'Rescue now uses a temporary generated Cloud Forest mini-wilderness with the authored locale and full mini-map residency; cleaned up after playback. Fight uses the rescue wide shot; Spearhead enters from outside the prior view; moving humanoids animate legs; final player stance yaw obeys body/neck deadzones; tighter surveyor shots and rear chair with departure hiding; lower farm camera, moving two-character follow shot and facade view after both arrivals; intro wind-only audio.' }), // Mobile/debug-panel callers can inspect live cinematic ownership without a console.
