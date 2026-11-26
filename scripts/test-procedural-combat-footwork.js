@@ -128,6 +128,12 @@ assert(Math.abs(afterFootSize.left.targetY - afterFootSize.left.contactY) < 1e-9
 assert(Math.abs(independent.legs.standingPosteriorY - (afterFootSize.left.contactY
     + (originalHip - afterFootSize.left.contactY) * 1.75)) < 1e-9,
   'leg proportion survives an independently adjusted shoe size');
+independent.legs.setAgeFootScaleMultiplier(1.6);
+assert(Math.abs(independent.legs.getStandingPoseDebug().left.contactY - afterFootSize.left.contactY * 1.6) < 1e-9, 'age foot sizing updates actual sole contact');
+independent.legs.setFootScaleMultiplier(1.2);
+assert(Math.abs(independent.legs.getStandingPoseDebug().left.contactY - startContact * 1.2 * 1.6) < 1e-9, 'adult foot edits compose with age rather than replacing it');
+independent.legs.setAgeFootScaleMultiplier(1);
+assert(Math.abs(independent.legs.getStandingPoseDebug().left.contactY - startContact * 1.2) < 1e-9, 'adult stage restores the newly authored foot size');
 independent.legs.setFootScaleMultiplier(1.4);
 assert.equal(independent.legs.getStandingPoseDebug().left.contactY, afterFootSize.left.contactY,
   'reapplying foot size is idempotent, including for late asynchronous GLB replacements');

@@ -908,6 +908,7 @@
     // 1 (formula unchanged) for any species/gender without an authored
     // entry.
     const initialFootScale = footScaleMultiplierForSpecies(speciesId, gender); // Original species multiplier, retained so later slider updates never compound scale.
+    let ageFootScale = 1; // Preview age factor is composed with the independent adult foot size and sole contact.
     let footSizeScale = initialFootScale; // Current multiplier used by fallback feet and any asynchronously arriving GLB.
     const radius = modelHeight * footHeightFraction * 0.5 * initialFootScale * sizeBalanceMultiplier;
     const isKenkariFamily = KENKARI_FAMILY.has(speciesId);
@@ -1125,7 +1126,7 @@
       const next = Number.isFinite(raw) && raw > 0 ? Math.max(.1, Math.min(4, raw)) : initialFootScale;
       if (!meshChanged && Math.abs(next - footSizeScale) <= 1e-9) return footSizeScale; // Repeated identical slider inputs need no foot transforms or leg IK.
       footSizeScale = next;
-      const relative = footSizeScale / initialFootScale; // Relative to the foot geometry's original shipped multiplier.
+      const relative = footSizeScale / initialFootScale * ageFootScale; // Relative to the foot geometry's original shipped multiplier.
       for (const side of ['left', 'right']) {
         const foot = state[side];
         if (!foot) continue;
@@ -1142,6 +1143,15 @@
       }
       setLegLengthMultiplier(legLengthMultiplier, true); // Sole contact changed even if the leg-size slider did not; refresh IK once.
       return footSizeScale;
+    }
+
+    function setAgeFootScaleMultiplier(multiplier) {
+      const raw = Number(multiplier); // Separate authoring stage; never overwrite the authored adult size.
+      const next = Number.isFinite(raw) && raw > 0 ? Math.max(.01, Math.min(20, raw)) : 1;
+      if (state.disposed || Math.abs(next - ageFootScale) <= 1e-9) return ageFootScale;
+      ageFootScale = next;
+      setFootScaleMultiplier(footSizeScale, true); // Reuse the sole-contact/IK owner and the original per-mesh baseline.
+      return ageFootScale;
     }
 
     // Solves the leg chain for `side` ('left'/'right') from that leg's own
@@ -1959,7 +1969,7 @@
     }
 
     const handle = {
-      group: root, update, dispose, applyRecordedLegPose, setLegLengthMultiplier, setFootScaleMultiplier,
+      group: root, update, dispose, applyRecordedLegPose, setLegLengthMultiplier, setFootScaleMultiplier, setAgeFootScaleMultiplier,
       get standingPosteriorY() { return posteriorY; }, // Consumers such as chair/pants positioning read the live hip, not an outdated creation-time value.
       restPosteriorY, // Preview and game diagnostics can compare current leg length with its original source anatomy.
       get standingFootContactY() { return (state.leftContactY + state.rightContactY) * .5; }, // Author height/beltline conversion measures real sole-contact height; no scene traversal or extra update pass.

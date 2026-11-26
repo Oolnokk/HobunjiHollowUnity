@@ -800,6 +800,10 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
     const visuals = entry.ageVisuals ||= {}; // Reuse discovered GLB nodes until an actual rig rebuild invalidates them.
     let missing = 0; // Retry only genuine late GLB arrivals, not every character every frame.
     for (const kind of (onlyKind ? [onlyKind] : ['hand', 'foot'])) {
+      if (kind === 'foot' && typeof entry.feet?.setAgeFootScaleMultiplier === 'function') {
+        entry.feet.setAgeFootScaleMultiplier(values.foot); // Leg owner maintains the unscaled baseline, sole contact and late mesh replacement.
+        continue;
+      }
       for (const side of ['left', 'right']) {
         const name = `${side}_${kind === 'hand' ? 'hand_visual' : 'foot'}`;
         let visual = visuals[name];
@@ -1036,7 +1040,7 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
     entry.feet = window.ProceduralLegAnimation?.attach?.(THREE, entry.group, {
       speciesId: entry.species, gender: entry.gender, bodyColors: entry.avatarProfile?.bodyColors || entry.npc?.appearance?.bodyColors,
       modelWidth, modelHeight, handAttachY: entry.model.userData.handAttachY,
-      profile: entry.avatarProfile, spine: window.HobunjiLongoranSpecies?.spineFor?.(entry.gender),
+      profile: entry.avatarProfile, npcRecord: entry.previewNpc, spine: window.HobunjiLongoranSpecies?.spineFor?.(entry.gender),
       gaitProfile: window.HobunjiLongoranSpecies?.gaitFor?.(entry.gender),
       name: `${entry.group.name}_feet`, portraitSize: 200,
       onFootVisualsReplaced({ left, right }) {
@@ -1469,9 +1473,9 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
     applyAnatomyConfig(rigProfile);
 
     const previewNpc = isChild(rep.npc)
-      ? { ...rep.npc, role: 'adult', tags: (rep.npc.tags || []).filter(tag => String(tag).toLowerCase() !== 'child') }
+      ? { ...rep.npc, isChild: false, role: 'adult', tags: (rep.npc.tags || []).filter(tag => String(tag).toLowerCase() !== 'child') }
       : rep.npc; // Child-only NPC donors must not pre-shrink the rig before the selected global age stage is applied.
-    const avatar = await buildPortrait(rep.npc);
+    const avatar = await buildPortrait(previewNpc); // Child-only donor cosmetics stay unchanged, but its limb metadata must not pre-shrink the adult reference.
     if (buildId !== generation || !previewRoot) return null; // Exiting mid-network-load must never attach a stale mesh to a disposed comparison scene.
     const group = new THREE.Group(); // Preview-only parent used by portrait, hands, feet, and whole-character scale together.
     group.name = `FullScalePreview_${rep.key}`;
@@ -1514,6 +1518,7 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
       handAttachY: model.userData.handAttachY,
       name: `${group.name}_feet`,
       profile: avatar.profile,
+      npcRecord: previewNpc, // Use the same neutral adult identity as the portrait and hands.
       ...(rep.species === 'longoran' ? { spine: window.HobunjiLongoranSpecies?.spineFor?.(rep.gender), gaitProfile: window.HobunjiLongoranSpecies?.gaitFor?.(rep.gender) } : {}), // Uses the identical authored gait when building the lineup.
       portraitSize: avatar.front.width || 200,
       onFootVisualsReplaced({ left, right }) {
@@ -1527,7 +1532,7 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
 
     previewRoot.add(group);
     const measuredBeltline = Number(feet?.restPosteriorY) / modelHeight; // Shared model/leg floor-local coordinates: the unscaled hip divided by the unscaled top.
-    entry = { ...rep, group, model, feet, spineGuide: null, profile: rigProfile, avatarProfile: avatar.profile, frontCanvas: avatar.front,
+    entry = { ...rep, previewNpc, group, model, feet, spineGuide: null, profile: rigProfile, avatarProfile: avatar.profile, frontCanvas: avatar.front,
       basePortraitY: model.position.y,
       beltlineBaseFraction: Number.isFinite(measuredBeltline) && measuredBeltline > .05 && measuredBeltline < .95 ? measuredBeltline : .5 }; // Never invent a modified hip ratio from authored portrait or leg scales. // Shared entry for late age-limb imports, the spine guide and pants.
     applyPreviewProportions(entry); // Preserve both age stage and independent portrait/leg authored scale at spawn.

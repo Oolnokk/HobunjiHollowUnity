@@ -201,11 +201,17 @@
     return { ...saved, baby: clone(repositoryProfiles.baby), toddler: clone(repositoryProfiles.toddler) };
   }
 
+  function upgradePresetModifiers(modifiers, version) {
+    const saved = sanitize(modifiers); // Keep independent child settings and current-version edits.
+    if (Number(version) >= PRESET_VERSION) return saved;
+    return { ...saved, baby: clone(defaults.baby), toddler: clone(defaults.toddler) }; // Same fallback reset as the editor draft migration.
+  }
+
   function readApplied() {
     try {
       const data = JSON.parse(localStorage.getItem(APPLIED_KEY) || 'null');
       return data?.schema === SCHEMA && data.modifiers && typeof data.modifiers === 'object'
-        ? { modifiers: sanitize(data.modifiers), basis: sanitizeBasis(data.convergenceBasis || repositoryBasis), profiles: upgradePresetProfiles(data.profiles, data.presetVersion), needsPresetUpgrade: !(Number(data.presetVersion) >= PRESET_VERSION) } : null;
+        ? { modifiers: upgradePresetModifiers(data.modifiers, data.presetVersion), basis: sanitizeBasis(data.convergenceBasis || repositoryBasis), profiles: upgradePresetProfiles(data.profiles, data.presetVersion), needsPresetUpgrade: !(Number(data.presetVersion) >= PRESET_VERSION) } : null;
     } catch (error) {
       console.warn('[age-rig] invalid applied authoring data, using repository proportions', error);
       return null;

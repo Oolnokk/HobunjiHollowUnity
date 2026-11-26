@@ -179,7 +179,7 @@ layeredFoot.onAfterRender = function originalAfter() {};
 layeredFoot.matrixWorld.elements[14] = 1;
 const depthSource = read('docs/js/procedural-leg-animation.js'); // Real foot draw-time push implementation, not a stand-in translation.
 const depthStart = depthSource.indexOf('    function installFootDepthPush(foot) {');
-const depthEnd = depthSource.indexOf('    function installFootAxes(foot) {', depthStart);
+const depthEnd = depthSource.indexOf('    const childLimbMetadata =', depthStart); // Isolate the rendering closure from attachment metadata.
 assert(depthStart >= 0 && depthEnd > depthStart, 'found real camera-relative foot depth hook');
 class EyeVector {
   setFromMatrixPosition(matrix) {

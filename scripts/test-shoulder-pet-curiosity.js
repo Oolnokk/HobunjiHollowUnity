@@ -192,8 +192,8 @@ assert.match(rigSource,
   /\['uumkaoii'[\s\S]{0,180}\[0,-0\.2057328849409156,-0\.004605298975405354\]/,
   'Uumkaoii uses the supplied shoulderGrip');
 assert.match(rigSource,
-  /\['kenkari::female'[\s\S]{0,100}\[-0\.16564616738866406,0\.25011972083640993,0,0\.98412\]/,
-  'Kenkari female keeps her authored shoulder position and Mao-ao-referenced 0.98412x scale');
+  /\['kenkari::female'[\s\S]{0,100}\[-0\.16564616738866406,0\.25011972083640993,0,1\.093433\]/,
+  'Kenkari female keeps her authored shoulder position and Mao-ao-referenced 1.093433x scale');
 assert.match(rigSource,
   /characterTransformAliases = Object\.freeze\(\{ rakakoan: 'kenkari'[\s\S]{0,60}\}\)/,
   'Rakakoan still maps to Kenkari rather than owning independent perch transforms');

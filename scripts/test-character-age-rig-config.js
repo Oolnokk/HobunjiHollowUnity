@@ -46,6 +46,14 @@ const override = {
   toddler: { width: .45, height: .47, head: .68, hand: 1.1, foot: 1.05 },
   child: { width: .57, height: .63, head: .76, hand: 1.15, foot: 1.13 },
 };
+const oldAppliedKey = initial.api.appliedStorageKey; // Simulate an earlier saved gameplay override.
+storage.set(oldAppliedKey, JSON.stringify({ schema: initial.api.schema, presetVersion: 1, modifiers: override }));
+const migrated = start();
+assert.equal(migrated.family.phaseScales.basket.height, .32, 'old applied baby fallback must migrate with the new individual preset');
+assert.equal(migrated.family.phaseScales.toddler.height, .4, 'old applied toddler fallback must migrate too');
+assert.equal(migrated.png.childScaleMultiplier, .63, 'independent child override survives the preset upgrade');
+assert.equal(JSON.parse(storage.get(oldAppliedKey)).presetVersion, initial.api.presetVersion, 'migration persists its new version');
+migrated.api.restoreRepositoryOnThisDevice();
 const applied = plain(initial.api.applyOnThisDevice(override));
 assert.deepEqual(applied, Object.fromEntries(Object.entries(override).map(([mode, values]) => [mode, { ...values, widthConvergence: 0, heightConvergence: 0 }])), 'valid global authoring values must be persisted unchanged');
 assert.equal(initial.family.phaseScales.basket.width, .36, 'baby width reaches the family record');
