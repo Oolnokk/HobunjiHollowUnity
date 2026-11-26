@@ -883,7 +883,7 @@
         const spendAmount = quanta * PASSIVE_DRAIN_QUANTUM; // Used as the authored amount passed through normal stamina perks/alchemy/affliction handling.
         passiveDrainCarry = Math.max(0, passiveDrainCarry - spendAmount);
         if (window.ResourceSystem) {
-          window.ResourceSystem.spendStamina(deps.player, Math.min(deps.player.stamina, spendAmount), 'Blink Dodge (passive)');
+          window.ResourceSystem.spendStamina(deps.player, Math.min(deps.player.stamina, spendAmount), 'Blink Dodge (passive)', { actionKind: 'blinkPassive' });
         } else {
           deps.player.stamina = Math.max(0, deps.player.stamina - Math.min(deps.player.stamina, spendAmount));
         }
@@ -931,7 +931,7 @@
       // Never refuses for lack of stamina — overspending pushes into
       // Exhausted instead (see resource-system.js's spendStamina), same as
       // this game's base dodge (game.js's performDodge).
-      window.ResourceSystem?.spendStamina(deps.player, ZIP_COST * (1 + (stats.zipCostMul || 0)), 'Blink Dodge hop');
+      window.ResourceSystem?.spendStamina(deps.player, ZIP_COST * (1 + (stats.zipCostMul || 0)), 'Blink Dodge hop', { actionKind: 'combatDodge', abilityId: 'blinkDodge' });
       const invulnMs = ZIP_INVULN_S * (1 + (stats.invulnMul || 0)) * 1000; // Used to extend the player's shared iframe deadline for this hop.
       deps.player.invulnUntil = Math.max(deps.player.invulnUntil || 0, performance.now() + invulnMs);
       nextZipAt = t + ZIP_COOLDOWN_S * (1 + (stats.zipCooldownMul || 0));
