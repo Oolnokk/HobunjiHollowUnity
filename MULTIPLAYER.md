@@ -28,7 +28,7 @@ second code path. Order of work:
 | `js/sim-clock.js` (`SimClock.now()`) | `performance.now()` in gameplay timers | host-synced time; offset is 0 today so it is identical |
 
 | `js/remote-player-state.js` (`RemotePlayerState`) | `damagePlayer` + `PlayerDowned` being local-only | health, downed/bleed-out timer, Second Wind (`noteKillBy`) and respawn for every non-local player, no HUD; registered as `DamageAuthority`'s remote handler |
-| `js/dev-dummy-player.js` (`DevDummyPlayer`) | — | dev stand-in second player: `spawn({x,y,areaId})`, `walkTo`, `follow`, `setArea`, `despawn`. No avatar mesh yet |
+| `js/dev-dummy-player.js` (`DevDummyPlayer`) | — | dev stand-in second player: `spawn({x,y,areaId})`, `walkTo`, `follow`, `setArea`, `despawn`. Has a real body via `RemotePlayerAvatar` |
 
 Migrated to `DamageAuthority.hit`: hostile bite, companion bite, enemy ranged
 projectiles (test every player, nearest first), animal pounce/guard-charge/leap,
@@ -64,6 +64,24 @@ While knocked out the local avatar is flagged `_downed` (enemies and `nearestPla
 
 **Not done yet:** a revive interaction prompt for the local player (only the API and dev hooks exist), live-testing the bed and Wait/Sleep menu paths with a second real player. Natural real-time clock progression is deliberately not gated; only skips are.
 
+### Remote player avatar (`js/remote-player-avatar.js`, `window.RemotePlayerAvatar`)
+
+Every non-local player gets an on-screen body while they are in the area this client shows. It is the
+cutscene player stand-in pipeline, not a new renderer: `makeNpcWalker(syntheticRecord)` (authored PNG
+portrait + pants, procedural 3D feet and hands with their generated outlines, per
+`docs/architecture/visual-authoring.md`), kept out of `npcWalkers` (no schedule, dialogue or save state),
+driven from the simulation entity (`x`, `y`, `angle`), disposed through `despawnNpcVisitor(walker, true)`,
+and enumerated by `CharacterVisuals` as an NPC-kind character. A body is built on entry (~1-2 s) and
+removed when the player leaves the area or the session. The network layer supplies the look via
+`player.avatarProfile = { appearance, equippedCosmetics, appliedDyes }`; with none, the local player's look is used (the dummy).
+
+Verified in the real game (headless): the body builds in town, faces the camera / faces away from the
+entity's `angle`, gait follows real speed (feet animate at ~2.5 tiles/s while walking, 0 when stopped),
+and despawn leaves no body behind. **Not yet done:** held tools/weapons and bag items for remote players
+(needs their equipment ids), a shoulder pet / companion via `ActorRegistry.ownerOf`, a nameplate,
+x-ray/outline parity with the local player (`held-xray` is player-only in `CharacterVisuals.CAPABILITIES`),
+and close-up checking of feet and the pants seam.
+
 Simulation LOD is player-set aware: bandit sleep/wake (`wilderness-simulation-lod.js`)
 and Porakaneki ecology/aggro radii use `ActorRegistry.distanceToNearestPlayer` /
 nearest-player tile position, so a camp beside a guest stays awake on the host and a
@@ -74,7 +92,6 @@ keyed to the *local* player/camera on purpose — each client renders for itself
 ### Still singleton-bound (next up)
 
 - Deliberately local-only (they are the local avatar's own action): `skeeri-ruins.js` swoop, `combat-camera-alignment-bridge.js` aerial wall impact, ruin/cave-trap deps in `game.js`, `respawnPlayer`/`PlayerDowned`/`GameFeel.playerHurt`. Ruin hazards must become "every player in the ruin" before co-op ruins.
-- The dummy has no avatar: register remote players with `CharacterVisuals` (held items, portrait, shadow) and add their shoulder pet / companion via `ownerOf`.
 - Other `performance.now()` gameplay timers (`invulnUntil` on the local player, `combat-input.js`, stamina windows set from `game.js`) are still wall-clock.
 - `nearestPlayer` callers should switch to `strict: true` once hostiles in other zones are simulated.
 - `WildernessChunks` residency, sleep/time advance and cutscenes assume one player.
