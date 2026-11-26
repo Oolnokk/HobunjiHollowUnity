@@ -16611,10 +16611,13 @@
         _zoneCacheHistory.push(entry);
         if (_zoneCacheHistory.length > 40) _zoneCacheHistory.shift();
         if (cutscenePreviewActive || _tothalShiftPromise) { entry.skipped = cutscenePreviewActive ? 'cutscene preview' : 'tothal shift'; return; }
-        const inactive = _zoneVisitOrder.filter(id => id !== currentArea && _zoneScenes.has(id));
+        // Co-op: a zone where ANY player stands is never evicted (its scene, NPCs, bandits and camps must survive), and it
+        // does not use up the inactive-zone budget; only zones nobody is in compete for it.
+        const occupied = window.ActorRegistry.occupiedAreas();
+        const inactive = _zoneVisitOrder.filter(id => id !== currentArea && !occupied.has(id) && _zoneScenes.has(id));
         const keep = new Set(inactive.slice(Math.max(0, inactive.length - zoneCacheMaxInactive())));
         for (const mapId of [..._zoneScenes.keys()]) {
-          if (mapId === currentArea || keep.has(mapId)) { entry.kept.push(mapId); continue; }
+          if (mapId === currentArea || occupied.has(mapId) || keep.has(mapId)) { entry.kept.push(mapId); continue; }
           releaseResidentRigs(mapId);
           let blocker = zoneEvictionBlocker(mapId);
           if (blocker === 'resident rig' && window.ZoneBanditRelease.releaseZone(mapId)) blocker = zoneEvictionBlocker(mapId); // Only when bandits are the sole pin; see js/zone-bandit-release.js.

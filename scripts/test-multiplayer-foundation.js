@@ -53,6 +53,19 @@ assert.equal(reg.nearestPlayer(90, 0, { aliveOnly: true }), local);
 guest.health = 50;
 assert.deepEqual(Array.from(reg.playersInArea('cave')), [guest]);
 
+// Occupied areas: every zone with a player in it must be kept alive by the host.
+{
+  const occ = Array.from(reg.occupiedAreas()).sort();
+  assert.deepEqual(occ, ['cave', 'town'], 'local avatar (town, via the game) + guest (cave)');
+  guest.areaId = 'town';
+  assert.deepEqual(Array.from(reg.occupiedAreas()), ['town'], 'two players in one area occupy it once');
+  guest.areaId = 'cave';
+  const nowhere = { x: 0, y: 0, health: 1 };
+  reg.registerPlayer(nowhere, { playerId: 'ghost' });
+  assert.equal(reg.occupiedAreas().has(undefined) || reg.occupiedAreas().has(null), false, 'a player with no known area occupies nothing');
+  reg.unregisterPlayer(nowhere);
+}
+
 // Ownership: companion master / projectile owner resolve to a player.
 assert.equal(reg.ownerPlayerOf({ master: guest }), guest);
 assert.equal(reg.ownerPlayerOf({ owner: local }), local);

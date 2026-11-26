@@ -144,6 +144,14 @@
     return false;
   }
 
+  // Every area that has at least one player in it (the local one included). The host must keep
+  // these alive (scene cache, camps, NPC parking); only an area nobody is in may be evicted.
+  function occupiedAreas() {
+    const out = new Set();
+    for (const p of players) { const a = areaOf(p); if (a != null) out.add(a); }
+    return out;
+  }
+
   // Distance in px from (x, y) to the nearest player (same-area players first).
   // Simulation LOD (sleep/wake, ecology radius) must use this, never the local
   // player alone: a camp next to a guest has to stay awake on the host.
@@ -175,7 +183,7 @@
     assignId, idOf, getById,
     registerPlayer, unregisterPlayer, onPlayersChanged,
     getPlayers, getLocalPlayer, isPlayer, isLocalPlayer, playerCount,
-    setLocalAreaResolver, areaOf, playersInArea, isAnyPlayerInArea, nearestPlayer, distanceToNearestPlayer,
+    setLocalAreaResolver, areaOf, playersInArea, isAnyPlayerInArea, occupiedAreas, nearestPlayer, distanceToNearestPlayer,
     ownerOf, ownerPlayerOf, getDebug,
   };
 })();

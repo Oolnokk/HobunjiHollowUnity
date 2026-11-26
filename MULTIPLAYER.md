@@ -79,6 +79,20 @@ gather as an audience) the **other players are placed in the crowd** too.
 
 **Not done yet / not verified:** the local host avatar when it is *not* the controller (the runner places only the controller; `joinCrowd` skips the local entity); a spectator camera for guests whose own client must switch to the scene's area (needs the network layer); who may skip a scene; verified live only for a standing crowd slot and the begin/end/pause behaviour (seated slots and both owners are covered by unit tests with real owner code, not yet seen in a browser).
 
+### Residency: simulation vs assets vs what is drawn
+
+Three things that used to be one ("the area the player is in") and now have different owners in co-op:
+
+| Concept | Meaning | Keyed to | Owner |
+| --- | --- | --- | --- |
+| **Render visibility** | what this client draws | **this client's own player/camera** | `WildernessChunks` mesh streaming (16x16-tile chunks, load/unload radii), visual LODs (`WildlifeVisualLod`, tree/grass/brick LOD, outline budget), `RemotePlayerAvatar` bodies |
+| **Asset residency** | which zone scenes/meshes/textures stay built in memory | **every player's area**, plus the recent-zones budget | `trimZoneCache` in `game.js` (+ `ZoneBanditRelease`, NPC parking) |
+| **Simulation residency** | which areas' creatures, bandits, camps, NPCs are ticked | **every player's area** (and, for sleep/wake and ecology radii, the nearest player in that area) | `wilderness-simulation-lod.js`, `porakaneki-camps-runtime.js`, `offarea-npc-tick.js`, `updateHostiles` (see below) |
+
+- `ActorRegistry.occupiedAreas()` is the one answer to "which areas have a player in them". `trimZoneCache` now keeps every occupied zone (they do not count against `zoneCache.maxInactiveZones`), so a zone a guest is standing in is never evicted: its scene, parked NPCs, bandits and camps survive instead of being torn down and re-seeded.
+- Chunk meshes are pure asset/render state (nothing in the simulation queries `WildernessChunks` for loaded chunks), so **each client streams the chunks around its own player** and the host does not load chunks around a guest.
+- **Still single-area (the big remaining item):** `updateHostiles`, wildlife/den spawning, and most world updates only tick creatures whose `areaId === currentArea`, and `currentArea` is a global that also selects the active scene and grid. A zone only a guest occupies is therefore *kept* but not *ticked* by the host. Ticking several areas needs those updates to take an explicit area/scene/grid context instead of reading `currentArea`; do it one system at a time, starting with `updateHostiles`.
+
 ### Conversations and menus (`js/npc-conversations.js`, `window.NpcConversations`)
 
 Design decision: an ordinary NPC conversation holds **only the person talking**. The world, the clock and
