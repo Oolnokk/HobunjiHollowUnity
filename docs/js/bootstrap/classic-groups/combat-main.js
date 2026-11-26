@@ -13,7 +13,7 @@
     "js/combat/combat-animal-attacks.js?v=20261126h583b393",
     "js/combat/combat-voorg-ass-rear-kick.js?v=20261126h5232b66",
     "js/combat/combat-attach.js?v=20261126h901bb94",
-    "js/combat/combat-loadout.js?v=20261118torchThrowScaled2",
+    "js/combat/combat-loadout.js?v=20261126groundFit2",
     "js/combat/combat-progression.js?v=20261114packbooks2",
     "js/combat/combat-attack-events.js?v=20261027shape2",
     "js/combat/companion-offense.js?v=20261123companionAudit3",

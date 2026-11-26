@@ -270,6 +270,7 @@
       if (!socket || !shoulder) return false;
       socket.position.x = shoulder.x + (Number(fallbackPose?.position?.x) || 0); // Walk/idle poses author x = 0; gameplay poses (crawl) may reach sideways.
       socket.position.y = posteriorYInParent() + armLengthOffsetY() + (Number(fallbackPose?.position?.y) || 0);
+      if(!fallbackPose?.overridden) global.HeldGroundPose?.constrainFreeHand?.(parent,socket,shoulder,rig.armLengthForSide?.(side),modelHeight);
       socket.updateMatrix?.();
       socket.updateMatrixWorld?.(true);
       return true;

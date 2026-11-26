@@ -8,7 +8,7 @@ const root = path.join(__dirname, '..', 'docs');
 const cfgSource = fs.readFileSync(path.join(root, 'js', 'xray-hierarchy.js'), 'utf8');
 const render = fs.readFileSync(path.join(root, 'js', 'held-object-render-order.js'), 'utf8');
 
-const store = {};
+const store = { 'hobunji.xrayHierarchy.v1': '{"feet.groundXray":"on"}' }; // Simulate a developer who enabled the retired rule.
 const panels = [];
 let floorPunchTestEnabled = true; // Captures mobile A/B toggle changes in the fake renderer.
 const win = {
@@ -32,6 +32,10 @@ assert.strictEqual(X.get('weapon.frontPlaneMask'), 'off', 'owner portrait weapon
 // Defaults, validation, live change, listeners.
 assert.strictEqual(X.get('hand.frontPlaneMask'), 'off', 'hands are not masked by owner front art by default');
 assert.strictEqual(X.get('actors.order'), 'all');
+assert.strictEqual(X.get('feet.groundXray'), undefined, 'saved legacy overrides cannot restore lower-body ground X-ray');
+assert.strictEqual(X.set('feet.groundXray', 'on'), false, 'live config cannot restore the retired rule');
+assert.deepStrictEqual(X.importDiff('{"feet.groundXray":"on"}'), { ok: true, applied: 0 }, 'legacy imports ignore the retired rule');
+assert.ok(!X.keys().includes('feet.groundXray'), 'the retired rule is absent from developer controls');
 assert.strictEqual(X.get('layers.manualOrder'), 'off');
 assert.strictEqual(X.get('background.gearDepth'), 'ignore');
 assert.strictEqual(X.get('airborne.rebuildDepth'), 'on');

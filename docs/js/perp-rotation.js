@@ -591,6 +591,7 @@
     cameraRelativePerpsAtWorldPosition,
     cameraRelativeCreaturePerpsAtWorldPosition,
     perspectivePerpsForState,
+    liveCameraPosition, // Shared camera sample for independently suspended portrait sprites.
     creatureDeadzoneTarget,
     creatureSnapSwayTarget,
     nearestCardinalAngle,

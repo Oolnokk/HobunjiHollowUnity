@@ -21,6 +21,39 @@
   const cachedImages = {}; // Source images reused while dragging the arrow interactively.
   const chosenShaft = () => data.shafts[byId('shaft').value]; // Active donor haft.
   const chosenHead = () => data.heads[byId('head').value]; // Active blade/weight part.
+  // A separate source-only drawing surface avoids stealing mounting-arrow
+  // gestures and saves one band definition on the haft, never the current pair.
+  let bandPanel=null,bandCanvas=null,bandMinimum=null,bandStatus=null,bandDrag=null;
+  function drawShorteningBands(){
+    if(!bandCanvas)return;
+    const shaft=chosenShaft(),image=cachedImages['shaft-canvas'],ctx=bandCanvas.getContext('2d');
+    ctx.clearRect(0,0,450,1204);
+    if(image)ctx.drawImage(image,0,0,450,1204);
+    const bands=[...(shaft.shorteningBands||[])];
+    if(bandDrag&&bandDrag.shaft===byId('shaft').value)bands.push({x0:Math.min(bandDrag.start.x,bandDrag.end.x),x1:Math.max(bandDrag.start.x,bandDrag.end.x),y0:Math.min(bandDrag.start.y,bandDrag.end.y),y1:Math.max(bandDrag.start.y,bandDrag.end.y)});
+    ctx.fillStyle='rgba(251,191,36,.25)';ctx.strokeStyle='#fbbf24';ctx.lineWidth=4;
+    for(const b of bands){ctx.fillRect(b.x0,b.y0,b.x1-b.x0,b.y1-b.y0);ctx.strokeRect(b.x0,b.y0,b.x1-b.x0,b.y1-b.y0);}
+    bandMinimum.value=Math.round((shaft.minShorteningScale??.65)*100);
+    bandStatus.textContent=(shaft.shorteningBands||[]).length+' haft bands • assembled contact is traced automatically in game.';
+  }
+  function installShorteningBands(){
+    if(bandPanel)return;
+    bandPanel=document.createElement('details');bandPanel.style.cssText='margin:12px 0';
+    const title=document.createElement('summary');title.textContent='Haft shortening bands (all heads)';bandPanel.appendChild(title);
+    const help=document.createElement('p');help.textContent='Drag rectangles around the shortenable wood/haft. Keep the entire haft width inside each rectangle; protruding art outside it follows the head rigidly. All heads inherit these bands and their final composed silhouette is traced automatically.';bandPanel.appendChild(help);
+    bandCanvas=document.createElement('canvas');bandCanvas.width=450;bandCanvas.height=1204;bandCanvas.style.cssText='width:min(225px,100%);height:auto;display:block;background:#202832;touch-action:none;cursor:crosshair';bandCanvas.setAttribute('aria-label','Draw haft shortening rectangles');bandPanel.appendChild(bandCanvas);
+    const label=document.createElement('label');label.textContent='Minimum remaining band length (%) ';
+    bandMinimum=document.createElement('input');bandMinimum.type='number';bandMinimum.min=10;bandMinimum.max=100;bandMinimum.step=1;label.appendChild(bandMinimum);bandPanel.appendChild(label);
+    bandMinimum.addEventListener('change',()=>{const n=Number(bandMinimum.value);if(!Number.isFinite(n)||bandMinimum.value===''){drawShorteningBands();return;}chosenShaft().minShorteningScale=Math.max(.1,Math.min(1,n/100));save();});
+    const clear=document.createElement('button');clear.type='button';clear.textContent='Clear haft bands';clear.onclick=()=>{chosenShaft().shorteningBands=[];save();};bandPanel.appendChild(clear);
+    bandStatus=document.createElement('p');bandStatus.setAttribute('aria-live','polite');bandPanel.appendChild(bandStatus);
+    const point=e=>{const r=bandCanvas.getBoundingClientRect();return {x:Math.round(Math.max(0,Math.min(450,(e.clientX-r.left)*450/r.width))),y:Math.round(Math.max(0,Math.min(1204,(e.clientY-r.top)*1204/r.height)))};};
+    bandCanvas.addEventListener('pointerdown',e=>{if(!e.isPrimary||e.button>0||bandDrag||!cachedImages['shaft-canvas'])return;e.preventDefault();const p=point(e);bandDrag={id:e.pointerId,shaft:byId('shaft').value,start:p,end:p};bandCanvas.setPointerCapture(e.pointerId);drawShorteningBands();});
+    bandCanvas.addEventListener('pointermove',e=>{if(bandDrag?.id!==e.pointerId)return;bandDrag.end=point(e);drawShorteningBands();});
+    bandCanvas.addEventListener('pointerup',e=>{if(bandDrag?.id!==e.pointerId)return;const d=bandDrag;bandDrag=null;if(d.shaft!==byId('shaft').value){drawShorteningBands();return;}const p=point(e),b={x0:Math.min(d.start.x,p.x),x1:Math.max(d.start.x,p.x),y0:Math.min(d.start.y,p.y),y1:Math.max(d.start.y,p.y)},old=chosenShaft().shorteningBands||[];const next=api.cleanShorteningBands([...old,b]);if(next.length!==old.length+1){drawShorteningBands();bandStatus.textContent='Band needs nonzero area, no longitudinal overlap, and at most 16 bands.';return;}chosenShaft().shorteningBands=next;save();});
+    bandCanvas.addEventListener('pointercancel',()=>{bandDrag=null;drawShorteningBands();});
+    byId('shaft-canvas').insertAdjacentElement('afterend',bandPanel);
+  }
   const shaftOwnsFlail = () => !!chosenShaft()?.flailAssembly && !api.isFlailHead(chosenHead())
     && !!api.flailRecipe(byId('shaft').value,byId('head').value); // Rigid head hangs from this shaft's rope.
   const currentFlailHeadContact = () => {
@@ -303,6 +336,7 @@
       ]); // Image requests are cached in runtime.
       if (ticket !== serial) return;
       cachedImages['shaft-canvas'] = shaftImage; cachedImages['head-canvas'] = headImage;
+      installShorteningBands();drawShorteningBands();
       drawLines('shaft-canvas'); drawLines('head-canvas');
       const match = api.matchingMounts(shaft, head), values = api.settings(shaftKey, headKey); // Auto-match and pair-local corrections.
       const canvas = byId('preview'), ctx = canvas.getContext('2d');
@@ -646,6 +680,7 @@
         : 'Rigid combination: the usual baked modular head and bridge geometry applies.';
   }
   function render() {
+    bandDrag=null; // A selection or undo cancels the in-flight rectangle.
     const shaft = chosenShaft(), head = chosenHead(), headKey = byId('head').value; // Active authoring context.
     drawIdentity(); // Name/slot/rope diagnostics remain accessible on mobile without developer tools.
     updateBoreControls(); // Bore selection and touch mover stay in sync with undo, import and source changes.

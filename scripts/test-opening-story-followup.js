@@ -72,20 +72,87 @@ const temple = {townGrid:townTiles,worldTownTransitions:[{targetMapId:'map_i_tem
 const templeStart = game.indexOf('      async function placeOpeningPlayerOutsideTemple() {');
 const templeEnd = game.indexOf('      function openingFarmTourPoints()',templeStart);
 const arrivalPromise = vm.runInNewContext(game.slice(templeStart,templeEnd)+'\nplaceOpeningPlayerOutsideTemple();',temple);
+const guideStart = game.indexOf('      let openingGuidePoints = null;');
+const guideEnd = game.indexOf('      function openingFarmTourPoints()',guideStart);
+const town = JSON.parse(read('docs/config/maps/hobunji_hollow_town.map.json'));
+const farmGate = town.transitions.find(t=>t.label==='To Farm');
+const guideGrid = Array.from({length:town.rows},(_,r)=>Array.from({length:town.cols},(_,c)=>town.tiles[c+','+r]||{type:'grass'}));
+const guideWalker = {area:'town',root:{visible:true,position:{x:0,z:0}},avatarGroup:{}};
+let probes=0,sight=false,busy=false;
+const guideContext = {townGrid:guideGrid,worldTownTransitions:[{...farmGate,target:'farm',area:'town'}],TileType:{PATH:'path'},TILE:32,
+  isNpcTileWalkable:(_a,c,r)=>{probes++;return !!guideGrid[r]?.[c]&&guideGrid[r][c].type!=='shrub';},
+  canNpcBeeline:()=>true,currentArea:'town',gameStarted:true,paused:false,menuOpen:false,dialogueOpen:false,cutscenePreviewActive:false,sceneTransDir:0,
+  isPlayerInCombat:()=>false,sitInteraction:false,farmEditMode:false,actionHeldDown:false,chargeAction:false,toolSwingT:0,
+  findNpcWalker:()=>guideWalker,player:{x:0,y:0},window:{NpcConversations:{isBusy:()=>busy},RangedWeapons:{hasLineOfSight:()=>sight}}};
+vm.runInNewContext(game.slice(guideStart,guideEnd)+'\nthis.target=openingFarmGuideTarget;this.visible=visibleOpeningFarmGuide;',guideContext);
+const wait=guideContext.target(false),lead=guideContext.target(true);
+assert.equal(guideGrid[wait.r][wait.c].type,'path','guide waits on the authored approach road');
+assert.equal(guideGrid[lead.r][lead.c].type,'path');
+assert(Math.hypot(wait.c-farmGate.col,wait.r-farmGate.row)>Math.hypot(lead.c-farmGate.col,lead.r-farmGate.row));
+const probeCount=probes;
+guideContext.target(false);
+assert.equal(probes-probeCount,2,'cached guide pair checks only its two positions');
+guideWalker.root.position.x=wait.c+.5;guideWalker.root.position.z=wait.r+.5;
+guideContext.player.x=(wait.c+.5)*32;guideContext.player.y=(wait.r+2.5)*32;
+assert.equal(guideContext.visible(),null,'walls prevent dialogue');
+sight=true;
+assert.equal(guideContext.visible(),guideWalker);
+busy=true;
+assert.equal(guideContext.visible(),null,'busy NPC cannot interrupt another player');
+busy=false;guideContext.menuOpen=true;
+assert.equal(guideContext.visible(),null,'menus prevent automatic dialogue');
+guideContext.menuOpen=false;guideContext.player.x+=32*10;
+assert.equal(guideContext.visible(),null,'remote players are outside invitation radius');
+
 // The normal transition picker must hide wilderness exits while retaining farm travel.
 const pickerStart = game.indexOf('        const t = pool.find(x =>');
 const pickerEnd = game.indexOf('        // Deliberately once per frame',pickerStart);
-const picker = {canUseRoofSpot:()=>true,area:'town',pc:2,pr:3,pool:[{area:'town',col:2,row:3,target:'zone',targetMapId:'map_southern_cloud_forest'}],_isBuildingArea:()=>false,_isZoneArea:()=>false,_playerData:profile,window:context.window};
-vm.runInNewContext(game.slice(pickerStart,pickerEnd),picker);
+const exitMessages = []; // Captures the actual blocked-exit instruction.
+const picker = {key:'town:2,3',showToast:text=>exitMessages.push(text),refreshActionBar(){},canUseRoofSpot:()=>true,area:'town',pc:2,pr:3,pool:[{area:'town',col:2,row:3,target:'zone',targetMapId:'map_southern_cloud_forest'}],_isBuildingArea:()=>false,_isZoneArea:()=>false,_playerData:profile,window:context.window};
+vm.runInNewContext('(function(){'+game.slice(pickerStart,pickerEnd)+'})()',picker);
 assert.equal(picker._pendingSpotTransition,null,'locked wilderness exits offer no transition');
+assert.deepEqual(exitMessages,[api.farmGuideExitMessage]);
+assert.equal(picker._transitionLatch,'town:2,3','standing on a locked exit does not repeat the toast');
 picker.pool=[{area:'town',col:2,row:3,target:'farm',targetCol:2,targetRow:3}];
-vm.runInNewContext('{'+game.slice(pickerStart,pickerEnd)+'}',picker);
+vm.runInNewContext('(function(){'+game.slice(pickerStart,pickerEnd)+'})()',picker);
 assert.equal(picker._pendingSpotTransition.target,'farm','farm remains reachable during onboarding');
 async function checkTour() {
   await arrivalPromise;
   assert.deepEqual(arrivals,[[4,5],'invalidated']);
   assert.equal(await api.onFarmEntered(profile),false,'farm tour waits for the opening');
   saved.set(api.stateKey(profile),'complete');
+  let hours = 23.5, visible = false, invitations = 0, reject = false; // Mutable world clock and real dialogue acceptance fixture.
+  const walker = {};
+  context.window.CalendarSystem = { isInitialized:()=>true, previewAfterHours:()=>({day:Math.floor(hours/24)+1,time01:hours%24}),getHour:value=>value, getAbsoluteGameHour:()=>hours };
+  Object.assign(context.window.AuthoredCutsceneRuntime, {
+    visibleFarmGuide:()=>visible ? walker : null,
+    openFarmGuideDialogue:async candidate=>{assert.equal(candidate,walker);invitations++;return reject ? false : undefined;}
+  });
+  await api.updateFarmGuide(0);
+  assert.equal(invitations,0,'not visible yet');
+  visible = true; reject = true;
+  await api.updateFarmGuide(300);
+  assert.equal(invitations,1,'attempt to open a conversation');
+  reject = false;
+  await api.updateFarmGuide(600);
+  assert.equal(invitations,2,'failed conversation does not consume the reminder');
+  assert.equal(api.debugSnapshot().farmGuide.nextHour,24.5);
+  assert.equal(api.debugSnapshot().farmGuide.walking,true);
+  hours=24.49;
+  await api.updateFarmGuide(900);
+  assert.equal(invitations,2,'cooldown survives midnight');
+  hours=24.5; visible=false;
+  await api.updateFarmGuide(1200);
+  assert.equal(api.debugSnapshot().farmGuide.walking,false,'returns to invitation spot when reminder rearms');
+  assert.equal(invitations,2,'out of sight stays armed');
+  hours=28; visible=true;
+  await api.updateFarmGuide(1500);
+  assert.equal(invitations,3,'returning to sight triggers exactly one reminder after missed hours');
+  assert.equal(saved.get(api.stateKey(profile)+':farm-guide-next-hour'),'29','legacy cooldown survives reload');
+  const reloadedWindow = {...context.window}; // Fresh story module with the same save and authoritative clock.
+  vm.runInNewContext(story,{...context,window:reloadedWindow});
+  await reloadedWindow.OpeningStoryCutscene.updateFarmGuide(0);
+  assert.equal(invitations,3,'reload must not bypass the hour cooldown');
   const pending = api.onFarmEntered(profile); // Entering the farm starts exactly one tour.
   for(let i=0;i<10&&!calls.length;i++) await Promise.resolve();
   assert.equal(calls.length,1);
@@ -103,6 +170,9 @@ async function checkTour() {
   assert.equal(api.canEnterWilderness({...profile,characterId:'owner-b'}),true,'completion is shared by owners in the same world');
   finish({ok:true});
   assert.equal(await retry,true);
+  hours=40;
+  await api.updateFarmGuide(1800);
+  assert.equal(invitations,3,'completed tours never send the invitation again');
   assert.equal(api.needsTempleArrival(profile),false);
   assert.equal(await api.onFarmEntered(profile),false,'completed worlds do not replay');
   assert.equal(api.canEnterWilderness({...profile,worldId:'another-world'}),false,'a new world has its own introduction');

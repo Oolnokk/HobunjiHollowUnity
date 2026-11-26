@@ -19,7 +19,7 @@ assert.doesNotThrow(() => new vm.Script(integration), 'prayer/rest integration p
 assert.doesNotThrow(() => new vm.Script(sleepBridge), 'sleep bridge still parses');
 assert.doesNotThrow(() => new vm.Script(combatBootstrap), 'parser-time compatibility bootstrap still parses');
 
-assert.match(combatBootstrap, /sleep-passage-action-bridge\.js\?v=[A-Za-z0-9_.-]+[\s\S]{0,120}HobunjiSleepPassageActionBridge\?\.version\)\s*>=\s*3/, 'parser-time loader requests a cache-busted Sleep bridge and requires the current bridge version');
+assert.match(combatBootstrap, /sleep-passage-action-bridge\.js\?v=[A-Za-z0-9_.-]+[\s\S]{0,120}HobunjiSleepPassageActionBridge\?\.version\)\s*>=\s*4/, 'parser-time loader requests a cache-busted Sleep bridge and requires the current bridge version');
 assert.match(sleepBridge, /devotion-rest-buffs\.js\?v=[A-Za-z0-9_.-]+/, 'Sleep bridge cache-busts the prayer/rest integration');
 assert.match(integration, /temple-prayer-rest-blessings\.js\?v=[A-Za-z0-9_.-]+/, 'integration cache-busts the prayer/rest core authority');
 assert.match(core, /PRAYER_DURATION_HOURS\s*=\s*7\s*\*\s*24/, 'prayers last one in-game week');
@@ -63,7 +63,7 @@ assert.match(integration, /sitState[\s\S]{0,150}sitInteraction/, 'integration al
 
 assert.match(sleepBridge, /OWNED_BED_SLEEP_PENDING_KEY\s*=\s*'__hobunjiOwnedBedSleepPending'/, 'the real player-bed Sleep action owns a one-shot Well Rested token');
 assert.match(sleepBridge, /function armOwnedBedSleep\(\)[\s\S]{0,300}source:\s*'player-bed'/, 'visible bed Sleep arms the owned-bed token');
-assert.match(sleepBridge, /function openSharedSleepPassage\(\)[\s\S]{0,300}armOwnedBedSleep\(\)[\s\S]{0,300}open\.call\(window\.CalendarSystem, 'sleep'\)/, 'all bed Sleep input paths arm the same token before opening the shared Sleep passage');
+assert.match(sleepBridge, /function openSharedSleepPassage\(\)[\s\S]*?armOwnedBedSleep\(\)[\s\S]*?open\.call\(window\.CalendarSystem, 'sleep'\)/, 'bed Sleep arms the token before opening; behavioral rollback coverage lives in test-sleep-passage-action-bridge.js');
 assert.match(sleepBridge, /function onKeyDown\(event\)[\s\S]{0,1200}consumeEvent\(event\)[\s\S]{0,400}armedKeyCode = code/, 'parser-time Sleep bridge captures the displayed Sleep key before legacy game input');
 assert.match(core, /function consumeOwnedBedSleepToken\(\)[\s\S]{0,500}token\.source !== 'player-bed'/, 'blessing core consumes only the player-bed token');
 assert.match(core, /kind\s*===\s*'sleep'[\s\S]{0,200}consumeOwnedBedSleepToken\(\)/, 'the existing bed token still gates Well Rested');

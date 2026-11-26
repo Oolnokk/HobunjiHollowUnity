@@ -26,7 +26,6 @@ async function main() {
   const hostiles = new Set(); // The actual Combat.deps hostile set gates NPC yawns.
   const listeners = {}; // Captures the real sleep-completion event listener added by NpcYawnRest.
   let playerKomaOptions = null; // Records action-lock and facing ownership on the player ceremony.
-  let completedBedSleeps = 0; // Legacy BedLiePose can finish sleep without the newer time-passage event.
   let playerRested = true; // Starts protected while isolated NPC tests run, then exercises player hourly yawns explicitly.
   const playerChestChannels = new Map(); // Verifies the shared player body compositor receives and clears its yawn contribution.
   const stretchCalls = []; // Records begin, pose update and completion from the player-only final-render presentation.
@@ -55,7 +54,6 @@ async function main() {
       actionBlocked: () => stretchActionBlocked,
       debugSnapshot: () => ({ test: true }),
     },
-    BedLiePose: { debug: () => ({ completed: completedBedSleeps }) },
     CalendarSystem: {
       isInitialized: () => true,
       getAbsoluteGameHour: () => hour, // Full-day clock remains monotonic at midnight and at the 06:00 rollover.
@@ -317,11 +315,11 @@ async function main() {
   assert.equal(toasts.length, 3, 'generic Slagothim are not an eligible player subspecies');
   ms += 5100; frame({ timestamp: ms });
   window.__hobunjiPlayerProfile.appearance.speciesId = 'tletingan';
-  completedBedSleeps++; // Legacy bed sleep completes with no hobunji-time-passage event.
+  sleepEvent({ detail: { kind: 'sleep', hours: 8 } }); // CalendarSystem is the sole waking event owner.
   hour += 25; ms += 6500; frame({ timestamp: ms });
   assert.ok(runtime.debugSnapshot().active.some(entry => entry.npcId === '__player_daily_koma__'),
-    'legacy bed wake animates the player even when other NPCs also yawn in the same frame');
-  assert.equal(toasts.length, 4, 'legacy bed wake still lets an eligible player chew their daily Koma');
+    'Sleep passage wake animates the player even when other NPCs also yawn in the same frame');
+  assert.equal(toasts.length, 4, 'Sleep passage wake still lets an eligible player chew their daily Koma');
   assert.equal(runtime.playerMovementMultiplier(), .25, 'player Koma yawn still uses the quarter-speed movement multiplier');
   ms += 6000; frame({ timestamp: ms });
   playerRested = false;

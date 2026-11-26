@@ -36,7 +36,8 @@
        module so its fetch() wrapper can log each config/JSON access. -->
   <script src="js/dev-companion-bridge.js?v=20261019handoff1"></script>
   <script src="js/dev-companion-appearance.js?v=20261107appearance-audit2"></script>
-  <script src="js/xray-hierarchy.js?v=20261126geometryCache2"></script>
+  <script src="js/xray-hierarchy.js?v=20261126haf9dece"></script>
+  <script src="js/held-ground-pose.js?v=20261126h5db8017"></script>
   <script src="https://unpkg.com/three@0.128.0/examples/js/controls/TransformControls.js"></script>
   <script src="js/geometry-quality.js?v=20261110cloneaudit2"></script> <!-- Baked GLB quality profiles; source fallback. -->
   <script src="js/geometry-auto-lod.js?v=20261124cpuAudit2"></script> <!-- Opt-in render-only idle-time optimization. -->
@@ -167,7 +168,7 @@
   <script src="js/tool-metal-recolor.js?v=20261109profile1"></script>
   <script src="js/metal-armor-system.js?v=20261124patternNestAudit2"></script>
   <script src="config/colors/config.js?v=20261026h7f369c3"></script>
-  <script src="config/attachment-rig-profiles.js?v=20261126voorg31"></script>
+  <script src="config/attachment-rig-profiles.js?v=20261126neckAudit2"></script>
   <link rel="stylesheet" href="style.css?v=20261124bulkRebase4">
   <link rel="stylesheet" href="cooking-ui.css?v=20261109craftHours1">
   <link rel="stylesheet" href="ui-element-editor.css?v=20260814a">
@@ -197,7 +198,7 @@
        procedural-hand-outline-parity.js's fix for the same class of bug). -->
   <script src="js/portrait-plane-outline-parity.js?v=20261126neckBlendConsolidate3"></script>
   <!-- Shared held-item action poses used by game.js and its animation editor. -->
-  <script src="js/held-action-animations.js?v=20261126h5ab2b70"></script>
+  <script src="js/held-action-animations.js?v=20261126fixedWeaponSize1"></script>
   <!-- Great Fey skip voluntary gifts, proximity chatter, activity reactions, and pet greetings.
        Load once before all NPC interaction modules, including lazy runtimes. -->
   <script src="js/npc-interaction-policy.js?v=20261021fey1"></script>
@@ -211,14 +212,14 @@
   <!-- Accepted alcohol handoff + NPC playback; game.js supplies private-state adapters. -->
   <script src="js/npc-drink-interaction.js?v=20261119komaRigIdle5"></script>
   <script src="js/player-yawn-stretch-presentation.js?v=20261119shoulderReach5"></script> <!-- Final-render player yawn stretch; temporarily hides held visuals without unequipping them. -->
-  <script src="js/npc-yawn-rest.js?v=20261123youngVoice1"></script> <!-- NPC fatigue, waking yawns, untrimmed 0.350x intensity-5 breath fallback, player stretch and daily Slagothim Koma. -->
+  <script src="js/npc-yawn-rest.js?v=20261126bedNpcOnly1"></script> <!-- NPC fatigue, waking yawns, untrimmed 0.350x intensity-5 breath fallback, player stretch and daily Slagothim Koma. -->
   <!-- Inventory/HUD serving-fraction badges for alcohol bottles. -->
   <script src="js/alcohol-inventory-ui.js?v=20261028packpreview2"></script>
   <!-- Shared 2-bone leg solver (hip->thigh->calf) used by procedural-leg-animation.js -->
   <script src="js/leg-bones.js?v=20261013hb53d07e"></script>
   <!-- Procedural leg/foot animation for non-creature avatars (player + NPC walkers) -->
   <script src="js/actor-body-sink.js?v=20261117hRigSink2"></script> <!-- Body sink for enemies and NPCs: lowers their own roots while the leg handle folds the knees. -->
-  <script src="js/procedural-leg-animation.js?v=20261126h800b8a8"></script>
+  <script src="js/procedural-leg-animation.js?v=20261126footGroundAudit1"></script>
   <!-- In-game pants garment: skinned onto the procedural legs (rig data in config/pants-rigs.js, maths in js/pants-rig-core.js) -->
   <script src="config/pants-rigs.js?v=20261015h74422e2"></script>
   <script src="js/pants-rig-core.js?v=20261117waistWidthSolve1"></script>
@@ -355,10 +356,10 @@
        Used by game.js's updateToolMesh AND every BanditCombat humanoid, so it must load before combat-core.js, combat-bandit.js, the lazily loaded
        weapon-tool-stances.js / enemy-weapon-stances.js, and game.js. -->
   <script src="config/portrait-mouth-points.js?v=20261025mouth1"></script>
-  <script src="js/combat/shared-attack-pose.js?v=20261111flailPose1"></script>
-  <script src="config/weapon-sprite-assemblies.js?v=20261124cpuAudit2"></script> <!-- Authoritative multi-sprite weapon recipes shared with Tool Hub. -->
+  <script src="js/combat/shared-attack-pose.js?v=20261126flailHeadLean1"></script>
+  <script src="config/weapon-sprite-assemblies.js?v=20261126staffClearance1"></script> <!-- Authoritative multi-sprite weapon recipes shared with Tool Hub. -->
   <script src="js/weapon-layer-effects.js?v=20261115torchWick2"></script> <!-- Recolor, visibility masks and fire behind head overlays. -->
-  <script src="js/weapon-sprite-assemblies.js?v=20261124cpuAudit2"></script> <!-- Shared layered PNG weapon + flail component runtime; pre-render updates player and enemy assemblies. -->
+  <script src="js/weapon-sprite-assemblies.js?v=20261126flailAudit3"></script> <!-- Shared layered PNG weapon + flail component runtime; pre-render updates player and enemy assemblies. -->
   <script src="js/tool-activity-stages.js?v=20261111modToolWork2"></script> <!-- NPC dig/tool-action stages. -->
   <!-- Combat stats, core, attack processing, player abilities, loadout and enchantment systems. Edit js/bootstrap/classic-groups/combat-main.js instead of this entrypoint. -->
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="combat-main"></script>
@@ -520,7 +521,7 @@
        relative to the other systems above doesn't matter; must load before
        game.js, which calls window.CalendarSystem.init(...) during its own
        setup. -->
-  <script src="js/calendar-system.js?v=20261126he112adb"></script>
+  <script src="js/calendar-system.js?v=20261126bedPassageAudit2"></script>
   <!-- Resolves a map/interior's active alternate `layouts` entry (see
        docs/config/maps/map_i_temple.json's spirit_communion layout) against
        the current calendar time — window.MapLayoutSystem. Pure/stateless, no
@@ -570,7 +571,7 @@
   <script src="js/cliff-route-network.js?v=20261122mushrooms1"></script> <!-- Shared graph for selected exterior handholds, balcony terrain and wildlife routes. -->
   <script src="js/fall-system.js?v=20261107fall1"></script>
   <script src="js/player-air-motion-config.js?v=20261109actualMoveSpeed2"></script>
-  <script src="js/player-jump.js?v=20261126planarRebase1"></script> <!-- Free jumping and real cover-elevation traversal, initialized by ClimbSystem. -->
+  <script src="js/player-jump.js?v=20261126groundFit1"></script> <!-- Free jumping and real cover-elevation traversal, initialized by ClimbSystem. -->
   <script src="js/climb-system.js?v=20261122hb6f619e"></script>
   <script src="js/cliff-crawl-presentation.js?v=20261114footYaw1"></script> <!-- Rock-projected hands, feet and body for handhold routes and attached wall surfaces. -->
   <script src="js/creature-cliff-climb.js?v=20261122h48e636a"></script>
@@ -608,7 +609,7 @@
        injected via init(), so load order relative to the other systems
        above doesn't matter; must load before game.js, which calls
        window.PerpRotation.init(...) during its own setup. -->
-  <script src="js/perp-rotation.js?v=20261026h7f6f691"></script>
+  <script src="js/perp-rotation.js?v=20261126flailHeadLean1"></script>
   <script src="js/animal-shoulder-spline.js?v=20261126hc84ce7c"></script> <!-- Required by the actual seven-point flying rig perch deformation. -->
   <script src="js/flying-animal-rig.js?v=20261126h7c9249d"></script> <!-- Canonical authored two-bone bird wing/body assembly. -->
   <script src="js/tzatzul-registration.js?v=20261119dairyWild1"></script> <!-- Tzatzul dev species, hatchling peck, stable individual tint and flying-rig JSON. -->
@@ -666,9 +667,9 @@
        relative to the other systems above doesn't matter; must load
        before game.js, which calls window.MetalCraftShop.init(...) during
        its own setup. -->
-  <script src="config/modular-weapons.js?v=20261118captainWarCleaver2"></script>
+  <script src="config/modular-weapons.js?v=20261126fixedWeaponSize1"></script>
   <script src="js/modular-weapon-bridge-fill.js?v=20261109boreflex1"></script>
-  <script src="js/modular-weapons.js?v=20261119sideTangSweep2"></script>
+  <script src="js/modular-weapons.js?v=20261126fixedWeaponSize1"></script>
   <script src="js/bandit-captain-armaments.js?v=20261126planarRebase1"></script> <!-- Cultural donor pool + Foundry legal pair selection; registers unique loot before game startup. -->
   <script src="js/town-proposals.js?v=20261016proposals1"></script>
   <script src="js/foundry-shop.js?v=20261116subtiers1"></script>
@@ -2983,7 +2984,7 @@
   <script src="js/romance-wedding.js?v=20261126h44c94f3"></script>
   <script src="js/npc-following.js?v=20261122babyFollow1"></script>
   <!-- Shared spouse kiss motion/height solver. Loads before RomanceSystem.init but after the player render/leg APIs. -->
-  <script src="js/spouse-kiss-motion.js?v=20261126neckBlendConsolidate3"></script>
+  <script src="js/spouse-kiss-motion.js?v=20261126h40e548a"></script>
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="spouse-social"></script> <!-- Independently versioned, useful spouse dialogue and in-law relations. -->
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="romance-runtime"></script>
   <script src="js/npc-command-wheel.js?v=20261122familyBaby3"></script>
@@ -2996,14 +2997,14 @@
        See architecture/classic-script-groups.md. -->
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups2" data-classic-group="qol"></script>
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups2" data-classic-group="guild"></script>
-  <script src="js/bed-lie-pose.js?v=20261125h1082b9e"></script> <!-- Player sleep presentation; before game.js. -->
+  <script src="js/bed-lie-pose.js?v=20261126bedNpcOnly1"></script> <!-- Scheduled NPC mattress presentation; before game.js. -->
   <script src="js/lunge-targeting.js?v=20261121lungeAoeAudit2"></script>
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups2" data-classic-group="render"></script>
   <script src="js/held-gift-policy.js?v=20261122heldGiftPolicy1"></script> <!-- Shared gifting policy and clothing visual preparation; game.js owns equipment state. -->
   <script src="js/rootledoot-encounter.js?v=20261126h43c635f"></script>
-  <script src="game.js?v=20261126shoulderAway7"></script>
+  <script src="game.js?v=20261126he4513f6"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
-  <script src="js/opening-story-cutscene.js?v=20261115nativeArena1"></script>
+  <script src="js/opening-story-cutscene.js?v=20261126farmGuide3"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->
   <script src="js/banubu-snore.js?v=20261110banubuNightAudit3"></script>
   <script src="js/ui-element-editor.js?v=20261112keyPack2"></script>

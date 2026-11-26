@@ -394,6 +394,7 @@
           await window.DialogueContent?.renderNpcDialoguePortrait(); // Updates the existing world-space avatar/expression texture only.
         }
 
+        if (opts?.openingFarmGuide && (!dialogueOpen || _dialogueWalker !== walker)) return false; // A canceled asynchronous portrait load must not reopen the invitation.
         _npcDialogueEl.classList.add('open');
         _npcDialogueEl.setAttribute('aria-hidden', 'false');
 
@@ -3848,7 +3849,9 @@
             onAction(action) {
               if (action !== 'obj_interact') return { ok: false, message: 'Unknown action.' };
               if (sitInteraction || dialogueOpen || window.FarmAnimals.isHarvesting() || (window.Mounts?.rideState ?? 'none') !== 'none') return { ok: false, message: 'Cannot lie down right now.' };
-              return window.BedLiePose?.begin?.(o) || { ok: false, message: 'Lie-down animation is not available.' };
+              // Every input, including generic Interact (controller A), must use the chosen-duration passage.
+              const opened = window.HobunjiSleepPassageActionBridge?.openSharedSleepPassage?.();
+              return opened ? { ok: true, message: '', deferMemberSave: true } : { ok: false, message: 'Sleep is not available right now.' };
             },
           };
         }
@@ -4976,11 +4979,6 @@
         window.PlayerBodyTransformComposer?.setHeadAimTarget?.(null);
         if (window.CharacterActionLocks?.isLocked?.('player','head')) return; // Explicit paired gaze owns the same neck until its scoped lock releases.
         if (!playerNeckJoint) return;
-        if (window.BedLiePose?.isActive?.()) { // Sleeping rests the head with the flattened body instead of camera-tracking the reticle.
-          playerNeckJoint.rotation.set(0, 0, 0);
-          playerNeckJoint.userData.hobunjiPerspectiveAimLocked = false;
-          return;
-        }
         playerNeckJoint.userData.hobunjiPerspectiveAimLocked = (
           activeCameraMode === SHOULDER_SURF_MODE
           && !cutscenePreviewActive
@@ -9686,8 +9684,7 @@
       // — so the date/time (and weather) silently reset every session no
       // matter how long the world had actually been played. Loaded once in
       // spawnPlayerAvatar (before checkTothalShift, since currentTothalYear()
-      // reads calendar.day) and saved on every day rollover (advanceDay/
-      // sleepInBed) plus on tab close, mirroring _saveTothalYear's pattern.
+      // reads calendar.day) and saved on every day rollover (advanceDay) plus on tab close, mirroring _saveTothalYear's pattern.
       function _loadWorldCalendar() {
         const worldId = _tothalWorldId();
         if (!worldId) return null;
@@ -12242,10 +12239,17 @@
         else pool = area === 'town' ? worldTownTransitions : worldTransitions;
         const t = pool.find(x =>
           (_isBuildingArea(area) || _isZoneArea(area) || x.area === area) && x.col === pc && x.row === pr &&
-          (x.target !== 'zone' || window.OpeningStoryCutscene?.canEnterWilderness?.(_playerData) !== false) &&
           (!x.requiresKeyItem || !!window.KeyItemSystem?.has?.(x.requiresKeyItem)) &&
           canUseRoofSpot(x, area) &&
           (x.target === 'building' ? !!x.targetMapId : x.target === 'zone' ? !!x.targetMapId : x.target === 'exit_building' ? true : (Number.isFinite(x.targetCol) && Number.isFinite(x.targetRow)))) || null;
+        if (t?.target === 'zone' && window.OpeningStoryCutscene?.canEnterWilderness?.(_playerData) === false) {
+          _pendingSpotTransition = null;
+          _transitionLatch = key; // One reminder per approach; stepping away rearms the exit.
+          showToast(window.OpeningStoryCutscene.farmGuideExitMessage, true);
+          _spotReachedBar = true;
+          refreshActionBar();
+          return;
+        }
         _pendingSpotTransition = t;
         // Deliberately once per frame, not only when the spot changes: nothing
         // else re-resolves the action arch as the reticle moves or a tile/NPC
@@ -14371,7 +14375,7 @@
               const oldHeadArea = w.area; // Area transfers must never be mistaken for extreme one-frame movement.
               w.update(walkerDt);
               if (npcWalkers[i] === w) {
-                if (!w._familyBabyFollowing) window.BedLiePose?.syncNpc?.(w, w.currentScheduleTarget, walkerDt, w._bedLieSurface); // Every humanoid NPC uses real schedule-driven lie/stand poses, not just the player.
+                if (!w._familyBabyFollowing) window.BedLiePose?.syncNpc?.(w, w.currentScheduleTarget, walkerDt, w._bedLieSurface); // Humanoid NPCs use real schedule-driven lie/stand poses.
                 npcMovementHeadLookOptions.currentArea = currentArea;
                 npcMovementHeadLookOptions.hasScriptedGaze = cutscenePreviewActive
                   || npcDialogueStaging?.walker === w || _dialogueWalker === w || oldHeadArea !== w.area;
@@ -16135,7 +16139,7 @@
       // ── Exterior zones (Northern Cliffs / Southern Cloud Forest) ──────
       async function enterZone(mapId, defaultCol, defaultRow) {
         if (!cutscenePreviewActive && window.OpeningStoryCutscene?.canEnterWilderness?.() === false) {
-          showToast('Visit your farm with Spearhead before heading into the wilderness.', true);
+          showToast(window.OpeningStoryCutscene.farmGuideExitMessage, true);
           return;
         }
         // A Tothal Shift in progress is about to replace this zone's layout —
@@ -19638,7 +19642,6 @@
         }
         if (dialogueOpen) { updateNpcDialogueStaging(dt); return; }
         if (window.FarmAnimals.isHarvesting()) { window.FarmAnimals.updateHarvestInteraction(dt); return; }
-        if (window.BedLiePose?.isActive?.()) { player.vx = 0; player.vy = 0; return; } // Animated bed entry owns movement until morning.
         if (sitInteraction) { updateSitInteraction(dt); return; }
         if (window.Fishing?.state?.active) return;
         if (window.MusicMinigame?.state?.active) return;
@@ -25880,7 +25883,6 @@
       // ── Update player cube ────────────────────────────────────────
       function updatePlayerMesh(dt) {
         const pairedPoseLocked = window.CharacterActionLocks?.isLocked?.('player', 'pose') === true; // Exclusive paired choreography owns the live root position/yaw and authored knees until its lock releases.
-        window.BedLiePose?.update?.(dt); // The module positions the actor and its composer pose before this frame's avatar render sync.
         mineTorchLight.visible = !!window.TownMine?.floorFromMapId?.(currentArea);
         // Mount ride state now lives in js/mount-system.js (window.Mounts) —
         // shadowed locally so the rest of this function (posture/rotation
@@ -27176,6 +27178,7 @@
         }
         // Run after NPC routing/facing so an active ambient greeting can hold
         // its speaker toward the intended target for the rendered frame.
+        if (currentArea === 'town' && gameStarted && !paused && !dialogueOpen && !cutscenePreviewActive && sceneTransDir === 0) void window.OpeningStoryCutscene?.updateFarmGuide?.(now); // NPC positions and player mesh are current; travel/input decisions have already finished.
         ambientDialogueRuntime?.update(now);
         if (currentArea === 'town') {
           window.WaterSystem.updateTownWaterMeshes();
@@ -27408,8 +27411,8 @@
           // Breeding progress ticks per in-game hour crossed (rather than
           // once per day) so a pair's bar visibly creeps forward through
           // the day and can complete the moment it fills, not just at the
-          // next morning — see FarmAnimals.tickBreedingProgress. sleepInBed()
-          // covers whatever fraction of the day this real-time path skips.
+          // next morning — see FarmAnimals.tickBreedingProgress. The Sleep passage
+          // uses the same hourly calendar progression.
           window.FarmAnimals.tickBreedingProgress();
           // Cheap once-per-in-game-hour flush (~every 12 real seconds at the
           // default DAY_LENGTH_SECONDS) so a crash/force-close between day
@@ -27424,7 +27427,7 @@
         window.WeatherFX.chooseWeatherForDay();
         tickCropDay();
         window.NpcFarmPlots?.onNewDay?.();
-        // Breeding is ticked hourly (see updateCalendar/sleepInBed), not
+        // Breeding is ticked hourly (see updateCalendar), not
         // here — by the time a day naturally rolls over, every one of its
         // waking hours has already been credited in real time.
         window.FarmAnimals.tickResources();
@@ -27444,74 +27447,7 @@
         _saveWorldCalendar();
       }
 
-      // Sleeping in a bed (see getInteriorInteractableAt) skips straight to
-      // the next morning rather than waiting for calendar.time01 to wrap
-      // naturally — same day-rollover work as advanceDay() (weather reroll,
-      // crop growth, Tothal Shift check, den respawns), plus resetting the
-      // clock itself and restoring the player, which advanceDay() doesn't
-      // need to do since it only ever fires from a real elapsed-time wrap.
-      function sleepInBed() {
-        // Co-op: sleeping advances time only when every player is resting (js/time-consensus.js).
-        const gate = bedSleepGate();
-        if (gate?.state === 'waiting') return { ok: true, waiting: true, message: '💤 Waiting for the others to sleep…' };
-        if (gate?.state === 'resolved') return { ok: true, message: gate.message, hours: gate.hours };
-        return performSleepToMorning();
-      }
-
-      // In-game minutes until the next 06:00 (ranks a bed sleep against other queued skips).
-      function minutesUntilMorning() {
-        const playable = (NIGHT_HOUR - MORNING_HOUR) * 60;
-        return Math.max(0, 1 - calendar.time01) * playable + (24 * 60 - playable);
-      }
-      // null = single player (original immediate path). Otherwise the local player's rest state.
-      function bedSleepGate() {
-        const tc = window.TimeConsensus;
-        if (!tc?.shouldGate()) return null;
-        let done = tc.consumeResolution(player);
-        if (!done && tc.stateOf(player) === 'none') {
-          const r = tc.requestRest(player, { kind: 'sleep', source: 'bed', minutes: minutesUntilMorning(), run: () => { performSleepToMorning(); } });
-          if (r.state === 'resolved') done = tc.consumeResolution(player);
-        }
-        if (!done) return { state: 'waiting' };
-        return { state: 'resolved', hours: done.winner.minutes / 60, message: `😴 Everyone slept. Day ${calendar.day} begins: ${calendar.weather}.` };
-      }
-      function cancelBedSleep() { window.TimeConsensus?.cancelRest(player); }
-
-      function performSleepToMorning() {
-        // Whatever fraction of today's waking hours hadn't been played
-        // through yet (and so never got an hourly breeding tick from
-        // updateCalendar) gets credited here in one lump, so a pair
-        // progresses the same one day's worth whether that day was played
-        // out in real time or slept through.
-        const remainingDayFraction = Math.max(0, 1 - calendar.time01);
-        calendar.day += 1;
-        calendar.time01 = 0; // wake at MORNING_HOUR
-        window.WeatherFX.chooseWeatherForDay(); // also resyncs isRaining/rainStrength to the new hour
-        tickCropDay();
-        window.FarmAnimals.tickBreedingProgress(remainingDayFraction);
-        window.FarmAnimals.tickResources();
-        window.FarmAnimals.tickHearts();
-        window.ProceduralTasks.maybeRefreshRequestPostings();
-        checkTothalShift();
-        window.WildlifeSpawn.clearPendingDenRespawn();
-        window.ReagentPlants.respawnAllZoneReagents();
-        window.WildBerries.respawnAll(); // Same daily respawn advanceDay() runs.
-        window.WildTreasure.respawnAll();
-        window.ZoneRegrowth.tickFelledTreeRegrowth();
-        window.ZoneRegrowth.tickMinedRockRegrowth();
-        player.health  = player.maxHealth;
-        player.stamina = player.maxStamina;
-        const msg = `😴 Slept until morning. Day ${calendar.day} begins: ${calendar.weather}.`;
-        lastActionMessage = msg;
-        _saveWorldCalendar();
-        return { ok: true, message: msg };
-      }
-
-      window.BedLiePose?.init?.({
-        THREE, tileSize: () => TILE, player: () => player, playerRoot: () => playerMesh,
-        playerLegs: () => playerLegs, area: () => currentArea, sleep: sleepInBed, sleepGate: bedSleepGate, sleepCancel: cancelBedSleep,
-        showToast, isPaused: () => paused, getNpcWalkers: () => npcWalkers,
-      }); // Existing sleepInBed remains the sole authoritative day rollover; module owns presentation only.
+      window.BedLiePose?.init?.({ THREE }); // NPC mattress presentation only; player sleep belongs to CalendarSystem.
 
       // Weather rolling (chooseWeatherForDay/updateRainState) now lives
       // in js/weather-fx.js — call via window.WeatherFX.*.
@@ -30680,7 +30616,7 @@
         sit: beginSitInteraction,
         endSit: endSitInteraction,
         get sitState() { return sitInteraction; },
-        bedPose: () => ({ player: window.BedLiePose?.debug?.() || null, npcs: window.BedLiePose?.npcDebug?.(npcWalkers) || [] }), // On-device player/NPC sleeping posture, surface and x-ray status.
+        bedPose: () => ({ passage: window.CalendarSystem?.timeDebugSnapshot?.() || null, npcs: window.BedLiePose?.npcDebug?.(npcWalkers) || [] }), // Current time passage and NPC mattress presentation for mobile diagnostics.
         get playerState() { return { x: player.x, y: player.y, angle: player.angle }; },
         get camState() { return { mode: activeCameraMode, azimuthOffsetDeg: cameraAzimuthOffsetDeg, position: { x: camera.position.x, y: camera.position.y, z: camera.position.z } }; },
         foliageFurniture: (mapId = currentArea) => window.FoliageFurnitureRuntime?.debugState(mapId) || [],
@@ -30836,7 +30772,7 @@
       window.addEventListener('resize', () => { fitToAspect(); resizeCanvas(); updateCameraPosition(); if (menuOpen) auditInventorySizing(); });
       // Safety net for any inventory/pack change not already covered by an
       // explicit saveMemberWorldData() call above. Also flushes the
-      // in-progress time-of-day (advanceDay/sleepInBed already save on their
+      // in-progress time-of-day (advanceDay already saves on its
       // own day rollovers, but this catches whatever time01 progress
       // happened since the last one, so closing mid-afternoon doesn't roll
       // back to that morning next session).
@@ -33141,7 +33077,7 @@
         getBaseMoveSpeedTiles: () => MOVE_SPEED / TILE, // Jump travel reuses normal walking distance per second, not a separate hard-coded pace.
         canStartFreeJump: () => gameStarted && !paused && !dialogueOpen && !sitInteraction &&
           !window.Fishing?.state?.active && !window.MusicMinigame?.state?.active &&
-          !window.BedLiePose?.isActive?.() && !window.FarmAnimals?.isHarvesting?.() &&
+          !window.FarmAnimals?.isHarvesting?.() &&
           !window.PlayerSocialPoses?.active, // Actions/minigames that own the player must not secretly queue a jump.
         canPlayerOccupy, // Normal grounded movement authority.
         canPlayerOccupyAtHeight, // Jump uses native world collision at the physical foot height.
@@ -33909,7 +33845,7 @@
         else window.FarmPlotEditor?.restore?.(null); // A world with no saved layout has no family plots either.
         window.FarmEditor.applyFarmLayoutObjects(_worldLayout);
         window.FarmProduction.load(_worldLayout?.productionBuildings || []); // repositions again if THIS world saved custom crate positions
-        // Seed a starter bed in the farmhouse for a brand-new world — sleepInBed()
+        // Seed a starter bed in the farmhouse for a brand-new world — the Sleep passage
         // (see getInteriorInteractableAt) needs somewhere to sleep, and a fresh
         // player has no bed item in inventory yet to buy+place one themselves.
         // Gated on this world having no saved layout at all, so it never
@@ -35408,6 +35344,50 @@
         window.WeaponToolStances?.invalidateHolderMatrixWorld?.();
       }
 
+      let openingGuidePoints = null; // Cached pair of safe road-adjacent waiting/leading tiles, replaced on town layout change.
+      function openingFarmGuideTarget(walking) {
+        const gate = worldTownTransitions.find(spot => spot.target === 'farm' && spot.area === 'town'); // Actual authored farm entrance.
+        if (!gate || !townGrid) return null;
+        const cached = openingGuidePoints;
+        if (cached?.gate === gate && cached.grid === townGrid &&
+            isNpcTileWalkable('town', cached.wait.c, cached.wait.r) && isNpcTileWalkable('town', cached.lead.c, cached.lead.r)) return walking ? cached.lead : cached.wait;
+        const candidates = []; // Rebuild only when the authored map changes or a selected spot becomes blocked.
+        for (let dr = -4; dr <= 4; dr++) for (let dc = -4; dc <= 4; dc++) {
+          const c = gate.col + dc, r = gate.row + dr, distance = Math.hypot(dc, dr);
+          if (distance < 1 || distance > 4 || !isNpcTileWalkable('town', c, r)) continue;
+          if (worldTownTransitions.some(spot => spot.col === c && spot.row === r)) continue;
+          const road = townGrid[r]?.[c]?.type === TileType.PATH;
+          candidates.push({ c, r, distance, road, inward: dr < 0 });
+        }
+        const rank = (p, desired) => Math.abs(p.distance - desired) + (p.road ? 0 : 2) + (p.inward ? 0 : .5); // Prefer the visible approach road inside town.
+        const leads = candidates.slice().sort((a,b) => rank(a,1) - rank(b,1));
+        const waits = candidates.slice().sort((a,b) => rank(a,3) - rank(b,3));
+        let pair = null; // Require a connected, directly traversable pair instead of independent nearby tiles.
+        for (const lead of leads) {
+          const wait = waits.find(p => p.distance > lead.distance + .75 && canNpcBeeline('town', p.c + .5, p.r + .5, lead.c, lead.r));
+          if (wait) { pair = { lead, wait }; break; }
+        }
+        if (!pair) return null;
+        const target = p => ({ area: 'town', c: p.c, r: p.r, pose: 'stand', activity: 'Waiting for the new farmer', label: 'Farm entrance' });
+        openingGuidePoints = { gate, grid: townGrid, wait: target(pair.wait), lead: target(pair.lead) };
+        return walking ? openingGuidePoints.lead : openingGuidePoints.wait;
+      }
+
+      function visibleOpeningFarmGuide() {
+        if (currentArea !== 'town' || !gameStarted || paused || menuOpen || dialogueOpen || cutscenePreviewActive || sceneTransDir !== 0 ||
+            isPlayerInCombat() || sitInteraction || farmEditMode || actionHeldDown || chargeAction || toolSwingT > 0 ||
+            window.CombatTutorial?.active?.() || window.Fishing?.state?.active || window.MusicMinigame?.state?.active ||
+            window.CharacterActionLocks?.isLocked?.('player', 'movement')) return null;
+        const walker = findNpcWalker('spearhead_unumanuk'); // Use the real NPC and the shared dialogue staging.
+        const point = walker?.root?.position;
+        if (walker?.area !== 'town' || !walker.root?.visible || !point || window.NpcConversations?.isBusy?.(walker, player)) return null;
+        if (Math.hypot(point.x * TILE - player.x, point.z * TILE - player.y) > 4 * TILE) return null;
+        const target = openingFarmGuideTarget(false); // Do not summon the player while Spearhead is still crossing town.
+        if (!target || Math.hypot(point.x - target.c - .5, point.z - target.r - .5) > 1.25) return null;
+        const observer = { x: point.x * TILE, y: point.z * TILE, health: 1, avatarGroup: walker.avatarGroup, root: walker.root, areaId: 'town', walker }; // Shared sight expects pixel coordinates and real avatar height.
+        return window.RangedWeapons?.hasLineOfSight?.(observer, player, true) === true ? walker : null;
+      }
+
       function openingFarmTourPoints() {
         const entry = { c: Math.floor(player.x / TILE), r: Math.floor(player.y / TILE) }; // Starts where the owner actually entered the farm.
         const front = window.FarmhouseLoginSpawn?.frontDoor?.(); // Supplies both the approach and door normal for the final facade view.
@@ -35454,6 +35434,16 @@
         preloadOpeningMeeting,
         placeOutsideTemple: placeOpeningPlayerOutsideTemple,
         farmTourPoints: openingFarmTourPoints,
+        farmGuideTarget: openingFarmGuideTarget,
+        visibleFarmGuide: visibleOpeningFarmGuide,
+        async openFarmGuideDialogue(walker) {
+          try {
+            return await openNpcDialogue(walker, { openingFarmGuide: true, node: { type: 'line', text: 'Follow me. I will show you to your farm.', next: null } });
+          } catch (error) {
+            if (dialogueOpen && _dialogueWalker === walker) closeNpcDialogue(); // Release the local conversation lock if portrait or dialogue setup fails.
+            throw error;
+          }
+        },
         run: (payload, options = {}) => runCutscenePreview(payload, { ...options, live: true }), // Plays Director-format payloads as real gameplay cinematics with cleanup/restoration.
         isActive: () => cutscenePreviewActive, // Gameplay HUD owners can check the director without allocating a debug snapshot.
         debugSnapshot: () => ({ active: !!cutscenePreviewActive, currentArea, stageId: cutscenePreviewStageId, zoomPercent: cutscenePreviewZoomPercent, horizontalCameraSqueeze: _cameraHorizontalDebug, orbit: window.CinematicCameraRuntime?.activeCamera?.()?.orbitDebug || null, latestChange: 'Rescue now uses a temporary generated Cloud Forest mini-wilderness with the authored locale and full mini-map residency; cleaned up after playback. Fight uses the rescue wide shot; Spearhead enters from outside the prior view; moving humanoids animate legs; final player stance yaw obeys body/neck deadzones; tighter surveyor shots and rear chair with departure hiding; lower farm camera, moving two-character follow shot and facade view after both arrivals; intro wind-only audio.' }), // Mobile/debug-panel callers can inspect live cinematic ownership without a console.
