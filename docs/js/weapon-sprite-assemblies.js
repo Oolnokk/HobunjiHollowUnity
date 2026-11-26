@@ -860,10 +860,11 @@
     const authoredChainScaleY = chainScaleY; // Preserve the authored rope width even when a combat pose shortens its longitudinal reach.
     const headScale = relativePartScale(flail.head); // Head size is still independently handle-relative.
     const pose=global.HeldGroundPose;
+    const preview=pose?.enabled?.()&&!state.dualPhysicsSource&&global.HobunjiAttackEditorToolContext?.toolPlaneMesh===root;
     const runtime=pose?.enabled?.()&&!state.dualPhysicsSource
       &&root.parent===global.ProceduralHandAttachments?.gameDeps?.toolHolder
       ?global.WeaponToolStances?.getRuntimeState?.():null;
-    const profile=runtime?.activeSlot==='weapon'&&runtime.itemKey===state.itemKey
+    const profile=preview||runtime?.activeSlot==='weapon'&&runtime.itemKey===state.itemKey
       ?global.HobunjiHandToolGrips?.groundProfileForTool?.(state.itemKey):null;
     const floor=profile?.ropeMinScale!=null?pose.groundY():null;
     const contact=Number.isFinite(floor)&&!state.attacking?idleHeadContact(state,unit,profile):null;
@@ -874,7 +875,7 @@
     const spanY=(state.chainBottom.y-state.chainTop.y)*unit*chainScaleY;
     const baseLength=Math.hypot(spanX,spanY)*attachmentScale;
     const lightDrop=profile?.ropeMinScale!=null?pose.referenceDrop(root,q.pivotLocal):null; // Same immutable light stance reference as the haft.
-    const canFit=!!contact&&Number.isFinite(lightDrop)&&!state.fishingFlailHeadSpin&&global.PlayerJump?.heldPoseGrounded?.()===true;
+    const canFit=!!contact&&Number.isFinite(lightDrop)&&!state.fishingFlailHeadSpin&&(preview||global.PlayerJump?.heldPoseGrounded?.()===true);
     const candidate=canFit?pose.ropeFitCandidate(spanX,spanY,attachmentScale,lightDrop-contact.drop*attachmentScale*headScale,profile.ropeMinScale,pose.lightRopeScale(root)):null;
     const fixedScale=profile?.ropeMinScale!=null?pose.fittedRopeScale(root,profile,canFit,candidate):1;
     const desiredLocal=baseLength*fixedScale/attachmentScale;

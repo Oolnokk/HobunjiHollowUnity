@@ -1950,7 +1950,7 @@ function applyWeaponGroundPreview(){
   const height=grips.actualCharacterHeight?.(identity.speciesId,identity.gender);
   const profile=grips.groundProfileForTool?.(currentToolKey);
   const light=currentActionId==='light_idle'?anim.poses.neutral:
-    window.AttackIdleStanceEditor?.getConfig?.()?.stances?.lightWeapon||TOOL_PRESETS.find(entry=>entry.id==='light_weapon_idle')?.neutral;
+    window.AttackIdleStanceEditor?.lightPoseForPreview?.()||TOOL_PRESETS.find(entry=>entry.id==='light_weapon_idle')?.neutral;
   if(!light)return solver.skip('waiting-for-light-stance');
   const context=window.ProceduralHandFrameDriver?.groundPoseContext?.(toolHolder,currentToolKey)||{
     rig:{parent:characterBodyScaleRoot},itemKey:currentToolKey,preview:true,
@@ -2578,6 +2578,10 @@ window.HobunjiAttackEditorToolContext = Object.freeze({
     return true;
   }, // The direct torch-height control only updates the selected idle preview, never an active swing.
   focusNeutral() {
+    selectEditPhase('neutral');
+  },
+  previewAppliedGeometry() {
+    if(gizmoMode!=='off')setGizmoMode('off'); // Do not leave correction silently suppressed by an active authoring gizmo.
     selectEditPhase('neutral');
   },
   setHandCalibrationPresentation(active) {

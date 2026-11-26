@@ -10,7 +10,7 @@
   function configurePreview(three){previewThree=three;previewEnabled=!!three;}
   function setPreviewEnabled(value){previewEnabled=!!value;if(!previewEnabled)skip('raw-preview');}
   function three(){return previewThree||global.THREE;}
-  function skip(reason){clear();Object.assign(debug,{reason,fitted:false,angleDeg:0,shortening:0,originalMinY:null,finalMinY:null});}
+  function skip(reason){clear();Object.assign(debug,{reason,fitted:false,angleDeg:0,shortening:0,originalMinY:null,finalMinY:null,contactSource:null});}
   const actorFits=new WeakMap(); // Actor rig -> bounded per-item immutable physical fits, surviving equip/unequip and mesh replacement.
   const rootFits=new WeakMap(); // Flail owner resolves the exact same fit without another rig traversal.
   const NO_SEGMENTS=Object.freeze([]);

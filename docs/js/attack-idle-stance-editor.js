@@ -603,6 +603,7 @@
 
     window.AttackIdleStanceEditor = {
       getConfig: () => clone(exportPayload()),
+      lightPoseForPreview: () => workingConfig.stances.lightWeapon, // Read-only hot-path view; avoids cloning the full stance export every preview frame.
       reloadCommittedConfig: refreshCommittedConfig,
       getSelected: () => selectedKey,
       previewSelected: () => writeNeutralPose(currentPose()),

@@ -75,3 +75,43 @@ assert.equal(preview.enabled(),false);
 assert.equal(preview.snapshot().reason,'raw-preview');
 preview.setPreviewEnabled(true);
 assert.equal(preview.groundY(),0);
+
+const editor=fs.readFileSync('docs/tools/attack-animation-editor/index.html','utf8');
+assert.ok(editor.includes('js/held-ground-pose.js?'),'standalone page loads shared solver');
+assert.ok(editor.includes('configurePreview?.(THREE)'),'editor supplies module-scoped Three');
+assert.ok(editor.includes('solver.constrainWeapon(toolHolder,toolPlaneMesh,context)'),'editor runs real solver');
+assert.ok(editor.includes('applyWeaponGroundPreview();'),'applied pose reaches solver');
+assert.ok(editor.includes('previewAppliedGeometry()'),'Apply exits raw gizmo mode and focuses Neutral');
+const author=fs.readFileSync('docs/js/weapon-geometry-author.js','utf8');
+assert.ok(author.includes('originalGeometryFor?.(plane?.geometry)'),'drawing retains source coordinates during compression');
+assert.ok(author.includes('weaponGeometryFitStatus'),'visible live diagnostic');
+let THREE;
+try{THREE=require('three');}catch(e){if(e.code!=='MODULE_NOT_FOUND')throw e;}
+if(THREE){
+  // Actual Three transforms and buffer geometry, synthetic opaque sprite.
+  // No browser/WebGL or gameplay singleton is needed to run the editor path.
+  const rgba=new Uint8ClampedArray(4*16*4).fill(255);
+  const w={document:{createElement:()=>({getContext:()=>({drawImage(){},getImageData(){return {data:rgba};}})})}};
+  vm.runInNewContext(fs.readFileSync('docs/js/held-ground-pose.js','utf8'),{window:w});
+  const solver=w.HeldGroundPose;solver.configurePreview(THREE);
+  const parent=new THREE.Group(),holder=new THREE.Group(),weapon=new THREE.Group();
+  parent.add(holder);holder.add(weapon);
+  const source=new THREE.PlaneGeometry(.5,2),plane=new THREE.Mesh(source,new THREE.MeshBasicMaterial());
+  plane.material.map={image:{width:4,height:16}};plane.rotation.x=-Math.PI/2;weapon.add(plane);weapon.userData.toolPlane=plane;
+  holder.position.y=.6;holder.rotation.x=Math.PI/2;parent.updateMatrixWorld(true);
+  const profile={a:-1,b:1,heightFraction:1,minSegmentScale:.5,segments:[{a:0,b:.9}],contactOutline:[]};
+  const ctx={preview:true,rig:{parent},itemKey:'test',fitIdentity:'test',primary:{position:{x:0,y:0,z:0}},basis:new THREE.Quaternion(),authoredGripZ:0,profile,allowFit:true,lightReference:holder.matrix.clone()};
+  assert.equal(solver.needsFit(ctx,weapon),true);
+  solver.constrainWeapon(holder,weapon,ctx);
+  const result=solver.snapshot();assert.ok(result.fitted&&result.shortening>0,'preview establishes shortening from Light');
+  assert.ok(result.finalMinY>=.035-1e-5,'lowest opaque contact clears floor');
+  assert.ok(plane.geometry!==source,'actual displayed geometry is shortened');
+  const fitted=plane.geometry;
+  holder.position.y=1.5;holder.rotation.x=Math.PI/2;parent.updateMatrixWorld(true);
+  delete ctx.lightReference;solver.constrainWeapon(holder,weapon,ctx);
+  assert.equal(plane.geometry,fitted,'later frames retain physical length');
+  close(solver.snapshot().shortening,result.shortening);
+  solver.setPreviewEnabled(false);
+  assert.equal(plane.geometry,source,'raw mode restores original geometry');
+  console.log('held ground pose: actual Three preview integration passed');
+}
