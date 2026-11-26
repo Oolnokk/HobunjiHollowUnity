@@ -355,3 +355,33 @@ kiss.stop('new-foot-owner');
 assert(hopLegs.hasExternalFootTargets(), 'kiss cleanup preserves a successor’s foot targets');
 assert(hopLegs.releaseExternalFootTargets(replacementTargets), 'the newer action still owns both contacts');
 console.log('Spouse kiss LIVE Three.js r128 player rig PASS: both height orders, late render ownership, and foot recovery after landing, cancellation, and takeover.');
+
+// A lip in the restored blend moves only a fraction of its neck joint's
+// world displacement. The paired solver must correct the measured residual.
+{
+  const a = new THREE.Group(), b = new THREE.Group();
+  const ja = new THREE.Bone(), jb = new THREE.Bone();
+  scene.add(a,b); a.add(ja); b.add(jb); b.position.x=.19;
+  for (const [model,joint] of [[a,ja],[b,jb]]) {
+    model.userData.neckRig={available:true,neckJoint:joint};
+    model.userData.portraitModelHeight=1;
+  }
+  const originalHeadFrame=window.SharedAttackPose.headFrame;
+  window.SharedAttackPose.headFrame=(frame,model)=>{
+    model.getWorldPosition(frame.position);
+    const joint=model.userData.neckRig.neckJoint;
+    const tip=joint.getWorldPosition(new THREE.Vector3());
+    frame.position.lerp(tip,.85);
+    return true;
+  };
+  const scratch={THREE};
+  const result=kiss.syncMouthContact(a,b,1.2,scratch);
+  assert(result.contact, 'partially weighted lip reaches the original contact tolerance');
+  assert(Math.abs(result.distance-result.targetGap)<=result.gapTolerance, 'corrected gap remains visible');
+  const repeat=kiss.syncMouthContact(a,b,1.2,scratch);
+  assert(Math.abs(repeat.distance-result.distance)<1e-8, 'correction is idempotent on scrub/re-render');
+  kiss.syncMouthContact(null,null,0,scratch);
+  assert(ja.position.length()<1e-8 && jb.position.length()<1e-8, 'correction restores neutral joints');
+  window.SharedAttackPose.headFrame=originalHeadFrame;
+  scene.remove(a,b);
+}

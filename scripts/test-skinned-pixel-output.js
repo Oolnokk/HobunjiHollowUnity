@@ -39,6 +39,16 @@ function exercise(label){
   assert(Math.abs(out.x-12.05)<1e-9 && Math.abs(out.y-24.86)<1e-9,label+' blends torso/neck/head weights within the short neck instead of assuming a rigid head');
 }
 exercise('base resolver');
+const sharedResolver = sandbox.window.PNGPlaneAvatar.resolveSkinnedPixelWorldPosition;
 vm.runInContext(fs.readFileSync('docs/js/portrait-plane-outline-parity.js','utf8'),sandbox);
+assert.equal(sandbox.window.PNGPlaneAvatar.resolveSkinnedPixelWorldPosition, sharedResolver, 'outline adapter preserves the single source-pixel resolver');
 exercise('game parity resolver');
 console.log('skinned pixel output: bind/world parity, mirrored weighted heads, ancestor refresh and vector reuse PASS');
+
+// Animation Author imports Three as an ES module; window.THREE is optional.
+plane.position = new Vector3();
+sandbox.THREE = undefined;
+sandbox.window.THREE = undefined;
+ancestorsFresh = false;
+const moduleResult = sandbox.window.PNGPlaneAvatar.resolveSkinnedPixelWorldPosition(avatar, {x:25,y:25});
+assert(Math.abs(moduleResult.x-15.1)<1e-9, 'module-only Three uses the live mesh vector constructor');

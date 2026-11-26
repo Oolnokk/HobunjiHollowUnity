@@ -23,7 +23,7 @@ function extract(name) {
 const ctx = vm.createContext({});
 for (const name of [
   'smoothstep01', 'neckBlendBand', 'neckBlendWeight', 'headOffsetWeightAt',
-  'neckBlendRows', 'headScaleGateAtPixel', 'headScaleWeightAt',
+  'neckBlendRows', 'headScaleGateAtPixel', 'headScaleWeightAt', 'humanoidBlendWeightsAt', 'humanoidSpineSkinAt',
 ]) vm.runInContext(extract(name), ctx);
 ctx.window = ctx; // Run the exact shared seven-node interpolation, not a fixture that puts every torso vertex on spine node 6.
 vm.runInContext(fs.readFileSync('docs/js/character-spine.js', 'utf8'), ctx);
@@ -60,8 +60,10 @@ function verifyPixelBand(size, headBottom, segmentsY) {
     headBoundsPx: { left: size * 0.3, right: size * 0.7 },
   });
   const { top, bottom } = geometry.userData.neckBandPx;
-  assert.ok(Math.abs(top - (headBottom + 0.5)) < .001, 'bend top equals last sprite head pixel');
-  assert.ok(bottom - top > 0 && bottom - top <= 3, 'bend extends only 2-3 source pixels, even for a very high resolution sprite');
+  assert.equal(geometry.userData.portraitGridRows.length, segmentsY + 1, 'attachment sampler uses the actual redistributed grid');
+  assert.ok(Math.abs(geometry.userData.neckPivotPx - (headBottom + 0.5)) < .001, 'joint stays at last sprite head pixel');
+  assert.ok(bottom - top > 0 && bottom - top <= size * .30 + .001, 'broad blend is clipped to the sprite, not the physical joint');
+  assert.ok(Math.abs(geometry.userData.blendHeight - .30) < 1e-8, 'native broad falloff restored');
   assert.equal(geometry.userData.planeCellCount, 6 * segmentsY, 'no extra geometry cells');
   const expected = 6 * segmentsY * 6 * 2; // Two triangles, three vertices, two rendered faces per cell.
   const positions = geometry.getAttribute('position'), uvs = geometry.getAttribute('uv');
@@ -78,14 +80,11 @@ function verifyPixelBand(size, headBottom, segmentsY) {
       const bone = indices.array[i * 4 + j];
       return sum + (bone === 8 || bone === 9 ? weights.array[i * 4 + j] : 0);
     }, 0);
-    if (y < neckY - geometry.userData.blendHeight - 1e-5) {
-      assert.ok(turn < 1e-5, 'no neck rotation influences torso below 2-3 source pixels');
-      const placement = [0, 1, 2, 3].reduce((sum, j) => {
-        const bone = indices.array[i * 4 + j]; // No torso vertex is allowed to inherit the oversized head-offset (7) or turning head (8/9).
-        return sum + (bone >= 7 && bone <= 9 ? weights.array[i * 4 + j] : 0);
-      }, 0);
-      assert.ok(placement < 1e-5, 'skin between pelvis and 2.5px neck belongs entirely to seven spline bones, not a huge placement bone');
-    }
+    const pixelX = (x + .5) * size;
+    const expectedTurn = ctx.neckBlendWeight(y, neckY, geometry.userData.blendHeight, modelHeight);
+    const expectedScale = ctx.headScaleWeightAt(y, neckY, modelHeight, pixelX, { left: size * .3, right: size * .7 }, expectedTurn, geometry.userData.blendHeight);
+    assert.ok(Math.abs(turn - Math.max(expectedTurn, expectedScale)) < 1e-5, 'GPU weights reproduce legacy broad turn and independent scale');
+    assert.ok([0, 1, 2, 3].every(j => indices.array[i * 4 + j] !== 7 || weights.array[i * 4 + j] === 0), 'no long placement-only pseudo-neck: real spine supplies remaining weight');
     if (Math.abs(x) < 1e-5) {
       const spineReachShare = [0, 1, 2, 3].reduce((sum, j) => {
         const bone = indices.array[i * 4 + j]; // Actual y-displacement at each spine bone k is reach * k/6; short neck bones inherit the tip's full reach.

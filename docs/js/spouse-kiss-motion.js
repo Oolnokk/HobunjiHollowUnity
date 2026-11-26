@@ -408,33 +408,59 @@
     };
     const firstLimit = firstHeight * .32; // Anatomical reach budget; actor root, feet, and posterior remain unmoved.
     const secondLimit = secondHeight * .32; // Larger partner can contribute a proportionally larger head reach.
-    let firstTravel = Math.min(requestedTravel * .5, firstLimit);
-    const secondTravel = Math.min(requestedTravel - firstTravel, secondLimit);
-    firstTravel += Math.min(Math.max(0, requestedTravel - firstTravel - secondTravel),
-      Math.max(0, firstLimit - firstTravel)); // Spend available neck travel before declaring the small gap unreachable.
-    const directionSign = signedTravel >= 0 ? 1 : -1; // For overlapping faces, retract rather than aiming at zero distance.
+    const desiredGap = baselineGap - signedTravel * blend; // Preserve the original eased approach/recovery trajectory.
+    let firstTravel = 0, secondTravel = 0; // Actual world joint travel, bounded independently for each participant.
+    let distance = baselineGap;
     const moveJoint = (joint, travel, direction, worldPoint) => {
       if (!(travel > 0)) return;
       joint.getWorldPosition(worldPoint);
       joint.parent.updateWorldMatrix?.(true, false);
-      worldPoint.addScaledVector(data.delta, direction * directionSign * travel / Math.max(1e-8, data.delta.length()) * blend);
+      worldPoint.addScaledVector(data.delta, direction * travel / Math.max(1e-8, data.delta.length()));
       data.localPoint.copy(worldPoint);
-      joint.parent.worldToLocal(data.localPoint); // Convert the world lip gap through its true bowed/scaled neck parent.
-      joint.position.copy(data.localPoint); // The body, shoulders, posterior, feet, and exported actor root remain unmoved.
+      joint.parent.worldToLocal(data.localPoint);
+      joint.position.copy(data.localPoint);
       joint.updateWorldMatrix?.(true, true);
     };
-    moveJoint(firstJoint, firstTravel, 1, data.firstWorld);
-    moveJoint(secondJoint, secondTravel, -1, data.secondWorld);
-    first.updateWorldMatrix?.(true, true);
-    second.updateWorldMatrix?.(true, true);
-    if (!pose.headFrame(data.firstFrame, first) || !pose.headFrame(data.secondFrame, second)) {
-      return { contact: false, distance: null, reason: 'lip-reprojection-failed' };
+    // A rendered lip can carry less than 100% neck weight. Reproject and
+    // correct the residual using measured response, not a guessed rigid lip.
+    // At most two additional corrections; never move roots or exceed reach.
+    let response = 1;
+    for (let step = 0; step < 3; step++) {
+      const residual = distance - desiredGap;
+      if (Math.abs(residual) <= (step ? gapTolerance * .25 : 1e-8)) break;
+      const sign = residual >= 0 ? 1 : -1;
+      const demand = Math.abs(residual) / response;
+      const firstRemaining = Math.max(0, firstLimit * blend - firstTravel);
+      const secondRemaining = Math.max(0, secondLimit * blend - secondTravel);
+      let a = Math.min(demand * .5, firstRemaining);
+      const b = Math.min(demand - a, secondRemaining);
+      a += Math.min(Math.max(0, demand - a - b), firstRemaining - a);
+      if (a + b <= 1e-8) break;
+      moveJoint(firstJoint, a, sign, data.firstWorld);
+      moveJoint(secondJoint, b, -sign, data.secondWorld);
+      firstTravel += a; secondTravel += b;
+      first.updateWorldMatrix?.(true, true);
+      second.updateWorldMatrix?.(true, true);
+      if (!pose.headFrame(data.firstFrame, first) || !pose.headFrame(data.secondFrame, second)) {
+        return { contact: false, distance: null, reason: 'lip-reprojection-failed' };
+      }
+      const previousDistance = distance;
+      distance = data.firstFrame.position.distanceTo(data.secondFrame.position);
+      response = clamp((previousDistance - distance) * sign / (a + b), .15, 1);
+      data.delta.subVectors(data.secondFrame.position, data.firstFrame.position);
+      if (data.delta.lengthSq() <= 1e-12) {
+        // Keep a stable separation axis for the rare coincident-pixel case.
+        first.getWorldPosition(data.firstWorld);
+        second.getWorldPosition(data.secondWorld);
+        data.delta.subVectors(data.secondWorld, data.firstWorld);
+        if (data.delta.lengthSq() <= 1e-10) data.delta.set(0, 0, 1);
+      }
     }
-    const distance = data.firstFrame.position.distanceTo(data.secondFrame.position);
     return { contact: blend > .99 && Math.abs(distance - targetGap) <= gapTolerance,
       distance, baselineGap, blend, targetGap, gapTolerance,
-      reachLimited: firstTravel + secondTravel < requestedTravel - gapTolerance,
-      firstHeadMove: firstTravel * blend, secondHeadMove: secondTravel * blend };
+      reachLimited: Math.abs(distance - desiredGap) > gapTolerance &&
+        firstTravel + secondTravel >= (firstLimit + secondLimit) * blend - gapTolerance,
+      firstHeadMove: firstTravel, secondHeadMove: secondTravel };
   }
 
   function isWithinRig(node, root) {
