@@ -288,7 +288,7 @@
 
   function currentPlayerRunningSpeedPxS() {
     const computed = Number(window.CompanionMovementSpeed?.playerRunningSpeed?.(deps?.player)); // Uses the same live terrain/buff/footing target-speed formula as on-foot locomotion, even while riding.
-    return Number.isFinite(computed) && computed >= 0 ? computed : Math.max(0, Number(deps?.MOVE_SPEED) || 0); // Isolated preview fixtures can still ride before the companion service initializes.
+    return Number.isFinite(computed) && computed >= 0 ? computed : Math.max(0, Number(deps?.MOVE_SPEED) || 0) * (window.ResourceSystem?.movementMultiplier?.(deps?.player, 'walk') ?? 1); // Isolated preview fixtures can still ride before the companion service initializes.
   }
 
   function mountedTopSpeedPxS() {
