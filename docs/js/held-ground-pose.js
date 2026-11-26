@@ -33,7 +33,7 @@
   function fittedRopeScale(root,profile,canFit,candidate) {
     const fit=rootFits.get(root);
     if(!enabled()||fit?.profile!==profile)return 1;
-    fit.ropeScale=fixedValue(fit.ropeScale,canFit,candidate);
+    fit.ropeScale=fixedValue(fit.ropeScale,canFit&&Number.isFinite(fit.amount),candidate);
     return fit.ropeScale??1;
   }
   const frameId = () => global.RuntimeFrameScheduler?.frameId?.();
@@ -213,40 +213,52 @@
     if(!enabled()){if(active)restoreGeometry();return false;}
     debug.angleDeg=0;debug.shortening=0;debug.originalMinY=null;debug.finalMinY=null;
     const y=groundY(),s=work(),plane=mesh?.userData?.toolPlane;
-    if(!s||!Number.isFinite(y)||!context||!holder?.parent||!holder.visible||!mesh?.visible||!plane?.visible)return fail('no-ground-or-rig');
+    if(!s||!context||!holder?.parent||!holder.visible||!mesh?.visible||!plane?.visible)return fail('no-rig');
+    // A missing support sample is normal over a gap; it must not undo a fit.
     if(active&&active.plane!==plane)restoreGeometry();
     if(context.flexibleHaft&&!context.profile)return fail('unmeasured-flail');
     const fit=fitFor(context,mesh); // Fitting and rotation are separate: only the former is retained.
-    // Reject independent assemblies, mirrored/multi-hand duplicates, dynamic
-    // attachments, noncanonical planes, and shared/custom shader deformation.
+    // Only a single canonical rigid plane (or an independent flail haft)
+    // owns a fitted strip. Rotation eligibility is checked separately below.
     if(mesh.parent!==holder||plane.parent!==mesh||(!context.flexibleHaft&&mesh.children.length!==1)||plane.children.length
-      ||mesh.userData.toolEndFlipBase||plane.isSkinnedMesh||plane.isInstancedMesh
-      ||Math.abs(mesh.quaternion.x)+Math.abs(mesh.quaternion.y)+Math.abs(mesh.quaternion.z)>1e-6
-      ||!(mesh.scale.z>0)||Math.abs(plane.rotation.x+Math.PI/2)>1e-4
-      ||Math.abs(plane.rotation.y)>1e-4||plane.position.lengthSq()>1e-8
-      ||!(plane.scale.x>0&&plane.scale.y>0&&plane.scale.z>0))return fail('unsupported-assembly-or-basis');
+      ||mesh.userData.toolEndFlipBase||plane.isSkinnedMesh||plane.isInstancedMesh||!(mesh.scale.z>0))return fail('unsupported-assembly');
     const source=active?.plane===plane&&plane.geometry===active.geometry?active.source:plane.geometry;
     if(source?.type!=='PlaneGeometry'||source.attributes.position.count!==4)return fail('non-quad-weapon');
     if(active&&active.source!==source)restoreGeometry();
     if(!source.boundingBox)source.computeBoundingBox();
     const box=source.boundingBox;
     if(!box||box.isEmpty()||Math.abs(box.max.z-box.min.z)>1e-6||Math.abs(box.max.z)>1e-6)return fail('invalid-geometry');
+    // Apply known physical geometry even when there is no floor, a rotated
+    // child basis, or a nonuniform parent that makes a rotation solve unsafe.
+    if(fit?.amount>1e-6&&fit.profile.segments.length) {
+      const rows=stripRows(box,fit.profile.segments,s.rows);
+      setCompression(plane,source,box,rows,fit.profile.segments,fit.anchorZ,fit.amount,holder,mesh.scale.z);
+      active.rootOffset=mesh.position.z;
+    } else releaseCompression();
+    debug.shortening=fit?.amount??0;debug.fitted=Number.isFinite(fit?.amount);
+    if(!Number.isFinite(y))return fail('no-ground-sample',true);
+    if(Math.abs(mesh.quaternion.x)+Math.abs(mesh.quaternion.y)+Math.abs(mesh.quaternion.z)>1e-6
+      ||Math.abs(plane.rotation.x+Math.PI/2)>1e-4||Math.abs(plane.rotation.y)>1e-4
+      ||plane.position.lengthSq()>1e-8||!(plane.scale.x>0&&plane.scale.y>0&&plane.scale.z>0))
+      return fail('unsupported-rotation-basis',true);
     const parent=holder.parent;
     parent.matrixWorld.decompose(s.pos,s.parentQ,s.scale);
-    if(!(s.scale.x>0)||Math.abs(s.scale.x-s.scale.y)>1e-5||Math.abs(s.scale.x-s.scale.z)>1e-5)return fail('nonuniform-holder-parent');
+    if(!(s.scale.x>0)||Math.abs(s.scale.x-s.scale.y)>1e-5||Math.abs(s.scale.x-s.scale.z)>1e-5)return fail('nonuniform-holder-parent',true);
     holder.updateMatrix();mesh.updateMatrix();plane.updateMatrix();
     s.holder.multiplyMatrices(parent.matrixWorld,holder.matrix);
     s.mesh.multiplyMatrices(s.holder,mesh.matrix);
     s.matrix.multiplyMatrices(s.mesh,plane.matrix);
     const primary=context.primary?.position;
-    if(!primary)return fail('no-primary-grip');
+    if(!primary)return fail('no-primary-grip',true);
     const basis=context.basis;
     const profile=context.profile;
     // Use a single source-space anchor for the whole lifetime of the fit.
     // Animated grip ranges and sweep twists may change the hand, never the
     // physical proportions of the weapon.
-    const neutralBasis=Math.abs(plane.rotation.z)<1e-6&&Math.abs(plane.scale.y-1)<1e-6&&Math.abs(basis.x)+Math.abs(basis.y)+Math.abs(basis.z)<1e-6;
-    const canFit=!!fit&&context.allowFit&&neutralBasis&&global.PlayerJump?.heldPoseGrounded?.()===true;
+    const image=plane.material?.map?.image;
+    const measuredSource=!!image&&(image.naturalWidth||image.width)>0&&(image.naturalHeight||image.height)>0
+      &&profile?.a>=-box.max.y-1e-4&&profile?.b<=-box.min.y+1e-4;
+    const canFit=!!fit&&context.allowFit&&measuredSource&&global.PlayerJump?.heldPoseGrounded?.()===true;
     const gripZ=fit?.anchorZ??context.authoredGripZ??gripZFor(primary,mesh);
     const segments=profile&&(canFit||Number.isFinite(fit?.amount))?profile.segments:NO_SEGMENTS;
     const rows=stripRows(box,segments,s.rows);

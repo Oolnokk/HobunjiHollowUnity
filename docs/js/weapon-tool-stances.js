@@ -544,7 +544,7 @@
         ? window.ProceduralHandFrameDriver?.groundPoseContext?.(this,itemKey) : null;
       if(clearanceContext) {
         clearanceContext.flexibleHaft=!!assembly?.flail; // Suspension is solved separately by its existing owner.
-        clearanceContext.allowFit=stanceApplied&&!attackInProgress; // Never size a weapon from a swing or midair pose.
+        clearanceContext.allowFit=(stanceApplied||!targetPose)&&!attackInProgress&&!authoredToolActionActive; // Never size a weapon from a swing or midair pose.
       }
 
       // game.js writes a -90° local-Z twist into the child plane whenever the

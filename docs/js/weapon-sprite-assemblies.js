@@ -859,12 +859,12 @@
     const spanY=(state.chainBottom.y-state.chainTop.y)*unit*chainScaleY;
     const baseLength=Math.hypot(spanX,spanY)*attachmentScale;
     const canFit=!!contact&&!state.fishingFlailHeadSpin&&global.PlayerJump?.heldPoseGrounded?.()===true;
-    const candidate=canFit&&baseLength>1e-8?Math.max(profile.ropeMinScale,Math.min(1,available/baseLength)):null;
+    const minimumSpan=baseLength>1e-8?Math.abs(spanX)*attachmentScale/baseLength:0;
+    const candidate=canFit&&baseLength>1e-8?Math.max(profile.ropeMinScale,minimumSpan,Math.min(1,available/baseLength)):null;
     const fixedScale=profile?.ropeMinScale!=null?pose.fittedRopeScale(root,profile,canFit,candidate):1;
     const desiredLocal=baseLength*fixedScale/attachmentScale;
-    if(Math.abs(spanY)>1e-8&&desiredLocal*desiredLocal>=spanX*spanX)
-      chainScaleY*=Math.sqrt(Math.max(0,desiredLocal*desiredLocal-spanX*spanX))/Math.abs(spanY);
-    else if(fixedScale<1&&Math.abs(spanY)>1e-8)chainScaleY=0.00001;
+    if(fixedScale<1&&Math.abs(spanY)>1e-8)
+      chainScaleY*=Math.max(0.00001,Math.sqrt(Math.max(0,desiredLocal*desiredLocal-spanX*spanX))/Math.abs(spanY));
     // Existing authored flail length animations are separate from the physical
     // fitted size; they may shorten further, but cannot exceed it.
     chainScaleY *= fixedScale<1?Math.min(1,state.flailLengthScale):state.flailLengthScale;
