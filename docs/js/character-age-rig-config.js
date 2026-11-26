@@ -116,6 +116,10 @@
     const donor = identityKey(window.hobunjiTransformSpeciesId?.(species) || species, gender);
     return profiles?.[mode]?.[key] || profiles?.[mode]?.[donor] || null;
   }
+  function limbHeightFor(mode, species, gender) {
+    return mode === 'adult' ? 1 : positive(profileFor(mode, species, gender, repositoryProfiles)?.height, defaults[mode]?.height || 1);
+  } // Fixed age-stage size reference. Body edits and convergence do not resize hands or feet.
+
   function scaledProfile(row, factor) {
     return { ...row, width: row.width * factor, height: row.height * factor, head: row.head * factor }; // Hands/feet are local relative-size factors: the body transform already scales their geometry.
   }
@@ -267,6 +271,7 @@
     effectiveValues: () => clone(applied || defaults),
     sanitize,
     composePreviewScale,
+    limbHeightFor,
     resolveStageAxes,
     buildConvergenceBasis,
     nonFamilyChildLimbsFor,

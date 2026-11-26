@@ -1214,7 +1214,8 @@ body[data-animation-author-mode="rig"] #maaViewportBadge { max-width:calc(100% -
 <script src="../../js/animation-author-creature-gameplay-parity.js?v=20261122hAnimalRig28"></script> <!-- Shared game creature dimensions and floor solver. -->
 <script src="rig-preview-species.js?v=20261123ha26d360"></script>
 <script src="../../js/animation-author-shoulder-pose-preview.js?v=20261123neckAgeSync2"></script>
-<script src="../../js/animation-author-rig-carrier-preview.js?v=20261123neckAgeSync2"></script>
+<script src="../../js/shoulder-pet-attachment-runtime.js?v=20261122shoulderHeadOnly1"></script>
+<script src="../../js/animation-author-rig-carrier-preview.js?v=20261126h873668e"></script>
 <script src="../../js/belt-stow-torch-display.js?v=20261122stowSplit1"></script> <!-- Shared torch art and pivot, separate from the rig profile schema. -->
 <script src="../../js/belt-stow-rig.js?v=20261122stowSplit1"></script> <!-- Shared belt-stow coordinates and torch art with gameplay. -->
 <script src="../../js/animation-author-belt-stow.js?v=20261122posteriorFire2"></script> <!-- Reusable Rig Coordinates belt slot, preview and mobile controls. --> <!-- Fixed Small pet; non-interactive NPC is inverse-positioned around its grip. --> <!-- Rig Coordinates: gameplay shoulder deformation preview for the authored grip. -->
@@ -1228,11 +1229,11 @@ const STORAGE_KEY = 'hobunjiNpcPlaneAvatarRepoViewer.source.v1';
 const KURRAYA_STORAGE_KEY = 'hobunjiNpcPlaneAvatarRepoViewer.kurrayaProfiles.v1';
 const CREATURE_STORAGE_KEY = 'hobunjiGameplayBackdropRepoViewer.creatureProfiles.v1';
 const CREATURE_RENDER_SCRIPT = 'js/creature-genetics-render.js';
-const AUTHOR_HAND_RUNTIME_SCRIPT = new URL('../../js/held-action-animations.js?v=20261126neckMultiplayer1', location.href).href; // Keeps the hand preview paired with this exact Animation Author build instead of an older selected repository ref.
-const AUTHOR_PORTRAIT_RUNTIME_SCRIPT = new URL('../../js/png-plane-avatar.js?v=20261126neckMultiplayer1', location.href).href; // Always pair the editor controls with the local portrait-density/wireframe API, even when previewing older repository art.
+const AUTHOR_HAND_RUNTIME_SCRIPT = new URL('../../js/held-action-animations.js?v=20261126h5ab2b70', location.href).href; // Keeps the hand preview paired with this exact Animation Author build instead of an older selected repository ref.
+const AUTHOR_PORTRAIT_RUNTIME_SCRIPT = new URL('../../js/png-plane-avatar.js?v=20261126hf11e5ca', location.href).href; // Always pair the editor controls with the local portrait-density/wireframe API, even when previewing older repository art.
 const AUTHOR_SPINE_RUNTIME_SCRIPT = new URL('../../js/character-spine.js?v=20261126neckAudit2', location.href).href; // The paired Longoran preview must load the same real spline solver as gameplay before it builds a skinned portrait.
 const AUTHOR_LEG_BONES_SCRIPT = new URL('../../js/leg-bones.js?v=20260821a', location.href).href; // Supplies the exact invisible two-bone solver used by the paired feet preview.
-const AUTHOR_FEET_RUNTIME_SCRIPT = new URL('../../js/procedural-leg-animation.js?v=20261126neckAudit3', location.href).href; // Keeps rig-preview feet paired with this author build instead of the selected repository ref.
+const AUTHOR_FEET_RUNTIME_SCRIPT = new URL('../../js/procedural-leg-animation.js?v=20261126h32ad45c', location.href).href; // Keeps rig-preview feet paired with this author build instead of the selected repository ref.
 const AUTHOR_SHOULDER_RIG_RUNTIME_URLS = Object.freeze(Object.fromEntries([
   'js/grehlr-head-rig-correction.js', 'js/animal-head-rig-authored.js',
   'js/animal-shoulder-spline-profiles.js', 'js/animal-shoulder-spline.js',
@@ -1744,10 +1745,13 @@ function portraitExportFor(npc) {
     ...(npc.appearance?.bodyColors || {}),
   };
   return {
+    id: npc.id,
     name: npc.name || npc.id || 'NPC',
+    restingExpression: npc.restingExpression,
+    clothingPatterns: npc.clothingPatterns,
     appearance,
-    equippedCosmetics: asEquipArray(raw.equippedCosmetics || profile.equippedCosmetics || profile.cosmetics || profile.equipment || npc.equippedCosmetics),
-    appliedDyes: raw.appliedDyes || profile.appliedDyes || profile.dyes || npc.appliedDyes || {},
+    equippedCosmetics: asEquipArray(npc.equippedCosmetics ?? raw.equippedCosmetics ?? profile.equippedCosmetics ?? profile.cosmetics ?? profile.equipment),
+    appliedDyes: npc.appliedDyes ?? raw.appliedDyes ?? profile.appliedDyes ?? profile.dyes ?? {},
     portrait: npc.portrait || {},
     rawExport: raw,
   };
@@ -1776,8 +1780,8 @@ async function buildAvatarRender(npc) {
     const size = Number(window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.previewPortraitCanvasSize) || 200;
     const front = Object.assign(document.createElement('canvas'), { width: size, height: size });
     const back = Object.assign(document.createElement('canvas'), { width: size, height: size });
-    await renderPortraitSerial(front, profile, { seatId: npc.id || npc.name || 'npc' });
-    await renderPortraitSerial(back, profile, { seatId: npc.id || npc.name || 'npc', portraitView: 'behind' });
+    await renderPortraitSerial(front, profile, { seatId: npc.id || npc.name || 'npc', forceEyesOpen: true });
+    await renderPortraitSerial(back, profile, { seatId: npc.id || npc.name || 'npc', portraitView: 'behind', forceEyesOpen: true });
     return { exportNpc, profile, front, back };
   })();
   state.renderCache.set(cacheKey, promise);
@@ -9000,7 +9004,7 @@ applyViewportRotationDeadzones = function(dt = 0) {
   const orderedActors = viewportActorsParentFirst(); // Used so a carrier facing transform reaches its rider before rider yaw is measured.
 
   for (const actor of orderedActors) {
-    if (actor.source?.type === 'creature' && shoulderPetCarrierV1521(actor)) {
+    if (actor.source?.type === 'creature' && (shoulderPetCarrierV1521(actor) || shoulderCarrierEditingV1553(actor))) {
       const facingRoot = actor.viewportFacingRoot || actor.viewportVisual?.facingRoot; // V15.12 uses this shared root, not the retired per-plane camera correction.
       if (facingRoot) {
         facingRoot.rotation.y = finiteNumber(actor.viewportVisual?.facingRootBaseRotationY, 0); // Gameplay leaves a pinned shoulder pet's full PNG root at its authored Y orientation.
@@ -12604,7 +12608,7 @@ function installRigPantsPreviewV1546(actor) {
   actor.rigPantsPreview = null; // The prior leg handle, if any, already disposed its attached pants before this rebuild.
   const Renderer = window.PantsGarmentRenderer;
   if (actor?.source?.type !== 'npc' || !['rig', 'multi'].includes(animationAuthor.mode) || !actor.rigFeetPreview || !Renderer?.attachToLegs) return null;
-  const npc = state.npcs.find(item => String(item.id || item.name) === String(actor.source.id));
+  const npc = actor.previewNpcRecord || state.npcs.find(item => String(item.id || item.name) === String(actor.source.id));
   const equippedId = Renderer.garmentForCosmetics?.(npc ? portraitExportFor(npc).equippedCosmetics : []); // Avatar-editor wardrobe takes precedence.
   const defaultAllowed = npc?.noPants !== true && npc?.kind !== 'animal'
     && Renderer.hasRigFor?.(actor.source.species, actor.source.gender, 'pants_basic'); // Normal NPC gameplay gives basic pants to humanoids without authored legwear.
@@ -12650,6 +12654,7 @@ function installShoulderRigFeetPreviewV1529(actor) {
     bodyColors: profile?.bodyColors || actor.source.appearance?.bodyColors,
     modelWidth: metrics.modelWidth,
     modelHeight: metrics.modelHeight,
+    limbModelHeight: actor.model?.userData?.limbModelHeight,
     handAttachY: actor.model?.userData?.handAttachY,
     name: `${actor.id}_character_preview_rig`,
     profile,
@@ -12705,7 +12710,7 @@ log('V15.29 patch installed: Garanki uses child proportions and shoulder-rig cha
 // -----------------------------------------------------------------------------
 // V15.30 species/gender anatomy controls in the attachment-rig profile workflow.
 // -----------------------------------------------------------------------------
-const CHARACTER_ANATOMY_VERSION_V1530 = 1;
+const CHARACTER_ANATOMY_VERSION_V1530 = 2; // Limb axes are absolute geometry multipliers in v2.
 
 function clampCharacterAnatomyV1530(value, min, max, fallback) {
   const number = Number(value);
@@ -12739,8 +12744,8 @@ function configuredCharacterAnatomyV1530(species, gender, source = {}) {
     portraitScale: clampCharacterAnatomyV1530(sourceAnatomy.portraitScale, .1, 4, Number.isFinite(Number(staticAnatomy.portraitScale)) ? Number(staticAnatomy.portraitScale) : Number.isFinite(configuredPortraitScale) ? configuredPortraitScale : 1),
     handScale: clampCharacterAnatomyV1530(sourceAnatomy.handScale, .1, 4, Number.isFinite(Number(staticAnatomy.handScale)) ? Number(staticAnatomy.handScale) : Number.isFinite(resolvedHandScale) ? resolvedHandScale : 1),
     footScale: clampCharacterAnatomyV1530(sourceAnatomy.footScale, .1, 4, Number.isFinite(Number(staticAnatomy.footScale)) ? Number(staticAnatomy.footScale) : Number.isFinite(resolvedFootScale) ? resolvedFootScale : 1),
-    handScaleAxes: configuredPartScaleAxes(sourceAnatomy.handScaleAxes, staticAnatomy.handScaleAxes),
-    footScaleAxes: configuredPartScaleAxes(sourceAnatomy.footScaleAxes, staticAnatomy.footScaleAxes),
+    handScaleAxes: configuredPartScaleAxes(Number(sourceAnatomy.version) >= 2 ? sourceAnatomy.handScaleAxes : null, staticAnatomy.handScaleAxes || window.HobunjiCharacterRigScaleDefaults?.partAxesFor?.(species, gender, 'hand')),
+    footScaleAxes: configuredPartScaleAxes(Number(sourceAnatomy.version) >= 2 ? sourceAnatomy.footScaleAxes : null, staticAnatomy.footScaleAxes || window.HobunjiCharacterRigScaleDefaults?.partAxesFor?.(species, gender, 'foot')),
     armLengthHeightPercentOffset: clampCharacterAnatomyV1530(sourceAnatomy.armLengthHeightPercentOffset, -100, 100, Number(staticAnatomy.armLengthHeightPercentOffset) || 0),
     version: CHARACTER_ANATOMY_VERSION_V1530,
   };
@@ -15305,10 +15310,7 @@ clearAnimationActors = function(...args) {
 };
 
 
-// V15.53 — A shoulder-grip edit is previewed against a real, swappable NPC.
-// Only the temporary NPC's position and scale are solved around the animal's
-// already-Small grip. Its skinned portrait faces local +Z and stays at world
-// yaw zero (no billboard), independent of camera orbit and pet grip yaw.
+// Rig Coordinates uses a temporary gameplay NPC and pins the rendered pet to its shoulder.
 let shoulderCarrierPreviewV1553 = null; // Owns the unselectable NPC and its disposable rendering resources.
 let shoulderCarrierTaskV1553 = null; // One in-flight portrait build; inspector redraws do not duplicate it.
 let shoulderCarrierRequestedV1553 = null; // In-flight actor/NPC choice used to reject stale portraits after quick selections.
@@ -15331,8 +15333,20 @@ function shoulderCarrierNpcChoicesV1553() {
     try { appearance = portraitExportFor(npc)?.appearance; }
     catch (error) { log('Skipping invalid carrier NPC ' + String(npc.id || npc.name) + ': ' + error.message, 'warn'); continue; }
     const key = characterRigProfileKey({ appearance });
-    if (!animationAuthor.attachmentRigProfiles.characters?.[key] || unique.has(key)) continue;
-    unique.set(key, { npcId: String(npc.id || npc.name), label: npc.name || npc.id || key, key });
+    const donorKey = (window.hobunjiTransformSpeciesId?.(appearance.speciesId) || appearance.speciesId) + '::' + appearance.gender;
+    const profileKey = [key, donorKey].find(id => animationAuthor.attachmentRigProfiles.characters?.[id]?.anchors?.shoulderPerch);
+    if (!profileKey || (unique.has(key) && !unique.get(key).child)) continue;
+    unique.set(key, { npc, npcId: String(npc.id || npc.name), label: npc.name || npc.id || key, key, profileKey,
+      child: window.PNGPlaneAvatar?.isChildAvatar?.({ npcRecord: npc }) === true });
+  }
+  for (const species of ['nuhongan', 'longoran']) for (const gender of ['male', 'female']) {
+    const key = species + '::' + gender;
+    const donor = unique.get('tletingan::' + gender)?.npc;
+    if (!donor || unique.has(key) || !animationAuthor.attachmentRigProfiles.characters?.[key]?.anchors?.shoulderPerch) continue;
+    const npcId = 'shoulder-carrier-' + species + '-' + gender;
+    const appearance = { ...portraitExportFor(donor).appearance, speciesId: species, gender };
+    const npc = { ...donor, id: npcId, name: 'Tletingan wardrobe', species, gender, appearance }; // Preview-only appearance swaps retain compatible donor clothing.
+    unique.set(key, { npc, npcId, key, profileKey: key, label: 'Tletingan wardrobe' });
   }
   const items = [...unique.values()].sort((a, b) => a.key.localeCompare(b.key));
   shoulderCarrierCandidatesV1553 = { source: state.npcs, items };
@@ -15345,6 +15359,7 @@ function disposeShoulderCarrierV1553() {
   shoulderCarrierRequestedV1553 = null;
   const preview = shoulderCarrierPreviewV1553;
   shoulderCarrierPreviewV1553 = null;
+  if (preview?.actor) updateActorAttachmentAlignment(preview.actor); // Restore the authored viewport transform on exit or species swap.
   preview?.feet?.dispose?.();
   preview?.root?.removeFromParent?.();
   if (preview?.model) window.PNGPlaneAvatar?.disposeAvatarModel?.(preview.model);
@@ -15364,21 +15379,31 @@ function syncShoulderCarrierV1553() {
   const profile = animationAuthor.attachmentRigProfiles.characters?.[preview.profileKey];
   const perch = profile?.anchors?.shoulderPerch;
   if (!perch) { preview.root.visible = false; return; }
-  const signature = JSON.stringify(perch); // Updates only when the authored species/gender pivot actually changes.
-  if (signature !== preview.perchSignature) {
-    applyTransformSnapshot(preview.perch, perch);
-    preview.perchSignature = signature;
-  }
-  preview.perchScratch ||= new state.three.THREE.Vector3(); // Reused every sync; no per-frame allocation.
-  preview.perchSource = window.AnimationAuthorRigCarrierPreview?.resolvePerchFromSourcePixel?.({
-    avatarApi: window.PNGPlaneAvatar, model: preview.model, visualOffset: preview.visualOffset,
-    shoulderPerch: preview.perch, sourcePixel: perch.sourcePixel || profile.shoulderPerchRule?.sourcePixel,
-    scratch: preview.perchScratch,
-  }) ? 'skinned-source-pixel' : 'stored-xy'; // Matches gameplay's perch authority; stored x/y only when no pixel resolves.
-  preview.root.visible = window.AnimationAuthorRigCarrierPreview?.placeNpcAtGrip?.({
-    THREE: state.three.THREE, root: preview.root, visualOffset: preview.visualOffset,
-    shoulderPerch: preview.perch, creatureGrip: actor.rigAnchors?.shoulderGrip,
-  }) === true;
+  const grip = actor.rigAnchors?.shoulderGrip;
+  if (!grip) return;
+  const sourcePixel = perch.sourcePixel || profile.shoulderPerchRule?.sourcePixel;
+  const position = perch.position;
+  const aligned = actor.attachmentAlignment;
+  aligned.parent.updateWorldMatrix(true, false);
+  const gripPose = actorRigAnchorLocalMatrix(actor, 'shoulderGrip'); // Native grip after the picked creature size transform, before visual alignment.
+  const snapshot = [...gripPose.elements, ...actor.attachmentAlignment.parent.matrixWorld.elements,
+    position.x, position.y, position.z, sourcePixel?.x, sourcePixel?.y,
+    perch.rotationDeg?.x, perch.rotationDeg?.y, perch.rotationDeg?.z, perch.scale?.x, perch.scale?.y, perch.scale?.z, actor.previewShoulderFacingInward].join(',');
+  if (preview.poseSignature === snapshot) return;
+  preview.poseSignature = snapshot;
+  preview.pet.avatarRef.group.scale.set(perch.scale?.x || 1, perch.scale?.y || 1, perch.scale?.z || 1);
+  preview.pet.__hobunjiShoulderFacingInward = actor.previewShoulderFacingInward === true;
+  const transform = preview.solver.solveSurfaceTransform({
+    ...position, sourcePixel, rotationDeg: perch.rotationDeg, scale: perch.scale,
+  }, { localPosition: preview.gripPosition.setFromMatrixPosition(gripPose), rotationDeg: rotationDegSnapshot(grip) }, preview.pet);
+  aligned.position.copy(aligned.parent.worldToLocal(transform.worldPosition));
+  window.ProceduralLegAnimation.worldQuaternionWithoutScale(aligned.parent, preview.parentQuaternion);
+  aligned.quaternion.copy(preview.parentQuaternion.invert().multiply(transform.worldQuaternion));
+  aligned.scale.copy(preview.pet.avatarRef.group.scale);
+  aligned.updateMatrixWorld(true);
+  preview.gripError = grip.getWorldPosition(preview.gripPosition).distanceTo(transform.perchWorldPosition);
+  preview.root.visible = true; // Its companion grip is now pinned at the live skinned shoulder.
+
 }
 
 function shoulderCarrierStatusV1553(message) {
@@ -15390,12 +15415,15 @@ async function buildShoulderCarrierV1553(actor, npcId) {
   if (!shoulderCarrierEditingV1553(actor) || !npcId) return;
   disposeShoulderCarrierV1553();
   const generation = shoulderCarrierGenerationV1553;
-  const npc = state.npcs.find(entry => String(entry?.id || entry?.name) === npcId);
+  const choice = shoulderCarrierNpcChoicesV1553().find(item => item.npcId === npcId);
+  const npc = choice?.npc; // Includes synthetic adult carriers for species without a named NPC.
   if (!npc) { shoulderCarrierStatusV1553('No matching repository NPC.'); return; }
   shoulderCarrierStatusV1553('Building temporary ' + (npc.name || npc.id) + ' portrait…');
   shoulderCarrierRequestedV1553 = { creatureId: actor.id, npcId }; // Guards a still-loading carrier against a newly selected creature.
   const task = (async () => {
-    const avatar = await buildAvatarRender(npc); // Exactly the portrait compositor already used by Rig Coordinates' reference NPC.
+    const avatar = await buildAvatarRender(npc);
+    const baseHead = makePortraitCanvas(avatar.front.width || 200); // Gameplay's undecorated head mask drives the native neck and spine.
+    await renderPortraitSerial(baseHead, avatar.profile, { onlyHeadSprite: true, forceEyesOpen: true });
     if (generation !== shoulderCarrierGenerationV1553 || !shoulderCarrierEditingV1553(actor)
         || selectedAnimationActor() !== actor) return;
     const THREE = state.three.THREE;
@@ -15406,19 +15434,13 @@ async function buildShoulderCarrierV1553(actor, npcId) {
     visualOffset.name = 'ShoulderGripCarrierVisual';
     root.add(visualOffset);
     const model = window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(THREE, avatar.front, {
-      backCanvas: avatar.back, profile: avatar.profile,
+      backCanvas: avatar.back, headCanvas: baseHead, neckRig: true, meshBudget: 'npc', profile: avatar.profile,
       appearance: avatar.exportNpc.appearance, npcRecord: npc,
       modelWidth: animationAuthorAvatarBaseWidthV1536(),
       modelHeight: animationAuthorAvatarBaseWidthV1536(),
       name: root.name + '_portrait',
       userData: { source: 'shoulder-grip-carrier-preview', nonInteractive: true, npcId },
     });
-    try {
-      await buildNpcNeckRig(model, avatar, npc); // Standard Animation Author NPCs replace their initial (globally horizontally flipped) PNGPlaneAvatar textures with this unflipped skinned portrait.
-    } catch (error) {
-      window.PNGPlaneAvatar?.disposeAvatarModel?.(model);
-      throw new Error('Could not create the normal NPC portrait face: ' + error.message); // Visible in the temporary-carrier status; never silently show the mirrored fallback.
-    }
     if (generation !== shoulderCarrierGenerationV1553 || !shoulderCarrierEditingV1553(actor)
         || selectedAnimationActor() !== actor) {
       window.PNGPlaneAvatar?.disposeAvatarModel?.(model); // A slow head-only portrait bake cannot resurrect a carrier discarded while it was loading.
@@ -15430,41 +15452,59 @@ async function buildShoulderCarrierV1553(actor, npcId) {
     const modelWidth = Number(model.userData.portraitModelWidth) || modelHeight;
     model.position.y = modelHeight / 2; // The existing reference-NPC builder uses this gameplay floor-relative placement.
     const appearance = avatar.exportNpc.appearance;
-    const source = { type: 'npc', id: npcId, species: appearance.speciesId, gender: appearance.gender, appearance };
-    const profileKey = characterRigProfileKey(source);
+    const profileKey = choice?.profileKey; // Exact carrier perch first, the registered transform donor second.
     const profile = animationAuthor.attachmentRigProfiles.characters?.[profileKey];
-    if (!profile?.anchors?.shoulderPerch) {
+    if (!profile?.anchors?.shoulderPerch || !window.ShoulderPetAttachmentRuntime) {
       window.PNGPlaneAvatar?.disposeAvatarModel?.(model);
-      shoulderCarrierStatusV1553('No authored shoulder perch for ' + profileKey + '.');
-      return;
+      throw new Error('Gameplay shoulder preview is unavailable for ' + (choice?.key || npcId));
     }
-    const builtScale = modelWidth / animationAuthorAvatarBaseWidthV1536();
-    const anatomy = ensureCharacterAnatomyV1530(profile);
-    const targetScale = requestedRigActorAvatarScaleV1534({ source, model }, anatomy.portraitScale);
-    visualOffset.scale.setScalar(targetScale / Math.max(.001, builtScale)); // Matches NPC body calibration before the inverse carrier solve.
-    const perch = new THREE.Group(); // Hidden carrier anchor carries position, YXZ orientation and pet scale.
-    perch.name = 'ShoulderGripCarrierPerch_' + profileKey;
-    perch.rotation.order = 'YXZ'; // Gameplay's shoulder socket evaluates pitch, yaw and roll in YXZ order.
+    const scale = window.HobunjiCharacterRigScale; // Same floor-relative sizing, head compensation and adult posture used in-game.
+    scale?.applyToParent?.(visualOffset, appearance.speciesId, appearance.gender,
+      scale.scaleFor(appearance.speciesId, appearance.gender),
+      window.HobunjiCharacterSpine?.hunchFor?.({ npcRecord: npc, appearance }) || 0);
+    visualOffset.userData.hobunjiCharacterRigScaleInherited = true; // The delayed hand attach must retain the already composed carrier rig.
+    const perch = new THREE.Group(); // Its local translation is used only when no skinned source pixel is authored.
+    perch.rotation.order = 'YXZ';
     visualOffset.add(perch);
     applyTransformSnapshot(perch, profile.anchors.shoulderPerch);
     animationAuthor.modeRoots.rig.add(root);
+    window.AnimationAuthorRigCarrierPreview?.resolvePerchFromSourcePixel?.({
+      avatarApi: window.PNGPlaneAvatar, model, visualOffset, shoulderPerch: perch,
+      sourcePixel: profile.anchors.shoulderPerch.sourcePixel || profile.shoulderPerchRule?.sourcePixel,
+      scratch: new THREE.Vector3(), canonicalPortrait: true,
+    });
+    window.AnimationAuthorRigCarrierPreview?.placeNpcAtGrip?.({
+      THREE, root, visualOffset, shoulderPerch: perch, creatureGrip: actor.rigAnchors?.shoulderGrip, inversePetScale: false,
+    });
+    const solver = window.ShoulderPetAttachmentRuntime.create({
+      THREE, getOwnerMesh: () => visualOffset, getOwnerNeckJoint: () => model.userData.neckRig?.neckJoint,
+      getRotationSource: () => 'head', getInvertRotationSource: () => false, getCancelRotationalOffset: () => false,
+    });
+    const pet = { avatarRef: { group: { scale: perch.scale } } }; // The same authored pet-only scale multiplier gameplay applies to its Small art.
     shoulderCarrierPreviewV1553 = {
-      npcId, creatureId: actor.id, profileKey, label: npc.name || npc.id || profileKey,
-      root, visualOffset, perch, model, feet: null, perchSignature: JSON.stringify(profile.anchors.shoulderPerch),
+      actor, npcId, creatureId: actor.id, profileKey, label: npc.name || npc.id,
+      root, visualOffset, perch, model, feet: null, solver, pet,
+      gripPosition: new THREE.Vector3(), parentQuaternion: new THREE.Quaternion(),
     }; // Own the root before optional leg construction so every failed build is disposable.
     const feet = window.ProceduralLegAnimation?.attach?.(THREE, visualOffset, {
       speciesId: appearance.speciesId, gender: appearance.gender, bodyColors: avatar.profile?.bodyColors,
-      modelWidth, modelHeight, handAttachY: model.userData.handAttachY, profile: avatar.profile,
+      modelWidth, modelHeight, limbModelHeight: model.userData.limbModelHeight, handAttachY: model.userData.handAttachY, profile: avatar.profile,
       name: root.name + '_feet', portraitSize: avatar.front.width || 200,
     }) || null; // Same feet pipeline as the existing unselectable rig reference NPC.
     shoulderCarrierPreviewV1553.feet = feet;
+    window.ProceduralLegAnimation?.syncScaleForParent?.(visualOffset, scale?.legLengthRatioFor?.(appearance.speciesId, appearance.gender) || 1);
+    const portraitActor = { source: { type: 'npc', id: npcId, species: appearance.speciesId, gender: appearance.gender },
+      id: root.name, model, previewNpcRecord: npc, rigFeetPreview: feet }; // Reuse Rig Coordinates' ordinary NPC pants and mask path.
+    model.userData.rigAvatarProfile = avatar.profile;
+    model.userData.rigSourceFrontCanvas = avatar.front;
+    installRigPantsPreviewV1546(portraitActor);
     feet?.update?.(0, 0, false, null);
     if (generation !== shoulderCarrierGenerationV1553 || selectedAnimationActor() !== actor) {
       disposeShoulderCarrierV1553();
       return;
     }
     syncShoulderCarrierV1553();
-    shoulderCarrierStatusV1553('Carrier: ' + profileKey + ' · normal NPC skinned portrait (not horizontally mirrored) · fixed world-facing portrait (+Z), no billboarding · Small pet fixed.');
+    shoulderCarrierStatusV1553('Carrier: ' + choice.key + ' · grip error ' + (shoulderCarrierPreviewV1553.gripError || 0).toFixed(4));
     frameAllAnimationActors('angle');
   })();
   shoulderCarrierTaskV1553 = task;
@@ -15551,12 +15591,16 @@ renderAttachmentRigInspector = function(...args) {
   section.className = 'maaRigStatus';
   section.style.marginTop = '9px';
   section.innerHTML = '<b>Temporary shoulder carrier · not selectable/exported</b>'
-    + '<div class="maaField" style="margin-top:8px"><label for="maaShoulderCarrierNpcV1553">Preview NPC (species + gender)</label>'
+    + '<div class="maaField" style="margin-top:8px"><label for="maaShoulderCarrierNpcV1553">Preview NPC species and gender</label>'
     + '<select id="maaShoulderCarrierNpcV1553">' + choices.map(choice =>
       '<option value="' + escapeHtml(choice.npcId) + '">' + escapeHtml(choice.key + ' · ' + choice.label) + '</option>').join('') + '</select></div>'
+    + '<label><input type="checkbox" id="maaRigShoulderInward"> Face toward carrier</label>'
     + '<div class="maaSmall maaMuted" id="maaShoulderCarrierStatusV1553">Comparing Small creature with its owner’s authored shoulder perch…</div>'
-    + '<div class="maaSmall maaMuted">The animal remains fixed. The NPC uses the same skinned portrait as a normal NPC actor, not the horizontally flipped fallback planes. Its front points along fixed world +Z: orbiting the camera reveals its sides and back, without turning the NPC. Its shoulder stays pinned to the animal grip. Switch NPCs to compare fits.</div>';
+    + '<div class="maaSmall maaMuted">Compare the Small pet against the selected species’ live shoulder perch. Orbit to inspect the front, side, and back.</div>';
   $('maaInspector')?.appendChild(section);
+  const inward = section.querySelector('#maaRigShoulderInward'); // Same inward/outward state consumed by the game solver.
+  inward.checked = actor.previewShoulderFacingInward === true;
+  inward.addEventListener('change', () => { actor.previewShoulderFacingInward = inward.checked; syncShoulderCarrierV1553(); });
   const select = section.querySelector('#maaShoulderCarrierNpcV1553');
   select.value = shoulderCarrierNpcIdV1553;
   select.addEventListener('change', event => {
@@ -15567,7 +15611,7 @@ renderAttachmentRigInspector = function(...args) {
       && shoulderCarrierPreviewV1553.npcId === shoulderCarrierNpcIdV1553) {
     syncShoulderCarrierV1553();
     shoulderCarrierStatusV1553('Carrier: ' + shoulderCarrierPreviewV1553.profileKey
-      + ' · normal NPC skinned portrait (not horizontally mirrored) · fixed world-facing portrait (+Z), no billboarding · Small pet fixed.');
+      + ' · grip error ' + (shoulderCarrierPreviewV1553.gripError || 0).toFixed(4));
   } else if (!shoulderCarrierTaskV1553
       || shoulderCarrierRequestedV1553?.creatureId !== actor.id
       || shoulderCarrierRequestedV1553?.npcId !== shoulderCarrierNpcIdV1553) {

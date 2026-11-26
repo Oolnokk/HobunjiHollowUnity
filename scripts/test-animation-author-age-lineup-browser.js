@@ -97,6 +97,33 @@ async function main() {
       if (!near(window.HobunjiRomanceConfig.family.phaseScales.basket.height, baseline.height) || !near(config.snapshot().profiles.baby[selectedKey].height, preset.height)) {
         throw Error('Restore did not recover repository game phase config');
       }
+      const neighborKey = [...chooser.options].find(option => option.value !== selectedKey)?.value;
+      const scene = window.HobunjiGameplayBackdrop.getScene();
+      const neighbor = scene.getObjectByName('FullScalePreview_' + neighborKey);
+      if (!neighbor) throw Error('Overall Scale requires a second rendered identity for isolation checks');
+      const overall = document.getElementById('maaFullScaleRangeOverall');
+      const bakeOverall = document.getElementById('maaFullScaleBakeOverall');
+      const settle = () => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      for (const mode of ['baby', 'toddler', 'child', 'adult']) {
+        age.value = mode;
+        age.dispatchEvent(new Event('change', { bubbles: true }));
+        const originalScale = group.scale.clone();
+        const neighborScale = neighbor.scale.clone();
+        const beforeResize = api.debugSnapshot().agePerf.rigPasses;
+        overall.value = '110';
+        overall.dispatchEvent(new Event('input', { bubbles: true }));
+        await settle();
+        if (api.debugSnapshot().agePerf.rigPasses - beforeResize !== 1) throw Error(mode + ' Overall Scale should recompose only one rig');
+        if (!neighbor.scale.equals(neighborScale) || !near(group.scale.x, originalScale.x * 1.1) || !near(group.scale.y, originalScale.y * 1.1)) {
+          throw Error(mode + ' Overall Scale changed the wrong rig or used the wrong scale');
+        }
+        const draftScale = group.scale.clone();
+        bakeOverall.click();
+        await settle();
+        if (overall.value !== '100' || !near(group.scale.x, draftScale.x) || !near(group.scale.y, draftScale.y) || !neighbor.scale.equals(neighborScale)) {
+          throw Error(mode + ' bake did not preserve the selected preview and its neighbor');
+        }
+      }
       const result = { selectedKey, previewCount: api.previewCount, expected, appliedInGame: applied.profiles.baby[selectedKey].height,
         perf: { before, after, beforeHand, afterHand }, debug: api.debugSnapshot() };
       return result;
@@ -135,6 +162,27 @@ async function main() {
       && document.getElementById('maaRigTab')?.getAttribute('aria-selected') === 'true',
       null, { timeout: 90000 });
     assert.equal(await page.locator('#maaFullScalePanel').isVisible(), false, 'cancelled lineup must not cover the Rig editor');
+    await page.evaluate(async () => {
+      await window.MultiAvatarAnimationAuthor.addCreature('grehlr', 'idle');
+      const coordinate = document.getElementById('maaRigAnchorSelect');
+      coordinate.value = 'shoulderGrip';
+      coordinate.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    const carrierSelect = page.locator('#maaShoulderCarrierNpcV1553');
+    await carrierSelect.waitFor({ state: 'attached', timeout: 60000 });
+    const choices = await carrierSelect.locator('option').evaluateAll(options => options.map(option => ({ value: option.value, text: option.text })));
+    const targets = ['kenkari::male', 'longoran::female'].map(key => choices.find(option => option.text.startsWith(key)));
+    assert(targets.every(Boolean), 'carrier picker includes different species, including the adult Longoran fallback');
+    for (const target of targets) {
+      await carrierSelect.selectOption(target.value);
+      await page.waitForFunction(id => {
+        const scene = window.HobunjiGameplayBackdrop?.getScene?.();
+        const carrier = scene?.getObjectByName('ShoulderGripCarrierPreview_' + id);
+        const portrait = carrier?.getObjectByProperty('name', 'ShoulderGripCarrierPreview_' + id + '_portrait');
+        const status = document.getElementById('maaShoulderCarrierStatusV1553')?.textContent || '';
+        return portrait?.userData?.neckRig?.available && status.includes('grip error 0.0000');
+      }, target.value, { timeout: 90000 });
+    }
     console.log('PASS real mobile age-rig parity and all tab handoffs including Multi, Single, Rig and mid-load cancellation:',
       JSON.stringify(browserReport).slice(0,6000));
   } catch (error) {

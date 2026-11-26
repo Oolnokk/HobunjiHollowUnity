@@ -1954,6 +1954,9 @@
       : { available: false };
     root.userData.portraitVerticalPlacementRatio = placementRatio;
     root.userData.portraitScaleMultiplier = scaleMultiplier;
+    const growthStage = options.npcRecord?.childGrowthStage || options.profile?.npcRecord?.childGrowthStage || options.childGrowthStage || 'child';
+    const limbStageHeight = window.HobunjiCharacterAgeRigConfig?.limbHeightFor?.(growthStage, speciesId, gender) ?? childDimensions?.height;
+    root.userData.limbModelHeight = childDimensions ? modelHeight / childDimensions.height * limbStageHeight : modelHeight; // Geometry fit only; joint locations still use portrait dimensions.
     root.userData.childBodyAxes = childDimensions ? { width: childDimensions.width, height: childDimensions.height } : null; // Readable mobile diagnostic, not another frame update.
     root.userData.portraitModelWidth = modelWidth;
     root.userData.portraitModelHeight = modelHeight;

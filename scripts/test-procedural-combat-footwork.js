@@ -99,8 +99,8 @@ const tallerGait = tick(tallNarrow.legs, 2, {}), widerGait = tick(shortWide.legs
 assert(tallerGait.gait.fullStride > widerGait.gait.fullStride * 1.4, 'stride follows rendered standing leg length rather than X-only travel scale');
 assert(Math.abs(tallerGait.gait.worldStrideLength - tallerGait.gait.strideLength * 0.75) < 1e-9);
 assert(Math.abs(tallerGait.gait.worldLegLength - tallerGait.gait.legLength * 1.5) < 1e-9);
-assert(Math.abs(tallerGait.left.contactY - .04 * .75) < 1e-9, 'tall narrow feet retain floor contact after mean-scaling');
-assert(Math.abs(widerGait.left.contactY - .04 * 1.5) < 1e-9, 'wide feet retain floor contact after mean-scaling');
+assert(Math.abs(tallerGait.left.contactY - .04 / 1.5) < 1e-9, 'tall narrow feet keep a constant world sole height');
+assert(Math.abs(widerGait.left.contactY - .04 / .75) < 1e-9, 'wide feet keep a constant world sole height');
 const measureWorldStride = gait => gait.gait.worldStrideLength / gait.gait.worldLegLength; // World reach bound cannot be tested by comparing two local distances.
 assert(measureWorldStride(tallerGait) <= 1.8 + 1e-9 && measureWorldStride(widerGait) <= 1.8 + 1e-9, 'no stride overextends the scaled world leg');
 // Full Character Scale adjusts ACTUAL hip-to-ankle reach, not the foot mesh or the portrait's parent scale.
@@ -150,7 +150,7 @@ staticPreview.legs.setAgeFootScaleMultiplier(1.6);
 staticPreview.parent.userData.testBodyScale = { x: 1.5, y: .75 };
 staticPreview.legs.syncPreviewFootContact();
 const staticContact = staticPreview.legs.getStandingPoseDebug();
-assert(Math.abs(staticContact.left.contactY - .04 * 1.6 * 1.5) < 1e-9, 'static preview contact updates after nonuniform body resize without a gait tick');
+assert(Math.abs(staticContact.left.contactY - .04 * 1.6 / .75) < 1e-9, 'static preview contact updates after nonuniform body resize without a gait tick');
 assert(Math.abs(staticContact.left.targetY - staticContact.left.contactY) < 1e-9, 'static preview remains planted');
 const staticRevision = staticPreview.legs.anatomyRevision();
 staticPreview.legs.syncPreviewFootContact();
