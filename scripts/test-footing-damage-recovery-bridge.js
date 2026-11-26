@@ -131,6 +131,7 @@ console.log('Footing timing checks passed.');
   const liveContext = vm.createContext({ window: live, performance: { now: () => now }, console });
   vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'docs', 'js', 'combat', 'resource-system.js'), 'utf8'), liveContext);
   vm.runInContext(source, liveContext);
+  live.GameRandom.random = () => 0; // ResourceSystem installs the canonical seeded generator at load time.
   const rs = live.ResourceSystem;
   rs.registerStatModifierProvider((_entity, key) => key === 'incomingFootingDamage' ? .4 : 1); // A strong resistance which formerly rounded individual 0.1 charges to zero.
   const run = (fps, enhanced = false) => {
