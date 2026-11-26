@@ -6731,7 +6731,9 @@
           : c._cliffClimb ? c._cliffClimb.surfaceY
           : Number.isFinite(dynamicSurfaceY) ? dynamicSurfaceY
           : (g[row]?.[col] ? tileSurfaceYInArea(g[row][col], c.areaId) : 0);
-        const surfY = knockbackVisualSurfaceY(c, ordinarySurfY);
+        const birdLift = c.stableRole === 'companion' && !c.prone && !(c.knockbackT > 0) && !c._knockbackLedgeFall
+          ? (c._companionBirdMotion?.lift || 0) : 0; // Actual rendered body height for low flight and folded-wing hops.
+        const surfY = knockbackVisualSurfaceY(c, ordinarySurfY) + birdLift;
         const grp = c.avatarRef.group;
         window.BurningAfflictionVfx?.syncEntity?.(c, grp); // Burning Health presentation follows the same live creature group used by every avatar update.
         // scaleY (driven by attacks like Pounce, default 1) squashes the
@@ -8994,6 +8996,7 @@
           }
 
           const def = c.def;
+          const birdStartX = c.x, birdStartY = c.y; // Only actual horizontal motion can trigger flight or hopping.
           c.attackCooldownT = c._furiousSpecial
             ? c._furiousSpecial.cooldownBefore // Freeze the original companion cooldown while an interrupt attack runs.
             : Math.max(0, (Number(c.attackCooldownT) || 0) - dt);
@@ -9013,6 +9016,7 @@
             const catchupFacing = Math.atan2(master.y - c.y, master.x - c.x); // Face the owner after the invisible relocation.
             c.facing = catchupFacing;
             _restoreCompanionHead(c, dt);
+            window.TzatzulLiveVisuals?.updateCompanionLocomotion?.(c, dt, 0, false, true); // An off-camera recovery is not flight.
             followDebug.mode = 'distance-recovery'; followDebug.distancePx = Math.round(Math.hypot(master.x - c.x, master.y - c.y));
             followDebug.routeActive = false;
             updateCreatureMesh(c, dt, catchupFacing);
@@ -9286,10 +9290,47 @@
           if (!hardCatchup && window.CompanionFollowNavigation.tickRecovery(c, master, followGoal, dt)) {
             moving = false; runInPlace = false; // The invisible snap has already updated the animal's true and rendered positions.
           }
+          if (def.isFlyingSpecies && c.stableRole === 'companion') {
+            const interrupted = !!(c.prone || c.knockbackT > 0 || c._knockbackLedgeFall || c._cliffClimb || c._cliffRouteTravel || c.onBranch || c._downed || window.Combat?.animalAttacks?.isBusy(c) || window.Combat?.telegraph?.isBusy(c)); // Do not let follower flight override another physical or combat owner.
+            const movedPx = moving ? Math.hypot(c.x - birdStartX, c.y - birdStartY) : 0; // Ground navigation already applied the actual collision-safe step.
+            const outside = currentArea === 'farm' || currentArea === 'town' || _isZoneArea(currentArea); // Unmeasured carved cave ceilings default to hopping.
+            const ruin = currentArea === 'map_i_dev_random_ruin'; // Generated ruins expose actual voxel clearance.
+            const roomData = !outside && !ruin && _isBuildingArea(currentArea) && !_isCavernBuildingArea(currentArea) ? _rawMapDataByMapId.get(currentArea) : null; // Ordinary rooms have a known conservative flat-ceiling height.
+            let flightClear = false;
+            if (!interrupted && (movedPx > .08 || c._companionBirdMotion?.lift > 0) && (outside || ruin || roomData)) {
+              const x = c.x / TILE, z = c.y / TILE; // Convert footprint to world units for 3D clearance.
+              const px = birdStartX / TILE, pz = birdStartY / TILE;
+              const floor = Number(c.shaftSupportY ?? c.surfaceYOverride?.() ?? activeSurfaceYAtWorld(x, z));
+              const startFloor = Number(c.shaftSupportY ?? c.surfaceYOverride?.() ?? activeSurfaceYAtWorld(px, pz));
+              const radius = Math.max(.08, Math.min(.45, (c.visualModelWidth || def.modelWidth || .5) * .25));
+              const top = Math.max(.2, (c.halfHeight || .2) * 2);
+              const feet = floor + .65, startFeet = startFloor + .65;
+              if (Number.isFinite(feet) && Number.isFinite(startFeet)) {
+                if (outside || roomData) {
+                  const ceiling = roomData ? (window.InteriorEnvironmentRuntime?.normalizeEnvironment?.(roomData)?.wallHeight ?? INTERIOR_WALL_HEIGHT) : Infinity; // Do not rely on additional gable height or assume a carved cave is empty.
+                  flightClear = feet + top + .15 <= ceiling
+                    && canOccupyAt(c.x, c.y, radius * TILE, feet + radius)
+                    && canOccupyAt(c.x, c.y, radius * TILE, feet + top); // Respect local terrain and registered prop clearance.
+                } else {
+                  const clear = window.DevRandomRuin?.flightClear;
+                  flightClear = typeof clear === 'function' && [-radius, 0, radius].every(offset =>
+                    clear(px + offset, startFeet, pz, x + offset, feet, z) === true
+                    && clear(px, startFeet + top, pz + offset, x, feet + top, z + offset) === true); // Ruin voxels must allow the whole low-flight corridor.
+                }
+              }
+            }
+            const birdMotion = window.TzatzulLiveVisuals?.updateCompanionLocomotion?.(c, dt, movedPx, flightClear, interrupted);
+            followDebug.birdLocomotion = birdMotion?.mode || 'perched'; // Existing mobile companion debug record.
+            followDebug.birdFlightClear = flightClear;
+            followDebug.birdLift = birdMotion?.lift || 0;
+          }
 
           if (c._animalAttack?.id === 'rearKick' && !window.VoorgAssRearKick?.isHoldingKickPose?.(c)) _restoreCompanionHead(c, dt); // Companions release old gaze during windup, not during their frozen hoof pose.
           updateCreatureMesh(c, dt, aimAngle);
-          if (!window.Combat?.animalAttacks?.isBusy(c)) updateCreatureAnimFrame(c, dt, moving || runInPlace, runInPlace);
+          if (!window.Combat?.animalAttacks?.isBusy(c)) {
+            const birdMoving = c._companionBirdMotion ? c._companionBirdMotion.mode === 'flight' : moving || runInPlace; // Hopping and landing use the native folded-wing idle, not the flying run sprite.
+            updateCreatureAnimFrame(c, dt, birdMoving, c._companionBirdMotion ? false : runInPlace);
+          }
         }
 
         // Run last, after every avatar's position has actually been updated
@@ -26772,6 +26813,7 @@
               window.PerfProfiler?.end(hostilePerf);
               tickCorpses(dt);
             } else if (_isBuildingArea(currentArea)) {
+              window.TzatzulLiveVisuals?.tick?.(dt, currentArea); // Owned flying companions need the same renderer in ordinary rooms too.
               // Ordinary building interiors still have no wild spawns; this
               // branch only keeps any authored interior hostile/corpse active.
               const hostilePerf = window.PerfProfiler?.begin('hostiles'); // Uses the same timing bucket for authored interior combatants.
