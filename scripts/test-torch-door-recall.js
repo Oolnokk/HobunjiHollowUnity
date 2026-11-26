@@ -190,7 +190,7 @@ heldTorchForPopup = false;
 syncDoorPopup(nativeRows);
 assert.equal(lastPopup.promptInputs[0].actionId, 'action1', 'ordinary door action binding is retained without torch');
 
-const doorDispatch = sourceBetween(game, "        if (activeAction === 'obj_door_toggle') {", "        if (activeTool === 'shovel') {"); // Immediate door actions must bypass the shared torch swing clock.
+const doorDispatch = sourceBetween(game, "        if (activeAction === 'obj_ruin_site_door' || activeAction === 'obj_door_toggle') {", "        if (activeTool === 'shovel') {"); // Immediate door actions must bypass the shared torch swing clock.
 let worldSaves = 0, notifications = 0, refreshes = 0;
 const dispatchContext = vm.createContext({
   activeAction: 'obj_door_toggle', activeTool: 'adventuring',

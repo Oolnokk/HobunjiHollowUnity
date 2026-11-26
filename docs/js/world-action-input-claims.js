@@ -13,6 +13,7 @@
   const contextPresses = new Map(); // Physical press ID -> captured Action 1/2 context; keeps attack suppression through prompt changes until button-up.
   const routedPresses = new Map(); // Physical source + action -> original world claim held until the correct release.
   const routedClaimCounts = new Map(); // Action -> active physical owners; legacy callbacks release only for the final owner.
+  let torchArchReserved = false; // Cached reservation state invalidates the visible arch only on equip/stow transitions.
   let lastRoute = null; // Mobile-readable diagnostics for the latest resolved input and its owner.
 
   function configure(options = {}) {
@@ -167,6 +168,7 @@
 
   function claimFor(actionId) {
     actionId=String(actionId||'');
+    if ((actionId === 'action1' || actionId === 'action2') && window.AdventuringTools?.isHoldingTorch?.()) return null; // Torch owns these slots without manufacturing a competing claim.
     let best=null;
     for(const claims of owners.values()){
       for(const claim of claims){
@@ -249,7 +251,11 @@
     hasClaim:isClaimed, // Backward-compatible semantic used by early selector arbitration in game.js; keeps potion/ammo/item selectors from pre-empting a visible world interaction.
     claimFor,
     getRevision: () => revision, // General input claim version for diagnostics.
-    getArchRevision: () => archRevision, // HUD-specific version is stable across unrelated input-claim changes.
+    getArchRevision: () => {
+      const held = window.AdventuringTools?.isHoldingTorch?.() === true; // Constant-time state read; scan claims only when reservation changes.
+      if (held !== torchArchReserved) { torchArchReserved = held; refreshArchRevision(); }
+      return archRevision;
+    }, // HUD-specific version is stable across unrelated input-claim changes.
     dispatch,
     snapshot,
   });
