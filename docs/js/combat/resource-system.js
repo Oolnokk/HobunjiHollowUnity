@@ -570,7 +570,7 @@
     const spend = quantizedWindFootingCost(entity, total);
     windFootingRemainders.set(entity, Math.max(0, total - spend));
     if (spend > 0) {
-      spendFooting(entity, spend, "Windblown movement", { effectiveCost: true });
+      (window.ResourceSystem?.spendFooting || spendFooting)(entity, spend, "Windblown movement", { effectiveCost: true }); // Preserve recovery-delay and any later transaction observers.
       if (entity.footing <= 0 && !entity.prone) {
         windFootingRemainders.delete(entity); // A prior fall never lends a fractional charge to the next recovery.
         (onDepleted || window.Combat?.deps?.movementFootingDepleted)?.(entity, motion.windX, motion.windY);
