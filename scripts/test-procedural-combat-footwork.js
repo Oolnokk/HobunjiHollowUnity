@@ -66,7 +66,11 @@ context.window.LegBones = { solveTwoBoneLeg(_three, options) {
 } };
 let source = fs.readFileSync('docs/js/procedural-leg-animation.js', 'utf8'); // Only rendering/asset factories are replaced; gait, lunge, airborne, and diagnostics execute unchanged.
 source = source.replace('  window.ProceduralLegAnimation = {', `
-  buildFallbackFoot = function () { const foot = new THREE.Group(); foot.userData.contactRadiusY = 0.04; return foot; };
+  buildFallbackFoot = function (_three, options) {
+    const foot = new THREE.Group(); foot.userData.contactRadiusY = 0.04;
+    if (options.speciesId === 'support-test') foot.userData.groundSupportBox = { min: { x: -.08, y: -.04, z: -.12 }, max: { x: .08, y: .12, z: .24 } };
+    return foot;
+  };
   makeSurfaceRoleResolver = function () { return () => new Promise(() => {}); };
   makeBoneGuide = makeJointGuide = function () { return new THREE.Group(); };
   window.__groundSupportMath = { rolledSoleOffset, transformedFootBottomY, groundSafeDepthFactor };
@@ -100,6 +104,35 @@ near(groundSafeDepthFactor(1.02, 5, .5, 0), 1.02);
 near(groundSafeDepthFactor(1.2, 5, 3, 3), 1); // Elevated floors use the same rule.
 near(groundSafeDepthFactor(1.2, 5, 2.5, 3), 1); // A pre-existing penetration cannot be worsened by a downward depth push.
 near(groundSafeDepthFactor(1.2, -1, 0, 0), 1.2); // Low camera moves the shoe upward, not through ground.
+// Exercise the production IK call, not only the isolated support formula.
+const supportParent = new Group(); // Geometry-free rig uses an actual cached asymmetrical shoe envelope.
+const supportRig = context.window.ProceduralLegAnimation.attach(THREE, supportParent, { speciesId: 'support-test', modelHeight: 1 });
+const nativeSolve = context.window.LegBones.solveTwoBoneLeg; // Observe the corrected targets without changing the existing fake solver.
+const solvedTargets = [];
+context.window.LegBones.solveTwoBoneLeg = function (three, options) {
+  solvedTargets.push({ x: options.foot.x, y: options.foot.y, z: options.foot.z });
+  return nativeSolve(three, options);
+};
+let maxSoleCorrection = 0;
+for (let i = 0; i < 80; i++) {
+  solvedTargets.length = 0;
+  supportRig.update(1 / 60, 2, false, undefined, {});
+  const debug = supportRig.getStandingPoseDebug();
+  const last = solvedTargets.slice(-2); // The gait solver owns the final two solves.
+  for (const [index, side] of ['left', 'right'].entries()) {
+    const offset = debug.groundSupport[side].offsetY;
+    near(last[index].y, Math.max(debug[side].contactY, debug[side].targetY) + offset);
+    maxSoleCorrection = Math.max(maxSoleCorrection, offset);
+  }
+}
+assert(maxSoleCorrection > 0.01, 'asymmetric shoe support is actually applied during gait');
+supportRig.setFootScaleMultiplier(2);
+supportRig.update(1 / 60, 0, false);
+const planted = supportRig.getStandingPoseDebug();
+near(planted.left.contactY, .08);
+near(planted.left.targetY, .08);
+near(planted.groundSupport.left.offsetY, 0);
+context.window.LegBones.solveTwoBoneLeg = nativeSolve;
 const walk = rig(), run = rig(), tall = rig(2); // Compares mode changes at identical speed and different anatomical lengths.
 const walkDebug = tick(walk.legs, 2, {}), runDebug = tick(run.legs, 2, { combat: true }); // Settled walk/run cycles.
 assert(runDebug.gait.strideLength > walkDebug.gait.strideLength * 1.4);
