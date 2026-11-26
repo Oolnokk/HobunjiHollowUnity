@@ -701,9 +701,9 @@ function harness({ rock = null, furniture = null, wall = null, pit = null, start
   const shoulder = setup(1, 100, Math.PI / 2, true);
   const blocked = setup(1, 100, 0, false, true);
   const near = (a,b) => assert(Math.abs(a-b) < 1e-6, a + ' != ' + b);
-  near(withWind.dx, base.dx * 1.5); near(against.dx, -base.dx * .5);
-  near(idle.dx, base.dx * .5); near(idle.footing, 100);
-  near(withWind.footing, 98); near(against.footing, 100);
+  near(withWind.dx, base.dx * 1.75); near(against.dx, -base.dx * .25);
+  near(idle.dx, base.dx * .75); near(idle.footing, 100);
+  near(withWind.footing, 97); near(against.footing, 100);
   near(demented.dx, idle.dx); near(demented.dy, base.dx); near(demented.footing, 100);
   near(shoulder.dx, withWind.dx); near(shoulder.dy, 0);
   near(withWind.height, base.height); // Statuses never alter jump height or gravity.
