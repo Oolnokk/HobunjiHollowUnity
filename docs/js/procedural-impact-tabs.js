@@ -158,7 +158,7 @@
       script.addEventListener('error', () => reject(new Error(`Failed to load ${script.src}`)), { once: true });
       document.head.appendChild(script);
     });
-    load('procedural-pants-rig-author.js?v=20261126exactSeamsAudit1', PANTS_SCRIPT_ID)
+    load('procedural-pants-rig-author.js?v=20261126h9f6cf6d', PANTS_SCRIPT_ID)
       .then(() => load('procedural-pants-rig-apply.js', 'proceduralPantsRigApplyScript')) // Apply-to-NPC needs the author host's header to exist first.
       .catch(error => console.error('[Pants Rig]', error));
   }

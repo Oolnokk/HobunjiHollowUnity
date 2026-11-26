@@ -207,7 +207,7 @@ assert.strictEqual(hybrid.equippedCosmetics,undefined,'checking the hybrid does 
  const pushes=[]; // Records the actual draw-only offsets sent to the leg animator.
  const handle={depthBiasBase:.3,maskUniforms:{uPantsDepthBias:{value:.3}}}; // The original attach-time depth bias must remain unchanged.
  const legHandle={anatomyRevision:()=>revision,setFootDepthPush:value=>pushes.push(value)};
- vm.runInNewContext(source.slice(start,end),{handle,legHandle});
+ vm.runInNewContext(source.slice(start,end),{handle,legHandle,cuffsFitted:false,cuffUniforms:null});
  assert(handle.setDepthBiasLimit('close-contact',0));assert.equal(handle.maskUniforms.uPantsDepthBias.value,0);
  assert(handle.setDepthBiasLimit('other',.1));assert.equal(handle.maskUniforms.uPantsDepthBias.value,0);
  assert.equal(handle.setDepthBiasLimit('other',NaN),false);assert.equal(handle.setDepthBiasLimit('other',-1),false);
@@ -295,7 +295,7 @@ assert.strictEqual(hybrid.equippedCosmetics,undefined,'checking the hybrid does 
   const to = source.indexOf('    installGpuSkin(THREE, handle, gpuSkin);', from);
   const gpuFrom = source.indexOf('  function installGpuSkin('), gpuTo = source.indexOf('  function gpuSkinUsable(', gpuFrom);
   assert(from >= 0 && to > from && gpuFrom >= 0 && gpuTo > gpuFrom, 'seam preparation precedes GPU upload');
-  const prepare = new Function('handle', 'garment', 'LEG_SIDES', 'fitCuffs', source.slice(from, to));
+  const prepare = new Function('handle', 'garment', 'LEG_SIDES', 'fitCuffs', 'cameraCuffs', source.slice(from, to));
   const install = new Function(source.slice(gpuFrom, gpuTo) + '; return installGpuSkin;')();
   const garment = rigs.garments.pants_basic, sides = ['left', 'right'];
   for (const segments of [16, 32, 64]) {
@@ -310,7 +310,7 @@ assert.strictEqual(hybrid.equippedCosmetics,undefined,'checking the hybrid does 
       rings: { left: { influence: new Float32Array(count).fill(.5) }, right: { influence: new Float32Array(count).fill(.5) } },
       splineSpec: { belt: { samples: garment.pantsBeltSpline.map(sample) }, leftAnkle: { samples: garment.legOpenings.left.map(sample) }, rightAnkle: { samples: garment.legOpenings.right.map(sample) } },
       geometry: { setAttribute(name, attr) { attrs.set(name, attr); } } };
-    prepare(handle, garment, sides, true);
+    prepare(handle, garment, sides, true, false);
     const THREE = { BufferAttribute: class { constructor(array) { this.array = array; } }, Vector3: class {}, Matrix3: class {} };
     install(THREE, handle, true);
     for (const p of handle.splineSpec.belt.samples) for (const i of corners(p)) {

@@ -30,6 +30,8 @@
   const REST_RECHECK_FRAMES = 30; // A still garment re-checks its legs' rest stance this often (any leg motion checks at once).
   const LEG_SIDES = Object.freeze(['left', 'right']), LEG_JOINTS = Object.freeze(['hip', 'knee', 'ankle']), BONE_NAMES = Object.freeze(['thigh', 'calf']); // Shared per-frame loop lists (no per-frame array literals).
 
+  const cameraCuffsRequested = /(?:^|[?&])experimentalPantsCuffs=1(?:&|$)/.test(global.location?.search || ''); // Opt-in on the game URL for mobile testing.
+
   const core = () => global.HobunjiPantsRig || null;
   const normalizeSpecies = value => String(value || '').trim().toLowerCase().replace(/_/g, '-');
   const isPantlessSpecies = speciesId => PANTLESS_SPECIES.has(normalizeSpecies(speciesId));
@@ -359,7 +361,7 @@
       }
       // The ring is looped around the pole where the 2D calf bone crosses the spline (not at a spline vertex).
       const crossing = Core.boneSplineCrossing(legBones[side].knee, legBones[side].ankle, polyline);
-      rings[side] = { crossing, anchor: sampleAt(crossing), influence };
+      rings[side] = { crossing, anchor: sampleAt(crossing), influence, hoop: cameraCuffsRequested ? hoop : null };
     }
     // Debug splines: the belt spline and the two ankle (leg opening) splines, as bilinear samples of the skinned grid so they
     // show exactly where those authored curves currently sit on the deformed garment.
@@ -422,6 +424,56 @@
     '  vPantsLocal = position.xy - pantsSpineShift.xy;', // CPU path: the buffer already includes the spine shift.
     '}',
   ].join('\n');
+  const CUFF_VERTEX_DECLARATIONS = [
+    'attribute vec2 pantsCuffWeight;',
+    'uniform float uPantsCuffsActive;',
+    'uniform vec3 uPantsCuffRest[2];', // Fitted seam center (local XY), then cached push (world units).
+    'uniform vec3 uPantsCuffAnkle[2];', // Live physical ankles in garment-model coordinates.
+    'vec3 pantsBillboardCuff(vec3 restVertex, vec3 restCuff, vec3 ankle) {',
+    '  vec3 x = modelViewMatrix[0].xyz;',
+    '  vec3 y = modelViewMatrix[1].xyz;',
+    '  vec3 z = modelViewMatrix[2].xyz;',
+    '  vec3 inverseX = cross(y, z);',
+    '  float determinant = dot(x, inverseX);',
+    '  if (abs(determinant) < 1e-12) return ankle;',
+    '  vec3 center = (modelViewMatrix * vec4(ankle, 1.0)).xyz;',
+    '  vec2 seam = (restVertex.xy - restCuff.xy) * vec2(length(x), length(y));',
+    '  seam.x *= x.x < 0.0 ? -1.0 : 1.0;', // Keep the cuff orientation consistent with the portrait when seen from behind.
+    '  float distance = max(0.0, -center.z);',
+    '  float push = min(restCuff.z, distance * 0.5);',
+    '  vec3 offset = vec3(seam, push);',
+    '  if (projectionMatrix[2][3] < -0.5 && distance > 0.0) {',
+    '    float fraction = push / distance;',
+    '    offset.xy = seam * (1.0 - fraction) - center.xy * fraction;', // Preserve the ankle's projected center and the cuff's apparent scale.
+    '  }',
+    '  return ankle + vec3(dot(offset, inverseX), dot(offset, cross(z, x)), dot(offset, cross(x, y))) / determinant;',
+    '}',
+  ].join('\n');
+  const CUFF_VERTEX_BODY = [
+    'if (uPantsCuffsActive > 0.5) {',
+    '  if (pantsCuffWeight.x > 0.0 && pantsCuffWeight.x >= pantsCuffWeight.y) {',
+    '    transformed = mix(transformed, pantsBillboardCuff(position, uPantsCuffRest[0], uPantsCuffAnkle[0]), pantsCuffWeight.x);',
+    '  } else if (pantsCuffWeight.y > 0.0) {',
+    '    transformed = mix(transformed, pantsBillboardCuff(position, uPantsCuffRest[1], uPantsCuffAnkle[1]), pantsCuffWeight.y);',
+    '  }',
+    '}',
+  ].join('\n');
+
+  // At neutral fitting time, enclose the scaled shoe around its ankle in a sphere.
+  // Its radius bounds the shoe from every camera direction without sampling its posed mesh each frame.
+  function cuffPushDistance(foot) {
+    const box = foot?.userData?.groundSupportBox; // Existing sole envelope includes claws and imported foot geometry.
+    if (!box) return 0;
+    foot.updateWorldMatrix(true, false);
+    const matrix = foot.matrixWorld; // Includes the authored foot axes, age and character scale corrections.
+    const e = matrix.elements;
+    let radius = 0;
+    for (const x of [box.min.x, box.max.x]) for (const y of [box.min.y, box.max.y]) for (const z of [box.min.z, box.max.z]) {
+      radius = Math.max(radius, Math.hypot(e[0] * x + e[4] * y + e[8] * z, e[1] * x + e[5] * y + e[9] * z, e[2] * x + e[6] * y + e[10] * z));
+    }
+    return Number.isFinite(radius) && radius > 0 ? radius * 1.02 : 0;
+  }
+
   let gpuSkinGlobal = true; // A/B switch for diagnostics (PantsGarmentRenderer.setGpuSkinning).
 
   function installGpuSkin(THREE, handle, enabled) {
@@ -605,6 +657,7 @@
     const nodes = findLegNodes(legHandle);
     if (!THREE || !Core || !garment || !character || !plane || !nodes) return null;
     const fitCuffs = garmentId !== 'layered_skirt'; // A shared skirt has no independent ankle openings; keep its legacy hem deformation.
+    const cameraCuffs = cameraCuffsRequested && fitCuffs && gpuSkin !== false; // The experiment uses the garment's authored GPU material.
     const openingWidthRatioForFeet = () => { // Mirrors November 14's uniform body-X/Y average for procedural hands and feet.
       const factors = global.HobunjiCharacterRigScale?.bodyScaleFactorsFor?.(legHandle.group?.parent || avatarGroup);
       const x = Number(factors?.x), y = Number(factors?.y); // Body width/height scales from the existing character-rig owner.
@@ -658,7 +711,8 @@
       for (const sample of handle.splineSpec.belt.samples) {
         for (const index of [sample.i, sample.i + 1, sample.i + stride, sample.i + stride + 1]) waistOwners[index] = 1;
       }
-      const cuffOwners = new Uint8Array(stride * stride);
+      const cuffOwners = new Uint8Array(stride * stride); // Seam control points own all four interpolation corners.
+      const cuffWeights = cameraCuffs ? new Float32Array(stride * stride * 2) : null; // Only the immediate ankle-ring neighborhoods face the camera.
       for (let sideIndex = 0; fitCuffs && sideIndex < LEG_SIDES.length; sideIndex++) {
         const side = LEG_SIDES[sideIndex];
         for (const sample of handle.splineSpec[side + 'Ankle'].samples) {
@@ -671,6 +725,13 @@
           for (const side of LEG_SIDES) if (handle.rings[side]) handle.rings[side].influence[i] = 0;
           continue;
         }
+        if (cuffWeights) {
+          for (let sideIndex = 0; sideIndex < LEG_SIDES.length; sideIndex++) {
+            const ring = handle.rings[LEG_SIDES[sideIndex]];
+            if (!ring || (cuffOwners[i] && cuffOwners[i] !== (1 << sideIndex))) continue;
+            cuffWeights[i * 2 + sideIndex] = (cuffOwners[i] ? 1 : ring.hoop[i]) * (1 - handle.waistWidthInfluence[i]);
+          }
+        }
         if (handle.waistWidthInfluence[i] > 0 || (cuffOwners[i] !== 1 && cuffOwners[i] !== 2)) continue;
         const calfChannel = cuffOwners[i] === 1 ? 2 : 4;
         for (let c = 0; c < 5; c++) handle.weights[i * 5 + c] = c === calfChannel ? 1 : 0;
@@ -679,17 +740,28 @@
           if (ring) ring.influence[i] = cuffOwners[i] === (1 << sideIndex) ? 1 : 0;
         }
       }
+      if (cuffWeights) handle.geometry.setAttribute('pantsCuffWeight', new THREE.BufferAttribute(cuffWeights, 2));
     }
     installGpuSkin(THREE, handle, gpuSkin);
+    const cuffUniforms = cameraCuffs ? {
+      uPantsCuffsActive: { value: 0 },
+      uPantsCuffRest: { value: [new THREE.Vector3(), new THREE.Vector3()] },
+      uPantsCuffAnkle: { value: [new THREE.Vector3(), new THREE.Vector3()] },
+    } : null; // Present only in the experimental shader.
+    if (cuffUniforms) Object.assign(handle.maskUniforms, cuffUniforms);
+    let cuffsFitted = false; // Both shoes need a valid cached envelope before replacing normal foot depth presentation.
+    let cuffPushAnatomy, cuffPushWidth; // Clearance is independent of stance rebinds and camera movement.
 
     const depthBiasLimits=new Map(); // Paired close-contact animations may limit the feet-behind-pants cosmetic push.
     let appliedFootDepthBias=0; // Report the current drawing-only foot offset in mobile diagnostics.
     const applyFootDepthBias=()=>{
       let bias=handle.depthBiasBase||0; // Restores normal pants coverage automatically when animation scopes release.
       for(const value of depthBiasLimits.values())bias=Math.min(bias,value);
-      appliedFootDepthBias=bias;
-      handle.maskUniforms.uPantsDepthBias.value=bias;
-      legHandle.setFootDepthPush?.(bias); // Do not move the garment or the physical foot placement.
+      const cuffsActive = cuffsFitted && handle.gpuSkinActive && depthBiasLimits.size === 0; // Exact-contact animation scopes keep their original rules.
+      if (cuffUniforms) cuffUniforms.uPantsCuffsActive.value = cuffsActive ? 1 : 0;
+      appliedFootDepthBias=cuffsActive ? 0 : bias;
+      handle.maskUniforms.uPantsDepthBias.value=appliedFootDepthBias;
+      legHandle.setFootDepthPush?.(appliedFootDepthBias);
     };
     handle.setDepthBiasLimit=(owner,limit=null)=>{
       if(!owner)return false;
@@ -699,7 +771,7 @@
       applyFootDepthBias();
       return true;
     };
-    handle.getFootDepthBiasDebug=()=>({base:handle.depthBiasBase||0,applied:appliedFootDepthBias,anatomyRevision:legHandle.anatomyRevision?.() ?? null,openingWidthScale:handle.openingWidthScale,beltFitKind:handle.beltFit?.kind,beltWidthScale:handle.beltFit?.a,beltHorizontalShear:handle.beltFit?.c,torsoAlphaFit:handle.torsoAlphaFit,measuredFit:handle.measuredFit,scopes:[...depthBiasLimits.keys()]}); // Diagnostic snapshot on mobile.
+    handle.getFootDepthBiasDebug=()=>({base:handle.depthBiasBase||0,applied:appliedFootDepthBias,anatomyRevision:legHandle.anatomyRevision?.() ?? null,openingWidthScale:handle.openingWidthScale,beltFitKind:handle.beltFit?.kind,beltWidthScale:handle.beltFit?.a,beltHorizontalShear:handle.beltFit?.c,torsoAlphaFit:handle.torsoAlphaFit,measuredFit:handle.measuredFit,cameraCuffs:cuffUniforms && { active: !!cuffUniforms.uPantsCuffsActive.value, pushDistances: cuffUniforms.uPantsCuffRest.value.map(cuff => cuff.z) },scopes:[...depthBiasLimits.keys()]}); // Diagnostic snapshot on mobile.
     const createMesh = canvas => {
       const surface = global.HobunjiSpritePngSurface;
       const texture = surface?.makeCanvasTexture ? surface.makeCanvasTexture(THREE, canvas, `${name}-pants`) : new THREE.CanvasTexture(canvas);
@@ -716,14 +788,14 @@
         previousCompile?.call(this, shader, renderer);
         Object.assign(shader.uniforms, handle.maskUniforms);
         shader.vertexShader = shader.vertexShader
-          .replace('#include <common>', `#include <common>\nvarying vec2 vPantsLocal;\n${GPU_SKIN_VERTEX_DECLARATIONS}`)
-          .replace('#include <begin_vertex>', `#include <begin_vertex>\n${GPU_SKIN_VERTEX_BODY}`); // No depth pull here: pants are pure 3D proximity against the avatar's own planes; the feet are pushed away instead.
+          .replace('#include <common>', `#include <common>\nvarying vec2 vPantsLocal;\n${GPU_SKIN_VERTEX_DECLARATIONS}${cameraCuffs ? "\n" + CUFF_VERTEX_DECLARATIONS : ""}`)
+          .replace('#include <begin_vertex>', `#include <begin_vertex>\n${GPU_SKIN_VERTEX_BODY}${cameraCuffs ? "\n" + CUFF_VERTEX_BODY : ""}`);
         shader.fragmentShader = shader.fragmentShader
           .replace('#include <common>', '#include <common>\nvarying vec2 vPantsLocal;\nuniform sampler2D uPantsMask;\nuniform float uPantsMaskOn;\nuniform vec2 uPantsMaskO;\nuniform vec4 uPantsMaskInv;')
           .replace('#include <alphatest_fragment>', 'if (uPantsMaskOn > 0.5) { vec2 pd = vPantsLocal - uPantsMaskO; vec2 pc = vec2(uPantsMaskInv.x * pd.x + uPantsMaskInv.y * pd.y, uPantsMaskInv.z * pd.x + uPantsMaskInv.w * pd.y); float pantsInside = step(0.0, pc.x) * step(pc.x, 1.0) * step(0.0, pc.y) * step(pc.y, 1.0); diffuseColor.a *= 1.0 - pantsInside * texture2D(uPantsMask, vec2(pc.x, 1.0 - pc.y)).a; }\n#include <alphatest_fragment>');
       };
       material.customProgramCacheKey = function pantsMaskCacheKey() {
-        return 'pantsOverlayMaskSpineGpuSkin|' + (previousCacheKey?.call(this) || '');
+        return 'pantsOverlayMaskSpineGpuSkin|' + (cameraCuffs ? 'cameraCuffs|' : '') + (previousCacheKey?.call(this) || '');
       };
       return { texture, material };
     };
@@ -986,6 +1058,7 @@
       if (gpu !== handle.gpuSkinActive) { // Switching paths: the position buffer holds rest vertices (GPU) or skinned ones (CPU), so redo this frame.
         handle.gpuSkinActive = gpu;
         handle.maskUniforms.uPantsGpuSkin.value = gpu ? 1 : 0;
+        if (cuffUniforms) applyFootDepthBias();
         handle.uploadedBaseVersion = -1;
         handle.dirty = true;
       }
@@ -1011,6 +1084,10 @@
           handle.uploadedBaseVersion = handle.baseVersion;
         }
         writeGpuSkinUniforms(handle, transforms, aim);
+        if (cuffUniforms && cuffsFitted) for (let s = 0; s < LEG_SIDES.length; s++) {
+          const ankle = handle.scratch.bones3D[LEG_SIDES[s]].ankle; // Measured before the garment's visual leg-roll gain.
+          cuffUniforms.uPantsCuffAnkle.value[s].set(ankle.x, ankle.y, ankle.z);
+        }
         return;
       }
       Core.skinWeightedPositions(handle.basePositions, handle.weights, transforms, position.array);
@@ -1184,6 +1261,32 @@
         return Math.max(...xs) - Math.min(...xs);
       };
       handle.measuredFit = { waistSource: measuredBounds ? 'isolated-torso-lower-edge' : bounds ? 'composite-fallback' : 'authored', waistTarget: waistTarget && waistTarget.right - waistTarget.left, waistActual: sampledWidth(beltSamples), footTargets, cuffs: { left: sampledWidth(handle.splineSpec.leftAnkle.samples), right: sampledWidth(handle.splineSpec.rightAnkle.samples) } };
+      if (cuffUniforms) {
+        const mirrored = portraitsFlipped(); // Match the physical shoe to the same art side as its live calf.
+        const refreshPush = cuffPushAnatomy !== handle.fitAnatomyRevision || cuffPushWidth !== handle.openingWidthScale;
+        cuffPushAnatomy = handle.fitAnatomyRevision;
+        cuffPushWidth = handle.openingWidthScale;
+        const base = handle.basePositions, stride = (SEGMENTS + 1) * 3; // Fitted rest grid used by the cuff anchor samples.
+        cuffsFitted = true;
+        for (let index = 0; index < LEG_SIDES.length; index++) {
+          const cuff = cuffUniforms.uPantsCuffRest.value[index]; // Local rest center and world clearance for this cuff.
+          const sample = handle.rings[LEG_SIDES[index]]?.anchor; // Crossing of the authored opening and calf.
+          if (refreshPush && sample) {
+            const physicalSide = LEG_SIDES[mirrored ? 1 - index : index];
+            cuff.z = cuffPushDistance(legHandle.group?.getObjectByName?.(physicalSide + '_foot'));
+          }
+          if (!sample || cuff.z <= 0) { cuffsFitted = false; continue; }
+          const sampleAxis = axis => {
+            const top = sample.i * 3 + axis, bottom = top + stride;
+            const a = base[top] + (base[top + 3] - base[top]) * sample.fx;
+            const b = base[bottom] + (base[bottom + 3] - base[bottom]) * sample.fx;
+            return a + (b - a) * sample.fy;
+          };
+          cuff.x = sampleAxis(0);
+          cuff.y = sampleAxis(1);
+        }
+        if (refreshPush) applyFootDepthBias();
+      }
       const restPosition = handle.geometry.getAttribute('position'); // CPU/debug preview also sees the latest rest hem immediately.
       restPosition.array.set(handle.basePositions);
       restPosition.needsUpdate = true;
@@ -1303,6 +1406,6 @@
     taperTorsoBeltPoint, // Geometry regression hook to prove the same alpha width adjustment does not change knees/ankles.
     posteriorPortraitYForAvatar: (THREE, avatarGroup, legGroup) => { const plane = findPortraitPlane(avatarGroup), nodes = findLegNodes({ group: legGroup }); return plane && nodes ? posteriorPortraitY(THREE, avatarGroup, plane, nodes) : null; },
     hasRigFor: (speciesId, gender, garmentId = DEFAULT_GARMENT_ID) => !!(rigConfig().garments?.[garmentId] && resolveCharacter(speciesId, gender)),
-    debugSnapshot: () => ({ live: handles.size, garments: Object.keys(rigConfig().garments || {}), characters: Object.keys(rigConfig().characters || {}), footDepthBias: [...handles].filter(h => !h.disposed).slice(0, 12).map(h => ({ name: h.name, ...h.getFootDepthBiasDebug?.() })), lastChange: 'Neutral pants waist and cuffs fit measured torso and foot geometry; anatomy revisions refresh the cached fit.' }),
+    debugSnapshot: () => ({ live: handles.size, garments: Object.keys(rigConfig().garments || {}), characters: Object.keys(rigConfig().characters || {}), footDepthBias: [...handles].filter(h => !h.disposed).slice(0, 12).map(h => ({ name: h.name, ...h.getFootDepthBiasDebug?.() })), lastChange: 'The optional experimentalPantsCuffs URL flag faces fitted ankle openings toward the camera using cached per-shoe clearance.' }),
   });
 })(window);

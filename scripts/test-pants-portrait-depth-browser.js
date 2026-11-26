@@ -21,7 +21,8 @@ const pageErrors = []; // Captured so CI failures also have mobile-readable diag
     const page = await browser.newPage({ viewport: { width: 450, height: 450 } });
     page.on('pageerror', error => pageErrors.push(error.stack || String(error)));
     page.on('console', message => { if (message.type() === 'error') pageErrors.push(message.text()); });
-    await page.setContent('<!doctype html><html><body></body></html>');
+    await page.route('https://pants.test/**', route => route.fulfill({ contentType: 'text/html', body: '<!doctype html><html><body></body></html>' }));
+    await page.goto('https://pants.test/?experimentalPantsCuffs=1');
     await page.addScriptTag({ path: require.resolve('three/build/three.min.js') });
     for (const script of [
       'docs/config/pants-rigs.js',
@@ -142,6 +143,53 @@ const pageErrors = []; // Captured so CI failures also have mobile-readable diag
         bodyBounds: [box.min.toArray(), box.max.toArray()],
       }; // Copyable failure data without browser DevTools.
       pants.dispose();
+
+      // Reattach with local shoe envelopes so the optional renderer can cover them
+      // from the front, from behind and at a steep camera pitch.
+      for (const side of ['left', 'right']) {
+        const foot = new T.Mesh(new T.BoxGeometry(.24, .16, .36), new T.MeshBasicMaterial({ color: 0xff8000 }));
+        foot.name = side + '_foot';
+        foot.position.y = -.42;
+        foot.geometry.computeBoundingBox();
+        foot.userData.groundSupportBox = foot.geometry.boundingBox.clone();
+        legs.getObjectByName(side + '_calf').add(foot);
+      }
+      let footBias;
+      const experimental = R.attach(T, {
+        avatarGroup: model, legHandle: { group: legs, setFootDepthPush: value => { footBias = value; } },
+        speciesId: 'kenkari', gender: 'female', garmentRecord: rigs.garments.pants_basic,
+        characterRecord: rigs.characters.__default, meshBudget: 'npc',
+      });
+      await experimental.readyPromise;
+      experimental.update();
+      const activeBias = footBias;
+      const ankle = legs.getObjectByName('left_foot').getWorldPosition(new T.Vector3());
+      const experimentalCamera = new T.PerspectiveCamera(35, 1, .01, 10);
+      const pixel = (x = 64, y = 64) => {
+        renderer.render(scene, experimentalCamera);
+        const color = new Uint8Array(4);
+        gl.readPixels(x, y, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, color);
+        return [...color];
+      };
+      const cuffVersion = experimental.baseVersion;
+      const fittedPush = experimental.getFootDepthBiasDebug().cameraCuffs.pushDistances;
+      const views = [];
+      for (const [y, z] of [[.8, 1.4], [1.4, -.8]]) {
+        experimentalCamera.position.copy(ankle).add(new T.Vector3(.25, y, z));
+        experimentalCamera.lookAt(ankle);
+        experimental.setDepthBiasLimit('test-contact', 0);
+        const baseline = pixel();
+        experimental.setDepthBiasLimit('test-contact');
+        const cuff = pixel();
+        views.push({ baseline, cuff });
+      }
+      const cover = new T.Mesh(new T.PlaneGeometry(2, 2), new T.MeshBasicMaterial({ color: 0x20ff20, side: T.DoubleSide }));
+      cover.position.lerpVectors(ankle, experimentalCamera.position, .5);
+      cover.quaternion.copy(experimentalCamera.quaternion);
+      scene.add(cover);
+      result.cuffs = { activeBias, fittedPush, views, covered: pixel(),
+        reusedFit: cuffVersion === experimental.baseVersion };
+      experimental.dispose();
       renderer.dispose();
       return result;
     });
@@ -159,6 +207,16 @@ const pageErrors = []; // Captured so CI failures also have mobile-readable diag
     assert(result.material.depthTest && result.material.depthWrite && result.material.offset
       && result.material.factor > 0 && result.material.units > 0,
     'pants use real depth and a rearward camera-independent coplanar offset');
+    const isCyan = ([r, g, b]) => r < 95 && g > 100 && b > 100; // Color of the authored pants fixture.
+    assert.equal(result.cuffs.activeBias, 0, 'camera-facing cuffs disable the legacy whole-foot draw offset');
+    assert(result.cuffs.fittedPush.every(distance => distance > .21 && distance < .25), 'each shoe envelope is measured at fit time');
+    assert(result.cuffs.reusedFit, 'turning the camera does not recalculate shoe clearance');
+    for (const view of result.cuffs.views) {
+      assert(view.baseline[0] > 150 && view.baseline[2] < 80 && isCyan(view.cuff),
+        'cuff covers its real shoe in both inclined views: ' + JSON.stringify(result.cuffs));
+    }
+    assert(result.cuffs.covered[1] > 150 && result.cuffs.covered[2] < 100,
+      'closer solid geometry still occludes the experimental cuffs');
     for (const script of ['render-layers', 'render-hooks', 'social-action-r128-render-bridge',
       'surface-occlusion-composer', 'scissor-depth-snapshot', 'held-object-render-order']) {
       await page.addScriptTag({ path: path.join(root, 'docs/js', script + '.js') });
