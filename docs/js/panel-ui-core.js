@@ -606,7 +606,7 @@ if (/\/tools\/attack-animation-editor\/(?:index\.html)?$/.test(location.pathname
 // layout rewrites, so load its isolated Impact workspace adapter separately.
 if (/\/tools\/procedural-animation-editor\/(?:index\.html)?$/.test(location.pathname)) {
   const impactTabsScript = document.createElement('script');
-  impactTabsScript.src = '../../js/procedural-impact-tabs.js?v=20261009h6c8af83';
+  impactTabsScript.src = '../../js/procedural-impact-tabs.js?v=20261126inkAudit3';
   impactTabsScript.defer = true;
   document.head.appendChild(impactTabsScript);
 }
@@ -632,7 +632,7 @@ if (/\/tools\/locale-editor\/(?:index\.html)?$/.test(location.pathname)) {
   document.head.appendChild(localeTerrainScript);
 
   const localePreview3dScript = document.createElement('script'); // Adds relative-height shortcuts and a full-viewport live 3D authoring preview.
-  localePreview3dScript.src = 'locale-preview3d.js?v=20261125pristineCloth1';
+  localePreview3dScript.src = 'locale-preview3d.js?v=20261126inkAudit3';
   localePreview3dScript.defer = true;
   document.head.appendChild(localePreview3dScript);
 
