@@ -57,4 +57,19 @@ assert.match(avatarSource, /makeSpriteMaterial\(THREE, backTex, 'animal_back_mat
 assert.doesNotMatch(avatarSource, /alphaTest:\s*cfg\(\)\.alphaTest\s*\?\?\s*0\.001,\s*side:\s*THREE.FrontSide,\s*depthWrite:\s*true/,
   'animal cards must not use an independently permissive depth cutoff');
 
+// Exercise the actual pants shader composition on a real factory-created
+// material, without needing the rest of the rig or the DOM.
+const pantsSource = fs.readFileSync('docs/js/pants-garment-renderer.js','utf8');
+const hookStart = pantsSource.indexOf('const previousCompile = material.onBeforeCompile;');
+const hookEnd = pantsSource.indexOf('return { texture, material };', hookStart);
+assert.ok(hookStart >= 0 && hookEnd > hookStart);
+const pants = runtime.makeSpritePngUnlitMaterial(THREE, tex, 'pants');
+vm.runInNewContext(pantsSource.slice(hookStart,hookEnd), {
+  material: pants, handle: {maskUniforms:{}}, GPU_SKIN_VERTEX_DECLARATIONS:'', GPU_SKIN_VERTEX_BODY:''
+});
+const pantsShader={uniforms:{},vertexShader:'#include <common>\n#include <begin_vertex>',fragmentShader:'#include <common>\n#include <alphatest_fragment>'};
+pants.onBeforeCompile(pantsShader);
+assert.ok(pantsShader.fragmentShader.indexOf('diffuseColor.a *=') < pantsShader.fragmentShader.indexOf('#include <alphatest_fragment>'));
+assert.ok(pantsShader.fragmentShader.indexOf('#include <alphatest_fragment>') < pantsShader.fragmentShader.indexOf('diffuseColor.a = 1.0'));
+assert.match(pants.customProgramCacheKey(), /pantsOverlayMaskSpineGpuSkin\|hobunji-sprite-ink/);
 console.log('PNG plane mask-alpha coverage tests passed');

@@ -459,7 +459,10 @@
     const previousAutoClear = renderer.autoClear;
     const timing = gpuTimerInit(renderer);
     if (timing) gpuTimerPoll();
-    const sample = timing && gpuTimer.supported && pipelineFrames % 4 === 0 && gpuTimer.pending.length < 12; // Bounded outstanding queries.
+    // Render A/B owns elapsed-time queries during its frame/per-pass windows.
+    // Starting another query here would end or corrupt its active GL query.
+    const sample = timing && gpuTimer.supported && !window.RenderABBenchmark?.isRunning?.()
+      && pipelineFrames % 4 === 0 && gpuTimer.pending.length < 12; // Bounded outstanding queries.
     try {
       renderer.autoClear = true;
       if (precompose) {
@@ -603,7 +606,15 @@
         if (patchCompositeMaterial(material) && mode !== 'off') {
           const p = ensurePipeline(this);
           if (p) p.rawRender = originalRender;
-          const precomposed = p && runReferencePipeline(this, material, scene, camera);
+          const precomposed = p ? runReferencePipeline(this, material, scene, camera) : null;
+          if (precomposed == null) {
+            // Missing source/target support must present the unfiltered world,
+            // never sample an uninitialized or stale painterly target.
+            const uniform = material.uniforms.uHobunjiPaintMode;
+            const selected = uniform.value;
+            try { uniform.value = 0; return originalRender.call(this, scene, camera); }
+            finally { uniform.value = selected; }
+          }
           if (precomposed) {
             // Present the original painterly finish without doubling depth/seam ink.
             const u = material.uniforms;
