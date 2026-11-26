@@ -1027,6 +1027,7 @@
   // exact tool/hand matrix stays entirely in ensureSyncSentinel's
   // onBeforeRender hook below, untouched by either piece of this split.
   function attachmentSweep() {
+    if (!pending.size) return; // No per-frame array copy when nothing is waiting.
     for (const record of [...pending]) {
       if (!record.avatarRoot?.userData) {
         pending.delete(record);

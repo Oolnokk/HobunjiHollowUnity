@@ -15,7 +15,7 @@ const groups = {
   'pre-game-item-art': ['tool-icon-render', 'sprite-recolor', 'object-sprite-catalog'],
   'pre-game-services': ['mount-system', 'companion-movement-speed', 'audio-system', 'honeyfuzzle-audio',
     'scratchbones-emoji-reactions', 'animal-vocalizations', 'music-system', 'audio-track-gain-settings'],
-  'pre-game-diagnostics': ['transform-dump-utils', 'rig-transform-dump', 'pixel-probe'],
+  'pre-game-diagnostics': ['transform-dump-utils', 'rig-transform-dump', 'scene-load-summary', 'probe-performance-capture', 'pixel-probe'],
 }; // Four independent cache-token owners and the original required startup order.
 
 let previous = -1; // Detects invalid cross-group ordering, not merely intra-group order.

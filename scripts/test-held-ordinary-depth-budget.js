@@ -6,7 +6,7 @@ const source = fs.readFileSync('docs/js/held-object-render-order.js', 'utf8'); /
 const begin = source.indexOf('  let ordinaryDepthLeavesSkipped ='); // Includes the supplement helper and complete held replay.
 const end = source.indexOf('  function isShellOutlinePass(', begin);
 
-function fixture({ bounded = false, ordinary = true, fail = false, colorLock = true, tint = false, nested = false, airborne = false, wildernessGround = false, groundShaderSupported = true, staleStencil = false, emptyDepth = false, emptyScissor = false, waterOnly = false, prune = true, customWaterHook = false, portraitParity = false, replacedAfterHook = false, lod = false, pendingShadow = false } = {}) {
+function fixture({ bounded = false, ordinary = true, fail = false, colorLock = true, tint = false, nested = false, airborne = false, wildernessGround = false, groundShaderSupported = true, staleStencil = false, emptyDepth = false, emptyScissor = false, waterOnly = false, prune = true, customWaterHook = false, portraitParity = false, replacedAfterHook = false, lod = false, pendingShadow = false, mixedPrune = false, mixedWater = false, registryMemo = false, failWater = false } = {}) {
   const groundMaterial = wildernessGround ? { depthWrite: false,
     userData: { hobunjiXrayElevationShader: { supported: groundShaderSupported } } } : null; // Reproduces wilderness ground, including unsupported/cold elevation shaders.
   const opaque = { isMesh: true, visible: true, children: [], material: groundMaterial }; // Base world terrain whose held-only depth flag is tested below.
@@ -21,7 +21,7 @@ function fixture({ bounded = false, ordinary = true, fail = false, colorLock = t
   const scene = { background: 'sky', autoUpdate: true,
     traverseVisible(fn) { for (const node of [sky, opaque, ...(!emptyDepth ? [cover] : []), weapon, ...(!nested ? [hand] : []), ...(!emptyDepth ? [parent, hooked] : [])]) { if (node.visible) { fn(node); for (const child of node.children) if (child.visible) fn(child); } } },
   };
-  if (waterOnly) {
+  if (waterOnly || mixedWater) {
     cover.layers = {mask:8};
     cutout.layers = {mask:1};
     scene.children = [sky, opaque, cover, weapon, hand, parent, hooked]; // Live tree used by the production pruning helper.
@@ -81,6 +81,8 @@ function fixture({ bounded = false, ordinary = true, fail = false, colorLock = t
     prepareSubmergedOverlayStencilMaterials: () => new Map(), prepareOverlayCoverTintMaterials: () => new Map(), prepareTintCoverDepthMaterials: () => new Map(),
     waterReplayCount: 0, WATER_REPLAY_MASK: 8, HELD_OVERLAY_MASK: 2, GROUND_REPLAY_MASK: 4, PORTRAIT_WATER_MASK: 16,
     waterOnlyBranchPruneEnabled: prune, waterOnlyPrunedFrames:0, waterOnlyPrunedBranches:0, waterOnlyPruneFallbacks:0,
+    mixedWaterBranchPruneEnabled:mixedPrune,mixedWaterPrunedFrames:0,mixedWaterPrunedBranches:0,mixedWaterPruneFallbacks:0,mixedWaterVisited:0,
+    replayRegistryMemoEnabled:registryMemo,
     stampSubmergedPortraits(renderer, scene, camera, portraits) {
       const mask = camera.layers.mask;
       const old = portraits.map(node => node.layers.mask);
@@ -104,7 +106,7 @@ function fixture({ bounded = false, ordinary = true, fail = false, colorLock = t
         stencilMask = 0; // WebGL keeps the write mask from the tint material until another draw changes it.
         if (!draws.some(draw => draw.tintedPixels)) draws.at(-1).tintedPixels = stencil.slice(0, 2).map(bits => bits & 1);
       }
-      if (fail) throw new Error('render failure');
+      if (fail || (failWater && _camera.layers.mask===8)) throw new Error('render failure');
     },
   };
   for (const name of ['lastBaseElevationGroups', 'lastHeldFullscreenReason', 'fullscreenReplayCount', 'lastReplayScissorCoverage', 'nonGroundDepthReplayCount', 'selectiveOverlayCount', 'groundDepthRestoreCount']) scope[name] = 0;
@@ -119,7 +121,7 @@ function fixture({ bounded = false, ordinary = true, fail = false, colorLock = t
   const participants = [...(ordinary ? [weapon] : []), ...(bounded ? [hand] : [])]; // Only active sources are hidden by this render.
   const bodyTint = waterOnly ? {portraits:[cutout],touchingCovers:new Set([cover]),scopes:[]} : null;
   const run = () => scope.replaySelectiveHeldOverlay(renderer, scene, camera, participants, [], [opaque], [], [cover], 1, bodyTint);
-  if (fail) assert.throws(run, /render failure/); else run();
+  if (fail || failWater) assert.throws(run, /render failure/); else run();
   assert.equal(opaque.visible, true); assert.equal(cutout.visible, true); assert.equal(cover.visible, true); assert.equal(sky.visible, true);
   assert.equal(weapon.visible, true); assert.equal(hand.visible, true);
   assert.equal(parent.visible,true); assert.equal(hooked.visible,true);
@@ -173,6 +175,18 @@ assert.equal(submerged.clears, 0);
   const customAfter=mesh(); customAfter.onAfterRender=()=>{}; install(customAfter);
   assert.equal(customAfter.__hobunjiXrayBoundParity.localRestoreHook,undefined);
 }
+// Mixed gear+water uses the existing live tree pruner only during the last two water passes.
+const mixedPruned=fixture({tint:true,mixedWater:true,mixedPrune:true,registryMemo:true});
+const mixedLegacy=fixture({tint:true,mixedWater:true});
+const ids = f => f.draws.map(d=>({mask:d.mask,nodes:d.nodes.map(n=>n===f.cover?'cover':n===f.weapon?'weapon':n===f.hand?'hand':n===f.cutout?'cutout':n===f.opaque?'ground':n===f.parent?'parent':n===f.sky?'sky':'other')}));
+assert.deepEqual(ids(mixedPruned),ids(mixedLegacy),'mixed prune retains native draw identity and order');
+assert.equal(mixedPruned.scope.mixedWaterPrunedFrames,1);
+assert(mixedPruned.scope.mixedWaterPrunedBranches>0);
+assert(mixedPruned.draws.filter(d=>d.mask===8).every(d=>!d.opaqueVisible),'unrelated terrain hidden only for water draws');
+assert.equal(fixture({tint:true,mixedWater:true,mixedPrune:true,customWaterHook:true}).scope.mixedWaterPruneFallbacks,1);
+assert.equal(fixture({tint:true,mixedWater:true,mixedPrune:true,lod:true}).scope.mixedWaterPruneFallbacks,1);
+assert.equal(fixture({tint:true,mixedWater:true,mixedPrune:true,pendingShadow:true}).scope.mixedWaterPruneFallbacks,1);
+fixture({tint:true,mixedWater:true,mixedPrune:true,failWater:true}); // Restore even if the final water draw throws.
 const privateWater = fixture({ordinary:false,tint:true,waterOnly:true});
 const legacyWater = fixture({ordinary:false,tint:true,waterOnly:true,prune:false});
 assert.deepEqual(privateWater.draws.map(d=>d.mask),[16,8,8],'portrait stamp, water tint and depth restoration are preserved');

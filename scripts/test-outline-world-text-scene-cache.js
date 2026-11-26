@@ -37,9 +37,9 @@ class Scene extends Object3D {
 }
 const THREE = { Object3D, Scene }; // Production wrappers install on both classes.
 let clock = 1000; // Deterministic fake performance clock.
-const api = new Function('THREE', 'performance', 'WORLD_TEXT_RENDER_ORDER_MIN',
+const api = new Function('THREE', 'performance', 'WORLD_TEXT_RENDER_ORDER_MIN', 'window',
   extracted + '\nreturn {collectWorldTextOverlayEntries, sceneStructureEpoch, stats: () => ({worldTextFullScans,worldTextIncrementalRoots,worldTextCacheHits})};'
-)(THREE, { now: () => clock }, 1200); // Initial scene collection is a full traversal.
+)(THREE, { now: () => clock }, 1200, {}); // Initial scene collection is a full traversal.
 function popup() {
   const p = new Object3D();
   p.isMesh = true;

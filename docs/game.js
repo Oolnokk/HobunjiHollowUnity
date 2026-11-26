@@ -13172,6 +13172,8 @@
       // (the walker's only LOD gate before this) left every NPC on the far
       // side of a large area paying full gait/wander cost for no reason.
       const NPC_LOD_NEAR_TILES = 24; // Nearer wake boundary so a walker doesn't flicker in and out of the cheap tier at one exact distance.
+      // Opt-in coarse ticking of off-area walkers now lives in js/offarea-npc-tick.js (window.OffAreaNpcTick).
+      window.OffAreaNpcTick.init({ getCurrentArea: () => currentArea, isDialogueOrCutsceneWalker: w => _dialogueWalker === w || npcDialogueStaging?.walker === w || cutscenePreviewActive });
       const NPC_OFF_AREA_LEGS_INTERVAL_S = 0.5; // Off-area walkers' procedural legs only settle their resting pose at this cadence.
       const NPC_LOD_FAR_TILES = 28;
 
@@ -14192,17 +14194,19 @@
             if (w.combatTutorialSuspended) { w.root.visible = false; continue; } // Oddclaw's combat rig temporarily owns his presence.
             if (window.FestivalWheelDanceRuntime?.isPartner?.(w)) continue; // Paired dance owns this avatar's visual transform and temporarily suspends only its walker AI.
             if (w._npcUpdateError?.retryAt > npcUpdateNowMs) continue;
+            const walkerDt = window.OffAreaNpcTick.step(w, dt); // Off-area walkers get a coarse, accumulated dt (opt-in); null skips this frame.
+            if (walkerDt === null) continue;
             try {
               const oldHeadX = w.root?.position?.x, oldHeadZ = w.root?.position?.z; // Real travel this frame drives the head target, not a stale requested speed.
               const oldHeadArea = w.area; // Area transfers must never be mistaken for extreme one-frame movement.
-              w.update(dt);
+              w.update(walkerDt);
               if (npcWalkers[i] === w) {
-                if (!w._familyBabyFollowing) window.BedLiePose?.syncNpc?.(w, w.currentScheduleTarget, dt, w._bedLieSurface); // Every humanoid NPC uses real schedule-driven lie/stand poses, not just the player.
+                if (!w._familyBabyFollowing) window.BedLiePose?.syncNpc?.(w, w.currentScheduleTarget, walkerDt, w._bedLieSurface); // Every humanoid NPC uses real schedule-driven lie/stand poses, not just the player.
                 npcMovementHeadLookOptions.currentArea = currentArea;
                 npcMovementHeadLookOptions.hasScriptedGaze = cutscenePreviewActive
                   || npcDialogueStaging?.walker === w || _dialogueWalker === w || oldHeadArea !== w.area;
                 window.NpcMovementHeadTarget?.updateWalker?.(w, oldHeadX, oldHeadZ, npcMovementHeadLookOptions);
-                _tickNpcPortraitLife(w, dt);
+                _tickNpcPortraitLife(w, walkerDt);
               }
               if (w._npcUpdateError) w._npcUpdateError = null;
             } catch (error) {

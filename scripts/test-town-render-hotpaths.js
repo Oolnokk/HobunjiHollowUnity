@@ -64,8 +64,8 @@ const heldDepthReplay = heldRender.slice(
   heldRender.indexOf('  function replaySelectiveHeldOverlay('),
   heldRender.indexOf('  function isShellOutlinePass(')); // The actual grouped depth replay, not unrelated shell/scene code.
 const hiddenParticipantsAt = heldDepthReplay.indexOf('suppressedOverlay = suppressDraws('); // Visible depth candidates must be sampled after held participants are hidden.
-const pngCutoutsAt = heldDepthReplay.indexOf('collectVisible(pngDepthRegistry, scene)'); // One scan for PNG silhouette occluders per overlay replay.
-const protectedCoversAt = heldDepthReplay.indexOf('collectVisible(protectedCoverRegistry, scene)'); // One scan for water, snow, slush and vegetation covers.
+const pngCutoutsAt = heldDepthReplay.indexOf('collectVisible(pngDepthRegistry, scene'); // One scan for PNG silhouette occluders per overlay replay.
+const protectedCoversAt = heldDepthReplay.indexOf('collectVisible(protectedCoverRegistry, scene'); // One scan for water, snow, slush and vegetation covers.
 const groupReplayAt = heldDepthReplay.indexOf('for (const group of groups)'); // All elevation groups reuse the two candidate lists.
 assert.ok(hiddenParticipantsAt >= 0 && hiddenParticipantsAt < pngCutoutsAt
   && pngCutoutsAt < groupReplayAt && protectedCoversAt < groupReplayAt,
