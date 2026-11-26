@@ -6693,6 +6693,61 @@
       function _companionPersonalSpacePx() {
         return 1.5 * (playerAvatarModelWidth || 0.9) * TILE;
       }
+      // A low-flight step is independent of swimming penalties and existing ground
+      // detours, but must leave a safe landing surface beneath the bird. High
+      // cliffs, unsupported shaft crossings, and unmeasured caves retain ground routing.
+      function companionBirdFlightClear(c, fromX, fromY, toX, toY) {
+        const outside = currentArea === 'farm' || currentArea === 'town' || _isZoneArea(currentArea);
+        const ruin = currentArea === 'map_i_dev_random_ruin';
+        const roomData = !outside && !ruin && _isBuildingArea(currentArea) && !_isCavernBuildingArea(currentArea) ? _rawMapDataByMapId.get(currentArea) : null;
+        if (!outside && !ruin && !roomData) return false;
+        const radius = Math.max(.08, Math.min(.45, (c.visualModelWidth || c.def.modelWidth || .5) * .25)); // Conservative body footprint in world units.
+        const height = Math.max(.2, (c.halfHeight || .2) * 2);
+        const ceiling = roomData ? (window.InteriorEnvironmentRuntime?.normalizeEnvironment?.(roomData)?.wallHeight ?? INTERIOR_WALL_HEIGHT) : Infinity;
+        const gridNow = c.areaGrid || window.GridTileAccessors.getActiveGrid();
+        const support = (x, y) => ruin ? Number(c.shaftSupportY ?? c.surfaceYOverride?.() ?? activeSurfaceYAtWorld(x / TILE, y / TILE)) : activeSurfaceYAtWorld(x / TILE, y / TILE);
+        const fromFloor = support(fromX, fromY);
+        const clear = window.DevRandomRuin?.flightClear;
+        if (ruin && (typeof clear !== 'function' || !window.DevRandomRuin?.getState?.())) return false;
+        let previous = { x: fromX / TILE, z: fromY / TILE, floor: fromFloor };
+        const steps = Math.max(1, Math.ceil(Math.hypot(toX - fromX, toY - fromY) / (TILE * .2)));
+        for (let i = 0; i <= steps; i++) {
+          const wx = fromX + (toX - fromX) * i / steps, wy = fromY + (toY - fromY) * i / steps;
+          const x = wx / TILE, z = wy / TILE, floor = support(wx, wy);
+          const tile = gridNow?.[Math.floor(z)]?.[Math.floor(x)];
+          // An interrupted bird must be able to return to the same walkable story.
+          if (!tile || tile.mapBoundary || tile.incline || !Number.isFinite(floor) || Math.abs(floor - fromFloor) > .55) return false;
+          if (!creatureCanEnterTile(c.def, wx, wy, fromX, fromY, c)) return false;
+          // Probe both the grounded-to-flight ascent and full body at cruise height.
+          const feet = floor + .65;
+          if (feet + height + .15 > ceiling) return false;
+          if (!ruin) {
+            for (const lift of [.08, .35, .65]) {
+              if (!canOccupyAt(wx, wy, radius * TILE, floor + lift + radius)
+                || !canOccupyAt(wx, wy, radius * TILE, floor + lift + Math.max(radius, height))) return false;
+            }
+          } else {
+            for (const offset of [-radius, 0, radius]) {
+              if (!clear(previous.x + offset, previous.floor + .65 + radius, previous.z, x + offset, feet + radius, z)
+                || !clear(previous.x, previous.floor + .65 + height, previous.z + offset, x, feet + height, z + offset)
+                || !clear(x + offset, floor + radius, z, x + offset, feet + Math.max(radius, height), z)) return false;
+            }
+          }
+          previous = { x, z, floor };
+        }
+        return true;
+      }
+
+      function tryBirdFollowFlight(c, tx, ty, dt) {
+        if (!c.def?.isFlyingSpecies || c.stableRole !== 'companion' || c._cliffClimb || c._cliffRouteTravel || c.onBranch || c._downed || c.prone || c.knockbackT > 0 || c._knockbackLedgeFall) return false;
+        const speed = c.def.chaseSpeed * devGlobalSpeedMul
+          * (window.ResourceSystem?.timedDebuffModifier?.(c, 'moveSpeed') ?? 1)
+          * (window.RangedWeapons?.movementSpeedMultiplier?.(c) ?? 1); // Same authored pursuit pace and debuffs, but no swimming slowdown.
+        const direction = window.RangedWeapons?.movementDirectionMultiplier?.(c) || 1;
+        return window.TzatzulLiveVisuals?.tryCompanionFlightStep?.(c, tx, ty, speed, dt, direction,
+          (x, y, nx, ny) => companionBirdFlightClear(c, x, y, nx, ny)) === true;
+      }
+
       function _companionFollowWanderTick(c, dt, master) {
         c.wanderT -= dt;
         if (!c.wanderTarget || c.wanderT <= 0) {
@@ -9261,7 +9316,7 @@
             // A climbing owner is not a carrier: chase the walkable destination via
             // the shared cliff-route network, or wait on the ground once nearby.
             if (followGoal.routeRequired || followGoal.distance > (master.climbing ? FOLLOW_NEAR_PX : FOLLOW_FAR_PX)) {
-              moving = travelCreatureToward(c, followGoal.x, followGoal.y, def.chaseSpeed, dt);
+              moving = tryBirdFollowFlight(c, followGoal.x, followGoal.y, dt) || travelCreatureToward(c, followGoal.x, followGoal.y, def.chaseSpeed, dt);
               if (moving) aimAngle = Math.atan2(c.vy, c.vx);
             } else {
               c.vx = 0; c.vy = 0;
@@ -9288,38 +9343,14 @@
           c.facing = aimAngle;
           c.x = window.FormatUtils.clamp(c.x, 0, (c.areaCols || COLS) * TILE);
           c.y = window.FormatUtils.clamp(c.y, 0, (c.areaRows || ROWS) * TILE);
-          if (!hardCatchup && window.CompanionFollowNavigation.tickRecovery(c, master, followGoal, dt)) {
+          const recoveredAfterMove = !hardCatchup && window.CompanionFollowNavigation.tickRecovery(c, master, followGoal, dt); // Also cancels any accumulated flight/hop elevation.
+          if (recoveredAfterMove) {
             moving = false; runInPlace = false; // The invisible snap has already updated the animal's true and rendered positions.
           }
           if (def.isFlyingSpecies && c.stableRole === 'companion') {
-            const interrupted = !!(c.prone || c.knockbackT > 0 || c._knockbackLedgeFall || c._cliffClimb || c._cliffRouteTravel || c.onBranch || c._downed || window.Combat?.animalAttacks?.isBusy(c) || window.Combat?.telegraph?.isBusy(c)); // Do not let follower flight override another physical or combat owner.
+            const interrupted = !!(recoveredAfterMove || c.prone || c.knockbackT > 0 || c._knockbackLedgeFall || c._cliffClimb || c._cliffRouteTravel || c.onBranch || c._downed || window.Combat?.animalAttacks?.isBusy(c) || window.Combat?.telegraph?.isBusy(c)); // Do not let follower flight override another physical or combat owner.
             const movedPx = moving ? Math.hypot(c.x - birdStartX, c.y - birdStartY) : 0; // Ground navigation already applied the actual collision-safe step.
-            const outside = currentArea === 'farm' || currentArea === 'town' || _isZoneArea(currentArea); // Unmeasured carved cave ceilings default to hopping.
-            const ruin = currentArea === 'map_i_dev_random_ruin'; // Generated ruins expose actual voxel clearance.
-            const roomData = !outside && !ruin && _isBuildingArea(currentArea) && !_isCavernBuildingArea(currentArea) ? _rawMapDataByMapId.get(currentArea) : null; // Ordinary rooms have a known conservative flat-ceiling height.
-            let flightClear = false;
-            if (!interrupted && (movedPx > .08 || c._companionBirdMotion?.lift > 0) && (outside || ruin || roomData)) {
-              const x = c.x / TILE, z = c.y / TILE; // Convert footprint to world units for 3D clearance.
-              const px = birdStartX / TILE, pz = birdStartY / TILE;
-              const floor = Number(c.shaftSupportY ?? c.surfaceYOverride?.() ?? activeSurfaceYAtWorld(x, z));
-              const startFloor = Number(c.shaftSupportY ?? c.surfaceYOverride?.() ?? activeSurfaceYAtWorld(px, pz));
-              const radius = Math.max(.08, Math.min(.45, (c.visualModelWidth || def.modelWidth || .5) * .25));
-              const top = Math.max(.2, (c.halfHeight || .2) * 2);
-              const feet = floor + .65, startFeet = startFloor + .65;
-              if (Number.isFinite(feet) && Number.isFinite(startFeet)) {
-                if (outside || roomData) {
-                  const ceiling = roomData ? (window.InteriorEnvironmentRuntime?.normalizeEnvironment?.(roomData)?.wallHeight ?? INTERIOR_WALL_HEIGHT) : Infinity; // Do not rely on additional gable height or assume a carved cave is empty.
-                  flightClear = feet + top + .15 <= ceiling
-                    && canOccupyAt(c.x, c.y, radius * TILE, feet + radius)
-                    && canOccupyAt(c.x, c.y, radius * TILE, feet + top); // Respect local terrain and registered prop clearance.
-                } else {
-                  const clear = window.DevRandomRuin?.flightClear;
-                  flightClear = typeof clear === 'function' && [-radius, 0, radius].every(offset =>
-                    clear(px + offset, startFeet, pz, x + offset, feet, z) === true
-                    && clear(px, startFeet + top, pz + offset, x, feet + top, z + offset) === true); // Ruin voxels must allow the whole low-flight corridor.
-                }
-              }
-            }
+            const flightClear = !interrupted && (movedPx > .08 || c._companionBirdMotion?.lift > 0) && companionBirdFlightClear(c, birdStartX, birdStartY, c.x, c.y); // Same clearance owner as direct movement.
             const birdMotion = window.TzatzulLiveVisuals?.updateCompanionLocomotion?.(c, dt, movedPx, flightClear, interrupted);
             followDebug.birdLocomotion = birdMotion?.mode || 'perched'; // Existing mobile companion debug record.
             followDebug.birdFlightClear = flightClear;

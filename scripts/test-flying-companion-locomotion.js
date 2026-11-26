@@ -22,6 +22,14 @@ assert.equal(update({ def: { isFlyingSpecies: false }, stableRole: 'companion' }
 assert.equal(update({ def: { isFlyingSpecies: true }, stableRole: 'shoulderPet' }, .05, 5, true), undefined);
 assert.match(source, /actor\.isCompanion && actor\.def\?\.isFlyingSpecies\) rig\.setPerchSpline\?\.\(null\)/);
 assert.match(bridge, /if \(companion\?\.def\?\.isFlyingSpecies\) return false;/);
+const stepFlight = context.window.TzatzulLiveVisuals.tryCompanionFlightStep;
+const flyer = { ...bird, x: 0, y: 0, _travelPath: [{}] };
+assert.equal(stepFlight(flyer, 100, 0, 50, .1, 1, () => false), false);
+assert.equal(flyer.x, 0, 'blocked flight leaves position untouched for normal routing');
+assert.equal(stepFlight(flyer, 100, 0, 50, .1, 1, () => true), true);
+assert.equal(flyer.x, 5, 'clear flight advances real coordinates without a ground detour');
+assert.equal(flyer._travelPath, null);
+assert.equal(stepFlight(flyer, NaN, 0, 50, .1, 1, () => true), false);
 assert.match(game, /updateCompanionLocomotion\?\.\(c, dt, movedPx, flightClear, interrupted\)/);
 assert.match(game, /DevRandomRuin\?\.flightClear/);
 assert.match(game, /birdLift/);

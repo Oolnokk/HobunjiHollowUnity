@@ -549,7 +549,7 @@
     }
     const frameUrl = selected.url;
     if (!frameUrl || typeof combatDeps?.setCreatureFrame !== 'function' || !companion.avatarRef) return false;
-    if (!companion?.def?.isFlyingSpecies && needsSmallPetHead(companion, combatDeps)) {
+    if (needsSmallPetHead(companion, combatDeps)) {
       // A rare genetically Small pet gets the same head pixels as a baby. Naturally Small adults skip this entire branch.
       return ensureSmallPetHeadFrame(companion, combatDeps, frameName);
     }
