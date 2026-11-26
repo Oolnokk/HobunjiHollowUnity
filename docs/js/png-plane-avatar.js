@@ -486,28 +486,34 @@
   }
 
   function neckBlendBand(neckY, modelHeight, pixelHeight) {
-    const imageHeight = Number.isFinite(pixelHeight) && pixelHeight > 0 ? pixelHeight : 200; // Base portrait height maps each species' head-bottom pixel to model space.
-    const safeHeight = Number.isFinite(modelHeight) && modelHeight > 0 ? modelHeight : 1; // Prevent a malformed preview model from creating a zero-width bend.
-    const topPx = Math.max(0, Math.min(imageHeight - 1, (0.5 - neckY / safeHeight) * imageHeight)); // Last opaque base-head pixel, already used as the neck pivot.
-    const spanPx = Math.min(imageHeight - topPx - 0.01, Math.min(3, Math.max(2, Math.round(imageHeight * .012)))); // At most three SOURCE pixels below the skull, even on high-resolution portraits; retain a tiny last body row.
-    const height = spanPx / imageHeight * safeHeight; // Shared by GPU weights, CPU landmark probes, and the character-spine solver.
-    return { topY: neckY, bottomY: neckY - height, height, topPx, bottomPx: topPx + spanPx };
+    const imageHeight = Number.isFinite(pixelHeight) && pixelHeight > 0 ? pixelHeight : 200; // Source-pixel coordinates for mesh rows and diagnostics.
+    const safeHeight = Number.isFinite(modelHeight) && modelHeight > 0 ? modelHeight : 1; // Valid model-space height for the restored legacy falloff.
+    const height = safeHeight * .30; // The original 30%-height rotation blend, independent of the short physical neck joint.
+    const pivotPx = (0.5 - neckY / safeHeight) * imageHeight; // The actual base-head bottom remains the rotation pivot.
+    const topPx = Math.max(.01, Math.min(imageHeight - .02, pivotPx - imageHeight * .135));
+    const bottomPx = Math.max(topPx + .01, Math.min(imageHeight - .01, pivotPx + imageHeight * .165)); // Clip only the mesh rows, not the mathematical falloff.
+    return { topY: neckY + height * .45, bottomY: neckY - height * .55, height, topPx, bottomPx, pivotPx };
   }
 
-  function neckBlendWeight(y, topY, height) {
-    return smoothstep01((y - (topY - height)) / height); // Full head weight at/above the skull's bottom; no head weight below the narrow neck.
+  function neckBlendWeight(y, topY, height, modelHeight = Infinity, broad = height > modelHeight * .05) {
+    const below = broad ? .55 : 1; // Native and diagnostic broad profiles keep one curve at every radius; old untagged narrow rigs remain readable.
+    return smoothstep01((y - (topY - height * below)) / height);
   }
 
   function headOffsetWeightAt(y, topY, modelHeight, neckHeight) {
-    const bandBottom = topY - neckHeight; // Rotation stops here; only the nonrotating head-height compensation continues below.
-    const fadeHeight = Math.max(modelHeight * .24, neckHeight * 2); // Distribute up to ~12% species offset without vertically inverting cells.
+    if (neckHeight > modelHeight * .05) {
+      const placementHeight = modelHeight * .24; // Only the independent three-bone author uses this gradual placement envelope.
+      return smoothstep01((y - (topY - placementHeight)) / placementHeight);
+    }
+    const bandBottom = topY - neckHeight;
+    const fadeHeight = Math.max(modelHeight * .24, neckHeight * 2);
     return smoothstep01((y - (bandBottom - fadeHeight)) / fadeHeight);
   }
 
   function neckBlendRows(segmentsY, pixelHeight, topPx, bottomPx) {
-    const upperRows = Math.max(1, Math.min(segmentsY - 3, Math.round(topPx / pixelHeight * (segmentsY - 2)))); // Rows above the neck preserve approximate existing portrait mesh density.
-    const bendRows = 2; // Give the short neck band a middle skin-weight row without increasing triangles per NPC.
-    const lowerRows = segmentsY - upperRows - bendRows; // The rest of the grid covers the torso and legs.
+    const bendRows = Math.max(2, Math.min(segmentsY - 2, 2 * Math.round((bottomPx - topPx) / pixelHeight * segmentsY / 2))); // Reserve proportionate, even sampling across the broad blend, including its midpoint.
+    const upperRows = Math.max(1, Math.min(segmentsY - bendRows - 1, Math.round(topPx / pixelHeight * segmentsY)));
+    const lowerRows = segmentsY - upperRows - bendRows; // Fixed total triangle budget.
     const rows = new Float32Array(segmentsY + 1); // Nonuniform UV-matched row positions used by each portrait plane's geometry.
     for (let i = 0; i <= segmentsY; i++) {
       rows[i] = i <= upperRows ? topPx * i / upperRows
@@ -563,9 +569,39 @@
 
   function headScaleWeightAt(y, neckY, modelHeight, pixelX, bounds, turnWeight, blendHeight = modelHeight * .012) {
     if (!bounds) return turnWeight;
-    const verticalWeight = neckBlendWeight(y, neckY, blendHeight); // Head scale cannot secretly extend the neck rotation below its short species-specific bend.
+    if (blendHeight > modelHeight * .05) {
+      if (bounds.headMask) return bounds.headMask.weightAtPixel(pixelX, (modelHeight / 2 - y) / modelHeight * bounds.headMask.pixelHeight); // Restore the painted head/cosmetics scale influence.
+      const fullBelow = modelHeight / 36; // Original full-head margin below the skull.
+      const blendBelow = modelHeight * (bounds.tightGate === true ? .06 : .2); // Original independent tight/wide scale falloff.
+      return smoothstep01((y - (neckY - blendBelow)) / (blendBelow - fullBelow)) * headScaleGateAtPixel(pixelX, bounds);
+    }
+    const verticalWeight = neckBlendWeight(y, neckY, blendHeight); // Legacy narrow preview/fixture compatibility.
     if (bounds.headMask) return verticalWeight * bounds.headMask.weightAtPixel(pixelX, (modelHeight / 2 - y) / modelHeight * bounds.headMask.pixelHeight); // Preserve painted head+cosmetics gating within the same neck band.
     return verticalWeight * headScaleGateAtPixel(pixelX, bounds); // Preserve the separate wide/tight *horizontal* head-scale gates.
+  }
+
+  // The single broad humanoid influence calculation. The author uses a
+  // three-bone layout; gameplay and the attack editor use the full spine.
+  // Output is caller-owned so rebuilding a mesh allocates nothing per vertex.
+  function humanoidBlendWeightsAt(y, neckY, modelHeight, pixelX, bounds, turnHeight, scaleHeight, author, out) {
+    const turn = neckBlendWeight(y, neckY, turnHeight, modelHeight, true);
+    const scale = author ? 0 : headScaleWeightAt(y, neckY, modelHeight, pixelX, bounds, turn, scaleHeight);
+    const head = Math.max(turn, scale);
+    const offset = author ? Math.max(0, headOffsetWeightAt(y, neckY, modelHeight, scaleHeight) - head) : 0;
+    out.body = 1 - head - offset;
+    out.offset = offset;
+    out.turn = head - scale;
+    out.scale = scale;
+    return out;
+  }
+
+  function humanoidSpineSkinAt(y, neckY, modelHeight, pixelX, bounds, turnHeight, scaleHeight, spineBaseY, posteriorY, out) {
+    humanoidBlendWeightsAt(y, neckY, modelHeight, pixelX, bounds, turnHeight, scaleHeight, false, out);
+    const spline = spineNodeWeightsAt(y, Number.isFinite(spineBaseY) ? spineBaseY : neckY, modelHeight, posteriorY);
+    out.a = spline.a; out.b = spline.b;
+    out.wa = out.body * (1 - spline.wb);
+    out.wb = out.body * spline.wb;
+    return out;
   }
 
   // Builds the complete rectangular PNG plane as one two-sided SkinnedMesh.
@@ -1135,16 +1171,14 @@
     const segmentsY = Math.max(6, Math.round(Number(options.segmentsY) || 36));
     const pixelWidth = Math.max(1, Number(options.pixelWidth) || 1); // Used below to map the overall PNG plane into model/UV space.
     const pixelHeight = Math.max(1, Number(options.pixelHeight) || 1); // Used below to map the overall PNG plane into model/UV space.
-    const band = neckBlendBand(neckLocal.y, modelHeight, pixelHeight); // Species-specific bottom of its actual base-head sprite anchors the two-pixel neck transition.
-    const blendHeight = band.height; // Shared by the two skin weights and the CPU world-pixel resolver.
-    const rowPixels = neckBlendRows(segmentsY, pixelHeight, band.topPx, band.bottomPx); // Reserve two mesh cells at the tiny neck strip without growing the mesh.
-    // The head turns only in the narrow sprite-bottom band. Head *position*
-    // must continue blending farther down: authored offsets of ~10% of body height
-    // would invert a 2px triangle strip if they were applied to the rotation bone.
-    // A separate nonrotating placement bone supplies that broad compensation;
-    // the head-scale bone retains the established horizontal width gate.
+    const band = neckBlendBand(neckLocal.y, modelHeight, pixelHeight); // Broad visual blend around the unchanged short physical joint.
+    const blendHeight = band.height;
+    const rowPixels = neckBlendRows(segmentsY, pixelHeight, band.topPx, band.bottomPx);
+    // The seven real spine nodes still carry head-height placement. Blend rotation
+    // and scale against those nodes, not against one long pseudo-neck bone.
     const headBoundsPx = options.headBoundsPx || null;
     const positions = [], normals = [], uvs = [], skinIndices = [], skinWeights = [];
+    const skin = {}; // Shared weight scratch for each vertex in this geometry build.
 
     const toModelX = pixelX => -modelWidth / 2 + (pixelX / pixelWidth) * modelWidth;
     const toModelY = pixelY => modelHeight / 2 - (pixelY / pixelHeight) * modelHeight;
@@ -1154,16 +1188,9 @@
       positions.push(x, y, 0);
       normals.push(0, 0, normalZ);
       uvs.push(pixelX / pixelWidth, 1 - pixelY / pixelHeight);
-      const turnWeight = neckBlendWeight(y, neckLocal.y, blendHeight); // Short neck rotation ends just below the painted head.
-      if (turnWeight > 0) {
-        const scaleWeight = headScaleWeightAt(y, neckLocal.y, modelHeight, pixelX, headBoundsPx, turnWeight, blendHeight); // Head-scaling gate is independent of the placement fade.
-        skinIndices.push(OFFSET_BONE, NECK_BONE, HEAD_BONE, 0);
-        skinWeights.push(1 - turnWeight, turnWeight - scaleWeight, scaleWeight, 0); // All three upper bones inherit the head placement shift.
-      } else {
-        const spline = spineNodeWeightsAt(y, Number.isFinite(options.spineBaseY) ? options.spineBaseY : neckLocal.y, modelHeight, options.posteriorY); // Entire torso-to-neck area belongs to the actual seven-node spline.
-        skinIndices.push(spline.a, spline.b, 0, 0);
-        skinWeights.push(1 - spline.wb, spline.wb, 0, 0); // No broad head-offset skinning: the huge pseudo-neck was created by this 24%-height fade.
-      }
+      humanoidSpineSkinAt(y, neckLocal.y, modelHeight, pixelX, headBoundsPx, blendHeight, blendHeight, options.spineBaseY, options.posteriorY, skin);
+      skinIndices.push(skin.a, NECK_BONE, HEAD_BONE, skin.b);
+      skinWeights.push(skin.wa, skin.turn, skin.scale, skin.wb);
     };
 
     const appendCell = ({ column, row }, normalZ) => {
@@ -1199,7 +1226,7 @@
     geometry.computeBoundingBox();
     geometry.computeBoundingSphere();
     geometry.userData = {
-      segmentsX, segmentsY, blendHeight, neckLocal: { ...neckLocal }, neckBandPx: { top: band.topPx, bottom: band.bottomPx }, spinePosteriorY: Number.isFinite(options.posteriorY) ? options.posteriorY : null, spineBaseY: Number.isFinite(options.spineBaseY) ? options.spineBaseY : null,
+      segmentsX, segmentsY, blendHeight, neckLocal: { ...neckLocal }, neckBandPx: { top: band.topPx, bottom: band.bottomPx }, neckPivotPx: band.pivotPx, portraitGridRows: Array.from(rowPixels, px => px / pixelHeight), spinePosteriorY: Number.isFinite(options.posteriorY) ? options.posteriorY : null, spineBaseY: Number.isFinite(options.spineBaseY) ? options.spineBaseY : null,
       coverageMode: 'full-png-plane',
       planeBoundsPx: { left: 0, right: pixelWidth, top: 0, bottom: pixelHeight },
       planeCellCount: segmentsX * segmentsY,
@@ -1692,6 +1719,66 @@
     return resolved;
   }
 
+  // Sample the actual rendered triangle, rather than evaluating a nonlinear
+  // weight curve at an arbitrary texel. GPU skinning happens at the vertices;
+  // pixels between them interpolate the three already-posed positions.
+  // Only attachment queries use this path; no extra per-frame traversal or mesh.
+  function sampleSkinnedPortraitSurface(mesh, u, v, out, scratch) {
+    const geo = mesh.geometry;
+    const grid = geo?.userData;
+    const rows = grid?.portraitGridRows; // Normalized source rows, rebuilt with the skin at every density.
+    const sx = grid?.segmentsX, sy = grid?.segmentsY;
+    if (!rows || rows.length !== sy + 1 || !sx || u < 0 || u > 1 || v < 0 || v > 1 || geo.index) return false;
+    const pos = geo.getAttribute?.('position'), uv = geo.getAttribute?.('uv');
+    const indices = geo.getAttribute?.('skinIndex'), weights = geo.getAttribute?.('skinWeight');
+    if (!pos || !uv || !indices || !weights || pos.count < sx * sy * 6) return false;
+    let lo = 0, hi = sy; // Binary search just the existing vertical grid, including nonuniform neck rows.
+    while (hi - lo > 1) {
+      const mid = (lo + hi) >> 1;
+      if (v >= rows[mid]) lo = mid; else hi = mid;
+    }
+    const col = Math.min(sx - 1, Math.floor(u * sx));
+    const first = (lo * sx + col) * 6; // Both supported humanoid builders emit two consecutive front triangles per cell.
+    const { bindPoint, deformed, bonePoint, boneMatrix } = scratch;
+    const skeleton = mesh.skeleton;
+    for (let i = first; i < first + 6; i += 3) {
+      const ax = uv.getX(i), ay = 1 - uv.getY(i);
+      const bx = uv.getX(i + 1), by = 1 - uv.getY(i + 1);
+      const cx = uv.getX(i + 2), cy = 1 - uv.getY(i + 2);
+      const denom = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy);
+      if (Math.abs(denom) < 1e-14) continue;
+      const a = ((by - cy) * (u - cx) + (cx - bx) * (v - cy)) / denom;
+      const b = ((cy - ay) * (u - cx) + (ax - cx) * (v - cy)) / denom;
+      const c = 1 - a - b;
+      if (Math.min(a, b, c) < -1e-5) continue; // Float32 UV seams can differ from exact grid coordinates by a few ulps.
+      deformed.set(0, 0, 0);
+      for (let k = 0; k < 3; k++) {
+        const share = k === 0 ? a : k === 1 ? b : c;
+        if (!share) continue;
+        const j = i + k;
+        bindPoint.set(pos.getX(j), pos.getY(j), pos.getZ(j)).applyMatrix4(mesh.bindMatrix);
+        for (let slot = 0; slot < 4; slot++) {
+          const w = weights.array[j * 4 + slot] * share;
+          if (!w) continue;
+          const boneIndex = indices.array[j * 4 + slot];
+          if (skeleton.boneMatrices?.length >= (boneIndex + 1) * 16) {
+            boneMatrix.fromArray(skeleton.boneMatrices, boneIndex * 16);
+          } else {
+            const bone = skeleton.bones[boneIndex], inverse = skeleton.boneInverses?.[boneIndex];
+            if (!bone || !inverse) continue;
+            boneMatrix.multiplyMatrices(bone.matrixWorld, inverse);
+          }
+          bonePoint.copy(bindPoint).applyMatrix4(boneMatrix);
+          deformed.addScaledVector(bonePoint, w);
+        }
+      }
+      out.copy(deformed).applyMatrix4(mesh.bindMatrixInverse);
+      mesh.localToWorld(out);
+      return true;
+    }
+    return false;
+  }
+
   // Resolves an authored source-pixel coordinate through the same live torso/head
   // skinning used by the portrait SkinnedMesh. This remains avatar-instance
   // data so species-level cached anchors cannot be reused for a different pose.
@@ -1713,7 +1800,7 @@
       || pixelWidth <= 0 || pixelHeight <= 0 || modelWidth <= 0 || modelHeight <= 0) return null;
     const renderedPixelX = portraitsFlipped ? pixelWidth - pixelX : pixelX; // Used below so authored attachment landmarks mirror with the UV-flipped portrait.
 
-    const localPoint = out || new THREE.Vector3(); // Optional caller-owned output avoids per-frame vector allocations.
+    const localPoint = out || skinnedPlane.position?.clone?.() || new THREE.Vector3(); // Use the mesh's actual Three instance in module-based authors; caller output remains allocation-free.
     localPoint.set(
       -modelWidth / 2 + (renderedPixelX / pixelWidth) * modelWidth,
       modelHeight / 2 - (pixelY / pixelHeight) * modelHeight,
@@ -1724,7 +1811,7 @@
     const neckY = Number.isFinite(authoredNeckY) ? authoredNeckY
       : Number.isFinite(geometryNeckY) ? geometryNeckY : 0; // Never silently recenter a real neck at zero because a wrapper omitted neckLocal.
     const blendHeight = Number(skinnedPlane.geometry?.userData?.blendHeight) || neckBlendBand(neckY, modelHeight, pixelHeight).height; // Exact GPU band, also across mesh-density rebuilds.
-    let headWeight = neckBlendWeight(localPoint.y, neckY, blendHeight); // CPU landmarks and head attachments must follow the painted GPU neck.
+    let headWeight = neckBlendWeight(localPoint.y, neckY, blendHeight, modelHeight); // CPU landmarks and head attachments must follow the painted GPU neck.
 
     // updateMatrixWorld (not only updateWorldMatrix) is intentional here:
     // SkinnedMesh's override refreshes bindMatrixInverse in attached bind mode,
@@ -1737,6 +1824,8 @@
     pixelPositionScratch ||= { // Reused across sequential pixel queries; every caller keeps its own returned/output vector.
       bindPoint: localPoint.clone(), deformed: localPoint.clone(), bonePoint: localPoint.clone(), boneMatrix: skinnedPlane.bindMatrix.clone(),
     };
+    if (sampleSkinnedPortraitSurface(skinnedPlane, renderedPixelX / pixelWidth, pixelY / pixelHeight, localPoint, pixelPositionScratch)) return localPoint;
+    // Legacy/external fixtures without the regular grid metadata retain their analytical skinning.
     const { bindPoint, deformed, bonePoint, boneMatrix } = pixelPositionScratch; // Shared internal scratch never escapes this resolver.
     bindPoint.copy(localPoint).applyMatrix4(skinnedPlane.bindMatrix);
     deformed.set(0, 0, 0);
@@ -1747,15 +1836,17 @@
     const offsetBone = splitOffset ? 7 : authorOffset ? 1 : -1;
     const neckBone = splitOffset ? 8 : authorOffset ? 2 : splineLayout ? 7 : 1;
     const headBone = splitOffset ? 9 : authorOffset ? 2 : splineLayout ? 8 : 2;
-    const headScaleWeight = rig.headScaleJoint && skeleton.bones.length > headBone
+    const headScaleWeight = !authorOffset && rig.headScaleJoint && skeleton.bones.length > headBone
       ? headScaleWeightAt(localPoint.y, neckY, modelHeight, renderedPixelX, rig.headBoundsPx, headWeight, blendHeight) : 0; // Same horizontal head gate as GPU.
     const spline = pixelPositionScratch.spline ||= { a: 0, b: 0, wb: 0 }; // Reusable CPU scratch, keeping mobile shoulder-pet probes allocation-free.
     spline.a = 0; spline.b = 0; spline.wb = 0;
     if (splineLayout) (typeof window !== 'undefined' ? window.HobunjiCharacterSpine : null)?.nodeWeightsAt?.(localPoint.y, Number.isFinite(rig.spineBase?.y) ? rig.spineBase.y : neckY, modelHeight, rig.spinePosteriorY, spline);
-    const offsetWeight = hasPlacement ? (headWeight > 0
-      ? 1 - headWeight : authorOffset ? headOffsetWeightAt(localPoint.y, neckY, modelHeight, blendHeight) : 0) : 0; // The shared 10-bone GPU gives the entire torso-to-neck region to the spine; preserve the legacy author's separate 3-bone broad placement.
-    headWeight = hasPlacement ? headWeight : Math.max(headWeight, headScaleWeight); // Legacy meshes retain their original two/three-bone projection.
-    const bodyWeight = 1 - headWeight - offsetWeight;
+    const broad = blendHeight > modelHeight * .05; // Production skin restores blending against the real spine; narrow legacy rigs keep their old weights.
+    const shared = broad && (splitOffset || authorOffset) ? humanoidBlendWeightsAt(localPoint.y, neckY, modelHeight, renderedPixelX, rig.headBoundsPx, blendHeight, blendHeight, authorOffset, pixelPositionScratch.blend ||= {}) : null;
+    const offsetWeight = shared ? shared.offset : broad ? 0
+      : hasPlacement ? (headWeight > 0 ? 1 - headWeight : authorOffset ? headOffsetWeightAt(localPoint.y, neckY, modelHeight, blendHeight) : 0) : 0;
+    headWeight = shared ? shared.turn + shared.scale : broad || !hasPlacement ? Math.max(headWeight, headScaleWeight) : headWeight;
+    const bodyWeight = shared ? shared.body : 1 - headWeight - offsetWeight;
     for (let i = 0; i < Math.min(headBone + 1, skeleton.bones.length); i++) {
       const weight = hasPlacement && i === offsetBone ? offsetWeight
         : i === neckBone ? headWeight - headScaleWeight : i === headBone ? headScaleWeight
@@ -1802,10 +1893,11 @@
     if (vertical.lengthSq() < 1e-10) return null;
     vertical.normalize();
     const normal = tangent.clone().cross(vertical).normalize();
-    const basis = new THREE.Matrix4().makeBasis(tangent, vertical, normal);
+    const mesh = resolveSkinnedPortraitRoot(avatarRoot)?.userData?.neckRig?.skinnedPlane; // Editor Three may be an ES module rather than a window global.
+    const basis = (mesh?.matrix?.clone?.() || new THREE.Matrix4()).makeBasis(tangent, vertical, normal);
     return {
       position: center,
-      quaternion: new THREE.Quaternion().setFromRotationMatrix(basis),
+      quaternion: (mesh?.quaternion?.clone?.() || new THREE.Quaternion()).setFromRotationMatrix(basis),
       tangent,
       vertical,
       normal,
@@ -2107,6 +2199,8 @@
     meshBudget,
     headScaleGateAtPixel,
     headScaleWeightAt,
+    humanoidBlendWeightsAt,
+    humanoidSpineSkinAt,
     headGateBounds,
     defaultHeadGateFor,
     npcHeadGateFor,
