@@ -3246,3 +3246,22 @@ commit, so a reload does not recover; pushing any new commit gives a fresh URL. 
   report's 5.39 ms mean was one 72 ms warmup spike; without it ~0.95 ms. No measurable win, so it stays opt-in.
 - Deferred stable XP save: the ~80 ms callback in `stable-animal-progression.js` is the save, followed by a ~30 ms forced
   layout in `folder-save-quit-guard.js` and a ~26 ms folder-write completion. Coalescing window raised from 5 s to 30 s.
+
+
+### 26 Nov — Painterly off / resolution 75% device probes (GTX 1060 3GB, Cloud Forest fight)
+
+| Settings | FPS | driver mean | frame interval | gap outside our JS |
+| --- | --- | --- | --- | --- |
+| Painterly Medium, 100% | 6.5 | 61 ms | 153 ms | ~92 ms |
+| Painterly Off, 100% | 10.9 | 63.6 ms | 91.4 ms | ~28 ms |
+| Painterly Off, 75% (1387x643) | 10.9 | 69.4 ms | 91.8 ms | ~22 ms |
+
+- The painterly post-process costs roughly 60 ms of GPU/compositor time per frame on this card (153 -> 91 ms interval with game
+  logic unchanged). It is three full-screen passes (49-tap oil, 7-tap horizontal wash, 7-tap vertical wash + tone) on 8-bit
+  targets at the full 1850x858 buffer; on paper that is small, so the measured cost is unexplained. `PainterlyPostprocess` now
+  wraps each pass in `EXT_disjoint_timer_query_webgl2` queries (every 4th frame, asynchronous, hard-failing to "off") and the
+  Pixel Probe prints `Paint filter GPU ms (avg/max): oil / washH / washV+tone`. **Next: one recording with Painterly Medium.**
+- With Painterly off, lowering resolution to 75% changed nothing (10.9 FPS both), so the game is CPU-submission bound there:
+  driver 64-69 ms, of which render passes ~47-53 ms (world pass ~600 draws / ~520k triangles, matrix-walk ~18.5 ms of which only
+  ~5 ms is matrix updates, held-overlay replay ~16-20 ms). Game logic (hostiles, NPCs, companions) is a few ms.
+- Folder-save/controller-ui-nav forced layouts (22-37 ms) appear only in the frame where the probe tap itself opens its UI.

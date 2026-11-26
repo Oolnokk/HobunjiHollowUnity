@@ -1128,6 +1128,12 @@
     if (harlyaoLichDebugLine) lines.push(harlyaoLichDebugLine);
     const painterlyDebug = window.PainterlyPostprocess?.snapshot?.(); // Makes the live painterly stage/tier state copyable from mobile without a console.
     if (painterlyDebug) lines.push(`Paint filter: mode=${painterlyDebug.mode} effectiveSamples≈${painterlyDebug.sampleCount} internal=${painterlyDebug.internalSize || 'waiting'} pipeline=${painterlyDebug.pipelineMode || 'off'}/${painterlyDebug.pipelineFrames || 0}f renderer=${painterlyDebug.rendererAttached ? 'attached' : 'MISSING'} composite=${painterlyDebug.compositePatched ? 'patched' : 'waiting'} outlines=${painterlyDebug.outlinesEnabled == null ? '?' : (painterlyDebug.outlinesEnabled ? 'on' : 'OFF')} error=${painterlyDebug.lastError || 'none'} latest="${painterlyDebug.latestChange || 'n/a'}"`);
+    if (painterlyDebug?.gpuTiming) { // Real GPU cost of the three full-screen painterly passes (not CPU submission time).
+      const g = painterlyDebug.gpuTiming, f = n => (Number(n) || 0).toFixed(2);
+      lines.push(g.supported
+        ? `Paint filter GPU ms (avg/max over ${g.samples} samples${g.disjoint ? `, ${g.disjoint} discarded` : ''}): oil=${f(g.emaMs.oil)}/${f(g.maxMs.oil)} washH=${f(g.emaMs.washH)}/${f(g.maxMs.washH)} washV+tone=${f(g.emaMs.tone)}/${f(g.maxMs.tone)} sum=${f(g.emaMs.oil + g.emaMs.washH + g.emaMs.tone)}`
+        : g.supported === null ? 'Paint filter GPU ms: not sampled yet (filter off or no frames rendered)' : 'Paint filter GPU ms: unavailable (browser does not expose EXT_disjoint_timer_query_webgl2)');
+    }
     lines.push(`Livestock caller stack tracing: ${window.PerfProfiler?.traceLivestockCallers === true ? 'ON (expensive)' : 'off'}`);
     const feyIllusionDebug = window.FeyIllusions?.debugSnapshot?.(); // Copyable mobile proof for player perception, panic impacts and Hyped follow-ups.
     if (feyIllusionDebug && (feyIllusionDebug.lastEffect || feyIllusionDebug.hype?.lastEcho || feyIllusionDebug.hype?.lastNpcEcho || feyIllusionDebug.hype?.lastCreatureEcho || feyIllusionDebug.activePanicRoll || feyIllusionDebug.playerTurnRadiansRemaining || feyIllusionDebug.cameraMovementYawDeg)) {
