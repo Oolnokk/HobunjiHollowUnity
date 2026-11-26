@@ -24,6 +24,17 @@ assert.equal(update(bird, .05, 0, true).lift, 0, 'stopping a hop plants the feet
 assert.equal(update(bird, .05, 0, false).mode, 'perched');
 update(bird, .05, 5, true);
 assert.equal(update(bird, .05, 0, true, true).lift, 0, 'combat/knockback/recovery cancel locomotion height');
+const bodyY = context.window.TzatzulLiveVisuals.companionBodyY; // Exercise flight and terrain composition independently of renderer frame rate.
+bird.avatarRef = { group: { position: { y: 2 } } };
+const position = bird.avatarRef.group.position;
+position.y = bodyY(bird, 2.65, .65, .1);
+assert(Math.abs(position.y - 2.65) < 1e-9, 'flight lift is composed once');
+position.y = bodyY(bird, 2, 0, .1);
+assert.equal(position.y, 2, 'the first ground hop has no leftover flight height');
+position.y = bodyY(bird, 3.2, .2, .25);
+assert(Math.abs(position.y - 2.45) < 1e-9, 'terrain changes still interpolate underneath flight');
+position.y = 4;
+assert.equal(bodyY(bird, 4, 0, .1), 4, 'a relocation starts from its new placed height');
 assert.equal(update({ def: { isFlyingSpecies: false }, stableRole: 'companion' }, .05, 5, true), undefined);
 assert.equal(update({ def: { isFlyingSpecies: true }, stableRole: 'shoulderPet' }, .05, 5, true), undefined);
 assert.match(source, /actor\.isCompanion && actor\.def\?\.isFlyingSpecies\) rig\.setPerchSpline\?\.\(null\)/);

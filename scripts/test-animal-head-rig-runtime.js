@@ -27,7 +27,11 @@ assert.ok(rigTableStart >= 0
 assert.ok(indexSource.indexOf('js/png-plane-avatar.js') < indexSource.indexOf('js/creature-genetics.js')
   && indexSource.indexOf('js/creature-genetics.js') < indexSource.indexOf('js/creature-genetics-render.js'),
   'the head-rig runtime loads before the species bridge and game startup');
-assert.match(gameSource, /creatureId: creatureKey[\s\S]{0,180}headRig: window\.CreatureGeneticsRender\?\.headRigForKind/, 'game passes each creature kind\'s authored head rig explicitly so shoulder pets cannot fall back to whole-body turns');
+const buildCreatureVisuals = gameSource.slice(gameSource.indexOf('function createCreatureVisuals('), gameSource.indexOf('function releaseCreatureVisuals('));
+assert.match(buildCreatureVisuals, /const authoredHeadRig = window\.CreatureGeneticsRender\?\.headRigForKind\?\.\(creatureKey\)/,
+  'game resolves each creature kind’s authored head rig before building its visual');
+assert.match(buildCreatureVisuals, /creatureId: creatureKey,\s*headRig,/,
+  'the resolved rig is passed explicitly into the native creature builder');
 
 // Execute the real head-rig swap: downstream portrait occlusion must receive
 // the visible SkinnedMesh refs, not the rigid cards removed from the scene.
