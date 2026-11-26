@@ -1084,6 +1084,26 @@ console.log('Fey Immundanity, real Stamina illusions, proc, scaled echo, migrati
     close(north.x, 50); close(north.y, 100); close(north.footingCost, 0);
     const idle = RS.composeMovement(target, 0, 0, opts);
     close(idle.x, 50); close(idle.footingCost, 0);
+    const airOpts = { ...opts, airborne: true }; // One tuning value governs every native airborne caller.
+    const airEast = RS.composeMovement(target, 100, 0, airOpts);
+    close(airEast.x, 175); close(airEast.footingCost, 15);
+    const airWest = RS.composeMovement(target, -100, 0, airOpts);
+    close(airWest.x, -25); close(airWest.footingCost, 0);
+    const airIdle = RS.composeMovement(target, 0, 0, airOpts);
+    close(airIdle.x, 75); close(airIdle.footingCost, 0);
+    target._freeJump = { phase: 'air' };
+    close(RS.composeMovement(target, 100, 0, opts).x, 175);
+    target._freeJump.phase = 'supported';
+    close(RS.composeMovement(target, 100, 0, opts).x, 150);
+    delete target._freeJump;
+    target.lunging = true; target.lungeHopUnits = .5;
+    close(RS.composeMovement(target, 100, 0, { ...opts, mode: 'lunge' }).x, 175);
+    delete target.lunging; delete target.lungeHopUnits;
+    const carrier = makeEntity();
+    RS.addAffliction(carrier, 'windblownStamina', 100);
+    const airPair = RS.composeMountedMovement(target, carrier, 100, 0, airOpts);
+    close(airPair.x, 250);
+    close(airPair.riderMotion.footingCost, 15); close(airPair.carrierMotion.footingCost, 15);
     target.footing = 100;
     RS.beginMovementFrame(target);
     assert(!RS.windMovementHandled(target));
