@@ -1292,6 +1292,8 @@
     const surfaceForRole = makeSurfaceRoleResolver(THREE, speciesId, options.bodyColors);
     const partScale = window.HobunjiCharacterRigScale; // Shared authored axes for geometry and the fallback foot's contact radius.
     const footAxes = () => partScale?.partScaleAxesFor?.(speciesId, gender, 'foot');
+    // Move the foot farther from the camera during its draw so pants retain their depth ordering.
+    const pushCamera = new THREE.Vector3(); // Shared scratch camera position for the temporary depth offset.
     const rootScaleY = () => { const e = root.matrixWorld.elements; return Math.hypot(e[4], e[5], e[6]) || 1; }; // World size of one root-local unit.
     function installFootDepthPush(foot) {
       foot.traverse(mesh => {

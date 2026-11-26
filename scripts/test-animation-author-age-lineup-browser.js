@@ -148,26 +148,13 @@ async function main() {
     await page.waitForFunction(() => document.body.dataset.animationAuthorMode === 'rig'
       && document.getElementById('maaRigTab')?.getAttribute('aria-selected') === 'true',
       null, { timeout: 60000 });
-    await page.locator('#maaSingleTab').click();
-    await page.waitForFunction(() => document.body.dataset.animationAuthorMode === 'single'
-      && document.getElementById('maaSingleTab')?.getAttribute('aria-selected') === 'true',
-      null, { timeout: 60000 });
-
-    // Mid-build navigation must invalidate the unfinished lineup instead of cancelling a native tab click.
-    await page.locator('#maaFullScaleTab').click();
-    await page.waitForFunction(() => !!window.HobunjiFullCharacterScaleComparison?.debugSnapshot?.().building,
-      null, { timeout: 30000 });
-    await page.locator('#maaRigTab').click();
-    await page.waitForFunction(() => document.body.dataset.animationAuthorMode === 'rig'
-      && document.getElementById('maaRigTab')?.getAttribute('aria-selected') === 'true',
-      null, { timeout: 90000 });
-    assert.equal(await page.locator('#maaFullScalePanel').isVisible(), false, 'cancelled lineup must not cover the Rig editor');
     await page.evaluate(async () => {
       await window.MultiAvatarAnimationAuthor.addCreature('grehlr', 'idle');
       const coordinate = document.getElementById('maaRigAnchorSelect');
       coordinate.value = 'shoulderGrip';
       coordinate.dispatchEvent(new Event('change', { bubbles: true }));
     });
+    await page.evaluate(() => { document.getElementById('maaRightPanel').open = true; });
     const carrierSelect = page.locator('#maaShoulderCarrierNpcV1553');
     await carrierSelect.waitFor({ state: 'attached', timeout: 60000 });
     const choices = await carrierSelect.locator('option').evaluateAll(options => options.map(option => ({ value: option.value, text: option.text })));
@@ -183,6 +170,20 @@ async function main() {
         return portrait?.userData?.neckRig?.available && status.includes('grip error 0.0000');
       }, target.value, { timeout: 90000 });
     }
+    await page.locator('#maaSingleTab').click();
+    await page.waitForFunction(() => document.body.dataset.animationAuthorMode === 'single'
+      && document.getElementById('maaSingleTab')?.getAttribute('aria-selected') === 'true',
+      null, { timeout: 60000 });
+
+    // Mid-build navigation must invalidate the unfinished lineup instead of cancelling a native tab click.
+    await page.locator('#maaFullScaleTab').click();
+    await page.waitForFunction(() => !!window.HobunjiFullCharacterScaleComparison?.debugSnapshot?.().building,
+      null, { timeout: 30000 });
+    await page.locator('#maaRigTab').click();
+    await page.waitForFunction(() => document.body.dataset.animationAuthorMode === 'rig'
+      && document.getElementById('maaRigTab')?.getAttribute('aria-selected') === 'true',
+      null, { timeout: 90000 });
+    assert.equal(await page.locator('#maaFullScalePanel').isVisible(), false, 'cancelled lineup must not cover the Rig editor');
     console.log('PASS real mobile age-rig parity and all tab handoffs including Multi, Single, Rig and mid-load cancellation:',
       JSON.stringify(browserReport).slice(0,6000));
   } catch (error) {
