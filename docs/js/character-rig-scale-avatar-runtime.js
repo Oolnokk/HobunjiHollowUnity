@@ -64,7 +64,7 @@
 
       root.userData ||= {};
       const independentChild = child
-        ? window.HobunjiCharacterAgeRigConfig?.nonFamilyChildLimbsFor?.(options.npcRecord || options.profile?.npcRecord)
+        ? window.HobunjiCharacterAgeRigConfig?.nonFamilyChildLimbsFor?.({ ...(options.npcRecord || options.profile?.npcRecord), speciesId: identity.speciesId, gender: identity.gender })
         : null; // Ordinary authored children use the shared GLB sizes; family children keep their existing per-stage limb owner.
       if (independentChild) root.userData.hobunjiChildLimbVisualModifiers = independentChild; // Read on one-time hand/foot visual creation and GLB replacement, never per frame.
       const spineProfile = window.HobunjiCharacterSpine?.bind(root, options); // The whole options bag, so an authored aging.kyphosis (and sway) reaches the spine along with the hunch; shoulder aim and the weapon orbit read the same profile.

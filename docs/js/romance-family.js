@@ -314,6 +314,7 @@
       role: 'child',
       homeId: 'farmhouse', // Keeps village children anchored to their farm household.
       tags: phaseOf(child) === 'child' ? ['child', 'family', 'villager'] : ['child', 'family'], // Join village activities only when old enough.
+      childGrowthStage: phaseOf(child) === 'basket' ? 'baby' : phaseOf(child), // Explicit phase for species/gender baked proportion lookup.
       ...phaseScaleFields(phaseOf(child)),
       bio: `Your ${child.gender === 'female' ? 'daughter' : 'son'}.`,
       relationship: { canBefriend: true, canDate: false, canMarry: false, maxHearts: 10 },
@@ -473,7 +474,8 @@
       return;
     }
     walker._childPhase = phase;
-    const limbScale = phase === 'child' ? cfg().childLimbModifiers : cfg().phaseScales?.[phase]; // Same age-global hand/foot fields exported by Full Character Scale.
+    const individual = window.HobunjiCharacterAgeRigConfig?.profileFor?.(phase === 'basket' ? 'baby' : phase, child.speciesId, child.gender);
+    const limbScale = individual || (phase === 'child' ? cfg().childLimbModifiers : cfg().phaseScales?.[phase]); // Same age-global hand/foot fields exported by Full Character Scale.
     if (phase === 'basket' || (limbScale && (Number(limbScale.hand) !== 1 || Number(limbScale.foot) !== 1))) {
       window.FamilyBabyLimbs?.balanceWalker?.(walker, limbScale); // Preserve the baby's carried proxy, and support optional toddler/child limb modifiers without a permanent new frame loop.
     }

@@ -181,7 +181,7 @@
       // (pngPlaneAvatar.childScaleMultiplier / childHeadScaleMultiplier) as
       // Gantami and every other authored child.
       phaseScales: {
-        basket: { body: 0.32, head: 0.50, hand: 1.20, foot: 1.20 }, // Smaller newborn head, larger GLB hands/feet; toddler/child phases unchanged.
+        basket: { body: 0.28, width: 0.59, height: 0.28, head: 0.97, hand: 1.66, foot: 1.62 }, // Smaller newborn head, larger GLB hands/feet; toddler/child phases unchanged.
         toddler: { body: 0.4, head: 0.66, hand: 1, foot: 1 }, // Family walkers also support globally authored toddler hand/foot proportions.
         child: null, // Child body/head fall back to the shared pngPlaneAvatar defaults.
       },

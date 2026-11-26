@@ -223,7 +223,14 @@
     const positive = value => { const n = Number(value); return Number.isFinite(n) && n > 0 ? n : null; };
     let height = positive(record.childBodyHeightScale) ?? positive(options.childBodyHeightScale) ?? positive(record.childBodyScale) ?? positive(options.childBodyScale) ?? positive(cfg().childScaleMultiplier) ?? 1;
     let width = positive(record.childBodyWidthScale) ?? positive(options.childBodyWidthScale) ?? positive(cfg().childWidthScaleMultiplier) ?? height; // Existing saves without a width keep the historical uniform body size.
-    const head = positive(record.childHeadScale) ?? positive(options.childHeadScale) ?? positive(cfg().childHeadScaleMultiplier) ?? height;
+    let head = positive(record.childHeadScale) ?? positive(options.childHeadScale) ?? positive(cfg().childHeadScaleMultiplier) ?? height;
+    const ageApi = typeof window !== 'undefined' ? window.HobunjiCharacterAgeRigConfig : null;
+    const stage = record.childGrowthStage || options.childGrowthStage || 'child'; // Family records explicitly identify basket/baby versus toddler; ordinary children use child.
+    if (ageApi?.profileFor) {
+      const {species,gender} = avatarSpeciesAndGender(options);
+      const individual = ageApi.profileFor(stage,species,gender);
+      if (individual) { width=individual.width; height=individual.height; head=individual.head; return {body:height,height,width,head,headFactor:head/height,headFactorX:head/width}; } // Already baked; never apply convergence twice.
+    }
     const widthConvergence = record.childWidthConvergence ?? options.childWidthConvergence ?? cfg().childWidthConvergence ?? 0; // Explicit family stage overrides the generic child setting.
     const heightConvergence = record.childHeightConvergence ?? options.childHeightConvergence ?? cfg().childHeightConvergence ?? 0;
     if (widthConvergence > 0 || heightConvergence > 0) {

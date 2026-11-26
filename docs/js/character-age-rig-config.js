@@ -61,6 +61,31 @@
   const sanitizeBasis = source => Object.fromEntries(Object.entries(source || {}).filter(([key, row]) => /^[a-z0-9-]+::(male|female)$/.test(key) && Number.isFinite(row?.width) && row.width > 0 && Number.isFinite(row?.height) && row.height > 0).map(([key, row]) => [key, { width: Math.max(.02, Math.min(50, row.width)), height: Math.max(.02, Math.min(50, row.height)) }])); // Portable dimension ratios, never pixels or cosmetics.
   const repositoryBasis = sanitizeBasis(png.ageConvergenceBasis); // Freeze the deployed reference before local override restoration.
 
+  const PROFILE_AXES = ['width','height','head','hand','foot']; // Individual stage controls, distinct from temporary convergence and overall scale.
+  const importedBaby = {"kenkari::male":{"width":0.5075908845751128,"height":0.453370454451896,"head":0.97,"hand":1.66,"foot":1.62},"kenkari::female":{"width":0.7094736227583963,"height":0.4799919875580187,"head":0.97,"hand":1.66,"foot":1.62},"tletingan::male":{"width":0.6351384625607347,"height":0.41366648287453117,"head":0.97,"hand":1.66,"foot":1.62},"tletingan::female":{"width":0.7302219514914037,"height":0.4362406969631667,"head":0.97,"hand":1.66,"foot":1.62},"nuhongan::male":{"width":0.7939230782009183,"height":0.48234885152500057,"head":0.97,"hand":1.66,"foot":1.62},"nuhongan::female":{"width":0.9127774393642546,"height":0.5073680397943778,"head":0.97,"hand":1.66,"foot":1.62},"longoran::male":{"width":0.5318893528833739,"height":0.15406965943796308,"head":0.97,"hand":1.66,"foot":1.62},"longoran::female":{"width":0.597040269371654,"height":0.17609074441720884,"head":0.97,"hand":1.66,"foot":1.62},"engh-sho::male":{"width":0.7012768800050903,"height":0.2775602587932603,"head":0.97,"hand":1.66,"foot":1.62},"engh-sho::female":{"width":0.7236330221529035,"height":0.30470860905813646,"head":0.97,"hand":1.66,"foot":1.62},"mao-ao::male":{"width":0.8204021391894106,"height":0.2521045076794498,"head":0.97,"hand":1.66,"foot":1.62},"mao-ao::female":{"width":0.7931984954922331,"height":0.28493927228373717,"head":0.97,"hand":1.66,"foot":1.62},"mashtzarr::male":{"width":0.3204837034256795,"height":0.16385281401772706,"head":0.5,"hand":1.66,"foot":1.62},"mashtzarr::female":{"width":0.38302742547508767,"height":0.23512726538322992,"head":0.5,"hand":1.66,"foot":1.62},"mammakhbuur::male":{"width":0.30875868988571564,"height":0.16385281401772706,"head":0.5,"hand":1.66,"foot":1.62},"mammakhbuur::female":{"width":0.36271536503322704,"height":0.22758224549490091,"head":0.5,"hand":1.66,"foot":1.62},"harlyao::male":{"width":0.5113477250037115,"height":0.2218560282272236,"head":0.97,"hand":1.66,"foot":1.62},"boney-shinjimi-skeleton::male":{"width":0.754749242105478,"height":0.2580480180203811,"head":0.97,"hand":1.66,"foot":1.62},"harlyao-skeleton::male":{"width":0.5717797288677866,"height":0.21055245015383095,"head":0.97,"hand":1.66,"foot":1.62},"harlyao-skeleton::female":{"width":0.6662246427059282,"height":0.23736267192154487,"head":0.97,"hand":1.66,"foot":1.62},"mao-ao-skeleton::male":{"width":0.9240318830870201,"height":0.2574119709990172,"head":0.97,"hand":1.66,"foot":1.62},"maskbound-guardian::male":{"width":0.754749242105478,"height":0.2580480180203811,"head":0.97,"hand":1.66,"foot":1.62},"nohuknuk::male":{"width":0.4378697893131019,"height":0.35272258887024277,"head":0.97,"hand":1.66,"foot":1.62},"omgurku::male":{"width":0.4644610720649097,"height":0.22159813155567568,"head":0.97,"hand":1.66,"foot":1.62},"porakaneki::male":{"width":0.5132970237137927,"height":0.4466340538315023,"head":0.97,"hand":1.66,"foot":1.62}}; // User-uploaded 2026-11-25 baby proportions: convergence baked, head exceptions applied.
+  const repositoryProfiles = { baby: importedBaby, toddler: {}, child: {} };
+  function sanitizeProfiles(profiles) {
+    return Object.fromEntries(MODES.map(mode => [mode, Object.fromEntries(Object.entries(profiles?.[mode] || {}).filter(([key, row]) => /^[a-z0-9-]+::(male|female)$/.test(key) && row && typeof row === 'object').map(([key, row]) => [key, Object.fromEntries(PROFILE_AXES.map(axis => [axis, Math.max(.01, Math.min(20, positive(row[axis], defaults[mode][axis])))]))]))]));
+  }
+  function profileFor(mode, species, gender, profiles = activeProfiles) {
+    const key = identityKey(species, gender); // Exact species+gender first; no shared male/female override.
+    const donor = identityKey(window.hobunjiTransformSpeciesId?.(species) || species, gender);
+    return profiles?.[mode]?.[key] || profiles?.[mode]?.[donor] || null;
+  }
+  function scaledProfile(row, factor) {
+    return { ...row, width: row.width * factor, height: row.height * factor, head: row.head * factor }; // Hands/feet are local relative-size factors: the body transform already scales their geometry.
+  }
+  function stageConvergenceBasis(rows, adultBasis) {
+    const values = Object.entries(rows).map(([key, row]) => [key, { width: positive(adultBasis?.[key]?.width, 1) * row.width, height: positive(adultBasis?.[key]?.height, 1) * row.height }]);
+    if (!values.length) return {};
+    const mean = axis => Math.exp(values.reduce((sum, [,row]) => sum + Math.log(row[axis]), 0) / values.length);
+    const w = mean('width'), h = mean('height');
+    return Object.fromEntries(values.map(([key,row]) => [key,{width:row.width/w,height:row.height/h}]));
+  } // Repeated convergence operates on CURRENT individual proportions, not the original adults.
+  function convergeProfile(row, reference, strength) {
+    return { ...row, width: row.width * Math.pow(positive(reference?.width,1), -convergence(strength.widthConvergence)), height: row.height * Math.pow(positive(reference?.height,1), -convergence(strength.heightConvergence)) };
+  }
+
   function buildConvergenceBasis(profiles = []) {
     const dimensions = window.HobunjiCharacterDimensions; // Cached bare-art alpha bounds: never scan pixels in the slider or spawn path.
     const rig = window.HobunjiCharacterRigScale;
@@ -130,20 +155,24 @@
     try {
       const data = JSON.parse(localStorage.getItem(APPLIED_KEY) || 'null');
       return data?.schema === SCHEMA && data.modifiers && typeof data.modifiers === 'object'
-        ? { modifiers: sanitize(data.modifiers), basis: sanitizeBasis(data.convergenceBasis || repositoryBasis) } : null;
+        ? { modifiers: sanitize(data.modifiers), basis: sanitizeBasis(data.convergenceBasis || repositoryBasis), profiles: data.profiles ? sanitizeProfiles(data.profiles) : null } : null;
     } catch (error) {
       console.warn('[age-rig] invalid applied authoring data, using repository proportions', error);
       return null;
     }
   }
 
+  let activeProfiles = sanitizeProfiles(repositoryProfiles); // Repository preset is available before any child portrait or family limb builds.
   const stored = readApplied(); // Saved device override is activated once, before family world/spawn initialization.
   let applied = stored ? applyToConfig(stored.modifiers, stored.basis) : null;
+  if (stored?.profiles) activeProfiles = stored.profiles;
 
-  function applyOnThisDevice(modifiers, basis = repositoryBasis) {
+  function applyOnThisDevice(modifiers, basis = repositoryBasis, profiles = null) {
     const values = sanitize(modifiers); // Explicit editor action only; never triggered by a draft slider or autosave.
     const reference = sanitizeBasis(basis); // Persist measured identity ratios atomically with stage settings for game/editor parity on reload.
-    localStorage.setItem(APPLIED_KEY, JSON.stringify({ schema: SCHEMA, modifiers: values, convergenceBasis: reference }));
+    const nextProfiles = profiles ? sanitizeProfiles(profiles) : sanitizeProfiles(repositoryProfiles); // Explicit apply persists baked individual values, not transient slider settings.
+    localStorage.setItem(APPLIED_KEY, JSON.stringify({ schema: SCHEMA, modifiers: values, convergenceBasis: reference, profiles: nextProfiles }));
+    activeProfiles = nextProfiles;
     applied = applyToConfig(values, reference);
     return clone(applied);
   }
@@ -151,6 +180,7 @@
   function restoreRepositoryOnThisDevice() {
     localStorage.removeItem(APPLIED_KEY); // Does not touch drafts or permanent game saves.
     applied = null;
+    activeProfiles = sanitizeProfiles(repositoryProfiles);
     applyToConfig(defaults);
     return clone(defaults);
   }
@@ -161,13 +191,17 @@
     const child = record.isChild === true || String(record.role || '').toLowerCase() === 'child' || tags.includes('child');
     if (!child || tags.includes('family') || record.homeId === 'farmhouse') return null;
     const current = applied || defaults; // Follows the same active child proportion used by PNGPlaneAvatar and the family config.
-    return { hand: current.child.hand, foot: current.child.foot, phase: 'child', owner: 'generic-child-visuals' };
+    const individual = profileFor('child', record.appearance?.speciesId || record.speciesId || record.species, record.appearance?.gender || record.gender);
+    return { hand: individual?.hand ?? current.child.hand, foot: individual?.foot ?? current.child.foot, phase: 'child', owner: 'generic-child-visuals' };
   }
 
   window.HobunjiCharacterAgeRigConfig = Object.freeze({
     schema: SCHEMA,
     appliedStorageKey: APPLIED_KEY,
     repositoryDefaults: () => clone(defaults),
+    repositoryProfiles: () => clone(repositoryProfiles),
+    effectiveProfiles: () => clone(activeProfiles),
+    sanitizeProfiles, profileFor, scaledProfile, stageConvergenceBasis, convergeProfile, identityKey,
     effectiveValues: () => clone(applied || defaults),
     sanitize,
     composePreviewScale,
@@ -176,6 +210,6 @@
     nonFamilyChildLimbsFor,
     applyOnThisDevice,
     restoreRepositoryOnThisDevice,
-    snapshot: () => ({ applied: !!applied, values: clone(applied || defaults), convergenceBasis: clone(png.ageConvergenceBasis || repositoryBasis) }),
+    snapshot: () => ({ applied: !!applied, values: clone(applied || defaults), convergenceBasis: clone(png.ageConvergenceBasis || repositoryBasis), profiles: clone(activeProfiles) }),
   }); // Also exposed to existing mobile debug panels; no devtools required.
 })();
