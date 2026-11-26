@@ -186,20 +186,30 @@ const pageErrors = []; // Captured so CI failures also have mobile-readable diag
           parent.add(mesh);
           return mesh;
         };
-        const base = plane(0x00ff00, 0, 1, 6); // Authored interior floors can reveal only the layer the actor stands on.
+        const base = plane(0x00ff00, 0, 1, 6); // Authored floors must occlude held parts that intersect solid ground.
         base.material.userData.hobunjiInteriorFloorMaterial = true;
         held.markGroundMesh(base, 'interior-floor');
         window.DevRandomRuin = { getPlayerGroundSupportY: () => 1 };
         player.position.y = 1;
         held.markHeldPlane(plane(0xff0000, -0.45, 0.55, 0.3, holder));
-        const flailX = mode === 'no-stencil' ? 2 : 0.45; // Exercise the circle boundary on a saved depth target without stencil.
-        held.markHeldPlane(plane(0x0000ff, flailX, 0.55, 0.3, holder));
+        const flailX = mode === 'no-stencil' ? 2 : 0.45; // Also sample a distant part when the target has no stencil.
+        const flail = plane(0x0000ff, flailX, 0.55, 0.3, holder);
+        flail.userData.hobunjiWeaponAssemblyPart = true;
+        held.markHeldPlane(flail);
+        const hand = new T.Mesh(new T.SphereGeometry(0.12, 12, 8), new T.MeshBasicMaterial({ color: 0xff00ff }));
+        hand.userData.hobunjiProceduralHand = true;
+        hand.position.set(-1.05, 0.55, 0);
+        holder.add(hand);
+        held.markHeldPlane(hand);
+        const visibleWeapon = plane(0xff0000, 0, 1.05, 0.3, holder); // Visible positive control: above the floor, below the water.
+        visibleWeapon.userData.hobunjiDualWieldDuplicate = true;
+        held.markHeldPlane(visibleWeapon);
         if (mode === 'lower-floor') held.markGroundMesh(plane(0xffff00, -0.45, 0.76, 0.5), 'interior-floor');
         const wall = plane(0xffff00, 1.05, 1.25, 0.3); // Unregistered solid scenery must retain ordinary occlusion.
         held.markHeldPlane(plane(0xff0000, 1.05, 0.55, 0.25, holder));
-        let water = null; // Water tint must remain a distinct draw above only the submerged weapon.
+        let water = null; // Water should tint the unobstructed weapon independently of ground depth.
         if (mode === 'water') {
-          water = plane(0x0000ff, -0.45, 1.1, 0.4);
+          water = plane(0x0000ff, visibleWeapon.position.x, 1.1, 0.4);
           water.userData.waterSurfaceRole = 'test-cover';
           Object.assign(water.material, { transparent: true, opacity: 0.5, depthWrite: false });
         }
@@ -235,10 +245,12 @@ const pageErrors = []; // Captured so CI failures also have mobile-readable diag
           renderer.setRenderTarget(target);
           window.RenderHooks.beginWorldFrame({ renderer, scene, camera });
           try { renderer.render(scene, camera); } finally { window.RenderHooks.endWorldFrame(); }
-          output[mode].push({ weapon: read(-0.45), flail: read(flailX), wall: read(wall.position.x),
+          const depth = held.snapshot();
+          output[mode].push({ weapon: read(-0.45), flail: read(flailX), hand: read(hand.position.x),
+            visibleWeapon: read(visibleWeapon.position.x), wall: read(wall.position.x),
             ...(mode === 'actor-defaults' && { npc: read(-1), animal: read(1.35) }),
             ...(water && { waterDepthWrite: water.material.depthWrite }),
-            stencil: held.snapshot().stencilBits });
+            stencil: depth.stencilBits, elevationGroups: depth.baseElevationGroups });
         }
         renderer.setRenderTarget(null);
         target.dispose();
@@ -249,17 +261,17 @@ const pageErrors = []; // Captured so CI failures also have mobile-readable diag
     });
     for (const mode of ['cold', 'lower-floor', 'no-stencil', 'water', 'player-off', 'actor-defaults']) {
       const green = [0, 255, 0], yellow = [255, 255, 0]; // Physical floor and scenery colors.
-      const weapon = { 'lower-floor': green, 'player-off': green, water: [128, 0, 128] }[mode] || [255, 0, 0];
-      const flail = ['no-stencil', 'player-off'].includes(mode) ? green : [0, 0, 255];
-      const expected = { weapon, flail, wall: yellow, stencil: mode === 'no-stencil' ? 0 : 8,
-        ...(mode === 'actor-defaults' && { npc: green, animal: [0, 255, 255] }),
+      const expected = { weapon: green, flail: green, hand: green, wall: yellow,
+        visibleWeapon: mode === 'water' ? [128, 0, 128] : [255, 0, 0],
+        stencil: mode === 'no-stencil' ? 0 : 8, elevationGroups: 0,
+        ...(mode === 'actor-defaults' && { npc: green, animal: green }),
         ...(mode === 'water' && { waterDepthWrite: false }) };
       for (const [frame, pixels] of heldPixels[mode].entries()) {
-        assert.deepEqual(pixels, expected, mode + ' held x-ray, frame ' + frame);
+        assert.deepEqual(pixels, expected, mode + ' held world depth, frame ' + frame);
       }
     }
     assert.equal(pageErrors.length, 0, 'browser render/shader errors: ' + pageErrors.join('\n'));
-    console.log('Held x-ray WebGL cold/warm, local/other floor, stencil, water and actor defaults: PASS');
+    console.log('Held world depth WebGL cold/warm, with/without stencil, water and actor defaults: PASS');
     console.log('Pants portrait depth WebGL front/back/other-actor: PASS ' + JSON.stringify(result));
   } finally {
     if (browser) await browser.close();
