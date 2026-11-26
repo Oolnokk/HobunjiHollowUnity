@@ -143,6 +143,13 @@ if(THREE){
   assert.ok(holder.matrix.equals(holderBefore),'dual solve does not modify authored holder');
   assert.equal(mainMesh.geometry,plane.geometry);
   assert.equal(offMesh.geometry,plane.geometry);
+  // Unsupported live basis must keep the fixed geometry, not lengthen copies.
+  plane.rotation.x=0;parent.updateMatrixWorld(true);
+  solver.constrainWeapon(holder,weapon,ctx);
+  solver.constrainDualCopies({plane,mainRoot,offRoot,mainMesh,offMesh,invisible:false});
+  assert.equal(mainMesh.geometry,plane.geometry);
+  assert.equal(offMesh.geometry,plane.geometry);
+  assert.equal(solver.snapshot().reason,'dual-fit-retained');
   solver.setPreviewEnabled(false);
   assert.equal(mainMesh.geometry,source,'raw mode releases borrowed fit');
   assert.equal(offMesh.geometry,source);

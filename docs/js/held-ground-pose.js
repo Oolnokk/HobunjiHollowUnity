@@ -7,7 +7,7 @@
   const debug = { reason: 'not-run', angleDeg: 0, shortening: 0, floorY: null, originalMinY: null, finalMinY: null, rotations: 0, compressions: 0, freeHandLifts: 0, ordinaryParts: 0, fallbacks: 0 };
   let active = null, proof = null, floorFrame = null, floor = null, scratch = null;
   let dualPrepared=null; // The canonical fit is prepared before the independently posed visible copies.
-  let dualProofs=new WeakMap(); // Per-copy floor proof, never shared between hands.
+  let dualProofs=new WeakMap(),dualProofsUsed=false; // Per-copy floor proof, never shared between hands.
   const borrowedCopies=new Set(); // At most two copies borrow the canonical private fitted buffer; detach before disposal.
   let previewRoot=null; // Exact currently corrected editor root; raw gizmo mode must also bypass the suspension solve.
   let previewThree=null,previewEnabled=false; // Standalone editor uses its ESM Three namespace and the visible Y=0 grid.
@@ -149,7 +149,7 @@
     if(active.plane.geometry===active.geometry)active.plane.geometry=active.source;
     active.amount=0; // Keep the private strip buffer for the next near-ground pose.
   }
-  function clear() { proof=null;previewRoot=null;dualPrepared=null;dualProofs=new WeakMap();debug.dual=null;restoreGeometry(); }
+  function clear() { proof=null;previewRoot=null;dualPrepared=null;if(dualProofsUsed){dualProofs=new WeakMap();dualProofsUsed=false;}debug.dual=null;restoreGeometry(); }
   function fail(reason,preserveFit=false) { debug.reason=reason; debug.fallbacks++; proof=null;if(!preserveFit)restoreGeometry();return false; }
   function boxFor(mesh) {
     const g=mesh?.geometry;
@@ -363,6 +363,9 @@
       active.rootOffset=mesh.position.z;
     } else releaseCompression();
     debug.shortening=fit?.amount??0;debug.fitted=Number.isFinite(fit?.amount);debug.lightOriginalMinY=fit?.lightOriginalMinY??null;debug.lightFittedMinY=fit?.lightFittedMinY??null;
+    // Preserve fitted length on both copies even over pits or when their live
+    // orientation cannot be corrected. Only the floor-dependent solve waits.
+    if(context.dual)dualPrepared={holder,mesh,plane,context,segments:fit?.profile?.segments||NO_SEGMENTS,gripZ:fit?.anchorZ??context.authoredGripZ,amount:fit?.amount??0,contact:null,target:null,floor:y,flexible};
     if(!Number.isFinite(y))return fail('no-ground-sample',true);
     if(Math.abs(mesh.quaternion.x)+Math.abs(mesh.quaternion.y)+Math.abs(mesh.quaternion.z)>1e-6
       ||Math.abs(plane.rotation.x+Math.PI/2)>1e-4||Math.abs(plane.rotation.y)>1e-4
@@ -538,6 +541,7 @@
       if(copy.geometry!==d.plane.geometry)copy.geometry=d.plane.geometry;
       if(active?.geometry===copy.geometry)borrowedCopies.add(copy);
     }
+    if(!d.contact||!Number.isFinite(d.target)){debug.reason='dual-fit-retained';return;}
     const context=d.context;
     const grips=global.HobunjiHandToolGrips;
     const live=global.ProceduralHandFrameDriver?.groundPoseContext?.(d.holder,context.itemKey)||context;
@@ -573,7 +577,7 @@
         min=samplePoints(s,d.contact,d.segments,d.gripZ,d.amount,copy.matrixWorld);
       }
       results[side]={reason:angle?'rotation':'already-clear',angleDeg:angle*180/Math.PI,originalMinY:original,finalMinY:min};
-      if(min>=d.target-1e-7)dualProofs.set(copy,{frame:frameId(),min});
+      if(min>=d.target-1e-7){dualProofs.set(copy,{frame:frameId(),min});dualProofsUsed=true;}
     }
     debug.reason='dual-clearance';debug.finalMinY=Math.min(results.right?.finalMinY??Infinity,results.left?.finalMinY??Infinity);
   }
