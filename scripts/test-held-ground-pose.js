@@ -105,6 +105,43 @@ assert.ok(editor.includes('configurePreview?.(THREE)'),'editor supplies module-s
 assert.ok(editor.includes('solver.constrainWeapon(toolHolder,toolPlaneMesh,context)'),'editor runs real solver');
 assert.ok(editor.includes('applyWeaponGroundPreview();'),'applied pose reaches solver');
 assert.ok(editor.includes('previewAppliedGeometry()'),'Apply exits raw gizmo mode and focuses Neutral');
+// Execute the production hand-sync ordering helper with instrumented owners.
+const driver=fs.readFileSync('docs/js/procedural-hand-frame-driver.js','utf8');
+const prepareStart=driver.indexOf('  function prepareGroundPoseForSockets(');
+const prepareEnd=driver.indexOf('  function syncRigToTool(',prepareStart);
+assert.ok(prepareStart>=0&&prepareEnd>prepareStart);
+const syncBody=driver.slice(prepareEnd);
+assert.ok(syncBody.indexOf('prepareGroundPoseForSockets(record,')<syncBody.indexOf('const primarySocket = toolSocketWorld('),'prepare must precede the first canonical socket');
+{
+  const calls=[],player={},state={};let editorMode=false,enabled=true,slot='weapon',fresh=false,idle=null;
+  const holder={parent:{updateWorldMatrix(){calls.push('parent');}},updateMatrixWorld(){calls.push('bake');fresh=true;}};
+  const record={rig:{parent:player},avatarRoot:{userData:{}}};
+  const sandbox={
+    gameDeps:{playerMesh:player,toolHolder:holder},inAttackEditor:()=>editorMode,
+    toolGrips:{offhandIdleStateForTool(){calls.push('idle-state');return idle;}},
+    global:{HeldGroundPose:{enabled:()=>enabled,hasCurrentGripPose:()=>fresh},
+      WeaponToolStances:{getRuntimeState:()=>({activeSlot:slot})},
+      HobunjiDualWieldWeaponVisuals:{syncNow(){calls.push('dual-sync');fresh=true;return state;}}}
+  };
+  const prepare=vm.runInNewContext('('+driver.slice(prepareStart,prepareEnd).trim()+')',sandbox);
+  const run=(dual=null,solve={},owner=record,grip='melee')=>prepare(owner,holder,'weapon',grip,{},dual,solve);
+  assert.equal(run(),null);assert.equal(calls.join(','),'idle-state,parent,bake');
+  calls.length=0;run();assert.equal(calls.join(','),'idle-state','current frame avoids a duplicate bake');
+  calls.length=0;fresh=false;const solve={};run({},solve);
+  assert.equal(calls.join(','),'parent,dual-sync','dual owner bakes before socket sampling');
+  assert.equal(solve.dualWieldState,state);assert.equal(solve.dualWieldRecord,record);
+  assert.equal(solve.dualWieldSynced,true);assert.equal(solve.clearancePrepared,true);
+  calls.length=0;idle={blend:1};fresh=false;assert.equal(run(),idle);
+  assert.equal(calls.join(','),'idle-state,parent,dual-sync','invisible offhand follows the same fresh pose');
+  calls.length=0;editorMode=true;assert.equal(run(),undefined);editorMode=false;
+  enabled=false;assert.equal(run(),undefined);enabled=true;
+  slot='ranged';assert.equal(run(),undefined);slot='weapon';
+  assert.equal(run(null,{},record,'ranged'),undefined);
+  assert.equal(run(null,{}, {rig:{parent:{}},avatarRoot:{userData:{}}}),undefined);
+  assert.equal(calls.length,0,'non-player, editor, disabled and ranged paths perform no extra work');
+}
+const dualSource=fs.readFileSync('docs/js/dual-wield-weapon-visuals.js','utf8');
+assert.ok(dualSource.includes('(leanSync || solve?.clearancePrepared)'),'both hands consume the prepared copy state even with the lean A/B off');
 const author=fs.readFileSync('docs/js/weapon-geometry-author.js','utf8');
 assert.ok(author.includes('originalGeometryFor?.(plane?.geometry)'),'drawing retains source coordinates during compression');
 assert.ok(author.includes('weaponGeometryFitStatus'),'visible live diagnostic');
