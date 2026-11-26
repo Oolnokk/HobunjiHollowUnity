@@ -196,9 +196,10 @@
       // then slows this swing's own windup/strike/return down instead,
       // same as the source demo's "the same multiplier slows attack
       // cooldown" rule.
+      const unshackledTempo = window.ResourceSystem?.attackTempoMultiplier?.(deps.player, 'combatCombo') ?? 1; // Snapshot before the combo payment consumes the reserve.
       window.ResourceSystem?.spendStamina(deps.player, (step.staminaCost * (1 + (activeStats.staminaCostMul || 0)) / shapeStats.efficiency), step.name, { actionKind: 'combatCombo', abilityId: id, heavy: !!step.heavy }); // Weapon-only Stamina trade-offs preserve the latest active stage multipliers.
       const hypedAttackTempo = window.FeyHypedAttacks?.speedMultiplierForNextAction?.(deps.player, id) || 1; // Read immediately after the eligible Stamina payment, before the attack-event prepare consumes its credit.
-      const timeScale = 1 / ((window.ResourceSystem?.getExhaustionSpeed(deps.player) ?? 1) * shapeStats.speed * (window.DoubleEdgedCombatTrinkets?.attackSpeed?.() || 1) * hypedAttackTempo); // Bloodrush changes weapon tempo, not lunge distance.
+      const timeScale = 1 / ((window.ResourceSystem?.getExhaustionSpeed(deps.player) ?? 1) * shapeStats.speed * (window.DoubleEdgedCombatTrinkets?.attackSpeed?.() || 1) * hypedAttackTempo * unshackledTempo); // Bloodrush changes weapon tempo, not lunge distance.
       const windupS = step.windupS * timeScale;
       const strikeS = step.strikeS * timeScale;
       const returnS = (step.returnS || 0) * timeScale;
@@ -241,7 +242,7 @@
         strikeFrac: (windupS + strikeS) / totalVisual,
         power: 1, // poseFor already applied the editor's power rule to this pose.
         pose: comboStepPose(id, step),
-        holdS: (step.holdS || 0) / (shapeStats.speed * (window.DoubleEdgedCombatTrinkets?.attackSpeed?.() || 1)),
+        holdS: (step.holdS || 0) * timeScale,
         afflictionIds: Object.keys(attackAfflictions),
         afflictions: attackAfflictions,
         coneRangePx: rangePx,
@@ -301,6 +302,7 @@
             const actualDamage = specialProc ? Math.round(damage * SPECIAL_FINISHER_DAMAGE_MULTIPLIER * (1 + (finisherStats.damageMul || 0))) : damage; // Unqualified targets retain normal third-hit damage.
             const actualKnockback = specialProc ? knockbackPxS * Math.max(0, 1 + (finisherStats.knockbackMul || 0)) : knockbackPxS;
             deps.damageCreature(c, actualDamage, deps.player.x, deps.player.y, actualKnockback, {
+              attacker: deps.player, // Explicit source for Attack Power and Tempered Footing.
               abilityId: id, // Identifies the committed hit for authored training objectives.
               tag: dmgType,
               heavy: step.heavy,

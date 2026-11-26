@@ -244,8 +244,9 @@
     state.lungeRangePx = Math.max(0, Number(options.rangePx) || 0); // Cone reach used only for stopping the charge.
     state.lungeHalfConeRad = Math.max(0, Number(options.halfConeRad) || 0); // Cone width shared with the eventual special.
     const echoRatio = Number.isFinite(state.feyHypedEchoRatio) ? Math.max(0, state.feyHypedEchoRatio) : 1; // The second creature special's physical burst has 2%-per-point reach; its hit cone remains authoritative.
-    state.lungeMaxDistancePx = Math.max(0, Number(options.maxDistancePx) || 0) * echoRatio; // Finite movement budget after commitment.
-    state.lungeSpeedPxS = Math.max(1, Number(options.speedPxS) || 1) * echoRatio; // A reduced second lunge cannot travel its full original budget on a slow frame.
+    const mobility = window.ResourceSystem?.movementMultiplier?.(c, 'lunge') ?? 1; // All creature special lunges share the same scalar movement budget.
+    state.lungeMaxDistancePx = Math.max(0, Number(options.maxDistancePx) || 0) * echoRatio * mobility; // Finite movement budget after commitment.
+    state.lungeSpeedPxS = Math.max(1, Number(options.speedPxS) || 1) * echoRatio * mobility; // A reduced second lunge cannot travel its full original budget on a slow frame.
     state.lungeCollideRadiusPx = Math.max(0, Number(options.collideRadiusPx) || (deps.TILE || 32) * 0.32);
     state.lungeTraveledPx = 0; // Integrates the actual traversed distance, not target distance.
     state.lungeDetect = options.detect || null; // Optional 3D-specific collision test supplied by the named attack.
@@ -280,14 +281,31 @@
     const maxStep = Math.max(1, (deps.TILE || 32) * 0.2); // Substeps prevent skipping thin targets or running through walls on slow frames.
     while (remaining > 0.0001) {
       const step = Math.min(remaining, maxStep);
-      const nx = c.x + Math.cos(state.lungeAngle) * step;
-      const ny = c.y + Math.sin(state.lungeAngle) * step;
-      if (deps.canOccupyAt && !deps.canOccupyAt(nx, ny, state.lungeCollideRadiusPx)) return 'blocked';
-      c.x = nx;
-      c.y = ny;
-      state.lungeTraveledPx += step;
+      const rs = window.ResourceSystem; // Composes each bounded terrain substep, preserving contact tests along the actual drifted route.
+      const motion = rs?.composeMovement?.(c, Math.cos(state.lungeAngle) * step, Math.sin(state.lungeAngle) * step, { mode: 'lunge', scalarApplied: true, rotationApplied: true, reference: step, airborne: state.airborne === true, dt: step / Math.max(.001, state.lungeSpeedPxS) });
+      const dx = motion?.x ?? Math.cos(state.lungeAngle) * step, dy = motion?.y ?? Math.sin(state.lungeAngle) * step;
+      // Wind can enlarge an airborne substep by up to three quarters; subdivide the composed path
+      // again so the original maximum collision interval remains authoritative.
+      const splits = Math.max(1, Math.ceil(Math.hypot(dx, dy) / maxStep));
+      for (let i = 0; i < splits; i++) {
+        const nx = c.x + dx / splits, ny = c.y + dy / splits;
+        if (deps.canOccupyAt && !deps.canOccupyAt(nx, ny, state.lungeCollideRadiusPx)) {
+          if (motion?.wind) rs.commitMovement?.(c, motion, i / splits, window.Combat?.deps?.movementFootingDepleted);
+          return 'blocked';
+        }
+        c.x = nx; c.y = ny;
+        state.lungeTraveledPx += step / splits; // Authored progress, not extra wind distance: assisted lunges keep their original duration.
+        deps.tickCreatureFootsteps?.(c, Math.hypot(dx, dy) / splits);
+        const hit = coneLungeContact(c, state, deps);
+        if (hit) {
+          if (motion?.wind) rs.commitMovement?.(c, motion, (i + 1) / splits, window.Combat?.deps?.movementFootingDepleted);
+          if (c.prone) return 'range';
+          state.lungeContact = hit; return 'target';
+        }
+      }
+      if (motion?.wind) rs.commitMovement?.(c, motion, 1, window.Combat?.deps?.movementFootingDepleted);
+      if (c.prone) return 'range';
       remaining -= step;
-      deps.tickCreatureFootsteps?.(c, step);
       const contact = coneLungeContact(c, state, deps);
       if (contact) { state.lungeContact = contact; return 'target'; }
     }

@@ -80,7 +80,8 @@
           if (!combat.meleeHit(deps.player, target, { rangePx, halfConeRad, yaw: deps.player.angle, pitch: deps.getPlayerMeleeAimPitch?.() || 0 })) continue;
           const before = Math.max(0, Number(target.health) || 0); // Post-mitigation delta for existing cross-cutting hit observers.
           deps.damageCreature(target, damage, deps.player.x, deps.player.y, knockback, {
-            abilityId: comboId, tag: deps.currentWeaponDamageType(), heavy: false,
+            attacker: deps.player, // Explicit source for Attack Power and Tempered Footing.
+              abilityId: comboId, tag: deps.currentWeaponDamageType(), heavy: false,
             footingDamageMultiplier: attackContext.modifiers?.footingDamage || 1,
             afflictionBonuses: afflictions,
           });

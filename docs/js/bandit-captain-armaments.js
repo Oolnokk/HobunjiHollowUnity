@@ -4,8 +4,8 @@
   'use strict';
   const PREFIX = 'banditModular:'; // Unique per-captain keys prevent two drops from sharing enchantments or replacing a forged weapon.
   const MIN_STARS = 5; // Camp tier is zero-based; only five-to-eight-star ordinary captains qualify.
-  const BASE_IDS = Object.freeze(['burning', 'frostbitten', 'mirrored', 'livingFlame']); // Effects supported by the NPC hit event; omit player-only Living Gust.
-  const FLOURISH_IDS = Object.freeze(['fury', 'moralized', 'resolve']); // Never choose Sicced (player companion target lock) or Fey magic.
+  const BASE_IDS = Object.freeze(['burning', 'frostbitten', 'mirrored', 'livingFlame', 'stormwake', 'stonebind', 'soulweight', 'ancestralSight']); // Effects supported by the NPC hit event; omit player-only Living Gust.
+  const FLOURISH_IDS = Object.freeze(['fury', 'moralized', 'resolve', 'stormRenewal', 'bedrock', 'blackBargain', 'ancestralMercy']); // Never choose Sicced (player companion target lock) or Fey magic.
   const FLOURISH_SLOTS = Object.freeze(['tap1', 'tap2', 'hold1']); // These are the NPC's real offensive Combo/Quick/Charged slots.
   const unlooted = new Map(); // Spawned captains' enchantments stay outside player gear until the corpse is searched.
   let deps = null; // HarlyaoRelics.init supplies the ordinary saved-gear, tool definition and texture services.
@@ -29,7 +29,10 @@
     const available = flourishes.slice(), slots = FLOURISH_SLOTS.slice(), result = {};
     for (let i = 2; i < enchantmentCount(stars); i++) {
       const slot = slots.splice(Math.min(slots.length - 1, Math.floor(rng() * slots.length)), 1)[0];
-      const id = available.splice(Math.min(available.length - 1, Math.floor(rng() * available.length)), 1)[0];
+      const eligible = available.filter(id => window.EnchantmentSystem?.allowsFlourishSlot?.(id, slot) !== false); // No Fury on Held or Unshackled on Combo.
+      if (!eligible.length) return null;
+      const id = choose(eligible, rng);
+      available.splice(available.indexOf(id), 1);
       result[slot] = id;
     }
     return { base, flourishes: result };

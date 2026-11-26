@@ -78,9 +78,14 @@ const EquipmentPanel = {
   buildEquipmentSlots() {},
   clothingSpriteForCosmetic(id) { return `assets/${id}.png`; },
 };
+const statProviders = []; // Mimics the real resource-owner stat registration, not a second armor formula.
 const ResourceSystem = {
+  registerStatModifierProvider(provider) { statProviders.push(provider); },
   applyDamage(entity, amount) { damageSeen = amount; return amount; },
-  spendFooting(entity, amount) { footingSeen = amount; return amount; },
+  spendFooting(entity, amount, _reason, options = {}) {
+    footingSeen = options.effectiveCost ? amount : statProviders.reduce((v, provider) => v * provider(entity, 'incomingFootingDamage'), amount);
+    return footingSeen;
+  },
 };
 const Combat = {
   deps: { player },
@@ -578,6 +583,8 @@ windowStub.ResourceSystem.applyDamage(bandit, 100, {});
 assert(Math.abs(damageSeen - 85) < 1e-9, '6-unit enemy outfit reduces direct damage by the shared 15% defense');
 windowStub.ResourceSystem.spendFooting(bandit, 100, 'test');
 assert(Math.abs(footingSeen - 79) < 1e-9, '6-unit enemy outfit reduces Footing loss by the shared 21% resistance');
+windowStub.ResourceSystem.spendFooting(bandit, 79, 'already mitigated wind', { effectiveCost: true });
+assert.equal(footingSeen, 79, 'continuous effective Footing loss forwards the paid amount without reapplying cloth resistance');
 assert(Math.abs(api.armorStatsForEntity(bandit).combatMoveMul - 0.892) < 1e-9, 'enemy movement reads the same weight curve');
 
 player.dodging = true;

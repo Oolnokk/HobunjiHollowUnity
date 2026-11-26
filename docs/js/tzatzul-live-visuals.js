@@ -99,14 +99,18 @@
   }
 
   // Pure movement seam: only a successful clearance check may replace a ground detour.
-  function tryCompanionFlightStep(actor, tx, ty, speed, dt, direction, canFly) {
+  function tryCompanionFlightStep(actor, tx, ty, speed, dt, direction, canFly, composeStep) {
     if (!actor?.def?.isFlyingSpecies || actor.stableRole !== 'companion' ||
         ![actor.x, actor.y, tx, ty, speed, dt, direction].every(Number.isFinite) ||
         speed <= 0 || dt <= 0 || typeof canFly !== 'function') return false;
     const dx = tx - actor.x, dy = ty - actor.y, distance = Math.hypot(dx, dy);
     if (distance < 1) return false;
-    const step = Math.min(distance, speed * Math.min(.1, dt)); // Bounded step; no tunneling after a long pause.
-    const nx = actor.x + dx / distance * step * direction, ny = actor.y + dy / distance * step * direction;
+    const stepDt = Math.min(.1, dt); // Bound both displacement and the associated resource transaction.
+    const step = Math.min(distance, speed * stepDt);
+    const rawX = dx / distance * step * direction, rawY = dy / distance * step * direction;
+    const motion = composeStep?.(rawX, rawY, stepDt); // Optional shared compositor supplies the final displacement, never writes coordinates.
+    const nx = actor.x + (motion?.x ?? rawX), ny = actor.y + (motion?.y ?? rawY);
+    if (!Number.isFinite(nx) || !Number.isFinite(ny)) return false;
     if (!canFly(actor.x, actor.y, nx, ny)) return false;
     actor.vx = (nx - actor.x) / dt; actor.vy = (ny - actor.y) / dt;
     actor.x = nx; actor.y = ny;

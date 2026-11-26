@@ -111,6 +111,7 @@ assert.equal(originalInitDeps, deps, 'enemy dodge wrapper preserves BanditCombat
   assert(Math.abs(enemy.y - before.y) > 9.9, 'enemy dodge performs real swept movement');
 
   while (enemy.dodging) windowStub.BanditCombat.updateCombatAI(enemy, 0.1, player, 70);
+  assert(Math.abs(Math.hypot(enemy.x-before.x, enemy.y-before.y)-17)<1e-9, 'the final partial frame must not extend a dodge beyond its authored duration');
   assert.equal(dodgeVoices.length, 1, 'continued enemy dodge movement does not repeat its utterance');
   assert.equal(enemy.avatarRef.group.rotation.z, 0, 'roll presentation resets exactly when dodge movement ends');
   activeThreat = null;
@@ -132,6 +133,24 @@ assert.equal(originalInitDeps, deps, 'enemy dodge wrapper preserves BanditCombat
   assert.equal(staminaSpent, priorStaminaSpent, 'preparation cannot secretly spend dodge stamina');
   enemy._banditPreparedCharge = null;
   activeThreat = null;
+
+  // Actual compositor owns the world-space dodge intent. A 90-degree
+  // hallucination turns the normal lateral escape into a horizontal one.
+  vm.runInContext(fs.readFileSync('docs/js/combat/resource-system.js', 'utf8'), context);
+  windowStub.FeyIllusions = { movementRotationRad: () => Math.PI/2 };
+  const confused = await windowStub.BanditCombat.makeEntity();
+  Object.assign(confused, { maxHealth:100, footing:100, maxFooting:100 });
+  windowStub.ResourceSystem.initEntity(confused);
+  activeThreat = { id: 1, attacker: player, rangePx: 100, halfConeRad: Math.PI/4, yaw: 0, timeToImpactS:.2 };
+  windowStub.BanditCombat.updateCombatAI(confused, .016, player, 70);
+  assert.equal(confused.dodging, true);
+  assert(Math.abs(confused.dodgeDirY)<1e-9 && Math.abs(confused.dodgeDirX)>0.99, 'Demented rotates the committed enemy dodge direction exactly once');
+  const confusedStart = { x:confused.x, y:confused.y };
+  windowStub.BanditCombat.updateCombatAI(confused, .1, player, 70);
+  assert(Math.abs(confused.y-confusedStart.y)<1e-9 && Math.abs(confused.x-confusedStart.x)>9.9, 'actual dodge follows the same rotated direction as its preview');
+  windowStub.EnemyDodge.cancel(confused);
+  activeThreat = null;
+  delete windowStub.FeyIllusions;
 
   const offAxis = windowStub.EnemyDodge.threatStatus(enemy, { id: 2, attacker: player, rangePx: 200, halfConeRad: 0.2, yaw: Math.PI, lungePx: 0 }); // Opposite-facing attack must not trigger psychic evasion.
   assert.equal(offAxis.exposed, false);
