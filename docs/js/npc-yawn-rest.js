@@ -35,8 +35,7 @@
   let lastPlayerVoice = null; // Retains the player's most recent request and actual playback status even if town NPCs yawn afterward.
   let lastYawn = null; // Included in mobile diagnostics to verify each scheduled wake or hourly trigger.
   let lastError = null; // Included in mobile diagnostics instead of requiring browser devtools.
-  let playerWakePending = false; // Set by a real Sleep passage or finished bed lie; consumed when the player's avatar/actions become ready.
-  let lastBedSleepCount = null; // Tracks completed legacy bed animations without touching BedLiePose's private sleep/rollover logic.
+  let playerWakePending = false; // Set by a positive Sleep passage; consumed when the player's avatar/actions become ready.
   let playerWalker = null; // One stable adapter for the player's real avatar, allowing hourly yawns to reuse the NPC state machine.
 
   function nowGameHour() {
@@ -75,7 +74,6 @@
         playerWalker = null;
         voicePlans.clear();
         playerWakePending = false;
-        lastBedSleepCount = null;
         lastPlayerVoice = null;
       }
       return false;
@@ -99,7 +97,6 @@
       void voiceFor(identity.species, identity.gender).catch(error => { lastError = 'player voice prewarm: ' + String(error?.message || error); });
     } // Resolve the absent/borrowed yawn clip while the world is loading, rather than eating the first five-second yawn.
     playerWakePending = false; // A pending wake from another selected character must not animate the new one.
-    lastBedSleepCount = null; // BedLiePose counters are runtime-global, not per save character.
     dirty = false;
     return true;
   }
@@ -488,7 +485,7 @@
       || window.PlayerCrawl?.isActive?.()) return false; // Combat impacts, downed crawl and recovery fully own the body.
     if (player?._freeJump || player?.climbing || player?.onClimbSurface || player?.onCliffBalcony
         || player?._cliffRouteSession || player?.onBranch) return false; // Airborne, rope, climbing and branch traversal have their own hand/leg poses.
-    if (window.Combat?.deps?.isDialogueOpen?.() || window.BedLiePose?.isActive?.()) return false;
+    if (window.Combat?.deps?.isDialogueOpen?.() || window.CalendarSystem?.isTimePassageActive?.()) return false;
     const seat = window.__hobunjiFurnitureDebug?.sitState || window.__hobunjiFurnitureDebug?.sitInteraction; // Includes 'out': the player's stand-up animation still owns the body until sitInteraction becomes null.
     if (window.PlayerSocialPoses?.active || seat) return false;
     if (window.Fishing?.state?.active || window.MusicMinigame?.state?.active || playerMountTransitionActive()) return false; // Tool modes and mount/dismount transitions own the body and hands.
@@ -512,7 +509,7 @@
     const rested = window.TemplePrayerRestBlessings?.isRested?.() === true
       || window.TemplePrayerRestBlessings?.isWellRested?.() === true; // Both rest tiers prevent fatigue; only Well Rested also gives stat boosts.
     const player = window.Combat?.deps?.player; // Active forced player poses interrupt even a Koma ceremony that owns its own action lock.
-    const scriptedPose = !!(window.Combat?.deps?.isDialogueOpen?.() || window.BedLiePose?.isActive?.()
+    const scriptedPose = !!(window.Combat?.deps?.isDialogueOpen?.() || window.CalendarSystem?.isTimePassageActive?.()
       || window.PlayerSocialPoses?.active || window.__hobunjiFurnitureDebug?.sitState
       || window.__hobunjiFurnitureDebug?.sitInteraction || window.Fishing?.state?.active
       || window.MusicMinigame?.state?.active || playerMountTransitionActive()
@@ -534,11 +531,6 @@
     lastCheckMs = now;
     const hour = nowGameHour();
     if (!Number.isFinite(hour)) return;
-    const completedBedSleeps = window.BedLiePose?.debug?.()?.completed; // Legacy bed animation calls game.js sleepInBed without emitting the newer Sleep passage event.
-    if (Number.isFinite(completedBedSleeps)) {
-      if (lastBedSleepCount !== null && completedBedSleeps > lastBedSleepCount) playerWakePending = true;
-      lastBedSleepCount = completedBedSleeps;
-    }
     const area = window.Combat?.deps?.getCurrentArea?.();
     const globalCombat = combatNow();
     for (const entry of active) {
@@ -598,7 +590,7 @@
     debugSnapshot: () => ({
       version: VERSION, characterId: saveCharacterId,
       active: [...active].map(entry => ({ npcId: entry.state.id, elapsedS: (performance.now() - entry.startedAt) / 1000, koma: entry.komaStarted })),
-      trackedRecords: Object.keys(saved).length, playerWakePending, playerSlowMultiplier: playerMovementMultiplier(), lastBedSleepCount, lastYawn, lastVoice, lastPlayerVoice, trailingBreathCount: trailingBreaths.size, lastError,
+      trackedRecords: Object.keys(saved).length, playerWakePending, playerSlowMultiplier: playerMovementMultiplier(), lastYawn, lastVoice, lastPlayerVoice, trailingBreathCount: trailingBreaths.size, lastError,
       playerStretch: window.PlayerYawnStretchPresentation?.debugSnapshot?.() || null,
       fileChecks: fileProbes.size, pendingSave: dirty,
     }),

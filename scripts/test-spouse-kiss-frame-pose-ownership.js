@@ -21,7 +21,7 @@ const section = (start, end) => {
 
 const lockSource = section(
   "        const pairedPoseLocked = window.CharacterActionLocks?.isLocked?.('player', 'pose') === true;",
-  '        window.BedLiePose?.update?.(dt);'
+  '        mineTorchLight.visible = '
 );
 const moveSource = section(
   '        if (!pairedPoseLocked) {\n          const _playerMeshSmoothXZ',

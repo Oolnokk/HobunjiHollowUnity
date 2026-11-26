@@ -7,16 +7,10 @@ const fs = require('node:fs'); // Used to inspect the browser-only calendar modu
 const calendar = fs.readFileSync('docs/js/calendar-system.js', 'utf8'); // Source under test; time passage is installed inside the browser game closure.
 const index = fs.readFileSync('docs/index.html', 'utf8'); // Bootstrap under test; mobile browsers must receive the corrected input module immediately.
 
-assert.match(
-  calendar,
-  /if \(event\.type === 'pointerup'\) openTimePassage\(wantsSleep \? 'sleep' : 'wait'\)/,
-  'Sleep and Wait action-arch taps must trigger on pointer release',
-);
-assert.doesNotMatch(
-  calendar,
-  /if \(event\.type === 'pointerdown'\) openTimePassage\(wantsSleep \? 'sleep' : 'wait'\)/,
-  'Sleep and Wait action-arch taps must not trigger on pointer press',
-);
+const sleepBridge = fs.readFileSync('docs/js/sleep-passage-action-bridge.js', 'utf8'); // Sleep owns pointer release; CalendarSystem intercepts only seated Wait.
+assert.match(calendar, /if \(event\.type === 'pointerup'\) openTimePassage\('wait'\)/, 'Wait action-arch taps trigger on pointer release');
+assert.doesNotMatch(calendar, /if \(event\.type === 'pointerdown'\) openTimePassage\('wait'\)/, 'Wait does not trigger on pointer press');
+assert.match(sleepBridge, /function onPointerCapture\(event\)[\s\S]*?if \(event\.type !== 'pointerup' \|\| passageIsOpen\(\)\) return;[\s\S]*?openSharedSleepPassage\(\)/, 'Sleep action-arch taps trigger on pointer release through its existing bridge');
 assert.match(
   calendar,
   /_seatedWaitPointerId = event\.pointerId;[\s\S]*?window\.addEventListener\('pointerup',[\s\S]*?openTimePassage\('wait'\)/,

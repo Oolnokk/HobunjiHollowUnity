@@ -3849,7 +3849,9 @@
             onAction(action) {
               if (action !== 'obj_interact') return { ok: false, message: 'Unknown action.' };
               if (sitInteraction || dialogueOpen || window.FarmAnimals.isHarvesting() || (window.Mounts?.rideState ?? 'none') !== 'none') return { ok: false, message: 'Cannot lie down right now.' };
-              return window.BedLiePose?.begin?.(o) || { ok: false, message: 'Lie-down animation is not available.' };
+              // Every input, including generic Interact (controller A), must use the chosen-duration passage.
+              const opened = window.HobunjiSleepPassageActionBridge?.openSharedSleepPassage?.();
+              return opened ? { ok: true, message: '', deferMemberSave: true } : { ok: false, message: 'Sleep is not available right now.' };
             },
           };
         }
@@ -4977,11 +4979,6 @@
         window.PlayerBodyTransformComposer?.setHeadAimTarget?.(null);
         if (window.CharacterActionLocks?.isLocked?.('player','head')) return; // Explicit paired gaze owns the same neck until its scoped lock releases.
         if (!playerNeckJoint) return;
-        if (window.BedLiePose?.isActive?.()) { // Sleeping rests the head with the flattened body instead of camera-tracking the reticle.
-          playerNeckJoint.rotation.set(0, 0, 0);
-          playerNeckJoint.userData.hobunjiPerspectiveAimLocked = false;
-          return;
-        }
         playerNeckJoint.userData.hobunjiPerspectiveAimLocked = (
           activeCameraMode === SHOULDER_SURF_MODE
           && !cutscenePreviewActive
@@ -9685,8 +9682,7 @@
       // — so the date/time (and weather) silently reset every session no
       // matter how long the world had actually been played. Loaded once in
       // spawnPlayerAvatar (before checkTothalShift, since currentTothalYear()
-      // reads calendar.day) and saved on every day rollover (advanceDay/
-      // sleepInBed) plus on tab close, mirroring _saveTothalYear's pattern.
+      // reads calendar.day) and saved on every day rollover (advanceDay) plus on tab close, mirroring _saveTothalYear's pattern.
       function _loadWorldCalendar() {
         const worldId = _tothalWorldId();
         if (!worldId) return null;
@@ -14377,7 +14373,7 @@
               const oldHeadArea = w.area; // Area transfers must never be mistaken for extreme one-frame movement.
               w.update(walkerDt);
               if (npcWalkers[i] === w) {
-                if (!w._familyBabyFollowing) window.BedLiePose?.syncNpc?.(w, w.currentScheduleTarget, walkerDt, w._bedLieSurface); // Every humanoid NPC uses real schedule-driven lie/stand poses, not just the player.
+                if (!w._familyBabyFollowing) window.BedLiePose?.syncNpc?.(w, w.currentScheduleTarget, walkerDt, w._bedLieSurface); // Humanoid NPCs use real schedule-driven lie/stand poses.
                 npcMovementHeadLookOptions.currentArea = currentArea;
                 npcMovementHeadLookOptions.hasScriptedGaze = cutscenePreviewActive
                   || npcDialogueStaging?.walker === w || _dialogueWalker === w || oldHeadArea !== w.area;
@@ -19644,7 +19640,6 @@
         }
         if (dialogueOpen) { updateNpcDialogueStaging(dt); return; }
         if (window.FarmAnimals.isHarvesting()) { window.FarmAnimals.updateHarvestInteraction(dt); return; }
-        if (window.BedLiePose?.isActive?.()) { player.vx = 0; player.vy = 0; return; } // Animated bed entry owns movement until morning.
         if (sitInteraction) { updateSitInteraction(dt); return; }
         if (window.Fishing?.state?.active) return;
         if (window.MusicMinigame?.state?.active) return;
@@ -25886,7 +25881,6 @@
       // ── Update player cube ────────────────────────────────────────
       function updatePlayerMesh(dt) {
         const pairedPoseLocked = window.CharacterActionLocks?.isLocked?.('player', 'pose') === true; // Exclusive paired choreography owns the live root position/yaw and authored knees until its lock releases.
-        window.BedLiePose?.update?.(dt); // The module positions the actor and its composer pose before this frame's avatar render sync.
         mineTorchLight.visible = !!window.TownMine?.floorFromMapId?.(currentArea);
         // Mount ride state now lives in js/mount-system.js (window.Mounts) —
         // shadowed locally so the rest of this function (posture/rotation
@@ -27415,8 +27409,8 @@
           // Breeding progress ticks per in-game hour crossed (rather than
           // once per day) so a pair's bar visibly creeps forward through
           // the day and can complete the moment it fills, not just at the
-          // next morning — see FarmAnimals.tickBreedingProgress. sleepInBed()
-          // covers whatever fraction of the day this real-time path skips.
+          // next morning — see FarmAnimals.tickBreedingProgress. The Sleep passage
+          // uses the same hourly calendar progression.
           window.FarmAnimals.tickBreedingProgress();
           // Cheap once-per-in-game-hour flush (~every 12 real seconds at the
           // default DAY_LENGTH_SECONDS) so a crash/force-close between day
@@ -27431,7 +27425,7 @@
         window.WeatherFX.chooseWeatherForDay();
         tickCropDay();
         window.NpcFarmPlots?.onNewDay?.();
-        // Breeding is ticked hourly (see updateCalendar/sleepInBed), not
+        // Breeding is ticked hourly (see updateCalendar), not
         // here — by the time a day naturally rolls over, every one of its
         // waking hours has already been credited in real time.
         window.FarmAnimals.tickResources();
@@ -27451,74 +27445,7 @@
         _saveWorldCalendar();
       }
 
-      // Sleeping in a bed (see getInteriorInteractableAt) skips straight to
-      // the next morning rather than waiting for calendar.time01 to wrap
-      // naturally — same day-rollover work as advanceDay() (weather reroll,
-      // crop growth, Tothal Shift check, den respawns), plus resetting the
-      // clock itself and restoring the player, which advanceDay() doesn't
-      // need to do since it only ever fires from a real elapsed-time wrap.
-      function sleepInBed() {
-        // Co-op: sleeping advances time only when every player is resting (js/time-consensus.js).
-        const gate = bedSleepGate();
-        if (gate?.state === 'waiting') return { ok: true, waiting: true, message: '💤 Waiting for the others to sleep…' };
-        if (gate?.state === 'resolved') return { ok: true, message: gate.message, hours: gate.hours };
-        return performSleepToMorning();
-      }
-
-      // In-game minutes until the next 06:00 (ranks a bed sleep against other queued skips).
-      function minutesUntilMorning() {
-        const playable = (NIGHT_HOUR - MORNING_HOUR) * 60;
-        return Math.max(0, 1 - calendar.time01) * playable + (24 * 60 - playable);
-      }
-      // null = single player (original immediate path). Otherwise the local player's rest state.
-      function bedSleepGate() {
-        const tc = window.TimeConsensus;
-        if (!tc?.shouldGate()) return null;
-        let done = tc.consumeResolution(player);
-        if (!done && tc.stateOf(player) === 'none') {
-          const r = tc.requestRest(player, { kind: 'sleep', source: 'bed', minutes: minutesUntilMorning(), run: () => { performSleepToMorning(); } });
-          if (r.state === 'resolved') done = tc.consumeResolution(player);
-        }
-        if (!done) return { state: 'waiting' };
-        return { state: 'resolved', hours: done.winner.minutes / 60, message: `😴 Everyone slept. Day ${calendar.day} begins: ${calendar.weather}.` };
-      }
-      function cancelBedSleep() { window.TimeConsensus?.cancelRest(player); }
-
-      function performSleepToMorning() {
-        // Whatever fraction of today's waking hours hadn't been played
-        // through yet (and so never got an hourly breeding tick from
-        // updateCalendar) gets credited here in one lump, so a pair
-        // progresses the same one day's worth whether that day was played
-        // out in real time or slept through.
-        const remainingDayFraction = Math.max(0, 1 - calendar.time01);
-        calendar.day += 1;
-        calendar.time01 = 0; // wake at MORNING_HOUR
-        window.WeatherFX.chooseWeatherForDay(); // also resyncs isRaining/rainStrength to the new hour
-        tickCropDay();
-        window.FarmAnimals.tickBreedingProgress(remainingDayFraction);
-        window.FarmAnimals.tickResources();
-        window.FarmAnimals.tickHearts();
-        window.ProceduralTasks.maybeRefreshRequestPostings();
-        checkTothalShift();
-        window.WildlifeSpawn.clearPendingDenRespawn();
-        window.ReagentPlants.respawnAllZoneReagents();
-        window.WildBerries.respawnAll(); // Same daily respawn advanceDay() runs.
-        window.WildTreasure.respawnAll();
-        window.ZoneRegrowth.tickFelledTreeRegrowth();
-        window.ZoneRegrowth.tickMinedRockRegrowth();
-        player.health  = player.maxHealth;
-        player.stamina = player.maxStamina;
-        const msg = `😴 Slept until morning. Day ${calendar.day} begins: ${calendar.weather}.`;
-        lastActionMessage = msg;
-        _saveWorldCalendar();
-        return { ok: true, message: msg };
-      }
-
-      window.BedLiePose?.init?.({
-        THREE, tileSize: () => TILE, player: () => player, playerRoot: () => playerMesh,
-        playerLegs: () => playerLegs, area: () => currentArea, sleep: sleepInBed, sleepGate: bedSleepGate, sleepCancel: cancelBedSleep,
-        showToast, isPaused: () => paused, getNpcWalkers: () => npcWalkers,
-      }); // Existing sleepInBed remains the sole authoritative day rollover; module owns presentation only.
+      window.BedLiePose?.init?.({ THREE }); // NPC mattress presentation only; player sleep belongs to CalendarSystem.
 
       // Weather rolling (chooseWeatherForDay/updateRainState) now lives
       // in js/weather-fx.js — call via window.WeatherFX.*.
@@ -30687,7 +30614,7 @@
         sit: beginSitInteraction,
         endSit: endSitInteraction,
         get sitState() { return sitInteraction; },
-        bedPose: () => ({ player: window.BedLiePose?.debug?.() || null, npcs: window.BedLiePose?.npcDebug?.(npcWalkers) || [] }), // On-device player/NPC sleeping posture, surface and x-ray status.
+        bedPose: () => ({ passage: window.CalendarSystem?.timeDebugSnapshot?.() || null, npcs: window.BedLiePose?.npcDebug?.(npcWalkers) || [] }), // Current time passage and NPC mattress presentation for mobile diagnostics.
         get playerState() { return { x: player.x, y: player.y, angle: player.angle }; },
         get camState() { return { mode: activeCameraMode, azimuthOffsetDeg: cameraAzimuthOffsetDeg, position: { x: camera.position.x, y: camera.position.y, z: camera.position.z } }; },
         foliageFurniture: (mapId = currentArea) => window.FoliageFurnitureRuntime?.debugState(mapId) || [],
@@ -30843,7 +30770,7 @@
       window.addEventListener('resize', () => { fitToAspect(); resizeCanvas(); updateCameraPosition(); if (menuOpen) auditInventorySizing(); });
       // Safety net for any inventory/pack change not already covered by an
       // explicit saveMemberWorldData() call above. Also flushes the
-      // in-progress time-of-day (advanceDay/sleepInBed already save on their
+      // in-progress time-of-day (advanceDay already saves on its
       // own day rollovers, but this catches whatever time01 progress
       // happened since the last one, so closing mid-afternoon doesn't roll
       // back to that morning next session).
@@ -33148,7 +33075,7 @@
         getBaseMoveSpeedTiles: () => MOVE_SPEED / TILE, // Jump travel reuses normal walking distance per second, not a separate hard-coded pace.
         canStartFreeJump: () => gameStarted && !paused && !dialogueOpen && !sitInteraction &&
           !window.Fishing?.state?.active && !window.MusicMinigame?.state?.active &&
-          !window.BedLiePose?.isActive?.() && !window.FarmAnimals?.isHarvesting?.() &&
+          !window.FarmAnimals?.isHarvesting?.() &&
           !window.PlayerSocialPoses?.active, // Actions/minigames that own the player must not secretly queue a jump.
         canPlayerOccupy, // Normal grounded movement authority.
         canPlayerOccupyAtHeight, // Jump uses native world collision at the physical foot height.
@@ -33916,7 +33843,7 @@
         else window.FarmPlotEditor?.restore?.(null); // A world with no saved layout has no family plots either.
         window.FarmEditor.applyFarmLayoutObjects(_worldLayout);
         window.FarmProduction.load(_worldLayout?.productionBuildings || []); // repositions again if THIS world saved custom crate positions
-        // Seed a starter bed in the farmhouse for a brand-new world — sleepInBed()
+        // Seed a starter bed in the farmhouse for a brand-new world — the Sleep passage
         // (see getInteriorInteractableAt) needs somewhere to sleep, and a fresh
         // player has no bed item in inventory yet to buy+place one themselves.
         // Gated on this world having no saved layout at all, so it never
