@@ -98,22 +98,18 @@ tradeoff; a pants wearer whose sprite intersects another actor's plane may
 still need a dedicated per-actor depth composite. Opaque world geometry
 continues to depth-test normally; weapon stencils share the actor order.
 
-## Worn pants use the feet's ground-x-ray policy
+## Feet and worn pants always use ordinary ground depth
 
-As of the scaled-foot grounding change, `feet.groundXray` defaults to `off` in Xray Hierarchy. Dry feet and pants remain in ordinary world and shell depth passes. Submerged local lower-body meshes may enter the existing water-only color compositor, explicitly forced into the ordinary-depth group with no terrain exemption. The legacy shared ground replay below is available only as a developer A/B comparison. Solid-cover depth remains authoritative.
+Feet and pants keep physical terrain and prop occlusion in the world and
+outline passes. The legacy ground X-ray switch is retired, including in saved
+developer presets. The normal outline pass still draws modeled feet; authored
+PNG pants never get a generated shell.
 
-Each live pants garment now registers with the existing selective feet replay through
-`HeldObjectRenderOrder.markWaterOccludedMesh()`. This reuses the same local
-same-elevation grass/road/walkable-floor exemption, actor/camera-distance
-eligibility, and solid-cover and water/slush depth and tint behavior. Unworn,
-unloaded or off-distance NPC garments remain on the normal world depth path.
-
-The X-ray hierarchy configuration is **unchanged**: no global color priority
-is raised. Pants still use their existing owner-portrait depth/alpha rules.
-A conservative replay scissor margin covers GPU-deformed pants whose CPU
-rest mesh bounds do not change while their legs animate. Pants are authored
-PNG-art garments, so they do not acquire procedurally generated shell outlines.
-The Dev Companion snapshot reports pants registrations separately.
+The lower-body water registry still uses
+`HeldObjectRenderOrder.markWaterOccludedMesh()` to tint physically submerged
+nearby parts, with no floor exemption. Dry, distant, or unresolved parts do not
+enter the tint replay. The existing conservative bounds for GPU-deformed pants
+and their owner-portrait depth/alpha rules are unchanged.
 
 ## Shoulder pets are part of the owner's portrait occlusion
 
@@ -732,11 +728,11 @@ square ring and for the existing holder-centered floor circle
 (`XRAY_CIRCLE_RADIUS = XRAY_TILE_RADIUS + 0.5`). These are distinct
 operations: participant eligibility is player-relative; the depth shader
 still exempts only same-height ground around the eligible holder.
-Feet and pants no longer also apply the six-unit 3D camera sphere when the
-local filter is active. That camera check remains available for legacy
-range A/B and scenes without a valid player. Existing category and species
-gates and ordinary weapon budget are unchanged. Frustum rejection and
-screen-space replay scissoring remain independent conservative bounds.
+Feet and pants cannot participate in ground X-ray. Their separate water
+tint selection uses the local ring, or the six-unit camera sphere when
+the ring is unavailable or disabled. Existing category and species gates
+and ordinary weapon budget are unchanged. Frustum rejection and screen-space
+replay scissoring remain independent conservative bounds.
 
 
 ### Optional selective traversal / registry sharing pilots

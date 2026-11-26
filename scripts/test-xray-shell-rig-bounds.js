@@ -250,7 +250,10 @@ function shellScenario(withException,enableScissor=false){
     internalReplay:false,retiredScenes:{has(){return false;}},originalRender(){metrics.normal++;return 42;},
     scanScene(){},isShellOutlinePass(){return true;},
     heldRegistry:'held',waterOccludedRegistry:'feet',groundRegistry:'ground',topFaceGroundRegistry:'top',
-    collectVisible(name){return name==='held'?held:name==='ground'?[{visible:true}]:[];},
+    collectVisible(name){
+      assert.notEqual(name,'feet','normal lower-body shells must not be collected for ground-replay work');
+      return name==='held'?held:name==='ground'?[{visible:true}]:[];
+    },
     SHELL_LAYER:1,hasLayer(){return true;},isAuthoredInkPlane,
     filterOffscreenReplayMeshes:(camera,parts)=>parts,
     window:{HobunjiHandOutlineParity:{refreshHeldMatrices(){}}},buildXrayGroups:(renderer,scene,camera,meshes)=>{
