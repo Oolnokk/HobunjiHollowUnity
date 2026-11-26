@@ -18,6 +18,25 @@ vm.runInContext(`const INTERIOR_CELL_SIZE=.5;const clamp=(v,a,b)=>Math.max(a,Mat
 `, context);
 const bridge = fs.readFileSync('docs/tools/debris-ifier/debrisifier-v50-api.js','utf8'); // Validate the public API's input contract as well as placement.
 vm.runInContext(bridge.slice(bridge.indexOf('  function normalizeLayoutReservation('),bridge.indexOf('  async function generateInteriorLocale(')),context);
+// A touching tall blocker must never be selected as the target's opening.
+vm.runInContext(bridge.slice(bridge.indexOf('  function choosePillarShotSide('),bridge.indexOf('  // Run once, after every V50 prop')),context);
+const chooseFace=context.choosePillarShotSide;
+const origin={x:0,y:1.5,z:0}, openFloor=()=>true;
+const box=(minX,maxX,minZ,maxZ,minY=0,maxY=3)=>({min:{x:minX,y:minY,z:minZ},max:{x:maxX,y:maxY,z:maxZ}});
+const blockers={
+  north:box(-.5,.5,-1.2,-.24),east:box(.24,1.2,-.5,.5),
+  south:box(-.5,.5,.24,1.2),west:box(-1.2,-.24,-.5,.5),
+};
+for(const side of Object.keys(blockers)){
+  assert.equal(chooseFace(origin,side,[],openFloor),side,'preserves clear authored orientation');
+  assert.notEqual(chooseFace(origin,side,[blockers[side]],openFloor),side,'touching tall box blocks '+side);
+  assert.equal(chooseFace(origin,side,Object.values(blockers),openFloor),null,'rejects fully enclosed pillar');
+  assert.equal(chooseFace(origin,side,Object.entries(blockers).filter(([key])=>key!==side).map(([,value])=>value),openFloor),side,'accepts only clear face');
+}
+assert.equal(chooseFace(origin,'north',[box(-.5,.5,-1.2,-.24,0,.6)],openFloor),'north','low scenery below shot is not cover');
+assert.equal(chooseFace(origin,'north',[],(_x,z)=>z>=0),'east','opening must face supported floor');
+assert.equal(chooseFace(origin,'north',[],()=>false),null,'no shooting approach on missing floor');
+console.log('ok pillar projectile clearance: four orientations, touching cover, floor and elevation');
 assert.equal(context.normalizeLayoutReservation(null),null);
 assert.throws(()=>context.normalizeLayoutReservation({w:180}),/Invalid/);
 let accepted=0; // Count usable native stage paths over actual generated networks.
