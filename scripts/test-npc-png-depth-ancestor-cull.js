@@ -106,3 +106,24 @@ nativeApi.renderDepth(nativeScene);
 assert.equal(localHookCalls,2,'custom local update must not be deduplicated even with native world recursion');
 assert.equal(p5.world,23);assert.equal(p6.world,25);
 console.log('PNG depth shared native ancestors and custom world/local hook fallbacks passed');
+
+// A player's stance owner deliberately restores the mutable local pose after
+// baking matrixWorld. Recomputing a descendant with updateWorldMatrix would
+// bypass that owner, yielding a detached silhouette in the later depth pass.
+const weaponHolder=new NativeObject(nativeScene,100);
+weaponHolder.__weaponToolStanceMatrixHook=true;
+const weaponRoot=new NativeObject(weaponHolder,1);
+const weaponPlane=nativePlane(weaponRoot,2);
+const dualRoot=new NativeObject(weaponPlane,3);
+const dualPlane=nativePlane(dualRoot,4);
+weaponHolder.world=10;weaponRoot.world=11;weaponPlane.world=13;dualRoot.world=16;dualPlane.world=20;
+matrixUpdates.clear();
+nativeApi.init({camera,renderer:{render(){
+  assert.equal(weaponPlane.world,13,'depth sees the baked visible weapon, not its restored local pose');
+  assert.equal(dualPlane.world,20,'depth preserves the independently posed copy subtree');
+}}});
+nativeApi.renderDepth(nativeScene);
+assert.equal(nativeApi.snapshot().bakedWeaponMatricesReused,2);
+for(const node of [weaponHolder,weaponRoot,weaponPlane,dualRoot,dualPlane])assert.equal(matrixUpdates.has(node),false,'never rewalk a baked weapon ancestor');
+assert.equal(matrixUpdates.get(common),1,'ordinary avatar ancestor optimization still runs');
+console.log('Weapon depth reuses the baked stance subtree, including paired weapons.');

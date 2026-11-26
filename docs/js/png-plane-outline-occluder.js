@@ -37,6 +37,7 @@
   // per-mesh temp array here was pure steady-state GC churn.
   const materialStates = new Map();
   let sharedAncestorRefreshesAvoided = 0; // Counts repeated native ancestor matrix work eliminated inside the PNG depth pass.
+  let bakedWeaponMatricesReused = 0; // Counts weapon depth draws that preserve the actual colour-pass stance/clearance transform.
 
   function init(injectedDeps) { deps = injectedDeps; }
 
@@ -122,10 +123,12 @@
       let root = object;
       chain.length = 0;
       if (refreshed) chain.push(root);
+      let bakedWeaponPose = root.__weaponToolStanceMatrixHook === true; // This subtree's base traversal bakes a temporary pose, then restores its locals.
       let hierarchyVisible = root.visible !== false; // NPC render-only culling hides roots, not every child plane.
       while (root.parent) {
         root = root.parent;
         if (refreshed) chain.push(root);
+        if (root.__weaponToolStanceMatrixHook === true) bakedWeaponPose = true;
         if (root.visible === false) hierarchyVisible = false;
       }
       if (!root.isScene) { // Despawned -- drop from the registry.
@@ -136,9 +139,14 @@
       if (root !== activeScene) continue; // Retain inactive-area actors without modifying their materials.
       if (!object.isMesh || !hierarchyVisible || !(object.layers.mask & (1 << LAYER))) continue;
       meshCount++;
-      // The base colour pass already updated the scene. Refresh only this depth participant
-      // and its ancestors for any late animation-hook changes before skipping another whole-scene update.
-      refreshDepthWorldMatrix(object, chain, refreshed, nativeUpdate, nativeLocalUpdate);
+      // The stance hook writes the rendered world matrices, then restores its
+      // authored local position/quaternion and plane twist. updateWorldMatrix
+      // bypasses that hook and would put an uncorrected sword into the depth
+      // buffer, making an isolated screen-space outline. Preserve the entire
+      // baked subtree (including dual copies); other PNGs still refresh for
+      // legitimate late animation changes. No extra walk or per-mesh draw hook.
+      if (bakedWeaponPose) bakedWeaponMatricesReused++;
+      else refreshDepthWorldMatrix(object, chain, refreshed, nativeUpdate, nativeLocalUpdate);
       if (Array.isArray(object.material)) {
         for (const material of object.material) captureMaterial(material);
       } else {
@@ -228,6 +236,6 @@
     registerDepthMesh, // Depth-only participants can retain their own 3D shell outlines.
     prune,
     renderDepth,
-    snapshot: () => ({ registered: meshes.length, lastOccluderCount, sharedAncestorRefreshesAvoided }),
+    snapshot: () => ({ registered: meshes.length, lastOccluderCount, sharedAncestorRefreshesAvoided, bakedWeaponMatricesReused }),
   };
 })();

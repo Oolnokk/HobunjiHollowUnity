@@ -224,6 +224,35 @@ if(THREE){
   close(liftResult.gripLift,.115);close(liftResult.shortening,0);
   assert.ok(liftResult.finalMinY>=.035-1e-7);close(liftResult.gripPivotDrift,0);
   solver.setPreviewEnabled(false);
+  // Real Three replay: weapon stance bakes a corrected world matrix, then
+  // restores authored locals as the runtime does. The occluder must not undo
+  // that correction by calling native updateWorldMatrix on the sprite.
+  {
+    const scene=new THREE.Scene();scene.add(parent);
+    const colorHolder=holder.position.clone(),colorQ=holder.quaternion.clone();
+    const colorMatrix=plane.matrixWorld.clone();
+    holder.__weaponToolStanceMatrixHook=true;
+    holder.position.y-=.75;holder.quaternion.identity();holder.updateMatrix();
+    const normalActor=new THREE.Group();scene.add(normalActor);
+    const normalPlane=new THREE.Mesh(new THREE.PlaneGeometry(1,1),new THREE.MeshBasicMaterial());
+    normalActor.add(normalPlane);normalActor.position.y=2;
+    const windowLike={};
+    vm.runInNewContext(fs.readFileSync('docs/js/png-plane-outline-occluder.js','utf8'),{window:windowLike,THREE});
+    const depth=windowLike.PngPlaneOutlineOccluder;
+    depth.registerDepthMesh(plane);depth.registerDepthMesh(normalPlane);
+    const camera={layers:{mask:1,set(n){this.mask=1<<n;}}};
+    depth.init({camera,renderer:{render(sceneArg){
+      assert.equal(sceneArg.autoUpdate,false);
+      assert.ok(plane.matrixWorld.equals(colorMatrix),'actual weapon depth matrix exactly matches the visible corrected sprite');
+      close(normalPlane.matrixWorld.elements[13],2);
+    }}});
+    depth.renderDepth(scene);
+    assert.equal(depth.snapshot().bakedWeaponMatricesReused,1);
+    assert.ok(plane.matrixWorld.equals(colorMatrix),'later screen-outline pass inherits the same depth transform');
+    assert.equal(scene.autoUpdate,true);
+    delete holder.__weaponToolStanceMatrixHook;holder.position.copy(colorHolder);holder.quaternion.copy(colorQ);
+    scene.remove(parent);parent.updateMatrixWorld(true);
+  }
   // Two visible copies have distinct raw poses. Correct around each actual
   // grip, including the offhand offset, rather than either mesh's origin.
   solver.setPreviewEnabled(true);
