@@ -19500,13 +19500,15 @@
         }
 
         if (player.dodging) {
-          player.dodgeT -= dt;
+          const travelDt = Math.min(Math.max(0, dt), Math.max(0, player.dodgeT)); // Final partial roll frame must not extend travel or wind cost.
+          player.dodgeT -= travelDt;
           const minX = PLAYER_RADIUS, maxX = window.GridTileAccessors.getActiveCols() * TILE - PLAYER_RADIUS;
           const minY = PLAYER_RADIUS, maxY = window.GridTileAccessors.getActiveRows() * TILE - PLAYER_RADIUS;
           const heavyDistanceMul = window.ResourceSystem?.timedDebuffModifier?.(player, 'dodgeLungeDistance') ?? 1; // Heavy reduces dodge travel over the unchanged dodge duration/iframe window.
           const dodgeSpeedPx = DODGE_SPEED_PX * heavyDistanceMul;
-          const dodgeMotion = window.ResourceSystem?.composeMovement?.(player, player.dodgeDirX * dodgeSpeedPx * dt, player.dodgeDirY * dodgeSpeedPx * dt, { mode: 'dodge', scalarApplied: true, rotationApplied: true, reference: dodgeSpeedPx * dt, dt }); // Input direction was already resolved by the compositor.
-          const dodgeDx = dodgeMotion?.x ?? player.dodgeDirX * dodgeSpeedPx * dt, dodgeDy = dodgeMotion?.y ?? player.dodgeDirY * dodgeSpeedPx * dt;
+          const dodgeMotion = window.ResourceSystem?.composeMovement?.(player, player.dodgeDirX * dodgeSpeedPx * travelDt, player.dodgeDirY * dodgeSpeedPx * travelDt, { mode: 'dodge', scalarApplied: true, rotationApplied: true, reference: dodgeSpeedPx * travelDt, dt: travelDt }); // Input direction was already resolved by the compositor.
+          const dodgeDx = dodgeMotion?.x ?? player.dodgeDirX * dodgeSpeedPx * travelDt, dodgeDy = dodgeMotion?.y ?? player.dodgeDirY * dodgeSpeedPx * travelDt;
+          const dodgeStartX = player.x, dodgeStartY = player.y; // Report and charge the accepted sweep, not unrelated earlier frame movement.
           const desiredX = window.FormatUtils.clamp(player.x + dodgeDx, minX, maxX);
           const desiredY = window.FormatUtils.clamp(player.y + dodgeDy, minY, maxY);
           const dodgeSwept = sweptMove(player.x, player.y, desiredX, desiredY, canPlayerDodgeOccupy); // Raised-support dodges use the same physical foot height as jumps, without altering native dodge timing or panicked-impact callbacks.
@@ -19523,9 +19525,9 @@
               return; // The physical impact owner may already have killed/respawned the actor; do not overwrite that state.
             }
           }
-          player.vx = dt > 0 ? dodgeDx / dt : 0;
-          player.vy = dt > 0 ? dodgeDy / dt : 0;
-          commitComposedMovement(player, dodgeMotion, Math.hypot(dodgeDx, dodgeDy), Math.hypot(player.x - _fsPrevX, player.y - _fsPrevY));
+          player.vx = travelDt > 0 ? (player.x - dodgeStartX) / travelDt : 0;
+          player.vy = travelDt > 0 ? (player.y - dodgeStartY) / travelDt : 0;
+          commitComposedMovement(player, dodgeMotion, Math.hypot(dodgeDx, dodgeDy), Math.hypot(player.x - dodgeStartX, player.y - dodgeStartY));
           if (player.prone) return; // The normal depletion path cancelled the action.
           if (player.dodgeT <= 0) {
             player.dodging = false;
@@ -19585,13 +19587,14 @@
           player.angle = committedLungeAngle;
 
           const priorProgress = 1 - Math.pow(player.lungeT / player.lungeDur, 3); // Delta of the authored ease-out curve, not an independent wind animation.
-          player.lungeT = Math.max(0, player.lungeT - dt);
+          const travelDt = Math.min(Math.max(0, dt), Math.max(0, player.lungeT)); // The ease-out and Footing charge share the same remaining action time.
+          player.lungeT = Math.max(0, player.lungeT - travelDt);
           const t = 1 - player.lungeT / player.lungeDur;
           const eased = 1 - Math.pow(1 - t, 3); // ease-out: fast off the top, settles into the landing
           const minX = PLAYER_RADIUS, maxX = window.GridTileAccessors.getActiveCols() * TILE - PLAYER_RADIUS;
           const minY = PLAYER_RADIUS, maxY = window.GridTileAccessors.getActiveRows() * TILE - PLAYER_RADIUS;
           const lungeStep = player.lungeDistancePx * Math.max(0, eased - priorProgress);
-          const lungeMotion = window.ResourceSystem?.composeMovement?.(player, player.lungeDirX * lungeStep, player.lungeDirY * lungeStep, { mode: 'lunge', scalarApplied: true, rotationApplied: true, reference: lungeStep || MOVE_SPEED * dt, dt });
+          const lungeMotion = window.ResourceSystem?.composeMovement?.(player, player.lungeDirX * lungeStep, player.lungeDirY * lungeStep, { mode: 'lunge', scalarApplied: true, rotationApplied: true, reference: lungeStep, dt: travelDt }); // A cone-halted lunge has no remaining horizontal budget.
           if (lungeMotion?.wind) player._windLungeIntegrated = true;
           const desiredX = window.FormatUtils.clamp(player._windLungeIntegrated ? player.x + (lungeMotion?.x ?? player.lungeDirX * lungeStep) : player.lungeStartX + player.lungeDirX * player.lungeDistancePx * eased, minX, maxX);
           const desiredY = window.FormatUtils.clamp(player._windLungeIntegrated ? player.y + (lungeMotion?.y ?? player.lungeDirY * lungeStep) : player.lungeStartY + player.lungeDirY * player.lungeDistancePx * eased, minY, maxY);
@@ -19601,9 +19604,10 @@
           // Breaker's ~7 tiles can cover more than a tile in one frame and
           // would otherwise tunnel clean through a one-tile-thick plateau
           // wall instead of stopping at it.
+          const lungeStartX = player.x, lungeStartY = player.y; // Wind costs only the actual committed lunge sweep.
           const lungeSwept = sweptMove(player.x, player.y, desiredX, desiredY, canPlayerOccupy);
           player.x = lungeSwept.x; player.y = lungeSwept.y;
-          commitComposedMovement(player, lungeMotion, Math.hypot(lungeMotion?.x || 0, lungeMotion?.y || 0), Math.hypot(player.x - _fsPrevX, player.y - _fsPrevY));
+          commitComposedMovement(player, lungeMotion, Math.hypot(lungeMotion?.x || 0, lungeMotion?.y || 0), Math.hypot(player.x - lungeStartX, player.y - lungeStartY));
           if (player.prone) return;
           player.lungeHopCurrent = player.lungeHopUnits * Math.sin(eased * Math.PI);
           if (Number.isFinite(player.lungeFlightWorldY)) {
@@ -19841,7 +19845,7 @@
         }
 
         commitComposedMovement(player, walkMotion, Math.hypot(walkMotion?.x || 0, walkMotion?.y || 0), Math.hypot(player.x - moveStartX, player.y - moveStartY));
-        if (player.prone) return;
+        if (walkMotion?.wind && player.prone) return; // Preserve normal prone crawling/facing when no wind-induced fall occurred.
 
         // ── Facing ────────────────────────────────────────────
         btnWeaponSwitch?.classList.toggle('active', heldMode === 'tool' && (activeTool === 'weapon' || activeTool === 'ranged'));
