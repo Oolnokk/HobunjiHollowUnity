@@ -109,7 +109,7 @@ canvas{display:block;width:100%;height:100%}
 <script src="../../js/color-fill.js?v=20261117h93b0e83"></script>
 <script src="../../js/tool-metal-recolor.js?v=20261030rigall5"></script>
 <script src="../../js/weapon-layer-effects.js?v=20261115torchWick2"></script>
-<script src="../../js/weapon-sprite-assemblies.js?v=20261126staffClearance1"></script>
+<script src="../../js/weapon-sprite-assemblies.js?v=20261126flailHeadLean1"></script>
 <!-- Three.js r128 ESM — matches the version used by the main game (docs/index.html) -->
 <script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.128.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.128.0/examples/jsm/"}}</script>
 </head>
@@ -338,7 +338,7 @@ canvas{display:block;width:100%;height:100%}
 <!-- Shared attack-pose math (window.SharedAttackPose): the SAME timeline, rest poses and mirroring rule the game plays for the player and every enemy. -->
 <script src="../../config/portrait-mouth-points.js?v=20261025mouth1"></script>
 <script src="../../js/attack-editor-mouth-point.js?v=20261025mouth1"></script>
-<script src="../../js/combat/shared-attack-pose.js?v=20261111flailPose1"></script>
+<script src="../../js/combat/shared-attack-pose.js?v=20261126flailHeadLean1"></script>
 <script src="../../js/combat/melee-pose-spacing.js?v=20260920spacing2"></script>
 <script src="../../js/combat/attack-pose-templates.js?v=20261115h01bf772"></script>
 <script src="../../js/festival-ancestor-figures.js?v=20261111h74436ed"></script> <!-- Shared carved_smooth portrait recoloring; the Statue Author reuses the exact Tzizkhanash mask. -->
@@ -3080,6 +3080,7 @@ document.addEventListener('input', () => { lastFlailPreviewT = -1; }); // Parame
 function updatePreviewFlail(sampleT, sampleDt) {
   window.HobunjiWeaponSpriteAssemblies?.setAction(toolPlaneMesh, {
     attacking: sampleT > 0.001 && sampleT < 0.999, progress: sampleT,
+    cameraPosition: camera.position, // NPC deadzone uses the actual preview camera.
     movementPosition: rig.position, // Preview character stays stationary unless authoring moves the rig; animation itself cannot tilt the hanging chain.
     windupFrac: anim.windupFrac, strikeFrac: anim.strikeFrac, holdFrac: anim.holdFrac,
     flailLengthScale: SharedAttackPose.flailLengthScaleAt(anim.poses, sampleT, anim.windupFrac, anim.strikeFrac, anim.holdFrac, anim.sequence), // Same keyframe interpolation as player and enemy swings.
