@@ -282,9 +282,9 @@
     while (remaining > 0.0001) {
       const step = Math.min(remaining, maxStep);
       const rs = window.ResourceSystem; // Composes each bounded terrain substep, preserving contact tests along the actual drifted route.
-      const motion = rs?.composeMovement?.(c, Math.cos(state.lungeAngle) * step, Math.sin(state.lungeAngle) * step, { mode: 'lunge', scalarApplied: true, rotationApplied: true, reference: step, dt: step / Math.max(.001, state.lungeSpeedPxS) });
+      const motion = rs?.composeMovement?.(c, Math.cos(state.lungeAngle) * step, Math.sin(state.lungeAngle) * step, { mode: 'lunge', scalarApplied: true, rotationApplied: true, reference: step, airborne: state.airborne === true, dt: step / Math.max(.001, state.lungeSpeedPxS) });
       const dx = motion?.x ?? Math.cos(state.lungeAngle) * step, dy = motion?.y ?? Math.sin(state.lungeAngle) * step;
-      // Wind can enlarge a substep by up to half; subdivide the composed path
+      // Wind can enlarge an airborne substep by up to three quarters; subdivide the composed path
       // again so the original maximum collision interval remains authoritative.
       const splits = Math.max(1, Math.ceil(Math.hypot(dx, dy) / maxStep));
       for (let i = 0; i < splits; i++) {
