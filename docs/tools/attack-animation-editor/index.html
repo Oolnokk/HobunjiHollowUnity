@@ -331,7 +331,8 @@ canvas{display:block;width:100%;height:100%}
      in-game character dump use the exact same code/format. -->
 <script src="../../js/transform-dump-utils.js?v=20261017h3ce7f8d"></script>
 <script src="../../js/rig-transform-dump.js?v=20261029rigdump1"></script>
-<script src="../../js/weapon-geometry-author.js?v=20261126groundFit1"></script>
+<script src="../../js/held-ground-pose.js?v=20261126groundPreview1"></script>
+<script src="../../js/weapon-geometry-author.js?v=20261126groundPreview1"></script>
 <script src="../../js/held-action-animations.js?v=20261126groundFit1"></script>
 <script src="../../js/kurraya-instrument.js?v=20261118festival1954x1955a"></script>
 <!-- Shared attack-pose math (window.SharedAttackPose): the SAME timeline, rest poses and mirroring rule the game plays for the player and every enemy. -->
@@ -347,6 +348,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
 // Statue Author freezes the already-assembled rig into reusable furniture geometry.
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
+window.HeldGroundPose?.configurePreview?.(THREE); // Same solver as the game, with the editor's actual grid floor.
 
 const $ = id => document.getElementById(id);
 const logLines = [];
@@ -668,6 +670,7 @@ function applyPreviewNeckWeights() {
 function refreshPreviewDebug() {
   setDebug([
     'Hobunji Attack Animation Editor',
+    `Ground fit: ${JSON.stringify(window.HeldGroundPose?.snapshot?.()||{})}`,
     'Latest: flail Hold uses momentum, gravity and actual rope length; paused scrubbing replays the swing.',
     (() => { const physics = window.HobunjiWeaponSpriteAssemblies?.debugSnapshot().find(entry => entry.physics)?.physics; return physics ? `Flail physics: ${physics.model} · lever ${physics.length.toFixed(3)} · angular velocity [${physics.angularVelocity.map(value => value.toFixed(2)).join(', ')}] rad/s · gravity ${physics.gravity}` : 'Flail physics: select a flail preview to inspect'; })(),
     `Neck preview: ${Math.round(neckPreviewStrength * 100)}% strength · ${(neckPreviewRadiusFrac * 100).toFixed(1)}% radius · ${neckWeightSummary}`,
@@ -1143,7 +1146,7 @@ async function setToolSprite(toolKey) {
   const g = await buildToolPlaneMesh(toolKey);
   if (requestId !== toolSpriteRequestId) { if (g) disposeToolPlaneMesh(g); return; }
   window.HobunjiDualWieldWeaponVisuals?.teardown?.();
-  if (toolPlaneMesh) { window.HobunjiWeaponSpriteAssemblies?.drop(toolPlaneMesh); toolHolder.remove(toolPlaneMesh); disposeToolPlaneMesh(toolPlaneMesh); }
+  if (toolPlaneMesh) { window.HeldGroundPose?.clear?.(); window.HobunjiWeaponSpriteAssemblies?.drop(toolPlaneMesh); toolHolder.remove(toolPlaneMesh); disposeToolPlaneMesh(toolPlaneMesh); }
   toolPlaneMesh = g;
   currentToolKey = toolKey;
   if (g) { toolHolder.add(g); logDebug(`Weapon sprite set: ${toolKey}`); }
@@ -1927,6 +1930,72 @@ function applyBodySink(pct, bodyYawDeg = 0) {
   characterBodyScaleRoot.position.y = (characterBodyScaleRoot.userData.sinkBaseY || 0) - worldSink;
   toolBase.position.y = toolBaseRestY - worldSink; // toolBase is a sibling of the body root, so it is lowered by the same world distance.
 }
+// Build the permanent fit from Light Neutral without changing the visible
+// pose or mutating the authored animation. Both paths use the same orbit map.
+const groundPreviewReferenceHolder=new THREE.Object3D(); // Scratch local holder for one-time physical fitting.
+const groundPreviewReferencePlane=new THREE.Matrix4();
+const groundPreviewPoint=new THREE.Vector3();
+const groundPreviewPlanePosition=new THREE.Vector3();
+const groundPreviewPlaneQ=new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1,0,0),-Math.PI/2);
+let groundPreviewStatusAt=0; // Throttle the mobile-readable status, not the actual clearance solve.
+function applyWeaponGroundPreview(){
+  const solver=window.HeldGroundPose,grips=window.HobunjiHandToolGrips,plane=toolPlaneMesh?.userData?.toolPlane;
+  if(!solver)return;
+  if(!solver.enabled())return solver.skip('raw-preview');
+  if(gizmoMode!=='off')return solver.skip('raw-gizmo-authoring');
+  if(handCalibrationPresentationActive||anim.headRelative||!TOOL_SPRITE_DEFS[currentToolKey]?.usesWeaponStanceBasis||grips?.currentGripContext?.()==='ranged')return solver.skip('not-melee-preview');
+  if(!plane||!grips||!avatarModel)return solver.skip('waiting-for-preview');
+  if(grips.isDualWieldWeapon?.(currentToolKey))return solver.skip('dual-wield-unsupported');
+  const identity={speciesId:currentSpeciesId,gender:currentGender};
+  const height=grips.actualCharacterHeight?.(identity.speciesId,identity.gender);
+  const profile=grips.groundProfileForTool?.(currentToolKey);
+  const light=currentActionId==='light_idle'?anim.poses.neutral:
+    window.AttackIdleStanceEditor?.getConfig?.()?.stances?.lightWeapon||TOOL_PRESETS.find(entry=>entry.id==='light_weapon_idle')?.neutral;
+  if(!light)return solver.skip('waiting-for-light-stance');
+  const context=window.ProceduralHandFrameDriver?.groundPoseContext?.(toolHolder,currentToolKey)||{
+    rig:{parent:characterBodyScaleRoot},itemKey:currentToolKey,preview:true,
+    authoredGripZ:grips.authoredPrimaryGripForTool(currentToolKey,'melee')?.position?.z,
+    primary:grips.primaryGripForTool(currentToolKey,'melee',identity),secondary:null,
+    basis:new THREE.Quaternion(),profile,
+  }; // Geometry still previews while the hand rig is loading.
+  context.preview=true;context.profile=profile;
+  context.fitIdentity=[currentSpeciesId,currentGender,height||'',characterBodyScaleRoot.scale.y,
+    toolPlaneMesh.scale.z,toolBaseRestY,light.x,light.y,light.z,light.pitch,light.yaw,light.roll,light.bodyYaw,light.bodySink,light.scale,light.flailLengthScale].join(':');
+  context.allowFit=!profile?.heightFraction||height>0;
+  context.flexibleHaft=!!window.HobunjiWeaponSpriteAssemblies?.definitionFor?.(currentToolKey,TOOL_SPRITE_DEFS[currentToolKey])?.flail;
+  toolBase.updateWorldMatrix(true,false);
+  context.rig.parent.updateWorldMatrix?.(true,false);
+  if(context.allowFit&&solver.needsFit(context,toolPlaneMesh)){
+    const sink=currentActionId==='light_idle'?appliedWorldSink:
+      Math.max(0,Number(light.bodySink??SharedAttackPose.idleBodySinkPct())||0)/100*currentAvatarModelHeight*characterBodyScaleRoot.scale.y;
+    const rawY=(toolBaseRestY-sink)/(characterBodyScaleRoot.scale.y||1);
+    groundPreviewPoint.set(toolBase.position.x+(Number(light.x)||0),rawY+(Number(light.y)||0),toolBase.position.z+(Number(light.z)||0));
+    window.HobunjiSpeciesPoseScale?.transformPosePoint?.(groundPreviewPoint,{
+      cx:0,cy:currentPoseCentroidY,cz:0,floorY:0,baseY:rawY,speciesId:currentSpeciesId,gender:currentGender,
+      modelHeight:currentAvatarModelHeight,armLength:currentArmLength,poseOrbitScale:currentPoseOrbitScale,
+    });
+    groundPreviewReferenceHolder.position.copy(groundPreviewPoint).sub(toolBase.position);
+    groundPreviewReferenceHolder.quaternion.setFromEuler(new THREE.Euler(THREE.MathUtils.degToRad(light.pitch||0),THREE.MathUtils.degToRad(light.yaw||0),THREE.MathUtils.degToRad(light.roll||0),'YXZ'));
+    groundPreviewReferenceHolder.scale.setScalar(safeNum(light.scale,1));
+    SharedAttackPose.anchorScaleAtPoint(groundPreviewReferenceHolder,editorToolGrip(),groundPreviewReferenceHolder.scale.x);
+    groundPreviewReferenceHolder.updateMatrix();
+    context.lightReference=groundPreviewReferenceHolder.matrix;
+    context.lightPlaneReference=groundPreviewReferencePlane.compose(groundPreviewPlanePosition,groundPreviewPlaneQ,plane.scale);
+    context.lightReferenceFlailScale=SharedAttackPose.validFlailLength(light.flailLengthScale);
+  }
+  solver.constrainWeapon(toolHolder,toolPlaneMesh,context);
+  toolHolder.updateMatrix(); // The hand driver and renderer see the corrected transform, not merely the diagnostic.
+}
+function updateGroundPreviewStatus(now){
+  if(now<groundPreviewStatusAt)return;
+  groundPreviewStatusAt=now+200;
+  const node=$('weaponGeometryFitStatus'),s=window.HeldGroundPose?.snapshot?.();
+  if(!node||!s)return;
+  const number=n=>Number.isFinite(n)?n.toFixed(3):'—';
+  const text='Ground preview: '+s.reason+' · fit '+(s.fitted?(100*s.shortening).toFixed(1)+'% band shortening':'not fitted')+
+    ' · rotation '+number(s.angleDeg)+'° · lowest Y '+number(s.originalMinY)+' → '+number(s.finalMinY)+' · floor 0'+(s.contactSource?' · '+s.contactSource:'');
+  if(node.textContent!==text)node.textContent=text;
+}
 function applyPoseToRig(pose) {
   syncGripAxisMarkers(); // Keep Nut/Bridge markers visible while previewing, scrubbing and switching instruments, even with the gizmo off.
   window.HobunjiDualWieldWeaponVisuals?.setCarriedPose(pose); // The invisible idle-offhand tool peels the pose the holder carries right now.
@@ -1981,6 +2050,7 @@ function applyPoseToRig(pose) {
     toolHolder.getWorldPosition(poseWorldDebugScratch);
     lastScaledWorldPose.x = poseWorldDebugScratch.x; lastScaledWorldPose.y = poseWorldDebugScratch.y; lastScaledWorldPose.z = poseWorldDebugScratch.z;
     lastScaledRigPose.x = toolBase.position.x + toolHolder.position.x; lastScaledRigPose.y = toolBase.position.y + toolHolder.position.y; lastScaledRigPose.z = toolBase.position.z + toolHolder.position.z;
+    window.HeldGroundPose?.skip?.('head-relative-preview');
     return;
   }
   window.HobunjiSpeciesPoseScale?.transformPosePoint?.(poseOrbitScratch, {
@@ -2004,6 +2074,7 @@ function applyPoseToRig(pose) {
   if (anim.worldUpright && previewT <= .00001)
     window.ToolWorldUpright?.apply?.(toolHolder, toolPlane, THREE, currentToolKey === 'torch' ? -1 : 1); // Torch's -Y flame axis matches gameplay; other sprites retain +Y.
   SharedAttackPose.anchorScaleAtPoint(toolHolder, editorToolGrip(), toolHolder.scale.x); // Weapon scale pivots on the main-hand grip so the hand never slides.
+  applyWeaponGroundPreview();
 }
 
 // ── Unified gameplay Action registry + practical effects ─────────────────
@@ -3045,6 +3116,7 @@ function animate() {
     refreshPreviewDebug(); // Existing mobile debug panel shows the reconstructed physical state.
   } else updatePreviewFlail(previewT, playing ? dt : 0);
   lastFlailPreviewT = previewT;
+  updateGroundPreviewStatus(now);
   renderer.render(scene, camera); // Head-anchored and hand-anchored tools now share the normal preview draw.
 }
 animate();

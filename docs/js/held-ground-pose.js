@@ -6,6 +6,11 @@
   const STEP = Math.PI / 36; // Bounded five-degree rotation search with refinement.
   const debug = { reason: 'not-run', angleDeg: 0, shortening: 0, floorY: null, originalMinY: null, finalMinY: null, rotations: 0, compressions: 0, freeHandLifts: 0, ordinaryParts: 0, fallbacks: 0 };
   let active = null, proof = null, floorFrame = null, floor = null, scratch = null;
+  let previewThree=null,previewEnabled=false; // Standalone editor uses its ESM Three namespace and the visible Y=0 grid.
+  function configurePreview(three){previewThree=three;previewEnabled=!!three;}
+  function setPreviewEnabled(value){previewEnabled=!!value;if(!previewEnabled)skip('raw-preview');}
+  function three(){return previewThree||global.THREE;}
+  function skip(reason){clear();Object.assign(debug,{reason,fitted:false,angleDeg:0,shortening:0,originalMinY:null,finalMinY:null});}
   const actorFits=new WeakMap(); // Actor rig -> bounded per-item immutable physical fits, surviving equip/unequip and mesh replacement.
   const rootFits=new WeakMap(); // Flail owner resolves the exact same fit without another rig traversal.
   const NO_SEGMENTS=Object.freeze([]);
@@ -57,9 +62,10 @@
     return fit.ropeScale??1;
   }
   const frameId = () => global.RuntimeFrameScheduler?.frameId?.();
-  function enabled() { return global.XrayHierarchy?.get?.('ground.heldPose') === 'rotation'; }
+  function enabled() { return previewThree?previewEnabled:global.XrayHierarchy?.get?.('ground.heldPose') === 'rotation'; }
   function groundY() {
     if (!enabled()) return null;
+    if(previewThree){debug.floorY=0;return 0;}
     const id = frameId();
     if (id == null || floorFrame !== id) {
       floorFrame = id;
@@ -108,7 +114,7 @@
     return null;
   }
   function work() {
-    const T=global.THREE;
+    const T=three();
     if(!T)return null;
     return scratch ||= {
       holder: new T.Matrix4(), mesh: new T.Matrix4(), plane: new T.Matrix4(), matrix: new T.Matrix4(), reference: new T.Matrix4(),
@@ -206,7 +212,7 @@
   }
   function setCompression(plane,source,box,rows,segments,gripZ,amount,holder,rootScale) {
     if(!amount) { releaseCompression(); return; }
-    const T=global.THREE;
+    const T=three();
     if(active?.plane===plane&&active.source===source&&active.amount===amount&&active.gripZ===gripZ&&active.segments===segments){
       active.holder=holder;active.rootScale=rootScale;plane.geometry=active.geometry;return;
     }
@@ -351,7 +357,7 @@
     const image=plane.material?.map?.image;
     const measuredSource=!!image&&(image.naturalWidth||image.width)>0&&(image.naturalHeight||image.height)>0
       &&(profile?.modular?!!image.modularFrame:(profile?.a>=-box.max.y-1e-4&&profile?.b<=-box.min.y+1e-4));
-    const pending=!!fit&&context.allowFit&&!!context.lightReference&&measuredSource&&global.PlayerJump?.heldPoseGrounded?.()===true;
+    const pending=!!fit&&context.allowFit&&!!context.lightReference&&measuredSource&&(context.preview===true||global.PlayerJump?.heldPoseGrounded?.()===true);
     const gripZ=fit?.anchorZ??context.authoredGripZ??gripZFor(primary,mesh);
     const segments=profile&&(pending||Number.isFinite(fit?.amount))?profile.segments:NO_SEGMENTS;
     const rows=stripRows(box,segments,s.rows);
@@ -369,7 +375,7 @@
     const canFit=pending&&s.autoContact;
     debug.contactSource=s.autoContact?'auto-alpha':outline?.length?'authored-fallback':'quad-fallback';
     debug.contactVertices=s.contact.length;
-    if(canFit)s.reference.multiplyMatrices(parent.matrixWorld,context.lightReference).multiply(mesh.matrix).multiply(plane.matrix);
+    if(canFit)s.reference.multiplyMatrices(parent.matrixWorld,context.lightReference).multiply(mesh.matrix).multiply(context.lightPlaneReference||plane.matrix);
     debug.fitReference='lightWeapon';
     const target=y+PAD;
     const original=samplePoints(s,s.contact,segments,gripZ,0);
@@ -429,7 +435,7 @@
       // Only construct world XYZ samples when actual rotation is required.
       let count=0,lowest=null;
       for(const vertex of s.contact){
-        const p=s.samples[count] ||= new global.THREE.Vector3();
+        const p=s.samples[count] ||= new (three().Vector3)();
         p.set(vertex.x,-contractedZ(vertex.z,gripZ,segments,amount,vertex.columnX),0).applyMatrix4(s.matrix);
         count++;
         if(!lowest||p.y<lowest.y)lowest=p;
@@ -444,7 +450,7 @@
         s.points.push({a:s.rel.y,b:s.cross.y});
       }
       angle=chooseAngle(s.points,s.pivot.y,target,a=>reachable(a,amount));
-      if(angle===null)return fail('no-reachable-clear-pose',true);
+      if(angle===null){debug.finalMinY=min;return fail('no-reachable-clear-pose',true);}
       min=minimumY(s.points,s.pivot.y,angle);
     }
     if(angle) {
@@ -497,5 +503,5 @@
     if(!clear(mesh.matrixWorld)||(extra&&!clear(extra)))return false;
     debug.ordinaryParts++;return true;
   }
-  global.HeldGroundPose=Object.freeze({enabled,groundY,constrainWeapon,constrainFreeHand,ordinaryDepthFor,adjustGrip,adjustHaftPoint,ropeClearance,fittedRopeScale,referenceDrop,lightRopeScale,ropeFitCandidate,needsFit,originalGeometryFor,prepareGeometryUpdate,fixedValue,clear,contractedZ,contactVertices,tracePixels,autoContact,minimumY,chooseAngle,snapshot:()=>({...debug})});
+  global.HeldGroundPose=Object.freeze({configurePreview,setPreviewEnabled,skip,enabled,groundY,constrainWeapon,constrainFreeHand,ordinaryDepthFor,adjustGrip,adjustHaftPoint,ropeClearance,fittedRopeScale,referenceDrop,lightRopeScale,ropeFitCandidate,needsFit,originalGeometryFor,prepareGeometryUpdate,fixedValue,clear,contractedZ,contactVertices,tracePixels,autoContact,minimumY,chooseAngle,snapshot:()=>({...debug})});
 })(typeof window!=='undefined'?window:globalThis);

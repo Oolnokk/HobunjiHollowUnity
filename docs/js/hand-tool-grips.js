@@ -1609,6 +1609,7 @@
         if(raw?.contactOutline?.length&&!profile.contactOutline.length)throw new Error('Contact outline needs at least three non-collinear points.');
         mutate(()=>{const entry=ensureTool(key);if(profile)entry.lengthProfile=profile;else delete entry.lengthProfile;});
         syncEditorSpanUi();
+        global.HobunjiAttackEditorToolContext?.focusNeutral?.(); // Applying geometry shows the fitted Neutral immediately instead of an arbitrary scrubbed attack.
       },
     }); // Editor-only canvas; gameplay never loads or allocates its authoring state.
 

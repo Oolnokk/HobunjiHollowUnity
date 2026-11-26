@@ -64,3 +64,14 @@ close(candidate(0,2,1,1,.3,.5),1);
 close(candidate(0,2,1,.5,.3,.5),.5);
 close(candidate(0,2,1,.1,.3,.5),.3);
 close(candidate(1,Math.sqrt(3),1,.25,.1,.5),.5);
+
+const preview=context.window.HeldGroundPose;
+assert.equal(preview.enabled(),false);
+preview.configurePreview({});
+assert.equal(preview.enabled(),true);
+assert.equal(preview.groundY(),0,'preview floor equals visible grid');
+preview.setPreviewEnabled(false);
+assert.equal(preview.enabled(),false);
+assert.equal(preview.snapshot().reason,'raw-preview');
+preview.setPreviewEnabled(true);
+assert.equal(preview.groundY(),0);

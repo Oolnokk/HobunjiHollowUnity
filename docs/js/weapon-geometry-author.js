@@ -17,6 +17,11 @@
     const help=document.createElement('div');help.className='help';
     help.textContent='Drag length A/B, drag shortening bands, or trace the complete contact perimeter. Draw a rectangle around only the shortenable material. Bands and rope are fitted once in the grounded Light weapon stance; automatic alpha contact is used at runtime; jumps change rotation, never fitted length. Cyan = length, amber = shortening, pink = contact.';
     wrap.appendChild(help);
+    const previewLabel=document.createElement('label');previewLabel.style.cssText='display:flex;gap:6px;align-items:center;margin:6px 0';
+    const previewToggle=document.createElement('input');previewToggle.type='checkbox';previewToggle.checked=true;previewToggle.id='weaponGeometryPreviewEnabled';
+    previewToggle.addEventListener('change',()=>global.HeldGroundPose?.setPreviewEnabled?.(previewToggle.checked));
+    previewLabel.append(previewToggle,document.createTextNode('Preview fitted weapon and ground clearance'));wrap.appendChild(previewLabel);
+    const fitStatus=document.createElement('div');fitStatus.id='weaponGeometryFitStatus';fitStatus.className='help';fitStatus.setAttribute('aria-live','polite');fitStatus.textContent='Waiting for preview solver…';wrap.appendChild(fitStatus);
     const toolbar=document.createElement('div');toolbar.style.cssText='display:flex;gap:5px;flex-wrap:wrap;margin:6px 0';wrap.appendChild(toolbar);
     const button=(parent,label,fn)=>{const b=document.createElement('button');b.type='button';b.textContent=label;b.addEventListener('click',fn);parent.appendChild(b);return b;};
     const mode=document.createElement('select');mode.setAttribute('aria-label','Draw geometry mode');
@@ -48,12 +53,13 @@
       const root=api.source(),plane=root?.userData?.toolPlane;
       const material=Array.isArray(plane?.material)?plane.material[0]:plane?.material;
       const image=material?.map?.image;
-      if(!plane?.geometry||!image||!(image.naturalWidth||image.width)||!(image.naturalHeight||image.height))return null;
-      if(source?.plane===plane&&source.image===image&&source.geometry===plane.geometry)return source;
-      if(!plane.geometry.boundingBox)plane.geometry.computeBoundingBox?.();
-      const b=plane.geometry.boundingBox;
+      const geometry=global.HeldGroundPose?.originalGeometryFor?.(plane?.geometry)||plane?.geometry;
+      if(!geometry||!image||!(image.naturalWidth||image.width)||!(image.naturalHeight||image.height))return null;
+      if(source?.plane===plane&&source.image===image&&source.geometry===geometry)return source;
+      if(!geometry.boundingBox)geometry.computeBoundingBox?.();
+      const b=geometry.boundingBox;
       if(!b||!(b.max.x>b.min.x)||!(b.max.y>b.min.y))return null;
-      return {plane,image,geometry:plane.geometry,box:{minX:b.min.x,maxX:b.max.x,minZ:-b.max.y,maxZ:-b.min.y},unsupported:root.children?.length!==1||plane.children?.length>0||root.userData?.toolEndFlipBase===true};
+      return {plane,image,geometry,box:{minX:b.min.x,maxX:b.max.x,minZ:-b.max.y,maxZ:-b.min.y},unsupported:root.children?.length!==1||plane.children?.length>0||root.userData?.toolEndFlipBase===true};
     }
     function defaultDraft(){const b=source.box;return {a:round(b.minZ),b:round(b.maxZ),heightFraction:0,minSegmentScale:.65,segments:[],contactOutline:[]};}
     function syncNumbers(){if(draft){fraction.value=Math.round(draft.heightFraction*10000)/100;minimum.value=Math.round(draft.minSegmentScale*10000)/100;ropeMin.value=(draft.ropeMinScale||0)*100;}}
@@ -174,7 +180,7 @@
     button(actions,'Clear flail head edge',()=>{if(draft){saveUndo();draft.headContact=null;changed();}});
     button(actions,'Clear bands',()=>{if(draft){saveUndo();draft.segments=[];changed();}});
     button(actions,'Revert draft',()=>setDraft(committed));
-    button(actions,'Apply geometry',()=>{try{if(!draft||!source||readSource()!==source)throw Error('Wait for the selected sprite to load.');if(draft.contactOutline.length>0&&draft.contactOutline.length<3)throw Error('Trace at least three points or clear the outline.');api.apply(copy(draft),key);dirty=false;draw();message('Applied to grip configuration. Export/save it with the existing grip controls.');}catch(e){message(e.message);}});
+    button(actions,'Apply geometry',()=>{try{if(!draft||!source||readSource()!==source)throw Error('Wait for the selected sprite to load.');if(draft.contactOutline.length>0&&draft.contactOutline.length<3)throw Error('Trace at least three points or clear the outline.');api.apply(copy(draft),key);dirty=false;draw();message('Applied to grip configuration and live preview. Export/save it with the existing grip controls.');}catch(e){message(e.message);}});
     button(actions,'Restore legacy',()=>{try{api.apply(null,key);setDraft(null);message('Legacy weapon geometry restored.');}catch(e){message(e.message);}});
     return {refresh};
   }

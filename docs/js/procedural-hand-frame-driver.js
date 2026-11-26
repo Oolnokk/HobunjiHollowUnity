@@ -1056,13 +1056,14 @@
 
   global.ProceduralHandFrameDriver = {
     groundPoseContext(holder, itemKey) {
-      if(inAttackEditor()||!gameDeps?.playerMesh||holder!==gameDeps.toolHolder)return null;
+      const preview=inAttackEditor();
+      if(preview?holder!==global.HobunjiAttackEditorToolContext?.toolHolder:(!gameDeps?.playerMesh||holder!==gameDeps.toolHolder))return null;
       for(const record of managed) {
-        if(record.rig?.parent!==gameDeps.playerMesh||record.avatarRoot?.userData?.proceduralHandToolHolder||currentToolHolder(record)!==holder)continue;
-        const key=currentToolKey(record);
+        if((!preview&&record.rig?.parent!==gameDeps.playerMesh)||record.avatarRoot?.userData?.proceduralHandToolHolder||currentToolHolder(record)!==holder)continue;
+        const key=preview?toolGrips.toolKeyFor(itemKey):currentToolKey(record);
         if(!key||toolGrips.isDualWieldWeapon?.(key)||currentGripContext(record)!=='melee')return null;
         const identity={speciesId:record.speciesId,gender:record.gender,rigScaleY:Number(record.avatarRoot?.userData?.proceduralHandRigScaleY)||null};
-        return {rig:record.rig,itemKey:itemKey||key,
+        return {rig:record.rig,itemKey:itemKey||key,preview,
           fitIdentity:[identity.speciesId,identity.gender,identity.rigScaleY||'',toolGrips.actualCharacterHeight?.(identity.speciesId,identity.gender,identity.rigScaleY)||''].join(':'),
           authoredGripZ:toolGrips.authoredPrimaryGripForTool(key,'melee')?.position?.z,
           primary:toolGrips.primaryGripForTool(key,'melee',identity),
