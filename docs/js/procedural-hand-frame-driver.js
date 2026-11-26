@@ -430,13 +430,16 @@
       toolHolder.updateWorldMatrix?.(true, true);
       quaternion = hierarchyWorldQuaternion(record, toolHolder, new Quaternion());
     }
-    quaternion.multiply(visualBasis.quaternion);
+    const groundPose=global.HeldGroundPose; // Exact final sprite basis published by the clearance solver for this holder only.
+    quaternion.multiply(groundPose?.gripBasisFor?.(toolHolder)||visualBasis.quaternion);
     if (gripFrame) {
       const rawPoint = gripFrame.position || {};
-      const p = global.HeldGroundPose?.adjustGrip?.(toolHolder, rawPoint) || rawPoint; // The same longitudinal map as the visible weapon.
-      const localOffset = new Vector3(Number(p.x) || 0, Number(p.y) || 0, Number(p.z) || 0)
-        .applyQuaternion(visualBasis.quaternion);
-      if (visualBasis.mirrorX) localOffset.x = -localOffset.x; // Backhand reflects the entire weapon child after its sweep-plane twist, so hands must follow that same final handle location.
+      const localOffset = new Vector3();
+      if(!groundPose?.resolveGripLocal?.(toolHolder,rawPoint,localOffset)){
+        const p = groundPose?.adjustGrip?.(toolHolder, rawPoint) || rawPoint; // Legacy unsupported geometry retains the longitudinal fit.
+        localOffset.set(Number(p.x) || 0, Number(p.y) || 0, Number(p.z) || 0).applyQuaternion(visualBasis.quaternion);
+        if (visualBasis.mirrorX) localOffset.x = -localOffset.x; // Backhand reflects the entire weapon child after its sweep-plane twist.
+      }
       if (bakedWorldMatrix) localOffset.applyMatrix4(bakedWorldMatrix);
       else toolHolder.localToWorld(localOffset);
       position = localOffset;

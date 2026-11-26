@@ -141,6 +141,29 @@ if(THREE){
   assert.equal(solver.snapshot().contactHullBuilds,result.contactHullBuilds+1,'replacing weapon artwork rebuilds the hull');
   solver.setPreviewEnabled(false);
   assert.equal(plane.geometry,source,'raw mode restores original geometry');
+  // The real grip is off-origin. Compare against the actual sprite matrix,
+  // not the solver's own pivot reconstruction (including a reflected root).
+  solver.setPreviewEnabled(true);
+  for(const sign of [1,-1]){
+    holder.position.set(.1,.35,0);holder.rotation.set(Math.PI/2,0,0);
+    weapon.position.set(.12,-.04,.17);weapon.scale.set(sign*1.2,1.2,1.2);
+    plane.rotation.z=-Math.PI/6;
+    const raw=new THREE.Vector3(.06,-.04,-.2);
+    const grip=raw.clone().multiplyScalar(1.2).add(weapon.position);
+    const point=new THREE.Vector3(raw.x,-raw.z,raw.y);
+    parent.updateMatrixWorld(true);
+    const before=point.clone().applyMatrix4(plane.matrixWorld);
+    const offOrigin={...ctx,itemKey:'offset-pivot',profile:null,allowFit:false,primary:{position:grip},basis:new THREE.Quaternion()};
+    assert.equal(solver.constrainWeapon(holder,weapon,offOrigin),true,'offset grip requires a correction');
+    parent.updateMatrixWorld(true);
+    const after=point.clone().applyMatrix4(plane.matrixWorld);
+    close(after.distanceTo(before),0);
+    close(solver.resolveGripLocal(holder,grip,new THREE.Vector3()).applyMatrix4(holder.matrixWorld).distanceTo(before),0);
+    close(solver.snapshot().gripPivotDrift,0);
+    assert.ok(solver.snapshot().finalMinY>=.035-1e-5);
+  }
+  weapon.position.set(0,0,0);weapon.scale.set(1,1,1);plane.rotation.z=0;
+  solver.setPreviewEnabled(false);
   // Two visible copies have distinct raw poses. Correct around each actual
   // grip, including the offhand offset, rather than either mesh's origin.
   solver.setPreviewEnabled(true);
@@ -170,6 +193,7 @@ if(THREE){
   assert.ok(d.right.finalMinY>=.035-1e-5&&d.left.finalMinY>=.035-1e-5,'both weapons clear floor');
   close(localRight.clone().applyMatrix4(mainMesh.matrixWorld).distanceTo(beforeRight),0);
   close(localLeft.clone().applyMatrix4(offMesh.matrixWorld).distanceTo(beforeLeft),0);
+  close(d.right.gripPivotDrift,0);close(d.left.gripPivotDrift,0);
   assert.ok(holder.matrix.equals(holderBefore),'dual solve does not modify authored holder');
   assert.equal(mainMesh.geometry,plane.geometry);
   assert.equal(offMesh.geometry,plane.geometry);

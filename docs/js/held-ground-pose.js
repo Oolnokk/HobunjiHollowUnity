@@ -4,8 +4,9 @@
   'use strict';
   const PAD = 0.035; // Clearance above the physical standing surface, in world units.
   const STEP = Math.PI / 36; // Bounded five-degree rotation search with refinement.
-  const debug = { reason: 'not-run', angleDeg: 0, shortening: 0, floorY: null, originalMinY: null, finalMinY: null, rotations: 0, compressions: 0, contactHullBuilds: 0, contactHullVertices: 0, freeHandLifts: 0, fallbacks: 0 };
+  const debug = { reason: 'not-run', angleDeg: 0, shortening: 0, floorY: null, originalMinY: null, finalMinY: null, rotations: 0, compressions: 0, contactHullBuilds: 0, contactHullVertices: 0, gripPivotDrift: null, freeHandLifts: 0, fallbacks: 0 };
   let active = null, floorFrame = null, floor = null, scratch = null;
+  let gripHolder=null; // Owner of the exact current sprite-space grip transform, shared with hand sockets.
   let dualPrepared=null; // The canonical fit is prepared before the independently posed visible copies.
   const borrowedCopies=new Set(); // At most two copies borrow the canonical private fitted buffer; detach before disposal.
   let previewRoot=null; // Exact currently corrected editor root; raw gizmo mode must also bypass the suspension solve.
@@ -127,7 +128,7 @@
       axis: new T.Vector3(), direction: new T.Vector3(), cross: new T.Vector3(),
       point: new T.Vector3(), rel: new T.Vector3(), base: new T.Vector3(), candidate: new T.Vector3(),
       pos: new T.Vector3(), scale: new T.Vector3(), parentQ: new T.Quaternion(), q: new T.Quaternion(),
-      localQ: new T.Quaternion(), oldQ: new T.Quaternion(),
+      localQ: new T.Quaternion(), oldQ: new T.Quaternion(), gripBasis: new T.Quaternion(),
       samples: [], points: [], rows: [], contact: [], contactKey: null, contactSource: null, contactSegments: null,
     };
   }
@@ -148,7 +149,7 @@
     if(active.plane.geometry===active.geometry)active.plane.geometry=active.source;
     active.amount=0; // Keep the private strip buffer for the next near-ground pose.
   }
-  function clear() { previewRoot=null;dualPrepared=null;debug.dual=null;restoreGeometry(); }
+  function clear() { previewRoot=null;gripHolder=null;dualPrepared=null;debug.dual=null;restoreGeometry(); }
   function fail(reason,preserveFit=false) { debug.reason=reason; debug.fallbacks++; if(!preserveFit)restoreGeometry();return false; }
   // The canonical PNG is a flat XY quad; its -90 degree X basis makes
   // image Y correspond to -item Z. Split exactly at the authored endpoints,
@@ -280,10 +281,26 @@
     const z=(point.z-active.rootOffset)/active.rootScale;
     return {x:point.x,y:point.y,z:active.rootOffset+contractedZ(z,active.gripZ,active.segments,active.amount)*active.rootScale};
   }
+  // Grip data is calibrated in the neutral item frame, not at the holder
+  // origin. Undo the item's placement, deform/rotate in its own space, then
+  // apply the visible root scale (including a reflected X) and placement.
+  function localGripPoint(point,basis,mesh,gripZ,segments,amount,out) {
+    const position=mesh.position,scale=mesh.scale;
+    return out.set((point.x-position.x)/Math.abs(scale.x),
+      (point.y-position.y)/Math.abs(scale.y),
+      contractedZ(gripZFor(point,mesh),gripZ,segments,amount))
+      .applyQuaternion(basis).multiply(scale).add(position);
+  }
   function worldGrip(s,point,basis,mesh,gripZ,segments,amount,out) {
-    const z=gripZFor(point,mesh);
-    return out.set(point.x,point.y,mesh.position.z+contractedZ(z,gripZ,segments,amount)*mesh.scale.z)
-      .applyQuaternion(basis).applyMatrix4(s.holder);
+    return localGripPoint(point,basis,mesh,gripZ,segments,amount,out).applyMatrix4(s.holder);
+  }
+  function gripBasisFor(holder) {
+    return holder===gripHolder?scratch?.gripBasis:null;
+  }
+  function resolveGripLocal(holder,point,out) {
+    const s=scratch;
+    if(!s||!gripHolder||holder!==gripHolder)return null;
+    return localGripPoint(point,s.gripBasis,s.gripMesh,s.gripAnchor,s.gripSegments,s.gripAmount,out);
   }
   // Split every outline edge at the shortening boundaries. The deformation
   // is piecewise affine, so its extrema occur at these vertices.
@@ -344,7 +361,7 @@
     return false;
   }
   function constrainWeapon(holder,mesh,context) {
-    dualPrepared=null;
+    dualPrepared=null;gripHolder=null;debug.gripPivotDrift=null;
     if(!enabled()){clear();return false;}
     previewRoot=null;debug.dual=null;debug.angleDeg=0;debug.shortening=0;debug.originalMinY=null;debug.finalMinY=null;debug.fitted=false;debug.assemblyDetail=null;debug.lightOriginalMinY=null;debug.lightFittedMinY=null;
     const y=groundY(),s=work(),plane=mesh?.userData?.toolPlane;
@@ -383,7 +400,7 @@
     if(!Number.isFinite(y))return fail('no-ground-sample',true);
     if(Math.abs(mesh.quaternion.x)+Math.abs(mesh.quaternion.y)+Math.abs(mesh.quaternion.z)>1e-6
       ||Math.abs(plane.rotation.x+Math.PI/2)>1e-4||Math.abs(plane.rotation.y)>1e-4
-      ||plane.position.lengthSq()>1e-8||!(plane.scale.x>0&&plane.scale.y>0&&plane.scale.z>0))
+      ||plane.position.lengthSq()>1e-8||!(plane.scale.x>0&&plane.scale.y>0&&plane.scale.z>0)||!mesh.scale.x||!mesh.scale.y)
       return fail('unsupported-rotation-basis',true);
     const parent=holder.parent;
     parent.matrixWorld.decompose(s.pos,s.parentQ,s.scale);
@@ -394,7 +411,9 @@
     s.matrix.multiplyMatrices(s.mesh,plane.matrix);
     const primary=context.primary?.position;
     if(!primary)return fail('no-primary-grip',true);
-    const basis=context.basis;
+    // Read the actual rendered sprite basis after the stance owner's twist.
+    // A separately reconstructed/rounded animation basis is not authoritative.
+    const basis=s.gripBasis.set(Math.SQRT1_2,0,0,Math.SQRT1_2).premultiply(plane.quaternion);
     const profile=context.profile;
     // Use a single source-space anchor for the whole lifetime of the fit.
     // Animated grip ranges and sweep twists may change the hand, never the
@@ -481,12 +500,13 @@
       debug.compressions++;
     } else releaseCompression();
     debug.shortening=amount;debug.fitted=Number.isFinite(fit?.amount);
+    gripHolder=holder; s.gripMesh=mesh;s.gripAnchor=gripZ;s.gripSegments=segments;s.gripAmount=amount;
     const contact=fittedContact(s,segments,gripZ,amount); // Both dual copies share the baked sprite coordinates.
     debug.contactHullVertices=contact.hull.length;
     if(context.dual){
       // The hidden source owns length, not either hand's live orientation.
       // Copies are posed later by the dual-wield owner, then individually corrected.
-      dualPrepared={holder,mesh,plane,context,segments,gripZ,amount,contact,target,floor:y,flexible};
+      dualPrepared={holder,mesh,plane,context,basis,segments,gripZ,amount,contact,target,floor:y,flexible};
       debug.reason='dual-ready';debug.finalMinY=null;return false;
     }
     let min=amount?projectedContactY(contact.hull,s.matrix):original;
@@ -520,6 +540,8 @@
       // Apply a world rotation around the actual primary grip. Convert the
       // quaternion back to the holder's parent; preserve the raw grip exactly.
       rotateAroundGrip(holder,parent.matrixWorld,s.holder,s.pivot,s.axis,angle,s);
+      s.holder.multiplyMatrices(parent.matrixWorld,holder.matrix);
+      debug.gripPivotDrift=worldGrip(s,primary,basis,mesh,gripZ,segments,amount,s.point).distanceTo(s.pivot);
       debug.rotations++;
     }
     debug.angleDeg=angle*180/Math.PI;debug.shortening=amount;debug.finalMinY=min;
@@ -562,7 +584,7 @@
     const live=global.ProceduralHandFrameDriver?.groundPoseContext?.(d.holder,context.itemKey)||context;
     s.holder.copy(d.holder.matrixWorld);
     s.inverse.copy(d.plane.matrixWorld).invert();
-    const localGrip=(point,out)=>worldGrip(s,point,live.basis||context.basis,d.mesh,d.gripZ,d.segments,d.amount,out).applyMatrix4(s.inverse);
+    const localGrip=(point,out)=>worldGrip(s,point,d.basis,d.mesh,d.gripZ,d.segments,d.amount,out).applyMatrix4(s.inverse);
     const results=debug.dual={};
     for(const [side,root,copy,grip] of [
       ['right',current.mainRoot,main,live.primary],
@@ -570,9 +592,10 @@
     ]){
       if(!grip?.position){results[side]={reason:'no-grip'};continue;}
       let min=projectedContactY(d.contact.hull,copy.matrixWorld),angle=0;
-      const original=min;
+      const original=min;let gripPivotDrift=null;
       if(min<d.target){
-        localGrip(grip.position,s.pivot).applyMatrix4(copy.matrixWorld);
+        localGrip(grip.position,s.grip);
+        s.pivot.copy(s.grip).applyMatrix4(copy.matrixWorld);
         let count=0,lowest=null;
         for(const v of d.contact.points){
           const p=s.samples[count]||=new (three().Vector3)();
@@ -590,8 +613,9 @@
         }
         root.updateMatrixWorld(true);
         min=projectedContactY(d.contact.hull,copy.matrixWorld);
+        gripPivotDrift=s.point.copy(s.grip).applyMatrix4(copy.matrixWorld).distanceTo(s.pivot);
       }
-      results[side]={reason:angle?'rotation':'already-clear',angleDeg:angle*180/Math.PI,originalMinY:original,finalMinY:min};
+      results[side]={reason:angle?'rotation':'already-clear',angleDeg:angle*180/Math.PI,originalMinY:original,finalMinY:min,gripPivotDrift};
     }
     debug.reason='dual-clearance';debug.finalMinY=Math.min(results.right?.finalMinY??Infinity,results.left?.finalMinY??Infinity);
   }
@@ -611,5 +635,5 @@
     if(s.point.distanceTo(shoulder)>reach+0.002)return false;
     socket.position.copy(s.candidate);debug.freeHandLifts++;return true;
   }
-  global.HeldGroundPose=Object.freeze({configurePreview,setPreviewEnabled,previewAppliesTo,suspendedReferenceY,hasDrawingHaftChildren,skip,enabled,groundY,constrainWeapon,constrainDualCopies,releaseDualCopy,rotateAroundGrip,constrainFreeHand,adjustGrip,adjustHaftPoint,ropeClearance,fittedRopeScale,referenceDrop,lightRopeScale,ropeFitCandidate,needsFit,originalGeometryFor,prepareGeometryUpdate,fixedValue,clear,contractedZ,contactVertices,tracePixels,autoContact,bakeContact,projectedContactY,minimumY,chooseAngle,snapshot:()=>({...debug})});
+  global.HeldGroundPose=Object.freeze({configurePreview,setPreviewEnabled,previewAppliesTo,suspendedReferenceY,hasDrawingHaftChildren,skip,enabled,groundY,constrainWeapon,constrainDualCopies,releaseDualCopy,rotateAroundGrip,constrainFreeHand,adjustGrip,gripBasisFor,resolveGripLocal,adjustHaftPoint,ropeClearance,fittedRopeScale,referenceDrop,lightRopeScale,ropeFitCandidate,needsFit,originalGeometryFor,prepareGeometryUpdate,fixedValue,clear,contractedZ,contactVertices,tracePixels,autoContact,bakeContact,projectedContactY,minimumY,chooseAngle,snapshot:()=>({...debug})});
 })(typeof window!=='undefined'?window:globalThis);
