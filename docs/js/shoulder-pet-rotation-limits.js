@@ -110,6 +110,7 @@
       if (seam>0 && seam<1 && !us.some(u=>Math.abs(u-seam)<1e-5)) us.push(seam);
       us.sort((a,b)=>a-b);
       const samples=[], tris=[], pointIds=new Map(), sourceIds=new Map(), sourceIndices=[];
+      let paintedCells=0; // An empty painted mask is valid, unlike an unreadable or unsupported geometry.
       function compact(i) {
         if (!sourceIds.has(i)) { sourceIds.set(i,sourceIndices.length*3); sourceIndices.push(i); }
         return sourceIds.get(i);
@@ -133,10 +134,11 @@
       }
       for (let y=0;y<vs.length-1;y++) for (let x=0;x<us.length-1;x++) {
         if (!maps.some((map,i)=>opaqueCell(map,masks[i],us[x],vs[y],us[x+1],vs[y+1]))) continue;
+        paintedCells++;
         const a=sample(x,y),b=sample(x+1,y),c=sample(x,y+1),d=sample(x+1,y+1);
         if (Math.min(a,b,c,d)>=0) tris.push([a,b,c],[b,d,c]);
       }
-      return { sourceIndices,samples,tris, sourcePoints:new Float64Array(sourceIndices.length*3),
+      return { sourceIndices,samples,tris, empty:paintedCells===0 && source.length>0, sourcePoints:new Float64Array(sourceIndices.length*3),
         points:new Float64Array(samples.length*3), world:new Float64Array(samples.length*3),
         boxes:new Float64Array(tris.length*6) };
     }

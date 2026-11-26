@@ -133,3 +133,23 @@ const restricted=solver.constrain(args);
 assert.ok(restricted.headYawDeg===0 || restricted.mode==='no-safe-rotation','passive constraint never selects a forbidden yaw');
 if(restricted.mode==='geometric-depth')assert.equal(pet.avatarRef.headRig.currentYawDeg,0);
 console.log('passive geometry candidates respect permitted direction');
+
+
+// A requested passive turn is evaluated from the old live pose without
+// mutating the bones. The attachment owns the single final write.
+args.passiveAwayLimit=()=>40;args.requestedPassiveYaw=24;
+args.quaternion=new Q();
+const beforeWrites=headWrites;
+const deferred=solver.constrain(args);
+assert.equal(deferred.requestedHeadYawDeg,24);
+assert.equal(headWrites,beforeWrites,'deferred solver never writes intermediate or chosen yaw');
+assert.ok(deferred.mode==='geometric-depth' || deferred.mode==='no-safe-rotation');
+// Transparent split overlay does not disable the base animal's constraint.
+const emptyOverlay=mesh(rectangle(.3,0));
+emptyOverlay.visible=true;emptyOverlay.userData={hobunjiShoulderSplitOverlay:true};
+group.children.push(emptyOverlay);
+const emptySolver=create({Matrix4:M,Quaternion:Q,Euler:E,Vector3:V},m=>m===emptyOverlay?{empty:true}:proxy);
+args.requestedPassiveYaw=0;args.quaternion=new Q();
+assert.equal(emptySolver.constrain(args).mode,'geometric-depth','empty overlay is skipped rather than invalidating solver');
+group.children.pop();
+console.log('deferred yaw and transparent overlay geometry passed');

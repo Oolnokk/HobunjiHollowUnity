@@ -510,3 +510,19 @@ for(const mirror of [false,true])for(const inward of [false,true])for(const side
 }
 flipped=false;delete pet.shoulderCuriosity;
 console.log('passive yaw: mirrored perch, both observation poses, both head sides and late clamp passed');
+
+
+// A detached cached portrait hierarchy can keep a parent; replacement should
+// be found only once and never fall back to the old skinned surface.
+const oldRoot=owner;
+let traversals=0;
+const replacement={...owner,userData:{...owner.userData},parent:null};
+const outer={traverse(fn){traversals++;fn(this);fn(replacement);}};
+replacement.parent=outer;
+const detached={};oldRoot.parent=detached;
+const recoverySampler=win.ShoulderPetAttachmentRuntime.createPerchSampler(THREE);
+assert.ok(recoverySampler(outer,pixel,out),'replacement portrait resolves');
+assert.ok(recoverySampler(outer,pixel,out),'replacement remains cached');
+assert.equal(traversals,1,'stale shared root does not cause repeated hierarchy scans');
+delete oldRoot.parent;
+console.log('detached portrait recovery is cached');

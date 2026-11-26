@@ -21,6 +21,7 @@
   function createPerchSampler(THREE) {
     const point = new THREE.Vector3(); // Scratch for one weighted bone contribution.
     let cached = null; // One fixed pixel per owner; rebuild on a mirror, rig or density change.
+    let recoveredRoot = null; // Reuse the replacement if the shared portrait resolver still remembers a detached avatar.
     function compile(mesh,u,v,pos,uv,indices,weights) {
       const geo=mesh.geometry,grid=geo.userData,rows=grid?.portraitGridRows;
       const sx=grid?.segmentsX,sy=grid?.segmentsY;
@@ -53,13 +54,16 @@
     function sample(owner,pixel,out) {
       if(!pixel || !Number.isFinite(Number(pixel.x)) || !Number.isFinite(Number(pixel.y)))return null;
       const api=window.PNGPlaneAvatar;
+      const belongs=root=>{for(let node=root;node;node=node.parent)if(node===owner)return true;return false;};
       let root=api?.resolveSkinnedPortraitRoot?.(owner);
-      // A cached descendant can still have a parent after its entire avatar
-      // hierarchy was detached. Never sample an old character after a rebuild.
-      if(root && root!==owner){
-        let node=root;while(node && node!==owner)node=node.parent;
-        if(!node){root=null;owner.traverse?.(n=>{if(!root && n.userData?.neckRig?.available && n.userData.neckRig.skinnedPlane?.skeleton && n.userData.sourceCanvas)root=n;});}
-      }
+      // A cached descendant can retain an immediate parent inside a detached
+      // avatar. Recover once, then verify ancestry without traversing again.
+      const stale=!!root && !belongs(root);
+      if(stale){
+        root=belongs(recoveredRoot)?recoveredRoot:null;
+        if(!root)owner.traverse?.(n=>{if(!root && n.userData?.neckRig?.available && n.userData.neckRig.skinnedPlane?.skeleton && n.userData.sourceCanvas)root=n;});
+        recoveredRoot=root;
+      }else recoveredRoot=null;
       const mesh=root?.userData?.neckRig?.skinnedPlane,geo=mesh?.geometry,skeleton=mesh?.skeleton;
       const canvas=root?.userData?.sourceCanvas,w=Number(canvas?.naturalWidth||canvas?.width),h=Number(canvas?.naturalHeight||canvas?.height);
       if(mesh && skeleton?.bones?.length && mesh.bindMatrix && w>0 && h>0 && point.applyMatrix4){
@@ -88,8 +92,10 @@
       }
       // Legacy/irregular portrait builders retain the shared authoritative resolver.
       // The frame API is a compatibility fallback for old standalone editor fixtures.
-      if(typeof api?.resolveSkinnedPixelWorldPosition==='function')return api.resolveSkinnedPixelWorldPosition(owner,pixel,out);
-      const frame=api?.resolveSkinnedPixelWorldFrame?.(owner,pixel);
+      if(stale && !root)return null; // Never fall back into the detached hierarchy.
+      const fallbackRoot=root || owner;
+      if(typeof api?.resolveSkinnedPixelWorldPosition==='function')return api.resolveSkinnedPixelWorldPosition(fallbackRoot,pixel,out);
+      const frame=api?.resolveSkinnedPixelWorldFrame?.(fallbackRoot,pixel);
       return frame?.position?out.copy(frame.position):null;
     }
     return sample;
@@ -335,8 +341,9 @@
       if(passive && useRenderedGrip){
         prepareAway(playerMesh,perchWorldPosition,rawGrip,renderedScale);
         passiveLimit=awayLimit(worldQuaternion);
-        passiveRequested=signedAwayYaw(Number(passive.currentYawDeg)||0,passiveLimit);
-        setPassiveYaw(pet.avatarRef,passiveRequested);
+        const rig=pet.avatarRef?.headRig?.rig;
+        const maxYaw=rig?Math.max(Math.abs(Number(rig.minDeg)||0),Math.abs(Number(rig.maxDeg)||0)):Infinity;
+        passiveRequested=signedAwayYaw(Math.min(Math.abs(Number(passive.currentYawDeg)||0),maxYaw),passiveLimit);
       }
       let geometryConstraint = null; // Live bone envelopes constrain the requested angles before composing the grip.
       if (rotationLimits && useRenderedGrip && typeof getOwnerPortraitMeshes === 'function') {
@@ -346,14 +353,17 @@
           scale: renderedScale, quaternion: worldQuaternion,
           ownerFrameYaw: 2*Math.atan2(ownerFrame.y,ownerFrame.w), perchSide: renderedPerchX,
           passiveAwayLimit: passive && useRenderedGrip ? awayLimitAtYaw : null, // Candidate headings may reverse the allowed side.
+          requestedPassiveYaw: passive && useRenderedGrip ? passiveRequested : null, // Evaluate mathematically; commit only the final pose.
         });
       }
       lastHeadPitch=lastPetSide=0;
       const headSideLean = useRenderedGrip ? applyHeadSideLean(worldQuaternion,perchWorldPosition,rawGrip,renderedScale) : 0; // One-sided broad-face lean, independent of the yaw collision solver.
       if(passive && useRenderedGrip){
         passiveLimit=awayLimit(worldQuaternion); // Includes the final collision-corrected heading and broad-face tilt.
-        const applied=Number(pet.avatarRef?.headRig?.currentYawDeg)||0;
-        setPassiveYaw(pet.avatarRef,clampAwayYaw(applied,passiveLimit));
+        const selected=geometryConstraint?.mode==='geometric-depth' && Number.isFinite(geometryConstraint.headYawDeg)
+          ? geometryConstraint.headYawDeg : passiveRequested;
+        setPassiveYaw(pet.avatarRef,clampAwayYaw(selected,passiveLimit)); // At most one simulation yaw write, including a clamped pose.
+        if(geometryConstraint)geometryConstraint.headYawDeg=Number(pet.avatarRef?.headRig?.currentYawDeg)||0;
       }
       awayReady=false;awayPerch=awayGrip=awayScale=null;
       const gripWorldOffset = new THREE.Vector3(

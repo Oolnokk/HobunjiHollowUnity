@@ -140,7 +140,9 @@
 
     function prepare(mesh,e) {
       const p=proxyFor(mesh);
+      if(p?.empty){e.empty=true;return true;} // Transparent split layers contribute no collision geometry.
       if(!p?.tris?.length || !p.sourceIndices?.length)return false;
+      e.empty=false;
       const pos=e.position,skinned=!!mesh.isSkinnedMesh;
       const skeleton=mesh.skeleton,indices=e.indicesAttr,weights=e.weightsAttr;
       if(!pos?.array || (skinned && (!skeleton?.bones?.length || !indices?.array || !weights?.array
@@ -185,7 +187,7 @@
         e.retries=0;const started=clock();e.ready=prepare(mesh,e);d.buildMs+=clock()-started;d.preparations++;
       }
       if(!e.ready)return null;
-      if(e.skinned && e.weightVersion!==weights.version) {
+      if(!e.empty && e.skinned && e.weightVersion!==weights.version) {
         refreshWeights(e);d.weightRefreshes++; // Only cached source indices; painted pitch can change skin weights without changing the topology.
       }
       return e;
@@ -278,7 +280,9 @@
       const started=clock(),d=diagnostic;
       const {pet,perch,grip,scale,quaternion}=args,avatar=pet?.avatarRef,group=avatar?.group;
       const requested=Math.atan2(2*(quaternion.w*quaternion.y+quaternion.x*quaternion.z),1-2*(quaternion.y**2+quaternion.z**2));
-      const rig=avatar?.headRig,head=Number(rig?.currentYawDeg)||0;
+      const rig=avatar?.headRig,currentHead=Number(rig?.currentYawDeg)||0;
+      const deferred=Number.isFinite(args.requestedPassiveYaw); // Passive attachment owns the single final live yaw write.
+      const head=deferred?args.requestedPassiveYaw:currentHead;
       Object.assign(d,{mode:'geometry-unavailable',quality:'live-bone-envelopes',checks:0,buildChecks:0,buildMs:0,
         preparations:0,weightRefreshes:0,envelopePairs:0,headCandidates:0,ownerPatches:0,petPatches:0,cacheHit:true,
         requestedBodyYawDeg:requested/DEG,resolvedBodyYawDeg:requested/DEG,bodyOffsetDeg:0,requestedHeadYawDeg:head,headYawDeg:head});
@@ -294,7 +298,7 @@
       ownerEntries.length=petEntries.length=ownerDisks.length=petDisks.length=0;seenMeshes.clear();seenBones.clear();
       for(const mesh of args.ownerMeshes) {
         if(!mesh || seenMeshes.has(mesh))continue;
-        seenMeshes.add(mesh);const e=entryFor(mesh,d);if(!e)return finish();ownerEntries.push(e);sync(e);
+        seenMeshes.add(mesh);const e=entryFor(mesh,d);if(!e)return finish();if(!e.empty){ownerEntries.push(e);sync(e);}
       }
       if(!ownerEntries.length)return finish();
       group.updateWorldMatrix(true,false);
@@ -304,10 +308,11 @@
       seenMeshes.clear();
       const addPet=(mesh,back)=>{
         if(!mesh || seenMeshes.has(mesh))return true;
-        seenMeshes.add(mesh);canonicalize(mesh,back);const e=entryFor(mesh,d);if(!e)return false;petEntries.push(e);sync(e);return true;
+        seenMeshes.add(mesh);canonicalize(mesh,back);const e=entryFor(mesh,d);if(!e)return false;if(!e.empty){petEntries.push(e);sync(e);}return true;
       };
       if(!addPet(avatar.frontPlane,false) || !addPet(avatar.backPlane,true))return finish();
       for(const m of group.children)if(m.visible && m.userData?.hobunjiShoulderSplitOverlay && !addPet(m,m.userData.hobunjiPlaneFace==='back'))return finish();
+      if(!petEntries.length)return finish(); // No painted animal geometry yet; do not claim clearance.
       for(const e of ownerEntries)pose(e,ownerFrame,null,0,null,null,ownerDisks);
       ownerDisks.sort((a,b)=>a.y0-b.y0); // Vertical broad phase shared by every head alternative.
       d.ownerPatches=ownerDisks.length;
@@ -347,7 +352,7 @@
       if(bestBody===null){d.mode='no-safe-rotation';return finish();}
       d.mode='geometric-depth';d.bodyOffsetDeg=wrap(bestBody-requested)/DEG;d.resolvedBodyYawDeg=bestBody/DEG;d.headYawDeg=bestHead;
       if(bestDelta>EPS)quaternion.setFromAxisAngle(axis,bestBody);
-      if(canTurn && Math.abs(bestHead-head)>EPS)avatar.updateHeadYaw(bestHead,1000);
+      if(!deferred && canTurn && Math.abs(bestHead-currentHead)>EPS)avatar.updateHeadYaw(bestHead,1000);
       return finish();
     }
     return {constrain};
