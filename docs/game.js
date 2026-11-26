@@ -732,8 +732,8 @@
       let _timeKnockoutLock = null;
       window.TimeConsensus.init({
         tilePx: TILE,
-        onKnockoutStart: p => { if (p === player && !_timeKnockoutLock) _timeKnockoutLock = window.CharacterActionLocks?.acquire?.({ owner: 'time-consensus-knockout', reason: 'knocked out', participants: ['player'], channels: ['movement', 'tools', 'actions'] }) || null; },
-        onKnockoutEnd: p => { if (p === player) { _timeKnockoutLock?.release?.(); _timeKnockoutLock = null; } },
+        onKnockoutStart: p => { if (p === player) { player._downed = player._timeKnockedOut = true; } if (p === player && !_timeKnockoutLock) _timeKnockoutLock = window.CharacterActionLocks?.acquire?.({ owner: 'time-consensus-knockout', reason: 'knocked out', participants: ['player'], channels: ['movement', 'tools', 'actions'] }) || null; },
+        onKnockoutEnd: p => { if (p === player) { player._downed = player._timeKnockedOut = false; _timeKnockoutLock?.release?.(); _timeKnockoutLock = null; } }, // Knocked out = not a target (enemies skip _downed) and takes no damage (damagePlayer).
       });
 
       // Nearest live player to (x, y) — see updateHostiles' targetPlayer.
@@ -5850,6 +5850,7 @@
       }
 
       function damagePlayer(amount, fromX, fromY, knockbackPxS = PLAYER_KNOCKBACK_PX_S, dmgOpts) {
+        if (player._timeKnockedOut) return dmgOpts?.environmentalImpact === true ? { applied: 0, lethal: false } : undefined; // Passed out waiting for a revive (js/time-consensus.js): cannot be hurt or killed meanwhile.
         const environmentalImpact = dmgOpts?.environmentalImpact === true; // Collision Health damage cannot be countered or treated as a second incoming attack.
         if (window.PlayerDowned?.isDowned?.()) { // A downed player takes no Health damage, knockback or stagger; each hit only shortens the bleed-out timer (js/player-downed.js).
           if (!environmentalImpact) { window.Rootledoots?.noteDownedHit?.(dmgOpts?.attacker, amount); window.PlayerDowned.noteHitWhileDowned(); }
