@@ -338,6 +338,7 @@
   <script src="js/time-consensus.js?v=20261125mp2"></script> <!-- Co-op rules for who may advance time (sleep consensus, knock-out revive window, longest skip wins). Initialised by game.js. -->
   <script src="js/time-consensus-hud.js?v=20261125mp3"></script> <!-- Countdown panel for the co-op revive window and sleep votes (needs TimeConsensus + RuntimeFrameScheduler at load). -->
   <script src="js/remote-player-state.js?v=20261124mp1"></script> <!-- Health/downed/bleed-out/respawn for non-local players; registers as DamageAuthority's remote handler. -->
+  <script src="js/remote-player-avatar.js?v=20261126mp4"></script> <!-- On-screen body for non-local players (reuses the cutscene stand-in makeNpcWalker pipeline). Initialised by game.js. -->
   <script src="js/dev-dummy-player.js?v=20261124mp1"></script> <!-- Dev-only second-player stand-in (window.DevDummyPlayer). -->
   <script src="js/combat/resource-system.js?v=20261126hf2c7e3d"></script>
   <script src="js/sacred-ground.js?v=20261108h9e2416f"></script> <!-- Global sacred-ground provider registry for totems, temple and future blessings. -->

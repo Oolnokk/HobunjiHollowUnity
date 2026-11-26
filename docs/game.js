@@ -13188,6 +13188,13 @@
       // side of a large area paying full gait/wander cost for no reason.
       const NPC_LOD_NEAR_TILES = 24; // Nearer wake boundary so a walker doesn't flicker in and out of the cheap tier at one exact distance.
       // Opt-in coarse ticking of off-area walkers now lives in js/offarea-npc-tick.js (window.OffAreaNpcTick).
+      // On-screen bodies for non-local players (guests, the dev dummy) now live in js/remote-player-avatar.js: the same makeNpcWalker rig the cutscene player stand-in uses, mirrored from the player's simulation entity.
+      window.RemotePlayerAvatar.init({
+        TILE, makeNpcWalker, despawnWalker: despawnNpcVisitor, npcSurfaceY,
+        getCurrentArea: () => currentArea,
+        getActiveScene: () => window.GridTileAccessors.getActiveScene(),
+        getLocalProfile: () => window.EquipmentPanel?.applyGearClothingToPlayerData?.(_playerData || window.__hobunjiPlayerProfile) || null,
+      });
       window.OffAreaNpcTick.init({ getCurrentArea: () => currentArea, isDialogueOrCutsceneWalker: w => _dialogueWalker === w || npcDialogueStaging?.walker === w || cutscenePreviewActive });
       const NPC_OFF_AREA_LEGS_INTERVAL_S = 0.5; // Off-area walkers' procedural legs only settle their resting pose at this cadence.
       const NPC_LOD_FAR_TILES = 28;
