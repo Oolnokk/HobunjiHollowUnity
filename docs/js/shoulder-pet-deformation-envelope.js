@@ -318,6 +318,10 @@
         d.petPatches=petDisks.length;d.headCandidates++;
         const body=solveBodyYaw(ownerDisks,petDisks,requested,scratch);
         if(body===null)return false;
+        if(args.passiveAwayLimit && Math.abs(angle)>EPS){
+          const allowed=args.passiveAwayLimit(body);
+          if(angle*allowed<=0 || Math.abs(angle)>Math.abs(allowed)+EPS)return false;
+        }
         const delta=Math.abs(wrap(body-requested));
         if(delta<bestDelta-EPS || (Math.abs(delta-bestDelta)<=EPS && Math.abs(angle-head)<Math.abs(bestHead-head))) {
           bestDelta=delta;bestBody=body;bestHead=angle;
@@ -333,7 +337,7 @@
         candidates.length=0;
         if(Math.abs(head)>EPS)candidates.push(head*.75,head*.5,head*.25,0);
         for(const candidate of candidates)if(evaluate(candidate))break;
-        if(bestBody===null) {
+        if(bestBody===null && !args.passiveAwayLimit) { // Passive curiosity can yield to neutral, never search inward.
           const limit=Math.max(Math.abs(Number(rig.rig?.minDeg)||0),Math.abs(Number(rig.rig?.maxDeg)||0));
           const sign=head<0?1:-1;
           if(limit>EPS && !evaluate(sign*limit*.5) && bestBody===null)evaluate(sign*limit);

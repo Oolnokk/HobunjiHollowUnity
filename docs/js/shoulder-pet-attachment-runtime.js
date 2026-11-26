@@ -1,6 +1,6 @@
 // Canonical shoulder-pet grip/perch world transform and rendered-root pin.
 // Gameplay owns its update cadence and passes live dependencies through getters.
-// This module never animates sprites or writes game state outside the pet root.
+// This module owns the pet root and the final direction of passive head yaw.
 //
 // Owner-generic: create() one instance per owner character with
 // getOwnerMesh/getOwnerNeckJoint (the player today; any NPC or enemy that
@@ -108,6 +108,7 @@
     }
 
     const samplePerch = createPerchSampler(THREE); // Same point sampler for simulation and the final composed draw.
+    const sampleHeadCenter = createPerchSampler(THREE); // Independent cached source landmark for the owner's actual painted head.
     const sampledPerch = new THREE.Vector3(), renderPerch = new THREE.Vector3(), localTarget = new THREE.Vector3(), gripOffset = new THREE.Vector3();
     const renderGrip = new THREE.Vector3(); // Actual world-space grip readback for the mobile diagnostic.
     const rotationLimits = window.ShoulderPetRotationLimits?.create?.(THREE); // One prepared deformation-envelope solver per owner.
@@ -198,6 +199,46 @@
       return lean;
     }
 
+    const awayCenter=new THREE.Vector3(),awayDelta=new THREE.Vector3(); // World head center and hypothetical pet origin relative to it.
+    const awayBasis=new THREE.Quaternion(),awayRight=new THREE.Vector3(),awayForward=new THREE.Vector3(); // Local yaw axes at each resolved body heading.
+    let awayPerch=null,awayGrip=null,awayScale=null,awayReady=false; // Per-solve inputs; cleared after choosing a pose.
+    function prepareAway(owner,perch,grip,scale) {
+      awayReady=false;
+      if(!owner || !perch || !grip || !scale)return;
+      const root=window.PNGPlaneAvatar?.resolveSkinnedPortraitRoot?.(owner);
+      const pixel=root?.userData?.neckRig?.headCentroidPx;
+      if(!pixel || !sampleHeadCenter(owner,pixel,awayCenter)){
+        const neck=getPlayerNeckJoint();
+        if(typeof neck?.getWorldPosition!=='function')return;
+        neck.updateWorldMatrix?.(true,false);neck.getWorldPosition(awayCenter);
+      }
+      awayPerch=perch;awayGrip=grip;awayScale=scale;awayReady=true;
+    }
+
+    function awayLimit(heading) {
+      if(!awayReady)return 0;
+      // Positive animal head yaw turns +Z toward +X. Use the actual world
+      // pet center (including its off-center grip) and the live head center.
+      // No fixed sign, portrait-flip flag, or inward/outward pose assumption.
+      awayDelta.set(-awayGrip.x*awayScale.x,-awayGrip.y*awayScale.y,-awayGrip.z*awayScale.z)
+        .applyQuaternion(heading).add(awayPerch).sub(awayCenter);
+      awayRight.set(1,0,0).applyQuaternion(heading);
+      awayForward.set(0,0,1).applyQuaternion(heading);
+      const rightLength=Math.hypot(awayRight.x,awayRight.z),forwardLength=Math.hypot(awayForward.x,awayForward.z);
+      if(rightLength<1e-6 || forwardLength<1e-6)return 0;
+      const side=(awayDelta.x*awayRight.x+awayDelta.z*awayRight.z)/rightLength;
+      const forward=(awayDelta.x*awayForward.x+awayDelta.z*awayForward.z)/forwardLength;
+      if(Math.abs(side)<1e-5)return 0; // No unique outward side; neutral is safe.
+      return Math.atan2(side,forward)*180/Math.PI;
+    }
+    function awayLimitAtYaw(yaw) {return awayLimit(awayBasis.setFromAxisAngle(worldUp,yaw));}
+    function signedAwayYaw(magnitude,limit) {return Math.sign(limit)*Math.min(Math.abs(magnitude),Math.abs(limit));}
+    function clampAwayYaw(yaw,limit) {return yaw*limit>0?signedAwayYaw(yaw,limit):0;}
+    function setPassiveYaw(avatar,yaw) {
+      if(typeof avatar?.updateHeadYaw!=='function')return;
+      const rig=avatar.headRig;
+      if(!rig || Math.abs((Number(rig.currentYawDeg)||0)-yaw)>1e-6)avatar.updateHeadYaw(yaw,1000);
+    }
     function _shoulderPetSurfaceTransform(perch, grip, pet) {
       const playerMesh = getPlayerMesh(); // Live owner mesh, never a stale captured avatar.
       const playerNeckJoint = getPlayerNeckJoint(); // Live skinned neck after portrait rebuilds.
@@ -289,6 +330,14 @@
       const renderedScale = pet?.avatarRef?.group?.scale; // Actual THREE root scale, including the swapped width/depth axes and the current breath/squash multiplier.
       const useRenderedGrip = !!(rawGrip && renderedScale
         && Number.isFinite(renderedScale.x) && Number.isFinite(renderedScale.y) && Number.isFinite(renderedScale.z)); // Only fall back for old callers without a real avatar root.
+      const passive=pet?.shoulderCuriosity; // The game advances unsigned curiosity magnitude; this pin alone chooses its sign.
+      let passiveLimit=0,passiveRequested=0;
+      if(passive && useRenderedGrip){
+        prepareAway(playerMesh,perchWorldPosition,rawGrip,renderedScale);
+        passiveLimit=awayLimit(worldQuaternion);
+        passiveRequested=signedAwayYaw(Number(passive.currentYawDeg)||0,passiveLimit);
+        setPassiveYaw(pet.avatarRef,passiveRequested);
+      }
       let geometryConstraint = null; // Live bone envelopes constrain the requested angles before composing the grip.
       if (rotationLimits && useRenderedGrip && typeof getOwnerPortraitMeshes === 'function') {
         const ownerFrame=keepHeadingUpright(worldQuaternionWithoutReflection(playerMesh,constraintOwnerFrame));
@@ -296,10 +345,17 @@
           ownerMeshes: getOwnerPortraitMeshes(), pet, perch: perchWorldPosition, grip: rawGrip,
           scale: renderedScale, quaternion: worldQuaternion,
           ownerFrameYaw: 2*Math.atan2(ownerFrame.y,ownerFrame.w), perchSide: renderedPerchX,
+          passiveAwayLimit: passive && useRenderedGrip ? awayLimitAtYaw : null, // Candidate headings may reverse the allowed side.
         });
       }
       lastHeadPitch=lastPetSide=0;
       const headSideLean = useRenderedGrip ? applyHeadSideLean(worldQuaternion,perchWorldPosition,rawGrip,renderedScale) : 0; // One-sided broad-face lean, independent of the yaw collision solver.
+      if(passive && useRenderedGrip){
+        passiveLimit=awayLimit(worldQuaternion); // Includes the final collision-corrected heading and broad-face tilt.
+        const applied=Number(pet.avatarRef?.headRig?.currentYawDeg)||0;
+        setPassiveYaw(pet.avatarRef,clampAwayYaw(applied,passiveLimit));
+      }
+      awayReady=false;awayPerch=awayGrip=awayScale=null;
       const gripWorldOffset = new THREE.Vector3(
         useRenderedGrip ? rawGrip.x * renderedScale.x : (grip.x || 0) * perchScaleX,
         useRenderedGrip ? rawGrip.y * renderedScale.y : (grip.y || 0) * perchScaleY,
@@ -323,6 +379,7 @@
         facingTowardPlayerCenter,
         shoulderFacingTurnDeg,
         shoulderLeanDeg, // Curiosity never tilts the root.
+        passiveYaw: passive ? {requested:passiveRequested,limit:passiveLimit,applied:Number(pet.avatarRef?.headRig?.currentYawDeg)||0} : null,
         headSideLean, headPitch: lastHeadPitch, petHeadSide: lastPetSide, // Render hook refreshes these from the final composed head.
         geometryConstraint, // Requested/applied angles and bounded candidate checks for Pixel Probe.
       };
@@ -347,6 +404,7 @@
         : finalTransform.worldPosition.clone(); // Local root position whose conceptual shoulderGrip coincides with shoulderPerch.
       group.position.copy(localPosition);
       group.quaternion.copy(localQuaternion);
+      if(c.shoulderCuriosity && !finalTransform.gripLocalPosition)setPassiveYaw(c.avatarRef,0); // Unanchored legacy pets cannot prove an outward direction.
       // Solve in the actual parent space, including nonuniform/reflected parent
       // scale. World-space quaternion subtraction alone does not account for it.
       if(group.isObject3D && group.scale && finalTransform.gripLocalPosition && finalTransform.perchWorldPosition){
@@ -396,6 +454,7 @@
         shoulderFacingTurnDeg: Number(finalTransform.shoulderFacingTurnDeg) || 0,
         shoulderLeanDeg: Number(finalTransform.shoulderLeanDeg) || 0, // Legacy curiosity lean remains zero.
         spriteMirrored: false,
+        passiveYaw: finalTransform.passiveYaw || null, // Reports requested, permitted and applied local head yaw.
         headSideLeanDeg: (Number(finalTransform.headSideLean)||0)*180/Math.PI, // Signed local-Z tilt of the broad face.
         ownerHeadPitchDeg: (Number(finalTransform.headPitch)||0)*180/Math.PI,
         petHeadSide: Number(finalTransform.petHeadSide)||0,
@@ -447,6 +506,21 @@
                 current.copy(renderedLocalRotation);
               }
             }
+            let renderAwayLimit=null,renderHeadYaw=null;
+            if(c.shoulderCuriosity && c.avatarRef?.headRig && typeof c.avatarRef.updateHeadYaw==='function'){
+              // A late neck/deadzone change can switch the occupied side.
+              // Clamp to neutral rather than introducing an untested opposite
+              // turn during rendering; the next simulation pin solves it.
+              prepareAway(record.owner,renderPerch,record.grip,group.scale);
+              renderAwayLimit=awayLimit(worldQuaternionWithoutReflection(group,renderedHeading));
+              awayReady=false;awayPerch=awayGrip=awayScale=null;
+              const avatar=c.avatarRef,rig=avatar.headRig,oldYaw=Number(rig.currentYawDeg)||0,oldTarget=rig.targetYawDeg;
+              renderHeadYaw=clampAwayYaw(oldYaw,renderAwayLimit);
+              if(Math.abs(renderHeadYaw-oldYaw)>1e-6){
+                undo.push(()=>{setPassiveYaw(avatar,oldYaw);rig.targetYawDeg=oldTarget;});
+                setPassiveYaw(avatar,renderHeadYaw);
+              }
+            }
             localTarget.copy(renderPerch);group.parent.worldToLocal(localTarget);
             gripOffset.copy(record.grip).multiply(group.scale).applyQuaternion(group.quaternion);
             localTarget.sub(gripOffset);
@@ -461,7 +535,8 @@
             if(debug){
               debug.renderPin={source:target?'live-skinned-pixel':'local-fallback',beforeError:before,afterError:renderGrip.distanceTo(renderPerch),
                 perch:renderPerch.toArray(),grip:renderGrip.toArray(),corrected:changed || rotationChanged,
-                headSideLeanDeg:finalLean*180/Math.PI,ownerHeadPitchDeg:lastHeadPitch*180/Math.PI,petHeadSide:lastPetSide};
+                headSideLeanDeg:finalLean*180/Math.PI,ownerHeadPitchDeg:lastHeadPitch*180/Math.PI,petHeadSide:lastPetSide,
+                passiveAwayLimitDeg:renderAwayLimit,passiveHeadYawDeg:renderHeadYaw};
               if(renderDebug)renderDebug.shoulderPerchPin=debug.renderPin;
             }
             return true;

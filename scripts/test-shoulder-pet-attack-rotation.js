@@ -475,3 +475,38 @@ assert.equal(renderDebug.shoulderPerchPin.headSideLeanDeg,0);
 closeness(new TestVector3(0,1,0).applyQuaternion(group.quaternion),new TestVector3(0,1,0),'prior tilt removed, not accumulated');
 while(lateUndo.length)lateUndo.pop()();
 console.log('directional broad-face head follow, observation reversal and late grip correction passed');
+
+
+// Passive yaw sign is derived from the physical head-to-pet vector, not
+// the observation pose or portrait flip flag. Same magnitudes in both poses.
+const passiveRig={currentYawDeg:0,targetYawDeg:0};
+pet.avatarRef.headRig=passiveRig;
+pet.avatarRef.updateHeadYaw=(yaw)=>{passiveRig.currentYawDeg=passiveRig.targetYawDeg=yaw;};
+pet.shoulderCuriosity={currentYawDeg:20};
+head.quaternion.setFromAxisAngle({x:0,y:1,z:0},0);
+const baseHeadPosition=head.getWorldPosition;
+for(const mirror of [false,true])for(const inward of [false,true])for(const side of [-1,1]){
+  flipped=mirror;pet.__hobunjiShoulderFacingInward=inward;
+  // Offset the owner head along the pet's actual local X axis, on either side.
+  const neutral=headFollow.solveSurfaceTransform(perch,grip,pet);
+  const right=new TestVector3(1,0,0).applyQuaternion(neutral.worldQuaternion);
+  const center=neutral.worldPosition;
+  head.getWorldPosition=v=>v.copy(center).sub(right.clone().multiply(new TestVector3(side,side,side)));
+  const solved=headFollow.solveSurfaceTransform(perch,grip,pet);
+  assert.equal(Math.sign(solved.passiveYaw.applied),side,'local sign follows actual owner-relative side');
+  assert.ok(Math.abs(solved.passiveYaw.applied-20*side)<1e-6,'existing curiosity magnitude retained');
+  // Positive local yaw turns +Z toward +X, so the turned nose points outward.
+  const nose=new TestVector3(0,0,1).applyQuaternion(new TestQuaternion().setFromAxisAngle({x:0,y:1,z:0},degrees(solved.passiveYaw.applied))).applyQuaternion(solved.worldQuaternion);
+  assert.ok(side*(nose.x*right.x+nose.z*right.z)>0,'world head turn is away');
+  headFollow.applyFinalTransform(pet,solved);
+  // Late pose moves the owner to the other side; do not show an inward frame.
+  head.getWorldPosition=v=>v.copy(center).add(right.clone().multiply(new TestVector3(side,side,side)));
+  const yawUndo=[];
+  win.ShoulderPetAttachmentRuntime.repinForRender(group,yawUndo,renderDebug);
+  assert.equal(passiveRig.currentYawDeg,0,'late side change clamps inward yaw to neutral');
+  while(yawUndo.length)yawUndo.pop()();
+  assert.equal(Math.sign(passiveRig.currentYawDeg),side,'render rollback restores simulation yaw');
+  head.getWorldPosition=baseHeadPosition;
+}
+flipped=false;delete pet.shoulderCuriosity;
+console.log('passive yaw: mirrored perch, both observation poses, both head sides and late clamp passed');

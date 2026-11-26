@@ -123,3 +123,13 @@ const render=fs.readFileSync('docs/js/bootstrap/classic-groups/render.js','utf8'
 assert.ok(render.indexOf('shoulder-pet-deformation-envelope.js')>=0 && render.indexOf('shoulder-pet-deformation-envelope.js')<render.indexOf('shoulder-pet-rotation-limits.js'),'live envelope module loads before its consumer');
 const integration=fs.readFileSync('docs/js/shoulder-pet-rotation-limits.js','utf8');
 assert.ok(integration.includes('if(liveEnvelope)return liveEnvelope.constrain(args);'),'real Three.js attachment uses the deformation-aware path');
+
+
+// Even when an inward yaw could open clearance, passive curiosity may
+// only yield toward neutral. Candidate headings must obey the live side.
+pet.avatarRef.headRig.currentYawDeg=30;yawBone.rotation.y=Math.PI/6;
+args.quaternion=new Q();args.passiveAwayLimit=()=>0;
+const restricted=solver.constrain(args);
+assert.ok(restricted.headYawDeg===0 || restricted.mode==='no-safe-rotation','passive constraint never selects a forbidden yaw');
+if(restricted.mode==='geometric-depth')assert.equal(pet.avatarRef.headRig.currentYawDeg,0);
+console.log('passive geometry candidates respect permitted direction');
