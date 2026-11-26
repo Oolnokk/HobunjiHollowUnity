@@ -229,7 +229,7 @@
     if (widthConvergence > 0 || heightConvergence > 0) {
       const { species, gender } = avatarSpeciesAndGender(options);
       const adult = window.HobunjiCharacterRigScale?.scaleFor?.(species, gender) || window.HobunjiCharacterRigScaleDefaults?.scaleFor?.(species, gender);
-      const adjusted = window.HobunjiCharacterAgeRigConfig?.resolveStageAxes?.(adult, { width, height, widthConvergence, heightConvergence });
+      const adjusted = window.HobunjiCharacterAgeRigConfig?.resolveStageAxes?.(adult, { width, height, widthConvergence, heightConvergence }, { species, gender });
       if (adjusted) { width = adjusted.width; height = adjusted.height; }
     }
     return { body: height, height, width, head, headFactor: head / height, headFactorX: head / width }; // Head remains an independent final size in both axes.

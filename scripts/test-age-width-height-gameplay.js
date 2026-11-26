@@ -98,6 +98,24 @@ childFixture.avatarSpeciesAndGender = () => ({ species: 'test', gender: 'male' }
 const actual = childFixture.childScaleFor({ npcRecord: { isChild: true } });
 assert.equal(actual.width, wide.width); assert.equal(actual.height, wide.height);
 assert.ok(Math.abs(actual.headFactorX * actual.width - full.head) < 1e-12, 'derived head ratio survives floating-point roundoff');
+// Identical authored scales, different original art dimensions: the measured lineup must distinguish them.
+const equalRig = { x: 1, y: 1, legLength: 1, head: 1 };
+world.HobunjiCharacterRigScale = { scaleFor: () => equalRig, heightBeltlineFor: () => ({ height: 1 }) };
+world.HobunjiCharacterDimensions = { dimensionsFor: (species, gender) => ({ body: { width: species === 'wide' ? 4 : 1 }, height: gender === 'male' ? 4 : 1, factors: { modelHeight: 1 } }) };
+const basis = api.buildConvergenceBasis([{species:'wide',gender:'male'},{species:'narrow',gender:'female'}]);
+assert.equal(basis['wide::male'].width, 2); assert.equal(basis['narrow::female'].width, .5);
+assert.equal(basis['wide::male'].height, 2); assert.equal(basis['narrow::female'].height, .5);
+const wideMeasured = api.resolveStageAxes(equalRig, full, {species:'wide',gender:'male'}, basis);
+const narrowMeasured = api.resolveStageAxes(equalRig, full, {species:'narrow',gender:'female'}, basis);
+assert.equal(wideMeasured.width * 4, narrowMeasured.width, 'identical authored X but distinct original art converges physically');
+assert.equal(wideMeasured.height * 4, narrowMeasured.height, 'identical authored Y but distinct stature converges physically');
+api.applyOnThisDevice({ child: full }, basis);
+assert.equal(png.ageConvergenceBasis['wide::male'].width, 2, 'game gets the same frozen measured reference');
+assert.equal(JSON.parse(saved.get(api.appliedStorageKey)).convergenceBasis['narrow::female'].height, .5, 'measured reference survives game reload');
+childFixture.avatarSpeciesAndGender = () => ({species:'wide',gender:'male'});
+childFixture.window.HobunjiCharacterRigScale = world.HobunjiCharacterRigScale;
+const measuredChild = childFixture.childScaleFor({npcRecord:{isChild:true}});
+assert.equal(measuredChild.width,wideMeasured.width); assert.equal(measuredChild.height,wideMeasured.height);
 const restored=api.restoreRepositoryOnThisDevice();
 assert.equal(restored.child.width,.5,'restoring game returns prior uniform child size');
 assert.equal(png.childWidthScaleMultiplier,.5,'reset also clears applied child width');
