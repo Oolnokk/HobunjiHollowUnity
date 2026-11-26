@@ -660,7 +660,7 @@
     characterBuildStatus.stage = 'leg-rig';
     const spine = window.HobunjiCharacterSpine?.bind(portrait, { speciesId: roster.appearance.speciesId, gender: roster.appearance.gender, spine: roster.spine }) || null; // Static hunch from the enemy loadout rule; shoulder aim reads it live off the portrait root.
     if (spine?.hunch > 0 && frontNeckSkin) { // Stoop the portrait itself: lower the spine bone of both the front and rear skins (they share the same weights).
-      window.HobunjiCharacterSpine.applyToRig({ splineNodes: { front: frontNeckSkin.splineNodes, back: backNeckSkin?.splineNodes }, neckLocal: frontNeckSkin.neckLocal, spinePosteriorY: frontNeckSkin.spinePosteriorY, spineBase: frontNeckSkin.spineBase }, spine, modelHeight);
+      window.HobunjiCharacterSpine.applyToRig({ splineNodes: { front: frontNeckSkin.splineNodes, back: backNeckSkin?.splineNodes }, neckLocal: frontNeckSkin.neckLocal, spinePosteriorY: frontNeckSkin.spinePosteriorY, spineBase: frontNeckSkin.spineBase, blendHeight: frontNeckSkin.weightedGeometry?.userData?.blendHeight }, spine, modelHeight); // Hostile shoulder and attack orbit calculations sample the same short base-head neck band as the portrait.
     }
     const legs = window.ProceduralLegAnimation?.attach(THREE, legsFrame, {
       speciesId: roster.appearance.speciesId, gender: roster.appearance.gender,
@@ -701,6 +701,7 @@
       // readable neck pivot could be detected (e.g. a fully transparent
       // portrait canvas), in which case that system just no-ops.
       neckJoint: (frontNeckSkin && backNeckSkin) ? { front: frontNeckSkin.neckBone, back: backNeckSkin.neckBone } : null,
+      headOffsetJoint: (frontNeckSkin && backNeckSkin) ? { front: frontNeckSkin.headOffsetBone, back: backNeckSkin.headOffsetBone } : null, // Independently positions front/back heads without extending the short rotational neck bend.
       headScaleJoint: (frontNeckSkin && backNeckSkin) ? {front:frontNeckSkin.headScaleBone,back:backNeckSkin.headScaleBone} : null,
       // The real per-species/gender hand-attach point buildSinglePlaneAvatarModel
       // scans from the actual rendered portrait (png-plane-avatar.js's
@@ -3457,7 +3458,12 @@
       joint.scale.x *= head / x;
       joint.scale.y *= head / y;
       joint.scale.z = (Number(joint.scale.z) || 1) * head / x;
-      if (joint.position) joint.position.y += originalHeight * offsetY;
+      joint.updateMatrix?.();
+    }
+    for (const joint of [avatarRef.headOffsetJoint?.front || avatarRef.headScaleJoint?.front || avatarRef.neckJoint?.front,
+      avatarRef.headOffsetJoint?.back || avatarRef.headScaleJoint?.back || avatarRef.neckJoint?.back]) {
+      if (!joint?.position) continue;
+      joint.position.y += originalHeight * offsetY; // Hostile head placement lives on the nonrotating parent; huge offsets no longer invert the two-pixel neck strip.
       joint.updateMatrix?.();
     }
     avatarRef.group.scale.set(avatarRef.group.scale.x * x, avatarRef.group.scale.y * y, avatarRef.group.scale.z * x);

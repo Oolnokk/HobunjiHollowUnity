@@ -939,7 +939,8 @@ assert.match(animationAuthorSource, /id="maaRigVerticalParity"/, 'Shoulder Rig m
 assert.match(animationAuthorSource, /getStandingPoseDebug/, 'Shoulder Rig diagnostics must consume rendered procedural-foot bounds instead of assuming their visual bottom');
 assert.match(proceduralFeetSource, /function footBoundsInRoot\(foot\)/, 'the shared foot runtime must measure rendered geometry in avatar floor space');
 assert.match(proceduralFeetSource, /HOBUNJI_ATTACHMENT_RIG_MATH\?\.characterPosteriorY/, 'procedural legs must resolve their hip/posterior with the shared floor-relative rule');
-assert.match(proceduralFeetSource, /group: root, update, dispose, applyRecordedLegPose, getStandingPoseDebug/, 'game and rigger feet handles must expose the same standing-pose diagnostic');
+assert.match(proceduralFeetSource, /group: root, update, dispose, applyRecordedLegPose, setLegLengthMultiplier, setFootScaleMultiplier/, 'game and rigger share real hip-to-foot reach and independent foot-size controls');
+assert.match(proceduralFeetSource, /getStandingPoseDebug/, 'game and rigger feet handles must still expose their live standing-pose diagnostics');
 assert.match(proceduralFeetSource, /setHoverMode, isHoverMode/, 'procedural leg handles must expose the shared hover-pose ownership seam');
 assert.match(proceduralFeetSource, /applyHoverPose\('left', dt\)[\s\S]*applyHoverPose\('right', dt\)/, 'hover mode must solve both procedural legs every update');
 assert.match(pixelProbeSource, /function _pixelProbeWaterFootContactLines\(activeScene, currentArea, playerMesh\)/, 'Pixel Probe must expose a mobile-readable rendered water/foot contact diagnostic');

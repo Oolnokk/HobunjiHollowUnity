@@ -87,11 +87,18 @@ assert.match(editor, /Scatterbow — Fire/, 'editor must include scatterbow fire
 assert.match(editor, /Tool scale \(uniform\)/, 'editor must expose neutral tool scale');
 assert.match(editor, /neutralOnly:\s*true/, 'tool scale must only be authored on the neutral pose');
 assert.match(editor, /id="neckStrength"[^>]*min="0"[^>]*max="2"[^>]*value="1"/, 'editor must expose a safe preview-only neck strength slider');
-assert.match(editor, /id="neckRadius"[^>]*min="0\.01"[^>]*max="0\.30"[^>]*value="0\.30"/, 'editor must default to the selected broad 30% neck blend');
-assert.match(editor, /function applyPreviewNeckWeights\(\)[\s\S]*weights\.setXYZW\(index, 1 - headWeight, headWeight, 0, 0\)/, 'neck radius preview must update only the root/head skin weights');
+assert.match(editor, /id="neckRadius"[^>]*min="0\.005"[^>]*max="0\.30"[^>]*value="0\.012"/,
+  'editor starts at the native short neck blend rather than the obsolete 30% shoulder band');
+assert.match(editor, /if \(neckPreviewRadiusCustomized && neckRig\.headOffsetJoint\)[\s\S]*weights\.setXYZW\(index, 1 - turnWeight, turnWeight - scaleWeight, scaleWeight, 0\)/,
+  'only explicitly edited radii may rewrite the placement/rotation/scale skin weights');
+assert.match(editor, /neckPreviewOriginalSkin\.get\(geometry\)[\s\S]*indices\.array\.set\(baseline\.indices\)[\s\S]*weights\.array\.set\(baseline\.weights\)/,
+  'preview radius tweaks restore original four-slot indices and weights before reapplying');
 assert.match(editor, /neckJoint\.rotation\.y = [^\n]*-rig\.rotation\.y \* neckPreviewStrength/, 'neck strength preview must scale the automatic body-yaw counter-turn');
 assert.match(editor, /id="showHeadSkinVertices"/, 'editor must expose a head-skinned vertex overlay toggle');
-assert.match(editor, /function rebuildHeadSkinVertexOverlay\(\)[\s\S]*weights\.getY\(index\)[\s\S]*new THREE\.Points/, 'head overlay must visualize the actual head-bone weight at each unique vertex');
+assert.match(editor, /function rebuildHeadSkinVertexOverlay\(\)[\s\S]*neckTurnWeightAtVertex\(indices, weights, index\)[\s\S]*new THREE\.Points/,
+  'head overlay must visualize only the rotating head bones, never the separate placement bone');
+assert.match(editor, /if \(bone === 8 \|\| bone === 9\) total \+= weights\.array\[offset\]/,
+  'head-weight heatmap must sum actual neck and head-scale influence slots');
 assert.match(editor, /function updateHeadSkinVertexOverlay\(\)[\s\S]*(?:boneTransform|applyBoneTransform)/, 'head overlay markers must follow the live skinned deformation');
 assert.match(editor, /lightBlendColor[\s\S]*fullHeadColor[\s\S]*\.lerp\(fullHeadColor, vertex\.headWeight\)/, 'head overlay must use a visible weight heatmap');
 const exportFunction = editor.slice(editor.indexOf('function exportAnimObject()'), editor.indexOf("$('exportBtn').onclick"));
@@ -109,13 +116,16 @@ assert.match(portraitUtils, /onlyHeadSprite[\s\S]*fighter's undecorated base hea
 assert.match(pngAvatar, /function detectHeadRigPixels\([\s\S]*headMask\.centroidPx\.x[\s\S]*method: 'head-sprite-alpha-centroid'/, 'shared neck rig must derive its horizontal pivot from the base-head alpha centroid');
 assert.match(pngAvatar, /function buildSkinnedPlaneGeometry\([\s\S]*coverageMode: 'full-png-plane'/, 'shared neck geometry covers the full PNG plane grid');
 assert.match(pngAvatar, /planeBoundsPx:[\s\S]*planeCellCount:/, 'shared neck geometry must expose plane-coverage diagnostics');
-assert.match(pngAvatar, /Number\(options\.blendHeight\) \|\| modelHeight \* \.30/, 'shared player and NPC rigs must use the selected broad deformation falloff by default');
+assert.match(pngAvatar, /const band = neckBlendBand\(neckLocal\.y, modelHeight, pixelHeight\)/,
+  'shared player and NPC rigs use the exact species base-head bottom for their short deformation band');
+assert.match(pngAvatar, /const spanPx = Math\.min\(imageHeight - topPx - 0\.01, Math\.min\(3, Math\.max\(2, Math\.round\(imageHeight \* \.012\)\)\)\)/,
+  'no portrait resolution should spread the head-turn band wider than three source pixels');
 assert.match(sharedNeckRig, /frontMaterial\.skinning = true;[\s\S]*backMaterial\.skinning = true;/, 'r128 portrait materials must explicitly compile their skinning shader path');
 assert.match(editor, /renderProfileToCanvas\(headCanvas, profile, \{ onlyHeadSprite: true/, 'attack editor must render the head-only centroid mask');
 assert.strictEqual((game.match(/renderProfileToCanvas\(headCanvas, profile, \{ onlyHeadSprite: true/g) || []).length, 1, 'player neck rig must use the head-only centroid mask');
 assert.match(game, /renderProfileToCanvas\(headCanvas, profile, \{ \.\.\.staticRenderOptions, onlyHeadSprite: true \}\)/, 'walking NPC neck rig must also use the head-only centroid mask');
 assert.match(index, /png-plane-avatar\.js\?v=\d+\w*/, 'game bootstrap must invalidate the broad-deformation cache');
-assert.match(editor, /png-plane-avatar\.js\?v=[A-Za-z0-9_.-]+/, 'attack editor must invalidate the broad-deformation cache');
+assert.match(editor, /png-plane-avatar\.js\?v=[A-Za-z0-9_.-]+/, 'attack editor must invalidate the sprite-anchored neck cache');
 assert.doesNotMatch(editor, /Head Yaw|headYaw/, 'head turn must not be an authored attack-pose channel');
 
 for (const itemKey of ['crossbow', 'scatterbow']) {

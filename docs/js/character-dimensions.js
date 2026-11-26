@@ -173,6 +173,9 @@
         }
       }
       status = 'ready';
+      // The game may have built actors before this once-per-session bare-PNG scan finished.
+      // Reapply their cached floor-parent scale in bounded batches without reloading sprites or changing saved overrides.
+      window.HobunjiCharacterRigScale?.refreshMeasuredHeights?.();
       for (const listener of listeners) { try { listener(snapshot()); } catch {} }
       return snapshot();
     })().catch(error => {
