@@ -6,6 +6,156 @@ single-browser-tab, `localStorage`-only). This document exists so the intended
 shape of multiplayer isn't lost, and to track what in the current codebase
 already lines up with it versus what will actively fight it.
 
+## Target: 4-player co-op, built single-player-first
+
+Goal: up to 4 players (`ActorRegistry.MAX_PLAYERS`), host-authoritative, no
+deterministic lockstep. Single-player is the same game with zero guests, not a
+second code path. Order of work:
+
+1. **Multiplayer-compatible single-player** (in progress — see below).
+2. Dev-controlled dummy second player (walk, take damage, go down, change area) — logic done (`DevDummyPlayer`), avatar mesh/equipment pending.
+3. Two connected clients: session, movement, appearance, equipment, animation state.
+4. Shared simulation: NPCs, combat, farming, inventories, world mutations.
+5. Independent exploration: simulation residency vs asset residency vs render visibility (`WildernessChunks`).
+6. Reconnect, cutscenes/festivals/sleep consensus, permissions, latency, mobile.
+
+### Foundations that exist now (step 1)
+
+| Module | Replaces | Use it for |
+| --- | --- | --- |
+| `js/actor-registry.js` (`ActorRegistry`) | the `player` singleton / `[player]` | stable entity ids (kept off the entity, never saved), `getPlayers()`, `getLocalPlayer()`, `areaOf()`, area-aware `nearestPlayer()`, `ownerOf()` for companion `master` / projectile `owner` |
+| `js/damage-authority.js` (`DamageAuthority.hit(target, …)`) | `damagePlayer(...)` having no target | one entry for attacker→target; local player → `damagePlayer`, remote player → registered handler (never the local player), else `damageCreature`; emits id-tagged hit events for a future host broadcast |
+| `js/sim-clock.js` (`SimClock.now()`) | `performance.now()` in gameplay timers | host-synced time; offset is 0 today so it is identical |
+
+| `js/remote-player-state.js` (`RemotePlayerState`) | `damagePlayer` + `PlayerDowned` being local-only | health, downed/bleed-out timer, Second Wind (`noteKillBy`) and respawn for every non-local player, no HUD; registered as `DamageAuthority`'s remote handler |
+| `js/dev-dummy-player.js` (`DevDummyPlayer`) | — | dev stand-in second player: `spawn({x,y,areaId})`, `walkTo`, `follow`, `setArea`, `despawn`. Has a real body via `RemotePlayerAvatar` |
+
+Migrated to `DamageAuthority.hit`: hostile bite, companion bite, enemy ranged
+projectiles (test every player, nearest first), animal pounce/guard-charge/leap,
+bandit swings, Voorg kick, swarm attach ticks/swats/rescues, Tzatzul dives,
+knockback-collision impact; combo/charged-breaker/resource timers use `SimClock`;
+hostile target acquisition is area-aware (non-strict).
+
+Try it in the console: `DevDummyPlayer.spawn(); DevDummyPlayer.follow(true);
+DamageAuthority.hit(DevDummyPlayer.get(), 40, 0, 0, 100, {}); RemotePlayerState.debugSnapshot()`.
+
+The Rootledoot encounter is participant-aware (`rootledoot-encounter.js`): activation, bait/reward dormancy,
+"player escaped locale", ambush start, spawn anchoring and victory use every player in the zone
+(local always counts; a remote one only when `ActorRegistry.areaOf` says it is there), and a local defeat only resets
+the fight when no other participant is still standing. Picking the root (`action`/`pick`) stays the local client's own
+interaction.
+
+### Time rules (`js/time-consensus.js`, `window.TimeConsensus`)
+
+With 2+ registered players, nothing advances the world clock on one player's say-so:
+
+- **Sleep / rest / Wait** needs every player resting. The first sleeper waits (bed pose holds; Wait/Sleep menu closes with a toast). Walking away withdraws the vote.
+- **Forced skips** (alcohol blackout, fey/Rootledoot defeat, Ikthi later) knock the victim out for **60 s** (`REVIVE_WINDOW_MS`). Another standing player within ~2.5 tiles revives them (`TimeConsensus.revive(target, by)`), which cancels that player's skip. Otherwise the skip happens. Each knocked-out player has their own window; a second skip while out does not extend it.
+- **Several queued skips**: the longest (in game minutes) wins and is applied **once**; every participant still gets their own side effects (wander travel, healing).
+- **Resting while someone is knocked out** counts them as asleep: when everyone else is resting (or nobody is left awake to revive), the skip fires immediately.
+- Single player (`shouldGate()` false) keeps the original immediate paths untouched.
+
+New skip sources call `TimeConsensus.knockOut(player, { kind, source, minutes, run, onResolved, onRevived })` (forced) or `requestRest` (voluntary) when `shouldGate()`; `run` applies the time change and is only called if that skip wins.
+Dev: `DevDummyPlayer.sleep(min)`, `.knockOut(min)`, `.reviveLocal()`, `.reviveDummy()`, `.wake()`; `TimeConsensus.snapshot()`.
+
+**Countdown HUD** (`js/time-consensus-hud.js`): "Out cold — a friend has 0:54 to revive you", "<name> is down — revive them within 0:54", and "Waiting for the others to sleep (n/m)"; verified live in the game.
+
+While knocked out the local avatar is flagged `_downed` (enemies and `nearestPlayer({aliveOnly})` skip it) and `damagePlayer` ignores hits, so nobody dies mid-window.
+
+**Not done yet:** a revive interaction prompt for the local player (only the API and dev hooks exist), live-testing the bed and Wait/Sleep menu paths with a second real player. Natural real-time clock progression is deliberately not gated; only skips are.
+
+### Cutscenes (`js/shared-cutscene.js`, `window.SharedCutscene`)
+
+Design decisions: a cutscene **pauses everyone** and **everyone can watch it, no matter where they are**.
+If it is a **crowd scene** (a wedding, an announcement, the Five Blossoms crowning - anywhere the villagers
+gather as an audience) the **other players are placed in the crowd** too.
+
+- `runCutscenePreview` (the one runner every authored/live scene goes through) is wrapped: `SharedCutscene.begin()` first, `end()` in a `finally`. Scenes nest (depth-counted), so a scene owner can open the session earlier than the runner.
+- Every registered player is a participant for the whole scene, in any area; a late joiner watches, a leaver is released. Remote participants are frozen, untargetable and invulnerable (`_inCutscene`; honoured by `ActorRegistry` alive checks, `EnemyPetTargeting.viable`, the hostile bite check, `RemotePlayerState.applyHit`, the dummy). `viewAreaFor(player)` is the scene's area for everyone (each client shows it).
+- The player who triggered the scene (`controller`) makes the dialogue choices; the others watch.
+- Time-skip revive windows and sleep votes are held for the length of the scene (`TimeConsensus.pause/resume`) and pick up where they left off.
+- **Crowd scenes opt in**: the scene owner lays out its villagers, then asks `crowdMembers()` (everyone but the controller) and calls `joinCrowd({ area, slots })` with the next slots of the **same layout** (`{ c, r, rotY, pose: 'stand' | 'sit', seatTarget? }`). The player's entity is moved to the slot (area, position, facing) and put back exactly afterwards. `RemotePlayerAvatar` draws crowd members only during a scene (standing, or seated through the cutscene runner's own seated-pose solve); other watchers are not drawn.
+- Opted in so far: **Five Blossoms crowning** (ranks, after the villagers) and the **wedding** (pews, after the villager guests). New crowd scenes: copy those two call sites.
+
+**Not done yet / not verified:** the local host avatar when it is *not* the controller (the runner places only the controller; `joinCrowd` skips the local entity); a spectator camera for guests whose own client must switch to the scene's area (needs the network layer); who may skip a scene; verified live only for a standing crowd slot and the begin/end/pause behaviour (seated slots and both owners are covered by unit tests with real owner code, not yet seen in a browser).
+
+### Residency: simulation vs assets vs what is drawn
+
+Three things that used to be one ("the area the player is in") and now have different owners in co-op:
+
+| Concept | Meaning | Keyed to | Owner |
+| --- | --- | --- | --- |
+| **Render visibility** | what this client draws | **this client's own player/camera** | `WildernessChunks` mesh streaming (16x16-tile chunks, load/unload radii), visual LODs (`WildlifeVisualLod`, tree/grass/brick LOD, outline budget), `RemotePlayerAvatar` bodies |
+| **Asset residency** | which zone scenes/meshes/textures stay built in memory | **every player's area**, plus the recent-zones budget | `trimZoneCache` in `game.js` (+ `ZoneBanditRelease`, NPC parking) |
+| **Simulation residency** | which areas' creatures, bandits, camps, NPCs are ticked | **every player's area** (and, for sleep/wake and ecology radii, the nearest player in that area) | `wilderness-simulation-lod.js`, `porakaneki-camps-runtime.js`, `offarea-npc-tick.js`, `updateHostiles` (see below) |
+
+- `ActorRegistry.occupiedAreas()` is the one answer to "which areas have a player in them". `trimZoneCache` now keeps every occupied zone (they do not count against `zoneCache.maxInactiveZones`), so a zone a guest is standing in is never evicted: its scene, parked NPCs, bandits and camps survive instead of being torn down and re-seeded.
+- Chunk meshes are pure asset/render state (nothing in the simulation queries `WildernessChunks` for loaded chunks), so **each client streams the chunks around its own player** and the host does not load chunks around a guest.
+- **Still single-area (the big remaining item):** `updateHostiles`, wildlife/den spawning, and most world updates only tick creatures whose `areaId === currentArea`, and `currentArea` is a global that also selects the active scene and grid. A zone only a guest occupies is therefore *kept* but not *ticked* by the host. Ticking several areas needs those updates to take an explicit area/scene/grid context instead of reading `currentArea`; do it one system at a time, starting with `updateHostiles`.
+
+#### Ticking more than one area: measurements and plan (not started in code)
+
+Measured on `updateHostiles` (794 lines): only **11** direct `currentArea` references (area filters and targeting arguments) and **1** direct audio call, so the function body is shallow. The risk is in its callees and in global state:
+
+- `GridTileAccessors.getActiveGrid()` / `getActiveScene()` are **pure lookups on `currentArea`** (and `getZoneSceneInfo(areaId)` already gives per-area access), and creatures already carry `areaGrid`/`scene`, with many movement helpers using `c.areaGrid || active grid`. So a bracketed per-area tick (`currentArea = X; tick; restore`, the same swap `runCutscenePreview` already does) is **mechanically viable**.
+- Hazards for that swap: `getActiveGrid()`/`getActiveScene()` **build a missing zone scene as a side effect** (never tick an unbuilt zone through them); per-frame caches keyed to the active area (`grazingPreyIndexArea`, `releasePreviousAreaCreatureTextures`, LOS and visibility caches) would thrash or release the wrong textures when areas alternate; sounds and effects triggered by creatures in a remote area would play at the local listener or draw into a scene nobody sees; `updateCreatureMesh` is interleaved with the AI so remote-area creatures would pay for visuals.
+- Reach: `currentArea` has 545 references in `game.js`, 213 modules call `getCurrentArea`, 22 of them in `js/combat/` (LOS, projectiles, bandit combat, afflictions).
+
+Staged plan, each stage gated and verified live before the next:
+1. **Opt-in remote-area tick** (off with one registered player, so single-player cannot change): for every *occupied, already-built* zone other than the current one, run the creature tick at the existing coarse 5 Hz (`FAR_WILDLIFE_AI_TICK_INTERVAL_S`) inside an area scope, with audio/FX muted and mesh updates skipped; make the per-area caches per-area.
+2. Same for NPC walkers (`offarea-npc-tick.js` is already player-set aware) and bandit camps.
+3. Build a guest's zone scene on the host when nobody has built it (paced, like the zone-build entry path).
+4. Remove the swap by passing an explicit area/scene/grid into the tick (the clean form), system by system.
+
+### Conversations and menus (`js/npc-conversations.js`, `window.NpcConversations`)
+
+Design decision: an ordinary NPC conversation holds **only the person talking**. The world, the clock and
+every other player keep running; the only other thing it freezes is the NPC being spoken to. (A cutscene is
+different: it pauses everyone - see above.)
+
+- One conversation per NPC: a second player gets `{ ok: false, by }` and a "<NPC> is already talking with someone else." toast instead of taking over. One NPC per player: starting another ends the previous.
+- `openNpcDialogue` asks `NpcConversations.begin(player, walker)` and `closeNpcDialogue` reports `end(player)`. A remote player's conversation (host side) freezes only that NPC and that player (`_inDialogue`) and releases on end, disconnect, or leaving the session. The remote body's own NPC-kind walker is not in `npcWalkers`, so it can never be talked to.
+- Dialogue never set `paused`, so the world already kept running; this change only adds the lock.
+- **Main menu in co-op** (`TimeConsensus.shouldGate()`): opening it no longer stops world time. Only the local player's controller polling, movement and vitals are held (`localPaused`); calendar, hostiles, NPCs, weather and the other players continue. Other modal gates that reuse `paused` (grooming, etc.) still stop the world, and single-player is unchanged.
+- Live-verified in the real game: the clock advances during both the dummy's and the local player's conversation; a second player is refused with the toast; the NPC returns to its schedule after each conversation; in co-op the main menu leaves the clock running and the local player still, while in single-player the same menu still pauses the world.
+
+**Not done yet:** a guest's own client (its dialogue UI and camera) needs the network layer; being hit while talking does not yet end the conversation for a remote speaker; other `paused` modal gates (grooming, farm-edit) are still world-global and should be reviewed one by one.
+
+### Remote player avatar (`js/remote-player-avatar.js`, `window.RemotePlayerAvatar`)
+
+Every non-local player gets an on-screen body while they are in the area this client shows. It is the
+cutscene player stand-in pipeline, not a new renderer: `makeNpcWalker(syntheticRecord)` (authored PNG
+portrait + pants, procedural 3D feet and hands with their generated outlines, per
+`docs/architecture/visual-authoring.md`), kept out of `npcWalkers` (no schedule, dialogue or save state),
+driven from the simulation entity (`x`, `y`, `angle`), disposed through `despawnNpcVisitor(walker, true)`,
+and enumerated by `CharacterVisuals` as an NPC-kind character. A body is built on entry (~1-2 s) and
+removed when the player leaves the area or the session. The network layer supplies the look via
+`player.avatarProfile = { appearance, equippedCosmetics, appliedDyes }`; with none, the local player's look is used (the dummy).
+
+Verified in the real game (headless): the body builds in town, faces the camera / faces away from the
+entity's `angle`, gait follows real speed (feet animate at ~2.5 tiles/s while walking, 0 when stopped),
+and despawn leaves no body behind. **Not yet done:** held tools/weapons and bag items for remote players
+(needs their equipment ids), a shoulder pet / companion via `ActorRegistry.ownerOf`, a nameplate,
+x-ray/outline parity with the local player (`held-xray` is player-only in `CharacterVisuals.CAPABILITIES`),
+and close-up checking of feet and the pants seam.
+
+Simulation LOD is player-set aware: bandit sleep/wake (`wilderness-simulation-lod.js`)
+and Porakaneki ecology/aggro radii use `ActorRegistry.distanceToNearestPlayer` /
+nearest-player tile position, so a camp beside a guest stays awake on the host and a
+player in another zone does not hold it awake. **Purely visual LOD** (wildlife
+avatar hiding, NPC leg suppression, tree/brick/grass LOD, outline budget) stays
+keyed to the *local* player/camera on purpose — each client renders for itself.
+
+### Still singleton-bound (next up)
+
+- Deliberately local-only (they are the local avatar's own action): `skeeri-ruins.js` swoop, `combat-camera-alignment-bridge.js` aerial wall impact, ruin/cave-trap deps in `game.js`, `respawnPlayer`/`PlayerDowned`/`GameFeel.playerHurt`. Ruin hazards must become "every player in the ruin" before co-op ruins.
+- Other `performance.now()` gameplay timers (`invulnUntil` on the local player, `combat-input.js`, stamina windows set from `game.js`) are still wall-clock.
+- `nearestPlayer` callers should switch to `strict: true` once hostiles in other zones are simulated.
+- `WildernessChunks` residency, sleep/time advance and cutscenes assume one player.
+
+Rule for new code: **never assume the local player is the only player.** Take a
+target/actor, ask the registry for players, and read time from `SimClock`.
+
 ## The intended model
 
 - One player is the **world owner**. Their character save is the "main"

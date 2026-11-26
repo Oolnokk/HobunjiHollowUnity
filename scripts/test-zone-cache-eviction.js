@@ -52,13 +52,17 @@ function makeWorld(config) {
     // Mirrors the real _disposeZoneScene: it drops the scene AND the saved zone state (written for terrain regeneration).
     _disposeZoneScene: id => { disposed.push(id); zoneScenes.delete(id); for (const m of Object.values(persist)) m.delete(id); },
   });
+  vm.runInContext(fs.readFileSync(path.join(root, 'docs/js/actor-registry.js'), 'utf8'), context); // The real registry: game.js asks it which areas have a player.
+  const registry = context.window.ActorRegistry;
+  registry.setLocalAreaResolver(() => context.currentArea);
+  registry.registerPlayer({ x: 0, y: 0, health: 100 }, { local: true });
   vm.runInContext(fs.readFileSync(path.join(root, 'docs/js/entity-distance-lod.js'), 'utf8'), context);
   vm.runInContext(fs.readFileSync(path.join(root, 'docs/js/wildlife-visual-lod.js'), 'utf8'), context); // The real isStreamableCorpse decides what may become data.
   vm.runInContext(fs.readFileSync(path.join(root, 'docs/js/zone-bandit-release.js'), 'utf8'), context); // The real module game.js hands bandit-only zones to.
   vm.runInContext(`${persistenceFns}\n${evictionBlock}\nwindow.ZoneBanditRelease.init({ zoneResidents, hostileObjects, corpseObjects, companionObjects, getCurrentArea: () => currentArea, despawnCreature, forgetCampState: id => window.BanditCamps.forgetZoneState(id) });\nthis.api = { releaseResidentRigs, parkZoneNpcs, noteZoneVisited, trimZoneCache, scheduleZoneCacheTrim, zoneEvictionBlocker, evictZoneScene, rebindZoneResidents, order: _zoneVisitOrder };`, context, { filename: 'zone-cache.js' });
   const addZone = id => zoneScenes.set(id, { scene: Object.assign(traversable([]), { cleared: false }), grid: ['grid-' + id], cols: 200, rows: 200 });
   const visit = id => { addZone(id); context.currentArea = id; context.api.noteZoneVisited(id); };
-  return { holderCalls, farmScene, buildingScenes, traversable, context, api: context.api, timers, disposed, campfireReleases, logs, persist, zoneScenes, hostiles, corpses, companions, npcs, despawned, forgotten, state, addZone, visit };
+  return { registry, holderCalls, farmScene, buildingScenes, traversable, context, api: context.api, timers, disposed, campfireReleases, logs, persist, zoneScenes, hostiles, corpses, companions, npcs, despawned, forgotten, state, addZone, visit };
 }
 
 // ---- keeps the current zone and the most recent inactive one --------------
@@ -80,6 +84,29 @@ function makeWorld(config) {
   w.api.trimZoneCache();
   assert.deepEqual(w.disposed, ['map_a', 'map_c'], 'after a is rebuilt and entered, the older inactive zone (c) goes');
   assert.ok(w.zoneScenes.has('map_a') && w.zoneScenes.has('map_b') && !w.zoneScenes.has('map_c'), 'current and previous stay built');
+}
+
+// ---- co-op: a zone any player stands in is never evicted ----------------------
+{
+  const w = makeWorld({});
+  w.visit('map_a'); w.visit('map_b'); w.visit('map_c'); // a is the oldest, c is current
+  const guest = { x: 0, y: 0, health: 100, areaId: 'map_a' };
+  w.registry.registerPlayer(guest, { playerId: 'guest' });
+  assert.deepEqual([...w.registry.occupiedAreas()].sort(), ['map_a', 'map_c']);
+  w.api.trimZoneCache();
+  assert.deepEqual(w.disposed, [], 'the guest keeps the oldest zone built (it would be evicted without them)');
+  assert.deepEqual([...w.zoneScenes.keys()].sort(), ['map_a', 'map_b', 'map_c'], 'and the one-zone inactive budget is still spent on the previous zone (b)');
+  // Another zone is entered: the guest's zone still survives; only unoccupied zones compete for the budget.
+  w.visit('map_d');
+  w.api.trimZoneCache();
+  assert.deepEqual(w.disposed, ['map_b'], 'the oldest UNOCCUPIED inactive zone goes; the guest zone and the most recent inactive one stay');
+  assert.deepEqual([...w.zoneScenes.keys()].sort(), ['map_a', 'map_c', 'map_d']);
+  assert.deepEqual([...w.forgotten], [], 'no camp or bandit state is released for an occupied zone');
+  // The guest leaves: their old zone is an ordinary inactive zone again.
+  guest.areaId = 'map_d';
+  w.api.trimZoneCache();
+  assert.deepEqual(w.disposed, ['map_b', 'map_a'], 'once nobody is there it is evicted like any other');
+  assert.ok(w.zoneScenes.has('map_c') && w.zoneScenes.has('map_d'));
 }
 
 // ---- config ---------------------------------------------------------------

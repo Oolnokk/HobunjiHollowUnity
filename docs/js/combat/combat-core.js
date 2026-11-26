@@ -1546,8 +1546,7 @@
     scene.add(devDeps.reticleWavyGroup);
   }
 
-  function skipBlackoutTime(severityPercent) {
-    if (!calendarDeps?.calendar) return 0;
+  function blackoutSkipMinutes(severityPercent) {
     const linear = Math.max(BLACKOUT_MIN_SKIP_MINUTES, severityPercent * BLACKOUT_MINUTES_PER_PERCENT);
     // Diminishing returns above the soft cap, then a hard ceiling — severity
     // keeps mattering for wander distance even past this point, it just
@@ -1556,7 +1555,11 @@
     const softened = linear <= BLACKOUT_TIME_SOFT_CAP_MINUTES
       ? linear
       : BLACKOUT_TIME_SOFT_CAP_MINUTES + (linear - BLACKOUT_TIME_SOFT_CAP_MINUTES) * 0.15;
-    const skippedMinutes = Math.min(BLACKOUT_TIME_HARD_CAP_MINUTES, Math.round(softened));
+    return Math.min(BLACKOUT_TIME_HARD_CAP_MINUTES, Math.round(softened));
+  }
+
+  function applyBlackoutMinutes(skippedMinutes) {
+    if (!calendarDeps?.calendar) return 0;
     const morning = Number(calendarDeps.MORNING_HOUR) || 6;
     const night = Number(calendarDeps.NIGHT_HOUR) || 22;
     const playableMinutesPerDay = Math.max(60, (night - morning) * 60);
@@ -1568,6 +1571,11 @@
     }
     calendar.time01 = Math.max(0, total);
     return skippedMinutes;
+  }
+
+  function skipBlackoutTime(severityPercent) {
+    if (!calendarDeps?.calendar) return 0;
+    return applyBlackoutMinutes(blackoutSkipMinutes(severityPercent));
   }
 
   function performBlackoutTravel(severityPercent, stars) {
@@ -1630,11 +1638,34 @@
     // below sees the true severity even well past 100%.
     const effectivePercent = Math.max(1, Number(severityPercent) || 0);
     const safeStars = Math.max(1, Math.min(5, Math.round(Number(stars) || 3)));
-    const skippedMinutes = skipBlackoutTime(effectivePercent);
-    const travel = performBlackoutTravel(effectivePercent, safeStars);
-    lastBlackout = { source, deficitPercent: effectivePercent, stars: safeStars, skippedMinutes, travel, at: performance.now() };
-    devDeps?.showToast?.(`${source === 'rootledoot' ? '✨' : '🍺'} Blackout — ${skippedMinutes} minutes passed.`, true);
-    return lastBlackout;
+    const finishBlackout = skippedMinutes => {
+      const travel = performBlackoutTravel(effectivePercent, safeStars);
+      lastBlackout = { source, deficitPercent: effectivePercent, stars: safeStars, skippedMinutes, travel, at: performance.now() };
+      devDeps?.showToast?.(`${source === 'rootledoot' ? '✨' : '🍺'} Blackout — ${skippedMinutes} minutes passed.`, true);
+      return lastBlackout;
+    };
+
+    // Co-op: a forced skip knocks the player out. Another player has 60 s to revive them,
+    // otherwise the time skip happens (longest queued skip wins; see js/time-consensus.js).
+    // The wander travel and toast run for this player once the skip is applied.
+    const tc = window.TimeConsensus;
+    const me = devDeps?.player;
+    if (tc?.shouldGate() && me) {
+      const minutes = blackoutSkipMinutes(effectivePercent);
+      const gate = tc.knockOut(me, {
+        kind: 'blackout', source, minutes,
+        run: () => { applyBlackoutMinutes(minutes); }, // Only called when THIS skip is the longest queued one.
+        onResolved: resolution => { finishBlackout(resolution.winner.minutes); }, // Everyone wakes after whichever skip won.
+        onRevived: by => { devDeps?.showToast?.(`${by?.name || 'A friend'} brought you round. No time passes.`, true); },
+      });
+      if (gate.state === 'waiting') {
+        devDeps?.showToast?.(`${source === 'rootledoot' ? '✨' : '🍺'} You are out cold. A friend has ${Math.round(tc.REVIVE_WINDOW_MS / 1000)}s to revive you, or time passes.`, false);
+        lastBlackout = { source, deficitPercent: effectivePercent, stars: safeStars, skippedMinutes: 0, travel: null, pendingRevive: true, at: performance.now() };
+      }
+      return lastBlackout;
+    }
+
+    return finishBlackout(skipBlackoutTime(effectivePercent));
   }
 
   RS.addDrunkenness = function addDrunkenness(entity, footingAmount, healthAmount, opts = {}) {

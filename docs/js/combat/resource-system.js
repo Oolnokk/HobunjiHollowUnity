@@ -25,7 +25,7 @@
 
   const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
   const round1 = value => Math.round(value * 10) / 10;
-  const nowMs = () => performance.now();
+  const nowMs = () => (window.SimClock ? window.SimClock.now() : performance.now()); // Shared sim clock (js/sim-clock.js).
   const STAMINA_RECOVERY_MULTIPLIER = 1.25; // Used by every time-based Stamina recovery path: ordinary regen, Exhausted debt, and Stamina-affliction recovery.
   const ACTION_PUNISHMENT_RECOVERY_MULTIPLIER = 4; // Used by action-punishing afflictions after the entity deliberately avoids their punished action.
   const ACTION_PUNISHMENT_RECOVERY_GRACE_MS = 750; // Used to require a short pause after the punished action before the accelerated recovery engages.

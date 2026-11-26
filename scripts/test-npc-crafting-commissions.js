@@ -349,8 +349,10 @@ async function runRealNpcDialogueRoute({ npcId, readyTask = null, tutorialActive
     DialogueCameraFraming: { end() {} },
     CinematicCameraRuntime: { beginDialogue() {} },
   }; // Runtime-owned systems stubbed only at their dependency boundaries.
+  vm.runInContext(read('docs/js/npc-conversations.js'), vm.createContext({ window: dialogueWorld, console })); // The real one-conversation-per-NPC lock openNpcDialogue now asks first.
   const context = {
     window: dialogueWorld,
+    player: { x: 0, y: 0 }, showToast() {},
     THREE: { MathUtils: { radToDeg: value => value } },
     ITEM_DEFS: { berry: { label: 'Berry' } },
     currentArea: 'town', dialogueOpen: false, _dialogueWalker: null,

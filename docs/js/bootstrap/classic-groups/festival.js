@@ -14,7 +14,7 @@
     "js/festival-blossom-petals.js?v=20261119petalFallAudit2",
     "js/festival-blossom-hunt.js?v=20261122blossomTrunkOutlines2",
     "js/festival-blossom-start-cue.js?v=20261119swatchDecal3",
-    "js/festival-blossom-ceremony.js?v=20261119h8503bae",
+    "js/festival-blossom-ceremony.js?v=20261126h6301742",
     "js/festival-system.js?v=20261122perception2",
     "js/festival-dialogue.js?v=20261115spouseSocialLife1",
     "js/festival-ui.js?v=20261118fiveBlossomsUI1"

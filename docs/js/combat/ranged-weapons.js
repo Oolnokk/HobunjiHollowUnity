@@ -1735,13 +1735,20 @@
       return { kind: 'actor', t: nearest.interval.enter, actor: c };
     }
 
-    const rawPlayerInterval = segmentHitboxInterval(start, end, actorHitbox(deps.player), projectileRadius);
-    const playerInterval = rawPlayerInterval && rawPlayerInterval.enter <= segmentLimit + AIM_EPSILON ? rawPlayerInterval : null;
+    // Any player the segment crosses can be struck, nearest first — not only the local avatar.
+    // Remote players are skipped when known to be in another area (the local one never is: single-player behaviour is unchanged).
+    let playerInterval = null, struckPlayer = deps.player;
+    for (const pl of deps.players || window.ActorRegistry?.getPlayers?.() || [deps.player]) {
+      if (!pl || pl === p.owner) continue;
+      if (pl !== deps.player && p.areaId != null && window.ActorRegistry?.areaOf?.(pl) != null && window.ActorRegistry.areaOf(pl) !== p.areaId) continue;
+      const iv = segmentHitboxInterval(start, end, actorHitbox(pl), projectileRadius);
+      if (iv && iv.enter <= segmentLimit + AIM_EPSILON && (!playerInterval || iv.enter < playerInterval.enter)) { playerInterval = iv; struckPlayer = pl; }
+    }
     let friendly = p.stagedTarget
       ? stagedTargetHit(p.stagedTarget, start, end, projectileRadius, p.areaId)
       : nearestHostileHit(start, end, projectileRadius, p.areaId, p.owner);
     if (friendly && friendly.interval.enter > segmentLimit + AIM_EPSILON) friendly = null;
-    let nearest = playerInterval ? { kind: 'player', interval: playerInterval, actor: deps.player } : null;
+    let nearest = playerInterval ? { kind: 'player', interval: playerInterval, actor: struckPlayer } : null;
     const petHit = nearestPlayerCompanionHit(start, end, projectileRadius, p.areaId); // Ground companions are separate actors, not part of the player hitbox.
     if (petHit && petHit.interval.enter <= segmentLimit + AIM_EPSILON &&
         (!nearest || petHit.interval.enter < nearest.interval.enter)) {
@@ -1776,9 +1783,11 @@
       else lastEvent = `enemy-pet-hit:${p.owner?.id || 'enemy'}->${nearest.actor.id || nearest.actor.name || 'creature'}`; // Separate mobile-readable proof of hits on the player's ground pet.
       return { kind: 'actor', t: nearest.interval.enter, actor: nearest.actor };
     }
-    deps.damagePlayer(damage, p.prevX, p.prevY, knockbackPxS, { tag: 'sharp', ranged: true, afflictionBonuses: p.afflictionBonuses, attackPower: Number(p.def?.attackPower) || 12, footingDamageMultiplier: p.footingDamageMultiplier, attacker: p.owner || null });
-    applySpecialAmmoDebuff(deps.player, p.specialAmmoId);
-    return { kind: 'actor', t: nearest.interval.enter, actor: deps.player };
+    const playerHitOpts = { tag: 'sharp', ranged: true, afflictionBonuses: p.afflictionBonuses, attackPower: Number(p.def?.attackPower) || 12, footingDamageMultiplier: p.footingDamageMultiplier, attacker: p.owner || null };
+    if (window.DamageAuthority) window.DamageAuthority.hit(nearest.actor, damage, p.prevX, p.prevY, knockbackPxS, playerHitOpts); // Hurts the player actually struck.
+    else deps.damagePlayer(damage, p.prevX, p.prevY, knockbackPxS, playerHitOpts);
+    applySpecialAmmoDebuff(nearest.actor, p.specialAmmoId);
+    return { kind: 'actor', t: nearest.interval.enter, actor: nearest.actor };
   }
 
   // Projectile orientation begins from the exact immutable launch frame.

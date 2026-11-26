@@ -33,7 +33,20 @@
   function chunkOf(c,r) { return runtime.chunkOf(c,r,chunkSize()); }
   function keyFor(zone,c,r) { return zone+':'+c+','+r; }
   function sameChunk(x,y,chunk) { return runtime.sameChunk(x,y,chunk,chunkSize()); }
-  function playerTile() { return {c:Math.floor(deps.player.x/deps.TILE),r:Math.floor(deps.player.y/deps.TILE)}; }
+  function playerTile(p=deps.player) { return {c:Math.floor(p.x/deps.TILE),r:Math.floor(p.y/deps.TILE)}; }
+  // Participants: every player in this zone (the local avatar always counts; a remote one only when ActorRegistry
+  // places it here). Single-player: exactly [deps.player], so every check below reduces to the old local-player test.
+  function playersHere() {
+    const reg=window.ActorRegistry;
+    if(!reg||reg.playerCount()<2)return [deps.player];
+    const zone=area();
+    return reg.getPlayers().filter(p=>p===deps.player||reg.areaOf(p)===zone);
+  }
+  function downed(p) { return p===deps.player?window.PlayerDowned?.isDowned?.()===true:p._downed===true; }
+  function standing(p) { return p.health>0&&!downed(p); }
+  function allDown() { return playersHere().every(downed); }
+  function anyInChunk(chunk) { return playersHere().some(p=>sameChunk(p.x/deps.TILE,p.y/deps.TILE,chunk)); } // Presence, not health: matches the old dormancy rule.
+  function anyStandingInChunk(chunk) { return playersHere().some(p=>standing(p)&&sameChunk(p.x/deps.TILE,p.y/deps.TILE,chunk)); }
   function tileAt(c,r) { return deps?.getGrid?.()?.[r]?.[c]; }
   function tileEligible(c,r,terrainOnly=false) {
     const tile=tileAt(c,r);
@@ -64,7 +77,7 @@
   async function showRoot(rec,large=false) {
     const {raw,crop}=await loadArt();
     if(!ownsScene(rec))return false;
-    if(!large&&(deps.canActivate?.()===false||!sameChunk(deps.player.x/deps.TILE,deps.player.y/deps.TILE,rec.chunk)||!flatFootprint(rec.site.c,rec.site.r)||npcInChunk(rec.zone,rec.chunk))){reset('bait suppressed during artwork load');return false;} // Recheck asynchronous activation without spending the successful daily roll.
+    if(!large&&(deps.canActivate?.()===false||!anyInChunk(rec.chunk)||!flatFootprint(rec.site.c,rec.site.r)||npcInChunk(rec.zone,rec.chunk))){reset('bait suppressed during artwork load');return false;} // Recheck asynchronous activation without spending the successful daily roll.
     const THREE=window.THREE;if(!THREE)return false;
     const art=large?crop:raw; // The bait preserves the farm PNG's authored padding; only NPC portraits and the boss reward use the opaque crop.
     if(!rootTextures.has(art)){const texture=new THREE.CanvasTexture(art);texture.magFilter=THREE.NearestFilter;texture.minFilter=THREE.NearestFilter;if(THREE.sRGBEncoding!==undefined)texture.encoding=THREE.sRGBEncoding;rootTextures.set(art,texture);}
@@ -106,8 +119,8 @@
     ledger.set(rec.key,{day:Math.floor(Number(deps.day?.())||0),cleared:false,ready:false}); // Missing art or invalidated terrain must not create a retry storm every half-second.
     reset(reason);
   }
-  function tryActivate() {
-    const zone=area(),p=playerTile(),chunk=chunkOf(p.c,p.r),key=keyFor(zone,chunk.c,chunk.r);
+  function tryActivate(who=deps.player) {
+    const zone=area(),p=playerTile(who),chunk=chunkOf(p.c,p.r),key=keyFor(zone,chunk.c,chunk.r);
     const day=Math.floor(Number(deps.day?.())||0),previous=ledger.get(key);
     if(journal.blocked(key,day))return; // Failed/used daily rolls perform no NPC scans on later ticks.
     if(deps.canActivate?.()===false||npcInChunk(zone,chunk))return; // Check combat and population only after cheap daily ledger rejection.
@@ -142,7 +155,7 @@
     void showRoot(rec,true).then(ok=>{if(!ok)fail('reward unavailable');else journal.clearRetry(rec.key);}).catch(error=>fail('reward failed: '+error.message));
   }
   function settleVictory(rec) {
-    if(active!==rec||rec.phase!=='combat'||rec.actors.size||!rec.boss||rec.building||rec.wave<WAVES.length||window.PlayerDowned?.isDowned?.())return false;
+    if(active!==rec||rec.phase!=='combat'||rec.actors.size||!rec.boss||rec.building||rec.wave<WAVES.length||allDown())return false;
     rec.phase='reward';
     pendingRewards.set(rec.key,{zone:rec.zone,site:{...rec.site},height:rec.bossRootHeight,armament:rec.boss._banditCaptainArmament});
     deps.save?.(); // Victory is a meaningful checkpoint; no per-tick save.
@@ -150,7 +163,8 @@
     return true;
   }
   function connectedSpawnTiles(rec) {
-    const p=playerTile(),origin=sameChunk(p.c,p.r,rec.chunk)&&tileEligible(p.c,p.r)?p:rec.site;
+    const anchor=playersHere().find(q=>standing(q)&&sameChunk(q.x/deps.TILE,q.y/deps.TILE,rec.chunk))||deps.player; // The participant who is actually in the chunk anchors spawns.
+    const p=playerTile(anchor),origin=sameChunk(p.c,p.r,rec.chunk)&&tileEligible(p.c,p.r)?p:rec.site;
     const elevation=Number(tileAt(origin.c,origin.r)?.elevTier)||0;
     return runtime.connectedSpawnTiles({origin,reference:p,contains:(c,r)=>sameChunk(c,r,rec.chunk),
       eligible:(c,r)=>tileEligible(c,r)&&(Number(tileAt(c,r)?.elevTier)||0)===elevation});
@@ -191,7 +205,7 @@
     });
   }
   function canBeginAmbush(rec){
-    return deps.player.health>0&&!window.PlayerDowned?.isDowned?.()&&deps.canActivate?.()!==false&&sameChunk(deps.player.x/deps.TILE,deps.player.y/deps.TILE,rec.chunk)&&!npcInChunk(rec.zone,rec.chunk);
+    return anyStandingInChunk(rec.chunk)&&deps.canActivate?.()!==false&&!npcInChunk(rec.zone,rec.chunk);
   }
   function cancelInitialAmbush(rec){
     ledger.set(rec.key,{day:Math.floor(Number(deps.day?.())||0),cleared:false,ready:true}); // No actor was adopted; the ambush may reappear after the NPC leaves.
@@ -257,7 +271,7 @@
     const rec=active;if(!rec||rec.phase!=='combat')return false;
     const {attributed:rootDefeat,deficit}=defeat.snapshot(); // Preserve before reset invalidates all actor and wave state.
     ledger.set(rec.key,{day:Math.floor(Number(deps.day?.())||0),cleared:false,ready:false}); // A fight crossing midnight still cannot reroll on its actual defeat day.
-    reset('defeat: locale reset, all actors despawned');
+    if(!playersHere().some(p=>p!==deps.player&&standing(p)))reset('defeat: locale reset, all actors despawned'); // Another standing participant keeps the fight going.
     window.CookingSystem?.grantFeySight?.(1);
     if(rootDefeat&&window.HobunjiAlcohol?.triggerFeyBlackout){
       const max=window.ResourceSystem?.getEffectiveMax?.(deps.player,'health')||deps.player.maxHealth||100;
@@ -277,19 +291,19 @@
     syncWorld(); // World/cycle strings and ledger maintenance are throttled too.
     const rec=active;
     if(!rec){
-      if(!window.PlayerDowned?.isDowned?.()&&deps.player.health>0){const p=playerTile();if(!resumeReward(zone,chunkOf(p.c,p.r)))tryActivate();}
+      for(const who of playersHere()){if(!standing(who))continue;const p=playerTile(who);if(resumeReward(zone,chunkOf(p.c,p.r)))break;tryActivate(who);if(active)break;}
       return;
     }
-    if(rec.phase==='combat'&&!window.PlayerDowned?.isDowned?.()&&Math.hypot(deps.player.x/deps.TILE-rec.site.c-.5,deps.player.y/deps.TILE-rec.site.r-.5)>chunkSize()*2){reset('player escaped locale');return;}
+    if(rec.phase==='combat'&&!allDown()&&playersHere().every(p=>Math.hypot(p.x/deps.TILE-rec.site.c-.5,p.y/deps.TILE-rec.site.r-.5)>chunkSize()*2)){reset('player escaped locale');return;} // Abandoned only when every participant has left.
     if(rec.phase==='bait'){
-      if(!sameChunk(deps.player.x/deps.TILE,deps.player.y/deps.TILE,rec.chunk)||npcInChunk(zone,rec.chunk)||!flatFootprint(rec.site.c,rec.site.r))reset('bait dormant');
+      if(!anyInChunk(rec.chunk)||npcInChunk(zone,rec.chunk)||!flatFootprint(rec.site.c,rec.site.r))reset('bait dormant');
       return;
     }
     if(rec.phase==='reward'){
-      if(!sameChunk(deps.player.x/deps.TILE,deps.player.y/deps.TILE,chunkOf(rec.site.c,rec.site.r)))reset('unclaimed harvest dormant');
+      if(!anyInChunk(chunkOf(rec.site.c,rec.site.r)))reset('unclaimed harvest dormant');
       return;
     }
-    if(rec.phase!=='combat'||rec.building||window.PlayerDowned?.isDowned?.())return;
+    if(rec.phase!=='combat'||rec.building||allDown())return;
     for(const actor of rec.actors)if(!deps.hostiles.has(actor)){reset('encounter actor removed by zone teardown');return;}
     if(rec.actors.size)return;
     if(rec.wave>=WAVES.length){

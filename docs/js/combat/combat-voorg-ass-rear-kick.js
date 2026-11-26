@@ -294,7 +294,7 @@
     const footingMultiplier = Math.max(FOOTING_MULTIPLIER_MIN, ((Number(target.maxFooting) || 50) * FOOTING_MAX_FRACTION) / Math.max(0.001, DAMAGE * footScale));
     const hitOptions = { tag: 'blunt', attacker: creature, footingDamageMultiplier: footingMultiplier };
     const isPlayer = target === deps.player || (deps.players || []).includes(target);
-    if (isPlayer) deps.damagePlayer(DAMAGE, creature.x, creature.y, KNOCKBACK_PX_S, hitOptions);
+    if (isPlayer) { if (window.DamageAuthority) window.DamageAuthority.hit(target, DAMAGE, creature.x, creature.y, KNOCKBACK_PX_S, hitOptions); else deps.damagePlayer(DAMAGE, creature.x, creature.y, KNOCKBACK_PX_S, hitOptions); }
     else if (creature.isCompanion && window.CompanionOffense) window.CompanionOffense.damageCreature(deps.damageCreature, creature, target, DAMAGE, creature.x, creature.y, KNOCKBACK_PX_S, hitOptions);
     else deps.damageCreature(target, DAMAGE, creature.x, creature.y, KNOCKBACK_PX_S, hitOptions);
     deps.playCreatureClawHit?.(creature);

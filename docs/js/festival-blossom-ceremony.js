@@ -36,12 +36,16 @@
     const villagers = livingVillagers(walkers);
     lastCast = villagers.map(walker => walker.rec.id);
     const crowdStart = Number(stage.row) + 4.5 + (Number(stage.postZ) || 0); // South of the stage, facing up/north at the two presenters.
-    const columns = Math.max(10, Math.ceil(villagers.length / 4)); // Four ranks maximum; a fixed 16-column cap could place large crowds outside town's southern boundary.
-    villagers.forEach((walker,index) => {
+    const members = window.SharedCutscene?.crowdMembers?.() || []; // Other players watch from the crowd too (js/shared-cutscene.js); none in single-player.
+    const total = villagers.length + members.length;
+    const columns = Math.max(10, Math.ceil(total / 4)); // Four ranks maximum; a fixed 16-column cap could place large crowds outside town's southern boundary.
+    const slotFor = index => {
       const row = Math.floor(index / columns),column = index % columns;
-      const inRank = Math.min(columns, villagers.length - row * columns); // A partly filled row still centers in front of the stage rather than all lining up to one side.
-      const c = Number(stage.col) + 1.5 + (column - (inRank - 1) / 2) * 0.8 + (row % 2 ? 0.25 : 0),
-        r = crowdStart + row * 0.95;
+      const inRank = Math.min(columns, total - row * columns); // A partly filled row still centers in front of the stage rather than all lining up to one side.
+      return {c:Number(stage.col) + 1.5 + (column - (inRank - 1) / 2) * 0.8 + (row % 2 ? 0.25 : 0), r:crowdStart + row * 0.95};
+    };
+    villagers.forEach((walker,index) => {
+      const {c,r} = slotFor(index);
       const target = {area:'town',c,r,rotY:180,pose:'stand',activity:'watching the Five Blossoms crowning',
         lookAt:{col:center.c+.5,row:center.r},socialLookAt:{x:center.c,z:center.r,y:1.6},socialWatching:true}; // Upward gaze shares the NPC's existing social look-at presentation.
       holding.set(walker.rec.id,target);
@@ -51,6 +55,7 @@
         if (walker.root?.position) {walker.root.position.x=c+.5;walker.root.position.z=r+.5;}
       } catch (error) { lastError = 'Could not position '+walker.rec.id+': '+String(error?.message || error); }
     });
+    if (members.length) window.SharedCutscene.joinCrowd({area:'town',slots:members.map((_,k)=>({...slotFor(villagers.length+k),rotY:180,pose:'stand'}))}); // Players take the ranks after the villagers.
     window.NpcScheduling?.invalidateTargetDecisions?.(); // Invalidate walker-local schedule leases before the fade reveals the newly gathered audience.
     return holding.size;
   }
@@ -108,6 +113,7 @@
     if(!stage || !runtime?.run || deps?.getArea?.()!=='town') return {ok:false,reason:'The festival stage or cutscene runtime is unavailable in town'};
     if(typeof onProclaim!=='function') return {ok:false,reason:'No reward callback provided'};
     running = true; lastError = '';
+    window.SharedCutscene?.begin({id:OWNER,title:'Five Blossoms crowning',area:'town'}); // Pauses every player; the others join the audience in arrangeCrowd().
     const lock = window.CharacterActionLocks?.acquire?.({owner:OWNER,reason:'Five Blossoms crowning',
       participants:[{id:'player',channels:['movement','tools','actions']}]}); // Prevent moving offstage while the ceremony is staging.
     let awarded = false; // Exactly-once handoff at Father Hunundi's proclamation.
@@ -133,7 +139,7 @@
       if(!awarded) awarded=!!onProclaim(); // Skip/fast-forward still grants the same crown, never twice.
       return {ok:awarded,first:true,crowd:lastCast.length};
     }catch(error){lastError=String(error?.message||error);window.__farmLog?.('[five-blossom-crowning] '+lastError,'error');return {ok:false,reason:lastError,awarded};}
-    finally {holding.clear();window.NpcScheduling?.invalidateTargetDecisions?.();running=false;lock?.release?.();} // Villagers promptly resume their previous routines on scene exit.
+    finally {holding.clear();window.NpcScheduling?.invalidateTargetDecisions?.();running=false;lock?.release?.();window.SharedCutscene?.end();} // Villagers promptly resume their previous routines on scene exit.
   }
   function init(injected) {
     deps = injected || null;holding.clear();window.NpcScheduling?.invalidateTargetDecisions?.();running=false;

@@ -358,6 +358,9 @@
       // scripts) instead of the NPC's ordinary tree/turn-in/favor routing.
       async function openNpcDialogue(walker, opts = null) {
         if (!walker || isPlayerInCombat()) return false; // Combat disables both direct dialogue calls and contextual Talk commands.
+        // Co-op: a conversation holds only the person talking, and an NPC talks to one player at a time (js/npc-conversations.js).
+        const conversation = window.NpcConversations.begin(player, walker);
+        if (!conversation.ok) { showToast(`${walker.rec?.name || 'They'} ${walker.rec?.name ? 'is' : 'are'} already talking with someone else.`, false); return false; }
         const rec  = walker.rec;
         window.DialogueContent?.recordNpcMemory(rec?.id, 'talked');
         window.WorldPopupText?.clearInteractionPrompts?.();
@@ -410,6 +413,7 @@
 
       function closeNpcDialogue() {
         if (cutscenePreviewActive) return; // Only the director may advance/close cinematic dialogue; Leave, Escape and controller cancel share this authority.
+        window.NpcConversations.end(player); // The NPC is free for other players again.
         dialogueOpen = false;
         window.CinematicCameraRuntime?.endDialogue?.();
         window.DialogueCameraFraming?.end?.();
@@ -720,24 +724,32 @@
         onBranch: null, branchT: 0, branchSurfaceY: 0,
       };
 
-      // All players present in this session — just the local `player` today
-      // (there is no networking in this repo yet). Hostile-creature target
-      // acquisition reads from this list via nearestPlayer() below instead
-      // of hardcoding `player` directly, so a second connected player would
-      // just need to be pushed into this array for hostiles to be able to
-      // notice and chase them too, with nothing in the AI itself to change.
-      const players = [player];
+      // Every player in this session lives in js/actor-registry.js. Today that is
+      // just the local `player`; `players` is the registry's live array (never
+      // reassign it — modules hold it by reference), so a second/remote player
+      // registered there is seen by hostile targeting, companion/pet targeting
+      // and the combat deps with nothing else to change.
+      const players = window.ActorRegistry.getPlayers();
+      window.ActorRegistry.registerPlayer(player, { local: true });
+      window.ActorRegistry.setLocalAreaResolver(() => currentArea); // player.areaId is not always rewritten on a map swap.
+      // Co-op time rules (beds, Wait/Sleep, blackouts) live in js/time-consensus.js; a knocked-out local avatar cannot act until revived or the skip lands.
+      window.SharedCutscene.init({ tilePx: TILE });
+      let _timeKnockoutLock = null;
+      window.TimeConsensus.init({
+        tilePx: TILE,
+        onKnockoutStart: p => { if (p === player) { player._downed = player._timeKnockedOut = true; } if (p === player && !_timeKnockoutLock) _timeKnockoutLock = window.CharacterActionLocks?.acquire?.({ owner: 'time-consensus-knockout', reason: 'knocked out', participants: ['player'], channels: ['movement', 'tools', 'actions'] }) || null; },
+        onKnockoutEnd: p => { if (p === player) { player._downed = player._timeKnockedOut = false; _timeKnockoutLock?.release?.(); _timeKnockoutLock = null; } }, // Knocked out = not a target (enemies skip _downed) and takes no damage (damagePlayer).
+      });
 
       // Nearest live player to (x, y) — see updateHostiles' targetPlayer.
-      // Identical to hardcoding `player` while `players` has one entry.
-      function nearestPlayer(x, y) {
-        let best = null, bestDist = Infinity;
-        for (const p of players) {
-          const d = Math.hypot(p.x - x, p.y - y);
-          if (d < bestDist) { best = p; bestDist = d; }
-        }
-        return best;
-      }
+      // Pass { areaId } to prefer players in the creature's own area.
+      function nearestPlayer(x, y, opts) { return window.ActorRegistry.nearestPlayer(x, y, opts); }
+
+      // One entry for "attacker hurts target" (js/damage-authority.js): routes to
+      // damagePlayer for the local avatar, a remote-player handler for any other
+      // player, and damageCreature for everything else. damagePlayer/damageCreature
+      // are hoisted function declarations defined further down this closure.
+      window.DamageAuthority.init({ damageLocalPlayer: damagePlayer, damageCreature, getLocalPlayer: () => player });
 
       // Health/Stamina afflictions + Exhausted/black-stamina debt — see
       // docs/js/combat/resource-system.js. Adds player.afflictions/
@@ -3715,9 +3727,7 @@
         return {
           dealHealthDamage(target, amount) {
             const opts = { environmentalImpact: true, reason: 'knockback collision', source: descriptor.label }; // Retains normal death authority without treating impact as a second weapon hit.
-            return target === player
-              ? damagePlayer(amount, sourceX, sourceY, 0, opts)
-              : damageCreature(target, amount, sourceX, sourceY, 0, opts);
+            return window.DamageAuthority.hit(target, amount, sourceX, sourceY, 0, opts); // Local/remote player or creature, by victim.
           },
           afterFootingDamage(target) {
             if (target.prone || target.footing > 0) return;
@@ -5845,6 +5855,7 @@
       }
 
       function damagePlayer(amount, fromX, fromY, knockbackPxS = PLAYER_KNOCKBACK_PX_S, dmgOpts) {
+        if (player._timeKnockedOut) return dmgOpts?.environmentalImpact === true ? { applied: 0, lethal: false } : undefined; // Passed out waiting for a revive (js/time-consensus.js): cannot be hurt or killed meanwhile.
         const environmentalImpact = dmgOpts?.environmentalImpact === true; // Collision Health damage cannot be countered or treated as a second incoming attack.
         if (window.PlayerDowned?.isDowned?.()) { // A downed player takes no Health damage, knockback or stagger; each hit only shortens the bleed-out timer (js/player-downed.js).
           if (!environmentalImpact) { window.Rootledoots?.noteDownedHit?.(dmgOpts?.attacker, amount); window.PlayerDowned.noteHitWhileDowned(); }
@@ -7352,6 +7363,16 @@
         }
       }
 
+      // The wildlife visual LOD is keyed to the LOCAL camera, but its `hidden` result also drops a
+      // creature to the coarse 5 Hz AI tick. A creature streamed out for this client can still be
+      // fighting another player, so that player keeps it on the full-rate simulation (host side of
+      // co-op). Always false in single-player (one registered player, the local one).
+      function simulationKeptAwakeByOtherPlayer(c) {
+        const reg = window.ActorRegistry;
+        if (reg.playerCount() < 2) return false;
+        const other = reg.distanceToNearestPlayer(c.x, c.y, { areaId: c.areaId, strict: true, filter: p => !reg.isLocalPlayer(p) });
+        return other / TILE < window.WildlifeVisualLod.wakeRadius();
+      }
       function updateWildlifeVisualLod(c, distanceTiles) {
         const hidden = window.WildlifeVisualLod.update(c, distanceTiles); // Promotes data-only actors through the same distance owner.
         if (hidden) releaseInactiveCreatureTextures(c);
@@ -7464,7 +7485,7 @@
             if (c.avatarRef?.group) c.avatarRef.group.visible = true;
           }
           const initialDistanceTiles = Math.hypot(player.x - c.x, player.y - c.y) / TILE; // Wakes a far creature immediately when the player crosses the nearer LOD boundary.
-          const initiallyLodSleeping = updateWildlifeVisualLod(c, initialDistanceTiles); // Selects full-rate or accumulated coarse simulation for this frame.
+          const initiallyLodSleeping = updateWildlifeVisualLod(c, initialDistanceTiles) && !simulationKeptAwakeByOtherPlayer(c); // Selects full-rate or accumulated coarse simulation for this frame.
           let entityDt = dt; // Carries accumulated elapsed time through the unchanged AI state machine on coarse far-wildlife ticks.
           if (initiallyLodSleeping) {
             c._farWildlifeAiAccumS = (c._farWildlifeAiAccumS || 0) + dt;
@@ -7514,7 +7535,7 @@
           // humanoid a live actor target and zeroes its player aggro; chase,
           // leash and sight below must follow that actor, not the player.
           const chunkCombatTarget = c.isBandit && c._chunkCombatTarget?.health > 0 && c._chunkCombatTarget.areaId === c.areaId ? c._chunkCombatTarget : null;
-          let targetPlayer = chunkCombatTarget || c.targetPlayer || nearestPlayer(c.x, c.y); // Scent priority can change this frame's active chase target before movement/attack.
+          let targetPlayer = chunkCombatTarget || c.targetPlayer || nearestPlayer(c.x, c.y, { areaId: c.areaId }); // Scent priority can change this frame's active chase target before movement/attack.
           if (window.ClimbSystem?.updateBranchDefender?.(c, entityDt, targetPlayer)) continue;
           // Attackers scale cliffs after a target that climbed away from them
           // (js/creature-cliff-climb.js); the scripted climb owns position.
@@ -7528,7 +7549,7 @@
           let dxp = targetPlayer.x - c.x, dyp = targetPlayer.y - c.y; // Refreshed when scent chooses a different player in this same AI tick.
           let distToPlayer = Math.hypot(dxp, dyp);
           const distFromHome = Math.hypot(c.x - c.homeX, c.y - c.homeY);
-          const visuallyLodSleeping = updateWildlifeVisualLod(c, distToPlayer / TILE); // Rechecks after target selection before choosing the resource cadence.
+          const visuallyLodSleeping = updateWildlifeVisualLod(c, distToPlayer / TILE) && !simulationKeptAwakeByOtherPlayer(c); // Rechecks after target selection before choosing the resource cadence.
           if (!tickCreatureResources(c, entityDt, visuallyLodSleeping)) continue;
           // A recently-fled animal gets a grace period at home before it can
           // be re-aggro'd by the player or re-picked as ambush prey (see
@@ -7885,7 +7906,7 @@
                         halfConeRad: attackHalfConeRad,
                         color: trailColor,
                       });
-                      if (targetPlayer?.health > 0 && !targetPlayer._downed &&
+                      if (targetPlayer?.health > 0 && !targetPlayer._downed && !targetPlayer._inCutscene &&
                           (!targetPlayer.areaId || targetPlayer.areaId === currentArea) &&
                           window.Combat?.meleeHit?.(c, targetPlayer, {
                         rangePx: def.attackRangePx,
@@ -7893,8 +7914,7 @@
                         direction: enemyAim?.direction,
                       })) {
                         const biteDamageOptions = { tag: attackTag, afflictionBonuses: window.ResourceSystem?.afflictionBonusesForTag(attackTag), attacker: c }; // Routes creature targets through their normal resilience/downed pipeline.
-                        if (players.includes(targetPlayer)) damagePlayer(def.attackDamage, c.x, c.y, HOSTILE_BITE_KNOCKBACK_PX_S, biteDamageOptions);
-                        else damageCreature(targetPlayer, def.attackDamage, c.x, c.y, HOSTILE_BITE_KNOCKBACK_PX_S, biteDamageOptions);
+                        window.DamageAuthority.hit(targetPlayer, def.attackDamage, c.x, c.y, HOSTILE_BITE_KNOCKBACK_PX_S, biteDamageOptions); // Routes by who was actually bitten (local player, another player, or a companion).
                         window.AudioSystem?.playCreatureClawHit(c);
                       }
                       c.retreatT = JUMP_BACK_DUR_S;
@@ -9340,7 +9360,7 @@
                         onStrike: () => {
                           if (window.CompanionCombatResponse.validFocus(target, currentArea) && Math.hypot(target.x - c.x, target.y - c.y) <= def.attackRangePx && (window.RangedWeapons?.hasLineOfSight?.(c, target, true) ?? true)) {
                             const damageOptions = { tag: def.attackTag || 'sharp', afflictionBonuses: window.ResourceSystem?.afflictionBonusesForTag(def.attackTag), attacker: c }; // Fallback animal bites retain their attacker identity for scent spending and debuff attribution.
-                            if (target === player) damagePlayer(def.attackDamage, c.x, c.y, COMPANION_BITE_KNOCKBACK_PX_S, damageOptions);
+                            if (window.ActorRegistry.isPlayer(target)) window.DamageAuthority.hit(target, def.attackDamage, c.x, c.y, COMPANION_BITE_KNOCKBACK_PX_S, damageOptions);
                             else if (window.CompanionOffense) window.CompanionOffense.damageCreature(damageCreature, c, target, def.attackDamage, c.x, c.y, COMPANION_BITE_KNOCKBACK_PX_S, damageOptions); // Shared Whistle/Sicced companion empowerment (js/combat/companion-offense.js).
                             else damageCreature(target, def.attackDamage, c.x, c.y, COMPANION_BITE_KNOCKBACK_PX_S, damageOptions);
                             window.AudioSystem?.playCreatureClawHit(c);
@@ -13301,6 +13321,13 @@
       // side of a large area paying full gait/wander cost for no reason.
       const NPC_LOD_NEAR_TILES = 24; // Nearer wake boundary so a walker doesn't flicker in and out of the cheap tier at one exact distance.
       // Opt-in coarse ticking of off-area walkers now lives in js/offarea-npc-tick.js (window.OffAreaNpcTick).
+      // On-screen bodies for non-local players (guests, the dev dummy) now live in js/remote-player-avatar.js: the same makeNpcWalker rig the cutscene player stand-in uses, mirrored from the player's simulation entity.
+      window.RemotePlayerAvatar.init({
+        TILE, makeNpcWalker, despawnWalker: despawnNpcVisitor, npcSurfaceY,
+        getCurrentArea: () => currentArea,
+        getActiveScene: () => window.GridTileAccessors.getActiveScene(),
+        getLocalProfile: () => window.EquipmentPanel?.applyGearClothingToPlayerData?.(_playerData || window.__hobunjiPlayerProfile) || null,
+      });
       window.OffAreaNpcTick.init({ getCurrentArea: () => currentArea, isDialogueOrCutsceneWalker: w => _dialogueWalker === w || npcDialogueStaging?.walker === w || cutscenePreviewActive });
       const NPC_OFF_AREA_LEGS_INTERVAL_S = 0.5; // Off-area walkers' procedural legs only settle their resting pose at this cadence.
       const NPC_LOD_FAR_TILES = 28;
@@ -16584,10 +16611,13 @@
         _zoneCacheHistory.push(entry);
         if (_zoneCacheHistory.length > 40) _zoneCacheHistory.shift();
         if (cutscenePreviewActive || _tothalShiftPromise) { entry.skipped = cutscenePreviewActive ? 'cutscene preview' : 'tothal shift'; return; }
-        const inactive = _zoneVisitOrder.filter(id => id !== currentArea && _zoneScenes.has(id));
+        // Co-op: a zone where ANY player stands is never evicted (its scene, NPCs, bandits and camps must survive), and it
+        // does not use up the inactive-zone budget; only zones nobody is in compete for it.
+        const occupied = window.ActorRegistry.occupiedAreas();
+        const inactive = _zoneVisitOrder.filter(id => id !== currentArea && !occupied.has(id) && _zoneScenes.has(id));
         const keep = new Set(inactive.slice(Math.max(0, inactive.length - zoneCacheMaxInactive())));
         for (const mapId of [..._zoneScenes.keys()]) {
-          if (mapId === currentArea || keep.has(mapId)) { entry.kept.push(mapId); continue; }
+          if (mapId === currentArea || occupied.has(mapId) || keep.has(mapId)) { entry.kept.push(mapId); continue; }
           releaseResidentRigs(mapId);
           let blocker = zoneEvictionBlocker(mapId);
           if (blocker === 'resident rig' && window.ZoneBanditRelease.releaseZone(mapId)) blocker = zoneEvictionBlocker(mapId); // Only when bandits are the sole pin; see js/zone-bandit-release.js.
@@ -26844,15 +26874,21 @@
         window.PerfProfiler?.end(prePausePerf);
 
         if (paused) window.PlayerDowned?.setGiveUpHeld?.(false); // The paused frame still runs: cancel surrender before wall-clock hold can complete after unpausing.
-        if (!paused) {
+        // Co-op: the main menu holds only the local player; the world, the clock and everyone else keep running (a
+        // conversation never paused the world either). Other modal gates that reuse `paused` still stop it.
+        const localPaused = paused;
+        const coopWorldContinues = paused && mainMenuOpen && window.TimeConsensus?.shouldGate() === true;
+        if (!paused || coopWorldContinues) {
           updateCalendar(dt);
           _layoutCheckAccumS += dt;
           if (_layoutCheckAccumS >= 2) { _layoutCheckAccumS = 0; checkMapLayoutChanges(); }
           window.WeatherFX._advanceSmoothedLighting(dt);
           const inputPerf = window.PerfProfiler?.begin('movement+input'); // Isolates controller polling/camera-look and player movement from everything else below.
-          pollControllerInput();
-          applyControllerCameraLook(dt);
-          updateMovement(dt);
+          if (!localPaused) { // The local player's own input and movement stay held while their menu is open.
+            pollControllerInput();
+            applyControllerCameraLook(dt);
+            updateMovement(dt);
+          }
           if (window.WallOrnamentPlacement?.isPlayerReticlePlacementActive?.()) {
             window.WallOrnamentPlacement.updatePlayerReticlePreview?.(); // Touch camera/movement retargets wall preview even without a connected controller.
           }
@@ -26870,7 +26906,7 @@
           const worldSystemsPerf = window.PerfProfiler?.begin('world systems'); // Campfire/fog/vitals/alchemy/cooking/bounty updates that run every frame regardless of area.
           window.WildernessCampfire?.updateVfx(dt);
           window.WildernessMap.updateFogAroundPlayer();
-          window.PlayerVitals.updatePlayerVitals(dt);
+          if (!localPaused) window.PlayerVitals.updatePlayerVitals(dt);
           window.AlchemySystem.update();
           window.AlchemyFlasks?.update(dt);
           window.CookingSystem.update();
@@ -27360,6 +27396,33 @@
       // clock itself and restoring the player, which advanceDay() doesn't
       // need to do since it only ever fires from a real elapsed-time wrap.
       function sleepInBed() {
+        // Co-op: sleeping advances time only when every player is resting (js/time-consensus.js).
+        const gate = bedSleepGate();
+        if (gate?.state === 'waiting') return { ok: true, waiting: true, message: '💤 Waiting for the others to sleep…' };
+        if (gate?.state === 'resolved') return { ok: true, message: gate.message, hours: gate.hours };
+        return performSleepToMorning();
+      }
+
+      // In-game minutes until the next 06:00 (ranks a bed sleep against other queued skips).
+      function minutesUntilMorning() {
+        const playable = (NIGHT_HOUR - MORNING_HOUR) * 60;
+        return Math.max(0, 1 - calendar.time01) * playable + (24 * 60 - playable);
+      }
+      // null = single player (original immediate path). Otherwise the local player's rest state.
+      function bedSleepGate() {
+        const tc = window.TimeConsensus;
+        if (!tc?.shouldGate()) return null;
+        let done = tc.consumeResolution(player);
+        if (!done && tc.stateOf(player) === 'none') {
+          const r = tc.requestRest(player, { kind: 'sleep', source: 'bed', minutes: minutesUntilMorning(), run: () => { performSleepToMorning(); } });
+          if (r.state === 'resolved') done = tc.consumeResolution(player);
+        }
+        if (!done) return { state: 'waiting' };
+        return { state: 'resolved', hours: done.winner.minutes / 60, message: `😴 Everyone slept. Day ${calendar.day} begins: ${calendar.weather}.` };
+      }
+      function cancelBedSleep() { window.TimeConsensus?.cancelRest(player); }
+
+      function performSleepToMorning() {
         // Whatever fraction of today's waking hours hadn't been played
         // through yet (and so never got an hourly breeding tick from
         // updateCalendar) gets credited here in one lump, so a pair
@@ -27391,7 +27454,7 @@
 
       window.BedLiePose?.init?.({
         THREE, tileSize: () => TILE, player: () => player, playerRoot: () => playerMesh,
-        playerLegs: () => playerLegs, area: () => currentArea, sleep: sleepInBed,
+        playerLegs: () => playerLegs, area: () => currentArea, sleep: sleepInBed, sleepGate: bedSleepGate, sleepCancel: cancelBedSleep,
         showToast, isPaused: () => paused, getNpcWalkers: () => npcWalkers,
       }); // Existing sleepInBed remains the sole authoritative day rollover; module owns presentation only.
 
@@ -30556,6 +30619,7 @@
       });
       window.__hobunjiFurnitureDebug = {
         give: (itemKey, n = 1) => { inventory[itemKey] = (inventory[itemKey] || 0) + n; },
+        openNpcDialogue: walker => openNpcDialogue(walker), // Headless/dev: start the real NPC dialogue (conversation lock included).
         place: placeDecorativeFurniture,
         sit: beginSitInteraction,
         endSit: endSitInteraction,
@@ -34193,7 +34257,14 @@
         } finally { for (const pin of preloadPins) _genotypeTextureResidency.release(pin); }
       }
 
+      // A cutscene pauses every player and everyone watches it, wherever they are (js/shared-cutscene.js).
+      // Crowd scenes (js/festival-blossom-ceremony.js, js/romance-wedding.js) place the other players in the crowd.
       async function runCutscenePreview(payload, runtimeOptions = {}) {
+        window.SharedCutscene.begin({ id: payload?.id || payload?.title || 'cutscene', title: payload?.title || null, area: payload?.mapId ? normalizeNpcArea(payload.mapId) : null });
+        try { return await runCutscenePreviewScene(payload, runtimeOptions); }
+        finally { window.SharedCutscene.end(); }
+      }
+      async function runCutscenePreviewScene(payload, runtimeOptions = {}) {
         payload = window.NpcPathfinding?.upgradeCutscenePayload?.(payload) ?? payload; // Move stages navigate around walls/furniture unless they opt out (collisionAware:false).
         const liveMode = runtimeOptions.live === true; // Switches the Director's existing stage engine from disposable preview semantics to a gameplay-safe authored cutscene.
         const previousArea = currentArea; // Restored after a live cutscene so its temporary scene swap never strands normal gameplay on the cinematic map.
