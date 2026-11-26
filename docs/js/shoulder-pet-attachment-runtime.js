@@ -111,6 +111,7 @@
     const sampledPerch = new THREE.Vector3(), renderPerch = new THREE.Vector3(), localTarget = new THREE.Vector3(), gripOffset = new THREE.Vector3();
     const renderGrip = new THREE.Vector3(); // Actual world-space grip readback for the mobile diagnostic.
     const rotationLimits = window.ShoulderPetRotationLimits?.create?.(THREE); // One prepared deformation-envelope solver per owner.
+    const SHOULDER_PET_MAX_BODY_PITCH_DEG = 30; // Corrective whole-body tilt around the card normal; not curiosity animation.
     const SHOULDER_PET_BODY_NECK_BLEND = 0.5; // Equal quaternion midpoint between the player body and neck follow frames.
     const worldUp = new THREE.Vector3(0, 1, 0); // Axis for the upright pet's heading and observation turn.
     const constraintOwnerFrame=new THREE.Quaternion(); // Reused owner-heading scratch for legacy owner-relative limits.
@@ -234,7 +235,7 @@
       if (shoulderFacingTurnDeg) worldQuaternion.multiply(SHOULDER_PET_HALF_TURN_QUATERNION);
       // Curiosity pitch/yaw is animated by the animal's head bones, not this shared root.
       // Keep the entire body and its off-center grip still between the two authored 180° observation poses.
-      const shoulderLeanDeg = 0; // Retained in attachment diagnostics to report the actually applied (neutral) body lean.
+      const shoulderLeanDeg = 0; // Curiosity remains head-only; geometry-driven pitch is recorded separately.
       const perchScaleX = Number(perch.scale?.x) > 0 ? Number(perch.scale.x) : 1; // Explicit authored grip multiplier; the runtime never recalculates it from body dimensions.
       const perchScaleY = Number(perch.scale?.y) > 0 ? Number(perch.scale.y) : 1; // Matches the pet's rendered Y scale when solving its foot grip.
       const perchScaleZ = Number(perch.scale?.z) > 0 ? Number(perch.scale.z) : 1; // Matches the pet's rendered depth scale.
@@ -249,6 +250,7 @@
           ownerMeshes: getOwnerPortraitMeshes(), pet, perch: perchWorldPosition, grip: rawGrip,
           scale: renderedScale, quaternion: worldQuaternion,
           ownerFrameYaw: 2*Math.atan2(ownerFrame.y,ownerFrame.w), perchSide: renderedPerchX,
+          maxBodyPitchDeg: SHOULDER_PET_MAX_BODY_PITCH_DEG,
         });
       }
       const gripWorldOffset = new THREE.Vector3(
@@ -273,7 +275,7 @@
         rotationalOffsetCancelled: s_cancelShoulderPetRotationalOffset,
         facingTowardPlayerCenter,
         shoulderFacingTurnDeg,
-        shoulderLeanDeg, // Always zero: head movement cannot drift the body or the shoulder grip.
+        shoulderLeanDeg, // Curiosity never tilts the root; corrective pitch uses the resolved quaternion above.
         geometryConstraint, // Requested/applied angles and bounded candidate checks for Pixel Probe.
       };
     }
@@ -327,7 +329,7 @@
         ? alignedGripWorldPosition.distanceTo(finalTransform.perchWorldPosition)
         : null; // Pixel Probe now measures real world transform drift, including genotype scaling and breathing.
       group.userData.hobunjiShoulderPetAttachment = { // Mobile-visible Pixel Probe diagnostics for this final authoritative pin.
-        recentChange: fallbackPlayerMesh ? 'Legacy shoulder pet uses the upright owner heading.' : 'Prepared skin controls and live bone envelopes constrain body/head yaw before pinning the authored grip.',
+        recentChange: fallbackPlayerMesh ? 'Legacy shoulder pet uses the upright owner heading.' : 'Live bone envelopes constrain body yaw, in-plane body pitch and head yaw before pinning the authored grip.',
         rotationSource: finalTransform.rotationSource || finalTransform.faceRotationSource,
         positionSource: finalTransform.perchPositionSource,
         expectedWorldPosition: finalTransform.worldPosition.toArray(),
@@ -344,8 +346,9 @@
         finalWorldQuaternion: worldQuaternion.toArray(), // Report the *actual applied* world orientation, including the legacy fallback repair.
         facingTowardPlayerCenter: finalTransform.facingTowardPlayerCenter === true,
         shoulderFacingTurnDeg: Number(finalTransform.shoulderFacingTurnDeg) || 0,
-        shoulderLeanDeg: Number(finalTransform.shoulderLeanDeg) || 0, // Reports the local X lean solved around the grip instead of either sprite center.
+        shoulderLeanDeg: Number(finalTransform.shoulderLeanDeg) || 0, // Legacy curiosity lean remains zero.
         spriteMirrored: false,
+        correctiveBodyPitchDeg: Number(finalTransform.geometryConstraint?.bodyPitchDeg) || 0, // Physical local-X body tilt around the grip.
         geometryConstraint: finalTransform.geometryConstraint || null, // Reports unavailable/no-safe-pose explicitly.
       };
       let canonicalPlaneRestored = group.userData.hobunjiShoulderSpriteCanonicalized === true;

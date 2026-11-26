@@ -1,7 +1,7 @@
 // Deformation-aware shoulder-pet constraints. Alpha proxy topology and skin bind
 // coordinates are prepared on asset changes; only a bounded set of controls
 // follows the existing bones. Horizontal disks and vertical slabs enclose
-// each sampled patch, allowing forbidden body-yaw arcs to be solved analytically.
+// each sampled patch, allowing forbidden body-yaw and in-plane pitch arcs to be solved analytically.
 (() => {
   'use strict';
   const DEG=Math.PI/180, TAU=2*Math.PI, EPS=1e-9;
@@ -38,7 +38,7 @@
     }
   }
 
-  function solveBodyYaw(owners,pets,requested,scratch={a:[],b:[],pairs:[]}) {
+  function solveBodyYaw(owners,pets,requested,scratch={a:[],b:[],pairs:[]},maxAngle=Math.PI) {
     const pairs=scratch.pairs; pairs.length=0;
     const c=Math.cos(requested),s=Math.sin(requested);
     let blocked=false;
@@ -56,9 +56,14 @@
       }
     }
     scratch.pairTests=(scratch.pairTests||0)+pairs.length/3;
-    if(!blocked)return wrap(requested);
+    if(!blocked && Math.abs(wrap(requested))<=maxAngle)return wrap(requested);
     let allowed=scratch.a,next=scratch.b;
-    allowed.length=0;allowed.push(0,TAU);
+    allowed.length=0;
+    // Pitch reuses the circular interval solver but is limited to a symmetric
+    // arc around neutral. Body yaw retains the entire circle.
+    if(maxAngle>=Math.PI)allowed.push(0,TAU);
+    else if(maxAngle>0)allowed.push(0,maxAngle,TAU-maxAngle,TAU);
+    else return null;
     for(let i=0;i<pairs.length;i+=3) {
       const o=pairs[i],p=pairs[i+1],r=pairs[i+2],product=2*o.radial*p.radial;
       const numerator=o.radial**2+p.radial**2-r*r;
@@ -99,10 +104,12 @@
     if(!THREE?.Matrix4 || !THREE?.Quaternion || !THREE?.Euler)return null;
     const entries=new WeakMap(); // Prepared controls, released with their painted mesh.
     const ownerEntries=[],petEntries=[],ownerDisks=[],petDisks=[],candidates=[];
+    const ownerPitchDisks=[],petPitchDisks=[]; // Alternate axis envelopes, built only when requested yaw is blocked.
     const seenBones=new Set(),seenMeshes=new Set(); // Reused during the bounded bone update.
     const ownerFrame=new THREE.Matrix4(),petFrame=new THREE.Matrix4();
     const prefix=new THREE.Matrix4(),world=new THREE.Matrix4(),local=new THREE.Matrix4();
     const q=new THREE.Quaternion(),euler=new THREE.Euler(),axis=new THREE.Vector3(0,1,0);
+    const pitchAxis=new THREE.Vector3(1,0,0),pitchQuaternion=new THREE.Quaternion(); // Local X is normal to the animal's YZ cards.
     const scratch={a:[],b:[],pairs:[],pairTests:0,ownerSorted:true};
     const diagnostic={}; // Pixel Probe reads the final constraint, not speculative head alternatives.
 
@@ -161,10 +168,12 @@
       if(skinned)refreshWeights(e);
       // makeProxy emits two triangles per UV cell. A disk/slab enclosing
       // their four transformed corners also encloses both sampled triangles.
-      e.patches=[];
+      e.patches=[];e.pitchPatches=[];
+      e.pitchPoints=null; // Lazily allocated only when this mesh participates in an alternate-axis solve.
       for(let i=0;i<p.tris.length;i+=2) {
         const corners=Array.from(new Set(p.tris[i].concat(p.tris[i+1]||[])));
-        e.patches.push({corners,x:0,z:0,r:0,y0:0,y1:0,radial:0,angle:0,inner:0,outer:0});
+        const patch={corners,x:0,z:0,r:0,y0:0,y1:0,radial:0,angle:0,inner:0,outer:0};
+        e.patches.push(patch);e.pitchPatches.push({...patch});
       }
       return true;
     }
@@ -253,7 +262,11 @@
         const [a,b,c,wa,wb,wc]=e.proxy.samples[i],j=i*3;
         for(let k=0;k<3;k++)points[j+k]=dst[a+k]*wa+dst[b+k]*wb+dst[c+k]*wc;
       }
-      for(const d of e.patches) {
+      collectDisks(points,e.patches,out);
+    }
+
+    function collectDisks(points,patches,out) {
+      for(const d of patches) {
         let x0=Infinity,x1=-Infinity,z0=Infinity,z1=-Infinity,y0=Infinity,y1=-Infinity;
         for(const i of d.corners) {
           const x=points[i],y=points[i+1],z=points[i+2];
@@ -265,6 +278,20 @@
         d.r=Math.sqrt(r2);
         diskMetrics(d);out.push(d);
       }
+    }
+
+    // Project the already-skinned points into coordinates where pitch is
+    // mathematically the same circular rotation as yaw. For a pet at
+    // requested body yaw, local X is the fixed axis; (X',Y',Z')=(Z,X,Y)
+    // makes a positive local-X pitch equivalent to positive solver yaw.
+    // No reskinning, new geometry reads, or candidate-angle loops.
+    function pitchDisks(e,out,c,s) {
+      const points=e.points,p=e.pitchPoints ||= new Float64Array(points.length);
+      for(let i=0;i<points.length;i+=3){
+        const x=points[i],y=points[i+1],z=points[i+2];
+        p[i]=s*x+c*z;p[i+1]=c*x-s*z;p[i+2]=y;
+      }
+      collectDisks(p,e.pitchPatches,out);
     }
 
     function canonicalize(mesh,back) {
@@ -279,13 +306,14 @@
       const {pet,perch,grip,scale,quaternion}=args,avatar=pet?.avatarRef,group=avatar?.group;
       const requested=Math.atan2(2*(quaternion.w*quaternion.y+quaternion.x*quaternion.z),1-2*(quaternion.y**2+quaternion.z**2));
       const rig=avatar?.headRig,head=Number(rig?.currentYawDeg)||0;
+      const pitchLimit=Math.min(Math.PI/2,Math.max(0,Number(args.maxBodyPitchDeg)||0)*DEG); // Runtime opts into bounded corrective body pitch.
       Object.assign(d,{mode:'geometry-unavailable',quality:'live-bone-envelopes',checks:0,buildChecks:0,buildMs:0,
-        preparations:0,weightRefreshes:0,envelopePairs:0,headCandidates:0,ownerPatches:0,petPatches:0,cacheHit:true,
+        preparations:0,weightRefreshes:0,envelopePairs:0,headCandidates:0,pitchSolves:0,bodyPitchDeg:0,ownerPatches:0,petPatches:0,cacheHit:true,
         requestedBodyYawDeg:requested/DEG,resolvedBodyYawDeg:requested/DEG,bodyOffsetDeg:0,requestedHeadYawDeg:head,headYawDeg:head});
       const finish=()=>{
         d.cacheHit=d.preparations===0;d.envelopePairs=scratch.pairTests;d.poseMs=Math.max(0,clock()-started-d.buildMs);
         // Do not keep the last unequipped/disposed avatar alive through scratch references.
-        ownerEntries.length=petEntries.length=ownerDisks.length=petDisks.length=scratch.pairs.length=0;
+        ownerEntries.length=petEntries.length=ownerDisks.length=petDisks.length=ownerPitchDisks.length=petPitchDisks.length=scratch.pairs.length=0;
         seenMeshes.clear();seenBones.clear();
         return d;
       };
@@ -311,16 +339,34 @@
       for(const e of ownerEntries)pose(e,ownerFrame,null,0,null,null,ownerDisks);
       ownerDisks.sort((a,b)=>a.y0-b.y0); // Vertical broad phase shared by every head alternative.
       d.ownerPatches=ownerDisks.length;
-      let bestBody=null,bestHead=head,bestDelta=Infinity;
+      let bestBody=null,bestHead=head,bestDelta=Infinity,bestPitch=0;
+      let pitchOwnerReady=false; // Owner projection is shared by every head alternative at the requested yaw.
       const evaluate=angle=>{
         petDisks.length=0;
         for(const e of petEntries)pose(e,petFrame,rig,angle,grip,scale,petDisks);
         d.petPatches=petDisks.length;d.headCandidates++;
-        const body=solveBodyYaw(ownerDisks,petDisks,requested,scratch);
+        let body=solveBodyYaw(ownerDisks,petDisks,requested,scratch),pitch=0;
+        // Prefer an upright pose when the requested yaw is already safe.
+        // Otherwise find the smallest safe tilt at that exact heading before
+        // giving up either the body heading or the independent head turn.
+        if(pitchLimit>EPS && (body===null || Math.abs(wrap(body-requested))>EPS)){
+          if(!pitchOwnerReady){
+            const c=Math.cos(requested),s=Math.sin(requested);
+            ownerPitchDisks.length=0;
+            for(const e of ownerEntries)pitchDisks(e,ownerPitchDisks,c,s);
+            ownerPitchDisks.sort((a,b)=>a.y0-b.y0);
+            pitchOwnerReady=true;
+          }
+          petPitchDisks.length=0;
+          for(const e of petEntries)pitchDisks(e,petPitchDisks,1,0);
+          d.pitchSolves++;
+          const solved=solveBodyYaw(ownerPitchDisks,petPitchDisks,0,scratch,pitchLimit);
+          if(solved!==null){body=requested;pitch=solved;}
+        }
         if(body===null)return false;
         const delta=Math.abs(wrap(body-requested));
         if(delta<bestDelta-EPS || (Math.abs(delta-bestDelta)<=EPS && Math.abs(angle-head)<Math.abs(bestHead-head))) {
-          bestDelta=delta;bestBody=body;bestHead=angle;
+          bestDelta=delta;bestBody=body;bestHead=angle;bestPitch=pitch;
         }
         return delta<EPS;
       };
@@ -342,7 +388,11 @@
       }
       if(bestBody===null){d.mode='no-safe-rotation';return finish();}
       d.mode='geometric-depth';d.bodyOffsetDeg=wrap(bestBody-requested)/DEG;d.resolvedBodyYawDeg=bestBody/DEG;d.headYawDeg=bestHead;
-      if(bestDelta>EPS)quaternion.setFromAxisAngle(axis,bestBody);
+      d.bodyPitchDeg=bestPitch/DEG;
+      if(bestDelta>EPS || Math.abs(bestPitch)>EPS){
+        quaternion.setFromAxisAngle(axis,bestBody);
+        if(Math.abs(bestPitch)>EPS)quaternion.multiply(pitchQuaternion.setFromAxisAngle(pitchAxis,bestPitch));
+      }
       if(canTurn && Math.abs(bestHead-head)>EPS)avatar.updateHeadYaw(bestHead,1000);
       return finish();
     }

@@ -426,3 +426,27 @@ const bridge=fs.readFileSync('docs/js/player-body-attachment-bridge.js','utf8');
 assert.match(bridge,/composer\.addPostHeadAimHook\?\.\(\(undo,renderDebug\)/,'late correction is attached to the existing final pose transaction');
 assert.match(bridge,/for\(const root of shoulderPetsForFrame\(\)\)repin\(root,undo,renderDebug\)/,'reuses active shoulder roots instead of traversing the scene');
 console.log('cached source pixel, live skinning and render-only shoulder translation passed');
+
+
+// Real pin integration: a whole-body in-plane correction must rotate about
+// the authored off-center grip, not the sprite center, including late repins.
+win.ShoulderPetRotationLimits={create:()=>({constrain(args){
+  assert.equal(args.maxBodyPitchDeg,30,'runtime enables bounded corrective tilt');
+  args.quaternion.multiply(new TestQuaternion().setFromAxisAngle({x:1,y:0,z:0},degrees(-18)));
+  return {bodyPitchDeg:-18};
+}})};
+const pitchedRuntime=win.ShoulderPetAttachmentRuntime.create({THREE,getOwnerMesh:()=>owner,getOwnerNeckJoint:()=>null,
+  getRotationSource:()=> 'head',getInvertRotationSource:()=>false,getCancelRotationalOffset:()=>false,getOwnerPortraitMeshes:()=>[mesh]});
+group.visible=true;
+const pitched=pitchedRuntime.solveSurfaceTransform(perch,grip,pet);
+pitchedRuntime.applyFinalTransform(pet,pitched);
+assert.equal(group.userData.hobunjiShoulderPetAttachment.correctiveBodyPitchDeg,-18);
+assert.ok(Math.abs(group.quaternion.x)+Math.abs(group.quaternion.z)>.01,'body is actually tilted');
+closeness(group.localToWorld(grip.localPosition.clone()),pitched.perchWorldPosition,'body pitch leaves the grip at the authored pixel');
+const pitchedOrientation=group.quaternion.clone();
+neck.y=14;
+assert.equal(win.ShoulderPetAttachmentRuntime.repinForRender(group,undo,renderDebug),true);
+closeness(group.localToWorld(grip.localPosition.clone()),new TestVector3(10.25,3.75,0),'late neck motion does not detach the tilted body');
+assert.deepEqual(group.quaternion,pitchedOrientation,'late translation correction preserves corrective pitch');
+undo.pop()();
+console.log('pitch-aware authored grip pin passed');
