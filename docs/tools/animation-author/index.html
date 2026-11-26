@@ -1210,7 +1210,7 @@ body[data-animation-author-mode="rig"] #maaViewportBadge { max-width:calc(100% -
 <script src="../../js/local-db-overrides.js?v=20261122hsharedDatabaseAudit2"></script> <!-- Reuses the gameplay NPC species composer. -->
 <script src="../../js/animal-chathead-frame.js?v=20261123hbd21292"></script>
 <script src="../../js/transform-dump-utils.js?v=20261017h3ce7f8d"></script>
-<script src="../../js/spouse-kiss-motion.js?v=20261126neckBlendConsolidate2"></script>
+<script src="../../js/spouse-kiss-motion.js?v=20261126neckBlendConsolidate3"></script>
 <script src="../../js/animation-author-creature-gameplay-parity.js?v=20261122hAnimalRig28"></script> <!-- Shared game creature dimensions and floor solver. -->
 <script src="rig-preview-species.js?v=20261123ha26d360"></script>
 <script src="../../js/animation-author-shoulder-pose-preview.js?v=20261123neckAgeSync2"></script>
@@ -1229,8 +1229,8 @@ const KURRAYA_STORAGE_KEY = 'hobunjiNpcPlaneAvatarRepoViewer.kurrayaProfiles.v1'
 const CREATURE_STORAGE_KEY = 'hobunjiGameplayBackdropRepoViewer.creatureProfiles.v1';
 const CREATURE_RENDER_SCRIPT = 'js/creature-genetics-render.js';
 const AUTHOR_HAND_RUNTIME_SCRIPT = new URL('../../js/held-action-animations.js?v=20261126neckMultiplayer1', location.href).href; // Keeps the hand preview paired with this exact Animation Author build instead of an older selected repository ref.
-const AUTHOR_PORTRAIT_RUNTIME_SCRIPT = new URL('../../js/png-plane-avatar.js?v=20261126neckBlendRestore1', location.href).href; // Always pair the editor controls with the local portrait-density/wireframe API, even when previewing older repository art.
-const AUTHOR_SPINE_RUNTIME_SCRIPT = new URL('../../js/character-spine.js?v=20261126neckBlendRestore1', location.href).href; // The paired Longoran preview must load the same real spline solver as gameplay before it builds a skinned portrait.
+const AUTHOR_PORTRAIT_RUNTIME_SCRIPT = new URL('../../js/png-plane-avatar.js?v=20261126neckBlendConsolidate3', location.href).href; // Always pair the editor controls with the local portrait-density/wireframe API, even when previewing older repository art.
+const AUTHOR_SPINE_RUNTIME_SCRIPT = new URL('../../js/character-spine.js?v=20261126neckBlendConsolidate3', location.href).href; // The paired Longoran preview must load the same real spline solver as gameplay before it builds a skinned portrait.
 const AUTHOR_LEG_BONES_SCRIPT = new URL('../../js/leg-bones.js?v=20260821a', location.href).href; // Supplies the exact invisible two-bone solver used by the paired feet preview.
 const AUTHOR_FEET_RUNTIME_SCRIPT = new URL('../../js/procedural-leg-animation.js?v=20261126neckAudit3', location.href).href; // Keeps rig-preview feet paired with this author build instead of the selected repository ref.
 const AUTHOR_SHOULDER_RIG_RUNTIME_URLS = Object.freeze(Object.fromEntries([

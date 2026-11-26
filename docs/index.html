@@ -185,9 +185,9 @@
   <script src="js/portrait-utils.js?v=20261125pristineCloth1"></script>
   <script src="js/portrait-breathing.js?v=20260831syllable4"></script>
   <script src="js/npc-avatar-preview-utils.js?v=20261122hKasa3"></script>
-  <script src="js/character-spine.js?v=20261126neckBlendRestore1"></script>
+  <script src="js/character-spine.js?v=20261126neckBlendConsolidate3"></script>
   <script src="js/hat-overflow-plane.js?v=20261124hatOverflow3"></script>
-  <script src="js/png-plane-avatar.js?v=20261126neckBlendRestore1"></script>
+  <script src="js/png-plane-avatar.js?v=20261126neckBlendConsolidate3"></script>
   <script src="js/creature-ground-anchor.js?v=20261126h78dd910"></script> <!-- Creature sprite ground-anchor scan/offset (extracted from game.js). -->
   <script src="js/species-pose-scaling.js?v=20261115shoulders3"></script>
   <script src="js/character-dimensions.js?v=20261126neckAudit2"></script>
@@ -195,7 +195,7 @@
        occlude 3D held items/tools) on the same matrix as its visible draw when
        PlayerBodyTransformComposer is composing a render-time body delta (mirrors
        procedural-hand-outline-parity.js's fix for the same class of bug). -->
-  <script src="js/portrait-plane-outline-parity.js?v=20261126neckBlendRestore1"></script>
+  <script src="js/portrait-plane-outline-parity.js?v=20261126neckBlendConsolidate3"></script>
   <!-- Shared held-item action poses used by game.js and its animation editor. -->
   <script src="js/held-action-animations.js?v=20261126neckMultiplayer1"></script>
   <!-- Great Fey skip voluntary gifts, proximity chatter, activity reactions, and pet greetings.
@@ -341,7 +341,7 @@
   <script src="js/npc-conversations.js?v=20261126mp6"></script> <!-- One conversation per NPC; a conversation holds only the person talking. Used by game.js openNpcDialogue/closeNpcDialogue. -->
   <script src="js/remote-player-state.js?v=20261124mp1"></script> <!-- Health/downed/bleed-out/respawn for non-local players; registers as DamageAuthority's remote handler. -->
   <script src="js/remote-player-avatar.js?v=20261126mp4"></script> <!-- On-screen body for non-local players (reuses the cutscene stand-in makeNpcWalker pipeline). Initialised by game.js. -->
-  <script src="js/remote-area-tick.js?v=20261126mp7"></script> <!-- Opt-in (off by default) coarse creature tick for other occupied, already-built zones in co-op. Initialised by game.js. -->
+  <script src="js/remote-area-tick.js?v=20261126hf57a4d7"></script> <!-- Opt-in (off by default) coarse creature tick for other occupied, already-built zones in co-op. Initialised by game.js. -->
   <script src="js/dev-dummy-player.js?v=20261124mp1"></script> <!-- Dev-only second-player stand-in (window.DevDummyPlayer). -->
   <script src="js/combat/resource-system.js?v=20261126h6c44b4c"></script>
   <script src="js/sacred-ground.js?v=20261108h9e2416f"></script> <!-- Global sacred-ground provider registry for totems, temple and future blessings. -->
@@ -680,7 +680,7 @@
        at call time (already global by then), so load order relative to the
        other systems above doesn't matter; must load before game.js, which
        calls window.WildlifeSpawn.init(...) during its own setup. -->
-  <script src="js/wildlife-spawn.js?v=20261122grehlrCustody2"></script>
+  <script src="js/wildlife-spawn.js?v=20261126hdc53e2a"></script>
   <!-- Town/zone building mesh spawning + decorative furniture/prop spawning
        (window.TownZoneBuildings) — reads globally-loaded HousePieceGen/
        WallBuilder/BuildingDoor/window.ProceduralFurniture/window.Music at
@@ -2983,7 +2983,7 @@
   <script src="js/romance-wedding.js?v=20261126h44c94f3"></script>
   <script src="js/npc-following.js?v=20261122babyFollow1"></script>
   <!-- Shared spouse kiss motion/height solver. Loads before RomanceSystem.init but after the player render/leg APIs. -->
-  <script src="js/spouse-kiss-motion.js?v=20261126neckBlendConsolidate2"></script>
+  <script src="js/spouse-kiss-motion.js?v=20261126neckBlendConsolidate3"></script>
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="spouse-social"></script> <!-- Independently versioned, useful spouse dialogue and in-law relations. -->
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="romance-runtime"></script>
   <script src="js/npc-command-wheel.js?v=20261122familyBaby3"></script>
@@ -3001,7 +3001,7 @@
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups2" data-classic-group="render"></script>
   <script src="js/held-gift-policy.js?v=20261122heldGiftPolicy1"></script> <!-- Shared gifting policy and clothing visual preparation; game.js owns equipment state. -->
   <script src="js/rootledoot-encounter.js?v=20261126h43c635f"></script>
-  <script src="game.js?v=20261126pingdortCoop1"></script>
+  <script src="game.js?v=20261126h19d628f"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261115nativeArena1"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->
