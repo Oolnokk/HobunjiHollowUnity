@@ -132,15 +132,17 @@
   }
 
   function makeDuplicateMesh(plane, side) {
+    const sourceGeometry=global.HeldGroundPose?.originalGeometryFor?.(plane.geometry)||plane.geometry; // Never share the temporary compressed buffer with invisible or later-visible copies.
     let duplicate = null;
     try {
       const material = Array.isArray(plane.material)
         ? plane.material.map(cloneOwnedMaterial)
         : cloneOwnedMaterial(plane.material);
-      duplicate = new plane.constructor(plane.geometry, material);
+      duplicate = new plane.constructor(sourceGeometry, material);
     } catch (_) {
       duplicate = plane.clone?.(false) || null;
       if (duplicate) {
+        duplicate.geometry=sourceGeometry;
         duplicate.material = Array.isArray(plane.material)
           ? plane.material.map(cloneOwnedMaterial)
           : cloneOwnedMaterial(plane.material);
@@ -752,6 +754,13 @@
     defaultOffhandPose: () => { const pose = global.SharedAttackPose?.IDLE_OFFHAND_POSE || idleStancePoses()?.offhand || null; return pose ? { x: pose.x, y: pose.y, z: pose.z, pitch: pose.pitch, yaw: pose.yaw, roll: pose.roll } : null; }, // The invisible idle offhand's default pose (the shared IDLE_OFFHAND_POSE).
     setEditorIdlePreview,
     setEditorOffhandAuthoring,
+    isNonDrawingChild(plane,child) {
+      const state=states.get(PLAYER_KEY); // Clearance is currently restricted to the player and the editor.
+      if(state?.plane!==plane||!(child===state.mainRoot||child===state.offRoot))return false;
+      // This is an owned hand-positioning helper, not an arbitrary hidden mesh.
+      // A real dual weapon can become visible again; never allow that case.
+      return child.visible===false||child.children.every(node=>node.visible===false);
+    },
     editorMainCopy: () => { const state = states.get(PLAYER_KEY); return state && state.influence > ACTIVE_EPSILON ? state.mainMesh : null; }, // The visible main-hand weapon when Dual Wield is showing both copies.
     editorOffhandCopy: () => { const state = states.get(PLAYER_KEY); return state && editorOffhandAuthoring && state.influence > ACTIVE_EPSILON ? state.offMesh : null; }, // The visible offhand weapon the Attack Editor gizmo should pivot on.
     debugSnapshot,

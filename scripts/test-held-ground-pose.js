@@ -127,3 +127,12 @@ assert.equal(rope(1,1,-1,.2).trailing,true,'fixed rope still trails');
 const assemblies=fs.readFileSync('docs/js/weapon-sprite-assemblies.js','utf8');
 assert.ok(assemblies.includes('const floor=profile?pose.groundY():null'),'zero rope-minimum does not disable clearance');
 assert.ok(assemblies.includes('function groundFitSpec(root,profile)'),'fit uses actual suspended assembly');
+
+const hiddenMain={visible:false},hiddenOff={visible:true,children:[{visible:false}]},overlay={visible:true};
+const planeFixture={children:[hiddenMain,hiddenOff]};
+context.window.HobunjiDualWieldWeaponVisuals={isNonDrawingChild:(p,c)=>p===planeFixture&&(c===hiddenMain||c===hiddenOff)&&(!c.visible||c.children.every(n=>!n.visible))};
+assert.equal(preview.hasDrawingHaftChildren(planeFixture),false,'invisible offhand helper cannot reject a normal weapon');
+hiddenOff.children[0].visible=true;
+assert.equal(preview.hasDrawingHaftChildren(planeFixture),true,'real visible dual copy is still rejected');
+hiddenOff.children[0].visible=false;planeFixture.children.push(overlay);
+assert.equal(preview.hasDrawingHaftChildren(planeFixture),true,'unrelated layer is still rejected');

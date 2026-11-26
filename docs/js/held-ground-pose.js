@@ -314,6 +314,11 @@
     const anchorY=e[1]*spec.x-e[5]*contractedZ(-spec.y,gripZ,segments,amount,spec.x)+e[13];
     return anchorY-scale*(spec.headDrop+Math.hypot(spec.spanX,spec.spanY*lightScale));
   }
+  function hasDrawingHaftChildren(plane){
+    const copies=global.HobunjiDualWieldWeaponVisuals;
+    for(const child of plane.children)if(!copies?.isNonDrawingChild?.(plane,child))return true;
+    return false;
+  }
   function constrainWeapon(holder,mesh,context) {
     proof=null;
     if(!enabled()){if(active)restoreGeometry();return false;}
@@ -330,7 +335,7 @@
     // spelling of the weapon key cannot cause a legitimate flail to be rejected.
     const detail=mesh.parent!==holder?'root-parent':plane.parent!==mesh?'haft-parent':
       (!flexible&&mesh.children.length!==1)?'rigid-siblings':
-      plane.children.length?'haft-children':mesh.userData.toolEndFlipBase?'end-flip':
+      hasDrawingHaftChildren(plane)?'haft-children':mesh.userData.toolEndFlipBase?'end-flip':
       plane.isSkinnedMesh||plane.isInstancedMesh?'nonrigid-plane':!(mesh.scale.z>0)?'nonpositive-scale':null;
     if(detail){debug.assemblyDetail=detail+' · '+(kind||'unregistered')+' · root children '+mesh.children.length+' · haft children '+plane.children.length;return fail('unsupported-assembly');}
     if(context.preview)previewRoot=mesh;
@@ -523,5 +528,5 @@
     if(!clear(mesh.matrixWorld)||(extra&&!clear(extra)))return false;
     debug.ordinaryParts++;return true;
   }
-  global.HeldGroundPose=Object.freeze({configurePreview,setPreviewEnabled,previewAppliesTo,suspendedReferenceY,skip,enabled,groundY,constrainWeapon,constrainFreeHand,ordinaryDepthFor,adjustGrip,adjustHaftPoint,ropeClearance,fittedRopeScale,referenceDrop,lightRopeScale,ropeFitCandidate,needsFit,originalGeometryFor,prepareGeometryUpdate,fixedValue,clear,contractedZ,contactVertices,tracePixels,autoContact,minimumY,chooseAngle,snapshot:()=>({...debug})});
+  global.HeldGroundPose=Object.freeze({configurePreview,setPreviewEnabled,previewAppliesTo,suspendedReferenceY,hasDrawingHaftChildren,skip,enabled,groundY,constrainWeapon,constrainFreeHand,ordinaryDepthFor,adjustGrip,adjustHaftPoint,ropeClearance,fittedRopeScale,referenceDrop,lightRopeScale,ropeFitCandidate,needsFit,originalGeometryFor,prepareGeometryUpdate,fixedValue,clear,contractedZ,contactVertices,tracePixels,autoContact,minimumY,chooseAngle,snapshot:()=>({...debug})});
 })(typeof window!=='undefined'?window:globalThis);
