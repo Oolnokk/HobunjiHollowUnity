@@ -1474,6 +1474,8 @@
         ? `${actor.label}=missing${aiSuffix(actor)}`
         : `${actor.label}=Y${Number(actor.min.y).toFixed(2)}..${Number(actor.max.y).toFixed(2)}${actor.onBranch ? '/branch' : ''}${actor.climbing ? '/climbing' : ''}${aiSuffix(actor)}`).join(' ');
       lines.push(`3D hitboxes: ${actorState}`);
+      const sceneLoadLine = window.SceneLoadSummary?.format?.(); // Counts and distance buckets that the per-creature list above lacks.
+      if (sceneLoadLine) lines.push(sceneLoadLine);
     }
     const interactionRay = hitboxDebug?.interactionRay;
     if (interactionRay) {

@@ -119,6 +119,8 @@
     // Explicit start/end only. Never flush classification or perform a scene scan.
     const result = {};
     for (const [name, read] of [
+      ['sceneLoad', () => window.SceneLoadSummary?.summary?.()], // Hostiles by state/distance at window start and end, so recordings are comparable.
+      ['npcPathing', () => window.NpcPathfinding?.debugSnapshot?.()], // Searches and expanded nodes inside the window attribute NPC-walker spikes.
       ['pixelJobs', () => window.PixelWorkYield?.getDebug?.()],
       ['fishProfiles', () => window.FishCatalog?.getPixelDebug?.()],
       ['heldReplay', () => window.HeldObjectRenderOrder?.performanceCounters?.()],

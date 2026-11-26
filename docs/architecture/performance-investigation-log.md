@@ -3265,3 +3265,24 @@ commit, so a reload does not recover; pushing any new commit gives a fresh URL. 
   driver 64-69 ms, of which render passes ~47-53 ms (world pass ~600 draws / ~520k triangles, matrix-walk ~18.5 ms of which only
   ~5 ms is matrix updates, held-overlay replay ~16-20 ms). Game logic (hostiles, NPCs, companions) is a few ms.
 - Folder-save/controller-ui-nav forced layouts (22-37 ms) appear only in the frame where the probe tap itself opens its UI.
+
+
+### 26 Nov — CORRECTION: painterly GPU cost measured at ~4 ms, not ~60 ms
+
+The first Painterly-on vs off comparison above attributed ~60 ms/frame to the painterly post-process. That inference was wrong: the
+runs were in different scenes (different combatant counts and draw loads), and the first Medium run also had pixel-asset work
+in flight. With GPU timer queries (PainterlyPostprocess, 31 samples, Cloud Forest, rain, 6 bandits chasing + Drenkirra):
+`oil=2.74 ms washH=0.93 ms washV+tone=0.20 ms sum=3.87 ms` average (single-sample maxima of 23-38 ms look like warmup/contention
+spikes). Same recording: Painterly Medium, 100%: **15.9 FPS**, driver mean 49.8 ms, frame interval 63.1 ms (gap outside our JS
+~11 ms). Painterly is therefore not the bottleneck on this card; do not optimize it on that basis.
+
+What dominates now (CPU submission): render passes 34.7 ms/frame (world pass ~560 draws / ~490k triangles ~13.6 ms, held-overlay
+replay ~10.9 ms plus ~14.8 ms base-render bucket), game logic a few ms. One-frame spike: `npc walkers` 36.8 ms
+(path-search suspect; 200 searches / ~70k node expansions this session; first attempt 1,200 nodes, widened attempt 4,000).
+
+Comparability: reports in different fights are not comparable, so Pixel Probe now prints `Scene load:` (hostiles alive / in area /
+engaged, counts within 10/20/40 tiles, companions, animals) and the performance window records that block plus the NPC
+pathfinding counters at its start and end (`counterDeltas.sceneLoad`, `counterDeltas.npcPathing`).
+
+Unrelated finding: `assets/audio/sfx/farming/sfx_harvest.mp3` is referenced by `config/scratchbones-config.js` and the sfx README
+but has never existed in the repository (combat audio HTTP 404 in the probe).
