@@ -185,7 +185,7 @@
   <script src="js/portrait-breathing.js?v=20260831syllable4"></script>
   <script src="js/npc-avatar-preview-utils.js?v=20261122hKasa3"></script>
   <script src="js/character-spine.js?v=20261123neckAgeSync2"></script>
-  <script src="js/png-plane-avatar.js?v=20261125bakedAgeProfiles2"></script>
+  <script src="js/png-plane-avatar.js?v=20261125babyToddlerPreset2"></script>
   <script src="js/creature-ground-anchor.js?v=20261023hf1"></script> <!-- Creature sprite ground-anchor scan/offset (extracted from game.js). -->
   <script src="js/species-pose-scaling.js?v=20261115shoulders3"></script>
   <script src="js/character-dimensions.js?v=20261124pixelCrownAudit1"></script>
@@ -195,7 +195,7 @@
        procedural-hand-outline-parity.js's fix for the same class of bug). -->
   <script src="js/portrait-plane-outline-parity.js?v=20261123neckAgeSync2"></script>
   <!-- Shared held-item action poses used by game.js and its animation editor. -->
-  <script src="js/held-action-animations.js?v=20261125bakedAgeProfiles2"></script>
+  <script src="js/held-action-animations.js?v=20261125babyToddlerPreset2"></script>
   <!-- Great Fey skip voluntary gifts, proximity chatter, activity reactions, and pet greetings.
        Load once before all NPC interaction modules, including lazy runtimes. -->
   <script src="js/npc-interaction-policy.js?v=20261021fey1"></script>
@@ -2954,14 +2954,14 @@
   <!-- Dating / marriage / children + the hold-Action-1 NPC command wheel.
        romance-family.js must load before romance-system.js (whose init()
        wires the family module in); game.js calls both init()s. -->
-  <script src="config/romance-config.js?v=20261125bakedAgeProfiles2"></script>
-  <script src="js/character-age-rig-config.js?v=20261125bakedAgeProfiles2"></script> <!-- Applies explicit Animation Author age proportions before family walkers initialize. -->
+  <script src="config/romance-config.js?v=20261125babyToddlerPreset2"></script>
+  <script src="js/character-age-rig-config.js?v=20261125babyToddlerPreset2"></script> <!-- Applies explicit Animation Author age proportions before family walkers initialize. -->
   <script src="config/family-baby-carry-pose.js?v=20261123babyPoseRev5"></script>
   <script src="js/family-baby-limbs.js?v=20261123babyGLB3"></script> <!-- Kicking hands/feet cloned from the hidden baby walker onto the carried proxy. -->
   <script src="js/family-baby-burdens.js?v=20261123babyPoseStable5"></script>
   <script src="js/family-baby-ambient-voice.js?v=20261122decoupledVoice1"></script> <!-- Voice adapter; physical baby carry code unchanged. -->
   <script src="js/family-baby-care.js?v=20261122noSpouseVat1"></script>
-  <script src="js/romance-family.js?v=20261125bakedAgeProfiles2"></script>
+  <script src="js/romance-family.js?v=20261125babyToddlerPreset2"></script>
   <script src="js/romance-wedding.js?v=20261027hbreath8"></script>
   <script src="js/npc-following.js?v=20261122babyFollow1"></script>
   <!-- Shared spouse kiss motion/height solver. Loads before RomanceSystem.init but after the player render/leg APIs. -->

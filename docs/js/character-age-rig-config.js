@@ -63,22 +63,22 @@
 
   const PROFILE_AXES = ['width','height','head','hand','foot']; // Individual stage controls, distinct from temporary convergence and overall scale.
   const importedBaby = {
-    "kenkari::male": {"width":0.5075908845751128,"height":0.453370454451896,"head":0.97,"hand":1.66,"foot":1.62},
-    "kenkari::female": {"width":0.7094736227583963,"height":0.4799919875580187,"head":0.97,"hand":1.66,"foot":1.62},
-    "tletingan::male": {"width":0.6351384625607347,"height":0.41366648287453117,"head":0.97,"hand":1.66,"foot":1.62},
-    "tletingan::female": {"width":0.7302219514914037,"height":0.4362406969631667,"head":0.97,"hand":1.66,"foot":1.62},
-    "nuhongan::male": {"width":0.7939230782009183,"height":0.48234885152500057,"head":0.97,"hand":1.66,"foot":1.62},
-    "nuhongan::female": {"width":0.9127774393642546,"height":0.5073680397943778,"head":0.97,"hand":1.66,"foot":1.62},
-    "longoran::male": {"width":0.5318893528833739,"height":0.15406965943796308,"head":0.97,"hand":1.66,"foot":1.62},
-    "longoran::female": {"width":0.597040269371654,"height":0.17609074441720884,"head":0.97,"hand":1.66,"foot":1.62},
+    "kenkari::male": {"width":0.561,"height":0.303,"head":0.626,"hand":1.66,"foot":1.62},
+    "kenkari::female": {"width":0.613,"height":0.27699999999999997,"head":0.9359999999999999,"hand":1.66,"foot":1.62},
+    "tletingan::male": {"width":0.613,"height":0.355,"head":0.846,"hand":1.66,"foot":1.62},
+    "tletingan::female": {"width":0.613,"height":0.27699999999999997,"head":0.846,"hand":1.66,"foot":1.62},
+    "nuhongan::male": {"width":0.691,"height":0.303,"head":0.885,"hand":1.66,"foot":1.62},
+    "nuhongan::female": {"width":0.7809999999999999,"height":0.2,"head":0.9359999999999999,"hand":1.66,"foot":1.62},
+    "longoran::male": {"width":0.5870000000000001,"height":0.14800000000000002,"head":0.755,"hand":1.66,"foot":1.62},
+    "longoran::female": {"width":0.5870000000000001,"height":0.14800000000000002,"head":0.768,"hand":1.66,"foot":1.62},
     "engh-sho::male": {"width":0.7012768800050903,"height":0.2775602587932603,"head":0.97,"hand":1.66,"foot":1.62},
     "engh-sho::female": {"width":0.7236330221529035,"height":0.30470860905813646,"head":0.97,"hand":1.66,"foot":1.62},
     "mao-ao::male": {"width":0.8204021391894106,"height":0.2521045076794498,"head":0.97,"hand":1.66,"foot":1.62},
     "mao-ao::female": {"width":0.7931984954922331,"height":0.28493927228373717,"head":0.97,"hand":1.66,"foot":1.62},
-    "mashtzarr::male": {"width":0.3204837034256795,"height":0.16385281401772706,"head":0.5,"hand":1.66,"foot":1.62},
-    "mashtzarr::female": {"width":0.38302742547508767,"height":0.23512726538322992,"head":0.5,"hand":1.66,"foot":1.62},
-    "mammakhbuur::male": {"width":0.30875868988571564,"height":0.16385281401772706,"head":0.5,"hand":1.66,"foot":1.62},
-    "mammakhbuur::female": {"width":0.36271536503322704,"height":0.22758224549490091,"head":0.5,"hand":1.66,"foot":1.62},
+    "mashtzarr::male": {"width":0.27699999999999997,"height":0.122,"head":0.5,"hand":2,"foot":1.699},
+    "mashtzarr::female": {"width":0.355,"height":0.161,"head":0.5489999999999999,"hand":2,"foot":2},
+    "mammakhbuur::male": {"width":0.30875868988571564,"height":0.083,"head":0.5,"hand":2,"foot":2},
+    "mammakhbuur::female": {"width":0.36271536503322704,"height":0.096,"head":0.574,"hand":2,"foot":2},
     "harlyao::male": {"width":0.5113477250037115,"height":0.2218560282272236,"head":0.97,"hand":1.66,"foot":1.62},
     "boney-shinjimi-skeleton::male": {"width":0.754749242105478,"height":0.2580480180203811,"head":0.97,"hand":1.66,"foot":1.62},
     "harlyao-skeleton::male": {"width":0.5717797288677866,"height":0.21055245015383095,"head":0.97,"hand":1.66,"foot":1.62},
@@ -89,8 +89,10 @@
     "omgurku::male": {"width":0.4644610720649097,"height":0.22159813155567568,"head":0.97,"hand":1.66,"foot":1.62},
     "porakaneki::male": {"width":0.5132970237137927,"height":0.4466340538315023,"head":0.97,"hand":1.66,"foot":1.62},
     "harlyao::female": {"width":0.6184486373165619,"height":0.2880658436213992,"head":0.97,"hand":1.66,"foot":1.62},
-  }; // User-uploaded 2026-11-25 baby proportions: convergence baked, head exceptions applied.
-  const repositoryProfiles = sanitizeProfiles(png.ageProfiles || { baby: importedBaby, toddler: {}, child: {} }); // Accept the exported baked profile table as checked-in configuration.
+  }; // Exact 26 baby profiles from hobunji_character_age_rig_modifiers(1).json; no new convergence or size correction.
+  const PRESET_VERSION = 2; // One-time upgrade of earlier baby/toddler drafts and applied profiles to the latest authored preset.
+  const importedToddler = Object.fromEntries(Object.entries(importedBaby).map(([key,row]) => [key, { ...row, height: row.height + .20 }])); // Add 20 percentage points to height only; independent editable toddler rows.
+  const repositoryProfiles = sanitizeProfiles(png.ageProfiles || { baby: importedBaby, toddler: importedToddler, child: {} }); // Accept the exported baked profile table as checked-in configuration.
   function rigReference(adult) {
     if (!adult || !['x','y','head'].every(axis => Number.isFinite(adult[axis]) && adult[axis] > 0)) return null;
     return { x: adult.x, y: adult.y, head: adult.head }; // Preserve the reference against which a younger stage's factors were authored.
@@ -193,11 +195,17 @@
     return values;
   }
 
+  function upgradePresetProfiles(profiles, version) {
+    const saved = sanitizeProfiles(profiles || {}); // Preserve the independently authored child table; replace only the two explicitly updated stages.
+    if (Number(version) >= PRESET_VERSION) return saved;
+    return { ...saved, baby: clone(repositoryProfiles.baby), toddler: clone(repositoryProfiles.toddler) };
+  }
+
   function readApplied() {
     try {
       const data = JSON.parse(localStorage.getItem(APPLIED_KEY) || 'null');
       return data?.schema === SCHEMA && data.modifiers && typeof data.modifiers === 'object'
-        ? { modifiers: sanitize(data.modifiers), basis: sanitizeBasis(data.convergenceBasis || repositoryBasis), profiles: data.profiles ? sanitizeProfiles(data.profiles) : null } : null;
+        ? { modifiers: sanitize(data.modifiers), basis: sanitizeBasis(data.convergenceBasis || repositoryBasis), profiles: upgradePresetProfiles(data.profiles, data.presetVersion), needsPresetUpgrade: !(Number(data.presetVersion) >= PRESET_VERSION) } : null;
     } catch (error) {
       console.warn('[age-rig] invalid applied authoring data, using repository proportions', error);
       return null;
@@ -208,12 +216,16 @@
   const stored = readApplied(); // Saved device override is activated once, before family world/spawn initialization.
   let applied = stored ? applyToConfig(stored.modifiers, stored.basis) : null;
   if (stored?.profiles) activeProfiles = stored.profiles;
+  if (stored?.needsPresetUpgrade) {
+    // Persist the one-time upgrade, without overwriting later deliberate edits or the child stage.
+    try { localStorage.setItem(APPLIED_KEY, JSON.stringify({ schema: SCHEMA, presetVersion: PRESET_VERSION, modifiers: applied, convergenceBasis: stored.basis, profiles: activeProfiles })); } catch (_) {}
+  }
 
   function applyOnThisDevice(modifiers, basis = repositoryBasis, profiles = null) {
     const values = sanitize(modifiers); // Explicit editor action only; never triggered by a draft slider or autosave.
     const reference = sanitizeBasis(basis); // Persist measured identity ratios atomically with stage settings for game/editor parity on reload.
     const nextProfiles = profiles ? sanitizeProfiles(profiles) : sanitizeProfiles(repositoryProfiles); // Explicit apply persists baked individual values, not transient slider settings.
-    localStorage.setItem(APPLIED_KEY, JSON.stringify({ schema: SCHEMA, modifiers: values, convergenceBasis: reference, profiles: nextProfiles }));
+    localStorage.setItem(APPLIED_KEY, JSON.stringify({ schema: SCHEMA, presetVersion: PRESET_VERSION, modifiers: values, convergenceBasis: reference, profiles: nextProfiles }));
     activeProfiles = nextProfiles;
     applied = applyToConfig(values, reference);
     return clone(applied);
@@ -241,6 +253,8 @@
     schema: SCHEMA,
     appliedStorageKey: APPLIED_KEY,
     repositoryDefaults: () => clone(defaults),
+    presetVersion: PRESET_VERSION,
+    upgradePresetProfiles,
     repositoryProfiles: () => clone(repositoryProfiles),
     effectiveProfiles: () => clone(activeProfiles),
     sanitizeProfiles, profileFor, scaledProfile, stageConvergenceBasis, convergeProfile, identityKey, rigReference, relativeProfile,

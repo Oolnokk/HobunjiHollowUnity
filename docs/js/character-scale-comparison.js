@@ -128,17 +128,20 @@
     ageModifiers = defaults;
     ageProfiles = window.HobunjiCharacterAgeRigConfig?.repositoryProfiles?.() || {}; // New authoritative uploaded baby values replace old global-only baby drafts once.
     ageOverall = {adult:1,baby:1,toddler:1,child:1}; stageBasisCache = null;
-    if (saved?.profiles) ageProfiles = window.HobunjiCharacterAgeRigConfig?.sanitizeProfiles?.(saved.profiles) || saved.profiles;
+    const ageApi = window.HobunjiCharacterAgeRigConfig;
+    if (saved?.schema === 'hobunji.character-age-rig-modifiers.v1' && ageApi?.upgradePresetProfiles) ageProfiles = ageApi.upgradePresetProfiles(saved.profiles,saved.presetVersion);
+    else if (saved?.profiles) ageProfiles = ageApi?.sanitizeProfiles?.(saved.profiles) || saved.profiles;
     if (saved?.schema !== 'hobunji.character-age-rig-modifiers.v1') return;
     for (const mode of AGE_MODES.filter(value => value !== 'adult')) for (const axis of AGE_AXES) {
-      if (mode === 'baby' && !saved.profiles && Object.keys(ageProfiles.baby || {}).length) continue; // Import the supplied baby preset once, not the obsolete global-only draft.
+      if ((mode === 'baby' || mode === 'toddler') && ageApi?.presetVersion && !(Number(saved.presetVersion) >= ageApi.presetVersion)) continue; // Import the supplied baby preset once, not the obsolete global-only draft.
       if (saved.profiles && axis.endsWith('Convergence')) continue; // Preview strength is not durable.
       ageModifiers[mode][axis] = clampAgeModifier(saved.modifiers?.[mode]?.[axis] ?? ((axis === 'width' || axis === 'height') ? saved.modifiers?.[mode]?.body : null), axis, defaults[mode][axis]); // Legacy body autosaves map to both axes.
     }
+    if (ageApi?.presetVersion && !(Number(saved.presetVersion) >= ageApi.presetVersion)) persistAgeModifiers(); // Replace old baby/toddler values once on this browser; retain subsequent authoring.
   }
 
   function persistAgeModifiers() {
-    try { localStorage.setItem(AGE_SAVE_KEY, JSON.stringify({ schema: 'hobunji.character-age-rig-modifiers.v1', modifiers: Object.fromEntries(Object.entries(ageModifiers).map(([mode,row])=>[mode,{...row,widthConvergence:0,heightConvergence:0}])), profiles: ageProfiles })); }
+    try { localStorage.setItem(AGE_SAVE_KEY, JSON.stringify({ schema: 'hobunji.character-age-rig-modifiers.v1', presetVersion: window.HobunjiCharacterAgeRigConfig?.presetVersion, modifiers: Object.fromEntries(Object.entries(ageModifiers).map(([mode,row])=>[mode,{...row,widthConvergence:0,heightConvergence:0}])), profiles: ageProfiles })); }
     catch (error) { console.warn('[full-character-scale] age-mode autosave failed', error); }
   }
 
