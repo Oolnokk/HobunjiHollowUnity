@@ -153,6 +153,17 @@ if(THREE){
   solver.setPreviewEnabled(false);
   assert.equal(mainMesh.geometry,source,'raw mode releases borrowed fit');
   assert.equal(offMesh.geometry,source);
+  // Flexible hafts have the same independent grip solve and must share their source compression.
+  solver.setPreviewEnabled(true);plane.rotation.x=-Math.PI/2;parent.updateMatrixWorld(true);
+  w.HobunjiWeaponSpriteAssemblies={assemblyKind:()=> 'flail'};
+  solver.constrainWeapon(holder,weapon,ctx);parent.updateMatrixWorld(true);
+  solver.constrainDualCopies({plane,mainRoot,offRoot,mainMesh,offMesh,invisible:false});
+  assert.equal(mainMesh.geometry,plane.geometry,'flexible main haft keeps canonical fit');
+  assert.equal(offMesh.geometry,plane.geometry,'flexible offhand haft keeps canonical fit');
+  const sourceTip=new THREE.Vector3(0,-.8,0),copyTip=sourceTip.clone();
+  solver.adjustHaftPoint(plane,sourceTip);solver.adjustHaftPoint(mainMesh,copyTip);
+  close(sourceTip.distanceTo(copyTip),0);assert.ok(copyTip.y>-.8,'flexible copy anchor follows shortening');
+  solver.setPreviewEnabled(false);assert.equal(mainMesh.geometry,source);assert.equal(offMesh.geometry,source);
   console.log('held ground pose: actual Three preview and independent dual grip pivots passed');
 }
 
@@ -189,3 +200,6 @@ context.window.HobunjiDualWieldWeaponVisuals={isOwnedChild:(p,c)=>p===canonical&
 assert.equal(preview.hasDrawingHaftChildren(canonical),true);
 assert.equal(preview.hasDrawingHaftChildren(canonical,true),false,'canonical dual source allows only owned copies');
 canonical.children.push({visible:true});assert.equal(preview.hasDrawingHaftChildren(canonical,true),true);
+
+assert.ok(assemblies.includes('const fixedScale=sharedSource?(sharedSource.fixedRopeScale??1)'),'dual flail heads inherit the permanent source rope fit');
+assert.ok(assemblies.includes('const profile=sharedSource?sharedSource.groundProfile:'),'dual flail heads use the same clearance profile');

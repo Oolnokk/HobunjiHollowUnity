@@ -264,7 +264,7 @@
   function gripZFor(point,mesh) { return (point.z-mesh.position.z)/mesh.scale.z; }
   function adjustHaftPoint(plane,point) {
     // The rope anchor follows exactly the same strip deformation as the art.
-    if(enabled()&&active?.plane===plane&&active.amount)point.y=-contractedZ(-point.y,active.gripZ,active.segments,active.amount,point.x);
+    if(enabled()&&active?.amount&&(active.plane===plane||borrowedCopies.has(plane)))point.y=-contractedZ(-point.y,active.gripZ,active.segments,active.amount,point.x);
     return point;
   }
   // The shortest permissible straight connector is tried first. If that
@@ -531,12 +531,12 @@
     if(!current)return;
     const main=current.mainMesh,off=current.offMesh;
     dualProofs.delete(main);dualProofs.delete(off);
-    if(!enabled()||!s||!d||d.plane!==current.plane||current.invisible||!current.mainRoot.visible||d.flexible){
+    if(!enabled()||!s||!d||d.plane!==current.plane||current.invisible||!current.mainRoot.visible){
       releaseDualCopy(main);releaseDualCopy(off);return;
     }
-    // Both copies have identical source geometry. They borrow the fitted
-    // buffer rather than allocate one per hand; the owner restores them before
-    // disposing it. Never modify the canonical geometry.
+    // Both rigid and flexible haft copies borrow the fitted source buffer.
+    // The assembly separately solves each flexible head using its own tip;
+    // the owner restores the borrowed geometry before disposal.
     for(const copy of [main,off]){
       if(copy.geometry!==d.plane.geometry)copy.geometry=d.plane.geometry;
       if(active?.geometry===copy.geometry)borrowedCopies.add(copy);

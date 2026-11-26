@@ -541,6 +541,7 @@
         if (replica) {
           replica.dualPhysicsSource = source; // Every swing copies this one authoritative WORLD-space direction, never a local-space angle.
           replica.attacking = source.attacking; replica.progress = source.progress;
+          replica.fishingFlailHeadSpin=source.fishingFlailHeadSpin;replica.fishingFlailSpinRevolutions=source.fishingFlailSpinRevolutions; // Shared attack phase, including special fishing throws.
           replica.flailLengthScale = source.flailLengthScale; // Each duplicate has its own visual connector but shares the source pose's reach.
           replica.wf = source.wf; replica.sf = source.sf; replica.hf = source.hf;
           replica.pitchTravelRad = source.pitchTravelRad; replica.yawTravelRad = source.yawTravelRad;
@@ -1005,12 +1006,14 @@
     const authoredChainScaleY = chainScaleY; // Preserve the authored rope width even when a combat pose shortens its longitudinal reach.
     const headScale = relativePartScale(flail.head); // Head size is still independently handle-relative.
     const pose=global.HeldGroundPose;
-    const preview=pose?.previewAppliesTo?.(root)&&!state.dualPhysicsSource;
-    const runtime=pose?.enabled?.()&&!state.dualPhysicsSource
+    const sharedSource=state.dualPhysicsSource&&!state.dualPhysicsSource.dead?state.dualPhysicsSource:null; // Source owns permanent geometry and rope fit; visible hands own live clearance.
+    const preview=pose?.previewAppliesTo?.(root)&&!sharedSource;
+    const runtime=pose?.enabled?.()&&!sharedSource
       &&root.parent===global.ProceduralHandAttachments?.gameDeps?.toolHolder
       ?global.WeaponToolStances?.getRuntimeState?.():null;
-    const profile=preview||runtime?.activeSlot==='weapon'&&runtime.itemKey===state.itemKey
-      ?global.HobunjiHandToolGrips?.groundProfileForTool?.(state.itemKey):null;
+    const profile=sharedSource?sharedSource.groundProfile:(preview||runtime?.activeSlot==='weapon'&&runtime.itemKey===state.itemKey
+      ?global.HobunjiHandToolGrips?.groundProfileForTool?.(state.itemKey):null);
+    state.groundProfile=profile; // No separate metadata lookup or mutable physical fit for the visible replicas.
     const floor=profile?pose.groundY():null; // No shortening limit means fixed rope length, NOT disabled ground contact.
     const contact=Number.isFinite(floor)&&!state.attacking?idleHeadContact(state,unit,profile):null;
     // Fixed Light fit uses upright contact; live trailing accounts for tilt separately.
@@ -1019,10 +1022,11 @@
     const spanX=(state.chainBottom.x-state.chainTop.x)*unit*chainScaleX;
     const spanY=(state.chainBottom.y-state.chainTop.y)*unit*chainScaleY;
     const baseLength=Math.hypot(spanX,spanY)*attachmentScale;
-    const lightDrop=profile?.ropeMinScale!=null?pose.referenceDrop(root,q.pivotLocal):null; // Same immutable light stance reference as the haft.
+    const lightDrop=!sharedSource&&profile?.ropeMinScale!=null?pose.referenceDrop(root,q.pivotLocal):null; // Same immutable light stance reference as the haft.
     const canFit=!!contact?.traced&&Number.isFinite(lightDrop)&&!state.fishingFlailHeadSpin&&(preview||global.PlayerJump?.heldPoseGrounded?.()===true);
     const candidate=canFit?pose.ropeFitCandidate(spanX,spanY,attachmentScale,lightDrop-contact.drop*attachmentScale*headScale,profile.ropeMinScale,pose.lightRopeScale(root)):null;
-    const fixedScale=profile?.ropeMinScale!=null?pose.fittedRopeScale(root,profile,canFit,candidate):1;
+    const fixedScale=sharedSource?(sharedSource.fixedRopeScale??1):(profile?.ropeMinScale!=null?pose.fittedRopeScale(root,profile,canFit,candidate):1);
+    state.fixedRopeScale=fixedScale; // Both independently posed copies retain the canonical fitted rope length.
     const desiredLocal=baseLength*fixedScale/attachmentScale;
     if(fixedScale<1&&Math.abs(spanY)>1e-8)
       chainScaleY*=Math.max(0.00001,Math.sqrt(Math.max(0,desiredLocal*desiredLocal-spanX*spanX))/Math.abs(spanY));
@@ -1047,7 +1051,8 @@
     if (chainSpan.lengthSq() < 1e-10) return; // Degenerate all-transparent/one-pixel chain cannot form a lever.
     state.physicsLength = Math.max(0.01, chainSpan.length() * attachmentScale); // World-space rope length supplies the pendulum lever arm.
     chainSpan.normalize();
-    const sharedPhysics = state.dualPhysicsSource?.dead ? null : state.dualPhysicsSource; // The original updates before its later-created visible copies in the shared frame scheduler.
+    const shaftUp = q.shaftUp.set(0, -1, 0).applyQuaternion(baseQ).normalize(); // Each physical haft has its own fallback trailing direction.
+    const sharedPhysics = sharedSource; // The original updates before its later-created visible copies in the shared frame scheduler.
     if (sharedPhysics) {
       state.direction.copy(sharedPhysics.direction); // Identical world-space sway; each side still uses its own baked haft attachment below.
       q.velocity.copy(sharedPhysics.scratch.velocity); // Shared actor movement for both visible copies.
@@ -1081,7 +1086,6 @@
     q.previousDirection.copy(state.direction); // Measure the driven connector velocity before release.
     const motion = flail.motion || {}; // Authored inertial controls from the Tool Hub; ordinary stances are not modified.
     const lag = Number.isFinite(Number(motion.lag)) ? Math.max(0, Math.min(1, Number(motion.lag))) : MOTION_LAG;
-    const shaftUp = q.shaftUp.set(0, -1, 0).applyQuaternion(baseQ).normalize(); // Both haft sprites attach at their bottom end: extend outward along local -Y, away from the grip.
     const pitchAxis = q.pitchAxis.set(1, 0, 0).applyQuaternion(q.rootWorldQ).normalize(); // Use the holder frame: the PNG sweep basis rotates its local X away from the authored pitch axis.
     if (state.attacking && (!state.wasAttacking || state.progress < state.lastFrameProgress - 0.01)) {
       state.angularVelocity.set(0, 0, 0); state.hasPhysicsVelocity = false; q.pivotAcceleration.set(0, 0, 0);
@@ -1141,10 +1145,10 @@
     // Run after the shared physics branch so each visible dual copy measures its own tip.
     const bodyVX=state.actorMotionValid?q.velocity.x:0,bodyVZ=state.actorMotionValid?q.velocity.z:0;
     advanceIdleHeadMotion(state.idleHeadMotion,state.attacking,state.progress,state.sf,state.hf,pivot,bodyVX,bodyVZ,dt,state.idleHeadMotion.yaw??Math.atan2(normal.x,normal.z),headDeadzone());
-    if (state.dualWieldHidden) return; // Hidden original still simulates the ONE pendulum, but need not position invisible rope/head art.
+    state.groundClearance=null;
+    if (state.dualWieldHidden) return; // Hidden original owns the ONE pendulum and fitted length, but not live floor contact.
     // Ground contact can now change only the direction of the already
     // fitted rope. No frame, jump, or pendulum swing can make it longer.
-    state.groundClearance=null;
     const idleQ=!state.attacking?idleHeadQuaternion(state,pivot,normal,q.headQ):null;
     const liveDrop=contact&&idleQ?tiltedHeadDrop(contact,idleQ):null; // Conservative live support, never resizing fitted rope.
     const available=contact?pivot.y-(floor+.035+liveDrop*attachmentScale*headScale):null;
