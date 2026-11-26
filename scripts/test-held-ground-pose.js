@@ -19,3 +19,13 @@ assert.equal(chooseAngle(points,1,.5,()=>false),null);
 assert.equal(chooseAngle(points,2,.5),0);
 assert.equal(chooseAngle([{a:0,b:0}],0,.5),null);
 console.log('held ground pose: pure contraction and rotation checks passed');
+
+// Protruding axe head: contact X is not a fictitious full-width rectangle.
+const box={min:{x:-1,y:-2},max:{x:1,y:2}};
+const axe=[{x:-.1,z:-2},{x:.1,z:-2},{x:.1,z:1},{x:1,z:1},{x:1,z:2},{x:-.1,z:2}];
+const contacts=[];assert.equal(context.window.HeldGroundPose.contactVertices(box,axe,[{a:0,b:.5}],contacts),true);
+assert.ok(contacts.some(p=>p.x===1&&p.z===2));
+assert.ok(!contacts.some(p=>p.x===1&&p.z===-2));
+assert.ok(contacts.some(p=>Math.abs(p.x-.1)<1e-6&&p.z===.5),'edge split at shortening boundary');
+assert.equal(context.window.HeldGroundPose.contactVertices(box,[{x:2,z:0},{x:0,z:0},{x:0,z:1}],[],contacts),false);
+assert.equal(contacts.length,4,'invalid outline uses rectangle');

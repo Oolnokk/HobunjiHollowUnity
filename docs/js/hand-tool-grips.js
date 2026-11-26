@@ -726,7 +726,21 @@
       .map(v => ({ a: Math.max(a, Number(v.a)), b: Math.min(b, Number(v.b)) })).sort((x,y) => x.a-y.a);
     for (const v of candidates) if (v.b-v.a > 1e-5 && (!segments.length || v.a >= segments[segments.length-1].b)) segments.push(v);
     const min = Number(raw.minSegmentScale);
-    return { a, b, heightFraction, minSegmentScale: raw.minSegmentScale != null && Number.isFinite(min) ? Math.max(0.1,Math.min(1,min)) : 0.65, segments };
+    const contactOutline = []; // Closed contact perimeter in canonical item X/Z, independent of the length endpoints.
+    if (Array.isArray(raw.contactOutline) && raw.contactOutline.length <= 128) {
+      for (const point of raw.contactOutline) {
+        if (point?.x == null || point?.z == null || !Number.isFinite(Number(point.x)) || !Number.isFinite(Number(point.z))) { contactOutline.length=0; break; }
+        const p={x:Number(point.x),z:Number(point.z)};
+        const prev=contactOutline[contactOutline.length-1];
+        if (!prev || Math.hypot(p.x-prev.x,p.z-prev.z)>1e-6) contactOutline.push(p);
+      }
+      const first=contactOutline[0],last=contactOutline[contactOutline.length-1];
+      if(first&&last&&Math.hypot(first.x-last.x,first.z-last.z)<1e-6)contactOutline.pop();
+      let area=0; // Reject empty, collinear or degenerate outlines.
+      for(let i=0;i<contactOutline.length;i++){const p=contactOutline[i],q=contactOutline[(i+1)%contactOutline.length];area+=p.x*q.z-q.x*p.z;}
+      if(contactOutline.length<3||Math.abs(area)<1e-8)contactOutline.length=0;
+    }
+    return { a, b, heightFraction, minSegmentScale: raw.minSegmentScale != null && Number.isFinite(min) ? Math.max(0.1,Math.min(1,min)) : 0.65, segments, contactOutline };
   }
 
   const lengthProfiles = new WeakMap(); // Entries are immutable until mutate()/replace() re-normalize grip data.
@@ -1483,7 +1497,7 @@
     editorUi.scalePair.set(normalizeToolScale(entry?.toolScale));
     editorUi.heightPair.set(normalizeHeightMultiplier(entry?.heightMultiplier));
     const length = lengthProfileForTool(editorCurrentToolKey()); // Avoid replacing an in-progress text edit.
-    if (document.activeElement !== editorUi.lengthInput) editorUi.lengthInput.value = length ? JSON.stringify(length, null, 2) : '';
+    editorUi.lengthAuthor?.refresh(editorCurrentToolKey(),length); // The canvas keeps its unsaved draft during unrelated pose refreshes.
     editorUi.heightPair.range.disabled = editorUi.heightPair.number.disabled = !!length?.heightFraction;
     editorUi.spanEnabled.checked = span.enabled === true;
     editorUi.startPair.set(numberOrZero(span.startZ)); editorUi.endPair.set(numberOrZero(span.endZ));
@@ -1556,63 +1570,21 @@
     const scalePair = editorFieldPair(scaleFields, 'handToolScale', 'Base tool scale', 1, 0.1, 3, 0.01, value => mutate(() => { ensureTool(editorCurrentToolKey()).toolScale = normalizeToolScale(value); }));
     const heightPair = editorFieldPair(scaleFields, 'handToolHeightMultiplier', 'Height multiplier', DEFAULT_HEIGHT_MULTIPLIER, 0, 3, 0.01, value => mutate(() => { ensureTool(editorCurrentToolKey()).heightMultiplier = normalizeHeightMultiplier(value); }));
 
-    const lengthHelp = document.createElement('div'); // Explicit longitudinal source measurement and multiple compressible sections.
-    lengthHelp.className = 'help';
-    lengthHelp.textContent = 'Optional measured length: A/B are the actual butt/tip coordinates on item-local Z (world units before scaling). heightFraction: 1 = character height, 0 = old sizing. segments: disjoint A/B intervals, uniformly compressed down to minSegmentScale before ground rotation. Empty = legacy. Press Apply.';
-    scalePanel.appendChild(lengthHelp);
-    const lengthInput = document.createElement('textarea');
-    lengthInput.rows = 6; lengthInput.style.width = '100%';
-    lengthInput.placeholder = '{"a":-0.5,"b":0.5,"heightFraction":0.8,"minSegmentScale":0.65,"segments":[{"a":-0.35,"b":-0.1}]}';
-    scalePanel.appendChild(lengthInput);
-    const measureButton=document.createElement('button'); // One explicit alpha scan, never during animation frames.
-    measureButton.type='button';measureButton.textContent='Measure visible sprite A/B';
-    scalePanel.appendChild(measureButton);
-    measureButton.addEventListener('click',()=>{
-      try {
-        const ctx=global.HobunjiAttackEditorToolContext;
-        const plane=ctx?.toolPlaneMesh?.userData?.toolPlane;
-        const material=Array.isArray(plane?.material)?plane.material[0]:plane?.material;
-        const image=material?.map?.image;
-        const width=image?.naturalWidth||image?.width,height=image?.naturalHeight||image?.height;
-        if(!plane?.geometry||!(width>0&&height>0))throw new Error('Wait for the weapon artwork to load.');
-        if(width*height>16000000)throw new Error('Artwork is too large for the measurement tool.');
-        const canvas=document.createElement('canvas');canvas.width=width;canvas.height=height;
-        const c=canvas.getContext('2d',{willReadFrequently:true});c.drawImage(image,0,0);
-        const rgba=c.getImageData(0,0,width,height).data;
-        let top=height,bottom=-1;
-        for(let y=0;y<height;y++)for(let x=0;x<width;x++)if(rgba[(y*width+x)*4+3]>=21){top=Math.min(top,y);bottom=y;break;}
-        if(bottom<top)throw new Error('No opaque pixels found.');
-        plane.geometry.computeBoundingBox();
-        const box=plane.geometry.boundingBox;
-        const span=box.max.y-box.min.y;
-        if(!(span>0))throw new Error('Invalid source geometry.');
-        const round=v=>Math.round(v*100000)/100000;
-        const prev=lengthInput.value.trim()?JSON.parse(lengthInput.value):{};
-        const a=round(-box.max.y+span*top/height),b=round(-box.max.y+span*(bottom+1)/height);
-        if(!(b>a))throw new Error('Measured length is zero.');
-        const identity=editorScaleIdentity(),characterHeight=actualCharacterHeight(identity.speciesId,identity.gender);
-        const fraction=prev.heightFraction??(characterHeight?round((b-a)*effectiveToolScaleForTool(editorCurrentToolKey(),identity.speciesId,identity.gender)/characterHeight):0);
-        lengthInput.value=JSON.stringify({...prev,a,b,heightFraction:fraction,minSegmentScale:prev.minSegmentScale??.65,segments:prev.segments??[]},null,2);
-        lengthMessage.textContent='Measured opaque art along item Z. Adjust the target fraction or segments and press Apply.';
-      }catch(error){lengthMessage.textContent=error.message;}
-    });
-    const lengthApply = document.createElement('button');
-    lengthApply.type = 'button'; lengthApply.textContent = 'Apply measured length / shortening';
-    scalePanel.appendChild(lengthApply);
-    const lengthMessage = document.createElement('div'); lengthMessage.className = 'help'; scalePanel.appendChild(lengthMessage);
-    lengthApply.addEventListener('click', () => {
-      try {
-        const raw = lengthInput.value.trim();
-        const profile = raw ? normalizeLengthProfile(JSON.parse(raw)) : null;
-        if (raw && !profile) throw new Error('A/B must be finite, with B greater than A.');
-        mutate(() => {
-          const entry = ensureTool(editorCurrentToolKey());
-          if (profile) entry.lengthProfile = profile; else delete entry.lengthProfile;
-        });
-        lengthMessage.textContent = profile ? 'Applied. Export grip configuration to keep these values.' : 'Legacy sizing restored.';
+    const lengthAuthor = global.HobunjiWeaponGeometryAuthor?.mount(scalePanel,{
+      source:()=>global.HobunjiAttackEditorToolContext?.toolPlaneMesh,
+      initialFraction:(a,b)=>{
+        const identity=editorScaleIdentity(),height=actualCharacterHeight(identity.speciesId,identity.gender);
+        return height ? (b-a)*effectiveToolScaleForTool(editorCurrentToolKey(),identity.speciesId,identity.gender)/height : 0;
+      },
+      apply(raw,key){
+        if(key!==editorCurrentToolKey())throw new Error('Selected weapon changed; reopen the correct sprite.');
+        const profile=raw?normalizeLengthProfile(raw):null;
+        if(raw&&!profile)throw new Error('Length requires finite A/B with B greater than A.');
+        if(raw?.contactOutline?.length&&!profile.contactOutline.length)throw new Error('Contact outline needs at least three non-collinear points.');
+        mutate(()=>{const entry=ensureTool(key);if(profile)entry.lengthProfile=profile;else delete entry.lengthProfile;});
         syncEditorSpanUi();
-      } catch (error) { lengthMessage.textContent = error.message; }
-    });
+      },
+    }); // Editor-only canvas; gameplay never loads or allocates its authoring state.
 
     const panel = document.createElement('div');
     panel.id = 'handSecondaryGripSpanPanel';
@@ -1718,7 +1690,7 @@
       pose[phase] = { enabled, dual, percent, primaryPercent, offhandEnabled, offhandCustom, offhandFields, offhandPairs };
     }
     spanEnabled.addEventListener('change', () => mutate(() => { currentSpan().enabled = spanEnabled.checked; }));
-    editorUi = { scalePanel, scalePair, heightPair, lengthInput, panel, axisEnabled, axisFields, axisStatus, axisPairs, mainEnabled, mainStartPair, mainEndPair, spanEnabled, startPair, endPair, pose, status: panel.querySelector('#handSecondarySpanStatus') };
+    editorUi = { scalePanel, scalePair, heightPair, lengthAuthor, panel, axisEnabled, axisFields, axisStatus, axisPairs, mainEnabled, mainStartPair, mainEndPair, spanEnabled, startPair, endPair, pose, status: panel.querySelector('#handSecondarySpanStatus') };
 
     document.getElementById('toolSpriteSelect')?.addEventListener('change', () => setTimeout(syncEditorSpanUi, 0));
     document.getElementById('handGripContextSelect')?.addEventListener('change', () => {

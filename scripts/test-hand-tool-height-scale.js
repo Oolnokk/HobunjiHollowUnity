@@ -75,3 +75,8 @@ assert.equal(grips.effectiveToolScaleForTool('hatchet', 'engh-sho', 'male'), 1.2
 assert.equal(grips.effectiveToolScaleForTool('hatchet', 'unknown', 'male'), 1.2, 'missing dimensions should safely fall back to the authored base scale');
 
 console.log('hand tool calculated-height scaling: ok');
+
+grips.mutate(data=>{data.tools.hatchet.lengthProfile={a:-.5,b:.5,heightFraction:.8,minSegmentScale:.6,segments:[{a:-.4,b:-.2}],contactOutline:[{x:-.1,z:-.5},{x:.2,z:.5},{x:-.1,z:.5}]};});
+assert.equal(grips.effectiveToolScaleForTool('hatchet','engh-sho','male'),1.6,'measured ratio overrides species multiplier');
+assert.equal(grips.lengthProfileForTool('hatchet').contactOutline.length,3);
+assert.equal(grips.clone().tools.hatchet.lengthProfile.contactOutline.length,3,'profile survives export');

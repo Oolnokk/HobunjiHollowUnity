@@ -64,7 +64,7 @@
       point: new T.Vector3(), rel: new T.Vector3(), base: new T.Vector3(), candidate: new T.Vector3(),
       pos: new T.Vector3(), scale: new T.Vector3(), parentQ: new T.Quaternion(), q: new T.Quaternion(),
       localQ: new T.Quaternion(), oldQ: new T.Quaternion(), box: new T.Box3(),
-      samples: [], points: [], rows: [],
+      samples: [], points: [], rows: [], contact: [], contactKey: null, contactSource: null, contactSegments: null,
     };
   }
   function restoreGeometry() {
@@ -132,15 +132,30 @@
     return out.set(point.x,point.y,mesh.position.z+contractedZ(z,gripZ,segments,amount)*mesh.scale.z)
       .applyQuaternion(basis).applyMatrix4(s.holder);
   }
-  function samplePoints(s,box,rows,segments,gripZ,amount) {
-    // Evaluate the two extrema of each horizontal strip. During compression
-    // search only Y is required; no vector or array allocation per candidate.
+  // Split every outline edge at the shortening boundaries. The deformation
+  // is piecewise affine, so its extrema occur at these vertices.
+  function contactVertices(box,outline,segments,out=[]) {
+    out.length=0;
+    const valid=Array.isArray(outline)&&outline.length>=3&&outline.every(p=>Number.isFinite(p.x)&&Number.isFinite(p.z)
+      &&p.x>=box.min.x-1e-5&&p.x<=box.max.x+1e-5&&-p.z>=box.min.y-1e-5&&-p.z<=box.max.y+1e-5);
+    const polygon=valid?outline:[{x:box.min.x,z:-box.max.y},{x:box.max.x,z:-box.max.y},{x:box.max.x,z:-box.min.y},{x:box.min.x,z:-box.min.y}];
+    for(let i=0;i<polygon.length;i++){
+      const p=polygon[i],q=polygon[(i+1)%polygon.length];
+      out.push(p);
+      if(Math.abs(q.z-p.z)<1e-10)continue;
+      for(const seg of segments)for(const z of [seg.a,seg.b]){
+        const t=(z-p.z)/(q.z-p.z);
+        if(t>0&&t<1)out.push({x:p.x+(q.x-p.x)*t,z});
+      }
+    }
+    return valid;
+  }
+  function samplePoints(s,vertices,segments,gripZ,amount) {
     let min=Infinity;
-    const e=s.matrix.elements;
-    for(const row of rows) {
-      const y=-contractedZ(-row,gripZ,segments,amount);
-      const base=e[5]*y+e[13];
-      min=Math.min(min,base+e[1]*box.min.x,base+e[1]*box.max.x);
+    const e=s.matrix.elements; // Use actual X extent, including protruding heads.
+    for(const p of vertices){
+      const y=-contractedZ(p.z,gripZ,segments,amount);
+      min=Math.min(min,e[1]*p.x+e[5]*y+e[13]);
     }
     return min;
   }
@@ -183,8 +198,18 @@
     const segments=profile&&Math.abs(plane.rotation.z)<1e-6&&Math.abs(plane.scale.y-1)<1e-6&&Math.abs(basis.x)+Math.abs(basis.y)+Math.abs(basis.z)<1e-6
       ?profile.segments:[];
     const rows=stripRows(box,segments,s.rows);
+    const outline=profile?.contactOutline;
+    const segmentKey=segments.length?segments:null;
+    const boundsChanged=s.contactMinX!==box.min.x||s.contactMaxX!==box.max.x||s.contactMinY!==box.min.y||s.contactMaxY!==box.max.y;
+    if(s.contactKey!==outline||s.contactSource!==source||s.contactSegments!==segmentKey||boundsChanged){
+      s.authoredContact=contactVertices(box,outline,segments,s.contact);
+      s.contactKey=outline;s.contactSource=source;s.contactSegments=segmentKey;
+      s.contactMinX=box.min.x;s.contactMaxX=box.max.x;s.contactMinY=box.min.y;s.contactMaxY=box.max.y;
+    }
+    debug.contactSource=s.authoredContact?'authored-outline':'quad-fallback';
+    debug.contactVertices=s.contact.length;
     const target=y+PAD;
-    const original=samplePoints(s,box,rows,segments,gripZ,0);
+    const original=samplePoints(s,s.contact,segments,gripZ,0);
     debug.originalMinY=original;
     let amount=0,min=original,angle=0;
     worldGrip(s,primary,basis,mesh,gripZ,segments,0,s.pivot);
@@ -207,12 +232,12 @@
     if(min<target&&segments.length) {
       const max=1-profile.minSegmentScale;
       if(max>0) {
-        const compressed=samplePoints(s,box,rows,segments,gripZ,max);
+        const compressed=samplePoints(s,s.contact,segments,gripZ,max);
         if(compressed>original+1e-6) {
           let lo=0,hi=max;
           if(compressed>=target)for(let i=0;i<10;i++) {
             const mid=(lo+hi)/2;
-            if(samplePoints(s,box,rows,segments,gripZ,mid)>=target)hi=mid;else lo=mid;
+            if(samplePoints(s,s.contact,segments,gripZ,mid)>=target)hi=mid;else lo=mid;
           }
           amount=hi;
           if(!reachable(0,amount)) {
@@ -220,8 +245,8 @@
             for(let i=0;i<10;i++) {const mid=(lo+hi)/2;if(reachable(0,mid))lo=mid;else hi=mid;}
             amount=lo;
           }
-          min=samplePoints(s,box,rows,segments,gripZ,amount);
-        } else min=samplePoints(s,box,rows,segments,gripZ,0);
+          min=samplePoints(s,s.contact,segments,gripZ,amount);
+        } else min=samplePoints(s,s.contact,segments,gripZ,0);
       }
     }
     if(min<target) {
@@ -229,14 +254,11 @@
       // offset from the grip. This rotates the offending end upward.
       // Only construct world XYZ samples when actual rotation is required.
       let count=0,lowest=null;
-      for(const row of rows) {
-        const yy=-contractedZ(-row,gripZ,segments,amount);
-        for(let i=0;i<2;i++) {
-          const p=s.samples[count] ||= new global.THREE.Vector3();
-          p.set(i?box.max.x:box.min.x,yy,0).applyMatrix4(s.matrix);
-          count++;
-          if(!lowest||p.y<lowest.y)lowest=p;
-        }
+      for(const vertex of s.contact){
+        const p=s.samples[count] ||= new global.THREE.Vector3();
+        p.set(vertex.x,-contractedZ(vertex.z,gripZ,segments,amount),0).applyMatrix4(s.matrix);
+        count++;
+        if(!lowest||p.y<lowest.y)lowest=p;
       }
       s.samples.length=count;
       s.axis.set(-(lowest.z-s.pivot.z),0,lowest.x-s.pivot.x);
@@ -306,5 +328,5 @@
     if(!clear(mesh.matrixWorld)||(extra&&!clear(extra)))return false;
     debug.ordinaryParts++;return true;
   }
-  global.HeldGroundPose=Object.freeze({enabled,groundY,constrainWeapon,constrainFreeHand,ordinaryDepthFor,adjustGrip,clear,contractedZ,minimumY,chooseAngle,snapshot:()=>({...debug})});
+  global.HeldGroundPose=Object.freeze({enabled,groundY,constrainWeapon,constrainFreeHand,ordinaryDepthFor,adjustGrip,clear,contractedZ,contactVertices,minimumY,chooseAngle,snapshot:()=>({...debug})});
 })(typeof window!=='undefined'?window:globalThis);
