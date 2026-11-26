@@ -1090,6 +1090,7 @@
     });
     const pantsDepth = playerPants?.getFootDepthBiasDebug?.(); // The render-only foot offset, including active paired-animation overrides.
     if (window.PantsGarmentRenderer) lines.push(`Pants/feet depth: player=${playerPants ? 'attached' : 'none'} live=${wornPants.length} camera=${camera?.isPerspectiveCamera ? 'perspective' : 'other'} base=${Number(pantsDepth?.base || 0).toFixed(4)}u applied=${Number(pantsDepth?.applied || 0).toFixed(4)}u anatomyRevision=${pantsDepth?.anatomyRevision ?? '-'} scopes=${pantsDepth?.scopes?.join(',') || 'none'}`);
+    if (pantsDepth?.measuredFit) lines.push('Pants seam fit (neutral local units): ' + JSON.stringify(pantsDepth.measuredFit)); // On-demand actual vs target widths, no animation overhead.
     const nuhonganDebug = window.HobunjiNuhonganSpecies?.debugSnapshot?.(); // Verifies the Tletingan anatomy inheritance used by this player's saved species.
     if (nuhonganDebug) lines.push('Nuhongan: ' + JSON.stringify(nuhonganDebug));
     const shingleSurfaces = window.HousePieceGen?.shingleSurfaceSnapshot?.(); // Copies roof-side UV recognition and the latest change for mobile debugging.
