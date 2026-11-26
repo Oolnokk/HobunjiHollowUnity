@@ -3848,7 +3848,9 @@
             onAction(action) {
               if (action !== 'obj_interact') return { ok: false, message: 'Unknown action.' };
               if (sitInteraction || dialogueOpen || window.FarmAnimals.isHarvesting() || (window.Mounts?.rideState ?? 'none') !== 'none') return { ok: false, message: 'Cannot lie down right now.' };
-              return window.BedLiePose?.begin?.(o) || { ok: false, message: 'Lie-down animation is not available.' };
+              // Every input, including generic Interact (controller A), must use the chosen-duration passage.
+              const opened = window.HobunjiSleepPassageActionBridge?.openSharedSleepPassage?.();
+              return opened ? { ok: true, message: '' } : { ok: false, message: 'Sleep is not available right now.' };
             },
           };
         }
@@ -9677,8 +9679,7 @@
       // — so the date/time (and weather) silently reset every session no
       // matter how long the world had actually been played. Loaded once in
       // spawnPlayerAvatar (before checkTothalShift, since currentTothalYear()
-      // reads calendar.day) and saved on every day rollover (advanceDay/
-      // sleepInBed) plus on tab close, mirroring _saveTothalYear's pattern.
+      // reads calendar.day) and saved on every day rollover (advanceDay) plus on tab close, mirroring _saveTothalYear's pattern.
       function _loadWorldCalendar() {
         const worldId = _tothalWorldId();
         if (!worldId) return null;
@@ -27389,8 +27390,8 @@
           // Breeding progress ticks per in-game hour crossed (rather than
           // once per day) so a pair's bar visibly creeps forward through
           // the day and can complete the moment it fills, not just at the
-          // next morning — see FarmAnimals.tickBreedingProgress. sleepInBed()
-          // covers whatever fraction of the day this real-time path skips.
+          // next morning — see FarmAnimals.tickBreedingProgress. the Sleep passage
+          // uses the same hourly calendar progression.
           window.FarmAnimals.tickBreedingProgress();
           // Cheap once-per-in-game-hour flush (~every 12 real seconds at the
           // default DAY_LENGTH_SECONDS) so a crash/force-close between day
@@ -27405,7 +27406,7 @@
         window.WeatherFX.chooseWeatherForDay();
         tickCropDay();
         window.NpcFarmPlots?.onNewDay?.();
-        // Breeding is ticked hourly (see updateCalendar/sleepInBed), not
+        // Breeding is ticked hourly (see updateCalendar), not
         // here — by the time a day naturally rolls over, every one of its
         // waking hours has already been credited in real time.
         window.FarmAnimals.tickResources();
@@ -27425,74 +27426,11 @@
         _saveWorldCalendar();
       }
 
-      // Sleeping in a bed (see getInteriorInteractableAt) skips straight to
-      // the next morning rather than waiting for calendar.time01 to wrap
-      // naturally — same day-rollover work as advanceDay() (weather reroll,
-      // crop growth, Tothal Shift check, den respawns), plus resetting the
-      // clock itself and restoring the player, which advanceDay() doesn't
-      // need to do since it only ever fires from a real elapsed-time wrap.
-      function sleepInBed() {
-        // Co-op: sleeping advances time only when every player is resting (js/time-consensus.js).
-        const gate = bedSleepGate();
-        if (gate?.state === 'waiting') return { ok: true, waiting: true, message: '💤 Waiting for the others to sleep…' };
-        if (gate?.state === 'resolved') return { ok: true, message: gate.message, hours: gate.hours };
-        return performSleepToMorning();
-      }
-
-      // In-game minutes until the next 06:00 (ranks a bed sleep against other queued skips).
-      function minutesUntilMorning() {
-        const playable = (NIGHT_HOUR - MORNING_HOUR) * 60;
-        return Math.max(0, 1 - calendar.time01) * playable + (24 * 60 - playable);
-      }
-      // null = single player (original immediate path). Otherwise the local player's rest state.
-      function bedSleepGate() {
-        const tc = window.TimeConsensus;
-        if (!tc?.shouldGate()) return null;
-        let done = tc.consumeResolution(player);
-        if (!done && tc.stateOf(player) === 'none') {
-          const r = tc.requestRest(player, { kind: 'sleep', source: 'bed', minutes: minutesUntilMorning(), run: () => { performSleepToMorning(); } });
-          if (r.state === 'resolved') done = tc.consumeResolution(player);
-        }
-        if (!done) return { state: 'waiting' };
-        return { state: 'resolved', hours: done.winner.minutes / 60, message: `😴 Everyone slept. Day ${calendar.day} begins: ${calendar.weather}.` };
-      }
-      function cancelBedSleep() { window.TimeConsensus?.cancelRest(player); }
-
-      function performSleepToMorning() {
-        // Whatever fraction of today's waking hours hadn't been played
-        // through yet (and so never got an hourly breeding tick from
-        // updateCalendar) gets credited here in one lump, so a pair
-        // progresses the same one day's worth whether that day was played
-        // out in real time or slept through.
-        const remainingDayFraction = Math.max(0, 1 - calendar.time01);
-        calendar.day += 1;
-        calendar.time01 = 0; // wake at MORNING_HOUR
-        window.WeatherFX.chooseWeatherForDay(); // also resyncs isRaining/rainStrength to the new hour
-        tickCropDay();
-        window.FarmAnimals.tickBreedingProgress(remainingDayFraction);
-        window.FarmAnimals.tickResources();
-        window.FarmAnimals.tickHearts();
-        window.ProceduralTasks.maybeRefreshRequestPostings();
-        checkTothalShift();
-        window.WildlifeSpawn.clearPendingDenRespawn();
-        window.ReagentPlants.respawnAllZoneReagents();
-        window.WildBerries.respawnAll(); // Same daily respawn advanceDay() runs.
-        window.WildTreasure.respawnAll();
-        window.ZoneRegrowth.tickFelledTreeRegrowth();
-        window.ZoneRegrowth.tickMinedRockRegrowth();
-        player.health  = player.maxHealth;
-        player.stamina = player.maxStamina;
-        const msg = `😴 Slept until morning. Day ${calendar.day} begins: ${calendar.weather}.`;
-        lastActionMessage = msg;
-        _saveWorldCalendar();
-        return { ok: true, message: msg };
-      }
-
       window.BedLiePose?.init?.({
         THREE, tileSize: () => TILE, player: () => player, playerRoot: () => playerMesh,
-        playerLegs: () => playerLegs, area: () => currentArea, sleep: sleepInBed, sleepGate: bedSleepGate, sleepCancel: cancelBedSleep,
+        playerLegs: () => playerLegs, area: () => currentArea,
         showToast, isPaused: () => paused, getNpcWalkers: () => npcWalkers,
-      }); // Existing sleepInBed remains the sole authoritative day rollover; module owns presentation only.
+      }); // NPC mattress poses remain available; player sleep time is owned by CalendarSystem.
 
       // Weather rolling (chooseWeatherForDay/updateRainState) now lives
       // in js/weather-fx.js — call via window.WeatherFX.*.

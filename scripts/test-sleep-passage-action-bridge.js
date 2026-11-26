@@ -174,3 +174,23 @@ assert.equal(unrelatedClick.prevented, false, 'non-Sleep interactions remain unt
 assert.deepEqual(opened, ['sleep'], 'non-Sleep interactions never open passage');
 
 console.log('farmhouse bed shared Sleep passage regression passed');
+
+// Generic Interact (controller A) bypasses the action-slot bridge and calls
+// the actual furniture callback. Exercise that production callback too.
+const gameSource = fs.readFileSync(path.join(__dirname, '../docs/game.js'), 'utf8');
+const bedStart = gameSource.indexOf("if (o.key === 'basicBed' || o.key === 'doubleBed' || o.key === 'bedroll')");
+const bedEnd = gameSource.indexOf('const def = DECORATIVE_FURNITURE_DEFS[o.key];', bedStart);
+assert.ok(bedStart >= 0 && bedEnd > bedStart);
+const bedCallback = vm.runInNewContext('(function(o) {' + gameSource.slice(bedStart, bedEnd) + '})', {
+  window: { HobunjiSleepPassageActionBridge: bridge, FarmAnimals: { isHarvesting: () => false }, Mounts: { rideState: 'none' }, BedLiePose: { begin() { throw new Error('legacy bed animation must not be invoked'); } } },
+  sitInteraction: false, dialogueOpen: false,
+});
+for (const key of ['basicBed', 'doubleBed', 'bedroll']) {
+  passageOpen = false;
+  opened = [];
+  const result = bedCallback({ key }).onAction('obj_interact');
+  assert.equal(result.ok, true);
+  assert.deepEqual(opened, ['sleep'], key + ' generic Interact opens the duration selector');
+  assert.equal(windowStub.__hobunjiOwnedBedSleepPending?.source, 'player-bed');
+}
+assert.doesNotMatch(gameSource, /function (?:sleepInBed|performSleepToMorning|bedSleepGate)\(/, 'no legacy automatic morning skip remains in gameplay');
