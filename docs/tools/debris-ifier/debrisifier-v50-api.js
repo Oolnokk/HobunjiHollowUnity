@@ -252,7 +252,7 @@
     };
     let turned=0;
     for (const housing of housings) {
-      const core=housing.children.find(child=>Number.isFinite(child.userData?.pillarNicheMouthZ));
+      const core=housing.children.find(child=>Number.isFinite(child.userData?.pillarNicheMouthZ) || child.userData?.obeliskProfile==='pillarHoused'); // Standalone V50 lacks the embedded projectile-mouth tag.
       if (!core) throw new Error('V50 target pillar has no projectile mouth');
       const center=new THREE.Box3().setFromObject(core).getCenter(new THREE.Vector3());
       const origin=housing.getWorldPosition(new THREE.Vector3());
@@ -262,7 +262,11 @@
         entry.box.min.z<=origin.z+1.2 && entry.box.max.z>=origin.z-1.2).map(entry=>entry.box);
       const preferred=housing.userData.openingSide;
       const side=choosePillarShotSide(origin,preferred,nearby,floorAt);
-      if (!side) throw new Error('V50 target pillar has no clear projectile face: '+(housing.userData.pillarSlotKey||housing.id));
+      if (!side) {
+        const error=new Error('V50 target pillar has no clear projectile face: '+(housing.userData.pillarSlotKey||housing.id));
+        error.name='V50PillarClearanceError'; // Parent runtime retries this layout-specific failure, not unrelated programmer errors.
+        throw error;
+      }
       if (side===preferred) continue;
       const direction=sideDirection(side);
       housing.rotation.y=yawForLocalNegativeZ(direction.dx,direction.dz);
