@@ -3233,3 +3233,16 @@ identically. Unit tests cover the cadence and every exclusion, not the live sche
 Testing note: a githack commit URL (`1c712d2db`) served `fishing-minigame.js` truncated at ~35 KB (browser: "Unexpected end of input", line 598)
 while the same file from raw.githubusercontent.com was complete and byte-identical to the repo (92,147 bytes). Githack caches per
 commit, so a reload does not recover; pushing any new commit gives a fresh URL. The visible symptom was a hang at 84% loading.
+
+
+### 26 Nov — second real-device Pixel Probe (GTX 1060 3GB, Cloud Forest fight, offAreaNpcTick ON)
+
+- 6.5 FPS; driver mean 61 ms but frame interval mean 153 ms. About 90 ms per frame passes outside our JavaScript
+  (between scheduler callbacks), and the first probe showed the same (interval 122 ms vs driver 62 ms). The probe's timings are
+  CPU submission only, so this points at GPU or compositor back-pressure, not at game logic. Candidates to A/B on the device
+  (existing settings): Painterly post-process (Medium = 72 samples per pixel at the full 1850x858 buffer, `PainterlyPostprocess`),
+  Resolution (100% -> 75%/50%), and the held-overlay replay (~16 ms CPU + extra full-screen passes). Not yet measured separately.
+- Off-area NPC tick: 86% of walker updates skipped (3,322 coarse, 20,032 skipped), `npc walkers` 0.93 ms/frame. The earlier
+  report's 5.39 ms mean was one 72 ms warmup spike; without it ~0.95 ms. No measurable win, so it stays opt-in.
+- Deferred stable XP save: the ~80 ms callback in `stable-animal-progression.js` is the save, followed by a ~30 ms forced
+  layout in `folder-save-quit-guard.js` and a ~26 ms folder-write completion. Coalescing window raised from 5 s to 30 s.

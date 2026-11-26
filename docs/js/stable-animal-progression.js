@@ -75,7 +75,7 @@
   // The scheduler's synchronous XP batch used to run a full-character save on the frame that
   // earned XP (measured ~64 ms each). Those saves are now coalesced into one trailing save;
   // any other full save cancels the pending one because it already writes the same state.
-  const DEFERRED_XP_SAVE_MS = 5000;
+  const DEFERRED_XP_SAVE_MS = 30000; // Each full save measured ~135 ms of hitching on a real device (save, folder write, menu relayout), so passive XP coalesces for 30 s. Flushed on page hide.
   let deferredXpSave = null;
   function cancelDeferredXpSave() {
     if (deferredXpSave === null) return;
