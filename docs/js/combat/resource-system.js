@@ -518,6 +518,26 @@
       footingCost: amount * .1 * alignment * duration, wind: true, windX: direction.x, windY: direction.y };
   }
 
+  // A mounted pair shares one physical trajectory, not two successive moves.
+  // Both afflictions evaluate the same already-scaled native heading so one
+  // actor's wind cannot masquerade as the other's voluntary movement.
+  function composeMountedMovement(rider, carrier, x, y, options = {}) {
+    const opts = { ...options, mode: "walk", scalarApplied: true, rotationApplied: true };
+    const riderMotion = hasWindblown(rider) ? composeMovement(rider, x, y, opts) : null;
+    const carrierMotion = carrier !== rider && hasWindblown(carrier) ? composeMovement(carrier, x, y, opts) : null;
+    return {
+      x: (riderMotion?.x ?? x) + (carrierMotion ? carrierMotion.x - x : 0),
+      y: (riderMotion?.y ?? y) + (carrierMotion ? carrierMotion.y - y : 0),
+      riderMotion, carrierMotion,
+    };
+  }
+
+  function commitMountedMovement(rider, carrier, motion, fraction, onDepleted) {
+    if (!motion) return;
+    commitMovement(rider, motion.riderMotion, fraction, onDepleted);
+    if (carrier !== rider) commitMovement(carrier, motion.carrierMotion, fraction, onDepleted);
+  }
+
   function beginMovementFrame(entity) { if (entity) windMotionFrames.delete(entity); }
   function windMovementHandled(entity) { return !!entity && windMotionFrames.has(entity); }
 
@@ -1480,6 +1500,8 @@
     movementIntent,
     composeMovement,
     commitMovement,
+    composeMountedMovement,
+    commitMountedMovement,
     beginMovementFrame,
     windMovementHandled,
     hasWindblown,
