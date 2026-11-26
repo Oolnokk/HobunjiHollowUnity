@@ -59,6 +59,29 @@ assert.ok(traced.every(p=>Number.isFinite(p.columnX)),'contact carries exact def
 assert.ok(!traced.some(p=>p.x===1&&p.z===1),'transparent lower corner is excluded');
 console.log('bounded bands and alpha contact: ok');
 
+// Height from the cached hull must match every original contact under live poses.
+const {bakeContact,projectedContactY}=context.window.HeldGroundPose;
+for(const vertices of [traced, traced.slice(0,1), traced.slice(0,2)]){
+  for(const amount of [0,.125,.5,1]){
+    for(const grip of [-.8,0,.6]){
+      const baked=bakeContact(vertices,bounded,grip,amount);
+      assert.ok(baked.hull.length>0&&baked.hull.length<=vertices.length);
+      const matrix={elements:Array(16).fill(0)};
+      matrix.elements[13]=.35;
+      for(let step=0;step<720;step++){
+        const theta=step*Math.PI/360;
+        matrix.elements[1]=Math.cos(theta)*.7;
+        matrix.elements[5]=Math.sin(theta)*1.3;
+        const expected=Math.min(...vertices.map(p=>matrix.elements[1]*p.x
+          -matrix.elements[5]*contractedZ(p.z,grip,bounded,amount,p.columnX)+.35));
+        assert.ok(Math.abs(projectedContactY(baked.hull,matrix)-expected)<1e-12);
+      }
+    }
+  }
+}
+assert.ok(bakeContact(traced,bounded,0,.5).hull.length<traced.length,'fitted hull drops redundant points');
+
+
 const candidate=context.window.HeldGroundPose.ropeFitCandidate;
 close(candidate(0,2,1,1,.3,.5),1);
 close(candidate(0,2,1,.5,.3,.5),.5);
@@ -111,6 +134,11 @@ if(THREE){
   delete ctx.lightReference;solver.constrainWeapon(holder,weapon,ctx);
   assert.equal(plane.geometry,fitted,'later frames retain physical length');
   close(solver.snapshot().shortening,result.shortening);
+  assert.equal(solver.snapshot().contactHullBuilds,result.contactHullBuilds,'live pose changes reuse the fitted hull');
+  const originalImage=plane.material.map.image;
+  plane.material.map.image={...originalImage};
+  solver.constrainWeapon(holder,weapon,ctx);
+  assert.equal(solver.snapshot().contactHullBuilds,result.contactHullBuilds+1,'replacing weapon artwork rebuilds the hull');
   solver.setPreviewEnabled(false);
   assert.equal(plane.geometry,source,'raw mode restores original geometry');
   // Two visible copies have distinct raw poses. Correct around each actual
@@ -134,8 +162,10 @@ if(THREE){
   const beforeRight=localRight.clone().applyMatrix4(mainMesh.matrixWorld);
   const beforeLeft=localLeft.clone().applyMatrix4(offMesh.matrixWorld);
   const holderBefore=holder.matrix.clone();
+  const hullBuilds=solver.snapshot().contactHullBuilds;
   solver.constrainDualCopies({plane,mainRoot,offRoot,mainMesh,offMesh,invisible:false});
   const d=solver.snapshot().dual;
+  assert.equal(solver.snapshot().contactHullBuilds,hullBuilds,'neither hand rebuilds the shared contact hull');
   assert.ok(d.right.angleDeg!==0&&d.left.angleDeg!==0,'independent corrective rotation');
   assert.ok(d.right.finalMinY>=.035-1e-5&&d.left.finalMinY>=.035-1e-5,'both weapons clear floor');
   close(localRight.clone().applyMatrix4(mainMesh.matrixWorld).distanceTo(beforeRight),0);

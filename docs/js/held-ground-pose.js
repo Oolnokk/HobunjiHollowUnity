@@ -4,7 +4,7 @@
   'use strict';
   const PAD = 0.035; // Clearance above the physical standing surface, in world units.
   const STEP = Math.PI / 36; // Bounded five-degree rotation search with refinement.
-  const debug = { reason: 'not-run', angleDeg: 0, shortening: 0, floorY: null, originalMinY: null, finalMinY: null, rotations: 0, compressions: 0, freeHandLifts: 0, fallbacks: 0 };
+  const debug = { reason: 'not-run', angleDeg: 0, shortening: 0, floorY: null, originalMinY: null, finalMinY: null, rotations: 0, compressions: 0, contactHullBuilds: 0, contactHullVertices: 0, freeHandLifts: 0, fallbacks: 0 };
   let active = null, floorFrame = null, floor = null, scratch = null;
   let dualPrepared=null; // The canonical fit is prepared before the independently posed visible copies.
   const borrowedCopies=new Set(); // At most two copies borrow the canonical private fitted buffer; detach before disposal.
@@ -166,6 +166,7 @@
     return [...new Set(cuts)].sort((a,b)=>a-b);
   }
   function convexHull(points) {
+    if(points.length<2)return points;
     const sorted=points.sort((a,b)=>a.x-b.x||a.z-b.z);
     const cross=(a,b,c)=>(b.x-a.x)*(c.z-a.z)-(b.z-a.z)*(c.x-a.x);
     const half=items=>{const out=[];for(const p of items){while(out.length>=2&&cross(out[out.length-2],out[out.length-1],p)<=0)out.pop();out.push(p);}out.pop();return out;};
@@ -311,6 +312,26 @@
     }
     return min;
   }
+  function bakeContact(vertices,segments,gripZ,amount) {
+    // Keep source ordering for the lowest-point tie that picks the rotation axis.
+    const points=vertices.map(p=>({x:p.x,z:contractedZ(p.z,gripZ,segments,amount,p.columnX)}));
+    return {points,hull:convexHull(points.slice())};
+  }
+  function projectedContactY(hull,matrix) {
+    const e=matrix.elements; // World height is affine in the sprite's local XY.
+    let min=Infinity;
+    for(const p of hull)min=Math.min(min,e[1]*p.x+e[5]*-p.z+e[13]);
+    return min;
+  }
+  function fittedContact(s,segments,gripZ,amount) {
+    if(!s.bakedContact||s.bakedAmount!==amount||(amount!==0&&s.bakedGripZ!==gripZ)){
+      s.bakedContact=amount?bakeContact(s.contact,segments,gripZ,amount):{points:s.contact,hull:s.rawHull};
+      s.bakedAmount=amount;
+      s.bakedGripZ=gripZ;
+      debug.contactHullBuilds++;
+    }
+    return s.bakedContact;
+  }
   function suspendedReferenceY(matrix,spec,segments,gripZ,amount,lightScale){
     const e=matrix.elements,scale=Math.hypot(e[4],e[5],e[6]); // Actual Light stance long-axis scale, never the live attack scale.
     const anchorY=e[1]*spec.x-e[5]*contractedZ(-spec.y,gripZ,segments,amount,spec.x)+e[13];
@@ -388,25 +409,26 @@
     const outline=profile?.contactOutline;
     const segmentKey=segments.length?segments:null;
     const boundsChanged=s.contactMinX!==box.min.x||s.contactMaxX!==box.max.x||s.contactMinY!==box.min.y||s.contactMaxY!==box.max.y;
-    if(s.contactKey!==outline||s.contactSource!==source||s.contactImage!==image||s.contactSegments!==segmentKey||boundsChanged){
+    if(!s.rawHull||s.contactKey!==outline||s.contactSource!==source||s.contactImage!==image||s.contactSegments!==segmentKey||boundsChanged){
       const auto=autoContact(image,box,segments);
       s.contact.length=0;
       if(auto)s.contact.push(...auto);
       else contactVertices(box,outline,segments,s.contact);
+      s.rawHull=convexHull(s.contact.slice()); // Full unshortened outline for the diagnostic minimum.
+      s.bakedContact=null; // Asset, segment layout, or bounds changed.
       s.autoContact=!!auto;s.contactKey=outline;s.contactSource=source;s.contactImage=image;s.contactSegments=segmentKey;
       s.contactMinX=box.min.x;s.contactMaxX=box.max.x;s.contactMinY=box.min.y;s.contactMaxY=box.max.y;
     }
-    const suspension=pending&&flexible?global.HobunjiWeaponSpriteAssemblies?.groundFitSpec?.(mesh,profile):null;
-    const canFit=pending&&s.autoContact&&(!flexible||!!suspension); // Do not lock zero shortening before the rope/head have loaded.
+    const suspension=pending&&!Number.isFinite(fit.amount)&&flexible?global.HobunjiWeaponSpriteAssemblies?.groundFitSpec?.(mesh,profile):null;
+    const canFit=pending&&!Number.isFinite(fit.amount)&&s.autoContact&&(!flexible||!!suspension); // Do not lock zero shortening before the rope/head have loaded.
     debug.contactSource=s.autoContact?'auto-alpha':outline?.length?'authored-fallback':'quad-fallback';
     debug.contactVertices=s.contact.length;
     if(canFit)s.reference.multiplyMatrices(parent.matrixWorld,context.lightReference).multiply(mesh.matrix).multiply(context.lightPlaneReference||plane.matrix);
     debug.fitReference='lightWeapon';
     const target=y+PAD;
-    const original=samplePoints(s,s.contact,segments,gripZ,0);
+    const original=projectedContactY(s.rawHull,s.matrix); // Unshortened baseline in Pixel Probe.
     debug.originalMinY=original;
-    let amount=fit?.amount??0,min=samplePoints(s,s.contact,segments,gripZ,amount),angle=0;
-    worldGrip(s,primary,basis,mesh,gripZ,segments,amount,s.pivot);
+    let amount=fit?.amount??0; // The fitting pass may establish a permanent shortening.
     const rig=context.rig;
     const secondary=context.secondary?.position;
     function reachable(a,compression) {
@@ -423,7 +445,7 @@
       worldGrip(s,secondary,basis,mesh,gripZ,segments,0,s.base).applyMatrix4(s.inverse);
       return s.second.distanceTo(s.shoulder)<=Math.max(reach,s.base.distanceTo(s.shoulder))+0.002;
     }
-    if(canFit&&!Number.isFinite(fit.amount)){
+    if(canFit){
       const lightScale=context.lightReferenceFlailScale??1;
       const evaluate=a=>Math.min(samplePoints(s,s.contact,segments,gripZ,a,s.reference),suspension?suspendedReferenceY(s.reference,suspension,segments,gripZ,a,lightScale):Infinity);
       const referenceMin=evaluate(0);
@@ -450,7 +472,6 @@
         const anchorY=e[1]*suspension.x-e[5]*contractedZ(-suspension.y,gripZ,segments,amount,suspension.x)+e[13];
         fit.ropeScale=profile.ropeMinScale!=null?ropeFitCandidate(suspension.spanX,suspension.spanY,scale,anchorY-target-scale*suspension.headDrop,profile.ropeMinScale,lightScale):1;
       }
-      min=samplePoints(s,s.contact,segments,gripZ,amount);
     }
     // Always apply the fitted geometry before attempting a pose correction.
     // A failed rotation retains the fit and falls back to legacy depth.
@@ -460,21 +481,25 @@
       debug.compressions++;
     } else releaseCompression();
     debug.shortening=amount;debug.fitted=Number.isFinite(fit?.amount);
-    worldGrip(s,primary,basis,mesh,gripZ,segments,amount,s.pivot);
+    const contact=fittedContact(s,segments,gripZ,amount); // Both dual copies share the baked sprite coordinates.
+    debug.contactHullVertices=contact.hull.length;
     if(context.dual){
       // The hidden source owns length, not either hand's live orientation.
       // Copies are posed later by the dual-wield owner, then individually corrected.
-      dualPrepared={holder,mesh,plane,context,segments,gripZ,amount,contact:s.contact,target,floor:y,flexible};
+      dualPrepared={holder,mesh,plane,context,segments,gripZ,amount,contact,target,floor:y,flexible};
       debug.reason='dual-ready';debug.finalMinY=null;return false;
     }
+    let min=amount?projectedContactY(contact.hull,s.matrix):original;
+    let angle=0; // Clear poses skip the pivot and rotation work.
     if(min<target) {
+      worldGrip(s,primary,basis,mesh,gripZ,segments,amount,s.pivot);
       // Pick the horizontal axis perpendicular to the lowest point's radial
       // offset from the grip. This rotates the offending end upward.
       // Only construct world XYZ samples when actual rotation is required.
       let count=0,lowest=null;
-      for(const vertex of s.contact){
+      for(const vertex of contact.points){
         const p=s.samples[count] ||= new (three().Vector3)();
-        p.set(vertex.x,-contractedZ(vertex.z,gripZ,segments,amount,vertex.columnX),0).applyMatrix4(s.matrix);
+        p.set(vertex.x,-vertex.z,0).applyMatrix4(s.matrix);
         count++;
         if(!lowest||p.y<lowest.y)lowest=p;
       }
@@ -544,14 +569,14 @@
       ['left',current.offRoot,off,live.offhand||grips?.offhandPrimaryGripForTool?.(context.itemKey,'melee',live.scaleIdentity||context.scaleIdentity)]
     ]){
       if(!grip?.position){results[side]={reason:'no-grip'};continue;}
-      localGrip(grip.position,s.pivot).applyMatrix4(copy.matrixWorld);
-      let min=samplePoints(s,d.contact,d.segments,d.gripZ,d.amount,copy.matrixWorld),angle=0;
+      let min=projectedContactY(d.contact.hull,copy.matrixWorld),angle=0;
       const original=min;
       if(min<d.target){
+        localGrip(grip.position,s.pivot).applyMatrix4(copy.matrixWorld);
         let count=0,lowest=null;
-        for(const v of d.contact){
+        for(const v of d.contact.points){
           const p=s.samples[count]||=new (three().Vector3)();
-          p.set(v.x,-contractedZ(v.z,d.gripZ,d.segments,d.amount,v.columnX),0).applyMatrix4(copy.matrixWorld);
+          p.set(v.x,-v.z,0).applyMatrix4(copy.matrixWorld);
           count++;if(!lowest||p.y<lowest.y)lowest=p;
         }
         s.samples.length=count;
@@ -564,7 +589,7 @@
           results[side]={reason:'no-reachable-clear-pose',originalMinY:original,finalMinY:min};continue;
         }
         root.updateMatrixWorld(true);
-        min=samplePoints(s,d.contact,d.segments,d.gripZ,d.amount,copy.matrixWorld);
+        min=projectedContactY(d.contact.hull,copy.matrixWorld);
       }
       results[side]={reason:angle?'rotation':'already-clear',angleDeg:angle*180/Math.PI,originalMinY:original,finalMinY:min};
     }
@@ -586,5 +611,5 @@
     if(s.point.distanceTo(shoulder)>reach+0.002)return false;
     socket.position.copy(s.candidate);debug.freeHandLifts++;return true;
   }
-  global.HeldGroundPose=Object.freeze({configurePreview,setPreviewEnabled,previewAppliesTo,suspendedReferenceY,hasDrawingHaftChildren,skip,enabled,groundY,constrainWeapon,constrainDualCopies,releaseDualCopy,rotateAroundGrip,constrainFreeHand,adjustGrip,adjustHaftPoint,ropeClearance,fittedRopeScale,referenceDrop,lightRopeScale,ropeFitCandidate,needsFit,originalGeometryFor,prepareGeometryUpdate,fixedValue,clear,contractedZ,contactVertices,tracePixels,autoContact,minimumY,chooseAngle,snapshot:()=>({...debug})});
+  global.HeldGroundPose=Object.freeze({configurePreview,setPreviewEnabled,previewAppliesTo,suspendedReferenceY,hasDrawingHaftChildren,skip,enabled,groundY,constrainWeapon,constrainDualCopies,releaseDualCopy,rotateAroundGrip,constrainFreeHand,adjustGrip,adjustHaftPoint,ropeClearance,fittedRopeScale,referenceDrop,lightRopeScale,ropeFitCandidate,needsFit,originalGeometryFor,prepareGeometryUpdate,fixedValue,clear,contractedZ,contactVertices,tracePixels,autoContact,bakeContact,projectedContactY,minimumY,chooseAngle,snapshot:()=>({...debug})});
 })(typeof window!=='undefined'?window:globalThis);
