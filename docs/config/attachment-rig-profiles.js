@@ -113,7 +113,7 @@
     ['dabinggi-hound',[0,0.17901245841201874,0.6091387381509006],'highest-opaque-pixel-along-idle-sprite-midline',-5,[687.5,210.5],0,[-0.16036566987282258,-0.12636677592420467,0.12410100452746164],[[2,2],[1,1],[0.35,0.35]],null],
     ['uumkaoii',[0,0.2575246358178592,0.005623701988496838],'animation-author-export-2026-10-22',null,null,null,[0,-0.2057328849409156,-0.004605298975405354],[[1.5,1.5],[1,1],[0.24,0.24]],null],
     ['puktuk',[0,0.1830394938019193,-0.012420318741466083],'animation-author-export-2026-09-15',null,null,null,[0,-0.257,0.034273761545456985],[[0.75,0.75],[0.45,0.45],[0.28,0.28]],null],
-    ['voorg-ass',[-0.0016655977917167481,0.18328943170147868,0.043832914384796626],'animation-author-export-2026-09-15',null,null,null,[0,-0.29318061503235254,0.051543592657975104],[[1,1],[0.75,0.75],[0.34,0.34]],null], // Shoulder grip only from Rig Coordinates export (29); sizes and saddle unchanged.
+    ['voorg-ass',[-0.0016655977917167481,0.18328943170147868,0.043832914384796626],'animation-author-export-2026-09-15',null,null,null,[0,-0.27834423457602814,0.051543592657975104],[[1,1],[0.75,0.75],[0.34,0.34]],null], // Shoulder grip only from Rig Coordinates export (31); sizes and saddle unchanged.
     // Recovered saddle and shoulder-grip authoring from the October 22 exports (19), (20), and (21).
     ['nelk',[0,0.12365496943656872,0.09343178888117182],'animation-author-export-2026-10-22',null,null,null,[0.05838103969211583,-0.06616055534830413,0.05330590874914502],[[1.75,1.75],[1,1],[0.44,0.44]],null],
     ['nazgraku',[0,0.07886458733711826,-0.0022188537422596633],'animation-author-export-2026-10-22',null,null,null,[-0.010120303229480966,-0.112,0.04704726667943677],[[1.5,1.5],[1,1],[0.5,0.5]],null],
@@ -137,7 +137,7 @@
     'gar-wolf': Object.freeze([Object.freeze([0.01,-0.26545210788556156,0.07486897921502367])]), // Exact old master grip; user-authored positions remain untouched.
     'dabinggi-hound': Object.freeze([Object.freeze([0.01,-0.20203700498816118,0.09104867302389968])]), // Exact old master grip; user-authored positions remain untouched.
     'puktuk': Object.freeze([Object.freeze([0.01,-0.29715994741785007,-0.0010889163404909086])]), // Exact old master grip; user-authored positions remain untouched.
-    'voorg-ass': Object.freeze([Object.freeze([0.01,-0.33453636625016553,0.0181046276028018]), Object.freeze([0,-0.11122461401165312,0.05961047587703741])]), // Exact old master grip; user-authored positions remain untouched.
+    'voorg-ass': Object.freeze([Object.freeze([0.01,-0.33453636625016553,0.0181046276028018]), Object.freeze([0,-0.11122461401165312,0.05961047587703741]), Object.freeze([0,-0.29318061503235254,0.051543592657975104])]), // Exact old master grip; user-authored positions remain untouched.
     nelk: Object.freeze([Object.freeze([0.030176488041515424,-0.11264054358274966,0.028253979555520257]), Object.freeze([0,0,0]), Object.freeze([0.01,0,0])]), // November 16 plus earlier exact stale defaults.
     nazgraku: Object.freeze([Object.freeze([0.011498553593554665,-0.14241261412989242,0.000946211786312177]), Object.freeze([0,0,0]), Object.freeze([0.01,0,0])]), // November 16 plus earlier exact stale defaults.
     grehlr: Object.freeze([Object.freeze([0.01,-0.3719770036140037,0])]),
