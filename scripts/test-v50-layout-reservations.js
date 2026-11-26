@@ -18,6 +18,65 @@ vm.runInContext(`const INTERIOR_CELL_SIZE=.5;const clamp=(v,a,b)=>Math.max(a,Mat
 `, context);
 const bridge = fs.readFileSync('docs/tools/debris-ifier/debrisifier-v50-api.js','utf8'); // Validate the public API's input contract as well as placement.
 vm.runInContext(bridge.slice(bridge.indexOf('  function normalizeLayoutReservation('),bridge.indexOf('  async function generateInteriorLocale(')),context);
+// A touching tall blocker must never be selected as the target's opening.
+vm.runInContext(bridge.slice(bridge.indexOf('  function choosePillarShotSide('),bridge.indexOf('  // Run once, after every V50 prop')),context);
+const chooseFace=context.choosePillarShotSide;
+const origin={x:0,y:1.5,z:0}, openFloor=()=>true;
+const box=(minX,maxX,minZ,maxZ,minY=0,maxY=3)=>({min:{x:minX,y:minY,z:minZ},max:{x:maxX,y:maxY,z:maxZ}});
+const blockers={
+  north:box(-.5,.5,-1.2,-.24),east:box(.24,1.2,-.5,.5),
+  south:box(-.5,.5,.24,1.2),west:box(-1.2,-.24,-.5,.5),
+};
+for(const side of Object.keys(blockers)){
+  assert.equal(chooseFace(origin,side,[],openFloor),side,'preserves clear authored orientation');
+  assert.notEqual(chooseFace(origin,side,[blockers[side]],openFloor),side,'touching tall box blocks '+side);
+  assert.equal(chooseFace(origin,side,Object.values(blockers),openFloor),null,'rejects fully enclosed pillar');
+  assert.equal(chooseFace(origin,side,Object.entries(blockers).filter(([key])=>key!==side).map(([,value])=>value),openFloor),side,'accepts only clear face');
+}
+assert.equal(chooseFace(origin,'north',[box(-.5,.5,-1.2,-.24,0,.6)],openFloor),'north','low scenery below shot is not cover');
+assert.equal(chooseFace(origin,'north',[],(_x,z)=>z>=0),'east','opening must face supported floor');
+assert.equal(chooseFace(origin,'north',[],()=>false),null,'no shooting approach on missing floor');
+// Exercise the scene-level correction and metadata, not just the pure side selector.
+const fixtureContext=vm.createContext({
+  THREE:{
+    Vector3:class {constructor(x=0,y=0,z=0){this.set(x,y,z);}set(x,y,z){Object.assign(this,{x,y,z});return this;}},
+    Box3:class {setFromObject(o){this.value=o.box;return this;}getCenter(out){const {min,max}=this.value;return out.set((min.x+max.x)/2,(min.y+max.y)/2,(min.z+max.z)/2);}}
+  },
+  sideDirection:side=>({north:{dx:0,dz:-1},east:{dx:1,dz:0},south:{dx:0,dz:1},west:{dx:-1,dz:0}}[side]),
+  yawForLocalNegativeZ:(dx,dz)=>Math.atan2(-dx,-dz),
+  DEG:Math.PI/180,
+});
+vm.runInContext(bridge.slice(bridge.indexOf('  function choosePillarShotSide('),bridge.indexOf('  function normalizeLayoutReservation(')),fixtureContext);
+function clearanceFixture(solidBoxes, embedded=true){
+  const core={userData:embedded?{pillarNicheMouthZ:-.24}:{obeliskProfile:'pillarHoused'},box:box(-.1,.1,-.1,.1,1.4,1.6)};
+  const housing={id:1,userData:{hiddenActivatorMount:'pillarNiche',openingSide:'north',pillarSlotKey:'room:5,5'},
+    children:[core],rotation:{y:0},box:box(-.39,.39,-.39,.39,0,2),
+    updateMatrixWorld(){},getWorldPosition:out=>out.set(0,0,0)};
+  core.parent=housing;
+  const meshes=solidBoxes.map(bounds=>({isMesh:true,userData:{},visible:true,material:{},geometry:{
+    boundingBox:{clone:()=>({...bounds,applyMatrix4(){return this;},isEmpty:()=>false})}
+  }}));
+  const root={userData:{},children:[housing,...meshes],updateMatrixWorld(){},worldToLocal:v=>v,
+    traverse(fn){fn(this);fn(housing);fn(core);for(const mesh of meshes)fn(mesh);}};
+  housing.parent=root;for(const mesh of meshes)mesh.parent=root;
+  const anchor={pillarSlotKey:'room:5,5',openingSide:'north'};
+  const record={rot:0,previewRuin:{mountType:'pillarNiche',...anchor}};
+  const floorCells=Array.from({length:36},(_,i)=>[i%6,Math.floor(i/6)]);
+  const locale={objects:[record],meta:{interiorShell:{floorCells,cellSize:.5,worldWidth:3,worldDepth:3,movingParts:[{anchors:[anchor]}]}}};
+  return {root,locale,housing,anchor,record};
+}
+for(const embedded of [true,false]){
+  const fixture=clearanceFixture([blockers.north],embedded);
+  const result=fixtureContext.ensurePillarShotClearance(fixture.root,fixture.locale);
+  assert.equal(result.checked,1);assert.equal(result.turned,1);
+  assert.equal(fixture.housing.userData.openingSide,'east');
+  assert.equal(fixture.housing.rotation.y,-Math.PI/2);
+  assert.equal(fixture.anchor.openingSide,'east');assert.equal(fixture.record.previewRuin.openingSide,'east');
+  assert.equal(fixture.record.rot,-90);
+}
+const trapped=clearanceFixture(Object.values(blockers));
+assert.throws(()=>fixtureContext.ensurePillarShotClearance(trapped.root,trapped.locale),{name:'V50PillarClearanceError'});
+console.log('ok pillar projectile clearance: four orientations, touching cover, floor and elevation');
 assert.equal(context.normalizeLayoutReservation(null),null);
 assert.throws(()=>context.normalizeLayoutReservation({w:180}),/Invalid/);
 let accepted=0; // Count usable native stage paths over actual generated networks.

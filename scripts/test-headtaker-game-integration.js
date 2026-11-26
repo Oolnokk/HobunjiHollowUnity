@@ -58,7 +58,7 @@ const posEnd=game.indexOf('        // Bob animation when moving',posStart);
 assert(posStart>0&&posEnd>posStart,'find actual updateCreatureMesh position branch');
 const posCode=game.slice(posStart,posEnd);
 const pos=new Function('c','TILE','surfY','scaleY','meleeLeapY','dt','kickPoseHeld','window',
-  'const grp=c.avatarRef.group;'+posCode+'return {headtakerAttached,headtakerDescending,headtakerOwnsFacing};');
+  'const grp=c.avatarRef.group, birdMotion=null, birdLift=0;'+posCode+'return {headtakerAttached,headtakerDescending,headtakerOwnsFacing};');
 
 function actor(attached=false) {
   const a={

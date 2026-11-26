@@ -5392,6 +5392,9 @@
         const sizeScale = { x: c.visualScaleX, y: c.visualScaleY }; // Already resolved by the factory, including authored size class.
         const targetScene = c.scene, targetGrid = c.areaGrid, gridCols = c.areaCols, gridRows = c.areaRows; // Stored area ownership survives town/wilderness transitions.
         const groundLift = c.groundLift; // Authored floor lift remains unchanged.
+        const pingdortShoulder = c.stableRole === 'shoulderPet' && creatureKey === window.PingdortRegistration?.KIND; // The flight presenter never takes ownership of shoulder portraits.
+        const authoredHeadRig = window.CreatureGeneticsRender?.headRigForKind?.(creatureKey) || undefined;
+        const headRig = pingdortShoulder ? window.PingdortRegistration.shoulderHeadRig(authoredHeadRig) : authoredHeadRig; // Give the shoulder curl a native skin even before any head is painted.
         // A swarm species (honeyfuzzle) is one entity drawn as an instanced
         // flock — see js/honeyfuzzle-swarm.js; frontPlane is its yaw pivot.
         const avatarRef = def.swarm && window.HoneyfuzzleSwarm
@@ -5400,7 +5403,7 @@
           modelWidth, modelHeight,
           name: c.id,
           creatureId: creatureKey,
-          headRig: window.CreatureGeneticsRender?.headRigForKind?.(creatureKey) || undefined,
+          headRig,
         });
         if (!def.swarm) {
           avatarRef.frontPlane = avatarRef.group.children[0] || null;
@@ -5440,6 +5443,7 @@
         targetScene.add(groundShadow);
 
         c.avatarRef = avatarRef;
+        if (pingdortShoulder) window.PingdortRegistration.attachShoulderRest(c, avatarRef, headRig);
         c.groundShadow = groundShadow;
         c._wildlifeVisualsReleased = false;
         c.currentFrameUrl = null;
@@ -6839,7 +6843,8 @@
           : c._cliffClimb ? c._cliffClimb.surfaceY
           : Number.isFinite(dynamicSurfaceY) ? dynamicSurfaceY
           : (g[row]?.[col] ? tileSurfaceYInArea(g[row][col], c.areaId) : 0);
-        const birdLift = window.TzatzulLiveVisuals?.companionLift?.(c, 'flight') || 0; // Hop lift is composed at draw time, outside the terrain interpolation.
+        const birdMotion = c._companionBirdMotion ? window.TzatzulLiveVisuals : null; // The bird compositor separates low flight from terrain smoothing.
+        const birdLift = birdMotion?.companionLift(c, 'flight') || 0; // Hop lift is still composed at draw time.
         const surfY = knockbackVisualSurfaceY(c, ordinarySurfY) + birdLift;
         const grp = c.avatarRef.group;
         window.BurningAfflictionVfx?.syncEntity?.(c, grp); // Burning Health presentation follows the same live creature group used by every avatar update.
@@ -6861,12 +6866,14 @@
         } else if (headtakerDescending) {
           grp.position.x = tx; grp.position.z = tz; // Preserve the combat module's exact sky-to-host Y interpolation rather than ease toward it again.
         } else if (c._wildlifeVisualLodJustWoke || kickPoseHeld) {
-          grp.position.set(tx, ty, tz); // A held kick cannot visually keep sliding toward a previous fast-lunge target through the ordinary position lerp.
+          grp.position.set(tx, birdMotion ? birdMotion.companionBodyY(c, ty, birdLift, 1) : ty, tz); // A held kick cannot visually keep sliding toward a previous fast-lunge target through the ordinary position lerp.
           c._wildlifeVisualLodJustWoke = false;
         } else {
           grp.position.x += (tx - grp.position.x) * Math.min(1, dt * 10);
           grp.position.z += (tz - grp.position.z) * Math.min(1, dt * 10);
-          grp.position.y += (ty - grp.position.y) * Math.min(1, dt * 7);
+          const blendY = Math.min(1, dt * 7); // Keep the existing support interpolation for birds and ordinary creatures.
+          grp.position.y = birdMotion ? birdMotion.companionBodyY(c, ty, birdLift, blendY)
+            : grp.position.y + (ty - grp.position.y) * blendY;
         }
         // Bob animation when moving — mirrors the player's own effort-based
         // move bob (updateMovement): amplitude ramps from the calm-walking

@@ -2,7 +2,7 @@
 const assert = require('node:assert/strict'); // The production renderer/painter integration must preserve complete uploaded rigs.
 const fs = require('node:fs'); // Loads the shipped modules and creature bestiary.
 const vm = require('node:vm'); // Runs browser-only installers without devtools.
-const ids = ["moot","voorg-ass","puktuk","gar-wolf","grehlr","dabinggi-hound","uumkaoii","nelk","nazgraku"]; // Nine species explicitly approved for this release.
+const ids = ["moot","voorg-ass","puktuk","gar-wolf","grehlr","dabinggi-hound","uumkaoii","nelk","nazgraku","pingdort"]; // Ten independently authored species.
 const bestiary = JSON.parse(fs.readFileSync('docs/config/creatures/hobunji-creature-bestiary.json','utf8'));
 const originalDrenkirra = { pivot:{x:.4375,y:.51}, weightMap:{ marker:'unchanged-head-paint' } }; // Non-upload regression fixture.
 const renderer = { ANIMAL_HEAD_RIGS: {drenkirra:originalDrenkirra}, HEAD_RIG_VARIANT_ALIASES:{} };
@@ -16,13 +16,14 @@ const win = {CreatureGeneticsRender:renderer, HobunjiAnimalHeadRigSpecies:specie
 const context = vm.createContext({window:win, localStorage,console,JSON,Object,String,Array,Number});
 vm.runInContext(fs.readFileSync('docs/js/animal-head-rig-authored.js','utf8'),context,{filename:'animal-head-rig-authored.js'});
 const api = win.HobunjiAuthoredAnimalHeadRigs;
-assert.equal(api?.version,'2026-11-18-nine-authored-rigs2','latest defaults must load on desktop and mobile');
+assert.equal(api?.version,'2026-11-26-ten-authored-rigs1','latest defaults must load on desktop and mobile');
 const plain = value=>JSON.parse(JSON.stringify(value)); // Normalizes the vm realm before deep-equality comparisons.
 for(const id of ids){
   const records=bestiary.creatures.filter(c=>c.id===id);
   assert.equal(records.length,1,id+': editor needs exactly one full creature record');
   const expected=records[0].headRig;
-  assert(expected?.shoulderRest?.enabled,id+': full painted shoulder export is required');
+  if(id==='pingdort') assert.equal(expected?.shoulderRest,undefined,'Pingdort curl remains owned by the flying rig');
+  else assert(expected?.shoulderRest?.enabled,id+': full painted shoulder export is required');
   assert.deepEqual(plain(api.get(id)),expected,id+': uploaded full rig equals painter source');
   assert.deepEqual(plain(renderer.ANIMAL_HEAD_RIGS[id]),expected,id+': renderer contains new default');
   assert.deepEqual(plain(species.ANIMAL_HEAD_RIGS[id]),expected,id+': species lookup contains new default');
@@ -87,7 +88,8 @@ const expectedMaps={
     "weightMap": "31220f8a",
     "compressibilityMap": "5d5deb33",
     "stretchabilityMap": "13d686e4"
-  }
+  },
+  "pingdort": {"weightMap":"5bcc9a6e","compressibilityMap":"e102b425","stretchabilityMap":"b408ca16"}
 }; // Signed-off fingerprints of every 16-bit source RLE stream.
 function fingerprint(map){
   let hash=0x811c9dc5; // FNV-1a checks both bytes of all run lengths and painted values.
@@ -120,4 +122,4 @@ moot.shoulderRest.afterPoints[6].y+=.01;
 assert.equal(voorg.shoulderRest.afterPoints[6].y,otherEnd,'independent shoulder curve survives runtime edits');
 assert.notStrictEqual(api.get('nelk').shoulderRest.beforePoints,api.get('nazgraku').shoulderRest.beforePoints,
  'painted shoulder splines are not shared mutable instances');
-console.log('animal-head-rig-authored: nine complete rigs, source fingerprints, fallbacks, preview and avatar ownership passed');
+console.log('animal-head-rig-authored: ten complete rigs, source fingerprints, fallbacks, preview and avatar ownership passed');
