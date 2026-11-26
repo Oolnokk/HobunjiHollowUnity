@@ -1260,8 +1260,10 @@
       const grounded = usesFloorContact() && !externalFootTargets && !state.hoverEnabled && !!support;
       const lift = grounded ? rolledSoleOffset(support, mesh.scale, state[`${side}Roll`], state.extremityYRatio) : 0;
       mesh.userData.groundSoleOffsetY = lift; // Existing mobile diagnostics report the additional support height.
-      const solveTarget = lift === 0 ? target : groundedSolveTarget.copy(target); // Do not accumulate corrections into animation state.
-      if (lift !== 0) solveTarget.y += lift;
+      const contactY = state[`${side}ContactY`]; // Neutral support height in the same frame as the gait target.
+      const solvedY = grounded ? Math.max(contactY, target.y) + lift : target.y; // A landing, resized foot or lunge onto raised ground may retain a stale below-floor target.
+      const solveTarget = solvedY === target.y ? target : groundedSolveTarget.copy(target); // Do not accumulate corrections into animation state.
+      solveTarget.y = solvedY;
       const bend = legBend[side];
       const solved = window.LegBones.solveTwoBoneLeg(THREE, {
         hip: chain.hip.position, foot: solveTarget, bendDegX: bend.x, bendDegZ: bend.z,
@@ -1351,6 +1353,7 @@
         mesh.onBeforeRender = function footDepthPushBefore(renderer, scene, camera, ...rest) {
           before.call(this, renderer, scene, camera, ...rest);
           pushed = false;
+          foot.userData.groundDepthFactor = 1; // Clear old diagnostic values when no bias is applied this draw.
           if (!(state.footDepthPush > 0) || !camera?.isPerspectiveCamera || (externalFootTargets && externalFootExtendedReach)) return; // Exact-contact grapple soles must NOT be pushed behind the victim's opaque portrait by the normal pants-depth overlay.
           const e = this.matrixWorld.elements;
           pushCamera.setFromMatrixPosition(camera.matrixWorld);
