@@ -312,23 +312,21 @@
     // Vertices on a tile boundary touch 2 (edge) or 4 (corner) cells —
     // average their path-membership so the mask starts as a clean 0 /
     // 0.25 / 0.5 / 0.75 / 1 step instead of guessing a single owner cell.
-    const touching = (g, n) => {
-      if (g % CELLS === 0) {
-        const a = g / CELLS - 1, b = g / CELLS, arr = [];
-        if (a >= 0 && a < n) arr.push(a);
-        if (b >= 0 && b < n) arr.push(b);
-        return arr;
-      }
-      return [Math.floor(g / CELLS)];
-    };
+    // Path membership is looked up once per tile (not once per vertex x touching cell), and the touched cell range is
+    // computed inline: no per-vertex arrays. Counts are integers, so sum / n is exactly what the array version produced.
+    const pathCell = new Uint8Array(bw * bh);
+    for (let cj = 0; cj < bh; cj++) for (let ci = 0; ci < bw; ci++) if (isPathCell(ci, cj)) pathCell[cj * bw + ci] = 1;
+    // Touched cells along one axis for vertex index g: [lo, hi] inclusive, clipped to [0, n).
+    const touchLo = g => { const a = g % CELLS === 0 ? g / CELLS - 1 : Math.floor(g / CELLS); return a < 0 ? 0 : a; };
+    const touchHi = (g, n) => { const b = g % CELLS === 0 ? g / CELLS : Math.floor(g / CELLS); return b > n - 1 ? n - 1 : b; };
 
     let mask = new Float32Array(GW * GH);
     for (let gj = 0; gj < GH; gj++) {
-      const rows = touching(gj, bh);
+      const rLo = touchLo(gj), rHi = touchHi(gj, bh);
       for (let gi = 0; gi < GW; gi++) {
-        const cols = touching(gi, bw);
+        const cLo = touchLo(gi), cHi = touchHi(gi, bw);
         let sum = 0, n = 0;
-        for (const cj of rows) for (const ci of cols) { n++; if (isPathCell(ci, cj)) sum++; }
+        for (let cj = rLo; cj <= rHi; cj++) for (let ci = cLo; ci <= cHi; ci++) { n++; sum += pathCell[cj * bw + ci]; }
         mask[gj * GW + gi] = n ? sum / n : 0;
       }
     }
@@ -336,19 +334,33 @@
     // Box-blur the mask a few times to round it into an organic, non-grid
     // boundary — this is what gives the rim its "more complex/defineable"
     // character instead of a tile-square hole.
+    // Two buffers ping-pong (every cell is overwritten each pass) and interior vertices skip the per-neighbour bounds checks;
+    // the nine terms are still added in the same dj-then-di order, so every float result is bit-identical to the checked loop.
+    let blurSpare = new Float32Array(GW * GH);
     for (let pass = 0; pass < 3; pass++) {
-      const next = new Float32Array(GW * GH);
-      for (let gj = 0; gj < GH; gj++)
+      const next = blurSpare;
+      for (let gj = 0; gj < GH; gj++) {
+        const interiorRow = gj > 0 && gj < GH - 1;
         for (let gi = 0; gi < GW; gi++) {
           let sum = 0, n = 0;
-          for (let dj = -1; dj <= 1; dj++)
-            for (let di = -1; di <= 1; di++) {
-              const ni = gi+di, nj = gj+dj;
-              if (ni<0||ni>=GW||nj<0||nj>=GH) continue;
-              sum += mask[nj*GW+ni]; n++;
-            }
+          if (interiorRow && gi > 0 && gi < GW - 1) {
+            const k = gj * GW + gi;
+            sum = mask[k - GW - 1]; sum += mask[k - GW]; sum += mask[k - GW + 1];
+            sum += mask[k - 1]; sum += mask[k]; sum += mask[k + 1];
+            sum += mask[k + GW - 1]; sum += mask[k + GW]; sum += mask[k + GW + 1];
+            n = 9;
+          } else {
+            for (let dj = -1; dj <= 1; dj++)
+              for (let di = -1; di <= 1; di++) {
+                const ni = gi+di, nj = gj+dj;
+                if (ni<0||ni>=GW||nj<0||nj>=GH) continue;
+                sum += mask[nj*GW+ni]; n++;
+              }
+          }
           next[gj*GW+gi] = sum / n;
         }
+      }
+      blurSpare = mask;
       mask = next;
     }
 
@@ -400,14 +412,30 @@
     const Y = new Float32Array(RW * RH);
     const positions = new Float32Array(RW * RH * 3);
     const grooveTile = new Uint8Array(bw * bh); // 1 = the groove reaches this tile, so it needs the 4x4 grid.
+    // Far from the route the blurred mask is exactly 0, and so is the bilinear sample. A render vertex owned by tile (tci, tcj)
+    // reads fine-mask columns [CELLS*tci, CELLS*tci + CELLS + 1] and rows [CELLS*tcj, CELLS*tcj + CELLS + 1] (vx - minC is exactly
+    // gi / RC and RC * CELLS / RC lands on whole cells). Mark every tile whose window contains a non-zero cell once, then skip the
+    // sample (m = +0, exactly what it returns) for the rest, and skip roughDisp where blend is +0 (it contributes +/-0).
+    const windowSpan = CELLS + 1;
+    const tileHasMask = new Uint8Array(bw * bh);
+    for (let y = 0; y < GH; y++) {
+      const tjLo = Math.max(0, Math.ceil((y - windowSpan) / CELLS)), tjHi = Math.min(bh - 1, Math.floor(y / CELLS));
+      for (let x = 0; x < GW; x++) {
+        if (mask[y * GW + x] === 0) continue;
+        const tiLo = Math.max(0, Math.ceil((x - windowSpan) / CELLS)), tiHi = Math.min(bw - 1, Math.floor(x / CELLS));
+        for (let tj = tjLo; tj <= tjHi; tj++) for (let ti = tiLo; ti <= tiHi; ti++) tileHasMask[tj * bw + ti] = 1;
+      }
+    }
     for (let gj = 0; gj < RH; gj++)
       for (let gi = 0; gi < RW; gi++) {
         const vx = minC + gi * RSTEP, vz = minR + gj * RSTEP;
-        const m = maskAt(vx, vz);
-        const blend = smooth(Math.min(1, Math.max(0, m)));
-        const localY = seamDisp(vx, vz) + blend * PATH_DY + blend * roughDisp(vx, vz);
         const tci = Math.min(bw - 1, Math.floor(gi / RC));
         const tcj = Math.min(bh - 1, Math.floor(gj / RC));
+        const m = tileHasMask[tcj * bw + tci] ? maskAt(vx, vz) : 0;
+        const blend = smooth(Math.min(1, Math.max(0, m)));
+        const localY = blend === 0
+          ? seamDisp(vx, vz) + blend * PATH_DY
+          : seamDisp(vx, vz) + blend * PATH_DY + blend * roughDisp(vx, vz);
         const ownerTile = srcGrid[minR + tcj]?.[minC + tci]; // Supplies the absolute terrain tier for this route vertex.
         const tierY = (ownerTile?.elevTier || 0) * deps.PLATEAU_UNIT;
         const k = gj*RW+gi;

@@ -3328,3 +3328,21 @@ Gotcha found by the equivalence test: ids start at 1, since `traceBoundaryLoops`
 Proof of identical output: `scripts/test-surface-stretch-topology-equivalence.js` (golden hashes from the pre-change code over 7
 deterministic mesas: holes, pieces, material slot, tight angle, quad pairs, edge options; needs `THREE_PATH` or `npm i three`, else it skips).
 Node micro-benchmark, 7,200-triangle mesa: 186 ms -> 105 ms per `mapGeometry`.
+
+### Zone build: plateau mesa bookkeeping and path network heightfield (2026-11-26)
+
+Both are pure functions of the zone grid, so each got a golden-hash test generated from the pre-change code before any edit
+(`scripts/test-plateau-mesa-golden.js`, `scripts/test-path-network-golden.js`; real three.js needed via `THREE_PATH` or `npm i three`,
+otherwise they skip).
+
+- `buildPlateauMesa`: `inMask` built a template-string key per call (several per vertex), the BFS allocated `[gi, gj]` arrays and a
+  neighbour table per step, and every quad built a string key for the own-mask test. Memoized per tile / indexed BFS / per-tile gate.
+  41 -> 25 ms per 66x66-tile mesa (Node).
+- `buildPathNetworkGeo` (route heightfield for a whole zone): profiling showed the bilinear `maskAt` lookup plus `roughDisp` ran for every
+  render vertex even though the blurred route mask is exactly 0 almost everywhere. Tiles whose sampling window sees no non-zero mask cell
+  skip the lookup (result is exactly +0) and `roughDisp` is skipped where the blend is +0 (it adds +/-0). The mask build/blur also lost
+  its per-vertex arrays and per-pass buffers (same float summation order). 1203 -> 758 ms on a 200x180-tile zone (Node).
+
+Gotcha while doing this: a Python splice used `str.index("const seamDisp")` from the start of the file and silently duplicated ~230
+lines because an earlier function has the same text; the golden test still passed because the stale copy was the one being called.
+When splicing, search from the start marker, and check `git diff --stat` before trusting a green test.
