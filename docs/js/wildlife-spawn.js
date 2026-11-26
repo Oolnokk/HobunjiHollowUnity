@@ -1414,7 +1414,7 @@
 
     if (spawned > 0) {
       window.__farmLog?.(`[${speciesKey}] spawned roaming herd key=${herdKey} size=${spawned} mother=${motherIndex >= 0 ? 1 : 0} babies=${motherBabyCount} anchor=(${Math.round(anchor.x / deps.TILE)},${Math.round(anchor.y / deps.TILE)})`, 'wildlife');
-      if (zoneId === deps.getCurrentArea() && speciesKey === VOORG_ASS_SPECIES) deps.showToast('A large Voorg-Ass herd is roaming the cliffs.', false);
+      if (isLocalListenerZone(zoneId) && speciesKey === VOORG_ASS_SPECIES) deps.showToast('A large Voorg-Ass herd is roaming the cliffs.', false);
     }
     return spawned;
   }
@@ -1681,7 +1681,7 @@
       if (creature) { deps.hostileObjects.add(creature); spawned++; }
       else window.__farmLog?.(`[wildlife] ${denKey}: makeCreatureEntity("${speciesKey}") returned null (attempt ${i + 1}/${count}) — bad/missing CREATURE_DB entry?`, 'wildlife');
     }
-    if (spawned > 0 && zoneId === deps.getCurrentArea()) {
+    if (spawned > 0 && isLocalListenerZone(zoneId)) {
       deps.showToast(`${deps.CREATURE_DB[speciesKey]?.label || speciesKey} pack moved into a den nearby.`, false);
     } else if (spawned === 0) {
       window.__farmLog?.(`[wildlife] ${denKey}: pack spawn for "${speciesKey}" placed 0/${count} creatures (fallback: den left empty).`, 'wildlife');
@@ -1954,7 +1954,7 @@
       }
     }
 
-    if (zoneId === deps.getCurrentArea()) deps.showToast(`${motherDef.label || 'A drenkirra Nestmother'} is nesting nearby.`, false);
+    if (isLocalListenerZone(zoneId)) deps.showToast(`${motherDef.label || 'A drenkirra Nestmother'} is nesting nearby.`, false);
   }
 
   function ensureCurrentZoneNestTrees() {
@@ -1984,6 +1984,10 @@
       spawnNestAtBranch(currentArea, branch, key);
     }
   }
+
+  // Player-facing toasts are for the zone the LOCAL player is in. During a co-op remote-area tick `getCurrentArea()` is
+  // swapped to the guest's zone, so compare with the listener's real area instead (js/remote-area-tick.js).
+  const isLocalListenerZone = zoneId => zoneId === (window.AreaScope?.listenerArea?.() ?? deps.getCurrentArea());
 
   function updateHostileSpawning(dt) {
     // Ambient wildlife spawning has no business intruding on an
