@@ -33,4 +33,47 @@ assert.equal(stepFlight(flyer, NaN, 0, 50, .1, 1, () => true), false);
 assert.match(game, /updateCompanionLocomotion\?\.\(c, dt, movedPx, flightClear, interrupted\)/);
 assert.match(game, /DevRandomRuin\?\.flightClear/);
 assert.match(game, /birdLift/);
+// Execute the actual game clearance function with a minimal tile/ceiling/voxel fixture.
+const clearStart = game.indexOf('function companionBirdFlightClear(');
+const clearEnd = game.indexOf('function tryBirdFollowFlight(', clearStart);
+assert(clearStart >= 0 && clearEnd > clearStart);
+const walkable = { type: 'grass' }; // Actual same-story support fixture; switch tile to solid for the negative case.
+const grid = [[walkable, walkable], [walkable, walkable]];
+let blocked = false, floorY = 0, wallHeight = 2, voxelClear = true;
+const world = {
+  currentArea: 'farm', TILE: 64, INTERIOR_WALL_HEIGHT: 1.75,
+  window: {
+    GridTileAccessors: { getActiveGrid: () => grid },
+    InteriorEnvironmentRuntime: { normalizeEnvironment: () => ({ wallHeight }) },
+    DevRandomRuin: { getState: () => ({}), flightClear: () => voxelClear },
+  },
+  _isZoneArea: () => false, _isBuildingArea: area => area.startsWith('map_i_'),
+  _isCavernBuildingArea: area => area === 'map_i_cave',
+  _rawMapDataByMapId: new Map([['map_i_room', {}]]),
+  activeSurfaceYAtWorld: () => floorY,
+  isSolid: type => type === 'rock',
+  creatureCanEnterTile: () => true,
+  canOccupyAt: () => !blocked,
+};
+vm.runInNewContext(game.slice(clearStart, clearEnd) + '\nthis.clear = companionBirdFlightClear;', world);
+const subject = { def: { isFlyingSpecies: true, modelWidth: .4 }, halfHeight: .2, areaGrid: grid };
+assert.equal(world.clear(subject, 32, 32, 35, 32), true);
+blocked = true;
+assert.equal(world.clear(subject, 32, 32, 35, 32), false);
+blocked = false;
+grid[0][0] = { type: 'rock' };
+assert.equal(world.clear(subject, 32, 32, 35, 32), false);
+grid[0][0] = walkable;
+world.currentArea = 'map_i_room'; wallHeight = .8;
+assert.equal(world.clear(subject, 32, 32, 35, 32), false);
+wallHeight = 2;
+assert.equal(world.clear(subject, 32, 32, 35, 32), true);
+world.currentArea = 'interior';
+assert.equal(world.clear(subject, 32, 32, 35, 32), true);
+world.currentArea = 'map_i_cave';
+assert.equal(world.clear(subject, 32, 32, 35, 32), false);
+world.currentArea = 'map_i_dev_random_ruin'; voxelClear = false;
+assert.equal(world.clear(subject, 32, 32, 35, 32), false);
+voxelClear = true;
+assert.equal(world.clear(subject, 32, 32, 35, 32), true);
 console.log('flying companion locomotion and undeformed-perch tests passed');

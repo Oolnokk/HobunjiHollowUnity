@@ -6413,6 +6413,7 @@
 
       function tickCreatureFootsteps(c, distPx) {
         if (c._familyBabyFollower || c.areaId !== currentArea) return; // Infants crawl rather than play animal footfalls.
+        if (c._companionBirdMotion?.mode === 'flight') return; // A flapping companion has wingbeat audio, not ground footsteps.
         if (!Number.isFinite(c.x) || !Number.isFinite(c.y)) return; // belt-and-suspenders: see moveCreatureToward/creatureCanEnterTile's own NaN guards
         if (!window.AudioSystem?.footstepAdvance(c, distPx)) return;
         const spatial = window.AudioSystem?.combatAudioSpatial(c, { earshotTiles: 9 }); // Footstep falloff includes real cliff/branch height, not just flat map distance.
@@ -6450,6 +6451,10 @@
         if (wx < 0 || wy < 0 || wx >= aC * TILE || wy >= aR * TILE) return false;
         if (window.DevRandomRuin?.shaftCreatureCanEnter?.(actor, wx, wy, walkingPath) === false) return false;
         const col = Math.floor(wx / TILE), row = Math.floor(wy / TILE);
+        if (actor?.stableRole === 'companion' && def?.isFlyingSpecies && (currentArea === 'interior' || _isBuildingArea(currentArea)) && currentArea !== 'map_i_dev_random_ruin') {
+          const birdRadius = Math.max(.08, Math.min(.45, (actor.visualModelWidth || def.modelWidth || .5) * .25)) * TILE; // Hop routes must not pass through walls or solid furniture.
+          if (!canOccupyAt(wx, wy, birdRadius)) return false;
+        }
         if (actor?._familyBabyFollower) {
           const tile = window.GridTileAccessors.getActiveGrid()?.[row]?.[col]; // Crawlers cannot swim or pass solid walls, even where wildlife may.
           if (!tile || tile.incline || isSolid(tile.type) || WATERWAY_TYPES.has(tile.type) || (Number(tile.water) || 0) >= 0.003) return false;
@@ -6700,10 +6705,11 @@
         const outside = currentArea === 'farm' || currentArea === 'town' || _isZoneArea(currentArea);
         const ruin = currentArea === 'map_i_dev_random_ruin';
         const roomData = !outside && !ruin && _isBuildingArea(currentArea) && !_isCavernBuildingArea(currentArea) ? _rawMapDataByMapId.get(currentArea) : null;
-        if (!outside && !ruin && !roomData) return false;
+        const farmhouse = currentArea === 'interior'; // The original farmhouse has its own scene and known ceiling.
+        if (!outside && !ruin && !roomData && !farmhouse) return false;
         const radius = Math.max(.08, Math.min(.45, (c.visualModelWidth || c.def.modelWidth || .5) * .25)); // Conservative body footprint in world units.
         const height = Math.max(.2, (c.halfHeight || .2) * 2);
-        const ceiling = roomData ? (window.InteriorEnvironmentRuntime?.normalizeEnvironment?.(roomData)?.wallHeight ?? INTERIOR_WALL_HEIGHT) : Infinity;
+        const ceiling = farmhouse ? INTERIOR_WALL_HEIGHT : roomData ? (window.InteriorEnvironmentRuntime?.normalizeEnvironment?.(roomData)?.wallHeight ?? INTERIOR_WALL_HEIGHT) : Infinity;
         const gridNow = c.areaGrid || window.GridTileAccessors.getActiveGrid();
         const support = (x, y) => ruin ? Number(c.shaftSupportY ?? c.surfaceYOverride?.() ?? activeSurfaceYAtWorld(x / TILE, y / TILE)) : activeSurfaceYAtWorld(x / TILE, y / TILE);
         const fromFloor = support(fromX, fromY);
@@ -6716,7 +6722,7 @@
           const x = wx / TILE, z = wy / TILE, floor = support(wx, wy);
           const tile = gridNow?.[Math.floor(z)]?.[Math.floor(x)];
           // An interrupted bird must be able to return to the same walkable story.
-          if (!tile || tile.mapBoundary || tile.incline || !Number.isFinite(floor) || Math.abs(floor - fromFloor) > .55) return false;
+          if (!tile || tile.mapBoundary || tile.incline || isSolid(tile.type) || !Number.isFinite(fromFloor) || !Number.isFinite(floor) || Math.abs(floor - fromFloor) > .55) return false;
           if (!creatureCanEnterTile(c.def, wx, wy, fromX, fromY, c)) return false;
           // Probe both the grounded-to-flight ascent and full body at cruise height.
           const feet = floor + .65;
@@ -9168,6 +9174,7 @@
             && !window.Combat?.telegraph?.isBusy(c)) _tickCompanionHorizonScan(c, master, dt);
 
           let moving = false, runInPlace = false, aimAngle = c.facing || 0;
+          let directBirdFlight = false; // Reuse the accepted volume sweep rather than repeating it after movement.
           if (c._knockbackLedgeFall || c.prone || c.knockbackT > 0) {
             // An interrupted animal must not resume a stale lunge after recovering.
             // cancel() also restores any paused Furious cooldown; its attack owns the cleanup.
@@ -9316,7 +9323,8 @@
             // A climbing owner is not a carrier: chase the walkable destination via
             // the shared cliff-route network, or wait on the ground once nearby.
             if (followGoal.routeRequired || followGoal.distance > (master.climbing ? FOLLOW_NEAR_PX : FOLLOW_FAR_PX)) {
-              moving = tryBirdFollowFlight(c, followGoal.x, followGoal.y, dt) || travelCreatureToward(c, followGoal.x, followGoal.y, def.chaseSpeed, dt);
+              directBirdFlight = tryBirdFollowFlight(c, followGoal.x, followGoal.y, dt);
+              moving = directBirdFlight || travelCreatureToward(c, followGoal.x, followGoal.y, def.chaseSpeed, dt);
               if (moving) aimAngle = Math.atan2(c.vy, c.vx);
             } else {
               c.vx = 0; c.vy = 0;
@@ -9350,7 +9358,7 @@
           if (def.isFlyingSpecies && c.stableRole === 'companion') {
             const interrupted = !!(recoveredAfterMove || c.prone || c.knockbackT > 0 || c._knockbackLedgeFall || c._cliffClimb || c._cliffRouteTravel || c.onBranch || c._downed || window.Combat?.animalAttacks?.isBusy(c) || window.Combat?.telegraph?.isBusy(c)); // Do not let follower flight override another physical or combat owner.
             const movedPx = moving ? Math.hypot(c.x - birdStartX, c.y - birdStartY) : 0; // Ground navigation already applied the actual collision-safe step.
-            const flightClear = !interrupted && (movedPx > .08 || c._companionBirdMotion?.lift > 0) && companionBirdFlightClear(c, birdStartX, birdStartY, c.x, c.y); // Same clearance owner as direct movement.
+            const flightClear = !interrupted && (directBirdFlight || ((movedPx > .08 || c._companionBirdMotion?.lift > 0) && companionBirdFlightClear(c, birdStartX, birdStartY, c.x, c.y))); // Same clearance owner as direct movement.
             const birdMotion = window.TzatzulLiveVisuals?.updateCompanionLocomotion?.(c, dt, movedPx, flightClear, interrupted);
             followDebug.birdLocomotion = birdMotion?.mode || 'perched'; // Existing mobile companion debug record.
             followDebug.birdFlightClear = flightClear;
@@ -26844,14 +26852,13 @@
               updateHostiles(dt);
               window.PerfProfiler?.end(hostilePerf);
               tickCorpses(dt);
-            } else if (_isBuildingArea(currentArea)) {
-              window.TzatzulLiveVisuals?.tick?.(dt, currentArea); // Owned flying companions need the same renderer in ordinary rooms too.
+            } else if (currentArea === 'interior' || _isBuildingArea(currentArea)) {
+              window.TzatzulLiveVisuals?.tick?.(dt, currentArea); // Owned flying companions need the same renderer in ordinary rooms too, including the farmhouse.
               // Ordinary building interiors still have no wild spawns; this
               // branch only keeps any authored interior hostile/corpse active.
               const hostilePerf = window.PerfProfiler?.begin('hostiles'); // Uses the same timing bucket for authored interior combatants.
-              updateHostiles(dt);
+              if (_isBuildingArea(currentArea)) { updateHostiles(dt); tickCorpses(dt); } // The legacy farmhouse never ran an interior hostile loop.
               window.PerfProfiler?.end(hostilePerf);
-              tickCorpses(dt);
             }
           }
 
