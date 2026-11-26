@@ -3303,3 +3303,16 @@ pathfinding counters at its start and end (`counterDeltas.sceneLoad`, `counterDe
 
 Unrelated finding: `assets/audio/sfx/farming/sfx_harvest.mp3` is referenced by `config/scratchbones-config.js` and the sfx README
 but has never existed in the repository (combat audio HTTP 404 in the probe).
+
+## Wilderness zone first build: water-body outline distance (2026-11-26)
+
+Profiled `buildZoneScene('map_northern_cliffs')` (first build, headless software GL, Chrome CPU profiler): 3972 ms. About 1.8 s of it was
+`water-body-outline-overlay.js` `buildDomain` -> `applyProtectedBand`, which measured every mapped vertex against every boundary
+segment (O(vertices x segments), `Math.hypot` per pair; `pointSegmentDistance` alone ~1.0 s self time).
+
+Fix: `buildBoundaryDistanceIndex` (uniform grid + outward ring search that stops once nothing unseen can be closer, squared distances,
+one sqrt per query). Exact: `scripts/test-water-body-boundary-index.js` compares against brute force (random, pond rim, diagonal,
+degenerate, outside points) to 1e-9, and it is ~21x faster on a 1200-segment outline. Same zone after: 2466 ms (-38%).
+
+Remaining top of the build (not yet touched): `buildZoneMesaMeshes` ~0.94 s (surface-stretch UV remap/unwrap), `buildPathNetworkGeo`
+~0.3 s self. This benefits every first zone entry, single-player included, and shortens the co-op host's guest-zone build hitch.
