@@ -65,7 +65,7 @@
         vec3 applyScreenOutline(vec3 color) {
           float centerDepth = linearDepth(texture2D(tSceneDepth, vUv).r);
           if (visibleCurve(vUv, centerDepth) < 0.5) return color;
-          vec2 stroke = uTexel * 3.0; // Three times the original one-texel inward stroke; same sample count.
+          vec2 stroke = uTexel * 12.0; // Four times the previous three-texel reach, with the same four neighbor taps.
           float edge = max(max(curveEdge(vUv + vec2(stroke.x, 0.0), centerDepth),
                                curveEdge(vUv - vec2(stroke.x, 0.0), centerDepth)),
                            max(curveEdge(vUv + vec2(0.0, stroke.y), centerDepth),
