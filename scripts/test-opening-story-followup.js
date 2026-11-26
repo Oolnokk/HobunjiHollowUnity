@@ -82,7 +82,7 @@ assert.equal(picker._pendingSpotTransition,null,'locked wilderness exits offer n
 assert.deepEqual(exitMessages,[api.farmGuideExitMessage]);
 assert.equal(picker._transitionLatch,'town:2,3','standing on a locked exit does not repeat the toast');
 picker.pool=[{area:'town',col:2,row:3,target:'farm',targetCol:2,targetRow:3}];
-vm.runInNewContext('{'+game.slice(pickerStart,pickerEnd)+'}',picker);
+vm.runInNewContext('(function(){'+game.slice(pickerStart,pickerEnd)+'})()',picker);
 assert.equal(picker._pendingSpotTransition.target,'farm','farm remains reachable during onboarding');
 async function checkTour() {
   await arrivalPromise;
