@@ -1229,8 +1229,8 @@ const KURRAYA_STORAGE_KEY = 'hobunjiNpcPlaneAvatarRepoViewer.kurrayaProfiles.v1'
 const CREATURE_STORAGE_KEY = 'hobunjiGameplayBackdropRepoViewer.creatureProfiles.v1';
 const CREATURE_RENDER_SCRIPT = 'js/creature-genetics-render.js';
 const AUTHOR_HAND_RUNTIME_SCRIPT = new URL('../../js/held-action-animations.js?v=20261126neckMultiplayer1', location.href).href; // Keeps the hand preview paired with this exact Animation Author build instead of an older selected repository ref.
-const AUTHOR_PORTRAIT_RUNTIME_SCRIPT = new URL('../../js/png-plane-avatar.js?v=20261126neckMultiplayer1', location.href).href; // Always pair the editor controls with the local portrait-density/wireframe API, even when previewing older repository art.
-const AUTHOR_SPINE_RUNTIME_SCRIPT = new URL('../../js/character-spine.js?v=20261126neckAudit2', location.href).href; // The paired Longoran preview must load the same real spline solver as gameplay before it builds a skinned portrait.
+const AUTHOR_PORTRAIT_RUNTIME_SCRIPT = new URL('../../js/png-plane-avatar.js?v=20261126neckBlendRestore1', location.href).href; // Always pair the editor controls with the local portrait-density/wireframe API, even when previewing older repository art.
+const AUTHOR_SPINE_RUNTIME_SCRIPT = new URL('../../js/character-spine.js?v=20261126neckBlendRestore1', location.href).href; // The paired Longoran preview must load the same real spline solver as gameplay before it builds a skinned portrait.
 const AUTHOR_LEG_BONES_SCRIPT = new URL('../../js/leg-bones.js?v=20260821a', location.href).href; // Supplies the exact invisible two-bone solver used by the paired feet preview.
 const AUTHOR_FEET_RUNTIME_SCRIPT = new URL('../../js/procedural-leg-animation.js?v=20261126neckAudit3', location.href).href; // Keeps rig-preview feet paired with this author build instead of the selected repository ref.
 const AUTHOR_SHOULDER_RIG_RUNTIME_URLS = Object.freeze(Object.fromEntries([
@@ -4852,9 +4852,9 @@ function buildTwoSidedSkinnedPlaneGeometry(THREE, modelWidth, modelHeight, neckL
   const segmentsX = Math.max(4, Math.round(Number(options.segmentsX) || 28));
   const segmentsY = Math.max(6, Math.round(Number(options.segmentsY) || 36));
   const pixelHeight = Math.max(1, Number(options.pixelHeight) || 200); // The base-head canvas determines the neck bend's actual pixel-space position.
-  const band = window.PNGPlaneAvatar.neckBlendBand(neckLocal.y, modelHeight, pixelHeight); // Use gameplay's species-dependent short neck strip, not an editor-only approximation.
+  const band = window.PNGPlaneAvatar.neckBlendBand(neckLocal.y, modelHeight, pixelHeight); // Use gameplay's species-dependent pivot and restored broad falloff.
   const blendHeight = band.height; // Preserved in geometry diagnostics for the mobile inspector.
-  const rowPixels = window.PNGPlaneAvatar.neckBlendRows(segmentsY, pixelHeight, band.topPx, band.bottomPx); // Two cells resolve the narrow bend at any mesh density.
+  const rowPixels = window.PNGPlaneAvatar.neckBlendRows(segmentsY, pixelHeight, band.topPx, band.bottomPx); // Distribute the existing mesh cells across the broad blend.
   const source = new THREE.PlaneGeometry(modelWidth, modelHeight, segmentsX, segmentsY).toNonIndexed();
   const sourcePosition = source.getAttribute('position');
   const sourceUv = source.getAttribute('uv');
@@ -4883,11 +4883,9 @@ function buildTwoSidedSkinnedPlaneGeometry(THREE, modelWidth, modelHeight, neckL
     uvs[cursor * 2] = sourceUv.getX(sourceIndex);
     uvs[cursor * 2 + 1] = 1 - remappedPixelY / pixelHeight; // Keep head/pants PNG texture coordinates in register with the redistributed mesh.
 
-    // The Rotation bone (2) only bends the exact base-head neck strip; Offset (1)
-    // shifts the head vertically without giving that short strip an inverted fold.
-    const turnWeight = window.PNGPlaneAvatar.neckBlendWeight(y, neckLocal.y, blendHeight);
-    const offsetWeight = turnWeight > 0 ? 1 - turnWeight
-      : window.PNGPlaneAvatar.headOffsetWeightAt(y, neckLocal.y, modelHeight, blendHeight); // Editor and runtime share the same broad, nonrotating placement fade.
+    // Rotation (2) blends gradually; Offset (1) independently shifts the head.
+    const turnWeight = window.PNGPlaneAvatar.neckBlendWeight(y, neckLocal.y, blendHeight, modelHeight);
+    const offsetWeight = Math.max(0, window.PNGPlaneAvatar.headOffsetWeightAt(y, neckLocal.y, modelHeight, blendHeight) - turnWeight); // Placement is independent; rotation already inherits the placement bone.
     skinIndices[cursor * 4] = 0; // Root torso (used below the offset-only band).
     skinIndices[cursor * 4 + 1] = 1; // Head-offset bone, which doesn't inherit neck rotation.
     skinIndices[cursor * 4 + 2] = 2; // Neck rotation (and this editor's optional head scale).
@@ -4921,7 +4919,7 @@ function buildTwoSidedSkinnedPlaneGeometry(THREE, modelWidth, modelHeight, neckL
   geometry.addGroup(frontVertexCount, cursor - frontVertexCount, 1);
   geometry.computeBoundingBox();
   geometry.computeBoundingSphere();
-  geometry.userData = { segmentsX, segmentsY, blendHeight, neckLocal: { ...neckLocal }, neckBandPx: { top: band.topPx, bottom: band.bottomPx } }; // Mobile diagnostics expose the actual sampled strip.
+  geometry.userData = { segmentsX, segmentsY, blendHeight, neckLocal: { ...neckLocal }, neckBandPx: { top: band.topPx, bottom: band.bottomPx }, neckPivotPx: band.pivotPx, portraitGridRows: Array.from(rowPixels, px => px / pixelHeight) }; // Mobile diagnostics expose the actual sampled strip.
   source.dispose();
   return geometry;
 }
@@ -5376,7 +5374,7 @@ function renderAnimationInspector() {
   const neckStatus = neckRig?.implementation === 'creature-painted-neck'
     ? `Native painted creature neck: <b>${neckRig.mesh.segmentsX}×${neckRig.mesh.segmentsY}</b> weighted skin, pivot <b>${neckRig.detected.pivotPx.x.toFixed(1)}, ${neckRig.detected.pivotPx.y.toFixed(1)} px</b>. Shoulder Rig keyframes animate the actual creature head.`
     : neckRig?.available
-      ? `One <b>${neckRig.mesh?.segmentsX || 28}×${neckRig.mesh?.segmentsY || 36}</b> skinned plane. Species base-head bottom / bend top: <b>${neckRig.skinnedPlane.geometry.userData.neckBandPx.top.toFixed(1)} px</b>; bend ends at <b>${neckRig.skinnedPlane.geometry.userData.neckBandPx.bottom.toFixed(1)} px</b> (pivot X: ${neckRig.detected.pivotPx.x.toFixed(1)} px). Same strip as gameplay.`
+      ? `One <b>${neckRig.mesh?.segmentsX || 28}×${neckRig.mesh?.segmentsY || 36}</b> skinned plane. Base-head joint: <b>${neckRig.skinnedPlane.geometry.userData.neckPivotPx.toFixed(1)} px</b>; rotation blend: <b>${neckRig.skinnedPlane.geometry.userData.neckBandPx.top.toFixed(1)}–${neckRig.skinnedPlane.geometry.userData.neckBandPx.bottom.toFixed(1)} px</b> (pivot X: ${neckRig.detected.pivotPx.x.toFixed(1)} px). Same rotation falloff as gameplay.`
     : 'This actor has no skinned portrait neck rig. Creature targets can receive eye contact but do not currently deform a humanoid portrait plane.';
   inspector.innerHTML = `
     <section id="maaBatchOffsetSection" class="maaSection">

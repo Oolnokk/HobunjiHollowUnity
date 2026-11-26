@@ -307,8 +307,9 @@
     if (!curve) return out;
     const { neckY, baseY, modelHeight, posteriorY } = profile;
     const w = nodeWeightsAt(y, baseY, modelHeight, posteriorY, weightScratch);
-    const blend = Math.max(modelHeight * 0.0001, Number(profile.blendHeight) || modelHeight * 0.012); // Mirror the portrait's short neck strip when projecting shoulders and held weapons.
-    const head = smoothstep01((y - (neckY - blend)) / blend); // Full head at the painted chin; full spine just below the short band.
+    const blend = Math.max(modelHeight * 0.0001, Number(profile.blendHeight) || modelHeight * .30); // Match the active portrait's broad turn falloff.
+    const below = blend > modelHeight * .05 ? .55 : 1; // Same legacy curve as PNGPlaneAvatar.neckBlendWeight, including narrow diagnostic overrides.
+    const head = smoothstep01((y - (neckY - blend * below)) / blend);
     const a = curve[w.a], b = curve[w.b], last = curve[SEGMENTS];
     out.x = (1 - head) * (a.x + (b.x - a.x) * w.wb) + head * last.x;
     out.y = (1 - head) * (a.y + (b.y - a.y) * w.wb) + head * last.y;
