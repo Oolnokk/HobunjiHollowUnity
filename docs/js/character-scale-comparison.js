@@ -698,7 +698,7 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
     const composed = window.HobunjiCharacterAgeRigConfig?.composePreviewScale?.(authored, stage)
       || { x: authored.x * (stage.width ?? stage.body), y: authored.y * (stage.height ?? stage.body), head: authored.head * stage.head, offsetY: authored.offsetY };
     composed.legLength = (Number(authored.legLength) > 0 ? Number(authored.legLength) : Number(authored.y) || 1) * (composed.y / (Number(authored.y) || 1));
-    if (ageMode !== 'adult') composed.ageComposed = true; // Derived preview multipliers can exceed the adult authoring bounds. // Leg height follows Height and keeps the authored beltline.
+    if (ageMode !== 'adult') composed.ageComposed = true; // Derived preview multipliers can exceed the adult authoring bounds; both leg and portrait height follow the same factor.
     // Gameplay builds the child body scale into modelWidth/modelHeight and uses childHeadFactor=head/body at the neck.
     // This editor starts with a neutral adult portrait and applies the mathematically equivalent floor-parent transform.
     window.HobunjiCharacterRigScale?.applyToParent?.(entry.group, entry.species, entry.gender, composed,
@@ -1462,7 +1462,7 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
     sixFootGuide = line;
   }
 
-  function layout(anchor = null) {
+  function layout(anchor = manualViewInteraction ? selected : null) {
     if (!THREE || !entries.length || !previewRoot) return;
     const anchorX = entries.includes(anchor) ? Number(anchor.group.position.x) : NaN; // Snapshot before resetting group positions to measure new widths.
     if (chair) chair.parent?.remove?.(chair);
@@ -1494,7 +1494,7 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
     if (Number.isFinite(minDepth) && Number.isFinite(maxDepth)) sixFootGuideDepth = Math.max(1.5, Math.abs(minDepth), Math.abs(maxDepth)) + 1; // Conservative back-plane distance for all orbit directions.
     const shift = Number.isFinite(anchorX) ? anchor._lineX - anchorX : cursor / 2; // Preserve the selected floor origin; camera and zoom remain untouched.
     sixFootLineupBounds = { minX: -shift, maxX: cursor - shift, minZ: minDepth, maxZ: maxDepth }; // Exact shifted X extents and cached geometry Z, measured once per layout.
-    for (const entry of entries) entry.group.position.x = entry._lineX - shift;
+    for (const entry of entries) entry.group.position.x = entry === anchor && Number.isFinite(anchorX) ? anchorX : entry._lineX - shift; // Assign the exact saved anchor to prevent cumulative roundoff.
     if (chair) chair.position.x -= shift;
     previewRoot.updateMatrixWorld(true);
   }

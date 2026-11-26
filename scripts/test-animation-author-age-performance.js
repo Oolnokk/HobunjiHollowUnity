@@ -119,4 +119,30 @@ assert.equal(lastAppliedHunch, .65, 'the adult reference retains its authored NP
 assert.equal(entries[2].limbs.get('left_hand_visual').scale.x, 2, 'adult reference restores each imported GLB baseline');
 assert.equal(api.snapshot().runningTimer, false, 'switching to adult mode should not poll already-present limbs');
 
+// Execute the production layout against deterministic measured widths, without WebGL.
+const layoutStart = source.indexOf('  function layout(anchor');
+const layoutEnd = source.indexOf('  function focusSelected()', layoutStart);
+assert(layoutStart >= 0 && layoutEnd > layoutStart, 'layout implementation must be present');
+const lineup = [1,2,3].map((width, i) => ({ key: String(i), group: { width,
+  position: { x: 0, y: 0, z: 0, set(x,y,z) { Object.assign(this, {x,y,z}); } }, updateMatrixWorld() {} } })); // Mock only bounding-box geometry.
+class Box3 {
+  setFromObject(group) { this.group = group; this.min = {z:-.5}; this.max = {z:.5}; return this; }
+  getSize() { return {x:this.group.width}; }
+  getCenter() { return {x:0}; }
+}
+const layoutContext = { entries: lineup, previewRoot: { updateMatrixWorld() {} }, THREE: {Box3,Vector3:class{}},
+  chair:null, sixFootGuideDepth:0, sixFootLineupBounds:null, lineupSpacing:()=>.2, manualViewInteraction:false, selected:null };
+vm.runInNewContext(source.slice(layoutStart,layoutEnd) + '\nthis.layout=layout;', layoutContext);
+layoutContext.layout();
+const anchored = lineup[1]; // Selected middle character should retain precisely the same world origin.
+const x = anchored.group.position.x;
+for (let i=0;i<30;i++) {
+  lineup[0].group.width += .05; anchored.group.width += .03; lineup[2].group.width += .08;
+  layoutContext.layout(anchored);
+  assert.equal(anchored.group.position.x,x,'global width edits must not shift the selected character');
+  assert(lineup[0].group.position.x < x && lineup[2].group.position.x > x,'neighboring characters redistribute in order');
+}
+layoutContext.manualViewInteraction=true; layoutContext.selected=anchored;
+lineup[0].group.width += .7; layoutContext.layout();
+assert.equal(anchored.group.position.x,x,'late preview loading also preserves the current selection anchor');
 console.log('PASS age lineup performance: frame batching, no needless hand sync, cached GLBs, no empty polling, numeric editing and adult restoration');

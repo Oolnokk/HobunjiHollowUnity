@@ -97,7 +97,7 @@ childFixture.window = { HobunjiCharacterAgeRigConfig: api, HobunjiCharacterRigSc
 childFixture.avatarSpeciesAndGender = () => ({ species: 'test', gender: 'male' });
 const actual = childFixture.childScaleFor({ npcRecord: { isChild: true } });
 assert.equal(actual.width, wide.width); assert.equal(actual.height, wide.height);
-assert.equal(actual.headFactorX * actual.width, full.head);
+assert.ok(Math.abs(actual.headFactorX * actual.width - full.head) < 1e-12, 'derived head ratio survives floating-point roundoff');
 const restored=api.restoreRepositoryOnThisDevice();
 assert.equal(restored.child.width,.5,'restoring game returns prior uniform child size');
 assert.equal(png.childWidthScaleMultiplier,.5,'reset also clears applied child width');
