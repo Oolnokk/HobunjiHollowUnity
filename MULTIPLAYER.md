@@ -79,6 +79,20 @@ gather as an audience) the **other players are placed in the crowd** too.
 
 **Not done yet / not verified:** the local host avatar when it is *not* the controller (the runner places only the controller; `joinCrowd` skips the local entity); a spectator camera for guests whose own client must switch to the scene's area (needs the network layer); who may skip a scene; verified live only for a standing crowd slot and the begin/end/pause behaviour (seated slots and both owners are covered by unit tests with real owner code, not yet seen in a browser).
 
+### Conversations and menus (`js/npc-conversations.js`, `window.NpcConversations`)
+
+Design decision: an ordinary NPC conversation holds **only the person talking**. The world, the clock and
+every other player keep running; the only other thing it freezes is the NPC being spoken to. (A cutscene is
+different: it pauses everyone - see above.)
+
+- One conversation per NPC: a second player gets `{ ok: false, by }` and a "<NPC> is already talking with someone else." toast instead of taking over. One NPC per player: starting another ends the previous.
+- `openNpcDialogue` asks `NpcConversations.begin(player, walker)` and `closeNpcDialogue` reports `end(player)`. A remote player's conversation (host side) freezes only that NPC and that player (`_inDialogue`) and releases on end, disconnect, or leaving the session. The remote body's own NPC-kind walker is not in `npcWalkers`, so it can never be talked to.
+- Dialogue never set `paused`, so the world already kept running; this change only adds the lock.
+- **Main menu in co-op** (`TimeConsensus.shouldGate()`): opening it no longer stops world time. Only the local player's controller polling, movement and vitals are held (`localPaused`); calendar, hostiles, NPCs, weather and the other players continue. Other modal gates that reuse `paused` (grooming, etc.) still stop the world, and single-player is unchanged.
+- Live-verified in the real game: the clock advances during both the dummy's and the local player's conversation; a second player is refused with the toast; the NPC returns to its schedule after each conversation; in co-op the main menu leaves the clock running and the local player still, while in single-player the same menu still pauses the world.
+
+**Not done yet:** a guest's own client (its dialogue UI and camera) needs the network layer; being hit while talking does not yet end the conversation for a remote speaker; other `paused` modal gates (grooming, farm-edit) are still world-global and should be reviewed one by one.
+
 ### Remote player avatar (`js/remote-player-avatar.js`, `window.RemotePlayerAvatar`)
 
 Every non-local player gets an on-screen body while they are in the area this client shows. It is the
