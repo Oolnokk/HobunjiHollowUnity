@@ -32,9 +32,16 @@
     function number(label,min,max,step){const field=document.createElement('label');field.style.cssText='display:flex;flex:1;min-width:120px;flex-direction:column';field.textContent=label;const input=document.createElement('input');input.type='number';input.min=min;input.max=max;input.step=step;field.appendChild(input);numbers.appendChild(field);return input;}
     const fraction=number('Length (% character height; 0 = legacy)',0,400,1);
     const minimum=number('Minimum band length (%)',10,100,1);
+    const ropeMin=number('Flail minimum rope length (%; 0 = off)',0,100,1);
+    const headCanvas=document.createElement('canvas');headCanvas.width=240;headCanvas.height=160;
+    headCanvas.style.cssText='width:100%;max-width:320px;background:#202832;touch-action:none;display:none';
+    headCanvas.setAttribute('aria-label','Flail head contact edge; drag between two points');
+    wrap.appendChild(headCanvas);
+    const headCtx=headCanvas.getContext('2d');
+    let headSprite=null,headView=null,headStart=null; // Independent suspended-head edge.
     const status=document.createElement('div');status.className='help';status.setAttribute('aria-live','polite');wrap.appendChild(status);
     const ctx=canvas.getContext('2d');
-    let key=null,committed=null,source=null,view=null,draft=null,dirty=false,gesture=null; // One draft for the selected sprite.
+    let key=null,committed=null,committedSignature='',source=null,view=null,draft=null,dirty=false,gesture=null; // One draft for the selected sprite.
     const history=[]; // Bounded undo stack; direct authoring events only.
     function message(s){status.textContent=s;}
     function readSource(){
@@ -49,7 +56,7 @@
       return {plane,image,geometry:plane.geometry,box:{minX:b.min.x,maxX:b.max.x,minZ:-b.max.y,maxZ:-b.min.y},unsupported:root.children?.length!==1||plane.children?.length>0||root.userData?.toolEndFlipBase===true};
     }
     function defaultDraft(){const b=source.box;return {a:round(b.minZ),b:round(b.maxZ),heightFraction:0,minSegmentScale:.65,segments:[],contactOutline:[]};}
-    function syncNumbers(){if(draft){fraction.value=Math.round(draft.heightFraction*10000)/100;minimum.value=Math.round(draft.minSegmentScale*10000)/100;}}
+    function syncNumbers(){if(draft){fraction.value=Math.round(draft.heightFraction*10000)/100;minimum.value=Math.round(draft.minSegmentScale*10000)/100;ropeMin.value=(draft.ropeMinScale||0)*100;}}
     function setDraft(value){draft=value?copy(value):source?defaultDraft():null;if(draft){draft.segments||=[];draft.contactOutline||=[];}syncNumbers();history.length=0;dirty=false;draw();}
     function saveUndo(){if(!draft)return;history.push(copy(draft));if(history.length>30)history.shift();}
     function changed(){dirty=true;draw();}
@@ -60,7 +67,26 @@
     }
     function line(z,color,label){const y=pixel({x:0,z}).y;ctx.strokeStyle=color;ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(view.x,y);ctx.lineTo(view.x+view.w,y);ctx.stroke();ctx.fillStyle=color;ctx.font='12px sans-serif';ctx.fillText(label,view.x+4,y-4);}
     function band(a,b){const y=pixel({x:0,z:Math.min(a,b)}).y,yy=pixel({x:0,z:Math.max(a,b)}).y;ctx.fillStyle='rgba(251,191,36,.23)';ctx.fillRect(view.x,y,view.w,yy-y);line(Math.min(a,b),'#fbbf24','');line(Math.max(a,b),'#fbbf24','');}
+    function drawHead(){
+      const image=headSprite?.material?.map?.image;
+      headCanvas.style.display=image?'block':'none';
+      ropeMin.parentNode.style.display=image?'flex':'none';
+      if(!image||!headCtx)return;
+      const w=image.naturalWidth||image.width,h=image.naturalHeight||image.height;
+      if(!(w>0&&h>0))return;
+      const scale=Math.min(220/w,140/h);
+      headView={x:(240-w*scale)/2,y:(160-h*scale)/2,w:w*scale,h:h*scale};
+      headCtx.clearRect(0,0,240,160);headCtx.drawImage(image,headView.x,headView.y,headView.w,headView.h);
+      const edge=draft?.headContact;
+      if(edge?.length===2){headCtx.strokeStyle='#f472b6';headCtx.lineWidth=2;headCtx.beginPath();edge.forEach((p,i)=>{const x=headView.x+p.u*headView.w,y=headView.y+p.v*headView.h;i?headCtx.lineTo(x,y):headCtx.moveTo(x,y);});headCtx.stroke();}
+    }
+    function headPoint(e){const r=headCanvas.getBoundingClientRect();return {u:clamp(((e.clientX-r.left)*240/r.width-headView.x)/headView.w,0,1),v:clamp(((e.clientY-r.top)*160/r.height-headView.y)/headView.h,0,1)};}
+    headCanvas.addEventListener('pointerdown',e=>{if(!draft||!headView)return;e.preventDefault();headCanvas.setPointerCapture?.(e.pointerId);headStart=headPoint(e);});
+    headCanvas.addEventListener('pointerup',e=>{if(!headStart||!draft)return;saveUndo();draft.headContact=[headStart,headPoint(e)];headStart=null;changed();});
+    headCanvas.addEventListener('pointercancel',()=>{headStart=null;});
+    ropeMin.addEventListener('change',()=>{if(!draft)return;saveUndo();const n=Number(ropeMin.value);draft.ropeMinScale=n>0?clamp(n/100,.1,1):null;syncNumbers();changed();});
     function draw(){
+      drawHead();
       if(!ctx)return;
       ctx.clearRect(0,0,canvas.width,canvas.height);ctx.fillStyle='#202832';ctx.fillRect(0,0,canvas.width,canvas.height);
       if(!source||!draft){ctx.fillStyle='#fff';ctx.fillText('Select a loaded weapon sprite',16,28);message('Waiting for sprite');return;}
@@ -74,12 +100,15 @@
       if(gesture&&mode.value==='length'){line(gesture.start.z,'#fff','');line(gesture.end.z,'#fff','');}
       const outline=draft.contactOutline;
       if(outline.length){ctx.strokeStyle='#f472b6';ctx.fillStyle='rgba(244,114,182,.10)';ctx.lineWidth=2;ctx.beginPath();outline.forEach((p,i)=>{const q=pixel(p);i?ctx.lineTo(q.x,q.y):ctx.moveTo(q.x,q.y);});if(outline.length>2){ctx.closePath();ctx.fill();}ctx.stroke();for(const p of outline){const q=pixel(p);ctx.fillStyle='#f472b6';ctx.fillRect(q.x-2,q.y-2,4,4);}}
-      message((dirty?'Unsaved draft • ':'')+key+' • '+round(draft.b-draft.a)+' source length • '+draft.segments.length+' bands • '+outline.length+' contact points'+(source.unsupported?' • layered/flipped sprite: runtime clearance fallback':''));
+      message((dirty?'Unsaved draft • ':'')+key+' • '+round(draft.b-draft.a)+' source length • '+draft.segments.length+' bands • '+outline.length+' contact points'+(source.unsupported&&!headSprite?' • layered/flipped sprite: runtime clearance fallback':headSprite?' • draw suspended head edge in the second canvas':''));
     }
     function refresh(nextKey,profile){
       const next=readSource();
-      if(nextKey!==key||next!==source){key=nextKey;source=next;committed=profile;gesture=null;setDraft(profile);}
-      else if(profile!==committed){committed=profile;setDraft(profile);}
+      const part=global.HobunjiWeaponSpriteAssemblies?.previewParts?.(next?.plane)?.groundContactSprite||null;
+      const headChanged=part!==headSprite;headSprite=part;
+      if(nextKey!==key||next!==source){key=nextKey;source=next;committed=profile;committedSignature=JSON.stringify(profile||null);gesture=null;headStart=null;setDraft(profile);}
+      else if(profile!==committed){committed=profile;const sig=JSON.stringify(profile||null);if(sig!==committedSignature){committedSignature=sig;setDraft(profile);}else if(headChanged)drawHead();}
+      else if(headChanged)drawHead();
     }
     function addPoint(p){
       const pts=draft.contactOutline,last=pts[pts.length-1];
@@ -132,7 +161,7 @@
         const outline=hull(points);
         if(outline.length<3||outline.length>MAX_POINTS)throw Error('Automatic outline too complex; draw the perimeter manually.');
         saveUndo();draft.a=round(Math.min(...outline.map(p=>p.z)));draft.b=round(Math.max(...outline.map(p=>p.z)));
-        draft.contactOutline=outline.map(p=>({x:round(p.x),z:round(p.z)}));
+        draft.contactOutline=outline.map(p=>({x:p.x,z:p.z}));
         draft.segments=draft.segments.filter(v=>v.a>=draft.a&&v.b<=draft.b);
         if(!draft.heightFraction)draft.heightFraction=clamp(api.initialFraction(draft.a,draft.b),0,4);
         syncNumbers();changed();
@@ -140,9 +169,10 @@
     });
     button(actions,'Undo',()=>{if(history.length){draft=history.pop();syncNumbers();changed();}});
     button(actions,'Clear outline',()=>{if(draft){saveUndo();draft.contactOutline=[];changed();}});
+    button(actions,'Clear flail head edge',()=>{if(draft){saveUndo();draft.headContact=null;changed();}});
     button(actions,'Clear bands',()=>{if(draft){saveUndo();draft.segments=[];changed();}});
     button(actions,'Revert draft',()=>setDraft(committed));
-    button(actions,'Apply geometry',()=>{try{if(!draft)throw Error('No sprite selected.');if(draft.contactOutline.length>0&&draft.contactOutline.length<3)throw Error('Trace at least three points or clear the outline.');api.apply(copy(draft),key);dirty=false;draw();message('Applied to grip configuration. Export/save it with the existing grip controls.');}catch(e){message(e.message);}});
+    button(actions,'Apply geometry',()=>{try{if(!draft||!source||readSource()!==source)throw Error('Wait for the selected sprite to load.');if(draft.contactOutline.length>0&&draft.contactOutline.length<3)throw Error('Trace at least three points or clear the outline.');api.apply(copy(draft),key);dirty=false;draw();message('Applied to grip configuration. Export/save it with the existing grip controls.');}catch(e){message(e.message);}});
     button(actions,'Restore legacy',()=>{try{api.apply(null,key);setDraft(null);message('Legacy weapon geometry restored.');}catch(e){message(e.message);}});
     return {refresh};
   }

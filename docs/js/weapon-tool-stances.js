@@ -538,9 +538,11 @@
       }
 
       const clearance = window.HeldGroundPose; // Use the very same raw grip basis as the hand driver, before transient child-plane twist.
+      const assembly=window.HobunjiWeaponSpriteAssemblies?.definitionFor?.(itemKey,def);
       const clearanceContext = clearance?.enabled?.() && activeSlot === 'weapon' && !idleDualWield
-        && !window.HobunjiWeaponSpriteAssemblies?.definitionFor?.(itemKey,def)
+        && (!assembly || (assembly.flail && !attackInProgress))
         ? window.ProceduralHandFrameDriver?.groundPoseContext?.(this,itemKey) : null;
+      if(clearanceContext) clearanceContext.flexibleHaft=!!assembly?.flail; // Suspension is solved separately by its existing owner.
 
       // game.js writes a -90° local-Z twist into the child plane whenever the
       // active animation is sweep. That twist belongs to the sweep motion, not

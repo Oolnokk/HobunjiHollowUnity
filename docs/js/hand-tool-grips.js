@@ -740,7 +740,10 @@
       for(let i=0;i<contactOutline.length;i++){const p=contactOutline[i],q=contactOutline[(i+1)%contactOutline.length];area+=p.x*q.z-q.x*p.z;}
       if(contactOutline.length<3||Math.abs(area)<1e-8)contactOutline.length=0;
     }
-    return { a, b, heightFraction, minSegmentScale: raw.minSegmentScale != null && Number.isFinite(min) ? Math.max(0.1,Math.min(1,min)) : 0.65, segments, contactOutline };
+    return { a, b, heightFraction, minSegmentScale: raw.minSegmentScale != null && Number.isFinite(min) ? Math.max(0.1,Math.min(1,min)) : 0.65, segments, contactOutline,
+      ropeMinScale: raw.ropeMinScale != null && Number.isFinite(Number(raw.ropeMinScale)) ? Math.max(.1,Math.min(1,Number(raw.ropeMinScale))) : null,
+      headContact: Array.isArray(raw.headContact)&&raw.headContact.length===2&&raw.headContact.every(p=>p&&Number.isFinite(p.u)&&Number.isFinite(p.v)&&p.u>=0&&p.u<=1&&p.v>=0&&p.v<=1)
+        ? raw.headContact.map(p=>({u:p.u,v:p.v})) : null };
   }
 
   const lengthProfiles = new WeakMap(); // Entries are immutable until mutate()/replace() re-normalize grip data.

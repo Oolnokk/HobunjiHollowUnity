@@ -745,6 +745,36 @@
     part.matrixWorldNeedsUpdate = true;
   }
 
+  // Idle head artwork stays world-up. Measure the vertical offset from its
+  // rope attachment to its authored contact edge, or all layer bounds.
+  function idleHeadContact(state,unit,profile) {
+    const head=state.config.flail.head,visual=head.visualTransform;
+    const index=Math.max(0,head.layers.findIndex(l=>l.id===head.anchorLayer));
+    const mesh=state.headParts[index];
+    if(!mesh)return null;
+    const sx=visual?(Number(visual.scaleX)||1)*(visual.flipX?-1:1):1;
+    const sy=visual?(Number(visual.scaleY)||1)*(visual.flipY?-1:1):1;
+    const theta=-(Number(visual?.rotation)||0)*Math.PI/180;
+    const c=Math.cos(theta),s=Math.sin(theta);
+    const ty=(x,y)=>s*x*sx+c*y*sy;
+    const a=head.anchorSpace==='composite'?state.scratch.headAnchorLocal.set(state.headAnchor.x*unit,-state.headAnchor.y*unit,0)
+      :pixelPoint(state.headAnchorImage,state.headAnchor,unit,head.layers[index]?.offsetPx,state.scratch.headAnchorLocal);
+    const anchorY=ty(a.x,a.y);
+    let lower=Infinity;
+    const authored=!!profile.headContact;
+    if(authored) {
+      if(!mesh.geometry.boundingBox)mesh.geometry.computeBoundingBox();
+      const b=mesh.geometry.boundingBox;
+      for(const p of profile.headContact)lower=Math.min(lower,ty(mesh.position.x+b.min.x+p.u*(b.max.x-b.min.x),mesh.position.y+b.max.y-p.v*(b.max.y-b.min.y)));
+    }else for(const part of state.headParts) {
+      if(!part.geometry.boundingBox)part.geometry.computeBoundingBox();
+      const b=part.geometry.boundingBox;
+      for(const x of [b.min.x,b.max.x])for(const y of [b.min.y,b.max.y])lower=Math.min(lower,ty(part.position.x+x,part.position.y+y));
+    }
+    const drop=anchorY-lower+(Number(visual?.y)||0)*unit;
+    return Number.isFinite(drop)?{drop,authored}:null;
+  }
+
   function updateOne(state, dt, now, effectsDt = dt) {
     const { root, plane, config, scratch: q } = state;
     if (!root.parent) {
@@ -782,7 +812,9 @@
       state.baseAnchorImage = baseImage; // Re-scan only when an edited/recolored haft changes its source image.
     }
     if (!state.baseAnchor || !state.chainTop || !state.chainBottom || !state.headAnchor) return;
-    const pivot = bakedPoint(pixelPoint(baseImage, state.baseAnchor, unit, null, q.pivotLocal), plane, null, q.inverseRootMatrix, q.pivot); // Baked local Y offset rotates with its own haft.
+    pixelPoint(baseImage,state.baseAnchor,unit,null,q.pivotLocal);
+    global.HeldGroundPose?.adjustHaftPoint?.(plane,q.pivotLocal);
+    const pivot = bakedPoint(q.pivotLocal, plane, null, q.inverseRootMatrix, q.pivot); // Baked local Y offset rotates with its own haft.
     plane.matrixWorld.decompose(q.decomposePos, q.baseQ, q.scale); // Rotation and rendered world scale from the baked matrix (getWorldQuaternion/getWorldScale bypass holder hooks).
     const baseQ = q.baseQ;
     const normal = q.normal.set(0, 0, 1).applyQuaternion(baseQ);
@@ -920,6 +952,46 @@
     if (dt > 0 && !state.fishingFlailHeadSpin) state.hasPhysicsVelocity = true; // Head-only spin is a kinematic orbit, not an impulse into the pendulum integrator.
     }
     if (state.dualWieldHidden) return; // Hidden original still simulates the ONE pendulum, but need not position invisible rope/head art.
+    // Idle ground contact is a presentation constraint on the existing
+    // pendulum, not a second simulation. Attack motion is left untouched.
+    state.groundClearance=null;
+    const pose=global.HeldGroundPose;
+    const runtime=pose?.enabled?.()&&!state.attacking&&!state.fishingFlailHeadSpin&&!state.dualPhysicsSource
+      &&root.parent===global.ProceduralHandAttachments?.gameDeps?.toolHolder
+      ?global.WeaponToolStances?.getRuntimeState?.():null;
+    const profile=runtime?.activeSlot==='weapon'&&runtime.itemKey===state.itemKey
+      ?global.HobunjiHandToolGrips?.lengthProfileForTool?.(state.itemKey):null;
+    const floor=profile?.ropeMinScale!=null?pose.groundY():null;
+    if(Number.isFinite(floor)) {
+      const contact=idleHeadContact(state,unit,profile);
+      if(contact) {
+        const available=pivot.y-(floor+.035+contact.drop*attachmentScale*headScale);
+        const solve=pose.ropeClearance(state.physicsLength,profile.ropeMinScale,state.direction.y,available);
+        if(solve) {
+          // Raster chains may have a lateral span: preserve that axis when
+          // solving the exact longitudinal stretch, and never fake a shorter length.
+          const dx=topLocal.x-bottomLocal.x,dy=topLocal.y-bottomLocal.y;
+          const desired=solve.length/attachmentScale;
+          if(Math.abs(dy)>1e-8&&desired*desired>=dx*dx) {
+            const factor=Math.sqrt(Math.max(0,desired*desired-dx*dx))/Math.abs(dy);
+            chainScaleY*=factor;topLocal.y*=factor;bottomLocal.y*=factor;
+            chainSpan.copy(topLocal).sub(bottomLocal).normalize();
+            if(solve.trailing) {
+              // Choose behind the latest locomotion, then previous sway,
+              // then the haft's outward axis when perfectly stationary.
+              const back=q.target.set(-q.velocity.x,0,-q.velocity.z);
+              if(back.lengthSq()<1e-8)back.set(state.direction.x,0,state.direction.z);
+              if(back.lengthSq()<1e-8)back.set(q.shaftUp.x,0,q.shaftUp.z);
+              if(back.lengthSq()<1e-8)back.set(0,0,1);
+              back.normalize().multiplyScalar(Math.sqrt(Math.max(0,1-solve.directionY*solve.directionY)));
+              state.direction.set(back.x,solve.directionY,back.z);
+              state.angularVelocity.multiplyScalar(.25); // Contact damps rather than injecting pendulum energy.
+            }
+            state.groundClearance={length:solve.length,trailing:solve.trailing,headContact:contact.authored?'authored-edge':'bounds',floor};
+          }
+        }
+      }
+    }
     const worldQ = planeQuaternion(q.headUp.copy(state.direction).negate(), normal, q.worldQ, q);
     worldQ.multiply(q.correction.setFromUnitVectors(chainSpan, q.axisUp)); // Align both opaque chain endpoints, not the image rectangle.
     const chainCenterWorld = q.chainCenter.copy(pivot).sub(q.tmp.copy(topLocal).multiplyScalar(attachmentScale).applyQuaternion(worldQ)); // Keep the already axis-scaled top contact pinned to the haft.
@@ -1007,6 +1079,7 @@
       yawTravelDeg: s.yawTravelRad * 180 / Math.PI, // Authored sweep travel for comparison with measured world motion.
       physics: { model: 'taut-pendulum', length: s.physicsLength, angularVelocity: s.angularVelocity.toArray(), angularDamping: flailDamping(s.config.flail?.motion), gravity: 9.81 }, // Existing mobile snapshot exposes actual lever length and rad/s momentum.
       fire: (s.fireEmitters || []).map(fx => ({ layer: fx.sourceLayer.id, particles: fx.particles.length, sourcePixels: fx.sources.length, sourceFallback: fx.sourceFallback, clusters: fx.clusters?.length || 0, worldRise: fx.worldRise, modularShaft: s.config.flail ? null : s.itemKey.startsWith('modular:') ? s.itemKey.split(':')[1] : null, masteryRank: Number(fx.config.fixedMasteryRank ?? s.masteryLevel?.()) || 0, size: fx.config.size, visualScale: fx.visualScale, worldMoteSize: (Number(fx.config.size) || 0.035) * fx.visualScale, masteryFocus: fx.config.masteryFocus ?? 1, blend: fx.config.blendMode || 'additive', opacity: fx.config.opacity ?? 0.92, tipAnchors: fx.anchors?.map(anchor => [anchor.x, anchor.y]) || [], rate: fx.config.rate, life: fx.config.life, speed: fx.config.speed })), // Mobile tools inspect the actual shared emitter instead of a separate approximation.
+      groundClearance: s.groundClearance || null, // Mobile diagnostics for shortened and trailing connectors.
       lagSource: s.movementPosition ? 'character' : 'haft-fallback', // Mobile checks can distinguish locomotion from animated weapon movement.
       scale: s.config.flail ? {
         chainX: connectorAxisScale(s.config.flail.chain, 'scaleX'),
@@ -1120,6 +1193,7 @@
     return {
       ready: !!(state.chain && state.headRoot && state.headParts.length === state.config.flail.head.layers.length),
       chain: state.chain, headRoot: state.headRoot,
+      groundContactSprite: state.headParts[Math.max(0,state.config.flail.head.layers.findIndex(l=>l.id===state.config.flail.head.anchorLayer))]||null,
       neutralMatrices: neutralPreviewMatrices(state), // Valid even if this cached flail has never been drawn in the world.
       metalTargets: (state.metalTargets || []).slice(), // The live per-layer, post-occlusion head masks; the natural rope is not a metal emitter.
     };

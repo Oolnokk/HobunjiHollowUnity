@@ -122,6 +122,25 @@
     plane.geometry=active.geometry;
   }
   function gripZFor(point,mesh) { return (point.z-mesh.position.z)/mesh.scale.z; }
+  function adjustHaftPoint(plane,point) {
+    // The rope anchor follows exactly the same strip deformation as the art.
+    if(enabled()&&active?.plane===plane&&active.amount)point.y=-contractedZ(-point.y,active.gripZ,active.segments,active.amount);
+    return point;
+  }
+  // The shortest permissible straight connector is tried first. If that
+  // cannot hang vertically, retain the minimum length and trail sideways.
+  function ropeClearance(length,minScale,directionY,availableDrop) {
+    if(!(length>0)||!Number.isFinite(availableDrop))return null;
+    const dy=Math.max(-1,Math.min(1,directionY));
+    const min=length*Math.max(.1,Math.min(1,minScale));
+    if(length*dy>=-availableDrop)return {length,directionY:dy,trailing:false};
+    if(dy<0&&availableDrop>=0) {
+      const desired=availableDrop/-dy;
+      if(desired>=min)return {length:Math.min(length,desired),directionY:dy,trailing:false};
+    }
+    if(-availableDrop>min)return null; // Even the shortest connector cannot reach the required raised endpoint.
+    return {length:min,directionY:Math.max(-1,Math.min(1,-availableDrop/min)),trailing:true};
+  }
   function adjustGrip(holder,point) {
     if(!enabled()||active?.holder!==holder||!active.amount)return point;
     const z=(point.z-active.rootOffset)/active.rootScale;
@@ -166,9 +185,10 @@
     const y=groundY(),s=work(),plane=mesh?.userData?.toolPlane;
     if(!s||!Number.isFinite(y)||!context||!holder?.parent||!holder.visible||!mesh?.visible||!plane?.visible)return fail('no-ground-or-rig');
     if(active&&active.plane!==plane)restoreGeometry();
+    if(context.flexibleHaft&&!context.profile)return fail('unmeasured-flail');
     // Reject independent assemblies, mirrored/multi-hand duplicates, dynamic
     // attachments, noncanonical planes, and shared/custom shader deformation.
-    if(mesh.parent!==holder||plane.parent!==mesh||mesh.children.length!==1||plane.children.length
+    if(mesh.parent!==holder||plane.parent!==mesh||(!context.flexibleHaft&&mesh.children.length!==1)||plane.children.length
       ||mesh.userData.toolEndFlipBase||plane.isSkinnedMesh||plane.isInstancedMesh
       ||Math.abs(mesh.quaternion.x)+Math.abs(mesh.quaternion.y)+Math.abs(mesh.quaternion.z)>1e-6
       ||!(mesh.scale.z>0)||Math.abs(plane.rotation.x+Math.PI/2)>1e-4
@@ -328,5 +348,5 @@
     if(!clear(mesh.matrixWorld)||(extra&&!clear(extra)))return false;
     debug.ordinaryParts++;return true;
   }
-  global.HeldGroundPose=Object.freeze({enabled,groundY,constrainWeapon,constrainFreeHand,ordinaryDepthFor,adjustGrip,clear,contractedZ,contactVertices,minimumY,chooseAngle,snapshot:()=>({...debug})});
+  global.HeldGroundPose=Object.freeze({enabled,groundY,constrainWeapon,constrainFreeHand,ordinaryDepthFor,adjustGrip,adjustHaftPoint,ropeClearance,clear,contractedZ,contactVertices,minimumY,chooseAngle,snapshot:()=>({...debug})});
 })(typeof window!=='undefined'?window:globalThis);

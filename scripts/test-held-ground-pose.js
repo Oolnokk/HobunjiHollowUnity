@@ -29,3 +29,9 @@ assert.ok(!contacts.some(p=>p.x===1&&p.z===-2));
 assert.ok(contacts.some(p=>Math.abs(p.x-.1)<1e-6&&p.z===.5),'edge split at shortening boundary');
 assert.equal(context.window.HeldGroundPose.contactVertices(box,[{x:2,z:0},{x:0,z:0},{x:0,z:1}],[],contacts),false);
 assert.equal(contacts.length,4,'invalid outline uses rectangle');
+
+const rope=context.window.HeldGroundPose.ropeClearance;
+assert.equal(rope(2,.5,-1,3).length,2);
+assert.equal(rope(2,.5,-1,1.5).length,1.5);
+const drag=rope(2,.5,-1,.6);assert.equal(drag.length,1);assert.equal(drag.directionY,-.6);assert.equal(drag.trailing,true);
+assert.equal(rope(2,.5,-1,-2),null);
