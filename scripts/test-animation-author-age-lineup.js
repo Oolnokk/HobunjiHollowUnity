@@ -70,6 +70,10 @@ const exposed = editorSource.replace('  install();\n})();', `
   window.__ageTest = {
     init() { loadAgeModifiers(); active = true; entries = [window.__ageEntry]; syncAgeControls(); },
     setAgeMode, applyAgeModifiers, ageValues, loadAgeModifiers, get ageMode() { return ageMode; },
+    configure(next,chosen) { entries=next; selected=chosen; loadAgeModifiers(); syncAgeControls(); },
+    choose(entry) { selected=entry; syncAgeControls(); },
+    editIndividualAge, bakeConvergence, previewOverall, bakeOverall, previewAgeValues,
+    individualAgeValues, get overall() {return ageOverall[ageMode];},
   };
 })();`);
 assert.notEqual(exposed, editorSource, 'the production editor exposes its private test seam');
@@ -119,4 +123,54 @@ assert.equal(api.ageValues().head, .55, 'legacy head authoring survives migratio
 api.setAgeMode('adult');
 api.setAgeMode('nonexistent');
 assert.equal(api.ageMode, 'adult', 'unexpected saved/UI stage names are rejected');
+// Exercise the real shared per-profile implementation and actual private editor handlers.
+stored.delete('hobunjiFullCharacterScale.ageModes.v1');
+vm.runInContext(fs.readFileSync('docs/js/character-age-rig-config.js','utf8'),context);
+const other = {...entry,key:'mashtzarr::female',species:'mashtzarr',group:{...stageRoot},profile:{anatomy:{}}};
+const liveAdult = new Map(); // Mock only host persistence and geometry, not stage composition or bake math.
+window.HobunjiCharacterRigScale.scaleFor = (species,gender)=>liveAdult.get(species+'::'+gender)||{x:1.2,y:1.5,legLength:1.5,head:1.1,offsetY:0};
+window.HobunjiAnimationAuthorScaleHost.setRigScale=(species,gender,scale)=>{liveAdult.set(species+'::'+gender,scale);return scale;};
+window.HobunjiCharacterRigScaleDefaults={uploadedScaleRestoreValues:{[entry.key]:{},[other.key]:{}}};
+window.HobunjiCharacterDimensions={dimensionsFor(species){return {body:{width:species==='mashtzarr'?2:1},height:species==='mashtzarr'?1.6:1,factors:{modelHeight:1}};}};
+api.configure([entry,other],entry);
+api.setAgeMode('baby');
+assert.equal(api.individualAgeValues(other).head,.5,'imported Mashtzarr exception is visible in actual editor state');
+const otherBefore=api.individualAgeValues(other).width;
+api.editIndividualAge('width','123.4');
+assert.equal(api.individualAgeValues(entry).width,1.234,'selected identity has its own width');
+assert.equal(api.individualAgeValues(other).width,otherBefore,'another species/gender retains its own width');
+api.choose(other);
+api.editIndividualAge('head','52');
+assert.equal(api.individualAgeValues(other).head,.52);
+assert.equal(api.individualAgeValues(entry).head,.97);
+api.applyAgeModifiers('widthConvergence','45');
+api.applyAgeModifiers('heightConvergence','30');
+const beforeBake=[entry,other].map(e=>api.previewAgeValues(e));
+api.bakeConvergence();
+assert.equal(api.ageValues().widthConvergence,0);assert.equal(api.ageValues().heightConvergence,0);
+for(const [i,e] of [entry,other].entries()) for(const axis of ['width','height','head','hand','foot']) assert.ok(Math.abs(api.previewAgeValues(e)[axis]-beforeBake[i][axis])<1e-10,'convergence bake preserves preview '+axis);
+api.previewOverall('75');
+const scaledBefore=[entry,other].map(e=>api.previewAgeValues(e));
+api.bakeOverall();
+assert.equal(api.overall,1);
+for(const [i,e] of [entry,other].entries()) for(const axis of ['width','height','head','hand','foot']) assert.ok(Math.abs(api.previewAgeValues(e)[axis]-scaledBefore[i][axis])<1e-10,'overall bake preserves preview '+axis);
+const savedBaby=api.individualAgeValues(entry).width;
+api.setAgeMode('toddler');
+assert.equal(api.individualAgeValues(entry).width,.4,'baby bake leaves toddler proportions alone');
+api.previewOverall('125');api.bakeOverall();
+assert.equal(api.individualAgeValues(entry).width,.5);
+api.setAgeMode('child');
+assert.equal(api.individualAgeValues(entry).width,.5,'toddler bake leaves child proportions alone');
+api.setAgeMode('adult');
+api.previewOverall('80');
+const adultPreview=applied.filter(item=>item.species===entry.species).at(-1).values;
+api.bakeOverall();
+assert.equal(api.overall,1);
+const adultBaked=applied.filter(item=>item.species===entry.species).at(-1).values;
+for(const axis of ['x','y','legLength','head'])assert.ok(Math.abs(adultPreview[axis]-adultBaked[axis])<1e-10,'adult bake preserves preview '+axis);
+api.setAgeMode('baby');
+assert.ok(Math.abs(api.previewAgeValues(entry).width*liveAdult.get(entry.key).x-savedBaby*1.2)<1e-10,'adult overall bake does not change young world width');
+api.loadAgeModifiers();
+assert.equal(api.ageValues().widthConvergence,0,'pending convergence resets on reload');
+assert.ok(Math.abs(api.previewAgeValues(entry).width*liveAdult.get(entry.key).x-savedBaby*1.2)<1e-10,'baked age profile reloads without drift');
 console.log('Animation Author age-wide lineup, dropdown selection, runtime sharing, and autosave checks passed.');

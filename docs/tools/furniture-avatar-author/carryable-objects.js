@@ -907,8 +907,8 @@
       const phase=window.HobunjiRomanceConfig?.family?.phaseScales?.basket||{body:.32,head:.50}; // Family config owns newborn proportions; fallback covers offline editor previews.
       const body=Number(phase.body)>0?Number(phase.body):.32;
       const head=Number(phase.head)>0?Number(phase.head):.50;
-      const npcRecord={role:'child',tags:['child','family'],isChild:true,
-        childBodyScale:body,childHeadScale:head}; // Same infant proportions as RomanceFamily.childRecord.
+      const npcRecord={role:'child',tags:['child','family'],isChild:true,childGrowthStage:'baby',
+        childBodyScale:body,childBodyHeightScale:body,childBodyWidthScale:Number(phase.width)||body,childHeadScale:head}; // Same infant proportions as RomanceFamily.childRecord.
       let model=null;
       if(window.PNGPlaneAvatar?.buildSinglePlaneAvatarModel){
         try{
@@ -924,7 +924,8 @@
           const by=valid(anatomy.rigScaleY,valid(anatomy.rigScale,valid(defaults.y,1)));
           const hs=valid(anatomy.headScale,valid(anatomy.rigScale,valid(defaults.head,1)));
           const headJoint=model?.userData?.neckRig?.headScaleJoint;
-          headJoint?.scale?.set?.(hs/bx*head/body,hs/by*head/body,1); // Same x/y head compensation as HobunjiCharacterRigScale.applyHeadCompensation.
+          const child = window.PNGPlaneAvatar.childScaleFor?.({speciesId:identity.speciesId,gender:identity.gender,npcRecord}); // Same baked species/gender baby proportions as the world portrait.
+          headJoint?.scale?.set?.(hs/bx*(child?.headFactorX??head/body),hs/by*(child?.headFactor??head/body),1); // Same x/y head compensation as HobunjiCharacterRigScale.applyHeadCompensation.
           const offset=Number(anatomy.headOffsetY??defaults.offsetY);
           if(headJoint?.position && Number.isFinite(offset))
             headJoint.position.y+=Math.max(-.5,Math.min(.5,offset))*Number(model.userData?.portraitModelHeight||0); // Same authored head Y nudge as gameplay.
