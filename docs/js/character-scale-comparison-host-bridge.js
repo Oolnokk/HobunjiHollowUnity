@@ -58,6 +58,19 @@
   // number (treated as that same value on x/y/head; offsetY defaults to 0,
   // it has no legacy single-field form). Returns a fully-resolved tuple, or
   // null if nothing usable was supplied.
+  const limbAxisFields = ['handScaleAxes', 'footScaleAxes']; // Shared by native import/export, reset and Full Character Scale saves.
+  function normalizedPartAxes(axes) {
+    if (!axes || !['x', 'y', 'z'].every(axis => Number.isFinite(Number(axes[axis])) && Number(axes[axis]) > 0)) return null;
+    return Object.fromEntries(['x', 'y', 'z'].map(axis => [axis, normalizedRigScaleNumber(axes[axis])]));
+  }
+
+  function copyPartAxes(target, source) {
+    for (const field of limbAxisFields) if (source[field]) {
+      target[field] = { ...source[field] };
+      target.version = Math.max(2, Number(target.version) || 0);
+    }
+  }
+
   function normalizedRigScale(value) {
     if (value == null) return null;
     if (typeof value === 'number' || typeof value === 'string') {
@@ -76,6 +89,10 @@
     if (legLength != null) resolved.legLength = legLength;
     if (handScale != null) resolved.handScale = handScale;
     if (footScale != null) resolved.footScale = footScale;
+    for (const field of limbAxisFields) {
+      const axes = normalizedPartAxes(value[field]); // Missing axes keep old scalar-only saves valid.
+      if (axes) resolved[field] = axes;
+    }
     return resolved;
   }
 
@@ -89,7 +106,7 @@
     const handScale = normalizedRigScaleNumber(anatomy.handScale);
     const footScale = normalizedRigScaleNumber(anatomy.footScale);
     if (x != null || y != null || head != null || offsetY != null || legLength != null || handScale != null || footScale != null)
-      return normalizedRigScale({ x, y, head, offsetY, legLength, handScale, footScale });
+      return normalizedRigScale({ x, y, head, offsetY, legLength, handScale, footScale, handScaleAxes: anatomy.handScaleAxes, footScaleAxes: anatomy.footScaleAxes });
     return normalizedRigScale(anatomy.rigScale); // Pre-split single-field profiles.
   }
 
@@ -106,6 +123,7 @@
       else delete profile.anatomy.legLengthScale; // Importing an old Height tuple must restore its original shared portrait/leg proportion, never retain stale newer authoring.
       if (value.handScale != null) profile.anatomy.handScale = value.handScale;
       if (value.footScale != null) profile.anatomy.footScale = value.footScale;
+      copyPartAxes(profile.anatomy, value);
     }
   }
 
@@ -119,6 +137,7 @@
     const key = profileKey(species, gender);
     const scale = normalizedRigScale(value);
     if (!key || scale == null) return null;
+    for (const field of limbAxisFields) if (!scale[field] && rigScaleOverrides.get(key)?.[field]) scale[field] = rigScaleOverrides.get(key)[field];
     rigScaleOverrides.set(key, scale);
     applyRigScaleToSharedProfiles(key, scale);
     if (persist) persistRigScaleOverrides();
@@ -146,7 +165,8 @@
       if (!key || scale == null) continue;
       const existing = rigScaleOverrides.get(key);
       if (!existing || existing.x !== scale.x || existing.y !== scale.y || existing.head !== scale.head || existing.offsetY !== scale.offsetY
-          || existing.legLength !== scale.legLength || existing.handScale !== scale.handScale || existing.footScale !== scale.footScale) {
+          || existing.legLength !== scale.legLength || existing.handScale !== scale.handScale || existing.footScale !== scale.footScale
+          || limbAxisFields.some(field => ['x', 'y', 'z'].some(axis => existing[field]?.[axis] !== scale[field]?.[axis]))) {
         rigScaleOverrides.set(key, scale);
         changed = true;
       }
@@ -180,6 +200,7 @@
     for (const [rawKey, profile] of Object.entries(characters)) {
       if (!profile?.anatomy) continue;
       const original = repositoryPartScales.get(rawKey); // Restore exactly the authored hand/foot sizes rather than resetting every species to 100%.
+      for (const field of limbAxisFields) delete profile.anatomy[field]; // Reset to the frozen repository defaults.
       if (original) for (const part of ['handScale', 'footScale']) {
         if (original[part] == null) delete profile.anatomy[part];
         else profile.anatomy[part] = original[part];
@@ -219,13 +240,13 @@
     const id = String(npcId || '');
     const value = normalizedAge(age);
     if (!id || value == null) return null;
-    if (value <= 0) npcAgeOverrides.delete(id); else npcAgeOverrides.set(id, value);
+    npcAgeOverrides.set(id, value); // Zero explicitly straightens an NPC whose authored base pose is hunched.
     persistNpcAgeOverrides();
     return value;
   }
 
-  function npcAgeFor(npcId) {
-    return npcAgeOverrides.get(String(npcId || '')) || 0;
+  function npcAgeFor(npcId, fallback = 0) {
+    return npcAgeOverrides.get(String(npcId || '')) ?? fallback;
   }
 
   function resetNpcAges() {
@@ -347,6 +368,7 @@
       else delete profile.anatomy.legLengthScale; // Legacy rig imports do not preserve a previously authored independent limb length.
       if (scale.handScale != null) profile.anatomy.handScale = scale.handScale;
       if (scale.footScale != null) profile.anatomy.footScale = scale.footScale;
+      copyPartAxes(profile.anatomy, scale);
       delete profile.anatomy.rigScale; // Superseded by the x/y/head split; dropped so a re-export never resurrects the ambiguous uniform field.
     }
     return profiles;
@@ -444,6 +466,7 @@
       else delete profile.anatomy.legLengthScale; // Legacy rig imports do not preserve a previously authored independent limb length.
       if (scale.handScale != null) profile.anatomy.handScale = scale.handScale;
       if (scale.footScale != null) profile.anatomy.footScale = scale.footScale;
+      copyPartAxes(profile.anatomy, scale);
     }
     return profile;
   }

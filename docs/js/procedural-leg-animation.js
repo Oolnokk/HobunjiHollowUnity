@@ -910,7 +910,8 @@
     const initialFootScale = footScaleMultiplierForSpecies(speciesId, gender); // Original species multiplier, retained so later slider updates never compound scale.
     let ageFootScale = 1; // Preview age factor is composed with the independent adult foot size and sole contact.
     let footSizeScale = initialFootScale; // Current multiplier used by fallback feet and any asynchronously arriving GLB.
-    const radius = modelHeight * footHeightFraction * 0.5 * initialFootScale * sizeBalanceMultiplier;
+    const limbModelHeight = Number(options.limbModelHeight ?? options.drunkBodyRoot?.userData?.limbModelHeight) || modelHeight; // Geometry fit only; posture and IK still use body dimensions.
+    const radius = limbModelHeight * footHeightFraction * 0.5 * initialFootScale * sizeBalanceMultiplier;
     const isKenkariFamily = KENKARI_FAMILY.has(speciesId);
     const sphereScaleXZ = isKenkariFamily ? 0.6 : 1;
     const sphereScaleY = isKenkariFamily ? 1 : 0.75;
@@ -1145,9 +1146,10 @@
       return footSizeScale;
     }
 
-    function setAgeFootScaleMultiplier(multiplier) {
+    function setAgeFootScaleMultiplier(multiplier, bodyRatio = 1) {
       const raw = Number(multiplier); // Separate authoring stage; never overwrite the authored adult size.
-      const next = Number.isFinite(raw) && raw > 0 ? Math.max(.01, Math.min(20, raw)) : 1;
+      const authored = Number.isFinite(raw) && raw > 0 ? Math.max(.01, Math.min(20, raw)) : 1;
+      const next = authored * (Number.isFinite(bodyRatio) && bodyRatio > 0 ? bodyRatio : 1); // Editor correction from the preview body mean to the gameplay stage height.
       if (state.disposed || Math.abs(next - ageFootScale) <= 1e-9) return ageFootScale;
       ageFootScale = next;
       setFootScaleMultiplier(footSizeScale, true); // Reuse the sole-contact/IK owner and the original per-mesh baseline.
@@ -1288,14 +1290,10 @@
     }
 
     const surfaceForRole = makeSurfaceRoleResolver(THREE, speciesId, options.bodyColors);
-    const partProfileKey = `${speciesId}::${gender}`; // Stable key avoids allocating lookup strings during joint animation.
-    const partAxes = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters?.[partProfileKey]?.anatomy?.footScaleAxes; // Optional authored foot-only axes leave hips, leg lengths, and stance positions untouched.
-
-    // Depth push for the feet (see PantsGarmentRenderer): worn pants must always draw over the feet, but must also be pure 3D proximity against
-    // the avatar's own planes, so the garment cannot carry a depth pull of its own. Instead each foot mesh is scaled about the CAMERA for its
-    // draw: the screen image is identical (a uniform scale about the eye changes nothing in projection) but the foot is `footDepthPush` farther,
-    // so the pants win the depth test over it. Done in onBeforeRender (three derives modelViewMatrix after it) and undone in onAfterRender.
-    const pushCamera = new THREE.Vector3();
+    const partScale = window.HobunjiCharacterRigScale; // Shared authored axes for geometry and the fallback foot's contact radius.
+    const footAxes = () => partScale?.partScaleAxesFor?.(speciesId, gender, 'foot');
+    // Move the foot farther from the camera during its draw so pants retain their depth ordering.
+    const pushCamera = new THREE.Vector3(); // Shared scratch camera position for the temporary depth offset.
     const rootScaleY = () => { const e = root.matrixWorld.elements; return Math.hypot(e[4], e[5], e[6]) || 1; }; // World size of one root-local unit.
     function installFootDepthPush(foot) {
       foot.traverse(mesh => {
@@ -1343,8 +1341,7 @@
     const childFootFactor = Number(childLimbMetadata?.foot) > 0 ? Number(childLimbMetadata.foot) : 1;
     function installFootAxes(foot) {
       installFootDepthPush(foot);
-      window.HobunjiCharacterRigScale?.installPartScaleAxes?.(THREE, foot, parent, () => window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters?.[partProfileKey]?.anatomy?.footScaleAxes, true); // Shared uniform hand/foot average through moving leg joints.
-      if (partAxes?.y > 0) foot.userData.contactRadiusY *= partAxes.y; // Sphere fallback retains ground contact after geometry grows about its center; GLB bottom origin remains zero.
+      partScale?.installPartScaleAxes?.(THREE, foot, parent, footAxes, true);
       if (childFootFactor !== 1 && foot?.scale?.multiplyScalar) {
         foot.scale.multiplyScalar(childFootFactor); // Scale final GLB visuals and sphere fallbacks equally.
         if (Number.isFinite(foot.userData?.contactRadiusY)) foot.userData.contactRadiusY *= childFootFactor;
@@ -1364,8 +1361,9 @@
     installFootAxes(rightFallback);
     state.left = leftFallback;
     state.right = rightFallback;
-    state.leftContactY = leftFallback.userData.contactRadiusY;
-    state.rightContactY = rightFallback.userData.contactRadiusY;
+    state.extremityYRatio = (footAxes()?.y || 1) / (partScale?.bodyScaleFactorsFor?.(parent)?.y || 1); // First-frame contact uses the same body compensation.
+    state.leftContactY = leftFallback.userData.contactRadiusY * state.extremityYRatio;
+    state.rightContactY = rightFallback.userData.contactRadiusY * state.extremityYRatio;
     placeIdleTarget('left', state.leftContactY);
     placeIdleTarget('right', state.rightContactY);
 
@@ -1714,7 +1712,7 @@
       const bodyFactors = window.HobunjiCharacterRigScale?.bodyScaleFactorsFor?.(parent); // The scale owner can be several joints above the feet.
       state.bodyScaleX = Number(bodyFactors?.x) > 0 ? Number(bodyFactors.x) : 1;
       state.bodyScaleY = Number(bodyFactors?.y) > 0 ? Number(bodyFactors.y) : 1;
-      const footYRatio = (state.bodyScaleX + state.bodyScaleY) / (2 * state.bodyScaleY); // Body Y times this ratio equals the uniform arithmetic mean.
+      const footYRatio = (footAxes()?.y || 1) / state.bodyScaleY; // Sole contact uses authored Y independently of body height.
       if (Math.abs(footYRatio - state.extremityYRatio) > 1e-9) {
         state.extremityYRatio = footYRatio;
         const nextLeftContactY = (Number(state.left?.userData?.contactRadiusY) || 0) * footYRatio; // Resized sole height: used to keep an already planted left foot grounded.

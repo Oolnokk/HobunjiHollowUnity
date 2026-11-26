@@ -51,7 +51,7 @@
   const AGE_AXES = ['width', 'height', 'head', 'hand', 'foot', 'widthConvergence', 'heightConvergence']; // Separate width/height for every global baby/toddler/child stage, plus head/limbs.
   let ageMode = 'adult'; // Current preview stage; never stored on individual NPCs or their authored rig profiles.
   let ageProfiles = {}; // Per-stage per-species/gender baked values; adult rig fields remain in the host's normal authoring store.
-  let ageOverall = {adult:1,baby:1,toddler:1,child:1}; // Temporary uniform preview, reset after baking.
+  const overallDrafts = new Map(); // Temporary uniform factors keyed by age stage and species/gender.
   let stageBasisCache = null; // Current-stage convergence reference, invalidated by individual edits or adult reference changes.
   let ageConvergenceBasis = null; // Cached relative adult dimensions across all loaded lineup identities; invalidated when adult art/scales change.
   let ageModifiers = {}; // Editable age-wide values, initialized from gameplay configuration and then local editor overrides.
@@ -60,6 +60,7 @@
   let selectedLayoutFrame = 0; // Batches per-species (non-age) width/head edits so neighboring lineup actors never overlap.
   let ageRenderFrame = 0; // Coalesces rapid touch slider updates into one lineup/layout pass per display frame.
   let ageDirtyBody = false; // Set when body/head changes require whole-rig transforms and bounding-box layout.
+  const overallDirtyEntries = new Set(); // Only recomposes edited rigs when the overall slider moves.
   let ageDirtyLimb = null; // 'hand' or 'foot' limits visual-only updates to the changed GLB type.
   const agePerf = { rigPasses: 0, layoutPasses: 0, limbLookups: 0, lateRetries: 0, handSyncs: 0 }; // Mobile-accessible counters for debugging slider performance.
 
@@ -127,7 +128,7 @@
     catch (error) { console.warn('[full-character-scale] invalid age-mode autosave', error); }
     ageModifiers = defaults;
     ageProfiles = window.HobunjiCharacterAgeRigConfig?.repositoryProfiles?.() || {}; // New authoritative uploaded baby values replace old global-only baby drafts once.
-    ageOverall = {adult:1,baby:1,toddler:1,child:1}; stageBasisCache = null;
+    overallDrafts.clear(); stageBasisCache = null;
     const ageApi = window.HobunjiCharacterAgeRigConfig;
     if (saved?.schema === 'hobunji.character-age-rig-modifiers.v1' && ageApi?.upgradePresetProfiles) ageProfiles = ageApi.upgradePresetProfiles(saved.profiles,saved.presetVersion);
     else if (saved?.profiles) ageProfiles = ageApi?.sanitizeProfiles?.(saved.profiles) || saved.profiles;
@@ -179,10 +180,14 @@
     const api = window.HobunjiCharacterAgeRigConfig;
     const row = individualAgeValues(entry);
     if (ageMode === 'adult' || !api?.convergeProfile) return ageValues(); // Legacy test/host fallback retains global behavior.
-    const strength = ageValues();
-    if (!(strength.widthConvergence || strength.heightConvergence)) return api.scaledProfile(api.relativeProfile(row,authored),ageOverall[ageMode]);
-    if (!stageBasisCache) stageBasisCache = currentStageReference();
-    return api.scaledProfile(api.relativeProfile(api.convergeProfile(row,stageBasisCache[entry.key],strength),authored),ageOverall[ageMode]);
+    const strength = ageValues(); // Preserve existing whole-lineup convergence for body axes.
+    let adjusted = row;
+    if (strength.widthConvergence || strength.heightConvergence) {
+      if (!stageBasisCache) stageBasisCache = currentStageReference();
+      adjusted = api.convergeProfile(row, stageBasisCache[entry.key], strength);
+    }
+    const factor = overallFactorFor(entry); // Explicit whole-character resize retains hand/foot proportions.
+    return { ...api.scaledProfile(api.relativeProfile(adjusted, authored), factor), hand: row.hand * factor, foot: row.foot * factor };
   }
   function editIndividualAge(axis, raw) {
     if (!selected || ageMode === 'adult') return;
@@ -198,54 +203,88 @@
     const api = window.HobunjiCharacterAgeRigConfig;
     const rows = stageRows();
     if (!api?.stageConvergenceBasis) return;
-    const basis = currentStageReference();
+    const basis = stageBasisCache || currentStageReference();
     const next = Object.fromEntries(Object.entries(rows).map(([key,row])=>[key,api.convergeProfile(row,basis[key],ageValues())]));
     if(Object.values(next).some(row=>[row.width,row.height].some(v=>!Number.isFinite(v)||v<.01||v>20))) {status('Cannot bake convergence: a resulting value exceeds the 1–2000% individual bounds. Reduce convergence strength.');return;}
     ageProfiles[ageMode] = next;
     ageValues().widthConvergence=0; ageValues().heightConvergence=0; stageBasisCache=null;
     persistAgeModifiers(); syncAgeControls(); queueAgeRender('width'); status('Convergence baked into individual values; sliders reset to zero.');
   }
-  function previewOverall(raw) {
-    const factor=Number(raw)/100;
-    if (!Number.isFinite(factor)||factor<.1||factor>4) return;
-    ageOverall[ageMode]=factor; syncAgeControls(); queueAgeRender('width');
+  function overallDraftKey(entry) {
+    return `${ageMode}:${entry.key}`;
   }
+
+  function overallFactorFor(entry = selected) {
+    return entry ? overallDrafts.get(overallDraftKey(entry)) ?? 1 : 1;
+  }
+
+  function previewOverall(raw) {
+    const factor = Number(raw) / 100; // Live preview of the chosen identity at the current age.
+    if (!selected || !Number.isFinite(factor) || factor < .1 || factor > 4) return;
+    if (factor === 1) overallDrafts.delete(overallDraftKey(selected));
+    else overallDrafts.set(overallDraftKey(selected), factor);
+    syncAgeControls();
+    queueAgeRender('width', selected);
+  }
+
+  function scaledAdult(scale, factor) {
+    return { ...scale, x: scale.x * factor, y: scale.y * factor,
+      legLength: (scale.legLength || scale.y) * factor, head: scale.head * factor };
+  }
+
+  function ageScaleInBounds(row) {
+    return [row.width, row.height, row.head, row.hand, row.foot].every(value => Number.isFinite(value) && value >= .01 && value <= 20);
+  }
+
   function bakeOverall() {
-    const factor=ageOverall[ageMode];
-    if (factor===1) return;
-    const api=window.HobunjiCharacterAgeRigConfig;
-    if (!api?.scaledProfile) return;
-    if (ageMode==='adult') {
-      const bridge=host(), rig=window.HobunjiCharacterRigScale;
-      if (!bridge?.setRigScale || !rig?.scaleFor) return;
-      const identities=allAgeIdentities(); const canonical=new Map();
-      for (const entry of identities) {
-        const species=window.hobunjiTransformSpeciesId?.(entry.species)||entry.species;
-        const key=species+'::'+entry.gender;
-        if (!canonical.has(key)) {
-          const scale=rig.scaleFor(entry.species,entry.gender,entry.profile);
-          const anatomy=entry.profile?.anatomy || rig.profileFor?.(species,entry.gender)?.anatomy || {};
-          canonical.set(key,{species,gender:entry.gender,scale:{...scale,handScale:anatomy.handScale,footScale:anatomy.footScale}});
-        }
+    const entry = selected; // One identity owns both the pending preview and its baked dimensions.
+    const factor = overallFactorFor(entry);
+    const api = window.HobunjiCharacterAgeRigConfig; // Shares the runtime's uniform size and adult-reference rules.
+    if (!entry || factor === 1 || !api?.scaledProfile) return;
+    if (ageMode === 'adult') {
+      const bridge = host(); // Persists the selected adult through the native rig-profile owner.
+      const adult = adultScaleForEntry(entry);
+      if (!bridge?.setRigScale || !adult) return;
+      const anatomy = entry.profile?.anatomy || {}; // Preserve any independently authored adult limb scales.
+      const multiply = part => Object.fromEntries(Object.entries(partAxesFor(entry, part)).map(([axis, value]) => [axis, value * factor]));
+      const next = { ...scaledAdult(adult, factor), handScale: anatomy.handScale, footScale: anatomy.footScale,
+        handScaleAxes: multiply('hand'), footScaleAxes: multiply('foot') };
+      if ([next.x, next.y, next.legLength, next.head, ...Object.values(next.handScaleAxes), ...Object.values(next.footScaleAxes)].some(value => !Number.isFinite(value) || value < .1 || value > 4)) {
+        status('Cannot bake adult overall scale outside the 10–400% rig bounds.');
+        return;
       }
-      const updates=[...canonical.values()].map(({species,gender,scale})=>({species,gender,next:{...scale,x:scale.x*factor,y:scale.y*factor,legLength:(scale.legLength||scale.y)*factor,head:scale.head*factor}}));
-      if(updates.some(({next})=>[next.x,next.y,next.legLength,next.head].some(v=>!Number.isFinite(v)||v<.1||v>4))) { status('Cannot bake adult overall scale: one or more adult rig values would exceed the existing 10–400% bounds. Choose a smaller adjustment.'); return; }
-      // Adult overall resize must not change the already-authored size of any younger stage.
-      const compensated=Object.fromEntries(['baby','toddler','child'].map(mode=>[mode,Object.fromEntries(identities.map(entry=>{
-        const adult=adultScaleForEntry(entry); const row=api.relativeProfile(individualAgeValues(entry,mode),adult);
-        return [entry.key,{...api.scaledProfile(row,1/factor),adultReference:api.rigReference({x:adult.x*factor,y:adult.y*factor,head:adult.head*factor})}];
-      }))])); // Store the new adult reference so same-site gameplay preserves young dimensions even before deploying the adult rig export.
-      if(Object.values(compensated).some(rows=>Object.values(rows).some(row=>[row.width,row.height,row.head].some(v=>v<.01||v>20)))) { status('Cannot bake adult scale without exceeding younger-stage authoring bounds.'); return; }
-      updates.forEach(({species,gender,next},i)=>bridge.setRigScale(species,gender,next,{persist:i===updates.length-1}));
-      Object.assign(ageProfiles,compensated); persistProfiles(); ageConvergenceBasis=null;
+      const compensated = AGE_MODES.slice(1).map(mode => { // Keep this identity's younger stages at their existing world size.
+        const row = api.relativeProfile(individualAgeValues(entry, mode), adult);
+        return [mode, { ...api.scaledProfile(row, 1 / factor), hand: row.hand / factor, foot: row.foot / factor, adultReference: api.rigReference(next) }];
+      });
+      if (compensated.some(([, row]) => !ageScaleInBounds(row))) {
+        status('Cannot bake adult scale without exceeding younger-stage authoring bounds.');
+        return;
+      }
+      if (bridge.setRigScale(entry.species, entry.gender, next) == null) {
+        status('Could not save the selected adult rig scale.');
+        return;
+      }
+      for (const [mode, row] of compensated) (ageProfiles[mode] ||= {})[entry.key] = row;
+      persistProfiles();
+      ageConvergenceBasis = null;
+      stageBasisCache = null;
     } else {
-      const rows=stageRows();
-      const next=Object.fromEntries(Object.entries(rows).map(([key,row])=>[key,api.scaledProfile(row,factor)]));
-      if(Object.values(next).some(row=>[row.width,row.height,row.head].some(v=>v<.01||v>20))) {status('Cannot bake: an individual value would exceed the 1–2000% bounds.');return;}
-      ageProfiles[ageMode]=next;
+      const row = individualAgeValues(entry); // Overall is the explicit uniform resize for the selected age.
+      const next = { ...api.scaledProfile(row, factor), hand: row.hand * factor, foot: row.foot * factor };
+      if (!ageScaleInBounds(next)) {
+        status('Cannot bake overall scale outside the 1–2000% individual age bounds.');
+        return;
+      }
+      // Retain the displayed convergence reference until another proportion edit so this bake cannot resize neighbors.
+      if (!stageBasisCache && (ageValues().widthConvergence || ageValues().heightConvergence)) stageBasisCache = currentStageReference();
+      (ageProfiles[ageMode] ||= {})[entry.key] = next;
     }
-    ageOverall[ageMode]=1; stageBasisCache=null; persistAgeModifiers(); if(selected) select(selected);
-    syncAgeControls(); queueAgeRender('width'); status('Overall scale baked into individual values; slider reset to 100%.');
+    overallDrafts.delete(overallDraftKey(entry));
+    persistAgeModifiers();
+    select(entry);
+    queueAgeRender('width', entry);
+    status(`Baked overall scale for ${prettySpecies(entry.species)} ${entry.gender} (${ageMode}). Slider reset to 100%.`);
   }
 
   function host() {
@@ -333,10 +372,13 @@
       return [];
     };
     return {
+      id: npc.id,
       name: npc.name || npc.id || 'NPC',
+      restingExpression: npc.restingExpression,
+      clothingPatterns: npc.clothingPatterns,
       appearance,
-      equippedCosmetics: asEquipArray(raw.equippedCosmetics || profile.equippedCosmetics || profile.cosmetics || profile.equipment || npc.equippedCosmetics),
-      appliedDyes: raw.appliedDyes || profile.appliedDyes || profile.dyes || npc.appliedDyes || {},
+      equippedCosmetics: asEquipArray(npc.equippedCosmetics ?? raw.equippedCosmetics ?? profile.equippedCosmetics ?? profile.cosmetics ?? profile.equipment),
+      appliedDyes: npc.appliedDyes ?? raw.appliedDyes ?? profile.appliedDyes ?? profile.dyes ?? {},
       portrait: npc.portrait || {},
       rawExport: raw,
     };
@@ -474,8 +516,8 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
       panel.innerHTML = `
         <div class="scaleHead"><b>Full character scale</b><span id="maaFullScaleSelected" class="scaleSelected">Choose a character</span><span id="maaFullScaleNpc" class="pill">—</span><label for="maaFullScaleChoose" class="small">Character</label><select id="maaFullScaleChoose" aria-label="Choose character to edit"></select></div>
         <div class="scaleHead"><label for="maaFullScaleAgeMode">Lineup age</label><select id="maaFullScaleAgeMode" aria-label="Show full lineup at age"><option value="adult">Adult (reference)</option><option value="baby">Baby</option><option value="toddler">Toddler</option><option value="child">Child</option></select></div>
-        <section aria-label="Overall stage scale">
-          ${scaleRow('Overall','Overall scale',10,400,1,100,'Temporary uniform size of this age lineup')}
+        <section aria-label="Overall scale for selected character">
+          ${scaleRow('Overall','Overall scale',10,400,1,100,'Temporary uniform size of the selected species and gender at this age')}
           <button id="maaFullScaleBakeOverall" type="button" class="good">Bake overall scale</button>
         </section>
         <section id="maaFullScaleAgeControls" aria-label="Individual age proportions" hidden>
@@ -485,7 +527,7 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
             <input id="maaFullScaleAgeRange${name}" type="range" min="${min}" max="${axis.endsWith('Convergence') ? 100 : 200}" step="0.1" value="100" aria-label="${name.toLowerCase()} for selected age mode">
             <input id="maaFullScaleAgeNum${name}" type="number" min="${min}" max="${max}" step="0.1" value="100" aria-label="${name.toLowerCase()} percent (exact)">%
           </div>`).join('')}
-          <p class="maaSmall maaMuted">Convergence is a temporary whole-lineup adjustment of the CURRENT proportions. Bake to save it into each species/gender and reset the sliders to zero. Overall scale changes size without changing proportions.</p>
+          <p class="maaSmall maaMuted">Convergence is a temporary whole-lineup adjustment of the CURRENT proportions. Bake to save it into each species/gender and reset the sliders to zero. Overall scale applies to the selected character at the current age.</p>
           <button id="maaFullScaleBakeConvergence" type="button" class="good">Bake convergence</button>
           <div class="scaleActions"><button id="maaFullScaleAgeExport" type="button" class="secondary">Export age defaults JSON</button><button id="maaFullScaleAgeApply" type="button" class="good">Apply to game (same site)</button><button id="maaFullScaleAgeUnapply" type="button" class="secondary">Restore game's defaults</button></div>
           <div id="maaFullScaleRuntimeStatus" class="scaleStatus" aria-live="polite">Draft only until applied.</div>
@@ -507,8 +549,12 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
         ${scaleRow('X', 'Width', 10, 400, 0.5, 100, 'Body width scale')}
         ${scaleRow('Height', 'Height', 10, 400, 0.5, 100, 'Total stature relative to the unscaled avatar; beltline changes do not change overall height')}
         ${scaleRow('Beltline', 'Beltline height', 0.1, 99.9, 0.1, 50, 'Beltline height as a percent of floor-to-head stature; higher values give longer legs and a shorter torso')}
-        ${scaleRow('Hand', 'Hand scale', 10, 400, 0.5, 100, 'Independent size of both procedural hands')}
-        ${scaleRow('Foot', 'Foot scale', 10, 400, 0.5, 100, 'Independent size of both procedural feet')}
+        <fieldset><legend>Hand geometry</legend>
+        ${['X', 'Y', 'Z'].map(axis => scaleRow('Hand' + axis, 'Hand ' + axis, 10, 400, .01, 100, 'Scale both hands along ' + axis)).join('')}
+        </fieldset>
+        <fieldset><legend>Foot geometry</legend>
+        ${['X', 'Y', 'Z'].map(axis => scaleRow('Foot' + axis, 'Foot ' + axis, 10, 400, .01, 100, 'Scale both feet along ' + axis)).join('')}
+        </fieldset>
         ${scaleRow('Head', 'Head', 10, 400, 0.5, 100, 'Head scale')}
         ${scaleRow('OffsetY', 'Head Y offset', -50, 50, 0.5, 0, 'Head Y offset, percent of model height')}
         ${scaleRow('Age', 'Age (hunch)', 0, 100, 1, 0, 'Per-NPC age hunch, lowers the head further')}
@@ -550,6 +596,14 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
           number.value = String(percent);
           range.value = String(percent);
           editIndividualAge(axis, percent);
+        });
+      }
+      for (const part of ['Hand', 'Foot']) for (const axis of ['X', 'Y', 'Z']) {
+        const range = panel.querySelector('#maaFullScaleRange' + part + axis); // Slider and numeric field edit the same stored adult axis.
+        const number = panel.querySelector('#maaFullScaleNum' + part + axis);
+        range.addEventListener('input', () => { number.value = range.value; editPartAxis(part, axis, range.value); });
+        number.addEventListener('change', () => {
+          if (!editPartAxis(part, axis, number.value) && selected) syncPartAxes(selected);
         });
       }
       panel.querySelector('#maaFullScaleAgeExport').addEventListener('click', exportAgeModifiers);
@@ -654,9 +708,9 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
     if (panel) panel.hidden = false; // Mode-scoped CSS makes it visible here and hides it again in other tabs.
   }
 
-  function setSliderValue(axis, percent) {
+  function setSliderValue(axis, percent, precision = 10) {
     document.getElementById(`maaFullScaleRange${axis}`).value = String(percent);
-    document.getElementById(`maaFullScaleNum${axis}`).value = String(Math.round(percent * 10) / 10);
+    document.getElementById(`maaFullScaleNum${axis}`).value = String(Math.round(percent * precision) / precision);
   }
 
   function spineGapSourcePixels(entry) {
@@ -727,11 +781,9 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
     const dimensions = window.HobunjiCharacterRigScale?.heightBeltlineFor?.(scale, beltlineGeometryFor(entry));
     setSliderValue('Height', clampPercent((dimensions?.height || scale.y || 1) * 100));
     setSliderValue('Beltline', Math.max(.1, Math.min(99.9, (dimensions?.beltline || entry.beltlineBaseFraction || .5) * 100))); // Display the actual floor-to-hip percentage after migration from legacy Y/legLength.
-    setSliderValue('Hand', clampPercent(partScaleFor(entry, 'hand') * 100));
-    setSliderValue('Foot', clampPercent(partScaleFor(entry, 'foot') * 100));
+    syncPartAxes(entry);
     setSliderValue('OffsetY', clampOffsetPercent(scale.offsetY * 100));
-    const age = entry.npc?.id ? (host()?.npcAgeFor?.(entry.npc.id) || 0) : 0;
-    setSliderValue('Age', clampAgePercent(age * 100));
+    setSliderValue('Age', clampAgePercent(currentAgeFraction(entry) * 100));
     const longoranPanel = document.getElementById('maaFullScaleLongoranControls');
     if (longoranPanel) longoranPanel.hidden = entry.species !== 'longoran';
     const npcAgeRow = document.getElementById('maaFullScaleRangeAge')?.closest?.('.scaleRow'); // Longoran hunch is species-authored; don't show a second, misleading NPC-age hunch input.
@@ -759,8 +811,10 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
     // Selection changes the edited character, never camera position, angle, projection, or zoom.
   }
 
-  function currentAgeFraction() {
-    return selected?.npc?.id ? (host()?.npcAgeFor?.(selected.npc.id) || 0) : 0;
+  function currentAgeFraction(entry) {
+    const authored = entry.model?.userData?.hobunjiCharacterRigHeadRuntime?.age
+      ?? window.HobunjiCharacterRigScale?.ageFor?.({ npcRecord: entry.npc }) ?? 0; // Default to the same hunch the gameplay portrait received at build time.
+    return host()?.npcAgeFor?.(entry.npc?.id, authored) ?? authored;
   }
 
 
@@ -772,9 +826,15 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
     if (stage) stage.hidden = ageMode === 'adult';
     const adultFields=document.getElementById('maaFullScaleAdultFields'); if(adultFields) adultFields.hidden=ageMode!=='adult';
     const overallRange=document.getElementById('maaFullScaleRangeOverall'), overallNumber=document.getElementById('maaFullScaleNumOverall');
-    const overallPercent=String(Math.round(ageOverall[ageMode]*100));
-    if(overallRange)overallRange.value=overallPercent;
-    if(overallNumber && document.activeElement!==overallNumber)overallNumber.value=overallPercent;
+    const factor = overallFactorFor(); // Each selected identity and age restores its own draft controls.
+    const overallPercent = String(Math.round(factor * 100));
+    if (overallRange) { overallRange.value = overallPercent; overallRange.disabled = !selected; }
+    if (overallNumber) {
+      if (document.activeElement !== overallNumber) overallNumber.value = overallPercent;
+      overallNumber.disabled = !selected;
+    }
+    const bakeButton = document.getElementById('maaFullScaleBakeOverall'); // Avoid offering an empty bake before a preview is selected.
+    if (bakeButton) bakeButton.disabled = !selected || factor === 1;
     const npcAgeRow = document.getElementById('maaFullScaleRangeAge')?.closest?.('.scaleRow'); // Adult donor hunch cannot distort the growth-stage lineup.
     if (npcAgeRow) npcAgeRow.hidden = ageMode !== 'adult' || selected?.species === 'longoran';
     const runtimeStatus = document.getElementById('maaFullScaleRuntimeStatus'); // Remains visible while a user is tuning a growth stage.
@@ -797,12 +857,13 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
   function syncAgeLimbs(entry, onlyKind = null) {
     if (!entry?.group?.getObjectByName) return 0;
     const values = individualAgeValues(entry);
+    const bodyRatio = entry.ageLimbBodyRatio ?? 1; // Matches gameplay limbs built at the stage's model height.
     const visuals = entry.ageVisuals ||= {}; // Reuse discovered GLB nodes until an actual rig rebuild invalidates them.
     let missing = 0; // Retry only genuine late GLB arrivals, not every character every frame.
     for (const kind of (onlyKind ? [onlyKind] : ['hand', 'foot'])) {
       if (kind === 'foot' && typeof entry.feet?.setAgeFootScaleMultiplier === 'function') {
         entry.feet.syncPreviewFootContact?.(); // Width/height changes alter the uniform foot contact ratio even if no gait tick runs.
-        entry.feet.setAgeFootScaleMultiplier(values.foot); // Leg owner maintains the unscaled baseline, sole contact and late mesh replacement.
+        entry.feet.setAgeFootScaleMultiplier(values.foot, bodyRatio); // Leg owner maintains the unscaled baseline, sole contact and late mesh replacement.
         syncLegPortraitAlignment(entry); // Foot contact can move the hip when leg length is independently authored.
         continue;
       }
@@ -817,7 +878,7 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
         }
         const base = ageLimbBases.get(visual) || { x: visual.scale.x, y: visual.scale.y, z: visual.scale.z };
         if (!ageLimbBases.has(visual)) ageLimbBases.set(visual, base);
-        const factor = values[kind];
+        const factor = values[kind] * bodyRatio;
         const x = base.x * factor, y = base.y * factor, z = base.z * factor;
         if (Math.abs(visual.scale.x - x) < 1e-7 && Math.abs(visual.scale.y - y) < 1e-7 && Math.abs(visual.scale.z - z) < 1e-7) continue;
         visual.scale.set(x, y, z);
@@ -845,13 +906,16 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
     const composed = window.HobunjiCharacterAgeRigConfig?.composePreviewScale?.(authored, stage, entry, ageMode === 'adult' ? {} : lineupConvergenceBasis())
       || { x: authored.x * (stage.width ?? stage.body), y: authored.y * (stage.height ?? stage.body), head: authored.head * stage.head, offsetY: authored.offsetY };
     composed.legLength = (Number(authored.legLength) > 0 ? Number(authored.legLength) : Number(authored.y) || 1) * (composed.y / (Number(authored.y) || 1));
-    if (ageMode === 'adult' && ageOverall.adult !== 1) { for(const field of ['x','y','legLength','head']) composed[field]*=ageOverall.adult; }
-    if (ageMode !== 'adult' || ageOverall.adult !== 1) composed.ageComposed = true; // Derived preview multipliers can exceed the adult authoring bounds; both leg and portrait height follow the same factor.
+    const overall = overallFactorFor(entry); // Adult drafts apply outside stage composition, which starts from the neutral adult stage.
+    if (ageMode === 'adult' && overall !== 1) Object.assign(composed, scaledAdult(composed, overall));
+    if (ageMode !== 'adult' || overall !== 1) composed.ageComposed = true; // Derived preview multipliers can exceed the adult authoring bounds; both leg and portrait height follow the same factor.
     // Gameplay builds the child body scale into modelWidth/modelHeight and uses childHeadFactor=head/body at the neck.
     // This editor starts with a neutral adult portrait and applies the mathematically equivalent floor-parent transform.
     window.HobunjiCharacterRigScale?.applyToParent?.(entry.group, entry.species, entry.gender, composed,
       entry.species === 'longoran' ? (window.HobunjiLongoranSpecies?.spineFor?.(entry.gender)?.hunch || 0)
-        : ageMode === 'adult' && entry.npc?.id ? (host()?.npcAgeFor?.(entry.npc.id) || 0) : 0); // Adult representative age hunch is excluded from child stages, but Longoran species posture remains.
+        : ageMode === 'adult' ? currentAgeFraction(entry) : 0); // Adult representative age hunch is excluded from child stages, but Longoran species posture remains.
+    const stageLimbHeight = window.HobunjiCharacterAgeRigConfig?.limbHeightFor?.(ageMode, entry.species, entry.gender) ?? 1;
+    entry.ageLimbBodyRatio = stageLimbHeight * overall; // Explicit uniform Overall Scale still includes hands and feet.
     agePerf.rigPasses++;
     syncAgeLimbs(entry);
   }
@@ -877,21 +941,29 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
 
   function flushAgeRender() {
     ageRenderFrame = 0;
-    if (!active && !building) { ageDirtyBody = false; ageDirtyLimb = null; return; }
+    if (!active && !building) { ageDirtyBody = false; ageDirtyLimb = null; overallDirtyEntries.clear(); return; }
     if (ageDirtyBody) {
       for (const entry of entries) applyPreviewProportions(entry);
       syncHandsOnce();
       for (const entry of entries) syncAgeLimbs(entry, 'hand'); // Reassert only hands after pose ownership settles.
       relayoutForAge();
-    } else if (ageDirtyLimb) {
-      for (const entry of entries) syncAgeLimbs(entry, ageDirtyLimb === 'both' ? null : ageDirtyLimb); // Limb-only work: no full rig traversal or layout; feet update their own contact solver.
+    } else {
+      if (overallDirtyEntries.size) {
+        for (const entry of overallDirtyEntries) applyPreviewProportions(entry);
+        syncHandsOnce();
+        for (const entry of overallDirtyEntries) syncAgeLimbs(entry, 'hand');
+        relayoutForAge();
+      }
+      if (ageDirtyLimb) for (const entry of entries) syncAgeLimbs(entry, ageDirtyLimb === 'both' ? null : ageDirtyLimb);
     }
+    overallDirtyEntries.clear();
     ageDirtyBody = false;
     ageDirtyLimb = null;
   }
 
-  function queueAgeRender(axis) {
-    ageDirtyBody ||= axis === 'width' || axis === 'height' || axis === 'head' || axis.endsWith('Convergence');
+  function queueAgeRender(axis, entry = null) {
+    if (entry) overallDirtyEntries.add(entry);
+    else ageDirtyBody ||= axis === 'width' || axis === 'height' || axis === 'head' || axis.endsWith('Convergence');
     if (!ageDirtyBody && (axis === 'hand' || axis === 'foot')) ageDirtyLimb = ageDirtyLimb && ageDirtyLimb !== axis ? 'both' : axis;
     if (ageRenderFrame) return;
     if (typeof requestAnimationFrame !== 'function') { flushAgeRender(); return; } // Node/mobile diagnostics use the same path without a render loop.
@@ -922,6 +994,7 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
     ageRenderFrame = 0;
     ageDirtyBody = false;
     ageDirtyLimb = null;
+    overallDirtyEntries.clear(); // The stage switch immediately redraws every preview.
     ageMode = nextMode;
     stageBasisCache=null;
     manualViewInteraction = true;
@@ -995,10 +1068,6 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
     entry.spineGuide?.sync(showSpineGuides && entry === selected); // The seven bones and cyan neck endpoint follow the actual scale/hunch result immediately.
   }
 
-  // Same garment rule as gameplay NPCs (game.js): the NPC's authored leg
-  // garment, else basic pants for humanoids with a pants rig. Without this the
-  // lineup showed an empty hip-to-foot gap that gameplay always covers, which
-  // made Leg length and lanky species proportions impossible to judge.
   function pantsAssetUrl(path) {
     const value = String(path || '').trim();
     if (!value || /^(?:https?:|data:|blob:|\/)/i.test(value)) return value;
@@ -1008,9 +1077,8 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
   function attachPreviewPants(entry, frontCanvas) {
     const Renderer = window.PantsGarmentRenderer;
     if (!THREE || !entry?.feet || !entry.model || !Renderer?.attachToLegs) return null;
-    const exportNpc = portraitExportFor(entry.npc);
-    const equipped = Renderer.garmentForCosmetics?.(exportNpc.equippedCosmetics) || null;
-    const garmentId = equipped || (entry.npc?.noPants !== true && Renderer.hasRigFor?.(entry.species, entry.gender, 'pants_basic') ? 'pants_basic' : null);
+    const exportNpc = entry.portraitExport; // The profile and skinned leg garment read the same resolved wardrobe.
+    const garmentId = Renderer.garmentForCosmetics?.(exportNpc.equippedCosmetics);
     const source = garmentId ? window.HOBUNJI_PANTS_RIGS?.garments?.[garmentId] : null;
     if (!source) return null; // Pantless/unsupported species stay uncovered, exactly as in gameplay.
     const garmentRecord = clone(source);
@@ -1121,6 +1189,32 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 0);
     status('Exported Longoran male/female spine and gait settings; this editor does not alter the repository until reviewed and committed.');
+  }
+
+  function partAxesFor(entry, part) {
+    return window.HobunjiCharacterRigScale?.partScaleAxesFor?.(entry.species, entry.gender, part, entry.profile)
+      || { x: 1, y: 1, z: 1 };
+  }
+
+  function syncPartAxes(entry) {
+    for (const part of ['Hand', 'Foot']) {
+      const axes = partAxesFor(entry, part.toLowerCase());
+      for (const axis of ['X', 'Y', 'Z']) setSliderValue(part + axis, Math.round(axes[axis.toLowerCase()] * 10000) / 100, 100);
+    }
+  }
+
+  function editPartAxis(part, axis, raw) {
+    const entry = selected; // Capture the target before queuing a deferred preview repaint.
+    const percent = Number(raw);
+    if (!entry || ageMode !== 'adult' || !Number.isFinite(percent) || percent < 10 || percent > 400) return false;
+    const field = part.toLowerCase() + 'ScaleAxes';
+    const value = { ...partAxesFor(entry, part.toLowerCase()), [axis.toLowerCase()]: percent / 100 };
+    const scale = adultScaleForEntry(entry);
+    const anatomy = entry.profile?.anatomy || {}; // Preserve independent base model calibration in native exports.
+    if (!scale || host()?.setRigScale?.(entry.species, entry.gender, { ...scale, handScale: anatomy.handScale, footScale: anatomy.footScale, [field]: value }) == null) return false;
+    syncPartAxes(entry);
+    queueAgeRender('width', entry); // Refresh contacts and layout in one scheduled pass without rebuilding GLBs.
+    return true;
   }
 
   function partScaleFor(entry, part) {
@@ -1271,7 +1365,7 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
     ageConvergenceBasis = null; // Reset invalidates the cached reference.
     if (!active) return;
     if (window.confirm && !window.confirm('Reset every species/gender scale, Longoran posture/gait, every per-NPC hunch, and the global baby/toddler/child proportions to repository defaults? This discards local overrides.')) return;
-    ageProfiles=window.HobunjiCharacterAgeRigConfig?.repositoryProfiles?.() || {}; ageOverall={adult:1,baby:1,toddler:1,child:1}; stageBasisCache=null;
+    ageProfiles=window.HobunjiCharacterAgeRigConfig?.repositoryProfiles?.() || {}; overallDrafts.clear(); stageBasisCache=null;
     ageModifiers = repositoryAgeModifiers(); // Reset global baby/toddler/child modifiers alongside per-species edits.
     try { localStorage.removeItem(AGE_SAVE_KEY); } catch (_) {}
     syncAgeControls();
@@ -1317,6 +1411,8 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
         legLength: Math.round((scale.legLength || scale.y) * 10000) / 10000,
         handScale: Math.round(partScaleFor({ species: descriptor.species, gender: descriptor.gender, profile }, 'hand') * 10000) / 10000,
         footScale: Math.round(partScaleFor({ species: descriptor.species, gender: descriptor.gender, profile }, 'foot') * 10000) / 10000,
+        handScaleAxes: partAxesFor({ ...descriptor, profile }, 'hand'),
+        footScaleAxes: partAxesFor({ ...descriptor, profile }, 'foot'),
         head: Math.round(scale.head * 10000) / 10000,
         offsetY: Math.round(scale.offsetY * 10000) / 10000,
       };
@@ -1432,9 +1528,16 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
     return job;
   }
 
+  function previewPortraitExport(npc) {
+    const exportNpc = portraitExportFor(npc); // Normalize legacy data before the shared gameplay pants fallback runs.
+    const wardrobe = { ...npc, ...exportNpc, appliedDyes: { ...exportNpc.appliedDyes } }; // The fallback mutates its input; keep the repository record intact.
+    window.PantsGarmentRenderer?.ensureNpcPants?.(wardrobe);
+    return { ...exportNpc, equippedCosmetics: wardrobe.equippedCosmetics, appliedDyes: wardrobe.appliedDyes };
+  }
+
   async function buildPortrait(npc) {
     await window.NpcAvatarPreview.ensurePortraitCosmetics({ assetBase: '../../assets/', configBase: '../../config/' });
-    const exportNpc = portraitExportFor(npc);
+    const exportNpc = previewPortraitExport(npc);
     let profile = window.NpcAvatarPreview.buildProfileFromNpcExport(exportNpc);
     if (!profile) {
       profile = window.NpcAvatarPreview.randomProfile(`full-scale:${npc.id || npc.name}`, {
@@ -1500,6 +1603,7 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
       },
       modelWidth: baseWidth,
       modelHeight: baseWidth,
+      meshBudget: 'npc', // Use the live NPC portrait grid in the comparison.
       name: `${group.name}_portrait`,
       userData: { source: 'full-character-scale-preview', nonInteractive: true, npcId: rep.npc.id || null },
     });
@@ -1534,7 +1638,7 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
 
     previewRoot.add(group);
     const measuredBeltline = Number(feet?.restPosteriorY) / modelHeight; // Shared model/leg floor-local coordinates: the unscaled hip divided by the unscaled top.
-    entry = { ...rep, previewNpc, group, model, feet, spineGuide: null, profile: rigProfile, avatarProfile: avatar.profile, frontCanvas: avatar.front,
+    entry = { ...rep, previewNpc, group, model, feet, spineGuide: null, profile: rigProfile, avatarProfile: avatar.profile, portraitExport: avatar.exportNpc, frontCanvas: avatar.front,
       basePortraitY: model.position.y,
       beltlineBaseFraction: Number.isFinite(measuredBeltline) && measuredBeltline > .05 && measuredBeltline < .95 ? measuredBeltline : .5 }; // Never invent a modified hip ratio from authored portrait or leg scales. // Shared entry for late age-limb imports, the spine guide and pants.
     applyPreviewProportions(entry); // Preserve both age stage and independent portrait/leg authored scale at spawn.
@@ -1849,6 +1953,7 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
     ageRenderFrame = 0;
     ageDirtyBody = false;
     ageDirtyLimb = null;
+    overallDirtyEntries.clear();
     focusedEntryKey = null;
     manualViewInteraction = false; // A new editor session starts with a fresh no-interaction initial camera fit.
     selected = null;
@@ -2027,7 +2132,7 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
         selection: 'dropdown-only',
         panelVisible: !!document.getElementById(PANEL_ID)?.offsetParent, // Detects a hidden selector on mobile.
         ageMode,
-        individualAgeValues: clone(individualAgeValues(selected)), overallScalePreview: ageOverall[ageMode], bakedAgeProfiles: Object.keys(ageProfiles[ageMode]||{}).length,
+        individualAgeValues: clone(individualAgeValues(selected)), overallScalePreview: overallFactorFor(), overallScaleTarget: selected ? { key: selected.key, age: ageMode } : null, bakedAgeProfiles: Object.keys(ageProfiles[ageMode]||{}).length,
         globalAgeModifiers: clone(ageValues()), // Confirms the active phase is shared by every lineup avatar.
         selectedAgeAxes: selected ? clone(previewAgeValues(selected)) : null, // Effective selected width/height after convergence.
         ageConvergenceMeasuredProfiles: Object.keys(lineupConvergenceBasis()).length, // Mobile diagnostics: distinguish measured convergence from nominal fallback.
@@ -2049,7 +2154,7 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
         gait: selected?.species === 'longoran' ? selected.feet?.getStandingPoseDebug?.()?.gait || null : null, // Exposes actual Maskbound gait state in the preview.
         portraitLoading: window.__portraitPixelCacheDebug?.()?.imageLoads || null, // Displays slowest sprite and real request counts without devtools.
         portraitImageCache: window.__portraitPixelCacheDebug?.()?.images || null, // Cache size and evictions distinguish reload churn from network slowness.
-        latestChange: 'Dropdown-only adult/baby/toddler/child lineup with short neck, independent leg length and authored pants.',
+        latestChange: 'Overall Scale previews and bakes one species and gender at the current age. Adult hand and foot X/Y/Z scales are independent of the body and retain gameplay contact geometry.',
       }),
     });
     return true;

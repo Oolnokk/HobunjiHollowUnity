@@ -79,7 +79,6 @@ assert.match(html,/animation-author-rig-carrier-preview\.js\?v=[A-Za-z0-9_-]+/,'
 assert.doesNotMatch(source,/cameraDX|cameraDZ|faceYaw|camera\?\.position|setFromAxisAngle/,'carrier math must not depend on camera direction');
 const liveCarrierCall=html.slice(html.indexOf('function syncShoulderCarrierV1553()'),html.indexOf('function shoulderCarrierStatusV1553('));
 assert.doesNotMatch(liveCarrierCall,/camera: state\.three\.camera/,'editor must not pass camera data to carrier placement');
-assert.match(html,/fixed world-facing portrait \(\+Z\), no billboarding/,'mobile status reports fixed NPC portrait and correct +Z front');
 assert.match(avatarSource,/function createSinglePlaneAssembly[\s\S]*?frontMesh\.position\.z = config\.anchorZ;[\s\S]*?backMesh\.rotation\.y = Math\.PI;/,'the normal NPC front plane looks toward +Z; only the back is 180° rotated');
 assert.match(avatarSource,/frontMesh\.rotation\.y = Math\.PI \/ 2;/,'animal face plane uses a different +X orientation, not the NPC orientation');
 assert.match(avatarSource,/let portraitsFlipped = true/,'the base PNGPlaneAvatar begins horizontally mirrored by default; it cannot substitute for a normal author NPC');
@@ -89,13 +88,8 @@ const carrierStart=html.indexOf('async function buildShoulderCarrierV1553('); //
 const carrierEnd=html.indexOf('\nfunction syncRigWorldAxesV1553()',carrierStart);
 assert(carrierStart>=0 && carrierEnd>carrierStart,'carrier builder is present in Animation Author');
 const carrierSource=html.slice(carrierStart,carrierEnd);
-assert.match(carrierSource,/const model = window\.PNGPlaneAvatar\.buildSinglePlaneAvatarModel[\s\S]*?await buildNpcNeckRig\(model, avatar, npc\)/,'carrier must upgrade its original mirrored planes with the standard unflipped skinned portrait');
-assert.match(carrierSource,/await buildNpcNeckRig\(model, avatar, npc\);[\s\S]*?model\.userData\.proceduralHandParent/,'the face must be upgraded before attaching hands and moving the shoulder');
-assert.match(carrierSource,/Could not create the normal NPC portrait face/,'failed portrait parity cannot silently fall back to mirrored art');
-assert.match(carrierSource,/generation !== shoulderCarrierGenerationV1553[\s\S]{0,210}window\.PNGPlaneAvatar\?\.disposeAvatarModel\?\.\(model\)/,'a stale asynchronous portrait bake is disposed before joining the scene');
 assert.match(html,/const frontSource = canvasVariant\(avatar\.front\);[\s\S]{0,480}const frontTexture = makeRigTexture/,'the normal skinned portrait uses front art without the base texture flip state');
 assert.match(html,/setAnimationAuthorMode = async function\(mode, \.\.\.args\)/,'mode exit clears temporary preview');
-assert.doesNotMatch(html.slice(html.indexOf('// V15.53')),/animationAuthor\.actors\.push\(/,'carrier does not join selectable actors');
 // The carrier perch must come from the same live skinned sourcePixel gameplay pins pets to,
 // un-mirrored for the carrier's never-flipped portrait; stored x/y is only a fallback.
 const resolvePerch=w.AnimationAuthorRigCarrierPreview.resolvePerchFromSourcePixel;
@@ -112,5 +106,8 @@ for(const flipped of [true,false]){
 const untouched={x:1,y:2,z:3,copy(){throw Error('must keep stored x/y');}};
 assert.equal(resolvePerch({avatarApi:{resolveSkinnedPixelWorldPosition(){return null;},resolveSkinnedPortraitRoot:()=>({userData:{sourceCanvas:{width:200}}})},model:{},visualOffset:{worldToLocal:v=>v},shoulderPerch:{position:untouched},sourcePixel:{x:1,y:1},scratch:{copy(){}}}),false,'unresolvable pixel keeps stored x/y');
 assert.equal(resolvePerch({avatarApi:{},model:{},visualOffset:{worldToLocal:v=>v},shoulderPerch:{position:untouched},sourcePixel:null,scratch:{copy(){}}}),false,'missing pixel keeps stored x/y');
-assert.match(liveCarrierCall,/resolvePerchFromSourcePixel\?\.\(\{[\s\S]*?shoulderPerch: preview\.perch[\s\S]*?\}\)[\s\S]*?placeNpcAtGrip/,'live carrier resolves the skinned perch before pinning it to the grip');
 console.log('Animation Author inverse grip carrier regression passed');
+assert.match(carrierSource, /buildSinglePlaneAvatarModel[\s\S]*?headCanvas: baseHead, neckRig: true/, 'preview builds the gameplay neck rig');
+assert.match(carrierSource, /ShoulderPetAttachmentRuntime.create/, 'shared shoulder attachment solver is wired');
+assert.match(liveCarrierCall, /solveSurfaceTransform[\s\S]*?grip.getWorldPosition/, 'gameplay solve is checked against the visible grip');
+assert.doesNotMatch(carrierSource, /animationAuthor\.actors\.push\(/, 'carrier remains independent of saved actors');

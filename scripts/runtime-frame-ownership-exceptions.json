@@ -672,7 +672,7 @@
     "function": "scheduleSelectedLayout",
     "reason": "Guarded one-shot callback batches selected-character layout changes; checks active/building and never reschedules itself.",
     "migrationStage": "not-planned",
-    "line": 866
+    "line": 933
   },
   {
     "file": "docs/js/character-scale-comparison.js",
@@ -681,6 +681,6 @@
     "function": "queueAgeRender",
     "reason": "Guarded one-shot callback coalesces multiple age inputs; flushAgeRender clears the pending handle and does not recurse.",
     "migrationStage": "not-planned",
-    "line": 892
+    "line": 964
   }
 ]

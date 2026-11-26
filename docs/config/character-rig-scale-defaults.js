@@ -98,6 +98,20 @@
     return raw === 'female' || raw === 'f' ? 'female' : 'male';
   };
   const scaleFor = (species, gender) => VALUES[`${normalizeSpecies(species)}::${normalizeGender(gender)}`] || { x: 1, y: 1, head: 1, offsetY: 0 };
+  const adultPartAxes = new Map(); // Snapshot the previous visual size once, independently of editable body proportions.
+  for (const [key, body] of Object.entries(UPLOADED_SCALE_RESTORE)) {
+    const mean = (body.x + body.y) / 2;
+    const species = key.split('::')[0];
+    const oldHand = species === 'longoran' ? LONGORAN_HAND_SCALE_AXES : species === 'nuhongan' ? NUHONGAN_HAND_SCALE_AXES : null;
+    const oldFoot = species === 'longoran' ? LONGORAN_FOOT_SCALE_AXES : species === 'nuhongan' ? NUHONGAN_PART_SCALE_AXES : null;
+    const uniform = prior => {
+      const size = mean * (prior ? (prior.x + prior.y + prior.z) / 3 : 1);
+      return Object.freeze({ x: size, y: size, z: size });
+    };
+    adultPartAxes.set(key, { hand: uniform(oldHand), foot: uniform(oldFoot) });
+  }
+  const neutralPartAxes = Object.freeze({ x: 1, y: 1, z: 1 }); // Model baseline for unregistered actors.
+  const partAxesFor = (species, gender, part) => adultPartAxes.get(`${normalizeSpecies(species)}::${normalizeGender(gender)}`)?.[part] || neutralPartAxes;
   const uniformScaleFor = (species, gender) => scaleFor(species, gender).x; // Back-compat for readers that only need one scalar.
 
   function applyMaoaoFootScaleTuning() {
@@ -125,5 +139,6 @@
     applyMaoaoFootScaleTuning,
     scaleFor,
     uniformScaleFor,
+    partAxesFor,
   });
 })();

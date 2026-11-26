@@ -584,8 +584,7 @@
     return false;
   }
 
-  // Body width/height remain separately authored, but hand and foot geometry
-  // compensates to their arithmetic mean uniformly in the body scale owner's frame.
+  // Find the scale owner so limb geometry can cancel inherited body proportions.
   function characterScaleOwnerFor(node) {
     for (let current = node; current; current = current.parent) {
       if (current.userData?.hobunjiCharacterRigScaleState?.factor || current.userData?.hobunjiCharacterPartScaleFactors) return current;
@@ -598,16 +597,23 @@
     return owner?.userData?.hobunjiCharacterRigScaleState?.factor || owner?.userData?.hobunjiCharacterPartScaleFactors || null;
   }
 
+  function partScaleAxesFor(species, gender, part, profile = profileFor(species, gender)) {
+    const authored = profile?.anatomy?.[part === 'hand' ? 'handScaleAxes' : 'footScaleAxes']; // Live axis editing replaces the fixed adult default.
+    return authored || window.HobunjiCharacterRigScaleDefaults?.partAxesFor?.(species, gender, part) || NEUTRAL_PART_AXES;
+  }
+
+  const NEUTRAL_PART_AXES = Object.freeze({ x: 1, y: 1, z: 1 }); // Standalone tools may omit the defaults script.
+
   // Authored part axes act in the floor-parent frame before joint rotations.
   // Conjugating through the joint chain keeps the part origin/arm reach fixed
   // and gives the same size during idle, grip rotation, and leg animation.
-  function installPartScaleAxes(THREE, node, reference, axes, uniformCharacterScale = false) {
-    if ((!axes && !uniformCharacterScale) || !node?.updateMatrix || !reference) return false;
+  function installPartScaleAxes(THREE, node, reference, axes, independentCharacterScale = false) {
+    if ((!axes && !independentCharacterScale) || !node?.updateMatrix || !reference) return false;
     const initial = (typeof axes === 'function' ? axes() : axes) || { x: 1, y: 1, z: 1 }; // Missing authored axes still require uniform body compensation.
     const values = ['x', 'y', 'z'].map(axis => Number(initial[axis])); // Additional explicit part-axis tweaks stay separate from body X/Y.
     if (!values.every(value => Number.isFinite(value) && value > 0)) return false;
     const authored = new THREE.Matrix4().makeScale(...values); // Legacy per-part authoring.
-    const uniform = new THREE.Matrix4(); // Shared mean-scale compensation in the body owner's axes.
+    const bodyInverse = new THREE.Matrix4(); // Counteracts inherited body sizing around the fixed part origin.
     const ancestry = new THREE.Matrix4(); // Reused joint chain, without positional offsets.
     const inverse = new THREE.Matrix4(); // Reused reverse joint chain for size-only changes.
     const correction = new THREE.Matrix4(); // Reused part-local transform.
@@ -632,7 +638,7 @@
     node.updateMatrix = function updateAuthoredPartMatrix() {
       update.call(this);
       if (window.HobunjiAttackEditorHandCalibrationMode?.active) return; // Calibration mode keeps the existing neutral comparison.
-      const current = typeof axes === 'function' ? axes() : axes;
+      const current = (typeof axes === 'function' ? axes() : axes) || NEUTRAL_PART_AXES;
       if (current && (Number(current.x) !== values[0] || Number(current.y) !== values[1] || Number(current.z) !== values[2])) {
         const next = ['x', 'y', 'z'].map(axis => Number(current[axis]));
         if (!next.every(value => Number.isFinite(value) && value > 0)) return;
@@ -641,14 +647,13 @@
       }
       let changed = false;
       if (values[0] !== 1 || values[1] !== 1 || values[2] !== 1) changed = applyInFrame(this, reference, authored);
-      if (uniformCharacterScale) {
+      if (independentCharacterScale) {
         if (!scaleOwner) scaleOwner = characterScaleOwnerFor(reference);
         const factors = scaleOwner?.userData?.hobunjiCharacterRigScaleState?.factor || scaleOwner?.userData?.hobunjiCharacterPartScaleFactors;
         const x = Number(factors?.x), y = Number(factors?.y);
-        if (x > 0 && y > 0 && Number.isFinite(x) && Number.isFinite(y) && Math.abs(x - y) > 1e-9) {
-          const mean = (x + y) * 0.5; // User-selected shared uniform size for every character hand and foot.
-          uniform.makeScale(mean / x, mean / y, mean / x);
-          changed = applyInFrame(this, scaleOwner, uniform) || changed;
+        if (x > 0 && y > 0 && Number.isFinite(x) && Number.isFinite(y) && (x !== 1 || y !== 1)) {
+          bodyInverse.makeScale(1 / x, 1 / y, 1 / x);
+          changed = applyInFrame(this, scaleOwner, bodyInverse) || changed;
         }
       }
       if (changed) this.matrix.setPosition(this.position); // Preserve hand grips, ankle locations and attachment origins.
@@ -683,6 +688,7 @@
     rigScaleRootFor,
     rigScaleInheritedFor,
     bodyScaleFactorsFor,
+    partScaleAxesFor,
     installProfileDefaults,
     installPartScaleAxes,
   });

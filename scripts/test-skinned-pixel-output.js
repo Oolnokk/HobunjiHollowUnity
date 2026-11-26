@@ -16,11 +16,11 @@ class Matrix4 {
 }
 const identity = [1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1]; // Root and neck keep their bind-space points unchanged.
 const scaleHead = [2,0,0,0,0,3,0,0,0,0,1,0,.1,-.2,0,1]; // Distinct head scale and offset make neck-only sampling visibly wrong.
-const plane = {isSkinnedMesh:true,geometry:{userData:{blendHeight:.04}},bindMatrix:new Matrix4(1,1,1,4,5,0),bindMatrixInverse:new Matrix4(1,1,1,-4,-5,0),skeleton:{bones:[{},{},{}],boneMatrices:[...identity,...identity,...scaleHead],update(){}},updateMatrixWorld(){assert.equal(ancestorsFresh,true);},localToWorld(p){p.x+=10;p.y+=20;p.z+=30;return p;}}; // Nonidentity bind/world transforms detect accidental double world application.
+const plane = {isSkinnedMesh:true,position:new Vector3(),geometry:{userData:{blendHeight:.04}},bindMatrix:new Matrix4(1,1,1,4,5,0),bindMatrixInverse:new Matrix4(1,1,1,-4,-5,0),skeleton:{bones:[{},{},{}],boneMatrices:[...identity,...identity,...scaleHead],update(){}},updateMatrixWorld(){assert.equal(ancestorsFresh,true);},localToWorld(p){p.x+=10;p.y+=20;p.z+=30;return p;}}; // Nonidentity bind/world transforms detect accidental double world application.
 let ancestorsFresh = false; // A head pose can be queried before Three's normal world render updates its parents.
 const avatar = {userData:{portraitModelWidth:2,portraitModelHeight:2,sourceCanvas:{width:100,height:100},neckRig:{available:true,skinnedPlane:plane,neckLocal:{y:0},headScaleJoint:{}}},updateWorldMatrix(){ancestorsFresh=true;},updateMatrixWorld(){}}; // Minimal canonical PNG rig with the separate head-scale bone.
 const THREE = {Vector3,Matrix4}; // Only the math used by this production pixel path is required.
-const sandbox = {window:{THREE},THREE,localStorage:{getItem(){return null;},setItem(){}}}; // Runs the base module, then its gameplay parity adapter, in one realm.
+const sandbox = {window:{THREE},localStorage:{getItem(){return null;},setItem(){}}}; // Runs the base module, then its gameplay parity adapter, in one realm.
 vm.createContext(sandbox);
 vm.runInContext(fs.readFileSync('docs/js/png-plane-avatar.js','utf8'),sandbox);
 function exercise(label){

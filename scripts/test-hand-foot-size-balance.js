@@ -83,6 +83,6 @@ assert(grips.secondaryGripSpanForTool('hatchet')?.enabled, 'future deliberate re
 
 assert.match(scratchConfigSource, /"sizeBalanceMultiplier": 1\.2/, 'shared feet config must enlarge all species by 20%');
 assert.match(feetSource, /const initialFootScale = footScaleMultiplierForSpecies\(speciesId, gender\)/, 'foot size starts from the authored species/gender multiplier');
-assert.match(feetSource, /const radius = modelHeight \* footHeightFraction \* 0\.5 \* initialFootScale \* sizeBalanceMultiplier/, 'foot radius still includes the shared 20% multiplier without compounding later slider edits');
+assert.match(feetSource, /const radius = limbModelHeight \* footHeightFraction \* 0\.5 \* initialFootScale \* sizeBalanceMultiplier/, 'foot radius still includes the shared 20% multiplier without compounding later slider edits');
 
 console.log('hand/foot size midpoint + secondary-grip reset PASS');
