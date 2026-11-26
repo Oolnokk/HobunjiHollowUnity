@@ -48,15 +48,13 @@ vm.runInContext(fs.readFileSync('docs/js/creature-ground-anchor.js', 'utf8'), co
 vm.runInContext(fs.readFileSync('docs/js/pingdort-registration.js', 'utf8'), context);
 const pingdort = context.PingdortRegistration.PRESENTATION; // The native field model also supplies the rig tool's preview proportions.
 const perchedBottomRatio = 413 / 494; // Last opaque row of the authored perched sprite, expressed as its lower edge.
-for (const width of [pingdort.modelWidth, context.SCRATCHBONES_CONFIG.game.livestock.animalWidths.pingdort]) {
-  const height = width * pingdort.spriteAspect; // Field and farm use slightly different native widths.
-  for (const sizeClass of ['small', 'medium', 'large']) {
-    const scaleY = context.CreatureGenetics.creatureSizeScale('pingdort', sizeClass).y; // The world scales both the sprite and its local correction.
-    const lift = context.CreatureGenetics.creatureGroundOffset('pingdort', sizeClass); // Absolute world distance from support to the actor origin.
-    const offset = context.CreatureGroundAnchor.planeOffset(height, perchedBottomRatio, lift / scaleY);
-    const footY = lift + (offset + (.5 - perchedBottomRatio) * height) * scaleY;
-    assert(Math.abs(footY) < 1e-9, `Pingdort ${width}/${sizeClass} lands on the support surface`);
-  }
+const pingdortHeight = pingdort.modelWidth * pingdort.spriteAspect; // Base sprite height shared across companion sizes.
+for (const sizeClass of ['small', 'medium', 'large']) {
+  const scaleY = context.CreatureGenetics.creatureSizeScale('pingdort', sizeClass).y; // The world scales both the sprite and its local correction.
+  const lift = context.CreatureGenetics.creatureGroundOffset('pingdort', sizeClass); // Absolute world distance from support to the actor origin.
+  const offset = context.CreatureGroundAnchor.planeOffset(pingdortHeight, perchedBottomRatio, lift / scaleY);
+  const footY = lift + (offset + (.5 - perchedBottomRatio) * pingdortHeight) * scaleY;
+  assert(Math.abs(footY) < 1e-9, `Pingdort companion ${sizeClass} lands on the support surface`);
 }
 
 const skeeriWidths = { small: 0.65, medium: 1.15, large: 2.2 }; // Real ruined Skeeri native model widths used for class-proportional floor lift.

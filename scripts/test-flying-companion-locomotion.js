@@ -15,6 +15,12 @@ assert.equal(bird._companionBirdMotion.mode, 'flight');
 assert.equal(bird._companionBirdMotion.lift, .65);
 assert.equal(update(bird, .05, 5, false).mode, 'hop');
 assert(bird._companionBirdMotion.lift <= .13, 'blocked flight uses short folded-wing hops');
+const liftFor = context.window.TzatzulLiveVisuals.companionLift; // Both placement owners read the same flight and hop state.
+assert(liftFor(bird, 'hop') > 0);
+assert.equal(liftFor(bird, 'flight'), 0, 'hop height stays out of the smoothed flight path');
+const sampledHops = Array.from({ length: 30 }, () => update(bird, 1 / 30, 5, false).lift); // Typical mobile frame timing while continually moving.
+assert(sampledHops.filter(height => height === 0).length >= 4, 'each repeated hop has a planted interval while walking');
+assert.equal(update(bird, .05, 0, true).lift, 0, 'stopping a hop plants the feet even when there is room to fly');
 assert.equal(update(bird, .05, 0, false).mode, 'perched');
 update(bird, .05, 5, true);
 assert.equal(update(bird, .05, 0, true, true).lift, 0, 'combat/knockback/recovery cancel locomotion height');

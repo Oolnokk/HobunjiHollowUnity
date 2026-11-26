@@ -5454,8 +5454,9 @@
         // by an earlier creature.
         if (!def.swarm) resolveCreatureGroundAnchorRatio(def.sprites.idle, (bottomRatio) => { // A hovering swarm has no feet to anchor.
           if (c.avatarRef !== avatarRef) return; // Ignore an opacity scan that completes after this visual rig was retired.
-          const localFloorLift = creatureKey === 'pingdort' && c.stableRole !== 'shoulderPet'
-            ? groundLift / sizeScale.y : undefined; // Match an unattached Pingdort's visible foot to its size-specific floor lift.
+          const localFloorLift = creatureKey === 'pingdort' && c.stableRole === 'companion'
+            ? groundLift / sizeScale.y : undefined; // Match the flat companion pose to its size-specific floor lift.
+          if (creatureKey === window.TzatzulRegistration?.HATCHLING_KIND) avatarRef.groundAnchorBottomRatio = bottomRatio; // The articulated hatchling hinges camera tilt at this same opaque foot edge.
           const offsetY = creaturePlaneGroundOffset(modelHeight, bottomRatio, localFloorLift);
           if (avatarRef.frontPlane) avatarRef.frontPlane.position.y = offsetY;
           if (avatarRef.backPlane) avatarRef.backPlane.position.y = offsetY;
@@ -6840,8 +6841,7 @@
           : c._cliffClimb ? c._cliffClimb.surfaceY
           : Number.isFinite(dynamicSurfaceY) ? dynamicSurfaceY
           : (g[row]?.[col] ? tileSurfaceYInArea(g[row][col], c.areaId) : 0);
-        const birdLift = c.stableRole === 'companion' && !c.prone && !(c.knockbackT > 0) && !c._knockbackLedgeFall && !c.onBranch && !c.tzatzulCapturedBy
-          ? (c._companionBirdMotion?.lift || 0) : 0; // Actual rendered body height for low flight and folded-wing hops.
+        const birdLift = window.TzatzulLiveVisuals?.companionLift?.(c, 'flight') || 0; // Hop lift is composed at draw time, outside the terrain interpolation.
         const surfY = knockbackVisualSurfaceY(c, ordinarySurfY) + birdLift;
         const grp = c.avatarRef.group;
         window.BurningAfflictionVfx?.syncEntity?.(c, grp); // Burning Health presentation follows the same live creature group used by every avatar update.

@@ -119,7 +119,7 @@
     const initial=/^#[0-9a-f]{6}$/i.test(String(requested||''))?requested:null;
     let recolored=null; // A fallback to authored PNGs is safer than tinting the white eye when canvas compositing is unavailable.
     if(initial)try{recolored=recoloredImages(images,initial);}catch(error){debug.failures++;debug.lastError=String(error);}
-    const instance=window.FlyingAnimalRig.create({...settings,perchSpline:undefined},recolored||images); // World perches use the native folded sprite. The authoring spline is for curled attachment poses.
+    const instance=window.FlyingAnimalRig.create(settings,recolored||images); // Wild perches use the authored curl. The live companion presenter flattens its own rig.
     let displayedColor=recolored?initial:null; // Tracks the exact color already baked into this rig's PNG textures, not a multiplied material tint.
     const poseMaterials=instance.bodyMaterials; // References the existing flying/perched/wings materials; gripping shares perched.
     instance.restoreTint=(nextHex=displayedColor)=>{

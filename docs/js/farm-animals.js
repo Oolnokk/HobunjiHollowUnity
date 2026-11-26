@@ -1199,8 +1199,7 @@
     // prism, and shared with the wild/companion creature path for the
     // same kind) landing on the exact same pixels as before.
     deps.resolveCreatureGroundAnchorRatio(baseUrl, (bottomRatio) => {
-      const localFloorLift = kind === 'pingdort' ? groundLift / sizeScale.y : undefined; // Park the folded feet on the farm surface at every size.
-      const offsetY = deps.creaturePlaneGroundOffset(ANIMAL_H, bottomRatio, localFloorLift);
+      const offsetY = deps.creaturePlaneGroundOffset(ANIMAL_H, bottomRatio);
       if (avatarRef.frontPlane) avatarRef.frontPlane.position.y = offsetY;
       if (avatarRef.backPlane) avatarRef.backPlane.position.y = offsetY;
     });
