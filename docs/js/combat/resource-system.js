@@ -274,7 +274,7 @@
     mirroredHealth: Object.freeze({ resource: "health", conversionRate: 1, normalPriority: 30 }),
     currentStamina: Object.freeze({
       resource: "stamina", conversionRate: 2, normalPriority: 5, beneficialPriority: 120,
-      requiresBeneficialTransaction: true, benefitsTransaction: tx => tx?.actionKind === "combatDodge" || /\bdodge\b/i.test(String(tx?.reason || '')),
+      requiresBeneficialTransaction: true, benefitsTransaction: isDodgeTransaction,
     }),
     temperedFooting: Object.freeze({ resource: "footing", conversionRate: 1, normalPriority: 60 }),
     pactHealth: Object.freeze({
@@ -508,6 +508,7 @@
     const inAir = typeof airborne === "boolean" ? airborne : !!(
       entity?._freeJump?.phase === "air" ||
       entity?._mountHop ||
+      (entity === window.Combat?.deps?.player && window.Mounts?.rideState === "mounted" && window.Mounts?.rideEntity?._mountHop) ||
       (entity?.lunging && (entity.lungeHopUnits > .01 || entity.lungeDirectFlightStrength > .01)) ||
       (entity?._banditLunging && entity._banditLungeAirborne)
     );
@@ -1134,12 +1135,18 @@
     return addAffliction(entity, id, amount);
   }
 
+  function isDodgeTransaction(tx = {}) {
+    const kind = String(tx.actionKind || ""); // Explicit action classifications take precedence over legacy reason labels.
+    const reason = String(tx.reason || "");
+    return kind === "combatDodge" || (!kind && /\bdodge\b/i.test(reason) && !/\bpassive\b/i.test(reason));
+  }
+
   function spendStamina(entity, amount, reason = "action", transaction = {}) {
     if (!entity) return { spent: 0, excess: 0, enhancedPaid: 0, consumed: [], tempoMultiplier: 1, panicSpent: 0 };
     entity.lastAttackAttemptAt = nowMs();
     const actionKind = String(transaction?.actionKind || ''); // Structured action kind shared by resource-specific stamina spending.
     const label = String(reason || ''); // Legacy reason labels preserve dodge detection for untyped actions.
-    const dodge = actionKind === 'combatDodge' || /\bdodge\b/i.test(label); // Also covers the ordinary roll's second somersault payment.
+    const dodge = isDodgeTransaction({ actionKind, reason: label }); // Legacy somersaults still qualify; passive Blink upkeep does not.
     amount = Math.max(0, Number(amount) || 0) * timedDebuffModifier(entity, "staminaCost");
     if (entity === window.Combat?.deps?.player) {
       const attacking = !dodge && (/^(combatCombo|combatQuickAttack|offensiveHeldCharge|offensiveHeldFlurry|rangedWeaponLoad|rangedWeaponFire|combatWeaponAttack)$/.test(actionKind) || (!actionKind && /attack|swing|strike|breaker|flurry|quick|jab|stab|shot|reload|heavy/i.test(label)));
