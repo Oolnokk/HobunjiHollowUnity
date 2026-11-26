@@ -61,8 +61,9 @@ assert.doesNotMatch(grips, /function inverseTransform|function composePrimaryInv
 assert.match(grips, /const point = gripPointOnAxis\(ensureTool\(value\)\?\.customGripAxis, itemZ\)/, 'secondary hand span must follow the authored item-local haft axis');
 assert.match(grips, /position: itemPointToHolder\(value, point, context, identity\)/, 'secondary hand span must resolve through the shared item-space placement mapping');
 assert.match(grips, /function heightMultiplierForTool/, 'held-item metadata must expose a per-weapon height multiplier');
-assert.match(grips, /1 \+ \(heightRatio - 1\) \* heightMultiplier/, 'effective weapon scale must blend calculated character-height ratio by the authored multiplier');
-assert.match(grips, /editorFieldPair\(scaleFields, 'handToolHeightMultiplier', 'Height multiplier'/, 'Attack Editor grip UI must expose the weapon height multiplier');
+assert.match(grips, /1\+\(characterHeightRatio\(speciesId,gender,rigScaleY\)-1\)\*multiplier/, 'explicitly enabled weapon scaling must blend the calculated height ratio by its multiplier');
+assert.match(grips, /if\(multiplier===0\)return 1/, 'default inactive scaling must not consult character height');
+assert.match(grips, /editorFieldPair\(scaleFields, 'handToolHeightMultiplier', 'Species scale multiplier'/, 'Attack Editor grip UI must expose the weapon height multiplier');
 assert.doesNotMatch(editor, /id="poseOrbitScale"|orbitScalesDownloadBtn|orbitScalesSaveOverrideBtn|orbitScalesClearOverrideBtn/, 'retired per-species weapon scale authoring controls must not remain in the Attack Editor');
 
 assert.match(direct, /id="handGripContextSelect"[\s\S]*Melee grip[\s\S]*Ranged grip/, 'grip UI must expose independent melee and ranged grip sets.');
