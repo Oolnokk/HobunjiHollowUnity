@@ -229,7 +229,12 @@
     if (ageApi?.profileFor) {
       const {species,gender} = avatarSpeciesAndGender(options);
       const individual = ageApi.profileFor(stage,species,gender);
-      if (individual) { width=individual.width; height=individual.height; head=individual.head; return {body:height,height,width,head,headFactor:head/height,headFactorX:head/width}; } // Already baked; never apply convergence twice.
+      if (individual) {
+        const adult = window.HobunjiCharacterRigScale?.scaleFor?.(species,gender) || window.HobunjiCharacterRigScaleDefaults?.scaleFor?.(species,gender);
+        const resolved = ageApi.relativeProfile?.(individual,adult) || individual;
+        width=resolved.width; height=resolved.height; head=resolved.head;
+        return {body:height,height,width,head,headFactor:head/height,headFactorX:head/width};
+      } // Already baked; never apply convergence twice.
     }
     const widthConvergence = record.childWidthConvergence ?? options.childWidthConvergence ?? cfg().childWidthConvergence ?? 0; // Explicit family stage overrides the generic child setting.
     const heightConvergence = record.childHeightConvergence ?? options.childHeightConvergence ?? cfg().childHeightConvergence ?? 0;

@@ -149,6 +149,9 @@
   function allAgeIdentities() {
     const keys = Object.keys(window.HobunjiCharacterRigScaleDefaults?.uploadedScaleRestoreValues || {});
     const map = new Map(keys.map(key=>{const [species,gender]=key.split('::');return [key,{key,species,gender}];}));
+    for (const mode of ['baby','toddler','child']) for(const key of Object.keys(ageProfiles[mode]||{})) {
+      if(!map.has(key)){const [species,gender]=key.split('::');map.set(key,{key,species,gender});}
+    }
     for (const entry of entries) map.set(entry.key, entry);
     return [...map.values()];
   }
@@ -161,14 +164,22 @@
   function stageRows(mode = ageMode) {
     return Object.fromEntries(allAgeIdentities().map(entry=>[entry.key,individualAgeValues(entry,mode)]));
   }
-  function previewAgeValues(entry) {
+  function adultScaleForEntry(entry) {
+    return window.HobunjiCharacterRigScale?.scaleFor?.(entry.species,entry.gender,entry.profile) || window.HobunjiCharacterRigScaleDefaults?.scaleFor?.(entry.species,entry.gender);
+  }
+  function currentStageReference(mode=ageMode) {
+    const api=window.HobunjiCharacterAgeRigConfig;
+    const rows=Object.fromEntries(allAgeIdentities().map(entry=>[entry.key,api.relativeProfile(individualAgeValues(entry,mode),adultScaleForEntry(entry))]));
+    return api.stageConvergenceBasis(rows,lineupConvergenceBasis()); // Measure the currently effective shape, including any frozen adult reference.
+  }
+  function previewAgeValues(entry, authored=adultScaleForEntry(entry)) {
     const api = window.HobunjiCharacterAgeRigConfig;
     const row = individualAgeValues(entry);
     if (ageMode === 'adult' || !api?.convergeProfile) return ageValues(); // Legacy test/host fallback retains global behavior.
     const strength = ageValues();
-    if (!(strength.widthConvergence || strength.heightConvergence)) return api.scaledProfile(row,ageOverall[ageMode]);
-    if (!stageBasisCache) stageBasisCache = api.stageConvergenceBasis(stageRows(),lineupConvergenceBasis());
-    return api.scaledProfile(api.convergeProfile(row,stageBasisCache[entry.key],strength),ageOverall[ageMode]);
+    if (!(strength.widthConvergence || strength.heightConvergence)) return api.scaledProfile(api.relativeProfile(row,authored),ageOverall[ageMode]);
+    if (!stageBasisCache) stageBasisCache = currentStageReference();
+    return api.scaledProfile(api.relativeProfile(api.convergeProfile(row,stageBasisCache[entry.key],strength),authored),ageOverall[ageMode]);
   }
   function editIndividualAge(axis, raw) {
     if (!selected || ageMode === 'adult') return;
@@ -183,9 +194,11 @@
     if (ageMode === 'adult') return;
     const api = window.HobunjiCharacterAgeRigConfig;
     const rows = stageRows();
-    const basis = api?.stageConvergenceBasis?.(rows,lineupConvergenceBasis());
-    if (!basis) return;
-    ageProfiles[ageMode] = Object.fromEntries(Object.entries(rows).map(([key,row])=>[key,api.convergeProfile(row,basis[key],ageValues())]));
+    if (!api?.stageConvergenceBasis) return;
+    const basis = currentStageReference();
+    const next = Object.fromEntries(Object.entries(rows).map(([key,row])=>[key,api.convergeProfile(row,basis[key],ageValues())]));
+    if(Object.values(next).some(row=>[row.width,row.height].some(v=>!Number.isFinite(v)||v<.01||v>20))) {status('Cannot bake convergence: a resulting value exceeds the 1–2000% individual bounds. Reduce convergence strength.');return;}
+    ageProfiles[ageMode] = next;
     ageValues().widthConvergence=0; ageValues().heightConvergence=0; stageBasisCache=null;
     persistAgeModifiers(); syncAgeControls(); queueAgeRender('width'); status('Convergence baked into individual values; sliders reset to zero.');
   }
@@ -206,12 +219,19 @@
       for (const entry of identities) {
         const species=window.hobunjiTransformSpeciesId?.(entry.species)||entry.species;
         const key=species+'::'+entry.gender;
-        if (!canonical.has(key)) canonical.set(key,{species,gender:entry.gender,scale:rig.scaleFor(entry.species,entry.gender,entry.profile)});
+        if (!canonical.has(key)) {
+          const scale=rig.scaleFor(entry.species,entry.gender,entry.profile);
+          const anatomy=entry.profile?.anatomy || rig.profileFor?.(species,entry.gender)?.anatomy || {};
+          canonical.set(key,{species,gender:entry.gender,scale:{...scale,handScale:anatomy.handScale,footScale:anatomy.footScale}});
+        }
       }
       const updates=[...canonical.values()].map(({species,gender,scale})=>({species,gender,next:{...scale,x:scale.x*factor,y:scale.y*factor,legLength:(scale.legLength||scale.y)*factor,head:scale.head*factor}}));
       if(updates.some(({next})=>[next.x,next.y,next.legLength,next.head].some(v=>!Number.isFinite(v)||v<.1||v>4))) { status('Cannot bake adult overall scale: one or more adult rig values would exceed the existing 10–400% bounds. Choose a smaller adjustment.'); return; }
       // Adult overall resize must not change the already-authored size of any younger stage.
-      const compensated=Object.fromEntries(['baby','toddler','child'].map(mode=>[mode,Object.fromEntries(Object.entries(stageRows(mode)).map(([key,row])=>[key,api.scaledProfile(row,1/factor)]))]));
+      const compensated=Object.fromEntries(['baby','toddler','child'].map(mode=>[mode,Object.fromEntries(identities.map(entry=>{
+        const adult=adultScaleForEntry(entry); const row=api.relativeProfile(individualAgeValues(entry,mode),adult);
+        return [entry.key,{...api.scaledProfile(row,1/factor),adultReference:api.rigReference({x:adult.x*factor,y:adult.y*factor,head:adult.head*factor})}];
+      }))])); // Store the new adult reference so same-site gameplay preserves young dimensions even before deploying the adult rig export.
       if(Object.values(compensated).some(rows=>Object.values(rows).some(row=>[row.width,row.height,row.head].some(v=>v<.01||v>20)))) { status('Cannot bake adult scale without exceeding younger-stage authoring bounds.'); return; }
       updates.forEach(({species,gender,next},i)=>bridge.setRigScale(species,gender,next,{persist:i===updates.length-1}));
       Object.assign(ageProfiles,compensated); persistProfiles(); ageConvergenceBasis=null;
@@ -394,7 +414,7 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
 #${PANEL_ID} output{text-align:right;color:var(--accent);font-weight:850;font-variant-numeric:tabular-nums}
 #${PANEL_ID} .scaleActions{display:flex;gap:7px;flex-wrap:wrap}
 #${PANEL_ID} .scaleStatus{font-size:10px;color:var(--muted)}
-#${PANEL_ID} #maaFullScaleLongoranControls[hidden],#${PANEL_ID} #maaFullScaleAgeControls[hidden],#${PANEL_ID} .scaleRow[hidden]{display:none!important}
+ #${PANEL_ID} #maaFullScaleAdultFields[hidden],#${PANEL_ID} #maaFullScaleLongoranControls[hidden],#${PANEL_ID} #maaFullScaleAgeControls[hidden],#${PANEL_ID} .scaleRow[hidden]{display:none!important}
 #${PANEL_ID} #maaFullScaleAgeMode{flex:1 1 170px;min-width:0;background:#17222f;color:inherit;padding:6px;border:1px solid rgba(255,255,255,.25);border-radius:6px}
 #${PANEL_ID} #maaFullScaleAgeControls{display:grid;gap:4px;padding:8px;border:1px solid rgba(167,139,250,.4);border-radius:9px}
 #${PANEL_ID} #maaFullScaleAgeControls .scaleRow{grid-template-columns:80px minmax(0,1fr) 64px}
@@ -459,8 +479,8 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
           <b>Selected species/gender — <span id="maaFullScaleAgeTitle">age</span> proportions</b>
           ${[['Width','width',1,2000],['Height','height',1,2000],['Head','head',1,2000],['Hands','hand',1,2000],['Feet','foot',1,2000],['WidthConvergence','widthConvergence',0,100],['HeightConvergence','heightConvergence',0,100]].map(([name,axis,min,max]) => `
           <div class="scaleRow"><label for="maaFullScaleAgeRange${name}">${name.replace("Convergence", " convergence")}</label>
-            <input id="maaFullScaleAgeRange${name}" type="range" min="${min}" max="${max}" step="1" value="100" aria-label="${name.toLowerCase()} for selected age mode">
-            <input id="maaFullScaleAgeNum${name}" type="number" min="${min}" max="${max}" step="1" value="100" aria-label="${name.toLowerCase()} percent (exact)">%
+            <input id="maaFullScaleAgeRange${name}" type="range" min="${min}" max="${axis.endsWith('Convergence') ? 100 : 200}" step="0.1" value="100" aria-label="${name.toLowerCase()} for selected age mode">
+            <input id="maaFullScaleAgeNum${name}" type="number" min="${min}" max="${max}" step="0.1" value="100" aria-label="${name.toLowerCase()} percent (exact)">%
           </div>`).join('')}
           <p class="maaSmall maaMuted">Convergence is a temporary whole-lineup adjustment of the CURRENT proportions. Bake to save it into each species/gender and reset the sliders to zero. Overall scale changes size without changing proportions.</p>
           <button id="maaFullScaleBakeConvergence" type="button" class="good">Bake convergence</button>
@@ -766,7 +786,7 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
       const percent = String(Math.round((axis.endsWith('Convergence')?ageValues():values)[axis] * 1000)/10);
       const range = document.getElementById(`maaFullScaleAgeRange${name}`);
       const number = document.getElementById(`maaFullScaleAgeNum${name}`);
-      if (range) range.value = percent;
+      if (range) { if(!axis.endsWith('Convergence')) range.max=String(Math.max(200,Math.ceil(Number(percent)/100)*100)); range.value = percent; }
       if (number && document.activeElement !== number) number.value = percent; // Do not overwrite partially entered percentages on mobile keyboards.
     }
   }
@@ -812,7 +832,7 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
   function applyPreviewProportions(entry, authoredOverride = null) {
     if (!entry?.group?.isObject3D) return;
     const authored = authoredOverride || window.HobunjiCharacterRigScale?.scaleFor?.(entry.species, entry.gender, entry.profile) || { x: 1, y: 1, legLength: 1, head: 1, offsetY: 0 };
-    const stage = previewAgeValues(entry);
+    const stage = previewAgeValues(entry,authored);
     const composed = window.HobunjiCharacterAgeRigConfig?.composePreviewScale?.(authored, stage, entry, ageMode === 'adult' ? {} : lineupConvergenceBasis())
       || { x: authored.x * (stage.width ?? stage.body), y: authored.y * (stage.height ?? stage.body), head: authored.head * stage.head, offsetY: authored.offsetY };
     composed.legLength = (Number(authored.legLength) > 0 ? Number(authored.legLength) : Number(authored.y) || 1) * (composed.y / (Number(authored.y) || 1));
@@ -946,7 +966,7 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
       phaseScales: { basket: { ...clone(values.baby), body: values.baby.height }, toddler: { ...clone(values.toddler), body: values.toddler.height } }, // Height remains the legacy body alias for older game code consuming exported JSON.
       pngPlaneAvatar: { childScaleMultiplier: values.child.height, childWidthScaleMultiplier: values.child.width, childHeadScaleMultiplier: values.child.head, childWidthConvergence: values.child.widthConvergence, childHeightConvergence: values.child.heightConvergence, ageConvergenceBasis: clone(lineupConvergenceBasis()), ageProfiles: clone(ageProfiles) }, // Vertical height retains legacy child body alias.
       childLimbModifiers: { hand: values.child.hand, foot: values.child.foot },
-      note: 'Baby/toddler width/height/head map to HobunjiRomanceConfig.family.phaseScales; child width/height/head map to PNGPlaneAvatar childWidthScaleMultiplier/childScaleMultiplier/childHeadScaleMultiplier. Legacy body loads as both axes.' };
+      note: 'Baked profiles are authoritative per growth stage and species/gender. Install pngPlaneAvatar.ageProfiles with the exported fallback phase and PNG settings; adultReference preserves dimensions across adult overall edits. Temporary convergence and overall preview adjustments are not exported.' };
     const blob = new Blob([JSON.stringify(data, null, 2) + '\n'], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
@@ -1742,6 +1762,7 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
       }
       if (buildId !== generation || !entry) return;
       entries.push(entry);
+      ageConvergenceBasis=null; stageBasisCache=null; // Include newly available identities in the next whole-lineup correction.
       if (chooser) {
         const option = document.createElement('option');
         option.value = entry.key;
@@ -1763,6 +1784,9 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
     if (buildId !== generation) return;
     if (!entries.length) throw new Error('No repository character previews could be built.');
 
+    if (ageMode !== 'adult' && (ageValues().widthConvergence || ageValues().heightConvergence)) {
+      for (const entry of entries) applyPreviewProportions(entry); // A draft started during progressive loading must converge the complete final lineup consistently.
+    }
     const finishedChair = await buildChair();
     if (buildId !== generation) return;
     chair = finishedChair;
@@ -1995,7 +2019,7 @@ body[data-animation-author-mode="${MODE}"] #maaTopbar{z-index:25} /* Tabs remain
         ageMode,
         individualAgeValues: clone(individualAgeValues(selected)), overallScalePreview: ageOverall[ageMode], bakedAgeProfiles: Object.keys(ageProfiles[ageMode]||{}).length,
         globalAgeModifiers: clone(ageValues()), // Confirms the active phase is shared by every lineup avatar.
-        selectedAgeAxes: selected ? window.HobunjiCharacterAgeRigConfig?.resolveStageAxes?.(window.HobunjiCharacterRigScale?.scaleFor?.(selected.species, selected.gender, selected.profile), ageValues(), selected, lineupConvergenceBasis()) || null : null, // Effective selected width/height after convergence.
+        selectedAgeAxes: selected ? clone(previewAgeValues(selected)) : null, // Effective selected width/height after convergence.
         ageConvergenceMeasuredProfiles: Object.keys(lineupConvergenceBasis()).length, // Mobile diagnostics: distinguish measured convergence from nominal fallback.
         runtimeAgeConfig: window.HobunjiCharacterAgeRigConfig?.snapshot?.() || null, // Distinguishes local drafts from the explicit game override.
         agePerf: { ...agePerf }, // Counts rig/body recalculations and late GLB probes for phone performance checks.

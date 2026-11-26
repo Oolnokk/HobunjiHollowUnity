@@ -62,11 +62,53 @@
   const repositoryBasis = sanitizeBasis(png.ageConvergenceBasis); // Freeze the deployed reference before local override restoration.
 
   const PROFILE_AXES = ['width','height','head','hand','foot']; // Individual stage controls, distinct from temporary convergence and overall scale.
-  const importedBaby = {"kenkari::male":{"width":0.5075908845751128,"height":0.453370454451896,"head":0.97,"hand":1.66,"foot":1.62},"kenkari::female":{"width":0.7094736227583963,"height":0.4799919875580187,"head":0.97,"hand":1.66,"foot":1.62},"tletingan::male":{"width":0.6351384625607347,"height":0.41366648287453117,"head":0.97,"hand":1.66,"foot":1.62},"tletingan::female":{"width":0.7302219514914037,"height":0.4362406969631667,"head":0.97,"hand":1.66,"foot":1.62},"nuhongan::male":{"width":0.7939230782009183,"height":0.48234885152500057,"head":0.97,"hand":1.66,"foot":1.62},"nuhongan::female":{"width":0.9127774393642546,"height":0.5073680397943778,"head":0.97,"hand":1.66,"foot":1.62},"longoran::male":{"width":0.5318893528833739,"height":0.15406965943796308,"head":0.97,"hand":1.66,"foot":1.62},"longoran::female":{"width":0.597040269371654,"height":0.17609074441720884,"head":0.97,"hand":1.66,"foot":1.62},"engh-sho::male":{"width":0.7012768800050903,"height":0.2775602587932603,"head":0.97,"hand":1.66,"foot":1.62},"engh-sho::female":{"width":0.7236330221529035,"height":0.30470860905813646,"head":0.97,"hand":1.66,"foot":1.62},"mao-ao::male":{"width":0.8204021391894106,"height":0.2521045076794498,"head":0.97,"hand":1.66,"foot":1.62},"mao-ao::female":{"width":0.7931984954922331,"height":0.28493927228373717,"head":0.97,"hand":1.66,"foot":1.62},"mashtzarr::male":{"width":0.3204837034256795,"height":0.16385281401772706,"head":0.5,"hand":1.66,"foot":1.62},"mashtzarr::female":{"width":0.38302742547508767,"height":0.23512726538322992,"head":0.5,"hand":1.66,"foot":1.62},"mammakhbuur::male":{"width":0.30875868988571564,"height":0.16385281401772706,"head":0.5,"hand":1.66,"foot":1.62},"mammakhbuur::female":{"width":0.36271536503322704,"height":0.22758224549490091,"head":0.5,"hand":1.66,"foot":1.62},"harlyao::male":{"width":0.5113477250037115,"height":0.2218560282272236,"head":0.97,"hand":1.66,"foot":1.62},"boney-shinjimi-skeleton::male":{"width":0.754749242105478,"height":0.2580480180203811,"head":0.97,"hand":1.66,"foot":1.62},"harlyao-skeleton::male":{"width":0.5717797288677866,"height":0.21055245015383095,"head":0.97,"hand":1.66,"foot":1.62},"harlyao-skeleton::female":{"width":0.6662246427059282,"height":0.23736267192154487,"head":0.97,"hand":1.66,"foot":1.62},"mao-ao-skeleton::male":{"width":0.9240318830870201,"height":0.2574119709990172,"head":0.97,"hand":1.66,"foot":1.62},"maskbound-guardian::male":{"width":0.754749242105478,"height":0.2580480180203811,"head":0.97,"hand":1.66,"foot":1.62},"nohuknuk::male":{"width":0.4378697893131019,"height":0.35272258887024277,"head":0.97,"hand":1.66,"foot":1.62},"omgurku::male":{"width":0.4644610720649097,"height":0.22159813155567568,"head":0.97,"hand":1.66,"foot":1.62},"porakaneki::male":{"width":0.5132970237137927,"height":0.4466340538315023,"head":0.97,"hand":1.66,"foot":1.62}}; // User-uploaded 2026-11-25 baby proportions: convergence baked, head exceptions applied.
-  const repositoryProfiles = { baby: importedBaby, toddler: {}, child: {} };
-  function sanitizeProfiles(profiles) {
-    return Object.fromEntries(MODES.map(mode => [mode, Object.fromEntries(Object.entries(profiles?.[mode] || {}).filter(([key, row]) => /^[a-z0-9-]+::(male|female)$/.test(key) && row && typeof row === 'object').map(([key, row]) => [key, Object.fromEntries(PROFILE_AXES.map(axis => [axis, Math.max(.01, Math.min(20, positive(row[axis], defaults[mode][axis])))]))]))]));
+  const importedBaby = {
+    "kenkari::male": {"width":0.5075908845751128,"height":0.453370454451896,"head":0.97,"hand":1.66,"foot":1.62},
+    "kenkari::female": {"width":0.7094736227583963,"height":0.4799919875580187,"head":0.97,"hand":1.66,"foot":1.62},
+    "tletingan::male": {"width":0.6351384625607347,"height":0.41366648287453117,"head":0.97,"hand":1.66,"foot":1.62},
+    "tletingan::female": {"width":0.7302219514914037,"height":0.4362406969631667,"head":0.97,"hand":1.66,"foot":1.62},
+    "nuhongan::male": {"width":0.7939230782009183,"height":0.48234885152500057,"head":0.97,"hand":1.66,"foot":1.62},
+    "nuhongan::female": {"width":0.9127774393642546,"height":0.5073680397943778,"head":0.97,"hand":1.66,"foot":1.62},
+    "longoran::male": {"width":0.5318893528833739,"height":0.15406965943796308,"head":0.97,"hand":1.66,"foot":1.62},
+    "longoran::female": {"width":0.597040269371654,"height":0.17609074441720884,"head":0.97,"hand":1.66,"foot":1.62},
+    "engh-sho::male": {"width":0.7012768800050903,"height":0.2775602587932603,"head":0.97,"hand":1.66,"foot":1.62},
+    "engh-sho::female": {"width":0.7236330221529035,"height":0.30470860905813646,"head":0.97,"hand":1.66,"foot":1.62},
+    "mao-ao::male": {"width":0.8204021391894106,"height":0.2521045076794498,"head":0.97,"hand":1.66,"foot":1.62},
+    "mao-ao::female": {"width":0.7931984954922331,"height":0.28493927228373717,"head":0.97,"hand":1.66,"foot":1.62},
+    "mashtzarr::male": {"width":0.3204837034256795,"height":0.16385281401772706,"head":0.5,"hand":1.66,"foot":1.62},
+    "mashtzarr::female": {"width":0.38302742547508767,"height":0.23512726538322992,"head":0.5,"hand":1.66,"foot":1.62},
+    "mammakhbuur::male": {"width":0.30875868988571564,"height":0.16385281401772706,"head":0.5,"hand":1.66,"foot":1.62},
+    "mammakhbuur::female": {"width":0.36271536503322704,"height":0.22758224549490091,"head":0.5,"hand":1.66,"foot":1.62},
+    "harlyao::male": {"width":0.5113477250037115,"height":0.2218560282272236,"head":0.97,"hand":1.66,"foot":1.62},
+    "boney-shinjimi-skeleton::male": {"width":0.754749242105478,"height":0.2580480180203811,"head":0.97,"hand":1.66,"foot":1.62},
+    "harlyao-skeleton::male": {"width":0.5717797288677866,"height":0.21055245015383095,"head":0.97,"hand":1.66,"foot":1.62},
+    "harlyao-skeleton::female": {"width":0.6662246427059282,"height":0.23736267192154487,"head":0.97,"hand":1.66,"foot":1.62},
+    "mao-ao-skeleton::male": {"width":0.9240318830870201,"height":0.2574119709990172,"head":0.97,"hand":1.66,"foot":1.62},
+    "maskbound-guardian::male": {"width":0.754749242105478,"height":0.2580480180203811,"head":0.97,"hand":1.66,"foot":1.62},
+    "nohuknuk::male": {"width":0.4378697893131019,"height":0.35272258887024277,"head":0.97,"hand":1.66,"foot":1.62},
+    "omgurku::male": {"width":0.4644610720649097,"height":0.22159813155567568,"head":0.97,"hand":1.66,"foot":1.62},
+    "porakaneki::male": {"width":0.5132970237137927,"height":0.4466340538315023,"head":0.97,"hand":1.66,"foot":1.62},
+    "harlyao::female": {"width":0.6184486373165619,"height":0.2880658436213992,"head":0.97,"hand":1.66,"foot":1.62},
+  }; // User-uploaded 2026-11-25 baby proportions: convergence baked, head exceptions applied.
+  const repositoryProfiles = sanitizeProfiles(png.ageProfiles || { baby: importedBaby, toddler: {}, child: {} }); // Accept the exported baked profile table as checked-in configuration.
+  function rigReference(adult) {
+    if (!adult || !['x','y','head'].every(axis => Number.isFinite(adult[axis]) && adult[axis] > 0)) return null;
+    return { x: adult.x, y: adult.y, head: adult.head }; // Preserve the reference against which a younger stage's factors were authored.
   }
+  function sanitizeProfiles(profiles) {
+    return Object.fromEntries(MODES.map(mode => [mode, Object.fromEntries(Object.entries(profiles?.[mode] || {})
+      .filter(([key, row]) => /^[a-z0-9-]+::(male|female)$/.test(key) && row && typeof row === 'object')
+      .map(([key, row]) => {
+        const values = Object.fromEntries(PROFILE_AXES.map(axis => [axis, Math.max(.01, Math.min(20, positive(row[axis], defaults[mode][axis])))]));
+        const reference = rigReference(row.adultReference);
+        return [key, reference ? { ...values, adultReference: reference } : values];
+      }))]));
+  }
+  function relativeProfile(row, adult) {
+    const reference = rigReference(row?.adultReference), current = rigReference(adult);
+    if (!reference || !current) return row;
+    return { ...row, width: row.width * reference.x/current.x, height: row.height * reference.y/current.y, head: row.head * reference.head/current.head };
+  } // Child factors are adjusted to the live adult rig, preserving baked dimensions even when the adult export has not been installed yet.
   function profileFor(mode, species, gender, profiles = activeProfiles) {
     const key = identityKey(species, gender); // Exact species+gender first; no shared male/female override.
     const donor = identityKey(window.hobunjiTransformSpeciesId?.(species) || species, gender);
@@ -201,7 +243,7 @@
     repositoryDefaults: () => clone(defaults),
     repositoryProfiles: () => clone(repositoryProfiles),
     effectiveProfiles: () => clone(activeProfiles),
-    sanitizeProfiles, profileFor, scaledProfile, stageConvergenceBasis, convergeProfile, identityKey,
+    sanitizeProfiles, profileFor, scaledProfile, stageConvergenceBasis, convergeProfile, identityKey, rigReference, relativeProfile,
     effectiveValues: () => clone(applied || defaults),
     sanitize,
     composePreviewScale,

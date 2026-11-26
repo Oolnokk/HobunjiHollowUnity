@@ -107,7 +107,7 @@ api.setAgeMode('adult');
 assert.equal(applied.at(-1).values.x, 1.2, 'returning to adult restores canonical authored width');
 assert.equal(visuals.get('right_foot').scale.z, 4, 'returning to adult restores original foot geometry size');
 assert(editorSource.includes('maaFullScaleAgeRange${name}'), 'rendered stage UI retains the dynamic age-control IDs');
-assert(editorSource.includes("['Width','width',10,200],['Height','height',10,200]"), 'independent Width and Height sliders exist for every age stage');
+assert(editorSource.includes("['Width','width',1,2000],['Height','height',1,2000]"), 'independent Width and Height sliders exist for every age stage');
 // Old v1 body-only autosaves must hydrate both new axes, not erase established presets.
 stored.set('hobunjiFullCharacterScale.ageModes.v1', JSON.stringify({ schema: 'hobunji.character-age-rig-modifiers.v1', modifiers: { baby: { body: .37, head: .55, hand: 1.6, foot: 1.1 } } }));
 api.loadAgeModifiers();
