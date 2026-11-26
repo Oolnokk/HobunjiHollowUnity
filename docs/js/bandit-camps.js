@@ -1468,6 +1468,7 @@
       ? ({ omgurku: 'omgurkuHorn', porakaneki: 'porakanekiQuill' })[c.tribeId] || null
       : c.isPorakanekiHunter === true ? 'porakanekiQuill' : null; // Existing tribal humanoid corpses drop their own trophy, never bandit treasure.
     const holdSeconds = trophyKey ? 0 : (Number(c.lootHoldSeconds) || 0); // Tribal corpses use the ordinary pickup action, not the optional catacomb hold search.
+    const canSearch=()=>!c.caveBodyId||window.CaveSiteSystem?.canSearchBody?.(c)===true; // Stale corpse objects cannot survive a cave reset or area change.
     return {
       id: 'corpse_' + c.id,
       type: 'bandit_corpse',
@@ -1476,6 +1477,7 @@
       holdLabel: 'Searching ' + (c.name || c.def.label) + '...',
       getButtons() {
         if (c.ruinNoLoot===true)return []; // Preserve the authored ruin no-loot contract and its existing regression guard.
+        if (!canSearch())return []; // Closed, rising, spent, and stale catacomb bodies cannot be searched.
         if (trophyKey && c.corpseLooted === true)return []; // A claimed trophy must not leave a Collect prompt on a preserved corpse.
         if (holdSeconds > 0) return [{ icon: c.lootIcon || '🦴', label: 'Hold to Search', action: 'corpse_hold_loot', style: 'primary', allowed: true, worldInteraction: true, promptRoot: c.avatarRef?.group || null }];
         return [{ icon: trophyKey === 'omgurkuHorn' ? '📯' : trophyKey === 'porakanekiQuill' ? '🪶' : '🪙',
@@ -1485,6 +1487,7 @@
       onAction(action) {
         if (action !== 'obj_loot_corpse') return { ok: false, message: 'Unknown action.' };
         if(c.ruinNoLoot===true)return {ok:false,message:'This test-room opponent carries no loot.'}; // Also protects against calling the corpse action directly.
+        if (!canSearch())return {ok:false,message:'This body cannot be searched.'}; // Validate again at commit, not only when the hold prompt appears.
         if (trophyKey && c.corpseLooted === true) return { ok: false, message: 'This trophy has already been collected.' }; // Repeated mobile presses cannot mint another tribal currency token.
         if (trophyKey && (Number(deps.inventory[trophyKey]) || 0) >= (Number(window.InventoryStacks?.MAX_TOTAL) || 999)) {
           return { ok: false, message: 'Make room in your pack to collect this trophy.' }; // Never consume the body when its one guaranteed token cannot fit.
@@ -1509,7 +1512,10 @@
         }
         // keepCorpseAfterLoot: the body stays where it fell (e.g. a lich's
         // skeletons it can raise again); it just stops being lootable.
-        if (c.keepCorpseAfterLoot) c.corpseLooted = true;
+        if (c.keepCorpseAfterLoot) {
+          c.corpseLooted = true;
+          if(c.caveBodyId)window.CaveSiteSystem?.recordBodyLooted?.(c);
+        }
         else { deps.corpseObjects.delete(c); deps.despawnCreature(c); }
         deps.refreshItemScroll();
         deps.buildInventoryGrid(); // This is a no-op when the Pack is closed.

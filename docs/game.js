@@ -5737,6 +5737,8 @@
         // combat-counter-shield.js) -- safe to assume `player` is the guarded
         // captain's riposte target without needing a passed-in attacker.
         if (!environmentalImpact) {
+          const enemyPerkHit = window.PerkSystem?.scaleEnemyCombatHit?.(actorAttacker, amount, dmgOpts); // Shared NPC perk owner also covers ranged and special direct attacks.
+          if (enemyPerkHit) { amount = enemyPerkHit.amount; dmgOpts = enemyPerkHit.options; }
           const damageSource = dmgOpts?.attacker || (sourceNearPlayer ? player : null); // Explicit NPC attacker wins; ordinary player melee/ranged still resolves from its existing source position.
           amount *= window.ResourceSystem?.timedDebuffModifier?.(damageSource, 'outgoingDamage') ?? 1; // Enfeebled reduces the attacker's direct damage without altering target affliction buildup rules.
           if (c.isCompanion) amount *= window.CompanionResilience?.damageTakenMultiplier?.(c) ?? 1; // Thick Hide / Guardian Fury companion training (js/stable-companion-resilience.js).
@@ -5751,7 +5753,7 @@
         }
         if (!environmentalImpact) amount *= window.ResourceSystem?.getProneAttackMultiplier?.(c) ?? 1; // 1.75x temporary, 2.5x true Footing-break; scales direct damage and attack afflictions once.
         const resourceDamage = environmentalImpact ? { health: amount, footing: 0 } : hitResourceDamage(amount, dmgOpts);
-        const impactMultiplier = environmentalImpact ? 1 : (window.AlchemySystem?.getFootingDamageMultiplier?.() || 1) * (1 + (window.PerkSystem?.rank('combat', 'increaseFootingDamage') || 0) * 0.1); // Collision profiles are already authored at final strength.
+        const impactMultiplier = environmentalImpact || actorAttacker ? 1 : (window.AlchemySystem?.getFootingDamageMultiplier?.() || 1) * (1 + (window.PerkSystem?.rank('combat', 'increaseFootingDamage') || 0) * 0.1); // Collision profiles are already authored at final strength.
         resourceDamage.footing *= impactMultiplier;
         const healthBeforeImpact = environmentalImpact ? Math.max(0, Number(c.health) || 0) : 0; // Used to report the actual pre-death Health loss back to the collision resolver.
         if (window.ResourceSystem) window.ResourceSystem.applyDamage(c, resourceDamage.health, dmgOpts || {});
@@ -5851,6 +5853,8 @@
         if (!environmentalImpact && performance.now() < player.invulnUntil) return;
         if (!environmentalImpact) {
           const attacker = dmgOpts?.attacker || null; // Enemy modules pass their owning actor when available so Enfeebled follows the source rather than the victim.
+          const enemyPerkHit = window.PerkSystem?.scaleEnemyCombatHit?.(attacker, amount, dmgOpts); // Same owner as NPC-versus-NPC hits; no player perk leakage.
+          if (enemyPerkHit) { amount = enemyPerkHit.amount; dmgOpts = enemyPerkHit.options; }
           amount *= window.ResourceSystem?.timedDebuffModifier?.(attacker, 'outgoingDamage') ?? 1;
           amount *= window.SkillSystem?.damageTakenMultiplier?.() || 1;
         }

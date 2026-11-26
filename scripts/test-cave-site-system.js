@@ -338,7 +338,10 @@ assert(mineMap.oreRocks.length >= 7, 'ore-rich cave reuses oreRock mechanic at r
 const catMap = decorate(profile('map_i_test_catacomb', 'catacomb'));
 assert(catMap.caveProps.filter(item => item.key === 'ruinSanctumCoffin').length >= 3, 'catacomb places authored coffin props');
 assert(!catMap.furniture.some(item => /^ruin/.test(item.itemKey)), 'authored ruin pieces stay out of FURNITURE_DEFS-keyed mapData.furniture');
-assert(catMap.caveBodies.length >= 8, "catacomb has a whole lot of Mao'ao skeleton bodies lying around");
+assert(catMap.caveBodies.length >= 2 && catMap.caveBodies.length <= 10, 'compact catacomb has fewer, contained bodies');
+const coffinProps=catMap.caveProps.filter(item=>item.key==='ruinSanctumCoffin');
+assert(catMap.caveBodies.every(body=>coffinProps.some(coffin=>coffin.id===body.coffinId&&coffin.col===body.col&&coffin.row===body.row)), 'every skeleton belongs inside its own authored coffin');
+assert.equal(new Set(catMap.caveBodies.map(body=>body.coffinId)).size,catMap.caveBodies.length,'no two bodies share a coffin');
 assert(!catMap.caveGhoulSpawns, 'ghouls are deep-mine morlocks, not catacomb guardians');
 assert.equal(catMap.creatureSpawns.length, 0, 'cave without an animal den keeps no den creature spawns');
 
@@ -542,6 +545,7 @@ function assertSpaced(map) {
   const features = [...map.oreRocks, ...(map.caveProps || []).filter(prop => !prop.embedded), ...(map.caveBodies || []), ...(map.caveMushrooms || []), ...(map.caveBanditSpawns || []), ...(map.caveTraps || [])]; // All feature centres used to check cross-layer spacing.
   for (let i = 0; i < features.length; i++) for (let j = i + 1; j < features.length; j++) {
     if (features[i].caveSeparator && features[j].caveSeparator) continue; // Five mineable wall strata deliberately touch each other.
+    if([features[i],features[j]].some((body,k)=>body.coffinId===[features[j],features[i]][k].id&&[features[j],features[i]][k].key==='ruinSanctumCoffin'))continue; // Only a body and its own coffin may intentionally share a tile.
     assert(Math.hypot(features[i].col - features[j].col, features[i].row - features[j].row) >= 1.4, `${map.id}: ${JSON.stringify(features[i])} too close to ${JSON.stringify(features[j])}`);
   }
 }
@@ -958,10 +962,11 @@ console.log(`PASS cave-site-system: ${workspace.animalDens.length} anchors -> ${
   context.MinionCombat = {
     async makeEntity(opts) {
       made++;
-      return { id: `skel_${made}`, x: opts.x, y: opts.y, state: opts.extra?.state, health: 10, rosterRecord: { name: opts.name, equippedCosmetics: ['rugged_poncho'] }, speciesId: opts.speciesId, def: { lootPool: opts.defOverride?.lootPool }, ...opts.extra };
+      const vec=()=>({x:0,y:0,z:0,set(x,y,z){Object.assign(this,{x,y,z});}});
+      return { id: `skel_${made}`, x: opts.x, y: opts.y, state: opts.extra?.state, health: 10, halfHeight:.7, avatarRef:{group:{position:vec(),rotation:vec(),scale:{y:.82}},legs:{update(){}}}, rosterRecord: opts.roster||{ name: opts.name, equippedCosmetics: ['rugged_poncho'] }, speciesId: opts.speciesId, def: { lootPool: opts.defOverride?.lootPool }, ...opts.extra };
     },
   };
-  context.CreatureDeath = { settleAsCorpse(entity) { entity.state = 'corpse'; entity.health = 0; corpseObjects.add(entity); return true; } };
+  context.CreatureDeath = { settleAsCorpse(entity,opts) { entity.state = 'corpse'; entity.health = 0; entity.avatarRef.group.scale.y=1;entity.avatarRef.group.rotation.set(0,opts.yaw,Math.PI/2);entity.avatarRef.group.position.set(entity.x/deps.TILE,.084,entity.y/deps.TILE);corpseObjects.add(entity); return true; } };
   context.DevSpawner.init({ grantLoot() { return []; }, corpseObjects, despawnCreature(entity) { despawned.push(entity); } });
   const hostiles = new Set();
   Object.assign(deps, { getCurrentArea: () => 'map_i_test_catacomb', hostileObjects: hostiles, showToast() {} });
@@ -969,13 +974,42 @@ console.log(`PASS cave-site-system: ${workspace.animalDens.length} anchors -> ${
   Cave.updateCurrentCaveRuntime(1);
   await Cave.__test.bodySpawnPromises.get('map_i_test_catacomb');
   const records = Cave.__test.bodiesByMapId.get('map_i_test_catacomb');
+  const coffinAsset=JSON.parse(fs.readFileSync(path.join(root,'docs/config/furniture-authored/ruinSanctumCoffin.json'),'utf8')); // Shipped dimensions, not a synthetic coffin.
+  const supports=new Map();
+  context.HobunjiWalkableElevation={registerBox(bounds,opts){supports.set(opts.id,{bounds,opts});return opts.id;},unregister(id){supports.delete(id);},worldSurfaceTopAt(x,z,fallback,area){const matches=[...supports.values()].filter(s=>s.opts.area===area&&x>=s.bounds.minX&&x<=s.bounds.maxX&&z>=s.bounds.minZ&&z<=s.bounds.maxZ);return matches.length?Math.max(...matches.map(s=>s.bounds.topY)):fallback;}};
+  const plan=Cave.__test.plansByMapId.get('map_i_test_catacomb');
+  for(const coffin of plan.coffins)Cave.__test.registerCoffinSupports('map_i_test_catacomb',coffin,{},coffinAsset,{});
+  assert.equal(supports.size,plan.coffins.length*coffinAsset.parts.length,'each authored floor, wall and closed lid registers as a walkable support');
   assert.equal(records.length, bodiesPlan.length, 'every planned body is laid out');
-  assert(records.every(r => r.entity.state === 'corpse' && corpseObjects.has(r.entity)), 'bodies are settled, lootable corpses');
+  assert(records.every(r=>r.entity.avatarRef.group.scale.y===.82),'settled bodies retain authored vertical scale');
+  assert(records.every(r => r.entity.state === 'corpse' && !corpseObjects.has(r.entity) && r.entity._caveCoffinSealed), 'closed bodies are settled but cannot be targeted for loot');
   assert(records.every(r => r.entity.speciesId === 'mao-ao-skeleton' && r.entity.lootHoldSeconds === 2 && r.entity.keepCorpseAfterLoot), "Mao'ao skeleton bodies need a 2s hold and stay where they lie once searched");
   assert(records.every(r => r.entity.def.lootPool === 'caveSkeletonBody'), 'bodies roll the grave-goods loot pool');
   assert.equal(hostiles.size, 0, 'bodies are not live enemies until one rises');
 
-  // Search one body: the looted state is persisted by id.
+  // Open one coffin and wait for the authored transition before search becomes available.
+  for(const record of records)record.riser=false;
+  const firstBody=records[0].body;
+  deps.player.x=(firstBody.exitCol+.5)*deps.TILE;deps.player.y=(firstBody.exitRow+.5)*deps.TILE;
+  const coffinAction=Cave.objectAt('map_i_test_catacomb',firstBody.col,firstBody.row);
+  assert.equal(coffinAction.getButtons()[0].action,'obj_open_cave_coffin');
+  deps.player.x=(firstBody.col+.5)*deps.TILE;deps.player.y=(firstBody.row+.5)*deps.TILE;deps.player.physicalFeetY=.45;
+  assert(!coffinAction.onAction('obj_open_cave_coffin').ok,'closed lid cannot open underneath a standing player');
+  deps.player.x=(firstBody.exitCol+.5)*deps.TILE;deps.player.y=(firstBody.exitRow+.5)*deps.TILE;delete deps.player.physicalFeetY;
+  assert(coffinAction.onAction('obj_open_cave_coffin').ok);
+  assert(!supports.has('cave-coffin:map_i_test_catacomb:'+firstBody.coffinId+':lid'),'moving lid no longer provides phantom support');
+  assert(Math.abs(context.HobunjiWalkableElevation.worldSurfaceTopAt(firstBody.col+.5,firstBody.row+.5,0,'map_i_test_catacomb')-.0541)<.00001,'open center supports the actor at the actual plinth height');
+  const closedCoffin=plan.coffins.find(c=>c.id!==firstBody.coffinId);
+  assert(!Cave.__test.coffinBlocksBox(closedCoffin,{},closedCoffin.col+.5,closedCoffin.row+.5,.1,.50),'standing above the closed lid is not blocked by the old full-height envelope');
+  assert(Cave.__test.coffinBlocksBox(closedCoffin,{},closedCoffin.col+.5,closedCoffin.row+.5,.1,.40),'closed lid remains solid at its true height');
+  assert(!coffinAction.onAction('obj_open_cave_coffin').ok,'stale presses cannot restart opening');
+  assert(!corpseObjects.has(records[0].entity),'animation must finish before search');
+  Cave.updateCurrentCaveRuntime(1);
+  assert(corpseObjects.has(records[0].entity)&&!records[0].entity._caveCoffinSealed,'open body becomes searchable');
+  assert(Cave.canSearchBody(records[0].entity),'current open corpse can be searched');
+  deps.getCurrentArea=()=> 'map_other';
+  assert(!Cave.canSearchBody(records[0].entity),'stale interaction cannot loot from another map');
+  deps.getCurrentArea=()=> 'map_i_test_catacomb';
   records[0].entity.corpseLooted = true;
   Cave.updateCurrentCaveRuntime(1);
   assert(Cave.debugSnapshot().currentState.lootedBodies.includes(records[0].body.id), 'searched bodies are remembered');
@@ -984,19 +1018,71 @@ console.log(`PASS cave-site-system: ${workspace.animalDens.length} anchors -> ${
   for (const r of records) { r.riser = false; r.armedAt = null; } // An earlier update may already have armed a randomly chosen riser; start its timer fresh.
   const riser = records[1];
   riser.riser = true;
-  deps.player.x = (riser.body.col + 0.5) * deps.TILE; deps.player.y = (riser.body.row + 0.5) * deps.TILE;
+  deps.player.x = (riser.body.exitCol + 0.5) * deps.TILE; deps.player.y = (riser.body.exitRow + 0.5) * deps.TILE;
   Cave.updateCurrentCaveRuntime(1);
   assert(riser.armedAt != null && riser.delay >= 3 && riser.delay <= 12, 'walking close arms a 3-12s delay');
   const oldCorpse = riser.entity;
   Cave.updateCurrentCaveRuntime(riser.delay - 0.5);
   assert(!riser.risen && !riser.rising, 'nothing happens before the delay runs out');
   Cave.updateCurrentCaveRuntime(1);
+  assert(!riser.risen && !riser.rising,'restless corpse first opens its own coffin');
+  const exits=riser.body.exits;
+  const blockers=exits.map(p=>({areaId:'map_i_test_catacomb',health:1,x:(p.col+.5)*deps.TILE,y:(p.row+.5)*deps.TILE}));
+  for(const actor of blockers)hostiles.add(actor);
+  Cave.updateCurrentCaveRuntime(1);
+  assert(!riser.risen&&!riser.rising,'no emergence into occupied exits');
+  for(const actor of blockers)hostiles.delete(actor);
+  deps.player.x=(riser.body.col+.5)*deps.TILE;deps.player.y=(riser.body.row+.5)*deps.TILE; // Fixture frees every reserved exit.
+  Cave.updateCurrentCaveRuntime(1);
   await new Promise(resolve => setImmediate(resolve));
   await new Promise(resolve => setImmediate(resolve));
-  assert(riser.risen, 'the restless body rises after its delay');
+  assert(riser.rising&&!riser.risen&&riser.emergence.phase==='rise','replacement starts prone at the coffin, not on the exit tile');
+  const actor=riser.entity,group=actor.avatarRef.group,startX=actor.x,startY=actor.y,startHeight=group.position.y;
+  assert.equal(group.rotation.z,Math.PI/2);
+  Cave.updateCurrentCaveRuntime(.35);
+  assert(group.rotation.z>0&&group.rotation.z<Math.PI/2,'body continuously rotates toward standing');
+  assert(group.position.y>startHeight&&actor.x===startX&&actor.y===startY,'rise increases height without translating');
+  assert(!hostiles.has(actor),'AI cannot interrupt the standing animation');
+  Cave.updateCurrentCaveRuntime(.35);
+  Cave.updateCurrentCaveRuntime(.15);
+  assert(actor.x!==startX||actor.y!==startY,'walk translates continuously toward the exit');
+  assert(!riser.risen,'walking does not activate AI prematurely');
+  const walkingHeight=group.position.y;
+  assert(walkingHeight>actor.halfHeight,'feet remain elevated while stepping out');
+  const exit=riser.emergence.exit;
+  const obstruction={areaId:'map_i_test_catacomb',health:1,x:(exit.col+.5)*deps.TILE,y:(exit.row+.5)*deps.TILE};
+  hostiles.add(obstruction);
+  const before=riser.emergence.walk;
+  // Move the fixture player away from the return route, as a real player cannot stand inside the sealed coffin.
+  deps.player.x=(riser.body.col+.5)*deps.TILE-3*deps.TILE;deps.player.y=(riser.body.row+.5)*deps.TILE;
+  Cave.updateCurrentCaveRuntime(.05);
+  assert(riser.emergence.walk<before,'blocked walking reverses rather than passing through the occupant');
+  deps.getCurrentArea=()=> 'map_other';
+  const paused=riser.emergence.walk;
+  Cave.updateCurrentCaveRuntime(.2);
+  assert.equal(riser.emergence.walk,paused,'off-map emergence pauses');
+  deps.getCurrentArea=()=> 'map_i_test_catacomb';
+  hostiles.delete(obstruction);
+  let rimChecked=false;
+  for(let i=0;i<40&&!riser.risen;i++){
+    Cave.updateCurrentCaveRuntime(.025);
+    const progress=riser.emergence?.walk;
+    if(progress>=.65&&progress<=.8){rimChecked=true;assert(group.position.y-actor.halfHeight>=.4158,'feet stay above stone until the full footprint clears');}
+  }
+  assert(rimChecked,'test sampled the late rim crossing');
+  assert(riser.risen,'the restless body finishes walking before combat');
   assert(hostiles.has(riser.entity) && riser.entity.state === 'chase', 'it comes up fighting');
+  assert(riser.body.exits.some(p=>riser.entity.x===(p.col+.5)*deps.TILE&&riser.entity.y===(p.row+.5)*deps.TILE),'emerges beyond the solid coffin');
+  if(riser.body.exits.length>1)assert.notEqual(riser.entity.x+','+riser.entity.y,deps.player.x+','+deps.player.y,'uses the alternate exit instead of spawning on the player');
+  assert(Cave.__test.coffinBlocksBox({col:0,row:0,rotY:90,id:'test'}, {},.5,.5,.1,null),'coffin center is solid');
+  assert(!Cave.__test.coffinBlocksBox({col:0,row:0,rotY:90,id:'test'}, {},1.5,.5,.1,null),'exit side stays clear');
+  assert(Cave.__test.coffinBlocksBox({col:0,row:0,rotY:90,id:'test'}, {openedCoffins:['test']},-.5,.5,.1,null),'open lid is also solid');
   assert(!corpseObjects.has(oldCorpse) && despawned.includes(oldCorpse), 'the corpse is replaced where it lay');
+  assert(!Cave.canSearchBody(oldCorpse),'replaced corpse cannot be searched');
+  assert(!Cave.canSearchBody({...records[0].entity,corpseLooted:false}),'copied record cannot bypass spent state');
   assert.deepEqual(riser.entity.rosterRecord.equippedCosmetics, ['rugged_poncho'], 'an unsearched body rises in its own rags');
+  Cave.resetCave('map_i_test_catacomb');
+  assert.equal(supports.size,0,'cave renewal unregisters every coffin support');
   console.log(`PASS cave catacomb bodies: ${records.length} bodies, riser up after ${riser.delay.toFixed(1)}s`);
 })().catch(error => { console.error(error); process.exitCode = 1; });
 

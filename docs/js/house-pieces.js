@@ -45,11 +45,11 @@
     // Reusable solid-color translucent/emissive character treatment plus one cheap WeatherFX lantern-style glow provider per formation/object group.
     ['Ghostify', 'ghostify.js?v=20261104hf464126'],
     // Commander-led Harlyao simulation: persistent offscreen positions, regrouping followers, and individual distance-based promotion to native humanoid travel.
-    ['HarlyaoNightMarch', 'harlyao-night-march-runtime.js?v=20261114hbeaconfast'],
+    ['HarlyaoNightMarch', 'harlyao-night-march-runtime.js?v=20261125enemyClassMerge1'],
     // Porakaneki temporary locales can clear ordinary procedural shrub/rock clutter and relax only their own placement margins when dense wilderness would otherwise prevent any camp from existing.
     ['PorakanekiCampPlacementPolicy', 'porakaneki-camp-placement-policy.js?v=20261122boulderFootprints1'],
     // Porakaneki camp network: distance/hysteresis LOD, shared den-to-den hunting parties, planner-owned destinations, shared hostile-loop locomotion/rendering, and seasonal chief migration.
-    ['PorakanekiCamps', 'porakaneki-camps-runtime.js?v=20261125mergeAudit1'],
+    ['PorakanekiCamps', 'porakaneki-camps-runtime.js?v=20261125enemyClassMerge1'],
     // Keeps neutral Porakaneki off companion target lists, classifies self-defense vs initiated kills, applies Omgurku rivalry favor, and composes the faction rename into NPC database loads.
     ['PorakanekiFactionRules', 'porakaneki-faction-rules.js?v=20261104faction-luau1'],
     // Map-only locale proxies: chief camp is always known; each little camp gets its own independent discovery identity through the existing wilderness-map fog/discovery system.
