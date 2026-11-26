@@ -331,7 +331,7 @@
   }
   function constrainWeapon(holder,mesh,context) {
     proof=null;dualPrepared=null;
-    if(!enabled()){if(active)restoreGeometry();return false;}
+    if(!enabled()){clear();return false;}
     previewRoot=null;debug.dual=null;debug.angleDeg=0;debug.shortening=0;debug.originalMinY=null;debug.finalMinY=null;debug.fitted=false;debug.assemblyDetail=null;debug.lightOriginalMinY=null;debug.lightFittedMinY=null;
     const y=groundY(),s=work(),plane=mesh?.userData?.toolPlane;
     if(!s||!context||!holder?.parent||!holder.visible||!mesh?.visible||(!plane?.visible&&!context.dual))return fail('no-rig');
@@ -468,7 +468,7 @@
     if(context.dual){
       // The hidden source owns length, not either hand's live orientation.
       // Copies are posed later by the dual-wield owner, then individually corrected.
-      dualPrepared={holder,mesh,plane,context,segments,gripZ,amount,contact:s.contact.slice(),target,floor:y,flexible};
+      dualPrepared={holder,mesh,plane,context,segments,gripZ,amount,contact:s.contact,target,floor:y,flexible};
       debug.reason='dual-ready';debug.finalMinY=null;return false;
     }
     if(min<target) {
@@ -599,7 +599,7 @@
     const margin=Math.max(PAD,Number(shellPadding)||0);
     if(proof?.plane===mesh&&proof.frame===frameId()&&proof.min>=y+margin) {debug.ordinaryParts++;return true;}
     const dual=dualProofs.get(mesh);
-    if(dual?.frame===frameId()&&dual.min>=y+margin){debug.ordinaryParts++;return true;}
+    if(dual&&dual.frame===frameId()&&dual.min>=y+margin){debug.ordinaryParts++;return true;}
     if(mesh.userData?.hobunjiProceduralHand!==true)return false;
     const box=boxFor(mesh),s=work();if(!box||!s)return false;
     const materials=Array.isArray(mesh.material)?mesh.material:[mesh.material];

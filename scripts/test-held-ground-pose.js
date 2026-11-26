@@ -113,7 +113,40 @@ if(THREE){
   close(solver.snapshot().shortening,result.shortening);
   solver.setPreviewEnabled(false);
   assert.equal(plane.geometry,source,'raw mode restores original geometry');
-  console.log('held ground pose: actual Three preview integration passed');
+  // Two visible copies have distinct raw poses. Correct around each actual
+  // grip, including the offhand offset, rather than either mesh's origin.
+  solver.setPreviewEnabled(true);
+  holder.position.set(.1,.45,0);holder.rotation.set(Math.PI/2,0,0);
+  const mainRoot=new THREE.Group(),offRoot=new THREE.Group();
+  const mainMesh=new THREE.Mesh(source,new THREE.MeshBasicMaterial()),offMesh=new THREE.Mesh(source,new THREE.MeshBasicMaterial());
+  mainRoot.add(mainMesh);offRoot.add(offMesh);plane.add(mainRoot,offRoot);
+  mainRoot.position.x=-.2;offRoot.position.set(.3,0,.08);
+  offRoot.rotation.z=.25;
+  w.HobunjiDualWieldWeaponVisuals={isOwnedChild:(p,c)=>p===plane&&(c===mainRoot||c===offRoot)};
+  ctx.dual=true;ctx.offhand={position:{x:.05,y:0,z:0}};
+  parent.updateMatrixWorld(true);
+  solver.constrainWeapon(holder,weapon,ctx);
+  assert.equal(solver.snapshot().reason,'dual-ready');
+  parent.updateMatrixWorld(true);
+  const canonicalInverse=plane.matrixWorld.clone().invert();
+  const localRight=new THREE.Vector3().applyMatrix4(holder.matrixWorld).applyMatrix4(canonicalInverse);
+  const localLeft=new THREE.Vector3(.05,0,0).applyMatrix4(holder.matrixWorld).applyMatrix4(canonicalInverse);
+  const beforeRight=localRight.clone().applyMatrix4(mainMesh.matrixWorld);
+  const beforeLeft=localLeft.clone().applyMatrix4(offMesh.matrixWorld);
+  const holderBefore=holder.matrix.clone();
+  solver.constrainDualCopies({plane,mainRoot,offRoot,mainMesh,offMesh,invisible:false});
+  const d=solver.snapshot().dual;
+  assert.ok(d.right.angleDeg!==0&&d.left.angleDeg!==0,'independent corrective rotation');
+  assert.ok(d.right.finalMinY>=.035-1e-5&&d.left.finalMinY>=.035-1e-5,'both weapons clear floor');
+  close(localRight.clone().applyMatrix4(mainMesh.matrixWorld).distanceTo(beforeRight),0);
+  close(localLeft.clone().applyMatrix4(offMesh.matrixWorld).distanceTo(beforeLeft),0);
+  assert.ok(holder.matrix.equals(holderBefore),'dual solve does not modify authored holder');
+  assert.equal(mainMesh.geometry,plane.geometry);
+  assert.equal(offMesh.geometry,plane.geometry);
+  solver.setPreviewEnabled(false);
+  assert.equal(mainMesh.geometry,source,'raw mode releases borrowed fit');
+  assert.equal(offMesh.geometry,source);
+  console.log('held ground pose: actual Three preview and independent dual grip pivots passed');
 }
 
 const suspended=context.window.HeldGroundPose.suspendedReferenceY;
