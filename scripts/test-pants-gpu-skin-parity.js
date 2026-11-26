@@ -189,9 +189,8 @@ handle.update(true);
 assert.strictEqual(position.version, beforeStillFrame,
   'unchanged asymmetric leg pose does not upload on every render-only pass');
 
-// November 14's uniform extremity size changes the actual foot width independently of body-X
-// (e.g. male Longoran: X 1.05, Y 2). The same ratio must stretch BOTH fitted pant openings,
-// with the pant belt, bone centres, and static authored rig staying intact.
+// Legacy handles without measured foot geometry retain the historical width-ratio fallback.
+// Only the normal update may refit neutral geometry; render-only passes skin the current pose.
 const scaledRoots = { x: 1, y: 1 }; // Mock existing character-rig scale owner: updated after garment attachment.
 win.HobunjiCharacterRigScale = { bodyScaleFactorsFor: () => scaledRoots }; // Same API the real foot and pants renderers consult.
 const atSample = (sample, axis, vertices) => {
@@ -210,6 +209,8 @@ const originalGrid = Float32Array.from(handle.basePositions); // Source garment/
 const originalVersion = handle.baseVersion; // Rest-grid rebind should only happen when body proportions actually change.
 scaledRoots.x = 1.05; scaledRoots.y = 2;
 handle.update(true);
+assert.strictEqual(handle.baseVersion, originalVersion, 'render-only pass never rebinds even when a new width is pending');
+handle.update();
 assert(Math.abs(handle.openingWidthScale - (1.05 + 2) / (2 * 1.05)) < 1e-9,
   'Longoran-male pants follow the same 45.2% width compensation used by the foot meshes');
 assert.strictEqual(handle.baseVersion, originalVersion + 1, 'changing body proportions rebuilds the fitted garment exactly once');
@@ -242,7 +243,7 @@ for (let i = 0; i < expandedCPU.length / 3; i += 7) {
 
 // Refit from the ORIGINAL art, never the previous enlarged grid, so live scale changes are reversible.
 scaledRoots.x = 1; scaledRoots.y = 1;
-handle.update(true);
+handle.update();
 assert(Math.abs(handle.openingWidthScale - 1) < 1e-9);
 for (const side of ['left', 'right']) assert(Math.abs(spanFor(side) - initialSpans[side]) < 1e-5,
   `${side} opening returns to the original authored fit with no accumulated stretch`);
@@ -336,6 +337,55 @@ for (const budget of ['npc', 'player']) {
   original.dispose(); fitted.dispose(); // Frees both test actors without leaking GPU meshes.
 }
 
+// Real Three.js absolute width fitting at both mesh budgets. The synthetic leg owner
+// exposes measured, scaled mesh widths (rather than the old mean-body-ratio estimate).
+for (const meshBudget of ['npc', 'player']) {
+  for (const mirrored of [false, true]) {
+    win.PNGPlaneAvatar = { getPortraitsFlipped: () => mirrored };
+    const actor = makeAvatar(), widths = { left: .14, right: .19 };
+    let revision = 0, bounds = { left: .25, right: .75 };
+    const legHandle = {
+      group: actor.legs, anatomyRevision: () => revision,
+      getFootWidthScaleX: () => 1, getFootWidthX: side => widths[side],
+      getTorsoBeltBounds: () => bounds,
+      getRestStance: () => ({ left: { hip: { x: -.15, y: .85, z: .02 }, ankle: { x: -.15, y: .01, z: .02 } }, right: { hip: { x: .15, y: .85, z: .02 }, ankle: { x: .15, y: .01, z: .02 } } }),
+    };
+    const pants = Renderer.attach(THREE, { avatarGroup: actor.model, legHandle, speciesId: 'longoran', gender: 'male', garmentRecord: rigs.garments.pants_basic, meshBudget });
+    assert(pants, 'absolute-width pants attach');
+    const mat = new THREE.MeshBasicMaterial(); pants.mesh = new THREE.Mesh(pants.geometry, mat); pants.material = mat; actor.model.add(pants.mesh);
+    const sampleX = (sample, grid = pants.basePositions) => win.HobunjiPantsRig.sampleGridX(grid, pants.segments, sample);
+    const widthFor = (key, grid) => {
+      const xs = pants.splineSpec[key].samples.map(p => sampleX(p, grid));
+      return Math.max(...xs) - Math.min(...xs);
+    };
+    const checkWidths = () => {
+      assert(Math.abs(widthFor('belt') - (bounds.right - bounds.left)) < 1e-6, 'actual waist is the measured horizontal torso span');
+      for (const side of ['left', 'right']) {
+        const footSide = mirrored ? (side === 'left' ? 'right' : 'left') : side;
+        assert(Math.abs(widthFor(side + 'Ankle') - widths[footSide]) < 1e-6, 'actual cuff independently fits its corresponding foot X width');
+      }
+    };
+    checkWidths();
+    const baseline = Float32Array.from(pants.basePositions), version = pants.baseVersion;
+    // A late GLB/torso replacement invalidates the cached fit even when body scale does not change.
+    widths.left = .21; widths.right = .10; bounds = { left: .20, right: .80 }; revision++;
+    pants.update(true);
+    assert.strictEqual(pants.baseVersion, version, 'render-only pass defers the late measurement');
+    pants.update();
+    assert.strictEqual(pants.baseVersion, version + 1, 'one anatomy revision causes exactly one neutral refit');
+    checkWidths();
+    for (let i = 0; i < baseline.length; i++) if (i % 3) assert(Math.abs(pants.basePositions[i] - baseline[i]) < 1e-6, 'new width targets leave vertical position and depth unchanged');
+    pants.update(); pants.update(true);
+    assert.strictEqual(pants.baseVersion, version + 1, 'stable measured widths never cause repeated fitting');
+    widths.left = .14; widths.right = .19; bounds = { left: .25, right: .75 }; revision++;
+    pants.update(); checkWidths();
+    for (let i = 0; i < baseline.length; i++) assert(Math.abs(pants.basePositions[i] - baseline[i]) < 1e-6, 'absolute refits are reversible without accumulating drift');
+    pants.dispose();
+  }
+}
+delete win.PNGPlaneAvatar;
+console.log('Pants measured X widths and late revision (real Three.js): PASS');
+
 // A hunch is sampled from REST positions, not animated feet. Resizing the cuff with an
 // unchanged spine profile must still rebuild those sampled shifts; otherwise the PNG
 // upper-body portrait and the pants separate after a late species-scale update.
@@ -348,7 +398,7 @@ win.HobunjiCharacterSpine = { deformAt: (_profile, height, displacement) => {
 handle.update(true);
 assert(handle.spineShift, 'test hunch installs actual per-vertex pants shifts');
 scaledRoots.x = 1.05; scaledRoots.y = 2;
-handle.update(true);
+handle.update();
 assert.strictEqual(handle.spineCurve, hunch.curve, 'resize preserves the same authored hunch');
 for (let i = 0; i < handle.basePositions.length / 3; i += 13) {
   const expectedX = (handle.basePositions[i * 3 + 1] - model.getObjectByName('frontPlane').position.y) * 0.25;
@@ -356,7 +406,7 @@ for (let i = 0; i < handle.basePositions.length / 3; i += 13) {
     'hunch offsets are resampled from the newly widened garment on a late body-scale change');
 }
 scaledRoots.x = scaledRoots.y = 1;
-handle.update(true);
+handle.update();
 delete model.userData.hobunjiSpine;
 win.HobunjiCharacterSpine = previousSpine;
 
