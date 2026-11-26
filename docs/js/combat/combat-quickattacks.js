@@ -361,6 +361,7 @@
             const hitAfflictions = conditionBonusUsed ? mergeEffectMaps(attackAfflictions, quickBonusAfflictions) : attackAfflictions;
             const impactDamage = mounted ? Math.round(damage * (window.Mounts?.mountedMeleeDamageMultiplier?.() || 1)) : damage; // Strike-frame carrier velocity, never desired speed.
             deps.damageCreature(c, impactDamage, deps.player.x, deps.player.y, knockbackPxS, {
+              attacker: deps.player, // Explicit source for Attack Power and Tempered Footing.
               abilityId: id, conditionBonusUsed, // Identifies the committed cooldown-ready bonus hit for authored training objectives.
               tag: deps.currentWeaponDamageType(),
               category: 'quickAttack',

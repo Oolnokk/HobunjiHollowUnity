@@ -52,7 +52,7 @@ const Combat = runtime.Combat;
 
 // ── The enemy's real fire functions, sliced out of combat-bandit.js ──
 const banditSource = read('docs/js/combat/combat-bandit.js');
-const fireSlice = banditSource.slice(banditSource.indexOf('  function fireBanditComboStep('), banditSource.indexOf('  function updateBanditGuardWindow('));
+const fireSlice = banditSource.slice(banditSource.indexOf('  function payBanditAttack('), banditSource.indexOf('  function updateBanditGuardWindow('));
 const banditScope = {
   window: runtime, performance: runtime.performance, Math,
   deps: { TILE: 32, rnd: () => 0.5 },

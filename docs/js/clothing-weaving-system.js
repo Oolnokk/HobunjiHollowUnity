@@ -483,10 +483,12 @@
     };
     RS.applyDamage.__clothingWeightArmor = true;
 
+    const sharedFootingScale = typeof RS.registerStatModifierProvider === 'function'; // Share armor mitigation with continuous Footing costs before resource rounding.
+    if (sharedFootingScale) RS.registerStatModifierProvider((entity, key) => key === 'incomingFootingDamage' && (entity === window.Combat?.deps?.player || entity?._usesOutfitWeight) ? armorStatsForEntity(entity).footingTakenMul : 1);
     const originalFooting = RS.spendFooting.bind(RS); // Preserves perk resistance and prone handling beneath cloth resistance.
-    RS.spendFooting = function clothingWeightFooting(entity, amount, reason = 'hit') {
-      if (entity === window.Combat?.deps?.player || entity?._usesOutfitWeight) amount *= armorStatsForEntity(entity).footingTakenMul;
-      return originalFooting(entity, amount, reason);
+    RS.spendFooting = function clothingWeightFooting(entity, amount, reason = 'hit', options = {}) {
+      if (!sharedFootingScale && !options.effectiveCost && (entity === window.Combat?.deps?.player || entity?._usesOutfitWeight)) amount *= armorStatsForEntity(entity).footingTakenMul;
+      return originalFooting(entity, amount, reason, options);
     };
     RS.spendFooting.__clothingWeightArmor = true;
 
