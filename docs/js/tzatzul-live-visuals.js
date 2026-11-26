@@ -109,6 +109,17 @@
     return motion.lift;
   }
 
+  function companionBodyY(actor, targetY, flightLift, blend) {
+    const avatar = actor.avatarRef; // Store flight composition on the current visual, so remounts do not inherit it.
+    const currentY = avatar.group.position.y;
+    const previousLift = currentY === avatar.companionFlightWorldY ? avatar.companionFlightLift : 0; // A relocation or external placement starts with a fresh surface height.
+    const supportY = currentY - previousLift;
+    const y = supportY + (targetY - flightLift - supportY) * blend + flightLift;
+    avatar.companionFlightWorldY = y;
+    avatar.companionFlightLift = flightLift;
+    return y;
+  }
+
   // Pure movement seam: only a successful clearance check may replace a ground detour.
   function tryCompanionFlightStep(actor, tx, ty, speed, dt, direction, canFly, composeStep) {
     if (!actor?.def?.isFlyingSpecies || actor.stableRole !== 'companion' ||
@@ -414,6 +425,6 @@
       liveRigs: [...tracked.values()].filter(state => !!state.rig).length,
       loading: [...tracked.values()].filter(state => state.loading).length };
   }
-  window.TzatzulLiveVisuals = Object.freeze({ init, tick, snapshot, release, updateCompanionLocomotion, companionLift, tryCompanionFlightStep, getPlayerCarryPlacement,
+  window.TzatzulLiveVisuals = Object.freeze({ init, tick, snapshot, release, updateCompanionLocomotion, companionLift, companionBodyY, tryCompanionFlightStep, getPlayerCarryPlacement,
     applyPlayerCarryPlacement: (group, placement, undo) => applyCarryPlacement(deps.player, group, placement, undo) });
 })();

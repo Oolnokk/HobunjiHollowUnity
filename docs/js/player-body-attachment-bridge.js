@@ -29,9 +29,9 @@
       lateLoad('js/grehlr-head-rig-correction.js?v=20261118GrehlrCorr10', 'grehlr-head-rig-correction');
     }
   }
-  if (window.HobunjiAuthoredAnimalHeadRigs?.version !== '2026-11-18-nine-authored-rigs2') {
-    if (!parserLoad('js/animal-head-rig-authored.js?v=20261123h77c301d', 'animal-head-rig-authored')) {
-      lateLoad('js/animal-head-rig-authored.js?v=20261123h77c301d', 'animal-head-rig-authored');
+  if (window.HobunjiAuthoredAnimalHeadRigs?.version !== '2026-11-26-ten-authored-rigs1') {
+    if (!parserLoad('js/animal-head-rig-authored.js?v=20261126pingdortHead1', 'animal-head-rig-authored')) {
+      lateLoad('js/animal-head-rig-authored.js?v=20261126pingdortHead1', 'animal-head-rig-authored');
     }
   }
   if (!window.HobunjiShoulderSplineProfiles || Number(window.HobunjiShoulderSplineProfiles.version) < 5) {
@@ -40,8 +40,8 @@
     }
   }
   if (!window.AnimalShoulderSpline || Number(window.AnimalShoulderSpline.version) < 10) {
-    if (!parserLoad('js/animal-shoulder-spline.js?v=20261119h401d940', 'animal-shoulder-spline')) {
-      lateLoad('js/animal-shoulder-spline.js?v=20261119h401d940', 'animal-shoulder-spline');
+    if (!parserLoad('js/animal-shoulder-spline.js?v=20261126hc84ce7c', 'animal-shoulder-spline')) {
+      lateLoad('js/animal-shoulder-spline.js?v=20261126hc84ce7c', 'animal-shoulder-spline');
     }
   }
   if (!window.HobunjiShoulderSplitLayerParity || Number(window.HobunjiShoulderSplitLayerParity.version) < 3) {
@@ -97,20 +97,22 @@
   }
 
   function authoredShoulderRestFor(companion, combatDeps) {
-    if (companion?.def?.isFlyingSpecies) return null; // Native folded-wing perch, never a mammal curl.
+    if (companion?.def?.isFlyingSpecies && companion.creatureKey !== window.PingdortRegistration?.KIND) return null;
     const kind = genotypeKindFor(companion, combatDeps);
     const rawRig = kind ? window.CreatureGeneticsRender?.headRigForKind?.(kind) : null;
     return rawRig?.shoulderRest || null;
   }
 
   function effectiveShoulderRest(companion, combatDeps) {
-    if (companion?.def?.isFlyingSpecies) return null; // Do not inherit a stale baked rest profile.
+    if (companion?.def?.isFlyingSpecies && companion.creatureKey !== window.PingdortRegistration?.KIND) return null;
     const runtime = companion?.avatarRef?.shoulderRest;
     const authored = authoredShoulderRestFor(companion, combatDeps);
     return runtime || authored ? { ...(runtime || {}), ...(authored || {}) } : null;
   }
 
   function splineAllowedFor(companion, combatDeps) {
+    if (companion?.creatureKey && companion.creatureKey === window.PingdortRegistration?.KIND)
+      return !!companion.avatarRef?.shoulderRest?.authored; // Only the native shoulder avatar gets the registered Pingdort curl.
     if (companion?.def?.isFlyingSpecies) return false;
     const kind = genotypeKindFor(companion, combatDeps);
     return !!window.HobunjiShoulderSplineProfiles?.allows?.(kind);
