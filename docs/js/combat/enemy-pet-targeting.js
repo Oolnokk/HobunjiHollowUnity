@@ -9,7 +9,13 @@
     return !!target && Number(target.health) > 0 && !target._downed && !target._inCutscene &&
       !target._deathTransitionStarted && !target._denHidden &&
       Number.isFinite(target.x) && Number.isFinite(target.y) &&
-      (!target.areaId || target.areaId === areaId);
+      areaMatches(target, areaId);
+  }
+  // A registered player's area comes from the registry (the local avatar has no areaId of its own); anything else uses areaId.
+  function areaMatches(target, areaId) {
+    const reg = window.ActorRegistry;
+    const area = reg?.isPlayer(target) ? reg.areaOf(target) : target.areaId;
+    return !area || area === areaId;
   }
 
   function groundPet(target, areaId, players = null) {
