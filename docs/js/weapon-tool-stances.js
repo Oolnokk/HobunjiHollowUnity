@@ -540,7 +540,7 @@
       const clearance = window.HeldGroundPose; // Use the very same raw grip basis as the hand driver, before transient child-plane twist.
       const assembly=window.HobunjiWeaponSpriteAssemblies?.definitionFor?.(itemKey,def);
       const clearanceContext = clearance?.enabled?.() && activeSlot === 'weapon' && !idleDualWield
-        && (!assembly || assembly.flail)
+        // The solver checks exact topology, including emitter-only children.
         ? window.ProceduralHandFrameDriver?.groundPoseContext?.(this,itemKey) : null;
       if(clearanceContext) {
         clearanceContext.flexibleHaft=window.HobunjiWeaponSpriteAssemblies?.assemblyKind?.(mesh)==='flail'||!!assembly?.flail; // Suspension is solved separately by its existing owner.

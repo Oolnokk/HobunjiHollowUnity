@@ -191,7 +191,13 @@
     states.delete(root);
   }
 
-  function assemblyKind(root) { const state=states.get(root);return state?.config?.flail?'flail':state?'layered':null; } // Exact decorated root, not a guessed tool-name alias.
+  function assemblyKind(root) { const state=states.get(root);return state?.config?.flail?'flail':state?'layered':null; }
+  function isGroundNonSolidChild(plane,child){
+    const state=states.get(plane?.parent);
+    if(!state||state.plane!==plane)return false;
+    // Only exact emitter-owned groups are exempt. Real PNG overlays remain solid.
+    return !!state.fireEmitters?.some(fx=>fx.group===child&&child.userData?.weaponInterleavedVfx===true);
+  } // Exact decorated root, not a guessed tool-name alias.
   function definitionFor(itemKey, def) {
     return def?.weaponAssembly || DEF[itemKey] || DEF[def?.shapeKey] || (Array.isArray(def?.spriteLayers) && def.spriteLayers.length ? { layers: def.spriteLayers } : null);
   }
@@ -1256,7 +1262,7 @@
   }
 
   global.HobunjiWeaponSpriteAssemblies = {
-    definitions: DEF, assemblyKind, groundFitSpec, groundStatus:root=>states.get(root)?.groundClearance||null, decorate, setAction, tick, drop, syncDualWield, scheduleTickAfterPose, debugSnapshot, previewParts, enchantmentTargets, dualWieldEnchantmentTargets, bakedPoint,
+    definitions: DEF, assemblyKind, isGroundNonSolidChild, groundFitSpec, groundStatus:root=>states.get(root)?.groundClearance||null, decorate, setAction, tick, drop, syncDualWield, scheduleTickAfterPose, debugSnapshot, previewParts, enchantmentTargets, dualWieldEnchantmentTargets, bakedPoint,
     opaqueAt, anchor, refreshWorldMatrix, definitionFor, ropeSpriteSizing, ropeOpaqueBounds, tintRopePixels, stepPendulum, flailDamping, flailStrikeStraightening, flailYawTravel, fishingFlailHeadDirection, // Pure sizing and phase helpers have regression tests.
   };
   global.HobunjiCacheAudit?.register('weapon assemblies (weak owner registry)', () => { let count = 0; for (const entry of records) if (liveState(entry)) count++; return count; });

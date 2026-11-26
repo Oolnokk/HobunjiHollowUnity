@@ -316,13 +316,14 @@
   }
   function hasDrawingHaftChildren(plane){
     const copies=global.HobunjiDualWieldWeaponVisuals;
-    for(const child of plane.children)if(!copies?.isNonDrawingChild?.(plane,child))return true;
+    const assemblies=global.HobunjiWeaponSpriteAssemblies;
+    for(const child of plane.children)if(!copies?.isNonDrawingChild?.(plane,child)&&!assemblies?.isGroundNonSolidChild?.(plane,child))return true;
     return false;
   }
   function constrainWeapon(holder,mesh,context) {
     proof=null;
     if(!enabled()){if(active)restoreGeometry();return false;}
-    previewRoot=null;debug.angleDeg=0;debug.shortening=0;debug.originalMinY=null;debug.finalMinY=null;debug.fitted=false;debug.assemblyDetail=null;
+    previewRoot=null;debug.angleDeg=0;debug.shortening=0;debug.originalMinY=null;debug.finalMinY=null;debug.fitted=false;debug.assemblyDetail=null;debug.lightOriginalMinY=null;debug.lightFittedMinY=null;
     const y=groundY(),s=work(),plane=mesh?.userData?.toolPlane;
     if(!s||!context||!holder?.parent||!holder.visible||!mesh?.visible||!plane?.visible)return fail('no-rig');
     // A missing support sample is normal over a gap; it must not undo a fit.
@@ -352,7 +353,7 @@
       setCompression(plane,source,box,rows,fit.profile.segments,fit.anchorZ,fit.amount,holder,mesh.scale.z);
       active.rootOffset=mesh.position.z;
     } else releaseCompression();
-    debug.shortening=fit?.amount??0;debug.fitted=Number.isFinite(fit?.amount);
+    debug.shortening=fit?.amount??0;debug.fitted=Number.isFinite(fit?.amount);debug.lightOriginalMinY=fit?.lightOriginalMinY??null;debug.lightFittedMinY=fit?.lightFittedMinY??null;
     if(!Number.isFinite(y))return fail('no-ground-sample',true);
     if(Math.abs(mesh.quaternion.x)+Math.abs(mesh.quaternion.y)+Math.abs(mesh.quaternion.z)>1e-6
       ||Math.abs(plane.rotation.x+Math.PI/2)>1e-4||Math.abs(plane.rotation.y)>1e-4
@@ -438,6 +439,7 @@
       fit.amount=fixedValue(fit.amount,true,amount);fit.anchorZ=gripZ;
       fit.referenceMatrix=s.reference.clone();fit.referenceFloor=target;fit.referenceFlailScale=context.lightReferenceFlailScale??1;
       debug.lightFittedMinY=evaluate(amount);
+      fit.lightOriginalMinY=referenceMin;fit.lightFittedMinY=debug.lightFittedMinY;
       if(suspension){
         const e=s.reference.elements,scale=Math.hypot(e[4],e[5],e[6]);
         const anchorY=e[1]*suspension.x-e[5]*contractedZ(-suspension.y,gripZ,segments,amount,suspension.x)+e[13];

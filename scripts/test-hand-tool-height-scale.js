@@ -82,3 +82,8 @@ assert.equal(gp,grips.groundProfileForTool('modular:hatchet:hammer:steel'));
 assert.equal(gp.minSegmentScale,.5);
 assert.ok(Math.abs(gp.segments[0].x0-(-80*.5/450))<1e-10);
 assert.equal(gp.contactOutline.length,0,'never reuse donor contact for assembled head');
+
+for(const key of ["hatchet","hoe","bshuakauitl","grappleflail","warhammer","pickshovel","daggersword","plainssword","dagger","kylie","warcleaver","fishingspear","fishingmace","harlyaolongsword","harlyaobroadsword"])assert.ok(grips.lengthProfileForTool(key),'latest export: '+key);
+assert.equal(grips.lengthProfileForTool('grappleflail').ropeMinScale,.6);
+assert.equal(grips.lengthProfileForTool('warhammer').minSegmentScale,.75);
+assert.equal(grips.toolScaleForTool('hachututorchstaff'),1);

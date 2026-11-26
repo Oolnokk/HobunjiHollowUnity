@@ -136,3 +136,10 @@ hiddenOff.children[0].visible=true;
 assert.equal(preview.hasDrawingHaftChildren(planeFixture),true,'real visible dual copy is still rejected');
 hiddenOff.children[0].visible=false;planeFixture.children.push(overlay);
 assert.equal(preview.hasDrawingHaftChildren(planeFixture),true,'unrelated layer is still rejected');
+
+const flame={userData:{weaponInterleavedVfx:true}};
+const firePlane={children:[flame]};
+context.window.HobunjiWeaponSpriteAssemblies={isGroundNonSolidChild:(p,c)=>p===firePlane&&c===flame};
+assert.equal(preview.hasDrawingHaftChildren(firePlane),false,'staff flame must not reject rigid sprite');
+firePlane.children.push({userData:{weaponInterleavedVfx:true}});
+assert.equal(preview.hasDrawingHaftChildren(firePlane),true,'unowned child cannot bypass topology check');
