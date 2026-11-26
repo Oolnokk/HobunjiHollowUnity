@@ -391,3 +391,28 @@ console.log('PASS world render pipeline: pass order, scopes, frame hooks, failur
   assert.equal(scene.children[0].children[0].visible,true);
   assert.equal(p.sceneMatrixCensus({}),null);
 }
+
+// The gameplay pipeline, not the inner composite wrapper, owns the final text
+// draw after perception. Both render modes release reservations on failure.
+for (const outlines of [true,false]) {
+  const stages=[];
+  const h=createWorldRenderPipelineHarness({window:{OutlineRenderPerformance:{
+    prepareWorldTextOverlay(renderer,scene,camera) {
+      stages.push('reserve');
+      let finished=false;
+      return present=>{
+        if(finished)return false;
+        finished=true; stages.push(present?'present':'abort');
+        if(present) assert.equal(h.pipeline.currentPass(),'worldText');
+        return present;
+      };
+    }
+  },PerceptionMode:{renderOverlay(){stages.push('perception');}}}}).init();
+  h.settings.outlines=outlines;
+  h.frame();
+  assert.deepEqual(stages,['reserve','perception','present']);
+  stages.length=0;
+  h.throwOn=()=>true;
+  assert.throws(()=>h.frame(),/synthetic native render failure/);
+  assert.deepEqual(stages,['reserve','abort']);
+}

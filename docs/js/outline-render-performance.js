@@ -530,7 +530,7 @@
     if (pending) {
       restoreWorldTextBaseVisibility(pending.entries);
       restoreWorldTextOverlayLayers(pending);
-      abandonedWorldTextOverlays++;
+      if (pending.entries.length) abandonedWorldTextOverlays++;
     }
     pendingWorldTextOverlayByRenderer.delete(renderer);
   }
@@ -863,7 +863,7 @@
           // Without a camera authority, prefer accepting a new world camera rather than
           // indefinitely presenting glyphs from a stale camera after a scene transition.
         }
-        if (auxiliaryScene || auxiliaryCamera) {
+        if (pending.explicit || auxiliaryScene || auxiliaryCamera) {
           auxiliaryWorldBasePassesPreserved++;
           if (auxiliaryCamera) {
             // The auxiliary camera traverses this same scene with every layer
@@ -930,7 +930,17 @@
     const startedAt = performance.now();
     let result;
     try {
-      if (pass === 'base') {
+      const explicit = pendingWorldTextOverlayByRenderer.get(renderer);
+      if (explicit?.explicit && explicit.scene === scene && explicit.camera === camera
+          && (pass === 'base' || pass === 'postOrDirect')) {
+        // The world pipeline already reserved and hid these meshes. Never let
+        // a nested composite, replay or direct render consume the reservation.
+        result = originalRender.call(renderer, scene, camera);
+        if (pass === 'base' || !renderer.getRenderTarget?.()) {
+          explicit.matrixEpoch = matrixEpochOf(scene);
+          explicit.baseAt = performance.now();
+        }
+      } else if (pass === 'base') {
         // A still-pending overlay means the prior frame never reached the known
         // presentation pass. Restore those layers before collecting this frame so
         // a bad/alternate render sequence cannot strand popup meshes indefinitely.
@@ -964,7 +974,7 @@
       }
 
       const pending = pendingWorldTextOverlayByRenderer.get(renderer);
-      if (pass === 'postOrDirect' && pending && !renderer.getRenderTarget?.()) {
+      if (pass === 'postOrDirect' && pending && !pending.explicit && !renderer.getRenderTarget?.()) {
         const isOutlineComposite = !!findOutlineCompositeMaterial(scene);
         const isDirectGameplayPresentation = pending.scene === scene && pending.camera === camera;
         if (isOutlineComposite || isDirectGameplayPresentation) {
@@ -1001,6 +1011,25 @@
     worldTextAboveShell: true,
     setScoreCharacterRootsProvider(provider) {
       scoreActorRootProvider = typeof provider === 'function' ? provider : null; // Injected once from the game, executed only for a plate-revealed exterior melody.
+    },
+    // The gameplay pipeline owns presentation timing; keep text out of every
+    // world/paint/perception pass, then draw exactly once on the finished canvas.
+    // The older render-wrapper detection remains only for standalone hosts.
+    prepareWorldTextOverlay(renderer, scene, camera) {
+      invalidatePendingWorldTextOverlay(renderer);
+      const entries = collectWorldTextOverlayEntries(scene);
+      const pending = { scene, camera, entries, explicit: true, matrixEpoch: -1, baseAt: NaN }; // Epoch becomes valid only after the base draw.
+      reserveWorldTextOverlayLayer(entries);
+      hideWorldTextDuringBase(entries);
+      pendingWorldTextOverlayByRenderer.set(renderer, pending);
+      if (entries.length) withheldWorldTextBasePasses++;
+      return function finishWorldTextOverlay(present) {
+        if (pendingWorldTextOverlayByRenderer.get(renderer) !== pending) return false;
+        restoreWorldTextBaseVisibility(entries);
+        if (present) return finalizeWorldTextOverlay(renderer, pending);
+        invalidatePendingWorldTextOverlay(renderer);
+        return false;
+      };
     },
     prepareDirectScoreOverlay(renderer, scene, camera, scoreMeshes) {
       if (!scoreMeshes) return null;

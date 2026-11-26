@@ -583,6 +583,7 @@
     let worldFrame = null;
     const captureTimings = captureHookOff ? [] : null; // No extra timing arrays or walks in ordinary gameplay.
     let completed = false; // Mark a failed native submission as an incomplete capture.
+    let finishWorldText = null; // Owned by this frame; released even if a native draw throws.
     suspendScopes(scopeCtx, scopeRestores, captureTimings);
     try {
       worldFrame = hooks?.beginWorldFrame?.({ renderer, scene: activeScene, camera }) || null;
@@ -593,10 +594,14 @@
       occlusionFrame.walkers = deps.npcWalkers; occlusionFrame.hostiles = deps.hostileObjects; occlusionFrame.area = area;
       window.ActorRenderOcclusion?.beginFrame?.(occlusionFrame);
       window.CloudForestFog?.prepareKanthicGlyphFrame?.(activeScene,now,camera); // Hide base-pass glow; only the occupied region receives depth-tested emission.
+      finishWorldText = window.OutlineRenderPerformance?.prepareWorldTextOverlay?.(renderer, activeScene, camera) || null;
       if (outlines) renderOutlinedPasses(renderer, camera, activeScene, seamOn, area);
-      else renderDirectPasses(renderer, camera, activeScene, area);
+      else renderDirectPasses(renderer, camera, activeScene, area, !!finishWorldText);
+      pass('worldText');
+      finishWorldText?.(true); // The final color writer, after painterly and Perception Mode.
       completed = true;
     } finally {
+      finishWorldText?.(false); // Idempotent; release reservations if any earlier pass failed.
       pass('cleanup');
       window.CloudForestFog?.endKanthicGlyphFrame?.(); // Restore authored visibility before resuming gameplay.
       window.ActorRenderOcclusion?.endFrame?.(); // Release all render-only hostile/NPC suppressions before resuming game systems.
@@ -775,10 +780,10 @@
     window.PerceptionMode?.renderOverlay(renderer, activeScene, camera);
   }
 
-  function renderDirectPasses(renderer, camera, activeScene, area) {
+  function renderDirectPasses(renderer, camera, activeScene, area, worldTextManaged) {
     const PerfProfiler = window.PerfProfiler;
-    const scoreMeshes = window.PuzzleCaveEntrances?.activeScoreMeshes?.(area, activeScene); // The active cave plate owns direct-render score candidates.
-    const finishScore = window.OutlineRenderPerformance?.prepareDirectScoreOverlay?.(renderer, activeScene, camera, scoreMeshes); // Keeps the glyphs out of actor probes and held-depth replay.
+    const scoreMeshes = worldTextManaged ? null : window.PuzzleCaveEntrances?.activeScoreMeshes?.(area, activeScene); // Compatibility for hosts without the explicit overlay API.
+    const finishScore = worldTextManaged ? null : window.OutlineRenderPerformance?.prepareDirectScoreOverlay?.(renderer, activeScene, camera, scoreMeshes);
     let worldPresented = false; // Release the temporary layer on error without drawing an overlay over an incomplete frame.
     try {
       window.PngPlaneOutlineOccluder.prune(); // Outlines off skips the pass that otherwise compacts this registry every frame.

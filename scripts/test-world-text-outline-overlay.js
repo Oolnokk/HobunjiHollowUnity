@@ -37,6 +37,7 @@ class Renderer {
 }
 Renderer.prototype.render = function render(scene, camera) {
   this.calls.push({ scene: scene?.name || '', mask: Number(camera?.layers?.mask ?? 0) >>> 0, target: this._target,
+    popupVisible:scene?.testPopup?.visible, popupLayers:scene?.testPopup?.layers?.mask,
     noteVisible:scene?.scoreNote?.visible, noteDepthTest:scene?.scoreNote?.material?.depthTest, actorColorWrite:scene?.maskActor?.material?.colorWrite,
     actorDepthWrite:scene?.maskActor?.material?.depthWrite, actorAlphaTest:scene?.maskActor?.material?.alphaTest,
     effectLayers:scene?.maskEffect?.layers?.mask, actorLayers:scene?.maskActor?.layers?.mask });
@@ -406,3 +407,37 @@ testGameplayZoneChangeReplacesStaleOverlay();
 testSameSceneAuxiliaryAndLiveCameraSwap();
 testPlateGatedScoreAvoidsHiddenFinalPass();
 console.log('world-text final-overlay regression guard passed');
+
+// Gameplay owns final presentation, regardless of the painterly wrapper order.
+// Simulate an early canvas composite, an offscreen precomposite, final canvas
+// and perception. The same reservation covers both outlined and direct modes.
+for (const outlined of [true, false]) {
+  const renderer = new Renderer(), popup = makePopupMesh();
+  const scene = makeWorldScene('managed-world', popup); scene.testPopup = popup;
+  const camera = { layers: new Layers(0xffffffff) };
+  const post = makePostScene('world_render_composite'), postCamera = {layers:new Layers(1)};
+  const finish = api.prepareWorldTextOverlay(renderer, scene, camera);
+  if (outlined) renderBase(renderer, scene, camera);
+  else { renderer.setRenderTarget(null); renderer.render(scene,camera); }
+  assert.equal(popup.visible,false,'text withheld for every world pass');
+  if (outlined) {
+    renderer.setRenderTarget({texture:{}}); renderer.render(post,postCamera);
+    renderer.setRenderTarget(null); renderer.render(post,postCamera);
+    renderer.render(post,postCamera);
+  }
+  renderer.setRenderTarget(null);
+  renderer.render({name:'perception',children:[]},postCamera);
+  assert.equal(renderer.calls.filter(c=>c.scene===scene.name&&c.mask===(1<<6)).length,0,'no intermediate presentation consumes text');
+  assert.equal(finish(true),true);
+  const last=renderer.calls.at(-1);
+  assert.equal(last.scene,scene.name); assert.equal(last.target,null); assert.equal(last.mask,1<<6);
+  assert.equal(last.popupVisible,true); assert.equal(last.popupLayers,1<<6);
+  assert.equal(popup.visible,true); assert.equal(popup.layers.mask,1);
+  assert.equal(finish(false),false,'cleanup does not draw twice');
+  const next=api.prepareWorldTextOverlay(renderer,scene,camera);
+  const count=renderer.calls.length;
+  next(false);
+  assert.equal(renderer.calls.length,count,'aborted frame draws no text');
+  assert.equal(popup.visible,true); assert.equal(popup.layers.mask,1);
+}
+console.log('Explicit world text presentation passed');
