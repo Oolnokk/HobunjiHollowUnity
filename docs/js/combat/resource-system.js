@@ -199,7 +199,7 @@
     windblownStamina: {
       name: "Windblown Stamina", resource: "stamina", extend: "currentBack", priority: 91, recovers: true,
       family: "control", tags: ["tothal", "wind"],
-      desc: "Each application changes the world-space wind direction. Additive movement reaches 50% of authored speed at 100 points; voluntary movement with the wind costs Footing. Naturally fades."
+      desc: "Each application changes the world-space wind direction. Additive movement reaches 50% of available speed on the ground and 75% in midair at 100 points; voluntary movement with the wind costs Footing (also 50% stronger in midair). Naturally fades."
     },
     leadboundStamina: {
       name: "Leadbound Stamina", resource: "stamina", extend: "currentBack", priority: 96, recovers: true,
@@ -500,6 +500,20 @@
 
   function hasWindblown(entity) { return getAffliction(entity, "windblownStamina") > 0; }
 
+  const WINDBLOWN_AIR_MULTIPLIER = 1.5; // Shared tuning for airborne horizontal drift and associated assisted-travel Footing cost.
+
+  function windAirMultiplier(entity, airborne) {
+    // Explicit native solver state wins; the fallback covers player dodges and
+    // committed lunges that already expose their active flight state.
+    const inAir = typeof airborne === "boolean" ? airborne : !!(
+      entity?._freeJump?.phase === "air" ||
+      entity?._mountHop ||
+      (entity?.lunging && (entity.lungeHopUnits > .01 || entity.lungeDirectFlightStrength > .01)) ||
+      (entity?._banditLunging && entity._banditLungeAirborne)
+    );
+    return inAir ? WINDBLOWN_AIR_MULTIPLIER : 1;
+  }
+
   function composeMovement(entity, x, y, options = {}) {
     const mode = options.mode || "walk"; // Used to select the existing scalar mobility budget.
     const scalar = options.scalarApplied ? 1 : movementMultiplier(entity, mode);
@@ -509,20 +523,21 @@
     if (!amount || !entity || options.wind === false) return { x: baseX, y: baseY, footingCost: 0, wind: false };
     const direction = windblownDirection(entity); // Shared world-space wind, never camera-relative.
     const reference = Math.max(0, Number(options.reference) || Math.hypot(baseX, baseY)); // In the same units as the caller's vector (velocity or displacement).
-    const strength = reference * amount * .005;
+    const airMultiplier = windAirMultiplier(entity, options.airborne); // Only wind changes, never authored steering or vertical physics.
+    const strength = reference * amount * .005 * airMultiplier;
     const voluntary = options.voluntary === false ? 0 : Math.hypot(baseX, baseY);
     const dot = voluntary > 1e-8 ? (baseX * direction.x + baseY * direction.y) / voluntary : 0;
     const alignment = Math.max(0, Math.min(1, dot));
     const duration = Math.max(0, Number(options.dt) || 0);
     return { x: baseX + direction.x * strength, y: baseY + direction.y * strength,
-      footingCost: amount * .1 * alignment * duration, wind: true, windX: direction.x, windY: direction.y };
+      footingCost: amount * .1 * alignment * duration * airMultiplier, wind: true, windX: direction.x, windY: direction.y };
   }
 
   // A mounted pair shares one physical trajectory, not two successive moves.
   // Both afflictions evaluate the same already-scaled native heading so one
   // actor's wind cannot masquerade as the other's voluntary movement.
   function composeMountedMovement(rider, carrier, x, y, options = {}) {
-    const opts = { ...options, mode: "walk", scalarApplied: true, rotationApplied: true };
+    const opts = { ...options, airborne: typeof options.airborne === "boolean" ? options.airborne : !!carrier?._mountHop, mode: "walk", scalarApplied: true, rotationApplied: true }; // Rider and carrier share the same airborne state.
     const riderMotion = hasWindblown(rider) ? composeMovement(rider, x, y, opts) : null;
     const carrierMotion = carrier !== rider && hasWindblown(carrier) ? composeMovement(carrier, x, y, opts) : null;
     return {
@@ -1508,6 +1523,7 @@
     movementDebug: entity => ({ // Mobile diagnostics; no per-frame DOM work.
       walk: movementMultiplier(entity, 'walk'), dodgeLunge: movementMultiplier(entity, 'dodge'),
       windblown: getAffliction(entity, 'windblownStamina'),
+      windAirMultiplier: windAirMultiplier(entity), // Mobile diagnostics show the active flight modifier.
       windYawDeg: hasWindblown(entity) ? windblownDirection(entity).angle * 180 / Math.PI : null,
       dementedYawDeg: (Number(window.FeyIllusions?.movementRotationRad?.(entity)) || 0) * 180 / Math.PI,
     }),
