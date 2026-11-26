@@ -131,14 +131,21 @@
   }
 
   function runPhase(hook, phase, fn, ctx, state) {
-    const start = timing ? performance.now() : 0;
+    const probe = window.ProbePerformanceCapture; // Opt-in session, independent of the live RenderHooks timing toggle.
+    const probeFrame = probe?.active ? probe.beginTiming('render hook') : null;
+    const timed = timing || !!probeFrame;
+    const start = timed ? performance.now() : 0;
     try {
       return fn(ctx, state);
     } catch (error) {
       recordError(hook, phase, error);
       return undefined;
     } finally {
-      if (timing) hook.ms += performance.now() - start;
+      if (timed) {
+        const elapsed = performance.now() - start;
+        if (timing) hook.ms += elapsed;
+        if (probeFrame) probe.recordTiming(probeFrame,'render hook: '+hook.id+'/'+phase,elapsed);
+      }
     }
   }
 

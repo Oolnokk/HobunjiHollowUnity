@@ -857,9 +857,10 @@ const _AUTHORED_SURFACE_TONE_CACHE = new PortraitPixelCache(4 * 1024 * 1024);
 // Small bounded caches shared by temporary NPC portrait canvases and persistent player/dialogue canvases.
 const _BEARD_HOOD_RESULT_CACHE = new PortraitPixelCache(8 * 1024 * 1024, 32); // Two 200x200 negotiated layers per entry.
 const _BEARD_HOOD_SOURCE_CACHE = new PortraitPixelCache(4 * 1024 * 1024, 24); // Pristine beard ImageData, never mutated by negotiation.
+const _BEARD_HOOD_CLOTH_CACHE = new PortraitPixelCache(4 * 1024 * 1024, 24); // Immutable unwarped hood readbacks shared across beard combinations.
 const _BEARD_HOOD_IMAGE_IDS = new WeakMap(); // Identifies decoded canonical images without keeping them alive.
 let _beardHoodNextImageId = 0;
-const _beardHoodPerf = { hits:0, misses:0, beardReadHits:0, beardReads:0, hoodReadHits:0, bypasses:0 };
+const _beardHoodPerf = { hits:0, misses:0, beardReadHits:0, beardReads:0, hoodReadHits:0, clothReadHits:0, clothReads:0, bypasses:0 };
 function beardHoodIdentity(value) {
   let id = _BEARD_HOOD_IMAGE_IDS.get(value);
   if (!id) { id = ++_beardHoodNextImageId; _BEARD_HOOD_IMAGE_IDS.set(value,id); }
@@ -897,7 +898,7 @@ window.__portraitPixelCacheDebug = () => ({
   images: IMG_CACHE.snapshot(), hueSat: _HUESAT_FILL_CACHE.snapshot(),
   shade: _SHADE_FILL_CACHE.snapshot(), surfaceTone: _AUTHORED_SURFACE_TONE_CACHE.snapshot(),
   imageLoads: { ...portraitImageLoadDebug },
-  beardHood: { ..._beardHoodPerf, negotiated: _BEARD_HOOD_RESULT_CACHE.snapshot(), pristine: _BEARD_HOOD_SOURCE_CACHE.snapshot() },
+  beardHood: { ..._beardHoodPerf, negotiated: _BEARD_HOOD_RESULT_CACHE.snapshot(), pristine: _BEARD_HOOD_SOURCE_CACHE.snapshot(), pristineCloth: _BEARD_HOOD_CLOTH_CACHE.snapshot() },
 });
 function _surfaceToneConfig() {
   const cfg = window.SCRATCHBONES_CONFIG?.game?.portrait?.tinting || {};
@@ -2258,17 +2259,31 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
           _beardHoodPerf.beardReads++;
         } catch (_) { /* Shared negotiation retains its safe error fallback. */ }
       }
+      // Reuse only the same canonical, static draw; dynamic hoods and custom
+      // preview composers keep their fresh readbacks. Beard-specific policy
+      // is deliberately absent from this pristine cloth key.
+      const clothKey = resultKey ? JSON.stringify([hoodKey,staticDeform]) : null;
+      let pristineCloth = clothKey ? _BEARD_HOOD_CLOTH_CACHE.get(clothKey) : null;
+      if (pristineCloth) _beardHoodPerf.clothReadHits++;
+      else if (clothKey) {
+        try {
+          pristineCloth = hoodCtx.getImageData(0,0,PORTRAIT_CW,PORTRAIT_CH);
+          _BEARD_HOOD_CLOTH_CACHE.set(clothKey,pristineCloth);
+          _beardHoodPerf.clothReads++;
+        } catch (_) { /* Fall through to the normal readback/error handling. */ }
+      }
       const stretch = cutoutApi.stretchHoodToRoots(hoodScratch, tuftRoots, {
         maxStretch:beardAuthoring.maxStretch,subdivision:beardAuthoring.subdivision,
         aboveInfluence:beardAuthoring.aboveInfluence,belowInfluence:beardAuthoring.belowInfluence,
-        retainUnchangedImageData:true
+        retainUnchangedImageData:true,pristineHoodImageData:pristineCloth
       });
       if (stretch.unchangedImageData) _beardHoodPerf.hoodReadHits++;
       const result = cutoutApi.negotiateBeardHood(beardScratch, hoodScratch, paintedBeardMask, hoodPolicy.mask,
         {hoodMoves:stretch.moves,permissionMode:hoodPolicy.mode,coneSpread:hoodPolicy.coneSpread,
           topConeSpread:hoodPolicy.topConeSpread,topUpConeSpread:hoodPolicy.topUpConeSpread,
           topDownConeLength:hoodPolicy.topDownConeLength,hoodAlphaFloor:hoodPolicy.alphaFloor,whiskerMask,
-          requestMode:beardAuthoring.requestMode,beardImageData,unchangedHoodImageData:stretch.unchangedImageData});
+          requestMode:beardAuthoring.requestMode,beardImageData,unchangedHoodImageData:stretch.unchangedImageData,
+          pristineHoodImageData:!stretch.applied && !stretch.error ? pristineCloth : null});
       if (!result.error) {
         negotiatedBeard = beardScratch;
         negotiatedHood = hoodScratch;

@@ -363,11 +363,16 @@
     }
   }
 
-  async function writeRecoveryCheckpoint(slot, record) {
+  async function writeRecoveryCheckpoint(slot, record, { returnSerialized = false } = {}) {
     if (_state !== 'ready' || !_handle) throw new Error('No local save folder connected.');
-    const dirHandle = await _handle.getDirectoryHandle(RECOVERY_DIR, { create: true }); // Recovery writes are isolated from canonical characters/worlds/layouts.
-    await writeJsonFile(dirHandle, recoveryFilename(slot), record);
-    return record;
+    const filename = recoveryFilename(slot); // Validate the recovery slot before touching disk.
+    const raw = JSON.stringify(record); // Snapshot once before I/O; the optional browser mirror uses exactly these committed bytes.
+    const dirHandle = await _handle.getDirectoryHandle(RECOVERY_DIR, { create: true });
+    const fileHandle = await dirHandle.getFileHandle(filename, { create: true });
+    const writable = await fileHandle.createWritable();
+    await writable.write(raw);
+    await writable.close();
+    return returnSerialized ? raw : record; // Preserve the historical public result for other callers.
   }
 
   async function readRecoveryCheckpoint(slot) {

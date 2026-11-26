@@ -302,10 +302,15 @@
   // squeezePileWithExternalWorker), at `efficacy`× the yield.
   const externalWorkers = new Map(); // vatId → worker
   function clearFamilyWorkers() { // Family assignments are save-scoped; remove ghosts when changing characters/worlds.
-    for (const [vatId, worker] of externalWorkers) if (worker.familyWorker) externalWorkers.delete(vatId);
+    for (const [vatId, worker] of externalWorkers) if (worker.familyWorker) {
+      window.RomanceFamily?.clearVatWorkerPose?.(vatId);
+      externalWorkers.delete(vatId);
+    }
   }
   function setExternalWorker(vatId, worker) {
     if (!vatId) return false;
+    const previous = externalWorkers.get(vatId); // Releasing/replacing a worker also releases their render attachment.
+    if (previous?.familyWorker && (!worker?.familyWorker || previous.id !== worker.id)) window.RomanceFamily?.clearVatWorkerPose?.(vatId);
     if (worker) externalWorkers.set(vatId, { ...worker, external: true });
     else externalWorkers.delete(vatId);
     return true;
@@ -366,7 +371,8 @@
     if (!vatCanAccept(rec.kind, rec.genotype)) return { ok: false, message: `${rec.name} is not Small; only Small livestock can work a squeezing vat.` };
     const vat = findVatById(vatId);
     if (!vat || deps.PROCESSING_FURNITURE_DEFS[vat.furnitureKey]?.method !== 'squeezing') return { ok: false, message: 'That is not a squeezing vat.' };
-    if (list.some(l => l.assignedVatId === vatId && l.id !== livestockId && _workerCanOperate(l))) return { ok: false, message: 'That vat already has livestock assigned to it.' };
+    const worker = assignedWorkerForVat(vatId, list); // Same authority as processing and animated worker dispatch.
+    if (worker && (worker.external || worker.id !== livestockId)) return { ok: false, message: 'That vat already has a worker assigned to it.' };
     const oldVatId = rec.assignedVatId; // Used to release a live pose when transferring a worker between vats.
     rec.assignedVatId = vatId;
     deps.saveWorldLivestock(list);
@@ -386,6 +392,7 @@
     return { ok: true, message: `${rec.name} unassigned from its vat.` };
   }
   function retargetAssignments(oldVatId, newVatId = null) {
+    if (!oldVatId || oldVatId === newVatId) return 0;
     const list = deps.loadWorldLivestock();
     let changed = 0;
     for (const rec of list) {
@@ -394,8 +401,14 @@
       changed++;
     }
     if (changed) deps.saveWorldLivestock(list);
-    if (changed) window.FarmAnimals?.clearVatWorkerPose?.(oldVatId);
-    return changed;
+    const external = externalWorkers.get(oldVatId); // Keep the live external assignment in sync with the moved processor.
+    if (external) {
+      externalWorkers.delete(oldVatId);
+      if (newVatId) externalWorkers.set(newVatId, external);
+    }
+    const familyChanged = window.RomanceFamily?.retargetVatAssignments?.(oldVatId, newVatId) || 0;
+    if (changed || external || familyChanged) window.FarmAnimals?.clearVatWorkerPose?.(oldVatId);
+    return changed + (familyChanged || (external ? 1 : 0));
   }
   // Starts the vat's real authored squeezing job for raw dew (bypassing the
   // dig-up-a-pile step). Returns 'started', 'busy', or false when the vat no
@@ -431,7 +444,8 @@
   // Lets an external worker pull one dug-up-able dew pile off the farm into
   // its vat. Returns the autoSqueezeAtVat status, or 'no-dew'.
   function squeezePileWithExternalWorker(vatId) {
-    if (!externalWorkers.has(vatId)) return false;
+    const external = externalWorkers.get(vatId); // Legacy conflicting assignments must not consume dew using another worker's job.
+    if (!external || assignedWorkerForVat(vatId) !== external) return false;
     const pile = listPiles()[0];
     if (!pile) return 'no-dew';
     const status = autoSqueezeAtVat(vatId, pile.colorKey);

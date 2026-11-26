@@ -84,6 +84,10 @@
 
   // Created by init(). Names kept from game.js so its old comments still match.
   let shellOutlineMat = null;
+  const DEFAULT_GENERATED_OUTLINE_MODE = 'screen'; // User-selected shipped default and settings reset authority.
+  let generatedOutlineMode = DEFAULT_GENERATED_OUTLINE_MODE; // Experimental generated-outline selector; master Outlines still controls the composite.
+  let shellMaskMaterial = null; // Unexpanded, front-facing geometry for the selective screen-space mode.
+  let shellMaskRT = null; // Allocated only in screen-space mode, reused between frames.
   let targetOutlineGreenMat = null;
   let targetOutlineRedMat = null;
   let _furnitureIdMat = null;
@@ -236,6 +240,9 @@
 
   function createOutlineMaterials() {
     shellOutlineMat = createShellOutlineMaterial(THREE);
+    shellMaskMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.FrontSide, skinning: true, morphTargets: true });
+    shellMaskMaterial.userData ||= {};
+    shellMaskMaterial.userData.hobunjiScreenOutlineMask = true; // Existing matrix-reuse owner identifies this secondary pass.
 
     // Shared vertex shader used for coloured target outlines (supports instancing)
     const _targetOutlineVert = `
@@ -401,6 +408,7 @@
     if (!_mainRT) return;
     const seamOn = !!deps.settings.seamOutlines() && window.OutlineRenderPerformance?.nonShellOutlinesSuppressed !== true; // Retired seam output cannot justify a target switch, clear or full-size ID buffer.
     _mainRT.setSize(pixelW, pixelH);
+    if (shellMaskRT) shellMaskRT.setSize(pixelW, pixelH);
     // The material-ID buffer stays 1x1 while seam outlines are off.
     _edgeIdRT.setSize(seamOn ? pixelW : 1, seamOn ? pixelH : 1);
     _postMat.uniforms.uTexel.value.set(1 / pixelW, 1 / pixelH);
@@ -458,16 +466,24 @@
   registerRenderScope({ id: 'wilderness-distance-cull', owner: 'wilderness-distance-cull.js', order: 600,
     suspend: ctx => window.WildernessDistanceCull?.suspendForRender?.(ctx.scene, ctx.camera, ctx.playerTile, { isZone: ctx.isZone }) });
 
-  function suspendScopes(ctx, restores) {
+  function suspendScopes(ctx, restores, captureTimings = null) {
     for (const scope of scopes) {
       if (!scope.enabled) continue;
+      const startedAt = captureTimings ? performance.now() : 0; // Time scope preparation only on an explicitly captured frame.
+      const profiler = window.PerfProfiler; // Reuse the existing opt-in timing owner.
+      const scopePerf = (window.ProbePerformanceCapture?.active || profiler?.isEnabled?.()) ? profiler?.begin('render scope: '+scope.id) : null;
+      let failed = false; // Distinguish a failed scope from a no-op.
       try {
         const restore = scope.suspend(ctx);
         if (typeof restore === 'function') restores.push(restore);
       } catch (error) {
+        failed = true;
         scope.errors++;
         scope.lastError = String(error?.message || error);
         if (scope.errors <= 3) console.warn(`[WorldRenderPipeline] scope ${scope.id} failed`, error);
+      } finally {
+        if (captureTimings) captureTimings.push({ id: scope.id, ms: Number((performance.now() - startedAt).toFixed(3)), failed });
+        if (scopePerf) profiler.end(scopePerf);
       }
     }
   }
@@ -484,27 +500,45 @@
   let captureArmed = false;
   let capture = null; // Last captured frame.
   let captureRecords = null;
-  const captureStarts = [];
+  let captureMainCensus = null; // One draw-state graph census, after render scopes and presentation hooks.
+  let captureMainCensusError = null; // Diagnostic errors must not prevent rendering.
+  let captureStaticWallAudit = null; // Audit after native main matrices, before probe/auxiliary draws invalidate readiness.
   function recordPassStart(ctx) {
-    captureStarts[ctx.depth] = performance.now();
+    const worldScene = ctx.scene === scopeCtx.scene; // Excludes other scenes and fullscreen composite.
+    if (currentPass === 'main' && worldScene && ctx.camera === scopeCtx.camera && !captureMainCensus && !captureMainCensusError) {
+      try { captureMainCensus = sceneMatrixCensus(ctx.scene); }
+      catch (error) { captureMainCensusError = String(error?.message || error); }
+    }
+    // At the last capture hook before native r128 rendering, true requests a full scene matrix walk.
+    return { startedAt: performance.now(), pass: currentPass, worldScene, sceneAutoUpdate: ctx.scene?.autoUpdate === true };
   }
-  function recordPassEnd(ctx) {
-    if (!captureRecords) return;
+  function recordPassEnd(ctx, state) {
+    if (!captureRecords || !state) return;
     const renderer = ctx.renderer;
     const scene = ctx.scene;
     const rt = renderer.getRenderTarget?.();
     const describe = window.HobunjiRenderLayers?.describe;
     captureRecords.push({
-      pass: currentPass,
+      pass: state.pass,
       depth: ctx.depth,
+      worldScene: state.worldScene,
+      sceneAutoUpdate: state.sceneAutoUpdate,
       scene: scene?.name || (scene === deps?.getActiveScene?.() ? 'activeScene' : scene?.type || '?'),
       layers: describe ? describe(ctx.camera?.layers?.mask) : ctx.camera?.layers?.mask,
       override: scene?.overrideMaterial ? (scene.overrideMaterial.name || scene.overrideMaterial.type) : null,
       target: rt ? `${rt.width}x${rt.height}` : 'canvas',
       draws: renderer.info?.render?.calls ?? null,
       triangles: renderer.info?.render?.triangles ?? null,
-      ms: Number((performance.now() - (captureStarts[ctx.depth] || performance.now())).toFixed(3)),
+      ms: Number((performance.now() - state.startedAt).toFixed(3)),
     });
+    if (state.pass === 'main' && state.worldScene && state.sceneAutoUpdate &&
+        ctx.camera === scopeCtx.camera && captureStaticWallAudit === null) {
+      try {
+        const owner = window.DenseForestWallBatches;
+        const audit = owner?.auditStaticMatrixBranches?.(scene);
+        if (audit) captureStaticWallAudit = { ...owner.staticMatrixSnapshot(), audit };
+      } catch (error) { captureStaticWallAudit = { error: String(error?.message || error) }; }
+    }
   }
   function captureFrame() { captureArmed = true; return true; }
 
@@ -525,6 +559,7 @@
     const renderPassPerf = PerfProfiler?.begin('render passes');
     const activeScene = deps.getActiveScene();
     const area = deps.getCurrentArea();
+    window.ProbePerformanceCapture?.markArea?.(area);
     const isZone = deps.isZoneArea(area);
     deps.getPlayerTile(playerTile);
     scopeCtx.scene = activeScene; scopeCtx.camera = camera; scopeCtx.isZone = isZone;
@@ -536,6 +571,9 @@
     if (captureArmed && window.RenderHooks?.register) {
       captureArmed = false;
       captureRecords = [];
+      captureMainCensus = null;
+      captureMainCensusError = null;
+      captureStaticWallAudit = null;
       captureHookOff = window.RenderHooks.register({
         id: 'world-render-pipeline-capture', owner: 'world-render-pipeline.js', order: 1e9,
         before: recordPassStart, afterRender: recordPassEnd,
@@ -543,7 +581,9 @@
     }
     const hooks = window.RenderHooks;
     let worldFrame = null;
-    suspendScopes(scopeCtx, scopeRestores);
+    const captureTimings = captureHookOff ? [] : null; // No extra timing arrays or walks in ordinary gameplay.
+    let completed = false; // Mark a failed native submission as an incomplete capture.
+    suspendScopes(scopeCtx, scopeRestores, captureTimings);
     try {
       worldFrame = hooks?.beginWorldFrame?.({ renderer, scene: activeScene, camera }) || null;
       // Frame-scoped whole-actor suppression; simulation still runs before and
@@ -555,6 +595,7 @@
       window.CloudForestFog?.prepareKanthicGlyphFrame?.(activeScene,now,camera); // Hide base-pass glow; only the occupied region receives depth-tested emission.
       if (outlines) renderOutlinedPasses(renderer, camera, activeScene, seamOn, area);
       else renderDirectPasses(renderer, camera, activeScene, area);
+      completed = true;
     } finally {
       pass('cleanup');
       window.CloudForestFog?.endKanthicGlyphFrame?.(); // Restore authored visibility before resuming gameplay.
@@ -564,12 +605,17 @@
       restoreScopes(scopeRestores); // Batches, culls and hidden walkers are back to their real state.
       if (captureHookOff) {
         captureHookOff();
-        capture = { at: now, area, outlines, passes: captureRecords };
+        capture = { at: now, area, outlines, completed, passes: captureRecords, scopeTimings: captureTimings,
+          mainMatrixCensus: captureMainCensus, mainMatrixCensusError: captureMainCensusError,
+          mainStaticWallAudit: captureStaticWallAudit };
         captureRecords = null;
+        captureMainCensus = null;
+        captureMainCensusError = null;
+        captureStaticWallAudit = null;
       }
       pass('idle');
       stats.frames++;
-      stats.lastFrame = { area, outlines, seamOutlines: seamOn, targetHighlights: targetMeshes.length, nativeRenders, scopes: scopes.filter(s => s.enabled).length };
+      stats.lastFrame = { area, outlines, generatedOutlineMode: outlines ? generatedOutlineMode : 'master-off', seamOutlines: seamOn, targetHighlights: targetMeshes.length, nativeRenders, scopes: scopes.filter(s => s.enabled).length };
     }
     PerfProfiler?.end(renderPassPerf);
     window.MobileRenderBudget?.sample(now, !deps.isPaused() && !window.PixelProbe?.armed);
@@ -584,6 +630,42 @@
     renderer.render(scene, camera);
     camera.layers.enableAll();
     scene.overrideMaterial = null;
+  }
+
+  function setGeneratedOutlineMode(mode) {
+    if (!['shell', 'screen', 'none'].includes(mode)) return generatedOutlineMode;
+    generatedOutlineMode = mode;
+    if (mode !== 'screen' && shellMaskRT) { shellMaskRT.dispose(); shellMaskRT = null; }
+    return generatedOutlineMode;
+  }
+
+  function renderScreenOutlineMask(renderer, camera, scene) {
+    // Same resolution/precision as world depth. Only shell-tagged curved surfaces
+    // are submitted, without expansion or the shell X-ray depth replay.
+    if (!shellMaskRT) shellMaskRT = makeSceneRT(_mainRT.width, _mainRT.height, true);
+    const oldTarget = renderer.getRenderTarget();
+    const oldMask = camera.layers.mask;
+    const oldMaterial = scene.overrideMaterial;
+    const oldBackground = scene.background;
+    const oldColorClear = renderer.autoClearColor, oldDepthClear = renderer.autoClearDepth;
+    const oldAutoClear = renderer.autoClear;
+    try {
+      renderer.setRenderTarget(shellMaskRT);
+      renderer.autoClear = false;
+      scene.background = null;
+      renderer.clear(true, true, true);
+      scene.overrideMaterial = shellMaskMaterial;
+      camera.layers.set(SHELL_LAYER);
+      renderer.render(scene, camera);
+    } finally {
+      scene.overrideMaterial = oldMaterial;
+      scene.background = oldBackground;
+      camera.layers.mask = oldMask;
+      renderer.setRenderTarget(oldTarget);
+      renderer.autoClear = oldAutoClear;
+      renderer.autoClearColor = oldColorClear;
+      renderer.autoClearDepth = oldDepthClear;
+    }
   }
 
   function renderOutlinedPasses(renderer, camera, activeScene, seamOn, area) {
@@ -610,15 +692,20 @@
     window.ActorRenderOcclusion?.probeAfterBase?.(); // Use existing world + PNG depth; no extra world redraw.
     PerfProfiler?.end(actorProbePerf);
 
-    // Selective shell outline pass (SHELL_OUTLINE objects only)
-    pass('shell');
-    const rpShellPerf = PerfProfiler?.begin('render: shell outline');
-    activeScene.overrideMaterial = shellOutlineMat;
-    camera.layers.set(SHELL_LAYER);
-    renderer.render(activeScene, camera);
-    camera.layers.enableAll();
-    activeScene.overrideMaterial = null;
-    PerfProfiler?.end(rpShellPerf);
+    if (generatedOutlineMode === 'shell') {
+      // Selective shell outline pass (SHELL_OUTLINE objects only).
+      pass('shell');
+      const rpShellPerf = PerfProfiler?.begin('render: shell outline');
+      activeScene.overrideMaterial = shellOutlineMat;
+      camera.layers.set(SHELL_LAYER);
+      try { renderer.render(activeScene, camera); }
+      finally { camera.layers.enableAll(); activeScene.overrideMaterial = null; PerfProfiler?.end(rpShellPerf); }
+    } else if (generatedOutlineMode === 'screen') {
+      pass('screenOutlineMask');
+      const maskPerf = PerfProfiler?.begin('render: screen outline mask');
+      try { renderScreenOutlineMask(renderer, camera, activeScene); }
+      finally { PerfProfiler?.end(maskPerf); }
+    }
 
     if (targetMeshes.length > 0) {
       pass('target');
@@ -669,6 +756,17 @@
     _postMat.uniforms.uCameraNear.value = camera.near;
     _postMat.uniforms.uCameraFar.value = camera.far;
     _postMat.uniforms.uSeamOutlinesOn.value = seamOn ? 1 : 0;
+    _postMat.uniforms.uDepthOutlinesOn.value = generatedOutlineMode === 'screen' && shellMaskRT ? 1 : 0;
+    _postMat.uniforms.tShellMaskDepth.value = shellMaskRT?.depthTexture || _mainRT.depthTexture;
+    _postMat.uniforms.uOrthographic.value = camera.isOrthographicCamera ? 1 : 0;
+    if (generatedOutlineMode === 'screen') {
+      const fog = activeScene.fog; // Fade ink towards the same scene fog as the shell shader.
+      _postMat.uniforms.uDepthFogMode.value = fog?.isFogExp2 ? 2 : fog?.isFog ? 1 : 0;
+      if (fog?.color) _postMat.uniforms.uDepthFogColor.value.copy(fog.color);
+      _postMat.uniforms.uDepthFogNear.value = fog?.near ?? 0;
+      _postMat.uniforms.uDepthFogFar.value = fog?.far ?? 1;
+      _postMat.uniforms.uDepthFogDensity.value = fog?.density ?? 0;
+    }
     renderer.render(_postScene, _postCamera);
     PerfProfiler?.end(rpCompositePerf);
     // Perception Mode silhouettes go on top of the finished composite so the
@@ -733,9 +831,57 @@
     return api;
   }
 
+  // On-demand matrix-work census for Pixel Probe, never called by renderFrame.
+  // Three r128's native updateMatrixWorld visits hidden descendants too; this
+  // measures their count, not their CPU time or whether any particular node is safe to freeze.
+  function sceneMatrixCensus(scene = deps?.getActiveScene?.()) {
+    if (!scene?.isScene) return null;
+    const totals = { nodes: 0, meshes: 0, hiddenNodes: 0, hiddenMeshes: 0, autoLocalMatrices: 0, hiddenAutoLocalMatrices: 0, renderProxyNodes: 0 };
+    const groups = new Map(); // Aggregates top-level scene branches by their existing runtime category.
+    function count(node, inheritedHidden, inheritedProxy, bucket) {
+      const hidden = inheritedHidden || node.visible === false;
+      const data = node.userData || {};
+      const proxy = inheritedProxy || data.hobunjiRenderProxy === true || data.hobunjiZonePropBatchHolder === true;
+      for (const target of [totals, bucket]) {
+        target.nodes++;
+        if (node.isMesh) target.meshes++;
+        if (hidden) {
+          target.hiddenNodes++;
+          if (node.isMesh) target.hiddenMeshes++;
+        }
+        if (node.matrixAutoUpdate !== false) {
+          target.autoLocalMatrices++;
+          if (hidden) target.hiddenAutoLocalMatrices++;
+        }
+        if (proxy) target.renderProxyNodes++;
+      }
+      for (const child of node.children || []) count(child, hidden, proxy, bucket);
+    }
+    for (const root of scene.children || []) {
+      const data = root.userData || {};
+      const category = data.hobunjiZonePropBatchHolder ? 'prop batch holder'
+        : data.denseForestWall ? 'dense forest wall'
+        : data.terrainRenderChunkSource ? 'terrain chunk source'
+        : data.hobunjiStaticBatchGroup ? 'static batch group'
+        : data.backgroundScenery ? 'background scenery'
+        : data.wildernessChunk === true || /^WildernessChunk_/i.test(root.name || '') ? 'wilderness chunk'
+        : String(root.name || root.type || 'unnamed').replace(/[_-]\d+(?:[_-]\d+)*$/,'');
+      let bucket = groups.get(category);
+      if (!bucket) {
+        bucket = { category, roots: 0, nodes: 0, meshes: 0, hiddenNodes: 0, hiddenMeshes: 0, autoLocalMatrices: 0, hiddenAutoLocalMatrices: 0, renderProxyNodes: 0 };
+        groups.set(category,bucket);
+      }
+      bucket.roots++;
+      count(root,scene.visible === false,false,bucket);
+    }
+    return { ...totals, rootCount: scene.children?.length || 0,
+      largestBranches: [...groups.values()].sort((a,b)=>b.nodes-a.nodes).slice(0,12) };
+  }
+
   const api = {
     init,
     renderFrame,
+    sceneMatrixCensus,
     resize,
     // Tagging
     markShellOutline,
@@ -757,6 +903,9 @@
     get materials() { return { shell: shellOutlineMat, targetAllowed: targetOutlineGreenMat, targetBlocked: targetOutlineRedMat, seamId: _furnitureIdMat, composite: _postMat }; },
     get targets() { return { main: _mainRT, seamId: _edgeIdRT }; },
     get camera() { return deps?.camera || null; }, // The gameplay camera every world pass uses (diagnostics).
+    defaultGeneratedOutlineMode: DEFAULT_GENERATED_OUTLINE_MODE,
+    getGeneratedOutlineMode: () => generatedOutlineMode,
+    setGeneratedOutlineMode,
     getOutlineRenderingConfig: () => JSON.parse(JSON.stringify(outlineRenderingConfig)),
     applyOutlineRenderingConfig,
     currentPass: () => currentPass,
@@ -764,6 +913,7 @@
     lastCapture: () => capture,
     snapshot: () => ({
       initialized: !!deps,
+      generatedOutlineMode, // Mobile diagnostics and A/B mode verification.
       frames: stats.frames,
       lastFrame: stats.lastFrame ? { ...stats.lastFrame } : null,
       scopes: scopes.map(scope => ({ id: scope.id, owner: scope.owner, order: scope.order, enabled: scope.enabled, errors: scope.errors, lastError: scope.lastError })),

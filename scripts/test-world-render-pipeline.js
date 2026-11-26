@@ -170,7 +170,7 @@ const SCOPE_ORDER = ['farm-tile-batches', 'zone-prop-batches', 'npc-view-cull', 
   assert.ok(h.log.some(e => e.id === 'endFrame'), 'actor occlusion is released');
   assert.equal(undone, 1, 'frame hooks are undone');
   assert.equal(h.hooks.isWorldFrameOpen(), false, 'no world frame left open');
-  assert.equal(h.activeScene.overrideMaterial, h.pipeline.materials.shell, '(the failing pass left its override; the next frame resets it)');
+  assert.equal(h.activeScene.overrideMaterial, null, 'shell override is restored even when the draw throws');
   h.throwOn = null;
   h.frame();
   assert.equal(h.activeScene.overrideMaterial, null, 'a normal frame recovers');
@@ -195,10 +195,52 @@ const SCOPE_ORDER = ['farm-tile-batches', 'zone-prop-batches', 'npc-view-cull', 
 // ── Frame capture ──────────────────────────────────────────────────────────
 {
   const h = createWorldRenderPipelineHarness().init();
+  const root = new h.THREE.Group();
+  root.name = 'Tree_12_34';
+  root.add(new h.THREE.Mesh());
+  h.activeScene.add(root);
+  h.activeScene.autoUpdate = true;
+  let audits=0;
+  h.window.DenseForestWallBatches = {
+    auditStaticMatrixBranches(scene) {
+      audits++;
+      assert.equal(scene,h.activeScene);
+      assert.equal(root.visible,false,'audit occurs inside main draw scopes');
+      assert.equal(h.log.at(-1).kind,'render','audit occurs after native submission');
+      assert.equal(h.log.at(-1).scene,'active');
+      assert.equal(h.log.at(-1).layers,0xFFFFFFFF);
+      return {ready:63,violations:0};
+    },
+    staticMatrixSnapshot:()=>({enabled:true}),
+  };
+  h.pipeline.registerRenderScope({id:'test-capture-hidden-root', order:10000, suspend:() => {
+    root.visible = false;
+    return () => {root.visible = true;};
+  }});
+  h.pipeline.registerRenderScope({id:'test-disabled-capture-scope', order:10001, suspend:() => {throw Error('disabled scope called');}});
+  h.pipeline.setScopeEnabled('test-disabled-capture-scope',false);
+  h.hooks.register({id:'test-capture-matrix-reuse',order:8000,
+    appliesTo:ctx=>ctx.scene===h.activeScene && ctx.camera.layers.mask===1<<4,
+    before:()=>{h.activeScene.autoUpdate=false;},
+    after:()=>{h.activeScene.autoUpdate=true;}});
   h.pipeline.captureFrame();
   h.frame();
   const capture = h.pipeline.lastCapture();
   assert.ok(capture && capture.outlines === true);
+  assert.equal(capture.completed,true);
+  assert.equal(audits,1);
+  assert.deepEqual(plain(capture.mainStaticWallAudit),{enabled:true,audit:{ready:63,violations:0}});
+  assert.equal(capture.mainMatrixCensus.nodes,2);
+  assert.equal(capture.mainMatrixCensus.hiddenNodes,2,'census sees temporary hidden root and child');
+  assert.equal(capture.mainMatrixCensus.largestBranches[0].category,'Tree','numbered names aggregate');
+  assert.equal(h.pipeline.sceneMatrixCensus(h.activeScene).hiddenNodes,0,'logical visibility restored');
+  assert.equal(root.visible,true);
+  assert.ok(capture.scopeTimings.some(s=>s.id==='test-capture-hidden-root' && s.failed===false && Number.isFinite(s.ms)));
+  assert.ok(!capture.scopeTimings.some(s=>s.id==='test-disabled-capture-scope'));
+  assert.equal(capture.passes.find(p=>p.pass==='main').worldScene,true);
+  assert.equal(capture.passes.find(p=>p.pass==='main').sceneAutoUpdate,true);
+  assert.equal(capture.passes.find(p=>p.pass==='pngDepth').sceneAutoUpdate,false,'actual pre-native flag');
+  assert.equal(capture.passes.find(p=>p.pass==='composite').worldScene,false);
   const passes = plain(capture.passes.map(p => p.pass));
   assert.deepEqual(passes, ['main', 'pngDepth', 'shell', 'composite'], 'capture labels each native render with its pass');
   assert.deepEqual(plain(capture.passes.find(p => p.pass === 'shell').layers), ['SHELL_OUTLINE']);
@@ -207,6 +249,13 @@ const SCOPE_ORDER = ['farm-tile-batches', 'zone-prop-batches', 'npc-view-cull', 
   assert.ok(!h.hooks.list().includes('world-render-pipeline-capture'), 'the capture hook removes itself');
   h.frame();
   assert.equal(h.pipeline.lastCapture(), capture, 'capture is one-shot');
+  h.throwOn = (scene,camera)=>scene===h.activeScene && camera.layers.mask===1<<4;
+  h.pipeline.captureFrame();
+  assert.throws(()=>h.frame(),/synthetic native render failure/);
+  assert.equal(h.pipeline.lastCapture().completed,false);
+  assert.equal(h.activeScene.autoUpdate,true);
+  assert.equal(root.visible,true);
+  assert.ok(!h.hooks.list().includes('world-render-pipeline-capture'),'failed capture removes its hook');
 }
 
 // ── Tagging helpers ────────────────────────────────────────────────────────
@@ -268,3 +317,77 @@ const SCOPE_ORDER = ['farm-tile-batches', 'zone-prop-batches', 'npc-view-cull', 
 }
 
 console.log('PASS world render pipeline: pass order, scopes, frame hooks, failure restore, capture, tagging, layers');
+
+
+// Compare all three generated outline modes without changing the master composite.
+{
+  const h = createWorldRenderPipelineHarness().init();
+  const p = h.pipeline, u = p.materials.composite.uniforms;
+  p.resize(640,360);
+  assert.equal(p.getGeneratedOutlineMode(),'shell');
+  assert.equal(p.setGeneratedOutlineMode('invalid'),'shell');
+  p.setGeneratedOutlineMode('screen');
+  const screen = h.renders(h.frame());
+  const mask = screen.find(r => r.layers === 1 << 1);
+  assert.ok(mask && mask.override !== p.materials.shell);
+  assert.equal(mask.override.side,h.THREE.FrontSide);
+  assert.notEqual(mask.target,p.targets.main);
+  assert.deepEqual([mask.target.width,mask.target.height],[640,360]);
+  assert.equal(u.tShellMaskDepth.value,mask.target.depthTexture);
+  assert.equal(u.uDepthOutlinesOn.value,1);
+  assert.equal(screen.at(-1).target,'canvas');
+  assert.equal(h.activeScene.overrideMaterial,null);
+  assert.equal(h.camera.layers.mask >>> 0,0xffffffff);
+  p.resize(320,180);
+  assert.deepEqual([mask.target.width,mask.target.height],[320,180]);
+  h.throwOn = (scene,camera) => scene === h.activeScene && camera.layers.mask === 1 << 1;
+  assert.throws(()=>h.frame(),/synthetic native render failure/);
+  assert.equal(h.renderer.getRenderTarget(),p.targets.main);
+  assert.equal(h.activeScene.overrideMaterial,null);
+  assert.equal(h.camera.layers.mask >>> 0,0xffffffff);
+  h.throwOn=null;
+  p.setGeneratedOutlineMode('none');
+  assert.equal(mask.target.disposed,true);
+  const none=h.renders(h.frame());
+  assert.equal(none.length,screen.length-1);
+  assert.equal(u.uDepthOutlinesOn.value,0);
+  assert.equal(none.at(-1).target,'canvas');
+  p.setGeneratedOutlineMode('shell');
+  assert.ok(h.renders(h.frame()).some(r=>r.override===p.materials.shell));
+}
+
+{
+  const h = createWorldRenderPipelineHarness({outlineMode:'default'}).init();
+  assert.equal(h.pipeline.defaultGeneratedOutlineMode,'screen');
+  assert.equal(h.pipeline.getGeneratedOutlineMode(),'screen');
+  assert.equal(h.pipeline.setGeneratedOutlineMode('invalid'),'screen');
+  assert.ok(!h.renders(h.frame()).some(r=>r.override===h.pipeline.materials.shell));
+}
+
+
+// The census includes hidden descendants, not just nodes the color pass draws.
+// It is strictly diagnostic and never changes transforms or visibility.
+{
+  const h=createWorldRenderPipelineHarness().init(), p=h.pipeline;
+  const scene={isScene:true,visible:true,children:[
+    {name:'WildernessChunk_0_2',visible:false,children:[
+      {isMesh:true,visible:true,matrixAutoUpdate:true,children:[]},
+      {isMesh:true,visible:true,matrixAutoUpdate:false,children:[]}
+    ]},
+    {userData:{hobunjiZonePropBatchHolder:true},visible:false,matrixAutoUpdate:false,children:[
+      {isMesh:true,visible:true,matrixAutoUpdate:false,children:[]}
+    ]},
+    {isMesh:true,name:'actor',visible:true,children:[]}
+  ]};
+  const census=p.sceneMatrixCensus(scene);
+  assert.equal(census.nodes,6);
+  assert.equal(census.meshes,4);
+  assert.equal(census.hiddenNodes,5);
+  assert.equal(census.hiddenMeshes,3);
+  assert.equal(census.autoLocalMatrices,3);
+  assert.equal(census.hiddenAutoLocalMatrices,2);
+  assert.equal(census.renderProxyNodes,2);
+  assert.equal(census.largestBranches[0].category,'wilderness chunk');
+  assert.equal(scene.children[0].children[0].visible,true);
+  assert.equal(p.sceneMatrixCensus({}),null);
+}

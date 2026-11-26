@@ -361,6 +361,8 @@
       const reductionRank = Math.max(0, Number(window.PerkSystem?.rank?.('combat', 'reduceStaminaUse')) || 0);
       const perkMultiplier = 1 - Math.min(0.6, reductionRank * 0.08);
       cost /= alchemyMultiplier * perkMultiplier;
+    } else {
+      cost /= Math.max(0.01, entity?.def?.combatPerkModifiers?.staminaCost ?? 1); // Like the player, reloading reserves the authored threshold, even with Stamina perks.
     }
     return cost;
   }
@@ -418,7 +420,7 @@
   }
   function isLoaded(itemKey, owner = null) {
     if (owner) return owner._rangedLoaded !== false;
-    if (!playerLoaded.has(itemKey)) playerLoaded.set(itemKey, true);
+    if (!playerLoaded.has(itemKey)) return defFor(itemKey)?.rangedType !== 'thrown'; // Registration defaults are lazy; explicit gameplay state always wins.
     return playerLoaded.get(itemKey);
   }
 
@@ -1960,12 +1962,18 @@
       return { aimAngle, moving: false, handled: true };
     }
     if (def.rangedType !== 'thrown') setLoaded(itemKey, false, c);
-    const chargeS = def.rangedType === 'thrown' ? Number(def.chargeWindupS) || 0 : 0;
+    const chargeS = def.rangedType === 'thrown' ? Math.max(0, Number(def.chargeWindupS) || 0) : 0;
+    if (chargeS > 0) {
+      // Hidden throws commit the same full pose cost as visible throws; ResourceSystem applies the actor's own perk once.
+      window.ResourceSystem?.spendStamina?.(c, chargeStaminaCostForPose(1), `${def.label} charge`, {
+        actionKind: 'offensiveHeldCharge', abilityId: 'thrownWeapon',
+      });
+    }
     c._rangedCooldownT = chargeS + Math.max(0.01, Number(def.fireDurationS) || 0.01) + 0.55; // Same cadence as a visible fire action plus its 0.55 s recovery.
     if (staging.rollAbstractHit(target)) {
       const count = Math.max(1, Math.round(def.projectileCount || 1));
       deps.damageCreature(target, Math.max(1, def.damage * count), c.x, c.y, def.knockbackPxS, {
-        tag: 'sharp', ranged: true, rangedItemKey: itemKey, friendlyFire: true, attacker: c, stagedDuel: true, attackPower: Number(def.attackPower) || 12,
+        tag: 'sharp', ranged: true, rangedItemKey: itemKey, friendlyFire: true, attacker: c, stagedDuel: true, attackPower: Number(def.attackPower) || 12, footingDamageMultiplier: 0, // Ordinary NPC projectiles have zero Footing damage in the visible path too.
       });
     }
     return { aimAngle, moving: false, handled: true };

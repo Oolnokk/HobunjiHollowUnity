@@ -330,6 +330,11 @@
         && vegetationCull.snapshot().lastCullables > 0) {
       variants.push({ id: 'fadedTreesDrawn', apply: () => vegetationCull.setHideFadedOut(false), undo: () => vegetationCull.setHideFadedOut(true) });
     }
+    const foliage = window.FoliageGenerator; // Compare the same scene with native matrix composition.
+    if (typeof foliage?.setIdentityTreeMatrixFastPath === 'function') {
+      const before = foliage.identityTreeMatrixStats().enabled;
+      variants.push({ id: before ? 'identityTreeMatricesOff' : 'identityTreeMatricesOn', apply: () => foliage.setIdentityTreeMatrixFastPath(!before), undo: () => foliage.setIdentityTreeMatrixFastPath(before) });
+    }
     const treeInstancer = window.WildernessTreeInstancer;
     if (typeof treeInstancer?.setEnabled === 'function' && vegetationCull?.snapshot?.().lastCullables > 0) {
       const instancingBefore = treeInstancer.enabled?.() === true; // Toggled per window without persisting.
@@ -341,11 +346,21 @@
     if (typeof propBatches?.setEnabled === 'function' && propBatches.snapshot?.().enabled === true && propBatches.snapshot().batches > 0) {
       variants.push({ id: 'propBatchesOff', apply: () => propBatches.setEnabled(false), undo: () => propBatches.setEnabled(true) });
     }
+    const instanceBounds = window.InstancedMeshBounds;
+    if (typeof instanceBounds?.setSceneScopedEnabled === 'function') {
+      const before = instanceBounds.snapshot().sceneScopedEnabled;
+      variants.push({ id: before ? 'globalInstanceRegistry' : 'sceneInstanceRegistry', apply: () => instanceBounds.setSceneScopedEnabled(!before), undo: () => instanceBounds.setSceneScopedEnabled(before) });
+    }
     const brickLod = window.InstancedBrickLod;
     if (typeof brickLod?.setEnabled === 'function' && brickLod.enabled() && brickLod.snapshot().farMeshes > 0) {
       variants.push({ id: 'brickLodOff', apply: () => brickLod.setEnabled(false), undo: () => brickLod.setEnabled(true) });
     }
     const wallBatches = window.DenseForestWallBatches;
+    if (typeof wallBatches?.setStaticMatrixEnabled === 'function' && wallBatches.staticMatrixSnapshot().enrolled > 0
+        && activeScene?.getObjectByName?.('AuthoredCloudForestDenseChunk_0')) {
+      const before = wallBatches.staticMatrixSnapshot().enabled; // Restore actual user preference, independent of batching.
+      variants.push({ id: before ? 'staticWallMatricesOff' : 'staticWallMatricesOn', apply: () => wallBatches.setStaticMatrixEnabled(!before), undo: () => wallBatches.setStaticMatrixEnabled(before) });
+    }
     if (typeof wallBatches?.setEnabled === 'function' && wallBatches.snapshot?.().enabled === true && wallBatches.snapshot().batches > 0) {
       variants.push({ id: 'denseWallBatchesOff', apply: () => wallBatches.setEnabled(false), undo: () => wallBatches.setEnabled(true) });
       if (wallBatches.snapshot().lodEnabled === true && wallBatches.snapshot().lodFarTrees > 0) {
@@ -364,7 +379,36 @@
     if (typeof dualWield?.setLeanSyncEnabled === 'function' && dualWield.leanSyncEnabled?.() === true) {
       variants.push({ id: 'dualWieldFullSync', apply: () => dualWield.setLeanSyncEnabled(false), undo: () => dualWield.setLeanSyncEnabled(true) });
     }
+    // Compare all three generated-outline modes while keeping the offscreen
+    // composite, painterly, X-ray color and target highlights unchanged.
+    if (outlinesBefore === true && typeof pipeline?.setGeneratedOutlineMode === 'function') {
+      const outlineBefore = pipeline.getGeneratedOutlineMode();
+      for (const [id, mode] of [['shellOutlines','shell'],['screenDepthOutlines','screen'],['generatedOutlinesOff','none']]) {
+        variants.push({ id, apply: () => pipeline.setGeneratedOutlineMode(mode), undo: () => pipeline.setGeneratedOutlineMode(outlineBefore) });
+      }
+    }
+    const waterHierarchy = window.XrayHierarchy; // Preserve exact bounds/wet-tile authoring choice after A/B.
+    if (typeof waterHierarchy?.set === 'function') {
+      const before = waterHierarchy.get('portrait.waterTint');
+      if (before !== 'off') variants.push({ id: 'portraitWaterTintOff', apply: () => waterHierarchy.set('portrait.waterTint','off'), undo: () => waterHierarchy.set('portrait.waterTint',before) });
+    }
     const heldOrder = window.HeldObjectRenderOrder;
+    if (typeof heldOrder?.setWaterOnlyBranchPruneEnabled === 'function') {
+      const before = heldOrder.snapshot().waterOnlyBranchPruneEnabled;
+      variants.push({ id: before ? 'waterOnlyPruneOff' : 'waterOnlyPruneOn', apply: () => heldOrder.setWaterOnlyBranchPruneEnabled(!before), undo: () => heldOrder.setWaterOnlyBranchPruneEnabled(before) });
+    }
+    if (typeof heldOrder?.setMixedWaterBranchPruneEnabled === 'function') {
+      const before = heldOrder.snapshot().mixedWaterBranchPruneEnabled;
+      variants.push({ id: before ? 'mixedWaterPruneOff' : 'mixedWaterPruneOn', apply: () => heldOrder.setMixedWaterBranchPruneEnabled(!before), undo: () => heldOrder.setMixedWaterBranchPruneEnabled(before) });
+    }
+    if (typeof heldOrder?.setReplayRegistryMemoEnabled === 'function') {
+      const before = heldOrder.snapshot().replayRegistryMemoEnabled;
+      variants.push({ id: before ? 'replayRegistryMemoOff' : 'replayRegistryMemoOn', apply: () => heldOrder.setReplayRegistryMemoEnabled(!before), undo: () => heldOrder.setReplayRegistryMemoEnabled(before) });
+    }
+    if (typeof heldOrder?.setSlowClassificationFallbackEnabled === 'function') {
+      const before = heldOrder.snapshot().slowClassificationFallbackEnabled;
+      variants.push({ id: before ? 'slowClassificationFallbackOff' : 'slowClassificationFallbackOn', apply: () => heldOrder.setSlowClassificationFallbackEnabled(!before), undo: () => heldOrder.setSlowClassificationFallbackEnabled(before) });
+    }
     if (typeof heldOrder?.setLocalReplayRingEnabled === 'function') {
       const localBefore = heldOrder.snapshot?.().localReplayRingEnabled !== false; // Restore the user's exact policy after each sample window.
       variants.push({ id: localBefore ? 'fullXrayRange' : 'localXrayRing', apply: () => heldOrder.setLocalReplayRingEnabled(!localBefore), undo: () => heldOrder.setLocalReplayRingEnabled(localBefore) });

@@ -357,6 +357,54 @@
     };
   }
 
+  // GPU timing for the three full-screen passes, so a Pixel Probe report shows their real GPU cost (CPU timers cannot).
+  // Uses EXT_disjoint_timer_query_webgl2 when the browser exposes it; sampled on every 4th frame; results are polled
+  // asynchronously so it never stalls the pipeline. Reported as an EMA and a max in snapshot().
+  const gpuTimer = { gl: null, ext: null, supported: null, pending: [], samples: 0, disjoint: 0, ema: { oil: 0, washH: 0, tone: 0 }, max: { oil: 0, washH: 0, tone: 0 } };
+  function gpuTimerInit(renderer) {
+    if (gpuTimer.supported !== null) return gpuTimer.supported;
+    try {
+      const gl = renderer.getContext?.();
+      const ext = gl?.getExtension?.('EXT_disjoint_timer_query_webgl2');
+      gpuTimer.supported = !!(gl && ext && typeof gl.createQuery === 'function');
+      if (gpuTimer.supported) { gpuTimer.gl = gl; gpuTimer.ext = ext; }
+    } catch (_) { gpuTimer.supported = false; }
+    return gpuTimer.supported;
+  }
+  function gpuTimerPoll() {
+    const { gl, ext, pending } = gpuTimer;
+    if (!gl || !pending.length) return;
+    let disjoint = false;
+    try { disjoint = gl.getParameter(ext.GPU_DISJOINT_EXT); } catch (_) { gpuTimer.supported = false; return; }
+    while (pending.length) {
+      const entry = pending[0];
+      if (!gl.getQueryParameter(entry.query, gl.QUERY_RESULT_AVAILABLE)) break;
+      pending.shift();
+      if (disjoint) gpuTimer.disjoint++;
+      else {
+        const ms = gl.getQueryParameter(entry.query, gl.QUERY_RESULT) / 1e6;
+        gpuTimer.ema[entry.name] = gpuTimer.samples ? gpuTimer.ema[entry.name] * 0.8 + ms * 0.2 : ms;
+        gpuTimer.max[entry.name] = Math.max(gpuTimer.max[entry.name], ms);
+        if (entry.name === 'tone') gpuTimer.samples++;
+      }
+      gl.deleteQuery(entry.query);
+    }
+  }
+  function timedPass(name, sample, run) {
+    if (!sample) { run(); return; }
+    const { gl, ext } = gpuTimer;
+    let query = null;
+    try { query = gl.createQuery(); gl.beginQuery(ext.TIME_ELAPSED_EXT, query); }
+    catch (_) { gpuTimer.supported = false; query = null; } // Timing must never be able to break the painterly passes.
+    try { run(); }
+    finally {
+      if (query) {
+        try { gl.endQuery(ext.TIME_ELAPSED_EXT); gpuTimer.pending.push({ name, query }); }
+        catch (_) { gpuTimer.supported = false; }
+      }
+    }
+  }
+
   function runReferencePipeline(renderer, compositeMaterial) {
     if (mode === 'off') return null;
     const p = ensurePipeline(renderer);
@@ -384,19 +432,22 @@
 
     const previousTarget = renderer.getRenderTarget?.() || null;
     const previousAutoClear = renderer.autoClear;
+    const timing = gpuTimerInit(renderer);
+    if (timing) gpuTimerPoll();
+    const sample = timing && gpuTimer.supported && pipelineFrames % 4 === 0 && gpuTimer.pending.length < 12; // Bounded outstanding queries.
     try {
       renderer.autoClear = true;
       renderer.setRenderTarget(p.oilRT);
       renderer.clear?.(true, false, false);
-      p.rawRender.call(renderer, passes.oil.scene, passes.oil.camera);
+      timedPass('oil', sample, () => p.rawRender.call(renderer, passes.oil.scene, passes.oil.camera));
 
       renderer.setRenderTarget(p.washHRT);
       renderer.clear?.(true, false, false);
-      p.rawRender.call(renderer, passes.washH.scene, passes.washH.camera);
+      timedPass('washH', sample, () => p.rawRender.call(renderer, passes.washH.scene, passes.washH.camera));
 
       renderer.setRenderTarget(p.toneRT);
       renderer.clear?.(true, false, false);
-      p.rawRender.call(renderer, passes.tone.scene, passes.tone.camera);
+      timedPass('tone', sample, () => p.rawRender.call(renderer, passes.tone.scene, passes.tone.camera));
     } finally {
       renderer.autoClear = previousAutoClear;
       renderer.setRenderTarget(previousTarget);
@@ -559,6 +610,8 @@
       internalSize: lastPipelineSize || null,
       pipelineFrames,
       pipelineMode: lastPipelineMode,
+      gpuTiming: { supported: gpuTimer.supported, samples: gpuTimer.samples, disjoint: gpuTimer.disjoint, pending: gpuTimer.pending.length,
+        emaMs: { ...gpuTimer.ema }, maxMs: { ...gpuTimer.max } }, // Real GPU milliseconds per painterly pass when the browser exposes timer queries.
       referenceSettings: `oil 10/3/.27 all tiers; watercolor ${MODE_PROFILE[mode]?.waterRadius || 0}/${MODE_PROFILE[mode]?.waterMix?.toFixed(2) || '0'}/1.00/0; gamma .81; crush .18; contrast .80; saturation .68; yellow .08 + blue .67 on vivid yellow-green gate only; tan protection .86; teal 0; deblur 1; debrown 0; revive .80; edge .76; detail 1.00; grain 0`,
       rendererAttached,
       compositePatched: patchedMaterials.size > 0,

@@ -15,6 +15,12 @@
         uTexel: { value: new THREE.Vector2(1, 1) },
         uCameraNear: { value: 0.1 }, uCameraFar: { value: 200 },
         uSeamOutlinesOn: { value: 0 },
+        tShellMaskDepth: { value: null }, // Depth of only the curved, shell-tagged geometry.
+        uDepthOutlinesOn: { value: 0 }, // Uniform branch: no extra samples in shell/none modes.
+        uOrthographic: { value: 0 },
+        uDepthFogMode: { value: 0 },
+        uDepthFogColor: { value: new THREE.Color(0) },
+        uDepthFogNear: { value: 0 }, uDepthFogFar: { value: 1 }, uDepthFogDensity: { value: 0 },
         // Defaults from game.js's OUTLINE_RENDERING_DEFAULTS, overwritten in
         // place once config/outline-rendering.json loads.
         uSeamColorDistThresh: { value: 0.1 },
@@ -30,14 +36,48 @@
         uniform vec2 uTexel;
         uniform float uCameraNear, uCameraFar;
         uniform float uSeamOutlinesOn;
+        uniform sampler2D tShellMaskDepth;
+        uniform float uDepthOutlinesOn, uOrthographic, uDepthFogMode;
+        uniform vec3 uDepthFogColor;
+        uniform float uDepthFogNear, uDepthFogFar, uDepthFogDensity;
         uniform float uSeamColorDistThresh, uSeamOcclusionTolerance;
         varying vec2 vUv;
         float linearDepth(float z) {
+          if (uOrthographic > 0.5) return mix(uCameraNear, uCameraFar, z);
           float zNdc = z * 2.0 - 1.0;
           return (2.0 * uCameraNear * uCameraFar) / (uCameraFar + uCameraNear - zNdc * (uCameraFar - uCameraNear));
         }
+        // Only darken a visible eligible pixel, never its untagged neighbor.
+        // Matching full-scene depth rejects curves behind portraits, terrain and walls.
+        float visibleCurve(vec2 uv, float worldDepth) {
+          float raw = texture2D(tShellMaskDepth, uv).r;
+          if (raw >= 1.0) return 0.0;
+          float maskDepth = linearDepth(raw);
+          return step(abs(maskDepth - worldDepth), max(0.012, worldDepth * 0.0005));
+        }
+        float curveEdge(vec2 uv, float centerDepth) {
+          float otherDepth = linearDepth(texture2D(tSceneDepth, uv).r);
+          // Inward silhouette plus strong outward depth discontinuities. Suppress
+          // small depth gradients on smooth curved faces.
+          float gap = smoothstep(max(0.105, centerDepth * 0.009), max(0.225, centerDepth * 0.018), otherDepth - centerDepth);
+          return max(1.0 - visibleCurve(uv, otherDepth), gap);
+        }
+        vec3 applyScreenOutline(vec3 color) {
+          float centerDepth = linearDepth(texture2D(tSceneDepth, vUv).r);
+          if (visibleCurve(vUv, centerDepth) < 0.5) return color;
+          vec2 stroke = uTexel * 3.0; // Three times the original one-texel inward stroke; same sample count.
+          float edge = max(max(curveEdge(vUv + vec2(stroke.x, 0.0), centerDepth),
+                               curveEdge(vUv - vec2(stroke.x, 0.0), centerDepth)),
+                           max(curveEdge(vUv + vec2(0.0, stroke.y), centerDepth),
+                               curveEdge(vUv - vec2(0.0, stroke.y), centerDepth)));
+          float fog = 0.0;
+          if (uDepthFogMode > 1.5) fog = 1.0 - exp(-uDepthFogDensity * uDepthFogDensity * centerDepth * centerDepth);
+          else if (uDepthFogMode > 0.5) fog = smoothstep(uDepthFogNear, uDepthFogFar, centerDepth);
+          return mix(color, uDepthFogColor * fog, edge);
+        }
         void main() {
           vec3 color = texture2D(tColor, vUv).rgb;
+          if (uDepthOutlinesOn > 0.5) color = applyScreenOutline(color);
           // Seam outlines are off by default. A uniform branch is coherent
           // across the whole draw, so every pixel then pays one texture
           // read instead of seven in this full-screen pass.

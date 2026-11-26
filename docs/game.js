@@ -5742,6 +5742,8 @@
         // combat-counter-shield.js) -- safe to assume `player` is the guarded
         // captain's riposte target without needing a passed-in attacker.
         if (!environmentalImpact) {
+          const enemyPerkHit = window.PerkSystem?.scaleEnemyCombatHit?.(actorAttacker, amount, dmgOpts); // Shared NPC perk owner also covers ranged and special direct attacks.
+          if (enemyPerkHit) { amount = enemyPerkHit.amount; dmgOpts = enemyPerkHit.options; }
           const damageSource = dmgOpts?.attacker || (sourceNearPlayer ? player : null); // Explicit NPC attacker wins; ordinary player melee/ranged still resolves from its existing source position.
           amount *= window.ResourceSystem?.timedDebuffModifier?.(damageSource, 'outgoingDamage') ?? 1; // Enfeebled reduces the attacker's direct damage without altering target affliction buildup rules.
           if (c.isCompanion) amount *= window.CompanionResilience?.damageTakenMultiplier?.(c) ?? 1; // Thick Hide / Guardian Fury companion training (js/stable-companion-resilience.js).
@@ -5756,7 +5758,7 @@
         }
         if (!environmentalImpact) amount *= window.ResourceSystem?.getProneAttackMultiplier?.(c) ?? 1; // 1.75x temporary, 2.5x true Footing-break; scales direct damage and attack afflictions once.
         const resourceDamage = environmentalImpact ? { health: amount, footing: 0 } : hitResourceDamage(amount, dmgOpts);
-        const impactMultiplier = environmentalImpact ? 1 : (window.AlchemySystem?.getFootingDamageMultiplier?.() || 1) * (1 + (window.PerkSystem?.rank('combat', 'increaseFootingDamage') || 0) * 0.1); // Collision profiles are already authored at final strength.
+        const impactMultiplier = environmentalImpact || actorAttacker ? 1 : (window.AlchemySystem?.getFootingDamageMultiplier?.() || 1) * (1 + (window.PerkSystem?.rank('combat', 'increaseFootingDamage') || 0) * 0.1); // Collision profiles are already authored at final strength.
         resourceDamage.footing *= impactMultiplier;
         const healthBeforeImpact = environmentalImpact ? Math.max(0, Number(c.health) || 0) : 0; // Used to report the actual pre-death Health loss back to the collision resolver.
         if (window.ResourceSystem) window.ResourceSystem.applyDamage(c, resourceDamage.health, dmgOpts || {});
@@ -5856,6 +5858,8 @@
         if (!environmentalImpact && performance.now() < player.invulnUntil) return;
         if (!environmentalImpact) {
           const attacker = dmgOpts?.attacker || null; // Enemy modules pass their owning actor when available so Enfeebled follows the source rather than the victim.
+          const enemyPerkHit = window.PerkSystem?.scaleEnemyCombatHit?.(attacker, amount, dmgOpts); // Same owner as NPC-versus-NPC hits; no player perk leakage.
+          if (enemyPerkHit) { amount = enemyPerkHit.amount; dmgOpts = enemyPerkHit.options; }
           amount *= window.ResourceSystem?.timedDebuffModifier?.(attacker, 'outgoingDamage') ?? 1;
           amount *= window.SkillSystem?.damageTakenMultiplier?.() || 1;
         }
@@ -13182,6 +13186,8 @@
       // (the walker's only LOD gate before this) left every NPC on the far
       // side of a large area paying full gait/wander cost for no reason.
       const NPC_LOD_NEAR_TILES = 24; // Nearer wake boundary so a walker doesn't flicker in and out of the cheap tier at one exact distance.
+      // Opt-in coarse ticking of off-area walkers now lives in js/offarea-npc-tick.js (window.OffAreaNpcTick).
+      window.OffAreaNpcTick.init({ getCurrentArea: () => currentArea, isDialogueOrCutsceneWalker: w => _dialogueWalker === w || npcDialogueStaging?.walker === w || cutscenePreviewActive });
       const NPC_OFF_AREA_LEGS_INTERVAL_S = 0.5; // Off-area walkers' procedural legs only settle their resting pose at this cadence.
       const NPC_LOD_FAR_TILES = 28;
 
@@ -14202,17 +14208,19 @@
             if (w.combatTutorialSuspended) { w.root.visible = false; continue; } // Oddclaw's combat rig temporarily owns his presence.
             if (window.FestivalWheelDanceRuntime?.isPartner?.(w)) continue; // Paired dance owns this avatar's visual transform and temporarily suspends only its walker AI.
             if (w._npcUpdateError?.retryAt > npcUpdateNowMs) continue;
+            const walkerDt = window.OffAreaNpcTick.step(w, dt); // Off-area walkers get a coarse, accumulated dt (opt-in); null skips this frame.
+            if (walkerDt === null) continue;
             try {
               const oldHeadX = w.root?.position?.x, oldHeadZ = w.root?.position?.z; // Real travel this frame drives the head target, not a stale requested speed.
               const oldHeadArea = w.area; // Area transfers must never be mistaken for extreme one-frame movement.
-              w.update(dt);
+              w.update(walkerDt);
               if (npcWalkers[i] === w) {
-                if (!w._familyBabyFollowing) window.BedLiePose?.syncNpc?.(w, w.currentScheduleTarget, dt, w._bedLieSurface); // Every humanoid NPC uses real schedule-driven lie/stand poses, not just the player.
+                if (!w._familyBabyFollowing) window.BedLiePose?.syncNpc?.(w, w.currentScheduleTarget, walkerDt, w._bedLieSurface); // Every humanoid NPC uses real schedule-driven lie/stand poses, not just the player.
                 npcMovementHeadLookOptions.currentArea = currentArea;
                 npcMovementHeadLookOptions.hasScriptedGaze = cutscenePreviewActive
                   || npcDialogueStaging?.walker === w || _dialogueWalker === w || oldHeadArea !== w.area;
                 window.NpcMovementHeadTarget?.updateWalker?.(w, oldHeadX, oldHeadZ, npcMovementHeadLookOptions);
-                _tickNpcPortraitLife(w, dt);
+                _tickNpcPortraitLife(w, walkerDt);
               }
               if (w._npcUpdateError) w._npcUpdateError = null;
             } catch (error) {

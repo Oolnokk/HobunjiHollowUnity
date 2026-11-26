@@ -1122,6 +1122,65 @@
     };
   }
 
+
+  function applyEnemyCombatBuild(def, rank, tier, mineEnemy, opts = {}, authoredRule = null) {
+    const perks = window.PerkSystem; // Live player tree also powers ordinary humanoid combat progression.
+    const extra = opts.extra || {}; // Bespoke boss/caster choreography retains its authored tuning.
+    if (!perks?.buildEnemyCombatProfile || def.combatPerkModifiers || opts.disableCombatClass || extra.combatTutorialTarget || extra.combatTutorialPreview || extra.isMaskboundTitan || extra.isHarlyaoDemolitionist || extra.lichType || opts.rosterOverride?.lichType || extra.maskboundTroop === 'headtaker' || extra.mineWyrmWitchType || !def.banditAbilityLoadout?.tap1) return def;
+    const random = perks.enemyCombatRandom(opts.combatBuildSeed, deps.rnd); // Persistent abstract actors get the same class and loadout when their rig is rebuilt.
+    const combatClass = perks.rollEnemyCombatClass(random); // Separate from enemyClass, which identifies faction/species elsewhere.
+    const level = perks.enemyCombatLevel(rank, tier, mineEnemy);
+    const loadout = { ...def.banditAbilityLoadout }; // Per-entity copy; never change a shared authored attack object.
+    if (loadout.tap2 && !authoredRule?.attacks?.tap2 && !Object.hasOwn(opts.defOverride?.banditAbilityLoadout || {}, 'tap2')) {
+      loadout.tap2 = perks.enemyQuickAttack(combatClass, random) || loadout.tap2;
+    }
+    // Keep the rank's held-ability count, but a one-hold fighter can specialize
+    // in a counter rather than a charge. Fixed Workshop and caller slots win.
+    const fixedSlots = opts.defOverride?.banditAbilityLoadout || {}; // Caller-authored abilities must never be overwritten.
+    if (loadout.hold1 === 'chargedBreaker' && !loadout.hold2
+        && !authoredRule?.attacks?.hold1 && !authoredRule?.attacks?.hold2
+        && !Object.hasOwn(fixedSlots, 'hold1') && !Object.hasOwn(fixedSlots, 'hold2')
+        && perks.enemyHeldAttack(combatClass, random) === 'counterShield') {
+      loadout.hold1 = null;
+      loadout.hold2 = 'counterShield';
+    }
+    def.banditAbilityLoadout = loadout;
+    def.combatPerkMinimumAttacks = mineEnemy ? 1 : 2; // Preserve the factory's original opening stamina budget when equipment changes.
+    return installEnemyCombatProfile(def, combatClass, level);
+  }
+
+  function installEnemyCombatProfile(def, combatClass, level) {
+    const previous = def.combatPerkModifiers; // Equipment wrappers may rebuild a profile; remove its old multipliers before installing the new ones.
+    const baseHealth = def.combatPerkBaseHealth ??= def.maxHealth; // Retain exact unscaled capacities across weapon swaps.
+    const baseStamina = def.combatPerkBaseStamina ??= def.maxStamina;
+    const baseCost = def.attackStaminaCost / (previous?.staminaCost ?? 1);
+    const profile = window.PerkSystem.buildEnemyCombatProfile(combatClass, level, def.banditAbilityLoadout, def.attackTag, def.rangedWeaponKey);
+    Object.assign(def, profile);
+    def.combatPerkWeaponSignature = JSON.stringify([def.attackTag, def.rangedWeaponKey || null]); // Used only by spawn-time equipment reconciliation.
+    const mods = profile.combatPerkModifiers; // Use the enemy's own existing lower base resources and stamina cost.
+    def.maxHealth = Math.max(1, Math.round(baseHealth * mods.health));
+    def.maxStamina = Math.max(1, Math.round(baseStamina * mods.stamina), Math.ceil(baseCost * mods.staminaCost * (def.combatPerkMinimumAttacks || 1)));
+    def.attackStaminaCost = baseCost * mods.staminaCost; // AI affordability checks and actual spend share the same value.
+    return def;
+  }
+
+  function refreshEnemyCombatBuild(entity) {
+    const def = entity?.def; // Cultural and modular equipment wrappers run after the ordinary factory.
+    if (!def?.combatPerkModifiers || def.combatPerkWeaponSignature === JSON.stringify([def.attackTag, def.rangedWeaponKey || null])) return entity;
+    const resources = window.ResourceSystem;
+    const fraction = key => {
+      const maximum = resources?.getEffectiveMax?.(entity, key) ?? entity[key === 'health' ? 'maxHealth' : 'maxStamina'];
+      return maximum > 0 ? Math.max(0, Math.min(1, entity[key] / maximum)) : 0;
+    }; // Reconciliation is spawn-time, but preserves missing-resource fractions rather than granting a heal.
+    const healthFraction = fraction('health'), staminaFraction = fraction('stamina');
+    installEnemyCombatProfile(def, def.combatClass, def.combatLevel);
+    entity.maxHealth = def.maxHealth;
+    entity.maxStamina = def.maxStamina;
+    entity.health = (resources?.getEffectiveMax?.(entity, 'health') ?? entity.maxHealth) * healthFraction;
+    entity.stamina = (resources?.getEffectiveMax?.(entity, 'stamina') ?? entity.maxStamina) * staminaFraction;
+    return entity;
+  }
+
   // ── Bandit ability AI ────────────────────────────────────────────
   //
   // Bandits attack through the SAME abilities the player has access to
@@ -1558,7 +1617,7 @@
     // practice" for the player -- omitting it here would give bandits a
     // ~67% bigger hit cone than the identical player attack.
     const rangePx = base.rangePx * step.rangeMul * (comboData.RANGE_SCALE ?? 1);
-    const halfConeRad = Math.min(Math.PI, step.halfConeDeg * Math.PI / 180 * shapeStats.range);
+    const halfConeRad = Math.min(Math.PI, step.halfConeDeg * Math.PI / 180 * shapeStats.range * (def.combatPerkModifiers?.aoe ?? 1));
     const knockbackPxS = base.knockbackPxS * step.knockbackMul * shapeStats.power;
     const aimAngle = Math.atan2(targetPlayer.y - c.y, targetPlayer.x - c.x);
     c.facing = aimAngle;
@@ -1570,7 +1629,7 @@
     c._banditSwingDirSign = step.dirSign || 1; c._banditSwingPower = stepPose ? 1 : (step.power || 1);
     c._banditSwingPoseScale = 1; c._banditSwingWindupCurve = null;
     c._banditSwingHoldS = (step.holdS || 0) / shapeStats.speed; c._banditSwingReturnS = (step.returnS || 0) / shapeStats.speed; // Same pause / finisher tail combat-combo.js hands the player's swing visual.
-    const lungeBudgetPx = deps.TILE * (step.lungeMul || 1) * (comboData?.LUNGE_SCALE || 1.5);
+    const lungeBudgetPx = deps.TILE * (step.lungeMul || 1) * (comboData?.LUNGE_SCALE || 1.5) * (def.combatPerkModifiers?.lunge ?? 1);
     const lungeDurationS = (step.windupS + step.strikeS) / shapeStats.speed;
     if (staged) {
       // Pre-capped instead of halted by a per-frame meleeHit probe (null hitTest skips it).
@@ -1608,7 +1667,7 @@
         if (landed && staged) {
           if (!comboStepHit) c._banditComboLandCount = (c._banditComboLandCount || 0) + 1; // A Hyped second hit is still the same combo step, not a phantom extra chain point.
           comboStepHit = true;
-          damageBanditCombatTarget(c, targetPlayer, damage, c.x, c.y, knockbackPxS, { tag: def.attackTag, stagedDuel: true, enchantmentSlot: 'tap1', comboFinisher: isFinalStep });
+          damageBanditCombatTarget(c, targetPlayer, damage, c.x, c.y, knockbackPxS, { tag: def.attackTag, stagedDuel: true, enchantmentSlot: 'tap1', comboFinisher: isFinalStep, perkHeavy: !!step.heavy });
           window.AudioSystem?.playWeaponHitSfx(def.attackTag, c.x, c.y, c.areaId, sfxPitch, ['small', 'medium', 'large'][comboStep]);
         } else if (landed) {
           if (!comboStepHit) c._banditComboLandCount = (c._banditComboLandCount || 0) + 1; // A Hyped second hit is still the same combo step, not a phantom extra chain point.
@@ -1619,7 +1678,7 @@
           // player's own combat-combo.js fix, which no longer tags a
           // swing by combo family (sweep=blunt/thrust=sharp) regardless
           // of the equipped weapon's real material.
-          damageBanditCombatTarget(c, targetPlayer, damage, c.x, c.y, knockbackPxS, { tag: def.attackTag, enchantmentSlot: 'tap1', comboFinisher: isFinalStep, afflictionBonuses: window.CombatAttackEvents?.scaleAfflictions?.(window.ResourceSystem?.afflictionBonusesForTag(def.attackTag), 1) || window.ResourceSystem?.afflictionBonusesForTag(def.attackTag) });
+          damageBanditCombatTarget(c, targetPlayer, damage, c.x, c.y, knockbackPxS, { tag: def.attackTag, enchantmentSlot: 'tap1', comboFinisher: isFinalStep, perkHeavy: !!step.heavy, afflictionBonuses: window.CombatAttackEvents?.scaleAfflictions?.(window.ResourceSystem?.afflictionBonusesForTag(def.attackTag), 1) || window.ResourceSystem?.afflictionBonusesForTag(def.attackTag) });
           window.AudioSystem?.playWeaponHitSfx(def.attackTag, c.x, c.y, c.areaId, sfxPitch, ['small', 'medium', 'large'][comboStep]);
         }
       },
@@ -1653,7 +1712,7 @@
     // rangeMul-scaled cone -- see the matching comment in
     // fireBanditComboStep, same "read as oversized" fix applies here.
     const rangePx = base.rangePx * tech.rangeMul * (qa.RANGE_SCALE ?? 1);
-    const halfConeRad = Math.min(Math.PI, tech.halfConeDeg * Math.PI / 180 * shapeStats.range);
+    const halfConeRad = Math.min(Math.PI, tech.halfConeDeg * Math.PI / 180 * shapeStats.range * (def.combatPerkModifiers?.aoe ?? 1));
     const aimAngle = Math.atan2(targetPlayer.y - c.y, targetPlayer.x - c.x);
     c.facing = aimAngle;
     c._banditAimPitch = window.Combat?.meleeAimSolution?.(c, targetPlayer, aimAngle, 0)?.pitch || 0; // Used by this enemy's leap, 3D hit cone, and pitched trail.
@@ -1662,7 +1721,7 @@
     c._banditSwingDirSign = 1; c._banditSwingPower = 1;
     c._banditSwingPoseScale = 1; c._banditSwingWindupCurve = null;
     c._banditSwingHoldS = (qa.HOLD_S || 0) / shapeStats.speed; c._banditSwingReturnS = 0; // Same post-strike pause the player's quick attack swing visual gets.
-    beginBanditLunge(c, deps.TILE * (qa.LUNGE_TILE_MUL || 5.5), (qa.WINDUP_S + qa.STRIKE_S) / shapeStats.speed, { rangePx, halfConeRad }, targetPlayer);
+    beginBanditLunge(c, deps.TILE * (qa.LUNGE_TILE_MUL || 5.5) * (def.combatPerkModifiers?.lunge ?? 1), (qa.WINDUP_S + qa.STRIKE_S) / shapeStats.speed, { rangePx, halfConeRad }, targetPlayer);
     let techHit = false;
     c._banditAction = beginBanditMeleeStage(c, {
       windupS: qa.WINDUP_S / shapeStats.speed, strikeS: qa.STRIKE_S / shapeStats.speed, recoverS: 0,
@@ -1708,7 +1767,7 @@
     const damage = Math.max(1, Math.round(base.damage * (cb.DAMAGE_MUL_MIN + (cb.DAMAGE_MUL_MAX - cb.DAMAGE_MUL_MIN) * chargeT)));
     const rangePx = base.rangePx * (cb.RANGE_MUL_MIN + (cb.RANGE_MUL_MAX - cb.RANGE_MUL_MIN) * chargeT);
     const halfConeDeg = cb.HALF_CONE_DEG_MIN + (cb.HALF_CONE_DEG_MAX - cb.HALF_CONE_DEG_MIN) * chargeT;
-    const halfConeRad = Math.min(Math.PI, halfConeDeg * Math.PI / 180 * shapeStats.range);
+    const halfConeRad = Math.min(Math.PI, halfConeDeg * Math.PI / 180 * shapeStats.range * (def.combatPerkModifiers?.aoe ?? 1));
     const knockbackPxS = base.knockbackPxS * (cb.KNOCKBACK_MUL_MIN + (cb.KNOCKBACK_MUL_MAX - cb.KNOCKBACK_MUL_MIN) * chargeT) * shapeStats.power;
     const lungeTileMul = cb.LUNGE_TILE_MUL_MIN + (cb.LUNGE_TILE_MUL_MAX - cb.LUNGE_TILE_MUL_MIN) * chargeT;
     const pitchDistanceResistance = cb.LUNGE_GRAVITY_RESIST_MIN
@@ -1736,7 +1795,7 @@
     // derives how long the shared nonlinear windup would need to reach it.
     beginBanditLunge(
       c,
-      deps.TILE * lungeTileMul,
+      deps.TILE * lungeTileMul * (def.combatPerkModifiers?.lunge ?? 1),
       windupS + cb.STRIKE_S / shapeStats.speed,
       { rangePx, halfConeRad, pitchDistanceResistance },
       targetPlayer,
@@ -1776,7 +1835,7 @@
     return true;
   }
 
-  // Captain-only, hold2. Not a held button either -- a periodic timed
+  // Counter Shield, hold2. Not a held button either -- a periodic timed
   // window instead: while `_banditGuardUntil` is in the future, an
   // incoming hit (see damageCreature's isBandit branch) is reduced and
   // answered with a real Counter Shield riposte using the exact damage/
@@ -1794,7 +1853,7 @@
     const base = banditAttackBaseline(def);
     const damage = Math.max(1, Math.round(base.damage * cs.COUNTER_DAMAGE_MUL));
     const rangePx = base.rangePx * cs.COUNTER_RANGE_MUL;
-    const halfConeRad = Math.min(Math.PI, cs.COUNTER_HALF_CONE_DEG * Math.PI / 180 * (def.weaponShapeStats?.range || 1));
+    const halfConeRad = Math.min(Math.PI, cs.COUNTER_HALF_CONE_DEG * Math.PI / 180 * (def.weaponShapeStats?.range || 1) * (def.combatPerkModifiers?.aoe ?? 1));
     const knockbackPxS = base.knockbackPxS * cs.COUNTER_KNOCKBACK_MUL * (def.weaponShapeStats?.power || 1);
     const aimAngle = Math.atan2(targetPlayer.y - c.y, targetPlayer.x - c.x);
     const aimPitch = window.Combat?.meleeAimSolution?.(c, targetPlayer, aimAngle, 0)?.pitch || 0; // Used by the counter's 3D cone and ribbon.
@@ -1894,7 +1953,7 @@
     if (!steps?.length) return base.rangePx;
     const step = steps[(c._banditComboIndex || 0) % steps.length];
     const comboRangePx = base.rangePx * step.rangeMul * (combo.RANGE_SCALE ?? 1);
-    const comboLungePx = deps.TILE * (step.lungeMul || 1) * (combo.LUNGE_SCALE || 1.5);
+    const comboLungePx = deps.TILE * (step.lungeMul || 1) * (combo.LUNGE_SCALE || 1.5) * (def.combatPerkModifiers?.lunge ?? 1);
     return banditAbilitySafeReachPx(comboRangePx, comboLungePx, step.windupS, step.strikeS);
   }
   function banditEngagementReachPx(c, def, loadout, targetPlayer) {
@@ -1909,7 +1968,7 @@
       const cond = banditQuickAttackConditions(c, targetPlayer);
       const tech = window.Combat.buildQuickAttack(techDef, cond);
       const qaRangePx = base.rangePx * tech.rangeMul * (qa.RANGE_SCALE ?? 1);
-      const qaLungePx = deps.TILE * (qa.LUNGE_TILE_MUL || 5.5);
+      const qaLungePx = deps.TILE * (qa.LUNGE_TILE_MUL || 5.5) * (def.combatPerkModifiers?.lunge ?? 1);
       reach = Math.min(reach, banditAbilitySafeReachPx(qaRangePx, qaLungePx, qa.WINDUP_S, qa.STRIKE_S));
     }
     // Charged Breaker (hold1) only ever fires as a fresh opener
@@ -1924,7 +1983,7 @@
         const chargeT = 0.75;
         const cbRangePx = base.rangePx * (cb.RANGE_MUL_MIN + (cb.RANGE_MUL_MAX - cb.RANGE_MUL_MIN) * chargeT);
         const cbLungeMul = cb.LUNGE_TILE_MUL_MIN + (cb.LUNGE_TILE_MUL_MAX - cb.LUNGE_TILE_MUL_MIN) * chargeT;
-        const cbLungePx = deps.TILE * cbLungeMul;
+        const cbLungePx = deps.TILE * cbLungeMul * (def.combatPerkModifiers?.lunge ?? 1);
         const cbWindupS = (cb.holdSecondsForPoseCharge?.(chargeT) ?? (cb.WINDUP_S * chargeT)) / (def.weaponShapeStats?.speed || 1);
         reach = Math.min(reach, banditAbilitySafeReachPx(cbRangePx, cbLungePx, cbWindupS, cb.STRIKE_S));
       }
@@ -2680,7 +2739,7 @@
       && c.attackCooldownT <= 0 && c.stamina >= def.attackStaminaCost && distToPlayer <= engageRangePx
       && committedOwner && committedOwner !== c && !preparer) {
       c._banditChargeDecisionCdS = 1.25; // Do not force a charge on every frame of a busy melee queue.
-      if (deps.rnd() < BANDIT_HOLD1_CHANCE && beginBanditPreparedCharge(c, targetPlayer)) {
+      if (deps.rnd() < (def.combatPerkModifiers?.chargeChance ?? BANDIT_HOLD1_CHANCE) && beginBanditPreparedCharge(c, targetPlayer)) {
         c._banditTactic = 'charging';
         return { aimAngle: towardAngle, moving: false };
       }
@@ -2797,7 +2856,7 @@
     const openingFresh = c._banditComboIndex === 0;
     let fired = false;
     let attackChoice = 'combo'; // Mobile AI diagnostics distinguish the actual selected ability, not simply whether a swing fired.
-    if (openingFresh && loadout.hold1 === 'chargedBreaker' && (c._banditHold1CdT || 0) <= 0 && deps.rnd() < BANDIT_HOLD1_CHANCE) {
+    if (openingFresh && loadout.hold1 === 'chargedBreaker' && (c._banditHold1CdT || 0) <= 0 && deps.rnd() < (def.combatPerkModifiers?.chargeChance ?? BANDIT_HOLD1_CHANCE)) {
       fired = fireBanditChargedBreaker(c, def, targetPlayer);
       if (fired) attackChoice = 'charged-breaker';
     }
@@ -3491,8 +3550,9 @@
     if (def.rangedWeaponKey && !window.RangedWeapons?.config?.[def.rangedWeaponKey]) {
       // The Fishing Spear is registered by the existing dual-role projectile archetype, not the base crossbow table.
       // NPCs must have that real thrown definition before they try to fire rather than holding an inert spear.
-      window.HobunjiRangedWeaponArchetypes?.patchGeneratedDefinitions?.();
+      window.HobunjiRangedWeaponArchetypes?.patchGeneratedDefinitions?.({ npcOnly: true, keys: [def.rangedWeaponKey] });
     }
+    applyEnemyCombatBuild(def, rank, tier, mineEnemy, opts, authoredRule); // After authored weapon and projectile definitions exist; before resources initialize.
     const targetScene = opts.scene || deps.getActiveScene();
     const targetGrid = opts.grid || deps.getActiveGrid();
     const gridCols = opts.cols || deps.getActiveCols();
@@ -3682,6 +3742,8 @@
     cancelLunge: cancelBanditLunge, // Stagger/death/leash cleanup: stops the lunge AND lowers its hop.
     finishAction: finishBanditAction, // Ends a staged action; a completed melee swing hands its hold/return to c._banditToolTail.
     engagementReachPx: banditEngagementReachPx,
+    applyEnemyCombatBuild, // Shared spawn and regression-test entry point.
+    refreshEnemyCombatBuild, // Reconcile actual equipment after the existing cultural/modular wrappers.
     RANK_LABEL: BANDIT_RANK_LABEL,
     TINT_SLOT_BY_SLOT: BANDIT_TINT_SLOT_BY_SLOT,
     GUARD_DAMAGE_ABSORB: BANDIT_GUARD_DAMAGE_ABSORB,

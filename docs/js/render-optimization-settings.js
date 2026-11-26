@@ -78,6 +78,11 @@
       desc: 'Shadewood wall chunks that are not fading are drawn as one instanced mesh per tree part instead of one per chunk.',
       available: () => typeof window.DenseForestWallBatches?.setEnabled === 'function',
       read: () => window.DenseForestWallBatches.snapshot?.().enabled, write: on => window.DenseForestWallBatches.setEnabled(on) },
+    { group: 'Batching (fewer draw calls)', id: 'staticWallMatrices', name: 'Cache static Cloud Forest wall matrix subtrees', on: false,
+      desc: 'Experimental: skip the native child matrix walk for unchanged, producer-owned wall chunks. Independent of batching, visibility and outline settings.',
+      available: () => typeof window.DenseForestWallBatches?.setStaticMatrixEnabled === 'function',
+      read: () => window.DenseForestWallBatches.staticMatrixSnapshot().enabled,
+      write: on => window.DenseForestWallBatches.setStaticMatrixEnabled(on) },
     { group: 'Batching (fewer draw calls)', id: 'denseWallLod', name: 'Lighter far Cloud Forest wall trees', on: true,
       desc: 'Wall trees 12+ tiles from the camera draw their roots, branches and vines with fewer rings and sides (same shapes, trunks and leaves). Needs the dense wall merge above.',
       available: () => typeof window.DenseForestWallBatches?.setLodEnabled === 'function',
@@ -90,6 +95,11 @@
       desc: 'Grass billboards on the farm and in town are drawn as spatial chunks instead of one sprite group per tile.',
       available: () => typeof window.GrassBillboardRenderChunks?.setEnabled === 'function',
       read: () => window.GrassBillboardRenderChunks.enabled, write: on => window.GrassBillboardRenderChunks.setEnabled(on) },
+    { group: 'Batching (fewer draw calls)', id: 'identityTreeMatrices', name: 'Fast static tree matrices', on: true,
+      desc: 'Copies the parent world matrix for identity-local generated tree leaves. Moved or animated parts use normal Three.js updates.',
+      available: () => typeof window.FoliageGenerator?.setIdentityTreeMatrixFastPath === 'function',
+      read: () => window.FoliageGenerator.identityTreeMatrixStats().enabled,
+      write: on => window.FoliageGenerator.setIdentityTreeMatrixFastPath(on) },
     { group: 'Batching (fewer draw calls)', id: 'treeInstancing', name: 'Instance wilderness trees', on: false, ownsPersistence: true,
       desc: 'Procedural trees and bushes instanced within 8×8-tile cells so camera and X-ray culling can skip distant batches. Experimental; off by default until device testing confirms a gain.',
       available: () => typeof window.WildernessTreeInstancer?.setEnabled === 'function',
@@ -99,6 +109,10 @@
       desc: 'Brick walls and path chunks whose nearest brick is 14+ tiles away draw each brick as a 12-triangle block of the same size instead of 70 triangles.',
       available: () => typeof window.InstancedBrickLod?.setEnabled === 'function',
       read: () => window.InstancedBrickLod.enabled(), write: on => window.InstancedBrickLod.setEnabled(on) },
+    { group: 'Culling (skip what cannot be seen)', id: 'sceneScopedInstances', name: 'Index instanced geometry by active map', on: true,
+      desc: 'Avoid scanning inactive maps during the instanced frustum cull and brick LOD. Live attachment and visibility remain authoritative.',
+      available: () => typeof window.InstancedMeshBounds?.setSceneScopedEnabled === 'function',
+      read: () => window.InstancedMeshBounds.snapshot().sceneScopedEnabled, write: on => window.InstancedMeshBounds.setSceneScopedEnabled(on) },
     { group: 'Culling (skip what cannot be seen)', id: 'instancedViewCull', name: 'Cull off-camera instanced walls and grass', on: true,
       desc: 'Instanced walls, path bricks and grass outside the camera view are skipped.',
       available: () => typeof window.InstancedMeshViewCull?.setEnabled === 'function',
@@ -112,6 +126,27 @@
       available: () => typeof window.ZoneVegetationCull?.setHideFadedOut === 'function',
       read: () => window.ZoneVegetationCull.snapshot?.().hideFadedOut, write: on => window.ZoneVegetationCull.setHideFadedOut(on) },
 
+    { group: 'Held items and x-ray replays', id: 'waterOnlyBranchPrune', name: 'Skip unrelated branches in water-only replays', on: true,
+      desc: 'Reduces scene traversal during portrait-only water tint. Keeps all water depth passes; complex custom render hooks fall back automatically.',
+      available: () => typeof held()?.setWaterOnlyBranchPruneEnabled === 'function',
+      read: () => heldSnap().waterOnlyBranchPruneEnabled, write: on => held().setWaterOnlyBranchPruneEnabled(on) },
+    { group: 'Held items and x-ray replays', id: 'portraitWaterTint', name: 'Submerged portrait tint', on: true,
+      desc: 'Off skips the separate water-color replay for submerged portraits; normal water and held-gear tint remain. Uses the existing X-ray hierarchy rule.', ownsPersistence: true,
+      available: () => typeof window.XrayHierarchy?.set === 'function',
+      read: () => window.XrayHierarchy.get('portrait.waterTint') !== 'off',
+      write: on => window.XrayHierarchy.set('portrait.waterTint', on ? 'wet-tile' : 'off') },
+    { group: 'Held items and x-ray replays', id: 'mixedWaterPrune', name: 'Skip unrelated branches in mixed water replays', on: false,
+      desc: 'Experimental: reuse one selective visibility transaction for the final two water submissions when gear is also replayed.',
+      available: () => typeof held()?.setMixedWaterBranchPruneEnabled === 'function',
+      read: () => heldSnap().mixedWaterBranchPruneEnabled, write: on => held().setMixedWaterBranchPruneEnabled(on) },
+    { group: 'Held items and x-ray replays', id: 'replayRegistryMemo', name: 'Share held replay registry ancestry checks', on: false,
+      desc: 'Experimental: reuse ancestor visibility and front portrait classification between adjacent registry reads, never across native draws.',
+      available: () => typeof held()?.setReplayRegistryMemoEnabled === 'function',
+      read: () => heldSnap().replayRegistryMemoEnabled, write: on => held().setReplayRegistryMemoEnabled(on) },
+    { group: 'Held items and x-ray replays', id: 'slowClassificationFallback', name: 'Less frequent held-object classification scans', on: false,
+      desc: 'Experimental: full repair scans every 3 seconds instead of 750 ms. Newly attached and explicitly invalidated objects still classify immediately before rendering.',
+      available: () => typeof held()?.setSlowClassificationFallbackEnabled === 'function',
+      read: () => heldSnap().slowClassificationFallbackEnabled, write: on => held().setSlowClassificationFallbackEnabled(on) },
     { group: 'Held items and x-ray replays', id: 'localReplayRing', name: 'X-ray only around the player', on: true,
       desc: 'Only actors on your tile or its eight neighbors receive selective X-ray and water tint replays. Off restores the old range.',
       available: () => typeof held()?.setLocalReplayRingEnabled === 'function',
@@ -241,8 +276,20 @@
     return get(id);
   }
 
+  function setGeneratedOutlineMode(mode) {
+    const owner = window.WorldRenderPipeline;
+    if (!owner?.setGeneratedOutlineMode || !['shell','screen','none'].includes(mode)) return null;
+    const actual = owner.setGeneratedOutlineMode(mode);
+    const stored = loadStored();
+    if (actual === (owner.defaultGeneratedOutlineMode || 'screen')) delete stored.generatedOutlineMode; else stored.generatedOutlineMode = actual;
+    saveStored(stored);
+    refreshInputs();
+    return actual;
+  }
+
   function applyStored() {
     const stored = loadStored();
+    if (['shell','screen','none'].includes(stored.generatedOutlineMode)) window.WorldRenderPipeline?.setGeneratedOutlineMode?.(stored.generatedOutlineMode);
     for (const [id, on] of Object.entries(stored)) {
       const toggle = byId.get(id);
       if (!toggle || toggle.ownsPersistence || typeof on !== 'boolean' || !toggle.available()) continue;
@@ -252,6 +299,7 @@
   }
 
   function reset() {
+    window.WorldRenderPipeline?.setGeneratedOutlineMode?.(window.WorldRenderPipeline.defaultGeneratedOutlineMode || 'screen');
     for (const toggle of settingsToggles) if (toggle.available() && get(toggle.id) !== toggle.on) set(toggle.id, toggle.on);
     saveStored({});
     refreshInputs();
@@ -259,6 +307,9 @@
 
   const inputId = id => byId.get(id)?.input || 'settingRenderOpt_' + id;
   function refreshInputs() {
+    const outlineSelect = document.getElementById('settingRenderOpt_generatedOutlineMode');
+    const outlineMode = window.WorldRenderPipeline?.getGeneratedOutlineMode?.();
+    if (outlineSelect && outlineMode && outlineSelect.value !== outlineMode) outlineSelect.value = outlineMode;
     for (const toggle of settingsToggles) {
       const input = document.getElementById(inputId(toggle.id));
       if (input) input.checked = get(toggle.id) === true;
@@ -294,6 +345,20 @@
     const intro = el('div', 'settings-desc', 'Every render optimisation, switchable for A/B testing on this device. On is how the game ships unless noted; choices are remembered on this device. The Render A/B benchmark (Dev Tools) times the main ones against each other.');
     intro.style.margin = '0 0 6px';
     section.appendChild(intro);
+    if (window.WorldRenderPipeline?.setGeneratedOutlineMode) {
+      const row = el('label', 'settings-row');
+      const label = el('div', 'settings-label');
+      label.append(el('div','settings-name','Generated outlines'), el('div','settings-desc','Keep master Outlines on. Screen-space uses visible curved-object depth; None keeps the composite and painterly without generated shell ink.'));
+      const select = el('select');
+      select.id = 'settingRenderOpt_generatedOutlineMode';
+      select.style.cssText = 'max-width:45%;background:rgba(255,255,255,.06);border:1px solid var(--border-bright);color:var(--text);align-self:center';
+      for (const [value, name] of [['shell','Shell (original)'],['screen','Screen-space depth (default)'],['none','None']]) {
+        const option = el('option',null,name); option.value = value; select.appendChild(option);
+      }
+      select.value = window.WorldRenderPipeline.getGeneratedOutlineMode();
+      select.addEventListener('change', () => setGeneratedOutlineMode(select.value));
+      row.append(label,select); section.appendChild(row);
+    }
     let group = null;
     for (const toggle of TOGGLES) {
       if (!toggle.available()) continue;
@@ -353,6 +418,7 @@
     get,
     set,
     reset,
+    setGeneratedOutlineMode,
     applyStored,
     refresh: refreshInputs,
   });

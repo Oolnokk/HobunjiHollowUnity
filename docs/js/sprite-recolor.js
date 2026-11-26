@@ -112,6 +112,42 @@
     directShadeFillPixels(data, [tr, tg, tb], null);
   }
 
+  const PIXEL_CHUNK_BYTES = 4096*4; // Bound the cooperative fallback's inner loops.
+  const canvasJob = fn => window.PixelWorkYield?.runCanvasJob ? window.PixelWorkYield.runCanvasJob(fn) : fn();
+
+  async function recolorAsync(data,targetHex,mode,opts) {
+    // Tools without the runtime budget keep their original synchronous math.
+    const budget=window.PixelWorkYield;
+    if(!budget?.processPixels){recolorImageData(data,targetHex,mode,opts);return;}
+    const config=shadeFillConfig(); // Snapshot the actual caller config for worker and fallback.
+    await budget.processPixels('sprite',data,{targetHex,mode,opts,config},async()=>{
+      const direct=mode!=='keyed'&&mode!=='mushroom'&&!String(mode||'').startsWith('dual-keyed');
+      let reference=null;
+      if(direct){
+        // ColorFill's global peak must be computed before modifying any pixels.
+        // A neutral fallback of 1 is a sentinel: eligible non-white RGB cannot
+        // have perceptual luminance 1. Thus black-only chunks cannot raise the
+        // reference of a different chunk, even for near-black authored art.
+        const sampleConfig={...config,neutralLuminance:1};
+        let peak=0,count=0;
+        for(let i=0;i<data.length;i+=PIXEL_CHUNK_BYTES){
+          const ref=colorFillApi().createShadeReference(data.subarray(i,i+PIXEL_CHUNK_BYTES),null,{config:sampleConfig});
+          count+=ref.count;if(ref.baseValue!==1)peak=Math.max(peak,ref.baseValue);
+          await budget.maybeYield();
+        }
+        const value=peak>0?peak:Math.max(1/255,Number(config.neutralLuminance)||.55);
+        reference={baseValue:value,peakLuminance:value,count,config};
+      }
+      const rgb=[(targetHex>>16)&255,(targetHex>>8)&255,targetHex&255];
+      for(let i=0;i<data.length;i+=PIXEL_CHUNK_BYTES){
+        const chunk=data.subarray(i,i+PIXEL_CHUNK_BYTES);
+        if(direct)colorFillApi().shadeFillPixels(chunk,rgb,{shadeReference:reference});
+        else recolorImageData(chunk,targetHex,mode,opts);
+        await budget.maybeYield();
+      }
+    });
+  }
+
   const _imgCache = new Map();
   const _canvasCache = new Map();
 
@@ -129,7 +165,7 @@
 
   // Paint separate layers instead of hue-keying the combined sprite; paper and binding
   // share coordinates but receive independent colors before they are composited.
-  function tintLayer(image, tint) {
+  async function tintLayer(image, tint) {
     const canvas = document.createElement('canvas'); // Shared-size tint buffer for layered authored icons.
     canvas.width = image.naturalWidth || image.width;
     canvas.height = image.naturalHeight || image.height;
@@ -137,7 +173,8 @@
     if (!ctx || !canvas.width || !canvas.height) throw new Error('Sprite layer has no usable image pixels');
     ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
     const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    recolorImageData(pixels.data, tint, 'direct');
+    await recolorAsync(pixels.data, tint, 'direct');
+    await window.PixelWorkYield?.maybeYield?.();
     ctx.putImageData(pixels, 0, 0);
     return canvas;
   }
@@ -149,12 +186,12 @@
     const key = 'shared-color-fill-v2|' + spritePath + '|' + mode + '|' + targetHex;
     if (_canvasCache.has(key)) return Promise.resolve(_canvasCache.get(key));
     const overlayPath = binding ? 'assets/objectsprites/scroll_binding.png' : 'assets/objectsprites/iridescent_sheen.png';
-    const pending = Promise.all([loadImage(spritePath), loadImage(overlayPath)]).then(([baseImage, overlayImage]) => {
-      const painted = tintLayer(baseImage, targetHex); // Scroll paper or solid powder body: color never leaks onto the second layer.
+    const pending = Promise.all([loadImage(spritePath), loadImage(overlayPath)]).then(([baseImage, overlayImage]) => canvasJob(async()=>{
+      const painted = await tintLayer(baseImage, targetHex); // Scroll paper or solid powder body: color never leaks onto the second layer.
       const ctx = painted.getContext('2d');
       if (binding) {
         const color = parseInt(binding[1], 16); // Exact canonical melee action-slot tint.
-        const ribbon = tintLayer(overlayImage, color);
+        const ribbon = await tintLayer(overlayImage, color);
         ctx.drawImage(ribbon, 0, 0, painted.width, painted.height);
       } else {
         ctx.save();
@@ -166,7 +203,7 @@
       window.__farmLog?.('[sprite-recolor] layered ' + spritePath + ' mode=' + mode, 'items');
       _canvasCache.set(key, painted);
       return painted;
-    }).catch(error => {
+    })).catch(error => {
       if (_canvasCache.get(key) === pending) _canvasCache.delete(key); // A temporary missing asset must be retryable on mobile.
       throw error;
     });
@@ -188,7 +225,7 @@
     const cacheKey='shared-color-fill-v2|'+spritePath+'|'+mode+'|'+targetHex+recolorOptionsKey(opts); // Different keyed hues/secondary masks cannot reuse another request's pixels.
     const cached=_canvasCache.get(cacheKey);
     if(cached)return Promise.resolve(cached);
-    const pending = loadImage(spritePath).then(img=>{
+    const pending = loadImage(spritePath).then(img=>canvasJob(async()=>{
       const canvas=document.createElement('canvas');
       const sourceWidth=img.naturalWidth, sourceHeight=img.naturalHeight; // User PNG dimensions remain unchanged on disk.
       const mushroomScale = mode === 'mushroom' ? Math.min(1, MUSHROOM_RUNTIME_MAX_EDGE / Math.max(sourceWidth, sourceHeight)) : 1; // Restricts only small mushroom renders, never other sprite families.
@@ -201,11 +238,13 @@
         ctx.drawImage(img,0,0,canvas.width,canvas.height);
       } else ctx.drawImage(img,0,0);
       const imageData=ctx.getImageData(0,0,canvas.width,canvas.height);
-      recolorImageData(imageData.data,targetHex,mode,opts); ctx.putImageData(imageData,0,0);
+      await recolorAsync(imageData.data,targetHex,mode,opts);
+      await window.PixelWorkYield?.maybeYield?.();
+      ctx.putImageData(imageData,0,0);
       const fillLabel = mode === 'mushroom' ? 'mushroom-cap hue-key/value-fill' : String(mode || '').startsWith('dual-keyed') ? 'dual hue-key/value-fill' : mode === 'keyed' ? 'hue-key/value-fill' : 'animal shade-fill'; // Used by mobile/debug logs to identify the active recolor path.
       window.__farmLog?.(`[sprite-recolor] ${fillLabel} ${spritePath} -> #${targetHex.toString(16).padStart(6,'0')}`,'items');
       _canvasCache.set(cacheKey,canvas); return canvas;
-    }).catch(error=>{
+    })).catch(error=>{
       if (_canvasCache.get(cacheKey) === pending) _canvasCache.delete(cacheKey); // Retry a failed render on the next Pack/HUD request.
       throw error;
     });
@@ -226,7 +265,7 @@
 
   function loadFishCatalogForGame(){
     if(typeof document==='undefined'||!document.getElementById('fishingOverlay'))return;
-    parserOrderedScript('fish-catalog.js','fish-catalog','20261115fishStyleCache1',()=>!!window.FishCatalog);
+    parserOrderedScript('fish-catalog.js','fish-catalog','20261125pixelWorker1',()=>!!window.FishCatalog);
   }
   function loadFishingEventsForGame(){
     if(typeof document==='undefined'||!document.getElementById('fishingOverlay'))return;
@@ -239,7 +278,7 @@
     parserOrderedScript('fishing-presentation-debug.js','fishing-presentation-debug','20261115fishStyleCounters1',()=>!!window.FishingPresentationDebug);
   }
 
-  window.SpriteRecolor={getRecoloredCanvas,recolorImageData,directShadeFillPixels,relativeLuminance,shadeFillConfig,DEFAULT_KEY_A,DEFAULT_KEY_B,SECONDARY_KEY_A,SECONDARY_KEY_B,KEY_HUE_TOLERANCE,DUAL_KEY_MODE_PREFIX,MUSHROOM_CAP_KEY};
+  window.SpriteRecolor={getRecoloredCanvas,recolorImageData,recolorAsync,directShadeFillPixels,relativeLuminance,shadeFillConfig,DEFAULT_KEY_A,DEFAULT_KEY_B,SECONDARY_KEY_A,SECONDARY_KEY_B,KEY_HUE_TOLERANCE,DUAL_KEY_MODE_PREFIX,MUSHROOM_CAP_KEY};
   loadFishCatalogForGame();
   loadFishingEventsForGame();
   loadAmphibiousFishingForGame();

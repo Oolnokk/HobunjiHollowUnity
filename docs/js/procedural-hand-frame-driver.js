@@ -975,7 +975,9 @@
     const compositor = global.ActorRigCompositor; // One registry for authored hand-placement baselines and named dance/yawn/grip overlays.
     if (!compositor?.setSolvedBase) return;
     for (const side of ['left', 'right']) {
-      const socket = record.rig?.group?.getObjectByName?.(side + '_hand_socket'); // Existing authored socket, never another preview hand.
+      const group = record.rig?.group; // The owning rig builds left/right sockets as direct children.
+      const name = side + '_hand_socket';
+      const socket = group?.children?.find(child => child.name === name) || group?.getObjectByName?.(name); // Legacy/nested authoring hosts retain recursive discovery.
       if (!socket?.parent) continue;
       compositor.setSolvedBase(socket, 'position', socket.position);
       compositor.setSolvedBase(socket, 'quaternion', socket.quaternion); // The complete scale-free shoulder/grip solve is the neutral orientation.
@@ -1025,6 +1027,7 @@
   // exact tool/hand matrix stays entirely in ensureSyncSentinel's
   // onBeforeRender hook below, untouched by either piece of this split.
   function attachmentSweep() {
+    if (!pending.size) return; // No per-frame array copy when nothing is waiting.
     for (const record of [...pending]) {
       if (!record.avatarRoot?.userData) {
         pending.delete(record);

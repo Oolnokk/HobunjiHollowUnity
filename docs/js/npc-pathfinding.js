@@ -139,6 +139,37 @@
     return fallback || { c, r };
   }
 
+  // Explicit chore relocation uses the same safe tile and terrain height
+  // as ordinary walkers, without carrying over the previous area's route.
+  function teleportWalkerToTile(walker, area, target) {
+    const root = walker?.root; // Existing live actor, never a duplicate avatar.
+    if (!root?.position || !deps || !Number.isFinite(target?.c) || !Number.isFinite(target?.r)
+      || !isNpcTileWalkable(area, target.c, target.r)) return false;
+    const y = deps.npcSurfaceY?.(area, target.c, target.r); // Safe resting height for when the chore releases the rendered attachment.
+    if (!Number.isFinite(y)) return false;
+    if (walker.area !== area) {
+      if (typeof walker.transferToArea !== 'function') return false;
+      walker.transferToArea(area, target);
+      if (walker.area !== area) return false;
+    }
+    walker.resetRouteState?.();
+    walker._npcCliffClimb = null; walker._cliffNpcY = null; walker._npcCliffGoal = null; // Old airborne paths cannot move a relocated actor.
+    if (walker._bedLieActive) {
+      window.BedLiePose?.releaseNpc?.(walker);
+      walker._npcCharacterRigRoot?.position?.set?.(0, 0, 0);
+      walker._npcCharacterRigRoot?.quaternion?.identity?.();
+      walker._bedLieActive = false;
+    }
+    walker._bedLieSurface = null;
+    window.FurnitureTableSystem?.setSeatTarget?.(walker.rec?.id, target);
+    root.position.set(target.c + 0.5, y, target.r + 0.5);
+    walker._legsPrevX = root.position.x; walker._legsPrevZ = root.position.z; walker._moveSpeedTiles = 0;
+    walker.currentScheduleTarget = target;
+    walker._npcScheduleDecision = null;
+    root.updateMatrixWorld?.(true);
+    return true;
+  }
+
   function canNpcTraverse(area, fromX, fromZ, toX, toZ, {
     ignoreFurnitureAtEnd = false,
     ignoreFurnitureTile = null,
@@ -823,6 +854,7 @@
     init,
     isNpcTileWalkable,
     nearestWalkableTile,
+    teleportWalkerToTile,
     isNpcPositionWalkable,
     canNpcTraverse,
     canNpcBeeline,

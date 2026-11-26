@@ -19,6 +19,7 @@
   function init(injectedDeps) { deps = injectedDeps; }
 
   let _pixelProbeArmed = false;
+  let _pixelProbePreviousRenderCapture = null; // Reject old captures on a tap before the next frame.
   const _pixelProbeRaycaster = new THREE.Raycaster();
 
   function _pixelProbeAngleDeg(radians) {
@@ -758,6 +759,15 @@
     })))}`);
     const portraitCpu=window.__portraitPixelCacheDebug?.()?.beardHood; // On-demand CPU-readback counters.
     if(portraitCpu) lines.push(`Beard/hood CPU cache: ${JSON.stringify(portraitCpu)}`);
+    const pixelJobs=window.PixelWorkYield?.getDebug?.();
+    if(pixelJobs) lines.push(`Pixel asset jobs: ${JSON.stringify(pixelJobs)}`);
+    { // States which opt-in/gated performance features were active for this recording, so a report is self-explaining.
+      const off=window.OffAreaNpcTick?.getDebug?.();
+      const gated=(window.RuntimeFrameScheduler?.getDebug?.()?.entries||[]).filter(e=>e.everyMs>0||e.skippedCalls>0).map(e=>`${e.id}(every ${e.everyMs||0}ms, skipped ${e.skippedCalls}/${e.callCount+e.skippedCalls})`);
+      if(off||gated.length) lines.push(`Opt-in performance features: offAreaNpcTick=${off?(off.enabled?'ON':'off')+` (coarse updates=${off.coarseUpdates}, skipped=${off.skippedUpdates})`:'module missing'} | gated scheduler subscribers=${gated.length?gated.join(', '):'none'} | enable with ?offAreaNpcTick=1 or OffAreaNpcTick.setEnabled(true)`);
+    }
+    const fishProfiles=window.FishCatalog?.getPixelDebug?.();
+    if(fishProfiles) lines.push(`Fish pixel profiles (local): ${JSON.stringify(fishProfiles)}`);
     const lodCpu=window.GeometryAutoLOD?.snapshot?.();
     if(lodCpu) lines.push(`Geometry AutoLOD CPU: ${JSON.stringify({visits:lodCpu.candidateVisits,hiddenSkips:lodCpu.hiddenAncestorSkips,geometryChecks:lodCpu.renderGeometryChecks})}`);
     const keyHudCpu=window.__keyHudWriteDebug?.();
@@ -890,6 +900,8 @@
 
   function disarmPixelProbe() {
     _pixelProbeArmed = false;
+    _pixelProbePreviousRenderCapture = null;
+    window.ProbePerformanceCapture?.cancel?.();
     const hint = document.getElementById('pixelProbeHint');
     if (hint) hint.style.display = 'none';
     deps.renderer.domElement.removeEventListener('pointerdown', _pixelProbeHandler, { capture: true });
@@ -898,13 +910,30 @@
   function armPixelProbe() {
     if (_pixelProbeArmed) { disarmPixelProbe(); return; }
     _pixelProbeArmed = true;
+    _pixelProbePreviousRenderCapture = window.WorldRenderPipeline?.lastCapture?.() || null;
+    window.WorldRenderPipeline?.captureFrame?.(); // One draw-state census; separate from the timing window.
     deps.closeMenu();
+    if (window.PerfProfiler) window.ProbePerformanceCapture?.start?.(deps.getCurrentArea());
     const hint = document.getElementById('pixelProbeHint');
-    if (hint) hint.style.display = 'flex';
+    if (hint) {
+      hint.style.display = 'flex';
+      hint.textContent = 'Pixel Probe: play for 10–20 seconds to record performance, then tap a pixel (or tap now for a visual-only report).';
+    }
     deps.renderer.domElement.addEventListener('pointerdown', _pixelProbeHandler, { capture: true, once: true });
   }
 
+  // A throwing optional diagnostic used to leave the hint on "Reading pixel..." forever with no clue why; surface the error instead.
   async function _pixelProbeHandler(ev) {
+    try { return await _pixelProbeHandlerInner(ev); }
+    catch (error) {
+      console.error('[PixelProbe] report failed', error);
+      const hint = document.getElementById('pixelProbeHint');
+      if (hint) { hint.style.display = 'flex'; hint.textContent = 'Pixel Probe failed: ' + String(error?.message || error).slice(0, 200) + ' (details in the console)'; }
+      throw error;
+    }
+  }
+
+  async function _pixelProbeHandlerInner(ev) {
     ev.preventDefault(); ev.stopImmediatePropagation?.(); ev.stopPropagation();
     setTimeout(() => { _pixelProbeArmed = false; }, 0); // Keep the armed input guard alive through this event so the parent gameplay pointer handler cannot attack.
     const hint = document.getElementById('pixelProbeHint');
@@ -912,6 +941,12 @@
 
     const renderer = deps.renderer, camera = deps.camera, playerMesh = deps.playerMesh;
     const currentArea = deps.getCurrentArea();
+    const performanceWindow = window.ProbePerformanceCapture?.finish?.('tap') || null; // Stop before readPixels, raycasts, screenshots, and forced renders.
+    const wallAtClick = window.DenseForestWallBatches?.staticMatrixSnapshot?.() || null;
+    const latestWorldCapture = window.WorldRenderPipeline?.lastCapture?.(); // Snapshot before probe-only re-renders.
+    const worldCaptureAtClick = latestWorldCapture && latestWorldCapture !== _pixelProbePreviousRenderCapture
+      && latestWorldCapture.area === currentArea ? latestWorldCapture : null;
+    _pixelProbePreviousRenderCapture = null;
     const facingAtClick = _pixelProbeCurrentFacingDebug(); // Preserves the state of the visibly bad frame before probe re-renders run.
     const drunkAtClick = window.HobunjiDrunkWalk?.getDebug?.() || null; // Captures the gait contribution at the clicked frame.
     const composerAtClick = window.PlayerBodyTransformComposer?.getDebug?.() || null; // Captures the last normal render's temporary transform choice.
@@ -1104,6 +1139,12 @@
     if (harlyaoLichDebugLine) lines.push(harlyaoLichDebugLine);
     const painterlyDebug = window.PainterlyPostprocess?.snapshot?.(); // Makes the live painterly stage/tier state copyable from mobile without a console.
     if (painterlyDebug) lines.push(`Paint filter: mode=${painterlyDebug.mode} effectiveSamples≈${painterlyDebug.sampleCount} internal=${painterlyDebug.internalSize || 'waiting'} pipeline=${painterlyDebug.pipelineMode || 'off'}/${painterlyDebug.pipelineFrames || 0}f renderer=${painterlyDebug.rendererAttached ? 'attached' : 'MISSING'} composite=${painterlyDebug.compositePatched ? 'patched' : 'waiting'} outlines=${painterlyDebug.outlinesEnabled == null ? '?' : (painterlyDebug.outlinesEnabled ? 'on' : 'OFF')} error=${painterlyDebug.lastError || 'none'} latest="${painterlyDebug.latestChange || 'n/a'}"`);
+    if (painterlyDebug?.gpuTiming) { // Real GPU cost of the three full-screen painterly passes (not CPU submission time).
+      const g = painterlyDebug.gpuTiming, f = n => (Number(n) || 0).toFixed(2);
+      lines.push(g.supported
+        ? `Paint filter GPU ms (avg/max over ${g.samples} samples${g.disjoint ? `, ${g.disjoint} discarded` : ''}): oil=${f(g.emaMs.oil)}/${f(g.maxMs.oil)} washH=${f(g.emaMs.washH)}/${f(g.maxMs.washH)} washV+tone=${f(g.emaMs.tone)}/${f(g.maxMs.tone)} sum=${f(g.emaMs.oil + g.emaMs.washH + g.emaMs.tone)}`
+        : g.supported === null ? 'Paint filter GPU ms: not sampled yet (filter off or no frames rendered)' : 'Paint filter GPU ms: unavailable (browser does not expose EXT_disjoint_timer_query_webgl2)');
+    }
     lines.push(`Livestock caller stack tracing: ${window.PerfProfiler?.traceLivestockCallers === true ? 'ON (expensive)' : 'off'}`);
     const feyIllusionDebug = window.FeyIllusions?.debugSnapshot?.(); // Copyable mobile proof for player perception, panic impacts and Hyped follow-ups.
     if (feyIllusionDebug && (feyIllusionDebug.lastEffect || feyIllusionDebug.hype?.lastEcho || feyIllusionDebug.hype?.lastNpcEcho || feyIllusionDebug.hype?.lastCreatureEcho || feyIllusionDebug.activePanicRoll || feyIllusionDebug.playerTurnRadiansRemaining || feyIllusionDebug.cameraMovementYawDeg)) {
@@ -1216,6 +1257,9 @@
     const heldRenderDebug = window.HeldObjectRenderOrder?.snapshot?.(); // Exposes the retained selective-x-ray render mode and pass counters on mobile.
     if (heldRenderDebug) lines.push(`Held x-ray: mode=${heldRenderDebug.mode} ground=${heldRenderDebug.groundMeshes} interiorFloor=${heldRenderDebug.interiorFloorMeshes ?? 0} cavernShell=${heldRenderDebug.topFaceGroundMeshes ?? 0} farmhouseFloor=${heldRenderDebug.farmhouseFloorMeshes ?? 0} held=${heldRenderDebug.heldMeshes} footWater=${heldRenderDebug.waterOccludedMeshes ?? '-'}/${heldRenderDebug.waterReplayMeshes ?? '-'}/${heldRenderDebug.waterReplays ?? '-'} stencil=${heldRenderDebug.stencilBits ?? '-'} skips=${heldRenderDebug.missingStencilFootReplaySkips ?? '-'} passes=${heldRenderDebug.baseWorldRenders}/${heldRenderDebug.selectiveOverlays}/${heldRenderDebug.nonGroundDepthReplays}/${heldRenderDebug.groundDepthRestores} shellXray=${heldRenderDebug.shellXrayPasses ?? 0}/${heldRenderDebug.shellXrayMeshes ?? 0} elevationGroups=${heldRenderDebug.elevationReplayGroups ?? 0} unknownElevation=${heldRenderDebug.unknownElevationMeshes ?? 0} elevationShaders=${heldRenderDebug.elevationShaderMaterials ?? 0}/${heldRenderDebug.elevationShaderFallbacks ?? 0} surfaceComposer=${heldRenderDebug.surfaceOcclusionComposer?.version ?? '-'}:${heldRenderDebug.surfaceOcclusionComposer?.consumers?.join(',') ?? '-'} waterDepthAlpha=${heldRenderDebug.surfaceOcclusionComposer?.waterDepthAlphaThreshold ?? '-'}`);
     if (heldRenderDebug) lines.push(`Actor x-ray: ${heldRenderDebug.allActorXrayDisabled ? 'ALL OFF (fast path)' : 'enabled categories'} | bypass frames=${heldRenderDebug.actorXrayBypassFrames ?? 0} | wet portrait-only frames=${heldRenderDebug.actorXrayWaterOnlyFrames ?? 0}`); // Distinguishes genuine disabled mode from the ordinary presentation work.
+    if (heldRenderDebug) lines.push(`Water-only traversal pruning: ${heldRenderDebug.waterOnlyBranchPruneEnabled ? 'on' : 'off'} | frames=${heldRenderDebug.waterOnlyPrunedFrames ?? 0} | branches=${heldRenderDebug.waterOnlyPrunedBranches ?? 0} | conservative fallbacks=${heldRenderDebug.waterOnlyPruneFallbacks ?? 0}`);
+    if (heldRenderDebug) lines.push(`Mixed water traversal: ${heldRenderDebug.mixedWaterBranchPruneEnabled ? 'on' : 'off'} frames=${heldRenderDebug.mixedWaterPrunedFrames ?? 0} branches=${heldRenderDebug.mixedWaterPrunedBranches ?? 0} visited=${heldRenderDebug.mixedWaterVisited ?? 0} fallbacks=${heldRenderDebug.mixedWaterPruneFallbacks ?? 0}; shared registry ancestry: ${heldRenderDebug.replayRegistryMemoEnabled ? 'on' : 'off'} reads=${heldRenderDebug.registryAncestorReads ?? 0} hits=${heldRenderDebug.registryAncestorHits ?? 0} front lists reused=${heldRenderDebug.frontRegistryReuses ?? 0}`);
+    if (heldRenderDebug) lines.push(`Held classification fallback: ${heldRenderDebug.slowClassificationFallbackEnabled ? '3s pilot' : '750ms'} scans=${heldRenderDebug.classificationFullScans ?? 0} forced=${heldRenderDebug.classificationForcedScans ?? 0} explicit invalidations=${heldRenderDebug.classificationExplicitInvalidations ?? 0}`);
     if (heldRenderDebug) lines.push(`Local X-ray ring: ${heldRenderDebug.localReplayRingEnabled ? `${2 * (heldRenderDebug.localReplayTileRadius ?? 1) + 1}x${2 * (heldRenderDebug.localReplayTileRadius ?? 1) + 1} player tiles` : 'legacy camera range'} | distant parts kept in ordinary depth=${heldRenderDebug.localReplayRingSkips ?? 0}`);
     const shadowPolicy = window.ShadowMapRefreshThrottle?.snapshot?.(); // Mobile report distinguishes requested policy from the actual renderer flag.
     if (shadowPolicy) lines.push(`Real-time shadows: ${shadowPolicy.shadowRenderingEnabled ? 'on' : 'off'} | active map=${shadowPolicy.activeShadowMap} | refreshes=${shadowPolicy.refreshes}`);
@@ -1227,13 +1271,32 @@
     const hitboxWork = window.__rangedDebug?.hitboxWork; // Counts reticle/AI reuse against the same game frame.
     if (sightWork || hitboxWork) lines.push(`Combat CPU work: sight=${JSON.stringify(sightWork || null)} hitboxes=${JSON.stringify(hitboxWork || null)}`);
     const projectilePool = window.__rangedDebug?.projectilePool; // Inspect resource reuse without devtools.
+    const matrixCensus = window.WorldRenderPipeline?.sceneMatrixCensus?.(activeScene); // Explicit user capture only; no diagnostic traversal during gameplay.
+    if (matrixCensus) lines.push(`Scene matrix census (outside render scopes): ${JSON.stringify(matrixCensus)}`);
+    if (performanceWindow) {
+      const p = performanceWindow; // Human-readable summary plus machine-readable timing buckets.
+      lines.push(`Performance window: ${p.completeFrames} frames, ${p.fps ?? '-'} FPS, driver mean/p90 ${p.gameLoop?.meanMs ?? '-'}/${p.gameLoop?.p90Ms ?? '-'}ms, frame interval mean/p90 ${p.frameIntervals?.meanMs ?? '-'}/${p.frameIntervals?.p90Ms ?? '-'}ms, ${p.reason}`);
+      lines.push(`Gameplay performance window (before probe renders): ${JSON.stringify(p)}`);
+    }
+    else lines.push('Gameplay performance window: unavailable; re-arm after the performance runtime loads.');
+    if (worldCaptureAtClick) lines.push(`World frame capture (one-shot, before probe renders): ${JSON.stringify(worldCaptureAtClick)}`);
+    else lines.push('World frame capture: unavailable for this arm/area; allow a gameplay frame after arming Pixel Probe before tapping.');
     const propBatches = window.ZonePropRenderBatches?.snapshot?.(); // Inspect draw savings and alpha-proof backlog.
     if (projectilePool) lines.push(`Projectile pools: ${JSON.stringify(projectilePool)}`);
     if (propBatches) lines.push(`Wilderness prop batches: ${JSON.stringify(propBatches)}`);
+    const treeMatrices = window.FoliageGenerator?.identityTreeMatrixStats?.(); // Counts actual matrix shortcut executions, not just visible draws.
+    if (treeMatrices) lines.push(`Static tree matrices: ${JSON.stringify(treeMatrices)}`);
     const treeBatches = window.WildernessTreeInstancer?.snapshot?.(); // On-demand mobile A/B: spatial cells, key hits, uploads and retired buffers.
     if (treeBatches) lines.push(`Wilderness tree instances: ${JSON.stringify(treeBatches)}`);
+    const instanceRegistry = window.InstancedMeshBounds?.snapshot?.(); // On-demand stats for active-map index and fallback behavior.
+    if (instanceRegistry) lines.push(`Instanced scene registry: ${JSON.stringify(instanceRegistry)}`);
+    const actionCoins = window.ActionArchIcons?.debugSnapshot?.(); // Only explicit diagnostic capture reads the combat UI.
+    if (actionCoins) lines.push(`Combat coins: builds=${actionCoins.coinBuilds ?? 0} reuses=${actionCoins.coinReuses ?? 0}`);
     const brickLod = window.InstancedBrickLod?.snapshot?.(); // Far brick meshes drawn with the octant hull and triangles avoided.
     if (brickLod?.frames) lines.push(`Brick LOD: ${JSON.stringify(brickLod)}`);
+    if (wallAtClick?.enrolled) {
+      lines.push(`Static wall matrix subtrees (at click): ${JSON.stringify({ ...wallAtClick, audit: worldCaptureAtClick?.mainStaticWallAudit?.audit ?? null })}`);
+    }
     const wallBatches = window.DenseForestWallBatches?.snapshot?.(); // Cloud Forest wall merge + distance LOD split (far/near trees, triangles avoided).
     if (wallBatches?.frames) lines.push(`Dense wall batches: ${JSON.stringify({ ...wallBatches, liteTwins: window.FoliageGenerator?.liteTreeStats?.() || null })}`);
 
@@ -1422,6 +1485,7 @@
         ? `${actor.label}=missing${aiSuffix(actor)}`
         : `${actor.label}=Y${Number(actor.min.y).toFixed(2)}..${Number(actor.max.y).toFixed(2)}${actor.onBranch ? '/branch' : ''}${actor.climbing ? '/climbing' : ''}${aiSuffix(actor)}`).join(' ');
       lines.push(`3D hitboxes: ${actorState}`);
+      try { const sceneLoadLine = window.SceneLoadSummary?.format?.(); if (sceneLoadLine) lines.push(sceneLoadLine); } catch (_) { /* Never block a probe report on an optional summary. */ }
     }
     const interactionRay = hitboxDebug?.interactionRay;
     if (interactionRay) {

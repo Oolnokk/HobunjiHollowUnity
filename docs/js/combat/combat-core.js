@@ -680,7 +680,7 @@
     const material = new THREE.MeshBasicMaterial({
       color: 0xffffff,
       transparent: true, opacity: 0.85, depthWrite: false,
-      blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false,
+      blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: true, depthTest: true,
     });
     const mesh = new THREE.Mesh(geometry, material);
     meleeTrailStats.created++;
@@ -699,6 +699,20 @@
     meleeTrailStats.disposed++;
   }
 
+  const COMBAT_VFX_RANGE_TILES = 24; // Same local visual budget as other wilderness emitters; gameplay damage is never gated here.
+  function shouldPresentCombatVfx(actor, scene = null) {
+    const player = deps?.player;
+    if (!actor || !player || actor === player) return true;
+    const area = deps.getCurrentArea?.();
+    if (area && actor.areaId && actor.areaId !== area) return false;
+    const activeScene = deps.getActiveScene?.();
+    if (scene && activeScene && scene !== activeScene) return false;
+    const tile = Number(deps.TILE);
+    const dx = Number(actor.x) - Number(player.x), dy = Number(actor.y) - Number(player.y);
+    if (!(tile > 0) || !Number.isFinite(dx + dy)) return true; // Fail open for isolated preview/editor hosts.
+    return dx * dx + dy * dy <= (tile * COMBAT_VFX_RANGE_TILES) ** 2;
+  }
+
   function spawnMeleeTrail(opts = {}) {
     const actor = opts.actor;
     const target = opts.target || null;
@@ -709,7 +723,7 @@
     if (opts.debug !== false) rememberMeleeColliderDebug(collider);
     if (opts.debugOnly) return null; // A multi-colored enemy trail uses several visual lanes but one full-cone hitbox.
     const scene = opts.scene || actor?.scene || deps?.getActiveScene?.();
-    if (!scene) return null; // Do not allocate GPU resources when a world or scene is unloading.
+    if (!scene || !shouldPresentCombatVfx(actor, scene)) return null; // Distant NPC swipes need no GPU resources; debug hitboxes remain independent.
 
     const mesh = pooledMeleeTrailMeshes.pop() || createMeleeTrailMesh(); // Reuse the same topology, GPU buffer and shader instead of uploading on every attack.
     if (mesh.visible === false) meleeTrailStats.reused++;
@@ -940,7 +954,7 @@
     windupPoseProgress,
     windupCurve,
     writeMeleeTrailRibbon,
-    spawnMeleeTrail,
+    spawnMeleeTrail, shouldPresentCombatVfx,
     isStaggered,
     beginStagger,
     update,
@@ -1172,12 +1186,7 @@
     if (entity === window.Combat?.deps?.player && opts.attacker?.rootledoot && entity.health <= 0) window.Rootledoots?.noteDown?.(opts.attacker, Math.max(0, enhanced.ordinaryRemaining - before)); // Actual excess after damage conversion/absorption, before Health clamp.
     const lost = round1(before - (Number(entity.health) || 0));
 
-    if (opts.afflictionBonuses) {
-      const attackPower = RS.attackPowerForAttack?.(opts) ?? 12; // Drunken Health conversion cannot make status effects damage-scaled again.
-      for (const [id, mul] of Object.entries(opts.afflictionBonuses)) {
-        if (RS.AFFLICTIONS[id] && mul > 0) RS.addAffliction(entity, id, attackPower * mul);
-      }
-    }
+    RS.applyAttackAfflictions?.(entity, opts); // The live alcohol adapter uses the same attack-power, alias and attacker-specific perk calculation as ordinary damage.
     if (opts.fixedAfflictionBuildup) {
       for (const [id, value] of Object.entries(opts.fixedAfflictionBuildup)) {
         if (RS.AFFLICTIONS[id] && Number.isFinite(value) && value > 0) RS.addAffliction(entity, id, value); // Preserve authored fixed on-hit effects through Drunken Health's specialized damage path.

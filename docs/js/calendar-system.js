@@ -1201,6 +1201,7 @@
     openTimePassage,
     beginTimePassageRun,
     finishTimePassageRun,
+    isTimePassageActive: () => !!(_timePassageKind || _passageRunning || _devAdvanceBusy || _timePassageUi?.iris.style.display === 'block'), // Actual modal/transition ownership, independent of developer clock speed.
     isTimePassageCancelled: () => _passageCancelled,
     recordTimePassageHour: elapsed => { _passageElapsedHours = Math.max(0, Number(elapsed) || 0); }, // Review-aware passage shares this owner's cancellation, clock lock and diagnostics.
     devAdvanceHours,

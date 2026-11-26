@@ -27,7 +27,7 @@
   let lodDistance = 14; // World units (≈ tiles) from the camera to the mesh's nearest brick.
   const liteCache = new WeakMap(); // source geometry -> { key, geometry }
   const swapped = []; // [mesh, source geometry, ...] for the current render
-  const stats = { frames: 0, meshes: 0, farMeshes: 0, farInstances: 0, trianglesAvoided: 0, builds: 0, enabled: true, distance: lodDistance };
+  const stats = { frames: 0, candidates: 0, meshes: 0, farMeshes: 0, farInstances: 0, trianglesAvoided: 0, builds: 0, enabled: true, distance: lodDistance };
   let sphere = null;
 
   function sourceKey(geometry) {
@@ -145,10 +145,14 @@
     if (!enabled || !scene?.isScene || !camera?.matrixWorld || !bounds?.forEachTracked || !window.THREE) return null;
     if (!sphere) sphere = new window.THREE.Sphere();
     const e = camera.matrixWorld.elements, camX = e[12], camY = e[13], camZ = e[14];
-    let meshes = 0, farMeshes = 0, farInstances = 0, avoided = 0;
+    let candidates = 0, meshes = 0, farMeshes = 0, farInstances = 0, avoided = 0;
     try {
-      bounds.forEachTracked(mesh => {
-        if (mesh.userData?.hobunjiBrickLod !== true || !(mesh.count > 0) || !drawnIn(mesh, scene)) return;
+      const visitBricks = callback => bounds.forEachTrackedBrickInScene
+        ? bounds.forEachTrackedBrickInScene(scene, callback)
+        : (bounds.forEachTrackedBrick || bounds.forEachTracked)(callback); // Older preview pages retain the generic fallback.
+      visitBricks((mesh, visible) => {
+        candidates++;
+        if (mesh.userData?.hobunjiBrickLod !== true || !(mesh.count > 0) || !(visible ?? drawnIn(mesh, scene))) return;
         meshes++;
         const world = bounds.worldSphere(mesh, sphere);
         if (!world) return;
@@ -166,7 +170,7 @@
       restore(); // Fail open: full-detail bricks.
       throw error;
     }
-    stats.frames++; stats.meshes = meshes; stats.farMeshes = farMeshes; stats.farInstances = farInstances; stats.trianglesAvoided = avoided;
+    stats.frames++; stats.candidates = candidates; stats.meshes = meshes; stats.farMeshes = farMeshes; stats.farInstances = farInstances; stats.trianglesAvoided = avoided;
     return swapped.length ? restore : null;
   }
 

@@ -207,6 +207,7 @@ function baseFixture({ snapshot = 'ok', handExtra = {}, scissored = false, punch
     restoreMaterialStates() {}, prepareGroundDepthMaterials: () => new Map(),
     prepareSubmergedOverlayStencilMaterials: () => new Map(), prepareOverlayCoverTintMaterials: () => new Map(), prepareTintCoverDepthMaterials: () => new Map(),
     waterReplayCount: 0, WATER_REPLAY_MASK: 8, HELD_OVERLAY_MASK: 2, GROUND_REPLAY_MASK: 4,
+    replayRegistryMemoEnabled:false, mixedWaterBranchPruneEnabled:false,
     isReplayCullable: o => !!o.geometry?.boundingSphere, instancedReplaySphere: () => null, hasAuthoredInstanceBounds: () => false, hasAlternateReplayPose: () => false,
     rawRender(_scene, _camera) { const nodes = []; _scene.traverseVisible(n => { if ((n.layers?.mask ?? 1) & _camera.layers.mask) nodes.push(n); }); draws.push({ mask: _camera.layers.mask, nodes, colorOff: colorLog[colorLog.length - 1] === false }); log.push('draw:' + _camera.layers.mask); },
   };

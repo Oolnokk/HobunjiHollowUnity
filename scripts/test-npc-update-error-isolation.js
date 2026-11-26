@@ -12,7 +12,7 @@ function walker(id, update) { return { rec: { id }, area: 'town', root: { positi
 const broken = walker('broken', () => { brokenCalls++; if (fail) throw new Error('festival chair failure'); }); // A deterministic failure stands in for a broken authored NPC/asset update.
 const healthy = walker('healthy', () => { healthyCalls++; }); // Runs after the failing walker in the real backwards loop.
 const context = {
-  window: { __farmLog: () => { logs++; }, InteriorDoorTiles: { update: () => { doorCalls++; } } },
+  window: { OffAreaNpcTick: { step: (w, dt) => dt }, __farmLog: () => { logs++; }, InteriorDoorTiles: { update: () => { doorCalls++; } } },
   performance: { now: () => now },
   npcWalkers: [healthy, broken], nearbyNpcWalker: null,
   npcMovementHeadLookOptions: {}, cutscenePreviewActive: false, npcDialogueStaging: null, _dialogueWalker: null,

@@ -134,9 +134,14 @@
     return true;
   }
 
-  function discoverPlanes() {
+  let lastDiscoveryPlayer = null, lastDiscoveryAt = -Infinity; // Planes only matter while dancing; rescan on a new player root or at most every 500 ms.
+  function discoverPlanes({ timestamp } = {}) {
     const player = currentPlayerMesh();
-    player?.traverse?.(node => { if (isPortraitPlane(node)) hookPlane(node); });
+    if (!player) return;
+    const now = Number.isFinite(timestamp) ? timestamp : performance.now();
+    if (player === lastDiscoveryPlayer && now - lastDiscoveryAt < 500) return; // Was a full subtree traverse on every browser frame.
+    lastDiscoveryPlayer = player; lastDiscoveryAt = now;
+    player.traverse?.(node => { if (isPortraitPlane(node)) hookPlane(node); });
   }
 
   function submitBodyChannel(t) {

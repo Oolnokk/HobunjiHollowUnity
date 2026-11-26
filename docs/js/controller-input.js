@@ -22,7 +22,7 @@
   if (typeof document === 'undefined' || document.readyState !== 'loading') return;
   const currentScript = document.currentScript; // Used to resolve the scheduler beside this module without assuming a docs/ base URL.
   if (!currentScript?.src || typeof document.write !== 'function') return;
-  const schedulerUrl = new URL('./runtime-frame-scheduler.js?v=20261116deepAudit1', currentScript.src).href; // Written into the active parser stream before later runtime consumers load.
+  const schedulerUrl = new URL('./runtime-frame-scheduler.js?v=20261125gating1', currentScript.src).href; // Written into the active parser stream before later runtime consumers load.
   document.write(`<script src="${schedulerUrl}"><\/script>`);
 })();
 

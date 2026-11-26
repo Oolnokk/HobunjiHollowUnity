@@ -1851,6 +1851,52 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
     }
     return lite || undefined;
   }
+  // Generated tree parts have their geometry baked in the owning tree's
+  // local space. For an identity-local leaf, the native r128 world update
+  // composes an identity matrix and multiplies it into its parent anyway.
+  // Keep normal updateWorldMatrix(), updateMatrix(), and all dynamic nodes
+  // untouched; install this only on the generator's own direct mesh leaves.
+  let identityTreeMatrixFastPath = true; // A/B switch for the generated part world-matrix shortcut.
+  const treeMatrixStats = { enrolled: 0, copies: 0, fallbacks: 0 }; // Mobile counters; no scene scans.
+  // The factory is runtime-scoped: editors can inject newer Three builds,
+  // and headless metadata consumers may have no Object3D at all. Only the
+  // game's r128 matrix contract is verified for this arithmetic shortcut.
+  const treeMatrixPrototype = String(T?.REVISION) === '128' ? T.Object3D?.prototype : null;
+  const nativeTreeWorldUpdate = treeMatrixPrototype?.updateMatrixWorld;
+  const nativeTreeLocalUpdate = treeMatrixPrototype?.updateMatrix;
+  function hasIdentityTreeTRS(node) {
+    const p=node.position,q=node.quaternion,s=node.scale;
+    return p?.x===0 && p.y===0 && p.z===0
+      && q?.x===0 && q.y===0 && q.z===0 && q.w===1
+      && s?.x===1 && s.y===1 && s.z===1;
+  }
+  function updateIdentityTreePartWorld(force) {
+    if (!identityTreeMatrixFastPath || this.matrixAutoUpdate !== true
+      || this.children.length !== 0 || this.updateMatrix !== nativeTreeLocalUpdate
+      || !hasIdentityTreeTRS(this)) {
+      treeMatrixStats.fallbacks++;
+      return nativeTreeWorldUpdate.call(this,force);
+    }
+    // The auto-update path would replace any manually edited local matrix
+    // with identity and set matrixWorldNeedsUpdate, even when force is false.
+    this.matrix.identity();
+    this.matrixWorld.copy(this.parent ? this.parent.matrixWorld : this.matrix);
+    this.matrixWorldNeedsUpdate=false;
+    treeMatrixStats.copies++;
+  }
+  function installIdentityTreeParts(tree) {
+    if (typeof nativeTreeWorldUpdate !== 'function' || typeof nativeTreeLocalUpdate !== 'function') return;
+    for (const part of tree.children) {
+      if (!part.isMesh || part.isSkinnedMesh || part.isInstancedMesh
+        || part.children.length || part.matrixAutoUpdate !== true
+        || part.updateMatrixWorld !== nativeTreeWorldUpdate
+        || part.updateMatrix !== nativeTreeLocalUpdate || !hasIdentityTreeTRS(part)
+        || typeof part.matrix?.identity !== 'function' || typeof part.matrixWorld?.copy !== 'function') continue;
+      part.updateMatrixWorld=updateIdentityTreePartWorld;
+      treeMatrixStats.enrolled++;
+    }
+  }
+
   const _treeVariantCache = new Map(); // presetKey -> Group[]
 
   function getTreeVariants(presetKey, preset) {
@@ -1942,6 +1988,7 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
         }
       }
     }
+    installIdentityTreeParts(inst); // Only fresh generated leaves; root placement/felling/editor transforms stay live.
     return inst;
   }
 
@@ -3288,6 +3335,8 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
     simplifySurfaceStrandRings, // Final ring reduction of surface-growth tubes (exposed for tests and tools).
     liteTreeGeometry, // Far-distance bark twin of a shared tree variant part (see its definition).
     liteTreeStats: () => ({ ..._liteStats, cachedVariants: _liteVariantCache.size }),
+    setIdentityTreeMatrixFastPath: value => { identityTreeMatrixFastPath = value !== false; return identityTreeMatrixFastPath; },
+    identityTreeMatrixStats: () => ({ enabled: identityTreeMatrixFastPath, ...treeMatrixStats }),
     buildLogMesh(options) {
       return buildGeneratedLogMesh(options);
     },

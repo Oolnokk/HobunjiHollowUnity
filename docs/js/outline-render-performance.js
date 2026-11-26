@@ -122,6 +122,7 @@
       && override.side === THREE.BackSide
       && override.uniforms?.uThickness
     ) return 'shell';
+    if (mask === MASK_SHELL && override?.userData?.hobunjiScreenOutlineMask === true) return 'screenOutlineMask';
 
     if (
       mask === MASK_TARGET
@@ -152,7 +153,7 @@
   }
 
   function isSecondaryOutlinePass(pass) {
-    return pass === 'shell' || pass === 'target' || pass === 'materialId' || pass === 'pngDepth' || pass === 'mist';
+    return pass === 'shell' || pass === 'screenOutlineMask' || pass === 'target' || pass === 'materialId' || pass === 'pngDepth' || pass === 'mist';
   }
 
   function materialForGroup(mesh, group) {
@@ -430,6 +431,10 @@
           const result = previous.apply(this, args);
           if (scene) {
             sceneStructureEpochs.set(scene, sceneStructureEpoch(scene) + 1);
+            // The static wall owner retires an enrolled root/leaf on structural edits.
+            window.DenseForestWallBatches?.noteStaticTopologyChange?.(this);
+            // Share the existing topology notification with instanced bounds; no second Object3D.add wrapper.
+            if (method === 'add' && typeof window !== 'undefined') window.InstancedMeshBounds?.noteSceneAttachment?.(scene, args);
             if (method === 'add' && worldTextCandidates.has(scene)) {
               let pending = pendingWorldTextRoots.get(scene);
               if (!pending) {
@@ -760,8 +765,8 @@
     if (now - lastLogAt < LOG_INTERVAL_MS) return;
     lastLogAt = now;
 
-    if (windowStats.shell?.renders) {
-      const order = ['base', 'pngDepth', 'shell', 'target', 'mist', 'materialId', 'postOrDirect'];
+    if (windowStats.shell?.renders || windowStats.screenOutlineMask?.renders) {
+      const order = ['base', 'pngDepth', 'shell', 'screenOutlineMask', 'target', 'mist', 'materialId', 'postOrDirect'];
       const parts = order.map(passSummary).filter(Boolean);
       parts.push(`matrix-reuse ${windowReusedSceneMatrixPasses}x`);
       if (windowSkippedShadowAutoUpdates) parts.push(`shadow-reuse ${windowSkippedShadowAutoUpdates}x`);
@@ -989,6 +994,9 @@
 
   const api = {
     installed: true,
+    sceneAttachmentNotifications: THREE.Object3D?.prototype?.add?.__hobunjiStructureEpochWrapped === true, // Old editor hosts fall back to global instance membership.
+    staticWallTopologyNotifications: THREE.Object3D?.prototype?.add?.__hobunjiStructureEpochWrapped === true
+      && THREE.Object3D?.prototype?.remove?.__hobunjiStructureEpochWrapped === true,
     nonShellOutlinesSuppressed: true,
     worldTextAboveShell: true,
     setScoreCharacterRootsProvider(provider) {

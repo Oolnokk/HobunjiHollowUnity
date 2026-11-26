@@ -172,12 +172,18 @@ earlyReturnRestore();
 assert.equal(distantSceneryRock.visible,true,'early exit restores hidden rocks');
 
 const trackedBounds = win.InstancedMeshBounds; // Production instanced-bounds object restored before the rest of the suite.
-win.InstancedMeshBounds = { ...trackedBounds, forEachTracked(cb) { cb(farWall); throw Error('injected instanced cull failure'); } };
+win.InstancedMeshBounds = { ...trackedBounds, forEachTrackedInScene(_scene, cb) { cb(farWall,true); throw Error('injected instanced cull failure'); } };
 assert.equal(view.suspendForRender(scene,camera),null,'failed instanced iteration must fail open');
 assert.equal(farWall.visible,true,'failed iteration restores any instanced visuals it already hid');
 assert.equal(distantSceneryRock.visible,true,'failed iteration also restores mountain visuals');
 assert.equal(sceneryResetCount,0,'healthy distant culling is not needlessly reset');
 assert.equal(sceneryRestoreCount,2,'both early-return and exception paths invoke their restore callback');
+// Legacy hosts without the scene iterator must also restore on failure.
+win.InstancedMeshBounds = { ...trackedBounds, forEachTrackedInScene:undefined, forEachTracked(cb) { cb(farWall); throw Error('injected legacy iteration failure'); } };
+assert.equal(view.suspendForRender(scene,camera),null);
+assert.equal(farWall.visible,true);
+assert.equal(distantSceneryRock.visible,true);
+assert.equal(sceneryRestoreCount,3);
 win.InstancedMeshBounds=trackedBounds;
 delete win.DistantSceneryViewCull;
 
