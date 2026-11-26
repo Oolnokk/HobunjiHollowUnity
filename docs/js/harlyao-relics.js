@@ -398,7 +398,7 @@
             if (!es.addBase(toolKey, id, { deferSave: true })) throw new Error('Invalid bound Base enchantment');
           }
           for (const [slot, id] of Object.entries(relic.enchantments.flourishes)) {
-            if (!es.setFlourish(toolKey, slot, id, { deferSave: true })) throw new Error('Invalid bound Flourish');
+            if (!es.setFlourish(toolKey, slot, id, { deferSave: true, importLegacySlot: true })) throw new Error('Invalid bound Flourish'); // A pre-restriction relic must unbind without discarding its saved enchantments.
           }
         }
         const learned = es?.unlockFromState?.(relic.enchantments, { deferSave: true }) || [];
