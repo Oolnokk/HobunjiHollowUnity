@@ -188,6 +188,17 @@ if(THREE){
   assert.equal(solver.snapshot().contactHullBuilds,result.contactHullBuilds+1,'replacing weapon artwork rebuilds the hull');
   solver.setPreviewEnabled(false);
   assert.equal(plane.geometry,source,'raw mode restores original geometry');
+  // A grip can be below the posterior even with every sprite pixel above the floor.
+  solver.setPreviewEnabled(true);
+  holder.position.set(0,1.5,0);
+  holder.rotation.set(Math.PI/2,0,0);
+  parent.updateMatrixWorld(true);
+  assert.equal(solver.constrainWeapon(holder,weapon,{...ctx,posteriorLocalY:1.7}),true);
+  close(holder.position.y,1.701);
+  close(solver.snapshot().posteriorLift,.201);
+  close(solver.snapshot().angleDeg,0);
+  assert.equal(solver.snapshot().reason,'posterior-lift');
+
   // The real grip is off-origin. Compare against the actual sprite matrix,
   // not the solver's own pivot reconstruction (including a reflected root).
   solver.setPreviewEnabled(true);
@@ -358,6 +369,33 @@ if(THREE){
   assert.equal(solver.hasCurrentGripPose(new THREE.Group()),false);
   frame++;assert.equal(solver.hasCurrentGripPose(holder),false);
   solver.clear();assert.equal(solver.hasCurrentGripPose(holder),false);
+
+  // Gameplay uses the body frame and live leg handle even with no ground sample.
+  parent.position.y=.2;
+  holder.position.y=.8;
+  parent.updateMatrixWorld(true);
+  const legs={standingPosteriorY:2}; // Authored relative to the translated character root.
+  w.PlayerBodyTransformComposer={getPlayerMesh:()=>parent,getPlayerLegHandle:()=>legs};
+  w.PlayerJump.heldPoseGroundY=()=>null;
+  plane.remove(mainRoot,offRoot);
+  frame++;
+  assert.equal(solver.constrainWeapon(holder,weapon,{...ctx,preview:false,dual:false}),true);
+  plane.add(mainRoot,offRoot);
+  assert.ok(solver.snapshot().gripY>=2.201-1e-8);
+  close(solver.snapshot().angleDeg,0);
+
+  // Both copies independently lift from their authored offsets over a gap.
+  holder.position.y=.8;
+  mainRoot.position.y=0;
+  offRoot.position.y=.1;
+  parent.updateMatrixWorld(true);
+  const dualContext={...ctx,preview:false};
+  solver.constrainWeapon(holder,weapon,dualContext);
+  solver.constrainDualCopies({plane,mainRoot,offRoot,mainMesh,offMesh,invisible:false});
+  assert.ok(solver.snapshot().dual.right.posteriorLift>0);
+  assert.ok(solver.snapshot().dual.left.posteriorLift>0);
+  assert.notEqual(solver.snapshot().dual.right.posteriorLift,solver.snapshot().dual.left.posteriorLift);
+  close(solver.snapshot().angleDeg,0);
   console.log('held ground pose: actual Three preview and independent dual grip pivots passed');
 }
 

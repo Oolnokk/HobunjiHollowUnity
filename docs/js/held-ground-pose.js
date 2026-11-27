@@ -3,11 +3,12 @@
 (function (global) {
   'use strict';
   const PAD = 0.035; // Clearance above the physical standing surface, in world units.
+  const POSTERIOR_PAD = 0.001; // Keep the socket just above the body anchor in world units.
   const STEP = Math.PI / 36; // Bounded five-degree rotation search with refinement.
   const REUSE_HEIGHT_TOLERANCE = 0.1; // A grounded pose is reused until the grip's height above the floor changes by this much (idle sway is about 0.05)
   const REUSE_ANGLE_TOLERANCE = 0.05; // ...or the stance rotates by this many radians.
   const LIFT_LIMIT = 0.15; // Most the whole weapon may be raised (world units) to keep the ordinary rotation instead of a fallback pose.
-  const debug = { reason: 'not-run', angleDeg: 0, shortening: 0, floorY: null, originalMinY: null, finalMinY: null, rotations: 0, compressions: 0, contactHullBuilds: 0, reuseHits: 0, reused: false, reuseMiss: null, reuseMissValue: 0, contactHullVertices: 0, gripPivotDrift: null, gripLift: 0, clearanceStrategy: null, freeHandLifts: 0, fallbacks: 0 };
+  const debug = { reason: 'not-run', angleDeg: 0, shortening: 0, floorY: null, originalMinY: null, finalMinY: null, rotations: 0, compressions: 0, contactHullBuilds: 0, reuseHits: 0, reused: false, reuseMiss: null, reuseMissValue: 0, contactHullVertices: 0, gripPivotDrift: null, gripLift: 0, posteriorLift: 0, clearanceStrategy: null, freeHandLifts: 0, fallbacks: 0 };
   let active = null, floorFrame = null, floor = null, scratch = null;
   let gripHolder=null; // Owner of the exact current sprite-space grip transform, shared with hand sockets.
   let lastPoseHolder=null,lastPoseFrame=null; // Prevent an extra pre-render bake when the dual owner already solved this frame.
@@ -199,7 +200,7 @@
     if(active.plane.geometry===active.geometry)active.plane.geometry=active.source;
     active.amount=0; // Keep the private strip buffer for the next near-ground pose.
   }
-  function clear() { previewRoot=null;gripHolder=null;lastPoseHolder=null;lastPoseFrame=null;dualPrepared=null;debug.dual=null;debug.gripPivotDrift=null;debug.gripLift=0;debug.clearanceStrategy=null;restoreGeometry(); }
+  function clear() { previewRoot=null;gripHolder=null;lastPoseHolder=null;lastPoseFrame=null;dualPrepared=null;debug.dual=null;debug.gripPivotDrift=null;debug.gripLift=0;debug.posteriorLift=0;debug.clearanceStrategy=null;restoreGeometry(); }
   function fail(reason,preserveFit=false) { debug.reason=reason; debug.fallbacks++; if(traceOn){trace.failCalls++;trace.lastFailReason=reason;trace.lastFailFrame=frameId()??null;} if(!preserveFit)restoreGeometry();return false; }
   // The canonical PNG is a flat XY quad; its -90 degree X basis makes
   // image Y correspond to -item Z. Split exactly at the authored endpoints,
@@ -407,8 +408,16 @@
     for(const child of plane.children)if(!copies?.isNonDrawingChild?.(plane,child)&&!(allowDual&&copies?.isOwnedChild?.(plane,child))&&!assemblies?.isGroundNonSolidChild?.(plane,child)&&!isEnchantmentVfxChild(child))return true;
     return false;
   }
+  function posteriorGripMinY(context) {
+    const body=context.rig?.parent; // Shared character body frame, already positioned for this pose.
+    const composer=global.PlayerBodyTransformComposer;
+    const localY=context.preview?context.posteriorLocalY:
+      body&&composer?.getPlayerMesh?.()===body?composer.getPlayerLegHandle?.()?.standingPosteriorY:undefined;
+    const matrix=body?.matrixWorld?.elements;
+    return matrix&&Number.isFinite(localY)?matrix[13]+matrix[5]*localY+POSTERIOR_PAD:null;
+  }
   function constrainWeapon(holder,mesh,context) {
-    dualPrepared=null;gripHolder=null;debug.gripPivotDrift=null;debug.gripLift=0;debug.clearanceStrategy=null;
+    dualPrepared=null;gripHolder=null;debug.gripPivotDrift=null;debug.gripLift=0;debug.posteriorLift=0;debug.clearanceStrategy=null;
     debug.itemKey=context?.itemKey??null;debug.speciesId=context?.scaleIdentity?.speciesId??null;debug.gripY=null;debug.reused=false;
     if(!enabled()){clear();return false;}
     lastPoseHolder=holder;lastPoseFrame=frameId();
@@ -446,7 +455,9 @@
     // Preserve fitted length on both copies even over pits or when their live
     // orientation cannot be corrected. Only the floor-dependent solve waits.
     if(context.dual)dualPrepared={holder,mesh,plane,context,segments:fit?.profile?.segments||NO_SEGMENTS,gripZ:fit?.anchorZ??context.authoredGripZ,amount:fit?.amount??0,contact:null,target:null,floor:y,flexible};
-    if(!Number.isFinite(y))return fail('no-ground-sample',true);
+    const gripMinY=posteriorGripMinY(context); // Body clearance still applies when crossing gaps.
+    const hasFloor=Number.isFinite(y);
+    if(!hasFloor&&gripMinY===null)return fail('no-ground-sample',true);
     if(Math.abs(mesh.quaternion.x)+Math.abs(mesh.quaternion.y)+Math.abs(mesh.quaternion.z)>1e-6
       ||Math.abs(plane.rotation.x+Math.PI/2)>1e-4||Math.abs(plane.rotation.y)>1e-4
       ||plane.position.lengthSq()>1e-8||!(plane.scale.x>0&&plane.scale.y>0&&plane.scale.z>0)||!mesh.scale.x||!mesh.scale.y)
@@ -470,7 +481,7 @@
     const image=plane.material?.map?.image;
     const measuredSource=!!image&&(image.naturalWidth||image.width)>0&&(image.naturalHeight||image.height)>0
       &&(profile?.modular?!!image.modularFrame:(profile?.a>=-box.max.y-1e-4&&profile?.b<=-box.min.y+1e-4));
-    const pending=!!fit&&context.allowFit&&!!context.lightReference&&measuredSource&&(context.preview===true||global.PlayerJump?.heldPoseGrounded?.()===true);
+    const pending=hasFloor&&!!fit&&context.allowFit&&!!context.lightReference&&measuredSource&&(context.preview===true||global.PlayerJump?.heldPoseGrounded?.()===true);
     const gripZ=fit?.anchorZ??context.authoredGripZ??gripZFor(primary,mesh);
     const segments=profile&&(pending||Number.isFinite(fit?.amount))?profile.segments:NO_SEGMENTS;
     const rows=stripRows(box,segments,s.rows);
@@ -493,7 +504,7 @@
     debug.contactVertices=s.contact.length;
     if(canFit)s.reference.multiplyMatrices(parent.matrixWorld,context.lightReference).multiply(mesh.matrix).multiply(context.lightPlaneReference||plane.matrix);
     debug.fitReference='lightWeapon';
-    const target=y+PAD;
+    const target=hasFloor?y+PAD:-Infinity;
     const original=projectedContactY(s.rawHull,s.matrix); // Unshortened baseline in Pixel Probe.
     debug.originalMinY=original;
     let amount=fit?.amount??0; // The fitting pass may establish a permanent shortening.
@@ -549,14 +560,25 @@
     if(context.dual){
       // The hidden source owns length, not either hand's live orientation.
       // Copies are posed later by the dual-wield owner, then individually corrected.
-      dualPrepared={holder,mesh,plane,context,basis,segments,gripZ,amount,contact,target,floor:y,flexible};
+      dualPrepared={holder,mesh,plane,context,basis,segments,gripZ,amount,contact,target,floor:y,flexible,gripMinY};
       debug.reason='dual-ready';debug.finalMinY=null;return false;
     }
     let min=amount?projectedContactY(contact.hull,s.matrix):original;
+    if(gripMinY!==null){
+      const gripY=worldGrip(s,primary,basis,mesh,gripZ,segments,amount,s.pivot).y; // Measure the fitted socket, including the weapon's local placement.
+      debug.posteriorLift=Math.max(0,gripMinY-gripY);
+      if(debug.posteriorLift>0){
+        liftNode(holder,parent.matrixWorld,s.holder,debug.posteriorLift,s);
+        s.holder.multiplyMatrices(parent.matrixWorld,holder.matrix);
+        s.matrix.multiplyMatrices(s.holder,mesh.matrix).multiply(plane.matrix);
+        min+=debug.posteriorLift;
+      }
+      debug.gripY=gripY+debug.posteriorLift;
+    }
     let angle=0; // Clear poses skip the pivot and rotation work.
     // Grounded poses are solved once and reused; only midair (or a real change of height or stance) solves again.
     const reusable=!previewThree&&Math.abs(holder.scale.x-1)<1e-6&&Math.abs(holder.scale.y-1)<1e-6&&Math.abs(holder.scale.z-1)<1e-6;
-    const grounded=reusable&&global.PlayerJump?.heldPoseGrounded?.()===true;
+    const grounded=hasFloor&&reusable&&global.PlayerJump?.heldPoseGrounded?.()===true;
     const entry=reusable?reuseFor(holder):null;
     if(entry){
       if(!grounded)entry.valid=false; // Midair the height above the floor is changing: recalculate every frame.
@@ -571,7 +593,7 @@
             debug.reuseHits++;debug.reused=true;debug.gripY=s.pivot.y;debug.clearanceStrategy=entry.strategy;
             debug.angleDeg=entry.angleDeg;debug.gripLift=entry.gripLift;debug.gripPivotDrift=0;
             debug.shortening=amount;debug.finalMinY=min;debug.reason=entry.reason;
-            if(traceOn)traceSolved(plane,contact,min,target,y);
+            if(traceOn&&hasFloor)traceSolved(plane,contact,min,target,y);
             return true;
           }
         }
@@ -615,10 +637,10 @@
       }
     }
     debug.angleDeg=angle*180/Math.PI;debug.shortening=amount;debug.finalMinY=min;
-    debug.reason=debug.gripLift?'rotation-and-lift':angle?'rotation':amount?'shortening':'already-clear';
+    debug.reason=debug.gripLift?'rotation-and-lift':angle?'rotation':debug.posteriorLift?'posterior-lift':amount?'shortening':'already-clear';
     if(entry){entry.reason=debug.reason;entry.strategy=debug.clearanceStrategy;}
-    if(traceOn)traceSolved(plane,contact,min,target,y);
-    return !!angle||debug.gripLift>0;
+    if(traceOn&&hasFloor)traceSolved(plane,contact,min,target,y);
+    return !!angle||debug.gripLift>0||debug.posteriorLift>0;
   }
   // Project around one horizontal axis. Reuse the sampled points and coefficient
   // objects: the common already-clear case never enters this routine.
@@ -813,7 +835,7 @@
       if(copy.geometry!==d.plane.geometry)copy.geometry=d.plane.geometry;
       if(active?.geometry===copy.geometry)borrowedCopies.add(copy);
     }
-    if(!d.contact||!Number.isFinite(d.target)){debug.reason='dual-fit-retained';return;}
+    if(!d.contact){debug.reason='dual-fit-retained';return;}
     const context=d.context;
     const grips=global.HobunjiHandToolGrips;
     const live=global.ProceduralHandFrameDriver?.groundPoseContext?.(d.holder,context.itemKey)||context;
@@ -826,9 +848,18 @@
       ['left',current.offRoot,off,live.offhand||grips?.offhandPrimaryGripForTool?.(context.itemKey,'melee',live.scaleIdentity||context.scaleIdentity)]
     ]){
       if(!grip?.position){results[side]={reason:'no-grip'};continue;}
+      let posteriorLift=0; // Each visible copy has its own fitted grip and world height.
+      if(d.gripMinY!==null){
+        localGrip(grip.position,s.grip);
+        posteriorLift=Math.max(0,d.gripMinY-s.pivot.copy(s.grip).applyMatrix4(copy.matrixWorld).y);
+        if(posteriorLift>0){
+          liftNode(root,d.plane.matrixWorld,root.matrixWorld,posteriorLift,s);
+          root.updateMatrixWorld(true);
+        }
+      }
       // Same rule as a single weapon: solved once while grounded and reused, solved every frame while midair.
       const reusable=!previewThree&&Math.abs(root.scale.x-1)<1e-6&&Math.abs(root.scale.y-1)<1e-6&&Math.abs(root.scale.z-1)<1e-6;
-      const grounded=reusable&&global.PlayerJump?.heldPoseGrounded?.()===true;
+      const grounded=Number.isFinite(d.floor)&&reusable&&global.PlayerJump?.heldPoseGrounded?.()===true;
       const entry=reusable?reuseFor(root):null;
       if(entry){
         if(!grounded)entry.valid=false;
@@ -838,7 +869,7 @@
             s.pivot.copy(s.grip).applyMatrix4(copy.matrixWorld);
             if(reuseStillValid(entry,root,s.pivot.y-d.floor)){
               reuseApply(entry,root,d.plane.matrixWorld,s);root.updateMatrixWorld(true);
-              results[side]={reason:entry.reason,angleDeg:entry.angleDeg,originalMinY:null,finalMinY:projectedContactY(d.contact.hull,copy.matrixWorld),gripPivotDrift:0,gripLift:entry.gripLift,clearanceStrategy:entry.strategy,reused:true};
+              results[side]={reason:entry.reason,angleDeg:entry.angleDeg,originalMinY:null,finalMinY:projectedContactY(d.contact.hull,copy.matrixWorld),gripPivotDrift:0,gripLift:entry.gripLift,posteriorLift,clearanceStrategy:entry.strategy,reused:true};
               debug.reuseHits++;continue;
             }
           }
@@ -875,9 +906,9 @@
           entry.valid=true;
         }
       }
-      results[side]={reason:gripLift?'rotation-and-lift':angle?'rotation':'already-clear',angleDeg:angle*180/Math.PI,originalMinY:original,finalMinY:min,gripPivotDrift,gripLift,clearanceStrategy:strategy};
+      results[side]={reason:gripLift?'rotation-and-lift':angle?'rotation':posteriorLift?'posterior-lift':'already-clear',angleDeg:angle*180/Math.PI,originalMinY:original,finalMinY:min,gripPivotDrift,gripLift,posteriorLift,clearanceStrategy:strategy};
     }
-    debug.reason='dual-clearance';debug.gripLift=Math.max(results.right?.gripLift??0,results.left?.gripLift??0);debug.finalMinY=Math.min(results.right?.finalMinY??Infinity,results.left?.finalMinY??Infinity);
+    debug.reason='dual-clearance';debug.posteriorLift=Math.max(results.right?.posteriorLift??0,results.left?.posteriorLift??0);debug.gripLift=Math.max(results.right?.gripLift??0,results.left?.gripLift??0);debug.finalMinY=Math.min(results.right?.finalMinY??Infinity,results.left?.finalMinY??Infinity);
   }
   function constrainFreeHand(parent,socket,shoulder,reach,height) {
     if(!enabled()||parent!==global.PlayerBodyTransformComposer?.getPlayerMesh?.()||!(reach>0)||!socket?.parent)return false;
