@@ -890,6 +890,21 @@
 
   // Idle head artwork stays world-up. Measure the vertical offset from its
   // rope attachment to its authored contact edge, or all layer bounds.
+  // The stance owner already accepts tool-slot clearance. Only modular flails
+  // extend the weapon ground-contact path to those non-weapon slots.
+  function playerGroundSlot(runtime,itemKey,holder) {
+    if(!runtime?.activeSlot||runtime.itemKey!==itemKey)return false;
+    return runtime.activeSlot==='weapon'||(itemKey.startsWith('modular:')&&
+      global.WeaponToolStances?.groundPoseEligible?.(runtime.activeSlot,itemKey,holder)===true);
+  }
+
+  function idleGroundContactAllowed(state,runtime,holder) {
+    // Legacy work strokes can be active even without a combat visual timeline.
+    // Keep the physical fit during the stroke, but release the pinned head.
+    return !state.attacking&&!state.fishingFlailHeadSpin&&
+      !(runtime?.activeSlot&&runtime.activeSlot!=='weapon'&&holder?.userData?.authoredToolActionActive===true);
+  }
+
   function idleHeadContact(state,unit,profile) {
     const head=state.config.flail.head,visual=head.visualTransform;
     const cached=state.groundHeadContact; // Head geometry is static under its moving suspension; alpha trace only when image/geometry changes.
@@ -1087,11 +1102,11 @@
     const runtime=pose?.enabled?.()&&!sharedSource
       &&root.parent===global.ProceduralHandAttachments?.gameDeps?.toolHolder
       ?global.WeaponToolStances?.getRuntimeState?.():null;
-    const profile=sharedSource?sharedSource.groundProfile:(preview||runtime?.activeSlot==='weapon'&&runtime.itemKey===state.itemKey
+    const profile=sharedSource?sharedSource.groundProfile:(preview||playerGroundSlot(runtime,state.itemKey,root.parent)
       ?global.HobunjiHandToolGrips?.groundProfileForTool?.(state.itemKey):null);
     state.groundProfile=profile; // No separate metadata lookup or mutable physical fit for the visible replicas.
     const floor=profile?pose.groundY():null; // The fitted length is a maximum; zero rope-minimum does not disable floor contact.
-    const contact=Number.isFinite(floor)&&!state.attacking?idleHeadContact(state,unit,profile):null;
+    const contact=Number.isFinite(floor)&&idleGroundContactAllowed(state,runtime,root.parent)?idleHeadContact(state,unit,profile):null;
     // Fixed Light fit uses upright contact; live trailing accounts for tilt separately.
     // Fit the connector in the neutral, vertically hanging reference pose, not
     // its transient pendulum direction. Reuse the physical fit on every frame.
@@ -1497,7 +1512,7 @@
 
   global.HobunjiWeaponSpriteAssemblies = {
     definitions: DEF, assemblyKind, isGroundNonSolidChild, groundFitSpec, groundStatus:root=>states.get(root)?.groundClearance||null, decorate, setAction, tick, drop, syncDualWield, scheduleTickAfterPose, debugSnapshot, previewParts, enchantmentTargets, dualWieldEnchantmentTargets, bakedPoint,
-    resolveGroundSlack, canPinGroundHead, slackConnectorScale, opaqueAt, anchor, refreshWorldMatrix, definitionFor, ropeSpriteSizing, ropeOpaqueBounds, tintRopePixels, stepPendulum, bodyYawRate, flailDamping, flailStrikeStraightening, flailYawTravel, fishingFlailHeadDirection, clampIdleHeadYaw, easeIdleHeadYaw, stepIdleHeadMotion, advanceIdleHeadMotion, resetIdleHeadMotion, leanHeadBasis, tiltedHeadDrop, // Pure sizing and phase helpers have regression tests.
+    playerGroundSlot, idleGroundContactAllowed, resolveGroundSlack, canPinGroundHead, slackConnectorScale, opaqueAt, anchor, refreshWorldMatrix, definitionFor, ropeSpriteSizing, ropeOpaqueBounds, tintRopePixels, stepPendulum, bodyYawRate, flailDamping, flailStrikeStraightening, flailYawTravel, fishingFlailHeadDirection, clampIdleHeadYaw, easeIdleHeadYaw, stepIdleHeadMotion, advanceIdleHeadMotion, resetIdleHeadMotion, leanHeadBasis, tiltedHeadDrop, // Pure sizing and phase helpers have regression tests.
   };
   global.HobunjiCacheAudit?.register('weapon assemblies (weak owner registry)', () => { let count = 0; for (const entry of records) if (liveState(entry)) count++; return count; });
   if (global.RuntimeFrameScheduler?.register) {
