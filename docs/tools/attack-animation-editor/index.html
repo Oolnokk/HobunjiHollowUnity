@@ -1947,13 +1947,14 @@ function applyWeaponGroundPreview(){
   if(gizmoMode!=='off')return solver.skip('raw-gizmo-authoring');
   if(handCalibrationPresentationActive||anim.headRelative)return solver.skip('attached-or-calibration-preview');
   const gripContext=grips?.currentGripContext?.()||'melee'; // Nonweapon Neutral uses the same visible grip as gameplay.
-  if(!TOOL_SPRITE_DEFS[currentToolKey]?.usesWeaponStanceBasis||gripContext==='ranged'){
-    if(!toolPlaneMesh||!grips||!avatarModel||(!currentAction().still&&previewT>0.00001))return solver.skip('authored-action-preview');
+  const carryAction=['torch_idle','torch_swing','held_item_small','held_item_large','flask_throw','kurraya_play_note'].includes(currentActionId);
+  if(carryAction||!TOOL_SPRITE_DEFS[currentToolKey]?.usesWeaponStanceBasis||gripContext==='ranged'){
+    if(!toolPlaneMesh||!grips||!avatarModel||(previewT>0.00001&&previewT<0.99999))return solver.skip('authored-action-preview');
     const identity={speciesId:currentSpeciesId,gender:currentGender};
     const primary=grips.primaryGripForTool?.(currentToolKey,gripContext,identity);
     const secondary=grips.secondaryGripForTool?.(currentToolKey,gripContext,identity);
     solver.skip('carry-preview');
-    solver.constrainCarry(toolHolder,toolPlaneMesh,{itemKey:currentToolKey,preview:true,rig:{parent:characterBodyScaleRoot},posteriorLocalY:editorLegs?.standingPosteriorY,grip:primary?.position,otherGrips:secondary?[secondary.position]:null,preserveOrientation:!!anim.worldUpright||gripContext==='ranged'||!!secondary});
+    solver.constrainCarry(toolHolder,toolPlaneMesh,{itemKey:currentToolKey,preview:true,rig:{parent:characterBodyScaleRoot},posteriorLocalY:editorLegs?.standingPosteriorY,grip:primary?.position,otherGrips:secondary?[secondary.position]:null,preserveOrientation:!!anim.worldUpright||currentActionId==='torch_idle'||(gripContext==='ranged'&&!currentActionId.endsWith('_load'))||!!secondary||currentActionId==='held_item_large'||currentActionId==='kurraya_play_note'});
     toolHolder.updateMatrix();
     return;
   }
