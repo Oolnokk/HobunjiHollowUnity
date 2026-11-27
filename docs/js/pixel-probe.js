@@ -1183,7 +1183,7 @@
     const creditedKnockback = window.KnockbackCollisionImpact?.debugCreditSnapshot?.(); // Last local shove/impact, independent of unrelated world combat.
     if (creditedKnockback) {
       const hit = creditedKnockback.lastImpact;
-      lines.push(`Player/pet knockback: begun=${creditedKnockback.begun} cancelled/replaced=${creditedKnockback.cancelled} resolved=${creditedKnockback.resolved}${hit ? ` last=${hit.target} / ${hit.label} (${hit.mode}) age=${Math.max(0, Date.now() - hit.at)}ms deficit=${hit.deficitTiles.toFixed(2)}t popups=${hit.popupCount} applied=[${Object.entries(hit.appliedEffects).map(([id, amount]) => `${id}=${amount}`).join(', ') || 'none'}]` : ' no credited collision yet'}`);
+      lines.push(`Player/pet knockback: begun=${creditedKnockback.begun} ended/replaced=${creditedKnockback.cancelled} resolved=${creditedKnockback.resolved}${hit ? ` last=${hit.target} / ${hit.label} (${hit.mode}) age=${Math.max(0, Date.now() - hit.at)}ms deficit=${hit.deficitTiles.toFixed(2)}t popups=${hit.popupCount} applied=[${Object.entries(hit.appliedEffects).map(([id, amount]) => `${id}=${amount}`).join(', ') || 'none'}]` : ' no credited collision yet'}`);
     }
     if (knockbackImpactDebug) {
       const effectText = Object.entries(knockbackImpactDebug.effects || {}).map(([key, value]) => `${key}=${value}`).join(', '); // Full scaled profile before caps/lethality.
