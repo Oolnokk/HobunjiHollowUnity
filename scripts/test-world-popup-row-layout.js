@@ -22,7 +22,7 @@ assert(!legacy.includes('rowLayouts'));
 function run(updateSource, activeSpec, now) {
   class Vec {
     constructor(x=0,y=0,z=0) { Object.assign(this,{x,y,z}); }
-    setFromMatrixColumn(matrix,i) { this.x = i===0?1:0; this.y=0; this.z=i===2?1:0; return this; }
+    setFromMatrixColumn(matrix,i) { this.x = i===0?1:0; this.y=i===1?1:0; this.z=i===2?1:0; return this; }
     normalize() { return this; }
     addScaledVector(v,k) { this.x+=v.x*k; this.y+=v.y*k; this.z+=v.z*k; return this; }
     copy(v) { this.x=v.x; this.y=v.y; this.z=v.z; return this; }
@@ -132,9 +132,20 @@ console.log('World popup row layout and family visibility parity: PASS');
   const root={}, active=[], state={active,settings:{floatPlus:{worldHeight:.13}}};
   const claim=vm.runInNewContext(block('  function claimFloatOffset(', '  function spawn(')+'\nclaimFloatOffset;', {state});
   for(let i=0;i<6;i++) {
-    const bounds={width:.38,height:.13};
-    const point=claim(root,bounds,true);
-    active.push({root,mode:'floatPlus',offsetX:point.x,offsetY:point.y,...bounds});
+    const emphasis=i===5; // Last popup is the bigger collision callout.
+    const bounds=emphasis?{width:.85,height:.13*1.65}:{width:.38,height:.13};
+    const point=claim(root,bounds,true,emphasis);
+    active.push({root,mode:'floatPlus',kind:'damage',scatter:true,emphasis,offsetX:point.x,offsetY:point.y,...bounds});
+  }
+  const box=(e,p)=> {
+    const drift=1+.22*(1-(1-p)**2), pop=e.emphasis?1.4-.4*Math.min(1,p/.24):1.1-.1*Math.min(1,p/.24);
+    const x=e.offsetX*drift+Math.sin(p*Math.PI)*e.height*.12,y=e.offsetY*drift+.075*(1-(1-p)**2);
+    return {x,y,w:e.width*pop,h:e.height*pop};
+  };
+  // Different start times: test every pair throughout both lifetimes.
+  for(let i=0;i<active.length;i++) for(let j=i+1;j<active.length;j++) for(let p=0;p<=10;p++) for(let q=0;q<=10;q++){
+    const a=box(active[i],p/10),b=box(active[j],q/10);
+    assert(Math.abs(a.x-b.x)>=(a.w+b.w)/2 || Math.abs(a.y-b.y)>=(a.h+b.h)/2,'scatter text envelopes never overlap');
   }
   assert(active.some(e=>e.offsetX<0)&&active.some(e=>e.offsetX>0),'burst spreads to both sides');
   assert(active.some(e=>e.offsetY<0)&&active.some(e=>e.offsetY>0),'burst spreads vertically as well');

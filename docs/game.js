@@ -1105,7 +1105,7 @@
         }
         if (entity._cliffClimb) {
           if (entity._cliffClimb.phase === 'fall') { entity.proneThrowT = 0; return true; }
-          if (window.CreatureCliffClimb?.knockOff?.(entity, 'knocked prone')) {
+          if (window.CreatureCliffClimb?.knockOff?.(entity, 'knocked prone', entity._knockbackCollisionImpact?.popupCredit === true)) {
             entity.proneThrowT = 0;
             return true;
           }
@@ -5782,7 +5782,7 @@
         if (!environmentalImpact && performance.now() < (Number(c?.invulnUntil) || 0) && !dmgOpts?.ignoreDodge) return false; // Enemy dodge iframes reject the complete direct hit before damage, afflictions, Footing, or stagger side effects.
         if (c?._downed) return false; // A downed companion is untargetable until it is revived (js/companion-downed.js).
         if (!environmentalImpact && window.Combat?.attach?.blocksDamage(c, dmgOpts, fromX, fromY)) return false; // A creature sitting on a host (honeyfuzzle Swarm) is immune to that host's attacks (js/combat/combat-attach.js).
-        if (dmgOpts?.ranged && !environmentalImpact) window.CreatureCliffClimb?.knockOff?.(c, 'shot while climbing'); // A projectile hit mid-climb peels an attacker off the cliff face.
+        if (dmgOpts?.ranged && !environmentalImpact) window.CreatureCliffClimb?.knockOff?.(c, 'shot while climbing', window.WorldPopupText?.isLocalCombatSource?.(dmgOpts.attacker) === true); // A projectile hit mid-climb peels an attacker off the cliff face.
         // Player melee must overlap the target vertically as well as pass its
         // existing top-down cone/range test. Ranged projectiles already run
         // their own swept 3D Box3 collision and deliberately bypass this.

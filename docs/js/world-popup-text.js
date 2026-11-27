@@ -514,15 +514,34 @@
       .sort((a, b) => a.sequence - b.sequence);
   }
 
-  function claimFloatOffset(root, bounds, scatter = false) {
+  function claimFloatOffset(root, bounds, scatter = false, emphasis = false) {
     const worldHeight = state.settings.floatPlus.worldHeight;
     const existing = state.active.filter(event => event.root === root && event.mode === 'floatPlus');
     const pathXClearance = worldHeight * (scatter ? 0.7 : 0.24); // Allow scattered numbers to drift outward without crossing nearby text.
     const pathYClearance = scatter ? Math.max(0.075, worldHeight * 0.55) : 0.075;
-    const isFree = point => existing.every(event =>
-      Math.abs(point.x - event.offsetX) > (bounds.width + event.width) * 0.5 + pathXClearance ||
-      Math.abs(point.y - event.offsetY) > (bounds.height + event.height) * 0.5 + pathYClearance
-    );
+    // Reserve the full animation envelope (including the first-frame pop),
+    // not just the resting text dimensions. Compute existing envelopes once
+    // per emitted burst number, never on the frame loop.
+    function envelope(x, y, width, height, scattered, peak) {
+      const travel = scattered ? 0.22 : 0;
+      const halfWidth = width * peak * 0.5, halfHeight = height * peak * 0.5;
+      return { left: Math.min(x, x * (1 + travel)) - halfWidth,
+        right: Math.max(x, x * (1 + travel)) + halfWidth + height * 0.12,
+        bottom: Math.min(y, y * (1 + travel)) - halfHeight,
+        top: Math.max(y, y * (1 + travel)) + halfHeight + 0.075 };
+    }
+    const peak = emphasis ? 1.4 : 1.1; // Same scale peak as the frame updater.
+    const reserved = scatter ? existing.map(event => envelope(event.offsetX, event.offsetY, event.width, event.height, event.scatter, event.emphasis ? 1.4 : event.kind === 'damage' ? 1.1 : 1)) : null;
+    const isFree = point => {
+      if (reserved) {
+        const candidate = envelope(point.x, point.y, bounds.width, bounds.height, true, peak);
+        return reserved.every(other => candidate.right + worldHeight * 0.1 < other.left || candidate.left > other.right + worldHeight * 0.1 ||
+          candidate.top + worldHeight * 0.1 < other.bottom || candidate.bottom > other.top + worldHeight * 0.1);
+      }
+      return existing.every(event =>
+        Math.abs(point.x - event.offsetX) > (bounds.width + event.width) * 0.5 + pathXClearance ||
+        Math.abs(point.y - event.offsetY) > (bounds.height + event.height) * 0.5 + pathYClearance);
+    };
     const searchCount = Math.max(240, (existing.length + 1) * 240);
     for (let index = 0; index < searchCount; index++) {
       const angle = index * 2.399963229728653 + (scatter ? 0.55 : 0);
@@ -532,6 +551,7 @@
       const point = { x: Math.cos(angle) * radius * (scatter ? 1.35 : 1), y: Math.sin(angle) * radius * (scatter ? 0.85 : 0.62) };
       if (isFree(point)) return point;
     }
+    if (reserved) return { x: 0, y: reserved.reduce((top, item) => Math.max(top, item.top), 0) + bounds.height * peak * 0.5 + worldHeight * 0.1 }; // Safe fallback for an unusually crowded burst.
     const topEdge = existing.reduce((top, event) => Math.max(top, event.offsetY + event.height * 0.5), 0);
     return { x: 0, y: topEdge + bounds.height * 0.5 + pathYClearance };
   }
@@ -559,7 +579,7 @@
       listFor(entry.root).forEach((item, index) => { item.listSlot = index; });
       event.listSlot = listFor(entry.root).length;
     } else {
-      const offset = claimFloatOffset(entry.root, parts, entry.scatter);
+      const offset = claimFloatOffset(entry.root, parts, entry.scatter, entry.emphasis);
       event.offsetX = offset.x;
       event.offsetY = offset.y;
     }
@@ -1134,7 +1154,7 @@
     if (clamped !== x) plane.position.addScaledVector(right, clamped - x);
   }
   const INTERACTION_MAX_SCREEN_FRACTION = 0.035; // A prompt row never exceeds 3.5% of the viewport height.
-  const _updateScratch = { right: null, forward: null };
+  const _updateScratch = { right: null, forward: null, up: null };
   function update(now) {
     const camera = state.deps?.camera;
     if (!camera || (!state.active.length && !state.conditionCallout && !state.aimLabel && !state.infoLists.size)) return;
@@ -1145,6 +1165,7 @@
     const halfFovTan = Math.tan(((Number(camera.fov) || 42) * Math.PI / 180) / 2);
     const finishedRewards = []; // Completed rewards are forwarded in their original event order after the reverse removal pass.
     let rowLayouts = null; // Allocate only if a live row needs layout; damage numbers and emojis do not.
+    let scatterUp = null; // Camera up is computed once, only on frames with a scattered popup.
     for (let index = state.active.length - 1; index >= 0; index--) {
       const event = state.active[index];
       if (event.mode === 'iconEffect') {
@@ -1177,7 +1198,14 @@
       if (event.mode === 'floatPlus') {
         const drift = event.scatter ? 0.22 * (1 - Math.pow(1 - progress, 2)) : 0; // Each number drifts away along its own chosen scatter direction.
         center.addScaledVector(cameraRight, event.offsetX * (1 + drift) + Math.sin(progress * Math.PI) * event.height * 0.12);
-        center.y += event.offsetY * (1 + drift) + 0.075 * (1 - Math.pow(1 - progress, 2));
+        const verticalOffset = event.offsetY * (1 + drift) + 0.075 * (1 - Math.pow(1 - progress, 2));
+        if (event.scatter) {
+          if (!scatterUp) {
+            if (!_updateScratch.up) _updateScratch.up = new state.deps.THREE.Vector3();
+            scatterUp = _updateScratch.up.setFromMatrixColumn(camera.matrixWorld, 1).normalize();
+          }
+          center.addScaledVector(scatterUp, verticalOffset); // True screen-space spacing survives a steep camera angle.
+        } else center.y += verticalOffset;
       } else {
         if (!rowLayouts) rowLayouts = new Map();
         let layouts = rowLayouts.get(event.root);

@@ -20,6 +20,7 @@ const campfire = JSON.parse(fs.readFileSync('docs/config/furniture-authored/camp
 const hearth = JSON.parse(fs.readFileSync('docs/config/furniture-authored/hearth.json', 'utf8')); // Existing built-in flame fixture must persist its hazard flag.
 
 // Integration guards: keep the feature attached to the real movement/death/editor paths.
+assert.match(gameSource, /CreatureCliffClimb\?\.knockOff\?\.\(entity, 'knocked prone', entity\._knockbackCollisionImpact\?\.popupCredit === true\)/, 'cliff-climb knockdowns retain shove attribution');
 assert.match(gameSource, /dropWorld, dropTiers, dirX: 0, dirY: 0, popupCredit: entity\._knockbackCollisionImpact\?\.popupCredit === true/, 'airborne prone falls retain their original hit credit');
 assert.match(gameSource, /popupCredit: \(entity\._knockbackCollisionImpact\?\.popupCredit \?\? air\.popupCredit\) === true/, 'a later obstruction cannot erase the ledge landing credit');
 assert.match(gameSource, /_knockbackLedgeAir\.popupCredit = entity\._knockbackCollisionImpact\.popupCredit === true; return api\.resolve/, 'the latest shove owns subsequent landing credit before horizontal resolution clears the state');
