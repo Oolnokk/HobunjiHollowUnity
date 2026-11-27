@@ -30,7 +30,7 @@
     "js/combat/combat-charged-breaker.js?v=20261126h22fa9c0",
     "js/combat/combat-flurry.js?v=20261126planarRebase1",
     "js/combat/combat-loadout-ui.js?v=20261123ha2c1378",
-    "js/combat/combat-enchantments.js?v=20261127h9f27629",
+    "js/combat/combat-enchantments.js?v=20261127combatPerf1",
     "js/combat/fey-illusions.js?v=20261127h64ecb2f",
     "js/combat/fey-hyped-attacks.js?v=20261127h2230969",
     "js/combat/weapon-enchantment-vfx.js?v=20261117flailEnchants1",
