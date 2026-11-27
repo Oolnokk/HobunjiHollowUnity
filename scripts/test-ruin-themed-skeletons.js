@@ -9,6 +9,12 @@ vm.runInNewContext(fs.readFileSync('docs/js/combat/combat-minion.js','utf8'),{wi
 await m.makeEntity(o);assert.equal(calls.at(-1).extra.ruinSkeletonHealthMultiplier,1.5);
 const e=await m.makeEntity({...o,extra:{wallCoffin:0}});assert.equal(e.ruinSkeletonHealthMultiplier,3);assert.equal(e.rosterRecord.enchantedWeapon.relicShape,'warhammer');
 await m.makeEntity({...o,zoneId:'map_mine'});assert.equal(calls.at(-1).extra.ruinSkeletonTheme,undefined);
+// Explicit preview theme is accepted only in the isolated Workshop arena, not in other game zones.
+await m.makeEntity({...o,zoneId:'map_mine',previewRuinTheme:'tothal',previewRuinWallCoffin:true});assert.equal(calls.at(-1).extra.ruinSkeletonTheme,undefined);
+const preview=await m.makeEntity({...o,zoneId:'map_dev_arena',previewRuinTheme:'tothal',previewRuinWallCoffin:true});
+assert.equal(preview.ruinSkeletonTheme,'tothal');assert.equal(preview.ruinSkeletonHealthMultiplier,3);
+const replay=await m.makeEntity({...o,zoneId:'map_dev_arena',previewRuinTheme:'tothal',previewRuinWallCoffin:true,preserveRoster:true,roster:preview.rosterRecord});
+assert.equal(replay.rosterRecord.enchantedWeapon,preview.rosterRecord.enchantedWeapon);assert.equal(replay.rosterRecord.ruinSkeletonSeed,preview.rosterRecord.ruinSkeletonSeed);
 const c={health:10,ruinSkeletonTheme:'hronal',physicalFeetY:4};m.trailMovement(c,0,0,128,0,'move',64);assert.equal(fires.length,0);
 m.trailMovement(c,0,0,128,0,'lunge',64);assert.equal(fires.length,3);assert.ok(fires.every(f=>f.y===4));
 theme='kanthic';const k={health:10,ruinSkeletonTheme:theme,physicalFeetY:4};m.trailMovement(k,0,0,128,0,'dodge',64);

@@ -147,8 +147,8 @@
     if (typeof heldTools?.createToolPlaneFactory !== 'function')
       throw Error('Game weapon mesh factory unavailable');
     // Same argument order the preview has always passed.
-    const weaponMeshFactory = (THREE, defs, ensureTexture, textures, renderOrder, markPngPlane, metalOptions, masteryLevel) =>
-      heldTools.createToolPlaneFactory({ THREE, defs, ensureTexture, textures, renderOrder, markPngPlane, metalOptions, masteryLevel });
+    const weaponMeshFactory = (THREE, defs, ensureTexture, textures, renderOrder, markPngPlane, metalOptions, masteryLevel, modularGeometries) =>
+      heldTools.createToolPlaneFactory({ THREE, defs, ensureTexture, textures, renderOrder, markPngPlane, metalOptions, masteryLevel, modularGeometries });
     const rangedItems = {};
     for (const id of ['crossbow', 'scatterbow']) {
       const literal = new RegExp(
@@ -333,15 +333,17 @@
       extra: { enemyLoadoutKind: kind },
       ...options,
     };
+    const saved=options.previewCaptainArmament; // Register before the normal actor factory constructs its weapon holder.
+    if(saved&&!window.BanditCaptainArmaments.registerDefinition(saved.key,saved))throw Error('Saved modular weapon could not be restored');
     if(kind.startsWith('harlyao-skeleton:')){
       const [,theme,variant]=kind.split(':');
       return window.MinionCombat.makeEntity({...shared,speciesId:'harlyao-skeleton',name:types.find(t=>t.id===kind).label,baseConfig:data.gang,
         previewRuinTheme:theme,previewRuinWallCoffin:variant==='coffin'});
     }
     if(kind.startsWith('rootledoot:')){
-      const saved=options.previewCaptainArmament;
-      if(saved&&!window.BanditCaptainArmaments.registerDefinition(saved.key,saved))throw Error('Saved modular root weapon could not be restored');
-      return window.Rootledoots.makeCombatant(data.gang,kind.split(':')[1],tier,0,0,shared);
+      const rank=kind.split(':')[1],entity=await window.Rootledoots.makeCombatant(data.gang,rank,tier,0,0,shared);
+      if(entity&&rank==='captain'&&!entity._banditCaptainArmament){window.BanditCombat.discardEntity?.(entity);throw Error('Big Rootledoot did not receive its required Fey weapon');}
+      return entity;
     }
     if (kind.startsWith('maskbound:'))
       return window.MaskboundGuardianCombat.makeEntity({

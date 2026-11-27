@@ -72,7 +72,7 @@ const files = [
   'js/combat/ranged-weapons.js?v=20261126spiritHealAudit1',
   'js/alchemy-system.js?v=20261125idleGate2',
   'js/combat/enemy-loadout-rules.js?v=20261127ruinViewer1',
-  'js/combat/combat-bandit.js?v=20261127ruinViewer1',
+  'js/combat/combat-bandit.js?v=20261127ruinViewer2',
   'js/weapon-tool-stances.js?v=20261118torchThrowScaled2',
   'js/combat/enemy-weapon-stances.js?v=20261122heldPreviewAudit1',
   'js/combat/combat-minion.js?v=20261127ruinViewer1',
@@ -96,7 +96,7 @@ const files = [
   'js/wilderness-encounter-runtime.js?v=20261124shared2',
   'js/rootledoot-encounter.js?v=20261127ruinViewer1',
   'js/combat/ranged-weapon-archetypes.js?v=20261125deepAudit1',
-  'tools/enemy-loadout-editor/source-data.js?v=20261127ruinViewer1',
+  'tools/enemy-loadout-editor/source-data.js?v=20261127ruinViewer2',
 ];
 const copy = (value) => JSON.parse(JSON.stringify(value));
 export class EnemyPreview {
@@ -266,6 +266,7 @@ export class EnemyPreview {
       Object.keys(d.metals).filter((k) => d.metals[k].tier),
     );
     this.weaponTextures = {};
+    this.weaponGeometries = new Map(); // Live modular mesh factory cache, owned by this preview scene.
     this.makeGameWeaponMesh = d.weaponMeshFactory(
       THREE,
       this.items,
@@ -275,6 +276,7 @@ export class EnemyPreview {
       (root) => window.PngPlaneOutlineOccluder.markPngPlane(root),
       (itemKey) => this.weaponMetalOptions(itemKey), // The weapon-assembly runtime's recolor options, as in the game.
       () => 0, // Preview weapons are unmastered.
+      this.weaponGeometries,
     );
     this.dependencies = {
       rnd: () => this.random(),
@@ -593,7 +595,7 @@ export class EnemyPreview {
     const old = this.actor;
     this.actor = next;
     this.attack = null;
-    if (old) this.discard(old);
+    if (old) this.discard(old,!!next._banditCaptainArmament&&next._banditCaptainArmament.key===old._banditCaptainArmament?.key); // History can rebuild the same unique modular weapon.
     const a = next.avatarRef;
     next.facing = Math.PI / 2;
     next.groupRot = 0;
@@ -1159,7 +1161,7 @@ export class EnemyPreview {
     const travelGaze = window.BanditCombat.updateMovementHeadLook(c, dt, move > 0, c.facing);
     if (!travelGaze) window.BanditCombat.restNeckLook(c, dt); // Same idle neck update the game's hostile loop runs; applies the body-yaw counter-turn.
   }
-  discard(actor) {
+  discard(actor,preserveUniqueKey=false) {
     window.MaskboundHeadtaker?.cancel?.(actor, 'workshop-dispose'); // Clear any temporary rig ownership before freeing GPU objects.
     if(actor?.isSpecialLich) {
       window.SpecialHarlyaoLiches?.applyPlasmSkin?.(actor,false);
@@ -1179,9 +1181,10 @@ export class EnemyPreview {
           textures.add(child.userData.loadedTexture);
       }
     const uniqueKey=actor._banditCaptainArmament?.key; // Workshop-owned modular cache entry.
-    window.BanditCaptainArmaments?.discard?.(actor);
+    if(preserveUniqueKey){actor._captainEnchantmentFx?.dispose?.();actor._captainEnchantmentFx=null;}
+    else window.BanditCaptainArmaments?.discard?.(actor);
     window.BanditCombat.discardEntity(actor);
-    if(uniqueKey){delete this.weaponTextures[uniqueKey];}
+    if(uniqueKey&&!preserveUniqueKey){this.weaponGeometries?.get(uniqueKey)?.dispose?.();this.weaponGeometries?.delete(uniqueKey);delete this.weaponTextures[uniqueKey];}
     for (const texture of textures) texture.dispose();
   }
   dispose() {
@@ -1189,6 +1192,7 @@ export class EnemyPreview {
     cancelAnimationFrame(this.frame);
     this.resizeObserver?.disconnect();
     if (this.actor) this.discard(this.actor);
+    for(const geometry of this.weaponGeometries?.values()||[])geometry.dispose();this.weaponGeometries?.clear();
     this.controls.dispose();
     this.shellMaterial.dispose();
     this.renderer.dispose();

@@ -3493,9 +3493,13 @@
     const loadoutRules = window.EnemyLoadoutRules;
     const loadoutKind = loadoutRules?.kindFor(rank, opts, opts.rosterOverride, cfg);
     cfg = loadoutRules?.configFor(loadoutKind, cfg, rank, deps.rnd) || cfg;
-    if(opts.extra?.ruinWallCoffin)cfg={...cfg,_ruinCoffinWeapon:true,weaponShapePool:[...window.MinionCombat.coffinWeaponShapes]}; // Match relic catalog.
+    if(opts.extra?.ruinWallCoffin){
+      const permitted=window.MinionCombat.coffinWeaponShapes; // Only authored choices that actually encode to bound relic shapes are legal.
+      const authored=loadoutRules?.ruleFor(loadoutKind)?.weapons?cfg.weaponShapePool?.filter(shape=>permitted.includes(shape)):null;
+      cfg={...cfg,_ruinCoffinWeapon:true,weaponShapePool:authored?.length?authored:[...permitted]};
+    } // Match relic catalog.
     if (mineEnemy) cfg = { ...cfg, _preserveMineEnemyTiers: true }; // Local override is never written into the global gang configuration.
-    if (!loadoutKind?.startsWith('bandit:') && (cfg?.combatPursuit || cfg?.quickAttackTuning))
+    if (!opts.extra?.rootledoot && !loadoutKind?.startsWith('bandit:') && (cfg?.combatPursuit || cfg?.quickAttackTuning))
       cfg = { ...cfg, combatPursuit: null, quickAttackTuning: null }; // Special humanoids and mine enemies retain their prior pace and Quick Attack probability.
     const wearsRankMetal = ['lieutenant', 'captain'].includes(rank) && loadoutKind?.startsWith('bandit:') && !opts.rosterOverride && !opts.preserveRoster; // Rank metal armor must match the weapon's metal, which is otherwise rolled after the portrait is baked.
     if (wearsRankMetal && !configuredWeaponMetalKey(cfg)) cfg = { ...cfg, weaponMetalKey: rollBanditWeaponMetalKey(cfg, rank, tier) };
