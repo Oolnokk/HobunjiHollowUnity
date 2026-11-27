@@ -23,6 +23,7 @@
   let baseMatrixCaptures = 0; // Diagnostic count of visible hand matrices captured by this adapter.
   let lockedOccluderDepthDraws = 0; // Diagnostic count of pre-shell depth replays forced to the captured visible hand matrix.
   let lockedShellDraws = 0; // Diagnostic count of shell draws forced to the captured visible matrix.
+  let lockedScreenMaskDraws = 0; // Counts screen-outline mask draws using the visible limb pose.
   let lockedMaterialIdDraws = 0; // Diagnostic count of material-ID draws forced to the captured visible matrix.
   let missedOutlineSnapshots = 0; // Outline draws where no recent visible matrix was available.
   let heldXrayTaggedMeshes = 0; // Current-or-former procedural hand meshes registered with the selective ground x-ray system.
@@ -52,6 +53,7 @@
       && material?.colorWrite === false
     ) return 'occluder-depth';
     if (!scene?.overrideMaterial) return null;
+    if (material?.userData?.hobunjiScreenOutlineMask === true) return 'screen-mask';
     if (isShellMaterial(material)) return 'shell';
     if (isMaterialIdMaterial(material)) return 'material-id';
     return null;
@@ -226,6 +228,9 @@
       } else if (passKind === 'shell') {
         rigState.lockedShellDraws++;
         lockedShellDraws++;
+      } else if (passKind === 'screen-mask') {
+        rigState.lockedScreenMaskDraws++;
+        lockedScreenMaskDraws++;
       } else {
         rigState.lockedMaterialIdDraws++;
         lockedMaterialIdDraws++;
@@ -332,6 +337,7 @@
       baseMatrixCaptures: 0, // Visible hand draws captured for this hand rig.
       lockedOccluderDepthDraws: 0, // Pre-shell depth replays that reused the exact visible hand matrix.
       lockedShellDraws: 0, // Shell draws that reused the exact visible hand matrix.
+      lockedScreenMaskDraws: 0, // Screen mask draws that reused the visible limb matrix.
       lockedMaterialIdDraws: 0, // Material-ID draws that reused the exact visible hand matrix.
       missedOutlineSnapshots: 0, // Outline draws without a recent visible matrix to reuse.
       initialGlbWaitAttempts: 0, // Poll count used to verify the initial async fallback -> GLB replacement was actually observed.
@@ -367,6 +373,7 @@
           outlineBaseMatrixCaptures: rigState.baseMatrixCaptures,
           outlineLockedOccluderDepthDraws: rigState.lockedOccluderDepthDraws,
           outlineLockedShellDraws: rigState.lockedShellDraws,
+          outlineLockedScreenMaskDraws: rigState.lockedScreenMaskDraws,
           outlineLockedMaterialIdDraws: rigState.lockedMaterialIdDraws,
           outlineMissedSnapshots: rigState.missedOutlineSnapshots,
           outlineInitialGlbWaitAttempts: rigState.initialGlbWaitAttempts,
@@ -413,6 +420,7 @@
         baseMatrixCaptures,
         lockedOccluderDepthDraws,
         lockedShellDraws,
+        lockedScreenMaskDraws,
         lockedMaterialIdDraws,
         missedOutlineSnapshots,
         heldXrayTaggedMeshes,
@@ -421,7 +429,7 @@
         maxSnapshotAgeMs: MAX_SNAPSHOT_AGE_MS,
         outlineThicknessMultiplier: OUTLINE_THICKNESS_MULTIPLIER,
         outlineDistanceScaling: 'inverse-view-depth-capped-at-foot-thickness',
-        latestChange: 'Colorless hand-depth replays and shell passes reuse the visible hand pose; a one-second snapshot window accommodates frame hitches without indefinite pose staleness.',
+        latestChange: 'Screen depth masks, colorless hand-depth replays and shell passes reuse the visible hand pose without shell expansion in screen mode.',
         outlineReferenceDepth: OUTLINE_REFERENCE_DEPTH,
         heldXray: global.HeldObjectRenderOrder?.snapshot?.() || null,
       };

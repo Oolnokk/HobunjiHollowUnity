@@ -211,3 +211,24 @@ delete runtimeDeps.toolMeshMap;
 const replacementWeapon = { visible: true, userData: { toolPlane: { isObject3D: true } } }; // Simulates swapping the dagger mesh without reconstructing the injected dependencies.
 runtimeDeps.toolHolder.children = [replacementWeapon];
 assert.equal(runtimeContext().visual, replacementWeapon, 'equipment swaps resolve the new attached weapon');
+
+// Horizontal movement lean must not rotate the neutral offhand's mirror plane.
+const uprightYaw = vm.runInNewContext('('+dual.slice(dual.indexOf('  function uprightMirrorYaw('),dual.indexOf('  function mirrorSolvedWeapon(')).trim()+')');
+const angleDiff=(a,b)=>Math.atan2(Math.sin(a-b),Math.cos(a-b));
+for(const yaw of [-Math.PI,-2,-.3,0,.7,2,Math.PI]){
+  for(const lean of [-.6,-.2,0,.2,.6]){
+    for(const direction of [0,.8,Math.PI/2,2.4]){
+      const qYaw=new GripQuaternion(0,Math.sin(yaw/2),0,Math.cos(yaw/2));
+      const qLean=new GripQuaternion(Math.cos(direction)*Math.sin(lean/2),0,Math.sin(direction)*Math.sin(lean/2),Math.cos(lean/2));
+      const result=uprightYaw(qLean.multiply(qYaw));
+      assert(Math.abs(angleDiff(result,yaw))<1e-9,'world-space pitch/roll cannot change the neutral mirror yaw');
+      const nx=Math.cos(result),nz=-Math.sin(result);
+      const main={x:.8,y:.15,z:.2},pivot={x:.1,y:1,z:.4};
+      const side=(main.x-pivot.x)*nx+(main.z-pivot.z)*nz;
+      const off={x:main.x-2*side*nx,y:main.y,z:main.z-2*side*nz};
+      assert.equal(off.y,main.y,'vertical reflection preserves the source ground clearance');
+    }
+  }
+}
+assert.match(dual,/const upright=current\.source==='runtime'&&current\.idleBlend>=1-ACTIVE_EPSILON/,'editor and authored attack poses retain their original mirror frame');
+assert.match(dual,/s\.bodyPosition\.addScaledVector\(s\.bodyRight\.set\(e\[4\],e\[5\],e\[6\]\),posterior\)/,'mirror passes through the same posterior pivot as the movement lean');

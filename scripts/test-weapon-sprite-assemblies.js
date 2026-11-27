@@ -78,16 +78,6 @@ vm.runInNewContext(source, {
   location: { href: 'https://example.test/game.html', pathname: '/game.html' },
 });
 const api = window.HobunjiWeaponSpriteAssemblies; // Public debug and authoring API.
-{
-  // Opposite haft headings converge to the same rearward rest, and travel still overrides it.
-  for(const z of [-1,1]){
-    const state={direction:{x:0,y:-1,z:0,set(x,y,z){Object.assign(this,{x,y,z});}}};
-    api.resolveTrailingDirection(state,0,0,0,z,-.5,.1,0,-1);
-    assert.ok(state.direction.z<0);
-    api.resolveTrailingDirection(state,1,0,0,z,-.5,.1,0,-1);
-    assert.equal(state.trailHeading.x,-1);
-  }
-}
 assert.equal(api.easeIdleHeadYaw(0,1,0),0);
 assert.ok(api.easeIdleHeadYaw(0,1,1/60)>0&&api.easeIdleHeadYaw(0,1,1/60)<.1);
 assert.ok(api.easeIdleHeadYaw(Math.PI-.1,-Math.PI+.1,1/60)>Math.PI-.1);
@@ -373,27 +363,44 @@ checkEnemyWeaponCleanup().catch(error => { console.error(error); process.exitCod
   assert.equal(m.leanX,0);assert.equal(m.yaw,.2);
 }
 
-{ // A floor-forced trailing connector keeps its drag heading when the actor stops, instead of snapping to a default angle.
-  const makeState = () => ({ direction: { x: 0, y: -1, z: 0, set(x, y, z) { this.x = x; this.y = y; this.z = z; return this; } } });
-  const solveY = -0.3, horizontal = Math.sqrt(1 - solveY * solveY);
-  const step = (s, vx, vz, shaftX, shaftZ, dt) => api.resolveTrailingDirection(s, vx, vz, shaftX, shaftZ, solveY, dt);
-  const s = makeState();
-  for (let i = 0; i < 120; i++) step(s, 4, 0, 0, 1, 1 / 60); // Travelling +X drags the connector toward -X.
-  assert.ok(Math.abs(s.direction.x + horizontal) < 1e-3 && Math.abs(s.direction.z) < 1e-3, 'trails directly behind the travel direction');
-  const settled = { x: s.direction.x, y: s.direction.y, z: s.direction.z };
-  for (let i = 0; i < 120; i++) step(s, 0, 0, 0, 1, 1 / 60); // Stopped: the shaft up-vector (+Z) must not take over.
-  assert.ok(Math.hypot(s.direction.x - settled.x, s.direction.y - settled.y, s.direction.z - settled.z) < 1e-6, 'stopping keeps the last drag heading');
-  const e = makeState(); e.direction.set(0, solveY, horizontal); // Already trailing toward +Z when the actor starts moving +X.
-  step(e, 4, 0, 0, 1, 1 / 60); // One frame later the heading has turned partway, not snapped to -X.
-  assert.ok(e.direction.x < -0.01 && e.direction.z > 0.01, 'heading eases from +Z toward -X instead of snapping');
-  assert.ok(Math.abs(e.direction.x) < horizontal - 0.05, 'one frame does not complete the turn');
-  assert.ok(e.direction.y >= solveY - 1e-12, 'easing never dips below the floor-safe vertical direction');
-  const frozen = makeState(); step(frozen, 4, 0, 0, 1, 0); // Frozen physics (dt 0) applies only the floor-safe clamp; nothing eases or advances.
-  assert.ok(Math.abs(frozen.direction.y - solveY) < 1e-12 && Math.abs(Math.hypot(frozen.direction.x, frozen.direction.y, frozen.direction.z) - 1) < 1e-9, 'frozen physics stays floor-safe and unit length');
-  const idle = makeState(); for (let i = 0; i < 120; i++) step(idle, 0, 0, 1, 0, 1 / 60); // Never moved: first contact falls back to the haft once and then stays.
-  assert.ok(Math.abs(idle.direction.x - horizontal) < 1e-3, 'standing first contact uses the haft heading');
-  step(idle, 0, 0, 0, 1, 1 / 60);
-  assert.ok(Math.abs(idle.direction.x - horizontal) < 1e-3, 'the haft fallback is remembered, not recomputed each frame');
-  for (const bad of [NaN, Infinity]) { const n = makeState(); step(n, bad, bad, 0, 1, 1 / 60); assert.ok(Number.isFinite(n.direction.x + n.direction.y + n.direction.z), 'non-finite velocity cannot corrupt the direction'); }
-  const len = Math.hypot(s.direction.x, s.direction.y, s.direction.z); assert.ok(Math.abs(len - 1) < 1e-6, 'result stays a unit vector');
+{ // A slack tether never pushes a grounded head.
+  const t={grounded:false}, d={x:0,y:-1,z:0};
+  const step=(x,z,available=.3,length=1,y=0)=>({...api.resolveGroundSlack(t,d,length,available,{x,y,z})});
+  const close=(a,b)=>assert.ok(Math.abs(a-b)<1e-8,`${a} != ${b}`);
+  const first=step(0,0);close(first.y,-.3);close(first.x,0);
+  assert.ok(api.canPinGroundHead(t,{x:.4,y:0,z:.2},1,.3),'a slack head must retain its prior visible orientation');
+  assert.equal(api.canPinGroundHead(t,{x:1.4,y:0,z:.2},1,.3),false,'taut dragging can rotate the head');
+  const slack=step(.4,.2);close(slack.x+.4,0);close(slack.z+.2,0);
+  assert.ok(Math.hypot(slack.x,slack.y,slack.z)<1);
+  const taut=step(1.4,.2);close(Math.hypot(taut.x,taut.y,taut.z),1);
+  const back=step(1,.2);close(back.x+1,taut.x+1.4);close(back.z,taut.z);
+  const rotated=step(1,.4);close(rotated.x,back.x);close(rotated.z+.4,back.z+.2);
+  const lifted=step(1,.4,1.1);assert.equal(lifted.grounded,false);close(lifted.y,-1);
+  const reset=step(10,10);close(reset.x,0);close(reset.z,0);
+  const verticalReset=step(10.2,10,.3,1,4);close(verticalReset.x,0);close(verticalReset.z,0);
+  const tangent={grounded:false};api.resolveGroundSlack(tangent,d,1,1,{x:0,y:0,z:0});
+  assert.equal(tangent.grounded,true,'exact vertical floor contact is pinned, not treated as airborne');
+  const rightHand={grounded:false};api.resolveGroundSlack(rightHand,d,1,.3,{x:2,y:0,z:0});
+  const leftHand={grounded:false};api.resolveGroundSlack(leftHand,d,1,.3,{x:-2,y:0,z:0});
+  api.resolveGroundSlack(rightHand,d,1,.3,{x:2.2,y:0,z:0});
+  api.resolveGroundSlack(leftHand,d,1,.3,{x:-1.8,y:0,z:0});
+  close(rightHand.x+2.2,2);close(leftHand.x-1.8,-2);
+  // The offhand may be unpinned while the hidden shared pendulum points up.
+  const kicked={x:0,y:1,z:0}, off={grounded:false};
+  const shared={dualWieldReplicas:[{},{}]}, root=shared.dualWieldReplicas[1];
+  const states=new Map([[shared.dualWieldReplicas[0],{groundTrail:{grounded:true}}]]);
+  const trail=off,sharedPhysics=shared,maxReach=1,available=.4;
+  // Evaluate the actual production seed predicate and use its chosen direction.
+  const seedSource=source.slice(source.indexOf('      const peers=sharedPhysics?.dualWieldReplicas;'),source.indexOf('      resolveGroundSlack(trail,seedOffhand'));
+  const seed=vm.runInNewContext(seedSource+';seedOffhand',{sharedPhysics,trail,root,states,maxReach,available});
+  assert.equal(seed,true,'grounded main hand permits an independent offhand ground seed');
+  api.resolveGroundSlack(off,seed?d:kicked,1,.4,{x:2,y:0,z:0});
+  assert.equal(off.grounded,true);close(off.y,-.4);close(off.x,0);
+  assert.equal(kicked.y,1,'shared pendulum is not mutated by the offhand');
+  const unreachable=step(10,10,-2,1,4);close(unreachable.y,1);close(Math.hypot(unreachable.x,unreachable.y,unreachable.z),1);
+  for(const [x,y,target] of [[0,1,.3],[.2,1,.5],[.5,1,.1],[.5,0,.1],[0,1,0]]){
+    const scale=api.slackConnectorScale(x,y,target,{});
+    assert.ok(scale.x>0&&scale.x<=1&&scale.y>0&&scale.y<=1);
+    assert.ok(Math.abs(Math.hypot(x*scale.x,y*scale.y)-target)<2e-6);
+  }
 }

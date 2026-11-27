@@ -401,7 +401,10 @@ with the main target, and disposed when leaving screen mode. Existing
 outline pass classification allows base-matrix reuse. The composite accepts
 only pixels whose mask depth matches the world depth, then samples four
 neighbors twelve render-target pixels away to detect an inward silhouette or
-substantial depth discontinuity. Authored PNGs and
+substantial depth discontinuity. Opposing raw-depth samples cancel planar slopes;
+world-scaled residual thresholds reject gentle curvature. Overlapping opposite
+strokes are attenuated (55% ink at full overlap) to preserve narrow-object color.
+No extra neighbor reads or geometry passes are introduced. Authored PNGs and
 hard-faced textured meshes are excluded by the existing shell-layer policy;
 an unrestricted world-depth Sobel filter would violate that policy. Standard
 scene fog fades the generated ink. With painterly active, the existing composite
