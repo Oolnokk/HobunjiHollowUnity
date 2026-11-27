@@ -200,6 +200,8 @@ header .toolbar #pair-undo,header .toolbar #pair-redo{min-width:88px;position:re
 <p>Alternatives are inactive by default. Draw, move or rotate the selected line on the head canvas. Choose an alternative under section 05 to use it for a specific pair.</p>
 <label>Head construction <select id="head-kind"><option value="blade">Blade — tang</option><option value="weight">Weight — eye/sleeve</option><option value="flail">Flexible head — rope/chain</option></select></label>
 <label>Haft mounting line <select id="socket"></select></label>
+<button id="use-head-line-for-socket" type="button">Use selected head line on selected haft line (this pair only)</button>
+<p id="head-line-pair-status" aria-live="polite"></p>
 <label>Selected haft mount type <select id="mount-kind"><option value="tang">Tang</option><option value="eye">Eye/sleeve</option><option value="rope">Rope/chain — span controls reach only</option></select></label>
 <div class="toolbar"><button id="add" type="button">Add haft line</button><button id="remove" type="button">Remove selected line</button></div>
 <p>Line length is the distance from its fixed origin to its arrow tip. For a <strong>rope</strong> line, this is the full hanging connector reach only; changing it never scales the head or changes rope/chain thickness. Use the number box, its native arrows, or the − / + buttons.</p>
@@ -209,7 +211,7 @@ header .toolbar #pair-undo,header .toolbar #pair-redo{min-width:88px;position:re
 </details>
 <details id="pair-workflow" class="workflow-section"><summary>05 · Pair-specific corrections</summary>
 <label>Default head mounting line for this pair <select id="pair-head-mount"></select></label>
-<p>Primary is the default. To mix tangs and sleeves, assign an applicable head line to individual haft sockets below. Secondary lines never match automatically. An unmatched socket does not draw a head; a pair with no valid socket cannot be forged.</p>
+<p>Primary is the default. Individual haft socket choices below take precedence over this default. To mix tangs and sleeves, assign an applicable head line to each desired haft socket. Secondary lines never match automatically. An unmatched socket does not draw a head; a pair with no valid socket cannot be forged.</p>
 <div id="pair-socket-mounts"></div>
 <label>Sprite layer order <select id="layer-order" aria-label="Selected head and haft sprite layer order">
 <option value="haft-over-head">Haft over head</option>
@@ -351,5 +353,5 @@ header .toolbar #pair-undo,header .toolbar #pair-redo{min-width:88px;position:re
 </details></section></main>
 <script src="../../config/modular-weapons.js?v=20261126fixedWeaponSize1"></script><script src="../../js/modular-weapon-bridge-fill.js?v=20261109boreflex1"></script><script src="../../js/color-fill.js?v=20261117h93b0e83"></script><script src="../../config/weapon-sprite-assemblies.js?v=20261126staffClearance1"></script>
 <script src="../../js/weapon-layer-effects.js?v=20261115torchWick2"></script>
-<script src="../../js/modular-weapons.js?v=20261127componentInk3"></script><script src="mount-gizmos.js?v=20261025length001"></script><script src="junction-picker.js?v=20261029recipes001"></script><script src="recipe-provenance.js?v=20261107recipeaudit2"></script><script src="full-assembly-preview.js?v=20261109headvisual2"></script><script src="editor.js?v=20261127componentInk3"></script><script src="sprite-outline.js?v=20261025b"></script><script src="sprite-cutter.js?v=20261029recipes001"></script>
+<script src="../../js/modular-weapons.js?v=20261127componentInk4"></script><script src="mount-gizmos.js?v=20261025length001"></script><script src="junction-picker.js?v=20261029recipes001"></script><script src="recipe-provenance.js?v=20261107recipeaudit2"></script><script src="full-assembly-preview.js?v=20261109headvisual2"></script><script src="editor.js?v=20261127componentInk4"></script><script src="sprite-outline.js?v=20261025b"></script><script src="sprite-cutter.js?v=20261029recipes001"></script>
 </body></html>
