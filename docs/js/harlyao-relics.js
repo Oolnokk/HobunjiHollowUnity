@@ -128,11 +128,12 @@
     const base = (relic.enchantments?.base || []).join('-');
     const flourishes = Object.entries(relic.enchantments?.flourishes || {}).map(([slot, id]) => `${slot}.${id}`).join('-');
     const prefix = SHAPES[relic?.shape]?.origin === 'Fey' ? FEY_BOUND_PREFIX : BOUND_PREFIX; // The origin is an explicit, save-stable bound-key distinction.
-    return `${prefix}${relic.shape}_${relic.uid}_B${base}_F${flourishes}${relic.visual ? encodeVisual(relic.visual) : ''}`;
+    const formulas=Object.entries(relic.enchantments?.formulas||{}).map(([id,n])=>id+'.'+n).join('-'); // Optional suffix keeps old bound keys valid.
+    return `${prefix}${relic.shape}_${relic.uid}_B${base}_F${flourishes}${relic.visual ? encodeVisual(relic.visual) : ''}${formulas?'_R'+formulas:''}`;
   }
 
   function decodeBoundKey(key) {
-    const match = /^(harlyaoBound_|feyBound_)([a-z]+)_([a-z0-9]+)_B([A-Za-z-]*)_F([A-Za-z0-9.-]*)(?:_V(\d+)\.(\d+)\.(\d+)\.(\d+))?$/.exec(String(key || ''));
+    const match = /^(harlyaoBound_|feyBound_)([a-z]+)_([a-z0-9]+)_B([A-Za-z-]*)_F([A-Za-z0-9.-]*)(?:_V(\d+)\.(\d+)\.(\d+)\.(\d+))?(?:_R([A-Za-z0-9.-]+))?$/.exec(String(key || ''));
     if (!match || !SHAPES[match[2]]) return null;
     const origin = match[1] === 'feyBound_' ? 'Fey' : 'Harlyao'; // Self-contained codec also works in the GH minion/ghoul isolated-serialization harness. // A malformed item cannot claim the wrong shape/origin.
     if ((SHAPES[match[2]].origin || 'Harlyao') !== origin) return null;
@@ -142,6 +143,7 @@
       if (slot && id) flourishes[slot] = id;
     }
     const raw = { base: match[4] ? match[4].split('-') : [], flourishes };
+    if(match[10])raw.formulas=Object.fromEntries(match[10].split('-').map(pair=>{const [id,n]=pair.split('.');return [id,Number(n)];}));
     const enchantments = ES()?.cleanWeaponState ? ES().cleanWeaponState(raw) : raw;
     if (origin === 'Fey' && (
       enchantments.base.some(id => ES()?.DEFINITIONS?.[id]?.alignment !== 'Fey')
@@ -162,8 +164,8 @@
   function describeEnchantments(enchantments) {
     const defs = ES()?.DEFINITIONS || {};
     const parts = [];
-    for (const id of enchantments?.base || []) parts.push(`${defs[id]?.displayName || id} (Base · ${defs[id]?.alignment || '?'})`);
-    for (const [slot, id] of Object.entries(enchantments?.flourishes || {})) parts.push(`${defs[id]?.displayName || id} (${slot.toUpperCase()} Flourish · ${defs[id]?.alignment || '?'})`);
+    for (const id of enchantments?.base || []) parts.push(`${defs[id]?.displayName || id} (Base · ${defs[id]?.alignment || '?'} · Formula ${enchantments.formulas?.[id]||1})`);
+    for (const [slot, id] of Object.entries(enchantments?.flourishes || {})) parts.push(`${defs[id]?.displayName || id} (${slot.toUpperCase()} Flourish · ${defs[id]?.alignment || '?'} · Formula ${enchantments.formulas?.[id]||1})`);
     return parts;
   }
 
@@ -201,11 +203,12 @@
     return { base, flourishes };
   }
 
-  function makeRelic(shape, origin = 'Harlyao') {
+  function makeRelic(shape, origin = 'Harlyao', source=origin==='Fey'?'fey':'common', difficulty) {
     const shapes = Object.keys(SHAPES).filter(id => (SHAPES[id].origin || 'Harlyao') === origin); // Boss-vault and Boney shape pools never overlap.
     if (!shapes.length) return null;
     const selected = shapes.includes(shape) ? shape : shapes[Math.floor(rnd() * shapes.length)];
-    return { shape: selected, origin, uid: newUid(), enchantments: rollEnchantments(origin) };
+    const state=rollEnchantments(origin); // Preserve source-specific research with this weapon.
+    return { shape: selected, origin, uid: newUid(), enchantments: source==='common'?state:(ES()?.rollFormulaState?.(state,source,difficulty,rnd)||state) };
   }
   function makeFeyRelic(shape) {
     return makeRelic(shape, 'Fey'); // Boney-specific reward generator; still uses real inventory, unbinding, gear and mastery.
@@ -268,7 +271,7 @@
 
   function rollBossChestRelic() {
     if (rnd() >= TUNING.BOSS_CHEST_RELIC_CHANCE) return [];
-    const relic = makeRelic();
+    const relic = makeRelic(undefined,'Harlyao','final');
     const key = grantBoundRelic(relic);
     return key ? [`🗡️ Bound ${SHAPES[relic.shape].label}`] : [];
   }
@@ -430,8 +433,9 @@
     if (!es.isBaseUnlocked(id)) return { ok: false, reason: 'locked' };
     if (isFeyEnchantment(id) && !requireFeyQuest()) return { ok: false, reason: 'quest' };
     const current = es.stateFor(weaponKey).base;
-    if (current[slotIndex] === id) return { ok: false, reason: 'unchanged' };
-    if (current.includes(id)) {
+    const level=es.formulaLevel?.(id)||1; // Combine all known distinct formulas when applying or upgrading.
+    if(current[slotIndex]===id&&(es.appliedLevel?.(weaponKey,id)||1)>=level)return {ok:false,reason:'unchanged'};
+    if (current.includes(id) && current[slotIndex] !== id) {
       deps?.showToast?.('That weapon already carries that enchantment.', false);
       return { ok: false, reason: 'duplicate' };
     }
@@ -440,7 +444,7 @@
     const result = window.GearMemberTransaction?.run?.({
       mutate: () => {
         if (!spendGold(price)) return { ok: false, reason: 'gold', price };
-        return es.equipBase(weaponKey, index, id, { deferSave: true })
+        return es.equipBase(weaponKey, index, id, { deferSave: true, level })
           ? { ok: true, price } : { ok: false, reason: 'enchant' };
       },
     }) || { ok: false, reason: 'unavailable' };
@@ -455,12 +459,13 @@
     if (!slotIds().includes(slotId) || es.allowsFlourishSlot?.(id, slotId) === false) return { ok: false, reason: 'slot' };
     if (!es.isFlourishUnlocked(id, slotId)) return { ok: false, reason: 'locked' };
     if (isFeyEnchantment(id) && !requireFeyQuest()) return { ok: false, reason: 'quest' };
-    if (es.flourishForSlot(slotId, weaponKey) === id) return { ok: false, reason: 'unchanged' };
+    const level=es.formulaLevel?.(id)||1; // Research is shared across the learned slots for this enchantment.
+    if(es.flourishForSlot(slotId,weaponKey)===id&&(es.appliedLevel?.(weaponKey,id,slotId)||1)>=level)return {ok:false,reason:'unchanged'};
     const price = feyServicePrice(TUNING.APPLY_FLOURISH_PRICE, isFeyEnchantment(id)); // Same Fey fee rules as Base enchanting.
     const result = window.GearMemberTransaction?.run?.({
       mutate: () => {
         if (!spendGold(price)) return { ok: false, reason: 'gold', price };
-        return es.setFlourish(weaponKey, slotId, id, { deferSave: true })
+        return es.setFlourish(weaponKey, slotId, id, { deferSave: true, level })
           ? { ok: true, price } : { ok: false, reason: 'enchant' };
       },
     }) || { ok: false, reason: 'unavailable' };
@@ -633,7 +638,7 @@
     for (let i = 0; i < (es?.BASE_LIMIT || 2); i++) {
       const current = state.base[i] || '';
       const options = [{ value: '', label: '— choose a learned Base enchantment —' }]
-        .concat(unlocked.base.filter(id => id === current || !state.base.includes(id)).map(id => ({ value: id, label: `${defs[id].icon || ''} ${defs[id].displayName} · ${defs[id].alignment}` })));
+        .concat(unlocked.base.filter(id => id === current || !state.base.includes(id)).map(id => ({ value: id, label: `${defs[id].icon || ''} ${defs[id].displayName} · Lv ${es.formulaLevel?.(id)||1} · ${defs[id].alignment}` })));
       const pick = select(options, current);
       const apply = button('Apply', () => pick.value && applyBase(selectedWeaponKey, i, pick.value), !window.ArtifactCollection?.unlocked?.('base') || (window.DelversGuild && !window.DelversGuild.canEnchant()) || !unlocked.base.length); // Label reflects the currently selected Fey/planar origin.
       const updateApplyLabel = () => { apply.textContent = `${isFeyEnchantment(pick.value) ? 'Pretend to enchant' : 'Apply'} (${feyServicePrice(TUNING.APPLY_BASE_PRICE, isFeyEnchantment(pick.value))}g)`; };
@@ -642,13 +647,13 @@
       const controls = [pick, apply];
       if (current) controls.push(button(`${isFeyEnchantment(current) ? 'Pretend to remove' : 'Remove'} (${feyServicePrice(TUNING.REMOVE_PRICE, isFeyEnchantment(current))}g)`, () => clearSlot(selectedWeaponKey, 'base', i), !window.ArtifactCollection?.unlocked?.('remove') || (window.DelversGuild && !window.DelversGuild.isMember())));
       list.appendChild(row('✦', `Base Enchantment ${i + 1}`,
-        esc(current ? `${defs[current].displayName} (${defs[current].alignment}) — ${defs[current].description}` : 'Empty. Applies to every qualifying hit.'), controls));
+        esc(current ? `${defs[current].displayName} Lv ${es.appliedLevel?.(selectedWeaponKey,current)||1} (${defs[current].alignment}) — ${defs[current].description}` : 'Empty. Applies to every qualifying hit.'), controls));
     }
 
     for (const slotId of slotIds()) {
       const current = state.flourishes?.[slotId] || '';
       const options = [{ value: '', label: '— choose a learned Flourish —' }]
-        .concat(unlocked.flourish.filter(entry => entry.slotId === slotId && es?.allowsFlourishSlot?.(entry.id, slotId) !== false).map(entry => ({ value: entry.id, label: `${defs[entry.id].icon || ''} ${defs[entry.id].displayName} · ${defs[entry.id].alignment}` })));
+        .concat(unlocked.flourish.filter(entry => entry.slotId === slotId && es?.allowsFlourishSlot?.(entry.id, slotId) !== false).map(entry => ({ value: entry.id, label: `${defs[entry.id].icon || ''} ${defs[entry.id].displayName} · Lv ${es.formulaLevel?.(entry.id)||1} · ${defs[entry.id].alignment}` })));
       const pick = select(options, current);
       const any = options.length > 1;
       const apply = button('Apply', () => pick.value && applyFlourish(selectedWeaponKey, slotId, pick.value), !window.ArtifactCollection?.unlocked?.('flourish') || (window.DelversGuild && !window.DelversGuild.canEnchant()) || !any); // Fey Flourishes use the same doubled fee and pretend label as Base magic.
@@ -658,11 +663,11 @@
       const controls = [pick, apply];
       if (current) controls.push(button(`${isFeyEnchantment(current) ? 'Pretend to remove' : 'Remove'} (${feyServicePrice(TUNING.REMOVE_PRICE, isFeyEnchantment(current))}g)`, () => clearSlot(selectedWeaponKey, 'flourish', slotId), !window.ArtifactCollection?.unlocked?.('remove') || (window.DelversGuild && !window.DelversGuild.isMember())));
       list.appendChild(row('❋', `${esc(flourishTriggerLabel(slotId, selectedWeaponKey))} Flourish`,
-        esc(current ? `${defs[current].displayName} (${defs[current].alignment}) — ${defs[current].description}` : any ? 'Empty.' : `Garanki has not learned any Flourish for ${slotId.toUpperCase()} yet.`), controls));
+        esc(current ? `${defs[current].displayName} Lv ${es.appliedLevel?.(selectedWeaponKey,current,slotId)||1} (${defs[current].alignment}) — ${defs[current].description}` : any ? 'Empty.' : `Garanki has not learned any Flourish for ${slotId.toUpperCase()} yet.`), controls));
     }
 
     list.appendChild(heading('What Garanki has learned'));
-    const learned = [...unlocked.base.map(id => `${defs[id].displayName} (Base)`), ...unlocked.flourish.map(entry => `${defs[entry.id].displayName} (${entry.slotId.toUpperCase()} Flourish)`)];
+    const learned=[...new Set([...unlocked.base,...unlocked.flourish.map(entry=>entry.id)])].map(id=>`${defs[id].displayName}: Lv ${es.formulaLevel?.(id)||1} — formulas ${(es.formulaIds?.(id)||[1]).join(', ')} / 5`);
     list.appendChild(note(learned.length ? learned.join(' · ') : 'Nothing yet — each relic you have him unbind teaches him its enchantments.'));
 
     if (deps.isDevMode?.()) {
@@ -678,6 +683,7 @@
       unbound: Object.keys(gear()?.harlyaoRelics || {}),
       latestChange: 'Unbinding clears verdigris and resets Mastery to 0; bronze relics then age with their new owner.',
       unlocks: ES()?.unlockedOptions?.() || null,
+      formulas: Object.fromEntries(Object.keys(ES()?.DEFINITIONS||{}).map(id=>[id,ES()?.formulaIds?.(id)||[]])), // Mobile research diagnostics.
       collection: window.ArtifactCollection?.debugSnapshot?.() || null,
       feyQuest: window.FeyArmamentQuest?.debugSnapshot?.() || null, // Visible through the existing mobile artifact/enchanting diagnostics.
     };

@@ -71,7 +71,7 @@
       const px=(c.site.x+c.nx*.5)*tile,pz=(c.site.z+c.nz*.5)*tile;
       try{
         const minion=await root.MinionCombat?.makeEntity?.({speciesId:'harlyao-skeleton',name:'Harlyao Skeleton',tier:1,x:px,y:pz,zoneId:mapId,weaponMetalKey:'nativeCopper',
-          extra:{homeX:px,homeY:pz,state:'chase',wallCoffin:c.index,ruinNoLoot:root.DevRandomRuin?.getRuntimeContext?.()?.noLoot===true}});
+          extra:{homeX:px,homeY:pz,state:'chase',wallCoffin:c.index,ruinFormulaTier:tier,ruinNoLoot:root.DevRandomRuin?.getRuntimeContext?.()?.noLoot===true}});
         if(!minion)return;
         if(session!==api||(isActive&&!isActive())){retireSkeleton(minion,true);return;}
         const DS=root.DynamicSurfaces,born=performance.now();

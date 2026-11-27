@@ -176,9 +176,9 @@
     }
     const trinketParts = window.TrinketSystem?.claimLoot?.(gained, chest.culture==='hachutu'?'hachutuRuin':'harlyaoRuin') || []; // trinket_<id> entries become gear, never inventory stacks.
     const relicParts = !chest.boss ? [] : chest.culture==='hachutu' ? (window.HachutuRelics?.grantBossWeapon?.() || []) : (window.HarlyaoRelics?.rollBossChestRelic?.(chest) || []);
-    if(chest.secret&&Math.random()<(chest.tier===1?.06:.10)){
+    if(!chest.boss&&chest.culture!=='hachutu'&&Math.random()<Math.min(.25,.06+.04*(chest.tier-1))){
       const relics=window.HarlyaoRelics; // The ordinary bound-enchanted weapon is saved by the same Garanki-ready inventory authority as boss loot.
-      const key=relics?.grantBoundRelic?.(relics.makeRelic());
+      const key=relics?.grantBoundRelic?.(relics.makeRelic(undefined,'Harlyao','ruin',window.DevRandomRuin?.getRuntimeContext?.()?.tier||chest.tier));
       if(key)relicParts.push('🗡️ Bound enchanted weapon');
     }
     const parts = [...(deps?.grantLoot?.(gained) || []), ...trinketParts, ...relicParts];

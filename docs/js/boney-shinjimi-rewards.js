@@ -29,10 +29,10 @@
     const slots = window.Combat?.loadout?.SLOT_IDS || SLOT_IDS;
     const missing = [];
     for (const def of defs) {
-      if (def.type === 'Base' && !es.isBaseUnlocked?.(def.id)) missing.push({ kind: 'base', id: def.id });
+      if (def.type === 'Base' && (!es.isBaseUnlocked?.(def.id)||(es.formulaLevel&&es.formulaLevel(def.id)<5))) missing.push({ kind: 'base', id: def.id });
       if (def.type === 'Flourish') {
         for (const slotId of slots) {
-          if (!es.isFlourishUnlocked?.(def.id, slotId)) missing.push({ kind: 'flourish', id: def.id, slotId });
+          if (!es.isFlourishUnlocked?.(def.id, slotId)||(es.formulaLevel&&es.formulaLevel(def.id)<5)) missing.push({ kind: 'flourish', id: def.id, slotId });
         }
       }
     }
@@ -52,7 +52,11 @@
       relic.enchantments.flourishes ||= {};
       relic.enchantments.flourishes[missing.slotId] = missing.id;
     }
-    return relic; // Every enchantment belongs to Fey; >=1 random slot teaches a still-unlearned Fey enchantment or flourish permutation.
+    const es=window.EnchantmentSystem; // Boney continues supplying missing research after all eligible slots are learned.
+    const known=es?.formulaIds?.(missing.id)||[];
+    const available=[1,2,3,4,5].filter(n=>!known.includes(n));
+    if(available.length)(relic.enchantments.formulas||={})[missing.id]=pick(available,rng);
+    return relic;
   }
 
   function chooseTrinket(rng = random) {

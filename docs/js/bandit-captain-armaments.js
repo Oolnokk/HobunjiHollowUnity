@@ -234,8 +234,9 @@
     const existing=fey?window.ModularWeapons.decode(entity.def.weaponKey):null;
     const choice = (existing&&all.find(pair=>pair.shaft===existing.shaft&&pair.head===existing.head))||choose(fey?all:(mixed.length?mixed:all),d.rnd||random);
     if (!choice) return entity;
-    const state = fey ? rollFeyEnchantments(capStars(tier), d.rnd || random) : rollEnchantments(capStars(tier), d.rnd || random);
-    if (!state) return entity;
+    const rolled = fey ? rollFeyEnchantments(capStars(tier), d.rnd || random) : rollEnchantments(capStars(tier), d.rnd || random);
+    if(!rolled)return entity;
+    const state=window.EnchantmentSystem?.rollFormulaState?.(rolled,fey?'fey':'captain',capStars(tier),d.rnd||random)||rolled; // Stable spawn roll.
     const uid = Date.now().toString(36) + '-' + (++serial).toString(36) + '-' + Math.floor((d.rnd || random)() * 0x10000).toString(36);
     const key = PREFIX + [choice.shaft, choice.head, metal, uid].join(':');
     const record = { ...choice, metal, uid, stars: capStars(tier), enchantments: state, ...(fey ? {origin:'Fey'} : {}) };
@@ -323,8 +324,8 @@
     if (!record || !deps?.ITEM_DEFS) return null;
     const label = boundLabel(record);
     const defs = window.EnchantmentSystem.DEFINITIONS; // Pack detail shows the actual recovered magic before registration.
-    const enchantmentLabels = [...record.enchantments.base.map(id => defs[id].displayName + ' (Base)'),
-      ...Object.entries(record.enchantments.flourishes).map(([slot, id]) => defs[id].displayName + ' (' + slot.toUpperCase() + ' Flourish)')];
+    const enchantmentLabels = [...record.enchantments.base.map(id => defs[id].displayName + ' (Base · Formula '+(record.enchantments.formulas?.[id]||1)+')'),
+      ...Object.entries(record.enchantments.flourishes).map(([slot, id]) => defs[id].displayName + ' (' + slot.toUpperCase() + ' Flourish · Formula '+(record.enchantments.formulas?.[id]||1)+')')];
     const def = { label, icon: '🗡️', cat: 'material', sellPrice: 90 + 30 * (record.enchantments.base.length + Object.keys(record.enchantments.flourishes).length),
       tags: [record.origin, 'Bound'], magicalStatus: 'bound', uniqueInventoryKey: true,
       desc: 'Still bound to its former owner. It cannot be equipped until Garanki Gabu re-registers it. Registration teaches him its enchantments: ' + enchantmentLabels.join('; ') + '.' };

@@ -1499,6 +1499,12 @@
         if (!trophyKey && c._banditCaptainArmament && !captainWeapon) return { ok: false, message: 'Could not collect the bound weapon. Try again.' };
         const coffinRelic=c.ruinWallCoffin?window.GhoulSpecialVariants?.lootEnchantedWeapon?.(c):null;
         if(c.ruinWallCoffin&&!coffinRelic)return {ok:false,message:'Could not collect the bound weapon; try again.'}; // Preserve corpse if grant fails.
+        let lichRelic=null; // A carried ancient armament is separate from the unarmed lich casting socket.
+        if(!trophyKey&&c.enemyClass==='harlyao-lich'&&!c.ruinNoLoot&&c.areaId!=='map_dev_arena'&&window.HarlyaoRelics?.makeRelic){
+          if(c._lichFormulaRelic===undefined)c._lichFormulaRelic=Math.random()<.5?window.HarlyaoRelics.makeRelic(undefined,'Harlyao','final'):null;
+          if(c._lichFormulaRelic&&!c._lichFormulaKey){c._lichFormulaKey=window.HarlyaoRelics.grantBoundRelic(c._lichFormulaRelic);if(!c._lichFormulaKey)return {ok:false,message:'Could not collect the lich relic; try again.'};}
+          lichRelic=c._lichFormulaKey;
+        }
         const parts = grantBanditLoot(trophyKey ? { [trophyKey]: 1 } : deps.rollLootPool(c.def.lootPool, { entity: c }));
         if (trophyKey) c.corpseLooted = true; // Mark the actual source before despawn, not only the temporary interaction object.
         if (!trophyKey) { // Ordinary bandits, ghouls and liches retain every existing corpse bonus; tribe hunters receive their trophy only.
@@ -1507,6 +1513,7 @@
           grantFlaskerLoadoutLoot(c, parts); // Flaskers always surrender several of both infinite combat loadout types on death.
           const relic = coffinRelic||window.GhoulSpecialVariants?.lootEnchantedWeapon?.(c); // A Shadowknight's enchanted weapon comes off the body, still bound.
           if (relic) parts.push('🗡️ Bound ' + relic.label);
+          if(lichRelic)parts.push('🗡️ Bound lich relic weapon');
           if (captainWeapon) parts.push('⚒️ ' + captainWeapon);
           for (const item of banditWornClothingItems(c.rosterRecord, c)) {
             deps.getPackClothing().push(item);
