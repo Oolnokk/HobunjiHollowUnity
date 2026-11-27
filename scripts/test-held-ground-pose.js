@@ -182,6 +182,8 @@ if(THREE){
   assert.equal(plane.geometry,fitted,'later frames retain physical length');
   close(solver.snapshot().shortening,result.shortening);
   assert.equal(solver.snapshot().contactHullBuilds,result.contactHullBuilds,'live pose changes reuse the fitted hull');
+  assert.ok(result.compressionRowBuilds>0,'initial fit builds the strip layout');
+  assert.equal(solver.snapshot().compressionRowBuilds,result.compressionRowBuilds,'unchanged fitted geometry never rebuilds shortening rows');
   const originalImage=plane.material.map.image;
   plane.material.map.image={...originalImage};
   solver.constrainWeapon(holder,weapon,ctx);
