@@ -31,6 +31,7 @@ jobs:
         uses: actions/checkout@v6
       - name: Validate save entrypoints
         run: |
+          node --check docs/js/browser-drive-folder.js
           node --check docs/js/netlify-cloud-save.js
           node --check docs/js/save-startup-gate.js
           node --check docs/onboarding-core.js

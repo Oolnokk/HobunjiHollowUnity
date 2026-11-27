@@ -1,58 +1,61 @@
-# Hosting and Netlify retirement — staged migration
+# Hosting and Netlify retirement
 
-This is the first stage of the replacement originally proposed in #552.
-The new static game host is GitHub Pages; Windows and Android continue to use
-their existing canonical local-save-folder engine. Android uses native Google
-Drive authorization; Windows uses Google Drive for Desktop. No save formats,
-folder-write behavior, native permissions, or existing cloud accounts are changed.
+GitHub Pages hosts the static game. Android (native Google authorization),
+Windows (Google Drive for Desktop), and browsers (direct Drive REST transport)
+use the current LocalSaveFolder portable layout: characters/, worlds/,
+farm-layouts/, patterns/, recovery/ and manifest.json. No separate cloud
+snapshot format is introduced.
 
 ## Enable and verify Pages
 
-1. In GitHub repository Settings → Pages, set the deployment source to
-   GitHub Actions.
-2. Merge this stage only after reviewing the changes. The deployment workflow
-   runs for main changes under docs/ and can also be triggered manually on main.
-3. Verify https://oolnokk.github.io/HobunjiHollowUnity/ loads the game, assets,
-   character creator, preview tools, and ordinary local saves. GitHub Pages
-   uses a different origin from Netlify, so its browser storage starts empty.
-   It does not automatically inherit existing saves or permissions.
-4. Keep the original Netlify deployment available throughout the migration.
-   Do not change DNS, disable Identity, delete Blobs, or delete the old site
-   before confirming recovery and migration.
+In repository Settings → Pages choose GitHub Actions. After merging, the
+deployment workflow publishes docs/ to
+https://oolnokk.github.io/HobunjiHollowUnity/. The Pages origin has separate
+browser storage; it does not inherit Netlify's browser saves or permissions.
+Keep the original Netlify deployment until old account saves have been recovered.
 
-## Existing player saves
+## Browser Drive setup
 
-- On Windows, configure Google Drive for Desktop and select the existing
-  save directory using Local Save Folder, not the Drive root.
-- On Android, follow android/README.md to configure and authorize native
-  Drive, select the same save directory, and explicitly load it before enabling
-  writes. The required OAuth and restricted-scope setup is outside this repo.
-- In a supported desktop browser, use its local folder chooser with a
-  Google Drive for Desktop directory. On browsers without a folder picker,
-  ordinary browser saves remain available, but direct browser Drive sync is
-  not yet implemented. Use the installed app for Drive access.
-- If a save exists only in Netlify, first preserve any newer local progress.
-  Open the original Netlify deployment, authenticate, and explicitly choose
-  the intended cloud revision using the existing conflict controls. Restore
-  it to that browser and back up to a **new empty** local folder using the
-  existing folder UI. Verify the backup can be loaded before copying it
-  into a Google Drive directory. Never overwrite an existing Drive save
-  without a separate backup and explicit reconciliation. Do not use a
-  disposable Festival Test save for migration.
+1. In Google Cloud enable Drive API, configure the OAuth consent screen and
+   add test users as appropriate. Create a Web application OAuth client.
+2. Add https://oolnokk.github.io as an authorized JavaScript origin
+   (or the exact HTTPS test host). Enter the public client ID in
+   docs/js/browser-drive-config.js for a deployment default, or paste it
+   in the in-game selector. Never put a client secret or access token in
+   source. No Google Picker/API key is required; paste the dedicated folder URL.
+3. The full Drive scope is restricted and requires consent/verification as
+   applicable; drive.file does not automatically include files written by
+   another client (e.g. Windows Drive sync). The adapter restricts all game
+   I/O to the selected dedicated folder and its recognized save directories.
+   Access tokens are memory-only; reconnect after reload/expiry.
+4. Choose Local Save Folder → Connect Google Drive, paste the URL of the
+   existing dedicated game save directory, and authorize. Choose Load from
+   Folder to explicitly accept the remote baseline. A new empty folder may
+   be initialized only by that explicit choice. Keep other devices closed
+   while playing. On a conflict or interrupted write stop, preserve any
+   unsaved browser progress, then reconnect/load or use recovery.
+5. Verify browser/Android/Windows round trips, permission expiry, a changed
+   remote file, large uploads, interruption, and actual Google CORS/popup
+   behavior before replacing the old site. Google Drive has no transactional
+   multi-file compare-and-swap; staged file publication and prior version
+   backups do not make simultaneous play safe.
 
-## Remaining work before final retirement
+## Migrate old saves
 
-- Implement browser OAuth and Drive access as a transport for the current
-  canonical save-folder layout, not the independent snapshot JSON used in
-  the September prototype #552. Keep credentials out of source, preserve
-  selected-folder authorization, bounded writes and conflict/recovery rules.
-- Verify live Google authorization, browser/Android/PC round trips, reconnect,
-  conflicting revisions, interrupted writes, and migration on real devices.
-- Verify Pages deploy and relative paths and compare actual storage usage.
-- Only after existing Netlify saves have been recovered and the replacement
-  is validated, remove netlify.toml, Netlify functions and dependencies,
-  the legacy browser client, and migration-only account UI.
+On Windows choose the existing Drive for Desktop game directory using Local
+Save Folder. On Android follow android/README.md for native setup. If a save
+exists only in Netlify, preserve newer local progress first. Open the original
+Netlify deployment, authenticate, choose the intended cloud revision, restore
+to that browser and back up to a new empty local folder. Verify the backup
+before copying to Drive; never overwrite another save without reconciliation.
+Do not migrate a disposable Festival Test timeline.
 
-The legacy service remains intentionally present for recovery. Do not treat
-this stage as complete removal of Netlify or a validated direct browser Drive
-implementation.
+## Retirement gate
+
+Do not disable the old service, delete Identity/Blobs, or change DNS until
+existing saves have been recovered and the production Drive round trip has
+passed. The legacy client and server functions are intentionally retained for
+recovery on their original host, not used by Pages or native applications.
+After verification remove the legacy client, Netlify functions, configuration
+and package dependencies in a follow-up cutover. This is an explicit
+data-preservation gate, not a requirement to run Netlify for the new game.

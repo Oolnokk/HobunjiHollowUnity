@@ -67,7 +67,7 @@
   }
 
   function isSupported() {
-    return typeof window.showDirectoryPicker === 'function' && typeof indexedDB !== 'undefined';
+    return (typeof window.showDirectoryPicker === 'function' || window.HobunjiBrowserDrive?.isSupported?.()) && typeof indexedDB !== 'undefined';
   }
 
   function openDb() {
@@ -85,7 +85,7 @@
     const db = await openDb();
     return new Promise((resolve, reject) => {
       const req = db.transaction(STORE, 'readonly').objectStore(STORE).get(key);
-      req.onsuccess = () => resolve(window.HobunjiAndroidFiles?.restoreHandle?.(req.result) ?? req.result ?? null); // Restore Android SAF directory token when read from IndexedDB.
+      req.onsuccess = () => { try { resolve(window.HobunjiAndroidFiles?.restoreHandle?.(req.result) ?? window.HobunjiBrowserDrive?.restoreHandle?.(req.result) ?? req.result ?? null); } catch (error) { reject(error); } }; // Restore native or browser Drive descriptor; never persist an access token.
       req.onerror = () => reject(req.error);
     });
   }
@@ -94,7 +94,7 @@
     const db = await openDb();
     return new Promise((resolve, reject) => {
       const tx = db.transaction(STORE, 'readwrite');
-      tx.objectStore(STORE).put(window.HobunjiAndroidFiles?.serializeHandle?.(value) ?? value, key); // Preserve normal native handles; serialize Android SAF tokens.
+      tx.objectStore(STORE).put(window.HobunjiAndroidFiles?.serializeHandle?.(value) ?? window.HobunjiBrowserDrive?.serializeHandle?.(value) ?? value, key); // Preserve normal native handles; serialize Android SAF tokens.
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
     });
@@ -960,9 +960,10 @@
         notify();
         return getStatus();
       }
+      const driveVerified = _handle.assertDriveUnchanged ? await _handle.assertDriveUnchanged(force && recoveryKind === 'restore') : false; // Verify every Drive revision before any canonical write.
       const delta = prepareChangedFiles(meta, farmLayouts); // Compare the captured live snapshot, not only browser cache keys.
       if (automatic && !force && recoveryKind === 'auto' && !_recoveryNeedsRefresh && delta && !delta.changed && !_lastError
-        && await canonicalFilesUnmodified() && await farmLayoutFilesUnmodified()) {
+        && (driveVerified || (await canonicalFilesUnmodified() && await farmLayoutFilesUnmodified()))) {
         _lastSaveWork = { written: 0, unchanged: delta.digests.size };
         _unchangedAutosavesSkipped++;
         _lastAction = 'autosync-skipped-unchanged';
@@ -1112,6 +1113,7 @@
       _lastManifestStamp = null;
       _lastError = String(error?.message || error);
       _lastAction = 'save-error';
+      if (_handle.assertDriveUnchanged) stopAutoSync(); // Never repeatedly retry remote conflicts or partial writes.
     }
     // The checkpoint writer already mirrored the affected slots. Reconcile the full history
     // when a folder is first armed, a restore completes, or a write may have failed.
@@ -1143,6 +1145,7 @@
   async function _saveLockProgressImpl({ characterId, worldId, lockId, record }) {
     try {
       if (!canSaveLockProgress(characterId)) throw new Error('Fast lock progress save has no verified folder baseline. Use the full save.');
+      await _handle.assertDriveUnchanged?.();
       const profile = window.__hobunjiPlayerProfile; // Prevent an in-flight lock modal from changing another character after a world switch.
       if (String(profile?.characterId) !== String(characterId) || String(profile?.worldId) !== String(worldId)) {
         throw new Error('Lock progress save belongs to another active character or world.');
@@ -1218,6 +1221,7 @@
       _lastManifestStamp = null;
       _lastError = String(error?.message || error);
       _lastAction = 'save-error';
+      if (_handle.assertDriveUnchanged) stopAutoSync(); // Never repeatedly retry remote conflicts or partial writes.
     }
     notify({ refreshRecovery: Boolean(_lastError) }); // This targeted write changes no recovery checkpoint.
     return getStatus();
@@ -1242,8 +1246,10 @@
     try {
       _committedFileState = null; // Explicit folder loads invalidate previous browser->disk comparisons.
       _lastManifestStamp = null;
+      await _handle.beginDriveLoad?.(); // Capture a remote version baseline before the explicit import.
       const folder = await readFolderSnapshot();
       if (!folder.exists) {
+        await _handle.finishDriveLoad?.(); // Empty folder initialization is an explicit user choice.
         _lastAction = 'initialized-empty-folder';
         const status = await syncNow({ automatic: false });
         return {
@@ -1279,6 +1285,8 @@
       }
 
       _ignoredFarmLayoutBackupFiles = folder.ignoredFarmLayoutBackupFiles || []; // Show ignored copies in the mobile save diagnostics.
+      if (_handle.finishDriveLoad && folder.corruptFarmLayoutFiles.length) throw new Error('Google Drive farm files are corrupt. Recover them before writing.');
+      await _handle.finishDriveLoad?.(); // Reject changes made during the folder read before importing or arming autosync.
       const browserMeta = readBrowserMeta();
       const browserLayouts = readBrowserFarmLayouts(browserMeta, false);
       const metaChanged = !browserMeta || !saveMetaMatches(browserMeta, folder.meta);
@@ -1405,7 +1413,7 @@
     try {
       while (_syncPromise) await _syncPromise; // Finish every older writer before opening the native root chooser.
       stopAutoSync(); // A writer finishing during the drain must not re-arm the previous root.
-      const handle = await window.showDirectoryPicker({ mode: 'readwrite' });
+      const handle = await (window.HobunjiBrowserDrive?.isSupported?.() ? window.HobunjiBrowserDrive.pickFolder() : window.showDirectoryPicker({ mode: 'readwrite' }));
       pickerCompleted = true;
       await rememberSelectedFolder(handle);
       switchCommitted = true;
@@ -1452,7 +1460,7 @@
     try {
       while (_syncPromise) await _syncPromise; // Native Drive picker may replace the selected root before returning.
       stopAutoSync();
-      const handle = await window.showDirectoryPicker({ mode: 'readwrite' }); // Same native picker invocation as normal selection.
+      const handle = await (window.HobunjiBrowserDrive?.isSupported?.() ? window.HobunjiBrowserDrive.pickFolder() : window.showDirectoryPicker({ mode: 'readwrite' })); // Same native picker invocation as normal selection.
       pickerCompleted = true;
       await rememberSelectedFolder(handle);
       _state = 'ready';
