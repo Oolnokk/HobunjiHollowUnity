@@ -380,6 +380,40 @@ for (const meshBudget of ['npc', 'player']) {
     widths.left = .14; widths.right = .19; bounds = { left: .25, right: .75 }; revision++;
     pants.update(); checkWidths();
     for (let i = 0; i < baseline.length; i++) assert(Math.abs(pants.basePositions[i] - baseline[i]) < 1e-6, 'absolute refits are reversible without accumulating drift');
+    // Hostiles bind pants to a portrait pivot and legs to a sibling pivot.
+    const scene = actor.model.parent, hostile = new THREE.Group();
+    scene.add(hostile); hostile.add(actor.model); hostile.add(actor.legs);
+    hostile.position.set(12000, 0, -9000); // Large shared world translations are valid.
+    pants.update(); checkWidths();
+    const oldPlane = actor.model.getObjectByName('frontPlane');
+    const replacement = oldPlane.clone();
+    actor.model.remove(oldPlane); actor.model.add(replacement);
+    oldPlane.position.set(0, 0, 0); oldPlane.updateMatrixWorld(true);
+    revision++; pants.update(); checkWidths();
+    for (let i = 0; i < baseline.length; i++) assert(Math.abs(pants.basePositions[i] - baseline[i]) < 1e-5,
+      'portrait replacement at a distant map location leaves the fitted grid local');
+    for (const gpu of [false, true]) {
+      Renderer.setGpuSkinning(gpu); pants.update();
+      const before = Float32Array.from(pants.geometry.getAttribute('position').array);
+      const uniforms = JSON.stringify(pants.maskUniforms.uPantsBoneT.value);
+      const ringUniforms = JSON.stringify(pants.maskUniforms.uPantsRingShift.value);
+      const rejected = pants.invalidPoseFrames;
+      actor.nodes.left.thigh.position.x += 12000; // Inconsistent sibling-bone transform.
+      pants.update(true);
+      assert.strictEqual(pants.invalidPoseFrames, rejected + 1, 'map-scale bone sample rejected in either skinning mode');
+      assert.deepStrictEqual(Float32Array.from(pants.geometry.getAttribute('position').array), before);
+      assert.strictEqual(JSON.stringify(pants.maskUniforms.uPantsBoneT.value), uniforms);
+      assert.strictEqual(JSON.stringify(pants.maskUniforms.uPantsRingShift.value), ringUniforms);
+      actor.nodes.left.thigh.position.x -= 12000;
+      pants.update();
+      const beforeVersion = pants.baseVersion;
+      actor.legs.position.x = 12000; revision++; pants.update();
+      assert.strictEqual(pants.baseVersion, beforeVersion, 'invalid neutral pose cannot overwrite fitted grid');
+      actor.legs.position.x = 0; pants.update();
+      assert.strictEqual(pants.baseVersion, beforeVersion + 1, 'valid anatomy revision retries after pose recovers');
+      checkWidths();
+    }
+    Renderer.setGpuSkinning(true);
     pants.dispose();
   }
 }
