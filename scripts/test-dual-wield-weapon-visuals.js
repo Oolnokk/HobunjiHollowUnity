@@ -83,6 +83,7 @@ class GripQuaternion {
   constructor(x = 0, y = 0, z = 0, w = 1) { this.set(x, y, z, w); }
   set(x, y, z, w) { Object.assign(this, { x, y, z, w }); return this; }
   clone() { return new GripQuaternion(this.x, this.y, this.z, this.w); }
+  copy(q) { return this.set(q.x, q.y, q.z, q.w); }
   invert() { this.x *= -1; this.y *= -1; this.z *= -1; return this; }
   normalize() { return this; }
   multiply(q) {
@@ -147,6 +148,43 @@ gripState.invisible = false;
   assert.equal(syncCalls, 2, 'full sync (Settings off): one sync per hand, as before');
   socketScope.leanSync = true;
 }
+// Execute the real anatomical reflection helper with the default calibrated
+// right/left bases, arbitrary grip rotation, and a yawed portrait.
+{
+  const mirrorPaired = vm.runInNewContext(`${dual.slice(mirrorStart, dual.indexOf('  function bakedWorldQuaternion(', mirrorStart))}\n(${dual.slice(dual.indexOf('  function mirrorPairedWristOrientation('), dual.indexOf('  function transformSocketForHand(')).trim()})`, {});
+  const q = (x=0,y=0,z=0,w=1) => new GripQuaternion(x,y,z,w);
+  const yaw = q(0, Math.sin(.37), 0, Math.cos(.37));
+  const halfTurn = q(0,1,0,0);
+  const rightBasis = q(), leftBasis = halfTurn;
+  const rig = { copyGripWristBasis(side, out, calibrationSide) {
+    if (side === 'left') assert.equal(calibrationSide, 'right');
+    return out.copy(side === 'right' ? rightBasis : leftBasis);
+  }};
+  const record = { rig };
+  const state = { mirrorOffhand: true, invisible: false, frameScratch: {
+    bodyQuaternion: yaw, mirrorWristLocal: q(), mirrorWristInverse: q(),
+    mirrorWristRightBasis: q(), mirrorWristLeftBasis: q(),
+  }};
+  const solve = { dualWieldRecord: record, dualWieldState: state };
+  const raw = yaw.clone().multiply(q(.5,.5,-.5,.5));
+  const out = q();
+  assert.equal(mirrorPaired(record, solve, raw, out), true);
+  // The resulting visible hand frame, expressed in portrait space, must
+  // preserve proximal Y (and Z) under X reflection, not reverse it.
+  const actual = yaw.clone().invert().multiply(out).multiply(leftBasis);
+  const source = yaw.clone().invert().multiply(raw).multiply(rightBasis);
+  const expected = q(source.x, -source.y, -source.z, source.w);
+  const dot = actual.x*expected.x + actual.y*expected.y + actual.z*expected.z + actual.w*expected.w;
+  assert(Math.abs(Math.abs(dot)-1)<1e-10, 'paired visible hand orientation must be the anatomical reflection');
+  state.mirrorOffhand = false;
+  const original = out.clone();
+  assert.equal(mirrorPaired(record, solve, raw, out), false, 'independently authored offhand keeps its legacy grip');
+  assert.deepEqual(out, original);
+  state.mirrorOffhand = true; state.invisible = true;
+  assert.equal(mirrorPaired(record, solve, raw, out), false, 'invisible idle offhand is unaffected');
+}
+assert.match(driver, /mirrorPairedWristOrientation\?\.\(record, dualSolve, primary\.quaternion, secondary\.quaternion\)/, 'the shared frame driver reflects the authored wrist before applying offhand shoulder constraints');
+
 // The holder bake skipping the copy roots is executed in test-dual-wield-state-consistency.js.
 
 const runtimeDeps = { toolHolder: { children: [] }, playerMesh: {} }; // Mirrors the real hand-runtime injection, which omits toolMeshMap.
