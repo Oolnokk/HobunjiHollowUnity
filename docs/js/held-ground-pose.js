@@ -432,6 +432,7 @@
     const flexible=kind==='flail'||context.flexibleHaft===true;
     if(flexible&&!context.profile)return fail('unmeasured-flail');
     const fit=fitFor(context,mesh); // Fitting and rotation are separate: only the former is retained.
+    if(context.fitOnly&&!Number.isFinite(fit?.amount))return fail('authored-action-no-fit',true);
     // Suspension siblings are owned by the actual decorated root. A caller's
     // spelling of the weapon key cannot cause a legitimate flail to be rejected.
     const detail=mesh.parent!==holder?'root-parent':plane.parent!==mesh?'haft-parent':
@@ -556,6 +557,7 @@
       debug.compressions++;
     } else releaseCompression();
     debug.shortening=amount;debug.fitted=Number.isFinite(fit?.amount);
+    if(context.fitOnly&&!amount){debug.reason='authored-action-unmodified';return false;}
     gripHolder=holder; s.gripMesh=mesh;s.gripAnchor=gripZ;s.gripSegments=segments;s.gripAmount=amount;
     const contact=fittedContact(s,segments,gripZ,amount); // Both dual copies share the baked sprite coordinates.
     debug.contactHullVertices=contact.hull.length;
@@ -938,7 +940,7 @@
     return changed;
   }
   function needsCarryFallback(){
-    return ['unsupported-assembly','unsupported-rotation-basis','nonuniform-holder-parent','non-quad-weapon','invalid-geometry','unsupported-pivot-parent'].includes(debug.reason);
+    return ['no-rig','unsupported-assembly','unsupported-rotation-basis','nonuniform-holder-parent','non-quad-weapon','invalid-geometry','unsupported-pivot-parent'].includes(debug.reason);
   }
   function setTrace(on){traceOn=!!on;if(!traceOn){trace.solved=null;trace.lastPlane=null;trace.lastContact=null;}return traceOn;}
   function traceSolved(plane,contact,min,target,floorY){
