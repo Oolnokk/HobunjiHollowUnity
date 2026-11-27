@@ -744,7 +744,7 @@
     if (!root || !scene || iconAnchorScene(root) !== scene) return null;
     const value = Math.round(amount * 10) / 10; // Authored damage-number precision.
     if (!value) return null;
-    const label = id === 'health' ? '' : id === 'footing' ? 'Footing' : window.ResourceSystem?.AFFLICTIONS?.[id]?.name || id;
+    const label = id === 'health' ? '' : id === 'footing' ? 'Footing' : (window.ResourceSystem?.AFFLICTIONS?.[id]?.name || id).replace(/\s+(Health|Stamina|Footing)$/i, ''); // Short popup labels omit only the trailing resource name.
     const palette = window.HOBUNJI_CONFIG?.resourceRings; // Shared authored resource and affliction colors, resolved only on a real hit.
     const color = id === 'footing' ? palette?.colors?.footing : palette?.afflictionColors?.[id]; // Health retains the popup editor's authored damage color.
     const suffix = source === 'impact' ? ' (Impact)' : ''; // Physical collision numbers are distinguishable from the original hit.
@@ -1260,7 +1260,7 @@
     avatarCentroidWorld, loadSettings, applySettings, clear,
     defaults: clone(DEFAULTS), storageKey: STORAGE_KEY,
     debugSnapshot: () => ({
-      latestChange: 'Local combat popups match resource colors and distinguish collision impacts.',
+      latestChange: 'Short affliction labels match resource colors and distinguish collision impacts.',
       lastCombatEffect: lastCombatEffect ? { ...lastCombatEffect } : null,
       lastSocialGains: lastSocialGains.map(gain => ({ ...gain, recipients: [...gain.recipients] })),
       pendingSocialGainKinds: [...socialGains.keys()],
