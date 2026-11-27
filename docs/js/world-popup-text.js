@@ -729,6 +729,27 @@
     return state.sequence;
   }
 
+  // Resolve ownership at the actual hit, never by proximity.
+  function isLocalCombatSource(attacker) {
+    const registry = window.ActorRegistry; // Shared player/companion ownership authority.
+    return !!attacker && !!registry && (registry.isLocalPlayer(attacker) ||
+      registry.isLocalPlayer(registry.ownerPlayerOf(attacker)));
+  }
+
+  let lastCombatEffect = null; // Existing debug snapshot exposes the last emitted combat number.
+  function showCombatEffect(entity, id, amount, credited) {
+    if (!credited || !(amount > 0) || !Number.isFinite(amount) || window.ActorRegistry?.isPlayer(entity)) return null;
+    const root = entity?.avatarRef?.group || entity?.root; // Existing avatar anchor.
+    const scene = state.deps?.getActiveScene?.(); // Never draw another area's combat in the local scene.
+    if (!root || !scene || iconAnchorScene(root) !== scene) return null;
+    const value = Math.round(amount * 10) / 10; // Authored damage-number precision.
+    if (!value) return null;
+    const label = id === 'health' ? '' : id === 'footing' ? 'Footing' : window.ResourceSystem?.AFFLICTIONS?.[id]?.name || id;
+    const sequence = showChange('damage', -value, { root, scene, text: label ? `-${value} ${label}` : undefined });
+    if (sequence != null) lastCombatEffect = { id, amount: value, sequence };
+    return sequence;
+  }
+
   function finishLevelUpAnnouncement() {
     if (state.levelUpTimer != null) clearTimeout(state.levelUpTimer);
     state.levelUpTimer = null;
@@ -1226,7 +1247,7 @@
 
   const api = {
     releaseScene,
-    init, update, showChange, showFamilyUsefulness, queueReward, queueSocialGain, queueLevelUp,
+    init, update, showChange, isLocalCombatSource, showCombatEffect, showFamilyUsefulness, queueReward, queueSocialGain, queueLevelUp,
     showIconEffect, countIconEffects, iconResourceSnapshot,
     setInteractionPrompts, syncInteractionPrompts, clearInteractionPrompts,
     setConditionCallout, clearConditionCallout,
@@ -1235,7 +1256,8 @@
     avatarCentroidWorld, loadSettings, applySettings, clear,
     defaults: clone(DEFAULTS), storageKey: STORAGE_KEY,
     debugSnapshot: () => ({
-      latestChange: 'Bounded emoji resource reuse and one row layout per active root/list; idle popup updates skip camera work.',
+      latestChange: 'Local player/companion combat numbers reuse authored damage popup animations.',
+      lastCombatEffect: lastCombatEffect ? { ...lastCombatEffect } : null,
       lastSocialGains: lastSocialGains.map(gain => ({ ...gain, recipients: [...gain.recipients] })),
       pendingSocialGainKinds: [...socialGains.keys()],
       interactionSignature: state.interactionSignature,

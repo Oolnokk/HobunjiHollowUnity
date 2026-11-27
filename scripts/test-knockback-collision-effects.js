@@ -20,7 +20,7 @@ const campfire = JSON.parse(fs.readFileSync('docs/config/furniture-authored/camp
 const hearth = JSON.parse(fs.readFileSync('docs/config/furniture-authored/hearth.json', 'utf8')); // Existing built-in flame fixture must persist its hazard flag.
 
 // Integration guards: keep the feature attached to the real movement/death/editor paths.
-assert.match(gameSource, /KnockbackCollisionImpact\?\.begin\?\.\(target, speedPxS, KNOCKBACK_DUR_S\)/,
+assert.match(gameSource, /KnockbackCollisionImpact\?\.begin\?\.\(target, speedPxS, KNOCKBACK_DUR_S, popupCredit\)/,
   'ordinary knockback records its authored intended travel once when the shove starts');
 const sweptMoveSource = fs.readFileSync('docs/js/swept-move.js', 'utf8'); // sweptMove was extracted out of game.js.
 assert.match(gameSource, /const sweptMove = window\.SweptMove\.sweptMove;/, 'game.js must keep using the extracted shared swept move');
@@ -295,6 +295,30 @@ const KNOCKBACK_DUR_S = 0.18; // Production fixed knockback duration.
   assert.equal(ResourceSystem.getAffliction(e, 'burningHealth'), 24, 'roll dodge leaves the rest of Burning intact');
   assert.equal(Impact.extinguishInWater(e), 24, 'entering water removes every remaining Burning point');
   assert.equal(ResourceSystem.getAffliction(e, 'burningHealth'), 0, 'water fully extinguishes Burning');
+}
+
+// Credit belongs to the actual movement, never a lingering last attacker.
+{
+  const popups = [];
+  windowStub.WorldPopupText = { showCombatEffect(target, id, amount, credited) { if (credited) popups.push({ target, id, amount }); } };
+  const e = entity();
+  const hooks = { dealHealthDamage(target, amount) { return { applied: Math.min(amount, 2), lethal: false }; } };
+  Impact.begin(e, TILE, 1, true);
+  const impact = Impact.resolve(e, { kind: 'stone' }, TILE, hooks);
+  assert.equal(impact.popupCredit, true);
+  assert.deepEqual(Object.fromEntries(popups.map(p => [p.id, p.amount])), { health: 2, footing: 20, shatteredStamina: 5, bruisedHealth: 4 });
+  assert.equal(Impact.resolve(e, { kind: 'stone' }, TILE, hooks), null);
+  assert.equal(popups.length, 4);
+  Impact.begin(e, TILE, 1, true);
+  Impact.begin(e, TILE, 1); // An unrelated shove replaces credited movement.
+  Impact.resolve(e, { kind: 'stone' }, TILE, hooks);
+  assert.equal(popups.length, 4, 'unrelated shove cannot inherit earlier credit');
+  const fallTarget = entity();
+  Impact.resolveStrength(fallTarget, { kind: 'stone' }, 1, TILE, hooks, { mode: 'ledge-fall', popupCredit: true });
+  assert.equal(popups.length, 8, 'credited ledge landing displays its own effects');
+  Impact.resolveStrength(fallTarget, { kind: 'stone' }, 1, TILE, hooks, { mode: 'ledge-fall' });
+  assert.equal(popups.length, 8, 'natural falls have no combat popup credit');
+  delete windowStub.WorldPopupText;
 }
 
 console.log('Knockback collision + ledge fall + Burning Health regression passed');

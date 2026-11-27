@@ -1311,6 +1311,18 @@
     entity.stamina = round1(Math.max(0, entity.stamina - drained)); // A drain, not a paid action: no action triggers or Black-Stamina debt.
   }
 
+  function showAttackEffect(entity, id, amount, opts = {}) {
+    if (!opts.attacker || opts.environmentalImpact || !(amount > 0)) return;
+    const popup = window.WorldPopupText; // Reuses authored damage animation and ownership filter.
+    popup?.showCombatEffect?.(entity, id, amount, popup.isLocalCombatSource?.(opts.attacker));
+  }
+
+  function addAttackAffliction(entity, id, amount, opts) {
+    const added = window.ResourceSystem.addAffliction(entity, id, amount); // Actual capped buildup, including live compatibility adapters.
+    showAttackEffect(entity, id, added, opts);
+    return added;
+  }
+
   function applyAttackAfflictions(entity, opts = {}) {
     if (opts.afflictionBonuses) {
       const buildupAttackPower = attackPowerForAttack(opts); // One shared attack-power basis for all live hit adapters.
@@ -1324,7 +1336,7 @@
         const player = window.Combat?.deps?.player; // Legacy anonymous player hits on creatures retain their old behavior; known NPCs use their own ranks.
         const attackerRank = opts.attacker ? (opts.attacker === player ? window.PerkSystem?.rank('combat', perkId) : opts.attacker.def?.combatPerks?.[perkId]) : (!Object.hasOwn(opts, 'attacker') && entity !== player ? window.PerkSystem?.rank('combat', perkId) : 0); // Explicit null/undefined sources are not attributed to the player.
         const familyMul = perkId ? 1 + (attackerRank || 0) * 0.12 : 1;
-        window.ResourceSystem.addAffliction(entity, actualId, buildupAttackPower * mul * aliasScale * familyMul); // Status buildup follows Attack Power, not the dart/club's Health damage.
+        addAttackAffliction(entity, actualId, buildupAttackPower * mul * aliasScale * familyMul, opts); // Status buildup follows Attack Power, not the dart/club's Health damage.
       }
     }
   }
@@ -1360,11 +1372,12 @@
       // afflictions, flat buildup cannot inherit prone vulnerability from the scaled hit amount.
       const flatProneMul = opts.environmentalImpact === true ? 1 : getProneAttackMultiplier(entity); // Applies 1.75x/2.5x to authored flat attack effects only, never ambient collision damage.
       for (const [id, amount] of Object.entries(opts.fixedAfflictionBuildup)) {
-        if (AFFLICTIONS[id] && Number.isFinite(amount) && amount > 0) addAffliction(entity, id, amount * flatProneMul);
+        if (AFFLICTIONS[id] && Number.isFinite(amount) && amount > 0) addAttackAffliction(entity, id, amount * flatProneMul, opts);
       }
     }
 
     enforceCaps(entity);
+    showAttackEffect(entity, 'health', lost, opts);
     if (lost > 0) window.dispatchEvent(new CustomEvent('hobunji-resource-change', { detail: { entity, delta: -lost, reason: opts.reason || 'damage', immediate: true } }));
     return lost;
   }
@@ -1612,7 +1625,7 @@
     spendStamina,
     spendFooting,
     applyDamage,
-    applyAttackAfflictions, // Shared with the Drunken Health live damage adapter.
+    applyAttackAfflictions, addAttackAffliction, showAttackEffect, // Shared with the Drunken Health live damage adapter.
     attackPowerForAttack, // Shared by the Drunken Health adapter and mobile combat diagnostics.
     tick,
     getRestInfo,
