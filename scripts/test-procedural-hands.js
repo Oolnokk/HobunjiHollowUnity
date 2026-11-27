@@ -450,7 +450,7 @@ assert.match(driverSource, /const modelCalibration = modelCalibrationForRecord\(
 assert.doesNotMatch(handSource, /function normalizedToolCalibration\(|syncToolCalibration\(|setToolCalibrationEnabled\(/, 'attachment rig must not maintain a second species-resolved calibration path');
 assert.doesNotMatch(shoulderAimSource, /toolCalibrationLocal|hand_calibration/, 'shoulder-follow must not read or write the model-calibration child at all');
 assert.match(shoulderAimSource, /localTargetDirection\.copy\(targetDirection\)\.applyQuaternion\(inverseAuthoredQuaternion\)/, 'shoulder-follow must transform the target into the authored generic hand-socket basis before solving local hinges');
-assert.match(shoulderAimSource, /calibrationOwnership: 'ignored-child-layer'/, 'shoulder diagnostics must make the ownership boundary visible');
+assert.match(shoulderAimSource, /calibrationOwnership: 'read-only-anatomical-basis'/, 'shoulder diagnostics must make the ownership boundary visible');
 assert.match(handSource, /lockedTo: 'raw-primary-grip-frame-before-grip-mode-and-hand-model-calibration'/, 'paper-hand diagnostics must identify the raw target before both downstream hand layers');
 assert.match(editorUiSource, /id="handModelCalibrationTab"/, '3D hand editor must expose a dedicated Calibrate GLB tab');
 assert.match(editorUiSource, /No attack animation, tool transform, Grip Mode, shoulder targeting, character-facing rotation, or animation-derived hand transform/, 'calibration tab must explicitly exclude the normal animation transform stack');
@@ -809,6 +809,9 @@ assert.match(shoulderAimSource, /palmNormal:\s*Math\.atan2\(x, y\)/, 'the -Z pal
 assert.match(shoulderAimSource, /targetDirection\.copy\(elbow\)\.sub\(socket\.position\)/, 'hand targeting must solve from the wrist socket\/origin back toward the resolved elbow');
 assert.match(shoulderAimSource, /localTargetDirection\.copy\(targetDirection\)\.applyQuaternion\(inverseAuthoredQuaternion\)/, 'target direction must be solved in the authored hand-local basis');
 assert.match(shoulderAimSource, /outputQuaternion\.copy\(authoredQuaternion\)\.multiply\(localCorrectionQuaternion\)/, 'local hinge correction must right-multiply the authored hand frame');
+assert.match(shoulderAimSource, /!freeSide\[side\].*copyGripWristBasis\?\.\(side, wristBasis\)/, 'both gripped hands must measure the rendered anatomical basis');
+assert.match(shoulderAimSource, /localCorrectionQuaternion\.premultiply\(wristBasis\)\.multiply\(inverseWristBasis\)/, 'anatomical wrist correction must return to the grip socket without editing the visual child');
+assert.match(shoulderAimSource, /const gripWeight = !freeSide\[side\] \|\| elbowSolve\?\.source === 'pose-authored' \? weights\.grip : 0/, 'shoulder-only gripped hands must honor the same enabled hinges as elbow-targeted grips');
 assert.match(shoulderAimSource, /targetFeature: 'elbow'/, 'hand diagnostics must expose the elbow as the proximal aim target');
 assert.match(shoulderAimSource, /componentSpace: 'hand-local'/, 'shoulder diagnostics must expose the hand-local hinge space');
 assert.doesNotMatch(shoulderAimSource, /weights\.yaw|localYawAxis|rotationVector/, 'the retired third shoulder hinge and parent-space rotation-vector gating must stay removed');
@@ -887,8 +890,8 @@ assert.doesNotMatch(shoulderControlsSource, /global\.renderPortraitProfile\s*=|g
     const sign = side === 'left' ? -1 : 1;
     for (const [grip, palm, expectedGrip, expectedPalm] of [
       [0, 0, 0, 0], [45, 15, 45, 15], [-45, -15, -45, -15],
-      [90, 60, 80, 35], [-90, -60, -70, -20],
-      [80, 35, 80, 35], [-70, -20, -70, -20],
+      [90, 60, 70, 35], [-90, -60, -80, -20],
+      [70, 35, 70, 35], [-80, -20, -80, -20],
     ]) {
       const result = leeway(rad(grip), sign * rad(palm), side, {});
       assert(Math.abs(result.grip - rad(expectedGrip)) < 1e-12, 'flexion/extension limit');
