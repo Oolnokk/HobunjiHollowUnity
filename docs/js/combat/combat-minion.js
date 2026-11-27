@@ -106,14 +106,17 @@
     if(!theme)return;
     try{
       const oil=theme==='kanthic'?await loadOil():null;
-      for(const canvas of canvases){
+      let frontMask=null; // Neutral and frown share the front patch distribution; rear gets its own mask.
+      for(let view=0;view<canvases.length;view++){
+        const canvas=canvases[view];
         const w=canvas.width,h=canvas.height,ctx=canvas.getContext('2d'); // Actual sprite resolution.
         const pixels=ctx.getImageData(0,0,w,h),data=pixels.data;
         let mask,overlay;
         if(oil){
           const eligible=new Uint8Array(w*h); // Opaque non-black sprite pixels.
           for(let p=0;p<eligible.length;p++){const i=p*4;eligible[p]=data[i+3]&&(data[i]||data[i+1]||data[i+2])?1:0;}
-          mask=window.ToolMetalRecolor?.buildOxidationMask?.(eligible,w,h,.56,{seed:roster.ruinSkeletonSeed,blotchCount:4});
+          mask=view<3&&frontMask?frontMask:window.ToolMetalRecolor?.buildOxidationMask?.(eligible,w,h,.56,{seed:roster.ruinSkeletonSeed,blotchCount:4});
+          if(view===0)frontMask=mask;
           if(!mask)throw new Error('Verdigris mask unavailable');
           const hidden=document.createElement('canvas'); // Stretch-to-fit hidden oil source.
           hidden.width=w;hidden.height=h;const hc=hidden.getContext('2d');hc.drawImage(oil,0,0,w,h);
@@ -151,19 +154,32 @@
       const layer=build(THREE,source,{kind:stone?'stoneStalagmites':'iceStalagmites',target:'selected',targetIds:['ruin-skeleton-back'],
         seed:roster.ruinSkeletonSeed,count:4,density:1,iceCluster:3,radius:width*.055,iceHeightMin:width*.12,iceHeightMax:width*.32,
         iceRoughness:.35,iceOpacity:stone?1:.92,color:stone?'#514942':'#c2e8fb',iceEngulf:.95,iceFootprintPadding:0,iceFacets:5,iceTipSharpness:.9,iceLean:.1});
-      if(!layer)return;
+      if(!layer?.children?.length)throw new Error('Back stalagmite generator returned no geometry');
       layer.name='ruin-skeleton-back-stalagmites';layer.rotation.x=Math.PI/2; // Furniture Y becomes rear-facing Z.
-      layer.position.set(0,-height*.08,.025);layer.traverse(node=>{if(node.isMesh)delete node.userData.bladedHazard;});
+      layer.position.set(0,-height*.08,.025);
+      const owned=[]; // Only per-instance buffers/materials are disposed; natural surface caches remain shared.
+      layer.traverse(node=>{if(!node.isMesh)return;delete node.userData.bladedHazard;
+        if(stone && window.FacetedRocks?.surfaceStone){
+          const oldGeometry=node.geometry,oldMaterial=node.material;
+          window.FacetedRocks.surfaceStone(node,{tint:'#514942',label:layer.name});
+          if(node.geometry!==oldGeometry)oldGeometry.dispose();
+          if(node.material!==oldMaterial)oldMaterial.dispose();
+          delete node.userData.shellOutline;node.layers.disable(1);
+          owned.push({geometry:node.geometry,material:node.material===oldMaterial?oldMaterial:null});
+        }else{owned.push({geometry:node.geometry,material:node.material});}
+      });
       back.add(layer);debug.spikes++;
+      let disposed=false;
+      return ()=>{if(disposed)return;disposed=true;layer.parent?.remove(layer);for(const entry of owned){entry.geometry.dispose();entry.material?.dispose();}};
     }catch(error){report(error);}finally{geometry.dispose();material.dispose();}
   }
   function trailMovement(c,x0,y0,x1,y1,mode,tile){
     const theme=c?.ruinSkeletonTheme; // No trail work on ordinary enemies.
     if(theme!=='kanthic'&&!(theme==='hronal'&&mode==='lunge'))return;
-    if(!(c.health>0)||!(tile>0)||![x0,y0,x1,y1].every(Number.isFinite)||window.DevRandomRuinLichThemes?.activeTheme?.()!==theme)return;
+    if(!(c.health>0)||!(tile>0)||c.prone||c.tzatzulCapturedBy||(c.areaId&&c.areaId!==RUIN_AREA)||!Number.isFinite(x0)||!Number.isFinite(y0)||!Number.isFinite(x1)||!Number.isFinite(y1)||window.DevRandomRuinLichThemes?.activeTheme?.()!==theme)return;
     const distance=Math.hypot(x1-x0,y1-y0)/tile; // Swept movement in tiles.
     if(distance<.0001)return;
-    const height=c.physicalFeetY??c.shaftSupportY??c.surfaceYOverride?.()??(c.avatarRef?.group?.position?.y-(c.halfHeight||0)); // Actual actor story.
+    const height=c.surfaceYOverride?.()??c.shaftSupportY??c.physicalFeetY??c.surfaceY??(c.avatarRef?.group?.position?.y-(c.halfHeight||0)); // Actual actor story.
     if(!Number.isFinite(height))return;
     const spacing=theme==='hronal'?.75:.45; // Distance-based cadence.
     let remaining=Number.isFinite(c._ruinTrailRemaining)?c._ruinTrailRemaining:0,count=0;
@@ -171,16 +187,16 @@
       const t=remaining/distance,x=(x0+(x1-x0)*t)/tile,z=(y0+(y1-y0)*t)/tile;remaining+=spacing;
       const tx=Math.floor(x),tz=Math.floor(z);
       const support=window.DynamicSurfaces?.sampleSupport?.(theme==='kanthic'?tx+.5:x,theme==='kanthic'?tz+.5:z,{minY:height-1.2,maxY:height+.35,pad:.02});
-      const floor=Number(support?.y);if(!Number.isFinite(floor))continue;
+      const floor=support?.y;if(!Number.isFinite(floor))continue;
       if(theme==='hronal'){
         if(window.PersistentGroundFire?.ignite?.({area:RUIN_AREA,x,z,y:floor,radius:.72,seconds:4,source:'ruin-skeleton-lunge'}))debug.fire++;
       }else{
         const key=tx+','+tz+','+Math.round(floor*10); // Chance only once per visited tile.
         if(c._ruinDripTile===key)continue;c._ruinDripTile=key;
-        if(rng()<.35&&window.DevRandomRuinLichThemes?.createPlasmPatch?.([{x:tx,z:tz,y:floor}],{ttl:5,label:'skeleton-drip'}))debug.plasm++;
+        if(rng()<.35&&window.DevRandomRuinLichThemes?.createSkeletonPlasmTile?.(tx,tz,floor))debug.plasm++;
       }
     }
-    c._ruinTrailRemaining=Math.max(0,remaining-distance);
+    c._ruinTrailRemaining=Math.max(0,remaining-distance); // Very long frames are deliberately capped, not caught up with a flood next frame.
   }
   function emitRuinEnchantedHit(c,target,actualDamage,slotId){
     if(!c?.ruinWallCoffin||!target||!(actualDamage>0)||!c.rosterRecord?.enchantedWeapon)return;

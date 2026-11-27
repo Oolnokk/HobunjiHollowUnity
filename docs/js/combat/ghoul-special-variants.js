@@ -144,6 +144,11 @@
       if (!plane || !spritePath || !window.WeaponEnchantmentVFX?.createFixedEmitter) return; // The weapon plane is built a moment after the entity.
       entity._enchantFx = window.WeaponEnchantmentVFX.createFixedEmitter(plane, { visual: enchanted.visual, counts: enchanted.counts, spritePath });
       if (!entity._enchantFx) entity._enchantFxFailed = true;
+      else if(entity.ruinWallCoffin && !entity._ruinEnchantDisposeInstalled){
+        entity._ruinEnchantDisposeInstalled=true;
+        const disposeAvatar=entity.avatarRef.dispose; // Same owner handles loot, reroll, and despawn.
+        entity.avatarRef.dispose=function(){entity._enchantFx?.dispose?.();entity._enchantFx=null;return disposeAvatar?.call(this);};
+      }
     }
     entity._enchantFx?.update(dt);
   }

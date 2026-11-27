@@ -567,7 +567,6 @@
     frontPivot.position.y = backPivot.position.y = assembly.position.y || 0;
     group.add(frontPivot);
     group.add(backPivot);
-    if(roster.ruinSkeletonTheme)window.MinionCombat?.attachRuinBackSpikes?.(THREE,backPivot,roster,portraitPlaneW,portraitPlaneH);
     // Big hats: brim/crown pixels past the portrait square ride each plane's head bone (js/hat-overflow-plane.js).
     window.HatOverflowPlane?.attachToPlanes?.(THREE, {
       profile, sourceCanvas: frontCanvas,
@@ -1484,6 +1483,7 @@
       distancePx = Math.min(distancePx, Math.max(0, currentDist - haltDist));
       if (distancePx <= 0 && lungeProfile.hopUnits <= 0.01) return;
     }
+    if(c.ruinSkeletonTheme==='hronal')c._ruinTrailRemaining=0; // Each committed lunge starts its own trail.
     c._banditLunging = true;
     c._banditLungeT = durationS;
     c._banditLungeDur = durationS;
@@ -2611,13 +2611,13 @@
     return staging.update(c, dt, target, distPx, towardAngle, npcDuelStagingApi);
   }
 
-  function updateBanditCombatAI(c,dt,targetPlayer,distToPlayer){
-    if(c?.ruinSkeletonTheme!=='kanthic')return updateBanditCombatAIInternal(c,dt,targetPlayer,distToPlayer);
+  function updateThemedBanditCombatAI(c,dt,targetPlayer,distToPlayer){
+    if(c?.ruinSkeletonTheme!=='kanthic')return updateBanditCombatAI(c,dt,targetPlayer,distToPlayer);
     const x=c.x,y=c.y; // Actual pursuit and lunge movement.
-    try{return updateBanditCombatAIInternal(c,dt,targetPlayer,distToPlayer);}
+    try{return updateBanditCombatAI(c,dt,targetPlayer,distToPlayer);}
     finally{if(!c._enemyDodge)window.MinionCombat?.trailMovement?.(c,x,y,c.x,c.y,'move',deps.TILE);}
   }
-  function updateBanditCombatAIInternal(c, dt, targetPlayer, distToPlayer) {
+  function updateBanditCombatAI(c, dt, targetPlayer, distToPlayer) {
     if (c?.tzatzulCapturedBy) {
       if (c._banditPreparedCharge) releaseBanditCharge(c, c._banditPreparedCharge.target); // Carried actors cannot hold a reservation while off the battlefield.
       releaseBanditApproach(c);
@@ -3598,6 +3598,10 @@
     const surfY = targetGrid[row]?.[col] ? deps.tileSurfaceYInArea(targetGrid[row][col], deps.getCurrentArea()) : 0;
     avatarRef.group.position.set(x / deps.TILE, surfY + halfH, y / deps.TILE);
     deps.markPngPlane(avatarRef.group);
+    if(roster.ruinSkeletonTheme && avatarRef.backPlane) {
+      const disposeSpikes=window.MinionCombat?.attachRuinBackSpikes?.(THREE,avatarRef.backPlane,roster,avatarRef.modelWidth,avatarRef.modelHeight); // Real geometry must not enter PNG depth replay.
+      if(disposeSpikes){const disposeAvatar=avatarRef.dispose;avatarRef.dispose=function(){disposeSpikes();return disposeAvatar.call(this);};}
+    }
     targetScene.add(avatarRef.group);
     // A lighting pass can prune a still-building avatar's off-scene light
     // while async portrait/limb work yields. Register again at scene adoption.
@@ -3766,7 +3770,7 @@
     // js/slagothim-traders.js to dress caravan walkers like other Tletingans.
     rollRoster: rollBanditRoster,
     clothingCandidates: _banditClothingCandidates, // Shared effective-pool inspection for the enemy loadout workshop.
-    updateCombatAI: updateBanditCombatAI,
+    updateCombatAI: updateThemedBanditCombatAI,
     restNeckLook, setBanditBodyYaw,
     updateMovementHeadLook,
     updateToolMesh: measuredBanditToolMesh, // Unchanged gameplay/pose calculation, with optional per-bandit swing timing.

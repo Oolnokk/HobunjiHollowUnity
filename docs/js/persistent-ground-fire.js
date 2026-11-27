@@ -133,7 +133,7 @@
           if(Math.hypot(Number(actor.x)/tile-patch.x,Number(actor.y)/tile-patch.z)>patch.radius)continue;
           if(ruin){
             const feetY=actor.physicalFeetY??(actor===player?ruin.getPlayerSupportY?.()
-              :actor.shaftSupportY??actor.surfaceYOverride?.()??actor.avatarRef?.group?.position?.y); // Known feet height keeps fire damage on its own floor.
+              :actor.shaftSupportY??actor.surfaceYOverride?.()??actor.surfaceY??(actor.avatarRef?.group?.position?.y-(actor.halfHeight||0))); // Known feet height keeps fire damage on its own floor.
             if(Number.isFinite(feetY)&&Math.abs(feetY-patch.y)>.9)continue;
           }
           window.ResourceSystem?.addAffliction?.(actor,'burningHealth',5); // Uses ordinary water/roll extinguish behavior.
