@@ -7,10 +7,18 @@ const vm = require('node:vm');
 const Native = require('../docs/js/ruin-v50-native-floors.js');
 const Plan = require('../docs/js/ruin-layer-plan.js');
 const bootstrap = fs.readFileSync('docs/tools/debris-ifier/debrisifier-01.js', 'utf8'); // Real guarded patch list.
-const original = fs.readFileSync('docs/tools/debris-ifier/debrisifier-v50-source.js', 'utf8'); // Immutable generator.
+const original = fs.readFileSync('docs/tools/debris-ifier/debrisifier-v50-source.js', 'utf8').replace(/\r\n/g, '\n'); // Canonical immutable generator for LF/CRLF comparison.
 const context = vm.createContext({window:{}, EMBEDDED_TREE:'unused', SOURCE_SHA256:'unused', EMBEDDED_FURNITURE_COUNT:11});
 vm.runInContext(bootstrap.slice(bootstrap.indexOf('  function patchEmbeddedRuntime('), bootstrap.lastIndexOf('\n  if (embeddedRuntime)')), context);
 const patched = context.patchEmbeddedRuntime(original); // Also fails if any patch no longer matches its source.
+const windowsSource = original.replace(/\n/g, '\r\n'); // Simulate a Windows checkout/package of the entire original generator.
+assert.equal(context.patchEmbeddedRuntime(windowsSource), patched, 'Windows CRLF must produce identical patched V50 code');
+const mixedSource = original.replace('  if(tallAsset){\n    for(const room of network.rooms){', '  if(tallAsset){\r\n    for(const room of network.rooms){'); // Simulate a partly converted source at the reported failure.
+assert.notEqual(mixedSource, original, 'fixture anchor must exist');
+assert.equal(context.patchEmbeddedRuntime(mixedSource), patched, 'mixed line endings at native fixture must also work');
+const changedSource = windowsSource.replace('  if(tallAsset){\r\n    for(const room of network.rooms){', '  if(tallAsset && false){\r\n    for(const room of network.rooms){'); // A real source change must still be rejected.
+assert.notEqual(changedSource, windowsSource);
+assert.throws(() => context.patchEmbeddedRuntime(changedSource), /one-room native V50 puzzle fixture changed/);
 vm.runInContext(`const INTERIOR_CELL_SIZE=.5;const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
   function doorwaySideForRoom(room,door){return door.axis==='x'?(door.boundary===room.col?'west':'east'):(door.boundary===room.row?'north':'south');}
   ${original.match(/function seededRng\(seedText\).*\n/)[0]}
