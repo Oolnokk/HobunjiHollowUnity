@@ -212,20 +212,30 @@ const server = http.createServer((request, response) => {
         const dispose=window.MinionCombat.attachRuinBackSpikes(T,avatar,{ruinSkeletonTheme:theme,ruinSkeletonSeed:7});
         group.updateMatrixWorld(true);const layer=group.getObjectByName('ruin-skeleton-back-stalagmites');
         if(!layer){results.push({theme,missing:true});continue;}
-        const mesh=layer.children[0],positions=mesh.geometry.attributes.position,point=new T.Vector3(),anchors=mesh.geometry.userData.iceGrowthAnchors;
-        let baseInside=avatar.ruinBackSpikeInfo.seated>0,baseVertices=positions.count,maxZ=-Infinity;
-        for(let i=0;i<positions.count;i++){
-          point.fromBufferAttribute(positions,i);point.applyMatrix4(mesh.matrixWorld);
-          maxZ=Math.max(maxZ,point.z);
+        const mesh=layer.children[0],positions=mesh.geometry.attributes.position,info=avatar.ruinBackSpikeInfo;
+        const sample=window.PNGPlaneAvatar.makePortraitSurfaceSampler(portrait);
+        let baseInside=mesh.isSkinnedMesh&&info.anchors.length>=18&&mesh.skeleton.bones.length===info.anchors.length;
+        for(let i=0;i<info.anchors.length;i++){const a=info.anchors[i],p=sample(a.u,a.v);baseInside&&=!!p&&p.distanceTo(mesh.skeleton.bones[i].position)<1e-5;}
+        const before=mesh.skeleton.bones.map(b=>({p:b.position.clone(),q:b.quaternion.clone()})),updates=info.poseUpdates;
+        hammer.position.x+=20;group.position.x+=3;group.updateMatrixWorld(true);
+        const unaffected=info.poseUpdates===updates&&before.every((b,i)=>b.p.distanceTo(mesh.skeleton.bones[i].position)<1e-7);
+        // A real spine bend changes both the root location and local normal while the weapon remains unrelated.
+        rig.splineNodes[2].rotation.x+=.55;rig.splineNodes[3].rotation.y+=.2;group.updateMatrixWorld(true);
+        const afterSample=window.PNGPlaneAvatar.makePortraitSurfaceSampler(portrait);let follows=info.poseUpdates>updates,turned=false,moved=false,aligned=true;
+        for(let i=0;i<info.anchors.length;i++){
+          const a=info.anchors[i],bone=mesh.skeleton.bones[i],p=afterSample(a.u,a.v);
+          follows&&=!!p&&p.distanceTo(bone.position)<1e-5;
+          moved||=before[i].p.distanceTo(bone.position)>.001;turned||=1-Math.abs(before[i].q.dot(bone.quaternion))>1e-5;
+          const tracker=window.PNGPlaneAvatar.makePortraitAnchorTracker(T,portrait,[a],window.PNGPlaneAvatar.getPortraitsFlipped());tracker.update();
+          aligned&&=new T.Vector3(0,0,1).applyQuaternion(bone.quaternion).dot(tracker.frames[0].normal)>.999;
         }
-        const before=layer.getWorldPosition(new T.Vector3());hammer.position.x+=20;group.updateMatrixWorld(true);
-        const unaffected=before.distanceTo(layer.getWorldPosition(new T.Vector3()))<1e-8;
         const attached=layer.parent===portrait;const surface=theme!=='hronal'||mesh.userData.facetedRock===true;
-        dispose();results.push({theme,baseInside,baseVertices,attached,unaffected,surface,maxZ,pants,pantsInk,pantsEffect,kanthicPants,disposed:layer.parent===null});
+        const dense=info.anchors.length>=18,poseUpdates=info.poseUpdates;
+        dispose();results.push({theme,baseInside,baseVertices:positions.count,attached,unaffected,surface,dense,follows,moved,turned,aligned,poseUpdates,pants,pantsInk,pantsEffect,kanthicPants,disposed:layer.parent===null});
       }
       return results;
     });
-    for(const result of skeletonResult)assert(result.baseInside&&result.baseVertices>0&&result.attached&&result.unaffected&&result.surface&&result.maxZ>.25&&result.pants&&result.pantsInk&&result.pantsEffect&&result.kanthicPants&&result.disposed,'Real torso geometry failed: '+JSON.stringify(result));
+    for(const result of skeletonResult)assert(result.baseInside&&result.baseVertices>0&&result.attached&&result.unaffected&&result.surface&&result.dense&&result.follows&&result.moved&&result.turned&&result.aligned&&result.pants&&result.pantsInk&&result.pantsEffect&&result.kanthicPants&&result.disposed,'Real torso geometry failed: '+JSON.stringify(result));
     await page.evaluate(() => {
       window.__iceFireTargets = new Map(); // The real composer registers its fire targets through this minimal existing contract.
       window.__iceSolids = new Map(); // Collision callback truthiness is checked both frozen and melting.

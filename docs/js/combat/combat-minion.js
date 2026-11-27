@@ -140,8 +140,8 @@
       if(theme==='kanthic'){
         if(outline[p]){data[i]=data[i+1]=data[i+2]=0;continue;} // Exact authored-style black; preserve original alpha.
         if(!mask[p])continue;
-        const a=overlay[i+3]/255;
-        for(let c=0;c<3;c++)data[i+c]=data[i+c]*(1-a)+overlay[i+c]*a;
+        const a=overlay[i+3]/255*.7; // Darker oil at 70% layer opacity; the independent black contour remains solid.
+        for(let c=0;c<3;c++)data[i+c]=data[i+c]*(1-a)+overlay[i+c]*.55*a;
       }else{
         const x=p%w,y=Math.floor(p/w),broad=coarse(x,y); // Smooth broad patches, no per-pixel grain.
         if(theme==='hronal'){
@@ -184,50 +184,97 @@
     const w=canvas?.width,h=canvas?.height;
     if(!(w>0&&h>0&&width>0&&height>0&&headCanvas?.width===w&&headCanvas?.height===h))return null;
     const rgba=canvas.getContext('2d').getImageData(0,0,w,h).data,head=headCanvas.getContext('2d').getImageData(0,0,w,h).data;
-    const pixels=[];let left=w,right=-1,top=h,bottom=-1;
-    // All visible rear pixels are eligible except the actual rear-facing head sprite (not a neck-height rectangle).
+    const distance=new Uint16Array(w*h); // Chebyshev distance to transparent/head pixels; computed only during spawn.
+    const max=Math.max(w,h)+1;
     for(let y=0;y<h;y++)for(let x=0;x<w;x++){
-      const i=(y*w+x)*4;
-      if(rgba[i+3]<128||head[i+3]>12)continue;
-      const px=flipped?x:w-1-x; // Rear canvas is mirrored once by the actual rear texture, unless global portrait flip reverses it.
-      pixels.push({x:px,y});left=Math.min(left,px);right=Math.max(right,px);top=Math.min(top,y);bottom=Math.max(bottom,y);
+      const p=y*w+x,i=p*4;
+      if(rgba[i+3]>=128&&head[i+3]<=12)distance[p]=x===0||y===0||x===w-1||y===h-1?1:max;
+    }
+    for(let y=1;y<h;y++)for(let x=1;x<w-1;x++){
+      const p=y*w+x;if(distance[p])distance[p]=Math.min(distance[p],1+Math.min(distance[p-1],distance[p-w-1],distance[p-w],distance[p-w+1]));
+    }
+    for(let y=h-2;y>=0;y--)for(let x=w-2;x>=1;x--){
+      const p=y*w+x;if(distance[p])distance[p]=Math.min(distance[p],1+Math.min(distance[p+1],distance[p+w-1],distance[p+w],distance[p+w+1]));
+    }
+    let clearance=Math.max(1,Math.round(Math.min(w,h)*.025)); // Five source pixels at the game's 200px portrait resolution.
+    let pixels=[];let left=w,right=-1,top=h,bottom=-1;
+    for(;clearance>=0;clearance--){
+      for(let y=0;y<h;y++)for(let x=0;x<w;x++){
+        const d=distance[y*w+x];if(d<=clearance)continue;
+        const px=flipped?x:w-1-x; // Rear texture's own mirror plus the global flip toggle.
+        pixels.push({x:px,y,d,nearest:Infinity});left=Math.min(left,px);right=Math.max(right,px);top=Math.min(top,y);bottom=Math.max(bottom,y);
+      }
+      if(pixels.length)break; // Very narrow authored silhouettes retain a valid fallback rather than losing all growth.
     }
     if(!pixels.length)return null;
     const x0=(left/w-.5)*width,x1=((right+1)/w-.5)*width,y0=(.5-(bottom+1)/h)*height,y1=(.5-top/h)*height;
-    const footprint={x:(x0+x1)/2,y:(y0+y1)/2,width:x1-x0,height:y1-y0,top:y1,bottom:y0,pixels:pixels.length};
-    Object.defineProperty(footprint,'project',{value:(x,z)=>{
+    const footprint={x:(x0+x1)/2,y:(y0+y1)/2,width:x1-x0,height:y1-y0,top:y1,bottom:y0,pixels:pixels.length,clearance};
+    const spacing=Math.min(width,height)*.045,spacing2=spacing*spacing; // Dense roots without duplicate or directly stacked centers.
+    const dx=width/w,dy=height/h;
+    function choose(x,z,unique){
       const px=(.5+(x+footprint.x)/width)*w-.5,py=(.5-(footprint.y-z)/height)*h-.5;
-      let best=Infinity,chosen=pixels[0];
+      let best=Infinity,chosen=null,fallback=null,farthest=-1;
       for(const pixel of pixels){
-        const distance=((pixel.x-px)/w*width)**2+((pixel.y-py)/h*height)**2;
-        if(distance<best){best=distance;chosen=pixel;}
-        if(best===0)break;
+        if(unique&&pixel.nearest===0)continue;
+        if(pixel.nearest>farthest){fallback=pixel;farthest=pixel.nearest;}
+        if(unique&&pixel.nearest<spacing2)continue;
+        const d=((pixel.x-px)*dx)**2+((pixel.y-py)*dy)**2;
+        if(d<best){best=d;chosen=pixel;}
       }
-      return {x:((chosen.x+.5)/w-.5)*width-footprint.x,z:footprint.y-(.5-(chosen.y+.5)/h)*height};
-    }});
+      chosen=chosen||fallback;
+      if(!chosen)return null;
+      if(unique)for(const pixel of pixels)pixel.nearest=Math.min(pixel.nearest,((pixel.x-chosen.x)*dx)**2+((pixel.y-chosen.y)*dy)**2);
+      return {x:((chosen.x+.5)/w-.5)*width-footprint.x,z:footprint.y-(.5-(chosen.y+.5)/h)*height,
+        maxRadius:Math.max(.001,(chosen.d-.5)*Math.min(dx,dy)/1.2)}; // Fit the faceted base ring inside the silhouette even when close to an edge.
+    }
+    Object.defineProperties(footprint,{project:{value:(x,z)=>choose(x,z,false)},pick:{value:(x,z)=>choose(x,z,true)}});
     return footprint;
   }
-  function seatRuinSpikeGeometry(geometry,footprint,width,height,sample){
-    const anchors=geometry.userData?.iceGrowthAnchors,positions=geometry.attributes?.position;
-    if(!sample||!positions||anchors?.length!==positions.count*3)return 0;
-    const shifts=new Map();let seated=0; // One sample per crystal, not per vertex, using the rear mesh's real skin deformation.
-    for(let i=0;i<positions.count;i++){
-      const k=i*3,x=anchors[k],z=anchors[k+2],key=x+','+z;
-      let shift=shifts.get(key);
-      if(!shift){
+  function rigRuinSpikeMesh(THREE,node,footprint,width,height,carrier,flipped,stone){
+    const original=node.geometry,originalMaterial=node.material,anchors=original.userData?.iceGrowthAnchors;
+    const count=original.attributes.position.count;
+    if(anchors?.length!==count*3)throw new Error('Missing per-crystal growth anchors');
+    const roots=[],rootByKey=new Map(),indices=new Uint16Array(count*4),weights=new Float32Array(count*4),pieces=new Float32Array(count);
+    for(let i=0;i<count;i++){
+      const x=anchors[i*3],z=anchors[i*3+2],key=x+','+z;
+      let id=rootByKey.get(key);
+      if(id===undefined){
+        id=roots.length;rootByKey.set(key,id);
         const localX=footprint.x+x,localY=footprint.y-z;
-        const point=sample(.5+localX/width,.5-localY/height);
-        if(point)seated++;
-        shift=point?{x:point.x-localX,y:point.y-localY,z:point.z}:{x:0,y:0,z:0};
-        shifts.set(key,shift);
+        roots.push({u:.5+localX/width,v:.5-localY/height,x:localX,y:localY}); // Immutable rear-plane UV and bind point for each spike.
       }
-      // Generator local +Y maps to rear +Z; local +Z maps to rear -Y.
-      positions.setXYZ(i,positions.getX(i)+shift.x,positions.getY(i)+shift.z,positions.getZ(i)-shift.y);
-      anchors[k]+=shift.x;anchors[k+1]+=shift.z;anchors[k+2]-=shift.y;
+      indices[i*4]=id;weights[i*4]=1;pieces[i]=id+1;
     }
-    positions.needsUpdate=true;geometry.computeBoundingBox();geometry.computeBoundingSphere();
-    if(geometry.userData.iceFullPositions)geometry.userData.iceFullPositions.set(positions.array);
-    return seated;
+    original.setAttribute('surfacePieceId',new THREE.BufferAttribute(pieces,1)); // Keep touching stone crystals separate during the furniture UV unwrap.
+    if(stone&&window.FacetedRocks?.surfaceStone){
+      window.FacetedRocks.surfaceStone(node,{tint:'#514942',label:'ruin-skeleton-back-stalagmites'});
+      if(node.geometry!==original)original.dispose();
+      if(node.material!==originalMaterial)originalMaterial.dispose();
+      delete node.userData.shellOutline;node.layers.disable(1);
+    }
+    const geometry=node.geometry;
+    if(geometry.attributes.position.count!==count)throw new Error('Stalagmite surfacing changed vertex ownership');
+    geometry.rotateX(Math.PI/2);geometry.translate(footprint.x,footprint.y,.007); // Generator Y becomes rear-facing Z; base sits .008 inside the portrait.
+    geometry.setAttribute('skinIndex',new THREE.BufferAttribute(indices,4));
+    geometry.setAttribute('skinWeight',new THREE.BufferAttribute(weights,4));
+    // Natural stone uses a shared cached material. Clone only that material before enabling skinning.
+    const material=node.material===originalMaterial?node.material:node.material.clone();
+    material.skinning=true;material.needsUpdate=true;
+    const mesh=new THREE.SkinnedMesh(geometry,material);mesh.name=node.name;mesh.userData={...node.userData};delete mesh.userData.bladedHazard;
+    mesh.layers.mask=node.layers.mask;mesh.renderOrder=node.renderOrder;mesh.frustumCulled=false;
+    const bones=roots.map((root,i)=>{const bone=new THREE.Bone();bone.name='ruin-crystal-'+i;bone.position.set(root.x,root.y,0);mesh.add(bone);return bone;});
+    mesh.bind(new THREE.Skeleton(bones)); // One rigid bone per crystal; no vertex stretching and one renderable mesh.
+    const tracker=window.PNGPlaneAvatar?.makePortraitAnchorTracker?.(THREE,carrier,roots,flipped);
+    const basis=new THREE.Matrix4(); // Reused for converting the animated surface frame to each bone quaternion.
+    function update(){
+      if(!tracker?.update())return false;
+      for(let i=0;i<bones.length;i++){
+        const frame=tracker.frames[i];if(!frame?.valid)continue;
+        bones[i].position.copy(frame.origin);basis.makeBasis(frame.tangent,frame.bitangent,frame.normal);bones[i].quaternion.setFromRotationMatrix(basis);
+      }
+      return true;
+    }
+    return {mesh,roots,update,tracker,dispose(){mesh.skeleton.dispose?.();geometry.dispose();material.dispose();}};
   }
   function attachRuinBackSpikes(THREE,avatar,roster){
     const carrier=avatar.backPortraitMesh||avatar.backPlane,width=avatar.modelWidth,height=avatar.modelHeight;
@@ -235,38 +282,33 @@
     if(!carrier||(theme!=='hronal'&&theme!=='tothal'))return;
     const build=window.IceStalagmiteCoverage?.build;
     if(!build){report('Stalagmite generator unavailable');return;}
+    const flipped=window.PNGPlaneAvatar?.getPortraitsFlipped?.()===true;
     let footprint;
-    try{footprint=ruinTorsoFootprint(avatar.backCanvas,avatar.ruinRearHeadCanvas,width,height,window.PNGPlaneAvatar?.getPortraitsFlipped?.()===true);}catch(error){report(error);return;}
+    try{footprint=ruinTorsoFootprint(avatar.backCanvas,avatar.ruinRearHeadCanvas,width,height,flipped);}catch(error){report(error);return;}
     if(!footprint){report('No visible non-head rear pixels');return;}
-    const radius=width*.085,maxSpikeHeight=width*.56,minSpikeHeight=width*.28; // Clearly visible furniture-style growth, independent of the narrowness of the body's mask.
+    const radius=width*.05,maxSpikeHeight=width*.56,minSpikeHeight=width*.28; // More, narrower crystals with the existing height range.
     const source=new THREE.Group(),geometry=new THREE.BoxGeometry(footprint.width,.02,Math.max(.005,footprint.height)),material=new THREE.MeshBasicMaterial({visible:false});
     const support=new THREE.Mesh(geometry,material);support.userData.authoredPartId='ruin-skeleton-back';source.add(support);
+    let layer,rig;
     try{
       const stone=theme==='hronal';
-      const layer=build(THREE,source,{kind:stone?'stoneStalagmites':'iceStalagmites',target:'selected',targetIds:['ruin-skeleton-back'],
-        seed:roster.ruinSkeletonSeed,count:5,density:1,iceCluster:3,radius,iceHeightMin:minSpikeHeight,iceHeightMax:maxSpikeHeight,
-        iceRoughness:.35,iceOpacity:stone?1:.92,color:stone?'#514942':'#c2e8fb',iceEngulf:1,iceFootprintPadding:0,iceFacets:5,iceTipSharpness:.9,iceLean:.1,mapSpikeOrigin:footprint.project});
-      if(!layer?.children?.length)throw new Error('Back stalagmite generator returned no geometry');
-      layer.name='ruin-skeleton-back-stalagmites';layer.rotation.x=Math.PI/2;
-      layer.position.set(footprint.x,footprint.y,.007); // Base vertices at -.015 sit .008 inside the actual back surface.
-      const sample=window.PNGPlaneAvatar?.makePortraitSurfaceSampler?.(carrier); // Static torso hunch is already applied when the avatar is adopted.
-      const owned=[];let seated=0;
-      layer.traverse(node=>{if(!node.isMesh)return;delete node.userData.bladedHazard;
-        seated+=seatRuinSpikeGeometry(node.geometry,footprint,width,height,sample);
-        if(stone&&window.FacetedRocks?.surfaceStone){
-          const oldGeometry=node.geometry,oldMaterial=node.material;
-          window.FacetedRocks.surfaceStone(node,{tint:'#514942',label:layer.name});
-          if(node.geometry!==oldGeometry)oldGeometry.dispose();
-          if(node.material!==oldMaterial)oldMaterial.dispose();
-          delete node.userData.shellOutline;node.layers.disable(1);
-          owned.push({geometry:node.geometry,material:node.material===oldMaterial?oldMaterial:null});
-        }else owned.push({geometry:node.geometry,material:node.material});
-      });
-      carrier.add(layer);debug.spikes++;
-      avatar.ruinBackSpikeInfo={theme,carrier:carrier.name||'rear portrait',footprint:{...footprint},radius,minSpikeHeight,maxSpikeHeight,seated}; // Actual surface and seated crystal count for the viewer.
+      layer=build(THREE,source,{kind:stone?'stoneStalagmites':'iceStalagmites',target:'selected',targetIds:['ruin-skeleton-back'],
+        seed:roster.ruinSkeletonSeed,count:12,density:1,iceCluster:3,radius,iceHeightMin:minSpikeHeight,iceHeightMax:maxSpikeHeight,
+        iceRoughness:.35,iceOpacity:stone?1:.92,color:stone?'#514942':'#c2e8fb',iceEngulf:1,iceFootprintPadding:0,iceFacets:5,iceTipSharpness:.9,iceLean:.1,mapSpikeOrigin:footprint.pick});
+      const generated=layer?.children?.find(child=>child.isMesh);
+      if(!generated)throw new Error('Back stalagmite generator returned no geometry');
+      layer.name='ruin-skeleton-back-stalagmites';
+      rig=rigRuinSpikeMesh(THREE,generated,footprint,width,height,carrier,flipped,stone);
+      layer.remove(generated);layer.add(rig.mesh);
+      const baseUpdate=layer.updateMatrixWorld;
+      // Called by the normal scene matrix traversal after the rear portrait's bones; works in runtime, preview and corpse poses.
+      layer.updateMatrixWorld=function(force){if(this.visible&&rig.update())avatar.ruinBackSpikeInfo.poseUpdates++;return baseUpdate.call(this,force);};
+      avatar.ruinBackSpikeInfo={theme,carrier:carrier.name||'rear portrait',footprint:{...footprint},radius,minSpikeHeight,maxSpikeHeight,
+        anchors:rig.roots.map(({u,v})=>({u,v})),seated:rig.roots.length,poseUpdates:0}; // Mobile rig dump can inspect saved coordinates and pose refresh count.
+      carrier.add(layer);carrier.updateWorldMatrix?.(true,false);carrier.updateMatrixWorld(true);debug.spikes++;
       let disposed=false;
-      return ()=>{if(disposed)return;disposed=true;layer.parent?.remove(layer);avatar.ruinBackSpikeInfo=null;for(const entry of owned){entry.geometry.dispose();entry.material?.dispose();}};
-    }catch(error){report(error);}finally{geometry.dispose();material.dispose();}
+      return ()=>{if(disposed)return;disposed=true;layer.parent?.remove(layer);avatar.ruinBackSpikeInfo=null;rig.dispose();};
+    }catch(error){layer?.parent?.remove(layer);if(rig)rig.dispose();else layer?.traverse(node=>{if(node.isMesh){node.geometry?.dispose();node.material?.dispose();}});avatar.ruinBackSpikeInfo=null;report(error);}finally{geometry.dispose();material.dispose();}
   }
   function trailMovement(c,x0,y0,x1,y1,mode,tile){
     const theme=c?.ruinSkeletonTheme; // No trail work on ordinary enemies.
@@ -388,7 +430,7 @@
     shamblingFootingFraction: SHAMBLING_FOOTING_FRACTION,
     dyeWeights: DYE_WEIGHTS,
     rollRoster,
-    coffinWeaponShapes:Object.keys(COFFIN_SHAPES),ruinHealth:RUIN_HEALTH,paintRuinPortraits,paintRuinPants,paintRuinPixels,ruinTorsoFootprint,seatRuinSpikeGeometry,attachRuinBackSpikes,trailMovement,emitRuinEnchantedHit,ruinDebugSnapshot:()=>({...debug}),
+    coffinWeaponShapes:Object.keys(COFFIN_SHAPES),ruinHealth:RUIN_HEALTH,paintRuinPortraits,paintRuinPants,paintRuinPixels,ruinTorsoFootprint,attachRuinBackSpikes,trailMovement,emitRuinEnchantedHit,ruinDebugSnapshot:()=>({...debug}),
     makeEntity,
     makeDemolitionist, // Explicit ruin-only Harlyao archetype; future challenge composers call this rather than changing ordinary Minion spawns.
   });

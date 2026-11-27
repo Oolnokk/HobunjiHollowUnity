@@ -11,7 +11,7 @@
     "js/combat/ghoul-special-variants.js?v=20261127ruinSkeletonAudit3",
     "js/combat/bandit-rank-wardrobe.js?v=20261031rankwardrobe1",
     "js/combat/combat-ghoul-wyrm-witches.js?v=20261027hcd7121b",
-    "js/combat/combat-minion.js?v=20261127ruinRearMask8",
+    "js/combat/combat-minion.js?v=20261127ruinSurfaceAnchors9",
     "js/combat/combat-maskbound-guardian.js?v=20261031headtakerguardian6",
     "js/combat/combat-enemy-dodge.js?v=20261127-ruin-skeletons",
     "js/combat/combat-maskbound-headtaker.js?v=20261126neckPlanarIntegration1",

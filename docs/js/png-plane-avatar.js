@@ -1723,60 +1723,101 @@
   // weight curve at an arbitrary texel. GPU skinning happens at the vertices;
   // pixels between them interpolate the three already-posed positions.
   // Only attachment queries use this path; no extra per-frame traversal or mesh.
-  function sampleSkinnedPortraitSurface(mesh, u, v, out, scratch) {
-    const geo = mesh.geometry;
-    const grid = geo?.userData;
-    const rows = grid?.portraitGridRows; // Normalized source rows, rebuilt with the skin at every density.
-    const sx = grid?.segmentsX, sy = grid?.segmentsY;
-    if (!rows || rows.length !== sy + 1 || !sx || u < 0 || u > 1 || v < 0 || v > 1 || geo.index) return false;
-    const pos = geo.getAttribute?.('position'), uv = geo.getAttribute?.('uv');
-    const indices = geo.getAttribute?.('skinIndex'), weights = geo.getAttribute?.('skinWeight');
-    if (!pos || !uv || !indices || !weights || pos.count < sx * sy * 6) return false;
-    let lo = 0, hi = sy; // Binary search just the existing vertical grid, including nonuniform neck rows.
-    while (hi - lo > 1) {
-      const mid = (lo + hi) >> 1;
-      if (v >= rows[mid]) lo = mid; else hi = mid;
+  function findPortraitSurfaceTriangle(geo,u,v){
+    const grid=geo?.userData,rows=grid?.portraitGridRows,sx=grid?.segmentsX,sy=grid?.segmentsY;
+    if(!rows||rows.length!==sy+1||!sx||u<0||u>1||v<0||v>1||geo.index)return null;
+    const pos=geo.getAttribute?.('position'),uv=geo.getAttribute?.('uv'),indices=geo.getAttribute?.('skinIndex'),weights=geo.getAttribute?.('skinWeight');
+    if(!pos||!uv||!indices||!weights||pos.count<sx*sy*6)return null;
+    let lo=0,hi=sy;
+    while(hi-lo>1){const mid=(lo+hi)>>1;if(v>=rows[mid])lo=mid;else hi=mid;}
+    const first=(lo*sx+Math.min(sx-1,Math.floor(u*sx)))*6;
+    for(let i=first;i<first+6;i+=3){
+      const ax=uv.getX(i),ay=1-uv.getY(i),bx=uv.getX(i+1),by=1-uv.getY(i+1),cx=uv.getX(i+2),cy=1-uv.getY(i+2);
+      const denom=(by-cy)*(ax-cx)+(cx-bx)*(ay-cy);
+      if(Math.abs(denom)<1e-14)continue;
+      const a=((by-cy)*(u-cx)+(cx-bx)*(v-cy))/denom,b=((cy-ay)*(u-cx)+(ax-cx)*(v-cy))/denom,c=1-a-b;
+      if(Math.min(a,b,c)>=-1e-5)return {first:i,a,b,c}; // Float32 UV seams may differ by a few ulps.
     }
-    const col = Math.min(sx - 1, Math.floor(u * sx));
-    const first = (lo * sx + col) * 6; // Both supported humanoid builders emit two consecutive front triangles per cell.
-    const { bindPoint, deformed, bonePoint, boneMatrix } = scratch;
-    const skeleton = mesh.skeleton;
-    for (let i = first; i < first + 6; i += 3) {
-      const ax = uv.getX(i), ay = 1 - uv.getY(i);
-      const bx = uv.getX(i + 1), by = 1 - uv.getY(i + 1);
-      const cx = uv.getX(i + 2), cy = 1 - uv.getY(i + 2);
-      const denom = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy);
-      if (Math.abs(denom) < 1e-14) continue;
-      const a = ((by - cy) * (u - cx) + (cx - bx) * (v - cy)) / denom;
-      const b = ((cy - ay) * (u - cx) + (ax - cx) * (v - cy)) / denom;
-      const c = 1 - a - b;
-      if (Math.min(a, b, c) < -1e-5) continue; // Float32 UV seams can differ from exact grid coordinates by a few ulps.
-      deformed.set(0, 0, 0);
-      for (let k = 0; k < 3; k++) {
-        const share = k === 0 ? a : k === 1 ? b : c;
-        if (!share) continue;
-        const j = i + k;
-        bindPoint.set(pos.getX(j), pos.getY(j), pos.getZ(j)).applyMatrix4(mesh.bindMatrix);
-        for (let slot = 0; slot < 4; slot++) {
-          const w = weights.array[j * 4 + slot] * share;
-          if (!w) continue;
-          const boneIndex = indices.array[j * 4 + slot];
-          if (skeleton.boneMatrices?.length >= (boneIndex + 1) * 16) {
-            boneMatrix.fromArray(skeleton.boneMatrices, boneIndex * 16);
-          } else {
-            const bone = skeleton.bones[boneIndex], inverse = skeleton.boneInverses?.[boneIndex];
-            if (!bone || !inverse) continue;
-            boneMatrix.multiplyMatrices(bone.matrixWorld, inverse);
-          }
-          bonePoint.copy(bindPoint).applyMatrix4(boneMatrix);
-          deformed.addScaledVector(bonePoint, w);
-        }
+    return null;
+  }
+
+  function sampleSkinnedPortraitSurface(mesh,u,v,out,scratch){
+    const geo=mesh.geometry,triangle=findPortraitSurfaceTriangle(geo,u,v);
+    if(!triangle)return false;
+    const pos=geo.attributes.position,indices=geo.attributes.skinIndex,weights=geo.attributes.skinWeight;
+    const {bindPoint,deformed,bonePoint,boneMatrix}=scratch,skeleton=mesh.skeleton;
+    deformed.set(0,0,0);
+    for(let k=0;k<3;k++){
+      const share=k===0?triangle.a:k===1?triangle.b:triangle.c;if(!share)continue;
+      const j=triangle.first+k;bindPoint.set(pos.getX(j),pos.getY(j),pos.getZ(j)).applyMatrix4(mesh.bindMatrix);
+      for(let slot=0;slot<4;slot++){
+        const w=weights.array[j*4+slot]*share;if(!w)continue;
+        const index=indices.array[j*4+slot];
+        if(skeleton.boneMatrices?.length>=(index+1)*16)boneMatrix.fromArray(skeleton.boneMatrices,index*16);
+        else{const bone=skeleton.bones[index],inverse=skeleton.boneInverses?.[index];if(!bone||!inverse)continue;boneMatrix.multiplyMatrices(bone.matrixWorld,inverse);}
+        bonePoint.copy(bindPoint).applyMatrix4(boneMatrix);deformed.addScaledVector(bonePoint,w);
       }
-      out.copy(deformed).applyMatrix4(mesh.bindMatrixInverse);
-      mesh.localToWorld(out);
+    }
+    out.copy(deformed).applyMatrix4(mesh.bindMatrixInverse);mesh.localToWorld(out);return true;
+  }
+
+  // Persistent UV anchors: compile triangle ownership/weights only when the skin geometry or portrait flip changes.
+  // Called during the portrait's child matrix traversal, after its actual skeleton matrices have been updated.
+  function makePortraitAnchorTracker(THREE,mesh,roots,initialFlip){
+    if(!mesh?.skeleton||!mesh.geometry?.attributes?.skinIndex)return null;
+    const skeleton=mesh.skeleton,bones=skeleton.bones;
+    const frames=roots.map(()=>({origin:new THREE.Vector3(),tangent:new THREE.Vector3(),bitangent:new THREE.Vector3(),normal:new THREE.Vector3(),valid:false}));
+    const previous=new Float64Array(bones.length*10),current=new Float64Array(previous.length);
+    const matrices=bones.map(()=>new THREE.Matrix4()),inverse=new THREE.Matrix4(),scratch=new THREE.Vector3(),edge1=new THREE.Vector3(),edge2=new THREE.Vector3();
+    let geometry=null,flip=null,compiled=[],vertices=[],initialized=false;
+    function compile(source,nextFlip){
+      const attrs=source.attributes,cache=new Map();vertices=[];
+      function vertex(index){
+        let entry=cache.get(index);if(entry)return entry;
+        const point=new THREE.Vector3().fromBufferAttribute(attrs.position,index).applyMatrix4(mesh.bindMatrix);
+        const influences=[];for(let slot=0;slot<4;slot++){
+          const weight=attrs.skinWeight.array[index*4+slot];if(weight)influences.push({index:attrs.skinIndex.array[index*4+slot],weight});
+        }
+        entry={point,influences,posed:new THREE.Vector3()};cache.set(index,entry);vertices.push(entry);return entry;
+      }
+      compiled=roots.map(root=>{
+        const u=nextFlip===initialFlip?root.u:1-root.u,t=findPortraitSurfaceTriangle(source,u,root.v);
+        if(!t)return null;
+        const i=t.first,uv=attrs.uv;
+        const du1=uv.getX(i+1)-uv.getX(i),dv1=uv.getY(i+1)-uv.getY(i),du2=uv.getX(i+2)-uv.getX(i),dv2=uv.getY(i+2)-uv.getY(i);
+        const determinant=du1*dv2-du2*dv1;
+        if(Math.abs(determinant)<1e-14)return null;
+        return {vertices:[vertex(i),vertex(i+1),vertex(i+2)],a:t.a,b:t.b,c:t.c,tx:dv2/determinant,ty:-dv1/determinant};
+      });
+      geometry=source;flip=nextFlip;
+    }
+    function update(){
+      const source=mesh.geometry?.attributes?.skinIndex?mesh.geometry:geometry; // Frozen draw replays can temporarily substitute baked geometry.
+      if(!source)return false;
+      const nextFlip=portraitsFlipped,changed=source!==geometry||nextFlip!==flip;
+      if(changed)compile(source,nextFlip);
+      savePortraitPose(mesh,current);
+      if(initialized&&!changed&&samePortraitPose(previous,current))return false;
+      previous.set(current);initialized=true;
+      if(mesh.bindMode==='detached')inverse.copy(mesh.bindMatrixInverse);else inverse.copy(mesh.matrixWorld).invert();
+      for(let i=0;i<bones.length;i++)matrices[i].multiplyMatrices(inverse,bones[i].matrixWorld).multiply(skeleton.boneInverses[i]);
+      for(const vertex of vertices){
+        vertex.posed.set(0,0,0);
+        for(const influence of vertex.influences)vertex.posed.addScaledVector(scratch.copy(vertex.point).applyMatrix4(matrices[influence.index]),influence.weight);
+      }
+      for(let i=0;i<compiled.length;i++){
+        const t=compiled[i],frame=frames[i];frame.valid=false;if(!t)continue;
+        const a=t.vertices[0].posed,b=t.vertices[1].posed,c=t.vertices[2].posed;
+        edge1.subVectors(b,a);edge2.subVectors(c,a);
+        frame.normal.crossVectors(edge1,edge2);
+        if(frame.normal.lengthSq()<1e-16)continue;
+        frame.normal.normalize();frame.tangent.copy(edge1).multiplyScalar(t.tx).addScaledVector(edge2,t.ty).normalize();
+        frame.bitangent.crossVectors(frame.normal,frame.tangent).normalize();
+        frame.origin.copy(a).multiplyScalar(t.a).addScaledVector(b,t.b).addScaledVector(c,t.c);frame.valid=true;
+      }
       return true;
     }
-    return false;
+    return {frames,update};
   }
 
   // One-shot sampler for geometry seated on a fully built portrait. The caller owns the result and can discard this after spawn.
@@ -2220,6 +2261,7 @@
     resolveSkinnedPixelWorldPosition,
     resolveSkinnedPixelWorldFrame,
     makePortraitSurfaceSampler,
+    makePortraitAnchorTracker,
     trackPortraitTexture,
     getPortraitsFlipped: () => portraitsFlipped,
     setPortraitsFlipped,

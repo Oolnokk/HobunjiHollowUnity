@@ -168,7 +168,8 @@
         const radius = settings.radius * (j ? .32 + random() * .48 : .67 + random() * .53); // Common base region ties clusters together.
         const x=origin.x+Math.cos(angle)*spread,z=origin.z+Math.sin(angle)*spread; // Default furniture remains unchanged; portrait growth projects each root back onto real opaque torso pixels.
         const mapped=typeof settings.mapSpikeOrigin==='function'?settings.mapSpikeOrigin(x,z):null;
-        appendSpike(T, positions, colors, anchors, random, mapped?.x??x,mapped?.z??z,height,radius,settings);
+        if(settings.mapSpikeOrigin&&!mapped)continue; // Mask exhausted: no floating or duplicate crystal roots.
+        appendSpike(T, positions, colors, anchors, random, mapped?.x??x,mapped?.z??z,height,Math.min(radius,mapped?.maxRadius??Infinity),settings);
         spikes++;
       }
     }

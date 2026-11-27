@@ -28,42 +28,19 @@ for(let y=45;y<72;y++)for(let x=10;x<90;x++)body[(y*w+x)*4+3]=255;
 for(let y=60;y<92;y++)for(let x=42;x<63;x++)body[(y*w+x)*4+3]=255;
 const fixture=data=>({width:w,height:h,getContext:()=>({getImageData:()=>({data})})});
 const footprint=m.ruinTorsoFootprint(fixture(body),fixture(head),1,1);
-assert.ok(footprint&&footprint.width>.75&&footprint.top>.04&&footprint.bottom<-.40);
-let shoulder=false;for(let z=-.5;z<=.5;z+=.1)for(let x=-.5;x<=.5;x+=.1){const root=footprint.project(x,z),px=Math.floor((.5-(root.x+footprint.x))*w),py=Math.floor((.5-(footprint.y-root.z))*h);assert.equal(body[(py*w+px)*4+3],255);assert.equal(head[(py*w+px)*4+3],0);if(py<60)shoulder=true;}assert.ok(shoulder);
-// Confirm individual roots use actual sampled rear-surface displacement, not a guessed shared bone.
-const verts=[[.1,-.015,.2],[.1,.4,.2],[-.2,-.015,-.1]],anchors=new Float32Array([.1,-.015,.2,.1,-.015,.2,-.2,-.015,-.1]);let samples=0;
-const geo={userData:{iceGrowthAnchors:anchors},attributes:{position:{count:3,getX:i=>verts[i][0],getY:i=>verts[i][1],getZ:i=>verts[i][2],setXYZ:(i,...v)=>{verts[i]=v;}}},computeBoundingBox(){},computeBoundingSphere(){}};
-assert.equal(m.seatRuinSpikeGeometry(geo,{x:0,y:0},1,1,(u,v)=>{samples++;return {x:u-.5+.04,y:.5-v-.03,z:.1};}),2);assert.equal(samples,2);assert.ok(Math.abs(verts[0][0]-.14)<1e-6&&Math.abs(verts[0][1]-.085)<1e-6&&Math.abs(verts[0][2]-.23)<1e-6);assert.ok(Math.abs(verts[1][1]-.5)<1e-6);
-// Exercise both actual attachment branches, with stand-in scene nodes so this also runs without WebGL.
-class Node {
-  constructor(){this.children=[];this.userData={};this.rotation={x:0};this.position={x:0,y:0,z:0,set(x,y,z){Object.assign(this,{x,y,z});}};this.layers={disable(){}};}
-  add(child){this.children.push(child);child.parent=this;} remove(child){this.children=this.children.filter(c=>c!==child);child.parent=null;}
-  traverse(fn){fn(this);for(const child of this.children)child.traverse(fn);}
-}
-class Disposable{dispose(){this.disposed=true;}}
-class Mesh extends Node{constructor(geometry,material){super();this.geometry=geometry;this.material=material;this.isMesh=true;}}
-const THREE={Group:Node,Mesh,BoxGeometry:Disposable,MeshBasicMaterial:Disposable};
-let lastSettings,stoneSurfaces=0;
-window.IceStalagmiteCoverage={build(T,source,settings){lastSettings=settings;const layer=new Node();layer.add(new Mesh(new Disposable(),new Disposable()));return layer;}};
-window.FacetedRocks={surfaceStone(mesh){stoneSurfaces++;mesh.geometry=new Disposable();mesh.material=new Disposable();}};
-for(const tradition of ['hronal','tothal']){
-  const group=new Node(),back=new Node(),portrait=new Node(),hammer=new Node(),nodes=Array.from({length:7},(_,i)=>{const n=new Node();n.name='torso-node-'+i;n.userData.hobunjiSplineRest={x:0,y:i===0?-.42:.05,z:0};return n;});
-  group.add(back);back.add(portrait);portrait.add(nodes[0]);for(let i=1;i<nodes.length;i++)nodes[i-1].add(nodes[i]);group.add(hammer);
-  portrait.name='actual-rear-mesh';const avatar={backPlane:back,backPortraitMesh:portrait,modelWidth:1,modelHeight:1,backCanvas:fixture(body),ruinRearHeadCanvas:fixture(head)};
-  const dispose=m.attachRuinBackSpikes(THREE,avatar,{ruinSkeletonTheme:tradition,ruinSkeletonSeed:7});
-  const carrier=portrait;
-  assert.ok(carrier.children.some(child=>child.name==='ruin-skeleton-back-stalagmites'));assert.equal(hammer.children.length,0);
-  const layer=carrier.children.find(child=>child.name==='ruin-skeleton-back-stalagmites');
-  assert.equal(layer.rotation.x,Math.PI/2);assert.equal(lastSettings.kind,tradition==='hronal'?'stoneStalagmites':'iceStalagmites');assert.equal(lastSettings.iceHeightMax,.56);assert.equal(lastSettings.iceHeightMin,.28);assert.equal(lastSettings.radius,.085);assert.equal(typeof lastSettings.mapSpikeOrigin,'function');
-  assert.equal(avatar.ruinBackSpikeInfo.carrier,carrier.name);assert.equal(avatar.ruinBackSpikeInfo.theme,tradition);dispose();dispose();assert.equal(layer.parent,null);assert.equal(avatar.ruinBackSpikeInfo,null);
-}
-assert.equal(stoneSurfaces,1,'Hronal must exercise the stone-specific material path');
+assert.ok(footprint&&footprint.width>.65&&footprint.top>0&&footprint.bottom<-.38&&footprint.clearance===3);
+let shoulder=false;for(let z=-.5;z<=.5;z+=.1)for(let x=-.5;x<=.5;x+=.1){
+  const root=footprint.project(x,z),px=Math.floor((.5-(root.x+footprint.x))*w),py=Math.floor((.5-(footprint.y-root.z))*h);
+  for(let oy=-3;oy<=3;oy++)for(let ox=-3;ox<=3;ox++){assert.equal(body[((py+oy)*w+px+ox)*4+3],255);assert.equal(head[((py+oy)*w+px+ox)*4+3],0);}
+  if(py<60)shoulder=true;
+}assert.ok(shoulder);
+const unique=new Set();for(let i=0;i<30;i++){const root=footprint.pick(0,0);assert.ok(root&&root.maxRadius>0);unique.add(root.x+','+root.z);}assert.equal(unique.size,30);
 vm.runInNewContext(fs.readFileSync('docs/js/tool-metal-recolor.js','utf8'),{window,console});
 const eligible=new Uint8Array(100*100).fill(1);
 const oilPixels=new Uint8ClampedArray(100*100*4),oilOverlay=new Uint8ClampedArray(oilPixels.length);for(let p=0;p<100*100;p++){oilPixels.set([120,110,90,255],p*4);oilOverlay.set([17,35,70,255],p*4);}
-oilPixels.set([0,0,0,255],0);m.paintRuinPixels({ruinSkeletonTheme:'kanthic',ruinSkeletonSeed:8},oilPixels,100,100,oilOverlay);let oilInk=0,oilFill=0;for(let p=1;p<100*100;p++){const i=p*4;if(oilPixels[i]===0&&oilPixels[i+1]===0&&oilPixels[i+2]===0)oilInk++;if(oilPixels[i]===17&&oilPixels[i+1]===35&&oilPixels[i+2]===70)oilFill++;}assert.ok(oilInk>0&&oilFill>0);const thin=window.ToolMetalRecolor.buildOxidationOutlineMask(window.ToolMetalRecolor.buildOxidationMask(eligible,100,100,.45,{seed:8,blotchCount:6,separateBlotches:true,looseBlotches:true}),eligible,100,100,1);assert.ok(oilInk>thin.reduce((n,v)=>n+v,0));assert.deepEqual(Array.from(oilPixels.slice(0,4)),[0,0,0,255]);
+oilPixels.set([0,0,0,255],0);m.paintRuinPixels({ruinSkeletonTheme:'kanthic',ruinSkeletonSeed:8},oilPixels,100,100,oilOverlay);let oilInk=0,oilFill=0;for(let p=1;p<100*100;p++){const i=p*4;if(oilPixels[i]===0&&oilPixels[i+1]===0&&oilPixels[i+2]===0)oilInk++;if(oilPixels[i]===43&&oilPixels[i+1]===46&&oilPixels[i+2]===54)oilFill++;}assert.ok(oilInk>0&&oilFill>0);const thin=window.ToolMetalRecolor.buildOxidationOutlineMask(window.ToolMetalRecolor.buildOxidationMask(eligible,100,100,.45,{seed:8,blotchCount:6,separateBlotches:true,looseBlotches:true}),eligible,100,100,1);assert.ok(oilInk>thin.reduce((n,v)=>n+v,0));assert.deepEqual(Array.from(oilPixels.slice(0,4)),[0,0,0,255]);
 // Force an irregular patch across authored ink and up against a transparent boundary. Its outline should not leave a clearance moat.
-const cut=new Uint8ClampedArray(12*12*4),oil=new Uint8ClampedArray(cut.length),forced=new Uint8Array(144);for(let y=1;y<11;y++)for(let x=1;x<11;x++){const p=y*12+x;cut.set(x===1?[0,0,0,255]:[120,110,90,255],p*4);oil.set([17,35,70,255],p*4);if(x<=4&&y>=4&&y<=7)forced[p]=1;}m.paintRuinPixels({ruinSkeletonTheme:'kanthic',ruinSkeletonSeed:9},cut,12,12,oil,forced);assert.deepEqual(Array.from(cut.slice((5*12+1)*4,(5*12+1)*4+4)),[0,0,0,255]);assert.deepEqual(Array.from(cut.slice((5*12+2)*4,(5*12+2)*4+4)),[17,35,70,255]);assert.equal(cut[(5*12)*4+3],0);assert.deepEqual(Array.from(cut.slice((5*12+5)*4,(5*12+5)*4+4)),[0,0,0,255]);
+const cut=new Uint8ClampedArray(12*12*4),oil=new Uint8ClampedArray(cut.length),forced=new Uint8Array(144);for(let y=1;y<11;y++)for(let x=1;x<11;x++){const p=y*12+x;cut.set(x===1?[0,0,0,255]:[120,110,90,255],p*4);oil.set([17,35,70,255],p*4);if(x<=4&&y>=4&&y<=7)forced[p]=1;}m.paintRuinPixels({ruinSkeletonTheme:'kanthic',ruinSkeletonSeed:9},cut,12,12,oil,forced);assert.deepEqual(Array.from(cut.slice((5*12+1)*4,(5*12+1)*4+4)),[0,0,0,255]);assert.deepEqual(Array.from(cut.slice((5*12+2)*4,(5*12+2)*4+4)),[43,46,54,255]);assert.equal(cut[(5*12)*4+3],0);assert.deepEqual(Array.from(cut.slice((5*12+5)*4,(5*12+5)*4+4)),[0,0,0,255]);
 for(let seed=1;seed<=12;seed++){
   const mask=window.ToolMetalRecolor.buildOxidationMask(eligible,100,100,.28,{seed,blotchCount:9,separateBlotches:true});
   const visited=new Uint8Array(mask.length);let groups=0,area=0;
