@@ -194,6 +194,8 @@ async function ready(page) {
     assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('hobunji.modularWeapons.v5')).shafts['pick-shovel'].overrides['porakaneki-greatclub'].mountTypeMode),'tang');
     await page.locator('#pair-mount-type').selectOption('both');
     await page.waitForFunction(()=>document.querySelector('#flail-preview')?.dataset.mountSockets==='0:eye,1:tang');
+    await page.locator('#assembly-elements').evaluate(panel=>{panel.open=true;});
+    await page.locator('#assembly-mount-elements .assembly-element-row').nth(1).getByRole('button',{name:'Select line'}).click(); // Restore the source workspace after the persistence reload.
     // Bore tool is contextual: a flexible SHAFT alone does not show head-owned connector drilling.
     await page.locator('#shaft').selectOption('grapple-flail');
     await page.locator('#head').selectOption('fishing-mace'); // Allowed axial mace head; hammers are deliberately excluded by the authored matrix.

@@ -301,6 +301,7 @@
     try {
       const recipe=api.flailRecipe(shaftKey,headKey); // The same resolved assembly used by gameplay; not a second authoring model.
       if (!recipe?.flail) {
+        document.querySelector('.rig-legend').textContent='Gold arrow = selected haft tang · Cyan arrow = selected haft sleeve · Number = original haft line';
         const shaft=data.shafts[shaftKey], head=data.heads[headKey];
         const rig=composed.modularAttachmentRig || api.attachmentRig(shaft,head,api.settings(shaftKey,headKey)); // Exact bitmap provenance.
         const result=draw.renderRigid(canvas,composed,rig.children.map(child=>({...child.worldMount,index:child.index})),guides);
@@ -311,6 +312,7 @@
         canvas.dataset.mountSockets=rig.children.map(child=>child.index+':'+child.type).join(',');
         return;
       }
+      document.querySelector('.rig-legend').textContent='Gold ring = rope starts on haft · Cyan ring = rope attaches to head · Purple dashed ruler = connector reach (not another weapon part)';
       const flail=recipe.flail, paths=[flail.chain.sprite||'assets/objectsprites/rope_long.png',
         ...flail.head.layers.map(layer=>layer.sprite)]; // Load one original chain and ALL moving head layers.
       const images=await Promise.all(paths.map(src=>api.loadImage(src,'../../')));
@@ -377,6 +379,7 @@
         const fullContext=full.getContext('2d');fullContext.clearRect(0,0,450,1204);
         fullContext.drawImage(shaftImage,0,0,450,1204);full.dataset.rigKind='incompatible';
         full.dataset.mountTypeMode=values.mountTypeMode || 'auto'; full.dataset.mountSockets='';
+        document.querySelector('.rig-legend').textContent='No fitted assembly to mark in this mode.';
         byId('flail-preview-status').textContent='Not forgeable · the head/haft mounts, flail recipe ownership or explicit exclusion prevent this assembly.';
         bridgeView = null;
         canvas.width = 450; canvas.height = 1204; // Incompatible pairs render the donor only.

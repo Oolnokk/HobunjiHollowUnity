@@ -76,6 +76,29 @@ async function run() {
   }
   const api = window.ModularWeapons;
   const config = api.getConfig();
+  // Exact rendered attachment provenance and raster positions, including coincident arrows and a distinct destination.
+  window.ModularWeaponsKeepReference=true;
+  const pickDraft=JSON.parse(JSON.stringify(config)),pickKey='pick-shovel',spikeKey='porakaneki-greatclub';
+  const runMountMode=async(mode)=>{
+    (pickDraft.shafts[pickKey].overrides[spikeKey] ||= {}).mountTypeMode=mode;
+    api.replace(pickDraft);
+    const bitmap=await api.compose(pickKey,spikeKey);
+    assert.equal(bitmap.modularMountTypeMode,mode);
+    return { sockets:Array.from(bitmap.modularAttachmentRig.children,c=>c.index+':'+c.type),
+      samples:bitmap.drawnPixels.filter(p=>p.kind==='head').map(p=>({
+        x:bitmap.modularFrame.left+p.origin.x*bitmap.modularFrame.width/bitmap.width,
+        y:bitmap.modularFrame.top+p.origin.y*bitmap.modularFrame.height/bitmap.height
+      })) };
+  };
+  const sleeveFit=await runMountMode('eye'),tangFit=await runMountMode('tang');
+  assert.deepEqual(sleeveFit.sockets,['0:eye']);assert.deepEqual(tangFit.sockets,['1:tang']);
+  assert.deepEqual(sleeveFit.samples,tangFit.samples,'Overlapping directed arrows produce identical artwork but different provenance');
+  assert.equal((await runMountMode('both')).samples.length,1,'Both draws only one head at coincident lines');
+  pickDraft.shafts[pickKey].mounts[1].start={x:295,y:656};
+  pickDraft.shafts[pickKey].mounts[1].end={x:375,y:656};
+  assert.notDeepEqual((await runMountMode('tang')).samples,sleeveFit.samples,'Selecting the distinct destination moves the actual painted primitive');
+  assert.equal((await runMountMode('both')).samples.length,2);
+  window.ModularWeaponsKeepReference=false;api.replace(config); // Leave other layer-order tests on their shipped fixtures.
   assert.equal(api.settings('dagger', 'fishing-spear').layerOrder, 'haft-over-head', 'Default is haft in the foreground.');
   assert.equal(config.shafts.dagger.overrides['fishing-spear']?.layerOrder, 'haft-over-head', 'Every pair has an explicitly curated shipped layer.');
   function paints(canvas) { return canvas.operations.filter(op => op.startsWith('paint:')); }
