@@ -254,7 +254,7 @@
     for (const id of ['feyDementedStamina', 'feyPanickedStamina', 'feyTurnabout']) {
       if (window.EnchantmentSystem?.hasBase?.(id, attack.context.weaponKey)) {
         window.FeyIllusions?.apply?.(id, target, {
-          weaponKey: attack.context.weaponKey, attacker: attack.actor, effectMultiplier: ratio,
+          weaponKey: attack.context.weaponKey, attacker: attack.actor, effectMultiplier: ratio*(window.EnchantmentSystem?.levelMultiplier?.(attack.context.weaponKey,id)||1),
         }); // Secondary illusion buildup and the 10% turning chance both scale by the echo's power.
       }
     }

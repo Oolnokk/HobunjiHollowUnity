@@ -163,7 +163,7 @@
     const shape=enchanted.relicShape||(entity.ruinWallCoffin?null:shapes[Math.floor(Math.random()*shapes.length)]); // Exact coffin weapon.
     if(!shape||!relics.SHAPES[shape])return null;
     const state=clone(enchanted.enchantments); // Preserve first formula roll across failed loot saves.
-    const enchantments=entity.ruinWallCoffin?(enchanted.formulaState||=window.EnchantmentSystem?.rollFormulaState?.(state,'ruin',entity.ruinFormulaTier,Math.random)||state):state;
+    const enchantments=entity.ruinWallCoffin?(enchanted.formulaState||=window.EnchantmentSystem?.rollFormulaState?.(state,'ruin',entity.ruinFormulaTier,()=>window.GameRandom?.random?.()??Math.random())||state):state;
     const relic = { ...relics.makeRelic(shape), enchantments, ...(enchanted.visual ? { visual: clone(enchanted.visual) } : {}) };
     const key = relics.grantBoundRelic(relic);
     const result=key?{key,label:relics.SHAPES[relic.shape].label}:null;

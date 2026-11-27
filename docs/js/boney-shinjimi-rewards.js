@@ -55,7 +55,7 @@
     const es=window.EnchantmentSystem; // Boney continues supplying missing research after all eligible slots are learned.
     const known=es?.formulaIds?.(missing.id)||[];
     const available=[1,2,3,4,5].filter(n=>!known.includes(n));
-    if(available.length)(relic.enchantments.formulas||={})[missing.id]=pick(available,rng);
+    if(es?.formulaIds&&available.length)(relic.enchantments.formulas||={})[missing.id]=pick(available,rng);
     return relic;
   }
 

@@ -18,6 +18,7 @@
     FLURRY_FLOURISH_NUMERIC_MULTIPLIER,
     FLURRY_FLOURISH_PROC_CHANCE,
     ENCHANTMENT_POWER_PER_IMMUNDANITY,
+    FORMULA_LEVEL_STEP:0.25, // Applied magnitude increases by 25% for each additional distinct formula.
     MASTERY_POWER_LOSS_PER_IMMUNDANITY,
 
     SICCED_DURATION_S: 8, // Used as the transient target-lock lifetime for Sicced.
@@ -231,8 +232,8 @@
       if (DEFINITIONS[id]?.type === 'Flourish') flourishes[slotId] = id;
     }
     const clean = { base, flourishes };
-    const ids = [...base,...Object.values(flourishes)]; // Bound metadata is validated against the actual enchantments.
     if (raw?.formulas) {
+      const ids = [...base,...Object.values(flourishes)]; // Only bound records allocate formula metadata.
       const formulas = {};
       for (const id of ids) { const n=raw.formulas[id]; if(Number.isInteger(n)&&n>=1&&n<=5) formulas[id]=n; }
       if(Object.keys(formulas).length) clean.formulas=formulas;
@@ -324,7 +325,6 @@
     return DEFINITIONS[id]?.type === 'Flourish' && unlockStore().flourish[flourishUnlockKey(id, slotId)] === true;
   }
 
-  const FORMULA_LEVEL_STEP=0.25; // Applied magnitude increases by 25% for each additional distinct formula.
   const formulaIds=id=>{const bits=Number(unlockStore().formulas[id])&31;return [1,2,3,4,5].filter(n=>bits&(1<<(n-1)));};
   const formulaLevel=id=>formulaIds(id).length;
   function formulaNumber(source,difficulty,rng=rnd){
@@ -349,7 +349,7 @@
   }
   function levelMultiplier(key,id,slotId){
     if(window.BanditCaptainArmaments?.unlootedEnchantmentState?.(key))return 1;
-    return 1+(appliedLevel(key,id,slotId)-1)*FORMULA_LEVEL_STEP;
+    return 1+(appliedLevel(key,id,slotId)-1)*TUNING.FORMULA_LEVEL_STEP;
   }
   function writeLevel(state,key,rank){
     if(Number.isInteger(rank)&&rank>=2&&rank<=5)(state.levels||={})[key]=rank;
@@ -875,11 +875,11 @@
     return Object.values(DEFINITIONS).filter(def => def.type === type);
   }
 
-  function readOnlyValue(id) {
+  function readOnlyValue(id,key,slotId) {
     const el = document.createElement('div');
     el.className = 'settings-desc';
     const def = DEFINITIONS[id];
-    el.textContent = def ? `${def.icon || ''} ${def.displayName} · ${def.alignment}` : '— Empty —';
+    el.textContent = def ? `${def.icon || ''} ${def.displayName} · Lv ${appliedLevel(key,id,slotId)} · ${def.alignment}` : '— Empty —';
     if (def) el.title = def.description;
     return el;
   }
@@ -890,8 +890,8 @@
     const attunement = window.TrinketSystem?.debugLines?.() || [];
     return [
       `Weapon: ${key}`,
-      `Base: ${state.base.map(id => `${id} (${DEFINITIONS[id]?.alignment})`).join(', ') || 'none'}`,
-      ...(window.Combat?.loadout?.SLOT_IDS || ['tap1','tap2','hold1','hold2']).map(slot => `${slot} Flourish: ${state.flourishes?.[slot] ? `${state.flourishes[slot]} (${DEFINITIONS[state.flourishes[slot]]?.alignment})` : '—'}`),
+      `Base: ${state.base.map(id => `${id} Lv ${appliedLevel(key,id)} (${DEFINITIONS[id]?.alignment})`).join(', ') || 'none'}`,
+      ...(window.Combat?.loadout?.SLOT_IDS || ['tap1','tap2','hold1','hold2']).map(slot => `${slot} Flourish: ${state.flourishes?.[slot] ? `${state.flourishes[slot]} Lv ${appliedLevel(key,state.flourishes[slot],slot)} (${DEFINITIONS[state.flourishes[slot]]?.alignment})` : '—'}`),
       `Tothal ${counts.Tothal} · Hronal ${counts.Hronal} · Kanthic ${counts.Kanthic} · Ohthic ${counts.Ohthic} · Fey ${counts.Fey} (neutral)`,
       `Immundanity: ${getWeaponImmundanity(key)}`,
       `Enchantment power: ×${getEnchantmentPowerMultiplier(key).toFixed(2)}`,
@@ -929,7 +929,7 @@
       const label = document.createElement('div');
       label.className = 'settings-label';
       label.innerHTML = `<div class="settings-name">Base Enchantment ${i + 1}</div><div class="settings-desc">Applies to every qualifying hit made with this weapon.</div>`;
-      row.append(label, readOnlyValue(state.base[i]));
+      row.append(label, readOnlyValue(state.base[i],key));
       section.appendChild(row);
     }
 
@@ -940,7 +940,7 @@
       label.className = 'settings-label';
       const ability = window.Combat?.abilities?.get?.(window.Combat?.loadout?.getSlot?.(slotId));
       label.innerHTML = `<div class="settings-name">${slotId.toUpperCase()} Flourish · ${ability?.label || 'Empty'}</div><div class="settings-desc">${flourishTriggerText(slotId)}</div>`;
-      row.append(label, readOnlyValue(state.flourishes?.[slotId]));
+      row.append(label, readOnlyValue(state.flourishes?.[slotId],key,slotId));
       section.appendChild(row);
     }
 

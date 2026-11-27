@@ -1516,3 +1516,47 @@ console.log('Planar enchantments through live Drunken Health adapter passed');
   same(cleaned,{base:['stormwake','ancestralSight'],flourishes:{tap1:'blackBargain',hold2:'ancestralMercy'}});
   console.log('Resource-specific provider dispatch, enhanced pool order and canonical enchantment normalization passed');
 }
+
+
+// Five independent formulas per enchantment: explicit application, migration and loot source gates.
+{
+  const originalGear=gear; // Isolate research from the preceding balance fixtures.
+  gear={tools:{sword:true}};
+  const formula=n=>({base:['burning'],flourishes:{tap1:'sicced'},formulas:{burning:n,sicced:n}});
+  assert.equal(ES.formulaLevel('burning'),0);
+  for(const [n,level] of [[4,1],[4,1],[2,2],[5,3],[1,4],[3,5]]) {
+    ES.unlockFromState(formula(n),{deferSave:true});
+    assert.equal(ES.formulaLevel('burning'),level);
+    assert.equal(ES.formulaLevel('sicced'),level);
+  }
+  same(ES.formulaIds('burning'),[1,2,3,4,5]);
+  assert.equal(ES.isFlourishUnlocked('sicced','tap2'),false,'formula research does not waive slot restrictions');
+  const relic={shape:'longsword',uid:'formula123',enchantments:formula(4)};
+  same(HR.decodeBoundKey(HR.encodeBoundKey(relic)).enchantments,formula(4),'bound formulas persist through the pack key');
+  assert.equal(ES.appliedLevel('sword','burning'),1,'knowledge never upgrades existing weapons automatically');
+  assert.equal(ES.equipBase('sword',0,'burning',{level:5,deferSave:true}),true);
+  assert.equal(ES.setFlourish('sword','tap1','sicced',{level:3,deferSave:true}),true);
+  assert.equal(ES.levelMultiplier('sword','burning'),2);
+  const snapshot=ES.serialize();
+  ES.load(snapshot);
+  assert.equal(ES.appliedLevel('sword','burning'),5);
+  assert.equal(ES.appliedLevel('sword','sicced','tap1'),3);
+  ES.equipBase('sword',0,null,{deferSave:true});
+  assert.equal(ES.appliedLevel('sword','burning'),1,'remove clears old strength');
+  ES.setFlourish('sword','tap1',null,{deferSave:true});
+  assert.equal(ES.appliedLevel('sword','sicced','tap1'),1);
+  gear={enchantmentUnlocks:{base:{burning:true},flourish:{'sicced@tap1':true}}};
+  same(ES.formulaIds('burning'),[1],'legacy learned enchantment grants exactly formula I');
+  same(ES.formulaIds('sicced'),[1]);
+  for(const [source,difficulty,min,max] of [['captain',5,1,2],['captain',8,1,2],['ruin','cave',2,4],['ruin','hole',2,4],['ruin','lich',2,4],['final',4,4,5],['fey',1,1,5]]) {
+    const results=Array.from({length:1000},(_,i)=>ES.formulaNumber(source,difficulty,()=>i/1000));
+    assert.equal(Math.min(...results),min);
+    assert.equal(Math.max(...results),max);
+  }
+  assert.equal(ES.formulaNumber('captain',5,()=>.3),1);
+  assert.equal(ES.formulaNumber('captain',8,()=>.3),2);
+  assert.equal(ES.formulaNumber('ruin','cave',()=>.025),3);
+  assert.equal(ES.formulaNumber('ruin','lich',()=>.025),4);
+  gear=originalGear;
+  console.log('Enchantment formula identity, source weights, migration and applied ranks passed');
+}

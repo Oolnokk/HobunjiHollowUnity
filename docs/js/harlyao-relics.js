@@ -128,7 +128,8 @@
     const base = (relic.enchantments?.base || []).join('-');
     const flourishes = Object.entries(relic.enchantments?.flourishes || {}).map(([slot, id]) => `${slot}.${id}`).join('-');
     const prefix = SHAPES[relic?.shape]?.origin === 'Fey' ? FEY_BOUND_PREFIX : BOUND_PREFIX; // The origin is an explicit, save-stable bound-key distinction.
-    const formulas=Object.entries(relic.enchantments?.formulas||{}).map(([id,n])=>id+'.'+n).join('-'); // Optional suffix keeps old bound keys valid.
+    const ids=new Set([...(relic.enchantments?.base||[]),...Object.values(relic.enchantments?.flourishes||{})]); // Ignore stale research from a replaced slot.
+    const formulas=Object.entries(relic.enchantments?.formulas||{}).filter(([id,n])=>ids.has(id)&&Number.isInteger(n)&&n>=1&&n<=5).map(([id,n])=>id+'.'+n).join('-'); // Optional suffix keeps old bound keys valid.
     return `${prefix}${relic.shape}_${relic.uid}_B${base}_F${flourishes}${relic.visual ? encodeVisual(relic.visual) : ''}${formulas?'_R'+formulas:''}`;
   }
 
@@ -641,7 +642,7 @@
         .concat(unlocked.base.filter(id => id === current || !state.base.includes(id)).map(id => ({ value: id, label: `${defs[id].icon || ''} ${defs[id].displayName} · Lv ${es.formulaLevel?.(id)||1} · ${defs[id].alignment}` })));
       const pick = select(options, current);
       const apply = button('Apply', () => pick.value && applyBase(selectedWeaponKey, i, pick.value), !window.ArtifactCollection?.unlocked?.('base') || (window.DelversGuild && !window.DelversGuild.canEnchant()) || !unlocked.base.length); // Label reflects the currently selected Fey/planar origin.
-      const updateApplyLabel = () => { apply.textContent = `${isFeyEnchantment(pick.value) ? 'Pretend to enchant' : 'Apply'} (${feyServicePrice(TUNING.APPLY_BASE_PRICE, isFeyEnchantment(pick.value))}g)`; };
+      const updateApplyLabel = () => { const upgrade=pick.value===current && (es.formulaLevel?.(current)||1)>(es.appliedLevel?.(selectedWeaponKey,current)||1); apply.textContent = `${isFeyEnchantment(pick.value) ? (upgrade?'Pretend to enhance':'Pretend to enchant') : (upgrade?'Enhance':'Apply')} (${feyServicePrice(TUNING.APPLY_BASE_PRICE, isFeyEnchantment(pick.value))}g)`; };
       pick.addEventListener('change', updateApplyLabel);
       updateApplyLabel();
       const controls = [pick, apply];
@@ -657,7 +658,7 @@
       const pick = select(options, current);
       const any = options.length > 1;
       const apply = button('Apply', () => pick.value && applyFlourish(selectedWeaponKey, slotId, pick.value), !window.ArtifactCollection?.unlocked?.('flourish') || (window.DelversGuild && !window.DelversGuild.canEnchant()) || !any); // Fey Flourishes use the same doubled fee and pretend label as Base magic.
-      const updateApplyLabel = () => { apply.textContent = `${isFeyEnchantment(pick.value) ? 'Pretend to enchant' : 'Apply'} (${feyServicePrice(TUNING.APPLY_FLOURISH_PRICE, isFeyEnchantment(pick.value))}g)`; };
+      const updateApplyLabel = () => { const upgrade=pick.value===current && (es.formulaLevel?.(current)||1)>(es.appliedLevel?.(selectedWeaponKey,current,slotId)||1); apply.textContent = `${isFeyEnchantment(pick.value) ? (upgrade?'Pretend to enhance':'Pretend to enchant') : (upgrade?'Enhance':'Apply')} (${feyServicePrice(TUNING.APPLY_FLOURISH_PRICE, isFeyEnchantment(pick.value))}g)`; };
       pick.addEventListener('change', updateApplyLabel);
       updateApplyLabel();
       const controls = [pick, apply];
@@ -667,6 +668,7 @@
     }
 
     list.appendChild(heading('What Garanki has learned'));
+    list.appendChild(note('Each distinct formula unlocks one level. Apply or enhance a weapon to combine all formulas Garanki knows. Duplicates do not raise the level.'));
     const learned=[...new Set([...unlocked.base,...unlocked.flourish.map(entry=>entry.id)])].map(id=>`${defs[id].displayName}: Lv ${es.formulaLevel?.(id)||1} — formulas ${(es.formulaIds?.(id)||[1]).join(', ')} / 5`);
     list.appendChild(note(learned.length ? learned.join(' · ') : 'Nothing yet — each relic you have him unbind teaches him its enchantments.'));
 
@@ -681,7 +683,7 @@
       bound: boundRelicsInInventory().map(entry => ({ key: entry.key, shape: entry.shape, origin: entry.origin, enchantments: entry.enchantments, price: unbindPrice(entry.enchantments, entry.origin) })),
       boundCaptains: window.BanditCaptainArmaments?.boundWeaponsInInventory?.() || [], // Mobile diagnostics include pending registrations.
       unbound: Object.keys(gear()?.harlyaoRelics || {}),
-      latestChange: 'Unbinding clears verdigris and resets Mastery to 0; bronze relics then age with their new owner.',
+      latestChange: 'Bound weapons carry source-specific enchantment formulas. Garanki combines distinct discoveries into levels I–V; applied levels persist per weapon and Flourish slot.',
       unlocks: ES()?.unlockedOptions?.() || null,
       formulas: Object.fromEntries(Object.keys(ES()?.DEFINITIONS||{}).map(id=>[id,ES()?.formulaIds?.(id)||[]])), // Mobile research diagnostics.
       collection: window.ArtifactCollection?.debugSnapshot?.() || null,
