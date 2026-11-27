@@ -4178,6 +4178,12 @@
       const originalPlaceHandWorld = rig.placeHandWorld?.bind(rig);
       if (originalPlaceHandWorld) {
         rig.placeHandWorld = function secondarySpanBlendWorld(side, worldPosition, worldQuaternion, modelCalibration = null, gripInfluence = null) {
+          if (rig.blendsGripBeforeShoulderAim) {
+            // The shared shoulder solver owns the raw idle-to-grip blend and
+            // constrains the resulting pose once, rather than being overwritten.
+            const influence = side === 'left' ? clamp01(gripInfluence ?? 1) : 1;
+            return originalPlaceHandWorld(side, worldPosition, worldQuaternion, modelCalibration, influence);
+          }
           const result = originalPlaceHandWorld(side, worldPosition, worldQuaternion, modelCalibration); // Preserve per-GLB calibration through the off-hand span wrapper.
           if (side !== 'left' || !leftSocket || !idlePosition || !idleQuaternion) return result;
           const influence = clamp01(gripInfluence ?? currentSecondaryGripAnimationState().influence);
