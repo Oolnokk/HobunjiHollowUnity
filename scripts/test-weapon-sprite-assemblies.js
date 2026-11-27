@@ -385,6 +385,18 @@ checkEnemyWeaponCleanup().catch(error => { console.error(error); process.exitCod
   api.resolveGroundSlack(rightHand,d,1,.3,{x:2.2,y:0,z:0});
   api.resolveGroundSlack(leftHand,d,1,.3,{x:-1.8,y:0,z:0});
   close(rightHand.x+2.2,2);close(leftHand.x-1.8,-2);
+  // The offhand may be unpinned while the hidden shared pendulum points up.
+  const kicked={x:0,y:1,z:0}, off={grounded:false};
+  const shared={dualWieldReplicas:[{},{}]}, root=shared.dualWieldReplicas[1];
+  const states=new Map([[shared.dualWieldReplicas[0],{groundTrail:{grounded:true}}]]);
+  const trail=off,sharedPhysics=shared,maxReach=1,available=.4;
+  // Evaluate the actual production seed predicate and use its chosen direction.
+  const seedSource=source.slice(source.indexOf('      const peers=sharedPhysics?.dualWieldReplicas;'),source.indexOf('      resolveGroundSlack(trail,seedOffhand'));
+  const seed=vm.runInNewContext(seedSource+';seedOffhand',{sharedPhysics,trail,root,states,maxReach,available});
+  assert.equal(seed,true,'grounded main hand permits an independent offhand ground seed');
+  api.resolveGroundSlack(off,seed?d:kicked,1,.4,{x:2,y:0,z:0});
+  assert.equal(off.grounded,true);close(off.y,-.4);close(off.x,0);
+  assert.equal(kicked.y,1,'shared pendulum is not mutated by the offhand');
   const unreachable=step(10,10,-2,1,4);close(unreachable.y,1);close(Math.hypot(unreachable.x,unreachable.y,unreachable.z),1);
   for(const [x,y,target] of [[0,1,.3],[.2,1,.5],[.5,1,.1],[.5,0,.1],[0,1,0]]){
     const scale=api.slackConnectorScale(x,y,target,{});
