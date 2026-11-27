@@ -10,13 +10,13 @@ const editor = fs.readFileSync('docs/tools/attack-animation-editor/index.html', 
 const runtimeEntries = ['docs/index.html', 'docs/tools/animation-author/index.html', 'docs/tools/attack-animation-editor/index.html']; // All entry points must request the current shared hand bootstrap.
 assert.match(dual, /const DUPLICATE_Z_GAP = 0\.15/, 'dual weapons use the requested halved 0.15 total plane-normal gap');
 assert.match(dual, /const MAIN_HAND_LAG_MS = 45/, 'main-hand duplicate keeps the requested small transform lag');
-assert.match(dual, /plane\.add\(offRoot\)[\s\S]*plane\.add\(mainRoot\)/, 'both visible weapon roots are children of the hidden original plane');
+assert.match(dual, /plane\.add\(mainRoot,offRoot\)/, 'the hidden plane bakes the main weapon before its reflection');
 assert.match(dual, /record\.material\.visible = false/, 'original weapon material is hidden without hiding child duplicates');
 assert.match(dual, /duplicate\.position\.set\?\.\(0, 0, side === 'main' \? -HALF_Z_SEPARATION : HALF_Z_SEPARATION\)/, 'only visible child weapons receive the equal/opposite local sprite-plane-normal offsets');
 assert.doesNotMatch(dual, /offsetWorld\.set\(0, 0, -HALF_Z_SEPARATION\)/, 'main root no longer carries the sandwich offset');
 assert.match(dual, /desiredWorldPosition\.copy\(basePosition\)/, 'main root replays only the delayed source transform');
 assert.match(dual, /delayedParentPose[\s\S]*MAIN_HAND_LAG_MS/, 'main root replays delayed translation + rotation without inheriting sprite scale twice');
-assert.match(dual, /current\.plane\.updateWorldMatrix\?\.\(true, false\)[\s\S]*current\.offRoot\.updateMatrixWorld\?\.\(true\)[\s\S]*current\.mainRoot\.updateMatrixWorld\?\.\(true\)/, 'duplicate world matrices are current before either hand reads its weapon socket');
+assert.match(dual, /current\.mainRoot\.updateMatrixWorld[\s\S]*?if\(current\.mirrorOffhand\)current\.offRoot\.updateMatrixWorld/, 'the final offhand bake follows main-hand clearance');
 assert.match(dual, /root\.scale\.set\(1, 1, 1\)/, 'dual roots stay unit-scale so the hidden parent is the sole sprite-scale authority');
 assert.match(dual, /idleStancePoses/, 'dual presentation consumes explicit main/offhand idle stance poses');
 assert.doesNotMatch(dual, /requestAnimationFrame/, 'dual-wield visuals must share the scheduler/hand-sync owners instead of starting a second frame loop');
