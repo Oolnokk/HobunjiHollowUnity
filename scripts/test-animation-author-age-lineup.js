@@ -142,7 +142,7 @@ assert.equal(api.individualAgeValues(other).width,otherBefore,'another species/g
 api.choose(other);
 api.editIndividualAge('head','52');
 assert.equal(api.individualAgeValues(other).head,.52);
-assert.equal(api.individualAgeValues(entry).head,.97);
+assert.equal(api.individualAgeValues(entry).head,.65);
 api.applyAgeModifiers('widthConvergence','45');
 api.applyAgeModifiers('heightConvergence','30');
 const beforeBake=[entry,other].map(e=>api.previewAgeValues(e));

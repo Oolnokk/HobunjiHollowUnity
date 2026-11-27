@@ -9,6 +9,7 @@
   const SCHEMA = 'hobunji.character-age-rig-modifiers.v1'; // Validates the editor's export and the applied browser override.
   const APPLIED_KEY = 'hobunji.character-age-rig-active.v1'; // Only an explicit Apply action writes this game-facing preference.
   const AXES = ['width', 'height', 'head', 'hand', 'foot', 'widthConvergence', 'heightConvergence']; // Independent body axes plus head and GLB limb sizes for every growth stage.
+  const YOUNG_HEAD = .65; // Shared default and one-time migration target for babies and toddlers.
   const MODES = ['baby', 'toddler', 'child']; // Adult reference never receives a size override.
   const family = window.HobunjiRomanceConfig?.family;
   const png = window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar;
@@ -27,8 +28,8 @@
       fallback[axis] ?? fallback.body),
   ])); // Old body-only authoring maps to BOTH width and height; never discard existing saved stages.
   const defaults = {
-    baby: stage(family.phaseScales?.basket, { width: .32, height: .32, head: .50, hand: 1.2, foot: 1.2 }),
-    toddler: stage(family.phaseScales?.toddler, { width: .4, height: .4, head: .66, hand: 1, foot: 1 }),
+    baby: stage(family.phaseScales?.basket, { width: .32, height: .32, head: YOUNG_HEAD, hand: 1.2, foot: 1.2 }),
+    toddler: stage(family.phaseScales?.toddler, { width: .4, height: .4, head: YOUNG_HEAD, hand: 1, foot: 1 }),
     child: {
       width: positive(png.childWidthScaleMultiplier, positive(png.childScaleMultiplier, .5)), // Old child size was uniform; new config may override width independently.
       height: positive(png.childScaleMultiplier, .5),
@@ -90,26 +91,27 @@
     "porakaneki::male": {"width":0.5132970237137927,"height":0.4466340538315023,"head":0.97,"hand":1.66,"foot":1.62},
     "harlyao::female": {"width":0.6184486373165619,"height":0.2880658436213992,"head":0.97,"hand":1.66,"foot":1.62},
   }; // Exact 26 baby profiles from hobunji_character_age_rig_modifiers(1).json; no new convergence or size correction.
-  const PRESET_VERSION = 2; // One-time upgrade of earlier baby/toddler drafts and applied profiles to the latest authored preset.
+  const PRESET_VERSION = 3; // V3 changes only baby/toddler head size; V1 still receives the original V2 body/limb migration.
   const importedToddler = Object.fromEntries(Object.entries(importedBaby).map(([key,row]) => [key, { ...row, height: row.height + .20 }])); // Add 20 percentage points to height only; independent editable toddler rows.
-  const repositoryProfiles = sanitizeProfiles(png.ageProfiles || { baby: importedBaby, toddler: importedToddler, child: {} }); // Accept the exported baked profile table as checked-in configuration.
-  function rigReference(adult) {
-    if (!adult || !['x','y','head'].every(axis => Number.isFinite(adult[axis]) && adult[axis] > 0)) return null;
-    return { x: adult.x, y: adult.y, head: adult.head }; // Preserve the reference against which a younger stage's factors were authored.
+  const repositoryProfiles = resetYoungHeads(sanitizeProfiles(png.ageProfiles || { baby: importedBaby, toddler: importedToddler, child: {} })); // Preserve authored body/limb values while replacing young head proportions.
+  function rigReference(adult, allowBodyOnly = false) {
+    if (!adult || !['x','y'].every(axis => Number.isFinite(adult[axis]) && adult[axis] > 0)) return null;
+    if (Number.isFinite(adult.head) && adult.head > 0) return { x: adult.x, y: adult.y, head: adult.head };
+    return allowBodyOnly ? { x: adult.x, y: adult.y } : null; // A migrated head is relative to the current adult, while baked body references remain intact.
   }
   function sanitizeProfiles(profiles) {
     return Object.fromEntries(MODES.map(mode => [mode, Object.fromEntries(Object.entries(profiles?.[mode] || {})
       .filter(([key, row]) => /^[a-z0-9-]+::(male|female)$/.test(key) && row && typeof row === 'object')
       .map(([key, row]) => {
         const values = Object.fromEntries(PROFILE_AXES.map(axis => [axis, Math.max(.01, Math.min(20, positive(row[axis], defaults[mode][axis])))]));
-        const reference = rigReference(row.adultReference);
+        const reference = rigReference(row.adultReference, true);
         return [key, reference ? { ...values, adultReference: reference } : values];
       }))]));
   }
   function relativeProfile(row, adult) {
-    const reference = rigReference(row?.adultReference), current = rigReference(adult);
+    const reference = rigReference(row?.adultReference, true), current = rigReference(adult);
     if (!reference || !current) return row;
-    return { ...row, width: row.width * reference.x/current.x, height: row.height * reference.y/current.y, head: row.head * reference.head/current.head };
+    return { ...row, width: row.width * reference.x/current.x, height: row.height * reference.y/current.y, head: reference.head ? row.head * reference.head/current.head : row.head };
   } // Child factors are adjusted to the live adult rig, preserving baked dimensions even when the adult export has not been installed yet.
   function profileFor(mode, species, gender, profiles = activeProfiles) {
     const key = identityKey(species, gender); // Exact species+gender first; no shared male/female override.
@@ -199,16 +201,26 @@
     return values;
   }
 
+  function resetYoungHeads(profiles) {
+    for (const mode of ['baby', 'toddler']) for (const row of Object.values(profiles[mode] || {})) {
+      row.head = YOUNG_HEAD;
+      if (row.adultReference) delete row.adultReference.head; // Preserve frozen body dimensions, but reset head relative to the live adult.
+    }
+    return profiles;
+  }
+
   function upgradePresetProfiles(profiles, version) {
-    const saved = sanitizeProfiles(profiles || {}); // Preserve the independently authored child table; replace only the two explicitly updated stages.
+    const saved = sanitizeProfiles(profiles || {});
     if (Number(version) >= PRESET_VERSION) return saved;
-    return { ...saved, baby: clone(repositoryProfiles.baby), toddler: clone(repositoryProfiles.toddler) };
+    if (!(Number(version) >= 2)) return { ...saved, baby: clone(repositoryProfiles.baby), toddler: clone(repositoryProfiles.toddler) }; // Preserve the original V1 -> V2 migration.
+    return resetYoungHeads(saved); // V2 -> V3 leaves body, limbs, and the older child stage intact.
   }
 
   function upgradePresetModifiers(modifiers, version) {
-    const saved = sanitize(modifiers); // Keep independent child settings and current-version edits.
+    const saved = sanitize(modifiers);
     if (Number(version) >= PRESET_VERSION) return saved;
-    return { ...saved, baby: clone(defaults.baby), toddler: clone(defaults.toddler) }; // Same fallback reset as the editor draft migration.
+    if (!(Number(version) >= 2)) return { ...saved, baby: clone(defaults.baby), toddler: clone(defaults.toddler) };
+    return { ...saved, baby: { ...saved.baby, head: YOUNG_HEAD }, toddler: { ...saved.toddler, head: YOUNG_HEAD } };
   }
 
   function readApplied() {
@@ -265,6 +277,7 @@
     repositoryDefaults: () => clone(defaults),
     presetVersion: PRESET_VERSION,
     upgradePresetProfiles,
+    upgradePresetModifiers, // The editor draft uses exactly the same versioned migration as gameplay.
     repositoryProfiles: () => clone(repositoryProfiles),
     effectiveProfiles: () => clone(activeProfiles),
     sanitizeProfiles, profileFor, scaledProfile, stageConvergenceBasis, convergeProfile, identityKey, rigReference, relativeProfile,

@@ -101,8 +101,8 @@
     }); // Existing body-only stages initialize BOTH dimensions.
     return {
       adult: { width: 1, height: 1, head: 1, hand: 1, foot: 1, widthConvergence: 0, heightConvergence: 0 },
-      baby: mode(phases.basket, { width: .32, height: .32, head: .50, hand: 1.2, foot: 1.2 }),
-      toddler: mode(phases.toddler, { width: .4, height: .4, head: .66, hand: 1, foot: 1 }),
+      baby: mode(phases.basket, { width: .32, height: .32, head: .65, hand: 1.2, foot: 1.2 }),
+      toddler: mode(phases.toddler, { width: .4, height: .4, head: .65, hand: 1, foot: 1 }),
       child: mode(phases.child, {
         width: positive(png.childWidthScaleMultiplier, positive(png.childScaleMultiplier, .5)),
         height: positive(png.childScaleMultiplier, .5),
@@ -133,12 +133,12 @@
     if (saved?.schema === 'hobunji.character-age-rig-modifiers.v1' && ageApi?.upgradePresetProfiles) ageProfiles = ageApi.upgradePresetProfiles(saved.profiles,saved.presetVersion);
     else if (saved?.profiles) ageProfiles = ageApi?.sanitizeProfiles?.(saved.profiles) || saved.profiles;
     if (saved?.schema !== 'hobunji.character-age-rig-modifiers.v1') return;
+    const savedModifiers = ageApi?.upgradePresetModifiers?.(saved.modifiers, saved.presetVersion) || saved.modifiers; // Same head-only migration as gameplay; preserve other V2 authoring.
     for (const mode of AGE_MODES.filter(value => value !== 'adult')) for (const axis of AGE_AXES) {
-      if ((mode === 'baby' || mode === 'toddler') && ageApi?.presetVersion && !(Number(saved.presetVersion) >= ageApi.presetVersion)) continue; // Import the supplied baby preset once, not the obsolete global-only draft.
       if (saved.profiles && axis.endsWith('Convergence')) continue; // Preview strength is not durable.
-      ageModifiers[mode][axis] = clampAgeModifier(saved.modifiers?.[mode]?.[axis] ?? ((axis === 'width' || axis === 'height') ? saved.modifiers?.[mode]?.body : null), axis, defaults[mode][axis]); // Legacy body autosaves map to both axes.
+      ageModifiers[mode][axis] = clampAgeModifier(savedModifiers?.[mode]?.[axis] ?? ((axis === 'width' || axis === 'height') ? savedModifiers?.[mode]?.body : null), axis, defaults[mode][axis]); // Legacy body autosaves map to both axes.
     }
-    if (ageApi?.presetVersion && !(Number(saved.presetVersion) >= ageApi.presetVersion)) persistAgeModifiers(); // Replace old baby/toddler values once on this browser; retain subsequent authoring.
+    if (ageApi?.presetVersion && !(Number(saved.presetVersion) >= ageApi.presetVersion)) persistAgeModifiers(); // Persist the shared migration once; retain subsequent authoring.
   }
 
   function persistAgeModifiers() {

@@ -13,8 +13,8 @@ const html = fs.readFileSync('docs/index.html', 'utf8'); // Ensures configuratio
 const bootstrap = fs.readFileSync('docs/js/attachment-rig-latest-authored-snapshot.js', 'utf8'); // Ensures the editor loads the SAME bridge.
 const storage = new Map(); // Local storage models the same-origin persistence boundary.
 const repositoryFamily = () => ({ phaseScales: {
-  basket: { body: .32, head: .50, hand: 1.2, foot: 1.2 },
-  toddler: { body: .4, head: .66, hand: 1, foot: 1 },
+  basket: { body: .32, head: .65, hand: 1.2, foot: 1.2 },
+  toddler: { body: .4, head: .65, hand: 1, foot: 1 },
   child: null,
 }, childLimbModifiers: { hand: 1, foot: 1 } });
 const repositoryPng = () => ({ childScaleMultiplier: .5, childHeadScaleMultiplier: .72 });
@@ -34,8 +34,8 @@ const initial = start();
 assert(initial.api, 'the shared age-rig API must initialize when family and PNG settings are available');
 const plain = value => JSON.parse(JSON.stringify(value));
 assert.deepEqual(plain(initial.api.repositoryDefaults()), {
-  baby: { width: .32, height: .32, head: .50, hand: 1.2, foot: 1.2, widthConvergence: 0, heightConvergence: 0 },
-  toddler: { width: .4, height: .4, head: .66, hand: 1, foot: 1, widthConvergence: 0, heightConvergence: 0 },
+  baby: { width: .32, height: .32, head: .65, hand: 1.2, foot: 1.2, widthConvergence: 0, heightConvergence: 0 },
+  toddler: { width: .4, height: .4, head: .65, hand: 1, foot: 1, widthConvergence: 0, heightConvergence: 0 },
   child: { width: .5, height: .5, head: .72, hand: 1, foot: 1, widthConvergence: 0, heightConvergence: 0 },
 });
 assert.equal(initial.api.snapshot().applied, false, 'drafts never change the game before explicit Apply');
@@ -54,6 +54,25 @@ assert.equal(migrated.family.phaseScales.toddler.height, .4, 'old applied toddle
 assert.equal(migrated.png.childScaleMultiplier, .63, 'independent child override survives the preset upgrade');
 assert.equal(JSON.parse(storage.get(oldAppliedKey)).presetVersion, initial.api.presetVersion, 'migration persists its new version');
 migrated.api.restoreRepositoryOnThisDevice();
+for (const mode of ['baby', 'toddler']) {
+  const rows = initial.api.repositoryProfiles()[mode];
+  assert.equal(Object.keys(rows).length, 26);
+  for (const row of Object.values(rows)) assert.equal(row.head, .65, mode + ': every authored head is 65% of its adult equivalent');
+}
+const v2Row = { width: .44, height: .37, head: .97, hand: 1.4, foot: 1.2, adultReference: { x: 1.2, y: 1.5, head: 1.1 } };
+const v2Profiles = { baby: { 'mao-ao::male': v2Row }, toddler: { 'mao-ao::male': v2Row }, child: { 'mao-ao::male': v2Row } };
+storage.set(oldAppliedKey, JSON.stringify({ schema: initial.api.schema, presetVersion: 2, modifiers: override, profiles: v2Profiles }));
+const v3 = start();
+for (const mode of ['baby', 'toddler']) {
+  const row = plain(v3.api.profileFor(mode, 'mao-ao', 'male'));
+  assert.deepEqual(row, { ...v2Row, head: .65, adultReference: { x: 1.2, y: 1.5 } });
+  assert.equal(v3.api.relativeProfile(row, { x: .6, y: .75, head: .7 }).head, .65, 'old adult head reference cannot enlarge migrated head');
+  assert.equal(v3.api.relativeProfile(row, { x: .6, y: .75, head: .7 }).width, .88, 'frozen body reference survives');
+  assert.deepEqual(plain(v3.api.effectiveValues()[mode]), { ...override[mode], head: .65, widthConvergence: 0, heightConvergence: 0 });
+}
+assert.deepEqual(plain(v3.api.profileFor('child', 'mao-ao', 'male')), v2Row, 'older child profile untouched');
+assert.equal(start().api.profileFor('toddler', 'mao-ao', 'male').head, .65, 'migration survives reload');
+v3.api.restoreRepositoryOnThisDevice();
 const applied = plain(initial.api.applyOnThisDevice(override));
 assert.deepEqual(applied, Object.fromEntries(Object.entries(override).map(([mode, values]) => [mode, { ...values, widthConvergence: 0, heightConvergence: 0 }])), 'valid global authoring values must be persisted unchanged');
 assert.equal(initial.family.phaseScales.basket.width, .36, 'baby width reaches the family record');
@@ -101,7 +120,7 @@ assert.equal(start().api.snapshot().applied, false, 'repository restore survives
 initial.api.applyOnThisDevice({ baby: { body: Infinity, head: -1, hand: 999, foot: null },
   toddler: { body: .25, head: .4, hand: .8, foot: .9 }, child: { body: .5, head: .7, hand: .9, foot: .99 } });
 assert.equal(initial.family.phaseScales.basket.body, .32, 'nonfinite values fall back to repository defaults');
-assert.equal(initial.family.phaseScales.basket.head, .5, 'negative values fall back to repository defaults');
+assert.equal(initial.family.phaseScales.basket.head, .65, 'negative values fall back to repository defaults');
 assert.equal(initial.family.phaseScales.basket.hand, 2, 'extreme hand proportions are safely clamped');
 assert.equal(initial.family.phaseScales.basket.foot, 1.2, 'missing foot values fall back to repository defaults');
 storage.set(initial.api.appliedStorageKey, 'not-json');
