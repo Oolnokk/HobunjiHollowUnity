@@ -1040,6 +1040,7 @@
 
   window.ToolMetalRecolor = {
     buildOxidationMask, // Shared irregular texture reveal mask.
+    buildOxidationOutlineMask, // Shared authored-style black perimeter for other texture reveals.
     getRecoloredCanvas,
     clearCache,
     rgbToHsv,

@@ -596,7 +596,7 @@
    * @param opts.appearance  {primaryHex, secondaryHex, patternHex, weaving}
    * @returns handle {update, setAppearance, dispose, mesh} or null when pants cannot be drawn for this avatar
    */
-  function attach(THREE, { avatarGroup, legHandle, speciesId, gender, garmentId = DEFAULT_GARMENT_ID, appearance = {}, name = 'pants', overlayMask = null, garmentRecord = null, characterRecord = null, imageUrl = null, sourceCanvas = null, footObjects = null, debugSplines = false, spine = null, meshBudget = null, gpuSkin = true } = {}) {
+  function attach(THREE, { avatarGroup, legHandle, speciesId, gender, garmentId = DEFAULT_GARMENT_ID, appearance = {}, name = 'pants', overlayMask = null, garmentRecord = null, characterRecord = null, imageUrl = null, sourceCanvas = null, footObjects = null, debugSplines = false, spine = null, meshBudget = null, gpuSkin = true, transformCanvas = null } = {}) {
     if (!characterRecord && isPantlessSpecies(speciesId)) return null; // The author's live preview (explicit records) can still show them.
     const Core = core();
     const garment = garmentRecord || rigConfig().garments?.[garmentId]; // The editor passes its live, unsaved authoring records here.
@@ -732,7 +732,10 @@
       handle.appearance = { ...handle.appearance, ...next };
       const token = ++handle.renderToken;
       let canvas;
-      try { canvas = await renderGarmentCanvas(garmentId, garment, handle.appearance); } catch (error) { console.warn('[PantsGarmentRenderer] could not render garment art', error); return false; }
+      try {
+        canvas = await renderGarmentCanvas(garmentId, garment, handle.appearance);
+        if(transformCanvas&&!handle.disposed&&token===handle.renderToken)canvas=await transformCanvas(canvas); // Optional owner-specific postprocess, only at appearance changes.
+      } catch (error) { console.warn('[PantsGarmentRenderer] could not render garment art', error); return false; }
       if (handle.disposed || token !== handle.renderToken) return false;
       const { texture, material } = createMesh(canvas);
       if (!handle.mesh) {

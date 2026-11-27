@@ -6,20 +6,27 @@ GhoulSpecialVariants:{rollEnchantedWeapon:(rnd,o)=>{assert.equal(o.singleBase,tr
 BanditCombat:{makeEntity:async(cfg,rank,tier,x,y,o)=>{calls.push(o);return {maxFooting:10,maxHealth:100,def:{weaponShapeKey:'warhammer'},rosterRecord:o.rosterOverride,...o.extra};}}};
 vm.runInNewContext(fs.readFileSync('docs/js/combat/combat-minion.js','utf8'),{window,console});
 (async()=>{const m=window.MinionCombat,o={zoneId:'map_i_dev_random_ruin',roster:{appearance:{speciesId:'harlyao-skeleton'}},baseConfig:{}};
-// Frost and charcoal must retain pure black, transparent and dark anti-aliased ink in all views.
-const sample=[0,0,0,255,0,0,0,80,12,20,24,255,100,85,50,255,200,150,100,0,0,32,0,255];
-const canvases=Array.from({length:4},()=>{const data=new Uint8ClampedArray(sample);return {width:6,height:1,data,getContext:()=>({getImageData:()=>({data}),putImageData(){}})};});
-await m.paintRuinPortraits({ruinSkeletonTheme:'tothal',ruinSkeletonSeed:7},canvases);
-for(const canvas of canvases){assert.deepEqual(Array.from(canvas.data.slice(0,12)),sample.slice(0,12));assert.deepEqual(Array.from(canvas.data.slice(16,20)),sample.slice(16,20));assert.ok(canvas.data[12]>100);assert.ok(canvas.data[13]>85);assert.equal(canvas.data[15],255);}
-for(const canvas of canvases)canvas.data.set(sample);
-await m.paintRuinPortraits({ruinSkeletonTheme:'hronal',ruinSkeletonSeed:7},canvases);
-for(const canvas of canvases){assert.deepEqual(Array.from(canvas.data.slice(0,12)),sample.slice(0,12));assert.deepEqual(Array.from(canvas.data.slice(16,20)),sample.slice(16,20));assert.ok(canvas.data[12]<100&&canvas.data[13]<85&&canvas.data[14]<50);assert.equal(canvas.data[15],255);assert.equal(canvas.data[20],0);}
+// All four portrait views must preserve original ink and its one-texel filter guard, plus transparent pixels.
+const W=12,H=9,sample=new Uint8ClampedArray(W*H*4);
+for(let p=0;p<W*H;p++)sample.set([100,85,50,255],p*4);
+const ix=(x,y)=>(y*W+x)*4;
+sample.set([0,0,0,255],ix(2,2));sample.set([0,0,0,80],ix(2,3));sample.set([12,20,24,255],ix(3,2));sample.set([200,150,100,0],ix(11,8));
+const canvases=Array.from({length:4},()=>{const data=new Uint8ClampedArray(sample);return {width:W,height:H,data,getContext:()=>({getImageData:()=>({data}),putImageData(){}})};});
+for(const tradition of ['tothal','hronal']){
+  for(const canvas of canvases)canvas.data.set(sample);
+  await m.paintRuinPortraits({ruinSkeletonTheme:tradition,ruinSkeletonSeed:7},canvases);
+  for(const canvas of canvases){
+    for(const [x,y] of [[2,2],[2,3],[3,2],[4,2],[1,1],[11,8]])assert.deepEqual(Array.from(canvas.data.slice(ix(x,y),ix(x,y)+4)),Array.from(sample.slice(ix(x,y),ix(x,y)+4)));
+    assert.ok(tradition==='tothal'?canvas.data[ix(8,5)]>100:canvas.data[ix(8,5)]<100);
+    assert.equal(canvas.data[ix(8,5)+3],255);
+  }
+}
 // Oversized skull + narrow torso, with an offset silhouette: only the body pixels may seed spikes.
 const w=100,h=100,body=new Uint8ClampedArray(w*h*4);
 for(let y=3;y<60;y++)for(let x=12;x<88;x++)body[(y*w+x)*4+3]=255;
 for(let y=60;y<92;y++)for(let x=42;x<63;x++)body[(y*w+x)*4+3]=255;
 const footprint=m.ruinTorsoFootprint({width:w,height:h,getContext:()=>({getImageData:()=>({data:body})})},{x:.48,y:.60},1,1);
-assert.ok(footprint&&footprint.top<-.10&&footprint.bottom>-.42);assert.ok(footprint.width<.22);assert.ok(footprint.x<0);
+assert.ok(footprint&&footprint.top<-.10&&footprint.bottom>-.42&&footprint.height>.24);assert.ok(footprint.width<.22);assert.ok(footprint.x<0);
 // Exercise both actual attachment branches, with stand-in scene nodes so this also runs without WebGL.
 class Node {
   constructor(){this.children=[];this.userData={};this.rotation={x:0};this.position={x:0,y:0,z:0,set(x,y,z){Object.assign(this,{x,y,z});}};this.layers={disable(){}};}
@@ -40,12 +47,14 @@ for(const tradition of ['hronal','tothal']){
   const carrier=nodes.find(n=>n.children.some(child=>child.name==='ruin-skeleton-back-stalagmites'));
   assert.ok(carrier&&nodes.indexOf(carrier)<5);assert.equal(hammer.children.length,0);
   const layer=carrier.children.find(child=>child.name==='ruin-skeleton-back-stalagmites');
-  assert.equal(layer.rotation.x,Math.PI/2);assert.equal(lastSettings.kind,tradition==='hronal'?'stoneStalagmites':'iceStalagmites');assert.ok(lastSettings.iceHeightMax<=footprint.height*.9);
+  assert.equal(layer.rotation.x,Math.PI/2);assert.equal(lastSettings.kind,tradition==='hronal'?'stoneStalagmites':'iceStalagmites');assert.equal(lastSettings.iceHeightMax,.32);assert.equal(lastSettings.iceHeightMin,.12);assert.equal(lastSettings.radius,.055);assert.equal(typeof lastSettings.mapSpikeOrigin,'function');
   assert.equal(avatar.ruinBackSpikeInfo.carrier,carrier.name);assert.equal(avatar.ruinBackSpikeInfo.theme,tradition);dispose();dispose();assert.equal(layer.parent,null);assert.equal(avatar.ruinBackSpikeInfo,null);
 }
 assert.equal(stoneSurfaces,1,'Hronal must exercise the stone-specific material path');
 vm.runInNewContext(fs.readFileSync('docs/js/tool-metal-recolor.js','utf8'),{window,console});
 const eligible=new Uint8Array(100*100).fill(1);
+const oilPixels=new Uint8ClampedArray(100*100*4),oilOverlay=new Uint8ClampedArray(oilPixels.length);for(let p=0;p<100*100;p++){oilPixels.set([120,110,90,255],p*4);oilOverlay.set([17,35,70,255],p*4);}
+oilPixels.set([0,0,0,255],0);m.paintRuinPixels({ruinSkeletonTheme:'kanthic',ruinSkeletonSeed:8},oilPixels,100,100,oilOverlay);let oilInk=0,oilFill=0;for(let p=1;p<100*100;p++){const i=p*4;if(oilPixels[i]===0&&oilPixels[i+1]===0&&oilPixels[i+2]===0)oilInk++;if(oilPixels[i]===17&&oilPixels[i+1]===35&&oilPixels[i+2]===70)oilFill++;}assert.ok(oilInk>0&&oilFill>0);assert.deepEqual(Array.from(oilPixels.slice(0,4)),[0,0,0,255]);
 for(let seed=1;seed<=12;seed++){
   const mask=window.ToolMetalRecolor.buildOxidationMask(eligible,100,100,.28,{seed,blotchCount:9,separateBlotches:true});
   const visited=new Uint8Array(mask.length);let groups=0,area=0;

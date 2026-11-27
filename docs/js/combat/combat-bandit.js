@@ -444,6 +444,7 @@
     characterBuildStatus.stage = 'back-portrait';
     if (roster.rootledoot) await window.Rootledoots.paintPortrait(backCanvas,true);
     else await window.NpcAvatarPreview.renderProfileToCanvas(backCanvas, profile, { portraitView: 'behind', forceEyesOpen: true });
+    const themedPantsOverlay=roster.ruinSkeletonTheme?await window.PantsGarmentRenderer?.buildOverlayMask?.(frontCanvas,profile,{forceEyesOpen:true}):null; // Compare ORIGINAL art; frost/char/oil are not clothing occluders.
     if(roster.ruinSkeletonTheme)await window.MinionCombat?.paintRuinPortraits?.(roster,[frontCanvas,neutralFrontCanvas,combatFrownCanvas,backCanvas]);
     // Imlao keeps an articulated, normally sized head rig but has no skull: the portrait is re-rendered with the head sprite skipped,
     // so the torso, collar and rear cloth the skull normally hides show through (not an erased hole).
@@ -682,7 +683,8 @@
         spine, // The pants ride the portrait's spine curve like an extension of it (frontPivot is not the avatar root the profile is bound to).
         name: roster.name || 'enemy', garmentId: enemyPants, meshBudget: 'npc', // Enemies use the capped garment grid.
         appearance: pantsAppearanceWithForcedPattern(window.PantsGarmentRenderer.appearanceFromBodyColors(profile.bodyColors), roster),
-        overlayMask: window.PantsGarmentRenderer.buildOverlayMask(frontCanvas, profile, { forceEyesOpen: true }),
+        overlayMask: roster.ruinSkeletonTheme?themedPantsOverlay:window.PantsGarmentRenderer.buildOverlayMask(frontCanvas, profile, { forceEyesOpen: true }),
+        transformCanvas:['hronal','tothal'].includes(roster.ruinSkeletonTheme)?canvas=>window.MinionCombat.paintRuinPants(roster,canvas):null, // Bakes themed art on every real garment appearance render, not the shared weaving cache.
       });
       characterBuildStatus.pantsAttached = !!pants && await pants.readyPromise;
     }

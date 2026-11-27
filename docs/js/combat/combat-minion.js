@@ -101,50 +101,78 @@
     let h=Math.imul(x+1,374761393)^Math.imul(y+1,668265263)^seed; // Deterministic portrait grain.
     h=Math.imul(h^(h>>>13),1274126177);return ((h^(h>>>16))>>>0)/4294967295;
   }
-  const inkFadeFor=(r,g,b)=>Math.max(0,Math.min(1,(Math.max(r,g,b)-24)/40)); // All traditions preserve pure black and its dark outline fringe.
+  function ruinInkMask(data,w,h){
+    const ink=new Uint8Array(w*h),protectedInk=new Uint8Array(w*h); // Original outline ownership, never inferred from the already-treated colors.
+    for(let p=0;p<ink.length;p++){
+      const i=p*4,r=data[i],g=data[i+1],b=data[i+2];
+      if(data[i+3]&&(Math.max(r,g,b)<=48||(r*.2126+g*.7152+b*.0722)<=30))ink[p]=1;
+    }
+    // Leave one original texel around the ink: linear texture sampling otherwise bleeds treated pixels into the authored black stroke.
+    for(let p=0;p<ink.length;p++)if(ink[p]){
+      const x=p%w,y=Math.floor(p/w);
+      for(let oy=-1;oy<=1;oy++)for(let ox=-1;ox<=1;ox++)if(x+ox>=0&&x+ox<w&&y+oy>=0&&y+oy<h)protectedInk[(y+oy)*w+x+ox]=1;
+    }
+    return protectedInk;
+  }
+  function paintRuinPixels(roster,data,w,h,overlay=null,sharedMask=null){
+    const theme=roster.ruinSkeletonTheme,seed=roster.ruinSkeletonSeed; // The same immutable source mask protects portraits and pants.
+    const ink=ruinInkMask(data,w,h);
+    let mask=null,outline=null;
+    if(theme==='kanthic'){
+      if(!overlay)throw new Error('Oil texture unavailable');
+      const eligible=new Uint8Array(w*h);
+      for(let p=0;p<eligible.length;p++)eligible[p]=data[p*4+3]&&!ink[p]?1:0;
+      const metal=window.ToolMetalRecolor;
+      mask=sharedMask?new Uint8Array(sharedMask):metal?.buildOxidationMask?.(eligible,w,h,.28,{seed,blotchCount:9,separateBlotches:true});
+      if(!mask||!metal?.buildOxidationOutlineMask)throw new Error('Verdigris mask/outline unavailable');
+      for(let p=0;p<mask.length;p++)if(!eligible[p])mask[p]=0;
+      outline=metal.buildOxidationOutlineMask(mask,eligible,w,h,1); // Actual verdigris outward ink boundary, not an imitation.
+    }
+    for(let p=0;p<w*h;p++){
+      const i=p*4;
+      if(!data[i+3]||ink[p])continue; // Full original black and antialias coverage wins over every effect.
+      if(theme==='kanthic'){
+        if(outline[p]){data[i]=data[i+1]=data[i+2]=0;continue;} // Exact authored-style black; preserve original alpha.
+        if(!mask[p])continue;
+        const a=overlay[i+3]/255;
+        for(let c=0;c<3;c++)data[i+c]=data[i+c]*(1-a)+overlay[i+c]*a;
+      }else{
+        const x=p%w,y=Math.floor(p/w),grain=noise(x,y,seed),broad=noise(Math.floor(x/4),Math.floor(y/4),seed);
+        if(theme==='hronal'){
+          const gray=(data[i]*.25+data[i+1]*.6+data[i+2]*.15)*(.16+broad*.18);
+          data[i]=Math.min(data[i],gray+grain*9);data[i+1]=Math.min(data[i+1],gray*.85+grain*4);data[i+2]=Math.min(data[i+2],gray*.75);
+        }else if(theme==='tothal'){
+          const sheen=.24+.31*broad+.16*grain;
+          data[i]=data[i]*(1-sheen)+183*sheen;data[i+1]=data[i+1]*(1-sheen)+224*sheen;data[i+2]=data[i+2]*(1-sheen)+249*sheen;
+        }
+      }
+    }
+    return mask;
+  }
   async function paintRuinPortraits(roster,canvases){
-    const theme=roster.ruinSkeletonTheme; // Spawn-only treatment.
+    const theme=roster.ruinSkeletonTheme;
     if(!theme)return;
     try{
       const oil=theme==='kanthic'?await loadOil():null;
-      let frontMask=null; // Neutral and frown share the front patch distribution; rear gets its own mask.
+      let frontMask=null,overlay=null,overlayW=0,overlayH=0; // Reuse scaled oil pixels across the same-sized views.
       for(let view=0;view<canvases.length;view++){
-        const canvas=canvases[view];
-        const w=canvas.width,h=canvas.height,ctx=canvas.getContext('2d'); // Actual sprite resolution.
-        const pixels=ctx.getImageData(0,0,w,h),data=pixels.data;
-        let mask,overlay;
-        if(oil){
-          const eligible=new Uint8Array(w*h); // Opaque non-black sprite pixels.
-          for(let p=0;p<eligible.length;p++){const i=p*4;eligible[p]=data[i+3]&&inkFadeFor(data[i],data[i+1],data[i+2])>0?1:0;}
-          mask=view<3&&frontMask?frontMask:window.ToolMetalRecolor?.buildOxidationMask?.(eligible,w,h,.28,{seed:roster.ruinSkeletonSeed,blotchCount:9,separateBlotches:true});
-          if(view===0)frontMask=mask;
-          if(!mask)throw new Error('Verdigris mask unavailable');
-          const hidden=document.createElement('canvas'); // Stretch-to-fit hidden oil source.
-          hidden.width=w;hidden.height=h;const hc=hidden.getContext('2d');hc.drawImage(oil,0,0,w,h);
-          overlay=hc.getImageData(0,0,w,h).data;
+        const canvas=canvases[view],w=canvas.width,h=canvas.height,ctx=canvas.getContext('2d');
+        const pixels=ctx.getImageData(0,0,w,h);
+        if(oil&&(!overlay||w!==overlayW||h!==overlayH)){
+          const hidden=document.createElement('canvas');hidden.width=w;hidden.height=h;
+          const hc=hidden.getContext('2d');hc.drawImage(oil,0,0,w,h);overlay=hc.getImageData(0,0,w,h).data;overlayW=w;overlayH=h;
         }
-        for(let p=0;p<w*h;p++){
-          const i=p*4; // RGBA byte offset.
-          if(!data[i+3]||!(data[i]||data[i+1]||data[i+2]))continue;
-          const inkFade=inkFadeFor(data[i],data[i+1],data[i+2]); // Preserve black and dark antialiasing for every tradition.
-          if(inkFade===0)continue; // Charcoal must not repaint the outline either.
-          if(oil){if(!mask[p])continue;const a=overlay[i+3]/255*inkFade;for(let c=0;c<3;c++)data[i+c]=data[i+c]*(1-a)+overlay[i+c]*a;}
-          else{
-            const x=p%w,y=Math.floor(p/w),seed=roster.ruinSkeletonSeed; // Fine and coarse stable texture.
-            const grain=noise(x,y,seed),broad=noise(Math.floor(x/4),Math.floor(y/4),seed);
-            if(theme==='hronal'){
-              const gray=(data[i]*.25+data[i+1]*.6+data[i+2]*.15)*(.16+broad*.18);
-              const char=[gray+grain*9,gray*.85+grain*4,gray*.75]; // Soot darkens the body, not the original ink fringe.
-              for(let c=0;c<3;c++)data[i+c]=data[i+c]*(1-inkFade)+Math.min(data[i+c],char[c])*inkFade;
-            }else{
-              const sheen=(.24+.31*broad+.16*grain)*inkFade;
-              data[i]=data[i]*(1-sheen)+183*sheen;data[i+1]=data[i+1]*(1-sheen)+224*sheen;data[i+2]=data[i+2]*(1-sheen)+249*sheen;
-            }
-          }
-        }
+        const mask=paintRuinPixels(roster,pixels.data,w,h,overlay,view>0&&view<3?frontMask:null);
+        if(view===0)frontMask=mask;
         ctx.putImageData(pixels,0,0);debug.portraits++;
       }
     }catch(error){report(error);}
+  }
+  async function paintRuinPants(roster,source){
+    if(!source||!['hronal','tothal'].includes(roster.ruinSkeletonTheme))return source;
+    const canvas=document.createElement('canvas');canvas.width=source.width;canvas.height=source.height; // The shared clothing cache must never receive hostile-specific pixels.
+    canvas.getContext('2d').drawImage(source,0,0);
+    await paintRuinPortraits(roster,[canvas]);return canvas;
   }
   function ruinTorsoFootprint(canvas,neck,width,height){
     const w=canvas?.width,h=canvas?.height;
@@ -156,27 +184,36 @@
     let bottom=-1; // Lowest alpha-visible row below the skull.
     for(let y=h-1;y>headEnd&&bottom<0;y--)for(let x=0;x<w;x++)if(opaque(x,y)){bottom=y;break;}
     const span=bottom-headEnd;if(span<5)return null;
-    for(const [start,end] of [[.18,.82],[.32,.70],[.42,.60]]){
-      const first=headEnd+Math.max(1,Math.ceil(span*start)),last=headEnd+Math.floor(span*end);
-      let left=0,right=w-1,valid=last>first;
-      for(let y=first;y<=last&&valid;y++){
-        let x=center;
-        if(!opaque(x,y)){
-          let found=-1;
-          for(let d=1;d<=Math.ceil(w*.12)&&found<0;d++)for(const q of [center-d,center+d])if(q>=0&&q<w&&opaque(q,y)){found=q;break;}
-          if(found<0){valid=false;break;}x=found;
-        }
-        let lo=x,hi=x;
-        while(lo>0&&opaque(lo-1,y))lo--;
-        while(hi<w-1&&opaque(hi+1,y))hi++;
-        left=Math.max(left,lo);right=Math.min(right,hi);valid=right-left>=2;
+    // Keep the union of the torso's connected center runs, not their narrowest intersection.
+    const first=headEnd+Math.max(1,Math.ceil(span*.08)),last=headEnd+Math.floor(span*.94);
+    const rows=[];let left=w,right=-1; // Each row retains its actual opaque span for root projection.
+    for(let y=first;y<=last;y++){
+      let x=center;
+      if(!opaque(x,y)){
+        let found=-1;
+        for(let d=1;d<=Math.ceil(w*.12)&&found<0;d++)for(const q of [center-d,center+d])if(q>=0&&q<w&&opaque(q,y)){found=q;break;}
+        if(found<0)continue;x=found;
       }
-      if(!valid)continue;
-      const x0=(.5-(right+.5)/w)*width,x1=(.5-(left+.5)/w)*width;
-      const y0=(.5-(last+.5)/h)*height,y1=(.5-(first+.5)/h)*height;
-      return {x:(x0+x1)/2,y:(y0+y1)/2,width:x1-x0,height:y1-y0,top:y1,bottom:y0};
+      let lo=x,hi=x;while(lo>0&&opaque(lo-1,y))lo--;while(hi<w-1&&opaque(hi+1,y))hi++;
+      if(hi-lo<2)continue;
+      lo++;hi--; // One pixel of clearance keeps the root inside the opaque silhouette.
+      rows.push({y,lo,hi});left=Math.min(left,lo);right=Math.max(right,hi);
     }
-    return null;
+    if(!rows.length||right<=left)return null;
+    const x0=(.5-(right+.5)/w)*width,x1=(.5-(left+.5)/w)*width;
+    const y0=(.5-(rows.at(-1).y+.5)/h)*height,y1=(.5-(rows[0].y+.5)/h)*height;
+    const footprint={x:(x0+x1)/2,y:(y0+y1)/2,width:x1-x0,height:y1-y0,top:y1,bottom:y0};
+    // Non-enumerable spawn-only projector keeps debug snapshots compact. It moves roots, not the geometry tips.
+    Object.defineProperty(footprint,'project',{value:(x,z)=>{
+      const px=(.5-(x+footprint.x)/width)*w-.5,py=(.5-(footprint.y-z)/height)*h-.5;
+      let best=Infinity,bx=left,by=first;
+      for(const row of rows){
+        const cx=Math.max(row.lo,Math.min(row.hi,px)),distance=((cx-px)/w*width)**2+((row.y-py)/h*height)**2;
+        if(distance<best){best=distance;bx=cx;by=row.y;}
+      }
+      return {x:(.5-(bx+.5)/w)*width-footprint.x,z:footprint.y-(.5-(by+.5)/h)*height};
+    }});
+    return footprint;
   }
   function attachRuinBackSpikes(THREE,avatar,roster){
     const back=avatar.backPlane,width=avatar.modelWidth,height=avatar.modelHeight; // Rear portrait dimensions, never the weapon holder.
@@ -188,17 +225,14 @@
     let footprint;
     try{footprint=ruinTorsoFootprint(avatar.backCanvas,avatar.ruinNeckNormalized,width,height);}catch(error){report(error);return;}
     if(!footprint){report('No opaque torso footprint below skull');return;}
-    // Satellites spread up to 1.78 radii and their bases reach 1.44 more. Inset each seed edge by 3.3 radii.
-    const radius=Math.min(width*.055,Math.min(footprint.width,footprint.height)/8);
-    const maxSpikeHeight=Math.min(width*.32,footprint.height*.9); // Long spikes on a large skull's tiny torso otherwise visually resemble a separate held object.
-    const minSpikeHeight=Math.min(width*.12,maxSpikeHeight*.45);
-    const source=new THREE.Group(),geometry=new THREE.BoxGeometry(footprint.width-radius*6.6,.02,footprint.height-radius*6.6),material=new THREE.MeshBasicMaterial({visible:false}); // Torso-as-ground proxy.
+    const radius=width*.055,maxSpikeHeight=width*.32,minSpikeHeight=width*.12; // Restore original authored growth size, independently of origin footprint.
+    const source=new THREE.Group(),geometry=new THREE.BoxGeometry(footprint.width,.02,Math.max(.005,footprint.height)),material=new THREE.MeshBasicMaterial({visible:false}); // Full torso seed area; no blanket radius inset.
     const support=new THREE.Mesh(geometry,material);support.userData.authoredPartId='ruin-skeleton-back';source.add(support);
     try{
       const stone=theme==='hronal';
       const layer=build(THREE,source,{kind:stone?'stoneStalagmites':'iceStalagmites',target:'selected',targetIds:['ruin-skeleton-back'],
         seed:roster.ruinSkeletonSeed,count:4,density:1,iceCluster:3,radius,iceHeightMin:minSpikeHeight,iceHeightMax:maxSpikeHeight,
-        iceRoughness:.35,iceOpacity:stone?1:.92,color:stone?'#514942':'#c2e8fb',iceEngulf:.95,iceFootprintPadding:0,iceFacets:5,iceTipSharpness:.9,iceLean:.1});
+        iceRoughness:.35,iceOpacity:stone?1:.92,color:stone?'#514942':'#c2e8fb',iceEngulf:1,iceFootprintPadding:0,iceFacets:5,iceTipSharpness:.9,iceLean:.1,mapSpikeOrigin:footprint.project});
       if(!layer?.children?.length)throw new Error('Back stalagmite generator returned no geometry');
       layer.name='ruin-skeleton-back-stalagmites';layer.rotation.x=Math.PI/2; // Furniture Y becomes rear-facing Z.
       layer.position.set(footprint.x,footprint.y,.007); // Ground vertices start at -.015; embed roots .008 into the portrait to avoid floating seams.
@@ -350,7 +384,7 @@
     shamblingFootingFraction: SHAMBLING_FOOTING_FRACTION,
     dyeWeights: DYE_WEIGHTS,
     rollRoster,
-    coffinWeaponShapes:Object.keys(COFFIN_SHAPES),ruinHealth:RUIN_HEALTH,paintRuinPortraits,ruinTorsoFootprint,attachRuinBackSpikes,trailMovement,emitRuinEnchantedHit,ruinDebugSnapshot:()=>({...debug}),
+    coffinWeaponShapes:Object.keys(COFFIN_SHAPES),ruinHealth:RUIN_HEALTH,paintRuinPortraits,paintRuinPants,paintRuinPixels,ruinTorsoFootprint,attachRuinBackSpikes,trailMovement,emitRuinEnchantedHit,ruinDebugSnapshot:()=>({...debug}),
     makeEntity,
     makeDemolitionist, // Explicit ruin-only Harlyao archetype; future challenge composers call this rather than changing ordinary Minion spawns.
   });

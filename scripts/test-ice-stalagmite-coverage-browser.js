@@ -193,12 +193,12 @@ const server = http.createServer((request, response) => {
         const dispose=window.MinionCombat.attachRuinBackSpikes(T,avatar,{ruinSkeletonTheme:theme,ruinSkeletonSeed:7});
         group.updateMatrixWorld(true);const layer=group.getObjectByName('ruin-skeleton-back-stalagmites');
         if(!layer){results.push({theme,missing:true});continue;}
-        const mesh=layer.children[0],positions=mesh.geometry.attributes.position,point=new T.Vector3();
+        const mesh=layer.children[0],positions=mesh.geometry.attributes.position,point=new T.Vector3(),anchors=mesh.geometry.userData.iceGrowthAnchors;
         let baseInside=true,baseVertices=0,maxZ=-Infinity;
         for(let i=0;i<positions.count;i++){
           point.fromBufferAttribute(positions,i);const ground=point.y<-.014;point.applyMatrix4(mesh.matrixWorld);
           maxZ=Math.max(maxZ,point.z);
-          if(ground){baseVertices++;baseInside&&=point.y<-.10&&point.y>-.44&&Math.abs(point.x)<.12;}
+          if(ground){baseVertices++;if(anchors&&anchors.length===positions.count*3){point.fromArray(anchors,i*3).applyMatrix4(mesh.matrixWorld);baseInside&&=point.y<-.10&&point.y>-.44&&Math.abs(point.x)<.12;}}
         }
         const before=layer.getWorldPosition(new T.Vector3());hammer.position.x+=20;group.updateMatrixWorld(true);
         const unaffected=before.distanceTo(layer.getWorldPosition(new T.Vector3()))<1e-8;
