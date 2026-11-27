@@ -33,7 +33,7 @@
     };
   }
 
-  function begin(entity, speedPxS, durationS) {
+  function begin(entity, speedPxS, durationS, popupCredit = false) {
     if (!entity) return null;
     if (Math.abs(finite(speedPxS)) > 0 && entity.onPerch && !entity.onBranch) window.PerchSupport?.release?.(entity, 'knocked from perch'); // Branch-compatible perches are released by the game's authoritative branch knockback path, avoiding double ledge damage.
     const speed = Math.max(0, Math.abs(finite(speedPxS)));
@@ -43,6 +43,7 @@
       startY: finite(entity.y),
       intendedPx: speed * duration,
       resolved: false,
+      popupCredit: popupCredit === true, // Captured at shove creation; never inherited by unrelated movement.
     };
     return entity._knockbackCollisionImpact;
   }
@@ -117,10 +118,15 @@
       resource?.enforceCaps?.(entity);
     }
 
+    if (meta.popupCredit === true) {
+      for (const [id, amount] of Object.entries(appliedEffects)) window.WorldPopupText?.showCombatEffect?.(entity, id, amount, true);
+    }
+
     const tile = Math.max(0.001, finite(tilePx, 1));
     lastImpact = {
       at: Date.now(),
       mode: meta.mode || 'horizontal',
+      popupCredit: meta.popupCredit === true, // Existing mobile impact diagnostics.
       label: descriptor?.label || descriptor?.kind || 'unspecified collision',
       kind: descriptor?.kind || 'fallback',
       bladedHazard: descriptor?.bladedHazard === true,
@@ -144,7 +150,7 @@
     if (!state || state.resolved) return null;
     const measure = impactStrength(entity, tilePx);
     state.resolved = true;
-    return applyResolvedImpact(entity, descriptor, tilePx, hooks, measure.deficitTiles, measure, { mode: 'horizontal' });
+    return applyResolvedImpact(entity, descriptor, tilePx, hooks, measure.deficitTiles, measure, { mode: 'horizontal', popupCredit: state.popupCredit });
   }
 
   function resolveStrength(entity, descriptor, strengthTiles, tilePx, hooks = {}, meta = {}) {

@@ -70,8 +70,8 @@ assert.equal(player.x, supportedX);
 jump.reset();
 
 // The real game hit entry is extracted, not a re-implementation of its rules.
-const hitStart = game.indexOf('function applyKnockback(target, fromX, fromY, speedPxS)');
-const hitEnd = game.indexOf('function startProneThrow(entity, isPlayer, facingAngle, direction)', hitStart);
+const hitStart = game.indexOf('function applyKnockback(');
+const hitEnd = game.indexOf('function startProneThrow(', hitStart);
 assert(hitStart >= 0 && hitEnd > hitStart);
 const events = [];
 const combatWorld = {

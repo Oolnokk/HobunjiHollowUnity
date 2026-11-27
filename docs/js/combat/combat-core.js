@@ -1175,7 +1175,8 @@
     const convertible = Math.min(getDrunk(entity, DRUNK_HEALTH_ID), finalDamage, availableBleedingCapacity(entity));
     if (convertible > 0) {
       removeDrunk(entity, DRUNK_HEALTH_ID, convertible);
-      original.addAffliction(entity, "bleedingHealth", convertible);
+      const added = original.addAffliction(entity, "bleedingHealth", convertible); // Actual converted Bleeding buildup.
+      RS.showAttackEffect?.(entity, 'bleedingHealth', added, opts);
     }
 
     const remaining = Math.max(0, finalDamage - convertible);
@@ -1189,10 +1190,11 @@
     RS.applyAttackAfflictions?.(entity, opts); // The live alcohol adapter uses the same attack-power, alias and attacker-specific perk calculation as ordinary damage.
     if (opts.fixedAfflictionBuildup) {
       for (const [id, value] of Object.entries(opts.fixedAfflictionBuildup)) {
-        if (RS.AFFLICTIONS[id] && Number.isFinite(value) && value > 0) RS.addAffliction(entity, id, value); // Preserve authored fixed on-hit effects through Drunken Health's specialized damage path.
+        if (RS.AFFLICTIONS[id] && Number.isFinite(value) && value > 0) RS.addAttackAffliction(entity, id, value, opts); // Preserve authored fixed on-hit effects through Drunken Health's specialized damage path.
       }
     }
     enforceDrunkenCaps(entity);
+    RS.showAttackEffect?.(entity, 'health', lost, opts);
     if (lost > 0) {
       window.dispatchEvent(new CustomEvent("hobunji-resource-change", {
         detail: { entity, delta: -lost, reason: opts.reason || "damage", immediate: true }

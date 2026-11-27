@@ -82,6 +82,7 @@
       const amount = effect.grant
         ? resource.addEnhancedResource?.(recipient, idToApply, effect.buildup * power, { reason: 'Fey: ' + id })
         : resource.addAffliction?.(recipient, idToApply, effect.buildup * power);
+      if (!effect.grant) resource.showAttackEffect?.(recipient, idToApply, amount, options);
       applied = finite(amount) > 0;
     }
     if (!applied) return false;
@@ -181,7 +182,7 @@
         if (pointSegmentDistance(finite(ally.x), finite(ally.y), roll.lastX, roll.lastY, nextX, nextY) > tilePx * 0.48) continue;
         roll.hitAllies.add(ally);
         rs()?.spendFooting?.(ally, roll.spent, 'panicked roll collision'); // Real instability follows physical contact, not illusory direct damage.
-        if (typeof deps?.applyKnockback === 'function') deps.applyKnockback(ally, nextX, nextY, roll.spent * 8, { source: 'fey-panicked-roll' });
+        if (typeof deps?.applyKnockback === 'function') deps.applyKnockback(ally, nextX, nextY, roll.spent * 8, { source: 'fey-panicked-roll', attacker: entity });
         lastEffect = { id: 'panicAllyCollision', ally: ally.name || ally.id || 'companion', panicSpent: roll.spent };
       }
     }

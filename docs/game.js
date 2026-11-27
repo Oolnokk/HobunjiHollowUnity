@@ -802,7 +802,9 @@
       const PRONE_THROW_PLAYER_MIN_PX_S = 600; // Guarantees a readable player throw when a source supplied no ordinary knockback speed.
       const PRONE_THROW_CREATURE_MIN_PX_S = 480; // Gives animals/bandits a minimum throw at the existing hostile-bite scale.
 
-      function applyKnockback(target, fromX, fromY, speedPxS) {
+      function applyKnockback(target, fromX, fromY, speedPxS, popupCredit = false) {
+        // Public movement callers may supply source metadata instead of the direct hit's precomputed credit.
+        popupCredit = popupCredit === true || window.WorldPopupText?.isLocalCombatSource?.(popupCredit?.attacker) === true;
         const reelingMul = window.ResourceSystem?.timedDebuffModifier?.(target, 'knockbackTaken') ?? 1; // Reeling scales the shared impulse before branch/free-plane collision handling diverges.
         speedPxS *= reelingMul;
         if (!(speedPxS > 0)) return; // Zero-knockback hits still damage/stagger but must not launch a prone target.
@@ -834,7 +836,7 @@
           target.knockbackVX = Math.cos(hitAngle) * speedPxS;
           target.knockbackVY = Math.sin(hitAngle) * speedPxS;
           startProneThrow(target, target === player, target === player ? target.angle : target.facing,
-            hitDirectionRelativeToFacing(target === player ? target.angle : target.facing, target.x, target.y, fromX, fromY));
+            hitDirectionRelativeToFacing(target === player ? target.angle : target.facing, target.x, target.y, fromX, fromY), popupCredit);
           target.knockbackT = 0;
           window.ImpactRagdollPlayback?.triggerTumble?.(target,
             hitDirectionRelativeToFacing(target === player ? target.angle : target.facing, target.x, target.y, fromX, fromY), PRONE_THROW_DUR_S);
@@ -854,8 +856,12 @@
             // a large Footing hit, with a floor of one remaining Health.
             const currentHealth = Number(target.health);
             const impactHealth = Math.min(4, Math.max(0, (Number.isFinite(currentHealth) ? currentHealth : 1) - 1));
-            if (impactHealth > 0) window.ResourceSystem?.applyDamage?.(target, impactHealth, { tag: 'blunt', source: 'fell from branch' });
-            window.ResourceSystem?.spendFooting?.(target, 47.5, 'fell from branch');
+            const healthLost = impactHealth > 0 ? window.ResourceSystem?.applyDamage?.(target, impactHealth, { tag: 'blunt', source: 'fell from branch' }) : 0; // Actual branch impact loss.
+            const footingLost = window.ResourceSystem?.spendFooting?.(target, 47.5, 'fell from branch'); // Actual branch impact Footing.
+            if (popupCredit) {
+              window.WorldPopupText?.showCombatEffect?.(target, 'health', healthLost, true);
+              window.WorldPopupText?.showCombatEffect?.(target, 'footing', footingLost, true);
+            }
             if (target === player) { _nestHoldT = 0; target._nestTakeActive = false; }
             if (target.lunging) {
           if (target === player && !Number.isFinite(target.lungeFlightWorldY)
@@ -880,7 +886,7 @@
         target.knockbackT = KNOCKBACK_DUR_S;
         target.knockbackVX = Math.cos(ang) * speedPxS;
         target.knockbackVY = Math.sin(ang) * speedPxS;
-        window.KnockbackCollisionImpact?.begin?.(target, speedPxS, KNOCKBACK_DUR_S);
+        window.KnockbackCollisionImpact?.begin?.(target, speedPxS, KNOCKBACK_DUR_S, popupCredit);
         // Getting hit always interrupts an in-progress combat lunge — without
         // this, resuming the lunge after knockback would interpolate from its
         // stale pre-knockback lungeStartX/Y and jump the player backward.
@@ -897,7 +903,7 @@
         }
       }
 
-      function startProneThrow(entity, isPlayer, facingAngle, direction) {
+      function startProneThrow(entity, isPlayer, facingAngle, direction, popupCredit = false) {
         let vx = Number(entity.knockbackVX) || 0;
         let vy = Number(entity.knockbackVY) || 0;
         const minSpeed = isPlayer ? PRONE_THROW_PLAYER_MIN_PX_S : PRONE_THROW_CREATURE_MIN_PX_S;
@@ -920,7 +926,7 @@
         entity.proneThrowT = PRONE_THROW_DUR_S;
         entity.proneThrowVX = vx;
         entity.proneThrowVY = vy;
-        window.KnockbackCollisionImpact?.begin?.(entity, Math.hypot(vx, vy), PRONE_THROW_DUR_S);
+        window.KnockbackCollisionImpact?.begin?.(entity, Math.hypot(vx, vy), PRONE_THROW_DUR_S, popupCredit);
       }
 
       // Classifies where a hit landed relative to the victim's own facing,
@@ -976,7 +982,7 @@
       // The player's direction-matched visual clip is retimed to that exact
       // gameplay duration. Thus every direction has the same stun at a given
       // Footing level even though the authored clips have different lengths.
-      function applyHitStagger(entity, isPlayer, facingAngle, victimX, victimY, fromX, fromY, footingDamage) {
+      function applyHitStagger(entity, isPlayer, facingAngle, victimX, victimY, fromX, fromY, footingDamage, popupCredit = false) {
         if (!window.ResourceSystem || entity.prone) return;
         const direction = hitDirectionRelativeToFacing(facingAngle, victimX, victimY, fromX, fromY);
         const staggerCfg = window.SCRATCHBONES_CONFIG?.game?.combat?.stagger || {};
@@ -984,13 +990,14 @@
         const baseDurationS = Number(staggerCfg.baseDurationSeconds);
         const maxDurationS = Number(staggerCfg.maxDurationSeconds);
         const maxDurationAtFootingFrac = Number(staggerCfg.maxDurationAtFootingFraction);
-        window.ResourceSystem.spendFooting(entity, Math.max(0, footingDamage) * footingLossPerDamage, 'hit');
+        const footingLost = window.ResourceSystem.spendFooting(entity, Math.max(0, footingDamage) * footingLossPerDamage, 'hit'); // Actual post-resistance Footing loss.
+        if (popupCredit) window.WorldPopupText?.showCombatEffect?.(entity, 'footing', footingLost, true);
 
         // This hit emptied Footing — go straight to the full breakThrow
         // knockdown instead of playing a regular stagger reaction that would
         // just get immediately overwritten by it.
         if (entity.footing <= 0) {
-          startProneThrow(entity, isPlayer, facingAngle, direction);
+          startProneThrow(entity, isPlayer, facingAngle, direction, popupCredit);
           enterProneIfFootingDepleted(entity, isPlayer, direction);
           return;
         }
@@ -3762,6 +3769,7 @@
           startSurfaceY: air.originSurfaceY, endSurfaceY: landing.surfaceY,
           visualSurfaceY: air.originSurfaceY,
           elapsed: 0, duration, dropWorld, dropTiers,
+          popupCredit: entity._knockbackCollisionImpact?.popupCredit === true, // Transfer credit before horizontal motion is cancelled.
           dirX: air.dirX, dirY: air.dirY,
         };
         entity._knockbackLedgeAir = null;
@@ -3799,7 +3807,7 @@
         return api.resolveStrength(
           entity, descriptor, fall.dropTiers, TILE,
           knockbackImpactHooks(entity, descriptor, fall.dirX, fall.dirY),
-          { mode: 'ledge-fall', dropWorld: fall.dropWorld, dropTiers: fall.dropTiers },
+          { mode: 'ledge-fall', dropWorld: fall.dropWorld, dropTiers: fall.dropTiers, popupCredit: fall.popupCredit === true },
         );
       }
 
@@ -5906,8 +5914,9 @@
             c._voorgRearKickThreat = null;
           }
         }
-        if (fromX !== undefined) applyKnockback(c, fromX, fromY, knockbackPxS * impactMultiplier * (resourceDamage.knockbackMultiplier ?? 1));
-        applyHitStagger(c, false, c.facing || 0, c.x, c.y, fromX, fromY, resourceDamage.footing);
+        const popupCredit = window.WorldPopupText?.isLocalCombatSource?.(dmgOpts?.attacker) === true; // Explicit attacker only; nearby NPC combat never earns credit.
+        if (fromX !== undefined) applyKnockback(c, fromX, fromY, knockbackPxS * impactMultiplier * (resourceDamage.knockbackMultiplier ?? 1), popupCredit);
+        applyHitStagger(c, false, c.facing || 0, c.x, c.y, fromX, fromY, resourceDamage.footing, popupCredit);
         if (!c.prone) c._proneAirFallStartY = null; // A non-knockdown stagger cannot contaminate a later fall.
       }
 
@@ -6080,7 +6089,7 @@
         let lastName = '';
         const dmgType = currentWeaponDamageType(); // Used by the legacy fallback's damage routing and matching impact family.
         const impactSize = action === 'slash' ? 'huge' : 'medium'; // The legacy wide slash is its heavy attack; the ordinary cut is neutral weight.
-        const dmgOpts = action === 'slash' ? { tag: dmgType, heavy: true } : { tag: dmgType };
+        const dmgOpts = action === 'slash' ? { tag: dmgType, heavy: true, attacker: player } : { tag: dmgType, attacker: player };
         for (const c of hostileObjects) {
           if (c.health <= 0) continue;
           if (c.areaId !== currentArea) continue;
@@ -23864,6 +23873,8 @@
         const detail = event.detail || {};
         const root = detail.entity === player ? playerMesh : detail.entity?.avatarRef?.group || detail.entity?.root;
         if (!root || !detail.delta) return;
+        // Outgoing Health numbers belong to the attributed hit/impact owners, not general vitals events.
+        if (detail.delta < 0 && detail.entity !== player) return;
         if (detail.immediate) {
           window.WorldPopupText?.showChange(detail.delta < 0 ? 'damage' : 'healing', detail.delta, { root });
           return;

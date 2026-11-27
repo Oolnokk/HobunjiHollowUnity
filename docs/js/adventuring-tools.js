@@ -157,7 +157,7 @@
     for (const target of api.hostileObjects) {
       if (target.health <= 0 || target.areaId !== area || !combat.meleeHit(player, target, hitOptions)) continue;
       const landed = api.damageCreature(target, Math.round(base.damage * step.damageMul), player.x, player.y,
-        base.knockbackPxS * step.knockbackMul, { abilityId: 'torch_swing', tag: 'blunt' });
+        base.knockbackPxS * step.knockbackMul, { abilityId: 'torch_swing', tag: 'blunt', attacker: player });
       if (landed === false) continue;
       hits++;
       api.playWeaponHitSfx?.('blunt', target.x, target.y, area);

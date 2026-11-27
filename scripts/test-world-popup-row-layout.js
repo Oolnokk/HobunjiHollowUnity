@@ -80,3 +80,32 @@ projected={x:0,y:0,z:0};popupRoot.visible=false;assert.equal(gate(popupRoot,2),f
 popupRoot.visible=true;popupRoot.parent={};assert.equal(gate(popupRoot,2),false);
 assert.equal(emitted.length,1,'off-camera, hidden and wrong-scene family awards do not spawn popups');
 console.log('World popup row layout and family visibility parity: PASS');
+
+ // Execute the actual source filter and popup formatting with isolated presentation stubs.
+{
+  const local = {}, remote = {}, pet = { master: local }, remotePet = { master: remote }, wild = {};
+  const scene = { isScene: true }, target = { root: { parent: scene } }, calls = [];
+  const registry = {
+    isLocalPlayer: actor => actor === local,
+    ownerPlayerOf: actor => actor?.master || null,
+    isPlayer: actor => actor === local || actor === remote,
+  };
+  const gate = vm.runInNewContext(
+    block('  function isLocalCombatSource(', '  function finishLevelUpAnnouncement(') + '\n({isLocalCombatSource,showCombatEffect});',
+    {window:{ActorRegistry:registry,ResourceSystem:{AFFLICTIONS:{bleedingHealth:{name:'Bleeding Health'}}}},
+      state:{deps:{getActiveScene:()=>scene}},iconAnchorScene:root=>root.visible===false?null:root.parent,
+      showChange:(kind,amount,options)=>{calls.push({kind,amount,text:options.text});return calls.length;}}
+  );
+  for(const source of [local,pet]) assert.equal(gate.isLocalCombatSource(source),true);
+  for(const source of [null,remote,remotePet,wild]) assert.equal(gate.isLocalCombatSource(source),false);
+  assert.equal(gate.showCombatEffect(target,'health',4.25,true),1);
+  assert.equal(gate.showCombatEffect(target,'bleedingHealth',2,true),2);
+  assert.equal(calls[0].amount,-4.3);
+  assert.equal(calls[1].text,'-2 Bleeding Health');
+  assert.equal(gate.showCombatEffect(target,'health',3,false),null);
+  assert.equal(gate.showCombatEffect(target,'health',0,true),null);
+  assert.equal(gate.showCombatEffect(local,'health',3,true),null);
+  target.root.parent={};
+  assert.equal(gate.showCombatEffect(target,'health',3,true),null);
+  assert.equal(calls.length,2);
+}
