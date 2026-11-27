@@ -38,6 +38,21 @@
     };
   }
 
+  // Approximate adult wrist limits in the generic hand frame, radians.
+  // The proximal direction is opposite the fingers, so positive Z is flexion.
+  const WRIST_FLEXION = 80 * Math.PI / 180;
+  const WRIST_EXTENSION = 70 * Math.PI / 180;
+  const WRIST_RADIAL = 20 * Math.PI / 180;
+  const WRIST_ULNAR = 35 * Math.PI / 180;
+
+  function wristHingeLeeway(grip, palmNormal, side, out) {
+    // Left/right generic hand frames mirror their thumbward deviation.
+    const sign = side === 'left' ? -1 : 1;
+    out.grip = Math.max(-WRIST_EXTENSION, Math.min(WRIST_FLEXION, grip));
+    out.palmNormal = sign * Math.max(-WRIST_RADIAL, Math.min(WRIST_ULNAR, sign * palmNormal));
+    return out;
+  }
+
   function installShoulderAim(THREE, rig, options = {}) {
     const avatarRoot = options.avatarRoot || rig?.avatarRoot || null;
     const parent = rig?.parent || avatarRoot?.parent || null;
@@ -63,6 +78,8 @@
     const gripCorrectionQuaternion = new THREE.Quaternion();
     const palmNormalCorrectionQuaternion = new THREE.Quaternion();
     const localCorrectionQuaternion = new THREE.Quaternion();
+    const wristLeeway = { grip: 0, palmNormal: 0 }; // Reused angular bounds for either hand.
+    const wristLeewayInverse = new THREE.Quaternion(); // Removes permitted palm deviation from the full target rotation.
     const authoredQuaternion = new THREE.Quaternion();
     const outputQuaternion = new THREE.Quaternion();
     const guideSpan = new THREE.Vector3(); // Reused by the optional paper-arm preview.
@@ -486,22 +503,23 @@
       const solvedHinges = solveLocalHingeAngles(localTargetDirection);
       const gripAngle = solvedHinges.grip; // Local +X hinge moves the +Y proximal axis out of the palm plane.
       const palmNormalAngle = solvedHinges.palmNormal; // Local -Z hinge turns the +Y proximal axis within the palm plane.
-      // Composing both hinges together aims the proximal axis exactly at the target
-      // (2 degrees of freedom) but leaves the remaining twist around that axis
-      // wherever the composition happens to put it -- unnoticeable for the small
-      // corrections a real authored elbow needs, but for the legacy shoulder
-      // fallback (elbow == shoulder, no authored offset) the required angles can be
-      // large, and that unconstrained twist can flip the hand. A single hinge alone
-      // has no such ambiguity, so only let grip engage once a real elbow is authored;
-      // the legacy fallback keeps the well-defined palm-normal-only correction it
-      // already used for swings.
+      // Keep the existing per-pose axis weights and legacy shoulder-only hinge rule.
       const gripWeight = elbowSolve?.source === 'pose-authored' ? weights.grip : 0;
-      const appliedGripAngle = gripAngle * gripWeight;
-      const appliedPalmNormalAngle = palmNormalAngle * weights.palmNormal;
+      wristHingeLeeway(gripAngle, palmNormalAngle, side, wristLeeway);
+      const appliedGripAngle = (gripAngle - wristLeeway.grip) * gripWeight;
+      const appliedPalmNormalAngle = (palmNormalAngle - wristLeeway.palmNormal) * weights.palmNormal;
 
-      gripCorrectionQuaternion.setFromAxisAngle(localGripAxis, appliedGripAngle);
-      palmNormalCorrectionQuaternion.setFromAxisAngle(localPalmNormalAxis, appliedPalmNormalAngle);
-      localCorrectionQuaternion.copy(palmNormalCorrectionQuaternion).multiply(gripCorrectionQuaternion).normalize();
+      // Within both limits, preserve the authored orientation exactly. Otherwise
+      // compose target * inverse(allowed) in hinge order, rather than subtracting
+      // two noncommuting angles. Zero grip correction keeps the palm-only path.
+      if (appliedGripAngle === 0) {
+        localCorrectionQuaternion.setFromAxisAngle(localPalmNormalAxis, appliedPalmNormalAngle);
+      } else {
+        gripCorrectionQuaternion.setFromAxisAngle(localGripAxis, appliedGripAngle);
+        palmNormalCorrectionQuaternion.setFromAxisAngle(localPalmNormalAxis, wristLeeway.palmNormal * weights.palmNormal + appliedPalmNormalAngle);
+        wristLeewayInverse.setFromAxisAngle(localPalmNormalAxis, -wristLeeway.palmNormal * weights.palmNormal);
+        localCorrectionQuaternion.copy(palmNormalCorrectionQuaternion).multiply(gripCorrectionQuaternion).multiply(wristLeewayInverse).normalize();
+      }
       outputQuaternion.copy(authoredQuaternion).multiply(localCorrectionQuaternion).normalize(); // Right multiply keeps both hinge axes hand-local.
       socket.quaternion.copy(outputQuaternion);
       const compositor = window.ActorRigCompositor; // Preserve additive effects above a clean, scale-free elbow/shoulder IK solve.
@@ -700,6 +718,7 @@
     wristProximalAxis: '+Y',
     allowedHinges: Object.freeze({ grip: '+X', palmNormal: '-Z' }),
     solveLocalHingeAngles,
+    wristHingeLeeway,
     idleWeights: Object.freeze({ grip: 1, palmNormal: 1 }),
     activeWeights: Object.freeze({ grip: 0, palmNormal: 1 }),
     setPaperArmGuideVisible(value) {
