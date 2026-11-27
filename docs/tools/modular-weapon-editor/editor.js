@@ -13,6 +13,7 @@
     if (section && byId(section)) byId(section).open = true;
   }
   let data = JSON.parse(JSON.stringify(api.getConfig())); // Editable copy of validated config.
+  let headMountEditId = 'primary'; // Authoring selection is independent from the pair's active line.
   let mountIndex = 0; // Active mounting line for edits on the selected haft.
   let serial = 0; // Discard outdated async image/assembly requests.
   let drawing = null; // Active touch/mouse drag, one sprite line at a time.
@@ -20,7 +21,12 @@
   const gizmos = window.ModularMountGizmos; // Reusable line manipulation geometry, shared with regression tests.
   const cachedImages = {}; // Source images reused while dragging the arrow interactively.
   const chosenShaft = () => data.shafts[byId('shaft').value]; // Active donor haft.
-  const chosenHead = () => data.heads[byId('head').value]; // Active blade/weight part.
+  const chosenHead = () => data.heads[byId('head').value];
+  const headLines = () => [chosenHead().mount, ...(chosenHead().alternativeMounts || [])]; // Primary then stable alternative IDs.
+  const headLineIndex = () => Math.max(0, headLines().findIndex(line=>line.id === headMountEditId));
+  const selectedHeadLine = () => headLines()[headLineIndex()];
+  const activeHeadMount = (shaft=chosenShaft(),head=chosenHead(),headKey=byId('head').value) =>
+    api.effectiveHeadMount(shaft,head,shaft.overrides?.[headKey] || {}); // Editor drafts are clones, so pass their pair explicitly. // Active blade/weight part.
   // A separate source-only drawing surface avoids stealing mounting-arrow
   // gestures and saves one band definition on the haft, never the current pair.
   let bandPanel=null,bandCanvas=null,bandMinimum=null,bandStatus=null,bandDrag=null;
@@ -177,7 +183,7 @@
     } catch (error) { msg('Save failed: ' + error.message); }
   }
   function compatible() {
-    return api.matchingMounts(chosenShaft(), chosenHead()).length > 0; // Automatic, rather than hand-authored, compatibility rule.
+    return api.matchingMounts(chosenShaft(), chosenHead(), chosenShaft().overrides[byId('head').value] || {}).length > 0; // Automatic, rather than hand-authored, compatibility rule.
   }
   function lineMarker(ctx, mount, selected) {
     const start = mount.start, end = mount.end; // Base of line and directed arrow tip in original sprite coordinates.
@@ -228,7 +234,7 @@
       ? layout : null;
   }
   function displayMounts(id) {
-    return id === 'head-canvas' ? [chosenHead().mount] : api.shaftMounts(chosenShaft());
+    return id === 'head-canvas' ? headLines() : api.shaftMounts(chosenShaft());
   }
   function rigToLocal(point, id) {
     const layout = rigLayout(id);
@@ -289,8 +295,8 @@
     }
     if (id === 'head-canvas' && api.isFlailHead(chosenHead())) return; // Original Tool Hub head anchor replaces all modular-head arrow gizmos.
     const mounts = displayMounts(id); // Ordinary rigid fitting lines continue to use the existing controls.
-    mounts.forEach((mount, i) => lineMarker(ctx, mount, id === 'head-canvas' || i === mountIndex));
-    drawGizmo(ctx, mounts[id === 'head-canvas' ? 0 : mountIndex]); // Selected handle is drawn in world/source-canvas space.
+    mounts.forEach((mount, i) => lineMarker(ctx, mount, i === (id === 'head-canvas' ? headLineIndex() : mountIndex)));
+    drawGizmo(ctx, mounts[id === 'head-canvas' ? headLineIndex() : mountIndex]); // Selected handle is drawn in world/source-canvas space.
   }
   async function drawFlailPreview(ticket, shaftKey, headKey, composed) {
     const canvas=byId('flail-preview'), figure=byId('flail-preview-figure');
@@ -338,7 +344,7 @@
       cachedImages['shaft-canvas'] = shaftImage; cachedImages['head-canvas'] = headImage;
       installShorteningBands();drawShorteningBands();
       drawLines('shaft-canvas'); drawLines('head-canvas');
-      const match = api.matchingMounts(shaft, head), values = api.settings(shaftKey, headKey); // Auto-match and pair-local corrections.
+      const values = api.settings(shaftKey, headKey), match = api.matchingMounts(shaft, head, values); // Auto-match and pair-local corrections.
       const canvas = byId('preview'), ctx = canvas.getContext('2d');
       if (match.length && !api.isDisallowed(shaftKey,headKey)) {
         const composed = await api.compose(shaftKey, headKey, '../../'); // Never invent a rigid weapon preview for two incompatible flail owners.
@@ -352,11 +358,11 @@
         const rig = api.attachmentRig(shaft, head, values); // Same scene tree as production: one parent rig with mount/primitive descendants.
         const matrices = rig.children.flatMap(mount => mount.children.map(child => child.worldMatrix)); // Include parent transform; do NOT fit heads to pre-scaled mounts twice.
         byId('debug').textContent = JSON.stringify({
-          shaft: shaftKey, head: headKey, kind: head.mount.type, mounts: shaft.mounts,
+          shaft: shaftKey, head: headKey, kind: activeHeadMount(shaft,head,headKey).type, mounts: shaft.mounts,
           duplicateFrom: shaft.duplicateFrom || null, attachmentRigTransform: api.shaftRigTransform(shaft),
           rigHierarchy: rig, localRegions: shaft.rigRegions||[], shaftArtTransform: api.shaftArtTransform(shaft),
           effectiveMounts: api.shaftMounts(shaft), fireAssembly: shaft.fireAssembly || null,
-          headArrow: head.mount, matchedMounts: match.length, corrections: values,
+          headArrow: activeHeadMount(shaft,head,headKey), matchedMounts: match.length, corrections: values,
           matrices,
           rigOperationSummary: { saved: values.bridges?.strokes?.length || 0,
             expanded: api.rigBridgeOperations(shaft, values.bridges?.strokes || []).length,
@@ -374,8 +380,8 @@
         canvas.width = 450; canvas.height = 1204; // Incompatible pairs render the donor only.
         ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.drawImage(shaftImage, 0, 0, 450, 1204);
         byId('debug').textContent = JSON.stringify({
-          shaft: shaftKey, head: headKey, incompatibility: 'No ' + (head.mount.type === 'blade' ? 'tang' : 'eye') + ' mount on selected haft.',
-          headArrow: head.mount, haftMounts: shaft.mounts
+          shaft: shaftKey, head: headKey, incompatibility: 'No ' + (activeHeadMount(shaft,head,headKey).type === 'blade' ? 'tang' : 'eye') + ' mount on selected haft.',
+          headArrow: activeHeadMount(shaft,head,headKey), haftMounts: shaft.mounts
         }, null, 2);
       }
     } catch (error) { if (ticket === serial) msg('Preview failed: ' + error.message); }
@@ -384,7 +390,7 @@
     const area = byId('attach-controls'); // Precise fallback when drag placement is difficult on a phone.
     area.replaceChildren();
     const lines = api.isFlailHead(chosenHead()) || shaftOwnsFlail() ? [['Haft', chosenShaft().mounts[mountIndex]]]
-      : [['Head', chosenHead().mount], ['Haft', chosenShaft().mounts[mountIndex]]]; // No editable modular head mounting line for a flail.
+      : [['Head', selectedHeadLine()], ['Haft', chosenShaft().mounts[mountIndex]]]; // No editable modular head mounting line for a flail.
     for (const [label, line] of lines) {
       const group = document.createElement('div'), title = document.createElement('span'); // One length per selected arrow.
       group.className = 'line-length-field'; title.className = 'line-length-label';
@@ -534,7 +540,7 @@
   function syncElementList() {
     const shaft = chosenShaft(), head = chosenHead(), headKey = byId('head').value; // Current assembly inventory.
     const mounts = byId('assembly-mount-elements'), ops = byId('assembly-operation-elements');
-    const required = head.mount.type === 'blade' ? 'tang' : 'eye'; // Rigid fallback when no dedicated suspension line exists.
+    const required = activeHeadMount(shaft,head,headKey).type === 'blade' ? 'tang' : 'eye'; // Rigid fallback when no dedicated suspension line exists.
     const flexible = !!(shaft.flailAssembly || head.flailAssembly);
     const matchedType = flexible && shaft.mounts.some(m => m.type === 'rope') ? 'rope' : required; // Same priority as the runtime resolver.
     const strokes = shaft.overrides[headKey]?.bridges?.strokes || []; // Saved operations before recipe expansion.
@@ -697,8 +703,21 @@
     byId('remove').disabled = shaft.mounts.length <= 1;
     byId('add').disabled = shaft.mounts.length >= (shaft.maxAttachments || 8);
     byId('mount-kind').value = shaft.mounts[mountIndex].type;
-    byId('head-kind').value = head.mount.type;
-    byId('head-kind').disabled = api.isFlailHead(head) || shaftOwnsFlail(); // A flail head's authored multi-sprite anchor is authoritative, whether flagged by recipe or mount type.
+    if (!headLines().some(line=>line.id===headMountEditId)) headMountEditId='primary';
+    const headEdit=byId('head-mount-edit'), pairMount=byId('pair-head-mount'); // Separate selectors: editing a line never activates it.
+    const labelFor = line => (line.type==='blade'?'Tang':line.type==='weight'?'Sleeve':'Flexible') + (line.id?' · '+line.id:' (primary)');
+    for (const select of [headEdit,pairMount]) {
+      select.replaceChildren(...headLines().map(line=>new Option(labelFor(line),line.id || 'primary')));
+    }
+    const flexibleHead=api.isFlailHead(head) || shaftOwnsFlail(); // Rope recipes retain their existing attachment authority.
+    headEdit.value=headMountEditId;
+    pairMount.value=shaft.overrides[headKey]?.headMountId || 'primary';
+    headEdit.disabled=pairMount.disabled=flexibleHead;
+    byId('head-mount-add-tang').disabled=byId('head-mount-add-sleeve').disabled=flexibleHead || headLines().length>=17;
+    byId('head-mount-remove').disabled=flexibleHead || headMountEditId==='primary';
+    byId('head-kind').value = selectedHeadLine().type;
+    byId('head-kind').querySelector('option[value="flail"]').disabled=headMountEditId!=='primary';
+    byId('head-kind').disabled = flexibleHead; // A flail head's authored multi-sprite anchor is authoritative, whether flagged by recipe or mount type.
     const duplicated = shaft.duplicateFrom && data.shafts[shaft.duplicateFrom]; // Duplicated attachment rigs, not shaft sprites, have independent transforms.
     const art=api.shaftArtTransform(shaft);
     byId('shaft-art-enabled').checked=art.enabled;
@@ -725,7 +744,7 @@
       : shaftOwnsFlail()
         ? 'Hanging rigid head: adjust its cyan pair-only contact in section 02; leave its shared tang/eye mounting arrow unchanged.'
         : (head.mountNote || ''); // Authoring notes for shovel scoop, transverse hoe, and pick head.
-    const accepted = compatible(), needed = shaft.flailAssembly || head.flailAssembly || head.mount.type === 'flail' ? 'rope (or legacy eye/tang)' : head.mount.type === 'blade' ? 'tang' : 'eye';
+    const accepted = compatible(), needed = shaft.flailAssembly || head.flailAssembly || head.mount.type === 'flail' ? 'rope (or legacy eye/tang)' : activeHeadMount(shaft,head,headKey).type === 'blade' ? 'tang' : 'eye';
     const blocked = api.isDisallowed(byId('shaft').value,headKey); // Real forge gate, not only the number of geometric mount matches.
     byId('part-readiness').textContent = shaft.flailAssembly && head.flailAssembly
       ? 'Not forgeable: both parts own a full rope. Keep a flail recipe on only one.'
@@ -852,9 +871,9 @@
         element.setPointerCapture(event.pointerId); update(event); return;
       }
       event.preventDefault();
-      const line = id === 'head-canvas' ? chosenHead().mount : chosenShaft().mounts[mountIndex]; // Stored local mount.
+      const line = id === 'head-canvas' ? selectedHeadLine() : chosenShaft().mounts[mountIndex]; // Stored local mount.
       const point = pointFor(element, event); // World/source-canvas pointer for visible handle hit-testing.
-      const visibleLine = displayMounts(id)[id === 'head-canvas' ? 0 : mountIndex];
+      const visibleLine = displayMounts(id)[id === 'head-canvas' ? headLineIndex() : mountIndex];
       const handle = gizmoMode === 'rotate' ? gizmos.rotationHandle(visibleLine) : gizmos.midpoint(visibleLine);
       if (gizmoMode !== 'draw' && !nearHandle(element, event, handle)) {
         msg(gizmoMode === 'move' ? 'Drag the crosshair handle to move the selected line.'
@@ -1144,11 +1163,40 @@
     }
     shaft.sprite = sprite; save(); // Replacement PNG is the entire shaft; copied sockets still align to its authoring frame.
   };
-  byId('head').onchange = () => {headContactMoveEnabled=false;headContactDrag=null;render();};
+  byId('head').onchange = () => {headMountEditId='primary';headContactMoveEnabled=false;headContactDrag=null;render();};
   byId('socket').onchange = () => { mountIndex = Number(byId('socket').value);
     openWorkspace('mount-editor-workflow'); render(); // Selecting a mount opens the viewport where the line is drawn.
   };
-  byId('head-kind').onchange = () => { chosenHead().mount.type = byId('head-kind').value; save(); };
+  byId('head-kind').onchange = () => { selectedHeadLine().type = byId('head-kind').value; save(); };
+  byId('head-mount-edit').onchange = () => { headMountEditId=byId('head-mount-edit').value; openWorkspace('mount-editor-workflow'); render(); };
+  function addHeadMount(type) {
+    const head=chosenHead(), alternatives=head.alternativeMounts ||= []; // Copy geometry for a predictable starting position, never activate the new line.
+    if (alternatives.length>=16 || api.isFlailHead(head) || shaftOwnsFlail()) return;
+    const prefix=type==='blade'?'tang':'sleeve';
+    let index=1;
+    while(alternatives.some(line=>line.id===prefix+'-'+index)) index++;
+    const id=prefix+'-'+index, source=selectedHeadLine();
+    alternatives.push({id,type,start:{...source.start},end:{...source.end}});
+    headMountEditId=id;
+    openWorkspace('mount-editor-workflow'); save();
+    msg('Alternative '+id+' added. Edit its arrow, then select it explicitly under Pair-specific corrections if desired.');
+  }
+  byId('head-mount-add-tang').onclick=()=>addHeadMount('blade');
+  byId('head-mount-add-sleeve').onclick=()=>addHeadMount('weight');
+  byId('head-mount-remove').onclick=()=>{
+    if(headMountEditId==='primary')return;
+    const id=headMountEditId, key=byId('head').value;
+    const affected=Object.values(data.shafts).filter(shaft=>shaft.overrides[key]?.headMountId===id);
+    if(affected.length && !window.confirm('Remove this line and reset '+affected.length+' pair(s) to their primary mount?'))return;
+    chosenHead().alternativeMounts=(chosenHead().alternativeMounts || []).filter(line=>line.id!==id);
+    for(const shaft of affected)shaft.overrides[key].headMountId='primary'; // Never retarget another alternative.
+    headMountEditId='primary';save();
+  };
+  byId('pair-head-mount').onchange=()=>{
+    const pair=chosenShaft().overrides[byId('head').value] ||= {};
+    pair.headMountId=byId('pair-head-mount').value; // Store primary explicitly so committed alternatives can be overridden.
+    save();
+  };
   byId('mount-kind').onchange = () => { chosenShaft().mounts[mountIndex].type = byId('mount-kind').value; save(); };
   byId('add').onclick = () => {
     const shaft = chosenShaft();
@@ -1179,7 +1227,7 @@
   };
   byId('reset-pair').onclick = () => {
     const old = chosenShaft().overrides[byId('head').value] || {}; // Reset local transforms while keeping authored pair exclusion.
-    chosenShaft().overrides[byId('head').value] = typeof old.disallow === 'boolean' ? { disallow: old.disallow } : {};
+    chosenShaft().overrides[byId('head').value] = { ...(typeof old.disallow === 'boolean' ? {disallow:old.disallow} : {}), headMountId:'primary' };
     save();
   };
   gesture('shaft-canvas'); gesture('head-canvas');
@@ -1677,7 +1725,7 @@
     for (const [shaftKey, shaft] of Object.entries(data.shafts)) {
       if (!audit.isMultiEndedSleeveHaft(shaft)) continue; // Only physically separated blade mounts, not eye+tang at a single joint.
       for (const [headKey, head] of Object.entries(data.heads)) {
-        if (head.mount.type !== 'blade' || api.isDisallowed(shaftKey, headKey)) continue;
+        if (activeHeadMount(shaft,head,headKey).type !== 'blade' || api.isDisallowed(shaftKey, headKey)) continue;
         const pair = shaft.overrides[headKey];
         if (pair?.bridges?.strokes?.some(op => op.recipe === name)
           || (skip && pair?.bridges?.strokes?.some(op => !op.recipe))) { skipped++; continue; }

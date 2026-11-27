@@ -195,6 +195,9 @@ header .toolbar #pair-undo,header .toolbar #pair-redo{min-width:88px;position:re
 <button id="gizmo-rotate" type="button" aria-pressed="false"><span aria-hidden="true">↻</span> Rotate line</button>
 </div>
 <p>In Draw mode, drag base to arrow tip. In Move mode, drag the crosshair to shift the whole line. In Rotate mode, drag the circle on its short arm to turn the line around its midpoint without changing its length.</p>
+<label>Head line to edit <select id="head-mount-edit"></select></label>
+<div class="toolbar"><button id="head-mount-add-tang" type="button">Add alternative tang</button><button id="head-mount-add-sleeve" type="button">Add alternative sleeve</button><button id="head-mount-remove" type="button">Remove selected alternative</button></div>
+<p>Alternatives are inactive by default. Draw, move or rotate the selected line on the head canvas. Choose an alternative under section 05 to use it for a specific pair.</p>
 <label>Head construction <select id="head-kind"><option value="blade">Blade — tang</option><option value="weight">Weight — eye/sleeve</option><option value="flail">Flexible head — rope/chain</option></select></label>
 <label>Haft mounting line <select id="socket"></select></label>
 <label>Selected haft mount type <select id="mount-kind"><option value="tang">Tang</option><option value="eye">Eye/sleeve</option><option value="rope">Rope/chain — span controls reach only</option></select></label>
@@ -205,6 +208,8 @@ header .toolbar #pair-undo,header .toolbar #pair-redo{min-width:88px;position:re
 <p>A haft may have tang, eye and rope lines. The <strong>rope line</strong> is the exact attachment and connector reach whenever present. Without one, the flail uses the exact attachment authored in Complex Tool Visuals — never a modular-head fitting line. Explicit exclusions still take precedence.</p>
 </details>
 <details id="pair-workflow" class="workflow-section"><summary>05 · Pair-specific corrections</summary>
+<label>Head mounting line for this pair <select id="pair-head-mount"></select></label>
+<p>Primary is the default. An alternative replaces the primary only for this exact haft/head pair; it never adds another head or automatically makes a different pair compatible.</p>
 <label>Sprite layer order <select id="layer-order" aria-label="Selected head and haft sprite layer order">
 <option value="haft-over-head">Haft over head</option>
 <option value="head-over-haft">Head over haft</option>
@@ -345,5 +350,5 @@ header .toolbar #pair-undo,header .toolbar #pair-redo{min-width:88px;position:re
 </details></section></main>
 <script src="../../config/modular-weapons.js?v=20261126fixedWeaponSize1"></script><script src="../../js/modular-weapon-bridge-fill.js?v=20261109boreflex1"></script><script src="../../js/color-fill.js?v=20261117h93b0e83"></script><script src="../../config/weapon-sprite-assemblies.js?v=20261126staffClearance1"></script>
 <script src="../../js/weapon-layer-effects.js?v=20261115torchWick2"></script>
-<script src="../../js/modular-weapons.js?v=20261127componentInk1"></script><script src="mount-gizmos.js?v=20261025length001"></script><script src="junction-picker.js?v=20261029recipes001"></script><script src="recipe-provenance.js?v=20261107recipeaudit2"></script><script src="full-assembly-preview.js?v=20261109headvisual2"></script><script src="editor.js?v=20261127componentInk1"></script><script src="sprite-outline.js?v=20261025b"></script><script src="sprite-cutter.js?v=20261029recipes001"></script>
+<script src="../../js/modular-weapons.js?v=20261127componentInk2"></script><script src="mount-gizmos.js?v=20261025length001"></script><script src="junction-picker.js?v=20261029recipes001"></script><script src="recipe-provenance.js?v=20261107recipeaudit2"></script><script src="full-assembly-preview.js?v=20261109headvisual2"></script><script src="editor.js?v=20261127componentInk2"></script><script src="sprite-outline.js?v=20261025b"></script><script src="sprite-cutter.js?v=20261029recipes001"></script>
 </body></html>
