@@ -484,8 +484,9 @@
     if (!deps || !group) return;
     const activeScene = deps.getActiveScene();
     const area = deps.getCurrentArea?.() ?? null;
-    const precipitating = deps.isOutdoorArea() && deps.calendar.isRaining;
-    const contentKind = area === WESTERN_SLOPE_ID ? 'blizzard' : 'rain';
+    const shiftBlizzard = window.TothalBlizzard?.stormIntensityFor?.(area) || 0; // Independent of rain: snow must not trigger town flooding or crop watering.
+    const precipitating = deps.isOutdoorArea() && (deps.calendar.isRaining || shiftBlizzard > 0);
+    const contentKind = area === WESTERN_SLOPE_ID || shiftBlizzard > 0 ? 'blizzard' : 'rain';
 
     if (activeScene !== attachedScene) {
       attachedScene?.remove(group);
@@ -510,7 +511,7 @@
     camera.getWorldDirection(cameraForward);
     cameraEuler.setFromQuaternion(camera.quaternion, 'YXZ');
     // Both rain and Western Slope snow use this exact precipitation-rate path.
-    const precipitationRate = clampNumber(deps.calendar.rainStrength, 0.1, 6, 2);
+    const precipitationRate = clampNumber(Math.max(deps.calendar.isRaining ? deps.calendar.rainStrength : 0, shiftBlizzard * 6), 0.1, 6, 2); // Shift peak doubles normal storm precipitation.
     const precipitationRatio = precipitationRate / 2;
     const context = {
       camera,
@@ -547,7 +548,7 @@
   function getDebugState() {
     const area = deps?.getCurrentArea?.() ?? null;
     const activeScene = deps?.getActiveScene?.() ?? null;
-    const blizzardActive = Boolean(group?.visible && area === WESTERN_SLOPE_ID && deps?.calendar?.isRaining);
+    const blizzardActive = Boolean(group?.visible && (area === WESTERN_SLOPE_ID || window.TothalBlizzard?.stormIntensityFor?.(area) > 0));
     const horizontalForwardLength = cameraForward ? Math.hypot(cameraForward.x, cameraForward.z) : 0;
     const rowYaw = horizontalForwardLength > 0.0001
       ? Math.atan2(-cameraForward.x, -cameraForward.z)
@@ -565,7 +566,8 @@
       attachedScene: attachedScene?.name || attachedScene?.uuid || null,
       groupParent: group?.parent?.name || group?.parent?.uuid || null,
       precipitationGroupCount,
-      strength: deps?.calendar?.rainStrength ?? 0,
+      strength: Math.max(deps?.calendar?.rainStrength || 0, (window.TothalBlizzard?.stormIntensityFor?.(area) || 0) * 6),
+      tothalStorm: window.TothalBlizzard?.stormIntensityFor?.(area) || 0,
       precipitationRenderer: blizzardActive ? 'rain-logic+blizzard-content' : 'rain',
       precipitationLayout: settings.mode === 'rows' ? 'player-centered-camera-yaw-rows' : 'camera-sheets',
       rowYawRadians: rowYaw,
@@ -595,10 +597,10 @@
 // rain-planes.js is already parser-blocking in index.html immediately before game boot, so this
 // synchronous include keeps that ordering without adding another bootstrap path to the huge game.js.
 if (!window.HobunjiSkyDome) {
-  if (document.readyState === 'loading') document.write('<script src="js/sky-dome.js?v=20261123h534415e"></scr' + 'ipt>');
+  if (document.readyState === 'loading') document.write('<script src="js/sky-dome.js?v=20261123h534415eTothal1127"></scr' + 'ipt>');
   else {
     const skyScript = document.createElement('script'); // Used only as a late-load fallback outside the normal parser boot path.
-    skyScript.src = 'js/sky-dome.js?v=20261123h534415e';
+    skyScript.src = 'js/sky-dome.js?v=20261123h534415eTothal1127';
     skyScript.async = false;
     document.head.appendChild(skyScript);
   }

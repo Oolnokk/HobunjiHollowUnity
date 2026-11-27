@@ -1989,6 +1989,97 @@
   // swapped to the guest's zone, so compare with the listener's real area instead (js/remote-area-tick.js).
   const isLocalListenerZone = zoneId => zoneId === (window.AreaScope?.listenerArea?.() ?? deps.getCurrentArea());
 
+  const tothalWildlifeShelterZones = new Set(); // Wilderness zones holding temporary roaming-animal shelter assignments.
+  function updateTothalWildlifeShelter(zoneId) {
+    if (!deps._isZoneArea(zoneId)) return false; // Only the four generated wilderness zones participate.
+    const storm = !!window.TothalBlizzard?.isShelteringFor?.(zoneId);
+    if (!storm && !tothalWildlifeShelterZones.has(zoneId)) return false; // No actor scan during the other 27 days of ordinary weather.
+    let dens = null; // Resolve viable den entrances only when a roaming animal needs a new shelter.
+    for (const c of deps.hostileObjects) {
+      const prior = c?._tothalStormShelter; // Temporary den metadata belongs to the specific zone and only this storm.
+      if (!storm) {
+        if (!prior || prior.zoneId !== zoneId) continue;
+        // Only undo a den key that still belongs to our temporary blizzard assignment.
+        // A moved animal may legitimately acquire another zone's native den while away.
+        if (c.denKey === prior.temporaryDenKey) {
+          c.denKey = prior.denKey; c.denEntranceX = prior.denEntranceX; c.denEntranceY = prior.denEntranceY;
+        }
+        if (c.areaId === zoneId) {
+          if (c.health > 0) {
+            if (c.state === 'return' || c.state === 'idle') c.state = prior.state || 'idle';
+            if (c._denHidden) {
+              c._denHidden = !!prior.denHidden; // Don't undo pre-existing den visibility or force a distant LOD portrait on-screen.
+              if (c.avatarRef?.group) c.avatarRef.group.visible = prior.avatarVisible ?? true;
+              if (c.groundShadow && typeof prior.shadowVisible === 'boolean') c.groundShadow.visible = prior.shadowVisible;
+            }
+          }
+        }
+        delete c._tothalStormShelter; // Dead and moved animals must not retain an orphaned snapshot after the one-time clear pass.
+        continue;
+      }
+      if (c.areaId !== zoneId || c.health <= 0 || c.isCompanion || c.isBandit || c.banditCompanion
+        || c.isTribeHunter || c.isPorakanekiHunter || c.tzatzulCapturedBy
+        || c.isWildPingdort || c.tzatzulRoostId || c.hiveKey) continue; // Native nest/hive owners handle flyers; do not steal their perch state with a temporary den.
+      if (prior) {
+        if (!c._denHidden && c.state !== 'return') { // Ordinary daytime AI must not resume a hunt before the blizzard subsides.
+          c.targetCreature = null; c.targetPlayer = false; c.state = 'return';
+        }
+        continue;
+      }
+      if (c.denKey) {
+        if (c._denHidden) continue; // Already indoors; do not disturb an existing den resident.
+        c._tothalStormShelter = {
+          zoneId, nativeDen: true, temporaryDenKey: c.denKey, denKey: c.denKey,
+          denEntranceX: c.denEntranceX, denEntranceY: c.denEntranceY, state: c.state,
+          denHidden: !!c._denHidden, avatarVisible: c.avatarRef?.group?.visible,
+          shadowVisible: c.groundShadow?.visible,
+        }; // Native residents already have the correct cave: issue a return order without borrowing another den.
+        tothalWildlifeShelterZones.add(zoneId);
+        c.targetCreature = null; c.targetPlayer = false; c.state = 'return';
+        continue;
+      }
+      if (dens === null) {
+        // Cache entrance coordinates for this scan, not across map regeneration or den collapse.
+        dens = [];
+        for (const den of deps.zoneLayouts.get(zoneId)?.dens || []) {
+          if (den.collapsed || den.turnoverStage === 'collapsed') continue;
+          const x = den.mouthAnchor ? (den.mouthAnchor.x + 0.5) * deps.TILE : (den.x + (den.w || 1) * 0.5) * deps.TILE;
+          const y = den.mouthAnchor ? (den.mouthAnchor.y + 0.5) * deps.TILE : (den.y + (den.h || 1) * 0.5) * deps.TILE;
+          dens.push({ den, x, y });
+        }
+      }
+      if (!dens.length) continue; // Roaming animals need a real den entrance; never invent a map transition.
+      let nearest = null, best = Infinity;
+      for (const entrance of dens) {
+        const dx = c.x - entrance.x, dy = c.y - entrance.y; // Squared world-space distance preserves nearest-den ordering.
+        const distance = dx * dx + dy * dy;
+        if (distance < best) { best = distance; nearest = entrance; }
+      }
+      if (!nearest) continue;
+      const temporaryDenKey = denKeyFor(zoneId, nearest.den); // Distinguishes this storm's borrowed den from a later legitimate reassignment.
+      c._tothalStormShelter = {
+        zoneId, denKey: c.denKey, denEntranceX: c.denEntranceX, denEntranceY: c.denEntranceY, state: c.state,
+        temporaryDenKey, denHidden: !!c._denHidden, avatarVisible: c.avatarRef?.group?.visible,
+        shadowVisible: c.groundShadow?.visible,
+      }; // A one-time snapshot restores genuine actor/LOD visibility instead of overriding the existing renderer.
+      tothalWildlifeShelterZones.add(zoneId);
+      c.denKey = temporaryDenKey;
+      c.denEntranceX = nearest.x;
+      c.denEntranceY = nearest.y;
+      c.targetCreature = null; c.targetPlayer = false;
+      c.state = 'return'; // Ordinary den-return path handles terrain, obstacles and the final doorway disappear.
+    }
+    if (!storm) tothalWildlifeShelterZones.delete(zoneId); // Restore once and retire the off-storm scan.
+    return storm; // Reuse the same event decision to gate outdoor population spawning below.
+  }
+
+  function restoreTothalSheltersAfterTravel() {
+    if (!tothalWildlifeShelterZones.size) return; // No allocation, scan, or calendar query on ordinary days.
+    for (const shelteredZone of tothalWildlifeShelterZones) { // Prior wilderness zones must recover even when the player ends the storm elsewhere.
+      if (!window.TothalBlizzard?.isShelteringFor?.(shelteredZone)) updateTothalWildlifeShelter(shelteredZone);
+    }
+  }
+
   function updateHostileSpawning(dt) {
     // Ambient wildlife spawning has no business intruding on an
     // authored cutscene once this scene finally lives on a real
@@ -2006,15 +2097,19 @@
     if (denCheckTimer > 0) return;
     denCheckTimer = DEN_CHECK_INTERVAL_S;
     processDueCaves();
+    restoreTothalSheltersAfterTravel(); // One-time storm-end cleanup of any previous wilderness regions, not just the active map.
+    const blizzardShelter = updateTothalWildlifeShelter(currentArea); // Reuse the existing two-second storm/shelter decision instead of checking the calendar twice.
     if (!deps._isZoneArea(currentArea)) return;
     if (!deps.buildZoneScene(currentArea)) return;
-    ensureCurrentZoneDenPacks();
-    ensureCurrentZoneRoamingHerds();
-    ensureCurrentZoneNestTrees();
-    window.TzatzulFlightRuntime?.ensureZone?.(currentArea); // Cliff birds spawn only where elevated natural ledge geometry exists.
-    window.PingdortFlocks?.ensureZone?.(currentArea); // Exactly three birds per fertile nest in Cloud Forest and Eastern Mire.
-    window.HoneyfuzzleHives?.ensureCurrentZone(); // Swarms come out of their hive stumps by day (js/honeyfuzzle-hives.js).
-    window.BanditCamps.ensureCurrentZoneCamps();
+    if (!blizzardShelter) {
+      ensureCurrentZoneDenPacks();
+      ensureCurrentZoneRoamingHerds();
+      ensureCurrentZoneNestTrees();
+      window.TzatzulFlightRuntime?.ensureZone?.(currentArea); // Cliff birds spawn only where elevated natural ledge geometry exists.
+      window.PingdortFlocks?.ensureZone?.(currentArea); // Exactly three birds per fertile nest in Cloud Forest and Eastern Mire.
+      window.HoneyfuzzleHives?.ensureCurrentZone(); // Swarms come out of their hive stumps by day (js/honeyfuzzle-hives.js).
+    } // Existing animals can reach shelter; no new exterior populations appear after that pass while it is snowing.
+    window.BanditCamps.ensureCurrentZoneCamps(); // Still stamp tent camps; their initial guards now emerge after the storm.
     if (_zoneEntryAnimalLogPending === currentArea) {
       _zoneEntryAnimalLogPending = null;
       window.MobileRenderBudget?.checkpoint?.('zone-populated'); // Captures the entry spike before a later page-process crash can discard diagnostics.
@@ -2151,6 +2246,7 @@
     isDenPackAlive,
     updateHostileSpawning,
     onZoneEntered,
+    updateTothalWildlifeShelter, // Mobile/manual diagnostic and regression hook for the shared return-to-den policy.
     restoreHerdMotherVisuals: c => c?.isHerdMother ? attachRoamingHerdBabiesToMother(c, c.carriedBabyCount) : 0, // Rebuilds either species' babies after streamed visual promotion.
     denNestCensus,
     roamingHerdCensus: (zoneId = deps.getCurrentArea()) => {

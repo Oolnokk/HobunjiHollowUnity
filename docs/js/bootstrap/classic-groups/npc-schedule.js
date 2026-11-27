@@ -6,7 +6,7 @@
     "js/npc-activities.js?v=20261109lazyCaveNpc1",
     "js/npc-social-stimuli.js?v=20260902a",
     "js/npc-activity-planner.js?v=20261111communion1",
-    "js/npc-scheduling.js?v=20261118fiveBlossomsAudience1",
+    "js/npc-scheduling.js?v=20261118fiveBlossomsAudience1Tothal1127Audit2",
     "js/npc-farm-plots.js?v=20261126familyWork2",
     "config/npcs/social-relations.js?v=20261111communion1",
     "js/npc-social-seating-bridge.js?v=20261111communion1",

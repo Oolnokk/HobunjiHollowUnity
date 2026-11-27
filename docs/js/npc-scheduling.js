@@ -25,7 +25,13 @@
   // instead of waiting out a real (or simulated) day/night cycle — see
   // jumpTime/forceNpcToTestStation/forceNpcToRedirectedTestStation.
   let deps = null;
-  function init(injectedDeps) { deps = injectedDeps; }
+  function init(injectedDeps) {
+    deps = injectedDeps;
+    walkerIndexById.clear(); walkerIndexList = null; walkerIndexAtMs = -Infinity;
+    tothalShelterAssignments.clear(); // Do not retain a prior world's generated doorway references.
+    floodShelterAssignmentsByNpcId.clear(); floodShelterTownAreaCache.clear();
+    floodShelterTownBuildingLinks = null; floodShelterEmergencyWasActive = false;
+  }
 
   function shouldDeferCavernLoad(area) {
     // Cave residents keep their logical schedule while unseen; generating their heavy SDF interior belongs to player entry, not an ambient NPC station lookup.
@@ -155,6 +161,27 @@
   let floodShelterTownBuildingLinks = null; // Used to cache direct town-to-building doors for one emergency; cleared when schedules resume.
   let floodShelterEmergencyWasActive = false; // Used to clear cached shelter commitments once flood hysteresis releases.
   const floodShelterTownAreaCache = new Map(); // area -> bool; resolveNpcScheduleTarget runs per NPC per frame, so the town-exposure BFS is memoized for one emergency.
+  const WALKER_INDEX_TTL_MS = 100; // Refreshes the shared NPC id index at most ten times per second, including normal scheduling.
+  const walkerIndexById = new Map(); // NPC id -> live walker, shared by agenda presence checks and both shelter paths.
+  let walkerIndexList = null; // Array identity used to invalidate the shared index after scene/world reinitialization.
+  let walkerIndexLength = -1; // Array count used to invalidate additions/removals immediately.
+  let walkerIndexAtMs = -Infinity; // Time of last rebuild, preventing per-NPC linear scans at 6 Hz.
+  let walkerIndexBuilds = 0; // Mobile diagnostic counts roster index rebuilds.
+  function walkerForNpcId(id) {
+    if (id === null || id === undefined) return null;
+    const walkers = deps?.npcWalkers || [];
+    const at = typeof performance !== 'undefined' ? performance.now() : Date.now(); // Scheduler uses this same monotonic browser clock.
+    if (walkers !== walkerIndexList || walkers.length !== walkerIndexLength
+        || at < walkerIndexAtMs || at - walkerIndexAtMs >= WALKER_INDEX_TTL_MS) {
+      walkerIndexById.clear();
+      for (const walker of walkers) if (walker?.rec?.id !== undefined) walkerIndexById.set(walker.rec.id, walker);
+      walkerIndexList = walkers;
+      walkerIndexLength = walkers.length;
+      walkerIndexAtMs = at;
+      walkerIndexBuilds++;
+    }
+    return walkerIndexById.get(id) || null;
+  }
 
   // Optional ambient gaze target — see game.js's _applyNpcAmbientLook, which
   // reads this off whatever station an idling/seated NPC currently resolves
@@ -256,7 +283,8 @@
   }
 
   function _townFloodEmergencyActive() {
-    const active = !!window.WaterSystem?.isTownFloodEmergency?.(); // Used to gate the schedule override from WaterSystem's hysteretic town flood state.
+    const storm = (window.TothalBlizzard?.currentState?.()?.storm || 0) > 0.01; // Town residents seek real indoor stations while the entire wilderness is stormbound.
+    const active = !!window.WaterSystem?.isTownFloodEmergency?.() || storm; // Reuse the existing shelter assignment/seat reservation pipeline.
     if (!active && floodShelterEmergencyWasActive) {
       floodShelterAssignmentsByNpcId.clear();
       floodShelterTownBuildingLinks = null;
@@ -357,6 +385,9 @@
   }
 
   function _floodShelterTarget(rec, assignment) {
+    const storm = (window.TothalBlizzard?.currentState?.()?.storm || 0) > 0.01; // Only changes human-facing labels; uses identical real building/seat logic.
+    const seeking = storm ? 'Seeking blizzard shelter' : 'Seeking flood shelter';
+    const sheltered = storm ? 'Sheltering from Tothal blizzard' : 'Sheltering from flood';
     const scene = deps.buildingScenes?.get?.(assignment.buildingArea);
     if (!scene) {
       // buildingScenes holds a null sentinel while a load is in flight; loadBuildingScene
@@ -364,12 +395,12 @@
       if (!deps.buildingScenes?.has?.(assignment.buildingArea)) deps.loadBuildingScene?.(assignment.buildingArea);
       return {
         area: 'town', c: assignment.entranceC, r: assignment.entranceR, pose: 'stand',
-        activity: 'Seeking flood shelter', floodShelterWaitingForInterior: true,
+        activity: seeking, floodShelterWaitingForInterior: true,
       };
     }
 
     const seat = _pickShelterSeat(rec, assignment);
-    if (seat) return { ...seat, stationId: seat.stationId || seat.id, pose: 'sit', activity: 'Sheltering from flood' };
+    if (seat) return { ...seat, stationId: seat.stationId || seat.id, pose: 'sit', activity: sheltered };
 
     const fallback = assignment.scheduledArea === assignment.buildingArea
       && Number.isFinite(assignment.scheduledC) && Number.isFinite(assignment.scheduledR)
@@ -380,23 +411,34 @@
     if (!fallback) {
       return {
         area: 'town', c: assignment.entranceC, r: assignment.entranceR, pose: 'stand',
-        activity: 'Seeking flood shelter', floodShelterWaitingForInterior: true,
+        activity: seeking, floodShelterWaitingForInterior: true,
       };
     }
-    return { area: assignment.buildingArea, c: fallback.c, r: fallback.r, pose: 'stand', activity: 'Sheltering from flood' };
+    return { area: assignment.buildingArea, c: fallback.c, r: fallback.r, pose: 'stand', activity: sheltered };
   }
 
   function applyTownFloodShelter(rec, normalTarget) {
+    if (!normalTarget && (window.TothalBlizzard?.currentState?.()?.storm || 0) > 0.01) {
+      const walker = walkerForNpcId(rec?.id); // Shared indexed lookup also serves unscheduled residents.
+      if (walker?.area === 'town' && Number.isFinite(walker.root?.position?.x) && Number.isFinite(walker.root?.position?.z))
+        normalTarget = { area: 'town', c: walker.root.position.x - 0.5, r: walker.root.position.z - 0.5, activity: 'Seeking blizzard shelter' };
+    }
     if (!normalTarget || !_townFloodEmergencyActive()) return normalTarget;
     const shelterLinks = _townBuildingShelterLinks();
     if (!shelterLinks.length) return normalTarget;
-    const walker = (deps.npcWalkers || []).find(candidate => candidate.rec?.id === rec?.id) || null; // Used to include NPCs currently caught outdoors in town even when today's schedule points elsewhere.
+    const walker = walkerForNpcId(rec?.id); // Includes anyone actually outdoors without rescanning all NPCs.
+    const storm = (window.TothalBlizzard?.currentState?.()?.storm || 0) > 0.01; // Town shelter is not a destination for residents currently in another region.
+    if (storm && walker?.area && !_areaBelongsToTown(walker.area, shelterLinks)) {
+      floodShelterAssignmentsByNpcId.delete(rec?.id);
+      return normalTarget;
+    }
     let assignment = floodShelterAssignmentsByNpcId.get(rec?.id);
 
     if (!assignment) {
       const targetArea = deps.normalizeNpcArea(normalTarget.area || '');
-      const walkerArea = deps.normalizeNpcArea(walker?.area || '');
-      const townExposed = _areaBelongsToTown(targetArea, shelterLinks) || _areaBelongsToTown(walkerArea, shelterLinks);
+      const walkerArea = walker?.area ? deps.normalizeNpcArea(walker.area) : null;
+      const walkerInTown = !!walkerArea && _areaBelongsToTown(walkerArea, shelterLinks);
+      const townExposed = storm && walkerArea ? walkerInTown : _areaBelongsToTown(targetArea, shelterLinks) || walkerInTown;
       if (!townExposed) return normalTarget;
 
       // Already indoors in a town building → shelter in place. Routing them to
@@ -436,9 +478,10 @@
       ...shelter,
       semanticActivity: 'floodShelter',
       obligation: 'critical',
-      plannerSource: 'flood-emergency',
+      plannerSource: (window.TothalBlizzard?.currentState?.()?.storm || 0) > 0.01 ? 'tothal-blizzard' : 'flood-emergency',
       plannerStatus: 'READY',
       floodShelter: true,
+      tothalBlizzardShelter: (window.TothalBlizzard?.currentState?.()?.storm || 0) > 0.01,
       floodShelterBuildingArea: assignment.buildingArea,
       floodShelterScheduledArea: assignment.scheduledArea,
       floodShelterScheduledC: assignment.scheduledC,
@@ -450,6 +493,7 @@
     const assignment = npcId ? floodShelterAssignmentsByNpcId.get(String(npcId)) || null : null; // Used by mobile-friendly debug output for one NPC without dumping every schedule record.
     return {
       emergency: _townFloodEmergencyActive(),
+      tothalBlizzard: (window.TothalBlizzard?.currentState?.()?.storm || 0) > 0.01,
       water: window.WaterSystem?.debugFloodSnapshot?.()?.town || null,
       assignment: assignment ? { ...assignment } : null,
       assignmentCount: floodShelterAssignmentsByNpcId.size,
@@ -564,7 +608,7 @@
   }
 
   function hasExistingNpcWalker(rec) {
-    return (deps.npcWalkers || []).some(w => w.rec?.id === rec?.id);
+    return !!walkerForNpcId(rec?.id); // Normal agenda presence checks share the same O(N)-per-batch index.
   }
 
   // The real entry point every call site in game.js uses (spawnScheduledNpcs,
@@ -621,9 +665,58 @@
     return null;
   }
 
+  const tothalShelterAssignments = new Map(); // Stable per-NPC nearest doorway; avoids retargeting every 160ms during the storm.
+  function applyTothalWildernessShelter(rec, target) {
+    const storm = window.TothalBlizzard?.currentState?.()?.storm || 0; // Shared calendar event, not the daily rain forecast.
+    if (storm <= 0.01) {
+      if (tothalShelterAssignments.size) tothalShelterAssignments.clear();
+      return target;
+    }
+    if (!rec?.id || target?.floodShelter || target?.tothalBlizzardShelter) return target;
+    const walker = walkerForNpcId(rec.id); // Existing resident in any area; indexed rather than an O(N²) search per decision batch.
+    if (!target && walker?.root && Number.isFinite(walker.root.position?.x) && Number.isFinite(walker.root.position?.z))
+      target = { area: walker.area, c: walker.root.position.x - 0.5, r: walker.root.position.z - 0.5, activity: 'Seeking blizzard shelter' };
+    if (!target) return null;
+    const walkerArea = walker?.area ? deps.normalizeNpcArea(walker.area) : null; // Missing actors use their scheduled area, not normalizeNpcArea's farm fallback.
+    if (walkerArea?.startsWith('map_i_') && Number.isFinite(walker?.root?.position?.x) && Number.isFinite(walker?.root?.position?.z)) {
+      return { area: walkerArea, c: walker.root.position.x - 0.5, r: walker.root.position.z - 0.5,
+        pose: 'stand', activity: 'Sheltering from Tothal blizzard', obligation: 'critical',
+        plannerSource: 'tothal-blizzard', tothalBlizzardShelter: true }; // Already inside: never send anyone back into the snow.
+    }
+    const area = walkerArea || deps.normalizeNpcArea(target.area || '');
+    if (area === 'town' || (area !== 'farm' && !window.TothalBlizzard?.wilderness?.(area))) return target;
+    let assignment = tothalShelterAssignments.get(rec.id);
+    if (!assignment || assignment.area !== area) {
+      const links = window.NpcPathfinding?.areaLinksFrom?.(area, { warmBuildings: false }) || []; // Reuse authored door graph without eagerly generating cave interiors.
+      const anchor = walkerArea === area && Number.isFinite(walker?.root?.position?.x)
+        ? { c: walker.root.position.x - 0.5, r: walker.root.position.z - 0.5 }
+        : { c: target.c, r: target.r }; // Choose the nearest real doorway to where this NPC actually is.
+      if (!Number.isFinite(anchor.c) || !Number.isFinite(anchor.r)) return target;
+      let closest = null, best = Infinity; // Single pass through the authored door graph; no sorting or intermediate array.
+      for (const link of links) {
+        if (!String(link.toArea || '').startsWith('map_i_') || !Number.isFinite(link.exit?.c) || !Number.isFinite(link.exit?.r)
+            || !Number.isFinite(link.spawn?.c) || !Number.isFinite(link.spawn?.r)) continue;
+        const dx = link.exit.c - anchor.c, dy = link.exit.r - anchor.r;
+        const distance = dx * dx + dy * dy;
+        if (distance < best) { best = distance; closest = link; }
+      }
+      if (!closest) return target;
+      assignment = { area, link: closest };
+      tothalShelterAssignments.set(rec.id, assignment);
+    }
+    const link = assignment.link; // NpcPathfinding owns transitions and routes to the indoor spawn.
+    return { area: link.toArea, c: link.spawn.c, r: link.spawn.r, pose: 'stand',
+      activity: 'Sheltering from Tothal blizzard', obligation: 'critical',
+      plannerSource: 'tothal-blizzard', tothalBlizzardShelter: true };
+  }
+
   function resolveNpcScheduleTarget(rec) {
     const overrideTarget = resolveTargetOverride(rec);
-    if (overrideTarget) return overrideTarget;
+    if (overrideTarget) {
+      // Preserve main's normal override precedence outside the Tothal event.
+      if ((window.TothalBlizzard?.currentState?.()?.storm || 0) <= 0.01) return overrideTarget;
+      return applyTothalWildernessShelter(rec, applyTownFloodShelter(rec, overrideTarget));
+    }
     const visitor = getVisitorPresence(rec); // Used to make visitor absence override agenda/free-time fallbacks.
     if (visitor) {
       const hasWalker = hasExistingNpcWalker(rec); // Used to distinguish an arrival spawn from an existing visitor's departure walk.
@@ -634,11 +727,11 @@
       };
       if (!visitor.active) {
         const departureTarget = hasWalker ? { ...entrance, activity: 'departing town', visitorDeparture: true } : null; // Used as the normal visitor lifecycle target before flood sheltering gets a chance to suspend departure.
-        return applyTownFloodShelter(rec, departureTarget);
+        return applyTothalWildernessShelter(rec, applyTownFloodShelter(rec, departureTarget));
       }
       if (!hasWalker) {
         const arrivalTarget = { ...entrance, activity: 'arriving in town', visitorArrival: true }; // Used as the normal visitor arrival target before a severe flood redirects them indoors.
-        return applyTownFloodShelter(rec, arrivalTarget);
+        return applyTothalWildernessShelter(rec, applyTownFloodShelter(rec, arrivalTarget));
       }
     }
     const normalTarget = !window.NpcActivityPlanner
@@ -647,7 +740,7 @@
           legacyResolve: resolveLegacyNpcScheduleTarget,
           hasExistingWalker: hasExistingNpcWalker(rec),
         }) || null; // Used to preserve the NPC's intended schedule location as the anchor for choosing the nearest flood shelter.
-    return applyTownFloodShelter(rec, normalTarget);
+    return applyTothalWildernessShelter(rec, applyTownFloodShelter(rec, normalTarget));
   }
 
   function resolveNpcScheduleTargetCached(walker, visibleArea = true) {
@@ -656,7 +749,7 @@
     const day = deps?.calendar?.day; // Day changes invalidate a cached agenda immediately.
     const time01 = deps?.calendar?.time01; // Clock jumps from dev tools or scenes invalidate without waiting for the lease.
     const record = walker.rec;
-    const floodEmergency = !!window.WaterSystem?.isTownFloodEmergency?.(); // Emergencies should interrupt cached ordinary station routines immediately.
+    const floodEmergency = !!window.WaterSystem?.isTownFloodEmergency?.() || (window.TothalBlizzard?.currentState?.()?.storm || 0) > 0.01; // Shelter transitions invalidate decision leases immediately. // Emergencies should interrupt cached ordinary station routines immediately.
     const cache = walker._npcScheduleDecision; // Walker-local cache avoids a global traversal and repeated planner allocation.
     const timeJumped = cache && Number.isFinite(time01) && Number.isFinite(cache.time01) &&
       (time01 < cache.time01 - 0.01 || time01 - cache.time01 > 0.02);
@@ -752,6 +845,9 @@
       };
     },
     floodShelterSnapshot,
+    tothalShelterSnapshot: () => ({ storm: window.TothalBlizzard?.currentState?.()?.storm || 0,
+      walkerIndexEntries: walkerIndexById.size, walkerIndexBuilds, // Mobile profile without devtools.
+      wildernessAssignments: [...tothalShelterAssignments.entries()].map(([id, entry]) => ({ id, area: entry.area, inside: entry.link.toArea })) }),
     setTownFloodShelterDebug(value) {
       const normalized = value === null || value === undefined ? null : !!value; // Used to force/release flood shelter mode from the existing in-game debug surface.
       window.WaterSystem?.setTownFloodEmergencyDebugOverride?.(normalized);

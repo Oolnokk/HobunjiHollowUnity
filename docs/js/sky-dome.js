@@ -136,6 +136,9 @@
   function currentCloudCover() {
     const calendar = deps?.calendar;
     if (!calendar) return CLEAR_CLOUD_COVER;
+    const shift = window.TothalBlizzard?.stormIntensityFor?.(deps?.getCurrentArea?.()) || 0; // All four wilderness skies share the Tothal curve.
+    if (shift > 0) return Math.max(CLEAR_CLOUD_COVER + (1 - CLEAR_CLOUD_COVER) * shift,
+      calendar.rainStrength >= 3 || calendar.weather === 'storm' ? 1 : calendar.rainStrength >= 2 ? 0.78 : CLEAR_CLOUD_COVER); // Never weaken an overlapping natural storm.
     if (calendar.rainStrength >= 3 || calendar.weather === 'storm') return 1;
     if (calendar.rainStrength >= 2) return 0.78;
     if (calendar.rainStrength >= 1 || calendar.isRaining || calendar.weather === 'rain') return 0.62;
@@ -145,7 +148,9 @@
   function currentLightingCloudCover() {
     const calendar = deps?.calendar;
     if (!calendar) return CLEAR_CLOUD_COVER;
+    const shift = window.TothalBlizzard?.stormIntensityFor?.(deps?.getCurrentArea?.()) || 0; // Gradual peak overcast; never change non-wilderness skies.
     const rainStrength = calendar.isRaining ? Number(calendar.rainStrength) || 0 : 0; // Drives weather darkness independently of the cloud atlas, avoiding large texture rebuilds at rain-window boundaries.
+    if (shift > 0) return Math.max(shift, rainStrength >= 3 ? 1 : rainStrength >= 2 ? 0.78 : rainStrength >= 1 ? 0.62 : calendar.weather === 'storm' ? 0.78 : calendar.weather === 'rain' ? 0.62 : CLEAR_CLOUD_COVER); // Respect the normal day's independent forecast.
     if (rainStrength >= 3) return 1;
     if (rainStrength >= 2) return 0.78;
     if (rainStrength >= 1) return 0.62;
