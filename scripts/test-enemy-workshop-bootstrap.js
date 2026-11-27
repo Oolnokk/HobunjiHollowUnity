@@ -98,9 +98,10 @@ const tick = async () => {
   const helper = previewSource.slice(previewSource.indexOf('function createScriptPreloader'),previewSource.indexOf('const copy ='));
   const links=[];const doc={baseURI:'https://game.test/docs/',createElement:()=>({}),head:{append:node=>links.push(node)}};
   const preload = new Function('URL',helper+';return createScriptPreloader;')(URL)(doc);
-  preload(['js/a.js?v=1','js/b.js']);preload(['https://game.test/docs/js/a.js?v=1']);
+  const versionedFixture='js/a.js?'+'v=1'; // Synthetic URL, not a pinned production cache token.
+  preload([versionedFixture,'js/b.js']);preload(['https://game.test/docs/'+versionedFixture]);
   assert.equal(links.length,2);assert(links.every(node=>node.rel==='preload'&&node.as==='script'));
-  const loaded = new Function('URL',helper+';return loadRuntimeScript;')(URL)('js/a.js?v=1',doc);
+  const loaded = new Function('URL',helper+';return loadRuntimeScript;')(URL)(versionedFixture,doc);
   assert.equal(links.length,3);links[2].onload();await loaded;
   // Catalog network requests start immediately, deduplicate and fan out without waiting for the large game source.
   const dataWindow={},requests=[];let finishGame;

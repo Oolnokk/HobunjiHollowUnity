@@ -45,6 +45,7 @@ vm.runInContext(extract(avatarSource, 'humanoidBlendWeightsAt'), context);
 context.avatarApi = { resolveSkinnedPortraitRoot: root => root,
   neckBlendBand: context.neckBlendBand, neckBlendWeight: context.neckBlendWeight, headOffsetWeightAt: context.headOffsetWeightAt, // The outline/parity adapter reads both identical neck and independent head-placement weights.
   headScaleGateAtPixel: context.headScaleGateAtPixel, headScaleWeightAt:context.headScaleWeightAt, getPortraitsFlipped: () => context.portraitsFlipped };
+vm.runInContext(extract(avatarSource, 'findPortraitSurfaceTriangle'), context);
 vm.runInContext(extract(avatarSource, 'sampleSkinnedPortraitSurface'), context);
 vm.runInContext(extract(avatarSource, 'resolveSkinnedPixelWorldPosition'), context);
 assert(!/avatarApi\.resolveSkinnedPixelWorldPosition\s*=/.test(paritySource), 'outline adapter must not replace the shared resolver');

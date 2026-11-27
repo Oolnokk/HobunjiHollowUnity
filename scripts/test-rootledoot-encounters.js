@@ -75,6 +75,9 @@ async function main() {
   const rigWindow={};new Function('window',fs.readFileSync('docs/config/attachment-rig-profiles.js','utf8'))(rigWindow);
   const rigs=rigWindow.HOBUNJI_ATTACHMENT_RIG_PROFILES.characters;
   assert.equal(rigs['rootledoot::male'],undefined);assert.ok(rigs['nohuknuk::male']);
+  const snapshot=fs.readFileSync('docs/js/attachment-rig-latest-authored-snapshot-core.js','utf8');
+  new Function('window','setInterval','clearInterval',snapshot)(rigWindow,()=>0,()=>{});
+  const donor=rigs['kenkari::male'];assert.ok(Math.abs(layout(.7,donor).gaitReach-donor.posteriorRule.heightPercentFromFloor/100)<1e-12,'Use live male Kenkari reference, not merely a synthetic donor');
   let rigChanges=0;
   w.HobunjiHandModelProfiles={mutate(){rigChanges++;}};
   const probe=await root.makeCombatant({},'grunt',0,0,0);
