@@ -78,6 +78,9 @@ vm.runInNewContext(source, {
   location: { href: 'https://example.test/game.html', pathname: '/game.html' },
 });
 const api = window.HobunjiWeaponSpriteAssemblies; // Public debug and authoring API.
+assert.ok(Math.abs(api.bodyYawRate(.1,Math.PI-.1,-Math.PI+.1)-2)<1e-10,'turn speed crosses the yaw wrap without a kick');
+assert.equal(api.bodyYawRate(.1,0,Math.PI),0,'a facing reset does not drag the flail');
+assert.equal(api.bodyYawRate(0,0,.2),0,'a paused redraw does not drive turn drag');
 assert.ok(api);
 // Exercise the real head-only spin math: one fixed shaft pivot, constant rope length, and zero allocations.
 const shaftDirection = { x: 0, y: -1, z: 0 }; // Unchanged source direction along the currently held shaft.

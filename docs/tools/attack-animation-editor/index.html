@@ -105,11 +105,11 @@ canvas{display:block;width:100%;height:100%}
 }
 </style>
 <script src="../../js/panel-ui.js?v=20261126exactSeamsAudit1"></script>
-<script src="../../config/weapon-sprite-assemblies.js?v=20261126staffClearance1"></script>
+<script src="../../config/weapon-sprite-assemblies.js?v=20261127h9dd742c"></script>
 <script src="../../js/color-fill.js?v=20261117h93b0e83"></script>
 <script src="../../js/tool-metal-recolor.js?v=20261030rigall5"></script>
 <script src="../../js/weapon-layer-effects.js?v=20261115torchWick2"></script>
-<script src="../../js/weapon-sprite-assemblies.js?v=20261126h4ed79f8"></script>
+<script src="../../js/weapon-sprite-assemblies.js?v=20261127h9dd742c"></script>
 <!-- Three.js r128 ESM — matches the version used by the main game (docs/index.html) -->
 <script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.128.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.128.0/examples/jsm/"}}</script>
 </head>
@@ -331,9 +331,9 @@ canvas{display:block;width:100%;height:100%}
      in-game character dump use the exact same code/format. -->
 <script src="../../js/transform-dump-utils.js?v=20261017h3ce7f8d"></script>
 <script src="../../js/rig-transform-dump.js?v=20261029rigdump1"></script>
-<script src="../../js/held-ground-pose.js?v=20261127h8e17950"></script>
+<script src="../../js/held-ground-pose.js?v=20261127h6f6c5af"></script>
 <script src="../../js/weapon-geometry-author.js?v=20261127h5626b5b"></script>
-<script src="../../js/held-action-animations.js?v=20261126exactGrip4"></script>
+<script src="../../js/held-action-animations.js?v=20261127hb56f8f8"></script>
 <script src="../../js/kurraya-instrument.js?v=20261118festival1954x1955a"></script>
 <!-- Shared attack-pose math (window.SharedAttackPose): the SAME timeline, rest poses and mirroring rule the game plays for the player and every enemy. -->
 <script src="../../config/portrait-mouth-points.js?v=20261025mouth1"></script>
@@ -3083,6 +3083,7 @@ function updatePreviewFlail(sampleT, sampleDt, resetHeadMotion=false) {
   window.HobunjiWeaponSpriteAssemblies?.setAction(toolPlaneMesh, {
     attacking: sampleT > 0.001 && sampleT < 0.999, progress: sampleT,
     resetHeadMotion, cameraPosition: camera.position, // NPC deadzone uses the actual preview camera.
+    movementRoot: rig, // Whole-character turn contributes to idle flail drag in the preview.
     movementPosition: rig.position, // Preview character stays stationary unless authoring moves the rig; animation itself cannot tilt the hanging chain.
     windupFrac: anim.windupFrac, strikeFrac: anim.strikeFrac, holdFrac: anim.holdFrac,
     flailLengthScale: SharedAttackPose.flailLengthScaleAt(anim.poses, sampleT, anim.windupFrac, anim.strikeFrac, anim.holdFrac, anim.sequence), // Same keyframe interpolation as player and enemy swings.

@@ -143,6 +143,11 @@
     m.tipReady=m.previousAttack=m.sawStrike=false;m.previousProgress=0;
     if(resetYaw){m.yaw=m.renderedYaw=m.perp=null;m.side=0;m.source='initial';}
   }
+  function bodyYawRate(deltaTime, previousYaw, yaw) {
+    if(!(deltaTime>0)||!Number.isFinite(previousYaw))return 0;
+    const delta=Math.atan2(Math.sin(yaw-previousYaw),Math.cos(yaw-previousYaw)); // Heading wraps seamlessly through ±π.
+    return Math.abs(delta)<=Math.PI/2?delta/deltaTime:0; // Abrupt facing resets cannot kick the head.
+  }
   function advanceIdleHeadMotion(m,attacking,progress,strikeFrac,holdFrac,pivot,bodyVX,bodyVZ,dt,seedYaw,deadRad) {
     if(!Number.isFinite(m.yaw))m.yaw=seedYaw;
     if(!(dt>0)) {
@@ -325,7 +330,7 @@
       headRoot: null, headAnchorImage: null, chainImage: null,
       direction: new THREE.Vector3(0, -1, 0), strikeStartDirection: new THREE.Vector3(0, -1, 0), lastPivot: new THREE.Vector3(), hasPivot: false, // Preserves the gravitational chain orientation only when the strike begins.
       idleHeadMotion:{yaw:null,leanX:0,leanZ:0,renderedYaw:null,side:0,perp:null,tipReady:false,tipX:0,tipZ:0,tipY:0,returnX:0,returnZ:0,previousAttack:false,previousProgress:0,sawStrike:false,source:'initial'}, cameraPosition:null, // Retained logical heading and smoothed lean, separate from pendulum.
-      lastMovementPosition: new THREE.Vector3(), hasMovementPosition: false, movementPosition: null, // Character movement source supplied by gameplay, not the weapon's animated joint.
+      lastMovementPosition: new THREE.Vector3(), hasMovementPosition: false, movementPosition: null, movementRoot:null, turnRoot:null, turnYaw:null, turnRate:0, // Character movement source supplied by gameplay, not the weapon's animated joint.
       angularVelocity: new THREE.Vector3(), pivotVelocity: new THREE.Vector3(), hasPhysicsVelocity: false, physicsLength: 0, // Persistent world-space pendulum momentum and measured lever length.
       equilibriumSkips: 0, // Diagnostic count of exact no-torque integration substeps skipped.
       lastShaftUp: new THREE.Vector3(), hasShaftUp: false, // Tracks observed pitch travel for procedural swings lacking authored pitch values.
@@ -512,6 +517,7 @@
     state.pitchTravelRad = Number.isFinite(options.pitchTravelDeg) ? options.pitchTravelDeg * Math.PI / 180 : null; // Authored strike-minus-windup pitch remains deterministic during editor scrubbing.
     state.yawTravelRad = Number.isFinite(options.yawTravelDeg) ? options.yawTravelDeg * Math.PI / 180 : 0; // Authored travel remains diagnostic; physical follow-through uses the measured world motion.
     state.cameraPosition = options.cameraPosition || null; // Standalone editor camera, if supplied.
+    state.movementRoot = options.movementRoot || null; // Editor body frame; gameplay can identify the player from its existing movement position.
     state.movementPosition = options.movementPosition || null; // Player/NPC world position excludes hand-motion offsets from neutral-to-windup lag.
     state.fishingFlailHeadSpin = !!state.config.flail && state.attacking && options.fishingFlailHeadSpin === true; // The flexible head alone spins; normal flail strikes and NPC pendulums are unaffected.
     state.fishingFlailSpinRevolutions = Number.isFinite(Number(options.fishingFlailSpinRevolutions))
@@ -972,7 +978,7 @@
       if (!state.detachedAt) {
         state.detachedAt = now;
         state.hasPivot = false; // Re-equipping resets old idle momentum rather than launching the suspended head.
-        state.hasMovementPosition=false;
+        state.hasMovementPosition=false;state.turnRoot=null;state.turnYaw=null;state.turnRate=0;
         resetIdleHeadMotion(state.idleHeadMotion);
         state.hasPhysicsVelocity = false;
         state.angularVelocity.set(0, 0, 0);
@@ -1103,6 +1109,7 @@
     state.actorMotionValid=!!actorPosition&&Number.isFinite(actorPosition.x)&&Number.isFinite(actorPosition.y)&&Number.isFinite(actorPosition.z);
     if (state.actorMotionValid) {
       if (!state.hasMovementPosition || state.lastMovementPosition.distanceToSquared(actorPosition) > 9) {
+        state.turnYaw=null;
         state.lastMovementPosition.copy(actorPosition); // Teleports / first observation must not whip the chain.
         state.hasMovementPosition = true;
       }
@@ -1174,8 +1181,22 @@
     }
     if (dt > 0 && !state.fishingFlailHeadSpin) state.hasPhysicsVelocity = true; // Head-only spin is a kinematic orbit, not an impulse into the pendulum integrator.
     }
-    // Run after the shared physics branch so each visible dual copy measures its own tip.
-    const bodyVX=state.actorMotionValid?q.velocity.x:0,bodyVZ=state.actorMotionValid?q.velocity.z:0;
+    // Actor turn drives the same drag as translation. Measure body yaw independently of the held pose.
+    const motionOwner=sharedPhysics||state; // Replicas use one heading sample and their own lever arms.
+    if(!sharedPhysics&&dt>0){
+      const player=motionOwner.movementPosition?global.PlayerBodyTransformComposer?.getPlayerMesh?.():null;
+      const body=motionOwner.movementRoot||(player&&player.position===motionOwner.movementPosition?player:null);
+      const world=body?.matrixWorld?.elements;
+      const yaw=world?Math.atan2(world[8],world[10]):null;
+      motionOwner.turnRate=world&&body===motionOwner.turnRoot?bodyYawRate(dt,motionOwner.turnYaw,yaw):0;
+      motionOwner.turnRoot=body;
+      motionOwner.turnYaw=yaw;
+    }
+    const bodyWorld=motionOwner.turnRoot?.matrixWorld?.elements; // World origin gives the radius to each actual haft.
+    const turnX=bodyWorld?motionOwner.turnRate*(pivot.z-bodyWorld[14]):0;
+    const turnZ=bodyWorld?-motionOwner.turnRate*(pivot.x-bodyWorld[12]):0;
+    const bodyVX=(state.actorMotionValid?q.velocity.x:0)+turnX;
+    const bodyVZ=(state.actorMotionValid?q.velocity.z:0)+turnZ;
     advanceIdleHeadMotion(state.idleHeadMotion,state.attacking,state.progress,state.sf,state.hf,pivot,bodyVX,bodyVZ,dt,state.idleHeadMotion.yaw??Math.atan2(normal.x,normal.z),headDeadzone());
     state.groundClearance=null;
     if (state.dualWieldHidden) return; // Hidden original owns the ONE pendulum and fitted length, but not live floor contact.
@@ -1187,7 +1208,7 @@
     if(contact&&Number.isFinite(available)&&!state.fishingFlailHeadSpin) {
       const solve=pose.ropeClearance(state.physicsLength,1,state.direction.y,available);
       if(solve?.trailing) {
-        resolveTrailingDirection(state,q.velocity.x,q.velocity.z,q.shaftUp.x,q.shaftUp.z,solve.directionY,dt); // Keeps the last drag heading once the actor stops; no snap to a default angle.
+        resolveTrailingDirection(state,q.velocity.x+turnX,q.velocity.z+turnZ,q.shaftUp.x,q.shaftUp.z,solve.directionY,dt); // Keeps the last drag heading once the actor stops; no snap to a default angle.
         state.angularVelocity.multiplyScalar(.25);
       }
       state.groundClearance={length:state.physicsLength,fittedScale:fixedScale,trailing:!!solve?.trailing,headContact:contact.traced?'auto-alpha':contact.authored?'authored-edge':'bounds',floor,headMinY:pivot.y+state.physicsLength*state.direction.y-liveDrop*attachmentScale*headScale,reason:solve?'solved':'unreachable'};
@@ -1419,7 +1440,7 @@
 
   global.HobunjiWeaponSpriteAssemblies = {
     definitions: DEF, assemblyKind, isGroundNonSolidChild, groundFitSpec, groundStatus:root=>states.get(root)?.groundClearance||null, decorate, setAction, tick, drop, syncDualWield, scheduleTickAfterPose, debugSnapshot, previewParts, enchantmentTargets, dualWieldEnchantmentTargets, bakedPoint,
-    resolveTrailingDirection, opaqueAt, anchor, refreshWorldMatrix, definitionFor, ropeSpriteSizing, ropeOpaqueBounds, tintRopePixels, stepPendulum, flailDamping, flailStrikeStraightening, flailYawTravel, fishingFlailHeadDirection, clampIdleHeadYaw, stepIdleHeadMotion, advanceIdleHeadMotion, resetIdleHeadMotion, leanHeadBasis, tiltedHeadDrop, // Pure sizing and phase helpers have regression tests.
+    resolveTrailingDirection, opaqueAt, anchor, refreshWorldMatrix, definitionFor, ropeSpriteSizing, ropeOpaqueBounds, tintRopePixels, stepPendulum, bodyYawRate, flailDamping, flailStrikeStraightening, flailYawTravel, fishingFlailHeadDirection, clampIdleHeadYaw, stepIdleHeadMotion, advanceIdleHeadMotion, resetIdleHeadMotion, leanHeadBasis, tiltedHeadDrop, // Pure sizing and phase helpers have regression tests.
   };
   global.HobunjiCacheAudit?.register('weapon assemblies (weak owner registry)', () => { let count = 0; for (const entry of records) if (liveState(entry)) count++; return count; });
   if (global.RuntimeFrameScheduler?.register) {

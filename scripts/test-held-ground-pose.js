@@ -195,6 +195,7 @@ if(THREE){
   parent.updateMatrixWorld(true);
   assert.equal(solver.constrainWeapon(holder,weapon,{...ctx,posteriorLocalY:1.7}),true);
   close(holder.position.y,1.701);
+  close(solver.authoredFrameFor(holder).holderWorld.elements[13],1.5);
   close(solver.snapshot().posteriorLift,.201);
   close(solver.snapshot().angleDeg,0);
   assert.equal(solver.snapshot().reason,'posterior-lift');
@@ -310,10 +311,10 @@ if(THREE){
   solver.constrainDualCopies({plane,mainRoot,offRoot,mainMesh,offMesh,invisible:false});
   const d=solver.snapshot().dual;
   assert.equal(solver.snapshot().contactHullBuilds,hullBuilds,'neither hand rebuilds the shared contact hull');
-  assert.ok(d.right.angleDeg!==0&&d.left.angleDeg!==0,'independent corrective rotation');
+  assert.ok(d.right.angleDeg!==0 && d.left.angleDeg===0 && d.left.gripLift>0,'the offhand uses lift to preserve its authored rotation');
   assert.ok(d.right.finalMinY>=.035-1e-5&&d.left.finalMinY>=.035-1e-5,'both weapons clear floor');
   close(localRight.clone().applyMatrix4(mainMesh.matrixWorld).distanceTo(beforeRight),0);
-  close(localLeft.clone().applyMatrix4(offMesh.matrixWorld).distanceTo(beforeLeft),0);
+  close(localLeft.clone().applyMatrix4(offMesh.matrixWorld).sub(beforeLeft).distanceTo(new THREE.Vector3(0,d.left.gripLift,0)),0);
   close(d.right.gripPivotDrift,0);close(d.left.gripPivotDrift,0);
   assert.ok(holder.matrix.equals(holderBefore),'dual solve does not modify authored holder');
   assert.equal(mainMesh.geometry,plane.geometry);
@@ -333,11 +334,11 @@ if(THREE){
   solver.constrainDualCopies({plane,mainRoot,offRoot,mainMesh,offMesh,invisible:false});
   const md=solver.snapshot().dual;
   for(const side of ['right','left']){
-    assert.ok(md[side].angleDeg!==0&&md[side].finalMinY>=.035-1e-5,'mirrored '+side+' clears floor');
+    assert.ok(md[side].finalMinY>=.035-1e-5,'mirrored '+side+' clears floor');
     close(md[side].gripPivotDrift,0);
   }
   close(mirrorRight.clone().applyMatrix4(mainMesh.matrixWorld).distanceTo(mirrorBeforeRight),0);
-  close(mirrorLeft.clone().applyMatrix4(offMesh.matrixWorld).distanceTo(mirrorBeforeLeft),0);
+  close(mirrorLeft.clone().applyMatrix4(offMesh.matrixWorld).sub(mirrorBeforeLeft).distanceTo(new THREE.Vector3(0,md.left.gripLift,0)),0);
   weapon.scale.x=1;
   // Unsupported live basis must keep the fixed geometry, not lengthen copies.
   plane.rotation.x=0;parent.updateMatrixWorld(true);
@@ -396,6 +397,21 @@ if(THREE){
   assert.ok(solver.snapshot().dual.left.posteriorLift>0);
   assert.notEqual(solver.snapshot().dual.right.posteriorLift,solver.snapshot().dual.left.posteriorLift);
   close(solver.snapshot().angleDeg,0);
+
+  holder.position.y=.8;
+  offRoot.position.set(0,0,0);
+  parent.updateMatrixWorld(true);
+  plane.remove(mainRoot,offRoot);
+  solver.constrainWeapon(holder,weapon,{...dualContext,dual:false});
+  plane.add(mainRoot,offRoot);
+  parent.updateMatrixWorld(true);
+  const offBefore=offRoot.getWorldPosition(new THREE.Vector3()); // Socket-only copy starts below the posterior.
+  offRoot.position.copy(offBefore.clone().add(new THREE.Vector3(0,-2,0)).applyMatrix4(plane.matrixWorld.clone().invert()));
+  offRoot.updateMatrixWorld(true);
+  const lowered=offRoot.getWorldPosition(new THREE.Vector3());
+  assert.ok(lowered.y<offBefore.y);
+  solver.constrainDualCopies({plane,mainRoot,offRoot,mainMesh,offMesh,invisible:true});
+  assert.ok(offRoot.getWorldPosition(new THREE.Vector3()).y>lowered.y);
   console.log('held ground pose: actual Three preview and independent dual grip pivots passed');
 }
 

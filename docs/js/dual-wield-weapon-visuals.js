@@ -366,7 +366,8 @@
     // holder is scene-level, so deriving the anchor from the baked holder pose is
     // more reliable than assuming a particular parent hierarchy.
     const bakedHolderWorld = !inAttackEditor() && current.source === 'runtime' ? global.WeaponToolStances?.lastHolderMatrixWorld?.() : null; // Only the player's holder goes through the stance owner's baked matrix; an actor's holder matrix is its own.
-    const holderWorld = s.holderWorld.copy(bakedHolderWorld || current.holder.matrixWorld);
+    const authored = global.HeldGroundPose?.authoredFrameFor?.(current.holder); // Reconstruct the opposite stance before floor rotation or grip lift.
+    const holderWorld = s.holderWorld.copy(authored?.holderWorld || bakedHolderWorld || current.holder.matrixWorld);
     const holderPosition = s.holderPosition;
     const holderQuaternion = s.holderQuaternion;
     holderWorld.decompose(holderPosition, holderQuaternion, s.ignoredScale);
@@ -408,7 +409,7 @@
     const holderDelta = targetHolderWorld.multiply(s.inverseHolderWorld.copy(holderWorld).invert());
     const planeRelative = s.planeRelative.copy(current.plane.matrixWorld).invert()
       .multiply(holderDelta)
-      .multiply(current.plane.matrixWorld);
+      .multiply(authored?.planeWorld || current.plane.matrixWorld);
     const result = s.idleResult; // Scratch: syncNow consumes it immediately.
     planeRelative.decompose(result.position, result.quaternion, s.ignoredScale);
     result.quaternion.normalize();
@@ -604,8 +605,8 @@
     current.mainRoot.updateMatrixWorld?.(true);
     if(key===PLAYER_KEY){
       const clearance=global.HeldGroundPose;
-      if(active)clearance?.constrainDualCopies?.(current);
-      else{clearance?.releaseDualCopy?.(current.mainMesh);clearance?.releaseDualCopy?.(current.offMesh);}
+      if(!active){clearance?.releaseDualCopy?.(current.mainMesh);clearance?.releaseDualCopy?.(current.offMesh);}
+      if(active||invisible)clearance?.constrainDualCopies?.(current);
     }
     current.flailCopiesReady = !!global.HobunjiWeaponSpriteAssemblies?.syncDualWield?.(current.visual, current.mainMesh, current.offMesh, active); // Each hand has its own real flail physics and head, never a world-space clone of the original rope.
     return current;
