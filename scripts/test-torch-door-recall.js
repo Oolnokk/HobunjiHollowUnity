@@ -137,6 +137,18 @@ doorContext.currentArea = 'map_i_dev_random_ruin';
 assert.deepEqual(Array.from(doorButtons(), x => x.action), ['torch_swing', 'torch_throw', 'dev_ruin_world_0'], 'native ruin door is an additional context action');
 doorContext.window.DevRandomRuinInteractions.getDoorActionButtons = () => [];
 assert.deepEqual(Array.from(doorButtons(), x => x.action), ['torch_swing', 'torch_throw'], 'unrelated world prompts cannot suppress Swing/Throw');
+const entrance = { type:'ruin_door', promptRoot:{}, getButtons:()=>[{action:'obj_ruin_site_door',label:'Enter the ruin',allowed:true}] }; // The production ruin object contract, approached without aiming at the blocked seal.
+doorContext.currentArea = 'zone-test';
+doorContext.player = {x:96,y:64};
+doorContext.TILE = 32;
+doorContext.window.FurnitureTableSystem.objectAt = () => null;
+doorContext.window.RuinSites = {objectAt: (area,col,row) => area === 'zone-test' && col === 3 && row === 2 ? entrance : null};
+const entranceButtons = doorButtons();
+assert.deepEqual(Array.from(entranceButtons, x=>x.action), ['torch_swing','torch_throw','obj_ruin_site_door']);
+assert.equal(entranceButtons[2].inputAction,'interact');
+assert.equal(entranceButtons[2].promptRoot,entrance.promptRoot);
+doorContext.player.x = 160;
+assert.equal(doorButtons().length,2,'walking away removes the entrance prompt');
 
 const methods = sourceBetween(ruin, '    getDoorActionButtons() {', '    invoke(index = 0) {'); // Tests native-door filtering and exact onPress ownership.
 let opens = 0;
@@ -184,13 +196,13 @@ const syncDoorPopup = vm.runInContext(floatingPopup + '\nsyncWorldPopup', floati
 syncDoorPopup(nativeRows);
 assert.equal(lastPopup.promptInputs[0].actionId, 'interact', 'torch-held ruin door advertises Interact, not its now-suppressed Action 1');
 assert.equal(lastPopup.promptInputs[0].label, 'E', 'native door popup resolves the live keyboard Interact glyph through ActionPromptUI');
-assert.equal(lastPopup.promptInputs[1].actionId, 'action1', 'unrelated world-control binding is unchanged');
-assert.equal(lastPopup.promptInputs[2].actionId, 'interact');
+assert.equal(lastPopup.promptInputs.length, 2, 'the unavailable non-door Action 1 prompt is not advertised while the torch is held');
+assert.equal(lastPopup.promptInputs[1].actionId, 'interact');
 heldTorchForPopup = false;
 syncDoorPopup(nativeRows);
 assert.equal(lastPopup.promptInputs[0].actionId, 'action1', 'ordinary door action binding is retained without torch');
 
-const doorDispatch = sourceBetween(game, "        if (activeAction === 'obj_door_toggle') {", "        if (activeTool === 'shovel') {"); // Immediate door actions must bypass the shared torch swing clock.
+const doorDispatch = sourceBetween(game, "        if (activeAction === 'obj_ruin_site_door' || activeAction === 'obj_door_toggle') {", "        if (activeTool === 'shovel') {"); // Immediate door actions must bypass the shared torch swing clock.
 let worldSaves = 0, notifications = 0, refreshes = 0;
 const dispatchContext = vm.createContext({
   activeAction: 'obj_door_toggle', activeTool: 'adventuring',

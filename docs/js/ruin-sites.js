@@ -577,7 +577,7 @@
     }
     const doorObject = makeDoorObject(record);
     const span = 1.6;
-    for (let dz = -2.5; dz <= 1.5; dz += .5) {
+    for (let dz = -2.5; dz <= 3.5; dz += .5) { // Include the authored 3.2-tile approach in the entrance interaction index.
       for (let dx = -span; dx <= span; dx += .5) {
         const along = { x:layout.out.x * dz, z:layout.out.z * dz }; // dz > 0 is out toward the approach.
         const across = { x:layout.out.z * dx, z:-layout.out.x * dx };
@@ -605,6 +605,7 @@
     return {
       id:`ruinsite_${site.id}`, type:'ruin_door', col:Math.floor(approach.x), row:Math.floor(approach.z), mesh:record.door || record.rubble,
       label:'🏛️ Sealed Ruin',
+      promptRoot:record.tunnel || record.door || record.rubble, // Stable prompt anchor even after the movable seal sinks.
       getButtons() {
         const saved = entranceState(site.id);
         if (saved.spent) return [{ icon:'🪨', label:'Collapsed — the passage is choked with rubble', action:'obj_ruin_site_door', style:'secondary', allowed:false }];

@@ -622,17 +622,18 @@
     const device=currentDevice(); // Used by the torch-door's physical arch-slot fallback when the Interact button is Jump or absent.
     let torchDoorIndex=0; // Mirrors adventuringToolActionButtons' appended door order after Torch Swing and Throw.
     const torchDoorSlots=['action3','itemAction1','itemAction2']; // Appended door rows occupy these arch slots, in order, on touch and controller.
-    const buttons=actionButtonsFromRows(rows).map((button, index) => {
-      if (!torchHeld || !PROXIMITY_DOOR_KINDS.has(rows[index]?.kind)) return button;
+    const buttons=actionButtonsFromRows(rows).flatMap((button, index) => {
+      if (!torchHeld) return [button];
+      if (!PROXIMITY_DOOR_KINDS.has(rows[index]?.kind)) return button.inputAction === 'action1' || button.inputAction === 'action2' ? [] : [button]; // Do not advertise reserved controls that cannot execute.
       const archAction=torchDoorSlots[torchDoorIndex++]||''; // No fourth actionable door slot exists in the current five-button arch.
-      return { ...button, inputAction: device === 'controller' || device === 'touch' ? archAction : 'interact' }; // Keyboard keeps E, while touch/controller use the visible third arch slot.
+      return [{ ...button, inputAction: device === 'controller' || device === 'touch' ? archAction : 'interact' }]; // Keyboard keeps E, while touch/controller use the visible third arch slot.
     });
     const root=promptAnchor.parent?promptAnchor:(rows[0]?.owner||lastAnchor||ruinRoot()||null);
     const promptInputs=window.ActionPromptUI.resolveWorldPromptInputs(buttons,null,device); // Shared remap, Jump priority, and arch-color hints for native rows.
     popup.syncInteractionPrompts({
       buttons,
       root,
-      enabled:inRuin()&&rows.length>0,
+      enabled:inRuin()&&buttons.length>0,
       scene:activeScene(),
       promptInputs,
       showInputHints:true,
