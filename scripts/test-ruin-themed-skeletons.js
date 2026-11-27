@@ -6,7 +6,7 @@ GhoulSpecialVariants:{rollEnchantedWeapon:(rnd,o)=>{assert.equal(o.singleBase,tr
 BanditCombat:{makeEntity:async(cfg,rank,tier,x,y,o)=>{calls.push(o);return {maxFooting:10,maxHealth:100,def:{weaponShapeKey:'warhammer'},rosterRecord:o.rosterOverride,...o.extra};}}};
 vm.runInNewContext(fs.readFileSync('docs/js/combat/combat-minion.js','utf8'),{window,console});
 (async()=>{const m=window.MinionCombat,o={zoneId:'map_i_dev_random_ruin',roster:{appearance:{speciesId:'harlyao-skeleton'}},baseConfig:{}};
-// All four portrait views must preserve original ink and its one-texel filter guard, plus transparent pixels.
+// All four portrait views must preserve original ink and transparent pixels without skipping adjacent colored texels.
 const W=12,H=9,sample=new Uint8ClampedArray(W*H*4);
 for(let p=0;p<W*H;p++)sample.set([100,85,50,255],p*4);
 const ix=(x,y)=>(y*W+x)*4;
@@ -16,8 +16,8 @@ for(const tradition of ['tothal','hronal']){
   for(const canvas of canvases)canvas.data.set(sample);
   await m.paintRuinPortraits({ruinSkeletonTheme:tradition,ruinSkeletonSeed:7},canvases);
   for(const canvas of canvases){
-    for(const [x,y] of [[2,2],[2,3],[3,2],[4,2],[1,1],[11,8]])assert.deepEqual(Array.from(canvas.data.slice(ix(x,y),ix(x,y)+4)),Array.from(sample.slice(ix(x,y),ix(x,y)+4)));
-    assert.ok(tradition==='tothal'?canvas.data[ix(8,5)]>100:canvas.data[ix(8,5)]<100);
+    for(const [x,y] of [[2,2],[2,3],[3,2],[11,8]])assert.deepEqual(Array.from(canvas.data.slice(ix(x,y),ix(x,y)+4)),Array.from(sample.slice(ix(x,y),ix(x,y)+4)));
+    for(const [x,y] of [[8,5],[4,2],[1,1]])assert.ok(tradition==='tothal'?canvas.data[ix(x,y)]>100:canvas.data[ix(x,y)]<100,'No unthemed halo beside ink');
     assert.equal(canvas.data[ix(8,5)+3],255);
   }
 }
@@ -26,7 +26,7 @@ const w=100,h=100,body=new Uint8ClampedArray(w*h*4);
 for(let y=3;y<60;y++)for(let x=12;x<88;x++)body[(y*w+x)*4+3]=255;
 for(let y=60;y<92;y++)for(let x=42;x<63;x++)body[(y*w+x)*4+3]=255;
 const footprint=m.ruinTorsoFootprint({width:w,height:h,getContext:()=>({getImageData:()=>({data:body})})},{x:.48,y:.60},1,1);
-assert.ok(footprint&&footprint.top<-.10&&footprint.bottom>-.42&&footprint.height>.24);assert.ok(footprint.width<.22);assert.ok(footprint.x<0);
+assert.ok(footprint&&footprint.top<-.10&&footprint.bottom>-.42&&footprint.height>.24);assert.ok(footprint.width<.22);assert.ok(footprint.x<0);assert.equal(footprint.desiredY,(footprint.previousY-.08)/2);assert.ok(footprint.y>footprint.previousY&&footprint.y===footprint.desiredY);
 // Projection keeps centers on opaque torso even when the wide satellites overshoot the seed box.
 for(let z=-.5;z<=.5;z+=.1)for(let x=-.5;x<=.5;x+=.1){const root=footprint.project(x,z),px=Math.floor((.5-(root.x+footprint.x))*w),py=Math.floor((.5-(footprint.y-root.z))*h);assert.ok(px>=42&&px<63&&py>=60&&py<92);assert.equal(body[(py*w+px)*4+3],255);}
 // Exercise both actual attachment branches, with stand-in scene nodes so this also runs without WebGL.
@@ -57,6 +57,8 @@ vm.runInNewContext(fs.readFileSync('docs/js/tool-metal-recolor.js','utf8'),{wind
 const eligible=new Uint8Array(100*100).fill(1);
 const oilPixels=new Uint8ClampedArray(100*100*4),oilOverlay=new Uint8ClampedArray(oilPixels.length);for(let p=0;p<100*100;p++){oilPixels.set([120,110,90,255],p*4);oilOverlay.set([17,35,70,255],p*4);}
 oilPixels.set([0,0,0,255],0);m.paintRuinPixels({ruinSkeletonTheme:'kanthic',ruinSkeletonSeed:8},oilPixels,100,100,oilOverlay);let oilInk=0,oilFill=0;for(let p=1;p<100*100;p++){const i=p*4;if(oilPixels[i]===0&&oilPixels[i+1]===0&&oilPixels[i+2]===0)oilInk++;if(oilPixels[i]===17&&oilPixels[i+1]===35&&oilPixels[i+2]===70)oilFill++;}assert.ok(oilInk>0&&oilFill>0);assert.deepEqual(Array.from(oilPixels.slice(0,4)),[0,0,0,255]);
+// Force an irregular patch across authored ink and up against a transparent boundary. Its outline should not leave a clearance moat.
+const cut=new Uint8ClampedArray(12*12*4),oil=new Uint8ClampedArray(cut.length),forced=new Uint8Array(144);for(let y=1;y<11;y++)for(let x=1;x<11;x++){const p=y*12+x;cut.set(x===1?[0,0,0,255]:[120,110,90,255],p*4);oil.set([17,35,70,255],p*4);if(x<=4&&y>=4&&y<=7)forced[p]=1;}m.paintRuinPixels({ruinSkeletonTheme:'kanthic',ruinSkeletonSeed:9},cut,12,12,oil,forced);assert.deepEqual(Array.from(cut.slice((5*12+1)*4,(5*12+1)*4+4)),[0,0,0,255]);assert.deepEqual(Array.from(cut.slice((5*12+2)*4,(5*12+2)*4+4)),[17,35,70,255]);assert.equal(cut[(5*12)*4+3],0);assert.deepEqual(Array.from(cut.slice((5*12+5)*4,(5*12+5)*4+4)),[0,0,0,255]);
 for(let seed=1;seed<=12;seed++){
   const mask=window.ToolMetalRecolor.buildOxidationMask(eligible,100,100,.28,{seed,blotchCount:9,separateBlotches:true});
   const visited=new Uint8Array(mask.length);let groups=0,area=0;

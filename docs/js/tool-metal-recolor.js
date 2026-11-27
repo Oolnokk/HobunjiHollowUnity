@@ -184,7 +184,7 @@
 
     if(opts.separateBlotches)for(const center of centers){
       const nearest=Math.min(...centers.filter(other=>other!==center).map(other=>Math.hypot(center.x-other.x,center.y-other.y)));
-      center.radius=Math.min(center.radius,baseRadius*.70,nearest*.29); // Even with the existing irregular edge wobble, retain a gap between neighboring blobs.
+      center.radius=opts.looseBlotches?Math.min(center.radius,baseRadius*1.12,nearest*.49):Math.min(center.radius,baseRadius*.70,nearest*.29); // Loose portrait patches may touch/merge locally or reach the silhouette; existing strict separated mode is unchanged.
     }
     const scored = [];
     for (const p of metalPixels) {
@@ -200,7 +200,8 @@
         const wideWobble = valueNoise1D(angle01 * 5.2 + center.phase, seed + c * 977 + 101) * 0.36;
         const fineJitter = valueNoise1D(angle01 * 17.0 + center.phase, seed + c * 977 + 202) * 0.14;
         const kinkNoise = Math.max(0, valueNoise1D(angle01 * 8.0 + center.phase, seed + c * 977 + 303) - 0.62) * center.kink * 0.22;
-        const radius = Math.max(0.35, center.radius * (1 + wideWobble + fineJitter + kinkNoise));
+        const irregularity=opts.looseBlotches?1.35:1; // Larger irregular Kanthic contours use the same seeded verdigris edge function.
+        const radius = Math.max(0.35, center.radius * (1 + (wideWobble + fineJitter + kinkNoise)*irregularity));
         const grain = valueNoise2D(x * 0.18, y * 0.18, seed + c * 977 + 404) * 0.08;
         best = Math.min(best, (distance / radius) + grain);
       }

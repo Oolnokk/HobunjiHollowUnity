@@ -102,17 +102,12 @@
     h=Math.imul(h^(h>>>13),1274126177);return ((h^(h>>>16))>>>0)/4294967295;
   }
   function ruinInkMask(data,w,h){
-    const ink=new Uint8Array(w*h),protectedInk=new Uint8Array(w*h); // Original outline ownership, never inferred from the already-treated colors.
+    const ink=new Uint8Array(w*h); // Protect only actual black/near-black source texels, not their neighboring colored pixels.
     for(let p=0;p<ink.length;p++){
-      const i=p*4,r=data[i],g=data[i+1],b=data[i+2];
-      if(data[i+3]&&(Math.max(r,g,b)<=48||(r*.2126+g*.7152+b*.0722)<=30))ink[p]=1;
+      const i=p*4;
+      if(data[i+3]&&Math.max(data[i],data[i+1],data[i+2])<=32)ink[p]=1;
     }
-    // Leave one original texel around the ink: linear texture sampling otherwise bleeds treated pixels into the authored black stroke.
-    for(let p=0;p<ink.length;p++)if(ink[p]){
-      const x=p%w,y=Math.floor(p/w);
-      for(let oy=-1;oy<=1;oy++)for(let ox=-1;ox<=1;ox++)if(x+ox>=0&&x+ox<w&&y+oy>=0&&y+oy<h)protectedInk[(y+oy)*w+x+ox]=1;
-    }
-    return protectedInk;
+    return ink;
   }
   function paintRuinPixels(roster,data,w,h,overlay=null,sharedMask=null){
     const theme=roster.ruinSkeletonTheme,seed=roster.ruinSkeletonSeed; // The same immutable source mask protects portraits and pants.
@@ -121,16 +116,16 @@
     if(theme==='kanthic'){
       if(!overlay)throw new Error('Oil texture unavailable');
       const eligible=new Uint8Array(w*h);
-      for(let p=0;p<eligible.length;p++)eligible[p]=data[p*4+3]&&!ink[p]?1:0;
+      for(let p=0;p<eligible.length;p++)eligible[p]=data[p*4+3]?1:0; // Let a patch cross original ink; final compositing gives authored ink priority.
       const metal=window.ToolMetalRecolor;
-      mask=sharedMask?new Uint8Array(sharedMask):metal?.buildOxidationMask?.(eligible,w,h,.28,{seed,blotchCount:9,separateBlotches:true});
+      mask=sharedMask?new Uint8Array(sharedMask):metal?.buildOxidationMask?.(eligible,w,h,.45,{seed,blotchCount:6,separateBlotches:true,looseBlotches:true});
       if(!mask||!metal?.buildOxidationOutlineMask)throw new Error('Verdigris mask/outline unavailable');
       for(let p=0;p<mask.length;p++)if(!eligible[p])mask[p]=0;
       outline=metal.buildOxidationOutlineMask(mask,eligible,w,h,1); // Actual verdigris outward ink boundary, not an imitation.
     }
     for(let p=0;p<w*h;p++){
       const i=p*4;
-      if(!data[i+3]||ink[p])continue; // Full original black and antialias coverage wins over every effect.
+      if(!data[i+3]||ink[p])continue; // Original ink wins, including semitransparent black; no unpainted halo.
       if(theme==='kanthic'){
         if(outline[p]){data[i]=data[i+1]=data[i+2]=0;continue;} // Exact authored-style black; preserve original alpha.
         if(!mask[p])continue;
@@ -202,7 +197,9 @@
     if(!rows.length||right<=left)return null;
     const x0=(.5-(right+.5)/w)*width,x1=(.5-(left+.5)/w)*width;
     const y0=(.5-(rows.at(-1).y+.5)/h)*height,y1=(.5-(rows[0].y+.5)/h)*height;
-    const footprint={x:(x0+x1)/2,y:(y0+y1)/2,width:x1-x0,height:y1-y0,top:y1,bottom:y0};
+    const previousY=(y0+y1)/2,originalY=-height*.08; // Original first-version placement and the immediately preceding torso midpoint, both in rear-plane local units.
+    const desiredY=(previousY+originalY)/2;
+    const footprint={x:(x0+x1)/2,y:Math.max(y0,Math.min(y1,desiredY)),width:x1-x0,height:y1-y0,top:y1,bottom:y0,previousY,originalY,desiredY}; // Only clamp if the requested midpoint itself is outside the torso.
     // Non-enumerable spawn-only projector keeps debug snapshots compact. It moves roots, not the geometry tips.
     Object.defineProperty(footprint,'project',{value:(x,z)=>{
       const px=(.5-(x+footprint.x)/width)*w-.5,py=(.5-(footprint.y-z)/height)*h-.5;
