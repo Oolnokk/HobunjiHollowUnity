@@ -274,7 +274,7 @@
       limits: { materials: ICON_MATERIAL_POOL_MAX, geometries: ICON_GEOMETRY_POOL_MAX, textures: ICON_TEXTURE_CACHE_MAX } } : null;
   }
 
-  function makePlane(text, kind, layout) {
+  function makePlane(text, kind, layout, color) {
     const THREE = state.deps.THREE;
     const size = layout.worldHeight;
     const canvas = document.createElement('canvas');
@@ -293,7 +293,7 @@
     ctx.lineWidth = 9;
     ctx.strokeStyle = 'rgba(15,10,8,.9)';
     ctx.strokeText(text, textX, canvas.height / 2);
-    ctx.fillStyle = state.settings.colors[kind] || '#fff';
+    ctx.fillStyle = color || state.settings.colors[kind] || '#fff';
     ctx.fillText(text, textX, canvas.height / 2);
     const texture = new THREE.CanvasTexture(canvas);
     texture.colorSpace = THREE.SRGBColorSpace;
@@ -543,7 +543,7 @@
     const planeCfg = mode === 'centeredFiveRow'
       ? { ...cfg, worldHeight: cfg.worldHeight * CENTERED_LIST_SCALE }
       : cfg;
-    const parts = makePlane(entry.text, entry.kind, planeCfg);
+    const parts = makePlane(entry.text, entry.kind, planeCfg, entry.color);
     const event = { ...entry, scene, ...parts, mode, sequence: state.sequence++, startedAt: performance.now(), lifetimeMs: cfg.lifetimeMs, listSlot: -1, offsetX: 0, offsetY: 0 };
     if (mode === 'centeredFiveRow') {
       const list = listFor(entry.root);
@@ -724,7 +724,7 @@
     if (!value) return null;
     const sign = Number(amount) >= 0 ? '+' : '-';
     const text = options.text || `${sign}${value}`;
-    if (kind === 'damage' || kind === 'healing') return spawn({ kind, text, root: options.root || state.deps?.playerRoot, scene: options.scene, modeOverride: options.mode });
+    if (kind === 'damage' || kind === 'healing') return spawn({ kind, text, root: options.root || state.deps?.playerRoot, scene: options.scene, modeOverride: options.mode, color: options.color });
     queueReward(kind, text, options);
     return state.sequence;
   }
@@ -737,7 +737,7 @@
   }
 
   let lastCombatEffect = null; // Existing debug snapshot exposes the last emitted combat number.
-  function showCombatEffect(entity, id, amount, credited) {
+  function showCombatEffect(entity, id, amount, credited, source = 'attack') {
     if (!credited || !(amount > 0) || !Number.isFinite(amount) || window.ActorRegistry?.isPlayer(entity)) return null;
     const root = entity?.avatarRef?.group || entity?.root; // Existing avatar anchor.
     const scene = state.deps?.getActiveScene?.(); // Never draw another area's combat in the local scene.
@@ -745,8 +745,12 @@
     const value = Math.round(amount * 10) / 10; // Authored damage-number precision.
     if (!value) return null;
     const label = id === 'health' ? '' : id === 'footing' ? 'Footing' : window.ResourceSystem?.AFFLICTIONS?.[id]?.name || id;
-    const sequence = showChange('damage', -value, { root, scene, text: label ? `-${value} ${label}` : undefined });
-    if (sequence != null) lastCombatEffect = { id, amount: value, sequence };
+    const palette = window.HOBUNJI_CONFIG?.resourceRings; // Shared authored resource and affliction colors, resolved only on a real hit.
+    const color = id === 'footing' ? palette?.colors?.footing : palette?.afflictionColors?.[id]; // Health retains the popup editor's authored damage color.
+    const suffix = source === 'impact' ? ' (Impact)' : ''; // Physical collision numbers are distinguishable from the original hit.
+    const text = label || suffix ? `-${value}${label ? ' ' + label : ''}${suffix}` : undefined;
+    const sequence = showChange('damage', -value, { root, scene, text, color });
+    if (sequence != null) lastCombatEffect = { id, amount: value, sequence, source, color: color || null, at: Date.now() };
     return sequence;
   }
 
@@ -1256,7 +1260,7 @@
     avatarCentroidWorld, loadSettings, applySettings, clear,
     defaults: clone(DEFAULTS), storageKey: STORAGE_KEY,
     debugSnapshot: () => ({
-      latestChange: 'Local player/companion combat numbers reuse authored damage popup animations.',
+      latestChange: 'Local combat popups match resource colors and distinguish collision impacts.',
       lastCombatEffect: lastCombatEffect ? { ...lastCombatEffect } : null,
       lastSocialGains: lastSocialGains.map(gain => ({ ...gain, recipients: [...gain.recipients] })),
       pendingSocialGainKinds: [...socialGains.keys()],
