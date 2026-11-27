@@ -29,6 +29,8 @@ class Geo {
   }
   computeBoundingBox(){}
   rotateX(){return this;}
+  rotateY(){return this;}
+  translate(){return this;}
   rotateZ(){return this;}
   setAttribute(k,v){this.attributes[k]=v;}
   computeVertexNormals(){}
@@ -45,7 +47,7 @@ class Box3 {
 }
 const THREE={
   Group:Obj,Object3D:Obj,Vector3:V,Mesh,InstancedMesh,Box3,
-  BoxGeometry:Geo,PlaneGeometry:Geo,TetrahedronGeometry:Geo,ConeGeometry:Geo,BufferGeometry:Geo,
+  BoxGeometry:Geo,CylinderGeometry:Geo,PlaneGeometry:Geo,TetrahedronGeometry:Geo,ConeGeometry:Geo,BufferGeometry:Geo,
   Float32BufferAttribute:class{constructor(values,size){this.values=values;this.itemSize=size;}},
   MeshBasicMaterial:Mat,DoubleSide:2,MathUtils:{lerp:(a,b,t)=>a+(b-a)*t}
 };
@@ -133,7 +135,7 @@ function makeFixture(hasTarget=true,supportCount=4){
 {
   const f=makeFixture(true,0);
   assert.equal(f.window.DevRandomRuinLichThemes.snapshot().totalPillars,0,
-    'Rooms containing only true pillar-niche targets must not receive rectangular fallback traps');
+    'Rooms containing only true pillar-niche targets must not receive extra decoy traps');
   assert.equal(f.target.visible,true);
   f.composer.clear();
 }

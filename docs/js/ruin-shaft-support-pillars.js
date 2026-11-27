@@ -191,5 +191,5 @@
       },
     };
   }
-  return Object.freeze({SOURCE,footprintTiles,layout,recipeFromSquarePillar,recipeForPlatform,stretchStoneFaces,mount});
+  return Object.freeze({SOURCE,loadSquarePillar:loadSource,footprintTiles,layout,recipeFromSquarePillar,recipeForPlatform,stretchStoneFaces,mount});
 });
