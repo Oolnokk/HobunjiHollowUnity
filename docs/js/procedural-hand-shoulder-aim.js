@@ -569,6 +569,18 @@
     // a clean base instead of treating a previously aimed quaternion as authored.
     captureAuthoredBase('left');
     captureAuthoredBase('right');
+    // Save the uncorrected idle endpoint so secondary grips blend BEFORE wrist targeting.
+    const leftIdlePosition = new THREE.Vector3();
+    const leftIdleQuaternion = new THREE.Quaternion();
+    let leftIdleValid = false;
+    function captureLeftIdleBase() {
+      const socket = socketFor('left');
+      if (!socket) return;
+      leftIdlePosition.copy(socket.position);
+      leftIdleQuaternion.copy(authoredBaseBySide.left);
+      leftIdleValid = authoredBaseValid.left;
+    }
+    captureLeftIdleBase();
 
     const needsFallback = installManualPoints();
     if (!needsFallback) {
@@ -609,10 +621,20 @@
 
     const originalPlaceHandWorld = rig.placeHandWorld?.bind(rig);
     if (originalPlaceHandWorld) {
-      rig.placeHandWorld = function shoulderAimPlaceHandWorld(side, worldPosition, worldQuaternion, modelCalibration = null) {
+      rig.blendsGripBeforeShoulderAim = true; // Secondary-span wrapper delegates partial blends to this final pose owner.
+      rig.placeHandWorld = function shoulderAimPlaceHandWorld(side, worldPosition, worldQuaternion, modelCalibration = null, gripInfluence = 1) {
         const result = originalPlaceHandWorld(side, worldPosition, worldQuaternion, modelCalibration); // Forward the calibration child payload unchanged; proximal targeting owns only the socket quaternion.
         if (result) {
           freeSide[side] = false;
+          const influence = clamp01(gripInfluence); // Explicit secondary/dual/idle grip weight, applied to the raw endpoints.
+          if (side === 'left' && leftIdleValid && influence < 0.9999) {
+            const socket = socketFor(side);
+            if (socket) {
+              socket.position.lerp(leftIdlePosition, 1 - influence);
+              socket.quaternion.slerp(leftIdleQuaternion, 1 - influence);
+              socket.updateMatrix?.();
+            }
+          }
           captureAuthoredBase(side);
           aimSide(side);
         }
@@ -627,6 +649,7 @@
         freeSide[side] = true;
         alignFreeHandToFallbackAnchor(side, fallbackPose);
         captureAuthoredBase(side);
+        if (side === 'left') captureLeftIdleBase();
         aimSide(side);
         return result;
       };
@@ -642,6 +665,7 @@
         alignFreeHandToFallbackAnchor('right', fallbackPoses?.right || null);
         captureAuthoredBase('left');
         captureAuthoredBase('right');
+        captureLeftIdleBase();
         aimAll();
         return result;
       };
