@@ -150,11 +150,10 @@
     // The final outline composite is a fullscreen post scene. Its camera normally
     // uses only the default layer, so camera.layers === MASK_ALL is not a valid
     // requirement for recognizing the presentation pass.
-    if (!target && !override && findOutlineCompositeMaterial(scene)) return 'postOrDirect';
-
     if (mask === MASK_ALL && !override) {
-      return target ? 'base' : 'postOrDirect';
+      return target ? 'base' : 'postOrDirect'; // Ordinary direct gameplay never needs a composite-material scan.
     }
+    if (!target && !override && findOutlineCompositeMaterial(scene)) return 'postOrDirect';
     return 'other';
   }
 
@@ -315,7 +314,8 @@
 
     let prepared = 0;
     const fillEntries = [];
-    scene?.traverse?.(object => {
+    const traverse = scene?.traverseVisible || scene?.traverse; // Match native renderer visibility; older isolated tools fall back to ordinary traversal.
+    traverse?.call(scene, object => {
       if (!object?.isMesh || !object.layers?.test?.(camera.layers)) return;
       const materials = Array.isArray(object.material) ? object.material : [object.material];
       if (!materials.some(isAlphaCutoutMaterial)) return;

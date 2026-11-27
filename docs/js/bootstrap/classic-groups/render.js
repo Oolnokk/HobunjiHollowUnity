@@ -6,7 +6,7 @@
     "js/instanced-mesh-view-cull.js?v=20261125sceneRegistry1",
     "js/instanced-brick-lod.js?v=20261125sceneRegistry1", // Render scope: far default-brick meshes draw an octant-hull brick (world-render-pipeline.js).
     "js/grass-billboard-render-chunks.js?v=20261112grasschunk1",
-    "js/actor-render-occlusion.js?v=20261126h0c61810",
+    "js/actor-render-occlusion.js?v=20261127boundedProbes1",
     "js/outline-composite-material.js?v=20261127maskEarly1",
     "js/character-visuals.js?v=20261124h21ad2df", // Character enumeration + visual capability table; game.js registers the provider.
     "js/character-held-tools.js?v=20261119charVisuals1", // Held tool/weapon planes for any character; game.js calls init() in its tool section.
