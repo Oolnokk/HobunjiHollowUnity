@@ -3607,7 +3607,7 @@
     }
     if(authoredRule?.ranged || authoredRule?.rangedChance != null)def.rangedWeaponKey=rolledDefinition.rangedWeaponKey;
     def = loadoutRules?.applyDefinition(loadoutKind, def, deps.rnd) || def;
-    if(opts.extra?.rootledoot){def.weaponKey=rolledDefinition.weaponKey;def.rangedWeaponKey=null;} // Workshop rules cannot substitute a forbidden weapon or ranged item.
+    if(opts.extra?.rootledoot){def.weaponKey=rolledDefinition.weaponKey;def.rangedWeaponKey=null;if(def.banditAbilityLoadout)def.banditAbilityLoadout.tap1=rolledDefinition.banditAbilityLoadout.tap1;} // Workshop rules cannot substitute a forbidden weapon or ranged item.
     if (def.rangedWeaponKey && !window.RangedWeapons?.config?.[def.rangedWeaponKey]) {
       // The Fishing Spear is registered by the existing dual-role projectile archetype, not the base crossbow table.
       // NPCs must have that real thrown definition before they try to fire rather than holding an inert spear.

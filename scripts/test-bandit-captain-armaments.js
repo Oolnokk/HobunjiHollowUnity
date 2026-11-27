@@ -323,9 +323,16 @@ for (let i=0;i<500;i++) {
     const expected=!s.editorOnly&&!h.editorOnly&&!h.craftDisabled&&(shaft==='dagger'||head==='porakaneki-greatclub')&&!modular.isDisallowed(shaft,head);
     assert.equal(rootPairs.some(p=>p.shaft===shaft&&p.head===head),expected);
   }
-  for(const rank of ['grunt','lieutenant'])for(const roll of [0.1,0.9]){
+  // Exercise the actual initial bandit weapon roll as well as the subsequent enchantment wrapper.
+  const banditSource=fs.readFileSync('docs/js/combat/combat-bandit.js','utf8'),start=banditSource.indexOf('  function banditWeaponFor('),end=banditSource.indexOf('  function banditRangedWeaponFor(',start);
+  const select=new Function('window','deps','configuredWeaponMetalKey','rollBanditWeaponMetalKey',banditSource.slice(start,end)+';return banditWeaponFor;');
+  for(const rank of ['grunt','lieutenant','captain'])for(let i=0;i<rootPairs.length;i++){
+    const roll=select(window,{...deps,rnd:()=> (i+.5)/rootPairs.length,metalDmgMultiplier:()=>1},()=> 'nativeCopper',()=> 'nativeCopper');
+    const weapon=roll({_rootledootWeaponPool:true},rank,0);assert(cap.isRootledootWeapon(weapon.weaponKey));assert.equal(weapon.animStyle,toolDefs[weapon.weaponKey].animStyle);
+  }
+  for(const rank of ['grunt','lieutenant'])for(const roll of [0.1,0.4,0.9]){
     const actor=entity();actor.rootledoot=true;actor.enemyClass='rootledoot';const part=rootPairs[0];actor.def.weaponKey=modular.itemKey(part.shaft,part.head,'nativeCopper');
-    cap.equip(actor,{},rank,0,{}, {...deps,rnd:()=>roll});assert(cap.isRootledootWeapon(actor.def.weaponKey));assert.equal(!!actor._banditCaptainArmament,roll<.25);
+    cap.equip(actor,{},rank,0,{}, {...deps,rnd:()=>roll});assert(cap.isRootledootWeapon(actor.def.weaponKey));assert.equal(!!actor._banditCaptainArmament,roll<(rank==='lieutenant'?.5:.25));
     if(actor._banditCaptainArmament){assert.equal(actor._banditCaptainArmament.origin,'Fey');assert(actor._banditCaptainArmament.enchantments.base.every(id=>definitions[id].alignment==='Fey'));cap.discard(actor);}
   }
   // Rootledoots use the actual modular catalog even below the normal captain's minimum tier.

@@ -1,4 +1,4 @@
-import { EnemyPreview } from './preview.js?v=20261127rootledootRigFey12';
+import { EnemyPreview } from './preview.js?v=20261127rootledootRigFey13';
 const $ = (id) => document.getElementById(id);
 const DRAFT_KEY = 'hobunji.enemyLoadoutWorkshop.v1';
 const state = {
@@ -992,13 +992,18 @@ function renderPools() {
       updateRuleJson();
       return;
     }
+    const rootledoot=state.kind.startsWith('rootledoot:'); // The live Foundry compatibility pool is fixed, not a bandit donor-shape rule.
     const nativeShapes = state.kind.startsWith('bandit:')
       ? window.WeaponTrustBanditLoadouts?.allowedMeleeShapes(species)
       : null;
     const nativeWeapons = nativeShapes?.length
       ? Object.fromEntries(nativeShapes.map((id) => [id, 1]))
       : d.weapons;
-    pool(
+    if(rootledoot){
+      const pairs=window.BanditCaptainArmaments.rootledootPairs(),rank=state.kind.split(':')[1];
+      $('poolPanel').append(el('h3',null,'Compatible modular weapons ('+pairs.length+')'),el('p','help','Each weapon must use a dagger haft or Porakaneki greatclub head and pass the Foundry crafting rules. Fey enchantment chance: '+(rank==='captain'?'100%':rank==='lieutenant'?'50%':'25%')+'. No ranged weapons.'));
+      for(const pair of pairs)$('poolPanel').append(el('p','muted',pair.shaft+' + '+pair.head));
+    }else pool(
       'Melee weapon shape',
       ['weapons'],
       nativeWeapons,
@@ -1032,6 +1037,7 @@ function renderPools() {
         (k) => state.data.metals[k].tier,
       ),
     );
+    if(!rootledoot){
     scalar(
       'Chance of ranged weapon',
       'rangedChance',
@@ -1049,6 +1055,7 @@ function renderPools() {
         },
       Object.keys(window.RangedWeapons.config),
     );
+    }
     if (state.kind === 'bandit:flasker') {
       const recipes = window.BanditCombat.availableFlaskRecipeIds();
       pool(

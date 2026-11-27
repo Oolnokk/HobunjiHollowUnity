@@ -183,7 +183,7 @@
   }
   function makeCombatant(cfg,rank,tier,x,y,opts={}) {
     const big=rank==='captain',name=big?'Big Rootledoot':'Rootledoot'; // Shared by live waves and the Workshop.
-    const roster=opts.rosterOverride||{name,appearance:{speciesId:'mao-ao',gender:'male',cosmetics:{},bodyColors:Object.fromEntries(['A','B','C'].map(k=>[k,{hex:ROOT_COLOR}]))},equippedCosmetics:[],cosmeticSlots:{},appliedDyes:{},rootledoot:true};
+    const roster={...opts.rosterOverride,name,appearance:{...opts.rosterOverride?.appearance,speciesId:'mao-ao',gender:'male',cosmetics:{},bodyColors:Object.fromEntries(['A','B','C'].map(k=>[k,{hex:ROOT_COLOR}]))},equippedCosmetics:[],cosmeticSlots:{},appliedDyes:{},rootledoot:true}; // Profile loader uses a known cosmetic species; the actual independent rig identity is rootledoot.
     const scale=big?1.35:rank==='lieutenant'?.82:.65;
     ensureRig(); // Spawn-only setup, shared by live waves and Workshop.
     return window.BanditCombat.makeEntity({...cfg,_rootledootWeaponPool:true},rank,tier,x,y,{...opts,enemyClass:'rootledoot',rosterOverride:roster,preserveRoster:true,
