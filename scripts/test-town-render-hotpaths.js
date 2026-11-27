@@ -313,12 +313,12 @@ assert.match(heldRender, /prepareOverlayCoverTintMaterials\(nearbyTintCovers\)/,
   'only nearby covers may be selected for the translucent tint pass');
 
 const tintGroupStart = heldRender.indexOf('  function splitXrayGroupsForTint(');
-const tintGroupEnd = heldRender.indexOf('  function installGroundElevationShader(', tintGroupStart);
+const tintGroupEnd = heldRender.indexOf('  // Ordinary parts need repaired cutout/cover depth', tintGroupStart);
 assert.ok(tintGroupStart >= 0 && tintGroupEnd > tintGroupStart,
   'owner-aware wet/dry grouping is part of the production renderer');
-const splitTintGroups = new Function('XRAY_MAX_BATCH_TILES', 'tintCoverNearActor', 'gearOverlapsWaterVolume', 'forEachMaterial', 'isWaterBoundGear',
+const splitTintGroups = new Function('tintCoverNearActor', 'gearOverlapsWaterVolume', 'forEachMaterial', 'isWaterBoundGear',
   heldRender.slice(tintGroupStart, tintGroupEnd) + '\nreturn splitXrayGroupsForTint;'
-)(8, tintCoverNearActor, () => true, (material, fn) => fn(material), () => false);
+)(tintCoverNearActor, () => true, (material, fn) => fn(material), () => false);
 const sharedMaterial = {}; // Same material on dry/wet actors must not share a stencil transaction.
 const wetHeld = { material: sharedMaterial };
 const dryHeld = { material: sharedMaterial };
@@ -340,10 +340,6 @@ assert.equal(separatedTintGroups[1].tintStencilRef, 0,
   'dry actor clears water-tint stencil');
 assert.deepEqual(separatedTintGroups.map(group => group.meshes[0]), [wetHeld, dryHeld],
   'each holder still receives exactly one overlay draw');
-assert.equal(separatedTintGroups[0].centers[0], 5.5,
-  'wet x-ray group keeps its physical world-space center');
-assert.equal(separatedTintGroups[1].centers[0], 18.5,
-  'dry x-ray group retains its own actor center rather than inheriting the wet actor center');
 const ordinaryMixed = splitTintGroups([
   { elevation: undefined, regions: [], meshes: [wetHeld, dryHeld] },
 ], tintScopes, [sparseWaterMesh]);
@@ -554,7 +550,7 @@ assert.equal(classifyTintCover(coverMesh({ environmentSurfaceMicroPlateau: true 
 assert.equal(classifyTintCover(coverMesh({ isWildernessGrassChunk: true })), false, 'billboard grass occludes rather than tints feet');
 const elevationNewline = String.fromCharCode(10);
 const elevationHelperStart = heldRender.indexOf('  function isDescendantOf(');
-const elevationHelperEnd = heldRender.indexOf('  function rectsOverlap(', elevationHelperStart);
+const elevationHelperEnd = heldRender.indexOf("  // Resolves each visible held part's owner", elevationHelperStart);
 assert.ok(elevationHelperStart >= 0 && elevationHelperEnd > elevationHelperStart, 'holder scope resolver');
 const actorScene = { isScene: true, position: { y: 0 }, matrixWorld: { elements: Array(16).fill(0) } };
 const actorAt = (name, x, y, z) => ({ name, position: { x, y, z }, matrixWorld: { elements: Object.assign(Array(16).fill(0), { 12: x, 13: y, 14: z }) }, parent: actorScene, userData: {} });
@@ -575,306 +571,6 @@ assert.ok(npcHeldEquipment.includes('walker.root.userData.hobunjiXrayActorRoot =
   'NPC held-equipment registration exposes the actual walker root to the x-ray resolver');
 assert.equal(resolveScope({ parent: actorScene }, actorScene, new Map()), null, 'unknown actor fails closed');
 
-const groupEnd = heldRender.indexOf('  const gearWaterBounds = ', elevationHelperEnd);
-const groupMeshes = new Function('actorXrayScope', 'replayScissorRect', 'isReplayCullable', 'xrayRule', 'window', heldRender.slice(elevationHelperEnd, groupEnd).replace(
-  '  function rectsOverlap', `  const XRAY_TILE_RADIUS = 1, XRAY_CIRCLE_RADIUS = 1.5, XRAY_MAX_BATCH_TILES = 8, XRAY_ELEVATION_GROUP_EPSILON = 0.05, XRAY_ELEVATION_TOLERANCE = 0.18;
-  let lastElevationReplayGroups, lastUnknownElevationMeshes, lastXrayTileRegions, lastXrayOrdinaryMeshes, scissorMinimumWorldY = 2;
-  const xrayGearRect = {}, xrayGroundRect = {};
-  const point = () => ({ set(x, y, z) { Object.assign(this, { x, y, z }); } });
-  const xrayGroundBox = { min: point(), max: point() };
-  function rectsOverlap`
-) + elevationNewline + 'return buildXrayGroups;')(
-  mesh => mesh.scope,
-  (renderer, camera, meshes, out, box) => {
-    if (meshes.some(mesh => mesh.uncertain)) return false;
-    if (box) Object.assign(out, { x: box.min.x, y: box.min.z, z: box.max.x - box.min.x, w: box.max.z - box.min.z });
-    else Object.assign(out, { x: meshes[0].x, y: meshes[0].z, z: 0.2, w: 0.2 });
-    return true;
-  },
-  () => true,
-  () => 'xray', {}, // Exercise legacy replay with the optional ground-fit route disabled.
-);
-const part = (col, row, elevation = 0, x = col + 0.5, z = row + 0.5) => ({ scope: { col, row, elevation }, x, z });
-const a = part(0, 0), sameTile = part(0, 0), far = part(10, 0), nearby = part(1, 0), upper = part(0, 0, 6);
-const outside = part(30, 0, 0, 32.5), uncertain = { ...part(20, 0), uncertain: true }, noHolder = {};
-const grouped = groupMeshes({}, actorScene, {}, [a, sameTile, far, nearby, upper, outside, uncertain, noHolder]);
-assert.deepEqual(grouped.groups.map(group => group.meshes), [[a, sameTile, far], [nearby], [upper], [uncertain]],
-  'only screen-separated same-height holder neighborhoods share a depth rebuild');
-assert.deepEqual(grouped.ordinary, [noHolder, outside], 'unknown ownership and parts beyond their projected floor use ordinary depth');
-assert.deepEqual([...grouped.groups[0].centers.slice(0, 4)], [0.5, 0.5, 10.5, 0.5], 'one batch carries both world-space circle centers to the shader');
-assert.match(heldRender, /const regionsByTile = new Map\(\)/,
-  'held x-ray scopes are bucketed by tile while preserving per-actor positions');
-const nearFloor = part(0, 0, 0.04), differentFloor = part(0, 0, 0.06);
-const sameTileFloors = groupMeshes({}, actorScene, {}, [a, nearFloor, differentFloor]);
-assert.deepEqual(sameTileFloors.groups.map(group => group.meshes), [[a, nearFloor], [differentFloor]],
-  'tile-indexed scopes preserve epsilon-based elevation grouping and prevent overlapping floors from batching');
-const offCenterA = { ...part(0, 0, 0, 0.2, 0.2), scope: { col: 0, row: 0, x: 0.2, z: 0.2, elevation: 0 } };
-const offCenterB = { ...part(0, 0, 0, 0.8, 0.8), scope: { col: 0, row: 0, x: 0.8, z: 0.8, elevation: 0 } };
-assert.equal(groupMeshes({}, actorScene, {}, [offCenterA, offCenterB]).groups.length, 2,
-  'characters on one tile but at different world positions get separate, correctly centered circles');
-const eyeAbove = { isPerspectiveCamera: true, matrixWorld: { elements: { 13: 4 } } };
-assert.deepEqual(groupMeshes({}, actorScene, eyeAbove, [a]).ordinary, [a], 'perspective eye and rigid gear above the floor need no floor exemption');
-assert.equal(groupMeshes({}, actorScene, eyeAbove, [a], 0.01).groups.length, 1, 'shell extrusion uses projection rather than the base-part height shortcut');
-
-const shaderStart = heldRender.indexOf('  function installGroundElevationShader(');
-const shaderEnd = heldRender.indexOf('  function collectGroundElevationMaterials(', shaderStart);
-const installElevationShader = new Function('XRAY_ELEVATION_TOLERANCE', 'XRAY_GROUND_NORMAL_MIN_Y', 'XRAY_MAX_BATCH_TILES', 'XRAY_CIRCLE_RADIUS', heldRender.slice(shaderStart, shaderEnd) + elevationNewline + 'return installGroundElevationShader;')(0.18, 0.55, 8, 1.5);
-const groundMaterial = { userData: {}, needsUpdate: false };
-const groundShaderState = installElevationShader(groundMaterial);
-groundShaderState.geometryHasNormals = true; // setGroundElevationFilter records this before the first compile.
-const standardGroundShader = { uniforms: {}, vertexShader: ['#include <common>', 'void main() {', '#include <worldpos_vertex>', '#include <defaultnormal_vertex>', '}'].join(elevationNewline), fragmentShader: ['#include <common>', 'void main() {', '#include <clipping_planes_fragment>', '}'].join(elevationNewline) };
-groundMaterial.onBeforeCompile(standardGroundShader, {});
-assert.equal(groundShaderState.supported, true, 'standard terrain shader is supported');
-assert.ok(standardGroundShader.vertexShader.includes('#include <common>' + elevationNewline + 'varying float vHobunjiXrayWorldY;'),
-  'vertex varyings are injected as real GLSL lines, not literal backslash-n text');
-assert.ok(standardGroundShader.vertexShader.includes(elevationNewline + 'vHobunjiXrayWorldNormal ='),
-  'terrain normal assignment starts on a real GLSL line');
-assert.ok(standardGroundShader.vertexShader.indexOf('vHobunjiXrayWorldNormal =') > standardGroundShader.vertexShader.indexOf('#include <worldpos_vertex>'),
-  'the world normal is written with the always-compiled world position, not tied to <defaultnormal_vertex>');
-// three r128's real MeshBasicMaterial vertex shader only includes
-// <defaultnormal_vertex> inside #ifdef USE_ENVMAP; the normal must still be
-// written outside that block or unlit terrain is never x-rayed.
-const r128BasicMaterial = { userData: {}, needsUpdate: false };
-const r128BasicState = installElevationShader(r128BasicMaterial);
-r128BasicState.geometryHasNormals = true;
-const r128BasicShader = { uniforms: {}, vertexShader: ['#include <common>', 'void main() {', '#ifdef USE_ENVMAP', '#include <beginnormal_vertex>', '#include <defaultnormal_vertex>', '#endif', '#include <begin_vertex>', '#include <worldpos_vertex>', '}'].join(elevationNewline), fragmentShader: ['#include <common>', 'void main() {', '#include <clipping_planes_fragment>', '}'].join(elevationNewline) };
-r128BasicMaterial.onBeforeCompile(r128BasicShader, {});
-const r128NormalAt = r128BasicShader.vertexShader.indexOf('vHobunjiXrayWorldNormal =');
-assert.equal(r128BasicState.supported, true, 'r128 MeshBasic terrain is supported');
-assert.ok(r128NormalAt > r128BasicShader.vertexShader.indexOf('#endif'), 'r128 MeshBasic terrain writes its x-ray normal outside the USE_ENVMAP block');
-assert.equal(standardGroundShader.vertexShader.includes('\\\\nvarying float'), false,
-  'vertex shader contains no escaped newline token');
-
-assert.ok(standardGroundShader.vertexShader.includes('vHobunjiXrayWorldY = hobunjiXrayWorldPosition.y'));
-assert.ok(standardGroundShader.vertexShader.includes('#ifdef USE_INSTANCING') && standardGroundShader.vertexShader.includes('#ifdef USE_BATCHING'),
-  'world height includes instancing and batching transforms before comparison');
-assert.ok(standardGroundShader.vertexShader.indexOf('#ifdef USE_BATCHING') < standardGroundShader.vertexShader.indexOf('#ifdef USE_INSTANCING'),
-  'world position follows Three.js batching-then-instancing transform order');
-assert.ok(standardGroundShader.vertexShader.includes('mat3(modelMatrix) * hobunjiXrayObjectNormal') && standardGroundShader.vertexShader.includes('mat3(instanceMatrix) * hobunjiXrayObjectNormal'),
-  'world normals follow the model and instance rotations (instanced path bricks)');
-assert.ok(standardGroundShader.fragmentShader.includes('gl_FrontFacing') && standardGroundShader.fragmentShader.includes('vHobunjiXrayWorldNormal.y >= 0.55') && standardGroundShader.fragmentShader.includes('discard;'), 'only same-height top faces are discarded');
-assert.ok(standardGroundShader.fragmentShader.includes('uHobunjiXrayAnyFacing > 0.5 ||'), 'slab and path surfaces may opt out of the top-face-only rule');
-assert.equal(standardGroundShader.uniforms.uHobunjiXrayAnyFacing, groundShaderState.uniforms.anyFacing);
-// World-bake safety (zone-prop-render-batches.js merges still props into world-space copies): the injection reads world
-// position/normal through modelMatrix, so it is safe on its own, and stays only as safe as the hook it wraps.
-assert.equal(groundMaterial.onBeforeCompile.__hobunjiWorldBakeSafe, true, 'the elevation hook alone is world-bake safe');
-const wrapsUnknown = { userData: {}, onBeforeCompile: function ownerShader() {}, needsUpdate: false };
-installElevationShader(wrapsUnknown);
-assert.equal(wrapsUnknown.onBeforeCompile.__hobunjiWorldBakeSafe, false, 'wrapping an unknown compile hook is not bake safe');
-const ownerSafe = function ownerSafeShader() {}; ownerSafe.__hobunjiWorldBakeSafe = true;
-const wrapsSafe = { userData: {}, onBeforeCompile: ownerSafe, needsUpdate: false };
-installElevationShader(wrapsSafe);
-assert.equal(wrapsSafe.onBeforeCompile.__hobunjiWorldBakeSafe, true, 'wrapping a hook that vouches for itself stays bake safe');
-const markedMaterial = { userData: { hobunjiWorldBakeSafe: true }, onBeforeCompile: function reagentShader() {}, needsUpdate: false };
-installElevationShader(markedMaterial);
-assert.equal(markedMaterial.onBeforeCompile.__hobunjiWorldBakeSafe, true, 'a material its owner marked bake safe stays so');
-assert.equal(standardGroundShader.uniforms.uHobunjiXrayActorElevation, groundShaderState.uniforms.elevation);
-const copiedGroundMaterial = {
-  userData: { hobunjiXrayElevationShader: { ...groundShaderState } }, // Explicit clone that copies a callback and copies metadata into a distinct state.
-  onBeforeCompile: groundMaterial.onBeforeCompile,
-  customProgramCacheKey: groundMaterial.customProgramCacheKey,
-  needsUpdate: false,
-};
-const copiedState = installElevationShader(copiedGroundMaterial);
-assert.notEqual(copiedState, groundShaderState, 'a cloned material gets its own tile/elevation uniforms');
-assert.equal(installElevationShader(copiedGroundMaterial), copiedState, 'a live clone is registered only once');
-copiedState.geometryHasNormals = true;
-const copiedShader = {
-  uniforms: {},
-  vertexShader: ['#include <common>', 'void main() {', '#include <worldpos_vertex>', '#include <defaultnormal_vertex>', '}'].join(elevationNewline),
-  fragmentShader: ['#include <common>', 'void main() {', '#include <clipping_planes_fragment>', '}'].join(elevationNewline),
-};
-// Use the stock shader before its first injection: a clone must inherit the prior hook,
-// not re-inject the source material's elevation declarations a second time.
-copiedGroundMaterial.onBeforeCompile(copiedShader, {});
-assert.equal(copiedShader.uniforms.uHobunjiXrayActorElevation, copiedState.uniforms.elevation,
-  'the cloned ground shader is wired to its own live elevation, not the source material');
-assert.equal((copiedShader.fragmentShader.match(/uniform float uHobunjiXrayActorElevation;/g) || []).length, 1,
-  'cloned material shader injection must not introduce duplicate GLSL declarations');
-assert.equal(copiedGroundMaterial.customProgramCacheKey(), groundMaterial.customProgramCacheKey(),
-  'cloned terrain materials preserve the program-cache namespace without nesting the original hook');
-
-const shallowSharedGroundMaterial = {
-  userData: { hobunjiXrayElevationShader: groundShaderState }, // A custom clone may retain the SAME nested state and callback, unlike Three.Material.clone().
-  onBeforeCompile: groundMaterial.onBeforeCompile,
-  customProgramCacheKey: groundMaterial.customProgramCacheKey,
-  needsUpdate: false,
-};
-const shallowSharedState = installElevationShader(shallowSharedGroundMaterial);
-assert.notEqual(shallowSharedState, groundShaderState,
-  'a shallow material clone must not reuse the source material shader state or actor tile uniforms');
-assert.equal(installElevationShader(shallowSharedGroundMaterial), shallowSharedState,
-  'a shallow clone stabilizes its own shader hook without wrapping again every replay');
-shallowSharedState.geometryHasNormals = true;
-const shallowSharedShader = {
-  uniforms: {},
-  vertexShader: ['#include <common>', 'void main() {', '#include <worldpos_vertex>', '}'].join(elevationNewline),
-  fragmentShader: ['#include <common>', 'void main() {', '#include <clipping_planes_fragment>', '}'].join(elevationNewline),
-};
-shallowSharedGroundMaterial.onBeforeCompile(shallowSharedShader, {});
-assert.equal(shallowSharedShader.uniforms.uHobunjiXrayActorElevation, shallowSharedState.uniforms.elevation,
-  'a shallow clone compiles with its own live actor elevation');
-assert.equal((shallowSharedShader.fragmentShader.match(/uniform float uHobunjiXrayActorElevation;/g) || []).length, 1,
-  'a shallow callback clone does not double-inject x-ray GLSL');
-
-const jigsawClone = {
-  userData: { ...groundMaterial.userData, terrainJigsawMaterial: true }, // TerrainRenderChunks.cloneJigsawMaterial retains the source metadata but Three.js drops onBeforeCompile.
-  onBeforeCompile() {}, // Prototype default supplied to the clone, without the old ground shader injection.
-  needsUpdate: false,
-};
-const jigsawState = installElevationShader(jigsawClone);
-assert.notEqual(jigsawState, groundShaderState,
-  'a real Jigsaw-style material clone must not reuse its source material shader state');
-assert.equal(jigsawClone.userData.hobunjiXrayElevationShader, jigsawState,
-  'the cloned ground material owns the live shader state after registration');
-jigsawState.geometryHasNormals = true;
-const jigsawShader = {
-  uniforms: {},
-  vertexShader: ['#include <common>', 'void main() {', '#include <worldpos_vertex>', '}'].join(elevationNewline),
-  fragmentShader: ['#include <common>', 'void main() {', '#include <clipping_planes_fragment>', '}'].join(elevationNewline),
-};
-jigsawClone.onBeforeCompile(jigsawShader, {});
-assert.equal(jigsawShader.uniforms.uHobunjiXrayActorElevation, jigsawState.uniforms.elevation,
-  'Jigsaw-style clones reinstall the selective depth fragment shader even after Three drops their old callback');
-assert.match(jigsawShader.fragmentShader, /if \(uHobunjiXrayElevationEnabled > 0\.5/,
-  'new Jigsaw material still discards only the actor-local floor fragments');
-let terrainUvHooks = 0; // Verifies existing Jigsaw/terrain material instrumentation still runs exactly once after an x-ray-aware clone.
-const terrainUvMaterial = {
-  userData: {},
-  onBeforeCompile(shader) { terrainUvHooks++; shader.uniforms.uTerrainUvOwner = { value: 7 }; },
-  customProgramCacheKey() { return 'terrain-uv'; },
-};
-const terrainUvState = installElevationShader(terrainUvMaterial);
-const clonedTerrainUvMaterial = {
-  userData: { hobunjiXrayElevationShader: { ...terrainUvState } },
-  onBeforeCompile: terrainUvMaterial.onBeforeCompile,
-  customProgramCacheKey: terrainUvMaterial.customProgramCacheKey,
-};
-const clonedTerrainUvState = installElevationShader(clonedTerrainUvMaterial);
-clonedTerrainUvState.geometryHasNormals = true;
-const terrainUvShader = {
-  uniforms: {},
-  vertexShader: ['#include <common>', 'void main() {', '#include <worldpos_vertex>', '}'].join(elevationNewline),
-  fragmentShader: ['#include <common>', 'void main() {', '#include <clipping_planes_fragment>', '}'].join(elevationNewline),
-};
-clonedTerrainUvMaterial.onBeforeCompile(terrainUvShader, {});
-assert.equal(terrainUvHooks, 1, 'the original terrain/Jigsaw shader hook runs once, not twice');
-assert.equal(terrainUvShader.uniforms.uTerrainUvOwner.value, 7, 'the previous terrain shader hook remains intact');
-assert.equal(terrainUvShader.uniforms.uHobunjiXrayActorElevation, clonedTerrainUvState.uniforms.elevation,
-  'the selective depth shader still binds the clone-specific elevation after running the prior hook');
-assert.equal(clonedTerrainUvMaterial.customProgramCacheKey(), 'terrain-uv|hobunji-ground-circle-xray-v6',
-  'custom terrain program-cache settings survive elevation shader replacement');
-const basicMaterial = { userData: {}, needsUpdate: false };
-const basicState = installElevationShader(basicMaterial);
-basicState.geometryHasNormals = true; // MeshBasic terrain uses geometry normals despite omitting the lighting normal chunk.
-const basicGroundShader = {
-  uniforms: {},
-  vertexShader: ['#include <common>', 'void main() {', '#include <worldpos_vertex>', '}'].join(elevationNewline),
-  fragmentShader: ['#include <common>', 'void main() {', '#include <clipping_planes_fragment>', '}'].join(elevationNewline),
-};
-basicMaterial.onBeforeCompile(basicGroundShader, {});
-assert.equal(basicState.supported, true, 'unlit MeshBasic grass supports elevation filtering when its geometry has normals');
-assert.ok(basicGroundShader.vertexShader.includes('hobunjiXrayObjectNormal = normal;'),
-  'unlit ground still rejects vertical walls using the geometry normal');
-const noNormalMaterial = { userData: {}, needsUpdate: false };
-const noNormalState = installElevationShader(noNormalMaterial);
-const noNormalShader = { uniforms: {}, vertexShader: ['#include <common>', 'void main() {', '#include <worldpos_vertex>', '}'].join(elevationNewline), fragmentShader: ['#include <common>', 'void main() {', '#include <clipping_planes_fragment>', '}'].join(elevationNewline) };
-noNormalMaterial.onBeforeCompile(noNormalShader, {});
-assert.equal(noNormalState.supported, false, 'unlit ground without a normal attribute remains a full-depth occluder');
-const missingLitMaterial = { userData: {}, needsUpdate: false };
-const missingLitState = installElevationShader(missingLitMaterial);
-missingLitState.geometryHasNormals = false;
-const missingLitShader = {
-  uniforms: {},
-  vertexShader: ['#include <common>', 'void main() {', '#include <worldpos_vertex>', '#include <defaultnormal_vertex>', '}'].join(elevationNewline),
-  fragmentShader: ['#include <common>', 'void main() {', '#include <clipping_planes_fragment>', '}'].join(elevationNewline),
-};
-missingLitMaterial.onBeforeCompile(missingLitShader, {});
-assert.equal(missingLitState.supported, false, 'lit ground without a normal attribute also retains full-depth occlusion');
-
-
-const filterStart = heldRender.indexOf('  const groundElevationCache =');
-const filterEnd = heldRender.indexOf('  function replaySelectiveHeldOverlay(', filterStart);
-const { collect, setFilter } = new Function('forEachMaterial', 'installGroundElevationShader', 'isRoadXrayMesh',
-  heldRender.slice(filterStart, filterEnd)
-  + elevationNewline + 'return { collect: collectGroundElevationMaterials, setFilter: setGroundElevationFilter };')(
-    (material, callback) => { if (Array.isArray(material)) material.forEach(callback); else if (material) callback(material); },
-    installElevationShader,
-    mesh => mesh.road === true);
-const drawable = (extra = {}) => ({ attributes: Object.assign({ position: { count: 3 } }, extra) });
-const filterMaterial = { userData: {} };
-const filterStates = collect([{ material: filterMaterial, geometry: drawable({ normal: {} }) }]);
-const tileBatch = grouped.groups[0];
-setFilter(filterStates, tileBatch);
-const uniforms = filterMaterial.userData.hobunjiXrayElevationShader.uniforms;
-assert.equal(uniforms.enabled.value, 1);
-assert.equal(uniforms.elevation.value, tileBatch.elevation);
-assert.equal(uniforms.centerCount.value, 2);
-assert.equal(uniforms.centers.value, tileBatch.centers);
-setFilter(filterStates, null);
-assert.equal(uniforms.enabled.value, 0, 'ordinary depth and subsequent lighting passes disable the tile filter');
-assert.match(standardGroundShader.fragmentShader, /dot\(offsetFromActor, offsetFromActor\) <= 2\.250000/,
-  'shader performs one world-space circular radius test per candidate center');
-assert.ok(standardGroundShader.vertexShader.includes('vHobunjiXrayWorldXZ = hobunjiXrayWorldPosition.xz;'));
-const sharedGroundMaterial = { userData: {}, needsUpdate: false };
-collect([
-  { material: sharedGroundMaterial, geometry: drawable({ normal: {} }) },
-  { material: sharedGroundMaterial, geometry: drawable() },
-]);
-assert.equal(sharedGroundMaterial.userData.hobunjiXrayElevationShader.geometryHasNormals, false,
-  'a shared unlit ground material fails closed if any registered mesh lacks normals');
-sharedGroundMaterial.needsUpdate = false;
-collect([{ material: sharedGroundMaterial, geometry: drawable({ normal: {} }) }]);
-assert.equal(sharedGroundMaterial.userData.hobunjiXrayElevationShader.geometryHasNormals, true,
-  'the live ground with normals regains x-ray after transient/replaced normal-less geometry is removed');
-assert.equal(sharedGroundMaterial.needsUpdate, true,
-  'the recovered ground material recompiles its shader, rather than retaining a stale solid-only variant');
-const cachedGroundScene = {}; // Each visible scene gets its own aggregate, even with shared materials.
-const otherGroundScene = {};
-const slots = [sharedGroundMaterial];
-const cachedGround = [{ material: slots, geometry: drawable({ normal: {} }) }];
-const firstMaterials = collect(cachedGround, cachedGroundScene);
-assert.equal(collect([...cachedGround], cachedGroundScene), firstMaterials, 'shell and color replays reuse the same material set');
-const equivalentChunk = { material: [...slots], geometry: drawable({ normal: {} }) };
-assert.equal(collect([equivalentChunk], cachedGroundScene), firstMaterials, 'an equivalent replacement chunk can reuse the cache without retaining the previous mesh');
-collect([{ material: sharedGroundMaterial, geometry: drawable() }], otherGroundScene);
-assert.equal(sharedGroundMaterial.userData.hobunjiXrayElevationShader.geometryHasNormals, false);
-assert.equal(collect(cachedGround, cachedGroundScene), firstMaterials);
-assert.equal(sharedGroundMaterial.userData.hobunjiXrayElevationShader.geometryHasNormals, true, 'cached scene restores the correct shared shader policy');
-const replacementGroundMaterial = { userData: {} };
-slots[0] = replacementGroundMaterial;
-assert.deepEqual([...collect(cachedGround, cachedGroundScene)], [replacementGroundMaterial], 'in-place material slot replacement invalidates the cache');
-cachedGround[0].geometry = drawable();
-collect(cachedGround, cachedGroundScene);
-assert.equal(replacementGroundMaterial.userData.hobunjiXrayElevationShader.geometryHasNormals, false, 'geometry replacement invalidates the normal policy');
-const replacementCompile = () => {};
-replacementGroundMaterial.onBeforeCompile = replacementCompile;
-collect(cachedGround, cachedGroundScene);
-assert.equal(replacementGroundMaterial.onBeforeCompile.__hobunjiXrayBaseCompile, replacementCompile, 'a changed compile callback is rewrapped on a cache hit');
-assert.equal(collect([], cachedGroundScene).size, 0, 'unloaded or hidden ground leaves the cache');
-const chunkedGroundMaterial = { userData: {}, needsUpdate: false };
-collect([
-  { material: chunkedGroundMaterial, geometry: { attributes: {} } },
-  { material: chunkedGroundMaterial, geometry: drawable({ normal: {} }) },
-]);
-assert.equal(chunkedGroundMaterial.userData.hobunjiXrayElevationShader.geometryHasNormals, true,
-  'an empty chunk-source husk does not poison its chunks’ shared material');
-const instancedBrickMaterial = { userData: {}, needsUpdate: false };
-collect([{ material: instancedBrickMaterial, isInstancedMesh: true, road: true, geometry: drawable({ normal: {} }) }]);
-assert.equal(instancedBrickMaterial.userData.hobunjiXrayElevationShader.geometryHasNormals, true, 'instanced path bricks keep their normals');
-assert.equal(instancedBrickMaterial.userData.hobunjiXrayElevationShader.uniforms.anyFacing.value, 1, 'path bricks x-ray on every face in the holder’s floor neighborhood');
-const interiorSlabMaterial = { userData: { hobunjiInteriorFloorMaterial: true } }; // Shared material used by the gameplay interior tile builder.
-collect([{ material: interiorSlabMaterial, geometry: drawable({ normal: {} }) }]);
-assert.equal(interiorSlabMaterial.userData.hobunjiXrayElevationShader.uniforms.anyFacing.value, 1, 'interior tile sides must not clip the weapon at floor seams');
-assert.equal(sharedGroundMaterial.userData.hobunjiXrayElevationShader.uniforms.anyFacing.value, 0, 'terrain keeps its walls and cliff faces as occluders');
-assert.match(heldRender, /buildXrayGroups\(this, scene, camera, xrayMeshes, shellPadding\)/,
-  'shell outlines use the same holder tile scope as the visible overlay');
-
-const customMaterial = { userData: {}, needsUpdate: false };
-const customState = installElevationShader(customMaterial);
-customMaterial.onBeforeCompile({ uniforms: {}, vertexShader: 'void main() {}', fragmentShader: 'void main() {}' }, {});
-assert.equal(customState.supported, false, 'unsupported custom terrain shaders keep full depth occlusion');
-
 assert.match(heldRender, /data\.mapEditorTerrain != null && object\.material\?\.userData\?\.terrainKey !== 'rock'/,
   'tagged wilderness floor buckets x-ray while solid stone-mound buckets stay as occluders');
 assert.match(heldRender, /materialMarksBaseGrass\(object\?\.material\)/,
@@ -889,8 +585,6 @@ assert.match(heldRender, /const groundMeshes = \[\.\.\.ground, \.\.\.topFaceGrou
   'cave shell floors stay in the depth buffer so elevation decides which top faces may be x-rayed');
 assert.doesNotMatch(heldRender, /swapToOccluderGeometry|restoreSwappedGeometry/,
   'the old blanket top-face removal cannot bypass the actor-elevation filter');
-assert.match(heldRender, /setGroundElevationFilter\(groundMaterials, group\)/,
-  'cave floor top faces are filtered by the owning actor elevation');
 assert.match(plateauMesa, /mesh\.userData\.hobunjiGroundSurface = true/,
   'raised wilderness mesa surfaces explicitly register as ground');
 assert.match(interiorBuilder, /cavernWalkableFloor: true,[\s\S]{0,120}hobunjiGroundSurface: true/,
@@ -903,18 +597,14 @@ assert.match(heldRender, /const heldDraws = suppressDraws\(\[\.\.\.held, \.\.\.f
   'feet are absent from the original color pass so they cannot pop over transparent water');
 assert.match(heldRender, /suppressedOverlay = suppressDraws\(overlayMeshes\);\s*coversHidden = tintOverlay \? hideObjects\(nearbyTintCovers\) : null;/,
   'the elevation rebuild excludes held meshes and near translucent covers while distant water remains hidden across every replay');
-assert.match(heldRender, /setGroundElevationFilter\(groundMaterials, group\)/,
-  'the ground shader receives the owning actor surface height for each replay group');
 assert.match(heldRender, /const tintOverlay = lastBaseStencilBits >= 1\s*&& hasOverlappingHeldCover\(renderer, camera, scissorMeshes, nearbyTintCovers\)/,
   'overlap checks cover both feet and held objects without tint when stencil is unavailable');
 assert.match(heldRender, /replaySelectiveHeldOverlay\(this, scene, camera, visibleHeld, visibleFeet, ground, topFaceGround, tintCovers, originalCameraMask, bodyTint, portraitOrder\)/,
   'the shared overlay receives registered water and slush covers as well as the actual feet');
 
-// Shell outlines inherit the same selective ground-x-ray policy as their
-// source meshes. Test the shell-pass discriminator and selective mesh filtering,
-// then guard the depth-rebuild -> shell -> depth-restore sequence.
+// The shell-pass discriminator that routes outline renders away from the held replay.
 const shellPassStart = heldRender.indexOf('  function isShellOutlinePass(');
-const shellPassEnd = heldRender.indexOf('  function hideNonXrayShellMeshes(', shellPassStart);
+const shellPassEnd = heldRender.indexOf('  function isStillVisibleInScene(', shellPassStart);
 assert.ok(shellPassStart >= 0 && shellPassEnd > shellPassStart,
   'the held renderer exposes a dedicated shell-outline pass discriminator');
 const isShellOutlinePass = new Function('THREE', 'SHELL_MASK',
@@ -928,47 +618,9 @@ assert.equal(isShellOutlinePass({ overrideMaterial: shellOverride }, { layers: {
 assert.equal(!!isShellOutlinePass({ overrideMaterial: null }, { layers: { mask: 2 } }), false,
   'depth-only layer renders are not mistaken for shell passes');
 
-const shellFilterStart = shellPassEnd;
-const shellFilterEnd = heldRender.indexOf('  // Replays shell outlines for the same meshes', shellFilterStart);
-const hideNonXrayShellMeshes = new Function('hasLayer', 'SHELL_LAYER',
-  heldRender.slice(shellFilterStart, shellFilterEnd) + '\nreturn hideNonXrayShellMeshes;')(
-  (object, layer) => !!(object.layers.mask & (1 << layer)), 1);
-const xrayShell = { isMesh: true, visible: true, layers: { mask: 2 } };
-const ordinaryShell = { isMesh: true, visible: true, layers: { mask: 2 } };
-const unrelatedMesh = { isMesh: true, visible: true, layers: { mask: 1 } };
-const shellScene = { traverseVisible(fn) { [xrayShell, ordinaryShell, unrelatedMesh].forEach(fn); } };
-const shellHidden = hideNonXrayShellMeshes(shellScene, new Set([xrayShell]));
-assert.equal(xrayShell.visible, true, 'the x-rayed object shell remains visible in its replay');
-assert.equal(ordinaryShell.visible, false, 'other shell objects are excluded from the selective replay');
-assert.equal(unrelatedMesh.visible, true, 'non-shell geometry is not hidden by shell filtering');
-for (const [object, visible] of shellHidden) object.visible = visible;
-assert.equal(ordinaryShell.visible, true, 'ordinary shell visibility is restored after the replay');
-
-const shellReplayStart = heldRender.indexOf('  function replayShellOutlineXray(');
-const shellReplayEnd = heldRender.indexOf('  function wrappedRender(', shellReplayStart);
-assert.ok(shellReplayStart >= 0 && shellReplayEnd > shellReplayStart,
-  'the renderer has a dedicated shell x-ray replay');
-const shellReplay = heldRender.slice(shellReplayStart, shellReplayEnd);
-const shellGroundFilterAt = shellReplay.indexOf('setGroundElevationFilter(groundMaterials, group)');
-const shellDepthAt = shellReplay.indexOf('prepareNonGroundDepthMaterials(scene, replayCandidates.depth, canMaskShellColor)');
-const shellDepthDrawAt = shellReplay.indexOf('rawRender.call(renderer, scene, camera)', shellDepthAt);
-const shellOnlyAt = shellReplay.indexOf('hideNonXrayShellMeshes(scene, groupSet, replayCandidates.shell)');
-const shellOutlineDrawAt = shellReplay.indexOf('rawRender.call(renderer, scene, camera)', shellOnlyAt);
-const shellRestoreAt = shellReplay.indexOf('renderer.clearDepth();', shellOutlineDrawAt);
-const shellDepthRestoreAt = shellReplay.indexOf('if (depthStates) restoreMaterialStates(depthStates)', shellRestoreAt);
-assert.match(shellReplay, /material\.depthTest = true;\s*material\.depthWrite = true;/,
-  'source-mesh depth remains available to mask the expanded back-face shell');
-assert.ok(shellDepthAt >= 0 && shellDepthAt < shellGroundFilterAt
-  && shellGroundFilterAt < shellDepthDrawAt && shellDepthDrawAt < shellOnlyAt
-  && shellOnlyAt < shellOutlineDrawAt && shellOutlineDrawAt < shellRestoreAt && shellRestoreAt < shellDepthRestoreAt,
-  'shell replay prepares depth once, changes only the per-group elevation mask, then restores complete depth and materials');
-assert.ok((/const shellCandidates = held\.filter\(mesh => hasLayer\(mesh, SHELL_LAYER\)\s*&& mesh\.userData\?\.hobunjiProceduralHand !== true && !isAuthoredInkPlane\(mesh\)\)/).test(heldRender)
-  && heldRender.includes('const xrayMeshes = filterOffscreenReplayMeshes(camera, shellCandidates)'),
-  'held ground-X-ray participants retain shell parity before camera culling; feet stay in the ordinary outline pass');
-assert.ok(pixelProbe.includes('shellXray=${heldRenderDebug.shellXrayPasses ?? 0}/${heldRenderDebug.shellXrayMeshes ?? 0}'),
-  'mobile Pixel Probe reports shell x-ray replay activity');
-assert.ok(heldRender.includes('replayShellOutlineXray(this, scene, camera, xrayGroupMeshes, ground, topFaceGround, scissored, groups, shellPadding)'),
-  'the shell pass reuses the same classified ground and top-face floor geometry as object x-ray');
+// The shell pass no longer replays anything: every held part is ordinary-depth, so the ordinary shell pass is
+// returned untouched (the only held work left there is refreshing the live held matrices).
+assert.ok(!heldRender.includes('replayShellOutlineXray'), 'the shell x-ray replay is gone');
 
 // This hard-won ordering contract must stay discoverable to subsequent
 // rendering refactors, not live solely in one PR conversation.
@@ -1036,7 +688,7 @@ assert.equal((heldRender.match(/window.PerfProfiler\?\.begin\('held-overlay: ele
 assert.doesNotMatch(heldRender, /requestedFootWaterComposite/,
   'the old patchy foot-water tint path is not used');
 const overlapStart = heldRender.indexOf('  function hasOverlappingHeldCover(');
-const overlapEnd = heldRender.indexOf('  const XRAY_ELEVATION_TOLERANCE', overlapStart);
+const overlapEnd = heldRender.indexOf('  function isDescendantOf(', overlapStart);
 assert.ok(overlapStart > 0 && overlapEnd > overlapStart, 'the live renderer exposes the conservative overlap check');
 const screenRect = { x: 0, y: 0, z: 48, w: 48 };
 const heldOverlap = new Function('replayScissorRect', 'footTintScreenRect', 'setReplayCullFrustum',

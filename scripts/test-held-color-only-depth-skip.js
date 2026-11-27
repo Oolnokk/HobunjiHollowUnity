@@ -67,11 +67,9 @@ const dependency = {
 
 const runtime = new Function('d', [
   'const {objectProto,heldRegistry,waterOccludedRegistry,pngDepthRegistry,protectedCoverRegistry,tintCoverRegistry,hasLayer,PNG_OCCLUDER_LAYER,isProtectedCover,collectVisible,hideObjects,restoreVisibility}=d;',
-  'let shellMaskedDepthDraws=0;',
   section('  function materialLeavesDepthAndStencil(', '  function isAutoDepthReplayInert('),
   section('  // Colour-only VFX in colourless depth submissions.', '  function replayFrustumIntersects('),
-  section('  function withShellDepthColorMask(', '  // Replays shell outlines for the same meshes'),
-  'return { hideColorOnlyHeldVfx, withShellDepthColorMask, setEnabled: v => { colorOnlyDepthSkipEnabled = v; }, counts: () => ({ colorOnlyDepthSkips, shellMaskedDepthDraws }) };',
+  'return { hideColorOnlyHeldVfx, setEnabled: v => { colorOnlyDepthSkipEnabled = v; }, counts: () => ({ colorOnlyDepthSkips }) };',
 ].join('\n'))(dependency);
 
 const skippable = [...motes, multi];
@@ -89,29 +87,14 @@ assert.ok(skippable.every(o => o.visible === true), 'restored');
 assert.equal(parkedMote.visible, false, 'an already-hidden mote is never revealed');
 assert.equal(runtime.counts().colorOnlyDepthSkips, skippable.length);
 
-// 2. Inside the shell's colourless submission: hidden only while the mask is locked.
-const color = { mask: true, locked: false, setMask(v) { if (!this.locked) this.mask = v; }, setLocked(v) { this.locked = v; } };
-let seenDuringDraw = null;
-assert.equal(runtime.withShellDepthColorMask(color, () => { seenDuringDraw = { motes: visibleNow(skippable), mask: color.mask, locked: color.locked }; return 'drawn'; }, scene), 'drawn');
-assert.deepEqual(seenDuringDraw, { motes: skippable.map(() => false), mask: false, locked: true });
-assert.ok(skippable.every(o => o.visible === true) && color.mask === true && color.locked === false, 'motes and colour mask restored');
-assert.equal(runtime.counts().shellMaskedDepthDraws, 1);
-
-// 3. A failed draw still restores visibility.
-assert.throws(() => runtime.withShellDepthColorMask(color, () => { throw new Error('lost context'); }, scene), /lost context/);
-assert.ok(skippable.every(o => o.visible === true), 'restored after a throw');
-
-// 4. No colour mask available: colour is written, so nothing may be hidden.
-runtime.withShellDepthColorMask(null, () => { seenDuringDraw = visibleNow(skippable); }, scene);
-assert.ok(seenDuringDraw.every(Boolean), 'colour pass keeps every mote');
-
-// 5. A/B switch off.
+// 2. A/B switch off: nothing is hidden.
 runtime.setEnabled(false);
-runtime.withShellDepthColorMask(color, () => { seenDuringDraw = visibleNow(skippable); }, scene);
-assert.ok(seenDuringDraw.every(Boolean), 'switch off: unchanged behaviour');
+const disabledHide = runtime.hideColorOnlyHeldVfx(scene);
+assert.ok(!disabledHide || disabledHide.size === 0, 'switch off: unchanged behaviour');
+assert.ok(skippable.every(o => o.visible === true), 'switch off: every mote stays drawn');
 runtime.setEnabled(true);
 
-// 6. Held replay call sites hide only inside colour-locked submissions.
+// 3. Held replay call sites hide only inside colour-locked submissions.
 const held = section('  function replaySelectiveHeldOverlay(', '  function isShellOutlinePass(');
 assert.match(held, /if \(canLockColorMask\) colorOnlyHidden = hideColorOnlyHeldVfx\(scene\);/, 'depth rebuild: only when the colour mask is locked');
 assert.match(held, /colorBuffer\.setLocked\(true\);\s*let gearColorOnly = null;[\s\S]{0,200}gearColorOnly = hideColorOnlyHeldVfx\(scene\);/, 'gear-depth recovery: after the colour lock');

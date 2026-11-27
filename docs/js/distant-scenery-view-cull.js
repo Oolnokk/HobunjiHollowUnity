@@ -232,6 +232,7 @@
     if (!T?.Scene || !T?.BoxGeometry || !T?.MeshBasicMaterial || !T?.Mesh) return false;
     if (typeof window.WesternSlopeMountainBackdrops?.keepInFrontOfSky!=='function') return false;
     queryScene=new T.Scene();
+    (queryScene.userData||={}).hobunjiOutlineSequenceNeutral=true; // Depth-query proxies never touch world matrices; do not end the outline matrix-reuse sequence.
     queryGeometry=new T.BoxGeometry(1,1,1); // All queries reuse twelve triangles; no additional world geometry is baked.
     queryMaterial=new T.MeshBasicMaterial({
       colorWrite:false,depthWrite:false,depthTest:true,transparent:false,

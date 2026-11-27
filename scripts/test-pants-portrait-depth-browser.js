@@ -160,7 +160,7 @@ const pageErrors = []; // Captured so CI failures also have mobile-readable diag
       && result.material.factor > 0 && result.material.units > 0,
     'pants use real depth and a rearward camera-independent coplanar offset');
     for (const script of ['render-layers', 'render-hooks', 'social-action-r128-render-bridge',
-      'surface-occlusion-composer', 'scissor-depth-snapshot', 'held-object-render-order']) {
+      'surface-occlusion-composer', 'held-object-render-order']) {
       await page.addScriptTag({ path: path.join(root, 'docs/js', script + '.js') });
     }
     const heldPixels = await page.evaluate(() => {
@@ -250,7 +250,7 @@ const pageErrors = []; // Captured so CI failures also have mobile-readable diag
             visibleWeapon: read(visibleWeapon.position.x), wall: read(wall.position.x),
             ...(mode === 'actor-defaults' && { npc: read(-1), animal: read(1.35) }),
             ...(water && { waterDepthWrite: water.material.depthWrite }),
-            stencil: depth.stencilBits, elevationGroups: depth.baseElevationGroups });
+            stencil: depth.stencilBits });
         }
         renderer.setRenderTarget(null);
         target.dispose();
@@ -263,7 +263,7 @@ const pageErrors = []; // Captured so CI failures also have mobile-readable diag
       const green = [0, 255, 0], yellow = [255, 255, 0]; // Physical floor and scenery colors.
       const expected = { weapon: green, flail: green, hand: green, wall: yellow,
         visibleWeapon: mode === 'water' ? [128, 0, 128] : [255, 0, 0],
-        stencil: mode === 'no-stencil' ? 0 : 8, elevationGroups: 0,
+        stencil: mode === 'no-stencil' ? 0 : 8,
         ...(mode === 'actor-defaults' && { npc: green, animal: green }),
         ...(mode === 'water' && { waterDepthWrite: false }) };
       for (const [frame, pixels] of heldPixels[mode].entries()) {

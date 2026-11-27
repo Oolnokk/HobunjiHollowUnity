@@ -116,7 +116,6 @@ assert.equal(api.needsParticleBounds(worldOnly, mainBlade), false, 'world-only s
 const extent = api.spriteWorldExtent({ matrixWorld: { elements: [0.3,0,0,0, 0,0.4,0,0, 0,0,1,0, 5,6,7,1] } }, { set(x, y, z) { this.x = x; this.y = y; this.z = z; } });
 assert.ok(Math.abs(extent - 0.5) < 1e-9, 'sprite radius covers its 0.3 x 0.4 quad at any rotation or centre');
 assert.match(source, /needsParticleBounds\(child, mesh\) && !includeParticleBounds\(child\)/, 'the replay scissor includes them');
-assert.match(source, /else if \(needsParticleBounds\(child, mesh\)\) \{/, 'and so does the near-replay far depth');
 assert.match(source, /const otherParticles = replayOthers\.length \? gearParticlesOf\(replayOthers\) : null;/, 'non-participant gear particles leave the overlays');
 
 // A/B off: nothing is hidden.
