@@ -8,7 +8,7 @@
   const REUSE_HEIGHT_TOLERANCE = 0.1; // A grounded pose is reused until the grip's height above the floor changes by this much (idle sway is about 0.05)
   const REUSE_ANGLE_TOLERANCE = 0.05; // ...or the stance rotates by this many radians.
   const LIFT_LIMIT = 0.15; // Most the whole weapon may be raised (world units) to keep the ordinary rotation instead of a fallback pose.
-  const debug = { reason: 'not-run', angleDeg: 0, shortening: 0, floorY: null, originalMinY: null, finalMinY: null, rotations: 0, compressions: 0, contactHullBuilds: 0, reuseHits: 0, reused: false, reuseMiss: null, reuseMissValue: 0, contactHullVertices: 0, gripPivotDrift: null, gripLift: 0, posteriorLift: 0, clearanceStrategy: null, freeHandLifts: 0, fallbacks: 0 };
+  const debug = { reason: 'not-run', angleDeg: 0, shortening: 0, floorY: null, originalMinY: null, finalMinY: null, rotations: 0, compressions: 0, contactHullBuilds: 0, compressionRowBuilds: 0, reuseHits: 0, reused: false, reuseMiss: null, reuseMissValue: 0, contactHullVertices: 0, gripPivotDrift: null, gripLift: 0, posteriorLift: 0, clearanceStrategy: null, freeHandLifts: 0, fallbacks: 0 };
   let active = null, floorFrame = null, floor = null, scratch = null;
   let authoredFrame=null; // Reused world matrices for reconstructing the counterpart before clearance.
   let gripHolder=null; // Owner of the exact current sprite-space grip transform, shared with hand sockets.
@@ -255,12 +255,15 @@
     if(cache.size>=8)cache.delete(cache.keys().next().value);
     cache.set(signature,result);return result;
   }
-  function setCompression(plane,source,box,rows,segments,gripZ,amount,holder,rootScale) {
+  function setCompression(plane,source,box,rowScratch,segments,gripZ,amount,holder,rootScale) {
     if(!amount) { releaseCompression(); return; }
     const T=three();
     if(active?.plane===plane&&active.source===source&&active.amount===amount&&active.gripZ===gripZ&&active.segments===segments){
       active.holder=holder;active.rootScale=rootScale;plane.geometry=active.geometry;return;
     }
+    // Only construct and sort the strip layout after the unchanged-fit fast path.
+    const rows=stripRows(box,segments,rowScratch); // Shared scratch used for geometry rebuilds only.
+    debug.compressionRowBuilds++;
     const signature=rows.join(','); // Adjacent bands share vertices at each row.
     if(!active||active.plane!==plane||active.source!==source||active.signature!==signature) {
       restoreGeometry();
@@ -449,8 +452,7 @@
     // Apply known physical geometry even when there is no floor, a rotated
     // child basis, or a nonuniform parent that makes a rotation solve unsafe.
     if(fit?.amount>1e-6&&fit.profile.segments.length) {
-      const rows=stripRows(box,fit.profile.segments,s.rows);
-      setCompression(plane,source,box,rows,fit.profile.segments,fit.anchorZ,fit.amount,holder,mesh.scale.z);
+      setCompression(plane,source,box,s.rows,fit.profile.segments,fit.anchorZ,fit.amount,holder,mesh.scale.z);
       active.rootOffset=mesh.position.z;
     } else releaseCompression();
     debug.shortening=fit?.amount??0;debug.fitted=Number.isFinite(fit?.amount);debug.lightOriginalMinY=fit?.lightOriginalMinY??null;debug.lightFittedMinY=fit?.lightFittedMinY??null;
@@ -486,7 +488,6 @@
     const pending=hasFloor&&!!fit&&context.allowFit&&!!context.lightReference&&measuredSource&&(context.preview===true||global.PlayerJump?.heldPoseGrounded?.()===true);
     const gripZ=fit?.anchorZ??context.authoredGripZ??gripZFor(primary,mesh);
     const segments=profile&&(pending||Number.isFinite(fit?.amount))?profile.segments:NO_SEGMENTS;
-    const rows=stripRows(box,segments,s.rows);
     const outline=profile?.contactOutline;
     const segmentKey=segments.length?segments:null;
     const boundsChanged=s.contactMinX!==box.min.x||s.contactMaxX!==box.max.x||s.contactMinY!==box.min.y||s.contactMaxY!==box.max.y;
@@ -551,7 +552,7 @@
     // Always apply the fitted geometry before attempting a pose correction.
     // A failed rotation retains the fit and falls back to legacy depth.
     if(amount>1e-6&&segments.length) {
-      setCompression(plane,source,box,rows,segments,gripZ,amount,holder,mesh.scale.z);
+      setCompression(plane,source,box,s.rows,segments,gripZ,amount,holder,mesh.scale.z);
       active.rootOffset=mesh.position.z;
       debug.compressions++;
     } else releaseCompression();
