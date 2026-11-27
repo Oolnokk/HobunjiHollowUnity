@@ -5,7 +5,7 @@
   const scriptUrls = [
     "js/input-hold-timing.js?v=20261116tapHoldAudit2",
     "js/combat/weapon-shape-stats.js?v=20261122hShapeFootingOnce",
-    "js/combat/combat-core.js?v=20261126h4f3f709",
+    "js/combat/combat-core.js?v=20261126familyWork2",
     "js/combat/enemy-search-ai.js?v=20261110h608e181",
     "js/combat/impact-blend-library.js?v=20260828b",
     "js/combat/impact-ragdoll-playback.js?v=20261123proneQuatNorm3",
@@ -30,7 +30,7 @@
     "js/combat/combat-charged-breaker.js?v=20261126h22fa9c0",
     "js/combat/combat-flurry.js?v=20261126planarRebase1",
     "js/combat/combat-loadout-ui.js?v=20261123ha2c1378",
-    "js/combat/combat-enchantments.js?v=20261127ruinSkeletonAudit2",
+    "js/combat/combat-enchantments.js?v=20261127rootCorsCrystalParity11",
     "js/combat/fey-illusions.js?v=20261126planarRebase1",
     "js/combat/fey-hyped-attacks.js?v=20261117hypedCreature6",
     "js/combat/weapon-enchantment-vfx.js?v=20261117flailEnchants1",

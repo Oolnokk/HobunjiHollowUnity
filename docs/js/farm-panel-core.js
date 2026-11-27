@@ -97,6 +97,7 @@
     renderFarmDew();
     renderFarmFurniture();
     renderFarmLivestock();
+    renderFamilyProgress();
     renderFarmStoragePane();
     renderFarmhandsSection();
 
@@ -122,6 +123,41 @@
       window.__hobunjiAddFarmhand(id, {});
       renderFarmhandsSection();
     };
+  }
+
+  function renderFamilyProgress() {
+    if (typeof document === 'undefined') return;
+    const host = document.getElementById('farmFamilyProgress');
+    if (!host) return;
+    const family = window.RomanceFamily?.familyProgress?.() || [];
+    const chores = window.RomanceFamily?.familyChores?.() || {};
+    const fields = window.FarmPlotEditor?.plots?.() || [];
+    const stations = new Map((window.FarmProduction?.familyStations?.({ includeInputs: false }) || []).map(station => [station.id, station.label]));
+    const escape = deps?.esc || (value => String(value ?? '').replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch])));
+    const xpText = value => String(Math.round((Number(value) || 0) * 100) / 100);
+    host.innerHTML = family.length ? family.map(member => {
+      const assigned = fields.filter(field => field.workers?.includes(member.id)).map(field => field.label || 'Field');
+      if (chores.livestock === member.id) assigned.push('Livestock');
+      for (const [id, assignment] of Object.entries(chores.processing || {})) if (assignment?.workerId === member.id && stations.has(id)) assigned.push(stations.get(id));
+      if (member.vatId) assigned.push('Squeezing vat');
+      const maxed = member.level >= member.maxLevel;
+      const progress = maxed ? 1 : Math.max(0, Math.min(1, member.xp / Math.max(1, member.nextLevelXp)));
+      const status = member.carrying ? 'Being carried' : member.following ? 'Following you' : member.role === 'Baby' ? 'Learning by observation' : 'Assignments: ' + (assigned.join(', ') || 'None');
+      return `<div class="farm-row" style="display:grid;gap:5px;align-items:start">
+        <strong>${escape(member.name)} · ${escape(member.role)}</strong>
+        <span>Usefulness level ${escape(member.level)} / ${escape(member.maxLevel)}</span>
+        <progress aria-label="Usefulness XP" max="1" value="${progress}" style="width:100%;accent-color:var(--accent,#d9ad65)"></progress>
+        <span class="farm-note">${maxed ? 'Maximum level' : xpText(member.xp) + ' / ' + xpText(member.nextLevelXp) + ' XP'}</span>
+        <span class="farm-note">${escape(status)}</span>
+      </div>`;
+    }).join('') : '<p class="farm-note">No spouse or children yet.</p>';
+    const refresh = document.getElementById('farmFamilyRefreshBtn');
+    if (refresh) refresh.onclick = renderFamilyProgress;
+  }
+  function refreshVisibleFamilyProgress() {
+    if (typeof document === 'undefined') return;
+    const pane = document.getElementById('mpFarm'), section = document.getElementById('farmSectionFamily');
+    if (pane?.classList.contains('active') && section?.getClientRects?.().length) renderFamilyProgress();
   }
 
   function showFarmMap() {
@@ -1975,7 +2011,7 @@
     render: renderFarmPanel,
     showMap: showFarmMap,
     renderStablePanel,
-    renderFarmProcessors,
+    renderFarmProcessors, renderFamilyProgress, refreshVisibleFamilyProgress,
     onAnimalSalesCollected, // Mirrors atomically collected animals out of the farm scene without re-saving.
     activeStableIdForRole,
     openLayoutEditor: openHouseLayoutModal,

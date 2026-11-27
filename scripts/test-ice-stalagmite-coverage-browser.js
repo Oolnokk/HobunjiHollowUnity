@@ -189,7 +189,7 @@ const server = http.createServer((request, response) => {
       const ctx=canvas.getContext('2d');ctx.fillRect(20,5,60,55);ctx.fillRect(10,45,80,27);ctx.fillRect(39,60,22,34);
       const head=document.createElement('canvas');head.width=head.height=100;head.getContext('2d').fillRect(20,5,60,55);
       const torso=document.createElement('canvas');torso.width=torso.height=100;const tc=torso.getContext('2d');tc.fillRect(24,36,52,36);tc.fillRect(42,60,21,34);
-      const results=[];
+      const results=[];let referenceGrowth=null; // Same seed/mask must produce identical vertices, roots, skinning and material settings.
       const garment=document.createElement('canvas');garment.width=48;garment.height=48;
       const gc=garment.getContext('2d');gc.fillStyle='#ac885f';gc.fillRect(3,3,42,42);gc.fillStyle='#000';gc.fillRect(3,3,42,2);
       const bytes=Array.from(gc.getImageData(0,0,48,48).data); // Shared garment source must remain byte-identical.
@@ -230,13 +230,16 @@ const server = http.createServer((request, response) => {
           const tracker=window.PNGPlaneAvatar.makePortraitAnchorTracker(T,portrait,[a],window.PNGPlaneAvatar.getPortraitsFlipped());tracker.update();
           aligned&&=new T.Vector3(0,0,1).applyQuaternion(bone.quaternion).dot(tracker.frames[0].normal)>.999;
         }
-        const attached=layer.parent===portrait;const surface=theme!=='hronal'||mesh.userData.facetedRock===true;
+        const attached=layer.parent===portrait;
+        const growth={positions:Array.from(positions.array),normals:Array.from(mesh.geometry.attributes.normal.array),indices:Array.from(mesh.geometry.attributes.skinIndex.array),weights:Array.from(mesh.geometry.attributes.skinWeight.array),anchors:info.anchors,opacity:mesh.material.opacity,roughness:mesh.material.roughness,metalness:mesh.material.metalness,transparent:mesh.material.transparent,side:mesh.material.side,depthWrite:mesh.material.depthWrite,flatShading:mesh.material.flatShading,vertexColors:mesh.material.vertexColors};
+        const surface=!mesh.material.map&&!mesh.userData.facetedRock&&mesh.material.vertexColors===true;
+        const geometryParity=referenceGrowth===null||JSON.stringify(referenceGrowth)===JSON.stringify(growth);referenceGrowth=growth;
         const dense=info.anchors.length>=8&&info.anchors.length<=18,poseUpdates=info.poseUpdates;
-        dispose();results.push({theme,baseInside,baseVertices:positions.count,attached,unaffected,surface,dense,follows,moved,turned,aligned,poseUpdates,pants,pantsInk,pantsEffect,kanthicPants,disposed:layer.parent===null});
+        dispose();results.push({theme,baseInside,baseVertices:positions.count,attached,unaffected,surface,geometryParity,dense,follows,moved,turned,aligned,poseUpdates,pants,pantsInk,pantsEffect,kanthicPants,disposed:layer.parent===null});
       }
       return results;
     });
-    for(const result of skeletonResult)assert(result.baseInside&&result.baseVertices>0&&result.attached&&result.unaffected&&result.surface&&result.dense&&result.follows&&result.moved&&result.turned&&result.aligned&&result.pants&&result.pantsInk&&result.pantsEffect&&result.kanthicPants&&result.disposed,'Real torso geometry failed: '+JSON.stringify(result));
+    for(const result of skeletonResult)assert(result.baseInside&&result.baseVertices>0&&result.attached&&result.unaffected&&result.surface&&result.geometryParity&&result.dense&&result.follows&&result.moved&&result.turned&&result.aligned&&result.pants&&result.pantsInk&&result.pantsEffect&&result.kanthicPants&&result.disposed,'Real torso geometry failed: '+JSON.stringify(result));
     const ownerMask=await page.evaluate(()=>{
       const T=THREE,renderer=new T.WebGLRenderer({stencil:true,antialias:false}),scene=new T.Scene();
       const target=new T.WebGLRenderTarget(64,64,{stencilBuffer:true}),camera=new T.OrthographicCamera(-1,1,1,-1,.1,10);

@@ -548,7 +548,7 @@
   // Planar effects share one data-driven application path; resource transactions own their unique behavior.
   function livingActor(actor) {
     return !!actor && Number(actor.health) > 0 && !actor._downed && !actor._denHidden && !actor._deathTransitionStarted
-      && !window.RomanceFamily?.isBasketBaby?.(actor.rec?.id || actor.id);
+      && !(window.RomanceFamily?.isProtectedFamilyChild?.(actor.rec?.id || actor.id) ?? window.RomanceFamily?.isBasketBaby?.(actor.rec?.id || actor.id));
   }
 
   function applyRealmHitAffliction(event, def, power) {

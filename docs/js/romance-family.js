@@ -35,7 +35,7 @@
   let registeredChildFriends = ''; // Signature of world-specific NPC friendship links, avoids work each tick.
 
   function defaultFamily() {
-    return { pregnancy: null, children: [], pendingAdoption: null, pendingBaby: null, spouseUsefulness: null };
+    return { pregnancy: null, children: [], pendingAdoption: null, pendingBaby: null, spouseUsefulness: null, farmChores: { livestock: '', processing: {} } };
   }
   const cfg = () => H?.cfg?.()?.family || {};
   const num = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
@@ -72,18 +72,29 @@
   // One saved usefulness XP pool; infants accumulate experience but cannot perform jobs.
   const BABY_OBSERVATION_XP_RATE = 0.01; // Share of actual player skill XP while back-stowed.
   let unsubscribeObservationXp = null; // One subscription across family reinitialization.
+  let lastUsefulnessPopup = null; // Latest attempted award, exposed through the existing family mobile diagnostics.
+  function presentUsefulnessGain(id, gain) {
+    if (!(gain > 0)) return;
+    const walker = H?.findWalker?.(id);
+    const carried = window.FamilyBabyAmbientVoice?.anchorFor?.(id); // Use the real visible arms/back proxy rather than its hidden walker.
+    const root = carried?.group || walker?.root;
+    const shown = window.WorldPopupText?.showFamilyUsefulness?.(root, gain) === true;
+    lastUsefulnessPopup = { id, gain, shown };
+    window.FarmPanel?.refreshVisibleFamilyProgress?.(); // Event-driven only; no frame loop or closed-menu rendering.
+  }
   function awardObservationXp(event) {
     if (!H?.rawDay) return; // Progression can fire before the family system has initialized.
     const gain = Number(event?.amount) * BABY_OBSERVATION_XP_RATE;
     if (!Number.isFinite(gain) || gain <= 0) return;
     const id = window.Shattercasks?.backCarriedInfo?.()?.id;
     if (!id) return;
-    const child = fam.children.find(c => phaseOf(c) === 'basket' && id === 'family_baby_' + c.id);
+    const child = fam.children.find(c => ['basket', 'toddler'].includes(phaseOf(c)) && id === 'family_baby_' + c.id);
     if (!child) return;
     const maxLevel = Math.max(1, Math.floor(num(usefulnessCfg().maxLevel, 5)));
     child.usefulnessLevel = clamp(Math.floor(num(child.usefulnessLevel, 1)), 1, maxLevel);
     if (child.usefulnessLevel >= maxLevel) return; // Maxed babies need no repeated saves.
-    child.usefulnessXp = Math.max(0, num(child.usefulnessXp, 0)) + gain;
+    const previousLevel = child.usefulnessLevel, previousXp = Math.max(0, num(child.usefulnessXp, 0));
+    child.usefulnessXp = previousXp + gain;
     while (child.usefulnessLevel < maxLevel) {
       const threshold = Math.max(1, num(usefulnessCfg().xpPerLevelFactor, 40)) * child.usefulnessLevel ** 2;
       if (child.usefulnessXp < threshold) break;
@@ -92,8 +103,15 @@
       H.toast(`⭐ ${child.name} reached usefulness level ${child.usefulnessLevel}!`, true);
     }
     if (child.usefulnessLevel >= maxLevel) child.usefulnessXp = 0;
+    presentUsefulnessGain(child.id, appliedUsefulnessGain(previousLevel, previousXp, child.usefulnessLevel, child.usefulnessXp));
     // Family XP is world-member data, not character skill metadata; coalesce writes with the existing idle-save queue.
     if (deps().scheduleMemberSave) deps().scheduleMemberSave(); else H.persist();
+  }
+  function appliedUsefulnessGain(beforeLevel, beforeXp, afterLevel, afterXp) {
+    let gain = afterXp - beforeXp;
+    const factor = Math.max(1, num(usefulnessCfg().xpPerLevelFactor, 40));
+    for (let level = beforeLevel; level < afterLevel; level++) gain += factor * level * level;
+    return Math.max(0, gain); // Report actual accepted XP, including level-up carryover but excluding overflow at cap.
   }
   function awardWork(workerId, action) {
     const profile = workProfileFor(workerId);
@@ -101,8 +119,10 @@
     const { record, stage, multiplier } = profile;
     const levelKey = stage === 'adult' ? 'level' : 'usefulnessLevel';
     const xpKey = stage === 'adult' ? 'xp' : 'usefulnessXp';
-    record[xpKey] = Math.max(0, num(record[xpKey], 0)) + Math.max(0, num(workActions()[action], 0)) * Math.max(0, multiplier);
     const maxLevel = Math.max(1, Math.floor(num(usefulnessCfg().maxLevel, 5)));
+    if (record[levelKey] >= maxLevel) return usefulnessInfo(workerId);
+    const previousLevel = record[levelKey], previousXp = Math.max(0, num(record[xpKey], 0));
+    record[xpKey] = previousXp + Math.max(0, num(workActions()[action], 0)) * Math.max(0, multiplier);
     while (record[levelKey] < maxLevel) {
       const threshold = Math.max(1, num(usefulnessCfg().xpPerLevelFactor, 40)) * record[levelKey] * record[levelKey];
       if (record[xpKey] < threshold) break;
@@ -111,6 +131,7 @@
       H.toast(`⭐ ${stage === 'adult' ? H.npcName(workerId) : record.name} reached usefulness level ${record[levelKey]}!`, true);
     }
     if (record[levelKey] >= maxLevel) record[xpKey] = 0;
+    presentUsefulnessGain(workerId, appliedUsefulnessGain(previousLevel, previousXp, record[levelKey], record[xpKey]));
     H.persist();
     return usefulnessInfo(workerId);
   }
@@ -319,6 +340,58 @@
     const child = fam.children.find(entry => entry.id === npcId); // Saved family age is authoritative for follower commands.
     return !!child && phaseOf(child) === 'basket';
   }
+  function isCarryFollowing(id) {
+    const child = fam.children.find(entry => entry.id === id); // Only active carry/follow ownership, not age or speech.
+    return !!child && (phaseOf(child) === 'basket' || phaseOf(child) === 'toddler') && !!(child.carryBy || child.followPlayer || window.FamilyBabyBurdens?.isProxyActive?.(id));
+  }
+  function isProtectedFamilyChild(id) {
+    const child = fam.children.find(entry => entry.id === id); // Carry protection does not change toddler speech or ordinary development.
+    if (!child) return false;
+    const phase = phaseOf(child);
+    return phase === 'basket' || window.FamilyBabyBurdens?.isProxyActive?.(id) === true
+      || (phase === 'toddler' && !!(child.carryBy || child.followPlayer));
+  }
+  function isFamilyWorkUnavailable(id) { return isProtectedFamilyChild(id); }
+  function familyProgress() {
+    const maxLevel = Math.max(1, Math.floor(num(usefulnessCfg().maxLevel, 5)));
+    const spouse = R?.getSpouse?.(), rows = [];
+    if (spouse?.npcId) rows.push({ id: spouse.npcId, name: H?.npcName?.(spouse.npcId) || spouse.npcId, role: 'Spouse', ...usefulnessInfo(spouse.npcId), maxLevel });
+    for (const child of fam.children) {
+      const phase = phaseOf(child);
+      const info = usefulnessInfo(child.id) || { level: num(child.usefulnessLevel, 1), xp: num(child.usefulnessXp, 0),
+        nextLevelXp: Math.max(1, num(usefulnessCfg().xpPerLevelFactor, 40)) * num(child.usefulnessLevel, 1) ** 2 };
+      rows.push({ id: child.id, name: child.name, role: phase === 'basket' ? 'Baby' : phase === 'toddler' ? 'Toddler' : 'Child',
+        ...info, maxLevel, vatId: child.vatId || null, carrying: child.carryBy || null, following: !!child.followPlayer });
+    }
+    return rows;
+  }
+  function retargetProcessingAssignment(oldId, newId) {
+    const assignments = fam.farmChores?.processing;
+    if (!assignments || !Object.prototype.hasOwnProperty.call(assignments, oldId) || oldId === newId) return false;
+    const assignment = assignments[oldId];
+    delete assignments[oldId];
+    if (newId) assignments[newId] = assignment;
+    window.NpcFarmPlots?.invalidateFamilyChores?.(); H?.persist?.(); return true;
+  }
+  function familyChores() { return fam.farmChores || null; } // Saved assignments belong to the family, not the map.
+  function setFamilyChore(kind, stationId, workerId, inputKey = '') {
+    if (workerId && !workProfileFor(workerId)) return false;
+    if (!fam.farmChores || typeof fam.farmChores !== 'object') fam.farmChores = { livestock: '', processing: {} };
+    if (kind === 'livestock') fam.farmChores.livestock = workerId || '';
+    else if (kind === 'processing') {
+      if (!window.FarmProduction?.isFamilyStation?.(stationId, inputKey)) return false;
+      if (!fam.farmChores.processing || typeof fam.farmChores.processing !== 'object') fam.farmChores.processing = {};
+      if (!workerId && !inputKey) delete fam.farmChores.processing[stationId];
+      else fam.farmChores.processing[stationId] = { workerId: workerId || '', inputKey: inputKey || '' };
+    } else return false;
+    window.NpcFarmPlots?.invalidateFamilyChores?.(); H.persist(); return true;
+  }
+  function releaseCarryFollow(id) {
+    const child = fam.children.find(entry => entry.id === id);
+    if (!child || phaseOf(child) !== 'toddler' || child.carryBy || !child.followPlayer) return false;
+    child.followPlayer = false; child.carrySpot = null;
+    window.FamilyBabyFollow?.clearWalker?.(walkerFor(child)); H.persist(); return true;
+  }
   function babyAmbientSound(npcId, random = Math.random) {
     return window.FamilyBabyAmbientVoice?.sound?.(npcId, isBasketBaby(npcId), cfg(), random) || null; // Voice module owns phonetics, family owns saved age.
   }
@@ -431,7 +504,7 @@
     const target = walker?.currentScheduleTarget; // Only an arrived worker on the matching chore may enter the animation.
     const root = walker?.root;
     const hour = H?.clockHour?.();
-    return !!(child && child.vatId === vatId && phaseOf(child) !== 'basket'
+    return !!(child && child.vatId === vatId && !isFamilyWorkUnavailable(child.id)
       && deps().getCurrentArea?.() === 'farm'
       && walker?.area === 'farm' && root?.parent && root.visible !== false && !vatPoseBlocked(child, walker)
       && target?.area === 'farm' && target.vatId === vatId
@@ -564,14 +637,15 @@
   function childTarget(child) {
     const phase = phaseOf(child);
     const hour = H.clockHour();
-    if (phase === 'basket') {
-      const following = window.FamilyBabyFollow?.scheduleTarget?.(child);
+    if (phase === 'basket' || isCarryFollowing(child.id) || window.FamilyBabyBurdens?.isProxyActive?.(child.id)) {
+      const following = window.FamilyBabyFollow?.scheduleTarget?.(child, phase);
       if (following) return following;
       const carry = child.carrySpot; // Saved safe landing spot: a put-down or thrown baby does not teleport to the basket on reload.
       if (carry && window.FamilyBabyBurdens?.isAllowedArea?.(carry.area)
           && Number.isFinite(carry.c) && Number.isFinite(carry.r)) {
         return { area: carry.area, c: carry.c, r: carry.r, activity: 'resting after being carried' };
       }
+      if (phase !== 'basket') return null; // A carried child has no independent farm or vat schedule.
       const basket = basketObject(child);
       if (basket) return { area: 'interior', c: basket.col, r: basket.row, activity: 'napping in the basket' };
       const anchor = interiorAnchor();
@@ -612,7 +686,7 @@
   function activeVatScheduleOverride(rec) {
     if (!rec?.isChild) return null;
     const child = fam.children.find(entry => entry.id === rec.id);
-    if (!child?.vatId || phaseOf(child) === 'basket' || !vatJobActive(vatObject(child))) return null;
+    if (!child?.vatId || isFamilyWorkUnavailable(child.id) || !vatJobActive(vatObject(child))) return null;
     const target = childTarget(child); // Only real unfinished batches outrank follow/wait and other ordinary schedules.
     return target?.vatId === child.vatId ? target : null;
   }
@@ -622,9 +696,10 @@
     const walker = walkerFor(child);
     const phase = phaseOf(child);
     syncChildAmbientGreetings(child); // Sync only on phase changes; module caches the last stage.
-    if (phase !== 'basket') { child.followPlayer = false; window.FamilyBabyFollow?.clearWalker?.(walker); }
+    if (phase === 'child' && !window.FamilyBabyBurdens?.isProxyActive?.(child.id)) { child.followPlayer = false; window.FamilyBabyFollow?.clearWalker?.(walker); }
     if (phase !== 'basket' && child.basketId) {
       const basket = basketObject(child);
+      if (child.carryBy === 'spouse') window.FamilyBabyBurdens?.returnToBasket?.(child, basket); // Finish newborn-only automatic care before removing the cradle.
       if (basket) deps().furniture?.removeInteriorFurniture?.(basket.id);
       child.basketId = null;
       H.toast(`🧸 ${child.name} has outgrown the baby basket and is toddling around!`, true);
@@ -643,7 +718,8 @@
     // scale + the rig scaler's head compensation), so a child who grows into
     // the next phase is rebuilt once with that phase's body/head scale.
     if (walker._childPhase && walker._childPhase !== phase && deps().despawnNpcWalker) {
-      window.FamilyBabyBurdens?.discard?.(child.id); // Retire held infant proxy before destroying its source rig.
+      if (window.FamilyBabyBurdens?.isProxyActive?.(child.id)) return; // Finish the active carry/throw before rebuilding the source avatar at its new age.
+      window.FamilyBabyBurdens?.discard?.(child.id, phase === 'toddler' && !!child.followPlayer); // Growth preserves a dropped baby's safe position/follow state.
       deps().despawnNpcWalker(walker);
       return;
     }
@@ -675,7 +751,7 @@
     for (const child of fam.children) {
       const walker = walkerFor(child);
       if (!walker?.root) continue;
-      if (phaseOf(child) === 'basket') continue; // The shared crawl owns infant presentation.
+      if (phaseOf(child) === 'basket' || child.carryBy || window.FamilyBabyBurdens?.isProxyActive?.(child.id)) continue; // Only carried/airborne children and crawling babies suppress the normal toddler wobble.
       const footing = num(walker._toddlingFooting, 0) / 99;
       const tumbling = walker._toddleTumbleUntil > now;
       const target = tumbling ? 1.15 : Math.sin(now / 160 + child.id.length) * 0.11 * footing;
@@ -697,7 +773,7 @@
   }
 
   function onNewDay() {
-    const workers = fam.children.filter(child => child.vatId && phaseOf(child) !== 'basket').map(child => ({ id: child.id, name: child.name, vatId: child.vatId })); // Squeezing is a child/toddler chore; spouses retain ordinary plot work.
+    const workers = fam.children.filter(child => child.vatId && phaseOf(child) !== 'basket' && !isFamilyWorkUnavailable(child.id)).map(child => ({ id: child.id, name: child.name, vatId: child.vatId })); // Squeezing is a child/toddler chore; spouses retain ordinary plot work.
     for (const worker of workers) {
       const status = window.DewVats?.squeezePileWithExternalWorker?.(worker.vatId);
       if (status === 'started') {
@@ -744,7 +820,7 @@
   function commandOptionsFor(walker) {
     const child = fam.children.find(entry => entry.id === walker?.rec?.id);
     const infantOptions = window.FamilyBabyCare?.commandOptionsFor?.(walker) || []; // Spouses retain baby handoffs, but never receive vat-work commands.
-    if (!child || phaseOf(child) === 'basket') return infantOptions;
+    if (!child || isFamilyWorkUnavailable(child.id)) return infantOptions;
     if (child.vatId) return [...infantOptions, { id: 'unvat', icon: '🛑', label: 'Stop Vat Work', run: () => {
       clearVatWorkerPose(child.vatId);
       window.DewVats?.setExternalWorker?.(child.vatId, null);
@@ -1067,9 +1143,14 @@
     const saved = JSON.parse(JSON.stringify(fam));
     // The shared Burden slots are not serialized. Save a safe nearby landing for
     // a baby held in the wilderness so reloading never sends them back home.
-    const carried = H?.rawDay ? saved.children.filter(c => c.carryBy === 'player' && phaseOf(c) === 'basket') : [];
+    const carried = H?.rawDay ? saved.children.filter(c => c.carryBy === 'player') : [];
     const spot = carried.length && window.FamilyBabyFollow?.savedCarrySpot?.();
-    if (spot) for (const child of carried) { child.carrySpot = { ...spot }; child.followPlayer = true; child.carryBy = null; child.carryPose = null; }
+    for (const child of carried) {
+      child.carryBy = null; child.carryPose = null; // Physical burden slots are not persisted.
+      const canFollow = ['basket', 'toddler'].includes(phaseOf(child)) && !!spot;
+      child.carrySpot = canFollow ? { ...spot } : null;
+      child.followPlayer = canFollow;
+    }
     return saved;
   }
   function restore(saved) {
@@ -1078,11 +1159,22 @@
     window.FamilyBabyBurdens?.clear?.(); // A new world gets its own baby burden handles.
     window.FamilyBabyFollow?.clear?.();
     window.FamilyBabyCare?.clear?.(); // No childcare intervals leak across restored families.
+    lastUsefulnessPopup = null;
+    window.NpcFarmPlots?.invalidateFamilyChores?.(); // Old family claims cannot survive a world/character change.
     window.FamilyBabyAmbientVoice?.clear?.(); // Remove prior world child speech registrations.
     window.DewVats?.clearFamilyWorkers?.(); // Remove stale assignments before rehydrating the newly loaded family's vats.
     fam = saved && typeof saved === 'object'
       ? { ...defaultFamily(), ...saved, children: Array.isArray(saved.children) ? saved.children.map(child => ({ ...child })) : [] }
       : defaultFamily();
+    if (!fam.farmChores || typeof fam.farmChores !== 'object') fam.farmChores = { livestock: '', processing: {} }; // Legacy saves remain opt-in.
+    for (const child of fam.children) {
+      // Older saves may contain an unsaved hand/back slot; don't block ensureWalker on a nonexistent proxy.
+      if (child.carryBy) { child.carryBy = null; child.carryPose = null; child.followPlayer = !!child.carrySpot && !!child.followPlayer; }
+      if (!child.carrySpot || !window.FamilyBabyBurdens?.isAllowedArea?.(child.carrySpot.area)) {
+        child.carrySpot = null; child.followPlayer = false;
+      }
+      if (H?.rawDay && phaseOf(child) === 'child') child.followPlayer = false;
+    }
     delete fam.spouseVatId; // Retired adult vat jobs from older saves are discarded; clearFamilyWorkers above releases their runtime shifts.
     delete fam.spouseVatWorkerId; // No obsolete spouse vat ownership is written back on the next save.
     // Save migration: shorten an existing three-month gestation to one month. A pre-migration
@@ -1104,6 +1196,7 @@
       pendingAdoption: !!fam.pendingAdoption,
       pendingBaby: !!fam.pendingBaby, // Mobile diagnostics reveal a naming prompt waiting to resume after reload.
       spouseUsefulness: R?.getSpouse?.()?.npcId ? usefulnessInfo(R.getSpouse().npcId) : null,
+      lastUsefulnessPopup,
       babyFollow: window.FamilyBabyFollow?.snapshot?.() || null,
       babyCare: window.FamilyBabyCare?.snapshot?.() || [], // Mobile debug rows show arms/back/basket and current shift.
       babyBurdens: window.FamilyBabyBurdens?.snapshot?.() || null, // Mobile shows proxy geometry, reverse-art policy and parent scene without devtools.
@@ -1113,9 +1206,9 @@
 
   const api = {
     init, tick, serialize, restore, snapshot, setVatWorkerPose, clearVatWorkerPose, retargetVatAssignments,
-    spouseTargetOverride, commandOptionsFor, spouseHoldingEgg, isBasketBaby, babyAmbientSound, voiceAgePhase,
+    spouseTargetOverride, commandOptionsFor, spouseHoldingEgg, isBasketBaby, isCarryFollowing, isProtectedFamilyChild, isFamilyWorkUnavailable, releaseCarryFollow, babyAmbientSound, voiceAgePhase,
     careContext: () => ({ family: fam, helpers: H, romance: R, phaseOf, walkerFor, basketObject, persist: () => H.persist() }), // One source of family state for childcare.
-    usefulnessInfo, awardWork, rollWorkQuality, awardObservationXp,
+    usefulnessInfo, awardWork, rollWorkQuality, awardObservationXp, familyChores, setFamilyChore, familyProgress, retargetProcessingAssignment,
     isAssignedToVat: id => fam.children.some(child => child.id === id && phaseOf(child) !== 'basket' && !!child.vatId), // Only non-infant children can reserve vats and interrupt family plot claims.
     openDreamPicker, openNamingPrompt, createChild,
     wardrobeRecordFor: id => { const child = fam.children.find(entry => entry.id === id); return child ? childRecord(child) : null; }, // Offscreen children still have identity/clothing for their family chest.

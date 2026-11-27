@@ -2968,7 +2968,7 @@
         // unit of each output from the same batch without consuming another
         // ingredient — capped well below Bountiful Harvest's rate since
         // processed goods are already economically amplified by quality.
-        const efficientProcessingRank = window.PerkSystem?.rank('farming', 'efficientProcessing') || 0;
+        const efficientProcessingRank = fixedFamilyQuality ? 0 : (window.PerkSystem?.rank('farming', 'efficientProcessing') || 0); // Family batches do not receive player perk bonuses.
         const bonusChance = Math.min(0.15, efficientProcessingRank * 0.03);
         const bonusUnit = bonusChance > 0 && (window.GameRandom?.random?.() ?? Math.random()) < bonusChance ? 1 : 0;
         outputs.forEach(output => {
@@ -3021,7 +3021,7 @@
         const emitterVisuals = (authoredVfx?.particleEmitters || []).map(record => ({ record, visual: window.AuthoredFurniture.createEmitterVisual(mesh, record) }));
         let vfxT = 0;
         let burstRemaining = 0;
-        function vfxActive() { return (isAging && !!job) || job?.kind === 'timed' || burstRemaining > 0; }
+        function vfxActive() { return ((isAging && !!job) || job?.kind === 'timed') && (!familyBatch() || jobRemainingHours() > 0) || burstRemaining > 0; }
         function triggerBurst() { if (!isAging) burstRemaining = PROCESS_BURST_S; }
         function jobRemainingHours() {
           if (!job) return 0;
@@ -3044,18 +3044,31 @@
           const durationHours = baseProcessingHours(def.method);
           job = { kind: 'timed', outputs, inputStars, inputLabel, source, yieldMultiplier,
             durationHours, readyAtGameHour: now + durationHours, substanceColor: timelineSubstanceColor(outputs) };
-          window.FarmEditor.saveFarmLayout();
+          const saved = window.FarmEditor.saveFarmLayout();
+          if (source === 'family-chore' && saved === false) { job = null; return { ok: false, message: 'Could not save the processor batch.' }; } // Family caller refunds the reserved ingredient.
           window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig().processStart);
           triggerBurst(); // Authored timeline/particle animations remain on render-time seconds, distinct from production.
           return { ok: true, started: true, durationHours };
         }
+        function familyBatch() { return job?.source === 'family-chore'; } // Generic family assignments collect their own finished batch.
+        function familyOutputFits() {
+          if (!job?.outputs?.length) return false;
+          const counts = new Map(); // Combined output keys must fit, even when a recipe repeats a key.
+          const possibleBonus = job.source === 'family' || familyBatch() ? 0 : (window.PerkSystem?.rank('farming', 'efficientProcessing') > 0 ? 1 : 0);
+          const units = (1 + possibleBonus) * Math.max(1, Math.floor(Number(job.yieldMultiplier) || 1));
+          for (const output of job.outputs) counts.set(output.key, (counts.get(output.key) || 0) + units);
+          for (const [key, count] of counts) if ((inventory[key] || 0) + count > window.InventoryStacks.MAX_TOTAL) return false;
+          return true;
+        }
         function finishTimedJob(notify = true) {
           if (job?.kind !== 'timed') return null;
+          if (familyBatch() && !familyOutputFits()) return { ok: false, message: 'Make room in your bag to collect this batch.' };
           const finished = job;
           job = null;
-          const outputStars = addProcessedOutputs(finished.outputs, finished.inputStars, def.method, finished.yieldMultiplier, finished.source === 'family');
+          if (finished.source === 'family-chore' && window.FarmEditor.saveFarmLayout() === false) { job = finished; return { ok: false, message: 'Could not save collection.' }; } // Do not grant goods for a batch that is still saved as ready.
+          const outputStars = addProcessedOutputs(finished.outputs, finished.inputStars, def.method, finished.yieldMultiplier, finished.source === 'family' || finished.source === 'family-chore');
           window.FarmAnimals?.clearVatWorkerPose?.(obj.id);
-          window.FarmEditor.saveFarmLayout();
+          if (finished.source !== 'family-chore') window.FarmEditor.saveFarmLayout();
           saveMemberWorldData();
           window.HudUpdate.refreshItemScroll(); buildInventoryGrid(); refreshActionBar();
           window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig()[PROCESSING_SFX_KEY[furnitureKey]]);
@@ -3065,12 +3078,12 @@
         }
         function updateVfx(dt) {
           // Non-authored stations still need to complete queued work after time passes.
-          if (job?.kind === 'timed' && jobRemainingHours() <= 0) finishTimedJob();
+          if (job?.kind === 'timed' && !familyBatch() && jobRemainingHours() <= 0) finishTimedJob(); // Family batches wait for an actual collection claim.
           if (!authoredVfx) return;
           vfxT += dt;
           if (burstRemaining > 0) burstRemaining = Math.max(0, burstRemaining - dt);
           const active = vfxActive();
-          const timed = job?.kind === 'timed';
+          const timed = job?.kind === 'timed' && (!familyBatch() || jobRemainingHours() > 0);
           const progress = timed ? Math.max(0, Math.min(1, 1 - jobRemainingHours() / Math.max(0.1, Number(job.durationHours) || baseProcessingHours(def.method)))) : 0;
           const liveTimeline = processTimeline ? { ...processTimeline, substanceColor: timed ? job.substanceColor : processTimeline.substanceColor } : null;
           const timelineState = liveTimeline ? window.AuthoredFurniture.applyProcessTimeline(mesh, authoredVfx, liveTimeline, progress) : null;
@@ -3097,6 +3110,38 @@
           triggerVfx: triggerBurst, // used by autoSqueezeDewAtVat (livestock-to-vat automation)
           startTimedJob({ outputs, inputStars, inputLabel, source, yieldMultiplier } = {}) { return startTimedJob(outputs, inputStars, inputLabel, source, yieldMultiplier); }, // Used by assigned livestock without coupling dew-vats.js to timeline internals.
           getJob() { return job; }, // read by saveFarmLayout
+          familyRecipe(itemKey) {
+            // Tea is a three-herb recipe UI, not a single-ingredient processor.
+            if (def.specialMode) return null;
+            return window.ItemProcessing.getProcessingOutputs(def.method, itemKey);
+          },
+          familyEligible: !def.specialMode,
+          familyCanLoad() {
+            if (def.method !== 'squeezing') return true;
+            const worker = window.DewVats?.assignedWorkerForVat?.(obj.id); // A loader may supply a vat, but may not bypass its dedicated stomper requirement.
+            return !!worker && (!worker.familyWorker || !window.RomanceFamily?.isFamilyWorkUnavailable?.(worker.id));
+          },
+          familyReady() { return !!job && jobRemainingHours() <= 0 && familyOutputFits(); },
+          startFamilyJob(itemKey, workerId) {
+            if (!obj.familyEligible || !obj.familyCanLoad() || job || !workerId || !hasFarmPermission('storage')) return { ok: false };
+            const outputs = obj.familyRecipe(itemKey);
+            const now = window.ItemProcessing?.gameHour?.();
+            if (!outputs?.length || !Number.isFinite(now)) return { ok: false };
+            const inputStars = window.RomanceFamily?.rollWorkQuality?.(workerId) ?? 1;
+            const inputLabel = ITEM_DEFS[itemKey]?.label || itemKey;
+            if (isAging) {
+              const durationHours = baseProcessingHours(def.method);
+              job = { kind: 'aging', outputs, readyAtGameHour: now + durationHours, durationHours, inputStars, inputLabel, source: 'family-chore' };
+              if (window.FarmEditor.saveFarmLayout() === false) { job = null; return { ok: false, message: 'Could not save the processor batch.' }; }
+              window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig().processStart);
+              return { ok: true };
+            }
+            return startTimedJob(outputs, inputStars, inputLabel, 'family-chore');
+          },
+          collectFamilyJob() {
+            if (!obj.familyEligible || !hasFarmPermission('storage') || !obj.familyReady()) return { ok: false };
+            return obj.onAction('obj_process_' + furnitureKey);
+          },
           getButtons() {
             if (def.specialMode === 'teaGrinder') {
               return [{ icon: def.icon, label: 'Blend Tea Leaves', action: 'obj_process_' + furnitureKey, style: 'primary', allowed: true }]; // Tea Grinder owns a three-input modal rather than the generic one-held-item processor contract.
@@ -3136,11 +3181,15 @@
               const remainingHours = jobRemainingHours();
               if (remainingHours > 0) return { ok: false, message: `${def.name} is still working — ${window.ItemProcessing.formatProcessHours(remainingHours)} left.` };
               if (job.kind === 'timed') return finishTimedJob(false);
+              if (familyBatch() && !familyOutputFits()) return { ok: false, message: 'Make room in your bag to collect this batch.' };
               const outputs = job.outputs;
               const inputStars = job.inputStars;
+              const fixedFamilyQuality = familyBatch();
+              const finished = job; // Retain the ready aging batch if persistence refuses to clear it.
               job = null;
-              const outputStars = addProcessedOutputs(outputs, inputStars, def.method);
-              window.FarmEditor.saveFarmLayout();
+              if (fixedFamilyQuality && window.FarmEditor.saveFarmLayout() === false) { job = finished; return { ok: false, message: 'Could not save collection.' }; }
+              const outputStars = addProcessedOutputs(outputs, inputStars, def.method, 1, fixedFamilyQuality);
+              if (!fixedFamilyQuality) window.FarmEditor.saveFarmLayout();
               saveMemberWorldData();
               window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig()[PROCESSING_SFX_KEY[furnitureKey]]);
               return { ok: true, message: `${def.icon} Collected ${window.LootRolling.starRatingText(outputStars)} ${outputs.map(o => o.label).join(', ')}.` };
@@ -3232,6 +3281,7 @@
         obj.mesh.position.set(col + 0.5, farmSurfaceYAtWorld(col + 0.5, row + 0.5), row + 0.5);
         worldObjects.set(col + ',' + row, obj);
         window.DewVats?.retargetAssignments(oldId, obj.id);
+        window.RomanceFamily?.retargetProcessingAssignment?.(oldId, obj.id); // Furniture identity changes with coordinates.
         window.FarmEditor.saveFarmLayout();
         return { ok: true, message: `${PROCESSING_FURNITURE_DEFS[obj.furnitureKey]?.icon || '⚙️'} ${PROCESSING_FURNITURE_DEFS[obj.furnitureKey]?.name || 'Processing furniture'} moved.` };
       }
@@ -3251,6 +3301,7 @@
         const def = PROCESSING_FURNITURE_DEFS[obj.furnitureKey];
         if (obj.getJob?.()) return { ok: false, message: `${def?.name || 'This processor'} cannot be removed until its contents are collected.` };
         window.DewVats?.retargetAssignments(obj.id, null);
+        window.RomanceFamily?.retargetProcessingAssignment?.(obj.id, null);
         worldObjects.delete(obj.col + ',' + obj.row);
         processingFurnitureObjects.delete(obj);
         obj.reset?.();
@@ -8194,6 +8245,7 @@
         isWilderness: area => Object.hasOwn(EXTERIOR_ZONES, area),
         isAreaSettled: () => sceneTransDir === 0 && !_layoutSwapInProgress,
         travelCreatureToward, canEnter: creatureCanEnterTile, surfaceY: npcSurfaceY, scheduleMemberSave: () => scheduleLootMemberSave(),
+        getToddlerWalkSpeed: walker => (npcMovementConfig().speedTilesPerSecond ?? 1.25) * (window.NpcCharacterState?.movementSpeedMultiplier?.(walker.rec?.id) ?? 1) / Math.max(.001, devGlobalSpeedMul), // Compensate for the creature mover applying the global speed multiplier; ordinary humanoid walking does not.
       }); // Uses the exact companion movement executor; no new wildlife combat object or second frame loop.
 
       // Shared ground truth for where a mount saddle, shoulder-pet grip,
@@ -33781,7 +33833,7 @@
         },
       });
       window.FarmProduction.init({ getPlayerData: () => _playerData, calendar, inventory, ITEM_DEFS, cropData, COLS, ROWS, TileType, MAX_WATER,
-        scene, worldObjects, hasFarmPermission, isFarmOwner, showToast, debugLog, getGrid: () => grid,
+        scene, worldObjects, processingFurnitureObjects, hasFarmPermission, isFarmOwner, showToast, debugLog, getGrid: () => grid,
         loadStorage: _loadWorldStorage, saveStorage: _saveWorldStorage, consumeInput: consumeProcessingInput,
         surfaceY: farmSurfaceYAtWorld, markOutline: _markOutline,
         saveFarmLayout: window.FarmEditor.saveFarmLayout, saveMemberWorldData });

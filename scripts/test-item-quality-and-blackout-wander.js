@@ -198,6 +198,7 @@ function makeSeededRandom(seed) {
   const startTimedJobCalls = [];
   const vat = {
     id: 'vat1', furnitureKey: 'squeezingVat', getJob: () => null,
+    onAction() { return { ok: true }; },
     startTimedJob(options) { startTimedJobCalls.push(options); return { ok: true, started: true, durationS: 5 }; },
   };
   const processingFurnitureObjects = new Set([vat]);
@@ -227,9 +228,21 @@ function makeSeededRandom(seed) {
 
   // Family workers must use their own level, not inherited player Farming rolls or animal hearts.
   livestock.length = 0;
+  assert.equal(vat.onAction('obj_process_squeezingVat').workerRequired, true);
+  assert.equal(vat.startTimedJob({}).workerRequired, true);
   let familyQualityRolls = 0; // Confirms a family squeezer asks RomanceFamily exactly once per job.
-  windowStub.RomanceFamily = { rollWorkQuality: id => { assert.equal(id, 'toddler1'); familyQualityRolls++; return 1; } };
+  let workerUnavailable = true; // Simulates a toddler leaving and returning to their assigned vat.
+  windowStub.RomanceFamily = {
+    isFamilyWorkUnavailable: id => id === 'toddler1' && workerUnavailable,
+    rollWorkQuality: id => { assert.equal(id, 'toddler1'); familyQualityRolls++; return 1; },
+  };
   DewVats.setExternalWorker('vat1', { id: 'toddler1', name: 'Pip', familyWorker: true, efficacy: 2 });
+  assert.equal(vat.onAction('obj_process_squeezingVat').workerRequired, true);
+  assert.equal(vat.startTimedJob({}).workerRequired, true);
+  assert.equal(DewVats.autoSqueezeAtVat('vat1', 'blue'), false);
+  assert.equal(familyQualityRolls, 0, 'blocked batches do not roll family quality');
+  workerUnavailable = false;
+  assert.equal(vat.onAction('obj_process_squeezingVat').ok, true);
   assert.equal(DewVats.autoSqueezeAtVat('vat1', 'blue'), 'started');
   const familyJob = startTimedJobCalls.at(-1);
   assert.equal(familyJob.inputStars, 1, 'a level-one toddler gives the job one-star quality even with the player animal perk');

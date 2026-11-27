@@ -165,7 +165,7 @@
       return mode === 'dismiss' ? window.RomanceSystem.dismissDate() : window.RomanceSystem.setDateMode(mode);
     }
     if (!id || walker.rec.dead || walker.rec.deceased || !['follow', 'wait', 'dismiss'].includes(mode)) return false;
-    if (isBasketBaby(walker.rec) && mode !== 'dismiss') return false; // Direct callers obey the same infant restriction.
+    if ((isBasketBaby(walker.rec) || window.RomanceFamily?.isCarryFollowing?.(id)) && mode !== 'dismiss') return false; // Direct callers obey the same infant restriction.
     const accepted = mode !== 'follow' || (window.NpcRapport?.get?.(id) ?? 0) >= 0;
     const text = !accepted ? 'No, I would rather stay here.'
       : mode === 'follow' ? 'Of course. Lead the way!'
@@ -188,7 +188,7 @@
   }
 
   function commandOptionsFor(walker) {
-    if (!walker?.rec?.id || walker.rec.dead || walker.rec.deceased || isBasketBaby(walker.rec) || walker._doorstepVisitor
+    if (!walker?.rec?.id || walker.rec.dead || walker.rec.deceased || isBasketBaby(walker.rec) || window.RomanceFamily?.isCarryFollowing?.(walker.rec.id) || walker._doorstepVisitor
       || walker._slagothimTrader || walker.isPorakanekiHunter || window.RomanceSystem?.isOnDateWith?.(walker.rec.id)) return [];
     const session = companions.get(walker.rec.id);
     if (!session) return [{ id: 'follow', icon: '👣', label: 'Follow me', run: () => setMode(walker, 'follow') }];
@@ -215,6 +215,8 @@
 
   window.NpcFollowing = {
     init, clear, clearRetreat, target, setMode, commandOptionsFor,
+    isCompanion: id => companions.has(id), // Farmwork availability reads the real session owner.
+    releaseForCarry: id => { companions.delete(id); clearRetreat(id); window.FurnitureTableSystem?.setSeatTarget?.(id, null); }, // Silent handoff to the physical carry owner.
     snapshot: () => ({
       latestChange: 'Shared combat cover, map transitions, running and exclusive seating for dates and friendly followers.',
       companions: [...companions].map(([id, session]) => ({ id, mode: session.mode })),

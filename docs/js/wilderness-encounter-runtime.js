@@ -191,6 +191,7 @@
       if(pending)return pending;
       pending=new Promise((resolve,reject)=>{
         const image=new Image();
+        image.crossOrigin='anonymous'; // Alpha cropping reads pixels; allow CORS-enabled asset redirects in both the game and Workshop.
         image.onload=()=>{
           try{
             const raw=document.createElement('canvas');raw.width=image.naturalWidth||image.width;raw.height=image.naturalHeight||image.height;
@@ -203,7 +204,7 @@
             crop.getContext('2d').drawImage(raw,l,t,crop.width,crop.height,0,0,crop.width,crop.height);
             resolve({raw,crop});
           }catch(error){reject(error);}
-        };image.onerror=()=>reject(Error('Sprite could not load: '+url));image.src=url;
+        };image.onerror=()=>reject(Error('Sprite could not load with CORS: '+url));image.src=url;
       }).catch(error=>{pending=null;throw error;});
       return pending;
     };

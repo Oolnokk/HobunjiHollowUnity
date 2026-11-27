@@ -230,11 +230,11 @@
     Object.defineProperties(footprint,{project:{value:(x,z)=>choose(x,z,false)},pick:{value:(x,z)=>choose(x,z,true)}});
     return footprint;
   }
-  function rigRuinSpikeMesh(THREE,node,footprint,width,height,carrier,flipped,stone){
-    const original=node.geometry,originalMaterial=node.material,anchors=original.userData?.iceGrowthAnchors;
-    const count=original.attributes.position.count;
+  function rigRuinSpikeMesh(THREE,node,footprint,width,height,carrier,flipped){
+    const geometry=node.geometry,material=node.material,anchors=geometry.userData?.iceGrowthAnchors;
+    const count=geometry.attributes.position.count;
     if(anchors?.length!==count*3)throw new Error('Missing per-crystal growth anchors');
-    const roots=[],rootByKey=new Map(),indices=new Uint16Array(count*4),weights=new Float32Array(count*4),pieces=new Float32Array(count);
+    const roots=[],rootByKey=new Map(),indices=new Uint16Array(count*4),weights=new Float32Array(count*4);
     for(let i=0;i<count;i++){
       const x=anchors[i*3],z=anchors[i*3+2],key=x+','+z;
       let id=rootByKey.get(key);
@@ -243,22 +243,12 @@
         const localX=footprint.x+x,localY=footprint.y-z;
         roots.push({u:.5+localX/width,v:.5-localY/height,x:localX,y:localY}); // Immutable rear-plane UV and bind point for each spike.
       }
-      indices[i*4]=id;weights[i*4]=1;pieces[i]=id+1;
+      indices[i*4]=id;weights[i*4]=1;
     }
-    original.setAttribute('surfacePieceId',new THREE.BufferAttribute(pieces,1)); // Keep touching stone crystals separate during the furniture UV unwrap.
-    if(stone&&window.FacetedRocks?.surfaceStone){
-      window.FacetedRocks.surfaceStone(node,{tint:'#514942',label:'ruin-skeleton-back-stalagmites'});
-      if(node.geometry!==original)original.dispose();
-      if(node.material!==originalMaterial)originalMaterial.dispose();
-      delete node.userData.shellOutline;node.layers.disable(1);
-    }
-    const geometry=node.geometry;
-    if(geometry.attributes.position.count!==count)throw new Error('Stalagmite surfacing changed vertex ownership');
+    // Both traditions retain the identical icicle vertices and faceted shader; no stone-specific UV or outline treatment.
     geometry.rotateX(Math.PI/2);geometry.translate(footprint.x,footprint.y,.007); // Generator Y becomes rear-facing Z; base sits .008 inside the portrait.
     geometry.setAttribute('skinIndex',new THREE.BufferAttribute(indices,4));
     geometry.setAttribute('skinWeight',new THREE.BufferAttribute(weights,4));
-    // Natural stone uses a shared cached material. Clone only that material before enabling skinning.
-    const material=node.material===originalMaterial?node.material:node.material.clone();
     material.skinning=true;material.needsUpdate=true;
     const mesh=new THREE.SkinnedMesh(geometry,material);mesh.name=node.name;mesh.userData={...node.userData};delete mesh.userData.bladedHazard;
     mesh.layers.mask=node.layers.mask;mesh.renderOrder=node.renderOrder;mesh.frustumCulled=false;
@@ -339,13 +329,13 @@
     let layer,rig,disposeOcclusion;
     try{
       const stone=theme==='hronal';
-      layer=build(THREE,source,{kind:stone?'stoneStalagmites':'iceStalagmites',target:'selected',targetIds:['ruin-skeleton-back'],
+      layer=build(THREE,source,{kind:'iceStalagmites',target:'selected',targetIds:['ruin-skeleton-back'],
         seed:roster.ruinSkeletonSeed,count:6,density:1,iceCluster:3,radius,iceHeightMin:minSpikeHeight,iceHeightMax:maxSpikeHeight,
-        iceRoughness:.35,iceOpacity:stone?1:.92,color:stone?'#514942':'#c2e8fb',iceEngulf:1,iceFootprintPadding:0,iceFacets:5,iceTipSharpness:.9,iceLean:.1,mapSpikeOrigin:footprint.pick});
+        iceRoughness:.35,iceOpacity:.92,color:stone?'#514942':'#c2e8fb',iceEngulf:1,iceFootprintPadding:0,iceFacets:5,iceTipSharpness:.9,iceLean:.1,mapSpikeOrigin:footprint.pick});
       const generated=layer?.children?.find(child=>child.isMesh);
       if(!generated)throw new Error('Back stalagmite generator returned no geometry');
       layer.name='ruin-skeleton-back-stalagmites';
-      rig=rigRuinSpikeMesh(THREE,generated,footprint,width,height,carrier,flipped,stone);
+      rig=rigRuinSpikeMesh(THREE,generated,footprint,width,height,carrier,flipped);
       layer.remove(generated);layer.add(rig.mesh);
       disposeOcclusion=installRuinFrontOcclusion(THREE,rig.mesh,avatar.frontPortraitMesh); // Own front alpha masks only its own growth material.
       const baseUpdate=layer.updateMatrixWorld;

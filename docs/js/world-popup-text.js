@@ -19,14 +19,14 @@
   const INTERACTION_CONNECTORS = new Set(['to', 'or', 'at', 'on', 'in', 'for', 'of', 'the', 'a', 'an']); // Used to keep grammatical glue visibly subordinate to the actionable words.
   const DEFAULTS = {
     assignments: {
-      damage: 'floatPlus', healing: 'floatPlus', skillXp: 'centeredFiveRow',
+      damage: 'floatPlus', healing: 'floatPlus', skillXp: 'centeredFiveRow', usefulnessXp: 'floatPlus',
       masteryXp: 'centeredFiveRow', favor: 'centeredFiveRow', rapport: 'centeredFiveRow', romance: 'centeredFiveRow', festivalFun: 'centeredFiveRow', livestockFavor: 'centeredFiveRow',
       currency: 'centeredFiveRow', loot: 'centeredFiveRow', interaction: 'centeredFiveRow',
     },
     floatPlus: { worldHeight: 0.36, xOffsetPercent: 10, yOffsetPercent: 13, lifetimeMs: 1150 },
     centeredFiveRow: { worldHeight: 0.32, xOffsetPercent: 40, yOffsetPercent: -4, lifetimeMs: 3200, rowSpacing: 1.08, maxRows: 5, textAlign: 'left' },
     colors: {
-      damage: '#fff4e2', healing: '#71f59a', skillXp: '#9de7ff',
+      damage: '#fff4e2', healing: '#71f59a', skillXp: '#9de7ff', usefulnessXp: '#9de7ff',
       masteryXp: '#78cfff', favor: '#ff9fd7', rapport: '#ffd84d', romance: '#ff3d73', festivalFun: '#b8f080', livestockFavor: '#ffb8d8', currency: '#ffe181', loot: '#ffffff', interaction: '#ffffff', conditionReady: '#fff4e2',
     },
   };
@@ -498,7 +498,7 @@
   // irrespective of the world popup style selected in the authoring tool.
   // RewardReadout excludes damage, non-acquisitions, and negative values.
   function forwardToReadout(event) {
-    if (!event || event.interactionPrompt || !['centeredFiveRow', 'floatPlus'].includes(event.mode)) return;
+    if (!event || event.kind === 'usefulnessXp' || event.interactionPrompt || !['centeredFiveRow', 'floatPlus'].includes(event.mode)) return; // Family gains never enter the player's acquisition readout.
     window.RewardReadout?.enqueue(event.kind, event.text, { color: state.settings.colors[event.kind] });
   }
 
@@ -709,6 +709,16 @@
     });
   }
 
+  function showFamilyUsefulness(root, amount) {
+    const camera = state.deps?.camera, scene = state.deps?.getActiveScene?.();
+    if (!root || !camera || !scene || iconAnchorScene(root) !== scene || !Number.isFinite(amount) || amount <= 0) return false;
+    const point = avatarCentroidWorld(root); // Only project on actual awards, never scan family members each frame.
+    if (!point?.project) return false;
+    point.project(camera);
+    if (![point.x, point.y, point.z].every(Number.isFinite) || Math.abs(point.x) > 1 || Math.abs(point.y) > 1 || Math.abs(point.z) > 1) return false;
+    const rounded = Math.round(amount * 100) / 100;
+    return spawn({ kind: 'usefulnessXp', text: '+' + (rounded || '<0.01') + ' Usefulness XP', root, scene, modeOverride: 'floatPlus' }) != null;
+  }
   function showChange(kind, amount, options = {}) {
     const value = Math.round(Math.abs(Number(amount) || 0) * 10) / 10;
     if (!value) return null;
@@ -1216,7 +1226,7 @@
 
   const api = {
     releaseScene,
-    init, update, showChange, queueReward, queueSocialGain, queueLevelUp,
+    init, update, showChange, showFamilyUsefulness, queueReward, queueSocialGain, queueLevelUp,
     showIconEffect, countIconEffects, iconResourceSnapshot,
     setInteractionPrompts, syncInteractionPrompts, clearInteractionPrompts,
     setConditionCallout, clearConditionCallout,
