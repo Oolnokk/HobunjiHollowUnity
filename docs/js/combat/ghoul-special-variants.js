@@ -162,7 +162,12 @@
     const shapes = Object.keys(relics.SHAPES || {});
     const shape=enchanted.relicShape||(entity.ruinWallCoffin?null:shapes[Math.floor(Math.random()*shapes.length)]); // Exact coffin weapon.
     if(!shape||!relics.SHAPES[shape])return null;
-    const relic = { ...relics.makeRelic(shape), enchantments: clone(enchanted.enchantments), ...(enchanted.visual ? { visual: clone(enchanted.visual) } : {}) };
+    const make = () => {
+      const state=clone(enchanted.enchantments);
+      const enchantments=entity.ruinWallCoffin?(window.EnchantmentSystem?.rollFormulaState?.(state,'coffin',entity.ruinFormulaTier,()=>window.GameRandom?.random?.()??Math.random())||state):state;
+      return { ...relics.makeRelic(shape), enchantments, ...(enchanted.visual ? { visual: clone(enchanted.visual) } : {}) };
+    };
+    const relic = entity.ruinWallCoffin?(entity._ruinPendingRelic||=make()):make(); // Preserve UID and formula roll on failed saves.
     const key = relics.grantBoundRelic(relic);
     const result=key?{key,label:relics.SHAPES[relic.shape].label}:null;
     if(result&&entity.ruinWallCoffin)entity._ruinBoundRelic=result;

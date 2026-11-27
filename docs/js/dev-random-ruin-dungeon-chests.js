@@ -105,10 +105,11 @@
       tier,
       tierName:look.name,
       poolId:'dungeonChest_tier' + tier,
-      boss:options.boss === true, // Boss-vault chests also roll a bound Harlyao relic weapon (js/harlyao-relics.js).
-      secret:options.secret===true, // Optional room caches use the low-tier lock and their own modest discovery rewards.
+      boss:options.boss === true, // Boss-vault weapon rewards draw the final formula pool.
+      secret:options.secret===true, // Optional room caches use the low-tier lock but the same equipment split.
       secretRevealed:options.secret!==true||options.initialRevealed===true, // Glow is extremely faint until the hiding mechanism is discovered.
       culture:options.culture==='hachutu'?'hachutu':'harlyao', // Only the dev Hachutu temple requests this culture.
+      formulaTier:window.DevRandomRuin?.getRuntimeContext?.()?.tier || tier, // Capture the owning ruin rarity at creation.
       theme:options.theme || window.DevRandomRuin?.getState?.()?.theme || null, // Capture the owning ruin's theme so another generated ruin cannot change this chest's loot family.
       group, hinge, glow,
       opened:false,
@@ -141,6 +142,55 @@
     return !!started;
   }
 
+  const random = () => window.GameRandom?.random?.() ?? Math.random(); // One equipment category roll per chest.
+  function isTrinket(key) { return String(key || '').startsWith('trinket_'); }
+
+  function selectChestTrinket(chest) {
+    const loot = window.LootRolling;
+    const definitions = window.TrinketSystem?.DEFINITIONS || {};
+    const world = loot?.lootShopWorldState?.();
+    const entries = loot?.getLootPools?.()?.[chest.poolId]?.entries || [];
+    let choices = entries.filter(entry => isTrinket(entry.itemKey)
+      && definitions[entry.itemKey.slice(8)] && Number(entry.chance) > 0
+      && (!world || window.ConditionRegistry?.entryEligible?.(entry, world) !== false))
+      .map(entry => ({key:entry.itemKey, weight:Number(entry.chance)})); // Existing authored chances become relative weights, not independent drops.
+    if (!choices.length) {
+      choices = Object.values(definitions).filter(item => item.source === 'harlyaoRuin'
+        && (!chest.secret || item.attunementCost <= 2)).map(item => ({key:'trinket_'+item.id, weight:1}));
+    }
+    if(!choices.length)choices=Object.values(definitions).filter(item=>item.source==='harlyaoRuin').map(item=>({key:'trinket_'+item.id,weight:1}));
+    if (!choices.length) return null;
+    let pick = random() * choices.reduce((sum, entry) => sum + entry.weight, 0);
+    for (const entry of choices) {
+      pick -= entry.weight;
+      if (pick < 0) return entry.key;
+    }
+    return choices[choices.length-1].key;
+  }
+
+  function grantChestEquipment(chest, gained) {
+    // Strip legacy/locally authored independent trinkets even if a loot provider ignores excludeTrinkets.
+    for (const key of Object.keys(gained)) if (isTrinket(key)) delete gained[key];
+    const weaponChosen = random() < .5; // Category is the first draw, independent of trinket weights.
+    const trinketKey = selectChestTrinket(chest);
+    if (weaponChosen || !trinketKey) {
+      const relics = window.HarlyaoRelics;
+      const source = chest.boss ? 'final' : 'ruinChest';
+      const tier = chest.formulaTier || window.DevRandomRuin?.getRuntimeContext?.()?.tier || chest.tier;
+      const relic = relics?.makeRelic?.(undefined, 'Harlyao', source, tier);
+      if (relic && relics.grantBoundRelic?.(relic)) {
+        chest.equipmentReward = 'weapon'; // Mobile/debug snapshot records the mutually exclusive outcome.
+        return ['🗡️ Bound enchanted weapon'];
+      }
+      // If a weapon could not be constructed or saved, still attempt the equipment reward.
+    }
+    const key = trinketKey;
+    if (!key) { chest.equipmentReward = 'unavailable'; return []; }
+    gained[key] = 1;
+    chest.equipmentReward = 'trinket';
+    return [];
+  }
+
   function open(chest, lockAward = null) {
     if (!chest || chest.opened) return false;
     if(chest.ruinSeed!=null&&window.RuinSites?.isInSite?.()
@@ -152,13 +202,13 @@
     window.GameFeel?.treasureFanfare?.(chest.tier, !!chest.boss); // Chests were silent; the lid swing now lands on a treasure motif.
     if (chest.glow?.material) chest.glow.material.opacity = 1.25; // Light bursts out of the opening lid, then fades through the existing per-frame decay.
     window.HobunjiActivityEvents?.emit('chest_opened', { buried: false, boss: !!chest.boss });
-    const gained = chest.culture==='hachutu' ? (window.ArtifactCollection?.rollArtifacts?.(chest.tier,'hachutu') || {hachutuMoneyBones:1}) : (window.LootRolling?.rollLootPool?.(chest.poolId, { boss: chest.boss, theme: chest.theme }) || {});
+    const gained = chest.culture==='hachutu' ? (window.ArtifactCollection?.rollArtifacts?.(chest.tier,'hachutu') || {hachutuMoneyBones:1}) : (window.LootRolling?.rollLootPool?.(chest.poolId, { boss: chest.boss, theme: chest.theme, excludeTrinkets:true }) || {});
     const extraCount = Math.min(4, Math.max(0, Math.floor(Number(lockAward?.bonusDrops) || 0))); // At most four individually rolled bonus drops, never four complete boss rewards.
     for (let bonusIndex = 0; bonusIndex < extraCount; bonusIndex++) {
       const bonusPool = chest.culture === 'hachutu'
         ? (window.ArtifactCollection?.rollArtifacts?.(1, 'hachutu') || {})
-        : (window.LootRolling?.rollLootPool?.(chest.poolId, { boss:false, theme:chest.theme }) || {});
-      const options = Object.entries(bonusPool).filter(([, count]) => Number(count) > 0); // Select one actual item per bonus roll, not a whole additional chest.
+        : (window.LootRolling?.rollLootPool?.(chest.poolId, { boss:false, theme:chest.theme, excludeTrinkets:true }) || {});
+      const options = Object.entries(bonusPool).filter(([key, count]) => !isTrinket(key) && Number(count) > 0); // Select one actual item per bonus roll, not a whole additional chest.
       const choice = options[Math.floor(Math.random() * options.length)];
       const key = choice?.[0] || (chest.culture === 'hachutu' ? 'hachutuMoneyBones' : 'harlyaoCopperCoin');
       const quantity = choice ? Math.max(1, Math.floor(Number(choice[1]) || 1)) : 1;
@@ -168,19 +218,10 @@
     if (!Object.keys(gained).some(key => window.ArtifactCollection?.ARTIFACTS?.[key] && gained[key] > 0)) {
       Object.assign(gained, window.ArtifactCollection?.rollArtifacts?.(chest.tier,chest.culture) || (chest.culture==='hachutu'?{hachutuMoneyBones:1}:{harlyaoCopperCoin:1}));
     }
-    if(chest.secret && !Object.keys(gained).some(key=>key.startsWith('trinket_')&&Number(gained[key])>0)){
-      const definitions=window.TrinketSystem?.DEFINITIONS||{}; // Reuse the normal low-attunement trinket catalog, not new one-off enchantments.
-      const choices=Object.values(definitions).filter(item=>item && item.attunementCost<=2
-        &&(item.source==='harlyaoRuin'||item.source==='buriedTreasure'));
-      if(choices.length){const selected=choices[Math.floor(Math.random()*choices.length)];gained['trinket_'+selected.id]=1;}
-    }
-    const trinketParts = window.TrinketSystem?.claimLoot?.(gained, chest.culture==='hachutu'?'hachutuRuin':'harlyaoRuin') || []; // trinket_<id> entries become gear, never inventory stacks.
-    const relicParts = !chest.boss ? [] : chest.culture==='hachutu' ? (window.HachutuRelics?.grantBossWeapon?.() || []) : (window.HarlyaoRelics?.rollBossChestRelic?.(chest) || []);
-    if(chest.secret&&Math.random()<(chest.tier===1?.06:.10)){
-      const relics=window.HarlyaoRelics; // The ordinary bound-enchanted weapon is saved by the same Garanki-ready inventory authority as boss loot.
-      const key=relics?.grantBoundRelic?.(relics.makeRelic());
-      if(key)relicParts.push('🗡️ Bound enchanted weapon');
-    }
+    const relicParts = chest.culture === 'hachutu'
+      ? (chest.boss ? window.HachutuRelics?.grantBossWeapon?.() || [] : [])
+      : grantChestEquipment(chest, gained);
+    const trinketParts = window.TrinketSystem?.claimLoot?.(gained, chest.culture==='hachutu'?'hachutuRuin':'harlyaoRuin') || []; // Claim at most one equipment trinket, never an inventory stack.
     const parts = [...(deps?.grantLoot?.(gained) || []), ...trinketParts, ...relicParts];
     chest.loot = gained;
     const title = `${chest.tierName} Dungeon Chest`;
@@ -217,6 +258,6 @@
     // Controls for chests still unopened; the owning puzzle module merges
     // these into its own interaction list.
     controlsFor:list => (list || []).filter(chest => chest && !chest.opened).map(chest => chest.control),
-    snapshot:() => [...chests].map(chest => ({ id:chest.id, tier:chest.tier, culture:chest.culture, theme:chest.theme, poolId:chest.poolId, opened:chest.opened, secret:chest.secret, loot:chest.loot, x:+chest.group.position.x.toFixed(3), y:+chest.group.position.y.toFixed(3), z:+chest.group.position.z.toFixed(3) })),
+    snapshot:() => [...chests].map(chest => ({ id:chest.id, tier:chest.tier, culture:chest.culture, theme:chest.theme, poolId:chest.poolId, opened:chest.opened, secret:chest.secret, equipmentReward:chest.equipmentReward || null, formulaTier:chest.formulaTier || null, loot:chest.loot, x:+chest.group.position.x.toFixed(3), y:+chest.group.position.y.toFixed(3), z:+chest.group.position.z.toFixed(3) })),
   });
 })();

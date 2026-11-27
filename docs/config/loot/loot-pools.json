@@ -462,7 +462,7 @@
     },
     "dungeonChest_tier1": {
       "label": "Dungeon Chest — Tier 1 (Weathered)",
-      "note": "Rolled by Harlyao ruin Dungeon Chests (docs/js/dev-random-ruin-dungeon-chests.js). metalBars grants 1–3 Town-Value-gated metal bars using the buried-treasure picker; trinket_<id> entries grant a gear trinket through TrinketSystem.claimLoot (docs/js/trinket-system.js) instead of an inventory stack. Tier 4 is also the boss-vault tier; those chests additionally roll a bound Harlyao relic weapon (docs/js/harlyao-relics.js).",
+      "note": "Rolled by Harlyao ruin Dungeon Chests (docs/js/dev-random-ruin-dungeon-chests.js). metalBars grants 1–3 Town-Value-gated metal bars using the buried-treasure picker; trinket_<id> chances act as relative weights for the single trinket reward; every Harlyao chest rolls either one trinket or one bound weapon at 50/50. Boss-vault weapons use final formula odds.",
       "entries": [
         {
           "id": "harlyaoArtifact",
@@ -499,7 +499,7 @@
     },
     "dungeonChest_tier2": {
       "label": "Dungeon Chest — Tier 2 (Bronze-bound)",
-      "note": "Rolled by Harlyao ruin Dungeon Chests (docs/js/dev-random-ruin-dungeon-chests.js). metalBars grants 1–3 Town-Value-gated metal bars using the buried-treasure picker; trinket_<id> entries grant a gear trinket through TrinketSystem.claimLoot (docs/js/trinket-system.js) instead of an inventory stack. Tier 4 is also the boss-vault tier; those chests additionally roll a bound Harlyao relic weapon (docs/js/harlyao-relics.js).",
+      "note": "Rolled by Harlyao ruin Dungeon Chests (docs/js/dev-random-ruin-dungeon-chests.js). metalBars grants 1–3 Town-Value-gated metal bars using the buried-treasure picker; trinket_<id> chances act as relative weights for the single trinket reward; every Harlyao chest rolls either one trinket or one bound weapon at 50/50. Boss-vault weapons use final formula odds.",
       "entries": [
         {
           "id": "harlyaoArtifact",
@@ -600,7 +600,7 @@
     },
     "dungeonChest_tier3": {
       "label": "Dungeon Chest — Tier 3 (Gilded)",
-      "note": "Rolled by Harlyao ruin Dungeon Chests (docs/js/dev-random-ruin-dungeon-chests.js). metalBars grants 1–3 Town-Value-gated metal bars using the buried-treasure picker; trinket_<id> entries grant a gear trinket through TrinketSystem.claimLoot (docs/js/trinket-system.js) instead of an inventory stack. Tier 4 is also the boss-vault tier; those chests additionally roll a bound Harlyao relic weapon (docs/js/harlyao-relics.js).",
+      "note": "Rolled by Harlyao ruin Dungeon Chests (docs/js/dev-random-ruin-dungeon-chests.js). metalBars grants 1–3 Town-Value-gated metal bars using the buried-treasure picker; trinket_<id> chances act as relative weights for the single trinket reward; every Harlyao chest rolls either one trinket or one bound weapon at 50/50. Boss-vault weapons use final formula odds.",
       "entries": [
         {
           "id": "harlyaoArtifact",
@@ -741,7 +741,7 @@
     },
     "dungeonChest_tier4": {
       "label": "Dungeon Chest — Tier 4 (Ancient)",
-      "note": "Rolled by Harlyao ruin Dungeon Chests (docs/js/dev-random-ruin-dungeon-chests.js). metalBars grants 1–3 Town-Value-gated metal bars using the buried-treasure picker; trinket_<id> entries grant a gear trinket through TrinketSystem.claimLoot (docs/js/trinket-system.js) instead of an inventory stack. Tier 4 is also the boss-vault tier; those chests additionally roll a bound Harlyao relic weapon (docs/js/harlyao-relics.js).",
+      "note": "Rolled by Harlyao ruin Dungeon Chests (docs/js/dev-random-ruin-dungeon-chests.js). metalBars grants 1–3 Town-Value-gated metal bars using the buried-treasure picker; trinket_<id> chances act as relative weights for the single trinket reward; every Harlyao chest rolls either one trinket or one bound weapon at 50/50. Boss-vault weapons use final formula odds.",
       "entries": [
         {
           "id": "harlyaoArtifact",
