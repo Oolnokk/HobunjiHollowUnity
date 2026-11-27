@@ -78,7 +78,7 @@
     if (!Number.isFinite(gain) || gain <= 0) return;
     const id = window.Shattercasks?.backCarriedInfo?.()?.id;
     if (!id) return;
-    const child = fam.children.find(c => phaseOf(c) === 'basket' && id === 'family_baby_' + c.id);
+    const child = fam.children.find(c => ['basket', 'toddler'].includes(phaseOf(c)) && id === 'family_baby_' + c.id);
     if (!child) return;
     const maxLevel = Math.max(1, Math.floor(num(usefulnessCfg().maxLevel, 5)));
     child.usefulnessLevel = clamp(Math.floor(num(child.usefulnessLevel, 1)), 1, maxLevel);
@@ -319,6 +319,17 @@
     const child = fam.children.find(entry => entry.id === npcId); // Saved family age is authoritative for follower commands.
     return !!child && phaseOf(child) === 'basket';
   }
+  function isCarryFollowing(id) {
+    const child = fam.children.find(entry => entry.id === id); // Only active carry/follow ownership, not age or speech.
+    return !!child && (phaseOf(child) === 'basket' || phaseOf(child) === 'toddler') && !!(child.carryBy || child.followPlayer || window.FamilyBabyBurdens?.isProxyActive?.(id));
+  }
+  function isFamilyWorkUnavailable(id) { return isBasketBaby(id) || isCarryFollowing(id); }
+  function releaseCarryFollow(id) {
+    const child = fam.children.find(entry => entry.id === id);
+    if (!child || phaseOf(child) !== 'toddler' || child.carryBy || !child.followPlayer) return false;
+    child.followPlayer = false; child.carrySpot = null;
+    window.FamilyBabyFollow?.clearWalker?.(walkerFor(child)); H.persist(); return true;
+  }
   function babyAmbientSound(npcId, random = Math.random) {
     return window.FamilyBabyAmbientVoice?.sound?.(npcId, isBasketBaby(npcId), cfg(), random) || null; // Voice module owns phonetics, family owns saved age.
   }
@@ -431,7 +442,7 @@
     const target = walker?.currentScheduleTarget; // Only an arrived worker on the matching chore may enter the animation.
     const root = walker?.root;
     const hour = H?.clockHour?.();
-    return !!(child && child.vatId === vatId && phaseOf(child) !== 'basket'
+    return !!(child && child.vatId === vatId && !isFamilyWorkUnavailable(child.id)
       && deps().getCurrentArea?.() === 'farm'
       && walker?.area === 'farm' && root?.parent && root.visible !== false && !vatPoseBlocked(child, walker)
       && target?.area === 'farm' && target.vatId === vatId
@@ -564,7 +575,7 @@
   function childTarget(child) {
     const phase = phaseOf(child);
     const hour = H.clockHour();
-    if (phase === 'basket') {
+    if (phase === 'basket' || (phase === 'toddler' && isCarryFollowing(child.id))) {
       const following = window.FamilyBabyFollow?.scheduleTarget?.(child);
       if (following) return following;
       const carry = child.carrySpot; // Saved safe landing spot: a put-down or thrown baby does not teleport to the basket on reload.
@@ -572,6 +583,7 @@
           && Number.isFinite(carry.c) && Number.isFinite(carry.r)) {
         return { area: carry.area, c: carry.c, r: carry.r, activity: 'resting after being carried' };
       }
+      if (phase === 'toddler') return null; // A carried toddler has no independent farm or vat schedule.
       const basket = basketObject(child);
       if (basket) return { area: 'interior', c: basket.col, r: basket.row, activity: 'napping in the basket' };
       const anchor = interiorAnchor();
@@ -612,7 +624,7 @@
   function activeVatScheduleOverride(rec) {
     if (!rec?.isChild) return null;
     const child = fam.children.find(entry => entry.id === rec.id);
-    if (!child?.vatId || phaseOf(child) === 'basket' || !vatJobActive(vatObject(child))) return null;
+    if (!child?.vatId || isFamilyWorkUnavailable(child.id) || !vatJobActive(vatObject(child))) return null;
     const target = childTarget(child); // Only real unfinished batches outrank follow/wait and other ordinary schedules.
     return target?.vatId === child.vatId ? target : null;
   }
@@ -622,7 +634,7 @@
     const walker = walkerFor(child);
     const phase = phaseOf(child);
     syncChildAmbientGreetings(child); // Sync only on phase changes; module caches the last stage.
-    if (phase !== 'basket') { child.followPlayer = false; window.FamilyBabyFollow?.clearWalker?.(walker); }
+    if (phase === 'child' && !window.FamilyBabyBurdens?.isProxyActive?.(child.id)) { child.followPlayer = false; window.FamilyBabyFollow?.clearWalker?.(walker); }
     if (phase !== 'basket' && child.basketId) {
       const basket = basketObject(child);
       if (basket) deps().furniture?.removeInteriorFurniture?.(basket.id);
@@ -643,7 +655,8 @@
     // scale + the rig scaler's head compensation), so a child who grows into
     // the next phase is rebuilt once with that phase's body/head scale.
     if (walker._childPhase && walker._childPhase !== phase && deps().despawnNpcWalker) {
-      window.FamilyBabyBurdens?.discard?.(child.id); // Retire held infant proxy before destroying its source rig.
+      if (window.FamilyBabyBurdens?.isProxyActive?.(child.id)) return; // Finish the active carry/throw before rebuilding the source avatar at its new age.
+      window.FamilyBabyBurdens?.discard?.(child.id); // Retire the old proxy before destroying its source rig.
       deps().despawnNpcWalker(walker);
       return;
     }
@@ -675,7 +688,7 @@
     for (const child of fam.children) {
       const walker = walkerFor(child);
       if (!walker?.root) continue;
-      if (phaseOf(child) === 'basket') continue; // The shared crawl owns infant presentation.
+      if (phaseOf(child) === 'basket' || isCarryFollowing(child.id)) continue; // Carry/follow owns the young child's presentation.
       const footing = num(walker._toddlingFooting, 0) / 99;
       const tumbling = walker._toddleTumbleUntil > now;
       const target = tumbling ? 1.15 : Math.sin(now / 160 + child.id.length) * 0.11 * footing;
@@ -744,7 +757,7 @@
   function commandOptionsFor(walker) {
     const child = fam.children.find(entry => entry.id === walker?.rec?.id);
     const infantOptions = window.FamilyBabyCare?.commandOptionsFor?.(walker) || []; // Spouses retain baby handoffs, but never receive vat-work commands.
-    if (!child || phaseOf(child) === 'basket') return infantOptions;
+    if (!child || isFamilyWorkUnavailable(child.id)) return infantOptions;
     if (child.vatId) return [...infantOptions, { id: 'unvat', icon: '🛑', label: 'Stop Vat Work', run: () => {
       clearVatWorkerPose(child.vatId);
       window.DewVats?.setExternalWorker?.(child.vatId, null);
@@ -1067,7 +1080,7 @@
     const saved = JSON.parse(JSON.stringify(fam));
     // The shared Burden slots are not serialized. Save a safe nearby landing for
     // a baby held in the wilderness so reloading never sends them back home.
-    const carried = H?.rawDay ? saved.children.filter(c => c.carryBy === 'player' && phaseOf(c) === 'basket') : [];
+    const carried = H?.rawDay ? saved.children.filter(c => c.carryBy === 'player' && ['basket', 'toddler'].includes(phaseOf(c))) : [];
     const spot = carried.length && window.FamilyBabyFollow?.savedCarrySpot?.();
     if (spot) for (const child of carried) { child.carrySpot = { ...spot }; child.followPlayer = true; child.carryBy = null; child.carryPose = null; }
     return saved;
@@ -1113,7 +1126,7 @@
 
   const api = {
     init, tick, serialize, restore, snapshot, setVatWorkerPose, clearVatWorkerPose, retargetVatAssignments,
-    spouseTargetOverride, commandOptionsFor, spouseHoldingEgg, isBasketBaby, babyAmbientSound, voiceAgePhase,
+    spouseTargetOverride, commandOptionsFor, spouseHoldingEgg, isBasketBaby, isCarryFollowing, isFamilyWorkUnavailable, releaseCarryFollow, babyAmbientSound, voiceAgePhase,
     careContext: () => ({ family: fam, helpers: H, romance: R, phaseOf, walkerFor, basketObject, persist: () => H.persist() }), // One source of family state for childcare.
     usefulnessInfo, awardWork, rollWorkQuality, awardObservationXp,
     isAssignedToVat: id => fam.children.some(child => child.id === id && phaseOf(child) !== 'basket' && !!child.vatId), // Only non-infant children can reserve vats and interrupt family plot claims.

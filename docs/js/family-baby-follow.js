@@ -27,7 +27,7 @@
   }
   function bind(child, walker, phase) {
     if (!walker) return;
-    if (phase !== 'basket' || !child.followPlayer || child.carryBy) { clearWalker(walker); return; }
+    if ((phase !== 'basket' && phase !== 'toddler') || !child.followPlayer || child.carryBy) { clearWalker(walker); return; }
     for (const [old, entry] of bound) if (old !== walker && entry.child.id === child.id) clearWalker(old);
     if (bound.has(walker)) { bound.get(walker).child = child; return; }
     window.BedLiePose?.releaseNpc?.(walker); // Release any older floor/bed pose before taking the rig.

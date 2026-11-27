@@ -76,16 +76,16 @@
   function commandOptionsFor(walker) {
     const ctx = context(), id = walker?.rec?.id;
     if (!ctx || !id) return [];
-    const child = ctx.family.children.find(c => c.id === id && isNewborn(c, ctx));
+    const child = ctx.family.children.find(c => c.id === id && ['basket', 'toddler'].includes(ctx.phaseOf(c))); // Carry commands include toddlers, not automatic newborn care.
     if (child) return [{
-      id: 'hold_baby', icon: '🍼', label: 'Hold Baby',
+      id: 'hold_baby', icon: '🍼', label: ctx.phaseOf(child) === 'toddler' ? 'Hold Toddler' : 'Hold Baby',
       run: () => {
         const ok = window.FamilyBabyBurdens?.takeIntoArms?.(child, walker, ctx.persist) === true;
-        if (!ok) ctx.helpers.toast?.('You need a free hand and the baby nearby.', false);
+        if (!ok) ctx.helpers.toast?.('You need free hands and your child nearby.', false);
         return ok;
       },
-    }]; // The real NPC radial wheel has a Hold option, never Follow.
-    const newborns = ctx.family.children.filter(c => c.otherParentId === id && isNewborn(c, ctx));
+    }, ...(ctx.phaseOf(child) === 'toddler' && child.followPlayer ? [{ id: 'stop_carry_follow', icon: '👋', label: 'Go play', run: () => window.RomanceFamily?.releaseCarryFollow?.(child.id) }] : [])]; // A put-down toddler can return to their normal routine.
+    const newborns = ctx.family.children.filter(c => c.otherParentId === id && ['basket', 'toddler'].includes(ctx.phaseOf(c))); // Parent handoff/stow commands use the same carryable stages.
     if (!newborns.length) return [];
     const options = []; // Extra commands share the ordinary hold-for-more action wheel.
     for (const baby of newborns) {
@@ -94,7 +94,7 @@
         run: () => window.FamilyBabyBurdens?.takeIntoArms?.(baby, ctx.walkerFor(baby), ctx.persist) === true,
       });
       else if (baby.carryBy === 'player' && window.Shattercasks?.heldBurdenInfo?.()?.id === 'family_baby_' + baby.id)
-        options.push({ id: 'stow_baby_' + baby.id, icon: '🎒', label: 'Stow Baby on Back',
+        options.push({ id: 'stow_baby_' + baby.id, icon: '🎒', label: ctx.phaseOf(baby) === 'toddler' ? 'Stow Toddler on Back' : 'Stow Baby on Back',
           run: () => window.Shattercasks?.stowOnBack?.() === true });
     }
     return options;

@@ -417,7 +417,7 @@
   function autoSqueezeAtVat(vatId, colorKey) {
     const vat = findVatById(vatId);
     const worker = assignedWorkerForVat(vatId);
-    if (!vat || !worker) return false;
+    if (!vat || !worker || (worker.familyWorker && window.RomanceFamily?.isFamilyWorkUnavailable?.(worker.id))) return false;
     _guardSqueezingVatStart(vat);
     const outputs = deps.getProcessingOutputs('squeezing', deps.dewItemKey(colorKey));
     if (!outputs) return false;

@@ -126,6 +126,7 @@
       if (!window.RomanceSystem?.spouseTownVisitNow?.(npcId)) return true;
     }
     if (window.NpcFollowing?.isCompanion?.(npcId)) return true;
+    if (plot?.family && window.RomanceFamily?.isFamilyWorkUnavailable?.(npcId)) return true; // Held or following young children cannot execute claims.
     if (plot?.family && window.RomanceFamily?.isAssignedToVat?.(npcId)) return true; // Vat work takes priority over a farm-plot claim.
     if (plot?.family && window.RomanceSystem?.activeSpouseOuting?.()?.npcId === npcId) return true; // Release live farm claims while the spouse accompanies a player-accepted outing.
     if (plot?.family && window.RomanceSystem?.getSpouse?.()?.npcId === npcId && window.RomanceFamily?.spouseHoldingEgg?.()) return true; // Egg care in bed also suspends in-flight fieldwork.

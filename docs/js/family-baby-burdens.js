@@ -227,7 +227,7 @@
       }
     }
     moveToWalker(entry);
-    if (child.followPlayer) window.FamilyBabyFollow?.bind?.(child, entry.walker, 'basket');
+    if (child.followPlayer) window.FamilyBabyFollow?.bind?.(child, entry.walker, entry.walker?._childPhase || 'basket');
     entry.persist?.();
     debug.lastError = null;
   }
@@ -280,6 +280,8 @@
         clearNpcGrip(entry); entry.npcCarryPose = null; // Spouse hands the baby over: its hand rig lets go.
         entry.child.carryBy = 'player'; entry.child.carryPose = 'arms'; entry.child.carrySpot = null; entry.child.followPlayer = false;
         window.FamilyBabyFollow?.clearWalker?.(entry.walker);
+        window.NpcFollowing?.releaseForCarry?.(entry.child.id); // Retire any ordinary follower session before the burden owns movement.
+        if (entry.child.vatId) window.RomanceFamily?.clearVatWorkerPose?.(entry.child.vatId);
         group.visible = true; showWalker(entry, false);
         entry.persist?.();
       },
@@ -311,7 +313,7 @@
     return entry;
   }
   function sync(child, walker, phase, persist) {
-    if (phase !== 'basket') { discard(child?.id); return null; } // Toddler transitions clean up the baby-only proxy.
+    if (phase !== 'basket' && phase !== 'toddler') { discard(child?.id); return null; } // Both young stages use the same carry registry.
     const entry = ensure(child, walker, persist);
     if (!entry) return null;
     const api = window.Shattercasks;
