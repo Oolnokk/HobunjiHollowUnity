@@ -865,9 +865,6 @@
         const offhandBaseSocket = toolSocketWorld(record, toolHolder, offhandGrip, visualBasis);
         const offhandSocket = global.HobunjiDualWieldWeaponVisuals?.transformSocketForHand?.(record, 'left', offhandBaseSocket, dualSolve) || offhandBaseSocket;
         const secondary = handSocketAfterGripMode(record, offhandSocket);
-        // Reflected pairs use the anatomical mirror of the raw main grip, before either wrist is constrained.
-        // Preserve the existing offhand position and the non-reflected authoring/legacy socket path.
-        global.HobunjiDualWieldWeaponVisuals?.mirrorPairedWristOrientation?.(record, dualSolve, primary.quaternion, secondary.quaternion);
         record.rig.placeHandWorld?.('left', secondary.position, secondary.quaternion, modelCalibration, dualWield.influence);
         record.secondaryActive = true;
         ensureFallbackState(record).owners.left = 'dual-wield-offhand-grip';
