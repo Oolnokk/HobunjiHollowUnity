@@ -536,7 +536,7 @@
     const inverseModel = scratch.inverseModel.copy(model.matrixWorld).invert();
     if (!Number.isFinite(inverseModel.elements[15]) || inverseModel.elements[15] === 0) return null; // Three returns a zero inverse for a singular owner.
     for (const side of LEG_SIDES) {
-      const thigh = nodes[side + 'Thigh'], calf = nodes[side + 'Calf']; // The calf update already updates its thigh ancestor.
+      const left = side === 'left', thigh = left ? nodes.leftThigh : nodes.rightThigh, calf = left ? nodes.leftCalf : nodes.rightCalf; // The calf update already updates its thigh ancestor.
       calf.updateWorldMatrix?.(true, false);
       const bones = scratch.bones3D[side], frames = scratch.frames[side];
       // Reuse each relative matrix for both joint position and twist. Avoid the
@@ -823,7 +823,7 @@
       }
       const e = relative.elements;
       for (let row = 0; row < 3; row++) for (let col = 0; col < 3; col++) restScratch.frame[row * 3 + col] = e[col * 4 + row];
-      return localJointsUsable(restScratch.bones, h.localPoseLimit) && restScratch.frame.every(Number.isFinite) ? restScratch : null;
+      return localJointsUsable(restScratch.bones, h.localPoseLimit) && restScratch.frame.every(value => Math.abs(value) <= 1e6) ? restScratch : null;
     };
     handle.rest = makeJoints();
     handle.restRaw = makeJoints();
@@ -833,7 +833,7 @@
       const stance = sample || restStanceBones(handle); // Reuse an already validated stance during the periodic recheck.
       // A temporarily invalid analytic stance must not be replaced with an animated bind.
       const measured = stance ? stance.bones : legHandle.getRestStance ? null : readLiveBones(handle);
-      if (!localJointsUsable(measured, handle.localPoseLimit) || (!stance && LEG_SIDES.some(side => BONE_NAMES.some(name => !handle.scratch.frames[side][name].every(Number.isFinite))))) {
+      if (!localJointsUsable(measured, handle.localPoseLimit) || (!stance && LEG_SIDES.some(side => BONE_NAMES.some(name => !handle.scratch.frames[side][name].every(value => Math.abs(value) <= 1e6))))) {
         handle.invalidRestSamples++;
         return false;
       }
@@ -879,7 +879,7 @@
         for (const name of BONE_NAMES) for (let k = 0; k < 9; k++) {
           const value = frames[name][k]; // Calf/thigh orientation component also affects garment twist.
           poseComponents[index] = value;
-          if (!Number.isFinite(value)) return null;
+          if (!(Math.abs(value) <= 1e6)) return null; // Reject corrupt orientation scales without extra per-component work.
           if (Math.abs(value - lastPoseComponents[index]) > POSE_EPSILON) moved = true;
           index++;
         }
@@ -900,8 +900,9 @@
       const measured = readLiveBones(handle);
       if (!measured) return null;
       const aim = handle.scratch.aim;
-      for (const side of ['left', 'right']) {
-        Core.amplifyLegRoll(measured[side], effectiveRollGain(), aim[side]);
+      const gain = effectiveRollGain(); // Both legs use the same stance-derived roll gain.
+      for (const side of LEG_SIDES) {
+        Core.amplifyLegRoll(measured[side], gain, aim[side]);
         for (const joint of ['hip', 'knee', 'ankle']) aim[side][joint].z += handle.bones2D[side][joint].z - handle.restRaw[side][joint].z;
       }
       return aim;
@@ -1138,6 +1139,7 @@
     if (!handle.captureRest()) { handle.dispose(); return null; } // Never bind a new garment to an invalid stance.
     applyFootDepthBias();
     handle.baseOriginal = new Float32Array(handle.basePositions); // The art as the portrait places it, before the alignment below (which is redone whenever the rest stance changes).
+    let fitPlane = plane; // Cached live portrait used only during neutral refits; resolve a replacement if detached.
     handle.alignToRest = () => {
       const SEGMENTS = handle.segments;
       handle.basePositions.set(handle.baseOriginal);
@@ -1181,12 +1183,16 @@
             });
             return [dx, dy];
           };
-          for (let row = 0, i = 0; row <= SEGMENTS; row++) {
+          // Fold the bound check into the existing neutral warp, not the per-frame skin.
+          let safe = true;
+          for (let row = 0, i = 0; row <= SEGMENTS && safe; row++) {
             for (let col = 0; col <= SEGMENTS; col++, i++) {
               const [dx, dy] = displace(col / SEGMENTS, row / SEGMENTS);
               base[i * 3] += dx; base[i * 3 + 1] += dy;
+              if (!(Math.abs(base[i * 3]) <= handle.localPoseLimit && Math.abs(base[i * 3 + 1]) <= handle.localPoseLimit)) { safe = false; break; }
             }
           }
+          if (!safe) { base.set(handle.baseOriginal); handle.invalidRestSamples++; }
         }
         for (const side of ['left', 'right']) for (const joint of ['hip', 'knee', 'ankle']) { const r = handle.rest[side][joint]; handle.bones2D[side][joint] = { x: r.x, y: r.y, z: r.z }; } // The 2D bones now lie on the 3D rest bones.
       }
@@ -1198,7 +1204,17 @@
       if (bounds) {
         // The original plane can be replaced by a wardrobe/rig rebuild. A detached
         // mesh's world matrix is not in the current avatar's coordinate system.
-        const livePlane = findPortraitPlane(handle.model); // Re-discover only on a neutral refit, not every frame.
+        let ancestor = fitPlane;
+        while (ancestor && ancestor !== handle.model) ancestor = ancestor.parent;
+        if (!ancestor) {
+          const candidate = findPortraitPlane(handle.model); // No hierarchy scan unless the cached portrait was actually detached.
+          const face = String(candidate?.userData?.hobunjiPlaneFace || '').toLowerCase();
+          const name = String(candidate?.name || '');
+          if (candidate && (face === 'front' || /front.*plane|plane.*front/i.test(name) || (name && name === fitPlane.name))) fitPlane = candidate;
+          else ancestor = null;
+          if (fitPlane === candidate) ancestor = handle.model;
+        }
+        const livePlane = ancestor ? fitPlane : null;
         if (livePlane) {
           livePlane.updateWorldMatrix?.(true, false); // Updates the current avatar ancestors as well.
           const dimensions = portraitDimensions(handle.model, livePlane);
