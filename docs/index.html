@@ -199,7 +199,7 @@
        procedural-hand-outline-parity.js's fix for the same class of bug). -->
   <script src="js/portrait-plane-outline-parity.js?v=20261126neckBlendConsolidate3"></script>
   <!-- Shared held-item action poses used by game.js and its animation editor. -->
-  <script src="js/held-action-animations.js?v=20261127h31eb7126e"></script>
+  <script src="js/held-action-animations.js?v=20261127followupPerf2"></script>
   <!-- Great Fey skip voluntary gifts, proximity chatter, activity reactions, and pet greetings.
        Load once before all NPC interaction modules, including lazy runtimes. -->
   <script src="js/npc-interaction-policy.js?v=20261021fey1"></script>
@@ -430,7 +430,7 @@
        relative to the other systems above doesn't matter; must load
        before game.js, which calls window.DewVats.init(...) during its own
        setup. -->
-  <script src="js/dew-vats.js?v=20261126familyAudit3"></script>
+  <script src="js/dew-vats.js?v=20261127followupPerf1"></script>
   <!-- Wild berry bushes (window.WildBerries) — self-contained aside from
        deps injected via init(), so load order relative to the other
        systems above doesn't matter; must load before game.js, which
@@ -2985,9 +2985,9 @@
   <script src="js/family-baby-limbs.js?v=20261123babyGLB3"></script> <!-- Kicking hands/feet cloned from the hidden baby walker onto the carried proxy. -->
   <script src="js/family-baby-burdens.js?v=20261127hf9e47c5"></script>
   <script src="js/family-baby-ambient-voice.js?v=20261122decoupledVoice1"></script> <!-- Voice adapter; physical baby carry code unchanged. -->
-  <script src="js/family-baby-follow.js?v=20261127h6c36db2"></script> <!-- Uses shared companion navigation and downed crawl curves. -->
+  <script src="js/family-baby-follow.js?v=20261127followupPerf1"></script> <!-- Uses shared companion navigation and downed crawl curves. -->
   <script src="js/family-baby-care.js?v=20261127hceefd7a"></script>
-  <script src="js/romance-family.js?v=20261127hb4b20e7"></script>
+  <script src="js/romance-family.js?v=20261127followupPerf1"></script>
   <script src="js/romance-wedding.js?v=20261126h44c94f3"></script>
   <script src="js/npc-following.js?v=20261127h0f1f7dc"></script>
   <!-- Shared spouse kiss motion/height solver. Loads before RomanceSystem.init but after the player render/leg APIs. -->

@@ -93,3 +93,23 @@ assert.equal(R._test.getFamily().children[0].carryBy,null,'legacy unsaved carry 
 assert.equal(R._test.getFamily().children[0].followPlayer,false);
 assert(saves>0);
 console.log('baby wilderness follow, crawl, recovery, carry save, fractional XP passed');
+
+// Family pose lookups must not construct a complete vat list or retain stale furniture.
+{
+  const dew=fs.readFileSync('docs/js/dew-vats.js','utf8');
+  const start=dew.indexOf('  function findSqueezingVatById('), end=dew.indexOf('  function _workerRequiredResult(',start);
+  assert(start>=0&&end>start);
+  const cooker={id:'same',furnitureKey:'cook'}, vat={id:'same',furnitureKey:'squeeze'};
+  const processors=new Set([cooker,vat]); // Live registry, including a duplicate ID of the wrong type.
+  const find=vm.runInNewContext(dew.slice(start,end)+'\nfindSqueezingVatById;',{deps:{processingFurnitureObjects:processors,PROCESSING_FURNITURE_DEFS:{cook:{method:'cooking'},squeeze:{method:'squeezing'}}}});
+  assert.equal(find('same'),vat);
+  processors.delete(vat);assert.equal(find('same'),null);
+  processors.add(vat);assert.equal(find('same'),vat);
+  assert.equal(find('missing'),null);
+  const family=fs.readFileSync('docs/js/romance-family.js','utf8');
+  const a=family.indexOf('  function vatObject('), b=family.indexOf('  function vatJobActive(',a);
+  const lookup=vm.runInNewContext(family.slice(a,b)+'\nvatObject;',{window:{DewVats:{findSqueezingVatById:find,listSqueezingVats(){throw Error('unexpected list allocation');}}}});
+  assert.equal(lookup({vatId:'same'}),vat);
+  assert.equal(lookup({vatId:'missing'}),null);
+  assert.equal(lookup({}),null);
+}

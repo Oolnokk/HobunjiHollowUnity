@@ -29,7 +29,7 @@
     new URL('boney-shinjimi-skeleton-species-runtime.js?v=20261116boney1', base).href,
     new URL('maskbound-guardian-species-runtime.js?v=20261101maskrear1', base).href,
     new URL('porakaneki-species-runtime.js?v=20260924poracolor2&rearHead=1', base).href,
-    new URL('character-rig-scale.js?v=20261126he6d0d7e', base).href,
+    new URL('character-rig-scale.js?v=20261127followupPerf1', base).href,
     new URL('character-rig-scale-avatar-runtime.js?v=20261126neckAudit2', base).href,
     new URL('maoao-arm-tint-runtime.js?v=20260907a', base).href,
     new URL('shoulder-camera-character-framing.js?v=20261024h224e340', base).href,

@@ -614,6 +614,7 @@
     if (!values.every(value => Number.isFinite(value) && value > 0)) return false;
     const authored = new THREE.Matrix4().makeScale(...values); // Legacy per-part authoring.
     const bodyInverse = new THREE.Matrix4(); // Counteracts inherited body sizing around the fixed part origin.
+    const combinedScale = new THREE.Matrix4(); // Used when both diagonal corrections share the same frame.
     const ancestry = new THREE.Matrix4(); // Reused joint chain, without positional offsets.
     const inverse = new THREE.Matrix4(); // Reused reverse joint chain for size-only changes.
     const correction = new THREE.Matrix4(); // Reused part-local transform.
@@ -621,6 +622,8 @@
     let scaleOwner = null; // Hostile rigs receive their final body-scale metadata after initial foot construction.
     function applyInFrame(part, frame, target) {
       if (!frame) return false;
+      // Direct children already use the requested frame: no conjugation or inverse is needed.
+      if (part.parent === frame) { part.matrix.premultiply(target); return true; }
       ancestry.identity();
       let ancestor = part.parent;
       while (ancestor && ancestor !== frame) {
@@ -645,13 +648,26 @@
         values[0] = next[0]; values[1] = next[1]; values[2] = next[2];
         authored.makeScale(...values);
       }
+      const authoredActive = values[0] !== 1 || values[1] !== 1 || values[2] !== 1; // Whether the authored correction participates.
+      if (independentCharacterScale && !scaleOwner) scaleOwner = characterScaleOwnerFor(reference);
+      const factors = independentCharacterScale && (scaleOwner?.userData?.hobunjiCharacterRigScaleState?.factor || scaleOwner?.userData?.hobunjiCharacterPartScaleFactors);
+      const x = Number(factors?.x), y = Number(factors?.y);
+      const bodyActive = x > 0 && y > 0 && Number.isFinite(x) && Number.isFinite(y) && (x !== 1 || y !== 1); // Live body-scale correction.
       let changed = false;
-      if (values[0] !== 1 || values[1] !== 1 || values[2] !== 1) changed = applyInFrame(this, reference, authored);
-      if (independentCharacterScale) {
-        if (!scaleOwner) scaleOwner = characterScaleOwnerFor(reference);
-        const factors = scaleOwner?.userData?.hobunjiCharacterRigScaleState?.factor || scaleOwner?.userData?.hobunjiCharacterPartScaleFactors;
-        const x = Number(factors?.x), y = Number(factors?.y);
-        if (x > 0 && y > 0 && Number.isFinite(x) && Number.isFinite(y) && (x !== 1 || y !== 1)) {
+      if (authoredActive && bodyActive && reference === scaleOwner) {
+        // A^-1 B A * A^-1 S A = A^-1 (B S) A. Both target scales are diagonal.
+        const sx = values[0] / x, sy = values[1] / y, sz = values[2] / x; // Combined same-frame authored/body correction.
+        if (Number.isFinite(sx) && Number.isFinite(sy) && Number.isFinite(sz) && sx > 0 && sy > 0 && sz > 0) {
+          combinedScale.makeScale(sx, sy, sz);
+          changed = applyInFrame(this, reference, combinedScale);
+        } else {
+          changed = applyInFrame(this, reference, authored);
+          bodyInverse.makeScale(1 / x, 1 / y, 1 / x);
+          changed = applyInFrame(this, scaleOwner, bodyInverse) || changed;
+        }
+      } else {
+        if (authoredActive) changed = applyInFrame(this, reference, authored);
+        if (bodyActive) {
           bodyInverse.makeScale(1 / x, 1 / y, 1 / x);
           changed = applyInFrame(this, scaleOwner, bodyInverse) || changed;
         }

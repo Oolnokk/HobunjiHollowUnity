@@ -117,6 +117,27 @@ late.userData={hobunjiCharacterPartScaleFactors:{x:0.75,y:1.5}}; // Enemies rece
 const afterLate=world(latePart).elements;
 assert.notDeepEqual(afterLate.slice(0,12),beforeLate.slice(0,12),'late-authored hostile scales activate on the next update');
 for(let i=12;i<=14;i++)assert.ok(Math.abs(afterLate[i]-beforeLate[i])<1e-9,'late hostile scale still keeps the ankle/grip origin fixed');
+// Count actual inversions on the shared-frame and direct-parent paths.
+{
+  let inversions=0; // Instrument only the independent test fixture.
+  const invert=Matrix4.prototype.invert;
+  Matrix4.prototype.invert=function(){inversions++;return invert.call(this);};
+  try {
+    const owner=node(null);
+    owner.pose.makeScale(2,3,2);
+    owner.userData={hobunjiCharacterRigScaleState:{factor:{x:2,y:3}}};
+    const joint=node(owner,.7,'x'), part=node(joint,.2,'z');
+    const base=world(part).elements;
+    context.installPartScaleAxes({Matrix4},part,owner,{x:2,y:3,z:2},true);
+    const corrected=world(part).elements;
+    assert.equal(inversions,1,'two same-frame corrections need only one inverse');
+    for(let i=0;i<16;i++)assert.ok(Math.abs(base[i]-corrected[i])<1e-9,'cancelling corrections preserve full world transform');
+    const direct=node(owner,.4,'z');
+    context.installPartScaleAxes({Matrix4},direct,owner,{x:2,y:3,z:2},true);
+    inversions=0;world(direct);
+    assert.equal(inversions,0,'direct parent requires no conjugation');
+  } finally {Matrix4.prototype.invert=invert;}
+}
 console.log('Independent part scaling verified for all species, moving joints, original attachment coordinates and late hostile scales.');
 const editorSource=fs.readFileSync('docs/tools/animation-author/index.html','utf8'); // Executes the actual import/export anatomy normalizer.
 windowObject.HOBUNJI_ATTACHMENT_RIG_PROFILES={characters:{'nuhongan::male':{anatomy:{handScaleAxes:axes,footScaleAxes:axes,handScale:0.95,footScale:0.95,armLengthHeightPercentOffset:6}}}};
