@@ -92,7 +92,7 @@ console.log('World popup row layout and family visibility parity: PASS');
   };
   const gate = vm.runInNewContext(
     block('  function isLocalCombatSource(', '  function finishLevelUpAnnouncement(') + '\n({isLocalCombatSource,showCombatEffect});',
-    {window:{ActorRegistry:registry,HOBUNJI_CONFIG:{resourceRings:{colors:{footing:'#67b7ff'},afflictionColors:{bleedingHealth:'#d11832'}}},ResourceSystem:{AFFLICTIONS:{bleedingHealth:{name:'Bleeding Health'}}}},
+    {window:{ActorRegistry:registry,HOBUNJI_CONFIG:{resourceRings:{colors:{footing:'#67b7ff'},afflictionColors:{bleedingHealth:'#d11832'}}},ResourceSystem:{AFFLICTIONS:{bleedingHealth:{name:'Bleeding Health'},woundedStamina:{name:'Wounded Stamina'},shatteredStamina:{name:'Shattered Stamina'},shamblingFooting:{name:'Shambling Footing'},scentMarkedHealth:{name:'Scent Marked Health'}}}},
       state:{deps:{getActiveScene:()=>scene}},iconAnchorScene:root=>root.visible===false?null:root.parent,
       showChange:(kind,amount,options)=>{calls.push({kind,amount,text:options.text,color:options.color});return calls.length;}}
   );
@@ -101,7 +101,7 @@ console.log('World popup row layout and family visibility parity: PASS');
   assert.equal(gate.showCombatEffect(target,'health',4.25,true),1);
   assert.equal(gate.showCombatEffect(target,'bleedingHealth',2,true),2);
   assert.equal(calls[0].amount,-4.3);
-  assert.equal(calls[1].text,'-2 Bleeding Health');
+  assert.equal(calls[1].text,'-2 Bleeding');
   assert.equal(calls[0].color,undefined,'ordinary Health uses the authored damage color');
   assert.equal(calls[1].color,'#d11832');
   assert.equal(gate.showCombatEffect(target,'footing',5,true,'impact'),3);
@@ -115,4 +115,9 @@ console.log('World popup row layout and family visibility parity: PASS');
   target.root.parent={};
   assert.equal(gate.showCombatEffect(target,'health',3,true),null);
   assert.equal(calls.length,4);
+  target.root.parent=scene;
+  for (const [id, amount, label] of [['woundedStamina',4,'Wounded'],['shatteredStamina',5,'Shattered'],['shamblingFooting',3,'Shambling'],['scentMarkedHealth',2,'Scent Marked']]) {
+    gate.showCombatEffect(target,id,amount,true,'impact');
+    assert.equal(calls.at(-1).text,`-${amount} ${label} (Impact)`);
+  }
 }
