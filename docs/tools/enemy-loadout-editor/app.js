@@ -1,4 +1,4 @@
-import { EnemyPreview } from './preview.js?v=20261126weaponDepthOff1';
+import { EnemyPreview } from './preview.js?v=20261126spiritHealAudit1';
 const $ = (id) => document.getElementById(id);
 const DRAFT_KEY = 'hobunji.enemyLoadoutWorkshop.v1';
 const state = {

@@ -127,13 +127,22 @@ assert.ok(RS.getAffliction(enemy, 'frostbittenStamina') > 0, '1. Frostbitten app
 
 // ── 9-11: Immundanity ─────────────────────────────────────────────
 function immFor(state) { gear = { weaponEnchantments: { w: state } }; return ES.getWeaponImmundanity('w'); }
-// Planes: sicced=Tothal fury=Hronal moralized=Kanthic resolve=Ohthic frostbitten=Tothal burning=Hronal mirrored=Kanthic livingGust=Ohthic livingFlame=Hronal
+// Planes: sicced=Kanthic fury=Hronal moralized=Tothal resolve=Ohthic frostbitten=Tothal burning=Hronal mirrored=Kanthic livingGust=Tothal livingFlame=Hronal
 assert.equal(immFor({ base: ['frostbitten'], flourishes: {} }), 1, 'Tothal 1 → 1');
 assert.equal(immFor({ base: ['frostbitten', 'burning'], flourishes: {} }), 0, '9. Tothal + Hronal cancel');
-assert.equal(immFor({ base: ['frostbitten'], flourishes: { tap1: 'sicced', tap2: 'fury' } }), 1, 'Tothal 2, Hronal 1 → 1');
-assert.equal(immFor({ base: ['frostbitten', 'burning'], flourishes: { tap1: 'sicced', tap2: 'fury' } }), 0, '11. Tothal 2, Hronal 2 → 0 (one-for-one, not Cartesian)');
-assert.equal(immFor({ base: ['mirrored', 'livingGust'], flourishes: {} }), 0, '10. Kanthic + Ohthic cancel');
-assert.equal(immFor({ base: ['frostbitten', 'mirrored'], flourishes: { tap1: 'sicced' } }), 3, 'Tothal 2, Kanthic 1 → 3');
+assert.equal(immFor({ base: ['frostbitten'], flourishes: { tap1: 'moralized', tap2: 'fury' } }), 1, 'Tothal 2, Hronal 1 → 1');
+assert.equal(immFor({ base: ['frostbitten', 'burning'], flourishes: { tap1: 'moralized', tap2: 'fury' } }), 0, '11. Tothal 2, Hronal 2 → 0 (one-for-one, not Cartesian)');
+assert.equal(immFor({ base: ['burning'], flourishes: { tap1: 'moralized' } }), 0, 'Moralized cancels Hronal');
+assert.equal(ES.planarCounts('w').Tothal, 1, 'Moralized has Tothal presentation');
+assert.equal(immFor({ base: ['ancestralSight'], flourishes: { tap1: 'sicced' } }), 0, 'Sicced cancels Ohthic');
+assert.equal(ES.planarCounts('w').Kanthic, 1, 'Sicced has Kanthic presentation');
+assert.equal(immFor({ base: ['mirrored', 'ancestralSight'], flourishes: {} }), 0, '10. Kanthic + Ohthic cancel');
+assert.equal(immFor({ base: ['livingGust', 'burning'], flourishes: {} }), 0, 'Living Gust cancels Hronal');
+assert.equal(immFor({ base: ['livingGust', 'mirrored'], flourishes: {} }), 2, 'Living Gust does not cancel Kanthic');
+assert.equal(immFor({ base: ['livingGust', 'frostbitten'], flourishes: {} }), 2, 'Living Gust stacks with Tothal');
+assert.equal(ES.planarCounts('w').Tothal, 2, 'Living Gust is counted as Tothal for presentation');
+assert.equal(ES.planarCounts('w').Ohthic, 0, 'Living Gust is no longer Ohthic');
+assert.equal(immFor({ base: ['frostbitten', 'mirrored'], flourishes: { tap1: 'sicced' } }), 3, 'Tothal 1, Kanthic 2 → 3');
 assert.equal(ES.getEnchantmentPowerMultiplier('w'), 1.3, '12. +10% enchantment power per Immundanity');
 assert.ok(Math.abs(ES.getMasteryPowerMultiplier('w') - 0.7) < 1e-9, '12. −10% mastery power per Immundanity');
 gear = { weaponEnchantments: { w: { base: ['frostbitten', 'mirrored'], flourishes: { tap1: 'sicced', tap2: 'moralized', hold1: 'sicced', hold2: 'moralized' } } } };
@@ -304,6 +313,73 @@ assert.equal(RS.getAffliction(player, 'mirroredHealth'), mirrorBefore, '16. zero
 CAE.hit(CAE.prepare({ abilityId: 'swingCombo', damage: 50 }), { target: enemy, actualDamage: 7 });
 assert.ok(Math.abs(RS.getAffliction(player, 'mirroredHealth') - mirrorBefore - 7 * ES.getEnchantmentPowerMultiplier('sword')) < 0.11, '16. Mirrored equals post-mitigation damage (× enchantment power)');
 
+// Spirit Heal: ordinary recovery, one full grant per nearby ally, actual damage only.
+{
+  reset();
+  load('docs/js/actor-registry.js');
+  const registry = context.ActorRegistry;
+  const savedHealth = player.health;
+  const savedArea = player.areaId; // Exercise the live local-area resolver rather than a stale avatar field.
+  const savedMirrored = RS.getAffliction(player, 'mirroredHealth'); // Ensure Spirit Heal does not create a shield.
+  const pet = makeEntity({ health: 50, x: 20, master: player, isCompanion: true, stableRole: 'companion' });
+  const guest = makeEntity({ health: 50, x: 30 });
+  const guestPet = makeEntity({ health: 50, x: 40, master: guest, isCompanion: true, stableRole: 'companion' });
+  const distant = makeEntity({ health: 50, x: 1000 });
+  const offArea = makeEntity({ health: 50, areaId: 'elsewhere' });
+  const hostilePet = makeEntity({ health: 50, banditCompanion: true, master: enemy });
+  const shoulder = makeEntity({ health: 50, master: player, stableRole: 'shoulderPet' });
+  const downed = makeEntity({ health: 50, master: player, _downed: true });
+  const hunter = makeEntity({ health: 50, isTribeHunter: true, _porakanekiPlannerControlled: true, _chunkCombatTarget: enemy });
+  const neutral = makeEntity({ health: 50, isTribeHunter: true, _porakanekiPlannerControlled: true });
+  const hostileHunter = makeEntity({ health: 50, isTribeHunter: true, _porakanekiPlannerControlled: false, _chunkCombatTarget: enemy });
+  registry.registerPlayer(player, { local: true });
+  for (const actor of [guest, distant, offArea]) registry.registerPlayer(actor);
+  companionObjects.push(pet, guestPet, hostilePet, shoulder, downed, pet); // Duplicate pet exercises recipient deduplication.
+  hostileObjects.push(hunter, neutral, hostileHunter);
+  player.health = 50;
+  player.areaId = 'old-map';
+  assert.equal(ES.addBase('sword', 'spiritHeal'), true);
+  assert.equal(ES.DEFINITIONS.spiritHeal.alignment, 'Ohthic');
+  const hit = actualDamage => CAE.hit(CAE.prepare({ abilityId: 'swingCombo', damage: 100 }), { target: enemy, actualDamage });
+  hit(0);
+  for (const actor of [player, pet, guest, guestPet, hunter]) assert.equal(actor.health, 50, 'Spirit Heal requires actual Health damage');
+  hit(20); // One Ohthic point: 1.1 multiplier, 1.1 self and 3.3 per ally.
+  assert.equal(player.health, 51.1);
+  for (const actor of [pet, guest, guestPet, hunter]) assert.equal(actor.health, 53.3, 'Each eligible ally gets the full 15% independently');
+  for (const actor of [distant, offArea, hostilePet, shoulder, downed, neutral, hostileHunter]) assert.equal(actor.health, 50, 'Ineligible actors receive no recovery');
+  assert.equal(RS.getAffliction(player, 'mirroredHealth'), savedMirrored, 'Spirit Heal grants no enhanced Health');
+  pet.health = 99;
+  hit(20);
+  assert.equal(pet.health, 100, 'Spirit Heal respects maximum Health');
+  // Exact projectile weapon identity, including a weapon swap before impact.
+  assert.equal(ES.addBase('throwingBlade', 'spiritHeal'), true);
+  weapon = 'unenchanted';
+  const beforeRanged = player.health; // Proves a non-enchanted source does not borrow the equipped or stored enchantment.
+  ES.applyRangedSpiritHeal(player, enemy, 'unenchanted', 20);
+  ES.applyRangedSpiritHeal(player, enemy, 'throwingBlade', 0);
+  assert.equal(player.health, beforeRanged);
+  ES.applyRangedSpiritHeal(player, enemy, 'throwingBlade', 20);
+  assert.ok(Math.abs(player.health - beforeRanged - 1.1) < 1e-9, 'Projectile hit uses the thrown weapon even after a swap');
+  // Healing respects the resource system's actual recovery penalties.
+  guest.health = 50;
+  RS.applyTimedDebuff(guest, 'inhibited', 12, { power: 2 });
+  ES.applyRangedSpiritHeal(player, enemy, 'throwingBlade', 20);
+  assert.equal(guest.health, 52.6, 'Inhibited reduces the ordinary ally recovery');
+  // Hostile wielders cannot heal the player party, even using the same enchantment definition.
+  const hostileWielder = makeEntity({ health: 50 });
+  const beforeHostileHit = player.health;
+  ES.applyRangedSpiritHeal(hostileWielder, player, 'throwingBlade', 20);
+  assert.equal(hostileWielder.health, 51.1);
+  assert.equal(player.health, beforeHostileHit, 'Victim and player party never receive hostile healing');
+  weapon = 'sword';
+  companionObjects.splice(companionObjects.length - 6, 6);
+  hostileObjects.splice(hostileObjects.length - 3, 3);
+  for (const actor of [player, guest, distant, offArea]) registry.unregisterPlayer(actor);
+  delete context.ActorRegistry;
+  player.health = savedHealth;
+  player.areaId = savedArea;
+}
+
 // ── 17: Kindling conversion ───────────────────────────────────────
 const k = makeEntity();
 RS.addAffliction(k, 'kindlingHealth', 6);
@@ -346,7 +422,7 @@ const hitSet = new Set([center]);
 const affected = ES.applyPeripheralGust(gustCtx, hitSet);
 assert.equal(affected, 1, '19. only the peripheral target gets the gust');
 assert.equal(knockbacks[0].target, periph);
-const gustPower = ES.getEnchantmentPowerMultiplier('sword'); // Living Gust alone: Ohthic 1 → Immundanity 1 → ×1.1.
+const gustPower = ES.getEnchantmentPowerMultiplier('sword'); // Living Gust alone: Tothal 1 → Immundanity 1 → ×1.1.
 assert.ok(Math.abs(knockbacks[0].speed - 200 * (1 + 0.25 * gustPower) * 0.5) < 1e-9, '19. peripheral target gets half of the (power-scaled) +25% knockback');
 assert.equal(periph.health, 100, '19. no damage outside the real hit cone');
 assert.ok(gustCtx.modifiers.lunge > 1.24, '21. lunge goes through the attack context modifier (+25%)');

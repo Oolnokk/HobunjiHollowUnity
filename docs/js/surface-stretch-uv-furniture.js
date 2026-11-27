@@ -32,7 +32,13 @@
   }
 
   function clamp01(value) { return Math.max(0, Math.min(1, Number(value) || 0)); }
-  function edgeKey(a, b) { return a < b ? `${a}|${b}` : `${b}|${a}`; }
+  // Topology vertices are interned to integer ids (collectTriangles) and an edge is ONE number, `first * EDGE_ID_SPACE + second`,
+  // where first/second keep the exact order the old `${a}|${b}` string keys had (string order of the vertex names). That order is
+  // observable: it decides which end of a boundary edge seeds a loop and the insertion order of the boundary adjacency maps.
+  // The string concat + long-string hashing this replaces was the single hottest function of a wilderness zone's mesa build.
+  const EDGE_ID_SPACE = 67108864; // 2^26: ids stay below it, so first * 2^26 + second is an exact double.
+  function edgeKey(a, b, names) { return names[a] < names[b] ? a * EDGE_ID_SPACE + b : b * EDGE_ID_SPACE + a; }
+  function edgeFirst(key) { return Math.floor(key / EDGE_ID_SPACE); }
 
   function chooseQuantizationEpsilon(geometry) {
     geometry.computeBoundingBox();
@@ -94,12 +100,15 @@
     const triangleCount = Math.floor(position.count / 3); // Used as the source triangle count in the expanded geometry.
     const triangles = []; // Used by adjacency recognition and UV writing.
     const vertexPositions = new Map(); // Used to retain one representative 3D position for each logical topology vertex.
+    const names = [null]; // Integer vertex id -> the quantized-position key string (its string order defines canonical edge order). Ids start at 1: the old string keys were always truthy and callers test `if (!next)`.
+    const idByName = new Map(); // Quantized-position key string -> integer vertex id.
+    const intern = name => { let id = idByName.get(name); if (id === undefined) { id = names.length; names.push(name); idByName.set(name, id); } return id; };
     const edgeToTriangles = new Map(); // Used to build the same shared-edge adjacency graph as the furniture editor.
 
     for (let triangleIndex = 0; triangleIndex < triangleCount; triangleIndex++) {
       if (selected && !selected.has(triangleIndex)) continue;
       const base = triangleIndex * 3; // Used as the first BufferAttribute vertex for this triangle.
-      const keys = [vertexKey(position, base, epsilon, pieceIds), vertexKey(position, base + 1, epsilon, pieceIds), vertexKey(position, base + 2, epsilon, pieceIds)]; // Used to reconstruct shared topology edges without artificial spatial patch seams.
+      const keys = [intern(vertexKey(position, base, epsilon, pieceIds)), intern(vertexKey(position, base + 1, epsilon, pieceIds)), intern(vertexKey(position, base + 2, epsilon, pieceIds))]; // Used to reconstruct shared topology edges without artificial spatial patch seams.
       const a = new THREE.Vector3(position.getX(base), position.getY(base), position.getZ(base)); // Used to calculate the face normal.
       const b = new THREE.Vector3(position.getX(base + 1), position.getY(base + 1), position.getZ(base + 1)); // Used to calculate the face normal.
       const c = new THREE.Vector3(position.getX(base + 2), position.getY(base + 2), position.getZ(base + 2)); // Used to calculate the face normal.
@@ -117,13 +126,13 @@
         }
       }
       for (let edge = 0; edge < 3; edge++) {
-        const key = edgeKey(keys[edge], keys[(edge + 1) % 3]); // Used as the logical shared-edge identifier.
+        const key = edgeKey(keys[edge], keys[(edge + 1) % 3], names); // Used as the logical shared-edge identifier.
         const owners = edgeToTriangles.get(key) || []; // Used to collect every face sharing this exact geometric edge.
         owners.push(localIndex);
         edgeToTriangles.set(key, owners);
       }
     }
-    return { triangles, vertexPositions, edgeToTriangles };
+    return { triangles, vertexPositions, edgeToTriangles, names };
   }
 
   function segmentSurfaceIslands(topology, splitAngleDeg, splitAtThreshold, ignoreReversedCoplanarFaces, preserveQuadPairs = false) {
@@ -218,7 +227,7 @@
       for (let edge = 0; edge < 3; edge++) {
         const a = triangle.keys[edge]; // Used as one endpoint of this mesh edge.
         const b = triangle.keys[(edge + 1) % 3]; // Used as the other endpoint of this mesh edge.
-        const key = edgeKey(a, b); // Used to count whether the edge is boundary or internal.
+        const key = edgeKey(a, b, topology.names); // Used to count whether the edge is boundary or internal.
         edgeCounts.set(key, (edgeCounts.get(key) || 0) + 1);
         if (!adjacency.has(a)) adjacency.set(a, new Set());
         if (!adjacency.has(b)) adjacency.set(b, new Set());
@@ -237,22 +246,22 @@
     const boundaryAdjacency = new Map(); // Used to trace the literal irregular perimeter of this surface.
     for (const [key, count] of edgeCounts) {
       if (count !== 1) continue;
-      const [a, b] = key.split('|'); // Used as the one-use perimeter edge endpoints.
+      const a = edgeFirst(key), b = key - a * EDGE_ID_SPACE; // Used as the one-use perimeter edge endpoints (same order the string key carried).
       if (!boundaryAdjacency.has(a)) boundaryAdjacency.set(a, new Set());
       if (!boundaryAdjacency.has(b)) boundaryAdjacency.set(b, new Set());
       boundaryAdjacency.get(a).add(b);
       boundaryAdjacency.get(b).add(a);
     }
-    return { vertices, adjacency, projected, boundaryAdjacency };
+    return { vertices, adjacency, projected, boundaryAdjacency, names: topology.names };
   }
 
-  function traceBoundaryLoops(boundaryAdjacency) {
+  function traceBoundaryLoops(boundaryAdjacency, names) {
     const unused = new Set(); // Used to consume each perimeter edge only once.
-    for (const [a, adjacent] of boundaryAdjacency) for (const b of adjacent) unused.add(edgeKey(a, b));
+    for (const [a, adjacent] of boundaryAdjacency) for (const b of adjacent) unused.add(edgeKey(a, b, names));
     const loops = []; // Used to distinguish the outer perimeter from holes or malformed extra components.
     while (unused.size) {
       const firstEdge = unused.values().next().value; // Used to seed the next perimeter trace.
-      const [edgeA, edgeB] = firstEdge.split('|'); // Used as candidate starting vertices.
+      const edgeA = edgeFirst(firstEdge), edgeB = firstEdge - edgeA * EDGE_ID_SPACE; // Used as candidate starting vertices.
       let start = edgeA; // Used as the loop-closing target.
       if ((boundaryAdjacency.get(edgeA)?.size || 0) === 2 && (boundaryAdjacency.get(edgeB)?.size || 0) !== 2) start = edgeB;
       const loop = [start]; // Used as the ordered boundary vertex list.
@@ -264,11 +273,11 @@
         let next = null; // Used as the next ordered boundary vertex.
         for (const candidate of adjacent) {
           if (candidate === previous) continue;
-          if (unused.has(edgeKey(current, candidate))) { next = candidate; break; }
+          if (unused.has(edgeKey(current, candidate, names))) { next = candidate; break; }
         }
-        if (!next) for (const candidate of adjacent) if (unused.has(edgeKey(current, candidate))) { next = candidate; break; }
+        if (!next) for (const candidate of adjacent) if (unused.has(edgeKey(current, candidate, names))) { next = candidate; break; }
         if (!next) break;
-        unused.delete(edgeKey(current, next));
+        unused.delete(edgeKey(current, next, names));
         previous = current;
         current = next;
         if (current === start) break;
@@ -451,7 +460,7 @@
 
   function unwrapIsland(topology, island, uvAttribute, options) {
     const data = islandData(topology, island); // Used to derive this recognized surface's perimeter, adjacency, local projection, and physical edge scale.
-    const loops = traceBoundaryLoops(data.boundaryAdjacency); // Used to identify the outer irregular outline and any holes.
+    const loops = traceBoundaryLoops(data.boundaryAdjacency, data.names); // Used to identify the outer irregular outline and any holes.
     let outerLoop = null; // Used as the boundary component that consumes the full texture-square outline.
     let outerArea = -1; // Used to choose the largest projected boundary as the outer perimeter.
     for (const loop of loops) {

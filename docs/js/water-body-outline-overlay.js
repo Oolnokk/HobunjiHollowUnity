@@ -353,6 +353,76 @@
     return Number.isFinite(best) ? best : 0;
   }
 
+  // Exact nearest-boundary-distance index. applyProtectedBand asks for the distance from EVERY mapped vertex to the whole
+  // boundary; brute force is O(vertices x segments) and was ~half of a wilderness zone's first build (profiled: ~1.8 s of
+  // 3.6 s, one third of it in pointSegmentDistance). Segments go into a uniform grid and a query searches outward in rings,
+  // stopping once no unseen segment can be closer, so the result equals the brute-force minimum (same math, squared
+  // distances, one sqrt per query).
+  function buildBoundaryDistanceIndex(segments) {
+    const list = [];
+    let minX = Infinity, minZ = Infinity, maxX = -Infinity, maxZ = -Infinity;
+    for (const segment of segments || []) {
+      if (!segment?.[0] || !segment?.[1]) continue;
+      const ax = segment[0][0], az = segment[0][1], bx = segment[1][0], bz = segment[1][1];
+      list.push(ax, az, bx, bz);
+      minX = Math.min(minX, ax, bx); maxX = Math.max(maxX, ax, bx);
+      minZ = Math.min(minZ, az, bz); maxZ = Math.max(maxZ, az, bz);
+    }
+    const count = list.length / 4;
+    if (!count) return { query: () => 0, segmentCount: 0 };
+    const span = Math.max(maxX - minX, maxZ - minZ, 1e-6);
+    const cell = Math.max(span / Math.max(1, Math.ceil(Math.sqrt(count))), 1e-6); // ~1 segment per cell on average
+    const cols = Math.floor((maxX - minX) / cell) + 1, rows = Math.floor((maxZ - minZ) / cell) + 1;
+    const buckets = new Array(cols * rows);
+    const cellOf = (v, lo, n) => Math.max(0, Math.min(n - 1, Math.floor((v - lo) / cell)));
+    for (let i = 0; i < count; i++) {
+      const ax = list[i * 4], az = list[i * 4 + 1], bx = list[i * 4 + 2], bz = list[i * 4 + 3];
+      const c0 = cellOf(Math.min(ax, bx), minX, cols), c1 = cellOf(Math.max(ax, bx), minX, cols);
+      const r0 = cellOf(Math.min(az, bz), minZ, rows), r1 = cellOf(Math.max(az, bz), minZ, rows);
+      for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) (buckets[r * cols + c] ||= []).push(i);
+    }
+    const stamp = new Int32Array(count);
+    let query_id = 0;
+    function segmentDistSq(x, z, i) {
+      const ax = list[i * 4], az = list[i * 4 + 1], dx = list[i * 4 + 2] - ax, dz = list[i * 4 + 3] - az;
+      const denom = dx * dx + dz * dz;
+      if (denom <= 1e-12) { const ex = x - ax, ez = z - az; return ex * ex + ez * ez; }
+      const t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / denom));
+      const ex = x - (ax + dx * t), ez = z - (az + dz * t);
+      return ex * ex + ez * ez;
+    }
+    function query(x, z) {
+      query_id++;
+      const pc = Math.floor((x - minX) / cell), pr = Math.floor((z - minZ) / cell);
+      const maxRing = Math.max(cols, rows, Math.abs(pc) + cols, Math.abs(pr) + rows);
+      let best = Infinity;
+      const visit = (c, r) => {
+        if (c < 0 || r < 0 || c >= cols || r >= rows) return;
+        const bucket = buckets[r * cols + c];
+        if (!bucket) return;
+        for (let k = 0; k < bucket.length; k++) {
+          const i = bucket[k];
+          if (stamp[i] === query_id) continue;
+          stamp[i] = query_id;
+          const d = segmentDistSq(x, z, i);
+          if (d < best) best = d;
+        }
+      };
+      for (let ring = 0; ring <= maxRing; ring++) {
+        // Every unseen segment lies outside the (2*ring-1)-cell block, i.e. at least (ring-1)*cell away (the point may
+        // sit anywhere inside its own cell; a query point outside the grid only makes the true bound larger).
+        if (ring >= 2) { const lower = (ring - 1) * cell; if (best <= lower * lower) break; }
+        if (ring === 0) visit(pc, pr);
+        else {
+          for (let c = pc - ring; c <= pc + ring; c++) { visit(c, pr - ring); visit(c, pr + ring); }
+          for (let r = pr - ring + 1; r <= pr + ring - 1; r++) { visit(pc - ring, r); visit(pc + ring, r); }
+        }
+      }
+      return Number.isFinite(best) ? Math.sqrt(best) : 0;
+    }
+    return { query, segmentCount: count };
+  }
+
   function setSquareDepth(u, v, targetDepth) {
     const du = Number(u) - 0.5;
     const dv = Number(v) - 0.5;
@@ -418,8 +488,9 @@
 
     const distances = new Float32Array(position.count);
     let maxDistance = TILE_RING_WORLD_WIDTH;
+    const boundaryIndex = buildBoundaryDistanceIndex(boundarySegments);
     for (let index = 0; index < position.count; index++) {
-      const distance = distanceToBoundary(position.getX(index), position.getZ(index), boundarySegments);
+      const distance = boundaryIndex.query(position.getX(index), position.getZ(index));
       distances[index] = distance;
       maxDistance = Math.max(maxDistance, distance);
     }
@@ -1220,6 +1291,8 @@
     sourceEdgeFraction: SOURCE_EDGE_FRACTION,
     tileRingWorldWidth: TILE_RING_WORLD_WIDTH,
     buildConnectivity,
+    buildBoundaryDistanceIndex, // Exposed for the equivalence test (scripts/test-water-body-boundary-index.js).
+    distanceToBoundary,
     buildFoldedSurfaceTopology,
     unfoldComponent,
     buildDomain,

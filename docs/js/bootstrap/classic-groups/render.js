@@ -20,7 +20,9 @@
     "js/zone-vegetation-cull.js?v=20261120he8225fb", // Wilderness vegetation corridor cull; game.js calls init() and tick(dt).
     "js/wilderness-tree-instancer.js?v=20261124spatialTrees2", // Render scope: drawn, non-fading procedural trees as InstancedMeshes (world-render-pipeline.js).
     "js/dense-forest-wall-batches.js?v=20261125staticWallBranch2", // Render scope: Cloud Forest dense wall chunk parts merged across chunks (world-render-pipeline.js).
-    "js/shoulder-pet-attachment-runtime.js?v=20261122shoulderHeadOnly1", // Shared pin solver, before game.js starts.
+    "js/shoulder-pet-deformation-envelope.js?v=20261126shoulderAway7", // Analytic angular intervals follow the live skin controls.
+    "js/shoulder-pet-rotation-limits.js?v=20261126boneEnvelope3", // Shared alpha-mask and topology preparation.
+    "js/shoulder-pet-attachment-runtime.js?v=20261126shoulderAway7", // Shared pin solver, before game.js starts.
     "js/stowed-torch-fire.js?v=20261122stowSplit1", // Shared layer-effects adapter owns stowed PNG, tint, wick and particles.
     "js/adventuring-torch-belt.js?v=20261122stowSplit1", // Stowed belt sprite and 30-second live torch timeout before game.js starts.
     "js/render-optimization-settings.js?v=20261126h0181729" // Settings → Render optimizations: a persisted toggle per render switch; last, after every owner.

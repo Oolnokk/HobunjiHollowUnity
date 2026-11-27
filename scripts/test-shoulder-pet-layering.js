@@ -501,4 +501,19 @@ actorXrayEnabled.animals = true;
 api.syncShoulderPetLayering(view(true));
 assert.equal(api.state.active, true, 're-enabling restores layering without detaching the pet');
 
-console.log('Shoulder pet paired front/back occlusion: ok');
+// The actual gameplay path no longer enables the legacy portrait-stage stack.
+api.setShoulderPetLayering(pet, front, back, front.material, back.material, { geometricDepth: true });
+api.syncShoulderPetLayering(view(true));
+assert.equal(api.state.mode, 'geometric-depth');
+assert.equal(api.state.xrayEnabled, false);
+assert.equal(api.shoulderPetDrawFace({ object: pet.avatarRef.frontPlane }), null);
+assert.equal(front.material.depthWrite, true);
+assert.equal(back.material.depthWrite, true);
+assert.equal(pet.avatarRef.frontPlane.material.depthWrite, true);
+actorXrayEnabled.animals = false;
+api.syncShoulderPetLayering(view(false));
+assert.equal(api.state.mode, 'geometric-depth', 'animal x-ray toggle does not restore shoulder x-ray');
+actorXrayEnabled.animals = true;
+api.syncShoulderPetLayering(view(true));
+assert.equal(api.state.xrayEnabled, false);
+console.log('Shoulder pet paired front/back occlusion and geometric depth: ok');

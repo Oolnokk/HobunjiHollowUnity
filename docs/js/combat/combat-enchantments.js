@@ -33,6 +33,9 @@
     BURNING_APPLICATION: 3.5, // Burning Health buildup from the Base Burning enchantment.
     FROSTBITTEN_APPLICATION: 3.5, // Frostbitten Stamina buildup from the Base Frostbitten enchantment.
     MIRRORED_HEALTH_RATIO: 1, // Mirrored Health gained per actual post-mitigation Health damage dealt.
+    SPIRIT_HEAL_SELF_RATIO: 0.05, // Ordinary Health restored to the wielder per actual damage dealt.
+    SPIRIT_HEAL_ALLY_RATIO: 0.15, // Full ordinary Health recovery for each eligible ally.
+    SPIRIT_HEAL_RADIUS_TILES: 12, // Same-area ally recovery radius centered on the wielder.
 
     LIVING_FLAME_ENEMY_BURNING_APPLICATION: 8, // Meaningful target Burning Health buildup per successful hit.
     LIVING_FLAME_SELF_KINDLING_APPLICATION: 5, // Kindling Health applied to the wielder per successful hit.
@@ -51,7 +54,7 @@
 
   const DEFINITIONS = Object.freeze({
     sicced: Object.freeze({
-      id: 'sicced', displayName: 'Sicced', type: 'Flourish', alignment: 'Tothal',
+      id: 'sicced', displayName: 'Sicced', type: 'Flourish', alignment: 'Kanthic',
       icon: '🐾', flurryBehavior: 'proc',
       scalable: Object.freeze({ companionPower: true }),
       description: 'Marks the struck enemy as the animal companion’s exclusive target and empowers the companion against it.',
@@ -64,7 +67,7 @@
       description: 'Combo finishers and qualifying Quick Attacks grant Furious Stamina. Offensive Held attacks snapshot +2% speed per point (up to +200%) before spending it.',
     }),
     moralized: Object.freeze({
-      id: 'moralized', displayName: 'Moralized', type: 'Flourish', alignment: 'Kanthic',
+      id: 'moralized', displayName: 'Moralized', type: 'Flourish', alignment: 'Tothal',
       icon: '✦', flurryBehavior: 'proc',
       scalable: Object.freeze({ amount: true }),
       description: 'Grants Moralized Stamina; each point pays three points of Stamina cost or drain.',
@@ -90,13 +93,18 @@
       icon: '◈', scalable: Object.freeze({ amount: true }),
       description: 'Actual Health damage dealt grants an equal amount of Mirrored Health.',
     }),
+    spiritHeal: Object.freeze({
+      id: 'spiritHeal', displayName: 'Spirit Heal', type: 'Base', alignment: 'Ohthic',
+      icon: '♡', scalable: Object.freeze({ amount: true }),
+      description: 'Restores 5% of actual Health damage to the wielder and 15% independently to each nearby living ally within 12 tiles. Values scale with Immundanity.',
+    }),
     livingFlame: Object.freeze({
       id: 'livingFlame', displayName: 'Living Flame', type: 'Base', alignment: 'Hronal',
       icon: '♨', scalable: Object.freeze({ burningAmount: true, kindlingAmount: true }),
       description: 'Hits burn enemies and kindle the wielder. Rolling away Burning throws three times the cured fire into nearby enemies.',
     }),
     livingGust: Object.freeze({
-      id: 'livingGust', displayName: 'Living Gust', type: 'Base', alignment: 'Ohthic',
+      id: 'livingGust', displayName: 'Living Gust', type: 'Base', alignment: 'Tothal',
       icon: '〰', scalable: Object.freeze({ selfFootingCost: true }),
       description: 'Strengthens knockback and lunges, widens a knockback-only gust cone, and rewards attacks that topple their wielder.',
     }),
@@ -444,6 +452,58 @@
     return out;
   }
 
+  // Spirit Heal uses a separate recipient scope: existing Flourishes retain their original behavior.
+  function applySpiritHeal(event, power) {
+    const { attacker, target, actualDamage } = event; // The resolved hit owns the healing budget.
+    const deps = window.Combat?.deps; // Live actor collections and local-area authority.
+    const registry = window.ActorRegistry; // Live co-op roster and authoritative area lookup.
+    const resources = window.ResourceSystem; // Ordinary recovery respects effective maxima and healing penalties.
+    if (!livingActor(attacker) || !Number.isFinite(actualDamage) || !(actualDamage > 0) || !(power > 0) || !resources?.applyHealthRecovery) return;
+    const isPlayer = actor => !!actor && (actor === deps?.player || registry?.isPlayer?.(actor) === true); // Null ownership never qualifies as a co-op player.
+    const canHeal = actor => livingActor(actor) && !actor._inCutscene && !actor.rec?.dead && !actor.rec?.deceased
+      && !(actor === deps?.player && window.PlayerDowned?.isDowned?.());
+    if (!canHeal(attacker) || !target || target === attacker) return;
+    const areaOf = actor => (actor === deps?.player ? deps?.getCurrentArea?.() : null) ?? registry?.areaOf?.(actor) ?? actor.areaId; // Local area authority wins over a stale avatar areaId.
+    const area = areaOf(attacker); // Never heal across map boundaries.
+    const radius = TUNING.SPIRIT_HEAL_RADIUS_TILES * (Number(deps?.TILE) || 0); // Squared range avoids square roots on recipient checks.
+    const radiusSq = radius * radius;
+    const amount = actualDamage * power; // One Immundanity calculation already supplied by onHit.
+    let restored = Math.max(0, resources.applyHealthRecovery(attacker, amount * TUNING.SPIRIT_HEAL_SELF_RATIO));
+    let allyCount = 0; // Counts actual positive ally recoveries for the mobile event log.
+    const seen = new Set([attacker, target]); // Prevent duplicate healing and never heal the struck victim.
+    const playerSide = isPlayer(attacker); // Only registered co-op players share a party; hostile NPCs never heal that party.
+    function healAlly(actor) {
+      if (seen.has(actor) || !canHeal(actor) || actor.stableRole === 'shoulderPet' || area == null || areaOf(actor) !== area || !(radius > 0)) return;
+      const dx = actor.x - attacker.x, dy = actor.y - attacker.y; // Horizontal world coordinates shared by combat.
+      if (!Number.isFinite(dx) || !Number.isFinite(dy) || dx * dx + dy * dy > radiusSq) return;
+      seen.add(actor);
+      const healed = resources.applyHealthRecovery(actor, amount * TUNING.SPIRIT_HEAL_ALLY_RATIO); // Full amount per ally, never split.
+      if (healed > 0) { restored += healed; allyCount++; }
+    }
+    if (playerSide) {
+      healAlly(deps?.player);
+      for (const actor of registry?.getPlayers?.() || []) healAlly(actor);
+    }
+    for (const actor of deps?.companionObjects || []) {
+      const owner = registry?.ownerOf?.(actor) || actor.master || (actor.banditCompanion ? null : deps?.player); // Preserve legacy ownership fallback only for non-hostile pets.
+      if (playerSide && actor.banditCompanion) continue; // A malformed hostile-pet owner must not turn it into a party ally.
+      if (owner === attacker || (playerSide && isPlayer(owner))) healAlly(actor);
+    }
+    if (playerSide) {
+      for (const actor of deps?.hostileObjects || []) {
+        // Neutral tribe combatants actively fighting this very opponent are temporary allies, not all neutral wildlife.
+        if ((actor.isTribeHunter || actor.isPorakanekiHunter) && actor._porakanekiPlannerControlled === true && actor._chunkCombatTarget === target) healAlly(actor);
+      }
+    }
+    if (restored > 0) logEvent(`Spirit Heal restored ${Math.round(restored * 10) / 10} Health (${allyCount} allies)`);
+  }
+
+  // Projectile impacts use this narrow adapter because they do not publish melee attack events.
+  function applyRangedSpiritHeal(attacker, target, weaponKey, actualDamage) {
+    if (!weaponKey || !Number.isFinite(actualDamage) || !(actualDamage > 0) || !hasBase('spiritHeal', weaponKey)) return;
+    applySpiritHeal({ attacker, target, actualDamage }, getEnchantmentPowerMultiplier(weaponKey));
+  }
+
   function applySicced(event, def, power) {
     const target = event.target;
     if (!validSiccedTarget(target)) return;
@@ -603,6 +663,7 @@
       const amount = scaled(DEFINITIONS.mirrored, key, event.actualDamage * TUNING.MIRRORED_HEALTH_RATIO, 'amount');
       applyEnhanced(event.attacker, 'mirroredHealth', amount, 'Mirrored');
     }
+    if (baseIds.includes('spiritHeal')) applySpiritHeal(event, power);
     if (baseIds.includes('livingFlame')) {
       const targetBurn = scaled(DEFINITIONS.livingFlame, key, TUNING.LIVING_FLAME_ENEMY_BURNING_APPLICATION, 'burningAmount');
       const selfKindling = scaled(DEFINITIONS.livingFlame, key, TUNING.LIVING_FLAME_SELF_KINDLING_APPLICATION, 'kindlingAmount');
@@ -908,6 +969,7 @@
     getMasteryPowerMultiplier,
     flourishQualifies,
     applyPeripheralGust,
+    applyRangedSpiritHeal,
     getCurrentSiccedTarget,
     enforceCompanionTargeting,
     renderLoadoutUI,

@@ -25,7 +25,7 @@
   // read getActiveGrid/getActiveScene/etc. from their own init() calls
   // throughout game.js.
   const scriptUrls = [
-    "js/terrain-geometry.js?v=20261114waterBrick1",
+    "js/terrain-geometry.js?v=20261126h0f6d1ae",
     "js/vegetation-crop-rendering.js?v=20261124traceHotpaths2",
     "js/grid-tile-accessors.js?v=20261125hourlyDanger2"
   ]; // Versioned game modules owned by this group.

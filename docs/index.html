@@ -36,7 +36,7 @@
        module so its fetch() wrapper can log each config/JSON access. -->
   <script src="js/dev-companion-bridge.js?v=20261019handoff1"></script>
   <script src="js/dev-companion-appearance.js?v=20261107appearance-audit2"></script>
-  <script src="js/xray-hierarchy.js?v=20261126hca00300"></script>
+  <script src="js/xray-hierarchy.js?v=20261127h36870ae"></script>
   <script src="js/held-ground-pose.js?v=20261126h5db8017"></script>
   <script src="https://unpkg.com/three@0.128.0/examples/js/controls/TransformControls.js"></script>
   <script src="js/geometry-quality.js?v=20261110cloneaudit2"></script> <!-- Baked GLB quality profiles; source fallback. -->
@@ -157,9 +157,9 @@
   <script src="js/inventory-wheel-list.js?v=20261125deepHotpaths1"></script> <!-- Item wheel list + cross-frame cache; game.js delegates getInventoryStackItems() here. -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <script src="debug.js?v=20261126h38a04d8"></script>
+  <script src="debug.js?v=20261127h38a04d8"></script>
   <!-- Global gameplay/UI config must load before CSS so config-backed custom properties are available on first paint. -->
-  <script src="config/config.js?v=20261126neckPlanarIntegration1"></script>
+  <script src="config/config.js?v=20261126h7a3b7da"></script>
   <script src="config/scratchbones-config.js?v=20261122h5cf4b6d"></script>
   <!-- Canonical source-art color fill math shared by portraits, creatures, weaving, tools, terrain, and item sprites. -->
   <script src="js/color-fill.js?v=20261117h93b0e83"></script>
@@ -168,7 +168,7 @@
   <script src="js/tool-metal-recolor.js?v=20261109profile1"></script>
   <script src="js/metal-armor-system.js?v=20261124patternNestAudit2"></script>
   <script src="config/colors/config.js?v=20261026h7f369c3"></script>
-  <script src="config/attachment-rig-profiles.js?v=20261126neckAudit2"></script>
+  <script src="config/attachment-rig-profiles.js?v=20261126voorg31merge1"></script>
   <link rel="stylesheet" href="style.css?v=20261124bulkRebase4">
   <link rel="stylesheet" href="cooking-ui.css?v=20261109craftHours1">
   <link rel="stylesheet" href="ui-element-editor.css?v=20260814a">
@@ -219,11 +219,11 @@
   <script src="js/leg-bones.js?v=20261013hb53d07e"></script>
   <!-- Procedural leg/foot animation for non-creature avatars (player + NPC walkers) -->
   <script src="js/actor-body-sink.js?v=20261117hRigSink2"></script> <!-- Body sink for enemies and NPCs: lowers their own roots while the leg handle folds the knees. -->
-  <script src="js/procedural-leg-animation.js?v=20261126footGroundAudit1"></script>
+  <script src="js/procedural-leg-animation.js?v=20261126exactSeamsAudit1"></script>
   <!-- In-game pants garment: skinned onto the procedural legs (rig data in config/pants-rigs.js, maths in js/pants-rig-core.js) -->
   <script src="config/pants-rigs.js?v=20261015h74422e2"></script>
-  <script src="js/pants-rig-core.js?v=20261117waistWidthSolve1"></script>
-  <script src="js/pants-garment-renderer.js?v=20261126inkAudit3"></script>
+  <script src="js/pants-rig-core.js?v=20261126exactSeamsAudit1"></script>
+  <script src="js/pants-garment-renderer.js?v=20261126exactSeamsAudit1"></script>
   <!-- Keeps the feet's outline/material-ID passes on the same matrix as their visible
        draw when PlayerBodyTransformComposer is composing a render-time body delta
        (mirrors procedural-hand-outline-parity.js's fix for the same class of bug). -->
@@ -359,7 +359,7 @@
   <script src="js/combat/shared-attack-pose.js?v=20261126flailHeadLean1"></script>
   <script src="config/weapon-sprite-assemblies.js?v=20261126staffClearance1"></script> <!-- Authoritative multi-sprite weapon recipes shared with Tool Hub. -->
   <script src="js/weapon-layer-effects.js?v=20261115torchWick2"></script> <!-- Recolor, visibility masks and fire behind head overlays. -->
-  <script src="js/weapon-sprite-assemblies.js?v=20261126flailAudit3"></script> <!-- Shared layered PNG weapon + flail component runtime; pre-render updates player and enemy assemblies. -->
+  <script src="js/weapon-sprite-assemblies.js?v=20261126h4ed79f8"></script> <!-- Shared layered PNG weapon + flail component runtime; pre-render updates player and enemy assemblies. -->
   <script src="js/tool-activity-stages.js?v=20261111modToolWork2"></script> <!-- NPC dig/tool-action stages. -->
   <!-- Combat stats, core, attack processing, player abilities, loadout and enchantment systems. Edit js/bootstrap/classic-groups/combat-main.js instead of this entrypoint. -->
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="combat-main"></script>
@@ -580,7 +580,7 @@
        Pure data/math with no dependencies, so load order doesn't matter.
        See docs/architecture/vertical-grid.md. -->
   <script src="js/cell-grid-3d.js?v=20261103he7fa634"></script>
-  <script src="js/dynamic-surfaces.js?v=20261106puzzleCaveSupport1"></script> <!-- Shared dynamic cliff balcony support, raised doors, moving ruin blockers and collision diagnostics; must exist before the wilderness mounts. -->
+  <script src="js/dynamic-surfaces.js?v=20261122h3263ed2"></script> <!-- Shared dynamic cliff balcony support, raised doors, moving ruin blockers and collision diagnostics; must exist before the wilderness mounts. -->
   <script src="js/cliff-elevated-surfaces.js?v=20261106miniplateau1"></script> <!-- Wilderness balconies reuse CellGrid3D and scoped DynamicSurfaces; terrain heightfield stays intact. -->
   <!-- Climbable wall surfaces (window.ClimbSurfaces): attach + move along a wall.
        Needs ClimbSystem (registered as a world-climb provider by game.js). -->
@@ -862,7 +862,7 @@
        window.ZonePlateauMesa.buildPlateauMesa(...) lazily, whenever a
        zone with tiered plateaus is first built or a plateau-top tile
        changes at runtime — never synchronously during initial boot. -->
-  <script src="js/zone-plateau-mesa.js?v=20261112hd2be5c9"></script>
+  <script src="js/zone-plateau-mesa.js?v=20261126hc9d51ac"></script>
   <script src="js/wilderness-bedrock.js?v=20261112h1f025e5"></script>
   <!-- One world-UV texture-backed mesh per water surface group. Dynamic
        flood/trench meshes are rebuilt only when the water simulation ticks;
@@ -3002,7 +3002,7 @@
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups2" data-classic-group="render"></script>
   <script src="js/held-gift-policy.js?v=20261122heldGiftPolicy1"></script> <!-- Shared gifting policy and clothing visual preparation; game.js owns equipment state. -->
   <script src="js/rootledoot-encounter.js?v=20261126h43c635f"></script>
-  <script src="game.js?v=20261126h3c453b5"></script>
+  <script src="game.js?v=20261126ha7f7edf"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261126farmGuide3"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->
