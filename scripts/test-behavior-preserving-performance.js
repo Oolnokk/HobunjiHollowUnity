@@ -148,7 +148,7 @@ function replayHandSync(source, diagnostic) {
   let useSecondary = true; // Switches to free-left-hand fallback in the same replay.
   const record = { rig: { placeHandWorld: (...args) => calls.push(args) }, fallback: { owners: {} } }; // Managed rig receiving frame and render synchronization.
   const context = {
-    syncing: false, global: { HobunjiHandGripModes: { currentModeKey: () => 'test' } },
+    syncing: false, gameDeps: null, inAttackEditor: () => false, global: { HobunjiHandGripModes: { currentModeKey: () => 'test' } },
     JSON: { stringify: value => { copies++; return JSON.stringify(value); }, parse: JSON.parse },
     playerKurrayaActive: () => false, freeRightHandFor: () => null,
     currentToolKey: () => 'axe', currentGripContext: () => 'melee',
@@ -164,7 +164,8 @@ function replayHandSync(source, diagnostic) {
     applyFallbackBoth: () => calls.push(['fallback', 'both']),
   }; // Isolates synchronization control flow while recording all pose-solver outputs.
   vm.createContext(context);
-  vm.runInContext(source.slice(source.indexOf('  function syncRigToTool('), source.indexOf('  const originalInstallGameRuntime')), context);
+  const prepareStart=source.indexOf('  function prepareGroundPoseForSockets('); // Include the real dependency in this isolated replay; older baseline refs lack it.
+  vm.runInContext(source.slice(prepareStart>=0?prepareStart:source.indexOf('  function syncRigToTool('), source.indexOf('  const originalInstallGameRuntime')), context);
   const holder = { parent: {}, visible: true }; // Visible equipped tool, then hidden below.
   const snapshots = []; // Explicit syncNow must retain its original diagnostic payload.
   for (let i = 0; i < 60; i++) snapshots.push(context.syncRigToTool(record, holder, diagnostic));

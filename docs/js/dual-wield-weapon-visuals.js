@@ -615,7 +615,7 @@
     // solve: optional object shared by both hands of one synchronous rig solve (procedural-hand-frame-driver.js);
     // with lean sync the second hand reuses the first hand's sync instead of repeating it.
     let current;
-    if (leanSync && solve && solve.dualWieldSynced === true && solve.dualWieldRecord === record) {
+    if ((leanSync || solve?.clearancePrepared) && solve && solve.dualWieldSynced === true && solve.dualWieldRecord === record) {
       current = solve.dualWieldState;
       stats.solveReuses++;
     } else {
