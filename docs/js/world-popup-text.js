@@ -514,20 +514,22 @@
       .sort((a, b) => a.sequence - b.sequence);
   }
 
-  function claimFloatOffset(root, bounds) {
+  function claimFloatOffset(root, bounds, scatter = false) {
     const worldHeight = state.settings.floatPlus.worldHeight;
     const existing = state.active.filter(event => event.root === root && event.mode === 'floatPlus');
-    const pathXClearance = worldHeight * 0.24;
-    const pathYClearance = 0.075;
+    const pathXClearance = worldHeight * (scatter ? 0.7 : 0.24); // Allow scattered numbers to drift outward without crossing nearby text.
+    const pathYClearance = scatter ? Math.max(0.075, worldHeight * 0.55) : 0.075;
     const isFree = point => existing.every(event =>
       Math.abs(point.x - event.offsetX) > (bounds.width + event.width) * 0.5 + pathXClearance ||
       Math.abs(point.y - event.offsetY) > (bounds.height + event.height) * 0.5 + pathYClearance
     );
     const searchCount = Math.max(240, (existing.length + 1) * 240);
     for (let index = 0; index < searchCount; index++) {
-      const angle = index * 2.399963229728653;
-      const radius = Math.max(0.18, worldHeight * 3.2) * Math.sqrt(index / 239);
-      const point = { x: Math.cos(angle) * radius, y: Math.sin(angle) * radius * 0.62 };
+      const angle = index * 2.399963229728653 + (scatter ? 0.55 : 0);
+      const radius = scatter
+        ? Math.max(0.18, worldHeight * 1.8) * Math.sqrt(1 + index / 7) // Start off-center and distribute the burst in different directions.
+        : Math.max(0.18, worldHeight * 3.2) * Math.sqrt(index / 239);
+      const point = { x: Math.cos(angle) * radius * (scatter ? 1.35 : 1), y: Math.sin(angle) * radius * (scatter ? 0.85 : 0.62) };
       if (isFree(point)) return point;
     }
     const topEdge = existing.reduce((top, event) => Math.max(top, event.offsetY + event.height * 0.5), 0);
@@ -535,16 +537,17 @@
   }
 
   function spawn(entry) {
-    const mode = entry.modeOverride || state.settings.assignments[entry.kind];
+    const mode = entry.scatter ? 'floatPlus' : entry.modeOverride || state.settings.assignments[entry.kind]; // Combat bursts never inherit list assignments.
     if (!state.deps || !entry.root || (mode !== 'floatPlus' && mode !== 'centeredFiveRow')) return null;
     const cfg = state.settings[mode];
     const scene = entry.scene || state.deps.getActiveScene?.(); // Resolved scene owner is retained so zone cleanup sees default-scene rewards.
     if (!scene?.add) return null;
+    const sizeMultiplier = entry.emphasis ? 1.65 : 1; // Impact callout uses the same Float+ renderer at a larger authored scale.
     const planeCfg = mode === 'centeredFiveRow'
       ? { ...cfg, worldHeight: cfg.worldHeight * CENTERED_LIST_SCALE }
-      : cfg;
+      : sizeMultiplier !== 1 ? { ...cfg, worldHeight: cfg.worldHeight * sizeMultiplier } : cfg;
     const parts = makePlane(entry.text, entry.kind, planeCfg, entry.color);
-    const event = { ...entry, scene, ...parts, mode, sequence: state.sequence++, startedAt: performance.now(), lifetimeMs: cfg.lifetimeMs, listSlot: -1, offsetX: 0, offsetY: 0 };
+    const event = { ...entry, scene, ...parts, mode, sizeMultiplier, sequence: state.sequence++, startedAt: performance.now(), lifetimeMs: cfg.lifetimeMs, listSlot: -1, offsetX: 0, offsetY: 0 };
     if (mode === 'centeredFiveRow') {
       const list = listFor(entry.root);
       if (list.length >= cfg.maxRows) {
@@ -556,7 +559,7 @@
       listFor(entry.root).forEach((item, index) => { item.listSlot = index; });
       event.listSlot = listFor(entry.root).length;
     } else {
-      const offset = claimFloatOffset(entry.root, parts);
+      const offset = claimFloatOffset(entry.root, parts, entry.scatter);
       event.offsetX = offset.x;
       event.offsetY = offset.y;
     }
@@ -724,7 +727,7 @@
     if (!value) return null;
     const sign = Number(amount) >= 0 ? '+' : '-';
     const text = options.text || `${sign}${value}`;
-    if (kind === 'damage' || kind === 'healing') return spawn({ kind, text, root: options.root || state.deps?.playerRoot, scene: options.scene, modeOverride: options.mode, color: options.color });
+    if (kind === 'damage' || kind === 'healing') return spawn({ kind, text, root: options.root || state.deps?.playerRoot, scene: options.scene, modeOverride: options.mode, color: options.color, scatter: options.scatter === true, emphasis: options.emphasis === true });
     queueReward(kind, text, options);
     return state.sequence;
   }
@@ -747,11 +750,19 @@
     const label = id === 'health' ? '' : id === 'footing' ? 'Footing' : (window.ResourceSystem?.AFFLICTIONS?.[id]?.name || id).replace(/\s+(Health|Stamina|Footing)$/i, ''); // Short popup labels omit only the trailing resource name.
     const palette = window.HOBUNJI_CONFIG?.resourceRings; // Shared authored resource and affliction colors, resolved only on a real hit.
     const color = id === 'footing' ? palette?.colors?.footing : palette?.afflictionColors?.[id]; // Health retains the popup editor's authored damage color.
-    const suffix = source === 'impact' ? ' (Impact)' : ''; // Physical collision numbers are distinguishable from the original hit.
-    const text = label || suffix ? `-${value}${label ? ' ' + label : ''}${suffix}` : undefined;
-    const sequence = showChange('damage', -value, { root, scene, text, color });
+    const text = label ? `-${value} ${label}` : undefined;
+    const sequence = showChange('damage', -value, { root, scene, text, color, mode: 'floatPlus', scatter: true });
     if (sequence != null) lastCombatEffect = { id, amount: value, sequence, source, color: color || null, at: Date.now() };
     return sequence;
+  }
+
+  // One prominent callout per resolved collision, not one suffix per number.
+  function showImpactCallout(entity) {
+    if (window.ActorRegistry?.isPlayer(entity)) return null;
+    const root = entity?.avatarRef?.group || entity?.root; // Same target anchor as the applied numbers.
+    const scene = state.deps?.getActiveScene?.();
+    if (!root || !scene || iconAnchorScene(root) !== scene) return null;
+    return spawn({ kind: 'damage', text: 'IMPACT!!!', root, scene, scatter: true, emphasis: true, color: '#ffe181' });
   }
 
   function finishLevelUpAnnouncement() {
@@ -1164,8 +1175,9 @@
         if (baseHeight > maxHeight) screenClamp = maxHeight / baseHeight;
       }
       if (event.mode === 'floatPlus') {
-        center.addScaledVector(cameraRight, event.offsetX + Math.sin(progress * Math.PI) * event.height * 0.12);
-        center.y += event.offsetY + 0.075 * (1 - Math.pow(1 - progress, 2));
+        const drift = event.scatter ? 0.22 * (1 - Math.pow(1 - progress, 2)) : 0; // Each number drifts away along its own chosen scatter direction.
+        center.addScaledVector(cameraRight, event.offsetX * (1 + drift) + Math.sin(progress * Math.PI) * event.height * 0.12);
+        center.y += event.offsetY * (1 + drift) + 0.075 * (1 - Math.pow(1 - progress, 2));
       } else {
         if (!rowLayouts) rowLayouts = new Map();
         let layouts = rowLayouts.get(event.root);
@@ -1186,9 +1198,9 @@
       event.plane.position.copy(center);
       event.plane.quaternion.copy(camera.quaternion);
       event.material.opacity = event.interactionPrompt ? 1 : progress < 0.72 ? 1 : (1 - progress) / 0.28;
-      const pop = event.kind === 'damage' ? 1.1 - 0.1 * Math.min(1, progress / 0.24) : 1;
+      const pop = event.emphasis ? 1.4 - 0.4 * Math.min(1, progress / 0.24) : event.kind === 'damage' ? 1.1 - 0.1 * Math.min(1, progress / 0.24) : 1;
       const listScale = event.mode === 'centeredFiveRow' ? CENTERED_LIST_SCALE : 1;
-      event.plane.scale.setScalar(state.settings[event.mode].worldHeight * listScale * pop * screenClamp);
+      event.plane.scale.setScalar(state.settings[event.mode].worldHeight * listScale * (event.sizeMultiplier || 1) * pop * screenClamp);
       if (event.interactionPrompt) keepPromptRowOnScreen(event.plane, camera, cameraRight, cameraBack, halfFovTan);
     }
     finishedRewards.sort((a, b) => a.sequence - b.sequence).forEach(forwardToReadout);
@@ -1251,7 +1263,7 @@
 
   const api = {
     releaseScene,
-    init, update, showChange, isLocalCombatSource, showCombatEffect, showFamilyUsefulness, queueReward, queueSocialGain, queueLevelUp,
+    init, update, showChange, isLocalCombatSource, showCombatEffect, showImpactCallout, showFamilyUsefulness, queueReward, queueSocialGain, queueLevelUp,
     showIconEffect, countIconEffects, iconResourceSnapshot,
     setInteractionPrompts, syncInteractionPrompts, clearInteractionPrompts,
     setConditionCallout, clearConditionCallout,
@@ -1260,7 +1272,7 @@
     avatarCentroidWorld, loadSettings, applySettings, clear,
     defaults: clone(DEFAULTS), storageKey: STORAGE_KEY,
     debugSnapshot: () => ({
-      latestChange: 'Short affliction labels match resource colors and distinguish collision impacts.',
+      latestChange: 'Combat numbers scatter in Float+; collisions emit one oversized IMPACT!!! callout.',
       lastCombatEffect: lastCombatEffect ? { ...lastCombatEffect } : null,
       lastSocialGains: lastSocialGains.map(gain => ({ ...gain, recipients: [...gain.recipients] })),
       pendingSocialGainKinds: [...socialGains.keys()],
