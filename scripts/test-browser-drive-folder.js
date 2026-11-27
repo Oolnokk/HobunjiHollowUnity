@@ -15,10 +15,11 @@ async function runSuite(source, NativeURL, NativeBlob, crypto) {
     throw Error('Expected rejection: '+fragment);
   };
   const env = {location:{protocol:'https:',hostname:'oolnokk.github.io'},crypto};
+  let http = async () => { throw Error('Unexpected network request in fixture'); }; // Inject real adapter HTTP transport tests without live credentials.
   const instrumented = source.replace('  window.HobunjiBrowserDrive=Object.freeze({',
     '  window.__driveTest={Session,DriveDirectory,DriveFile,folderId,allowed};\n  window.HobunjiBrowserDrive=Object.freeze({');
   check(instrumented !== source,'test seam changed');
-  new Function('window','globalThis','location','URL','Blob','crypto',instrumented)(env,env,env.location,NativeURL,NativeBlob,crypto);
+  new Function('window','globalThis','location','URL','Blob','crypto','fetch',instrumented)(env,env,env.location,NativeURL,NativeBlob,crypto,(...args)=>http(...args));
   const {Session,DriveDirectory,DriveFile,allowed,folderId} = env.__driveTest;
   check(folderId('https://drive.google.com/drive/folders/rootFolder123?usp=sharing')==='rootFolder123','folder link');
   await rejects(()=>folderId('https://not-drive.example/drive/folders/rootFolder123'),'Paste the Google Drive URL');
@@ -182,7 +183,63 @@ async function runSuite(source, NativeURL, NativeBlob, crypto) {
     await rejects(()=>s.request('https://not-google.example/drive/v3/files'),'Rejected unexpected');
     await rejects(()=>s.request('https://www.googleapis.com.evil.example/drive/v3/files'),'Rejected unexpected');
   }
-  return 17;
+  {
+    const s=new Session(root,'Hobunji','12345-test.apps.googleusercontent.com');
+    s.auth={token:'test-token',expires:Date.now()+60000};
+    const calls=[]; // Exercise the real request + multipart builder, not the fixture's mocked stage method.
+    const payload=new NativeBlob(['{"id":"char"}'],{type:'application/json'});
+    http=async(target,options)=>{
+      calls.push({target,options});
+      const u=new NativeURL(target);
+      check(u.origin==='https://www.googleapis.com','requests only go to Google');
+      const header=options.headers['Content-Type'];
+      check(options.method==='POST' && header.startsWith('multipart/related; boundary='),'small file uses multipart');
+      const body=await options.body.text();
+      const meta=JSON.parse(body.split('\r\n\r\n')[1].split('\r\n--')[0]);
+      check(meta.parents[0]===dir && meta.name.startsWith('.hobunji-pending-'+name+'-'),'staging metadata is scoped to selected directory');
+      check(body.includes('{"id":"char"}'),'complete file bytes are uploaded');
+      return {ok:true,status:200,json:async()=>({id:'realStage1234',name:meta.name,parents:[dir],size:String(payload.size),version:'1'})};
+    };
+    const result=await s.stage(dir,name,payload);
+    check(result.id==='realStage1234'&&calls.length===1,'real multipart response validated');
+    check(calls[0].options.headers.Authorization==='Bearer test-token'&&calls[0].options.redirect==='error'&&calls[0].options.credentials==='omit','token stays on authorized request, never a redirect or cookie');
+  }
+  {
+    const s=new Session(root,'Hobunji','12345-test.apps.googleusercontent.com');
+    s.auth={token:'test-token',expires:Date.now()+60000};
+    const payload=new NativeBlob(['x'.repeat(5*1024*1024+1)],{type:'application/json'});
+    let meta=null,calls=0; // A real >5 MiB body exercises the resumable path.
+    http=async(target,options)=>{
+      calls++;
+      const u=new NativeURL(target);
+      check(u.origin==='https://www.googleapis.com','resumable request origin');
+      if(calls===1){
+        check(options.method==='POST'&&options.headers['X-Upload-Content-Length']===String(payload.size),'resumable init length');
+        meta=JSON.parse(options.body);
+        return {ok:true,status:200,headers:{get:k=>k==='Location'?'https://www.googleapis.com/upload/drive/v3/files?upload_id=fixture':null}};
+      }
+      check(options.method==='PUT'&&options.body===payload,'exact Blob sent to resumable session');
+      return {ok:true,status:200,json:async()=>({id:'resumable1234',name:meta.name,parents:[dir],size:String(payload.size),version:'1'})};
+    };
+    check((await s.stage(dir,name,payload)).id==='resumable1234'&&calls===2,'real resumable request and response validated');
+    http=async()=>({ok:true,status:200,headers:{get:()=> 'https://evil.example/upload/drive/v3/files?upload_id=fixture'}});
+    await rejects(()=>s.stage(dir,name,payload),'Rejected unexpected Google Drive endpoint');
+    http=async()=>({ok:true,status:200,headers:{get:()=>null}});
+    await rejects(()=>s.stage(dir,name,payload),'did not expose the resumable upload URL');
+  }
+  {
+    const s=new Session(root,'Hobunji','12345-test.apps.googleusercontent.com');
+    s.auth={token:'test-token',expires:Date.now()+60000};s.writable=true;
+    http=async()=>({ok:false,status:401});
+    await rejects(()=>s.request('https://www.googleapis.com/drive/v3/files'),'authorization expired');
+    check(!s.granted()&&!s.writable,'HTTP 401 invalidates authorization and writes');
+    s.auth={token:'test-token',expires:Date.now()+60000};
+    http=async()=>({ok:false,status:403});
+    await rejects(()=>s.request('https://www.googleapis.com/drive/v3/files'),'HTTP 403');
+    http=async()=>{throw Error('sensitive raw diagnostic');};
+    await rejects(()=>s.request('https://www.googleapis.com/drive/v3/files'),'network request failed');
+  }
+  return 20;
 }
 if(require.main===module)runSuite(fs.readFileSync('docs/js/browser-drive-folder.js','utf8'),URL,Blob,webcrypto)
   .then(n=>console.log('browser Drive folder: '+n+' regression groups passed'))
