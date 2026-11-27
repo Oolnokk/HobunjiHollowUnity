@@ -1155,6 +1155,11 @@
     }
     return createPlasmPatch(tiles,{ttl,label:'bomb-puddle',ignoreClear:true});
   }
+  function createSkeletonPlasmTile(tx,tz,y) {
+    if(world?.theme!=='kanthic'||![tx,tz,y].every(Number.isFinite)||protectedPlasmTile(world.kit,tx,tz))return null;
+    if(window.DevRandomRuinTileOccupancy?.solidAt?.(tx+.5,tz+.5,.27,y+.35))return null;
+    return createPlasmPatch([{x:tx,z:tz,y}],{ttl:5,label:'skeleton-drip',ignoreClear:true}); // Caller proved the support at this height; shaft platforms need not be in the floor-zero set.
+  }
   function tickTimedPlasm(dt) {
     if(!world?.timedPlasm?.size)return;
     for(const patch of [...world.timedPlasm]){
@@ -1424,7 +1429,7 @@
     snapshot,
     isIceAt:(x,z)=>!!world?.iceTiles?.has(tileKey(x,z)), // Identical coverage for rendering and native locomotion.
     movementPhysicsAt:(x,z)=>world?.theme==='tothal'&&(world.iceTiles.has(tileKey(x,z))||window.RuinJumpShaft?.isIceAt?.(x,z,window.DevRandomRuin?.getPlayerGroundSupportY?.()))?ICE_PHYSICS:null, // No allocations per game frame; jump-shaft ice platforms answer for their own height.
-    addPlatformPillar,createPlasmPatch,createPlasmPuddle,
+    addPlatformPillar,createPlasmPatch,createPlasmPuddle,createSkeletonPlasmTile,
     createSpellPlasm, // Lich drops share tile rendering, immersion and checkpoint recovery.
     trackBossBlizzard,stopBossBlizzard,triggerBossBlizzard,resetBossHazards, // Nanahi tracks one spawn point and releases one icicle into the ordinary hit/shatter handlers each time.
     spawnBossPillar,updateArenaBossPillars,clearArenaBossPillars, // Testing Arena and the real ruin use the same preset-footprint pillar charge and explosion pipeline.

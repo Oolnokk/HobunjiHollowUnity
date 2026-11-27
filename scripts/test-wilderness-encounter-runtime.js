@@ -6,7 +6,7 @@ async function main(){
   const alpha=new Uint8Array(4*5*4); // 4×5 sprite with opaque bounding box x=1..2, y=2..4.
   for(let y=2;y<=4;y++)for(let x=1;x<=2;x++)alpha[(y*4+x)*4+3]=255;
   let loads=0,failImage=true;
-  class ImageMock{set src(_url){loads++;if(failImage){failImage=false;this.onerror();return;}this.width=4;this.height=5;this.onload();}}
+  class ImageMock{set src(_url){assert.equal(this.crossOrigin,'anonymous','CORS mode must be set before the image request');loads++;if(failImage){failImage=false;this.onerror();return;}this.width=4;this.height=5;this.onload();}}
   const doc={createElement:()=>({width:0,height:0,getContext:()=>({drawImage(){},getImageData:()=>({data:alpha}),clearRect(){},save(){},restore(){},translate(){},scale(){}})})};
   new Function('window','document','Image','performance',fs.readFileSync('docs/js/wilderness-encounter-runtime.js','utf8'))(w,doc,ImageMock,{now:()=>now});
   const R=w.WildernessEncounterRuntime;

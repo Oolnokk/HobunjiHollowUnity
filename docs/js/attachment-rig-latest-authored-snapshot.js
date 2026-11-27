@@ -52,6 +52,7 @@
     window.HobunjiLatestAuthoredRigReady = Promise.resolve();
     for (const src of urls) document.write(`<script src="${src}"><\/script>`);
   } else {
+    window.__enemyWorkshopPreloadScripts?.(urls); // Workshop-only download hints; preserve the ordered rig installation.
     const ready = loadSequentially(urls);
     window.HobunjiLatestAuthoredRigReady = ready;
     ready.catch(error => console.warn('[attachment-rig-bootstrap]', error));

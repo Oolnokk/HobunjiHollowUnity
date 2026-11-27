@@ -43,15 +43,15 @@
   }
 
   // Rolls an enchanted weapon: one Base, usually plus one enchantment of another type (a Flourish), with a random particle color and effect.
-  function rollEnchantedWeapon(rnd) {
+  function rollEnchantedWeapon(rnd,{singleBase=false,baseIds=null}={}) {
     const defs = Object.values(window.EnchantmentSystem?.DEFINITIONS || {});
-    const bases = defs.filter(def => def.type === 'Base'), flourishes = defs.filter(def => def.type === 'Flourish');
+    const bases = defs.filter(def => def.type === 'Base'&&(!baseIds||baseIds.includes(def.id))), flourishes = defs.filter(def => def.type === 'Flourish');
     if (!bases.length) return null;
     const pick = list => list[Math.floor(rnd() * list.length)];
     const base = pick(bases);
     const enchantments = { base: [base.id], flourishes: {} };
     const chosen = [base];
-    if (flourishes.length && rnd() < KNIGHT_SECOND_ENCHANTMENT_CHANCE) {
+    if (!singleBase && flourishes.length && rnd() < KNIGHT_SECOND_ENCHANTMENT_CHANCE) {
       const flourish = pick(flourishes);
       enchantments.flourishes[pick(SLOTS)] = flourish.id;
       chosen.push(flourish);
@@ -144,19 +144,29 @@
       if (!plane || !spritePath || !window.WeaponEnchantmentVFX?.createFixedEmitter) return; // The weapon plane is built a moment after the entity.
       entity._enchantFx = window.WeaponEnchantmentVFX.createFixedEmitter(plane, { visual: enchanted.visual, counts: enchanted.counts, spritePath });
       if (!entity._enchantFx) entity._enchantFxFailed = true;
+      else if(entity.ruinWallCoffin && !entity._ruinEnchantDisposeInstalled){
+        entity._ruinEnchantDisposeInstalled=true;
+        const disposeAvatar=entity.avatarRef.dispose; // Same owner handles loot, reroll, and despawn.
+        entity.avatarRef.dispose=function(){entity._enchantFx?.dispose?.();entity._enchantFx=null;return disposeAvatar?.call(this);};
+      }
     }
     entity._enchantFx?.update(dt);
   }
 
   // Corpse loot: the enchanted weapon comes off the body as a bound Harlyao relic with its exact enchantments and particle choice.
   function lootEnchantedWeapon(entity) {
+    if(entity?.ruinWallCoffin && entity._ruinBoundRelic) return entity._ruinBoundRelic; // A later corpse-loot failure cannot mint a duplicate bound weapon on retry.
     const enchanted = entity?.rosterRecord?.enchantedWeapon;
     const relics = window.HarlyaoRelics;
     if (!enchanted?.enchantments || !relics?.grantBoundRelic || !relics.makeRelic) return null;
     const shapes = Object.keys(relics.SHAPES || {});
-    const relic = { ...relics.makeRelic(shapes[Math.floor(Math.random() * shapes.length)]), enchantments: clone(enchanted.enchantments), ...(enchanted.visual ? { visual: clone(enchanted.visual) } : {}) };
+    const shape=enchanted.relicShape||(entity.ruinWallCoffin?null:shapes[Math.floor(Math.random()*shapes.length)]); // Exact coffin weapon.
+    if(!shape||!relics.SHAPES[shape])return null;
+    const relic = { ...relics.makeRelic(shape), enchantments: clone(enchanted.enchantments), ...(enchanted.visual ? { visual: clone(enchanted.visual) } : {}) };
     const key = relics.grantBoundRelic(relic);
-    return key ? { key, label: relics.SHAPES[relic.shape].label } : null;
+    const result=key?{key,label:relics.SHAPES[relic.shape].label}:null;
+    if(result&&entity.ruinWallCoffin)entity._ruinBoundRelic=result;
+    return result;
   }
 
   window.GhoulSpecialVariants = Object.freeze({ isUnarmedWitch, castWeaponKey, unarm, GLYPHS, WITCH_MAGIC_DYES, KNIGHT_PATTERN_DYE, PATTERN_SCALE, style, tick, rollEnchantedWeapon, lootEnchantedWeapon, framedPattern, tierMetal });

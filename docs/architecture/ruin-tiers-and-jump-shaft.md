@@ -106,6 +106,12 @@ Bombs now resolve their landing height through `DynamicSurfaces` inside ruins
 
 A few of the V50 wall panels on the shaft/gallery walls (2 / 4 / 6 per cave / hole / lich ruin, spread over the stories) are disguised coffins. The real panel mesh (engraving included) is the lid. Standing within ~2.7 tiles on the same story makes it fall forward onto the floor, revealing a black plane on the wall; a Harlyao skeleton climbs out of it over the dark spawn tile (which fades). Only one coffin skeleton is alive at a time; the next coffin stays shut until it is beaten. Test: `scripts/test-ruin-wall-coffins.js`. Debug lighting switch: `RuinLightOcclusion.setEnabled(false)`.
 
+## Themed dungeon skeletons
+
+All Harlyao skeletons spawned on the generated ruin map inherit the ruin's tradition in `MinionCombat`. Ordinary ruin minions receive 1.5× baseline Health; the solitary wall-coffin guards receive 3× baseline Health, exactly one randomly rolled NPC-compatible Base enchantment, and a matching Harlyao bound weapon as corpse loot. Their weapon magic never consults the player's gear record. Sanctum resurrection retains the appearance seed and does not grant a coffin relic.
+
+The char, frost and verdigris-style oil reveal are baked into the front, rear and combat expression canvases at construction time. Back stalagmites reuse furniture growth geometry; stone receives the shared faceted-rock surface treatment and bypasses PNG depth classification. Actual collision-accepted travel is the trigger: Hronal lunges leave 4-second ground-fire patches; Kanthic ordinary walks, lunges and dodges can leave individual 5-second plasm tiles on the actor's own support. Existing checkpoint and solid-tile protection remains in effect. The trail loop samples distance, not frame count. `MinionCombat.ruinDebugSnapshot()` exposes spawn/portrait/spike/hazard counters and the last visual error; `scripts/test-ruin-themed-skeletons.js` covers the core behavior.
+
 ## Emblem decals (`js/ruin-emblem.js`)
 
 Inside a ruin the generic round rune/seal decals resolve to the tradition's motif PNG (`assets/patterns/motif_harlyao_glyph_*`).

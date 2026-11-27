@@ -164,7 +164,15 @@
     const baseRadius = Math.max(1.2, Math.sqrt(metalPixels.length / Math.max(1, requestedCount) / Math.PI));
 
     for (let c = 0; c < requestedCount; c++) {
-      const p = metalPixels[Math.floor(rng() * metalPixels.length)] || metalPixels[0];
+      let p = metalPixels[Math.floor(rng() * metalPixels.length)] || metalPixels[0];
+      if(opts.separateBlotches&&centers.length){
+        let best=-1; // Pick the farthest of a bounded random sample rather than overlapping earlier centers.
+        for(let k=0;k<32;k++){
+          const candidate=metalPixels[Math.floor(rng()*metalPixels.length)],x=candidate%width,y=Math.floor(candidate/width);
+          const separation=Math.min(...centers.map(center=>(x-center.x)**2+(y-center.y)**2));
+          if(separation>best){best=separation;p=candidate;}
+        }
+      }
       centers.push({
         x: p % width,
         y: Math.floor(p / width),
@@ -174,6 +182,10 @@
       });
     }
 
+    if(opts.separateBlotches)for(const center of centers){
+      const nearest=Math.min(...centers.filter(other=>other!==center).map(other=>Math.hypot(center.x-other.x,center.y-other.y)));
+      center.radius=opts.looseBlotches?Math.min(center.radius,baseRadius*1.12,nearest*.49):Math.min(center.radius,baseRadius*.70,nearest*.29); // Loose portrait patches may touch/merge locally or reach the silhouette; existing strict separated mode is unchanged.
+    }
     const scored = [];
     for (const p of metalPixels) {
       const x = p % width;
@@ -188,7 +200,8 @@
         const wideWobble = valueNoise1D(angle01 * 5.2 + center.phase, seed + c * 977 + 101) * 0.36;
         const fineJitter = valueNoise1D(angle01 * 17.0 + center.phase, seed + c * 977 + 202) * 0.14;
         const kinkNoise = Math.max(0, valueNoise1D(angle01 * 8.0 + center.phase, seed + c * 977 + 303) - 0.62) * center.kink * 0.22;
-        const radius = Math.max(0.35, center.radius * (1 + wideWobble + fineJitter + kinkNoise));
+        const irregularity=opts.looseBlotches?1.35:1; // Larger irregular Kanthic contours use the same seeded verdigris edge function.
+        const radius = Math.max(0.35, center.radius * (1 + (wideWobble + fineJitter + kinkNoise)*irregularity));
         const grain = valueNoise2D(x * 0.18, y * 0.18, seed + c * 977 + 404) * 0.08;
         best = Math.min(best, (distance / radius) + grain);
       }
@@ -196,7 +209,10 @@
     }
 
     scored.sort((a, b) => a.score - b.score);
-    for (let i = 0; i < targetCount; i++) mask[scored[i].p] = 1;
+    for (let i = 0; i < targetCount; i++) {
+      if(opts.separateBlotches&&scored[i].score>1)break; // Never inflate the isolated blobs just to meet coverage.
+      mask[scored[i].p] = 1;
+    }
     return mask;
   }
 
@@ -1024,6 +1040,8 @@
   }
 
   window.ToolMetalRecolor = {
+    buildOxidationMask, // Shared irregular texture reveal mask.
+    buildOxidationOutlineMask, // Shared authored-style black perimeter for other texture reveals.
     getRecoloredCanvas,
     clearCache,
     rgbToHsv,

@@ -67,6 +67,22 @@ async function main() {
   load('wilderness-encounter-runtime.js',w,canvasDoc,Img);
   load('rootledoot-encounter.js',w,canvasDoc,Img);
   const root=w.Rootledoots;
+  // Short exposed legs and the posterior at the opaque root's exact vertical midpoint.
+  const bandit=fs.readFileSync('docs/js/combat/combat-bandit.js','utf8'),start=bandit.indexOf('  function rootledootLegLayout('),end=bandit.indexOf('  async function buildBanditAvatar(',start);
+  const layout=new Function(bandit.slice(start,end)+';return rootledootLegLayout;')();
+  for(const fraction of [.3,.7,1]){const p=layout(fraction,{posteriorRule:{heightPercentFromFloor:13.133738}});assert.equal(p.placementRatio,.56);assert.ok(Math.abs(p.posteriorFraction-p.gap-fraction/2)<1e-12);assert.ok(p.gaitReach<.15);}
+  // Rootledoots again use the standard Mao-ao humanoid rig; no bespoke primate registration.
+  const rigWindow={};new Function('window',fs.readFileSync('docs/config/attachment-rig-profiles.js','utf8'))(rigWindow);
+  const rigs=rigWindow.HOBUNJI_ATTACHMENT_RIG_PROFILES.characters;
+  assert.equal(rigs['rootledoot::male'],undefined);assert.ok(rigs['nohuknuk::male']);
+  const snapshot=fs.readFileSync('docs/js/attachment-rig-latest-authored-snapshot-core.js','utf8');
+  new Function('window','setInterval','clearInterval',snapshot)(rigWindow,()=>0,()=>{});
+  const donor=rigs['kenkari::male'];assert.ok(Math.abs(layout(.7,donor).gaitReach-donor.posteriorRule.heightPercentFromFloor/100)<1e-12,'Use live male Kenkari reference, not merely a synthetic donor');
+  let rigChanges=0;
+  w.HobunjiHandModelProfiles={mutate(){rigChanges++;}};
+  const probe=await root.makeCombatant({},'grunt',0,0,0);
+  assert.equal(rigChanges,0);assert.equal(probe.rootledoot,true);
+  spawnCount=0; // Probe must not alter the wave-count fixture.
   root.init({player,TILE:64,rnd:rand,hostiles,worldId:()=>'test',cycle:()=>1,day:()=>day,getArea:()=>zone,getGrid:()=>grid,walkable:(c,r)=>!!grid[r]?.[c]&&!grid[r][c].blocked,isBareGround:()=>true,getNpcWalkers:()=>walkers,isInCombat:()=>inCombat,canActivate:()=>canActivate,surfaceY:()=>0,getScene:()=>activeScene,despawn:c=>c.avatarRef.group.parent=null,canReceiveRoot:()=>true,giveRoot:()=>bag.feyHeftroot=(bag.feyHeftroot||0)+1});
   // Every suitable chunk owns one 3x3 footprint, and a wall separates even same-tier spawn tiles.
   for(let r=0;r<3;r++)for(let c=0;c<3;c++){

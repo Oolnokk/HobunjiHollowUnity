@@ -45,6 +45,7 @@ vm.runInContext(extract(avatarSource, 'humanoidBlendWeightsAt'), context);
 context.avatarApi = { resolveSkinnedPortraitRoot: root => root,
   neckBlendBand: context.neckBlendBand, neckBlendWeight: context.neckBlendWeight, headOffsetWeightAt: context.headOffsetWeightAt, // The outline/parity adapter reads both identical neck and independent head-placement weights.
   headScaleGateAtPixel: context.headScaleGateAtPixel, headScaleWeightAt:context.headScaleWeightAt, getPortraitsFlipped: () => context.portraitsFlipped };
+vm.runInContext(extract(avatarSource, 'findPortraitSurfaceTriangle'), context);
 vm.runInContext(extract(avatarSource, 'sampleSkinnedPortraitSurface'), context);
 vm.runInContext(extract(avatarSource, 'resolveSkinnedPixelWorldPosition'), context);
 assert(!/avatarApi\.resolveSkinnedPixelWorldPosition\s*=/.test(paritySource), 'outline adapter must not replace the shared resolver');
@@ -214,7 +215,7 @@ for (const resolve of [context.resolveSkinnedPixelWorldPosition, context.resolve
   const idx = makeAttr([0,0,0,0, 0,0,0,0, 2,0,0,0, 0,0,0,0, 2,0,0,0, 2,0,0,0],4);
   const wt = makeAttr(Array.from({length:6},()=>[1,0,0,0]).flat(),4);
   const attrs = { position:pos, uv, skinIndex:idx, skinWeight:wt };
-  plane.geometry = { userData:{segmentsX:1,segmentsY:1,portraitGridRows:[0,1],blendHeight:.30},getAttribute:k=>attrs[k] };
+  plane.geometry = { userData:{segmentsX:1,segmentsY:1,portraitGridRows:[0,1],blendHeight:.30},attributes:attrs,getAttribute:k=>attrs[k] };
   const resolve = context.resolveSkinnedPixelWorldPosition;
   // Pixel (25,50) lies within the first triangle. Top corner y .5 -> .8,
   // bottom corner stays -.5. At the middle of the row, y must be .15.

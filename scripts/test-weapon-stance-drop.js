@@ -147,4 +147,24 @@ assert(at(0.15) > 6 && at(0.15) < 14, 'lerps across the windup');
 const inherit = SAP.samplePose(out, { neutral: { bodySink: 9 }, windup: {}, strike: {} }, SAP.STYLE_NEUTRAL_POSE.thrust, 0.4, 0.3, 0.5, 0.7).bodySink;
 assert(Math.abs(inherit - 9) < 1e-9, 'a pose without an authored sink inherits the neutral');
 assert.strictEqual(SAP.samplePose(out, {}, SAP.STYLE_NEUTRAL_POSE.thrust, 0.4, 0.3, 0.5, 0.7).bodySink, 0, 'no authored sink at all means standing');
+vm.runInContext(read('docs/js/actor-body-sink.js'),sandbox);
+for(const scale of [.65,.82,1.35]){
+  const actor=new THREE.Group();actor.scale.setScalar(scale);actor.position.y=.4*scale;
+  const front=new THREE.Group(),rear=new THREE.Group(),hands=new THREE.Group(),legsPivot=new THREE.Group();
+  front.position.y=rear.position.y=.8*.06;hands.position.y=legsPivot.position.y=-.4;actor.add(front,rear,hands,legsPivot);
+  const hip=.8*(.06+.7/2),gap=.8*.06; // Bottom-aligned .7-height opaque root, with six percent standing clearance.
+  const legs=win.ProceduralLegAnimation.attach(THREE,legsPivot,{speciesId:'human',modelWidth:.8,modelHeight:.8,posteriorYOverride:hip,gaitReachLimit:.8*.13133738,stanceDropMax:gap*.8,legLengthRatioOverride:1});
+  for(let i=0;i<30;i++)legs.update(1/60,0,false,null,{});
+  legs.setLegLengthMultiplier(2);
+  assert(Math.abs(legs.standingPosteriorY-hip)<1e-8,'species refresh cannot move instance posterior');
+  const owner={legs,lower:[front,rear,hands,legsPivot].map(obj=>({obj}))};
+  const sink=win.ActorBodySink.apply(owner,30,0,true);
+  actor.updateMatrixWorld(true);
+  assert(Math.abs(sink-gap*.8)<1e-8,'short-legged body sink respects actual clearance');
+  assert(front.position.y>0,'portrait cannot sink through the floor');
+  assert(Math.abs(legs.group.getWorldPosition(new THREE.Vector3()).y)<1e-7,'hostile leg group stays at floor after sink');
+  const actualHip=legs.group.getObjectByName('left_hip').getWorldPosition(new THREE.Vector3()).y;
+  assert(Math.abs(actualHip-(hip-sink)*scale)<1e-7,'hip and portrait lower together');
+  legs.dispose();
+}
 console.log('weapon-stance-drop OK');
