@@ -113,6 +113,33 @@ assert.match(loader, /netlify-cloud-save\.js\?v=[A-Za-z0-9_.-]+/,
   assert.equal(status.availability, 'not-netlify', 'GitHack preview is reported as a static non-Netlify host');
   console.log('netlify cloud save static-preview host gate passed');
 
+  // Static/native origins must not install legacy UI or begin auth/polling.
+  for (const [hostname, protocol] of [
+    ['oolnokk.github.io', 'https:'], ['rawcdn.githack.com', 'https:'],
+    ['game', 'hobunji:'], ['', 'file:'], ['localhost', 'http:'],
+  ]) {
+    let installs = 0; // Counts unexpected DOM or observer work at startup.
+    const off = {
+      ...sandbox, location: { hostname, protocol }, window: null, globalThis: null,
+      document: { readyState: 'complete', body: {}, getElementById() { installs++; throw new Error('legacy UI mounted'); } },
+      MutationObserver: class { constructor() { installs++; } },
+      setInterval() { installs++; },
+    };
+    off.window = off; off.globalThis = off;
+    vm.runInNewContext(source, off);
+    assert.equal(off.NetlifyCloudSave.isAvailableHere(), false, hostname);
+    assert.equal(off.NetlifyCloudSave.getStatus().availability, 'not-netlify');
+    off.NetlifyCloudSave.openPanel();
+    assert.equal(off.NetlifyCloudSave.getStatus().panelOpen, false);
+    assert.equal(installs, 0);
+  }
+  assert.equal(fetchCalls, 0);
+  const onboarding = fs.readFileSync('docs/onboarding-core.js', 'utf8');
+  const startup = fs.readFileSync('docs/js/save-startup-gate.js', 'utf8');
+  for (const content of [onboarding, startup]) {
+    assert.ok(content.includes('window.NetlifyCloudSave?.isAvailableHere?.() ?'), 'only render legacy restore on supported origin');
+  }
+
   // A cloud status request can take seconds. Browser edits arriving during the
   // request must not be forgotten by the otherwise-unchanged sync branch.
   let revision = 'old'; // Simulated browser save revision captured before and after the cloud status request.

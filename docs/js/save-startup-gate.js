@@ -307,7 +307,7 @@
     try {
       let status = localSave.getStatus();
       if (!localSave.isSupported?.()) {
-        alert('Local save folders are not supported in this browser. Browser saves and Netlify Cloud Save still work.');
+        alert('Local save folders are not supported in this browser. Browser saves still work. To access a Google Drive save folder, use the installed game or a browser with local-folder support.');
         return;
       }
       if (status.state !== 'ready') {
@@ -351,7 +351,7 @@
       <div class="sl-section">
         <div class="sl-section-label">Restore</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;padding-top:6px;">
-          <button type="button" class="ob-tab" id="hobunjiEmptySaveCloud">☁ Cloud Save</button>
+          ${window.NetlifyCloudSave?.isAvailableHere?.() ? '<button type="button" class="ob-tab" id="hobunjiEmptySaveCloud">☁ Legacy Cloud Save</button>' : ''}
           <button type="button" class="ob-tab" id="hobunjiEmptySaveFolder">💾 ${localFolderLabel()}</button>
         </div>
       </div>
@@ -363,10 +363,10 @@
       </div>`;
 
     gate.querySelector('#hobunjiEmptySaveCloud')?.addEventListener('click', () => {
-      if (window.NetlifyCloudSave?.openPanel) {
+      if (window.NetlifyCloudSave?.isAvailableHere?.()) {
         window.NetlifyCloudSave.openPanel();
       } else {
-        alert('Cloud Save has not initialized yet. Reload the Netlify deployment and try again.');
+        alert('Legacy Cloud Save is unavailable here. Open your previous Netlify deployment to recover an existing account save.');
       }
     });
 

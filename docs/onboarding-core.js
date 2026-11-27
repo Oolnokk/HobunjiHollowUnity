@@ -1034,13 +1034,13 @@
         </a>
       </div>
       ${_localSaveFolderSectionHtml()}
-      <div class="sl-section sl-local-save-section">
-        <div class="sl-section-label">Cloud</div>
+      ${window.NetlifyCloudSave?.isAvailableHere?.() ? `<div class="sl-section sl-local-save-section">
+        <div class="sl-section-label">Legacy Cloud</div>
         <div class="sl-local-save-row">
-          <span class="sl-local-save-status">Sign in to sync saves across devices.</span>
-          <button type="button" class="sl-local-save-btn" id="slSourceCloud">☁ Cloud Save</button>
+          <span class="sl-local-save-status">Recover or sync an existing Netlify account save before migrating to Google Drive.</span>
+          <button type="button" class="sl-local-save-btn" id="slSourceCloud">☁ Legacy Cloud Save</button>
         </div>
-      </div>
+      </div>` : ''}
       ${_dbSourceSectionHtml()}
       <div class="sl-footer">
         <span></span>
@@ -1230,10 +1230,10 @@
     });
 
     _el.querySelector('#slSourceCloud')?.addEventListener('click', () => {
-      if (window.NetlifyCloudSave?.openPanel) {
+      if (window.NetlifyCloudSave?.isAvailableHere?.()) {
         window.NetlifyCloudSave.openPanel();
       } else {
-        alert('Cloud Save has not initialized yet. Reload the Netlify deployment and try again.');
+        alert('Legacy Cloud Save is unavailable here. Open your previous Netlify deployment to recover an existing account save.');
       }
     });
 

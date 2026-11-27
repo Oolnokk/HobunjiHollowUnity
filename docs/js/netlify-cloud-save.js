@@ -17,11 +17,11 @@
   const PANEL_ID = 'hobunjiCloudSavePanel';
   const LAUNCHER_ID = 'hobunjiCloudSaveLauncher';
   const SETTINGS_ROW_ID = 'hobunjiCloudSaveSettingsRow';
-  const STATIC_PREVIEW_HOSTS = new Set(['raw.githack.com', 'rawgit.com', 'localhost', '127.0.0.1', '::1', 'appassets.androidplatform.net']); // Android's local HTTPS asset host does not serve Netlify Functions. // Hosts that cannot serve this repo's Netlify Functions and should not emit expected 404 probes.
+  const STATIC_PREVIEW_HOSTS = new Set(['raw.githack.com', 'rawcdn.githack.com', 'rawgit.com', 'localhost', '127.0.0.1', '::1', 'appassets.androidplatform.net']); // Android's local HTTPS asset host does not serve Netlify Functions. // Hosts that cannot serve this repo's Netlify Functions and should not emit expected 404 probes.
 
   let _user = null;
   let _remote = null;
-  let _availability = 'checking';
+  let _availability = netlifyFunctionsAvailableHere() ? 'checking' : 'not-netlify';
   let _lastError = '';
   let _lastMessage = '';
   let _conflict = null;
@@ -148,7 +148,7 @@
     const runtimeLocation = globalThis.location;
     if (!runtimeLocation) return true;
     const host = String(runtimeLocation.hostname || '').toLowerCase();
-    if (runtimeLocation.protocol === 'file:') return false;
+    if (!['http:', 'https:'].includes(runtimeLocation.protocol)) return false; // Native app/file origins cannot host legacy functions.
     if (STATIC_PREVIEW_HOSTS.has(host) || host.endsWith('.github.io')) return false;
     return true;
   }
@@ -608,6 +608,7 @@
   }
 
   function openPanel() {
+    if (!netlifyFunctionsAvailableHere()) return;
     _panelOpen = true;
     notify();
   }
@@ -791,7 +792,7 @@
   }
 
   function renderAll() {
-    if (!document.body) return;
+    if (!document.body || !netlifyFunctionsAvailableHere()) return;
     injectStyles();
     ensureLauncher();
     renderSettingsRow();
@@ -799,7 +800,7 @@
   }
 
   async function init() {
-    if (!document.body) return;
+    if (!document.body || !netlifyFunctionsAvailableHere()) return; // Skip legacy UI, auth callbacks, observers and polling on static/native hosts.
     injectStyles();
     ensurePanel();
     ensureLauncher();
@@ -847,6 +848,7 @@
   }
 
   window.NetlifyCloudSave = {
+    isAvailableHere: netlifyFunctionsAvailableHere,
     getStatus,
     onChange,
     openPanel,
