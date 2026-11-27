@@ -361,3 +361,32 @@ console.log('Knockback collision + ledge fall + Burning Health regression passed
   assert.equal(popups.length,0);
   delete windowStub.WorldPopupText;
 }
+
+ // Environmental sound follows actual applied effects, not popup count or attacker.
+{
+  const calls = []; // Records semantic sound requests from the real resolver.
+  windowStub.AudioSystem = { playCollisionImpactSfx(...args) { calls.push(args); } };
+  const hostile = entity({hostile:true,areaId:'farm',x:30,y:40});
+  const hooks = {dealHealthDamage: (_target, amount) => ({applied:amount,lethal:false})};
+  for (const [descriptor,cue] of [[{kind:'stone'},'blunt'],[{kind:'wood'},'sharp'],[{bladedHazard:true},'sharp'],[{fireHazard:true,bladedHazard:true},'fire']]) {
+    const before = calls.length;
+    Impact.begin(hostile,TILE,1);
+    const result = Impact.resolve(hostile,descriptor,TILE,hooks);
+    assert.equal(result.impactSfx,cue);
+    assert.deepEqual(calls.at(-1),[cue,30,40,'farm']);
+    assert.equal(calls.length,before+1);
+    assert.equal(Impact.resolve(hostile,descriptor,TILE,hooks),null);
+    assert.equal(calls.length,before+1);
+  }
+  const before = calls.length;
+  Impact.begin(hostile,TILE,1);
+  hostile.x += TILE;
+  Impact.resolve(hostile,{kind:'stone'},TILE,hooks);
+  Impact.resolveStrength(entity({areaId:'farm',isCompanion:true,hostile:true}),{kind:'stone'},1,TILE,hooks,{popupCredit:true});
+  Impact.resolveStrength(entity({areaId:'farm'}),{kind:'stone'},1,TILE,hooks);
+  assert.equal(calls.length,before,'no effect, companion and unrelated nonhostile collisions stay silent');
+  const lethal = entity({hostile:true,areaId:'farm',x:12,y:34});
+  Impact.resolveStrength(lethal,{kind:'stone'},1,TILE,{dealHealthDamage(target,amount){target.x=999;return {applied:amount,lethal:true};}});
+  assert.deepEqual(calls.at(-1),['blunt',12,34,'farm'],'lethal collision retains original location');
+  delete windowStub.AudioSystem;
+}
