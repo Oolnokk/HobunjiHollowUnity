@@ -28,6 +28,8 @@ const main = fs.readFileSync(path.join(root, 'desktop/main.cjs'), 'utf8');
 const workflow = fs.readFileSync(path.join(root, '.github/workflows/windows-desktop.yml'), 'utf8');
 assert.match(html, /Content-Security-Policy/);
 assert.match(html, /Install &amp; Restart/);
+assert.match(ui, /'retrying'/, 'Check Now is disabled during retry backoff');
+assert.match(ui, /Retry Update Check/, 'Manual retry is labelled after failure');
 assert.match(ui, /textContent/, 'Errors/remote release text must not be injected as HTML');
 assert.ok(!ui.includes('innerHTML'), 'Update UI must never render untrusted HTML');
 assert.match(ui, /\['saving', 'installing'\]\.includes\(phase\)/, 'Later is disabled while saving or restarting');
@@ -166,7 +168,130 @@ async function checkUpdater() {
   console.log('Windows desktop updater: release feed, sandbox, IPC, progress, Later, safe restart and errors OK');
 }
 
-checkUpdater().catch(error => {
+async function checkRetryRecovery() {
+  const timeout = Object.assign(new Error('Cannot parse releases feed: Error: HttpError: 504\nHeaders: {"set-cookie":"secret-test-cookie"}\nXML: <feed>private</feed>'), { code: 'ERR_UPDATER_INVALID_RELEASE_FEED' });
+  const malformed = Object.assign(new Error('Cannot parse releases feed: invalid XML\nXML: <feed>private</feed>'), { code: 'ERR_UPDATER_INVALID_RELEASE_FEED' });
+  const delays = []; // Captures the exact backoff schedule without wall-clock sleeps.
+  const logs = []; // Verifies safe diagnostics for both event and promise rejection.
+  const updater = new EventEmitter();
+  let attempts = 0;
+  let failure = timeout;
+  let recoverOnAttempt = 0;
+  let duringDelay = null;
+  let downloadReject = null;
+  updater.checkForUpdates = async () => {
+    attempts++;
+    updater.emit('checking-for-update');
+    if (failure && attempts !== recoverOnAttempt) {
+      updater.emit('error', failure);
+      throw failure;
+    }
+    if (downloadReject) {
+      updater.emit('update-available', { version: '0.1.99' });
+      return { downloadPromise: downloadReject };
+    }
+    updater.emit('update-not-available');
+  };
+  const updates = createDesktopUpdates({
+    app: { getVersion: () => '0.1.0', isPackaged: true },
+    BrowserWindow: FakeWindow, ipcMain: { handle: () => {} }, shell: {},
+    autoUpdater: updater, getGameWindow: () => null, prepareRestart: async () => false,
+    logger: { error: (...args) => logs.push(args), warn: (...args) => logs.push(args) },
+    delayRetry: async ms => {
+      delays.push(ms);
+      assert.equal(updates.snapshot().phase, 'retrying');
+      assert.ok(updates.snapshot().error, 'Retry exposes a concise failure reason');
+      if (duringDelay) await duringDelay();
+    },
+  });
+  updates.start({ autoCheck: false });
+  assert.equal(updater.logger, null, 'Disable raw upstream response logging');
+  duringDelay = async () => {
+    const before = attempts;
+    await updates.checkNow();
+    assert.equal(attempts, before, 'Manual/periodic checks cannot overlap a retry');
+  };
+  await updates.checkNow();
+  assert.deepEqual(delays, [5000, 15000, 30000]);
+  assert.equal(attempts, 4);
+  assert.equal(updates.snapshot().phase, 'error');
+  assert.match(updates.snapshot().error, /HTTP 504/);
+  assert.equal(logs.length, 4, 'One diagnostic per failed attempt, not per error event');
+  assert.doesNotMatch(JSON.stringify([logs, updates.snapshot()]), /secret-test-cookie|<feed>|set-cookie/);
+  recoverOnAttempt = attempts + 2;
+  delays.length = 0;
+  await updates.checkNow();
+  assert.deepEqual(delays, [5000]);
+  assert.equal(updates.snapshot().phase, 'current');
+  assert.equal(updates.snapshot().error, null);
+  for (const [error, expected] of [
+    [new Error('Cannot parse releases feed: Error: Request timed out\nXML: private'), /timed out/],
+    [new Error('Request has been aborted by the server'), /aborted/],
+    [Object.assign(new Error('connection failed'), { code: 'ERR_CONNECTION_RESET' }), /ERR_CONNECTION_RESET/],
+    [Object.assign(new Error('server unavailable'), { code: 'HTTP_ERROR_503' }), /HTTP 503/],
+    [new Error('Cannot download "https://example.invalid/asset", status 502: Bad Gateway'), /HTTP 502/],
+  ]) {
+    failure = error;
+    recoverOnAttempt = attempts + 2;
+    delays.length = 0;
+    await updates.checkNow();
+    assert.deepEqual(delays, [5000]);
+    assert.equal(updates.snapshot().phase, 'current');
+    assert.match(logs.at(-1)[1], expected);
+  }
+  failure = malformed;
+  delays.length = 0;
+  await updates.checkNow();
+  assert.equal(updates.snapshot().phase, 'error');
+  assert.match(updates.snapshot().error, /metadata/);
+  assert.deepEqual(delays, [], 'Malformed metadata is not retried');
+  for (const [error, expected] of [
+    [Object.assign(new Error('not found'), { statusCode: 404 }), /HTTP 404/],
+    [Object.assign(new Error('denied'), { statusCode: 403 }), /HTTP 403/],
+  ]) {
+    failure = error;
+    await updates.checkNow();
+    assert.match(updates.snapshot().error, expected);
+    assert.deepEqual(delays, [], 'Permanent HTTP errors are not retried');
+  }
+
+  // A rejected auto-download must be consumed, without starting a large download retry loop.
+  failure = null;
+  let rejectDownload;
+  downloadReject = new Promise((_resolve, reject) => { rejectDownload = reject; });
+  await updates.checkNow();
+  assert.equal(updates.snapshot().phase, 'downloading');
+  const beforeDownloadError = logs.length;
+  updater.emit('error', timeout);
+  assert.equal(updates.snapshot().phase, 'downloading', 'Do not expose retry before the download promise settles');
+  const beforeSettlement = attempts;
+  await updates.checkNow();
+  assert.equal(attempts, beforeSettlement, 'No new check while the failed download is still settling');
+  rejectDownload(timeout);
+  await Promise.resolve();
+  assert.equal(updates.snapshot().phase, 'error');
+  assert.match(updates.snapshot().message, /Download failed/);
+  assert.equal(logs.length, beforeDownloadError + 1);
+  assert.deepEqual(delays, []);
+  downloadReject = new Promise((_resolve, reject) => { rejectDownload = reject; });
+  await updates.checkNow();
+  updater.emit('update-cancelled');
+  assert.equal(updates.snapshot().phase, 'cancelled');
+  const beforeCancelSettlement = attempts;
+  await updates.checkNow();
+  assert.equal(attempts, beforeCancelSettlement);
+  rejectDownload(new Error('cancelled'));
+  await Promise.resolve();
+  assert.equal(updates.snapshot().phase, 'idle');
+  assert.equal(updates.snapshot().targetVersion, null);
+  assert.equal(updates.snapshot().error, null);
+  downloadReject = null;
+  await updates.checkNow();
+  assert.equal(updates.snapshot().phase, 'current');
+  console.log('Windows desktop updater: bounded retries, recovery, safe errors, download settlement and cancellation OK');
+}
+
+checkUpdater().then(checkRetryRecovery).catch(error => {
   console.error(error);
   process.exitCode = 1;
 });

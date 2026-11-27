@@ -38,10 +38,21 @@
     }
   }
 
+  function ownerTopPrefix(owners,scratch) {
+    const prefix=scratch.ownerTopPrefix||=[]; // Numeric scratch, rebuilt for every live owner pose.
+    prefix.length=owners.length;
+    let top=-Infinity;
+    for(let i=0;i<owners.length;i++)prefix[i]=top=Math.max(top,owners[i].y1);
+    scratch.ownerPrefixVisits=(scratch.ownerPrefixVisits||0)+owners.length;
+    return prefix;
+  }
+  // Small sets cannot reliably amortize a full prefix build.
+  const useOwnerPrefix=(owners,pets,scratch)=>scratch.ownerSorted&&owners.length>=16&&pets.length>=4;
+
   // `forbidden` is an optional flat list of extra angular arcs [centre, halfWidth, ...] (radians)
   // that the answer may not lie in, e.g. the camera-edge-on zone; they are cut from the
   // allowed set exactly like the analytic collision arcs.
-  function solveBodyYaw(owners,pets,requested,scratch={a:[],b:[],pairs:[]},forbidden=null) {
+  function solveBodyYaw(owners,pets,requested,scratch={a:[],b:[],pairs:[]},forbidden=null,preparedPrefix=null) {
     const pairs=scratch.pairs; pairs.length=0;
     const c=Math.cos(requested),s=Math.sin(requested);
     let blocked=false;
@@ -49,9 +60,19 @@
     // Each surviving pair defines a single forbidden angular arc. Collect
     // them once; if the requested heading is already clear, no acos or arc
     // subtraction is needed.
+    const prefix=useOwnerPrefix(owners,pets,scratch)?(preparedPrefix||ownerTopPrefix(owners,scratch)):null; // Shared across live head alternatives.
+    let visits=0,searchSteps=0; // Accumulate diagnostics locally, not via a scratch-property write for each pair.
     for(const p of pets) {
       const x=c*p.x+s*p.z,z=-s*p.x+c*p.z;
-      for(const o of owners) {
+      let start=0;
+      if(prefix){
+        let end=owners.length;
+        // Every preceding slab ends below this pet; preserve pair order and the exact clearance comparison.
+        while(start<end){searchSteps++;const mid=(start+end)>>>1;if(p.y0>prefix[mid]+CLEARANCE)start=mid+1;else end=mid;}
+      }
+      for(let i=start;i<owners.length;i++) {
+        const o=owners[i];
+        visits++; // Includes rejected pairs and the sorted-loop early break.
         if(scratch.ownerSorted && o.y0>p.y1+CLEARANCE)break;
         const r=pairRadius(o,p);if(!r)continue;
         pairs.push(o,p,r);
@@ -59,6 +80,8 @@
         if(dx*dx+dz*dz<=r*r)blocked=true;
       }
     }
+    scratch.ownerVisits=(scratch.ownerVisits||0)+visits;
+    scratch.ownerSearchSteps=(scratch.ownerSearchSteps||0)+searchSteps;
     scratch.pairTests=(scratch.pairTests||0)+pairs.length/3;
     if(!blocked)return wrap(requested);
     let allowed=scratch.a,next=scratch.b;
@@ -351,7 +374,7 @@
     }
 
     function finishSolve(d,started) { // Hoisted: shared by every solve exit without a per-frame closure.
-      d.cacheHit=d.preparations===0;d.envelopePairs=scratch.pairTests;d.poseMs=Math.max(0,clock()-started-d.buildMs);
+      d.cacheHit=d.preparations===0;d.envelopePairs=scratch.pairTests;d.ownerPatchVisits=scratch.ownerVisits;d.ownerPrefixVisits=scratch.ownerPrefixVisits;d.ownerSearchSteps=scratch.ownerSearchSteps;d.poseMs=Math.max(0,clock()-started-d.buildMs);
       // Do not keep the last unequipped/disposed avatar alive through scratch references.
       ownerEntries.length=petEntries.length=ownerDisks.length=petDisks.length=scratch.pairs.length=0;
       seenMeshes.clear();seenBones.clear();
@@ -365,7 +388,7 @@
       d.mode='geometry-unavailable';d.quality='live-bone-envelopes';d.checks=0;d.buildChecks=0;d.buildMs=0; // Direct writes: no per-frame literal.
       d.preparations=0;d.weightRefreshes=0;d.envelopePairs=0;d.headCandidates=0;d.ownerPatches=0;d.petPatches=0;d.cacheHit=true;
       d.requestedBodyYawDeg=requested/DEG;d.resolvedBodyYawDeg=requested/DEG;d.bodyOffsetDeg=0;d.requestedHeadYawDeg=head;d.headYawDeg=head;
-      scratch.pairTests=0;
+      scratch.pairTests=0;scratch.ownerVisits=0;scratch.ownerPrefixVisits=0;scratch.ownerSearchSteps=0;
       if(!group?.isObject3D || !avatar.frontPlane || !grip || !scale || !perch || !args.ownerMeshes?.length)return finishSolve(d,started);
       ownerEntries.length=petEntries.length=ownerDisks.length=petDisks.length=0;seenMeshes.clear();seenBones.clear();
       for(const mesh of args.ownerMeshes) {
@@ -388,6 +411,7 @@
       ownerDisks.sort((a,b)=>a.y0-b.y0); // Vertical broad phase shared by every head alternative.
       d.ownerPatches=ownerDisks.length;
       let bestBody=null,bestHead=head,bestDelta=Infinity;
+      let preparedPrefix=null; // Owner disks are fixed across this solve's head alternatives.
       const zone=zoneActive(args.cameraDeadzone)?args.cameraDeadzone:null; // Camera-edge-on zone, enforced for body and head alike.
       let memory=null;if(zone){memory=zoneSides.get(group);if(!memory)zoneSides.set(group,memory=[]);}
       const target=zone?biasedRequest(zone,requested,memory):requested;
@@ -395,7 +419,8 @@
         petDisks.length=0;
         for(const e of petEntries)pose(e,petFrame,rig,angle,grip,scale,petDisks);
         d.petPatches=petDisks.length;d.headCandidates++;
-        const body=solveBodyYaw(ownerDisks,petDisks,target,scratch,zone?zoneArcs(zone,angle*DEG,zoneBuffer):null);
+        if(!preparedPrefix&&useOwnerPrefix(ownerDisks,petDisks,scratch))preparedPrefix=ownerTopPrefix(ownerDisks,scratch);
+        const body=solveBodyYaw(ownerDisks,petDisks,target,scratch,zone?zoneArcs(zone,angle*DEG,zoneBuffer):null,preparedPrefix);
         if(body===null)return false;
         if(args.passiveAwayLimit && Math.abs(angle)>EPS){
           const allowed=args.passiveAwayLimit(body);

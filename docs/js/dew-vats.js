@@ -322,6 +322,13 @@
     for (const obj of deps.processingFurnitureObjects) if (obj.id === vatId) return obj;
     return null;
   }
+  // Single-record lookup for the active family pose/schedule path; no temporary list of all vats.
+  function findSqueezingVatById(vatId) {
+    for (const obj of deps?.processingFurnitureObjects || []) {
+      if (obj.id === vatId && deps.PROCESSING_FURNITURE_DEFS[obj.furnitureKey]?.method === 'squeezing') return obj;
+    }
+    return null;
+  }
   function _workerRequiredResult() {
     return { ok: false, workerRequired: true, message: 'Assign housed Small livestock to this squeezing vat before starting it.' };
   }
@@ -475,6 +482,7 @@
     vatCanAccept,
     assignedWorkerForVat,
     findVatById,
+    findSqueezingVatById,
     assignToVat,
     unassignFromVat,
     retargetAssignments,

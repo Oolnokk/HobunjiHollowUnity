@@ -89,6 +89,16 @@ async function check() {
   assert(hatchlingRig.root.position.y > -0.23, 'moving hatchlings hop above, not instead of, their foot correction');
   window.TzatzulLiveVisuals.tick(0.05, 'perch-test');
   assert.equal(hatchlingRig.root.position.y, -0.23, 'hatchlings return to the authored foot anchor after landing');
+  const group=pingdort.avatarRef.group,original=pingdort.avatarRef.frontPlane;
+  const replacement={...original,visible:true,name:'replacement_front_plane'};
+  group.add(replacement);pingdort.avatarRef.frontPlane=replacement;
+  window.TzatzulLiveVisuals.tick(.05,'perch-test');
+  assert.equal(replacement.visible,false,'new native portrait is hidden immediately');
+  const before=window.TzatzulLiveVisuals.snapshot().refreshedPlanes;
+  window.TzatzulLiveVisuals.tick(.05,'perch-test');
+  assert.equal(window.TzatzulLiveVisuals.snapshot().refreshedPlanes,before,'duplicate reference and child are tracked only once');
+  window.TzatzulLiveVisuals.release(pingdort);
+  assert.equal(replacement.visible,true,'replacement visibility is restored on release');
   console.log('flying bird ground-anchor checks passed');
 }
 check().catch(error => { console.error(error); process.exitCode = 1; });

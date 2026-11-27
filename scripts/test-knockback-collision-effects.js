@@ -20,6 +20,10 @@ const campfire = JSON.parse(fs.readFileSync('docs/config/furniture-authored/camp
 const hearth = JSON.parse(fs.readFileSync('docs/config/furniture-authored/hearth.json', 'utf8')); // Existing built-in flame fixture must persist its hazard flag.
 
 // Integration guards: keep the feature attached to the real movement/death/editor paths.
+assert.match(gameSource, /CreatureCliffClimb\?\.knockOff\?\.\(entity, 'knocked prone', entity\._knockbackCollisionImpact\?\.popupCredit === true\)/, 'cliff-climb knockdowns retain shove attribution');
+assert.match(gameSource, /dropWorld, dropTiers, dirX: 0, dirY: 0, popupCredit: entity\._knockbackCollisionImpact\?\.popupCredit === true/, 'airborne prone falls retain their original hit credit');
+assert.match(gameSource, /popupCredit: \(entity\._knockbackCollisionImpact\?\.popupCredit \?\? air\.popupCredit\) === true/, 'a later obstruction cannot erase the ledge landing credit');
+assert.match(gameSource, /_knockbackLedgeAir\.popupCredit = entity\._knockbackCollisionImpact\.popupCredit === true; return api\.resolve/, 'the latest shove owns subsequent landing credit before horizontal resolution clears the state');
 assert.match(gameSource, /KnockbackCollisionImpact\?\.begin\?\.\(target, speedPxS, KNOCKBACK_DUR_S, popupCredit\)/,
   'ordinary knockback records its authored intended travel once when the shove starts');
 const sweptMoveSource = fs.readFileSync('docs/js/swept-move.js', 'utf8'); // sweptMove was extracted out of game.js.
@@ -299,13 +303,18 @@ const KNOCKBACK_DUR_S = 0.18; // Production fixed knockback duration.
 
 // Credit belongs to the actual movement, never a lingering last attacker.
 {
-  const popups = [];
-  windowStub.WorldPopupText = { showCombatEffect(target, id, amount, credited) { if (credited) popups.push({ target, id, amount }); } };
+  const popups = [], callouts = [];
+  windowStub.WorldPopupText = { showCombatEffect(target, id, amount, credited, source) { if (credited) { popups.push({ target, id, amount, source }); return popups.length; } }, showImpactCallout(target) { callouts.push(target); } };
   const e = entity();
   const hooks = { dealHealthDamage(target, amount) { return { applied: Math.min(amount, 2), lethal: false }; } };
   Impact.begin(e, TILE, 1, true);
+  assert.equal(popups.length, 0, 'starting knockback cannot emit collision numbers');
   const impact = Impact.resolve(e, { kind: 'stone' }, TILE, hooks);
   assert.equal(impact.popupCredit, true);
+  assert.equal(impact.popupCount, 4);
+  assert.deepEqual(callouts,[e],'one callout per collision, not per number');
+  assert(popups.every(p => p.source === 'impact'));
+  assert.equal(Impact.debugCreditSnapshot().lastImpact.popupCount, 4);
   assert.deepEqual(Object.fromEntries(popups.map(p => [p.id, p.amount])), { health: 2, footing: 20, shatteredStamina: 5, bruisedHealth: 4 });
   assert.equal(Impact.resolve(e, { kind: 'stone' }, TILE, hooks), null);
   assert.equal(popups.length, 4);
@@ -318,6 +327,15 @@ const KNOCKBACK_DUR_S = 0.18; // Production fixed knockback duration.
   assert.equal(popups.length, 8, 'credited ledge landing displays its own effects');
   Impact.resolveStrength(fallTarget, { kind: 'stone' }, 1, TILE, hooks, { mode: 'ledge-fall' });
   assert.equal(popups.length, 8, 'natural falls have no combat popup credit');
+  assert.deepEqual(callouts,[e,fallTarget],'only credited resolved impacts emit callouts');
+  assert.equal(Impact.debugCreditSnapshot().lastImpact.mode, 'ledge-fall');
+  const noContact = entity();
+  Impact.begin(noContact, TILE, 1, true);
+  Impact.cancel(noContact);
+  assert.equal(popups.length, 8, 'unobstructed motion cannot emit collision numbers');
+  const rejected = entity();
+  const rejectedImpact = Impact.resolveStrength(rejected, { kind: 'stone' }, 1, TILE, { dealHealthDamage: () => false }, { popupCredit: true });
+  assert.equal(rejectedImpact.appliedEffects.health, undefined, 'rejected Health is never reported as applied');
   delete windowStub.WorldPopupText;
 }
 

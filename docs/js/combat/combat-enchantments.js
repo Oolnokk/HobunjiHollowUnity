@@ -219,9 +219,12 @@
   }
 
   function cleanWeaponState(raw) {
-    const base = Array.isArray(raw?.base)
-      ? [...new Set(raw.base.map(migratedId).filter(id => DEFINITIONS[id]?.type === 'Base'))].slice(0, BASE_LIMIT)
-      : [];
+    const base = []; // Preserve first valid unique entries, with no intermediate maps, filters or Set.
+    if (Array.isArray(raw?.base)) for (const value of raw.base) {
+      const id = migratedId(value);
+      if (DEFINITIONS[id]?.type === 'Base' && !base.includes(id)) base.push(id);
+      if (base.length >= BASE_LIMIT) break;
+    }
     const flourishes = {};
     for (const slotId of window.Combat?.loadout?.SLOT_IDS || ['tap1','tap2','hold1','hold2']) {
       const id = migratedId(raw?.flourishes?.[slotId]);
@@ -378,8 +381,13 @@
 
   function activeDefinitions(key = weaponKey()) {
     const state = stateFor(key);
-    const ids = [...state.base, ...Object.entries(state.flourishes).filter(([slot, id]) => allowsFlourishSlot(id, slot)).map(([, id]) => id)].filter(Boolean);
-    return ids.map(id => DEFINITIONS[id]).filter(Boolean);
+    const active = []; // Base first, then eligible flourishes in their existing property order.
+    for (const id of state.base) if (id && DEFINITIONS[id]) active.push(DEFINITIONS[id]);
+    for (const slot of Object.keys(state.flourishes)) {
+      const id = state.flourishes[slot];
+      if (id && allowsFlourishSlot(id, slot)) active.push(DEFINITIONS[id]);
+    }
+    return active;
   }
 
   function getWeaponImmundanity(input = weaponKey()) {

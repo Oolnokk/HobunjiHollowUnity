@@ -1180,6 +1180,11 @@
       lines.push(`Banubu clouds: ${banubuClouds.map(cloud => `${cloud.name} floorY=${cloud.floorY.toFixed(3)} cloudY=${cloud.y.toFixed(3)}`).join(' | ')}`);
     }
     const knockbackImpactDebug = window.KnockbackCollisionImpact?.debugSnapshot?.(); // Latest forced-movement collision so mobile testing can verify collider type, scaling, and lethal suppression without a console.
+    const creditedKnockback = window.KnockbackCollisionImpact?.debugCreditSnapshot?.(); // Last local shove/impact, independent of unrelated world combat.
+    if (creditedKnockback) {
+      const hit = creditedKnockback.lastImpact;
+      lines.push(`Player/pet knockback: begun=${creditedKnockback.begun} ended/replaced=${creditedKnockback.cancelled} resolved=${creditedKnockback.resolved}${hit ? ` last=${hit.target} / ${hit.label} (${hit.mode}) age=${Math.max(0, Date.now() - hit.at)}ms deficit=${hit.deficitTiles.toFixed(2)}t popups=${hit.popupCount} applied=[${Object.entries(hit.appliedEffects).map(([id, amount]) => `${id}=${amount}`).join(', ') || 'none'}]` : ' no credited collision yet'}`);
+    }
     if (knockbackImpactDebug) {
       const effectText = Object.entries(knockbackImpactDebug.effects || {}).map(([key, value]) => `${key}=${value}`).join(', '); // Full scaled profile before caps/lethality.
       const appliedText = Object.entries(knockbackImpactDebug.appliedEffects || {}).map(([key, value]) => `${key}=${value}`).join(', '); // Effects that actually landed before any lethal cutoff.
