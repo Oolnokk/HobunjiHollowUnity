@@ -19461,13 +19461,13 @@
         else if (meleeAttackFacingCommit.attackSeen) meleeAttackFacingCommit = null;
       }
 
-      function shoulderBodyPerspectiveAuthority(movementStrength = player.inputStrength, perspectiveFacing = shoulderPerspectiveFacingAngle()) {
+      function shoulderBodyPerspectiveAuthority(cameraFacing = cameraFacingAngleRad()) {
         if (activeCameraMode !== SHOULDER_SURF_MODE) return 'other-camera';
         const meleeAttackActive = meleeAttackCurrentlyActive(); // Covers travel attacks, ordinary swings, and held melee windups without treating farming-tool animation as combat.
         const rangedAttackActive = activeTool === 'ranged' && window.RangedWeapons?.isPlayerAttacking?.(); // Deliberately excludes reload so only an actual shot gives the point body/root authority.
         if (meleeAttackActive || rangedAttackActive) return 'attack';
-        if (Number(movementStrength) > 0.001) return 'movement';
-        if (Math.abs(angleDiff(perspectiveFacing, facingAngle)) > SHOULDER_SURF_BODY_FREE_LOOK_RAD) return 'idle-neck-catchup';
+        if (heldMode === 'tool' && (activeTool === 'weapon' || activeTool === 'ranged' || activeTool === 'harpoon')) return 'camera-weapon'; // Neutral armed yaw belongs to camera look, never to the movement stick.
+        if (Math.abs(angleDiff(cameraFacing, facingAngle)) > SHOULDER_SURF_BODY_FREE_LOOK_RAD) return 'idle-neck-catchup';
         return 'idle-free';
       }
 
@@ -19913,7 +19913,7 @@
           ix /= inputLen;
           iy /= inputLen;
           const aimDeadzone = Number(window.SCRATCHBONES_CONFIG?.game?.input?.targeting?.inputAimDeadzone) || 0.08;
-          if (!Number.isFinite(mobileArchDragAngle) && inputStrength >= aimDeadzone && !controllerLookActive && !(isDesktop && mouseLookActive)) targetAimAngle = Math.atan2(iy, ix);
+          if (activeCameraMode !== SHOULDER_SURF_MODE && !Number.isFinite(mobileArchDragAngle) && inputStrength >= aimDeadzone && !controllerLookActive && !(isDesktop && mouseLookActive)) targetAimAngle = Math.atan2(iy, ix);
         }
 
         // Universal stuck-recovery: the instant the player first presses a
@@ -20112,24 +20112,23 @@
           targetAimAngle = mobileArchDragAngle;
           lastMoveAngle = mobileArchDragAngle;
         } else if (activeCameraMode === SHOULDER_SURF_MODE) {
-          // The head and attack rays remain camera-authored at all times. The
-          // physical body/root inherits that direction immediately during
-          // movement or attacks; while idle it keeps its direction until the
-          // exact head aim would exceed the former 60° independent neck range,
-          // then catches up only enough to restore that allowance. Nothing in
-          // this branch writes camera rotation, so body catch-up cannot restrict
-          // the camera itself.
-          const perspectiveFacing = shoulderPerspectiveFacingAngle(); // Shared point bearing used by direct alignment and the idle neck-limit boundary.
-          const perspectiveAuthority = shoulderBodyPerspectiveAuthority(inputStrength, perspectiveFacing); // Central state boundary shared with the on-demand mobile/debug report below.
+          // Camera look alone owns neutral armed facing. Unarmed free-look
+          // retains its neck allowance regardless of whether the player walks.
+          // Nothing in this branch writes camera rotation.
+          const cameraFacing = cameraFacingAngleRad(); // Stable look yaw, independent of strafe displacement and camera-follow lag.
+          const perspectiveAuthority = shoulderBodyPerspectiveAuthority(cameraFacing);
           const meleeFacingOverride = meleeAttackBodyFacingOverride();
           if (Number.isFinite(meleeFacingOverride) && perspectiveAuthority === 'attack') {
             facingAngle = meleeFacingOverride;
-          } else if (perspectiveAuthority === 'movement' || perspectiveAuthority === 'attack') {
-            facingAngle = perspectiveFacing;
+          } else if (perspectiveAuthority === 'attack') {
+            facingAngle = shoulderPerspectiveFacingAngle(); // Deliberate strikes retain their existing reticle convergence.
+          } else if (perspectiveAuthority === 'camera-weapon') {
+            facingAngle = cameraFacing;
+            targetAimAngle = cameraFacing;
           } else if (perspectiveAuthority === 'idle-neck-catchup') {
-            const rootFromPointDiff = angleDiff(facingAngle, perspectiveFacing); // Preserves the allowed neck yaw instead of squaring the idle body fully to the point.
-            const targetFacing = perspectiveFacing + window.FormatUtils.clamp(rootFromPointDiff, -SHOULDER_SURF_BODY_FREE_LOOK_RAD, SHOULDER_SURF_BODY_FREE_LOOK_RAD); // Nearest body bearing that puts the head back at the independent limit.
-            const catchupDiff = angleDiff(targetFacing, facingAngle); // Drives only the body/root toward the legal boundary at the former catch-up rate.
+            const rootFromPointDiff = angleDiff(facingAngle, cameraFacing);
+            const targetFacing = cameraFacing + window.FormatUtils.clamp(rootFromPointDiff, -SHOULDER_SURF_BODY_FREE_LOOK_RAD, SHOULDER_SURF_BODY_FREE_LOOK_RAD);
+            const catchupDiff = angleDiff(targetFacing, facingAngle);
             facingAngle += catchupDiff * Math.min(1, SHOULDER_SURF_BODY_CATCHUP_RATE * dt);
           }
           player.angle = facingAngle;
@@ -26172,9 +26171,9 @@
           // across whatever body yaw the clamp leaves.
           if (!player.perpState) player.perpState = {};
           const rawTargetRotY = -facingAngle + Math.PI / 2;
-          // Live travel direction (same 5px/s threshold as the walk bob below)
-          // outranks everything else when picking which dead-zone edge to use.
-          window.PerpRotation.setMovementHint(player.perpState, Math.hypot(player.vx, player.vy) > 5 ? Math.atan2(player.vx, player.vy) : null);
+          // In shoulder mode the corrective edge follows logical look yaw, not travel.
+          // Other camera modes retain their existing movement-facing behavior.
+          window.PerpRotation.setMovementHint(player.perpState, activeCameraMode === SHOULDER_SURF_MODE && !dialogueOpen ? rawTargetRotY : Math.hypot(player.vx, player.vy) > 5 ? Math.atan2(player.vx, player.vy) : null);
           const { effectiveTarget: pEffTarget, snapTo: pSnapTo } = window.PerpRotation.perpClamp(player.perpState, rawTargetRotY, playerCameraPerps());
           if (pSnapTo !== null) playerFacing = pEffTarget;
           else playerFacing += angleDiff(pEffTarget, playerFacing) * 0.18;
