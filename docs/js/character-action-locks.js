@@ -111,7 +111,7 @@
   if (typeof location !== 'undefined' && /\/tools\//.test(location.pathname || '')) return;
   const src = document.currentScript?.src || '';
   const base = src ? new URL('.', src).href : 'js/';
-  const chathead = new URL('animal-chathead-frame.js?v=20261123hbd21292', base).href;
+  const chathead = new URL('animal-chathead-frame.js?v=20261127flyerImpactAudit2', base).href;
   const dialogue = new URL('livestock-dialogue.js?v=20260902modular1', base).href;
   const livestockHarvestStaging = new URL('livestock-harvest-staging.js?v=20261119dairyWild1', base).href; // Loads exact multi-avatar harvest playback plus staging before FarmAnimals is assigned.
   const social = new URL('social-action-wheel.js?v=20261117hd8e73f5', base).href;
