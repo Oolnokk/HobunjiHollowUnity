@@ -7,6 +7,7 @@
   const PICK_SHAFT_MIGRATION_KEY = 'hobunji.modularWeapons.pickShovelForgeable.v1'; // One-time editor-only lift for saved local drafts; later explicit authoring is respected.
   const WAR_CLEAVER_SHAFT_MIGRATION_KEY = 'hobunji.modularWeapons.warCleaverForgeable.v1'; // Enable the shipped War-cleaver haft in old browser drafts without repeatedly overriding editor choices.
   const COMPANION_TANG_DIRECTION_MIGRATION_KEY = 'hobunji.modularWeapons.companionTangDirection.v1'; // Prevents replaying the one-time arrow repair over subsequent author edits.
+  const SPIKED_SWEEP_MIGRATION_KEY = 'hobunji.modularWeapons.spikedHeadSweep.v1'; // Correct stale local thrust settings once without locking future intentional edits.
   const PAIR_FIT_MIGRATION_KEY = 'hobunji.modularWeapons.authoredPerpendicularPairFits.v1'; // Adopt the new neutral-angle pair fits only once for preexisting browser drafts.
   const CORRECTED_COMPANION_TANG_SHAFTS = new Set(['fishing-mace', 'warhammer', 'bgungku', 'hatchet', 'hoe', 'pick-shovel']); // Only the six shipped automatically generated sideways tangs require reversed arrow direction.
   const PAIR_VISUAL_FIELDS = Object.freeze(["scaleX","scaleY","flipX","flipY","x","y","rotation","layerOrder"]); // Source-to-head corrections only; weapon behavior, bridges and authored art remain independent.
@@ -1326,6 +1327,7 @@
     const needsWarCleaverUpgrade = storage?.getItem(WAR_CLEAVER_SHAFT_MIGRATION_KEY) !== '1'; // Old local imports otherwise hide the now-authorized War-cleaver grip.
     const needsTangDirectionUpgrade = storage?.getItem(COMPANION_TANG_DIRECTION_MIGRATION_KEY) !== '1'; // Existing v5 drafts may contain the old reversed automatic arrows.
     const needsPairFitUpgrade = storage?.getItem(PAIR_FIT_MIGRATION_KEY) !== '1'; // Authored neutral-angle presets must supersede only their matching old copies.
+    const needsSpikedSweepUpgrade=storage?.getItem(SPIKED_SWEEP_MIGRATION_KEY)!=='1'; // A browser draft may predate the authored sweep correction.
     if (recent || prior || oldest) {
       const draft = recent ? JSON.parse(recent) : prior ? addCompanionsToPreviousDraft(JSON.parse(prior)) : JSON.parse(oldest); // Preserve every other authored setting.
       if (needsKylieUpgrade && draft.shafts?.kylie) draft.shafts.kylie.toolWorthy = true; // Old drafts must not mask the new shipped Kylie capability.
@@ -1333,15 +1335,21 @@
       if (needsWarCleaverUpgrade && draft.shafts?.['war-cleaver']) draft.shafts['war-cleaver'].editorOnly = false; // One-time migration; pair exclusions and authored transforms stay untouched.
       const repairedTangDirection = needsTangDirectionUpgrade && repairLegacyCompanionTangDirections(draft); // Only repair unchanged backwards companion arrows.
       migratedPairFits = needsPairFitUpgrade ? migrateOldPairFits(draft) : 0; // Keep deliberately edited pair corrections intact.
-      replace(draft, !recent || needsKylieUpgrade || needsPickShaftUpgrade || needsWarCleaverUpgrade || repairedTangDirection || migratedPairFits > 0);
+      let repairedSpikedSweep=false; // Only the Spiked Wooden Head's accidental thrust settings are migrated.
+      if(needsSpikedSweepUpgrade)for(const shaft of Object.values(draft.shafts||{})){
+        const pair=shaft.overrides?.['porakaneki-greatclub'];
+        if(pair?.animation==='thrust'){pair.animation='sweep';repairedSpikedSweep=true;}
+      }
+      replace(draft, !recent || needsKylieUpgrade || needsPickShaftUpgrade || needsWarCleaverUpgrade || repairedTangDirection || migratedPairFits > 0 || repairedSpikedSweep);
     }
     // Never mark a draft migration complete if its updated configuration could not be stored.
     if(draftPersistence.ok!==false) {
-    if (needsKylieUpgrade) storage?.setItem(KYLIE_TOOL_MIGRATION_KEY, '1');
-    if (needsPickShaftUpgrade) storage?.setItem(PICK_SHAFT_MIGRATION_KEY, '1');
-    if (needsWarCleaverUpgrade) storage?.setItem(WAR_CLEAVER_SHAFT_MIGRATION_KEY, '1');
-    if (needsTangDirectionUpgrade) storage?.setItem(COMPANION_TANG_DIRECTION_MIGRATION_KEY, '1');
-    if (needsPairFitUpgrade) storage?.setItem(PAIR_FIT_MIGRATION_KEY, '1');
+      if (needsKylieUpgrade) storage?.setItem(KYLIE_TOOL_MIGRATION_KEY, '1');
+      if (needsPickShaftUpgrade) storage?.setItem(PICK_SHAFT_MIGRATION_KEY, '1');
+      if (needsWarCleaverUpgrade) storage?.setItem(WAR_CLEAVER_SHAFT_MIGRATION_KEY, '1');
+      if (needsTangDirectionUpgrade) storage?.setItem(COMPANION_TANG_DIRECTION_MIGRATION_KEY, '1');
+      if (needsPairFitUpgrade) storage?.setItem(PAIR_FIT_MIGRATION_KEY, '1');
+      if (needsSpikedSweepUpgrade) storage?.setItem(SPIKED_SWEEP_MIGRATION_KEY, '1');
     }
   } catch (error) { global.__farmLog?.(`[Foundry] Ignored invalid attachment draft: ${error.message}`, 'warn'); }
   global.ModularWeapons = { getConfig: () => config, replace, persistDraft, draftPersistence:()=>({...draftPersistence}), settings, isDisallowed, transforms, decode, itemKey, sourceShape, weaponName, weaponDamageType, flailRecipe, flailGuide, authoredFlailAnchor, isFlailHead, resolvedBores, boreShaft, cleanBores, headTransform, compositionFrame, planeLayout, fitPlaneGeometry, compose, loadImage, outlineComponentPixels, outlinedImage, registerDefinitions, unlockedParts, matchingMounts, matchesRigidMount, rigidMountAssignments, rigidMountMode,

@@ -76,4 +76,25 @@ assert.equal(api.diagnostics('').revision,beforeRev+1);
 assert.equal(api.attachmentRig(live.shafts[pk],live.heads[hk],api.settings(pk,hk)).children[0].index,0);
 blocked=false;assert.equal(api.persistDraft().ok,true);
 assert.equal(JSON.parse(stored).shafts[pk].overrides[hk].mountTypeMode,'eye','Retry persists the current live draft');
-console.log('Pair mount type override and storage-failure tests passed.');
+// Old browser drafts must not silently restore the accidental Pick-Shovel thrust.
+const stale=JSON.parse(stored);
+stale.shafts[pk].overrides[hk].animation='thrust';
+stale.shafts.dagger.overrides.dagger.animation='thrust'; // Unrelated authored thrust must survive.
+const memory=new Map([['hobunji.modularWeapons.v5',JSON.stringify(stale)]]);
+const reloadWindow={localStorage:{getItem:key=>memory.get(key)||null,setItem:(key,value)=>memory.set(key,value)}};
+const boot=()=>{for(const path of ['docs/config/modular-weapons.js','docs/js/modular-weapons.js'])vm.runInNewContext(fs.readFileSync(path,'utf8'),{window:reloadWindow,console});return reloadWindow.ModularWeapons;};
+let reloadApi=boot();
+assert.equal(reloadApi.settings(pk,hk).animation,'sweep','Repair old saved spike thrust');
+assert.equal(reloadApi.settings('dagger','dagger').animation,'thrust','Leave unrelated thrust untouched');
+assert.equal(JSON.parse(memory.get('hobunji.modularWeapons.v5')).shafts[pk].overrides[hk].animation,'sweep');
+assert.equal(memory.get('hobunji.modularWeapons.spikedHeadSweep.v1'),'1');
+const defs={};reloadApi.registerDefinitions(defs,{}, {test:{label:'Test'}},['test']);
+const spiked=Object.values(defs).filter(def=>def.modular?.head===hk);
+assert(spiked.length>0);
+for(const def of spiked){assert.equal(def.animStyle,'sweep');assert.equal(def.comboStyle,'sweep');}
+// The one-time migration does not lock future deliberate authoring.
+const edited=JSON.parse(memory.get('hobunji.modularWeapons.v5'));
+edited.shafts[pk].overrides[hk].animation='thrust';
+reloadApi.replace(edited,true);reloadApi=boot();
+assert.equal(reloadApi.settings(pk,hk).animation,'thrust');
+console.log('Pair mount type override, storage-failure and stale spike draft migration tests passed.');
