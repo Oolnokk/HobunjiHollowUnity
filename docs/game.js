@@ -803,6 +803,8 @@
       const PRONE_THROW_CREATURE_MIN_PX_S = 480; // Gives animals/bandits a minimum throw at the existing hostile-bite scale.
 
       function applyKnockback(target, fromX, fromY, speedPxS, popupCredit = false) {
+        // Public movement callers may supply source metadata instead of the direct hit's precomputed credit.
+        popupCredit = popupCredit === true || window.WorldPopupText?.isLocalCombatSource?.(popupCredit?.attacker) === true;
         const reelingMul = window.ResourceSystem?.timedDebuffModifier?.(target, 'knockbackTaken') ?? 1; // Reeling scales the shared impulse before branch/free-plane collision handling diverges.
         speedPxS *= reelingMul;
         if (!(speedPxS > 0)) return; // Zero-knockback hits still damage/stagger but must not launch a prone target.
@@ -854,8 +856,12 @@
             // a large Footing hit, with a floor of one remaining Health.
             const currentHealth = Number(target.health);
             const impactHealth = Math.min(4, Math.max(0, (Number.isFinite(currentHealth) ? currentHealth : 1) - 1));
-            if (impactHealth > 0) window.ResourceSystem?.applyDamage?.(target, impactHealth, { tag: 'blunt', source: 'fell from branch' });
-            window.ResourceSystem?.spendFooting?.(target, 47.5, 'fell from branch');
+            const healthLost = impactHealth > 0 ? window.ResourceSystem?.applyDamage?.(target, impactHealth, { tag: 'blunt', source: 'fell from branch' }) : 0; // Actual branch impact loss.
+            const footingLost = window.ResourceSystem?.spendFooting?.(target, 47.5, 'fell from branch'); // Actual branch impact Footing.
+            if (popupCredit) {
+              window.WorldPopupText?.showCombatEffect?.(target, 'health', healthLost, true);
+              window.WorldPopupText?.showCombatEffect?.(target, 'footing', footingLost, true);
+            }
             if (target === player) { _nestHoldT = 0; target._nestTakeActive = false; }
             if (target.lunging) {
           if (target === player && !Number.isFinite(target.lungeFlightWorldY)

@@ -322,3 +322,24 @@ const KNOCKBACK_DUR_S = 0.18; // Production fixed knockback duration.
 }
 
 console.log('Knockback collision + ledge fall + Burning Health regression passed');
+
+ // Direct Health and affliction application report only credited attacks, using actual values.
+{
+  const local = {}, pet = {}, other = {}, popups = [];
+  windowStub.WorldPopupText = {
+    isLocalCombatSource: source => source === local || source === pet,
+    showCombatEffect(target,id,amount,credited) { if (credited) popups.push({id,amount}); },
+  };
+  const target = entity({health:100,maxHealth:100});
+  const lost = ResourceSystem.applyDamage(target,10,{attacker:local,attackPower:10,afflictionBonuses:{bleedingHealth:0.4}});
+  assert.equal(lost,10);
+  assert.deepEqual(Object.fromEntries(popups.map(p=>[p.id,p.amount])),{bleedingHealth:4,health:10});
+  popups.length=0;
+  ResourceSystem.applyDamage(target,5,{attacker:pet,fixedAfflictionBuildup:{woundedStamina:3}});
+  assert.deepEqual(Object.fromEntries(popups.map(p=>[p.id,p.amount])),{woundedStamina:3,health:5});
+  popups.length=0;
+  ResourceSystem.applyDamage(target,5,{attacker:other,afflictionBonuses:{bleedingHealth:0.4}});
+  ResourceSystem.applyDamage(target,5,{attacker:local,environmentalImpact:true});
+  assert.equal(popups.length,0);
+  delete windowStub.WorldPopupText;
+}

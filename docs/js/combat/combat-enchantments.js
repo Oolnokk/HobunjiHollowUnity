@@ -551,11 +551,17 @@
       && !(window.RomanceFamily?.isProtectedFamilyChild?.(actor.rec?.id || actor.id) ?? window.RomanceFamily?.isBasketBaby?.(actor.rec?.id || actor.id));
   }
 
+  function applyAttributedAffliction(target, id, amount, attacker) {
+    const resource = window.ResourceSystem; // Shared actual buildup and presentation path, retaining compatibility with isolated previews.
+    if (resource?.addAttackAffliction) return resource.addAttackAffliction(target, id, amount, { attacker });
+    return resource?.addAffliction?.(target, id, amount) || 0;
+  }
+
   function applyRealmHitAffliction(event, def, power) {
     if (!livingActor(event.target) || !(power > 0)) return false;
     const effect = def.hitAffliction; // Authored reserve amount, scaled by weapon Immundanity.
     if (!effect) return false;
-    const added = window.ResourceSystem?.addAffliction?.(event.target, effect.id, effect.amount * power) || 0;
+    const added = applyAttributedAffliction(event.target, effect.id, effect.amount * power, event.attacker);
     if (!(added > 0)) return false;
     logEvent(`${def.displayName}: +${added} ${window.ResourceSystem.AFFLICTIONS[effect.id].name} on ${targetName(event.target)}`);
     return true;
@@ -654,10 +660,10 @@
     }
 
     if (baseIds.includes('burning')) {
-      window.ResourceSystem?.addAffliction?.(target, 'burningHealth', scaled(DEFINITIONS.burning, key, TUNING.BURNING_APPLICATION, 'amount'));
+      applyAttributedAffliction(target, 'burningHealth', scaled(DEFINITIONS.burning, key, TUNING.BURNING_APPLICATION, 'amount'), event.attacker);
     }
     if (baseIds.includes('frostbitten')) {
-      window.ResourceSystem?.addAffliction?.(target, 'frostbittenStamina', scaled(DEFINITIONS.frostbitten, key, TUNING.FROSTBITTEN_APPLICATION, 'amount'));
+      applyAttributedAffliction(target, 'frostbittenStamina', scaled(DEFINITIONS.frostbitten, key, TUNING.FROSTBITTEN_APPLICATION, 'amount'), event.attacker);
     }
     if (baseIds.includes('mirrored') && event.actualDamage > 0) {
       const amount = scaled(DEFINITIONS.mirrored, key, event.actualDamage * TUNING.MIRRORED_HEALTH_RATIO, 'amount');
@@ -667,7 +673,7 @@
     if (baseIds.includes('livingFlame')) {
       const targetBurn = scaled(DEFINITIONS.livingFlame, key, TUNING.LIVING_FLAME_ENEMY_BURNING_APPLICATION, 'burningAmount');
       const selfKindling = scaled(DEFINITIONS.livingFlame, key, TUNING.LIVING_FLAME_SELF_KINDLING_APPLICATION, 'kindlingAmount');
-      window.ResourceSystem?.addAffliction?.(target, 'burningHealth', targetBurn);
+      applyAttributedAffliction(target, 'burningHealth', targetBurn, event.attacker);
       window.ResourceSystem?.addAffliction?.(event.attacker, 'kindlingHealth', selfKindling);
     }
 
@@ -750,7 +756,7 @@
       if (!inWide || inNormal) continue;
 
       if (typeof deps.applyKnockback === 'function') {
-        deps.applyKnockback(target, context.attacker.x, context.attacker.y, strength, { source: 'living-gust', footingDamageMultiplier: 0 });
+        deps.applyKnockback(target, context.attacker.x, context.attacker.y, strength, { source: 'living-gust', footingDamageMultiplier: 0, attacker: context.attacker });
       } else if (typeof deps.damageCreature === 'function') {
         // damageCreature is the existing public combat seam that owns knockback.
         // A zero-damage call intentionally asks it for movement only; no Base
@@ -760,6 +766,7 @@
           footingDamageMultiplier: 0,
           noAfflictions: true,
           enchantmentPeripheralGust: true,
+          attacker: context.attacker,
         });
       }
       affected++;
@@ -778,7 +785,7 @@
     for (const target of deps.hostileObjects || []) {
       if (!target || target.health <= 0 || target.areaId !== deps.getCurrentArea?.()) continue;
       if (Math.hypot(target.x - wielder.x, target.y - wielder.y) > radius) continue;
-      window.ResourceSystem?.addAffliction?.(target, 'burningHealth', amount);
+      applyAttributedAffliction(target, 'burningHealth', amount, wielder);
     }
     logEvent(`Living Flame roll transferred ${Math.round(amount * 10) / 10} Burning`);
   }
