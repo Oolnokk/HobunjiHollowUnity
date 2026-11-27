@@ -72,6 +72,16 @@
   // One saved usefulness XP pool; infants accumulate experience but cannot perform jobs.
   const BABY_OBSERVATION_XP_RATE = 0.01; // Share of actual player skill XP while back-stowed.
   let unsubscribeObservationXp = null; // One subscription across family reinitialization.
+  let lastUsefulnessPopup = null; // Latest attempted award, exposed through the existing family mobile diagnostics.
+  function presentUsefulnessGain(id, gain) {
+    if (!(gain > 0)) return;
+    const walker = H?.findWalker?.(id);
+    const carried = window.FamilyBabyAmbientVoice?.anchorFor?.(id); // Use the real visible arms/back proxy rather than its hidden walker.
+    const root = carried?.group || walker?.root;
+    const shown = window.WorldPopupText?.showFamilyUsefulness?.(root, gain) === true;
+    lastUsefulnessPopup = { id, gain, shown };
+    window.FarmPanel?.refreshVisibleFamilyProgress?.(); // Event-driven only; no frame loop or closed-menu rendering.
+  }
   function awardObservationXp(event) {
     if (!H?.rawDay) return; // Progression can fire before the family system has initialized.
     const gain = Number(event?.amount) * BABY_OBSERVATION_XP_RATE;
@@ -83,7 +93,8 @@
     const maxLevel = Math.max(1, Math.floor(num(usefulnessCfg().maxLevel, 5)));
     child.usefulnessLevel = clamp(Math.floor(num(child.usefulnessLevel, 1)), 1, maxLevel);
     if (child.usefulnessLevel >= maxLevel) return; // Maxed babies need no repeated saves.
-    child.usefulnessXp = Math.max(0, num(child.usefulnessXp, 0)) + gain;
+    const previousLevel = child.usefulnessLevel, previousXp = Math.max(0, num(child.usefulnessXp, 0));
+    child.usefulnessXp = previousXp + gain;
     while (child.usefulnessLevel < maxLevel) {
       const threshold = Math.max(1, num(usefulnessCfg().xpPerLevelFactor, 40)) * child.usefulnessLevel ** 2;
       if (child.usefulnessXp < threshold) break;
@@ -92,8 +103,15 @@
       H.toast(`⭐ ${child.name} reached usefulness level ${child.usefulnessLevel}!`, true);
     }
     if (child.usefulnessLevel >= maxLevel) child.usefulnessXp = 0;
+    presentUsefulnessGain(child.id, appliedUsefulnessGain(previousLevel, previousXp, child.usefulnessLevel, child.usefulnessXp));
     // Family XP is world-member data, not character skill metadata; coalesce writes with the existing idle-save queue.
     if (deps().scheduleMemberSave) deps().scheduleMemberSave(); else H.persist();
+  }
+  function appliedUsefulnessGain(beforeLevel, beforeXp, afterLevel, afterXp) {
+    let gain = afterXp - beforeXp;
+    const factor = Math.max(1, num(usefulnessCfg().xpPerLevelFactor, 40));
+    for (let level = beforeLevel; level < afterLevel; level++) gain += factor * level * level;
+    return Math.max(0, gain); // Report actual accepted XP, including level-up carryover but excluding overflow at cap.
   }
   function awardWork(workerId, action) {
     const profile = workProfileFor(workerId);
@@ -101,8 +119,10 @@
     const { record, stage, multiplier } = profile;
     const levelKey = stage === 'adult' ? 'level' : 'usefulnessLevel';
     const xpKey = stage === 'adult' ? 'xp' : 'usefulnessXp';
-    record[xpKey] = Math.max(0, num(record[xpKey], 0)) + Math.max(0, num(workActions()[action], 0)) * Math.max(0, multiplier);
     const maxLevel = Math.max(1, Math.floor(num(usefulnessCfg().maxLevel, 5)));
+    if (record[levelKey] >= maxLevel) return usefulnessInfo(workerId);
+    const previousLevel = record[levelKey], previousXp = Math.max(0, num(record[xpKey], 0));
+    record[xpKey] = previousXp + Math.max(0, num(workActions()[action], 0)) * Math.max(0, multiplier);
     while (record[levelKey] < maxLevel) {
       const threshold = Math.max(1, num(usefulnessCfg().xpPerLevelFactor, 40)) * record[levelKey] * record[levelKey];
       if (record[xpKey] < threshold) break;
@@ -111,6 +131,7 @@
       H.toast(`⭐ ${stage === 'adult' ? H.npcName(workerId) : record.name} reached usefulness level ${record[levelKey]}!`, true);
     }
     if (record[levelKey] >= maxLevel) record[xpKey] = 0;
+    presentUsefulnessGain(workerId, appliedUsefulnessGain(previousLevel, previousXp, record[levelKey], record[xpKey]));
     H.persist();
     return usefulnessInfo(workerId);
   }
@@ -331,6 +352,27 @@
       || (phase === 'toddler' && !!(child.carryBy || child.followPlayer));
   }
   function isFamilyWorkUnavailable(id) { return isProtectedFamilyChild(id); }
+  function familyProgress() {
+    const maxLevel = Math.max(1, Math.floor(num(usefulnessCfg().maxLevel, 5)));
+    const spouse = R?.getSpouse?.(), rows = [];
+    if (spouse?.npcId) rows.push({ id: spouse.npcId, name: H?.npcName?.(spouse.npcId) || spouse.npcId, role: 'Spouse', ...usefulnessInfo(spouse.npcId), maxLevel });
+    for (const child of fam.children) {
+      const phase = phaseOf(child);
+      const info = usefulnessInfo(child.id) || { level: num(child.usefulnessLevel, 1), xp: num(child.usefulnessXp, 0),
+        nextLevelXp: Math.max(1, num(usefulnessCfg().xpPerLevelFactor, 40)) * num(child.usefulnessLevel, 1) ** 2 };
+      rows.push({ id: child.id, name: child.name, role: phase === 'basket' ? 'Baby' : phase === 'toddler' ? 'Toddler' : 'Child',
+        ...info, maxLevel, vatId: child.vatId || null, carrying: child.carryBy || null, following: !!child.followPlayer });
+    }
+    return rows;
+  }
+  function retargetProcessingAssignment(oldId, newId) {
+    const assignments = fam.farmChores?.processing;
+    if (!assignments || !Object.prototype.hasOwnProperty.call(assignments, oldId) || oldId === newId) return false;
+    const assignment = assignments[oldId];
+    delete assignments[oldId];
+    if (newId) assignments[newId] = assignment;
+    window.NpcFarmPlots?.invalidateFamilyChores?.(); H?.persist?.(); return true;
+  }
   function familyChores() { return fam.farmChores || null; } // Saved assignments belong to the family, not the map.
   function setFamilyChore(kind, stationId, workerId, inputKey = '') {
     if (workerId && !workProfileFor(workerId)) return false;
@@ -1112,6 +1154,7 @@
     window.FamilyBabyBurdens?.clear?.(); // A new world gets its own baby burden handles.
     window.FamilyBabyFollow?.clear?.();
     window.FamilyBabyCare?.clear?.(); // No childcare intervals leak across restored families.
+    lastUsefulnessPopup = null;
     window.NpcFarmPlots?.invalidateFamilyChores?.(); // Old family claims cannot survive a world/character change.
     window.FamilyBabyAmbientVoice?.clear?.(); // Remove prior world child speech registrations.
     window.DewVats?.clearFamilyWorkers?.(); // Remove stale assignments before rehydrating the newly loaded family's vats.
@@ -1140,6 +1183,7 @@
       pendingAdoption: !!fam.pendingAdoption,
       pendingBaby: !!fam.pendingBaby, // Mobile diagnostics reveal a naming prompt waiting to resume after reload.
       spouseUsefulness: R?.getSpouse?.()?.npcId ? usefulnessInfo(R.getSpouse().npcId) : null,
+      lastUsefulnessPopup,
       babyFollow: window.FamilyBabyFollow?.snapshot?.() || null,
       babyCare: window.FamilyBabyCare?.snapshot?.() || [], // Mobile debug rows show arms/back/basket and current shift.
       babyBurdens: window.FamilyBabyBurdens?.snapshot?.() || null, // Mobile shows proxy geometry, reverse-art policy and parent scene without devtools.
@@ -1151,7 +1195,7 @@
     init, tick, serialize, restore, snapshot, setVatWorkerPose, clearVatWorkerPose, retargetVatAssignments,
     spouseTargetOverride, commandOptionsFor, spouseHoldingEgg, isBasketBaby, isCarryFollowing, isProtectedFamilyChild, isFamilyWorkUnavailable, releaseCarryFollow, babyAmbientSound, voiceAgePhase,
     careContext: () => ({ family: fam, helpers: H, romance: R, phaseOf, walkerFor, basketObject, persist: () => H.persist() }), // One source of family state for childcare.
-    usefulnessInfo, awardWork, rollWorkQuality, awardObservationXp, familyChores, setFamilyChore,
+    usefulnessInfo, awardWork, rollWorkQuality, awardObservationXp, familyChores, setFamilyChore, familyProgress, retargetProcessingAssignment,
     isAssignedToVat: id => fam.children.some(child => child.id === id && phaseOf(child) !== 'basket' && !!child.vatId), // Only non-infant children can reserve vats and interrupt family plot claims.
     openDreamPicker, openNamingPrompt, createChild,
     wardrobeRecordFor: id => { const child = fam.children.find(entry => entry.id === id); return child ? childRecord(child) : null; }, // Offscreen children still have identity/clothing for their family chest.

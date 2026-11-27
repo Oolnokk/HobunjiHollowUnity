@@ -196,8 +196,14 @@
     if (!deps?.hasFarmPermission?.('storage') || !deps.loadStorage || !deps.saveStorage) return null;
     return { load: deps.loadStorage, save: deps.saveStorage }; // Shared with livestock trough refilling.
   }
+  function smallStation(id) {
+    for (const obj of deps?.processingFurnitureObjects || []) if (obj.id === id && obj.familyEligible) return obj;
+    return null;
+  }
   function isFamilyStation(id, inputKey = '') {
     if (!deps) return false;
+    const small = smallStation(id);
+    if (small) return !inputKey || !!small.familyRecipe?.(inputKey)?.length;
     const entry = buildings.find(candidate => candidate.id === id);
     return !!(entry && catalog[entry.key]?.method && catalog[entry.key]?.family !== 'seedMaker'
       && (!inputKey || outputsFor(entry.key, inputKey)?.length));
@@ -206,16 +212,33 @@
     const stock = familyStorageAccess()?.load() || {};
     const assignments = window.RomanceFamily?.familyChores?.()?.processing || {};
     const stockedKeys = Object.keys(stock).filter(key => stock[key] > 0); // Read storage once when opening Farmwork.
-    return buildings.filter(entry => isFamilyStation(entry.id)).map(entry => {
+    const large = buildings.filter(entry => isFamilyStation(entry.id)).map(entry => {
       const selected = assignments[entry.id]?.inputKey;
       const inputs = [...new Set([...stockedKeys, ...(selected ? [selected] : [])])]
         .filter(key => outputsFor(entry.key, key)?.length)
         .map(key => ({ key, label: deps.ITEM_DEFS[key]?.label || key, count: stock[key] || 0 }));
       return { id: entry.id, label: catalog[entry.key].label, col: entry.col, row: entry.row, inputs };
     });
+    for (const obj of deps?.processingFurnitureObjects || []) {
+      if (!obj.familyEligible) continue;
+      const selected = assignments[obj.id]?.inputKey;
+      const inputs = [...new Set([...stockedKeys, ...(selected ? [selected] : [])])]
+        .filter(key => obj.familyRecipe?.(key)?.length)
+        .map(key => ({ key, label: deps.ITEM_DEFS[key]?.label || key, count: stock[key] || 0 }));
+      large.push({ id: obj.id, label: obj.label, col: obj.col, row: obj.row, inputs });
+    }
+    return large;
   }
   function familyJob(id, inputKey) {
-    if (!familyStorageAccess() || !isFamilyStation(id, inputKey)) return null;
+    const storage = familyStorageAccess();
+    if (!storage || !isFamilyStation(id, inputKey)) return null;
+    const small = smallStation(id);
+    if (small) {
+      const common = { source: 'processing', key: 'processing:' + id, stationId: id, c: small.col, r: small.row };
+      if (small.familyReady?.()) return { ...common, job: 'processingCollect', activity: 'collecting processed goods' };
+      if (small.getJob?.() || !inputKey || !(storage.load()[inputKey] > 0)) return null;
+      return { ...common, job: 'processingLoad', inputKey, activity: 'loading the processor' };
+    }
     const entry = buildings.find(candidate => candidate.id === id);
     const size = footprint(entry.key, entry.rot); // Work at the accessible front edge, rather than inside a building.
     const c = entry.col + Math.floor(size.w / 2), r = entry.row + size.h - 1;
@@ -227,9 +250,21 @@
     if (!(familyStorageAccess().load()[inputKey] > 0)) return null;
     return { ...common, job: 'processingLoad', inputKey, activity: 'loading the processor' };
   }
-  function applyFamilyJob(job, inputKey) {
+  function applyFamilyJob(job, inputKey, workerId) {
     const current = familyJob(job.stationId, inputKey);
     if (!current || current.job !== job.job || current.inputKey !== job.inputKey || current.c !== job.c || current.r !== job.r) return false;
+    const small = smallStation(job.stationId);
+    if (small) {
+      if (job.job === 'processingCollect') return small.collectFamilyJob?.().ok === true;
+      if (!workerId) return false;
+      const storage = familyStorageAccess(), stock = storage?.load();
+      if (!stock || !(stock[job.inputKey] > 0)) return false;
+      const next = { ...stock, [job.inputKey]: stock[job.inputKey] - 1 };
+      if (storage.save(next) === false) return false; // Debit the real store before starting a batch; failed persistence cannot grant free goods.
+      const result = small.startFamilyJob?.(job.inputKey, workerId);
+      if (!result?.ok) { storage.save(stock); return false; } // Rejected starts refund the reserved input.
+      return true;
+    }
     return (job.job === 'processingCollect' ? collect(job.stationId) : enqueue(job.stationId, job.inputKey, 1, 'storage')).ok === true;
   }
   function enqueue(id, itemKey, count, source = 'bag') {

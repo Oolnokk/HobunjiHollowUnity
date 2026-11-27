@@ -279,7 +279,7 @@
     const stations = window.FarmProduction?.familyStations?.() || [];
     html += `<div class="fw-settings" data-ctrl-transparent>
       <h3>Livestock &amp; processing</h3>
-      <p class="fw-note">Assigned workers tend livestock or processors from 08:00–17:00 before returning to fieldwork. Fodder and selected processor inputs come from Farm Storage; goods go into your bag.</p>
+      <p class="fw-note">Assigned workers tend livestock, small processors or production buildings from 08:00–17:00 before returning to fieldwork. Fodder and selected processor inputs come from Farm Storage; goods go into your bag.</p>
       <label>Livestock (feed, pet, collect)<select data-fwlivestock>${workerOptions(chores.livestock)}</select></label>
       ${stations.map(station => {
         const assignment = chores.processing?.[station.id] || {};
@@ -287,7 +287,7 @@
           <label>Worker<select data-fwprocessworker>${workerOptions(assignment.workerId)}</select></label>
           <label>Ingredient<select data-fwprocessinput><option value="">Collect only</option>${station.inputs.map(input => `<option value="${esc(input.key)}" ${assignment.inputKey === input.key ? 'selected' : ''}>${esc(input.label)} (${input.count} in storage)</option>`).join('')}</select></label></div>`;
       }).join('')}
-      ${stations.length ? '' : '<p class="fw-note">Place a processing building to assign a worker.</p>'}
+      ${stations.length ? '' : '<p class="fw-note">Place a processor or production building to assign a worker.</p>'}
       </div>`;
     view.innerHTML = html;
     view.querySelector('[data-fwlivestock]')?.addEventListener('change', event => {

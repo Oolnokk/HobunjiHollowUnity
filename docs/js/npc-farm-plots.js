@@ -275,7 +275,7 @@
         const assignments = familyChoreAssignments(id); // Revalidate actual assignment immediately before mutation.
         const assignment = assignments?.processing.find(([stationId]) => stationId === claim.stationId)?.[1];
         const ok = claim.source === 'livestock' ? assignments?.livestock && window.FarmAnimals?.applyFamilyJob?.(claim, id)
-          : assignment && window.FarmProduction?.applyFamilyJob?.(claim, assignment.inputKey);
+          : assignment && window.FarmProduction?.applyFamilyJob?.(claim, assignment.inputKey, id);
         choreCache.clear(); // Fresh stock/resource state for the next claim.
         if (ok) { window.RomanceFamily?.awardWork?.(id, claim.job); debug.jobsDone++; debug.lastJob = { worker: id, job: claim.job, key: claim.key, at: Date.now() }; }
       } else if (claim.ageS > 180) releaseFamilyClaim(id);
