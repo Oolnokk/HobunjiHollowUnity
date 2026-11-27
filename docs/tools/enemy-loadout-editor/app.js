@@ -1,4 +1,4 @@
-import { EnemyPreview } from './preview.js?v=20261127flailSlack1';
+import { EnemyPreview } from './preview.js?v=20261127flailSlack2';
 const $ = (id) => document.getElementById(id);
 const DRAFT_KEY = 'hobunji.enemyLoadoutWorkshop.v1';
 const state = {
