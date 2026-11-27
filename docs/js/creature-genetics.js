@@ -520,7 +520,8 @@
   }
   function stableEntryRole(entry) {
     const sizeClass=creatureSizeClass(entry?.kind,entry?.genotype); // Shared size calculation remains authoritative for breedable Pingdorts.
-    return (entry?.kind==='pingdort'||entry?.kind==='skeeri')&&sizeClass==='large'?'companion':CREATURE_SIZE_ROLE[sizeClass]; // Never equip a large Pingdort as a mount.
+    const flyer=deps.CREATURE_DB[entry?.kind]?.isFlyingSpecies===true||entry?.kind==='pingdort'||entry?.kind==='skeeri'; // Large flying pets are fighting companions, not mounts.
+    return flyer&&sizeClass==='large'?'companion':CREATURE_SIZE_ROLE[sizeClass];
   }
   // Steps a Size one notch up or down with no wraparound. Endpoint classes
   // always step inward so a successful rare mutation can never silently
