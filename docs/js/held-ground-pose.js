@@ -18,13 +18,13 @@
   // Corrected poses are solved while the player is midair (the height above the floor is changing) and otherwise
   // once, then reused: only the cheap relative correction is re-applied to each frame's stance pose.
   const reuseMap=new WeakMap();
-  function reuseFor(node){
-    let entry=reuseMap.get(node);
+  function reuseFor(node,map=reuseMap){
+    let entry=map.get(node);
     if(!entry){
       const T=three();
       entry={valid:false,q0:new T.Quaternion(),p0:new T.Vector3(),dq:new T.Quaternion(),grip:new T.Vector3(),liftY:0,qa:new T.Quaternion(),qb:new T.Quaternion(),pivotHeight:0,
         mesh:null,itemKey:null,amount:0,gripZ:0,fitIdentity:null,reason:null,strategy:null,angleDeg:0,gripLift:0};
-      reuseMap.set(node,entry);
+      map.set(node,entry);
     }
     return entry;
   }
@@ -798,6 +798,148 @@
     s.clearanceStrategy='flat-plus-minimum-lift';
     return minDown>minUp+1e-9?down:up;
   }
+  // Ordinary carried art may be a direct PNG, crossed instrument planes or
+  // an authored physical Burden. Never compress these without authored bands.
+  // Cache the rigid part topology and each source alpha hull on the actual art
+  // identity; walking, turning and renderer passes only project those points.
+  const carryPartsCache=new WeakMap();
+  const carryReuseMap=new WeakMap();
+  const carryDebug={reason:'not-run',itemKey:null,frame:null,partCount:0,originalMinY:null,finalMinY:null,angleDeg:0,lift:0,hullBuilds:0,reuseHits:0};
+  function carryPartsFor(root){
+    let cached=carryPartsCache.get(root);
+    if(cached&&cached.childCount===root.children.length)return cached.parts;
+    const parts=[];
+    root.traverse(node=>{
+      if(!node.isMesh||node.isSkinnedMesh||node.isInstancedMesh||!node.geometry)return;
+      for(let p=node;p;p=p.parent){
+        if(p.userData?.weaponEnchantmentVfx===true||p.userData?.groundNonSolid===true)return;
+        if(p===root)break;
+      }
+      parts.push({node,geometry:null,image:null,width:0,height:0,contact:null,box:null});
+    });
+    carryPartsCache.set(root,{childCount:root.children.length,parts});
+    return parts;
+  }
+  function carryPartVisible(part,root){
+    for(let node=part.node;node;node=node.parent){
+      if(node.visible===false)return false;
+      if(node===root)return true;
+    }
+    return false;
+  }
+  function carryContact(part){
+    const node=part.node,geometry=node.geometry,image=node.material?.map?.image;
+    const width=image?.naturalWidth||image?.width||0,height=image?.naturalHeight||image?.height||0;
+    if(part.geometry===geometry&&part.image===image&&part.width===width&&part.height===height)return;
+    Object.assign(part,{geometry,image,width,height,contact:null,box:null});
+    if(!geometry)return;
+    if(!geometry.boundingBox)geometry.computeBoundingBox();
+    const box=geometry.boundingBox;
+    if(!box||box.isEmpty())return;
+    part.box=box;
+    if(geometry.type==='PlaneGeometry'&&Math.abs(box.min.z)<1e-6&&Math.abs(box.max.z)<1e-6){
+      const points=autoContact(image,box,NO_SEGMENTS);
+      const outline=points||[]; // Missing/tainted texture conservatively uses the whole quad.
+      if(!points)contactVertices(box,null,NO_SEGMENTS,outline);
+      part.contact={points:outline,hull:convexHull(outline.slice())};
+      carryDebug.hullBuilds++;
+    }
+  }
+  function carryMinimum(parts,root){
+    let min=Infinity;
+    for(const part of parts){
+      if(!carryPartVisible(part,root))continue;
+      carryContact(part);
+      if(!part.box)continue;
+      const m=part.node.matrixWorld,e=m.elements,b=part.box;
+      const y=part.contact?projectedContactY(part.contact.hull,m):
+        e[13]+e[1]*(e[1]<0?b.max.x:b.min.x)+e[5]*(e[5]<0?b.max.y:b.min.y)+e[9]*(e[9]<0?b.max.z:b.min.z);
+      min=Math.min(min,y);
+    }
+    return min;
+  }
+  function refreshCarryWorld(holder,root){
+    holder.updateWorldMatrix(true,holder===root);
+    if(root!==holder)root.updateWorldMatrix(false,true);
+  }
+  function constrainCarry(holder,root,context={}){
+    Object.assign(carryDebug,{reason:'unavailable',itemKey:context.itemKey??null,frame:frameId()??null,partCount:0,originalMinY:null,finalMinY:null,angleDeg:0,lift:0});
+    if(!enabled()||!holder?.parent||holder.visible===false||!root||root.visible===false||!context.grip)return false;
+    const s=work(),floor=groundY(),posterior=posteriorGripMinY(context);
+    if(!s||(!Number.isFinite(floor)&&posterior===null))return false;
+    const parts=carryPartsFor(root);
+    carryDebug.partCount=parts.length;
+    if(!parts.length)return false;
+    refreshCarryWorld(holder,root);
+    let min=carryMinimum(parts,root);
+    if(!Number.isFinite(min))return false;
+    carryDebug.originalMinY=min;
+    const target=Number.isFinite(floor)?floor+PAD:-Infinity;
+    const grip=context.grip;
+    const readPivot=()=>s.pivot.set(Number(grip.x)||0,Number(grip.y)||0,Number(grip.z)||0).applyMatrix4(holder.matrixWorld);
+    readPivot();
+    let lowestGrip=s.pivot.y;
+    for(const other of context.otherGrips||NO_SEGMENTS){
+      if(other)lowestGrip=Math.min(lowestGrip,s.point.set(Number(other.x)||0,Number(other.y)||0,Number(other.z)||0).applyMatrix4(holder.matrixWorld).y);
+    }
+    let changed=false;
+    const posteriorLift=posterior===null?0:Math.max(0,posterior-lowestGrip);
+    const liftBy=amount=>{
+      if(!(amount>1e-7))return;
+      s.holder.copy(holder.matrixWorld);
+      liftNode(holder,holder.parent.matrixWorld,s.holder,amount,s);
+      refreshCarryWorld(holder,root);
+      carryDebug.lift+=amount;changed=true;
+    };
+    liftBy(posteriorLift);
+    if(posteriorLift)min=carryMinimum(parts,root);
+    // Two-handed carries, compound 3D art and aim/upright poses keep their
+    // orientation: translate the whole prop and both sockets instead.
+    const part=parts.length===1?parts[0]:null;
+    const canRotate=!context.preserveOrientation&&!!part?.contact&&carryPartVisible(part,root);
+    if(min<target&&canRotate){
+      readPivot();
+      const parent=holder.parent.matrixWorld,entry=reuseFor(holder,carryReuseMap);
+      const grounded=global.PlayerJump?.heldPoseGrounded?.()===true&&!previewThree;
+      const pivotHeight=s.pivot.y-floor;
+      const scale=holder.scale;
+      if(grounded&&entry.valid&&entry.root===root&&entry.contact===part.contact&&entry.gripX===grip.x&&entry.gripY===grip.y&&entry.gripZ===grip.z&&entry.scaleX===scale.x&&entry.scaleY===scale.y&&entry.scaleZ===scale.z&&reuseStillValid(entry,holder,pivotHeight)){
+        s.candidate.copy(holder.position);s.oldQ.copy(holder.quaternion);
+        reuseApply(entry,holder,parent,s);
+        refreshCarryWorld(holder,root);
+        const reusedMin=carryMinimum(parts,root);
+        if(reusedMin>=target-1e-7){
+          carryDebug.reuseHits++;carryDebug.angleDeg=entry.angleDeg;carryDebug.lift+=entry.liftY;
+          carryDebug.finalMinY=reusedMin;carryDebug.reason='cached-carry-pose';return true;
+        }
+        holder.position.copy(s.candidate);holder.quaternion.copy(s.oldQ);refreshCarryWorld(holder,root);
+      }
+      entry.valid=false;
+      readPivot();
+      entry.q0.copy(holder.quaternion);entry.p0.copy(holder.position);
+      entry.pivotHeight=pivotHeight;
+      s.parentInverse.copy(parent).invert();
+      entry.grip.copy(s.pivot).applyMatrix4(s.parentInverse).sub(entry.p0).applyQuaternion(s.q.copy(entry.q0).invert());
+      s.matrix.copy(part.node.matrixWorld);s.holder.copy(holder.matrixWorld);
+      const angle=solveContactRotation(s,part.contact,s.matrix,target);
+      if(angle&&rotateAroundGrip(holder,parent,s.holder,s.pivot,s.axis,angle,s)){
+        carryDebug.angleDeg=angle*180/Math.PI;changed=true;
+        refreshCarryWorld(holder,root);min=carryMinimum(parts,root);
+      }
+      entry.dq.copy(entry.q0).invert().multiply(holder.quaternion);
+      const residual=Math.max(0,target-min);
+      liftBy(residual);
+      if(grounded&&(carryDebug.angleDeg||residual>1e-7)){
+        Object.assign(entry,{valid:true,root,contact:part.contact,gripX:grip.x,gripY:grip.y,gripZ:grip.z,scaleX:scale.x,scaleY:scale.y,scaleZ:scale.z,angleDeg:carryDebug.angleDeg,liftY:residual});
+      }
+    }else if(min<target)liftBy(target-min);
+    carryDebug.finalMinY=carryMinimum(parts,root);
+    carryDebug.reason=carryDebug.angleDeg?'grip-pivot':changed?'carry-lift':'already-clear';
+    return changed;
+  }
+  function needsCarryFallback(){
+    return ['unsupported-assembly','unsupported-rotation-basis','nonuniform-holder-parent','non-quad-weapon','invalid-geometry','unsupported-pivot-parent'].includes(debug.reason);
+  }
   function setTrace(on){traceOn=!!on;if(!traceOn){trace.solved=null;trace.lastPlane=null;trace.lastContact=null;}return traceOn;}
   function traceSolved(plane,contact,min,target,floorY){
     trace.solveCalls++;trace.lastSolveFrame=frameId()??null;trace.lastReason=debug.reason;
@@ -960,5 +1102,5 @@
     if(s.point.distanceTo(shoulder)>reach+0.002)return false;
     socket.position.copy(s.candidate);debug.freeHandLifts++;return true;
   }
-  global.HeldGroundPose=Object.freeze({authoredFrameFor:holder=>authoredFrame?.holder===holder&&enabled()?authoredFrame:null,configurePreview,setPreviewEnabled,previewAppliesTo,suspendedReferenceY,hasDrawingHaftChildren,skip,enabled,groundY,setTrace,traceDrawn,constrainWeapon,constrainDualCopies,releaseDualCopy,rotateAroundGrip,constrainFreeHand,adjustGrip,gripBasisFor,hasCurrentGripPose,resolveGripLocal,adjustHaftPoint,ropeClearance,fittedRopeScale,referenceDrop,lightRopeScale,ropeFitCandidate,needsFit,originalGeometryFor,prepareGeometryUpdate,fixedValue,clear,contractedZ,contactVertices,tracePixels,autoContact,bakeContact,projectedContactY,minimumY,chooseAngle,snapshot:()=>({...debug})});
+  global.HeldGroundPose=Object.freeze({authoredFrameFor:holder=>authoredFrame?.holder===holder&&enabled()?authoredFrame:null,configurePreview,setPreviewEnabled,previewAppliesTo,suspendedReferenceY,hasDrawingHaftChildren,skip,enabled,groundY,setTrace,traceDrawn,constrainWeapon,constrainCarry,needsCarryFallback,constrainDualCopies,releaseDualCopy,rotateAroundGrip,constrainFreeHand,adjustGrip,gripBasisFor,hasCurrentGripPose,resolveGripLocal,adjustHaftPoint,ropeClearance,fittedRopeScale,referenceDrop,lightRopeScale,ropeFitCandidate,needsFit,originalGeometryFor,prepareGeometryUpdate,fixedValue,clear,contractedZ,contactVertices,tracePixels,autoContact,bakeContact,projectedContactY,minimumY,chooseAngle,snapshot:()=>({...debug,carry:{...carryDebug}})});
 })(typeof window!=='undefined'?window:globalThis);
