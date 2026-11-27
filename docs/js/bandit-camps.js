@@ -1501,7 +1501,7 @@
         if(c.ruinWallCoffin&&!coffinRelic)return {ok:false,message:'Could not collect the bound weapon; try again.'}; // Preserve corpse if grant fails.
         let lichRelic=null; // A carried ancient armament is separate from the unarmed lich casting socket.
         if(!trophyKey&&c.enemyClass==='harlyao-lich'&&!c.ruinNoLoot&&c.areaId!=='map_dev_arena'&&window.HarlyaoRelics?.makeRelic){
-          if(c._lichFormulaRelic===undefined)c._lichFormulaRelic=Math.random()<.5?window.HarlyaoRelics.makeRelic(undefined,'Harlyao','final'):null;
+          if(c._lichFormulaRelic===undefined)c._lichFormulaRelic=(window.GameRandom?.random?.()??Math.random())<.5?window.HarlyaoRelics.makeRelic(undefined,'Harlyao','final'):null;
           if(c._lichFormulaRelic&&!c._lichFormulaKey){c._lichFormulaKey=window.HarlyaoRelics.grantBoundRelic(c._lichFormulaRelic);if(!c._lichFormulaKey)return {ok:false,message:'Could not collect the lich relic; try again.'};}
           lichRelic=c._lichFormulaKey;
         }

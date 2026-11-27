@@ -32,6 +32,7 @@
       if (def.type === 'Base' && (!es.isBaseUnlocked?.(def.id)||(es.formulaLevel&&es.formulaLevel(def.id)<5))) missing.push({ kind: 'base', id: def.id });
       if (def.type === 'Flourish') {
         for (const slotId of slots) {
+          if(es.allowsFlourishSlot?.(def.id,slotId)===false)continue;
           if (!es.isFlourishUnlocked?.(def.id, slotId)||(es.formulaLevel&&es.formulaLevel(def.id)<5)) missing.push({ kind: 'flourish', id: def.id, slotId });
         }
       }
@@ -56,6 +57,7 @@
     const known=es?.formulaIds?.(missing.id)||[];
     const available=[1,2,3,4,5].filter(n=>!known.includes(n));
     if(es?.formulaIds&&available.length)(relic.enchantments.formulas||={})[missing.id]=pick(available,rng);
+    if(es?.cleanWeaponState)relic.enchantments=es.cleanWeaponState(relic.enchantments); // Drop formulas for replaced enchantments.
     return relic;
   }
 

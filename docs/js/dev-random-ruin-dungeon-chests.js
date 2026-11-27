@@ -109,6 +109,7 @@
       secret:options.secret===true, // Optional room caches use the low-tier lock but the same equipment split.
       secretRevealed:options.secret!==true||options.initialRevealed===true, // Glow is extremely faint until the hiding mechanism is discovered.
       culture:options.culture==='hachutu'?'hachutu':'harlyao', // Only the dev Hachutu temple requests this culture.
+      formulaTier:window.DevRandomRuin?.getRuntimeContext?.()?.tier || tier, // Capture the owning ruin rarity at creation.
       theme:options.theme || window.DevRandomRuin?.getState?.()?.theme || null, // Capture the owning ruin's theme so another generated ruin cannot change this chest's loot family.
       group, hinge, glow,
       opened:false,
@@ -157,6 +158,7 @@
       choices = Object.values(definitions).filter(item => item.source === 'harlyaoRuin'
         && (!chest.secret || item.attunementCost <= 2)).map(item => ({key:'trinket_'+item.id, weight:1}));
     }
+    if(!choices.length)choices=Object.values(definitions).filter(item=>item.source==='harlyaoRuin').map(item=>({key:'trinket_'+item.id,weight:1}));
     if (!choices.length) return null;
     let pick = random() * choices.reduce((sum, entry) => sum + entry.weight, 0);
     for (const entry of choices) {
@@ -169,10 +171,12 @@
   function grantChestEquipment(chest, gained) {
     // Strip legacy/locally authored independent trinkets even if a loot provider ignores excludeTrinkets.
     for (const key of Object.keys(gained)) if (isTrinket(key)) delete gained[key];
-    if (random() < .5) {
+    const weaponChosen = random() < .5; // Category is the first draw, independent of trinket weights.
+    const trinketKey = selectChestTrinket(chest);
+    if (weaponChosen || !trinketKey) {
       const relics = window.HarlyaoRelics;
       const source = chest.boss ? 'final' : 'ruinChest';
-      const tier = window.DevRandomRuin?.getRuntimeContext?.()?.tier || chest.tier;
+      const tier = chest.formulaTier || window.DevRandomRuin?.getRuntimeContext?.()?.tier || chest.tier;
       const relic = relics?.makeRelic?.(undefined, 'Harlyao', source, tier);
       if (relic && relics.grantBoundRelic?.(relic)) {
         chest.equipmentReward = 'weapon'; // Mobile/debug snapshot records the mutually exclusive outcome.
@@ -180,7 +184,7 @@
       }
       // If a weapon could not be constructed or saved, still attempt the equipment reward.
     }
-    const key = selectChestTrinket(chest);
+    const key = trinketKey;
     if (!key) { chest.equipmentReward = 'unavailable'; return []; }
     gained[key] = 1;
     chest.equipmentReward = 'trinket';
@@ -254,6 +258,6 @@
     // Controls for chests still unopened; the owning puzzle module merges
     // these into its own interaction list.
     controlsFor:list => (list || []).filter(chest => chest && !chest.opened).map(chest => chest.control),
-    snapshot:() => [...chests].map(chest => ({ id:chest.id, tier:chest.tier, culture:chest.culture, theme:chest.theme, poolId:chest.poolId, opened:chest.opened, secret:chest.secret, equipmentReward:chest.equipmentReward || null, loot:chest.loot, x:+chest.group.position.x.toFixed(3), y:+chest.group.position.y.toFixed(3), z:+chest.group.position.z.toFixed(3) })),
+    snapshot:() => [...chests].map(chest => ({ id:chest.id, tier:chest.tier, culture:chest.culture, theme:chest.theme, poolId:chest.poolId, opened:chest.opened, secret:chest.secret, equipmentReward:chest.equipmentReward || null, formulaTier:chest.formulaTier || null, loot:chest.loot, x:+chest.group.position.x.toFixed(3), y:+chest.group.position.y.toFixed(3), z:+chest.group.position.z.toFixed(3) })),
   });
 })();

@@ -326,7 +326,11 @@
   }
 
   const formulaIds=id=>{const bits=Number(unlockStore().formulas[id])&31;return [1,2,3,4,5].filter(n=>bits&(1<<(n-1)));};
-  const formulaLevel=id=>formulaIds(id).length;
+  function formulaLevel(id){
+    let bits=Number(unlockStore().formulas[id])&31,count=0; // Count known bits without allocating an array for every level label.
+    while(bits){bits&=bits-1;count++;}
+    return count;
+  }
   function formulaNumber(source,difficulty,rng=rnd){
     const roll=Math.max(0,Math.min(.999999,rng())); // One independent roll per enchantment, only at loot generation.
     const percent=roll*100; // Integer percentage cutoffs keep adjacent rarity bands explicit.
@@ -353,7 +357,10 @@
   }
   function levelMultiplier(key,id,slotId){
     if(window.BanditCaptainArmaments?.unlootedEnchantmentState?.(key))return 1;
-    return 1+(appliedLevel(key,id,slotId)-1)*TUNING.FORMULA_LEVEL_STEP;
+    return rankMultiplier(appliedLevel(key,id,slotId));
+  }
+  function rankMultiplier(rank){
+    return Number.isInteger(rank)&&rank>=2&&rank<=5?1+(rank-1)*TUNING.FORMULA_LEVEL_STEP:1;
   }
   function writeLevel(state,key,rank){
     if(Number.isInteger(rank)&&rank>=2&&rank<=5)(state.levels||={})[key]=rank;
@@ -577,7 +584,7 @@
 
   function applySicced(event, def, power) {
     const target = event.target;
-    if (!validSiccedTarget(target)) return;
+    if (event.attacker?._banditCaptainArmament || !validSiccedTarget(target)) return false; // Hostile captain loot cannot redirect the player's companion.
     target._siccedUntilMs = Math.max(Number(target._siccedUntilMs) || 0, nowMs() + TUNING.SICCED_DURATION_S * 1000);
     target._siccedCompanionPowerMul = 1 + TUNING.SICCED_COMPANION_POWER_BONUS * power;
     siccedTargets.add(target);
@@ -591,20 +598,20 @@
   }
 
   function applyFury(event, def, power) {
-    const amount = scaled(def, event.weaponKey, TUNING.FURIOUS_STAMINA_AMOUNT, 'amount', getEnchantmentPowerMultiplier(event.weaponKey)*levelMultiplier(event.weaponKey,def.id,event.slotId));
+    const amount = scaled(def, event.weaponKey, TUNING.FURIOUS_STAMINA_AMOUNT, 'amount', power);
     for (const ally of resolveAllies(event.attacker)) applyEnhanced(ally, 'furiousStamina', amount, 'Fury Flourish');
     logEvent(`Fury granted ${Math.round(amount * 10) / 10} Furious Stamina`);
   }
 
   function applyMoralized(event, def, power) {
-    const amount = scaled(def, event.weaponKey, TUNING.MORALIZED_STAMINA_AMOUNT, 'amount', getEnchantmentPowerMultiplier(event.weaponKey)*levelMultiplier(event.weaponKey,def.id,event.slotId));
+    const amount = scaled(def, event.weaponKey, TUNING.MORALIZED_STAMINA_AMOUNT, 'amount', power);
     for (const ally of resolveAllies(event.attacker)) applyEnhanced(ally, 'moralizedStamina', amount, 'Moralized Flourish');
     logEvent(`Moralized granted ${Math.round(amount * 10) / 10} Moralized Stamina`);
   }
 
   function applyResolve(event, def, power) {
-    const footing = scaled(def, event.weaponKey, TUNING.RESOLUTE_FOOTING_AMOUNT, 'amount', getEnchantmentPowerMultiplier(event.weaponKey)*levelMultiplier(event.weaponKey,def.id,event.slotId));
-    const health = scaled(def, event.weaponKey, TUNING.RESOLUTE_HEALTH_AMOUNT, 'amount', getEnchantmentPowerMultiplier(event.weaponKey)*levelMultiplier(event.weaponKey,def.id,event.slotId));
+    const footing = scaled(def, event.weaponKey, TUNING.RESOLUTE_FOOTING_AMOUNT, 'amount', power);
+    const health = scaled(def, event.weaponKey, TUNING.RESOLUTE_HEALTH_AMOUNT, 'amount', power);
     for (const ally of resolveAllies(event.attacker)) {
       applyEnhanced(ally, 'resoluteFooting', footing, 'Resolve Flourish');
       applyEnhanced(ally, 'resoluteHealth', health, 'Resolve Flourish');
@@ -723,36 +730,37 @@
     const target = event.target;
     if (!target || target.health <= 0 && !(event.actualDamage > 0)) return;
     const coffin=event.attacker?.ruinWallCoffin===true; // Read actor-local magic, not player gear sharing a crafted item key.
-    const baseIds=coffin?(event.attacker.rosterRecord?.enchantedWeapon?.enchantments?.base||[]):stateFor(key).base;
+    const state=coffin?event.attacker.rosterRecord?.enchantedWeapon?.enchantments:stateFor(key);
+    const baseIds=state?.base||[];
+    const ranks=coffin?null:state?.levels; // Reuse normalized state rather than rereading gear or allocating a per-hit closure.
     const alignment=coffin?DEFINITIONS[baseIds[0]]?.alignment:null; // Exactly one Base: one point of Immundanity for a planar enchantment.
     const power=coffin?1+(['Hronal','Tothal','Kanthic','Ohthic'].includes(alignment)?ENCHANTMENT_POWER_PER_IMMUNDANITY:0):getEnchantmentPowerMultiplier(key); // At most two equipped Base IDs; avoids scanning the expanded catalog on every hit.
-    const powerFor=id=>power*(coffin?1:levelMultiplier(key,id)); // Actor-local coffin magic never inherits player rank.
     for (const id of baseIds) {
       const def = DEFINITIONS[id];
-      if (def?.hitAffliction) applyRealmHitAffliction(event, def, powerFor(id));
-      if (def?.grantAffliction) applyRealmFlourish(event, def, powerFor(id)); // Weightless is a self-grant on every Base hit.
+      if (def?.hitAffliction) applyRealmHitAffliction(event, def, power*rankMultiplier(ranks?.[id]));
+      if (def?.grantAffliction) applyRealmFlourish(event, def, power*rankMultiplier(ranks?.[id])); // Weightless is a self-grant on every Base hit.
     }
 
     if (baseIds.includes('burning')) {
-      applyAttributedAffliction(target, 'burningHealth', scaled(DEFINITIONS.burning, key, TUNING.BURNING_APPLICATION, 'amount', powerFor('burning')), event.attacker);
+      applyAttributedAffliction(target, 'burningHealth', scaled(DEFINITIONS.burning, key, TUNING.BURNING_APPLICATION, 'amount', power*rankMultiplier(ranks?.burning)), event.attacker);
     }
     if (baseIds.includes('frostbitten')) {
-      applyAttributedAffliction(target, 'frostbittenStamina', scaled(DEFINITIONS.frostbitten, key, TUNING.FROSTBITTEN_APPLICATION, 'amount', powerFor('frostbitten')), event.attacker);
+      applyAttributedAffliction(target, 'frostbittenStamina', scaled(DEFINITIONS.frostbitten, key, TUNING.FROSTBITTEN_APPLICATION, 'amount', power*rankMultiplier(ranks?.frostbitten)), event.attacker);
     }
     if (baseIds.includes('mirrored') && event.actualDamage > 0) {
-      const amount = scaled(DEFINITIONS.mirrored, key, event.actualDamage * TUNING.MIRRORED_HEALTH_RATIO, 'amount', powerFor('mirrored'));
+      const amount = scaled(DEFINITIONS.mirrored, key, event.actualDamage * TUNING.MIRRORED_HEALTH_RATIO, 'amount', power*rankMultiplier(ranks?.mirrored));
       applyEnhanced(event.attacker, 'mirroredHealth', amount, 'Mirrored');
     }
-    if (baseIds.includes('spiritHeal')) applySpiritHeal(event, powerFor('spiritHeal'));
+    if (baseIds.includes('spiritHeal')) applySpiritHeal(event, power*rankMultiplier(ranks?.spiritHeal));
     if (baseIds.includes('livingFlame')) {
-      const targetBurn = scaled(DEFINITIONS.livingFlame, key, TUNING.LIVING_FLAME_ENEMY_BURNING_APPLICATION, 'burningAmount', powerFor('livingFlame'));
+      const targetBurn = scaled(DEFINITIONS.livingFlame, key, TUNING.LIVING_FLAME_ENEMY_BURNING_APPLICATION, 'burningAmount', power*rankMultiplier(ranks?.livingFlame));
       const selfKindling = scaled(DEFINITIONS.livingFlame, key, TUNING.LIVING_FLAME_SELF_KINDLING_APPLICATION, 'kindlingAmount', power);
       applyAttributedAffliction(target, 'burningHealth', targetBurn, event.attacker);
       window.ResourceSystem?.addAffliction?.(event.attacker, 'kindlingHealth', selfKindling);
     }
 
     for (const id of ['feyDementedStamina', 'feyPanickedStamina', 'feyTurnabout']) {
-      if (baseIds.includes(id)) window.FeyIllusions?.apply?.(id, target, { weaponKey: key, attacker: event.attacker, effectMultiplier: coffin?1:levelMultiplier(key,id) });
+      if (baseIds.includes(id)) window.FeyIllusions?.apply?.(id, target, { weaponKey: key, attacker: event.attacker, effectMultiplier: rankMultiplier(ranks?.[id]) });
     }
     if(!event.attacker?.ruinWallCoffin)applyFlourish(event);
   }

@@ -5,8 +5,8 @@
   const PREFIX = 'banditModular:'; // Unique per-captain keys prevent two drops from sharing enchantments or replacing a forged weapon.
   const BOUND_PREFIX = 'captainBound_'; // Self-contained pack identity preserving the weapon and its magic through custody.
   const MIN_STARS = 5; // Camp tier is zero-based; only five-to-eight-star ordinary captains qualify.
-  const BASE_IDS = Object.freeze(['burning', 'frostbitten', 'mirrored', 'livingFlame', 'stormwake', 'stonebind', 'soulweight', 'ancestralSight']); // Effects supported by the NPC hit event; omit player-only Living Gust.
-  const FLOURISH_IDS = Object.freeze(['fury', 'moralized', 'resolve', 'stormRenewal', 'bedrock', 'blackBargain', 'ancestralMercy']); // Never choose Sicced (player companion target lock) or Fey magic.
+  const BASE_IDS = Object.freeze(['burning', 'frostbitten', 'mirrored', 'livingFlame', 'stormwake', 'stonebind', 'soulweight', 'ancestralSight', 'livingGust', 'spiritHeal']); // Every non-Fey Base has a captain research source.
+  const FLOURISH_IDS = Object.freeze(['fury', 'moralized', 'resolve', 'stormRenewal', 'bedrock', 'blackBargain', 'ancestralMercy', 'sicced']); // Sicced can be recovered but cannot redirect the player's companion when held by a hostile.
   const FLOURISH_SLOTS = Object.freeze(['tap1', 'tap2', 'hold1']); // These are the NPC's real offensive Combo/Quick/Charged slots.
   const unlooted = new Map(); // Spawned captains' enchantments stay outside player gear until the corpse is searched.
   let deps = null; // HarlyaoRelics.init supplies the ordinary saved-gear, tool definition and texture services.
@@ -387,7 +387,7 @@
       g.captainModularWeapons[record.key] = { shaft, head, metal, uid, stars, donors, origin };
       g.tools[record.key] = true;
       g.toolMastery[record.key] = { xp: 0 };
-      g.weaponEnchantments[record.key] = record.enchantments;
+      g.weaponEnchantments[record.key] = { base:[...record.enchantments.base], flourishes:{...record.enchantments.flourishes} }; // Research identity is consumed at registration, not an applied rank.
       if (record.visual) g.weaponEnchantmentVisuals[record.key] = record.visual;
       const learned = es.unlockFromState(record.enchantments, { deferSave: true }); // Base by ID; Flourishes by their exact slot.
       return { ok: true, toolKey: record.key, learned, price };

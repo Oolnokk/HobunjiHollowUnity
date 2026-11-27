@@ -1531,6 +1531,10 @@ console.log('Planar enchantments through live Drunken Health adapter passed');
   }
   same(ES.formulaIds('burning'),[1,2,3,4,5]);
   assert.equal(ES.isFlourishUnlocked('sicced','tap2'),false,'formula research does not waive slot restrictions');
+  const draws=[.01,.99];
+  const independent=ES.rollFormulaState({base:['burning'],flourishes:{tap1:'sicced',tap2:'sicced'}},'final',3,()=>draws.shift());
+  same(independent.formulas,{burning:5,sicced:4},'one independent roll per distinct enchantment, not per repeated slot');
+  assert.equal(draws.length,0);
   const relic={shape:'longsword',uid:'formula123',enchantments:formula(4)};
   same(HR.decodeBoundKey(HR.encodeBoundKey(relic)).enchantments,formula(4),'bound formulas persist through the pack key');
   assert.equal(ES.appliedLevel('sword','burning'),1,'knowledge never upgrades existing weapons automatically');
@@ -1594,11 +1598,11 @@ console.log('Planar enchantments through live Drunken Health adapter passed');
   for(const boss of [false,true])for(const secret of [false,true])for(const roll of [.25,.75]){
     weapons.length=trinkets.length=materials.length=0;
     rewardContext.GameRandom.random=()=>roll;
-    const chest={id:'reward',tier:1,tierName:'Test',poolId:'dungeonChest_tier1',culture:'harlyao',boss,secret};
+    const chest={id:'reward',tier:1,formulaTier:'lich',tierName:'Test',poolId:'dungeonChest_tier1',culture:'harlyao',boss,secret};
     assert.equal(open(chest,{bonusDrops:4}),true);
     assert.equal(weapons.length+trinkets.length,1);
     assert.equal(chest.equipmentReward,roll<.5?'weapon':'trinket');
-    if(roll<.5){assert.equal(weapons[0].source,boss?'final':'ruinChest');assert.equal(weapons[0].tier,'hole');}
+    if(roll<.5){assert.equal(weapons[0].source,boss?'final':'ruinChest');assert.equal(weapons[0].tier,'lich','captured ruin tier wins over current runtime');}
     else assert.equal(trinkets[0][1],1);
     assert.equal(materials[0].coin,5,'bonus drops keep ordinary materials');
     assert.equal(open(chest),false,'opened chest cannot grant again');
