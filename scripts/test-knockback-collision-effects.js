@@ -362,7 +362,7 @@ console.log('Knockback collision + ledge fall + Burning Health regression passed
   delete windowStub.WorldPopupText;
 }
 
- // Environmental sound follows actual applied effects, not popup count or attacker.
+// Environmental sound follows actual applied effects, not popup count or attacker.
 {
   const calls = []; // Records semantic sound requests from the real resolver.
   windowStub.AudioSystem = { playCollisionImpactSfx(...args) { calls.push(args); } };
@@ -385,6 +385,10 @@ console.log('Knockback collision + ledge fall + Burning Health regression passed
   Impact.resolveStrength(entity({areaId:'farm',isCompanion:true,hostile:true}),{kind:'stone'},1,TILE,hooks,{popupCredit:true});
   Impact.resolveStrength(entity({areaId:'farm'}),{kind:'stone'},1,TILE,hooks);
   assert.equal(calls.length,before,'no effect, companion and unrelated nonhostile collisions stay silent');
+  const enemyHound = entity({isCompanion:true,banditCompanion:true,areaId:'farm'}); // Beastmaster pets are enemies, not the player's companions.
+  Impact.resolveStrength(enemyHound,{kind:'stone'},1,TILE,hooks);
+  assert.deepEqual(calls.at(-1),['blunt',0,0,'farm']);
+  assert.equal(calls.length,before+1);
   const lethal = entity({hostile:true,areaId:'farm',x:12,y:34});
   Impact.resolveStrength(lethal,{kind:'stone'},1,TILE,{dealHealthDamage(target,amount){target.x=999;return {applied:amount,lethal:true};}});
   assert.deepEqual(calls.at(-1),['blunt',12,34,'farm'],'lethal collision retains original location');
