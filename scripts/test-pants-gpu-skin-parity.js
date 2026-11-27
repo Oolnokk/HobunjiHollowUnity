@@ -412,6 +412,25 @@ for (const meshBudget of ['npc', 'player']) {
       actor.legs.position.x = 0; pants.update();
       assert.strictEqual(pants.baseVersion, beforeVersion + 1, 'valid anatomy revision retries after pose recovers');
       checkWidths();
+
+      // The live pose can be fine while the neutral metadata alone is invalid.
+      const getRestStance = legHandle.getRestStance;
+      legHandle.getRestStance = () => { const stance = getRestStance(); stance.left.hip.x = 12000; return stance; };
+      const neutralVersion = pants.baseVersion, rejectedRest = pants.invalidRestSamples;
+      revision++; pants.update();
+      assert.strictEqual(pants.baseVersion, neutralVersion, 'bad analytic rest alone cannot rewrite geometry');
+      assert.strictEqual(pants.invalidRestSamples, rejectedRest + 1);
+      legHandle.getRestStance = getRestStance; pants.update();
+      assert.strictEqual(pants.baseVersion, neutralVersion + 1);
+      checkWidths();
+
+      // Three.js returns a zero inverse for singular matrices.
+      const singularCount = pants.invalidPoseFrames, singularBefore = Float32Array.from(pants.geometry.getAttribute('position').array);
+      actor.model.scale.x = 0; pants.update(true);
+      assert.strictEqual(pants.invalidPoseFrames, singularCount + 1, 'singular owner matrix is rejected');
+      assert.deepStrictEqual(Float32Array.from(pants.geometry.getAttribute('position').array), singularBefore);
+      actor.model.scale.x = 1; pants.update();
+      checkWidths();
     }
     Renderer.setGpuSkinning(true);
     pants.dispose();
