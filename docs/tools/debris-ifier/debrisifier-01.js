@@ -195,7 +195,9 @@ function runtimeChooseMechanismActivatorType(rng,forcedType=null,linkedCubeDoor=
       ['elevator socket first-push direction', elevatorSocketCallNeedle, elevatorSocketCallReplacement],
     ];
 
-    let patched = sourceText;
+    // Git/desktop packaging may convert the recovered source to CRLF. Normalize only
+    // line endings before exact guarded replacements; changed code still fails closed.
+    let patched = sourceText.replace(/\r\n/g, '\n');
     for (const [label, needle, replacement] of patches) {
       if (!patched.includes(needle)) throw new Error(`V50 ${label} changed; refusing an unverified embedded patch.`);
       patched = patched.replace(needle, replacement);
