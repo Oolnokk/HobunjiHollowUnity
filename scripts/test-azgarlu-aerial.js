@@ -100,10 +100,11 @@ class Mesh extends O{constructor(geometry,material){super();this.geometry=geomet
 let composer;const footprints=new Map(); // Records exact XZ occupied boxes and their separate lifecycle tags.
 const squarePillar=JSON.parse(read('docs/assets/models/furniture/data/pillar_square.json')); // Keep the test tied to the actual five-part decoy recipe.
 let finishPillarLoad;
+let pillarLoadAttempts=0; // The first request fails and all live pillars share the automatic retry.
 const pillarLoad=new Promise(resolve=>{finishPillarLoad=resolve;}); // Exercise both the immediate tell and asynchronous authored-model upgrade.
 const rockWindow={
   THREE:{Group:O,Object3D:O,Vector3:V,Mesh,CylinderGeometry:Taper,Box3,BufferGeometry:G,Float32BufferAttribute:class{},MeshBasicMaterial:M,DoubleSide:2,MathUtils:{lerp:(a,b,t)=>a+(b-a)*t}},
-  RuinShaftSupportPillars:{loadSquarePillar:()=>pillarLoad,stretchStoneFaces(){}},
+  RuinShaftSupportPillars:{loadSquarePillar:()=>++pillarLoadAttempts===1?Promise.resolve(null):pillarLoad,stretchStoneFaces(){}},
   ProceduralFurniture:{buildPartMesh(part){
     const mesh=new Mesh(new Taper(.2,.24,part.transform.sy),new M());
     mesh.name=part.name;
@@ -119,7 +120,7 @@ const rockWindow={
   ResourceSystem:{addAffliction(){},spendFooting(){}},
 }; // Uses the same true Hronal composer as a generated dungeon, not a fabricated pillar animation.
 vm.runInNewContext(read('docs/js/area-footprint-blockers.js'),{window:rockWindow,console}); // Load the actual movement/projectile collision registry.
-vm.runInNewContext(read('docs/js/dev-random-ruin-lich-themes.js'),{window:rockWindow,console});
+vm.runInNewContext(read('docs/js/dev-random-ruin-lich-themes.js'),{window:rockWindow,console,setTimeout:queueMicrotask});
 async function checkPillars(){
   const context={root:new O(),theme:'hronal',seed:8,floorSet:new Set(),ceilingY:4,meta:{rooms:[],floorSurfaceY:0,wallHeight:4}};
   for(let z=0;z<12;z++)for(let x=0;x<12;x++)context.floorSet.add(x+','+z);
@@ -141,9 +142,21 @@ async function checkPillars(){
   composer.update(kit,0,1.05);
   assert.equal(loadingShaft.children.filter(c=>c.visible).length,2);
   assert.equal(platform.phase,'idle','A different floor does not trigger the platform decoy');
+  const arenaScene=new O(); // Exercise leaving the arena during the shared asset request.
+  const arenaDeps={TILE:64,player:simulatedPlayer,hostileObjects:new Set(),canOccupyAt:()=>true,worldSurfaceY:()=>0};
+  const arenaBoss={...boss,areaId:'map_dev_arena',scene:arenaScene,areaGrid:Array.from({length:12},()=>Array(12).fill({type:'grass'})),_specialToolDeps:arenaDeps};
+  arenaDeps.hostileObjects.add(arenaBoss);
+  assert.equal(rockWindow.DevRandomRuinLichThemes.spawnBossPillar(arenaBoss,simulatedPlayer),1);
+  const retiredPillar=arenaScene.children[0].children[0]; // This fallback is disposed before the successful reply.
+  const retiredVisual=retiredPillar.children[0];
+  rockWindow.DevRandomRuinLichThemes.clearArenaBossPillars();
+  await new Promise(setImmediate);
+  assert.equal(pillarLoadAttempts,2,'All waiting pillars share one retry after the failed first asset load');
   finishPillarLoad(squarePillar);
-  await pillarLoad;
-  await Promise.resolve();
+  await new Promise(setImmediate);
+  assert.equal(retiredPillar.children[0],retiredVisual,'A retired pillar is never rebuilt by a late asset reply');
+  assert.equal(retiredVisual.children[0].geometry.disposed,true);
+  assert.equal(arenaScene.children.length,0,'A late reply cannot resurrect a retired arena scene');
   function verifyDecoy(group,visibleStages){
     const [visual]=group.children;
     assert.deepEqual(visual.children.map(part=>part.name),squarePillar.parts.map(part=>part.name),'Every use includes the authored plinth, foot, shaft, collar and capital');
@@ -157,10 +170,6 @@ async function checkPillars(){
   verifyDecoy(platform.group,1);
   assert.equal(loadingShaft.geometry.disposed,true,'The loading stone is freed after the swap');
   composer.clear();assert.equal(footprints.size,0,'Ruin teardown removes summoned pillar collision');
-  const arenaScene=new O(); // A stand-alone Testing Arena needs the exact same rise/charge handler without a generated ruin composer.
-  const arenaDeps={TILE:64,player:simulatedPlayer,hostileObjects:new Set(),canOccupyAt:()=>true,worldSurfaceY:()=>0};
-  const arenaBoss={...boss,areaId:'map_dev_arena',scene:arenaScene,areaGrid:Array.from({length:12},()=>Array(12).fill({type:'grass'})),_specialToolDeps:arenaDeps};
-  arenaDeps.hostileObjects.add(arenaBoss);
   assert.equal(rockWindow.DevRandomRuinLichThemes.spawnBossPillar(arenaBoss,simulatedPlayer),1,'Testing Arena summons a rising pillar, not the old earth eruption');
   const arenaPillar=arenaScene.children[0].children[0]; // Body of the stand-alone fixed-width arena column.
   assert.equal(arenaPillar.scale.y,.001);

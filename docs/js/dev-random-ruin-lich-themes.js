@@ -579,12 +579,24 @@
       crack.material.opacity = crack.visible ? Math.min(.96, .48 + pillar.pulses * .16) : 0;
     }
   }
-  let squarePillarParts = null; // Shared authored recipe for spawned traps, warmed by the first Hronal ruin or arena.
+  let squarePillarParts = null; // Keep the authored recipe available after the first successful load.
+  let squarePillarRequest = null; // Coalesce requests from the ruin, shaft and arena, including a delayed retry.
+  const pendingDecoyUpgrades = new Map(); // Live placeholders wait for the next successful asset load.
   function loadSquarePillar() {
-    if (squarePillarParts) return;
-    return window.RuinShaftSupportPillars?.loadSquarePillar?.()?.then(source => {
-      if (source?.parts?.some(part => part.id === 'pillar_square_shaft')) squarePillarParts = source.parts;
-    }); // The structural shaft already owns the cached asset request and can retry failed loads.
+    const supports = window.RuinShaftSupportPillars;
+    if (squarePillarParts || squarePillarRequest || !supports?.loadSquarePillar) return;
+    squarePillarRequest = supports.loadSquarePillar().then(async source => {
+      if (!source && pendingDecoyUpgrades.size) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+        if (pendingDecoyUpgrades.size) return supports.loadSquarePillar();
+      }
+      return source;
+    }).then(source => {
+      if (!Array.isArray(source?.parts) || !source.parts.some(part => part.id === 'pillar_square_shaft')) return;
+      squarePillarParts = source.parts;
+      for (const upgrade of pendingDecoyUpgrades.values()) upgrade();
+      pendingDecoyUpgrades.clear();
+    }).finally(() => { squarePillarRequest = null; }); // A later spawn can try again if the asset is still unavailable.
   }
   function buildDecoyVisual(kit, height, salt) {
     const visual = new THREE.Group(); // Normalize the complete decoy, including the plinth, collar and capital.
@@ -639,15 +651,18 @@
     world.pillars.push(pillar);
     if(!pillar.arena&&!pillar.external)window.DevRandomRuinTileOccupancy?.addSolidBox?.(id,
       {cx:x,cz:z,halfX:.31,halfZ:.31},()=>pillar.phase!=='spent'&&pillar.phase!=='emerging',tag); // Fixed footprint; the arena instead uses a live AreaFootprintBlockers provider.
-    if (!visual.userData.authoredDecoyPillar) loadSquarePillar()?.then(() => {
-      if (!squarePillarParts || !window.ProceduralFurniture?.buildPartMesh || !group.parent?.parent || pillar.phase === 'spent') return;
-      const authored = buildDecoyVisual(kit, height, salt); // Keep the existing rise, collision and charge state during the art swap.
-      group.remove(visual);
-      disposePillarVisual(visual);
-      group.add(authored.visual);
-      pillar.cracks = authored.cracks;
-      showPillarCracks(pillar);
-    });
+    if (!visual.userData.authoredDecoyPillar && window.ProceduralFurniture?.buildPartMesh) {
+      pendingDecoyUpgrades.set(pillar, () => {
+        if (!group.parent?.parent) return;
+        const authored = buildDecoyVisual(kit, height, salt); // Keep the existing rise, collision and charge state.
+        group.remove(visual);
+        disposePillarVisual(visual);
+        group.add(authored.visual);
+        pillar.cracks = authored.cracks;
+        showPillarCracks(pillar);
+      });
+      loadSquarePillar();
+    }
     return pillar;
   }
   // A shaft jump platform's pillar (js/ruin-jump-shaft.js): same charge/pulse/blast
@@ -742,6 +757,7 @@
     return 0; // No pillar is created without a clear, real piece of ruin floor.
   }
   function releaseBossPillar(pillar) {
+    pendingDecoyUpgrades.delete(pillar);
     if(!pillar.arena)window.DevRandomRuinTileOccupancy?.clearSolids?.(pillar.tag); // Arena summons never touch the generated-ruin collision registry.
     pillar.group.parent?.remove?.(pillar.group);
     disposePillarVisual(pillar.group);
@@ -803,6 +819,7 @@
       }
       if (pillar.elapsed < 3) continue; // Blast one second after the third pulse.
       pillar.phase = 'spent';
+      pendingDecoyUpgrades.delete(pillar);
       pillar.group.visible = false; // Existing V50 support footprints automatically become inactive when the ancestor is hidden.
       releasePillarCameraOcclusion(pillar); // Drop the matching source mesh from camera raycasting as well.
       if (pillar.light) pillar.light.strength = 0; // No ghost glow remains after the native pillar explodes.
@@ -1349,6 +1366,7 @@
     for (const burst of world.bursts)disposeShardBurst(burst);
     for (const retired of world.shardPool?.values()||[])for(const burst of retired)disposeShardBurst(burst);
     for (const pillar of world.pillars) {
+      pendingDecoyUpgrades.delete(pillar);
       if(pillar.temporary){releaseBossPillar(pillar);continue;} // Reroll/exit clears even partially emerged boss pillars.
       if (!pillar.sourcePillar) continue;
       pillar.sourcePillar.visible = true; // A reused V50 generator root must never retain the previous run's exploded state.
