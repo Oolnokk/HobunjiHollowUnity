@@ -543,5 +543,17 @@ console.log('Pants rig bone skinning: PASS');
     if (i % 3 !== 0) assert.strictEqual(positions[i], original[i], 'width fitting never moves Y or Z');
     if (Math.floor(i / (stride * 3)) <= 2) assert.strictEqual(positions[i], beforeCuffs[i], 'cuff fit does not alter the waist');
   }
+  // A valid target and tiny nonzero source span can previously expand the whole grid.
+  const tinySeam = [sample(1, 1, 0, 0), sample(1, 1, .000001, 0)];
+  const unsafeWaist = original.slice();
+  assert(!Core.fitWaistSpanX(unsafeWaist, segments, tinySeam, { left: .1, right: .9 }, waistInfluence, 8), 'reject ill-conditioned waist before it changes a vertex');
+  assert(unsafeWaist.every((v, i) => v === original[i]), 'failed waist fit leaves the original grid intact');
+  const unsafeCuff = beforeCuffs.slice();
+  assert(!Core.stretchLegOpeningSpans(unsafeCuff, segments, rings, splines, { left: 100, right: .09 }, 2), 'reject cuff extrapolation outside local bounds');
+  assert(unsafeCuff.every((v, i) => v === beforeCuffs[i]), 'failed coupled cuff fit is atomic across both legs');
+  const bounded = original.slice();
+  assert(Core.fitWaistSpanX(bounded, segments, belt, { left: .13, right: .71 }, waistInfluence, 8));
+  assert(Core.stretchLegOpeningSpans(bounded, segments, rings, splines, { left: .31, right: .09 }, 8));
+  assert(bounded.every((v, i) => v === positions[i]), 'safe bounded solver produces identical coordinates');
   console.log('Independent absolute pants seam widths: PASS');
 }
