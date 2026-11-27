@@ -8,6 +8,11 @@
   let active = null, floorFrame = null, floor = null, scratch = null;
   let gripHolder=null; // Owner of the exact current sprite-space grip transform, shared with hand sockets.
   let lastPoseHolder=null,lastPoseFrame=null; // Prevent an extra pre-render bake when the dual owner already solved this frame.
+  // Opt-in render trace (js/held-ground-pose-trace.js, ?groundPoseTrace=1). Off by default: hot paths only
+  // pay one boolean test. Records what the last solve decided so a later render can be compared against it.
+  let traceOn=false;
+  const trace={solveCalls:0,failCalls:0,lastSolveFrame:null,lastReason:null,lastFailReason:null,lastFailFrame:null,lastTarget:null,lastFloor:null,lastSolvedY:null,lastPlane:null,lastContact:null,solved:null};
+  const traceOut={inScene:false,drawnHullY:null,drawnPointsY:null,matrixDelta:0,target:null,floor:null,solvedY:null,solveCalls:0,failCalls:0,lastSolveFrame:null,reason:null,lastFailReason:null,lastFailFrame:null,itemKey:null,speciesId:null,hullBuilds:0,hullVertices:0};
   let dualPrepared=null; // The canonical fit is prepared before the independently posed visible copies.
   const borrowedCopies=new Set(); // At most two copies borrow the canonical private fitted buffer; detach before disposal.
   let previewRoot=null; // Exact currently corrected editor root; raw gizmo mode must also bypass the suspension solve.
@@ -152,7 +157,7 @@
     active.amount=0; // Keep the private strip buffer for the next near-ground pose.
   }
   function clear() { previewRoot=null;gripHolder=null;lastPoseHolder=null;lastPoseFrame=null;dualPrepared=null;debug.dual=null;debug.gripPivotDrift=null;debug.gripLift=0;debug.clearanceStrategy=null;restoreGeometry(); }
-  function fail(reason,preserveFit=false) { debug.reason=reason; debug.fallbacks++; if(!preserveFit)restoreGeometry();return false; }
+  function fail(reason,preserveFit=false) { debug.reason=reason; debug.fallbacks++; if(traceOn){trace.failCalls++;trace.lastFailReason=reason;trace.lastFailFrame=frameId()??null;} if(!preserveFit)restoreGeometry();return false; }
   // The canonical PNG is a flat XY quad; its -90 degree X basis makes
   // image Y correspond to -item Z. Split exactly at the authored endpoints,
   // preserving UVs so the rigid portions are never squashed by interpolation.
@@ -546,6 +551,7 @@
     }
     debug.angleDeg=angle*180/Math.PI;debug.shortening=amount;debug.finalMinY=min;
     debug.reason=debug.gripLift?'rotation-and-lift':angle?'rotation':amount?'shortening':'already-clear';
+    if(traceOn)traceSolved(plane,contact,min,target,y);
     return !!angle||debug.gripLift>0;
   }
   // Project around one horizontal axis. Reuse the sampled points and coefficient
@@ -612,6 +618,31 @@
     const minUp=minimumY(s.points,s.pivot.y,up),minDown=minimumY(s.points,s.pivot.y,down);
     s.clearanceStrategy='flat-plus-minimum-lift';
     return Math.abs(minUp-minDown)<1e-9?(Math.abs(up)<=Math.abs(down)?up:down):minUp>minDown?up:down;
+  }
+  function setTrace(on){traceOn=!!on;if(!traceOn){trace.solved=null;trace.lastPlane=null;trace.lastContact=null;}return traceOn;}
+  function traceSolved(plane,contact,min,target,floorY){
+    trace.solveCalls++;trace.lastSolveFrame=frameId()??null;trace.lastReason=debug.reason;
+    trace.lastTarget=target;trace.lastFloor=floorY;trace.lastSolvedY=min;trace.lastPlane=plane;trace.lastContact=contact;
+    if(!trace.solved)trace.solved=new Float32Array(16);
+    const e=scratch.matrix.elements;for(let i=0;i<16;i++)trace.solved[i]=e[i]; // The exact matrix the solve validated.
+  }
+  // What a draw will actually use: the sprite's live matrixWorld, measured both through the cached hull and
+  // through every baked point. They must agree; a gap means the hull cache is stale for the current fit.
+  function traceDrawn(scene){
+    const plane=trace.lastPlane,contact=trace.lastContact,o=traceOut;
+    if(!traceOn||!plane||!contact)return null;
+    let root=plane;while(root.parent)root=root.parent;
+    o.inScene=root===scene;
+    const m=plane.matrixWorld.elements;
+    o.drawnHullY=projectedContactY(contact.hull,plane.matrixWorld);
+    let mn=Infinity;for(const p of contact.points)mn=Math.min(mn,m[1]*p.x+m[5]*-p.z+m[13]);
+    o.drawnPointsY=mn;
+    let d=0;const sv=trace.solved;if(sv)for(let i=0;i<16;i++)d=Math.max(d,Math.abs(sv[i]-m[i]));
+    o.matrixDelta=d;o.target=trace.lastTarget;o.floor=trace.lastFloor;o.solvedY=trace.lastSolvedY;
+    o.solveCalls=trace.solveCalls;o.failCalls=trace.failCalls;o.lastSolveFrame=trace.lastSolveFrame;o.reason=trace.lastReason;
+    o.lastFailReason=trace.lastFailReason;o.lastFailFrame=trace.lastFailFrame;
+    o.itemKey=debug.itemKey;o.speciesId=debug.speciesId;o.hullBuilds=debug.contactHullBuilds;o.hullVertices=contact.hull.length;
+    return o;
   }
   function liftNode(node,parentMatrix,nodeWorld,lift,s){
     s.parentInverse.copy(parentMatrix).invert();
@@ -708,5 +739,5 @@
     if(s.point.distanceTo(shoulder)>reach+0.002)return false;
     socket.position.copy(s.candidate);debug.freeHandLifts++;return true;
   }
-  global.HeldGroundPose=Object.freeze({configurePreview,setPreviewEnabled,previewAppliesTo,suspendedReferenceY,hasDrawingHaftChildren,skip,enabled,groundY,constrainWeapon,constrainDualCopies,releaseDualCopy,rotateAroundGrip,constrainFreeHand,adjustGrip,gripBasisFor,hasCurrentGripPose,resolveGripLocal,adjustHaftPoint,ropeClearance,fittedRopeScale,referenceDrop,lightRopeScale,ropeFitCandidate,needsFit,originalGeometryFor,prepareGeometryUpdate,fixedValue,clear,contractedZ,contactVertices,tracePixels,autoContact,bakeContact,projectedContactY,minimumY,chooseAngle,snapshot:()=>({...debug})});
+  global.HeldGroundPose=Object.freeze({configurePreview,setPreviewEnabled,previewAppliesTo,suspendedReferenceY,hasDrawingHaftChildren,skip,enabled,groundY,setTrace,traceDrawn,constrainWeapon,constrainDualCopies,releaseDualCopy,rotateAroundGrip,constrainFreeHand,adjustGrip,gripBasisFor,hasCurrentGripPose,resolveGripLocal,adjustHaftPoint,ropeClearance,fittedRopeScale,referenceDrop,lightRopeScale,ropeFitCandidate,needsFit,originalGeometryFor,prepareGeometryUpdate,fixedValue,clear,contractedZ,contactVertices,tracePixels,autoContact,bakeContact,projectedContactY,minimumY,chooseAngle,snapshot:()=>({...debug})});
 })(typeof window!=='undefined'?window:globalThis);
