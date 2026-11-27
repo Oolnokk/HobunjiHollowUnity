@@ -668,6 +668,10 @@
     const childLocalQ = mirroredChild
       ? mirrorQuaternionAcrossLocalX(planeLocalQ, new Quaternion())
       : planeLocalQ;
+    if (mirroredChild && !current.invisible) {
+      // Correct the half-turn on the visible offhand's local grip X axis. The grip point and weapon pose already match.
+      childLocalQ.multiply(planeLocalQ.set(1, 0, 0, 0));
+    }
     const quaternion = weaponWorldQ.multiply(childLocalQ).normalize();
 
     return {

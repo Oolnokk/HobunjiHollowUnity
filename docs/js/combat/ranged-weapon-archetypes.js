@@ -340,10 +340,10 @@
     if (!rs?.AFFLICTIONS || typeof rs.addAffliction !== 'function') return false;
     if (afflictionBridgeInstalled) return true;
     baseAddAffliction = rs.addAffliction.bind(rs);
-    rs.addAffliction = function rangedScaledAddAffliction(entity, id, amount) {
+    rs.addAffliction = function rangedScaledAddAffliction(entity, id, amount, fluidSource) {
       const alias = scaledAfflictionAliases.get(id);
-      if (!alias) return baseAddAffliction(entity, id, amount);
-      return baseAddAffliction(entity, alias.realId, amount * alias.scale);
+      if (!alias) return baseAddAffliction(entity, id, amount, fluidSource);
+      return baseAddAffliction(entity, alias.realId, amount * alias.scale, fluidSource);
     };
     afflictionBridgeInstalled = true;
     return true;

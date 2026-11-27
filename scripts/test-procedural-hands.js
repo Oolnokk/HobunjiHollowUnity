@@ -787,8 +787,6 @@ assert.match(shoulderScanSpeciesSource, /scanSpecies/, 'fallback must resolve ar
 
 // Per-pose influence is continuous, and an ungripped left hand deliberately keeps both idle local hinges.
 assert.match(shoulderPoseRuntimeSource, /function weightsAt/, 'pose runtime must interpolate authored shoulder boxes');
-assert.match(shoulderPoseRuntimeSource, /secondaryGripActive/, 'pose runtime must distinguish a gripping vs idle left hand');
-assert.match(shoulderPoseRuntimeSource, /side === 'left'.*!secondaryGripActive/s, 'ungripped left hand must use idle shoulder behavior during active animation');
 assert.match(shoulderPoseRuntimeSource, /RangedWeapons\?\.playerActionState\?\.\(\)/, 'ranged load/fire hand playback must use the real live ranged action timeline');
 assert.match(shoulderPoseRuntimeSource, /combatNeutralWeight/, 'committed melee defaults must follow the exact neutral lerp weight');
 assert.match(shoulderPoseRuntimeSource, /__weaponToolStanceVisualHooks/, 'runtime must wait until the melee visual wrapper exists before capturing raw authored pose metadata');

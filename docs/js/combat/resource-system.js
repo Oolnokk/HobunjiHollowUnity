@@ -737,9 +737,9 @@
 
   const fluidSources = {
     __proto__: null,
-    bleedingHealth: { flags: new WeakMap(), spraySource: 'blunt' },
-    poisonedHealth: { flags: new WeakMap(), spraySource: 'internal' },
-  }; // Source bits follow each affliction table until that affliction fully clears.
+    bleedingHealth: { flags: Symbol('bleedingFluidSources'), spraySource: 'blunt' },
+    poisonedHealth: { flags: Symbol('poisonFluidSources'), spraySource: 'internal' },
+  }; // Symbols preserve runtime provenance across affliction-table spreads without becoming numeric affliction IDs.
   const DRIP_SOURCE = 1, SPRAY_SOURCE = 2; // Older resource tables without a source use drips.
 
   function setAffliction(entity, id, amount, fluidSource) {
@@ -755,10 +755,10 @@
     const fluid = fluidSources[id]; // Only Bleeding and Poisoned Health track fluid presentation.
     if (fluid) {
       const previous = entity.afflictions[id] || 0; // Partial cleanses preserve both sources until this stack reaches zero.
-      if (next <= 0) fluid.flags.delete(entity.afflictions);
+      if (next <= 0) delete entity.afflictions[fluid.flags];
       else if (next > previous) {
-        const sources = previous > 0 ? fluid.flags.get(entity.afflictions) || DRIP_SOURCE : 0; // Legacy buildup still drips when a second source joins.
-        fluid.flags.set(entity.afflictions, sources | (fluidSource === fluid.spraySource ? SPRAY_SOURCE : DRIP_SOURCE));
+        const sources = previous > 0 ? entity.afflictions[fluid.flags] || DRIP_SOURCE : 0; // Legacy buildup still drips when a second source joins.
+        entity.afflictions[fluid.flags] = sources | (fluidSource === fluid.spraySource ? SPRAY_SOURCE : DRIP_SOURCE);
       }
     }
     entity.afflictions[id] = next;
@@ -1473,7 +1473,7 @@
     const bleed = getAffliction(entity, "bleedingHealth");
     if (bleed <= 0) return;
     if (dt > 0 && entity.health > 0) {
-      const sources = fluidSources.bleedingHealth.flags.get(entity.afflictions) || DRIP_SOURCE; // Sample before the final tick can clear the source bits.
+      const sources = entity.afflictions[fluidSources.bleedingHealth.flags] || DRIP_SOURCE; // Sample before the final tick can clear the source bits.
       if (sources & DRIP_SOURCE) window.AfflictionFluidVfx?.emit(entity, 'blood-drip', 380);
       if (sources & SPRAY_SOURCE) window.AfflictionFluidVfx?.emit(entity, 'blood-spew', 850);
     }
@@ -1504,7 +1504,7 @@
     const poison = getAffliction(entity, "poisonedHealth");
     if (poison <= 0) return;
     if (dt > 0 && entity.health > 0) {
-      const sources = fluidSources.poisonedHealth.flags.get(entity.afflictions) || DRIP_SOURCE; // Sample before the final damaging tick clears the stack.
+      const sources = entity.afflictions[fluidSources.poisonedHealth.flags] || DRIP_SOURCE; // Sample before the final damaging tick clears the stack.
       if (sources & DRIP_SOURCE) window.AfflictionFluidVfx?.emit(entity, 'poison-drip', 440);
       if (sources & SPRAY_SOURCE) window.AfflictionFluidVfx?.emit(entity, 'poison-spew', 850);
     }

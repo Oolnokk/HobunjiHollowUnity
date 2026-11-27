@@ -58,7 +58,7 @@ const files = [
   'js/creature-genetics-render.js?v=20261124sharedBodyColors2',
   'config/modular-weapons.js?v=20261118captainWarCleaver2',
   'js/modular-weapons.js?v=20261119sideTangSweep2',
-  'js/held-action-animations.js?v=20261127h22d76ee',
+  'js/held-action-animations.js?v=20261127h0c0e191',
   'js/combat/shared-attack-pose.js?v=20261126flailHeadLean1',
   'js/combat/attack-pose-templates.js?v=20261115h01bf772',
   'js/combat/melee-pose-spacing.js?v=20261028a',
@@ -96,7 +96,7 @@ const files = [
   'js/bandit-captain-armaments.js?v=20261127rootAnatomyRevert16',
   'js/wilderness-encounter-runtime.js?v=20261127rootCorsCrystalParity11',
   'js/rootledoot-encounter.js?v=20261127rootAnatomyRevert16',
-  'js/combat/ranged-weapon-archetypes.js?v=20261125deepAudit1',
+  'js/combat/ranged-weapon-archetypes.js?v=20261127h1602f00',
   'tools/enemy-loadout-editor/source-data.js?v=20261127workshopParallel14',
 ];
 // Fetch scripts concurrently without changing their dependency-sensitive execution order.

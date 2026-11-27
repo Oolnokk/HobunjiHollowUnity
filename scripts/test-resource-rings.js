@@ -402,6 +402,10 @@ assert.equal(ResourceSystem.getAffliction(shatteredStaminaTriggerEntity, 'bleedi
   ResourceSystem.removeAffliction(sick, 'poisonedHealth', 1);
   ResourceSystem.tick(sick, 0.1);
   assert.deepEqual(emitted.splice(0), ['poison-drip', 'poison-spew'], 'mixed poison keeps both visuals through a partial cleanse');
+  ResourceSystem.initEntity(sick); // Reattaching an actor rebuilds its affliction table from the existing state.
+  ResourceSystem.tick(sick, 0.1);
+  assert.deepEqual(emitted.splice(0), ['poison-drip', 'poison-spew'], 'rebuilding the affliction table preserves both poison sources');
+  assert.ok(Object.values(sick.afflictions).every(Number.isFinite), 'fluid provenance does not appear as a numeric affliction');
   ResourceSystem.removeAffliction(sick, 'poisonedHealth', 100);
   ResourceSystem.addAffliction(sick, 'poisonedHealth', 5);
   ResourceSystem.tick(sick, 0.1);

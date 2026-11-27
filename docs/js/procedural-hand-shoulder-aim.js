@@ -148,7 +148,7 @@
     }
 
     function weightsFor(side) {
-      const weights = poseRuntime?.currentWeights?.(side, avatarRoot) || { grip: 1, palmNormal: 1 }; // Avatar scope prevents the player's musical stance leaking to NPCs.
+      const weights = poseRuntime?.currentWeights?.(side, avatarRoot, !freeSide[side]) || { grip: 1, palmNormal: 1 }; // Pass actual socket ownership so a held offhand uses the pose's hinge weights.
       return { grip: clamp01(weights.grip), palmNormal: clamp01(weights.palmNormal) };
     }
 
