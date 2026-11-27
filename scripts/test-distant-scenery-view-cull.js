@@ -204,13 +204,14 @@ console.log('Distant scenery offscreen/occluded culling, conservative depth prox
       getQueryParameter(q,key){assert(pending.has(q));if(key===100)return tick>=q.readyAt;assert(tick>=q.readyAt);return q.passed;},
       deleteQuery(q){assert(pending.delete(q));},allVisible};
   }
-  let gpu=delayedGpu();const oldGpu=gpu;
+  let gpu=delayedGpu(),forceFailure=false;const oldGpu=gpu; // Exercise mid-draw failure after slots have been rebound.
   const delayedRenderer={capabilities:{isWebGL2:true},autoClear:true,shadowMap:{autoUpdate:true},getContext:()=>gpu,
     render(queryScene){
       assert(queryScene.children.length<=3);
       for(const proxy of [...queryScene.children].reverse())if(proxy.visible){
         proxy.onBeforeRender();assert(gpu.active);
         gpu.active.passed=gpu.allVisible||proxy.position.x>0;
+        if(forceFailure)throw Error('simulated scenery render error');
         proxy.onAfterRender();assert.equal(gpu.active,null);
       }
     }};
@@ -228,6 +229,15 @@ console.log('Distant scenery offscreen/occluded culling, conservative depth prox
   tick++;restore=enter();assert(rocks.every(rock=>rock.visible));restore?.();
   cull.reset();assert.equal(gpu.pending.size,0);
   assert.equal(cull.snapshot().proxySlots,3);
+  forceFailure=true;
+  restore=enter();cull.probeAfterBase(delayedRenderer,camera,scene);restore?.();
+  assert.equal(gpu.active,null,'fail-open closes the active query');
+  assert.equal(gpu.pending.size,0,'fail-open deletes pending queries from all slots');
+  assert.equal(cull.snapshot().gpuEnabled,false);
+  assert.equal(delayedRenderer.autoClear,true);
+  assert.equal(delayedRenderer.shadowMap.autoUpdate,true);
+  assert.equal(camera.layers.mask,32);
+  assert(rocks.every(rock=>rock.visible),'render failure does not leave scenery hidden after restoration');
   for(const rock of rocks)layer.remove(rock);
   scene.remove(western);
  }
