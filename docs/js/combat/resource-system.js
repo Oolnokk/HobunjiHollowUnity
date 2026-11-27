@@ -286,6 +286,8 @@
       requiresBeneficialTransaction: true, benefitsTransaction: tx => tx?.source === "afflictionTick",
     }),
   });
+  const enhancedByResource = Object.create(null); // Immutable definition groups used by resource transactions; never cache live amounts.
+  for (const entry of Object.entries(ENHANCED_RESOURCE_DEFS)) (enhancedByResource[entry[1].resource] ||= []).push(entry);
   // Short-lived combat debuffs are deliberately separate from resource-ring
   // afflictions: they change combat math for a duration without occupying
   // Health/Stamina/Footing bar segments. Quick Attack mastery choices are the
@@ -378,9 +380,10 @@
     return clamp(unclamped, Number.isFinite(Number(minModifier)) ? Number(minModifier) : 0.05, Number.isFinite(Number(maxModifier)) ? Number(maxModifier) : Infinity);
   }
 
-  function cleanupTimedDebuffs(entity, atMs = nowMs()) {
+  function cleanupTimedDebuffs(entity, atMs) {
     const store = timedDebuffStore(entity); // Existing runtime store; null is the steady-state path for almost every actor.
     if (!store) return null;
+    if (atMs === undefined) atMs = nowMs(); // No clock read for actors without timed statuses.
     let hasLive = false; // Tracks whether the object can stay attached without allocating Object.keys/Object.entries every frame.
     for (const id in store) {
       const entry = store[id]; // Current timed status checked against the shared monotonic combat clock.
@@ -891,10 +894,13 @@
   function getEffectiveMax(entity, key) {
     const player = window.Combat?.deps?.player; // Used to apply maximum-resource potion/perk buffs only to their consumer.
     const isPlayer = entity === player;
-    const staminaMul = (isPlayer ? (window.AlchemySystem?.getMaxStaminaMultiplier?.() || 1) * (1 + (window.PerkSystem?.rank('combat', 'increaseStamina') || 0) * 0.08) : 1) * statModifier(entity, "maxStamina"); // Used by Endurance / Increase Stamina / trinkets.
-    const healthMul = (isPlayer ? 1 + (window.PerkSystem?.rank('combat', 'increaseHealth') || 0) * 0.08 : 1) * statModifier(entity, "maxHealth"); // Increase Health perk / trinkets.
-    if (key === "stamina") return clamp((entity.maxStamina || 0) * staminaMul - getAffliction(entity, "windedStamina"), 0, (entity.maxStamina || 0) * staminaMul);
+    if (key === "stamina") {
+      const staminaMul = (isPlayer ? (window.AlchemySystem?.getMaxStaminaMultiplier?.() || 1) * (1 + (window.PerkSystem?.rank('combat', 'increaseStamina') || 0) * 0.08) : 1) * statModifier(entity, "maxStamina"); // Only Stamina queries need Endurance / Increase Stamina / trinkets.
+      const full = (entity.maxStamina || 0) * staminaMul; // Shared capacity and clamp ceiling.
+      return clamp(full - getAffliction(entity, "windedStamina"), 0, full);
+    }
     if (key === "health") {
+      const healthMul = (isPlayer ? 1 + (window.PerkSystem?.rank('combat', 'increaseHealth') || 0) * 0.08 : 1) * statModifier(entity, "maxHealth"); // Only Health queries need Increase Health / trinkets.
       const fullHealthMax = Math.max(0, (entity.maxHealth || 0) * healthMul); // Used to keep capacity afflictions nonlethal without inventing Health on entities whose authored maximum is zero.
       const rentHealth = Math.max(0, getAffliction(entity, "rentHealth")); // Persistent Wyrm-witch capacity loss; cleared only by shared sacred-ground detection.
       const afflictedHealthMax = clamp(fullHealthMax - getAffliction(entity, "congealedHealth") - rentHealth, 0, fullHealthMax); // Used as the raw Congealed-Health-reduced capacity before the living-target floor.
@@ -1085,22 +1091,19 @@
     return Number.isFinite(last) ? Math.max(0, nowMs() - last) : Infinity;
   }
 
-  function enhancedResourcePriority(def, transaction) {
-    const beneficial = typeof def?.benefitsTransaction === "function" && def.benefitsTransaction(transaction); // Action-specific benefit may outrank general enhanced resources without any one-off Furious check.
-    return beneficial ? Number(def.beneficialPriority ?? def.normalPriority) || 0 : Number(def?.normalPriority) || 0;
-  }
-
   function getEnhancedResources(entity, resourceKey, transaction = {}) {
-    return Object.entries(ENHANCED_RESOURCE_DEFS)
-      .filter(([id, def]) => def.resource === resourceKey && getAffliction(entity, id) > 0)
-      .map(([id, def]) => ({
-        id,
-        def,
-        amount: getAffliction(entity, id),
-        priority: enhancedResourcePriority(def, transaction),
-        benefitsTransaction: typeof def.benefitsTransaction === "function" && def.benefitsTransaction(transaction),
-      }))
-      .sort((a, b) => b.priority - a.priority || b.def.conversionRate - a.def.conversionRate);
+    const pools = []; // Only positive reserves of the requested resource enter the priority sort.
+    const definitions = enhancedByResource[resourceKey];
+    if (!definitions) return pools;
+    for (const [id, def] of definitions) {
+      const amount = getAffliction(entity, id); // Current balance, sampled once per eligible pool.
+      if (!(amount > 0)) continue;
+      const benefitsTransaction = typeof def.benefitsTransaction === "function" && def.benefitsTransaction(transaction); // Same predicate controls priority and eligibility.
+      const priority = benefitsTransaction ? Number(def.beneficialPriority ?? def.normalPriority) || 0 : Number(def.normalPriority) || 0;
+      pools.push({ id, def, amount, priority, benefitsTransaction });
+    }
+    if (pools.length > 1) pools.sort((a, b) => b.priority - a.priority || b.def.conversionRate - a.def.conversionRate);
+    return pools;
   }
 
   function resolveEnhancedResourceTransaction(entity, resourceKey, amount, transaction = {}) {

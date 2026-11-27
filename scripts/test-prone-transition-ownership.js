@@ -61,12 +61,13 @@ assert(recovery(target), 'a non-falling climbing actor still uses ordinary Footi
 delete target._cliffClimb;
 
 const debug={knockedOff:0,lastEvent:null};
-const knockOff=extract(cliff,"function knockOff(c, reason = 'shot while climbing')",
+const knockOff=extract(cliff,'function knockOff(',
   'function update(c, dt, target)', ['window','debug'], [{__farmLog:()=>{}},debug], 'knockOff');
 const descending={id:'descent',creatureKey:'nelk',x:150,y:160,
   _cliffClimb:{phase:'climb',descending:true,t:0.3,originX:100,originY:100,originSurfaceY:5,
   startX:100,startY:100,endX:250,endY:250,surfaceY:3.7,surfaceEndY:1}};
-assert(knockOff(descending,'knocked prone'));
+assert(knockOff(descending,'knocked prone',true));
+assert.equal(descending._cliffClimb.popupCredit,true,'credited interruption retains ownership until landing');
 assert.equal(descending._cliffClimb.phase,'fall');
 assert.equal(descending._cliffClimb.surfaceStartY,3.7);
 assert.equal(descending._cliffClimb.surfaceEndY,1,'descending interrupted climb keeps its lower target');
@@ -76,6 +77,9 @@ const ascending={id:'ascent',creatureKey:'nelk',x:150,y:160,
   _cliffClimb:{phase:'climb',descending:false,originX:100,originY:100,originSurfaceY:1,
   endX:250,endY:250,surfaceY:3.7,surfaceEndY:5}};
 assert(knockOff(ascending,'knocked prone'));
+assert.equal(ascending._cliffClimb.popupCredit,false,'uncredited interruption cannot inherit player credit');
+assert.equal(knockOff(descending,'later unrelated hit',false),false,'an already falling actor cannot restart its fall');
+assert.equal(descending._cliffClimb.popupCredit,true,'later interruption cannot steal original fall credit');
 assert.equal(ascending._cliffClimb.surfaceStartY,3.7);
 assert.equal(ascending._cliffClimb.surfaceEndY,1,'ascending interruption drops toward its lower base');
 assert.equal(ascending._cliffClimb.endX,100);

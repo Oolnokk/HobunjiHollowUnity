@@ -1492,3 +1492,27 @@ console.log('Planar enchantments: unique buildup, transactions, defensive/flurry
   assert.equal(RS.getAffliction(drunk, 'veilmarkedHealth'), 1);
 }
 console.log('Planar enchantments through live Drunken Health adapter passed');
+
+// Performance regression: unrelated capacity providers must not run for one resource query.
+{
+  const actor=makeEntity(), calls=[]; // Record only the actual registered stat provider visits.
+  const stop=RS.registerStatModifierProvider((entity,key)=>{if(entity===actor)calls.push(key);return 1;});
+  for(const [resource,stat] of [['health','maxHealth'],['stamina','maxStamina'],['footing','maxFooting']]){
+    calls.length=0;
+    assert.equal(RS.getEffectiveMax(actor,resource),100);
+    same(calls,[stat]);
+  }
+  stop();
+  const definitions=RS.ENHANCED_RESOURCE_DEFS;
+  for(const id of Object.keys(definitions)) RS.addEnhancedResource(actor,id,5);
+  for(const resource of ['health','stamina','footing','missing']) for(const tx of [{},{source:'directDamage'},{source:'afflictionTick'},{actionKind:'combatCombo'},{actionKind:'offensiveHeldCharge'},{actionKind:'dodge'}]){
+    const expected=Object.entries(definitions).filter(([id,def])=>def.resource===resource&&RS.getAffliction(actor,id)>0).map(([id,def])=>{
+      const benefitsTransaction=typeof def.benefitsTransaction==='function'&&def.benefitsTransaction(tx);
+      return {id,amount:RS.getAffliction(actor,id),benefitsTransaction,priority:benefitsTransaction?Number(def.beneficialPriority??def.normalPriority)||0:Number(def.normalPriority)||0,rate:def.conversionRate};
+    }).sort((a,b)=>b.priority-a.priority||b.rate-a.rate);
+    same(RS.getEnhancedResources(actor,resource,tx).map(({id,amount,benefitsTransaction,priority,def})=>({id,amount,benefitsTransaction,priority,rate:def.conversionRate})),expected);
+  }
+  const cleaned=ES.cleanWeaponState({base:['invalid','stormwake','stormwake','ancestralSight','burning'],flourishes:{tap1:'blackBargain',hold2:'ancestralMercy',bogus:'fury'}});
+  same(cleaned,{base:['stormwake','ancestralSight'],flourishes:{tap1:'blackBargain',hold2:'ancestralMercy'}});
+  console.log('Resource-specific provider dispatch, enhanced pool order and canonical enchantment normalization passed');
+}

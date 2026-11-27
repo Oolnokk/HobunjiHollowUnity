@@ -37,7 +37,7 @@
   <script src="js/dev-companion-bridge.js?v=20261019handoff1"></script>
   <script src="js/dev-companion-appearance.js?v=20261107appearance-audit2"></script>
   <script src="js/xray-hierarchy.js?v=20261127h36870ae"></script>
-  <script src="js/held-ground-pose.js?v=20261127lazyRows1"></script>
+  <script src="js/held-ground-pose.js?v=20261127h6314632"></script>
   <script src="js/held-ground-pose-trace.js?v=20261127trace1"></script> <!-- Diagnostic only: inert unless ?groundPoseTrace=1. -->
   <script src="https://unpkg.com/three@0.128.0/examples/js/controls/TransformControls.js"></script>
   <script src="js/geometry-quality.js?v=20261110cloneaudit2"></script> <!-- Baked GLB quality profiles; source fallback. -->
@@ -199,7 +199,7 @@
        procedural-hand-outline-parity.js's fix for the same class of bug). -->
   <script src="js/portrait-plane-outline-parity.js?v=20261126neckBlendConsolidate3"></script>
   <!-- Shared held-item action poses used by game.js and its animation editor. -->
-  <script src="js/held-action-animations.js?v=20261127h31eb7126e"></script>
+  <script src="js/held-action-animations.js?v=20261127followupPerf2"></script>
   <!-- Great Fey skip voluntary gifts, proximity chatter, activity reactions, and pet greetings.
        Load once before all NPC interaction modules, including lazy runtimes. -->
   <script src="js/npc-interaction-policy.js?v=20261021fey1"></script>
@@ -345,9 +345,9 @@
   <script src="js/remote-player-avatar.js?v=20261126mp4"></script> <!-- On-screen body for non-local players (reuses the cutscene stand-in makeNpcWalker pipeline). Initialised by game.js. -->
   <script src="js/remote-area-tick.js?v=20261127h2d04878"></script> <!-- Opt-in (off by default) coarse creature tick for other occupied, already-built zones in co-op. Initialised by game.js. -->
   <script src="js/dev-dummy-player.js?v=20261124mp1"></script> <!-- Dev-only second-player stand-in (window.DevDummyPlayer). -->
-  <script src="js/combat/resource-system.js?v=20261127combatPopups1"></script>
+  <script src="js/combat/resource-system.js?v=20261127combatPerf1"></script>
   <script src="js/sacred-ground.js?v=20261108h9e2416f"></script> <!-- Global sacred-ground provider registry for totems, temple and future blessings. -->
-  <script src="js/combat/knockback-collision-impact.js?v=20261127combatPopups1"></script>
+  <script src="js/combat/knockback-collision-impact.js?v=20261127impactScatter1"></script>
   <!-- Burning creatures and short-lived corpse flames share fire-hazard contact across knockback and adventuring torches. -->
   <script src="js/combat/burning-entity-hazards.js?v=20261117burnActorsAudit2"></script>
   <!-- Burning Health presentation: reuses the authored campfire emitter on living actors and temporarily burning corpses. -->
@@ -430,7 +430,7 @@
        relative to the other systems above doesn't matter; must load
        before game.js, which calls window.DewVats.init(...) during its own
        setup. -->
-  <script src="js/dew-vats.js?v=20261126familyAudit3"></script>
+  <script src="js/dew-vats.js?v=20261127followupPerf1"></script>
   <!-- Wild berry bushes (window.WildBerries) — self-contained aside from
        deps injected via init(), so load order relative to the other
        systems above doesn't matter; must load before game.js, which
@@ -575,7 +575,7 @@
   <script src="js/player-jump.js?v=20261126groundFit1"></script> <!-- Free jumping and real cover-elevation traversal, initialized by ClimbSystem. -->
   <script src="js/climb-system.js?v=20261122hb6f619e"></script>
   <script src="js/cliff-crawl-presentation.js?v=20261114footYaw1"></script> <!-- Rock-projected hands, feet and body for handhold routes and attached wall surfaces. -->
-  <script src="js/creature-cliff-climb.js?v=20261122h48e636a"></script>
+  <script src="js/creature-cliff-climb.js?v=20261127impactScatterAudit2"></script>
   <script src="js/companion-follow-navigation.js?v=20261124companionCatchup5"></script> <!-- Single companion route decision and unseen stuck recovery; initialized by game.js. -->
   <!-- Cubic 3D cell grid (window.CellGrid3D): the tile grid plus a level axis.
        Pure data/math with no dependencies, so load order doesn't matter.
@@ -615,7 +615,7 @@
   <script src="js/flying-animal-rig.js?v=20261126h7c9249d"></script> <!-- Canonical authored two-bone bird wing/body assembly. -->
   <script src="js/tzatzul-registration.js?v=20261119dairyWild1"></script> <!-- Tzatzul dev species, hatchling peck, stable individual tint and flying-rig JSON. -->
   <script src="js/skeeri-ruins.js?v=20261123skeeriEyePrewarm1"></script> <!-- Three authored Skeeri sizes, concealed ruin hatches and shaft witch-bomb runs. -->
-  <script src="js/tzatzul-live-visuals.js?v=20261126hfd81783"></script>
+  <script src="js/tzatzul-live-visuals.js?v=20261127birdScratch1"></script>
   <script src="js/tzatzul-cliff-sites.js?v=20261108tzflightnest2"></script> <!-- Separate rock-textured, non-climbable Tzatzul spires. -->
   <script src="js/tzatzul-flight-runtime.js?v=20261124h585debe"></script> <!-- Shared swept-body dive for exterior and nest mothers. -->
   <script src="js/tzatzul-nest-encounter.js?v=20261120hpaperheadless2"></script> <!-- Authoritative indoor mother and hatchling combat in the existing wildlife tick. -->
@@ -2871,7 +2871,7 @@
   <!-- Completed world-space loot and XP rewards move into the five-row, screen-fixed reading queue. -->
   <script src="js/reward-readout.js?v=20261107rewardReadout1"></script>
   <!-- World-space Float+ combat text and centered five-row reward lists. -->
-  <script src="js/world-popup-text.js?v=20261127anchorShare2"></script>
+  <script src="js/world-popup-text.js?v=20261127ha21dd67"></script>
   <!-- Quick Attack opportunity reticle needs WorldPopupText's avatar centroid
        helper at module evaluation time, so it belongs here rather than in the
        earlier combat-definition block. It still loads before game.js and
@@ -2985,9 +2985,9 @@
   <script src="js/family-baby-limbs.js?v=20261123babyGLB3"></script> <!-- Kicking hands/feet cloned from the hidden baby walker onto the carried proxy. -->
   <script src="js/family-baby-burdens.js?v=20261127hf9e47c5"></script>
   <script src="js/family-baby-ambient-voice.js?v=20261122decoupledVoice1"></script> <!-- Voice adapter; physical baby carry code unchanged. -->
-  <script src="js/family-baby-follow.js?v=20261127h6c36db2"></script> <!-- Uses shared companion navigation and downed crawl curves. -->
+  <script src="js/family-baby-follow.js?v=20261127followupPerf1"></script> <!-- Uses shared companion navigation and downed crawl curves. -->
   <script src="js/family-baby-care.js?v=20261127hceefd7a"></script>
-  <script src="js/romance-family.js?v=20261127hb4b20e7"></script>
+  <script src="js/romance-family.js?v=20261127followupPerf1"></script>
   <script src="js/romance-wedding.js?v=20261126h44c94f3"></script>
   <script src="js/npc-following.js?v=20261127h0f1f7dc"></script>
   <!-- Shared spouse kiss motion/height solver. Loads before RomanceSystem.init but after the player render/leg APIs. -->
@@ -3009,7 +3009,7 @@
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups2" data-classic-group="render"></script>
   <script src="js/held-gift-policy.js?v=20261122heldGiftPolicy1"></script> <!-- Shared gifting policy and clothing visual preparation; game.js owns equipment state. -->
   <script src="js/rootledoot-encounter.js?v=20261127rootAnatomyRevert16"></script>
-  <script src="game.js?v=20261127cameraStrafeMerge1"></script>
+  <script src="game.js?v=20261127impactScatterAudit2"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261126farmGuide3"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->

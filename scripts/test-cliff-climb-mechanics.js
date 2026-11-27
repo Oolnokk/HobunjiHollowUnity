@@ -181,18 +181,22 @@ CreatureCliffClimb.init({
   isZoneArea: () => true, getCurrentArea: () => 'zone',
   getActiveGrid: () => grid, getActiveCols: () => 7, getActiveRows: () => 1,
 });
-const footing = [];
-context.window.ResourceSystem = { applyDamage() {}, spendFooting: (e, amt) => footing.push(amt) };
+const footing = [], impactNumbers = [], impactCallouts = [];
+context.window.ResourceSystem = { applyDamage(e, amt) { return amt; }, spendFooting(e, amt) { footing.push(amt); return amt; } };
+context.window.WorldPopupText = { showCombatEffect(e,id,amount,credit,source) { impactNumbers.push({id,amount,credit,source}); return impactNumbers.length; }, showImpactCallout(e) { impactCallouts.push(e); } };
 const hunter = { id: 'h1', x: TILE * 0.8, y: 32, state: 'chase', health: 10, areaId: 'zone' };
 const prey = { x: TILE * 4.5, y: 32, health: 10 };
 assert.equal(CreatureCliffClimb.update(hunter, 1 / 60, prey), true, 'a chasing hostile at the wall foot climbs after its target');
 for (let i = 0; i < 15; i++) CreatureCliffClimb.update(hunter, 1 / 60, prey);
 assert(hunter._cliffClimb.surfaceY > 0, 'it is on the face');
-assert.equal(CreatureCliffClimb.knockOff(hunter), true, 'a projectile hit knocks it off');
+assert.equal(CreatureCliffClimb.knockOff(hunter, 'credited projectile', true), true, 'a projectile hit knocks it off');
 for (let i = 0; i < 60 && hunter._cliffClimb; i++) CreatureCliffClimb.update(hunter, 1 / 60, prey);
 assert.equal(hunter._cliffClimb, null);
 assert.equal(hunter.x, TILE * 0.8, 'it falls back to the foot of the wall');
 assert.equal(footing.length, 1, 'and lands hard');
+assert.equal(impactNumbers.length, 2, 'a credited ordinary cliff landing emits actual Health and Footing');
+assert(impactNumbers.every(e=>e.credit && e.source==='impact'));
+assert.deepEqual(impactCallouts,[hunter],'one callout at the landing');
 assert.equal(CreatureCliffClimb.update(hunter, 1 / 60, prey), false, 'retry waits for a cooldown');
 for (let i = 0; i < 200; i++) CreatureCliffClimb.update(hunter, 1 / 60, prey);
 for (let i = 0; i < 200 && (hunter._cliffClimb || hunter.x < TILE * 3); i++) CreatureCliffClimb.update(hunter, 1 / 60, prey);

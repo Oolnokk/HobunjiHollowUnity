@@ -27,15 +27,15 @@ assert(!uncached.includes('floatAnchors') && !uncached.includes('shareAnchors'))
 function run(updateSource, activeSpec, now, moveDuringIcon = false) {
   class Vec {
     constructor(x=0,y=0,z=0) { Object.assign(this,{x,y,z}); }
-    setFromMatrixColumn(matrix,i) { this.x = i===0?1:0; this.y=0; this.z=i===2?1:0; return this; }
+    setFromMatrixColumn(matrix,i) { this.x = i===0?1:0; this.y=i===1?0.8:i===2?-0.6:0; this.z=i===1?0.6:i===2?0.8:0; return this; }
     normalize() { return this; }
     addScaledVector(v,k) { this.x+=v.x*k; this.y+=v.y*k; this.z+=v.z*k; return this; }
     copy(v) { this.x=v.x; this.y=v.y; this.z=v.z; return this; }
     setScalar(s) { this.x=this.y=this.z=s; }
   }
   const roots = [{},{}]; // Multiple actors and both list categories.
-  const active = activeSpec.map(([id,root,kind,prompt,life,mode='centeredFiveRow']) => ({
-    id,root:roots[root],kind,interactionPrompt:prompt,mode,startedAt:0,lifetimeMs:life,sequence:id,
+  const active = activeSpec.map(([id,root,kind,prompt,life,mode='centeredFiveRow',scatter=false,sizeMultiplier=1]) => ({
+    id,root:roots[root],kind,interactionPrompt:prompt,mode,scatter,sizeMultiplier,startedAt:0,lifetimeMs:life,sequence:id,
     width:.3,height:.2,offsetX:id*.02,offsetY:id*.03,
     material:{opacity:1},plane:{position:new Vec(),quaternion:{copy(){}},scale:new Vec()},
   }));
@@ -52,7 +52,7 @@ function run(updateSource, activeSpec, now, moveDuringIcon = false) {
   ctx.listFor=root=>{sorts++;return active.filter(e=>e.root===root&&e.mode==='centeredFiveRow'&&!e.interactionPrompt).sort((a,b)=>(ctx.PRIORITY[a.kind]??99)-(ctx.PRIORITY[b.kind]??99)||a.sequence-b.sequence)};
   ctx.interactionListFor=root=>{sorts++;return active.filter(e=>e.root===root&&e.interactionPrompt).sort((a,b)=>a.sequence-b.sequence)};
   vm.runInNewContext(updateSource+'\nupdate('+now+');',ctx);
-  return {sorts,cameraUpdates,anchorBuilds,rows:active.map(e=>[e.id,e.listSlot,e.plane.position.x,e.plane.position.y,e.plane.scale.x,e.material.opacity]),disposed,forwarded};
+  return {sorts,cameraUpdates,anchorBuilds,rows:active.map(e=>[e.id,e.listSlot,e.plane.position.x,e.plane.position.y,e.plane.position.z,e.plane.scale.x,e.material.opacity]),disposed,forwarded};
 }
 const rows=[[1,0,'loot',false,3200],[2,0,'skillXp',false,3200],[3,0,'masteryXp',false,10],
  [4,0,'favor',false,3200],[5,0,'interaction',true,3200],[6,0,'interaction',true,3200],
@@ -64,14 +64,18 @@ for(const time of [5,500,3200]) {
   assert.deepEqual(after.forwarded,before.forwarded);
   if(time===5||time===500)assert(after.sorts<before.sorts,'reuse one sorted list per root and category until expiry');
 }
-const burst=[[1,0,'damage',false,1150,'floatPlus'],[2,0,'damage',false,1150,'floatPlus'],
-  [3,1,'damage',false,1150,'floatPlus'],[4,0,'loot',false,3200],[5,0,'damage',false,1150,'floatPlus']];
+const burst=[[1,0,'damage',false,1150,'floatPlus',true],[2,0,'damage',false,1150,'floatPlus',true],
+  [3,1,'damage',false,1150,'floatPlus'],[4,0,'loot',false,3200],[5,0,'impact',false,1150,'floatPlus',true,2]];
 for(const time of [5,500,1150,3200]) {
   const before=run(uncached,burst,time), after=run(actual,burst,time);
   assert.deepEqual(after.rows,before.rows,'shared anchors preserve independent animation offsets, root and mode placement');
   assert.deepEqual(after.disposed,before.disposed);
   assert.deepEqual(after.forwarded,before.forwarded);
-  if(time<1150)assert.equal(after.anchorBuilds,3,'one anchor transform per root and mode in a burst');
+  if(time<1150) {
+    assert.equal(after.anchorBuilds,3,'one anchor transform per root and mode in a burst');
+    assert.notEqual(after.rows[0][4],after.rows[1][4],'scattered numbers use independent camera-up offsets');
+    assert(after.rows[4][5]>after.rows[0][5],'impact callout keeps its larger presentation');
+  }
 }
 const callbackBurst=[[1,0,'damage',false,1150,'floatPlus'],[2,0,'emoji',false,1150,'iconEffect'],[3,0,'damage',false,1150,'floatPlus']];
 assert.deepEqual(run(actual,callbackBurst,50,true).rows,run(uncached,callbackBurst,50,true).rows,
@@ -103,28 +107,70 @@ console.log('World popup row layout and family visibility parity: PASS');
  // Execute the actual source filter and popup formatting with isolated presentation stubs.
 {
   const local = {}, remote = {}, pet = { master: local }, remotePet = { master: remote }, wild = {};
-  const scene = { isScene: true }, target = { root: { parent: scene } }, calls = [];
+  const scene = { isScene: true }, target = { root: { parent: scene } }, calls = [], callouts = [];
   const registry = {
     isLocalPlayer: actor => actor === local,
     ownerPlayerOf: actor => actor?.master || null,
     isPlayer: actor => actor === local || actor === remote,
   };
   const gate = vm.runInNewContext(
-    block('  function isLocalCombatSource(', '  function finishLevelUpAnnouncement(') + '\n({isLocalCombatSource,showCombatEffect});',
-    {window:{ActorRegistry:registry,ResourceSystem:{AFFLICTIONS:{bleedingHealth:{name:'Bleeding Health'}}}},
+    block('  function isLocalCombatSource(', '  function finishLevelUpAnnouncement(') + '\n({isLocalCombatSource,showCombatEffect,showImpactCallout});',
+    {window:{ActorRegistry:registry,HOBUNJI_CONFIG:{resourceRings:{colors:{footing:'#67b7ff'},afflictionColors:{bleedingHealth:'#d11832'}}},ResourceSystem:{AFFLICTIONS:{bleedingHealth:{name:'Bleeding Health'},woundedStamina:{name:'Wounded Stamina'},shatteredStamina:{name:'Shattered Stamina'},shamblingFooting:{name:'Shambling Footing'},scentMarkedHealth:{name:'Scent Marked Health'}}}},
       state:{deps:{getActiveScene:()=>scene}},iconAnchorScene:root=>root.visible===false?null:root.parent,
-      showChange:(kind,amount,options)=>{calls.push({kind,amount,text:options.text});return calls.length;}}
+      showChange:(kind,amount,options)=>{calls.push({kind,amount,...options});return calls.length;}, spawn:entry=>{callouts.push(entry);return callouts.length;}}
   );
   for(const source of [local,pet]) assert.equal(gate.isLocalCombatSource(source),true);
   for(const source of [null,remote,remotePet,wild]) assert.equal(gate.isLocalCombatSource(source),false);
   assert.equal(gate.showCombatEffect(target,'health',4.25,true),1);
   assert.equal(gate.showCombatEffect(target,'bleedingHealth',2,true),2);
   assert.equal(calls[0].amount,-4.3);
-  assert.equal(calls[1].text,'-2 Bleeding Health');
+  assert.equal(calls[1].text,'-2 Bleeding');
+  assert.equal(calls[0].color,undefined,'ordinary Health uses the authored damage color');
+  assert.equal(calls[1].color,'#d11832');
+  assert.equal(gate.showCombatEffect(target,'footing',5,true,'impact'),3);
+  assert.equal(calls[2].text,'-5 Footing');
+  assert.equal(calls[2].color,'#67b7ff');
+  assert.equal(gate.showCombatEffect(target,'health',3,true,'impact'),4);
+  assert.equal(calls[3].text,undefined);
+  assert(calls.every(call => call.scatter && call.mode === 'floatPlus'));
+  assert.equal(gate.showImpactCallout(target),1);
+  assert.equal(callouts[0].text,'IMPACT!!!');
+  assert.equal(callouts[0].emphasis,true);
+  assert.equal(callouts[0].scatter,true);
   assert.equal(gate.showCombatEffect(target,'health',3,false),null);
   assert.equal(gate.showCombatEffect(target,'health',0,true),null);
   assert.equal(gate.showCombatEffect(local,'health',3,true),null);
   target.root.parent={};
   assert.equal(gate.showCombatEffect(target,'health',3,true),null);
-  assert.equal(calls.length,2);
+  assert.equal(calls.length,4);
+  target.root.parent=scene;
+  for (const [id, amount, label] of [['woundedStamina',4,'Wounded'],['shatteredStamina',5,'Shattered'],['shamblingFooting',3,'Shambling'],['scentMarkedHealth',2,'Scent Marked']]) {
+    gate.showCombatEffect(target,id,amount,true,'impact');
+    assert.equal(calls.at(-1).text,`-${amount} ${label}`);
+  }
+}
+
+// Exercise real scatter placement with the authored small Float+ text size.
+{
+  const root={}, active=[], state={active,settings:{floatPlus:{worldHeight:.13}}};
+  const claim=vm.runInNewContext(block('  function claimFloatOffset(', '  function spawn(')+'\nclaimFloatOffset;', {state});
+  for(let i=0;i<6;i++) {
+    const emphasis=i===5; // Last popup is the bigger collision callout.
+    const bounds=emphasis?{width:.85,height:.13*1.65}:{width:.38,height:.13};
+    const point=claim(root,bounds,true,emphasis);
+    active.push({root,mode:'floatPlus',kind:'damage',scatter:true,emphasis,offsetX:point.x,offsetY:point.y,...bounds});
+  }
+  const box=(e,p)=> {
+    const drift=1+.22*(1-(1-p)**2), pop=e.emphasis?1.4-.4*Math.min(1,p/.24):1.1-.1*Math.min(1,p/.24);
+    const x=e.offsetX*drift+Math.sin(p*Math.PI)*e.height*.12,y=e.offsetY*drift+.075*(1-(1-p)**2);
+    return {x,y,w:e.width*pop,h:e.height*pop};
+  };
+  // Different start times: test every pair throughout both lifetimes.
+  for(let i=0;i<active.length;i++) for(let j=i+1;j<active.length;j++) for(let p=0;p<=10;p++) for(let q=0;q<=10;q++){
+    const a=box(active[i],p/10),b=box(active[j],q/10);
+    assert(Math.abs(a.x-b.x)>=(a.w+b.w)/2 || Math.abs(a.y-b.y)>=(a.h+b.h)/2,'scatter text envelopes never overlap');
+  }
+  assert(active.some(e=>e.offsetX<0)&&active.some(e=>e.offsetX>0),'burst spreads to both sides');
+  assert(active.some(e=>e.offsetY<0)&&active.some(e=>e.offsetY>0),'burst spreads vertically as well');
+  assert(new Set(active.map(e=>e.offsetX)).size===active.length,'no vertical list alignment');
 }

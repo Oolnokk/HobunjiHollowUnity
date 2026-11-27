@@ -51,12 +51,19 @@
     debug.lastBird = String(actor?.id || kind(actor) || 'tzatzul') + ':' + reason;
     return true;
   }
-  function portraitPlanes(actor, group) {
-    const ref = actor.avatarRef || {};
-    const candidates = [ref.frontPlane, ref.backPlane, ...(group.children || [])];
-    return [...new Set(candidates)].filter(node => node?.parent === group && node?.isMesh
+  function appendPortraitPlane(node, group, ref, out) {
+    if (node?.parent === group && node?.isMesh
       && (node.userData?.hobunjiPlaneFace === 'front' || node.userData?.hobunjiPlaneFace === 'back'
-        || /_(front|back)_plane$/.test(node.name || '') || node === ref.frontPlane || node === ref.backPlane));
+        || /_(front|back)_plane$/.test(node.name || '') || node === ref?.frontPlane || node === ref?.backPlane)
+      && !out.includes(node)) out.push(node);
+  }
+  function portraitPlanes(actor, group, out = []) {
+    out.length = 0;
+    const ref = actor.avatarRef;
+    appendPortraitPlane(ref?.frontPlane, group, ref, out);
+    appendPortraitPlane(ref?.backPlane, group, ref, out);
+    for (const node of group.children || []) appendPortraitPlane(node, group, ref, out);
+    return out;
   }
   function nativeGroundPlaneY(actor, state) {
     const authoredPlaneY = actor.avatarRef?.frontPlane?.position?.y
@@ -161,20 +168,24 @@
     }
     // Ordinary avatar code can re-enable its canonical sprite after a genotype
     // animation or visual promotion. Keep it hidden only while our rig exists.
-    const known = new Set(state.originals.map(record => record.node)); // Damage/genotype refresh can replace a native plane without replacing the whole avatar group.
-    for (const node of portraitPlanes(actor, state.group)) {
+    const planes = state.planeScratch ||= []; // Reused list; the current avatar's replacement planes are still discovered each frame.
+    const known = state.knownPlanes ||= new Set(); // Retain capacity, never stale membership.
+    known.clear();
+    for (const record of state.originals) known.add(record.node);
+    for (const node of portraitPlanes(actor, state.group, planes)) {
       if (!known.has(node)) {
         state.originals.push({ node, visible: node.visible });
         debug.refreshedPlanes++;
       }
       node.visible = false; // Never let an untinted native replacement draw on top of this bird's individually colored rig.
     }
+    planes.length = 0; known.clear(); // Do not retain detached art through scratch storage.
     if (state.rig.root?.parent === state.group) {
       state.rig.root.visible = !actor.tzatzulInNest; // Parents inside their cave are absent from the exterior renderer.
       // On a few zone-load paths a creature mounts before an active Camera is
       // injected. Always choose one authored pose, or flying/perched/wing
       // sprites all overlap until the next camera transition.
-      const fallback = {
+      const fallback = camera?.getWorldPosition ? camera : (state.fallbackCamera ||= {
         getWorldPosition(vector) {
           const unit = Math.max(1, Number(deps?.TILE) || 64);
           const perspective = deps?.player || actor;
@@ -182,11 +193,11 @@
             (Number(actor.branchSurfaceY) || 0) + 3,
             (Number(perspective.y) || 0) / unit + 2);
         },
-      }; // Cheap game-space viewpoint; no additional scene camera or RAF.
+      }); // Allocate only when no real camera is available; live actor/deps remain the authority.
       try {
         const bottomRatio = actor.avatarRef?.groundAnchorBottomRatio; // Shared with the native opacity correction, including a late image decode.
         const footY = hatchling && Number.isFinite(bottomRatio) ? .5 - bottomRatio : undefined; // Normalized perched-plane coordinates for the camera pitch hinge.
-        state.rig.update(camera?.getWorldPosition ? camera : fallback,
+        state.rig.update(fallback,
           pose, seconds, !!actor.tzatzulCarrying, window.CreatureBlink?.isShut?.(actor) === true, footY);
         cueWingbeat(actor, state, pose); // SFX stays in lockstep with the actually rendered wing pose.
         if (!(Number(actor.hitFlashT) > 0) && state.rig.restoreTint?.(kind(actor)==='pingdort' ? actor.genotype?.base?.color : undefined)) debug.tintRestores++; // Repair native hit-flash tint and reflect any live Pingdort genotype edits.
@@ -197,7 +208,8 @@
             const moved = state.previousHatchlingPosition && Math.hypot(actor.x - state.previousHatchlingPosition.x, actor.y - state.previousHatchlingPosition.y) > .08;
             state.hopPhase = moved ? ((state.hopPhase || 0) + Math.min(.1, state.renderDt || 0) * HOP_RATE_RAD_S) % (2 * Math.PI) : 0; // Bound the existing hop and planted phases.
             hopY = moved ? Math.max(0, Math.sin(state.hopPhase)) * HOP_HEIGHT : 0;
-            state.previousHatchlingPosition = { x: actor.x, y: actor.y };
+            const previous = state.previousHatchlingPosition ||= { x: 0, y: 0 }; // Persistent per-hatchling motion sample.
+            previous.x = actor.x; previous.y = actor.y;
           }
           state.rig.root.position.y = nativeGroundPlaneY(actor, state) + hopY; // Never let the flying-rig swap discard authored ground-Y/opaque-padding placement.
         }

@@ -479,7 +479,10 @@
     return bed ? { area: 'interior', c: bed.c, r: bed.r } : null;
   }
   function vatObject(child) {
-    return child.vatId ? (window.DewVats?.listSqueezingVats?.() || []).find(obj => obj.id === child.vatId) || null : null;
+    if (!child.vatId) return null;
+    const vats = window.DewVats; // Same current processor registry used by the full list API.
+    if (vats?.findSqueezingVatById) return vats.findSqueezingVatById(child.vatId);
+    return (vats?.listSqueezingVats?.() || []).find(obj => obj.id === child.vatId) || null; // Compatibility for isolated tools/test fixtures.
   }
 
   function vatJobActive(vat) {
