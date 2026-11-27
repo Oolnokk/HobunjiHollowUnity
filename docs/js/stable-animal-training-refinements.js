@@ -219,7 +219,7 @@
       ids.add(id);
     }
     if (species === 'grehlr' && (!window.CreatureGenetics?.creatureSizeClass || window.CreatureGenetics.creatureSizeClass(entry.kind, entry.genotype) === 'medium')) ids.add('grehlrStink');
-    return [...ids].map(id => ({ id, label: ATTACK_LABELS[id] || id, defaultFrequency: id === 'guardCharge' ? (def.realAttackEvery === 1 ? 1 : 3) : id === 'rearKick' ? 4 : 1 }));
+    return [...ids].map(id => ({ id, label: ATTACK_LABELS[id] || id, defaultFrequency: id === 'guardCharge' ? (flying || def.realAttackEvery === 1 ? 1 : 3) : (flying || id === 'rearKick') ? 4 : 1 }));
   }
 
   function effectIds(attackId) {
@@ -246,7 +246,7 @@
     const raw = entry.companionTactics || {}; // Saved settings are read defensively and normalized without per-frame save writes.
     const abilities = {}; // Species allow-list prevents stale/edited saves from granting another creature's move.
     for (const def of abilityDefs(entry, actor)) {
-      const saved = raw.abilities?.[def.id]; // Reads only this animal's supported moves.
+      const saved = raw.abilities?.[def.id] ?? (def.id === 'flyingCompanionDive' ? raw.abilities?.pingdortBoulderBomb : undefined); // Migrate old Pingdort tactics to the replacement dive without a save write.
       const frequency = Number(saved?.frequency); // Nonfinite settings fall back to the species default.
       abilities[def.id] = {
         frequency: Math.max(def.id === 'guardCharge' ? 1 : 0, Number.isFinite(frequency) ? capInt(frequency, 0, 4) : def.defaultFrequency), // Guard Charge is the always-available fallback (e.g. while Rear Kick cools down), so it can be rare but never Off.
