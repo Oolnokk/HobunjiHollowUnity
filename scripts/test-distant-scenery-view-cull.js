@@ -185,3 +185,50 @@ cull.suspendForRender(northScene,camera)?.();
 assert.equal(cull.snapshot().tracked,0,'the plateau cannot leak after leaving its area');
 
 console.log('Distant scenery offscreen/occluded culling, conservative depth proxies, camera wakeup, and cleanup passed.');
+
+ // Distinct delayed answers must follow scenery identity across borrowed meshes.
+ {
+  cull.setGpuEnabled(true);scene.add(western);
+  const rocks=Array.from({length:12},(_,i)=>{
+    const rock=new Group(),x=i%2?10:-10;
+    rock.userData.testBounds={min:new V(x-1,2,-100),max:new V(x+1,45,-50)};
+    layer.add(rock);return rock;
+  });
+  let tick=0;
+  function delayedGpu(allVisible=false){
+    const pending=new Set();
+    return {pending,active:null,ANY_SAMPLES_PASSED_CONSERVATIVE:50,QUERY_RESULT_AVAILABLE:100,QUERY_RESULT:101,
+      createQuery(){const q={readyAt:Infinity,passed:false};pending.add(q);return q;},
+      beginQuery(_,q){assert(pending.has(q)&&!this.active);this.active=q;},
+      endQuery(){assert(this.active);this.active.readyAt=tick+5;this.active=null;},
+      getQueryParameter(q,key){assert(pending.has(q));if(key===100)return tick>=q.readyAt;assert(tick>=q.readyAt);return q.passed;},
+      deleteQuery(q){assert(pending.delete(q));},allVisible};
+  }
+  let gpu=delayedGpu();const oldGpu=gpu;
+  const delayedRenderer={capabilities:{isWebGL2:true},autoClear:true,shadowMap:{autoUpdate:true},getContext:()=>gpu,
+    render(queryScene){
+      assert(queryScene.children.length<=3);
+      for(const proxy of [...queryScene.children].reverse())if(proxy.visible){
+        proxy.onBeforeRender();assert(gpu.active);
+        gpu.active.passed=gpu.allVisible||proxy.position.x>0;
+        proxy.onAfterRender();assert.equal(gpu.active,null);
+      }
+    }};
+  camera.position.set(0,0,0);
+  for(tick=0;tick<100;tick++){
+    const restore=enter();
+    if(tick>65)for(const [i,rock] of rocks.entries())assert.equal(rock.visible,i%2===1,'delayed answer must follow the rock, not the reused proxy');
+    cull.probeAfterBase(delayedRenderer,camera,scene);restore?.();
+  }
+  assert(oldGpu.pending.size>0);
+  gpu=delayedGpu(true);
+  // Context is detected during the after-base probe, so wakeup is effective at the next frame.
+  let restore=enter();cull.probeAfterBase(delayedRenderer,camera,scene);restore?.();
+  assert.equal(oldGpu.pending.size,0);
+  tick++;restore=enter();assert(rocks.every(rock=>rock.visible));restore?.();
+  cull.reset();assert.equal(gpu.pending.size,0);
+  assert.equal(cull.snapshot().proxySlots,3);
+  for(const rock of rocks)layer.remove(rock);
+  scene.remove(western);
+ }
+ console.log('Delayed scenery query ownership, reordered draws and context replacement passed.');
