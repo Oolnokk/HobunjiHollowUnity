@@ -92,6 +92,7 @@ const renderer={
   capabilities:{isWebGL2:true},autoClear:true,shadowMap:{autoUpdate:true},
   getContext(){return gl;},
   render(scene,camera) {
+    assert(scene.children.length<=3,'query scene must stay within its existing probe budget');
     assert(camera.layers.mask&1,'proxy render must include the normal world layer');
     for(const proxy of scene.children) if(proxy.visible) {
       assert(proxy.material.colorWrite===false && proxy.material.depthWrite===false,'depth queries may never change the base image');
@@ -157,6 +158,15 @@ restore=enter();
 assert.equal(visibleRock.visible,true,'camera movement invalidates stale occlusion immediately');
 restore();
 
+// Repeatedly query more scenery objects than can be submitted in one pass.
+const extraRocks=Array.from({length:12},(_,i)=>{
+  const rock=new Group();rock.userData.testBounds={min:new V(i,2,-100),max:new V(i+1,45,-50)};
+  layer.add(rock);return rock;
+});
+for(let i=0;i<30;i++){restore=enter();cull.probeAfterBase(renderer,camera,scene);restore?.();}
+assert.equal(cull.snapshot().proxySlots,3,'scenery slot pool stays bounded while rotating queries');
+assert(cull.snapshot().tracked>=14,'all individual scenery histories remain tracked');
+for(const rock of extraRocks)layer.remove(rock);
 cull.setGpuEnabled(false);
 restore=enter();
 assert.equal(visibleRock.visible,true,'WebGL1/disabled-GPU fallback must keep on-screen rock visible');
