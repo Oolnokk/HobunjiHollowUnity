@@ -335,7 +335,7 @@
       metalOptions: options.metalOptions || null, masteryLevel: options.masteryLevel || (() => 0), resolveAsset: imageUrl, // Live XP rank drives authored non-metal VFX, while metal still uses plating/mastery options.
       headRoot: null, headAnchorImage: null, chainImage: null,
       direction: new THREE.Vector3(0, -1, 0), strikeStartDirection: new THREE.Vector3(0, -1, 0), lastPivot: new THREE.Vector3(), hasPivot: false, // Preserves the gravitational chain orientation only when the strike begins.
-      groundTrail:{grounded:false,x:0,y:0,z:0,px:0,pz:0}, // Per-hand world-space slack endpoint; never feeds the shared pendulum.
+      groundTrail:{grounded:false,x:0,y:0,z:0,px:0,py:0,pz:0}, // Per-hand world-space slack endpoint; never feeds the shared pendulum.
       idleHeadMotion:{yaw:null,leanX:0,leanZ:0,renderedYaw:null,side:0,perp:null,tipReady:false,tipX:0,tipZ:0,tipY:0,returnX:0,returnZ:0,previousAttack:false,previousProgress:0,sawStrike:false,source:'initial'}, cameraPosition:null, // Retained logical heading and smoothed lean, separate from pendulum.
       lastMovementPosition: new THREE.Vector3(), hasMovementPosition: false, movementPosition: null, movementRoot:null, turnRoot:null, turnYaw:null, turnRate:0, // Character movement source supplied by gameplay, not the weapon's animated joint.
       angularVelocity: new THREE.Vector3(), pivotVelocity: new THREE.Vector3(), hasPhysicsVelocity: false, physicsLength: 0, // Persistent world-space pendulum momentum and measured lever length.
@@ -947,6 +947,22 @@
     return {x:p.x,y:p.y,spanX,spanY,headDrop:contact.drop*relativePartScale(f.head)};
   }
 
+  function retainsGroundContact(trail,pivot) {
+    if(!trail.grounded)return false;
+    const dx=pivot.x-trail.px,dy=pivot.y-trail.py,dz=pivot.z-trail.pz; // Reset a stale contact after a teleport in any axis.
+    return dx*dx+dy*dy+dz*dz<=9;
+  }
+  function canPinGroundHead(trail,pivot,length,available) {
+    if(!retainsGroundContact(trail,pivot)||!Number.isFinite(available)||Math.abs(available)>length)return false;
+    const x=trail.x+trail.px-pivot.x,z=trail.z+trail.pz-pivot.z;
+    return x*x+available*available+z*z<=length*length; // No pull: retain the previous head orientation as well as its contact.
+  }
+
+  function trailCanPin(state,pivot,length,floor,contact,scale) {
+    return state.groundTrail.grounded&&canPinGroundHead(state.groundTrail,pivot,length,
+      pivot.y-(floor+.035+tiltedHeadDrop(contact,state.scratch.headQ)*scale));
+  }
+
   // A grounded head stays at its last world-space contact until the connector
   // reaches its maximum length. Project only the excess onto the floor disk.
   function resolveGroundSlack(trail,direction,length,available,pivot) {
@@ -954,8 +970,8 @@
     const reachable=Number.isFinite(available)&&available<=length;
     const floorY=reachable?Math.min(length,-available):-length;
     const dx=pivot.x-trail.px,dz=pivot.z-trail.pz;
-    const keep=trail.grounded&&dx*dx+dz*dz<=9;
-    const grounded=reachable&&(keep||y<floorY);
+    const keep=retainsGroundContact(trail,pivot);
+    const grounded=reachable&&(keep||y<=floorY+1e-8);
     if(grounded){
       y=floorY;
       if(keep){x=trail.x-dx;z=trail.z-dz;} // Keep the head stationary in world space, not relative to the rotating haft.
@@ -963,7 +979,7 @@
       const flat=Math.hypot(x,z);
       if(flat>radius&&flat>0){x*=radius/flat;z*=radius/flat;}
     }
-    trail.x=x;trail.y=y;trail.z=z;trail.px=pivot.x;trail.pz=pivot.z;trail.grounded=grounded;
+    trail.x=x;trail.y=y;trail.z=z;trail.px=pivot.x;trail.py=pivot.y;trail.pz=pivot.z;trail.grounded=grounded;
     return trail;
   }
 
@@ -1209,7 +1225,10 @@
     if (state.dualWieldHidden) {state.groundTrail.grounded=false;return;} // Only visible hands own live floor contact.
     // Use a continuous per-hand endpoint for ground contact; the connector can
     // become slack but cannot exceed the permanent fit and authored pose reach.
-    const idleQ=!state.attacking?idleHeadQuaternion(state,pivot,normal,q.headQ,dt):null;
+    // Rotating a head around an off-center anchor moves its visible silhouette.
+    // Keep the last rendered quaternion while the grounded head is not being pulled.
+    const pinned=contact&&trailCanPin(state,pivot,maxReach,floor,contact,attachmentScale*headScale);
+    const idleQ=!state.attacking?(pinned?q.headQ:idleHeadQuaternion(state,pivot,normal,q.headQ,dt)):null;
     const liveDrop=contact&&idleQ?tiltedHeadDrop(contact,idleQ):null;
     const available=contact?pivot.y-(floor+.035+liveDrop*attachmentScale*headScale):null;
     const renderDirection=q.target.copy(state.direction); // Reuse post-physics scratch; do not mutate the shared direction.
@@ -1218,6 +1237,9 @@
       resolveGroundSlack(trail,state.direction,maxReach,available,pivot);
       const actual=Math.hypot(trail.x,trail.y,trail.z);
       if(actual>1e-10)renderDirection.set(trail.x/actual,trail.y/actual,trail.z/actual);
+      if(trail.grounded&&!sharedPhysics){ // Match the old ground-contact damping; lift-off starts from the last visible direction.
+        state.direction.copy(renderDirection);state.angularVelocity.multiplyScalar(.25);
+      }
       if(actual<maxReach-1e-8){
         const ratio=slackConnectorScale(topLocal.x-bottomLocal.x,topLocal.y-bottomLocal.y,actual/attachmentScale,q.tmp);
         chainScaleX*=ratio.x;chainScaleY*=ratio.y;
@@ -1454,7 +1476,7 @@
 
   global.HobunjiWeaponSpriteAssemblies = {
     definitions: DEF, assemblyKind, isGroundNonSolidChild, groundFitSpec, groundStatus:root=>states.get(root)?.groundClearance||null, decorate, setAction, tick, drop, syncDualWield, scheduleTickAfterPose, debugSnapshot, previewParts, enchantmentTargets, dualWieldEnchantmentTargets, bakedPoint,
-    resolveGroundSlack, slackConnectorScale, opaqueAt, anchor, refreshWorldMatrix, definitionFor, ropeSpriteSizing, ropeOpaqueBounds, tintRopePixels, stepPendulum, bodyYawRate, flailDamping, flailStrikeStraightening, flailYawTravel, fishingFlailHeadDirection, clampIdleHeadYaw, easeIdleHeadYaw, stepIdleHeadMotion, advanceIdleHeadMotion, resetIdleHeadMotion, leanHeadBasis, tiltedHeadDrop, // Pure sizing and phase helpers have regression tests.
+    resolveGroundSlack, canPinGroundHead, slackConnectorScale, opaqueAt, anchor, refreshWorldMatrix, definitionFor, ropeSpriteSizing, ropeOpaqueBounds, tintRopePixels, stepPendulum, bodyYawRate, flailDamping, flailStrikeStraightening, flailYawTravel, fishingFlailHeadDirection, clampIdleHeadYaw, easeIdleHeadYaw, stepIdleHeadMotion, advanceIdleHeadMotion, resetIdleHeadMotion, leanHeadBasis, tiltedHeadDrop, // Pure sizing and phase helpers have regression tests.
   };
   global.HobunjiCacheAudit?.register('weapon assemblies (weak owner registry)', () => { let count = 0; for (const entry of records) if (liveState(entry)) count++; return count; });
   if (global.RuntimeFrameScheduler?.register) {
