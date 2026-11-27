@@ -43,8 +43,8 @@ for (const z of [0.1, 0.5, 0.95, 0.999]) {
   assert.equal(behind(Math.fround(z + 2 * quantum), Math.fround(z)), false, 'float32 rounding does not erase a matching mask');
   assert.equal(behind(Math.fround(z + 8 * quantum), Math.fround(z)), true, 'float32 rounding does not admit a deeper mask');
 }
-assert.match(frag, /visibleCurve\(vUv, centerRaw, centerDepth\)/, 'center stroke is gated by visible scene depth');
-assert.match(frag, /visibleCurve\(uv, otherRaw, otherDepth\)/, 'neighbor sampling uses the same guard');
+assert.match(frag, /visibleCurve\(centerMask, centerRaw, centerDepth\)/, 'center stroke is gated by visible scene depth');
+assert.match(frag, /visibleCurve\(raw, otherRaw, otherDepth\)/, 'neighbor sampling uses the same guard');
 // Run the scalar math from the shipped GLSL rather than a separate copy.
 function scalarShaderFunction(name, globals = {}) {
   const fn = frag.match(new RegExp('float ' + name + '\\(([^)]*)\\) \\{([\\s\\S]*?)\\n        \\}'));
@@ -99,6 +99,18 @@ assert.match(frag, /vec2 stroke = uTexel \* 12\.0/, 'retain existing silhouette 
 assert.equal((frag.match(/curveSample\(vUv/g) || []).length, 4, 'no additional neighbor taps');
 assert.match(frag, /protectThinGeometry\(horizontal\.x, horizontal\.y, vertical\.x, vertical\.y\)/, 'thin protection is used by the composite');
 
+// Mask misses must skip scene-depth sampling, not merely skip the ink math.
+const centerStart = frag.indexOf('vec3 applyScreenOutline(');
+const neighborStart = frag.indexOf('vec2 curveSample(');
+assert.ok(centerStart >= 0 && neighborStart >= 0);
+const centerBody = frag.slice(centerStart, frag.indexOf('void main()', centerStart));
+const neighborBody = frag.slice(neighborStart, frag.indexOf('vec2 curveAxisEdges(', neighborStart));
+for (const [body, guard] of [[centerBody, 'if (centerMask >= 1.0) return color;'],
+  [neighborBody, 'if (raw >= 1.0) return vec2(1.0, 0.0);']]) {
+  assert.ok(body.indexOf(guard) >= 0 && body.indexOf(guard) < body.indexOf('texture2D(tSceneDepth'), 'empty mask exits before scene depth');
+}
+assert.ok(frag.indexOf('if (id0.a <= 0.5)') < frag.indexOf('vec4 idL ='), 'empty seam center skips neighbor IDs');
+assert.ok(frag.indexOf('if (idEdge <= 0.0)') < frag.indexOf('texture2D(tEdgeIdDepth'), 'non-seam pixels skip occlusion depth');
 const early = frag.indexOf('if (uSeamOutlinesOn < 0.5)');
 assert.ok(early > 0 && early < frag.indexOf('texture2D(tEdgeId'), 'seams off returns before any edge/depth texture read');
 
