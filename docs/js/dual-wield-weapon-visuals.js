@@ -417,10 +417,26 @@
     return result;
   }
 
+  // Swing-twist decomposition about world Y: discard the horizontal-axis
+  // walking lean without introducing Euler yaw drift from combined pitch/roll.
+  function uprightMirrorYaw(quaternion) {
+    return Math.abs(quaternion.w)+Math.abs(quaternion.y)>1e-8
+      ? 2*Math.atan2(quaternion.y,quaternion.w) : 0;
+  }
+
   function mirrorSolvedWeapon(current) {
     const s=frameScratch(current); // Reflect in the portrait's body frame, including its current facing.
+    current.bodyRoot.updateWorldMatrix?.(true,false); // Read the current body, not last frame's lean.
     const body=current.bodyRoot.matrixWorld;
     body.decompose(s.bodyPosition,s.bodyQuaternion,s.ignoredScale);
+    const upright=current.source==='runtime'&&current.idleBlend>=1-ACTIVE_EPSILON; // Neutral player hafts exclude movement lean, so their mirror must too.
+    current.uprightMirror=upright;
+    if(upright){
+      const posterior=global.PlayerBodyTransformComposer?.getPosteriorY?.()||0; // Walking lean pivots around this point, not the feet/root origin.
+      const e=body.elements;
+      s.bodyPosition.addScaledVector(s.bodyRight.set(e[4],e[5],e[6]),posterior);
+      s.bodyQuaternion.setFromAxisAngle(s.axisY,uprightMirrorYaw(s.bodyQuaternion));
+    }
     s.targetHolderWorld.compose(s.bodyPosition,s.bodyQuaternion,s.unitScale);
     s.reflection.copy(s.targetHolderWorld).multiply(s.mirrorX).multiply(s.inverseHolderWorld.copy(s.targetHolderWorld).invert());
     const root=current.offRoot;
@@ -759,6 +775,7 @@
       mainChildLocalPosition: state?.mainMesh?.position?.toArray?.() || null,
       offChildLocalPosition: state?.offMesh?.position?.toArray?.() || null,
       offChildMirroredX: Number(state?.offMesh?.scale?.x) < 0,
+      uprightMirror: !!state?.mirrorOffhand&&!!state?.uprightMirror, // Mobile check: both neutral hafts use a world-upright reflection.
       flailCopiesReady: !!state?.flailCopiesReady, // Readable on mobile without console/devtools; false while the replica art is loading.
       mainRootParentIsHiddenOriginalPlane: !!state && state.mainRoot?.parent === state.plane,
       offRootParentIsHiddenOriginalPlane: !!state && state.offRoot?.parent === state.plane,
