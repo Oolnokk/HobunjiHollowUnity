@@ -219,11 +219,16 @@
     for (let i = 0; i < trough.slots.length && empty.length < amount && empty.length < held; i++) if (trough.slots[i] == null) empty.push(i);
     const moved = empty.length;
     if (moved <= 0) return { ok: false, message: troughTotal(trough) >= TROUGH_CAPACITY ? 'That trough is full.' : `No ${deps.ITEM_DEFS[itemKey]?.label || itemKey} to add.` };
+    const originalStock = storage ? { ...stock } : null; // Retain original feed stock for a failed layout write.
     if (storage) {
       if (storage.save({ ...stock, [itemKey]: held - moved }) === false) return { ok: false, message: 'Could not save fodder withdrawal.' };
     } else { stock[itemKey] -= moved; deps.clampInventoryStack(itemKey); }
     for (const index of empty) trough.slots[index] = itemKey;
-    deps.saveFarmLayout();
+    if (deps.saveFarmLayout() === false && storage) {
+      for (const index of empty) trough.slots[index] = null;
+      if (storage.save(originalStock) === false) deps.debugLog?.('Family fodder rollback could not restore storage; check saved farm data.','error');
+      return { ok: false, message: 'Could not save trough refill.' };
+    }
     deps.refreshTroughVisual?.(barnId, troughIndex);
     return { ok: true, message: `Added ${moved} ${deps.ITEM_DEFS[itemKey]?.label || itemKey} to the trough (${troughTotal(trough)}/${TROUGH_CAPACITY}).` };
   }

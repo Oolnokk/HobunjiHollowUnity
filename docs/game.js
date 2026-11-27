@@ -3044,7 +3044,8 @@
           const durationHours = baseProcessingHours(def.method);
           job = { kind: 'timed', outputs, inputStars, inputLabel, source, yieldMultiplier,
             durationHours, readyAtGameHour: now + durationHours, substanceColor: timelineSubstanceColor(outputs) };
-          window.FarmEditor.saveFarmLayout();
+          const saved = window.FarmEditor.saveFarmLayout();
+          if (source === 'family-chore' && saved === false) { job = null; return { ok: false, message: 'Could not save the processor batch.' }; } // Family caller refunds the reserved ingredient.
           window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig().processStart);
           triggerBurst(); // Authored timeline/particle animations remain on render-time seconds, distinct from production.
           return { ok: true, started: true, durationHours };
@@ -3064,9 +3065,10 @@
           if (familyBatch() && !familyOutputFits()) return { ok: false, message: 'Make room in your bag to collect this batch.' };
           const finished = job;
           job = null;
+          if (finished.source === 'family-chore' && window.FarmEditor.saveFarmLayout() === false) { job = finished; return { ok: false, message: 'Could not save collection.' }; } // Do not grant goods for a batch that is still saved as ready.
           const outputStars = addProcessedOutputs(finished.outputs, finished.inputStars, def.method, finished.yieldMultiplier, finished.source === 'family' || finished.source === 'family-chore');
           window.FarmAnimals?.clearVatWorkerPose?.(obj.id);
-          window.FarmEditor.saveFarmLayout();
+          if (finished.source !== 'family-chore') window.FarmEditor.saveFarmLayout();
           saveMemberWorldData();
           window.HudUpdate.refreshItemScroll(); buildInventoryGrid(); refreshActionBar();
           window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig()[PROCESSING_SFX_KEY[furnitureKey]]);
@@ -3130,7 +3132,7 @@
             if (isAging) {
               const durationHours = baseProcessingHours(def.method);
               job = { kind: 'aging', outputs, readyAtGameHour: now + durationHours, durationHours, inputStars, inputLabel, source: 'family-chore' };
-              window.FarmEditor.saveFarmLayout();
+              if (window.FarmEditor.saveFarmLayout() === false) { job = null; return { ok: false, message: 'Could not save the processor batch.' }; }
               window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig().processStart);
               return { ok: true };
             }
@@ -3183,9 +3185,11 @@
               const outputs = job.outputs;
               const inputStars = job.inputStars;
               const fixedFamilyQuality = familyBatch();
+              const finished = job; // Retain the ready aging batch if persistence refuses to clear it.
               job = null;
+              if (fixedFamilyQuality && window.FarmEditor.saveFarmLayout() === false) { job = finished; return { ok: false, message: 'Could not save collection.' }; }
               const outputStars = addProcessedOutputs(outputs, inputStars, def.method, 1, fixedFamilyQuality);
-              window.FarmEditor.saveFarmLayout();
+              if (!fixedFamilyQuality) window.FarmEditor.saveFarmLayout();
               saveMemberWorldData();
               window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig()[PROCESSING_SFX_KEY[furnitureKey]]);
               return { ok: true, message: `${def.icon} Collected ${window.LootRolling.starRatingText(outputStars)} ${outputs.map(o => o.label).join(', ')}.` };

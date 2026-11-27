@@ -49,6 +49,79 @@ assert.equal(addProcessedOutputs([{ key: 'milk' }], 2, 'squeezing', 1, false), 5
   'ordinary processing retains the existing player quality reroll');
 assert.equal(processingRerolls, 1, 'ordinary processing still calls player mastery once');
 
+// Exercise the actual small-processor factory: manual player input, family
+// input, aging and timed jobs all use this persisted state machine.
+let gameHour = 10, allowLayout = true, vatWorker = null;
+const processorInventory = {}, processorQuality = [];
+const processorWindow = {
+  ...processingContext.window,
+  ItemProcessing: {
+    ensureProcessedItemDef() {},
+    gameHour: () => gameHour,
+    getProcessingOutputs: (_method, key) => key === 'fruit' ? [{ key:'juice', label:'Juice' }] : null,
+    formatProcessHours: hours => hours + 'h'
+  },
+  FarmEditor: { saveFarmLayout: () => allowLayout },
+  RomanceFamily: { rollWorkQuality: () => 2, isFamilyWorkUnavailable: id => id === 'carried' },
+  DewVats: { assignedWorkerForVat: () => vatWorker },
+  CookingSystem: { recordItemQuality: (...args) => processorQuality.push(args) },
+  PerkSystem: { rank: () => 5 },
+  LootRolling: { starRatingText: n => n+'★' },
+  HudUpdate: { refreshItemScroll() {} }
+};
+const factory = vm.runInNewContext(
+  extractFunction('      function addProcessedOutputs(', '\n      function placeProcessingFurniture(') + '\nmakeProcessingFurniture;', {
+    window: processorWindow, inventory: processorInventory,
+    PROCESSING_METHOD_CLASSES: {mashing:'quick',barrelAging:'aging',squeezing:'quick'},
+    PROCESSING_FURNITURE_DEFS: {
+      pestle: {method:'mashing',name:'Pestle',icon:'P'},
+      barrel: {method:'barrelAging',name:'Barrel',icon:'B'},
+      vat: {method:'squeezing',name:'Vat',icon:'V'},
+      tea: {method:'teaGrinding',name:'Tea',icon:'T',specialMode:'teaGrinder'}
+    },
+    PROCESSING_SFX_KEY: {}, AGING_METHODS: new Set(['barrelAging']),
+    AUTHORED_FURNITURE_KEYS: new Set(), PROCESS_BURST_S: 1.2,
+    ITEM_DEFS: {fruit:{label:'Fruit'}}, scene: {add(){}},
+    buildFurnitureVisual: () => ({position:{set(){}},rotation:{}}),
+    farmSurfaceYAtWorld:()=>0, _markOutline(){}, _markFurnitureEdgeId(){},
+    baseProcessingHours:()=>1, hasFarmPermission:()=>true, saveMemberWorldData(){},
+    showToast(){}, buildInventoryGrid(){}, refreshActionBar(){},
+  });
+const pestle = factory(1,1,'pestle');
+allowLayout=false;
+assert.equal(pestle.startFamilyJob('fruit','worker').ok,false);
+assert.equal(pestle.getJob(),null,'failed timed job save leaves no batch');
+allowLayout=true;
+assert.equal(pestle.startFamilyJob('fruit','worker').ok,true);
+assert.equal(pestle.getJob().inputStars,2);
+assert.equal(pestle.startFamilyJob('fruit','worker').ok,false,'busy station cannot accept second batch');
+gameHour=12; pestle.update(1);
+assert.equal(processorInventory.juice,undefined,'ready family batch is not auto-collected');
+assert.equal(pestle.familyReady(),true);
+processorInventory.juice=999;
+assert.equal(pestle.collectFamilyJob().ok,false);
+assert.ok(pestle.getJob(),'full bag retains timed batch');
+processorInventory.juice=0;allowLayout=false;
+assert.equal(pestle.collectFamilyJob().ok,false);
+assert.ok(pestle.getJob(),'failed collection write retains timed batch');
+assert.equal(processorInventory.juice,0);
+allowLayout=true;assert.equal(pestle.collectFamilyJob().ok,true);
+assert.equal(processorInventory.juice,1);assert.equal(pestle.getJob(),null);
+assert.equal(processorQuality.at(-1)[1],2,'family processing uses family usefulness, not player perks');
+const barrel = factory(2,2,'barrel');allowLayout=false;
+assert.equal(barrel.startFamilyJob('fruit','worker').ok,false);
+assert.equal(barrel.getJob(),null,'failed aging job save leaves no batch');
+allowLayout=true;assert.equal(barrel.startFamilyJob('fruit','worker').ok,true);
+gameHour=14;allowLayout=false;assert.equal(barrel.collectFamilyJob().ok,false);
+assert.ok(barrel.getJob(),'failed aging collection retains saved batch');
+allowLayout=true;assert.equal(barrel.collectFamilyJob().ok,true);
+assert.equal(processorInventory.juice,2);
+const vat=factory(3,3,'vat');
+assert.equal(vat.startFamilyJob('fruit','worker').ok,false,'vat requires a dedicated stomper');
+vatWorker={id:'carried',familyWorker:true};assert.equal(vat.startFamilyJob('fruit','worker').ok,false);
+vatWorker={id:'available',familyWorker:true};assert.equal(vat.startFamilyJob('fruit','worker').ok,true);
+assert.equal(factory(4,4,'tea').familyEligible,false,'three-input tea recipes remain manual');
+
 // Run the real family-grid callback instead of a stub in test-npc-farm-plots.
 const tile = { type: 'tilled', crop: 'needlegrain', cropAge: 4, cropReady: true, fertilized: true };
 const grid = [[], [null, tile]];

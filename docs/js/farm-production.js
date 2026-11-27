@@ -260,10 +260,11 @@
       if (!workerId) return false;
       const storage = familyStorageAccess(), stock = storage?.load();
       if (!stock || !(stock[job.inputKey] > 0)) return false;
-      const next = { ...stock, [job.inputKey]: stock[job.inputKey] - 1 };
+      const originalStock = { ...stock }; // Capture before saving, even if the storage adapter reuses its object.
+      const next = { ...originalStock, [job.inputKey]: stock[job.inputKey] - 1 };
       if (storage.save(next) === false) return false; // Debit the real store before starting a batch; failed persistence cannot grant free goods.
       const result = small.startFamilyJob?.(job.inputKey, workerId);
-      if (!result?.ok) { storage.save(stock); return false; } // Rejected starts refund the reserved input.
+      if (!result?.ok) { if (storage.save(originalStock) === false) deps.debugLog?.('Family processor refund could not restore storage; check saved farm data.','error'); return false; } // Rejected starts refund the reserved input.
       return true;
     }
     return (job.job === 'processingCollect' ? collect(job.stationId) : enqueue(job.stationId, job.inputKey, 1, 'storage', workerId)).ok === true;
@@ -276,6 +277,8 @@
     if (!outputs) return { ok: false, message: 'That ingredient cannot be processed here.' };
     const stock = source === 'storage' ? deps.loadStorage() : deps.inventory; // Queue takes custody of raw input before it starts processing.
     if (!Number.isSafeInteger(count) || count < 1 || count > (Number(stock[itemKey]) || 0)) return { ok: false, message: 'Enter a quantity you own.' };
+    const previousQueue = workerId ? copy(entry.queue) : null, previousAt = entry.nextAt; // Family batches can undo the reservation if the layout write fails.
+    const originalStock = source === 'storage' ? { ...stock } : null;
     if (source === 'storage' && deps.saveStorage({ ...stock, [itemKey]: stock[itemKey] - count }) === false) return { ok: false, message: 'Could not save ingredient withdrawal.' };
     for (let index = 0; index < count; index++) {
       const stars = workerId ? (window.RomanceFamily?.rollWorkQuality?.(workerId) ?? 1) : source === 'bag' ? deps.consumeInput(itemKey) : 3; // Family output uses their own usefulness; manual storage inputs retain default quality.
@@ -284,7 +287,12 @@
       else entry.queue.push({ itemKey, count: 1, stars, outputs: copy(outputs) });
     }
     if (entry.nextAt == null) entry.nextAt = now() + catalog[entry.key].daysPerInput;
-    deps.saveMemberWorldData(); deps.saveFarmLayout();
+    if (workerId && deps.saveFarmLayout() === false) {
+      entry.queue = previousQueue; entry.nextAt = previousAt;
+      if (originalStock && deps.saveStorage(originalStock) === false) deps.debugLog?.('Family processor rollback could not restore storage; check saved farm data.','error');
+      return { ok: false, message: 'Could not save family processing queue.' };
+    }
+    deps.saveMemberWorldData(); if (!workerId) deps.saveFarmLayout();
     return { ok: true, message: 'Queued ' + count + ' ingredients.' };
   }
   function tick() {
