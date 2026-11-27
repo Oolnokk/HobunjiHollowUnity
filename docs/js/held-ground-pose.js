@@ -8,7 +8,7 @@
   const REUSE_HEIGHT_TOLERANCE = 0.1; // A grounded pose is reused until the grip's height above the floor changes by this much (idle sway is about 0.05)
   const REUSE_ANGLE_TOLERANCE = 0.05; // ...or the stance rotates by this many radians.
   const LIFT_LIMIT = 0.15; // Most the whole weapon may be raised (world units) to keep the ordinary rotation instead of a fallback pose.
-  const debug = { reason: 'not-run', angleDeg: 0, shortening: 0, floorY: null, originalMinY: null, finalMinY: null, rotations: 0, compressions: 0, contactHullBuilds: 0, reuseHits: 0, reused: false, reuseMiss: null, reuseMissValue: 0, contactHullVertices: 0, gripPivotDrift: null, gripLift: 0, posteriorLift: 0, clearanceStrategy: null, freeHandLifts: 0, fallbacks: 0 };
+  const debug = { reason: 'not-run', angleDeg: 0, shortening: 0, floorY: null, originalMinY: null, finalMinY: null, rotations: 0, compressions: 0, contactHullBuilds: 0, compressionRowBuilds: 0, reuseHits: 0, reused: false, reuseMiss: null, reuseMissValue: 0, contactHullVertices: 0, gripPivotDrift: null, gripLift: 0, posteriorLift: 0, clearanceStrategy: null, freeHandLifts: 0, fallbacks: 0 };
   let active = null, floorFrame = null, floor = null, scratch = null;
   let authoredFrame=null; // Reused world matrices for reconstructing the counterpart before clearance.
   let gripHolder=null; // Owner of the exact current sprite-space grip transform, shared with hand sockets.
@@ -18,13 +18,13 @@
   // Corrected poses are solved while the player is midair (the height above the floor is changing) and otherwise
   // once, then reused: only the cheap relative correction is re-applied to each frame's stance pose.
   const reuseMap=new WeakMap();
-  function reuseFor(node){
-    let entry=reuseMap.get(node);
+  function reuseFor(node,map=reuseMap){
+    let entry=map.get(node);
     if(!entry){
       const T=three();
       entry={valid:false,q0:new T.Quaternion(),p0:new T.Vector3(),dq:new T.Quaternion(),grip:new T.Vector3(),liftY:0,qa:new T.Quaternion(),qb:new T.Quaternion(),pivotHeight:0,
         mesh:null,itemKey:null,amount:0,gripZ:0,fitIdentity:null,reason:null,strategy:null,angleDeg:0,gripLift:0};
-      reuseMap.set(node,entry);
+      map.set(node,entry);
     }
     return entry;
   }
@@ -255,12 +255,15 @@
     if(cache.size>=8)cache.delete(cache.keys().next().value);
     cache.set(signature,result);return result;
   }
-  function setCompression(plane,source,box,rows,segments,gripZ,amount,holder,rootScale) {
+  function setCompression(plane,source,box,rowScratch,segments,gripZ,amount,holder,rootScale) {
     if(!amount) { releaseCompression(); return; }
     const T=three();
     if(active?.plane===plane&&active.source===source&&active.amount===amount&&active.gripZ===gripZ&&active.segments===segments){
       active.holder=holder;active.rootScale=rootScale;plane.geometry=active.geometry;return;
     }
+    // Only construct and sort the strip layout after the unchanged-fit fast path.
+    const rows=stripRows(box,segments,rowScratch); // Shared scratch used for geometry rebuilds only.
+    debug.compressionRowBuilds++;
     const signature=rows.join(','); // Adjacent bands share vertices at each row.
     if(!active||active.plane!==plane||active.source!==source||active.signature!==signature) {
       restoreGeometry();
@@ -432,6 +435,7 @@
     const flexible=kind==='flail'||context.flexibleHaft===true;
     if(flexible&&!context.profile)return fail('unmeasured-flail');
     const fit=fitFor(context,mesh); // Fitting and rotation are separate: only the former is retained.
+    if(context.fitOnly&&!Number.isFinite(fit?.amount)){releaseCompression();return fail('authored-action-no-fit',true);}
     // Suspension siblings are owned by the actual decorated root. A caller's
     // spelling of the weapon key cannot cause a legitimate flail to be rejected.
     const detail=mesh.parent!==holder?'root-parent':plane.parent!==mesh?'haft-parent':
@@ -449,8 +453,7 @@
     // Apply known physical geometry even when there is no floor, a rotated
     // child basis, or a nonuniform parent that makes a rotation solve unsafe.
     if(fit?.amount>1e-6&&fit.profile.segments.length) {
-      const rows=stripRows(box,fit.profile.segments,s.rows);
-      setCompression(plane,source,box,rows,fit.profile.segments,fit.anchorZ,fit.amount,holder,mesh.scale.z);
+      setCompression(plane,source,box,s.rows,fit.profile.segments,fit.anchorZ,fit.amount,holder,mesh.scale.z);
       active.rootOffset=mesh.position.z;
     } else releaseCompression();
     debug.shortening=fit?.amount??0;debug.fitted=Number.isFinite(fit?.amount);debug.lightOriginalMinY=fit?.lightOriginalMinY??null;debug.lightFittedMinY=fit?.lightFittedMinY??null;
@@ -486,7 +489,6 @@
     const pending=hasFloor&&!!fit&&context.allowFit&&!!context.lightReference&&measuredSource&&(context.preview===true||global.PlayerJump?.heldPoseGrounded?.()===true);
     const gripZ=fit?.anchorZ??context.authoredGripZ??gripZFor(primary,mesh);
     const segments=profile&&(pending||Number.isFinite(fit?.amount))?profile.segments:NO_SEGMENTS;
-    const rows=stripRows(box,segments,s.rows);
     const outline=profile?.contactOutline;
     const segmentKey=segments.length?segments:null;
     const boundsChanged=s.contactMinX!==box.min.x||s.contactMaxX!==box.max.x||s.contactMinY!==box.min.y||s.contactMaxY!==box.max.y;
@@ -551,11 +553,12 @@
     // Always apply the fitted geometry before attempting a pose correction.
     // A failed rotation retains the fit and falls back to legacy depth.
     if(amount>1e-6&&segments.length) {
-      setCompression(plane,source,box,rows,segments,gripZ,amount,holder,mesh.scale.z);
+      setCompression(plane,source,box,s.rows,segments,gripZ,amount,holder,mesh.scale.z);
       active.rootOffset=mesh.position.z;
       debug.compressions++;
     } else releaseCompression();
     debug.shortening=amount;debug.fitted=Number.isFinite(fit?.amount);
+    if(context.fitOnly&&!amount){debug.reason='authored-action-unmodified';return false;}
     gripHolder=holder; s.gripMesh=mesh;s.gripAnchor=gripZ;s.gripSegments=segments;s.gripAmount=amount;
     const contact=fittedContact(s,segments,gripZ,amount); // Both dual copies share the baked sprite coordinates.
     debug.contactHullVertices=contact.hull.length;
@@ -571,6 +574,7 @@
       debug.reason='dual-ready';debug.finalMinY=null;return false;
     }
     let min=amount?projectedContactY(contact.hull,s.matrix):original;
+    if(context.fitOnly){debug.reason='authored-action-fit-only';debug.finalMinY=min;return false;} // Do not replace a working tool's authored stroke.
     if(gripMinY!==null){
       const gripY=worldGrip(s,primary,basis,mesh,gripZ,segments,amount,s.pivot).y; // Measure the fitted socket, including the weapon's local placement.
       debug.posteriorLift=Math.max(0,gripMinY-gripY);
@@ -588,20 +592,26 @@
     const grounded=hasFloor&&reusable&&global.PlayerJump?.heldPoseGrounded?.()===true;
     const entry=reusable?reuseFor(holder):null;
     if(entry){
-      if(!grounded)entry.valid=false; // Midair the height above the floor is changing: recalculate every frame.
+      if(!grounded||min>=target)entry.valid=false; // Midair the height above the floor is changing: recalculate every frame.
       else if(entry.valid){
-        if(entry.mesh===mesh&&entry.itemKey===context.itemKey&&entry.amount===amount&&entry.gripZ===gripZ&&entry.fitIdentity===context.fitIdentity){
+        if(entry.mesh===mesh&&entry.itemKey===context.itemKey&&entry.amount===amount&&entry.gripZ===gripZ&&entry.fitIdentity===context.fitIdentity&&entry.preserveOrientation===!!context.preserveOrientation&&entry.gripContext===context.gripContext){
           worldGrip(s,primary,basis,mesh,gripZ,segments,amount,s.pivot);
           if(reuseStillValid(entry,holder,s.pivot.y-y)){
+            s.candidate.copy(holder.position);s.oldQ.copy(holder.quaternion); // Restore authored pose if the cached correction no longer clears.
             reuseApply(entry,holder,parent.matrixWorld,s);
             s.holder.multiplyMatrices(parent.matrixWorld,holder.matrix);
             s.matrix.multiplyMatrices(s.holder,mesh.matrix).multiply(plane.matrix);
-            min=projectedContactY(contact.hull,s.matrix);
-            debug.reuseHits++;debug.reused=true;debug.gripY=s.pivot.y;debug.clearanceStrategy=entry.strategy;
-            debug.angleDeg=entry.angleDeg;debug.gripLift=entry.gripLift;debug.gripPivotDrift=0;
-            debug.shortening=amount;debug.finalMinY=min;debug.reason=entry.reason;
-            if(traceOn&&hasFloor)traceSolved(plane,contact,min,target,y);
-            return true;
+            const reusedMin=projectedContactY(contact.hull,s.matrix);
+            if(reusedMin>=target-1e-7){
+              debug.reuseHits++;debug.reused=true;debug.gripY=s.pivot.y;debug.clearanceStrategy=entry.strategy;
+              debug.angleDeg=entry.angleDeg;debug.gripLift=entry.gripLift;debug.gripPivotDrift=0;
+              debug.shortening=amount;debug.finalMinY=reusedMin;debug.reason=entry.reason;
+              if(traceOn&&hasFloor)traceSolved(plane,contact,reusedMin,target,y);
+              return true;
+            }
+            holder.position.copy(s.candidate);holder.quaternion.copy(s.oldQ);holder.updateMatrix();
+            s.holder.multiplyMatrices(parent.matrixWorld,holder.matrix);
+            s.matrix.multiplyMatrices(s.holder,mesh.matrix).multiply(plane.matrix);
           }
         }
         entry.valid=false; // Anything else changed (weapon, fit, large stance or height change): solve again.
@@ -610,7 +620,8 @@
     if(min<target) {
       worldGrip(s,primary,basis,mesh,gripZ,segments,amount,s.pivot);
       debug.gripY=s.pivot.y;
-      angle=solveContactRotation(s,contact,s.matrix,target,secondary?a=>reachable(a,amount):null);
+      if(context.preserveOrientation){s.clearanceStrategy='orientation-preserved';angle=0;} // A loaded ranged weapon or upright torch can lift but not lose its authored heading.
+      else angle=solveContactRotation(s,contact,s.matrix,target,secondary?a=>reachable(a,amount):null);
       debug.clearanceStrategy=s.clearanceStrategy;
       if(entry&&grounded){entry.q0.copy(holder.quaternion);entry.p0.copy(holder.position);entry.pivotHeight=s.pivot.y-y;} // Pre-correction stance.
       if(angle&&!rotateAroundGrip(holder,parent.matrixWorld,s.holder,s.pivot,s.axis,angle,s)){
@@ -638,7 +649,7 @@
         entry.liftY=debug.gripLift;
         s.parentInverse.copy(parent.matrixWorld).invert();
         entry.grip.copy(s.point.copy(s.pivot).applyMatrix4(s.parentInverse)).sub(entry.p0).applyQuaternion(s.q.copy(entry.q0).invert());
-        entry.mesh=mesh;entry.itemKey=context.itemKey;entry.amount=amount;entry.gripZ=gripZ;entry.fitIdentity=context.fitIdentity;
+        entry.mesh=mesh;entry.itemKey=context.itemKey;entry.amount=amount;entry.gripZ=gripZ;entry.fitIdentity=context.fitIdentity;entry.preserveOrientation=!!context.preserveOrientation;entry.gripContext=context.gripContext;
         entry.angleDeg=angle*180/Math.PI;entry.gripLift=debug.gripLift;
         entry.valid=true;
       }
@@ -795,6 +806,168 @@
     const minUp=minimumY(s.points,s.pivot.y,up),minDown=minimumY(s.points,s.pivot.y,down);
     s.clearanceStrategy='flat-plus-minimum-lift';
     return minDown>minUp+1e-9?down:up;
+  }
+  // Ordinary carried art may be a direct PNG, crossed instrument planes or
+  // an authored physical Burden. Never compress these without authored bands.
+  // Cache the rigid part topology and each source alpha hull on the actual art
+  // identity; walking, turning and renderer passes only project those points.
+  const carryPartsCache=new WeakMap();
+  const carryReuseMap=new WeakMap();
+  const carryDebug={reason:'not-run',itemKey:null,frame:null,partCount:0,originalMinY:null,finalMinY:null,angleDeg:0,lift:0,hullBuilds:0,reuseHits:0,minimumScans:0,clearFastPaths:0};
+  function carryPartsFor(root){
+    let cached=carryPartsCache.get(root);
+    if(cached&&cached.children.length===root.children.length&&cached.children.every((node,i)=>node===root.children[i])&&cached.revision===root.userData?.groundContactRevision)return cached.parts;
+    const parts=[];
+    root.traverse(node=>{
+      if(!node.isMesh||node.isSkinnedMesh||node.isInstancedMesh||!node.geometry||node.material?.colorWrite===false)return;
+      for(let p=node;p;p=p.parent){
+        if(p.userData?.weaponEnchantmentVfx===true||p.userData?.groundNonSolid===true)return;
+        if(p===root)break;
+      }
+      parts.push({node,geometry:null,image:null,width:0,height:0,contact:null,box:null});
+    });
+    carryPartsCache.set(root,{children:root.children.slice(),revision:root.userData?.groundContactRevision,parts});
+    return parts;
+  }
+  function carryPartVisible(part,root){
+    for(let node=part.node;node;node=node.parent){
+      if(node.visible===false)return false;
+      if(node===root)return true;
+    }
+    return false;
+  }
+  function carryContact(part){
+    const node=part.node,geometry=node.geometry,image=node.material?.map?.image;
+    const width=image?.naturalWidth||image?.width||0,height=image?.naturalHeight||image?.height||0;
+    const version=geometry?.attributes?.position?.version; // Mutable mesh positions invalidate the cached contact bounds.
+    if(part.geometry===geometry&&part.image===image&&part.width===width&&part.height===height&&part.version===version)return;
+    const geometryChanged=part.geometry!==geometry||part.version!==version;
+    Object.assign(part,{geometry,image,width,height,version,contact:null,box:null});
+    if(!geometry)return;
+    if(geometryChanged||!geometry.boundingBox)geometry.computeBoundingBox();
+    const box=geometry.boundingBox;
+    if(!box||box.isEmpty())return;
+    part.box=box;
+    if(geometry.type==='PlaneGeometry'&&Math.abs(box.min.z)<1e-6&&Math.abs(box.max.z)<1e-6){
+      const points=autoContact(image,box,NO_SEGMENTS);
+      const outline=points||[]; // Missing/tainted texture conservatively uses the whole quad.
+      if(!points)contactVertices(box,null,NO_SEGMENTS,outline);
+      part.contact={points:outline,hull:convexHull(outline.slice())};
+      carryDebug.hullBuilds++;
+    }
+  }
+  function carryMinimum(parts,root){
+    carryDebug.minimumScans++; // Count actual contact projections for the existing mobile debug snapshot.
+    let min=Infinity;
+    for(const part of parts){
+      if(!carryPartVisible(part,root))continue;
+      carryContact(part);
+      if(!part.box)continue;
+      const m=part.node.matrixWorld,e=m.elements,b=part.box;
+      const y=part.contact?projectedContactY(part.contact.hull,m):
+        e[13]+e[1]*(e[1]<0?b.max.x:b.min.x)+e[5]*(e[5]<0?b.max.y:b.min.y)+e[9]*(e[9]<0?b.max.z:b.min.z);
+      min=Math.min(min,y);
+    }
+    return min;
+  }
+  function refreshCarryWorld(holder,root){
+    holder.updateWorldMatrix(true,holder===root);
+    if(root!==holder)root.updateWorldMatrix(false,true);
+  }
+  function constrainCarry(holder,root,context={}){
+    Object.assign(carryDebug,{reason:'unavailable',itemKey:context.itemKey??null,frame:frameId()??null,partCount:0,originalMinY:null,finalMinY:null,angleDeg:0,lift:0});
+    if(!enabled()||!holder?.parent||holder.visible===false||!root||root.visible===false||!context.grip)return false;
+    const s=work(),floor=groundY();
+    if(!s)return false;
+    holder.parent.updateWorldMatrix?.(true,false); // Posterior and floor contact must use the current parent transform.
+    const posterior=posteriorGripMinY(context);
+    if(!Number.isFinite(floor)&&posterior===null)return false;
+    const parts=carryPartsFor(root);
+    carryDebug.partCount=parts.length;
+    if(!parts.length)return false;
+    refreshCarryWorld(holder,root);
+    let min=carryMinimum(parts,root);
+    if(!Number.isFinite(min))return false;
+    carryDebug.originalMinY=min;
+    const target=Number.isFinite(floor)?floor+PAD:-Infinity;
+    // A clear prop with no posterior restriction needs neither socket transforms nor a second hull projection.
+    if(posterior===null&&min>=target){
+      const previous=carryReuseMap.get(holder); // A clear frame must still invalidate a previously cached correction.
+      if(previous)previous.valid=false;
+      carryDebug.finalMinY=min;carryDebug.reason='already-clear';carryDebug.clearFastPaths++;
+      return false;
+    }
+    const grip=context.grip;
+    const readPivot=()=>s.pivot.set(Number(grip.x)||0,Number(grip.y)||0,Number(grip.z)||0).applyMatrix4(holder.matrixWorld);
+    readPivot();
+    let lowestGrip=s.pivot.y;
+    for(const other of context.otherGrips||NO_SEGMENTS){
+      if(other)lowestGrip=Math.min(lowestGrip,s.point.set(Number(other.x)||0,Number(other.y)||0,Number(other.z)||0).applyMatrix4(holder.matrixWorld).y);
+    }
+    let changed=false;
+    const posteriorLift=posterior===null?0:Math.max(0,posterior-lowestGrip);
+    const liftBy=amount=>{
+      if(!(amount>1e-7))return;
+      s.holder.copy(holder.matrixWorld);
+      liftNode(holder,holder.parent.matrixWorld,s.holder,amount,s);
+      refreshCarryWorld(holder,root);
+      carryDebug.lift+=amount;changed=true;
+    };
+    liftBy(posteriorLift);
+    if(posteriorLift)min=carryMinimum(parts,root);
+    if(min>=target){
+      const previous=carryReuseMap.get(holder); // Clear after evaluating/lifting the grip; never reuse an old rotation.
+      if(previous)previous.valid=false;
+      carryDebug.finalMinY=min;carryDebug.reason=changed?'carry-lift':'already-clear';carryDebug.clearFastPaths++;
+      return changed;
+    }
+    // Two-handed carries, compound 3D art and aim/upright poses keep their
+    // orientation: translate the whole prop and both sockets instead.
+    const part=parts.length===1?parts[0]:null;
+    const canRotate=!context.preserveOrientation&&!!part?.contact&&carryPartVisible(part,root);
+    if(!canRotate||min>=target||global.PlayerJump?.heldPoseGrounded?.()!==true){const previous=carryReuseMap.get(holder);if(previous)previous.valid=false;} // No stale correction across a clear/airborne/locked pose.
+    if(min<target&&canRotate){
+      readPivot();
+      const parent=holder.parent.matrixWorld,entry=reuseFor(holder,carryReuseMap);
+      const grounded=global.PlayerJump?.heldPoseGrounded?.()===true&&!previewThree;
+      const pivotHeight=s.pivot.y-floor;
+      const scale=holder.scale;
+      if(grounded&&entry.valid&&entry.root===root&&entry.contact===part.contact&&entry.gripX===grip.x&&entry.gripY===grip.y&&entry.gripZ===grip.z&&entry.scaleX===scale.x&&entry.scaleY===scale.y&&entry.scaleZ===scale.z&&reuseStillValid(entry,holder,pivotHeight)){
+        s.candidate.copy(holder.position);s.oldQ.copy(holder.quaternion);
+        reuseApply(entry,holder,parent,s);
+        refreshCarryWorld(holder,root);
+        const reusedMin=carryMinimum(parts,root);
+        if(reusedMin>=target-1e-7){
+          carryDebug.reuseHits++;carryDebug.angleDeg=entry.angleDeg;carryDebug.lift+=entry.liftY;
+          carryDebug.finalMinY=reusedMin;carryDebug.reason='cached-carry-pose';return true;
+        }
+        holder.position.copy(s.candidate);holder.quaternion.copy(s.oldQ);refreshCarryWorld(holder,root);
+      }
+      entry.valid=false;
+      readPivot();
+      entry.q0.copy(holder.quaternion);entry.p0.copy(holder.position);
+      entry.pivotHeight=pivotHeight;
+      s.parentInverse.copy(parent).invert();
+      entry.grip.copy(s.pivot).applyMatrix4(s.parentInverse).sub(entry.p0).applyQuaternion(s.q.copy(entry.q0).invert());
+      s.matrix.copy(part.node.matrixWorld);s.holder.copy(holder.matrixWorld);
+      const angle=solveContactRotation(s,part.contact,s.matrix,target);
+      if(angle&&rotateAroundGrip(holder,parent,s.holder,s.pivot,s.axis,angle,s)){
+        carryDebug.angleDeg=angle*180/Math.PI;changed=true;
+        refreshCarryWorld(holder,root);min=carryMinimum(parts,root);
+      }
+      entry.dq.copy(entry.q0).invert().multiply(holder.quaternion);
+      const residual=Math.max(0,target-min);
+      liftBy(residual);
+      if(grounded&&(carryDebug.angleDeg||residual>1e-7)){
+        Object.assign(entry,{valid:true,root,contact:part.contact,gripX:grip.x,gripY:grip.y,gripZ:grip.z,scaleX:scale.x,scaleY:scale.y,scaleZ:scale.z,angleDeg:carryDebug.angleDeg,liftY:residual});
+      }
+    }else if(min<target)liftBy(target-min);
+    carryDebug.finalMinY=carryMinimum(parts,root);
+    carryDebug.reason=carryDebug.angleDeg?'grip-pivot':changed?'carry-lift':'already-clear';
+    return changed;
+  }
+  function needsCarryFallback(){
+    return ['no-rig','unsupported-assembly','unsupported-rotation-basis','nonuniform-holder-parent','non-quad-weapon','invalid-geometry','unsupported-pivot-parent'].includes(debug.reason);
   }
   function setTrace(on){traceOn=!!on;if(!traceOn){trace.solved=null;trace.lastPlane=null;trace.lastContact=null;}return traceOn;}
   function traceSolved(plane,contact,min,target,floorY){
@@ -958,5 +1131,5 @@
     if(s.point.distanceTo(shoulder)>reach+0.002)return false;
     socket.position.copy(s.candidate);debug.freeHandLifts++;return true;
   }
-  global.HeldGroundPose=Object.freeze({authoredFrameFor:holder=>authoredFrame?.holder===holder&&enabled()?authoredFrame:null,configurePreview,setPreviewEnabled,previewAppliesTo,suspendedReferenceY,hasDrawingHaftChildren,skip,enabled,groundY,setTrace,traceDrawn,constrainWeapon,constrainDualCopies,releaseDualCopy,rotateAroundGrip,constrainFreeHand,adjustGrip,gripBasisFor,hasCurrentGripPose,resolveGripLocal,adjustHaftPoint,ropeClearance,fittedRopeScale,referenceDrop,lightRopeScale,ropeFitCandidate,needsFit,originalGeometryFor,prepareGeometryUpdate,fixedValue,clear,contractedZ,contactVertices,tracePixels,autoContact,bakeContact,projectedContactY,minimumY,chooseAngle,snapshot:()=>({...debug})});
+  global.HeldGroundPose=Object.freeze({authoredFrameFor:holder=>authoredFrame?.holder===holder&&enabled()?authoredFrame:null,configurePreview,setPreviewEnabled,previewAppliesTo,suspendedReferenceY,hasDrawingHaftChildren,skip,enabled,groundY,setTrace,traceDrawn,constrainWeapon,constrainCarry,needsCarryFallback,constrainDualCopies,releaseDualCopy,rotateAroundGrip,constrainFreeHand,adjustGrip,gripBasisFor,hasCurrentGripPose,resolveGripLocal,adjustHaftPoint,ropeClearance,fittedRopeScale,referenceDrop,lightRopeScale,ropeFitCandidate,needsFit,originalGeometryFor,prepareGeometryUpdate,fixedValue,clear,contractedZ,contactVertices,tracePixels,autoContact,bakeContact,projectedContactY,minimumY,chooseAngle,snapshot:()=>({...debug,carry:{...carryDebug}})});
 })(typeof window!=='undefined'?window:globalThis);

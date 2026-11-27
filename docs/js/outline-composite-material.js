@@ -51,8 +51,7 @@
         }
         // Only darken a visible eligible pixel, never its untagged neighbor.
         // Matching full-scene depth rejects curves behind portraits, terrain and walls.
-        float visibleCurve(vec2 uv, float sceneRaw, float worldDepth) {
-          float raw = texture2D(tShellMaskDepth, uv).r;
+        float visibleCurve(float raw, float sceneRaw, float worldDepth) {
           // Both screen-mode targets use 24-bit depth. Never accept a curve
           // behind the visible scene except for a few quantization steps; the
           // old symmetric world-space tolerance let nearby furniture ink cover
@@ -77,9 +76,12 @@
           return smoothstep(low, high, min(outward, residual));
         }
         vec2 curveSample(vec2 uv) {
+          float raw = texture2D(tShellMaskDepth, uv).r;
+          // The raw depth is irrelevant to curveAxisEdges if the mask is absent.
+          if (raw >= 1.0) return vec2(1.0, 0.0);
           float otherRaw = texture2D(tSceneDepth, uv).r;
           float otherDepth = linearDepth(otherRaw);
-          return vec2(otherRaw, visibleCurve(uv, otherRaw, otherDepth));
+          return vec2(otherRaw, visibleCurve(raw, otherRaw, otherDepth));
         }
         vec2 curveAxisEdges(vec2 minus, vec2 plus, float centerRaw, float low, float high, bool axisInterior) {
           // A mask boundary is a silhouette even if its depth is continuous.
@@ -100,9 +102,12 @@
           return edge * (1.0 - 0.45 * overlap);
         }
         vec3 applyScreenOutline(vec3 color) {
+          float centerMask = texture2D(tShellMaskDepth, vUv).r;
+          // Empty mask pixels never receive screen ink: avoid the scene-depth fetch and conversion.
+          if (centerMask >= 1.0) return color;
           float centerRaw = texture2D(tSceneDepth, vUv).r;
           float centerDepth = linearDepth(centerRaw);
-          if (visibleCurve(vUv, centerRaw, centerDepth) < 0.5) return color;
+          if (visibleCurve(centerMask, centerRaw, centerDepth) < 0.5) return color;
           vec2 stroke = uTexel * 12.0; // Keep the same four taps and silhouette reach.
           float low = rawGapThreshold(centerDepth, max(0.105, centerDepth * 0.009));
           float high = rawGapThreshold(centerDepth, max(0.225, centerDepth * 0.018));
@@ -128,6 +133,7 @@
           if (uSeamOutlinesOn < 0.5) { gl_FragColor = vec4(color, 1.0); return; }
 
           vec4 id0 = texture2D(tEdgeId, vUv);
+          if (id0.a <= 0.5) { gl_FragColor = vec4(color, 1.0); return; }
           vec4 idL = texture2D(tEdgeId, vUv - vec2(uTexel.x, 0.0));
           vec4 idR = texture2D(tEdgeId, vUv + vec2(uTexel.x, 0.0));
           vec4 idU = texture2D(tEdgeId, vUv + vec2(0.0, uTexel.y));
@@ -137,6 +143,8 @@
           idEdge = max(idEdge, (id0.a > 0.5 && idR.a > 0.5 && distance(id0.rgb, idR.rgb) > uSeamColorDistThresh) ? 1.0 : 0.0);
           idEdge = max(idEdge, (id0.a > 0.5 && idU.a > 0.5 && distance(id0.rgb, idU.rgb) > uSeamColorDistThresh) ? 1.0 : 0.0);
           idEdge = max(idEdge, (id0.a > 0.5 && idD.a > 0.5 && distance(id0.rgb, idD.rgb) > uSeamColorDistThresh) ? 1.0 : 0.0);
+
+          if (idEdge <= 0.0) { gl_FragColor = vec4(color, 1.0); return; }
 
           // Occlusion test — the ID buffer was rendered with only the
           // tagged objects in view, so it has no idea a wall or other

@@ -92,6 +92,7 @@ const renderer={
   capabilities:{isWebGL2:true},autoClear:true,shadowMap:{autoUpdate:true},
   getContext(){return gl;},
   render(scene,camera) {
+    assert(scene.children.length<=3,'query scene must stay within its existing probe budget');
     assert(camera.layers.mask&1,'proxy render must include the normal world layer');
     for(const proxy of scene.children) if(proxy.visible) {
       assert(proxy.material.colorWrite===false && proxy.material.depthWrite===false,'depth queries may never change the base image');
@@ -157,6 +158,15 @@ restore=enter();
 assert.equal(visibleRock.visible,true,'camera movement invalidates stale occlusion immediately');
 restore();
 
+// Repeatedly query more scenery objects than can be submitted in one pass.
+const extraRocks=Array.from({length:12},(_,i)=>{
+  const rock=new Group();rock.userData.testBounds={min:new V(i,2,-100),max:new V(i+1,45,-50)};
+  layer.add(rock);return rock;
+});
+for(let i=0;i<30;i++){restore=enter();cull.probeAfterBase(renderer,camera,scene);restore?.();}
+assert.equal(cull.snapshot().proxySlots,3,'scenery slot pool stays bounded while rotating queries');
+assert(cull.snapshot().tracked>=14,'all individual scenery histories remain tracked');
+for(const rock of extraRocks)layer.remove(rock);
 cull.setGpuEnabled(false);
 restore=enter();
 assert.equal(visibleRock.visible,true,'WebGL1/disabled-GPU fallback must keep on-screen rock visible');
@@ -175,3 +185,60 @@ cull.suspendForRender(northScene,camera)?.();
 assert.equal(cull.snapshot().tracked,0,'the plateau cannot leak after leaving its area');
 
 console.log('Distant scenery offscreen/occluded culling, conservative depth proxies, camera wakeup, and cleanup passed.');
+
+ // Distinct delayed answers must follow scenery identity across borrowed meshes.
+ {
+  cull.setGpuEnabled(true);scene.add(western);
+  const rocks=Array.from({length:12},(_,i)=>{
+    const rock=new Group(),x=i%2?10:-10;
+    rock.userData.testBounds={min:new V(x-1,2,-100),max:new V(x+1,45,-50)};
+    layer.add(rock);return rock;
+  });
+  let tick=0;
+  function delayedGpu(allVisible=false){
+    const pending=new Set();
+    return {pending,active:null,ANY_SAMPLES_PASSED_CONSERVATIVE:50,QUERY_RESULT_AVAILABLE:100,QUERY_RESULT:101,
+      createQuery(){const q={readyAt:Infinity,passed:false};pending.add(q);return q;},
+      beginQuery(_,q){assert(pending.has(q)&&!this.active);this.active=q;},
+      endQuery(){assert(this.active);this.active.readyAt=tick+5;this.active=null;},
+      getQueryParameter(q,key){assert(pending.has(q));if(key===100)return tick>=q.readyAt;assert(tick>=q.readyAt);return q.passed;},
+      deleteQuery(q){assert(pending.delete(q));},allVisible};
+  }
+  let gpu=delayedGpu(),forceFailure=false;const oldGpu=gpu; // Exercise mid-draw failure after slots have been rebound.
+  const delayedRenderer={capabilities:{isWebGL2:true},autoClear:true,shadowMap:{autoUpdate:true},getContext:()=>gpu,
+    render(queryScene){
+      assert(queryScene.children.length<=3);
+      for(const proxy of [...queryScene.children].reverse())if(proxy.visible){
+        proxy.onBeforeRender();assert(gpu.active);
+        gpu.active.passed=gpu.allVisible||proxy.position.x>0;
+        if(forceFailure)throw Error('simulated scenery render error');
+        proxy.onAfterRender();assert.equal(gpu.active,null);
+      }
+    }};
+  camera.position.set(0,0,0);
+  for(tick=0;tick<100;tick++){
+    const restore=enter();
+    if(tick>65)for(const [i,rock] of rocks.entries())assert.equal(rock.visible,i%2===1,'delayed answer must follow the rock, not the reused proxy');
+    cull.probeAfterBase(delayedRenderer,camera,scene);restore?.();
+  }
+  assert(oldGpu.pending.size>0);
+  gpu=delayedGpu(true);
+  // Context is detected during the after-base probe, so wakeup is effective at the next frame.
+  let restore=enter();cull.probeAfterBase(delayedRenderer,camera,scene);restore?.();
+  assert.equal(oldGpu.pending.size,0);
+  tick++;restore=enter();assert(rocks.every(rock=>rock.visible));restore?.();
+  cull.reset();assert.equal(gpu.pending.size,0);
+  assert.equal(cull.snapshot().proxySlots,3);
+  forceFailure=true;
+  restore=enter();cull.probeAfterBase(delayedRenderer,camera,scene);restore?.();
+  assert.equal(gpu.active,null,'fail-open closes the active query');
+  assert.equal(gpu.pending.size,0,'fail-open deletes pending queries from all slots');
+  assert.equal(cull.snapshot().gpuEnabled,false);
+  assert.equal(delayedRenderer.autoClear,true);
+  assert.equal(delayedRenderer.shadowMap.autoUpdate,true);
+  assert.equal(camera.layers.mask,32);
+  assert(rocks.every(rock=>rock.visible),'render failure does not leave scenery hidden after restoration');
+  for(const rock of rocks)layer.remove(rock);
+  scene.remove(western);
+ }
+ console.log('Delayed scenery query ownership, reordered draws and context replacement passed.');

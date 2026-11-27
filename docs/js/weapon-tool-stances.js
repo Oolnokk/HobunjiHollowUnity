@@ -479,6 +479,17 @@
     window.__farmLog?.(`[weapon-stance] ${signature}`, 'combat');
   }
 
+  // The stance owner decides whether a held object can be adjusted without
+  // stealing a work stroke, a ranged release, or a mouth-attached prop.
+  function groundPoseEligible(slot, itemKey, holder) {
+    if (!slot || !itemKey || !holder?.visible) return false;
+    if (slot === 'weapon') return true;
+    if (holder.userData?.headRelativeBackPlane) return false;
+    // Fitted tools retain their physical length through an authored stroke.
+    // The solver itself suppresses the idle pose correction during that stroke.
+    return true;
+  }
+
   function installHolderMatrixHook() {
     const holder = deps?.toolHolder;
     if (!holder || holderHookInstalled || holder.__weaponToolStanceMatrixHook) return;
@@ -539,23 +550,28 @@
 
       const clearance = window.HeldGroundPose; // Use the very same raw grip basis as the hand driver, before transient child-plane twist.
       const assembly=window.HobunjiWeaponSpriteAssemblies?.definitionFor?.(itemKey,def);
-      const clearanceContext = clearance?.enabled?.() && activeSlot === 'weapon'
+      const clearanceContext = clearance?.enabled?.() && groundPoseEligible(activeSlot,itemKey,this)
         // The solver checks exact topology, including emitter-only children.
         ? window.ProceduralHandFrameDriver?.groundPoseContext?.(this,itemKey) : null;
       if(clearanceContext) {
         clearanceContext.flexibleHaft=window.HobunjiWeaponSpriteAssemblies?.assemblyKind?.(mesh)==='flail'||!!assembly?.flail; // Suspension is solved separately by its existing owner.
         const scaleIdentity=clearanceContext.scaleIdentity; // Height readiness matters only for explicitly enabled species scaling.
         const grips=window.HobunjiHandToolGrips;
-        clearanceContext.allowFit=(stanceApplied||!targetPose)&&!attackInProgress&&!authoredToolActionActive&&(!grips?.heightMultiplierForTool?.(itemKey)||grips?.characterHeightReady?.(scaleIdentity?.speciesId,scaleIdentity?.gender)!==false);
-        if(clearanceContext.allowFit&&mesh&&clearance.needsFit(clearanceContext,mesh))grips?.applyHeldItemPlacement?.(mesh,itemKey,'melee',scaleIdentity);
+        clearanceContext.fitOnly=activeSlot!=='weapon'&&(attackInProgress||authoredToolActionActive||(activeSlot==='ranged'&&(!!window.RangedWeapons?.playerActionState?.()||!!window.HobunjiRangedWeaponArchetypes?.activeThrownChargeItemKey?.()))); // Preserve established length, never rotate a working stroke.
+        clearanceContext.preserveOrientation=!!targetPose?.worldUpright||(activeSlot==='ranged'&&window.RangedWeapons?.isLoaded?.(itemKey)!==false); // Flame up and loaded reticle bearing are authored constraints.
+        clearanceContext.allowFit=activeSlot!=='ranged'&&!torchIdle&&(stanceApplied||!targetPose)&&!attackInProgress&&!authoredToolActionActive&&(!grips?.heightMultiplierForTool?.(itemKey)||grips?.characterHeightReady?.(scaleIdentity?.speciesId,scaleIdentity?.gender)!==false);
+        if(clearanceContext.allowFit&&mesh&&clearance.needsFit(clearanceContext,mesh))grips?.applyHeldItemPlacement?.(mesh,itemKey,clearanceContext.gripContext||'melee',scaleIdentity);
         // Size every weapon from the authored LIGHT neutral, regardless of
         // which stance actually owns this frame. Restore the live pose before baking.
         if(clearanceContext.allowFit&&window.PlayerJump?.heldPoseGrounded?.()===true&&mesh&&clearance.needsFit(clearanceContext,mesh)){
           const livePosition=this.position.clone(),liveQuaternion=this.quaternion.clone();
           try{
             if(savedPosition&&savedQuaternion){this.position.copy(savedPosition);this.quaternion.copy(savedQuaternion);}
-            const lightFrame=applyRelativeHolderPose(this,sourcePose,idleStances.lightWeapon);
-            deps?.scaleToolWorldPointAroundPlayerCentroid?.(this.position,lightFrame.yawRad);
+            const fitPose=weaponIdleClass(itemKey,def)||activeSlot==='weapon'?idleStances.lightWeapon:targetPose; // Dual-role tools keep one physical fit; dedicated tools use their own Neutral.
+            if(fitPose){
+              const lightFrame=applyRelativeHolderPose(this,sourcePose,fitPose);
+              if(weaponIdleClass(itemKey,def)||activeSlot==='weapon'||torchIdle)deps?.scaleToolWorldPointAroundPlayerCentroid?.(this.position,lightFrame.yawRad);
+            }
             this.updateMatrix();
             clearanceContext.lightReference=this.matrix.clone(); // Local matrix; solver composes the same world/plane transforms.
             clearanceContext.lightReferenceFlailScale=SAP.validFlailLength?.(idleStances.lightWeapon.flailLengthScale)??1;
@@ -590,7 +606,15 @@
       try {
         if (clearanceContext) {
           const beforePosition=this.position.clone(),beforeQuaternion=this.quaternion.clone();
-          if(clearance.constrainWeapon(this,mesh,clearanceContext)) {
+          let adjusted=clearance.constrainWeapon(this,mesh,clearanceContext);
+          // Crossed/rotated ranged art or other noncanonical rigid equipment
+          // still gets contact clearance, but never a fabricated shortening band.
+          if(!adjusted&&activeSlot!=='weapon'&&!clearanceContext.fitOnly&&!clearanceContext.flexibleHaft&&clearance.needsCarryFallback?.()){
+            adjusted=clearance.constrainCarry?.(this,mesh,{rig:clearanceContext.rig,itemKey,grip:clearanceContext.primary?.position,
+              preserveOrientation:true, // Unsupported sprite bases have no proven calibrated rotation pivot; translate both sockets instead.
+              otherGrips:clearanceContext.secondary?[clearanceContext.secondary.position]:null});
+          }
+          if(adjusted) {
             savedPosition ||= beforePosition; savedQuaternion ||= beforeQuaternion;
           }
         } else clearance?.clear?.(); // Unequip, unsupported assemblies or A/B disable restore the original geometry.
@@ -774,6 +798,7 @@
     sweepTwistCancelWeight,
     idleBodyYawSnapshot,
     stanceEngaged,
+    groundPoseEligible, // Shared with the hand driver so the visible holder is baked before either grip.
     // Borrowed read-only view: consume immediately; use debugSnapshot for retained diagnostics.
     getRuntimeState,
     debugSnapshot,
