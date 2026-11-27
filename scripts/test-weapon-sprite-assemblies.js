@@ -365,9 +365,11 @@ checkEnemyWeaponCleanup().catch(error => { console.error(error); process.exitCod
 
 { // A slack tether never pushes a grounded head.
   const t={grounded:false}, d={x:0,y:-1,z:0};
-  const step=(x,z,available=.3,length=1)=>({...api.resolveGroundSlack(t,d,length,available,{x,z})});
+  const step=(x,z,available=.3,length=1,y=0)=>({...api.resolveGroundSlack(t,d,length,available,{x,y,z})});
   const close=(a,b)=>assert.ok(Math.abs(a-b)<1e-8,`${a} != ${b}`);
   const first=step(0,0);close(first.y,-.3);close(first.x,0);
+  assert.ok(api.canPinGroundHead(t,{x:.4,y:0,z:.2},1,.3),'a slack head must retain its prior visible orientation');
+  assert.equal(api.canPinGroundHead(t,{x:1.4,y:0,z:.2},1,.3),false,'taut dragging can rotate the head');
   const slack=step(.4,.2);close(slack.x+.4,0);close(slack.z+.2,0);
   assert.ok(Math.hypot(slack.x,slack.y,slack.z)<1);
   const taut=step(1.4,.2);close(Math.hypot(taut.x,taut.y,taut.z),1);
@@ -375,7 +377,15 @@ checkEnemyWeaponCleanup().catch(error => { console.error(error); process.exitCod
   const rotated=step(1,.4);close(rotated.x,back.x);close(rotated.z+.4,back.z+.2);
   const lifted=step(1,.4,1.1);assert.equal(lifted.grounded,false);close(lifted.y,-1);
   const reset=step(10,10);close(reset.x,0);close(reset.z,0);
-  const unreachable=step(10,10,-2);close(unreachable.y,1);close(Math.hypot(unreachable.x,unreachable.y,unreachable.z),1);
+  const verticalReset=step(10.2,10,.3,1,4);close(verticalReset.x,0);close(verticalReset.z,0);
+  const tangent={grounded:false};api.resolveGroundSlack(tangent,d,1,1,{x:0,y:0,z:0});
+  assert.equal(tangent.grounded,true,'exact vertical floor contact is pinned, not treated as airborne');
+  const rightHand={grounded:false};api.resolveGroundSlack(rightHand,d,1,.3,{x:2,y:0,z:0});
+  const leftHand={grounded:false};api.resolveGroundSlack(leftHand,d,1,.3,{x:-2,y:0,z:0});
+  api.resolveGroundSlack(rightHand,d,1,.3,{x:2.2,y:0,z:0});
+  api.resolveGroundSlack(leftHand,d,1,.3,{x:-1.8,y:0,z:0});
+  close(rightHand.x+2.2,2);close(leftHand.x-1.8,-2);
+  const unreachable=step(10,10,-2,1,4);close(unreachable.y,1);close(Math.hypot(unreachable.x,unreachable.y,unreachable.z),1);
   for(const [x,y,target] of [[0,1,.3],[.2,1,.5],[.5,1,.1],[.5,0,.1],[0,1,0]]){
     const scale=api.slackConnectorScale(x,y,target,{});
     assert.ok(scale.x>0&&scale.x<=1&&scale.y>0&&scale.y<=1);
