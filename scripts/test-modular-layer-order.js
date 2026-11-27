@@ -27,7 +27,15 @@ async function run() {
       }; };
       const pointOnBitmap = (x,y) => ({x:matrix.a*x + matrix.c*y + matrix.e,y:matrix.b*x+matrix.d*y+matrix.f});
       const ctx = {
-        drawImage(image, x=0, y=0) {
+        drawImage(image, x=0, y=0, ...rest) {
+          if (image?.drawnPixels && rest.length===6) { // The real compositor inks a component on a scratch bitmap and copies a 1:1 crop.
+            for(const sample of image.drawnPixels){
+              canvas.operations.push('paint:'+sample.kind);
+              canvas.drawnPixels.push({kind:sample.kind,origin:pointOnBitmap(sample.origin.x,sample.origin.y),
+                ...(sample.axis?{axis:pointOnBitmap(sample.axis.x,sample.axis.y)}:{})});
+            }
+            return;
+          }
           canvas.operations.push('paint:' + (image?.key || 'unknown'));
           if (image?.key === 'head' || image?.key === 'haft') {
             canvas.drawnPixels.push({kind:image.key, origin:pointOnBitmap(200,100),
@@ -37,9 +45,12 @@ async function run() {
             canvas.drawnPixels.push({kind:'junction', origin:pointOnBitmap(x+(image.width||0)/2,y+(image.height||0)/2)});
           }
         },
-        getImageData() {
-          const data = new Uint8ClampedArray(450 * 1204 * 4); // One opaque head pixel for real bounds math.
-          data[(100 * 450 + 200) * 4 + 3] = 255;
+        getTransform() { return {...matrix}; }, // Canvas CTM used by the isolated component rasterizer.
+        clearRect() { canvas.drawnPixels.length=0; }, // Scratch bitmap is reused, not accumulated across components.
+        getImageData(x=0,y=0,w=canvas.width,h=canvas.height) {
+          const data = new Uint8ClampedArray(w*h*4); // Match the requested subrectangle, not an entire source image.
+          if(w===450&&h===1204)data[(100*450+200)*4+3]=255;
+          else if(w>0&&h>0)data[3]=255; // A visible sample for a small source or component crop.
           return { data };
         },
         save() { canvas.operations.push('save'); saved.push({...matrix}); },

@@ -304,7 +304,11 @@
         const shaft=data.shafts[shaftKey], head=data.heads[headKey];
         const rig=api.attachmentRig(shaft,head,api.settings(shaftKey,headKey));
         const result=draw.renderRigid(canvas,composed,rig.children.map(child=>child.worldMount),guides);
-        status.textContent='Rigid assembly · '+result.mounts+' fitted attachment point(s). Gold = shaft attachment.';
+        const mode=api.settings(shaftKey,headKey).mountTypeMode || 'normal'; // Show applied mode and sockets even when their coordinates coincide.
+        const blocked=api.isDisallowed(shaftKey,headKey);
+        status.textContent='Rigid assembly · '+mode+' · '+result.mounts+' fitted attachment point(s): '+rig.children.map(child=>'#'+(child.index+1)+' '+(child.type==='eye'?'sleeve':'tang')).join(', ')+(blocked?' · Preview only: not forgeable':'')+'. Gold = shaft attachment.';
+        canvas.dataset.mountTypeMode=mode;
+        canvas.dataset.mountSockets=rig.children.map(child=>child.index+':'+child.type).join(',');
         return;
       }
       const flail=recipe.flail, paths=[flail.chain.sprite||'assets/objectsprites/rope_long.png',
@@ -340,8 +344,10 @@
       drawLines('shaft-canvas'); drawLines('head-canvas');
       const values = api.settings(shaftKey, headKey), match = api.matchingMounts(shaft, head, values); // Auto-match and pair-local corrections.
       const canvas = byId('preview'), ctx = canvas.getContext('2d');
-      if (match.length && !api.isDisallowed(shaftKey,headKey)) {
-        const composed = await api.compose(shaftKey, headKey, '../../'); // Never invent a rigid weapon preview for two incompatible flail owners.
+      const flexible=api.isFlailHead(head) || !!shaft.flailAssembly;
+      const excluded=api.isDisallowed(shaftKey,headKey); // Forging restrictions must not prevent authoring a geometrically valid rigid pair.
+      if (match.length && (!flexible || !excluded)) {
+        const composed = await api.compose(shaftKey, headKey, '../../'); // Explicitly excluded rigid pairs remain previewable; invalid flexible recipes do not.
         if (ticket !== serial) return;
         canvas.width = composed.width; canvas.height = composed.height;
         ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -369,6 +375,7 @@
         full.width=450;full.height=1204;
         const fullContext=full.getContext('2d');fullContext.clearRect(0,0,450,1204);
         fullContext.drawImage(shaftImage,0,0,450,1204);full.dataset.rigKind='incompatible';
+        full.dataset.mountTypeMode=values.mountTypeMode || 'normal'; full.dataset.mountSockets='';
         byId('flail-preview-status').textContent='Not forgeable · the head/haft mounts, flail recipe ownership or explicit exclusion prevent this assembly.';
         bridgeView = null;
         canvas.width = 450; canvas.height = 1204; // Incompatible pairs render the donor only.
@@ -730,7 +737,7 @@
     byId('part-readiness').textContent = shaft.flailAssembly && head.flailAssembly
       ? 'Not forgeable: both parts own a full rope. Keep a flail recipe on only one.'
       : shaft.overrides[headKey]?.disallow === true
-        ? 'Explicitly excluded: remove the pair disallow checkbox if this combination should be usable.'
+        ? 'Explicitly excluded from forging. A compatible rigid pair can still be previewed; uncheck the exclusion in section 05 to make it eligible.'
       : !accepted
         ? 'Incompatible: no applicable attachment line. For rigid heads, change the pair attachment type in section 05 or add a matching haft line.'
       : head.craftDisabled ? 'Retired head: existing items remain usable, but the Foundry cannot make new ones.'
@@ -745,6 +752,11 @@
     const pair = shaft.overrides[headKey] ||= {}; // Pair-only corrections; no shaft-global defaults.
     byId('pair-mount-type').value = pair.mountTypeMode || 'normal'; // Same head arrow in all modes; only the matching haft types differ.
     byId('pair-mount-type').disabled = api.isFlailHead(head) || !!shaft.flailAssembly;
+    const fitted=api.matchingMounts(shaft,head,pair); // Display actual resolved compatibility, not just the dropdown selection.
+    byId('pair-mount-type-status').textContent=byId('pair-mount-type').disabled
+      ? 'Rope/chain attachments use their own authored contact.'
+      : (fitted.length ? 'Fitting '+fitted.length+' haft line(s): '+fitted.map(m=>m.type==='eye'?'sleeve':'tang').join(', ')+'.' : 'No compatible haft lines in this mode.')
+        +(pair.disallow===true?' Explicitly excluded from forging; valid rigid fits can still be previewed.':'');
     byId('layer-order').value = pair.layerOrder === 'head-over-haft' ? 'head-over-haft' : 'haft-over-head'; // Default: haft in the foreground.
     const values = { ...neutral, ...pair }; // Neutral values are not stored unless changed.
     for (const key of [...api.transforms, 'animation']) {

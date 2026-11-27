@@ -149,6 +149,28 @@ async function ready(page) {
     assert.match(confirmation, /Kylie/);
     assert.equal(await page.evaluate(() => Object.values(window.ModularWeapons.getConfig().shafts.kylie.overrides)
       .flatMap(pair => pair.bridges?.strokes || []).filter(op => op.recipe).length), 1, 'Bulk placement does not add Kylie recipes');
+    // Actual dropdown -> persisted runtime -> composed bitmap on a shipped explicitly excluded rigid pair.
+    await page.locator('#shaft').selectOption('dagger');
+    await page.locator('#head').selectOption('warhammer');
+    await page.locator('#pair-workflow').evaluate(panel=>{panel.open=true;});
+    assert.equal(await page.locator('#disallow').isChecked(),true,'Shipped dagger/warhammer is explicitly excluded');
+    await page.locator('#pair-mount-type').selectOption('normal');
+    await page.waitForFunction(()=>document.querySelector('#flail-preview')?.dataset.rigKind==='incompatible'
+      && document.querySelector('#flail-preview')?.dataset.mountTypeMode==='normal');
+    const incompatiblePixels=await page.locator('#preview').evaluate(canvas=>canvas.toDataURL());
+    await page.locator('#pair-mount-type').selectOption('opposite');
+    await page.waitForFunction(()=>document.querySelector('#flail-preview')?.dataset.rigKind==='rigid'
+      && document.querySelector('#flail-preview')?.dataset.mountTypeMode==='opposite'
+      && document.querySelector('#flail-preview')?.dataset.mountSockets==='0:tang');
+    assert.notEqual(await page.locator('#preview').evaluate(canvas=>canvas.toDataURL()),incompatiblePixels,
+      'Actual composed head appears on the opposite haft socket even while excluded from forging');
+    assert.match(await page.locator('#flail-preview-status').innerText(),/Preview only: not forgeable/);
+    assert.equal(await page.evaluate(()=>window.ModularWeapons.isDisallowed('dagger','warhammer')),true);
+    assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('hobunji.modularWeapons.v5')).shafts.dagger.overrides.warhammer.mountTypeMode),'opposite');
+    await page.locator('#disallow').uncheck();
+    assert.equal(await page.evaluate(()=>window.ModularWeapons.isDisallowed('dagger','warhammer')),false);
+    await page.locator('#disallow').check(); // Restore explicit exclusion.
+    await page.locator('#pair-mount-type').selectOption('normal');
     // Bore tool is contextual: a flexible SHAFT alone does not show head-owned connector drilling.
     await page.locator('#shaft').selectOption('grapple-flail');
     await page.locator('#head').selectOption('fishing-mace'); // Allowed axial mace head; hammers are deliberately excluded by the authored matrix.
