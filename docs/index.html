@@ -247,7 +247,7 @@
   <script src="js/baby-animal-head-warp.js?v=20261119h47dfbdf"></script> <!-- Idle chathead alpha mask for babies and eligible genetically Small pet variants; final art includes coat patterns and eyes. -->
   <script src="js/honeyfuzzle-swarm.js?v=20261124sharedBodyColors2"></script> <!-- Honeyfuzzle swarm renderer: instanced translucent fly-pose blend plus genotype-tinted tail/spectacles; wild and stable creatures link through shared Combat deps. -->
   <script src="js/honeyfuzzle-colors.js?v=20261114queenPerf1"></script> <!-- Honeyfuzzle color regions and backward-compatible queen genetics FIFO. -->
-  <script src="js/honeyfuzzle-hives.js?v=20261124sharedBodyColors2"></script> <!-- Hive stumps: indexed defender lookup, one queen + honey per harvest, collapse. Initialized by game.js. -->
+  <script src="js/honeyfuzzle-hives.js?v=20261124sharedBodyColors2Tothal1127"></script> <!-- Hive stumps: indexed defender lookup, one queen + honey per harvest, collapse. Initialized by game.js. -->
   <!-- Shared per-frame "where is this creature/character's head" cache — see
        its own file header for why. No dependencies of its own; must load
        before anything that calls window.CreatureHeadCache. -->
@@ -381,7 +381,7 @@
        window.BanditCombat.makeEntity/loadGangConfig/loadCampLocaleDefs, so
        must load after combat-bandit.js above, and before game.js, which
        calls window.BanditCamps.init(...) during its own setup. -->
-  <script src="js/bandit-camps.js?v=20261127ruinViewer1"></script>
+  <script src="js/bandit-camps.js?v=20261127ruinViewer1Tothal1127Audit2"></script>
   <!-- Bounty board (hunt a named bandit captain, destroy his camp) —
        window.BountyBoard. Reads window.BanditCamps/window.BanditCombat
        directly, so must load after both above, and before game.js, which
@@ -454,7 +454,7 @@
   <script src="js/honeyfuzzle-house.js?v=20261114queenPerf1"></script> <!-- Honeyfuzzle House: 1x1 queen/swarm slot on a FarmProduction entry; hooked by farm-production.js, initialized by game.js. -->
   <script src="js/farm-layout-editor.js?v=20261016a"></script>
   <script src="js/world-meta-store.js?v=20261122cancelAnimal2"></script>
-  <script src="js/farm-animals.js?v=20261126familyAudit4"></script>
+  <script src="js/farm-animals.js?v=20261126familyAudit4Tothal1127"></script>
   <script src="js/bootstrap/classic-script-group-loader.js?v=20261114classicGroups3" data-classic-group="farm-buildings"></script> <!-- Farm construction, barn troughs and modular house. -->
   <!-- Death ragdoll → lootable corpse (window.CreatureDeath) —
        self-contained aside from deps injected via init(), so load order
@@ -523,6 +523,7 @@
        game.js, which calls window.CalendarSystem.init(...) during its own
        setup. -->
   <script src="js/calendar-system.js?v=20261126bedPassageAudit2"></script>
+  <script src="js/tothal-blizzard.js?v=20261127TothalClock1"></script> <!-- Deterministic Tothal storm timing shared by weather and sheltering AI. -->
   <!-- Resolves a map/interior's active alternate `layouts` entry (see
        docs/config/maps/map_i_temple.json's spirit_communion layout) against
        the current calendar time — window.MapLayoutSystem. Pure/stateless, no
@@ -617,7 +618,7 @@
   <script src="js/skeeri-ruins.js?v=20261123skeeriEyePrewarm1"></script> <!-- Three authored Skeeri sizes, concealed ruin hatches and shaft witch-bomb runs. -->
   <script src="js/tzatzul-live-visuals.js?v=20261127birdScratch1"></script>
   <script src="js/tzatzul-cliff-sites.js?v=20261108tzflightnest2"></script> <!-- Separate rock-textured, non-climbable Tzatzul spires. -->
-  <script src="js/tzatzul-flight-runtime.js?v=20261124h585debe"></script> <!-- Shared swept-body dive for exterior and nest mothers. -->
+  <script src="js/tzatzul-flight-runtime.js?v=20261124h585debeTothal1127"></script> <!-- Shared swept-body dive for exterior and nest mothers. -->
   <script src="js/tzatzul-nest-encounter.js?v=20261120hpaperheadless2"></script> <!-- Authoritative indoor mother and hatchling combat in the existing wildlife tick. -->
   <!-- Funji & Son's General Store (window.GeneralStore) — self-contained
        aside from deps injected via init(), and reads window.DyeSystem/
@@ -682,7 +683,7 @@
        at call time (already global by then), so load order relative to the
        other systems above doesn't matter; must load before game.js, which
        calls window.WildlifeSpawn.init(...) during its own setup. -->
-  <script src="js/wildlife-spawn.js?v=20261126he35bbef"></script>
+  <script src="js/wildlife-spawn.js?v=20261126he35bbefTothal1127"></script>
   <!-- Town/zone building mesh spawning + decorative furniture/prop spawning
        (window.TownZoneBuildings) — reads globally-loaded HousePieceGen/
        WallBuilder/BuildingDoor/window.ProceduralFurniture/window.Music at
@@ -748,7 +749,7 @@
        before game.js, which calls window.WeatherFX.init(...) during its
        own setup. -->
   <script src="js/weather-fx.js?v=20261118slopeSnow1"></script>
-  <script src="js/weather-wind.js?v=20261119katabaticWind2"></script> <!-- Authoritative per-zone wind strength shared by fog, foliage and BGS. -->
+  <script src="js/weather-wind.js?v=20261119katabaticWind2Tothal1127"></script> <!-- Authoritative per-zone wind strength shared by fog, foliage and BGS. -->
   <script src="js/emissive-light-orbs.js?v=20261104hc955306"></script> <!-- Blizzard-style glow circles above darkness/fog for emissive fake lights (mask eyes). -->
   <!-- Load after WeatherFX exists, but before game.js calls WeatherFX.init(), so daylight windows always capture the real overlay dependencies. -->
   <script src="js/daylight-window-runtime.js?v=20261027hglassB1"></script>
@@ -759,7 +760,7 @@
   <!-- Shared Cloud Forest mist cylinders: always in the forest, and wind-driven
        blowing snow on Western Slope. The zone's native sky/depth fog is unchanged. -->
   <script src="js/ruin-light-occlusion.js?v=20261108hac6d00e"></script> <!-- Screen-space ruin torch masks clip behind physical columns, walls and props. -->
-  <script src="js/cloud-forest-fog.js?v=20261124kanthicAudit4"></script>
+  <script src="js/cloud-forest-fog.js?v=20261124kanthicAudit4Tothal1127"></script>
   <!-- Farm tab hub (header, grid glance, buildings list, processor status
        tiles, livestock roster + breeding, farm<->stable transfers, storage,
        farmhands) and the Stable tab (window.FarmPanel) — reads
@@ -893,7 +894,7 @@
   <script src="js/shattercasks.js?v=20261127idleMainMerge1"></script>
   <script src="js/crate-piles.js?v=20261121lungeAoeAudit3"></script>
   <script src="js/hronal-witch-bombs.js?v=20261115bombImpact3"></script>
-  <script src="js/pingdort-flocks.js?v=20261122roostFoot2"></script> <!-- Wild Drenkirra-hunting flocks, fertile nests, and companion rock-bomber attacks. -->
+  <script src="js/pingdort-flocks.js?v=20261122roostFoot2Tothal1127"></script> <!-- Wild Drenkirra-hunting flocks, fertile nests, and companion rock-bomber attacks. -->
   <!-- Hanging ropes: the shared rope swing arithmetic (pure) and the rope component burdens hang from. Needs Shattercasks at
        call time only. See docs/architecture/ruin-capabilities.md. -->
   <script src="js/rope-core.js?v=20261122ropestraight1"></script>

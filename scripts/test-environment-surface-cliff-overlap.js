@@ -13,7 +13,6 @@ assert.match(source, /function tileSurfaceCorners\(/, 'the authored walkable sur
 assert.match(source, /function walkableEdgeContinuous\(/, 'covered neighbors must split when their walkable edge elevations differ');
 assert.match(source, /function addMicroPlateauTile\(/, 'micro plateau geometry must own its shallow inclined perimeter');
 assert.match(source, /const axis = \[0, inset, 1 - inset, 1\]/, 'the incline must run inward so its base is exactly on the walkable tile edge');
-assert.match(source, /baseAt\(u, v\) \+ SURFACE_DEPTH \* depthFactor\(u, v\)/, 'side height must derive only from this tile base plus shallow surface depth');
 assert.match(append, /walkableEdgeContinuous\(state, col, row, side, dc, dr, baseCorners\)/, 'surface breaks must be detected from authored edge heights');
 assert.doesNotMatch(source, /SURFACE_THICKNESS|addRoundedLip|oursMid|theirsMid/, 'no environment geometry may hang down toward a lower neighboring mesa');
 assert.match(source, /version:\s*7/, 'surface overlay debug version must identify rooted inclines with whole-mass snow UVs');

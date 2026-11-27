@@ -179,7 +179,7 @@
   function control(c, dt) {
     if (!c.hiveKey || c.health <= 0) return false;
     if (c._attachment) return false; // Combat.attach owns an active Swarm approach or rider, even at night: tucking home must never freeze the rescue tick.
-    const night = isNight();
+    const night = isNight() || !!window.TothalBlizzard?.isShelteringFor?.(c.areaId); // Hive residents reuse nighttime return/tuck behavior during the shift blizzard.
     const T = deps.TILE;
     if (!night) c._hiveNightProvoked = false;
     if (night && c._hiveNightProvoked) {

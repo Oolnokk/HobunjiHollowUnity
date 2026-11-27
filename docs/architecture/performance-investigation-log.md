@@ -773,6 +773,21 @@ textures. After rendering rain and the expanded blizzard bands, the
 cumulative count was 41 → 4. Frame times on player hardware are still
 unmeasured.
 
+## 23 Nov 2026: Tothal snow depth updates reuse scene geometry
+
+Snow now retains each chunk's position and UV buffers as the depth changes.
+Depth steps update only raised vertex heights, and the camera samples the
+same height change with per-tile masks. The rooted lips stay at their
+authored ground elevation. Melt and terrain regeneration still release the
+old geometry.
+
+The Three.js r128 synthetic benchmark used a 100×100 grid with water and
+plateau boundaries. The old implementation built the entire surface 41
+times for the initial cover and 40 depth steps. The new implementation
+built it once and updated the existing positions 40 times. The first
+whole-zone UV solve remains synchronous, and the benchmark does not include
+GPU uploads or on-device frame times.
+
 ## 19 Nov 2026: actual Chrome CPU profile — repeated scene traversals
 
 Inspected the attached `Trace-20261118T215416.json.gz` as a sampled Chrome

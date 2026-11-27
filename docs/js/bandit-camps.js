@@ -621,6 +621,11 @@
       return;
     }
 
+    if (window.TothalBlizzard?.isShelteringFor?.(zoneId)) {
+      _encounterCheckAccum = 0; // Road ambushes must not start while every camp is sheltering; existing active fights still resolve normally.
+      return;
+    }
+
     if (Math.hypot(deps.player.vx || 0, deps.player.vy || 0) < ENCOUNTER_MOVE_SPEED_MIN_PXS) {
       _encounterCheckAccum = 0;
       return;
@@ -766,7 +771,7 @@
   }
 
   async function spawnSimpleHydraBandit(rec, rank, nameOverride, exterior = false) {
-    if (rec.zoneId !== deps.getCurrentArea()) return null;
+    if (rec.zoneId !== deps.getCurrentArea() || window.TothalBlizzard?.isShelteringFor?.(rec.zoneId)) return null; // Keep unspawned ranks inside intact tents during the shift storm.
     if ((rec.reserveByRank[rank] || 0) <= 0) return null;
     rec.reserveByRank[rank]--; // Claimed before the async avatar build: concurrent callers can never spawn past the camp's reserve.
     const point = simpleHydraPoint(rec, exterior);
@@ -798,10 +803,84 @@
     return tents.length > 0 && tents.every(o => o.burning || o.destroyed);
   }
 
+  const tothalShelteredCampZones = new Set(); // Zones whose camp residents are sheltering; clearing the event restores their saved states.
+  const TOTHAL_SHELTER_RECHECK_MS = 2000; // During a storm, recheck same-size roster replacements no more than once every two seconds.
+  const tothalShelterSweeps = new Map(); // Zone -> last roster/camp identities and counts; avoids a full hostile scan every update frame.
+
+  function restoreTothalBanditResident(c, camp = null) {
+    const prior = c?._tothalTentShelter; // Exact pre-storm draw visibility, position and area for this bandit.
+    if (!prior) return;
+    delete c._tothalTentShelter;
+    if (c.health <= 0 || c.tzatzulCapturedBy || c.areaId !== 'map_i_tothal_storm_tent_' + prior.zoneId) return; // Cleanup owns only its temporary interior, never another system's real relocation.
+    c.areaId = prior.areaId;
+    c.x = camp?.homeX ?? prior.x; c.y = camp?.homeY ?? prior.y; // A regenerated/removed camp must not strand the actor in a fake interior.
+    c.state = 'idle';
+    const visibility = prior.visibility || {};
+    const objects = [c.avatarRef?.group, c.groundShadow, c._banditToolHolder, c._banditRangedToolHolder];
+    const before = [visibility.avatar, visibility.shadow, visibility.melee, visibility.ranged];
+    for (let i = 0; i < objects.length; i++) if (objects[i] && typeof before[i] === 'boolean') objects[i].visible = before[i];
+  }
+
+  function syncTothalBanditTentShelter(zoneId) {
+    const storm = !!window.TothalBlizzard?.isShelteringFor?.(zoneId);
+    const protectedZone = tothalShelteredCampZones.has(zoneId);
+    if (!storm && !protectedZone) return false; // Ordinary weather adds no hostile scan, timer or map allocation.
+    const camps = _banditCampInstances.get(zoneId) || null;
+    const roster = deps.hostileObjects;
+    const rosterCount = roster?.length ?? roster?.size ?? 0;
+    const nowMs = window.performance?.now?.() ?? Date.now(); // Monotonic decision clock, not an additional scheduler.
+    const previous = tothalShelterSweeps.get(zoneId);
+    if (storm && protectedZone && previous?.roster === roster && previous?.rosterCount === rosterCount
+        && previous?.camps === camps && previous?.campCount === (camps?.length || 0)
+        && nowMs >= previous.checkedAt && nowMs - previous.checkedAt < TOTHAL_SHELTER_RECHECK_MS) return true;
+    const campById = new Map((camps || []).map(rec => [rec.instance.id, rec])); // Built only on storm start, roster changes or a throttled refresh.
+    for (const c of roster || []) {
+      const camp = campById.get(c.banditCampInstanceId);
+      if (!storm && c._tothalTentShelter?.zoneId === zoneId) {
+        restoreTothalBanditResident(c, camp); // Restore even when its former camp no longer exists.
+        continue;
+      }
+      if (!camp || c.areaId !== zoneId || c.health <= 0 || c.tzatzulCapturedBy) continue; // Only shelter living exterior residents of this zone, not relocated or captured actors.
+      if (storm && !c._tothalTentShelter) {
+        c._tothalTentShelter = {
+          zoneId, areaId: c.areaId, x: c.x, y: c.y, state: c.state,
+          visibility: {
+            avatar: c.avatarRef?.group?.visible, shadow: c.groundShadow?.visible,
+            melee: c._banditToolHolder?.visible, ranged: c._banditRangedToolHolder?.visible,
+          },
+        }; // Each drawable keeps its own prior visibility; unequipped weapons stay hidden after the storm.
+        c.areaId = 'map_i_tothal_storm_tent_' + zoneId;
+        c.x = camp.homeX; c.y = camp.homeY;
+        c.state = 'idle'; c.targetCreature = null; c.targetPlayer = false; c._chunkCombatTarget = null;
+        if (c.avatarRef?.group) c.avatarRef.group.visible = false;
+        if (c.groundShadow) c.groundShadow.visible = false;
+        if (c._banditToolHolder) c._banditToolHolder.visible = false;
+        if (c._banditRangedToolHolder) c._banditRangedToolHolder.visible = false;
+      }
+    }
+    if (storm) {
+      tothalShelteredCampZones.add(zoneId);
+      tothalShelterSweeps.set(zoneId, { roster, rosterCount, camps, campCount: camps?.length || 0, checkedAt: nowMs });
+    } else {
+      tothalShelteredCampZones.delete(zoneId);
+      tothalShelterSweeps.delete(zoneId);
+    }
+    return storm;
+  }
+
+  function restoreTothalBanditZonesAfterTravel() {
+    if (!tothalShelteredCampZones.size) return; // Ordinary weather has no per-frame roster scan or allocation.
+    for (const shelteredZone of tothalShelteredCampZones) { // Clear distant tent assignments after the storm, even when the player is indoors or in another map.
+      if (!window.TothalBlizzard?.isShelteringFor?.(shelteredZone)) syncTothalBanditTentShelter(shelteredZone);
+    }
+  }
+
   async function updateSimpleHydra(dt) {
+    restoreTothalBanditZonesAfterTravel(); // Before the active-zone early return, so fake tent interiors cannot persist off-map.
     const zoneId = deps.getCurrentArea();
     if (!deps.isZoneArea(zoneId)) return;
     const recs = _banditCampInstances.get(zoneId) || [];
+    if (syncTothalBanditTentShelter(zoneId)) return; // Do not emerge from tents or refill reserves while the event lasts.
     if (!recs.length) return;
     const liveById = new Map();
     for (const c of deps.hostileObjects) {
@@ -810,6 +889,20 @@
 
     for (const rec of recs) {
       if (!rec.activeRanksById) continue;
+      if (rec.initialGuardsPending > 0 && !rec.initialGuardSpawnInFlight) {
+        if (simpleHydraAllTentsBurning(rec) || (rec.reserveByRank.grunt || 0) <= 0) rec.initialGuardsPending = 0; // Never release guards from destroyed tents or exhausted reserves.
+        else {
+          const nowMs = window.performance?.now?.() ?? Date.now(); // Recovery uses the existing update clock, not a second scheduler.
+          if (nowMs >= (rec.initialGuardNextAtMs || 0)) {
+            rec.initialGuardSpawnInFlight = true;
+            rec.initialGuardNextAtMs = nowMs + 850; // Stagger delayed avatar builds instead of spawning a storm-sized burst in one frame.
+            try {
+              const guard = await spawnSimpleHydraBandit(rec, 'grunt', undefined, true); // Reuse the ordinary reserve, variant, and camp membership owner.
+              if (guard) { rec.initialGuardsPending--; liveById.set(guard.id, guard); } // This pass took its roster snapshot before awaiting the spawn; don't falsely count a new guard as dead.
+            } finally { rec.initialGuardSpawnInFlight = false; }
+          }
+        }
+      }
       let nonCaptainDeaths = 0;
       for (const [id, rank] of [...rec.activeRanksById]) {
         if (liveById.has(id)) continue;
@@ -976,6 +1069,9 @@
       reinforcementPending: false,
       reinforcementSpawnInFlight: false,
       reinforcementTimer: 0,
+      initialGuardsPending: 0, // Number of initial exterior guards delayed by storm shelter at camp generation.
+      initialGuardSpawnInFlight: false, // Ensures asynchronous resume never spawns duplicate guards.
+      initialGuardNextAtMs: 0, // Spreads recovery over several existing update ticks.
       captainSpawned: false,
       captainSpawnInFlight: false,
       beastmastersSpawned: 0,
@@ -998,10 +1094,18 @@
     const initialGuardCount = Math.min(3, rec.reserveByRank.grunt);
     let initialGuards = 0;
     for (let i = 0; i < initialGuardCount; i++) {
+      if (window.TothalBlizzard?.isShelteringFor?.(zoneId)) {
+        rec.initialGuardsPending = initialGuardCount - i; // Late-generated camps wait for clear weather, then release the usual exterior guard quota.
+        break;
+      }
       const guard = await spawnSimpleHydraBandit(rec, 'grunt', undefined, true);
       if (guard) initialGuards++;
+      else if (window.TothalBlizzard?.isShelteringFor?.(zoneId)) {
+        rec.initialGuardsPending = initialGuardCount - i; // Also handle a storm starting while an async avatar is loading.
+        break;
+      }
     }
-    if (!initialGuards) {
+    if (!initialGuards && !window.TothalBlizzard?.isShelteringFor?.(zoneId)) {
       window.__farmLog?.('[bandits] simple hydra: initial guards could not spawn.', 'warn');
     }
     const total = grunts + flaskers + lieutenants + rec.reserveByRank.captain;
@@ -1062,6 +1166,11 @@
     _banditCampInstances.delete(zoneId);
     _banditZoneViews.delete(zoneId);
     _banditZoneEntryPending.delete(zoneId);
+    if (tothalShelteredCampZones.has(zoneId)) {
+      for (const c of deps?.hostileObjects || []) if (c._tothalTentShelter?.zoneId === zoneId) restoreTothalBanditResident(c); // A forced terrain regeneration must not leave residents stranded in non-existent tent areas.
+    }
+    tothalShelteredCampZones.delete(zoneId);
+    tothalShelterSweeps.delete(zoneId); // The new camp roster will be checked afresh on its next active tick.
     for (const [key, info] of _perceivedThreats) {
       if (info.zoneId !== zoneId) continue;
       _perceivedThreats.delete(key);
@@ -1538,7 +1647,10 @@
 
   window.BanditCamps = {
     init,
-    _simpleHydra: { campInstances: _banditCampInstances, update: updateSimpleHydra, spawnBandit: spawnSimpleHydraBandit, rankFor: simpleHydraRank, flaskerCountForGrunts }, // Test seam: executes the camp reinforcement lifecycle without a full zone.
+    _simpleHydra: { campInstances: _banditCampInstances, update: updateSimpleHydra, spawnBandit: spawnSimpleHydraBandit, rankFor: simpleHydraRank, flaskerCountForGrunts },
+    tothalShelterSnapshot: () => ({ storm: window.TothalBlizzard?.currentState?.()?.storm || 0,
+      shelteredZones: [...tothalShelteredCampZones],
+      residentCount: [...deps.hostileObjects].filter(c => !!c._tothalTentShelter).length }), // Mobile-copyable garrison audit. // Test seam: executes the camp reinforcement lifecycle without a full zone.
     isCampCleared: isBanditCampCleared,
     updateCampBanners: updateBanditCampBanners,
     senseTargets, // Active bandit-camp tents/fires for the Perception landmark glow.

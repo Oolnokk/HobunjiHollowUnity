@@ -465,7 +465,7 @@
   // beside the barn. Unassigned (stasis) livestock never spawn at all
   // (see addFromItem), so this only ever runs for housed ones.
   function _farmAnimalBarnTick(animal) {
-    const night = window.Music?.isNightTime();
+    const night = window.Music?.isNightTime() || (window.TothalBlizzard?.currentState?.()?.storm || 0) > 0.01; // Housed livestock reuse their existing barn-home path during the extreme storm.
     if (animal._barnHome) {
       if (!night) _farmAnimalWakeUp(animal);
       return true;
