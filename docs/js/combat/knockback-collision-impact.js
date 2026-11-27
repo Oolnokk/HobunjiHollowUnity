@@ -92,11 +92,25 @@
     return effects;
   }
 
+  function impactSoundSource(entity, descriptor, popupCredit) {
+    const combat = window.Combat?.deps; // Uses the existing enemy collection and player identity.
+    if (entity === combat?.player || (entity.isCompanion && !entity.banditCompanion)) return null;
+    const hostile = window.CombatHealthRecoveryPolicy?.isHostileEntity?.(entity)
+      || combat?.hostileObjects?.has?.(entity) || entity.hostile === true || entity.def?.hostile === true || entity.isBandit === true || entity.banditCompanion === true;
+    if (!hostile && popupCredit !== true) return null; // Credited hits can also strike otherwise passive quarry.
+    const areaId = entity.areaId || entity.area; // Never reinterpret an off-area actor as local.
+    if (!areaId || !Number.isFinite(entity.x) || !Number.isFinite(entity.y)) return null;
+    const cue = descriptor?.fireHazard === true ? 'fire'
+      : descriptor?.bladedHazard === true || descriptor?.kind === 'wood' ? 'sharp' : 'blunt'; // Fire wins for dual hazards; wood applies sharp afflictions.
+    return { cue, x: entity.x, y: entity.y, areaId }; // Capture before lethal hooks can remove or move the target.
+  }
+
   function applyResolvedImpact(entity, descriptor, tilePx, hooks, strengthTiles, measure, meta = {}) {
     const strength = Math.max(0, finite(strengthTiles));
     const effects = effectsFor(descriptor, strength);
     const appliedEffects = {}; // Pixel Probe reports what actually landed after resource caps/lethality, separate from the full scaled profile.
     const resource = window.ResourceSystem;
+    const soundSource = impactSoundSource(entity, descriptor, meta.popupCredit); // One potential cue for the whole resolved collision.
     let lethal = false;
 
     if (effects.health > 0) {
@@ -123,6 +137,14 @@
       resource?.enforceCaps?.(entity);
     }
 
+    let impactSfx = null; // Requested cue in mobile impact diagnostics; null means no sound was requested.
+    if (soundSource && Object.keys(appliedEffects).length > 0 && window.AudioSystem?.playCollisionImpactSfx) {
+      try {
+        window.AudioSystem.playCollisionImpactSfx(soundSource.cue, soundSource.x, soundSource.y, soundSource.areaId);
+        impactSfx = soundSource.cue;
+      } catch (_) { impactSfx = 'audio-error'; } // Audio failure cannot interrupt the completed gameplay collision.
+    }
+
     let popupCount = 0; // Counts successfully spawned numbers, distinct from applied gameplay effects.
     if (meta.popupCredit === true) {
       for (const [id, amount] of Object.entries(appliedEffects)) {
@@ -137,6 +159,7 @@
       mode: meta.mode || 'horizontal',
       popupCredit: meta.popupCredit === true, // Existing mobile impact diagnostics.
       popupCount,
+      impactSfx,
       target: String(entity.name || entity.id || entity.def?.label || 'actor'),
       label: descriptor?.label || descriptor?.kind || 'unspecified collision',
       kind: descriptor?.kind || 'fallback',

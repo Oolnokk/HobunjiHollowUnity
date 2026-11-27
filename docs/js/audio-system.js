@@ -1208,7 +1208,7 @@
   // One-shot combat SFX player (weapon swing/impact, block, bark, claw hit) —
   // simpler than playFootstepSfx since these always have a real audio
   // file staged (no procedural WebAudio fallback needed).
-  function playOneShotSfx(cfgEntry, volumeScale = 1, pitch = 1, spatial = null) {
+  function playOneShotSfx(cfgEntry, volumeScale = 1, pitch = 1, spatial = null, transposeNative = false) {
     const audioCfg = gameAudioConfig();
     if (audioCfg.enabled === false || !cfgEntry?.url) return null;
     if (combatSfxConfig().enabled === false) return null;
@@ -1226,6 +1226,14 @@
     }
     const snd = acquireCombatSfxAudio(cfgEntry.url) || new Audio(cfgEntry.url);
     trackActiveSfx(snd);
+    // Pooled voices must not carry a collision's pitch-preservation setting into a normal hit.
+    if (transposeNative) {
+      if (!snd._impactOriginalPitchFlags) snd._impactOriginalPitchFlags = ['preservesPitch', 'mozPreservesPitch', 'webkitPreservesPitch'].filter(key => key in snd).map(key => [key, snd[key]]); // Original native flags restored when this voice is reused.
+      disablePitchPreservation(snd);
+    } else if (snd._impactOriginalPitchFlags) {
+      for (const [key, value] of snd._impactOriginalPitchFlags) { try { snd[key] = value; } catch (_) {} }
+      snd._impactOriginalPitchFlags = null;
+    }
     snd.playbackRate = rate;
     if (snd._combatRequestedAt != null && !(Number(cfgEntry.gainBoost) > 1)) playPooledCombatSfx(snd, volume);
     else playSfxAudioElement(snd, volume, Number(cfgEntry.gainBoost) || 1);
@@ -2025,7 +2033,7 @@
   // see combat-core.js's deps.getCurrentArea()). size is authored by the
   // attack: combos use small/medium/large, while huge stays reserved for
   // true heavy strikes and quick attacks that earned their condition bonus.
-  function playWeaponHitSfx(tag, x, y, areaId, pitch, size = 'medium') {
+  function playWeaponHitSfx(tag, x, y, areaId, pitch, size = 'medium', transposeNative = false) {
     if (areaId !== deps.getCurrentArea()) return;
     const normalizedSize = ['small', 'medium', 'large', 'huge'].includes(size) ? size : 'medium';
     const family = tag === 'blunt' ? 'Blunt' : 'Sharp';
@@ -2035,8 +2043,21 @@
     const spatial = combatAudioSpatial({ x, y, areaId }, { earshotTiles: 9 });
     if (spatial.gain <= 0.002) return;
     const falloff = spatial.gain;
-    recordCombatSfx(key, cfgEntry, { tag: family.toLowerCase(), size: normalizedSize });
-    playOneShotSfx(cfgEntry, falloff, pitch, spatial);
+    recordCombatSfx(key, cfgEntry, { tag: family.toLowerCase(), size: normalizedSize, ...(transposeNative ? { impact: true, requestedPitch: pitch } : {}) });
+    playOneShotSfx(cfgEntry, falloff, pitch, spatial, transposeNative);
+  }
+
+  // Environmental impacts reuse the existing hit/ignition recordings and spatial audio.
+  function playCollisionImpactSfx(cue, x, y, areaId) {
+    if (!deps || !Number.isFinite(x) || !Number.isFinite(y) || !areaId || areaId !== deps.getCurrentArea()) return;
+    if (gameAudioConfig().enabled === false || combatSfxConfig().enabled === false) return; // Every impact is combat feedback, including the reused object ignition cue.
+    const pitch = 0.65; // Deep collision transposition (~7.5 semitones), shared by all three cue families.
+    if (cue === 'fire') {
+      const source = { x, y, areaId, earshotTiles: 9 }; // Actor gameplay coordinates, not Three.js world units.
+      playObjectSfxKey('igniteLarge', 1, pitch, source);
+    } else if (cue === 'sharp' || cue === 'blunt') {
+      playWeaponHitSfx(cue, x, y, areaId, pitch, 'medium', true);
+    }
   }
 
   function playQuickAttackBonusSfx(x, y, areaId) {
@@ -2315,6 +2336,7 @@
     playCreatureClawHit,
     playWeaponSlashSfx,
     playWeaponHitSfx,
+    playCollisionImpactSfx,
     playQuickAttackBonusSfx,
     playComboFinisherBonusSfx,
     playSoursapBurstSfx,

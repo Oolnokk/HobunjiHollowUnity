@@ -78,6 +78,8 @@ const combatSfx = {
   weaponSwing2: { url: 'swing2.mp3', volume: 1, preload: true },
   weaponSwing3: { url: 'swing3.mp3', volume: 1, preload: true },
   quickAttackBonusSlash: { url: 'anime-slash.wav', volume: 0.9, preload: true }, // Shared source for unchanged Quick Attack and double finisher variants.
+  weaponHitSharpMedium: { url: 'sharp-medium.mp3', volume: 1, preload: true },
+  weaponHitBluntMedium: { url: 'blunt-medium.mp3', volume: 1, preload: true },
   weaponHitSharpHuge: { url: 'sharp-huge.mp3', volume: 1, preload: true },
   counterShieldBlock: { url: 'block.mp3', volume: 1, preload: true },
   rangedImpact: { url: 'arrow-hit.mp3', volume: 1, preload: true },
@@ -88,7 +90,7 @@ const context = {
   Audio: FakeAudio,
   performance: { now: () => 1000 },
   setTimeout: () => 0,
-  window: { SCRATCHBONES_CONFIG: { game: { audio: { enabled: true, sfxVolume: 1, combatSfx } } } },
+  window: { SCRATCHBONES_CONFIG: { game: { audio: { enabled: true, sfxVolume: 1, combatSfx, objectSfx: { igniteLarge: { url: 'ignite-large.m4a', volume: 1 } } } } } },
 };
 vm.runInNewContext(audio, context);
 context.window.AudioSystem.init({
@@ -136,6 +138,36 @@ assert.equal(context.window.AudioSystem.combatSfxDebugSnapshot().last.detail.pit
 assert(Math.abs(FakeAudio.lastPlayed.playbackRate - 2) < 0.1, 'blowgun dart impacts must actually play at roughly 2x pitch');
 assert.equal(debug.maxStartDelayMs, 140, 'stale mobile combat play requests need a strict deadline');
 assert.equal(FakeAudio.plays, 6, 'named bandage loop plus swing, melee impact, block, and two arrow impacts should each render exactly once');
+
+// Environmental impacts transpose the native fallback and restore the pooled voice afterwards.
+{
+  const api = context.window.AudioSystem; // Real audio owner with the native media fixture.
+  const before = FakeAudio.plays;
+  for (const cue of ['sharp','blunt']) {
+    api.playCollisionImpactSfx(cue,0,0,'farm');
+    const voice = FakeAudio.lastPlayed; // Collision and ordinary hit share this pooled recording.
+    assert.equal(voice.src,cue+'-medium.mp3');
+    assert.equal(voice.playbackRate,0.65);
+    assert.equal(voice.preservesPitch,false);
+    voice.pause();
+    api.playWeaponHitSfx(cue,0,0,'farm',1,'medium');
+    assert.equal(FakeAudio.lastPlayed,voice);
+    assert.equal(voice.preservesPitch,true);
+    assert.equal(voice.playbackRate,1);
+  }
+  api.playCollisionImpactSfx('sharp',0,0,'other-area');
+  api.playCollisionImpactSfx('sharp',10000,0,'farm');
+  assert.equal(FakeAudio.plays,before+4,'off-area and distant collisions remain silent');
+  api.playCollisionImpactSfx('fire',0,0,'farm');
+  assert.equal(FakeAudio.lastPlayed.src,'ignite-large.m4a');
+  assert.equal(FakeAudio.lastPlayed.playbackRate,0.65);
+  assert.equal(FakeAudio.lastPlayed.preservesPitch,false);
+  assert.equal(FakeAudio.plays,before+5,'fire uses the torch recording once');
+  combatSfx.enabled = false;
+  for (const cue of ['sharp','blunt','fire']) api.playCollisionImpactSfx(cue,0,0,'farm');
+  assert.equal(FakeAudio.plays,before+5,'combat mute suppresses all three environmental cues');
+  combatSfx.enabled = true;
+}
 
 // In headless/mobile native fallback, the first lowered-pitch slash must finish before the second begins.
 const beforeSlash = FakeAudio.plays; // Keeps existing ordinary weapon/arrow SFX counts independent of the new finisher.
