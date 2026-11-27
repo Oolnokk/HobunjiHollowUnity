@@ -285,16 +285,21 @@ console.log('camera-edge zone: body and head stay out of it, with side memory, w
   const owners=Array.from({length:180},(_,i)=>disk(.3,0,.025,-2+i*.01,-1.99+i*.01));
   owners.push(disk(.3,0,.025,-2,1),disk(.3,0,.025,.2,.4));
   owners.sort((a,b)=>a.y0-b.y0);
-  const pets=[disk(.3,0,.025,.2,.4)];
+  const pets=Array.from({length:12},()=>disk(.3,0,.025,.2,.4));
   const baseline={a:[],b:[],pairs:[]}, fast={a:[],b:[],pairs:[],ownerSorted:true};
   assert.equal(solveBodyYaw(owners,pets,0,fast),solveBodyYaw(owners,pets,0,baseline),'long overlapping slabs must not be skipped');
   owners.splice(owners.findIndex(o=>o.y1===1),1);
-  baseline.ownerVisits=fast.ownerVisits=0;
+  baseline.ownerVisits=fast.ownerVisits=fast.ownerPrefixVisits=fast.ownerSearchSteps=0;
   assert.equal(solveBodyYaw(owners,pets,0,fast),solveBodyYaw(owners,pets,0,baseline));
   assert.ok(fast.ownerVisits<baseline.ownerVisits/10,'skip vertically irrelevant owner patches');
+  // Account for index construction and binary search as well as the remaining pair visits.
+  assert.ok(fast.ownerVisits+fast.ownerPrefixVisits+fast.ownerSearchSteps<baseline.ownerVisits/4,'reduce total broad-phase work, not just pair visits');
+  const small={a:[],b:[],pairs:[],ownerSorted:true};
+  solveBodyYaw(owners,pets.slice(0,1),0,small);
+  assert.equal(small.ownerPrefixVisits||0,0,'one pet patch cannot amortize a full owner index');
   for(let i=0;i<100;i++){
     const owner=Array.from({length:40},()=>{const y=(rand()-.5)*2;return disk((rand()-.5)*.8,(rand()-.5)*.8,.02+rand()*.05,y,y+rand()*.6);}).sort((a,b)=>a.y0-b.y0);
-    const y=rand()-.5,pet=[disk(.3,0,.04,y,y+.1)],request=rand()*Math.PI*2-Math.PI,arcs=[.5,.1];
+    const y=rand()-.5,pet=Array.from({length:6},(_,j)=>disk(.3,0,.04,y+j*.025,y+j*.025+.1)),request=rand()*Math.PI*2-Math.PI,arcs=[.5,.1];
     assert.equal(solveBodyYaw(owner,pet,request,{a:[],b:[],pairs:[],ownerSorted:true},arcs),solveBodyYaw(owner,pet,request,{a:[],b:[],pairs:[]},arcs),'sorted skip preserves exact arc order and result');
   }
 }
